@@ -1,5 +1,7 @@
 # Continuación QRA por fases — 2026-10-23
 
+Estado actual 2026-10-23T08:44:56-05:00: candidato F0/F1 preparado sobre main75e, código ancla ea05e99f742b9b6740161ba3dd7e4bd7654de118; CI propio PENDIENTE. [Ledger de cinco rutas](QRA_F0_F1_RUTAS_2026-10-23.tsv). El censo2193 de abajo conserva su base75be histórica y no acredita revisión de todos los archivos.
+
 Corte 2026-10-23T01:35:52-05:00. Base 75be5d6751b0075bbf061ce9f5b2ee09a36b427f; rama codex/qra-capital-20261023 y worktree propio locked ACTIVE. El cierre Omega220 PR102/104 permanece válido para su código e286 y sus 45 objetivos; no certifica esta nueva ola. El [inventario](QRA_CONTINUACION_INVENTARIO_2026-10-23.tsv) enumera 2193 rutas del árbol base por blob. Es una cola completa de archivos, con revisión pendiente; las 23 coincidencias de Omega220 sólo heredan su alcance concreto. La fase de la tabla es clasificación mecánica, no auditoría ni prioridad científica demostrada.
 
 ## Orden y aceptación
@@ -44,3 +46,13 @@ Main75e17d4635c3c12eaf377119fb2518df18b10ba1 integra Sol1095 y GLM154 y tiene9/9
 Censo de almacenamiento20s:110071 archivos y44,359,003,062bytes lógicos contados,8099directorios pendientes. Target contado44,345,299,482bytes, NO su total. Volumen libre362,375,606,272bytes. Método metadata streaming sin seguir reparse; no ahorro físico ni presupuesto300GB certificado. RAM13:34Z0.75GiB<4; no Cargo local. cargo tree --duplicates permanece sin ejecutar por presión de recursos; no podar semver a ciegas.
 
 F2 adicional prioritario demostrado RO: ACCOUNT_UPDATE con wb0 pierde publicación en stream/puente y capital_del_freno usa el arena positivo cuando exchange<=0. Distinguir cero observado de ausencia ligada a sesión, sin aceptar wb ausente que serde(default) convierte a0. Requiere su propio átomo y contratos reales; no está corregido por F0. Fuentes primarias: https://developers.binance.com/en/docs/catalog/core-trading-derivatives-trading-usd-s-m-futures/api/rest-api/account y https://developers.binance.com/en/docs/products/derivatives-trading-usds-futures/user-data-streams .
+
+## Candidato F0/F1 congelado para CI
+
+Source ancla ea05e99f742b9b6740161ba3dd7e4bd7654de118. Cinco rutas de comportamiento: tres lanzadores, contrato Python y shard CI. Treinta y dos métodos en recursos (16existentes+16nuevos):28pase completo previo PASS272.35s; luego6focusedPASS50.553s(3previos+3nuevoscleanup) y1método parametrizado de12negativos de flags PASS12.416s. Ambos PowerShell7.6.7/5.1.26100.9549 realmente ejecutados, sin skips ni Cargo real. La suite completa del candidato32 y el total esperado84recursos siguen pendientes de CI; no se presenta esa expectativa como resultado.
+
+Cleanup sólo de altas de esta invocación: valida ruta física/common-dir/HEAD, hash raw de la copia propia y ausencia de stage antes de restaurarla o retirar el archivo originalmente ausente. Modificación ajena distinta, cambio de HEAD o contenido staged conserva el árbol. Propaga75/101 y retira con Git sinforce. Los tres launchers rechazan RUSTFLAGS/CARGO_ENCODED_RUSTFLAGS/CARGO_BUILD_RUSTFLAGS; Bash también bloquea target/config/jobs alternativos. La salida de quality se drena sin acumularla toda; Clippy workspace una sola vez, errores nunca informativos.
+
+Rescate AGY103: f174 es ancestro por merge49f9, con exclusiones deliberadas registradas en buzón/PR103 (comentario6366222051). Shard nuevo sólo telemetry-server completo; preserva seis paquetes Sol y sus doctests, Host OMS/golden/storage sin recorte. Todos los854archivos Rust, Cargo.toml/lock y .cargo/config son idénticos a75e. No se incorpora DAZ global (UB según contrato oficial Rust) ni parsers sin consumidores vivos. La historia f174 conserva su desarrollo y los motivos no se ocultan tras un merge limpio. No se heredan sus10verdes antiguos. Composición esperada8Unit+2Replay=10jobs; cobertura objetivo50Sol+61telemetry-server=111 sinduplicados, pendiente de logs propios.
+
+Cierre exigido: candidato10/10 y push real main10/10 por separado, fuente anclada, recibo con límites, rama/WT propios retirados. Primary AGY con cambios ajenos y Verify locked ACTIVE se preservan. No activar motor, fondos ni entornos. El átomo F2 de capital observado0 y los fallbacks FFI siguen pendientes.
