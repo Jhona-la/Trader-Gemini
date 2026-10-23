@@ -17571,3 +17571,11 @@ guarda para tapes asimétricos, no redundancia inútil.
 
 Suite feature-engine completa verde (91 unit + dmrg 6/6 + mps 7/7 +
 entrelazamiento 7/7). CI del push: Unit + Replay verificados post-push.
+
+## 2026-10-23T09:56:51-05:00 — QRA F0/F1: código en main y CI propio10/10
+
+PR105 integrado en 68839f9683afdec64e4c992fdc6ce7e9d7c5441c, padres B75e/Hebe y árbol dded9f6ad0db349e956a34d8c28030267fd4897b igual al merge virtual7b8. Candidato10/10 Unit39964126655/Replay39964126563 y push real10/10 Unit39968864721/Replay39968864605, sin transferencias. Cada revisión acredita84 recursos,61 server,50 Sol,65 storage,16 Host OMS, all-targets y Golden1/56filtradas/2testigos. Recibo docs/audit/QRA_F0_F1_RESULTADOS_2026-10-23.md, expediente JSON sellado y ledger5anchorsHebe. Todos854Rust/Cargo/config iguales a75e.
+
+Launchers protegidos por semáforo/target/jobs2; flags/cleanup propios/75/101. Rescate AGY103 sólo cobertura servidor, desarrollo excluido preservado en historia. Censo completo76.31GB lógicos y RAM<4GiB; sin Cargo real local, borrado para censo o ahorro atribuido. Reserva de código QRA liberada.
+
+F2 capital/sesión/cache y rutaUDS quedan como propuestas sin implementar. Revisión de AGY PR106 fijada a235807dfc, comentarios6367417134/6367454945/6367483813; su CI no se hereda y QRA no edita sus fuentes. Primary AGY, Verify locked ACTIVE, Sol1097 y GLM155 se preservan. Retirar sólo rama/WT propios después del merge documental con HEAD integrado/árbol limpio; confirmación final en PR105 para no crear otro ciclo de commits. Sin motores, fondos, API autenticada, promoción ni métricas de rentabilidad.

@@ -12,8 +12,16 @@
 #      worktrees escriben los mismos artefactos y, por mtime, uno puede
 #      ejecutar el código del otro (scripts/tests/test_frescura_target.py).
 #   2. CARGO_BUILD_JOBS=2 salvo que se pida otra cosa explícitamente.
-#   3. Espera mientras haya OTRO cargo/rustc vivo o la RAM libre esté por
+#   3. Espera mientras haya OTRO cargo/rustc vivo o la RAM DISPONIBLE esté por
 #      debajo de SEMAFORO_RAM_MIN_GB (4 por defecto).
+#      F1-097: «disponible» es la memoria que el sistema puede entregar SIN
+#      paginar — `MemAvailable` en Linux y `AvailableMBytes` en Windows (libre
+#      + standby reclamable). Antes Windows medía `FreePhysicalMemory`, que
+#      sólo cuenta páginas libres y deja fuera el standby: en una máquina de
+#      builds con un target/ de decenas de GB, el semáforo anunciaba «2 GB»
+#      donde el Administrador de tareas mostraba 9, y los agentes aprendían a
+#      compilar por fuera del cerrojo. Medido 2026-10-23: el contador correcto
+#      cuesta ~36 ms por muestra frente a ~590 ms del anterior.
 #   4. Cerrojo atómico (mkdir) en <raíz>/target/.semaforo.lock con su dueño.
 #      Un cerrojo es huérfano si supera SEMAFORO_TTL_MIN (240), o si pasada
 #      la gracia SEMAFORO_GRACIA_S (120 s) no hay ningún cargo/rustc vivo: un
@@ -121,13 +129,34 @@ ram_libre_gb() {
     echo "$SEMAFORO_RAM_GB"
     return
   fi
+  local salida
   if command -v powershell > /dev/null 2>&1; then
-    powershell -NoProfile -Command \
-      "[math]::Round((Get-CimInstance Win32_OperatingSystem).FreePhysicalMemory/1MB, 2)" \
-      2> /dev/null | tr -d '\r '
+    # F1-097 — la MISMA magnitud que MemAvailable de Linux: memoria que el
+    # sistema puede entregar sin paginar (libre + standby reclamable).
+    # `Win32_PerfRawData_PerfOS_Memory` expone propiedades CIM en inglés, así
+    # que no depende del idioma de Windows (el contador `\Memory\...` de
+    # Get-Counter sí está localizado: en un Windows en español se llama
+    # `\Memoria\MB disponibles`).
+    salida=$(powershell -NoProfile -Command \
+      "[math]::Round((Get-CimInstance Win32_PerfRawData_PerfOS_Memory).AvailableMBytes/1024, 2)" \
+      2> /dev/null | tr -d '\r ')
   else
-    awk '/MemAvailable/ {printf "%.2f", $2/1048576}' /proc/meminfo
+    salida=$(awk '/MemAvailable/ {printf "%.2f", $2/1048576}' /proc/meminfo)
   fi
+  # Un valor ilegible NO es 0: se declara desconocido y el bucle decide con
+  # esa información (fail-closed, pero con el motivo a la vista).
+  if ram_conocida "$salida"; then
+    echo "$salida"
+  else
+    echo "desconocida"
+  fi
+}
+
+ram_conocida() {
+  case "$1" in
+    '' | *[!0-9.]* | *.*.*) return 1 ;;
+    *) return 0 ;;
+  esac
 }
 
 menor_que() { awk -v a="$1" -v b="$2" 'BEGIN { exit !(a < b) }'; }
@@ -156,17 +185,26 @@ limite=$(( inicio + espera_max_min * 60 ))
 while :; do
   ajenos=$(procesos_ajenos)
   ram=$(ram_libre_gb)
+  # Etiqueta de bitácora: una medición ilegible se registra como
+  # `ram_libre=desconocida`, nunca como `ram_libre=0GB`.
+  if ram_conocida "$ram"; then ram_log="${ram}GB"; else ram_log="desconocida"; fi
   motivo=""
   paciencia_agotada=0
-  # LG-25b sólo puede ignorar una cuenta numérica conocida, nunca «?».
+  # LG-25b sólo puede ignorar una cuenta numérica conocida, nunca «?», y sólo
+  # con una medición de RAM utilizable: una lectura desconocida no habilita
+  # saltarse la espera. El orden conserva el cortocircuito original: no se
+  # lanza ningún proceso extra si la paciencia no ha vencido.
   if [[ "$ajenos" =~ ^[0-9]+$ ]] \
     && [ $(( $(ahora) - inicio )) -ge $(( paciencia_min * 60 )) ] \
-    && ! menor_que "${ram:-0}" "$(awk -v a="$ram_min" -v b="$ram_extra" 'BEGIN { print a + b }')"; then
+    && ram_conocida "$ram" \
+    && ! menor_que "$ram" "$(awk -v a="$ram_min" -v b="$ram_extra" 'BEGIN { print a + b }')"; then
     paciencia_agotada=1
   fi
   if [ "${ajenos:-0}" != "0" ] && [ "$paciencia_agotada" = "0" ]; then
     motivo="$ajenos procesos cargo/rustc ajenos"
-  elif menor_que "${ram:-0}" "$ram_min"; then
+  elif ! ram_conocida "$ram"; then
+    motivo="RAM disponible DESCONOCIDA (la medición no devolvió un número; SEMAFORO_RAM_GB la fuerza)"
+  elif menor_que "$ram" "$ram_min"; then
     motivo="RAM libre ${ram} GB < ${ram_min} GB"
   else
     if cerrojo_huerfano; then
@@ -183,7 +221,7 @@ while :; do
   fi
   if [ "$(ahora)" -ge "$limite" ]; then
     echo "[semaforo] sin turno tras ${espera_max_min} min: $motivo; no compilo" >&2
-    registrar "SIN TURNO ($motivo): cargo $*"
+    registrar "SIN TURNO (ram_libre=${ram_log} | $motivo): cargo $*"
     exit 75
   fi
   echo "[semaforo] esperando: $motivo" >&2
@@ -203,9 +241,9 @@ if [ -n "${SEMAFORO_PRUEBA_ROBO:-}" ]; then
   printf '%s\n' "$SEMAFORO_PRUEBA_ROBO" > "$cerrojo/dueno"
 fi
 if [ "${ajenos:-0}" != "0" ]; then
-  registrar "turno por paciencia: ${ajenos} procesos cargo/rustc ajenos (fuera del semáforo), ram_libre=${ram}GB"
+  registrar "turno por paciencia: ${ajenos} procesos cargo/rustc ajenos (fuera del semáforo), ram_libre=${ram_log}"
 fi
-registrar "ADQUIERE ram_libre=${ram}GB jobs=$CARGO_BUILD_JOBS: cargo $*"
+registrar "ADQUIERE ram_libre=${ram_log} jobs=$CARGO_BUILD_JOBS: cargo $*"
 
 if [ "${SEMAFORO_SOLO_DECIDIR:-0}" = "1" ]; then
   echo "[semaforo] turno concedido; CARGO_TARGET_DIR=$CARGO_TARGET_DIR CARGO_BUILD_JOBS=$CARGO_BUILD_JOBS CARGO_UNSTABLE_CHECKSUM_FRESHNESS=$CARGO_UNSTABLE_CHECKSUM_FRESHNESS"
