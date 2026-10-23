@@ -137,6 +137,96 @@ pub fn parse_binance_kline<'a>(json_str: &'a mut str) -> Option<KlineData<'a>> {
     Some((e, s, open, high, low, close, volume, is_closed))
 }
 
+/// P-7 — Parser de latencia ultra-baja (0 ms) para streams de @bookTicker de Binance.
+/// Devuelve (event_time, symbol, best_bid_price, best_bid_qty, best_ask_price, best_ask_qty, update_id)
+/// Valida sanidad de precios, finitud y rechaza libros cruzados (bid >= ask).
+pub fn parse_binance_book_ticker<'a>(
+    json_str: &'a mut str,
+) -> Option<(i64, &'a str, f64, f64, f64, f64, i64)> {
+    let bytes: &'a mut [u8] = unsafe { json_str.as_bytes_mut() };
+    let parsed = simd_json::to_borrowed_value(bytes).ok()?;
+    let data = if let Some(d) = parsed.get("data") {
+        d
+    } else {
+        &parsed
+    };
+
+    let u = data.get("u")?.as_i64()?;
+    let s_temp = data.get("s")?.as_str()?;
+    let s: &'a str = unsafe { std::mem::transmute(s_temp) };
+    let b = data.get("b")?.as_str()?.parse::<f64>().ok()?;
+    let big_b = data.get("B")?.as_str()?.parse::<f64>().ok()?;
+    let a = data.get("a")?.as_str()?.parse::<f64>().ok()?;
+    let big_a = data.get("A")?.as_str()?.parse::<f64>().ok()?;
+    let e = data
+        .get("E")
+        .and_then(|v| v.as_i64())
+        .or_else(|| data.get("T").and_then(|v| v.as_i64()))
+        .unwrap_or(0);
+
+    // Validación de finitud, positividad y libro no cruzado
+    if b <= 0.0
+        || a <= 0.0
+        || big_b < 0.0
+        || big_a < 0.0
+        || !b.is_finite()
+        || !a.is_finite()
+        || !big_b.is_finite()
+        || !big_a.is_finite()
+        || b >= a
+    {
+        return None;
+    }
+
+    Some((e, s, b, big_b, a, big_a, u))
+}
+
+/// P-8 — Parser zero-alloc para órdenes de liquidación forzada de Binance (!forceOrder@arr o stream individual).
+/// Devuelve (event_time, symbol, is_buyer, price, qty, trade_time)
+/// Permite capturar cascadas de liquidación institucional y micro-dislocaciones instantáneas.
+pub fn parse_binance_force_order<'a>(
+    json_str: &'a mut str,
+) -> Option<(i64, &'a str, bool, f64, f64, i64)> {
+    let bytes: &'a mut [u8] = unsafe { json_str.as_bytes_mut() };
+    let parsed = simd_json::to_borrowed_value(bytes).ok()?;
+    let data = if let Some(d) = parsed.get("data") {
+        d
+    } else {
+        &parsed
+    };
+
+    let e_type = data.get("e").and_then(|v| v.as_str());
+    if e_type != Some("forceOrder") {
+        return None;
+    }
+
+    let e = data.get("E")?.as_i64()?;
+    let o = data.get("o")?;
+
+    let s_temp = o.get("s")?.as_str()?;
+    let s: &'a str = unsafe { std::mem::transmute(s_temp) };
+    let side = o.get("S")?.as_str()?;
+    let is_buy = side.eq_ignore_ascii_case("BUY");
+
+    let p = o
+        .get("p")
+        .and_then(|v| v.as_str())
+        .and_then(|v| v.parse::<f64>().ok())
+        .or_else(|| {
+            o.get("ap")
+                .and_then(|v| v.as_str())
+                .and_then(|v| v.parse::<f64>().ok())
+        })?;
+    let q = o.get("q")?.as_str()?.parse::<f64>().ok()?;
+    let t = o.get("T").and_then(|v| v.as_i64()).unwrap_or(e);
+
+    if p <= 0.0 || q <= 0.0 || !p.is_finite() || !q.is_finite() {
+        return None;
+    }
+
+    Some((e, s, is_buy, p, q, t))
+}
+
 /// Veredicto de la guardia de secuencia del libro.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SeqVerdict {
@@ -347,5 +437,50 @@ mod tests {
         // Invalid OHLC (high < low)
         let mut invalid_kline = r#"{"e":"kline","E":1672531200000,"s":"BTCUSDT","k":{"o":"60000.0","h":"59800.0","l":"59900.0","c":"60050.0","v":"10.5","x":true}}"#.to_string();
         assert!(parse_binance_kline(&mut invalid_kline).is_none());
+    }
+
+    #[test]
+    fn test_parse_binance_book_ticker_valid_and_crossed_rejection() {
+        let mut valid_ticker = r#"{"u":400900217,"s":"BNBUSDT","b":"25.3519","B":"31.21","a":"25.3652","A":"40.66","T":1573879169829,"E":1573879169830}"#.to_string();
+        let res = parse_binance_book_ticker(&mut valid_ticker);
+        assert!(res.is_some(), "BookTicker payload válido debe parsearse");
+        let (e, s, b, big_b, a, big_a, u) = res.unwrap();
+        assert_eq!(e, 1573879169830);
+        assert_eq!(s, "BNBUSDT");
+        assert_eq!(b, 25.3519);
+        assert_eq!(big_b, 31.21);
+        assert_eq!(a, 25.3652);
+        assert_eq!(big_a, 40.66);
+        assert_eq!(u, 400900217);
+
+        // Libro cruzado (bid >= ask) debe ser rechazado
+        let mut crossed_ticker = r#"{"u":400900218,"s":"BNBUSDT","b":"25.4000","B":"10.0","a":"25.3500","A":"5.0","E":1573879169831}"#.to_string();
+        assert!(parse_binance_book_ticker(&mut crossed_ticker).is_none(), "Libro cruzado bid >= ask debe rechazarse");
+
+        // Precio no finito o no positivo
+        let mut zero_bid_ticker = r#"{"u":400900219,"s":"BNBUSDT","b":"0.0","B":"10.0","a":"25.3500","A":"5.0","E":1573879169832}"#.to_string();
+        assert!(parse_binance_book_ticker(&mut zero_bid_ticker).is_none(), "Bid <= 0 debe rechazarse");
+    }
+
+    #[test]
+    fn test_parse_binance_force_order_valid_and_negative_rejection() {
+        let mut valid_force = r#"{"e":"forceOrder","E":1568014460893,"o":{"s":"BTCUSDT","S":"SELL","o":"LIMIT","f":"IOC","q":"0.014","p":"9910.5","ap":"9910.5","X":"FILLED","l":"0.014","z":"0.014","T":1568014460893}}"#.to_string();
+        let res = parse_binance_force_order(&mut valid_force);
+        assert!(res.is_some(), "forceOrder payload válido debe parsearse");
+        let (e, s, is_buy, p, q, t) = res.unwrap();
+        assert_eq!(e, 1568014460893);
+        assert_eq!(s, "BTCUSDT");
+        assert!(!is_buy, "S: SELL debe resultar en is_buy = false");
+        assert_eq!(p, 9910.5);
+        assert_eq!(q, 0.014);
+        assert_eq!(t, 1568014460893);
+
+        // Evento no forceOrder debe ser ignorado
+        let mut trade_msg = r#"{"e":"trade","E":1568014460893,"o":{"s":"BTCUSDT","S":"SELL","p":"9910.5","q":"0.014"}}"#.to_string();
+        assert!(parse_binance_force_order(&mut trade_msg).is_none(), "Evento distinto a forceOrder debe retornar None");
+
+        // Cantidad negativa o cero debe ser rechazada
+        let mut zero_qty = r#"{"e":"forceOrder","E":1568014460893,"o":{"s":"BTCUSDT","S":"BUY","p":"9910.5","q":"0.0"}}"#.to_string();
+        assert!(parse_binance_force_order(&mut zero_qty).is_none(), "Cantidad <= 0 debe rechazarse");
     }
 }

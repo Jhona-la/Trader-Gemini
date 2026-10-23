@@ -76,6 +76,10 @@ jobs:
             # Sintético: ni entrenamiento, ni promoción, ni modelos reales.
             # SI: ejecutar también el contrato de ingestión del benchmark.
             paquetes: -p trader-gemini-v5 --lib --bin train_forest --bin spectral_bench
+          - grupo: telemetria-y-silicio
+            # FASE 2 (Átomo 2.3): Shard dedicado a los 7 crates de telemetría y silicio censados por Sol:
+            # os-guardian, omniscient-registry, telemetry-engine, telemetry-server, flight-recorder, graph-4d, graph-architecture
+            paquetes: -p os-guardian -p omniscient-registry -p telemetry-engine -p telemetry-server -p flight-recorder -p graph-4d -p graph-architecture --lib --tests
     env:
       # QS-P3: los runners windows-2022 tienen 4 vCPU y 16 GB. Con 2 jobs la
       # compilación (casi todo el tiempo del job: 23–31 min en el PR #30)

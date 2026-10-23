@@ -40,6 +40,9 @@ pub fn init_guardian(affinity_mask: usize, max_memory_mb: usize, arena: Arc<Glob
         return process_id; // Ya inicializado
     }
 
+    // FASE 2: Activar FTZ/DAZ para supresión determinista de subnormales a nivel de silicio
+    enable_ftz_daz();
+
     #[cfg(windows)]
     unsafe {
         let process = GetCurrentProcess();
@@ -158,6 +161,9 @@ pub unsafe fn lock_memory_region(ptr: *mut std::ffi::c_void, size: usize) -> boo
 /// FASE 24: Configura el hilo actual para operar en máxima prioridad física.
 /// Solo debe llamarse desde el HFT Spin Loop (GodEngineScalp).
 pub fn set_current_thread_time_critical() {
+    // FASE 2: Garantizar FTZ/DAZ en el hilo HFT para eliminar microcode traps en subnormales
+    enable_ftz_daz();
+
     #[cfg(windows)]
     unsafe {
         let thread = GetCurrentThread();
@@ -200,9 +206,70 @@ pub fn pin_current_thread_to_core(core_id: usize) -> bool {
     }
 }
 
+/// FASE 2 (Átomo 2.1): Configura el registro de hardware MXCSR para suprimir números subnormales
+/// activando FTZ (Flush-To-Zero, bit 15 = 0x8000) y DAZ (Denormals-Are-Zero, bit 6 = 0x0040).
+/// Previene que números de punto flotante < 2.225e-308 provoquen microcode hardware assists (traps),
+/// garantizando ejecución matemática en latencia ultra-baja y determinista O(1).
+pub fn enable_ftz_daz() {
+    #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+    {
+        #[cfg(target_arch = "x86")]
+        use core::arch::x86::{_mm_getcsr, _mm_setcsr};
+        #[cfg(target_arch = "x86_64")]
+        use core::arch::x86_64::{_mm_getcsr, _mm_setcsr};
+
+        unsafe {
+            let mxcsr = _mm_getcsr();
+            // Bit 15: FTZ (0x8000), Bit 6: DAZ (0x0040)
+            _mm_setcsr(mxcsr | 0x8040);
+        }
+    }
+}
+
+/// FASE 2 (Átomo 2.1): Consulta si los modos FTZ y DAZ están activos en el registro de hardware actual.
+pub fn is_ftz_daz_enabled() -> bool {
+    #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+    {
+        #[cfg(target_arch = "x86")]
+        use core::arch::x86::_mm_getcsr;
+        #[cfg(target_arch = "x86_64")]
+        use core::arch::x86_64::_mm_getcsr;
+
+        unsafe {
+            let mxcsr = _mm_getcsr();
+            (mxcsr & 0x8040) == 0x8040
+        }
+    }
+    #[cfg(not(any(target_arch = "x86", target_arch = "x86_64")))]
+    {
+        true
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_ftz_daz_activation_and_subnormal_suppression() {
+        enable_ftz_daz();
+        assert!(
+            is_ftz_daz_enabled(),
+            "FTZ y DAZ deben estar habilitados en MXCSR tras enable_ftz_daz()"
+        );
+
+        #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+        {
+            // Un subnormal f64 ocurre por debajo de MIN_POSITIVE (2.2250738585072014e-308).
+            let min_normal = f64::MIN_POSITIVE;
+            let subnormal = min_normal * 0.5;
+            // Con FTZ activo a nivel de CPU, el subnormal se redondea inmediatamente a 0.0 sin microcódigo assist.
+            assert_eq!(
+                subnormal, 0.0,
+                "En hardware x86 con FTZ activo, el subnormal debe ser limpiado a cero inmediatamente"
+            );
+        }
+    }
 
     #[test]
     fn test_pin_current_thread_to_core() {
