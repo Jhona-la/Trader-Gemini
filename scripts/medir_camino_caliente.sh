@@ -41,8 +41,8 @@ repo=$(git rev-parse --show-toplevel)
 comun=$(git rev-parse --path-format=absolute --git-common-dir)
 raiz_principal=$(cd -- "$(dirname -- "$comun")" && pwd -P)
 semaforo="$repo/scripts/cargo_semaforo.sh"
-if [[ ! -f "$semaforo" || ${RUSTFLAGS+x} ]]; then
-  echo 'necesito el semáforo del checkout y RUSTFLAGS de la configuración compartida' >&2
+if [[ ! -f "$semaforo" || ${RUSTFLAGS+x} || ${CARGO_ENCODED_RUSTFLAGS+x} || ${CARGO_BUILD_RUSTFLAGS+x} ]]; then
+  echo 'necesito el semáforo del checkout y flags Rust de la configuración compartida' >&2
   exit 2
 fi
 export SEMAFORO_RAIZ="$raiz_principal" CARGO_TARGET_DIR="$raiz_principal/target"
@@ -60,17 +60,35 @@ done
 mkdir -p "$trabajo"
 trabajo=$(cd -- "$trabajo" && pwd -P)
 creados=()
+declare -A huellas_inyectadas=() blobs_originales=()
+comun_real=$(cd -- "$comun" && pwd -P)
 pid_invocacion=$BASHPID
 limpiar_si_fallo() {
-  local codigo=$1 dir
+  local codigo=$1 dir raiz_arbol comun_arbol huella
   [[ "$BASHPID" = "$pid_invocacion" && "$codigo" != 0 ]] || return 0
   for dir in "${creados[@]}"; do
     # Allowlist: sólo altas exitosas de ESTA invocación bajo su carpeta.
     # Sin --force: archivos nuevos/modificados ajenos impiden la retirada.
-    if [[ "$dir" = "$trabajo/"* ]]; then
-      git -C "$repo" worktree remove -- "$dir" || \
-        echo "conservo worktree modificado o en uso: $dir" >&2
+    [[ "$dir" = "$trabajo/"* && -d "$dir" && ! -L "$dir" ]] || continue
+    raiz_arbol=$(git -C "$dir" rev-parse --show-toplevel) || continue
+    [[ "$(cd -- "$raiz_arbol" && pwd -P)" = "$dir" ]] || continue
+    comun_arbol=$(git -C "$dir" rev-parse --path-format=absolute --git-common-dir) || continue
+    [[ "$(cd -- "$comun_arbol" && pwd -P)" = "$comun_real" ]] || continue
+    [[ "$(git -C "$dir" rev-parse HEAD)" = "${dir##*/}" ]] || continue
+    # La copia propia puede ensuciar BASE. Sólo deshacerla si sigue siendo
+    # exactamente el blob inyectado; un cambio posterior se conserva.
+    huella=${huellas_inyectadas[$dir]:-}
+    if [[ -n "$huella" && -f "$dir/$medidor" && ! -L "$dir/$medidor" ]] \
+      && [[ "$(git hash-object --no-filters -- "$dir/$medidor")" = "$huella" ]] \
+      && git -C "$dir" diff --cached --quiet -- "$medidor"; then
+      if [[ -n "${blobs_originales[$dir]:-}" ]]; then
+        git -C "$dir" restore --source=HEAD --worktree -- "$medidor" || continue
+      else
+        rm -- "$dir/$medidor" || continue
+      fi
     fi
+    git -C "$repo" worktree remove -- "$dir" || \
+      echo "conservo worktree modificado o en uso: $dir" >&2
   done
 }
 trap 'limpiar_si_fallo "$?"' EXIT
@@ -83,15 +101,24 @@ if [ -z "${RUSTUP_TOOLCHAIN:-}" ] && [ -f "$repo/rust-toolchain.toml" ]; then
 fi
 
 arbol() {
-  local sha dir
+  local sha dir nuevo=0 huella original
   sha=$(git -C "$repo" rev-parse --verify "$1^{commit}")
   dir="$trabajo/$sha"
   if [ ! -d "$dir" ]; then
     git -C "$repo" worktree add --detach "$dir" "$sha" > /dev/null
     creados+=("$dir")
+    nuevo=1
   fi
   # Sólo si difiere: copiar renueva la fecha y obliga a reenlazar.
-  cmp -s "$repo/$medidor" "$dir/$medidor" || cp "$repo/$medidor" "$dir/$medidor"
+  if ! cmp -s "$repo/$medidor" "$dir/$medidor"; then
+    huella=$(git hash-object --no-filters -- "$repo/$medidor")
+    original=$(git -C "$dir" rev-parse --verify "HEAD:$medidor" 2>/dev/null) || original=
+    cp "$repo/$medidor" "$dir/$medidor"
+    if [[ "$nuevo" = 1 && "$(git hash-object --no-filters -- "$dir/$medidor")" = "$huella" ]]; then
+      huellas_inyectadas[$dir]=$huella
+      blobs_originales[$dir]=$original
+    fi
+  fi
   arbol_dir=$dir
 }
 

@@ -57,8 +57,8 @@ function Invoke-CargoStep {
 }
 
 try {
-    if (Test-Path Env:RUSTFLAGS) {
-        throw 'RUSTFLAGS de entorno no esta permitido; use la configuracion compartida'
+    if ((Test-Path Env:RUSTFLAGS) -or (Test-Path Env:CARGO_ENCODED_RUSTFLAGS) -or (Test-Path Env:CARGO_BUILD_RUSTFLAGS)) {
+        throw 'Flags Rust de entorno no estan permitidos; use la configuracion compartida'
     }
     if (-not (Test-Path -LiteralPath $BashPath -PathType Leaf)) {
         throw "No se encontro bash MSYS: $BashPath"

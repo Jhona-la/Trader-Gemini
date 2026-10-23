@@ -29,8 +29,8 @@ REPO=$(git rev-parse --show-toplevel) || exit 2
 COMUN=$(git rev-parse --path-format=absolute --git-common-dir) || exit 2
 RAIZ_PRINCIPAL=$(cd -- "$(dirname -- "$COMUN")" && pwd -P) || exit 2
 SEMAFORO="$REPO/scripts/cargo_semaforo.sh"
-if [[ ! -f "$SEMAFORO" || ${RUSTFLAGS+x} ]]; then
-  echo 'necesito el semáforo del checkout y RUSTFLAGS de la configuración compartida' >&2
+if [[ ! -f "$SEMAFORO" || ${RUSTFLAGS+x} || ${CARGO_ENCODED_RUSTFLAGS+x} || ${CARGO_BUILD_RUSTFLAGS+x} ]]; then
+  echo 'necesito el semáforo del checkout y flags Rust de la configuración compartida' >&2
   exit 2
 fi
 for ARGUMENTO in "$@"; do

@@ -333,6 +333,9 @@ with trace.open("a", encoding="utf-8") as stream:
         "target": str(target), "jobs": os.environ.get("CARGO_BUILD_JOBS"),
         "lock_held": lock.is_dir(),
         "owner": (lock / "dueno").read_text() if lock.is_dir() else ""}) + "\\n")
+if os.environ.get("F0_EDIT_MEASURER") == "1":
+    (pathlib.Path.cwd() / "crates/god-engine-core/tests/medidor_camino_caliente.rs").write_text(
+        "// later edit owned by another agent\\n", encoding="utf-8")
 if args[0] == os.environ.get("F0_FAIL_VERB"):
     print("diagnostic without the display filter prefix", file=sys.stderr)
     sys.exit(int(os.environ.get("F0_FAIL_CODE", "101")))
@@ -386,7 +389,8 @@ fi
     def environment(self, **overrides):
         env = {key: value for key, value in os.environ.items()
                if not key.upper().startswith(("SEMAFORO_", "BASH_FUNC_", "F0_"))
-               and key.upper() not in {"BASH_ENV", "ENV", "RUSTFLAGS", "CARGO_TARGET_DIR",
+               and key.upper() not in {"BASH_ENV", "ENV", "RUSTFLAGS", "CARGO_ENCODED_RUSTFLAGS",
+                                       "CARGO_BUILD_RUSTFLAGS", "CARGO_TARGET_DIR",
                                        "GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE"}}
         env.update(PATH=str(self.bin) + os.pathsep + str(Path(BASH).parent)
                    + os.pathsep + env.get("PATH", ""),
@@ -534,6 +538,56 @@ exit $code
         self.admitted(1)
         self.assertEqual(self.git("worktree", "list", "--porcelain").count("worktree "), 1)
 
+    def revised_measurer(self):
+        path = self.root / "crates/god-engine-core/tests/medidor_camino_caliente.rs"
+        path.write_text("// newer injected measurer\n", encoding="utf-8")
+        self.git("add", "--", str(path.relative_to(self.root)))
+        self.git("-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid",
+                 "commit", "-qm", "new measurer")
+        return self.git("rev-parse", "HEAD").strip()
+
+    def test_medidor_retira_inyeccion_propia_distinta_en_base(self):
+        branch = self.revised_measurer()
+        for expected, overrides in ((75, {"SEMAFORO_RAM_GB": "1"}),
+                                    (101, {"F0_FAIL_VERB": "test"})):
+            with self.subTest(exit_code=expected):
+                self.reset_calls()
+                result = self.bash("medir_camino_caliente.sh", self.base, branch, **overrides)
+                self.assertEqual(result.returncode, expected, result.stdout + result.stderr)
+                self.admitted(0 if expected == 75 else 1)
+                self.assertEqual(self.git("worktree", "list", "--porcelain").count("worktree "), 1)
+                self.assertFalse((self.fixture / "measurer worktrees" / self.base).exists())
+                self.assertFalse((self.fixture / "measurer worktrees" / branch).exists())
+
+    def test_medidor_retira_inyeccion_propia_ausente_en_base(self):
+        relative = "crates/god-engine-core/tests/medidor_camino_caliente.rs"
+        anchor = self.root / "crates/god-engine-core/tests/fixture_keep.rs"
+        anchor.write_text("// keep the historical test directory\n", encoding="utf-8")
+        self.git("add", "--", str(anchor.relative_to(self.root)))
+        self.git("rm", "--", relative)
+        self.git("-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid",
+                 "commit", "-qm", "historical revision without measurer")
+        missing = self.git("rev-parse", "HEAD").strip()
+        branch = self.revised_measurer()
+        result = self.bash("medir_camino_caliente.sh", missing, branch, SEMAFORO_RAM_GB="1")
+        self.assertEqual(result.returncode, 75, result.stdout + result.stderr)
+        self.admitted(0)
+        self.assertEqual(self.git("worktree", "list", "--porcelain").count("worktree "), 1)
+        self.assertFalse((self.fixture / "measurer worktrees" / missing).exists())
+        self.assertFalse((self.fixture / "measurer worktrees" / branch).exists())
+
+    def test_medidor_conserva_edicion_posterior_del_blob_inyectado(self):
+        branch = self.revised_measurer()
+        result = self.bash("medir_camino_caliente.sh", self.base, branch,
+                           F0_FAIL_VERB="test", F0_EDIT_MEASURER="1")
+        self.assertEqual(result.returncode, 101, result.stdout + result.stderr)
+        self.admitted(1)
+        retained = self.fixture / "measurer worktrees" / self.base
+        self.assertEqual((retained / "crates/god-engine-core/tests/medidor_camino_caliente.rs")
+                         .read_text(encoding="utf-8"), "// later edit owned by another agent\n")
+        self.assertEqual(self.git("worktree", "list", "--porcelain").count("worktree "), 2)
+        self.assertFalse((self.fixture / "measurer worktrees" / branch).exists())
+
     def test_oracle_dos_cargos_con_turno_y_limite_de_identidad_explicito(self):
         result = self.bash("oracle_witness.sh", "--", "--nocapture")
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
@@ -562,6 +616,28 @@ exit $code
                     result = self.bash(script, *args, **overrides)
                     self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
                     self.assertEqual(self.calls(), [])
+
+    def test_launchers_rechazan_todas_las_variables_de_rustflags(self):
+        for variable in ("RUSTFLAGS", "CARGO_ENCODED_RUSTFLAGS", "CARGO_BUILD_RUSTFLAGS"):
+            value = "-C\x1fdebuginfo=2" if variable == "CARGO_ENCODED_RUSTFLAGS" else "-C debuginfo=2"
+            overrides = {variable: value}
+            for script, args in (("medir_camino_caliente.sh", (self.base, self.branch)),
+                                 ("oracle_witness.sh", ())):
+                with self.subTest(variable=variable, script=script):
+                    self.reset_calls()
+                    result = self.bash(script, *args, **overrides)
+                    self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
+                    self.admitted(0)
+            if not POWERSHELLS:
+                with self.subTest(variable=variable, script="quality_gate.ps1"):
+                    self.skipTest("requiere PowerShell; no certifica su guarda si omitido")
+            for engine in POWERSHELLS:
+                with self.subTest(variable=variable, script="quality_gate.ps1", engine=engine):
+                    self.reset_calls()
+                    result = self.quality(engine, **overrides)
+                    self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+                    self.admitted(0)
+                    self.assertNotIn("QUALITY GATE: PASS", result.stdout)
 
 
 if __name__ == "__main__":
