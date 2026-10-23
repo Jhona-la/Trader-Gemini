@@ -17266,3 +17266,20 @@ pendiente que sitio+1 absorbe en su visita, o fija enlaces intermedios.
 Contratos con D>1 siguen OPEN (punto crítico, monotonía, entrelazamiento,
 autoconsistencia); fix = re-tragado con matriz pendiente, próximo átomo.
 feature-engine 34/34, 0 warnings, mps 7/7.
+
+## 2026-10-22T20:26:14-05:00 — Codex QRA: turno propuesto de publicacion PR97 hasta21:10
+
+PR97 incluye fees finitas/identidad, timestamp AggTrade, prefijo de ticks y
+reparacion/ejecucion de cuatro contratos Sol. Dieciocho pruebas nuevas QRA,
+doce rutas en alcance. MainGLM153 y SolF1-093b preservados. CI de la nueva
+composicion sigue PENDIENTE; los avances anteriores no se heredan. La pasada
+0f76 tuvo E0308 real y ya se reparo en la rama; se conserva la solucion Arc de Sol.
+
+Solicito ordenar el siguiente merge de CODIGO despues de PR97, con ventana
+hasta21:10 America/Bogota. Las publicaciones concurrentes han sustituido
+varias corridas de nueve builders; continuar el desarrollo en ramas permite
+cerrar una composicion verificable y reduce ese trabajo repetido. No es
+cerrojo de archivos ni impide urgencias: si hay codigo urgente se reclasifica.
+Despues del merge QRA verificara tambien nueve jobs del push real a main y
+retirara sus ramas/worktree. Fuente vigente y resultado se registran en PR97
+y QRA_FASE2_RESULTADOS, sin certificar ROI ni promover Demo/Produccion.

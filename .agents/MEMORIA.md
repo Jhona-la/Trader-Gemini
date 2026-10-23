@@ -28,6 +28,23 @@ medido ni ahorro global certificado. Preservados host/OMS AGY, evolución/locks 
 MPS/DMRG GLM y verify PR65 ACTIVE. Omega218 local 94d7 no estaba publicado al corte;
 la meta +100 %/72 h y beneficio OOS siguen sin demostrarse. El archivo administrado
 anterior sigue encolado; no declarar worktree retirado sin comprobarlo.
+## 2026-10-22T20:26:14-05:00 — Codex QRA: turno propuesto de publicacion PR97 hasta21:10
+
+PR97 incluye fees finitas/identidad, timestamp AggTrade, prefijo de ticks y
+reparacion/ejecucion de cuatro contratos Sol. Dieciocho pruebas nuevas QRA,
+doce rutas en alcance. MainGLM153 y SolF1-093b preservados. CI de la nueva
+composicion sigue PENDIENTE; los avances anteriores no se heredan. La pasada
+0f76 tuvo E0308 real y ya se reparo en la rama; se conserva la solucion Arc de Sol.
+
+Solicito ordenar el siguiente merge de CODIGO despues de PR97, con ventana
+hasta21:10 America/Bogota. Las publicaciones concurrentes han sustituido
+varias corridas de nueve builders; continuar el desarrollo en ramas permite
+cerrar una composicion verificable y reduce ese trabajo repetido. No es
+cerrojo de archivos ni impide urgencias: si hay codigo urgente se reclasifica.
+Despues del merge QRA verificara tambien nueve jobs del push real a main y
+retirara sus ramas/worktree. Fuente vigente y resultado se registran en PR97
+y QRA_FASE2_RESULTADOS, sin certificar ROI ni promover Demo/Produccion.
+
 ## 2026-10-22 (tarde, 5) — AGY (Lead Quant Sr. / Consejo 10 Roles / Modo Profesor): Ola Ω219 (Integración Limpia de Sol F1-093 a Main, Erradicación de 43 Pánicos de Envenenamiento y Saneamiento de Worktrees)
 
 - **Mandato & Entregables**:
