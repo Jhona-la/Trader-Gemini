@@ -13,6 +13,7 @@ pub mod horizon_policy;
 pub mod paths;
 pub mod position;
 pub mod protection_health;
+pub mod quantum_phase;
 pub mod ring_buffer;
 pub mod state;
 pub mod state_continuity;
@@ -41,6 +42,10 @@ pub use espectral_multiactivo::{
 };
 pub use genome::{GenomeError, SuperGenotype};
 pub use position::{Position, PositionManager};
+pub use quantum_phase::{
+    calcular_factor_cuantico, clasificar_fase, evaluar_fase_cuantica, FaseCuantica,
+    QuantumCouplingParams, QuantumPhaseState,
+};
 pub use spectral_regime::{LegacyRegimeView, SpectralRegimeField, SpectralRegimeParams};
 pub use state::{GlobalArena, ScalpState};
 pub use tick_source::{TickEvent, TickSource};

@@ -17727,3 +17727,26 @@ Próximo átomo: según evolución del 3.3 de AGY (si su cableado consume
 batch o streaming, ajusto la API) o extensión del modelo (campos por
 sitio). NO tocar tick_reparser (Codex). CI del push: Unit + Replay
 verificados post-push por mí.
+
+## 2026-10-23 — AGY: FASE 3 ÁTOMO 3.3 — ACOPLAMIENTO CUÁNTICO TENSOR MPS AL UNIVERSO ESPECTRAL & DARWIN ONLINE (PR #112)
+
+**MODO PROFESOR — ANÁLISIS INTEGRAL {QUÉ, POR QUÉ, PARA QUÉ, CÓMO, CUÁNDO, DÓNDE, QUIÉN}:**
+
+- **QUÉ:** Conexión formal e integral del observable de entrelazamiento cuántico $g(\Delta S)$ derivado del modelo de Ising transverso con DMRG sobre tensores MPS (GLM 155/156) al Campo de Régimen Espectral continuo (`SpectralRegimeField`) y al motor de adaptación online (`QuantumCouplingParams`).
+- **POR QUÉ:** La física de mercado demostrada por GLM 156 reveló que los activos no operan en regímenes discretos, sino en fases cuánticas continuas: BTC habita la fase ordenada coherente ($g = 0.850 < 1.0$, estado GATO con memoria temporal no local), BNB roza el punto crítico ($g = 1.157$), y los activos de alta frecuencia caótica habitan la fase paramagnética ($g > 1.0$, e.g. ICP en $g = 4.095$). El sistema requería traducir este observable físico en una modulación continua $C^0/C^1$ de capacidad de margen y detección de transiciones de fase críticas para evitar la divergencia de susceptibilidad magnética $\chi \to \infty$ en puntos de bifurcación de liquidez.
+- **PARA QUÉ:** Permitir la amplificación orgánica y segura del capital en activos con coherencia macroscópica genuina ($f_{\text{cuantico}} \in [1.0, 2.0]$ para $g < 1.0$), amortiguar el apalancamiento suavemente ante el ruido microestructural ($f_{\text{cuantico}} = 1.0 / g \in (0.0, 1.0]$ para $g > 1.0$), y blindar la cartera contra el colapso de liquidez mediante amortiguamiento Hermite $C^1$ en la criticidad ($|g - 1.0| \le \delta_{\text{crit}}$).
+- **CÓMO:**
+  1. Módulo `crates/quantum-arena/src/quantum_phase.rs` con tipado algebraico estricto: `FaseCuantica` (`Ordenada`, `Critica`, `Paramagnetica`), `QuantumCouplingParams`, `QuantumPhaseState`.
+  2. Función de modulación $f_{\text{cuantico}}(g)$ continua y suave:
+     - Si $g \le 1.0$: $f_{\text{base}}(g) = 1.0 + \text{clamp}(1.0 - g, 0.0, 1.0)$.
+     - Si $g > 1.0$: $f_{\text{base}}(g) = 1.0 / g$.
+     - Continuidad en la frontera: $\lim_{g \to 1^-} f = 1.0 = \lim_{g \to 1^+} f$.
+     - Amortiguamiento crítico $C^1$ en $|g - 1.0| \le \delta_{\text{crit}}$ mediante polinomio de Hermite $H(u) = u^2(3 - 2u)$ con $u = |g - 1.0| / \delta_{\text{crit}}$, atenuando suavemente hasta $1.0 - \gamma_{\text{crit}}$ en el epicentro crítico.
+  3. Detección continua de transiciones de fase: $(g_{\text{prev}} - 1.0) \times (g - 1.0) < 0$.
+  4. Inversión determinista sobre `CurvaFases` de DMRG sin supuestos de monotonía, anclaje honesto de hiper-coherencia e inmunidad matemática estricta IEEE 754 (fail-closed a 1.0 ante NaN/Inf/negativos).
+  5. Integración en `SpectralRegimeField`: `effective_quantum_margin_multiplier` combinando multiplicador clásico y modulación cuántica con respeto absoluto a pisos mínimos de margen.
+- **CUÁNDO:** Se activa continuamente en cada evaluación del espectro vivo y al modular los requerimientos de margen en la entrada y gestión de órdenes del God Engine.
+- **DÓNDE:** `crates/quantum-arena/src/quantum_phase.rs`, `crates/quantum-arena/src/spectral_regime.rs`, `crates/quantum-arena/src/lib.rs`, `crates/quantum-arena/Cargo.toml`.
+- **QUIÉN:** AGY (Ola Omega220) para el Consejo de los 10 Roles de Trader Gemini.
+
+**CONTRATO FORMAL:** `crates/quantum-arena/tests/f3_003_quantum_entanglement_spectral_coupling_contract.rs` (8/8 tests PASS: amplificación ordenada BTC, atenuación paramagnética ICP, continuidad en criticidad, amortiguamiento Hermite, detección de cruce, inversión DMRG, inmunidad IEEE 754, e integración con `SpectralRegimeField`).
