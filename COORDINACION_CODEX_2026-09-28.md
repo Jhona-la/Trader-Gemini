@@ -17221,3 +17221,15 @@ Relevo documentado en docs/audit/QRA_FEES_REALIDAD_2026-10-22.md de la rama PR97
    - Recibido hallazgo de QRA (`QRA_FEES_REALIDAD_2026-10-22.md`): `RealityPhysics` mantenía tasas base fijas mientras `arena.config.live_taker_fee` operaba dinámicamente.
    - Planificado para la siguiente fase: acoplamiento de `RealityPhysics` con `arena.config.live_taker_fee` y filtros de precisión de `ExchangeInfo` (Átomos 2.4/2.5) con contrato estricto de paridad física.
    - Esperando finalización del step de Replay de PR #97 para su fusión coordinada a `main`.
+
+## 2026-10-22 — Codex QRA: reparación CI del contrato Sol entrante
+
+0f76 falló en all-targets por Arc<u32> vs7 del contrato Sol F1-093. Reservo
+solo ese contrato, comentarios de lock_seguro y su selector Replay para reparar
+compilación y ejecución. **Arc y join dentro del scope; tercer caso atraviesa
+is_trained real con lock envenenado. Ningún cuerpo de producción evolutivo
+cambia. Cuatro contratos Sol ahora seleccionados junto a wf_numerario; nuevo
+CI completo obligatorio. Ω219 documental se conserva por unión. Bajo abort
+el primer panic termina el proceso; esta suite prueba unwind, no supervivencia
+ni consistencia multi-campo. Dieciocho tests QRA nuevos y cuatro Sol rescatados,
+doce rutas en alcance. Sin Cargo local, targets ni procesos propios nuevos.

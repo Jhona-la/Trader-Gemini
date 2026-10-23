@@ -1,5 +1,16 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
 
+## 2026-10-22 — Codex QRA: contrato Sol entrante reparado, nuevo CI pendiente
+
+PR97 añade QRA-CI-01 tras el E0308 del candidato0f76 en el contrato Sol.
+Corrección Arc/u32, panic intencional consumido con join y ruta pública
+is_trained realmente ejercitada; cuatro tests conectados a Replay. Las otras
+18 pruebas nuevas FEE/TIME/MEM y doce rutas del ledger siguen pendientes de
+esta composición. Preservados los cuerpos de producción Sol; no hay Cargo local.
+Precisión sobre Ω219: panic=abort termina en el primer panic; los contratos
+prueban unwind, no supervivencia release. Copy/Arc no garantizan consistencia
+multi-campo ni validez numérica. Ver plan QRA_FASE2 y recibo por SHA al cierre.
+
 ## 2026-10-22 — Codex QRA: continuación FEE-01 / TIME-01 / MEM-01 en validación
 
 Base pública c2bdba425, rama codex/qra-wallet-parity-20261022. Plan y reservas:
