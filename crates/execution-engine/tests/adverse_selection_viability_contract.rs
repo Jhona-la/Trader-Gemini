@@ -156,8 +156,9 @@ async fn test_contract_router_resolves_dynamic_funding_cost() {
         .unwrap_or_default()
         .as_millis() as u64;
 
-    // Publicamos un funding rate positivo adverso para largos de 5 bps por ciclo
-    arena.coins[coin_id].publish_funding_next(0.0005, now_ms);
+    // Publicamos un funding rate adverso muy alto para largos (15 bps por ciclo de 8h)
+    // que empuja las fricciones totales por encima de un tercio del edge esperado (28 bps vs 3x(15+2+1) bps = 54 bps)
+    arena.coins[coin_id].publish_funding_next(0.0015, now_ms);
 
     let mut executor = OrderExecutor::new(
         "dummy_key".to_string(),
