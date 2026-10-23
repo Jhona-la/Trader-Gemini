@@ -1,4 +1,13 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
+
+## 2026-10-23T08:44:56-05:00 — QRA F0/F1 candidato; CI propio pendiente
+
+Rama codex/qra-capital-20261023, WT qra-continuacion locked. Main75e (Sol1095/GLM154 preservados,9/9 propios) incorporado; AGYf174 preservado por merge49f9 con rescate exclusivo telemetry-server completo, sin duplicar seispaquetesSol/doctests. DAZ global excluido por UB documentadoRust; parsers sinllamadores vivos sóloenhistoria. Los854Rust y Cargo/config igualesamain75e.
+
+Treslaunchers evitanbypasssemáforo,targetúnico/jobs2, errores75/101visibles,sinClippyduplicado ni bufferindefinido. Cleanup de medidor revierteúnicamentecopia propia idéntica/sinstageenalta propia y preservaajenos. Guardas3variablesRUSTFLAGS.32métodos existen (16nuevos), verificacioneslocales28full+6focused+12negativosparametrizados PASS, ambosPSreales, ceroCargo real. CIcandidate10/pushmain10/84recursos/61server pendientes,noheredar. Plan docs/audit/QRA_CONTINUACION_PLAN_2026-10-23.md, censo2193histórico yledger5rutas. SelloOmegaintacto.
+
+RAM libre0.46–2.02 y13:34Z0.75GiB<4; sincompilar/matarprocesosajenos. Censo20s44.36GBlógicosparcial,no total300GBni ahorrocertificados. cargotreependiente. PrimaryAGY/Verifylocked preservados. HallazgoF2vivo: wb0se pierdeentrescapas; noaceptarwbmissingdefault0. FFI3fallback13 tambiénpendiente. Sinoperaciones/modelos/promoción/ROIacreditado.
+
 ## Omega220 E2E — PR102 en main con CI propio 9/9
 
 Código integrado en main e2867598a97699b3148657578187685ab087bfad, padres d64+7715, árbol41cd5cb0 idéntico al candidato probado. PR102 conserva AGY PR99 y Sol F1094. Fees por símbolo/sesión sobre nocional efectivo, rebates, recibo local y adopciones estimadas; OMS cerrado hasta reconciliación completa, con protección de sesiones, reservas y tareas hasta protección/rollback. Resolver registry-only compatible sin mutar globales.
