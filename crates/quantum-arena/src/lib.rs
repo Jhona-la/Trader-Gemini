@@ -5,6 +5,7 @@ pub mod atomic_float;
 pub mod config;
 pub mod espectral_multiactivo;
 pub mod evalues;
+pub mod fee_schedule;
 pub mod feed_health;
 pub mod genome;
 pub mod genome_store;
@@ -33,6 +34,7 @@ pub use adaptive_quantiles::{
 };
 pub use atomic_float::AtomicF64;
 pub use config::QuantumConfig;
+pub use fee_schedule::{FeeSchedule, FeeScheduleError, SymbolFees};
 pub use espectral_multiactivo::{
     credibilidad_continua, familia_honesta, EspectralMultiactivo, EspectralMultiactivoParams,
     SnapshotParEscala,

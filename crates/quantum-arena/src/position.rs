@@ -269,7 +269,7 @@ impl Position {
         } else {
             0.5
         };
-        let safe_fee = if entry_fee.is_finite() && entry_fee >= 0.0 {
+        let safe_fee = if entry_fee.is_finite() {
             entry_fee
         } else {
             0.0

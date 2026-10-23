@@ -152,7 +152,7 @@ fn decision_fee_breaker(
     ventana_ms: u64,
 ) -> Option<u64> {
     let n = cierres.len();
-    if n == 0 || !(fees.is_finite() && fees >= 0.0) {
+    if n == 0 || !fees.is_finite() {
         return None;
     }
     let bruto: f64 = cierres.iter().map(|c| c.bruto).sum();
@@ -238,8 +238,15 @@ fn genome_protection_prices(
         })
         .filter(|a| a.is_finite() && *a > 0.0)
         .unwrap_or(0.0);
+    // Defensive protection must still be placed when current account fees are unknown.
+    // The explicit VIP0 scenario below is only geometry for an existing position; it
+    // never authorizes a new entry or claims a rate observed for another account/symbol.
+    let taker_fee = quantum_arena::symbol_registry::try_index(symbol)
+        .and_then(|ci| arena.config.fee_rates_for(ci))
+        .map(|(_, taker)| taker)
+        .unwrap_or(0.0005);
     let fee_rt = risk_engine::tp_sl::roundtrip_friction(
-        arena.config.live_taker_fee.load(o),
+        taker_fee,
         arena.config.base_slippage_floor.load(o).max(0.00001),
         atr_pct,
         arena.config.latency_penalty_ms.load(o).max(0.0),
@@ -1065,7 +1072,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     let darwin_approved = Arc::new(std::sync::atomic::AtomicBool::new(false));
-    let oms_reconciled = Arc::new(std::sync::atomic::AtomicBool::new(is_demo_mode));
+    // Testnet uses a live executor too. Local paper is identified only after executor construction.
+    let oms_reconciled = Arc::new(std::sync::atomic::AtomicBool::new(false));
     let orchestrator = Arc::new(std::sync::RwLock::new(PhaseOrchestrator::new_with_oms(
         120,
         is_demo_mode,
@@ -1423,6 +1431,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         );
     }
     let exec = Arc::new(arc_swap::ArcSwap::from_pointee(order_executor));
+    let oms_session = Arc::new(quantum_engine::host_oms::OmsSession::new(
+        Arc::clone(&exec),
+        Arc::clone(&oms_reconciled),
+    ));
 
     let initial_capital = loop {
         match exec.load().fetch_account_balance().await {
@@ -1448,11 +1460,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             match exec.load().fetch_commission_rate(first_sym).await {
                 Ok((m, t)) => {
                     telemetry_server::telemetry_log!("🌍 [OMNI-AWARENESS] API Real VIP Fees Extracted: Maker {:.4}%, Taker {:.4}%", m * 100.0, t * 100.0);
-                    // B3.11 — PARIDAD BT/LIVE de fees: el simulador de
-                    // backtest lee este archivo para cobrar las MISMAS
-                    // comisiones que la cuenta viva (antes hardcodeaba VIP0
-                    // 0.05% taker; esta cuenta paga 0.04% — los backtests
-                    // sobreestimaban fricción ~20%).
+                    // Legacy diagnostic artifact for this first symbol only. The active host
+                    // obtains a complete per-symbol schedule through OmsSession::refresh;
+                    // this file does not establish that a running replay consumes these rates.
                     let now_ms = std::time::SystemTime::now()
                         .duration_since(std::time::UNIX_EPOCH)
                         .unwrap_or_default()
@@ -1991,6 +2001,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         // Axiom XIV: Superposición Cuántica - Mentes Aisladas (Scalp vs Swing)
         let arena_real = Arc::new(quantum_arena::GlobalArena::new(initial_capital));
+        oms_session.initialize_arena(&arena_real);
         // X-020 (REHAB-6): arena_shadow ELIMINADA — 40+MB VirtualLock muertos. Jamás procesó un tick (todas sus referencias eran init-only) y su canal tx_shadow encolaba modelos NN eternamente. La "mente sombra" real vive en shadow_forest + ShadowForest del online_daemon.
 
         // E-01 — INICIALIZAR BUS DE TELEMETRÍA MMAP: sin esto, el writer
@@ -2327,7 +2338,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             telemetry_server::telemetry_log!("🚨 [RECONCILIATION] Fallaron ambas consultas de posiciones iniciales. Exposición remota es DESCONOCIDA (fail-closed). oms_reconciled=FALSE. Trading BLOQUEADO hasta snapshot exitoso en segundo plano.");
         } else if restored_positions.is_empty() {
             telemetry_server::telemetry_log!("🔍 [RECONCILIATION] Confirmado: Cero posiciones abiertas en Binance. Arena inicializada limpia.");
-            oms_reconciled.store(true, Ordering::Release);
+            telemetry_server::telemetry_log!("🔒 [BOOT_OMS] Posiciones vacías observadas; falta confirmar también órdenes abiertas de esta sesión.");
         } else {
             telemetry_server::telemetry_log!("🔍 [RECONCILIATION] Detectadas {} posiciones abiertas en Binance API:", restored_positions.len());
             let mut all_positions_adopted = true;
@@ -2486,14 +2497,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 }
             }
             if all_positions_adopted {
-                oms_reconciled.store(true, Ordering::Release);
-                telemetry_server::telemetry_log!("✅ [FASE 5] Adopción completa y limpia de posiciones activas. oms_reconciled=TRUE.");
+                telemetry_server::telemetry_log!("🔒 [FASE 5] Posiciones adoptadas; autorización pendiente del snapshot conjunto posiciones + órdenes abiertas.");
             } else {
                 telemetry_engine::telemetry_err!(
                     "🚨 [FASE 5] ADVERTENCIA CRÍTICA: Hay posiciones remotas no adoptadas en la arena. oms_reconciled permanece en FALSE (fail-closed) para prevenir sobremargen."
                 );
             }
         }
+
+        // Same production operation is used at boot, periodically and after executor replacement.
+        // No positions-only shortcut can authorize a live session.
+        let boot_oms = rt_handle.block_on(oms_session.refresh(&arena_real));
+        telemetry_server::telemetry_log!("🧾 [BOOT_OMS] Resultado de snapshot conjunto: {:?}", boot_oms);
 
         let arena_telemetry = Arc::clone(&arena_real);
         let telemetry_tx_for_server = telemetry_tx.clone();
@@ -2706,71 +2721,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         // - Corrige drift en cantidades por fills parciales
         // - Purga órdenes terminadas mayores a 10 min (600_000 ms)
         {
-            let exec_reconcile = Arc::clone(&exec);
             let arena_reconcile = Arc::clone(&arena_real);
-            let oms_reconcile = Arc::clone(&oms_reconciled);
+            let oms_reconcile = Arc::clone(&oms_session);
             rt_handle.spawn(async move {
                 telemetry_server::telemetry_log!("🔄 [RECONCILIATION-LOOP] Iniciando bucle periódico de reconciliación (60s)...");
                 let mut interval = tokio::time::interval(tokio::time::Duration::from_secs(60));
                 interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
                 loop {
                     interval.tick().await;
-                    let executor = exec_reconcile.load_full();
-                    let positions_res = executor.fetch_position_risk().await;
-                    let orders_res = executor.fetch_all_open_orders().await;
-                    match (positions_res, orders_res) {
-                        (Ok(positions), Ok(remote_orders)) => {
-                            let registry = executor.registry();
-                            let report = execution_engine::reconciliation::reconcile_with_orders(
-                                &positions,
-                                &remote_orders,
-                                &registry,
-                            );
-                            let adopted = report.apply_to_registry(
-                                &registry,
-                                arena_reconcile
-                                    .config
-                                    .live_taker_fee
-                                    .load(std::sync::atomic::Ordering::Relaxed),
-                            );
-                            let now_ms = std::time::SystemTime::now()
-                                .duration_since(std::time::UNIX_EPOCH)
-                                .unwrap_or_default()
-                                .as_millis() as u64;
-                            let purged_ghosts = report.purge_suspicious_active_orders(&registry, now_ms);
-                            let arena_report = execution_engine::reconciliation::reconcile_arena_checked(&positions, &arena_reconcile, now_ms);
-                            let pruned = registry.prune_terminated(now_ms.saturating_sub(600_000));
-
-                            // Solo publicar TRUE tras completar exitosamente la conciliación sin problemas no resueltos
-                            if arena_report.unresolved.is_empty() {
-                                if !oms_reconcile.load(std::sync::atomic::Ordering::Acquire) {
-                                    oms_reconcile.store(true, std::sync::atomic::Ordering::Release);
-                                    telemetry_server::telemetry_log!("✅ [RECONCILIATION] Reconciliación completa de fondo exitosa (posiciones + openOrders sin conflictos). oms_reconciled=TRUE. Trading desbloqueado.");
-                                }
-                            } else {
-                                for issue in &arena_report.unresolved {
-                                    telemetry_server::telemetry_log!("⚠️ [RECONCILIATION_UNRESOLVED] {} {:?}: estado local preservado", issue.symbol, issue.kind);
-                                }
-                            }
-
-                            if !report.suspicious_active_orders.is_empty() || adopted > 0 || arena_report.adjustments > 0 || purged_ghosts > 0 || !report.orphan_remote_orders.is_empty() {
-                                telemetry_server::telemetry_log!(
-                                    "🔄 [RECONCILIATION] {} | Adopted Reg: {}, Purged Ghosts: {}, Adj Arena: {}, Pruned Reg: {}",
-                                    report.summary,
-                                    adopted,
-                                    purged_ghosts,
-                                    arena_report.adjustments,
-                                    pruned
-                                );
-                            }
-                        }
-                        (Err(e_pos), _) => {
-                            telemetry_server::telemetry_log!("⚠️ [RECONCILIATION] Error consultando positionRisk en segundo plano: {}", e_pos);
-                        }
-                        (_, Err(e_ord)) => {
-                            telemetry_server::telemetry_log!("⚠️ [RECONCILIATION] Error consultando openOrders en segundo plano: {}", e_ord);
-                        }
-                    }
+                    let outcome = oms_reconcile.refresh(&arena_reconcile).await;
+                    telemetry_server::telemetry_log!("🔄 [RECONCILIATION] {:?}", outcome);
                 }
             });
         }
@@ -2893,7 +2853,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     struct Agg {
                         registros: Vec<(u64, f64)>, // (time, REALIZED_PNL)
                         funding: f64,
-                        fees: f64, // |COMMISSION|
+                        fees: f64, // signed cost = -COMMISSION cash flow; rebates reduce expense
                     }
                     let mut per: std::collections::HashMap<String, Agg> =
                         std::collections::HashMap::new();
@@ -2905,22 +2865,31 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         match e.income_type.as_str() {
                             "REALIZED_PNL" => a.registros.push((e.time, e.income)),
                             "FUNDING_FEE" => a.funding += e.income,
-                            "COMMISSION" => a.fees += e.income.abs(),
+                            "COMMISSION" => {
+                                if let Some(cost) = quantum_engine::host_oms::signed_commission_cost(e.income) {
+                                    a.fees += cost;
+                                }
+                            }
                             _ => {}
                         }
                     }
                     // LG-8: p* de la geometría del genoma a la τ de la ventana.
                     let tp_brk = arena_brk.config.tp_at_tau(tau_scale);
                     let sl_brk = arena_brk.config.sl_at_tau(tau_scale);
-                    let friccion_brk = risk_engine::tp_sl::roundtrip_friction(
-                        arena_brk.config.live_taker_fee.load(std::sync::atomic::Ordering::Relaxed),
-                        arena_brk.config.base_slippage_floor.load(std::sync::atomic::Ordering::Relaxed),
-                        0.0,
-                        0.0,
-                    );
-                    let p_star_brk = god_engine_core::p_equilibrio(tp_brk, sl_brk, friccion_brk)
-                        .unwrap_or(0.5);
                     for (sym, a) in per {
+                        let Some((_, taker_fee)) = quantum_arena::symbols::get_coin_id(&sym)
+                            .and_then(|ci| arena_brk.config.fee_rates_for(ci)) else {
+                            telemetry_server::telemetry_log!("[FEE-BREAKER] {} sin fee vigente del símbolo/sesión: no hay evidencia para una nueva decisión", sym);
+                            continue;
+                        };
+                        let friccion_brk = risk_engine::tp_sl::roundtrip_friction(
+                            taker_fee,
+                            arena_brk.config.base_slippage_floor.load(std::sync::atomic::Ordering::Relaxed),
+                            0.0, 0.0,
+                        );
+                        let Some(p_star_brk) = god_engine_core::p_equilibrio(tp_brk, sl_brk, friccion_brk) else {
+                            continue;
+                        };
                         let cierres = agrupar_cierres(a.registros, 1_000);
                         let bruto: f64 = cierres.iter().map(|c| c.bruto).sum();
                         let gross_pos: f64 = cierres.iter().filter(|c| c.bruto > 0.0).map(|c| c.bruto).sum();
@@ -4221,6 +4190,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 }
 
                 if !is_trading_allowed {
+                    // Readiness revocation applies to new exposure. Refund only the exact
+                    // unsent reservation; confirmed/reducing closes below remain dispatchable.
+                    if let Some(ref reservation) = entry_reservation {
+                        if let Err(reason) = reservation.cancel(&engine_real.arena) {
+                            quantum_arena::protection_health::mark_dirty();
+                            telemetry_engine::telemetry_err!("[ENTRY OMS VETO] reserva no cancelable: {:?}", reason);
+                        }
+                    }
+                    new_order = None;
+                }
+                if !is_trading_allowed && closed_order.is_none() {
                     if msg_count > 0 && msg_count.is_multiple_of(5000) {
                         telemetry_server::telemetry_log!("🔥 [ORCHESTRATOR] Syncing buffers... {} ticks (Fase: {:?}).", msg_count, current_phase);
                     }
@@ -4255,20 +4235,33 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         }
                         let new_exec_arc = Arc::new(mainnet_executor);
 
-                        // D-177: Asegurar modo hedge en Mainnet antes de almacenar executor
-                        // (spawn async — el closure del thread no es async)
-                        if !target_is_testnet && !is_paper_trading {
-                            let exec_for_hedge = Arc::clone(&new_exec_arc);
-                            rt_handle.spawn(async move {
-                                match exec_for_hedge.ensure_hedge_mode().await {
-                                    Ok(true) => telemetry_server::telemetry_log!("🔀 [TRANSITION] Cuenta Mainnet migrada a modo HEDGE exitosamente"),
-                                    Ok(false) => telemetry_server::telemetry_log!("🔀 [TRANSITION] Cuenta Mainnet ya se encuentra en modo HEDGE"),
-                                    Err(e) => telemetry_server::telemetry_log!("🚨 [TRANSITION] No se pudo garantizar modo HEDGE en Mainnet: {}", e),
+                        // Revoke before publishing a new executor; in-flight observations from
+                        // the previous generation cannot mutate the arena or reauthorize it.
+                        if let Err(reason) = oms_session.replace_executor(Arc::clone(&new_exec_arc), &arena_real) {
+                            telemetry_engine::telemetry_err!("[OMS TRANSITION] {}: executor conservado, entradas bloqueadas", reason);
+                            has_transitioned = false;
+                            if let Some(ref reservation) = entry_reservation {
+                                if let Err(cancel_error) = reservation.cancel(&engine_real.arena) {
+                                    quantum_arena::protection_health::mark_dirty();
+                                    telemetry_engine::telemetry_err!("[OMS TRANSITION] reserva nueva no enviada sin cancelar: {:?}", cancel_error);
                                 }
+                            }
+                            let oms_retry = Arc::clone(&oms_session);
+                            let arena_retry = Arc::clone(&arena_real);
+                            rt_handle.spawn(async move {
+                                let outcome = oms_retry.refresh(&arena_retry).await;
+                                telemetry_server::telemetry_log!("[OMS TRANSITION RETRY] sesión conservada reconciliada: {:?}", outcome);
+                            });
+                            continue;
+                        }
+                        {
+                            let oms_transition = Arc::clone(&oms_session);
+                            let arena_transition = Arc::clone(&arena_real);
+                            rt_handle.spawn(async move {
+                                let outcome = oms_transition.refresh(&arena_transition).await;
+                                telemetry_server::telemetry_log!("🧾 [OMS TRANSITION] {:?}", outcome);
                             });
                         }
-
-                        exec.store(Arc::clone(&new_exec_arc));
 
                         // D-178: Re-spawn UserDataStreamer con las credenciales y cliente de Mainnet
                         let mainnet_streamer = execution_engine::user_data_stream::UserDataStreamer::new(
@@ -4317,18 +4310,25 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         // reconexión (y con ella `reset_engines` y la pérdida
                         // del calentamiento) y en mainnet abandonaba el host
                         // elegido por latencia o por BEST_WS_ENDPOINT.
-                        let exec_clone = Arc::clone(&exec);
+                        let balance_token = oms_session.snapshot_token();
+                        let balance_executor = Arc::clone(balance_token.executor());
+                        let oms_balance = Arc::clone(&oms_session);
                         let db_tx_clone = db_tx.clone();
                         let arena_real_clone = Arc::clone(&engine_real.arena);
                         rt_handle.spawn(async move {
-                            if let Ok(bal) = exec_clone.load().fetch_account_balance().await {
-                                telemetry_server::telemetry_log!("🌍 [TRANSITION] Mainnet API Real Balance Extracted: ${:.4}", bal);
-                                arena_real_clone.unified_capital.store(bal, Ordering::Relaxed);
-                                arena_real_clone.config.base_capital.store(bal, Ordering::Relaxed);
-                                let _ = db_tx_clone.send((bal, 0.0)).await;
+                            if let Ok(bal) = balance_executor.fetch_account_balance().await {
+                                if oms_balance.publish_current_balance(&balance_token, bal, |balance| {
+                                    arena_real_clone.unified_capital.store(balance, Ordering::Relaxed);
+                                    arena_real_clone.config.base_capital.store(balance, Ordering::Relaxed);
+                                    let _ = db_tx_clone.try_send((balance, 0.0));
+                                }) {
+                                    telemetry_server::telemetry_log!("🌍 [TRANSITION] Balance de sesión vigente publicado: ${:.4}", bal);
+                                } else {
+                                    telemetry_server::telemetry_log!("[TRANSITION] Balance inválido u obsoleto: observación descartada sin mutar capital");
+                                }
                             }
 
-                            if let Ok(real_positions) = exec_clone.load().fetch_open_positions().await {
+                            if let Ok(real_positions) = balance_executor.fetch_open_positions().await {
                                 telemetry_server::telemetry_log!("🔍 [TRUTH-SYNC] Reconciling Mainnet API Positions...");
                                 for pos in real_positions {
                                     if pos.qty.abs() > 0.0 {
@@ -4518,25 +4518,28 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 ev_close_ms.abs_diff(bracket_ts_dedup)
                             );
                         } else {
-                        let live_maker_fee = engine_real.arena.config.live_maker_fee.load(Ordering::Relaxed);
-                        let live_taker_fee = engine_real.arena.config.live_taker_fee.load(Ordering::Relaxed);
-                        let fee = (qty * current_price) * (live_maker_fee + live_taker_fee);
+                        let accounting = quantum_engine::host_oms::matching_local_close(
+                            engine_real.take_local_close_accounting(coin_id), ev_close_ms, qty,
+                        );
                         let net = pnl; // pnl devuelto por el core ya es neto de comisiones
-                        let gross = pnl + fee;
                         // F1-081: Pasar el trade neto crudo a la envolvente, erradicando la doble EMA(0.95/0.05).
                         risk_envelope.record_net_pnl(net);
                         // HOST-005 / F1-059: persistir el posterior tras cada cierre
                         // limpio contabilizado sin bloquear el bucle de eventos.
                         persist_kelly_envelope_async(&rt_handle, &risk_envelope);
-                        total_gross_pnl += gross;
+                        if let Some(receipt) = accounting {
+                            total_gross_pnl += receipt.gross_pnl;
+                            total_fees += receipt.total_fees();
+                        } else {
+                            telemetry_engine::telemetry_err!("[CLOSE ACCOUNTING] {} sin recibo local del mismo evento/cantidad: bruto y fees desconocidos; cierre defensivo conservado", parsed_sym);
+                        }
                         total_net_pnl += net;
-                        total_fees += fee;
                         total_trades += 1;
                         if net > 0.0 { total_wins += 1; }
                         last_real_core_close_ms.insert(parsed_sym.to_string(), ev_close_ms);
 
                         let roi_post_fees = if (qty * current_price) > 0.0 { (net / (qty * current_price)) * 100.0 } else { 0.0 };
-                        telemetry!("🛑 [CONTINUOUS CORE] CLOSE HIT! Gross PnL: {:.4} | Net PnL: {:.4} | ROI Post-Fees: {:.4}%", gross, net, roi_post_fees);
+                        telemetry!("🛑 [CONTINUOUS CORE] CLOSE HIT! Gross PnL: {:?} | Net PnL: {:.4} | ROI Post-Fees: {:.4}%", accounting.map(|a| a.gross_pnl), net, roi_post_fees);
                         let _ = db_tx.try_send((unified_cap, 0.0));
                         let _ = loop_telemetry_tx.send(telemetry_server::TelemetryEvent::CapitalUpdate(unified_cap));
                         let ml_prob = engine_real.arena.coins[coin_id].ml_prob.load(Ordering::Relaxed);
@@ -4785,8 +4788,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 })
                                 .filter(|a| a.is_finite() && *a > 0.0)
                                 .unwrap_or(0.0);
+                            let Some((_, taker_fee_entry)) = engine_real.arena.config.fee_rates_for(coin_id) else {
+                                if let Some(ref reservation) = entry_reservation {
+                                    if let Err(reason) = reservation.cancel(&engine_real.arena) {
+                                        quantum_arena::protection_health::mark_dirty();
+                                        telemetry_engine::telemetry_err!("[ENTRY] fee desconocida, reserva no cancelable: {:?}", reason);
+                                    }
+                                }
+                                telemetry_engine::telemetry_err!("[ENTRY] {} sin fee observada para su símbolo/sesión: entrada retenida", parsed_sym);
+                                continue;
+                            };
                             let fee_rt_entry = risk_engine::tp_sl::roundtrip_friction(
-                                engine_real.arena.config.live_taker_fee.load(Ordering::Relaxed),
+                                taker_fee_entry,
                                 engine_real.arena.config.base_slippage_floor.load(Ordering::Relaxed).max(0.00001),
                                 atr_pct_entry,
                                 engine_real.arena.config.latency_penalty_ms.load(Ordering::Relaxed).max(0.0),
@@ -4823,8 +4836,20 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             continue;
                         };
                         let parsed_sym_str = parsed_sym.to_string();
-                        let exec_clone = Arc::clone(&exec);
+                        let entry_oms = Arc::clone(&oms_session);
+                        let entry_session = entry_oms.snapshot_token();
                         let arena_clone = Arc::clone(&engine_real.arena);
+                        let entry_task = match entry_oms.begin_entry_task(&entry_session, &arena_clone) {
+                            Ok(permit) => permit,
+                            Err(reason) => {
+                                if let Err(cancel_error) = reservation.cancel(&arena_clone) {
+                                    quantum_arena::protection_health::mark_dirty();
+                                    telemetry_engine::telemetry_err!("[ENTRY] reserva sin enviar no cancelable: {:?}", cancel_error);
+                                }
+                                telemetry_engine::telemetry_err!("[ENTRY] {}: {}", parsed_sym_str, reason);
+                                continue;
+                            }
+                        };
 
                         // B3.29 — MAKER DESACTIVADO PARA MOMENTUM (adverse
                         // selection estructural). Medido en 39 entradas: 0%
@@ -4995,12 +5020,20 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         }
 
                         rt_handle.spawn(async move {
+                            // Retain account identity through fills, rollback and the last OCO/
+                            // emergency-close callback, even after submit itself has returned.
+                            let _entry_task = entry_task;
                             // Vetada en el hilo del núcleo: la reserva ya se revirtió.
                             let Some(effective_leverage) = decision_envio else {
                                 return;
                             };
 
-                            let entry_executor = exec_clone.load_full();
+                            if let Err(reason) = entry_oms.check_entry(&entry_session, &arena_clone) {
+                                telemetry_engine::telemetry_err!("[ENTRY] {}: {}", parsed_sym_str, reason);
+                                rollback_positions(&arena_clone);
+                                return;
+                            }
+                            let entry_executor = Arc::clone(entry_session.executor());
                             let sym_filter = match entry_executor.get_symbol_filter(&parsed_sym_str).await {
                                 Ok(f) => f,
                                 Err(e) => {
@@ -5021,7 +5054,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             // The dispatcher confirms leverage (including 1x) before submission;
                             // unsupported capabilities fail before any leverage/account mutation.
                             use execution_engine::entry_dispatch::{
-                                dispatch_entry, new_entry_client_id, EntryRequest, EntryRoute,
+                                new_entry_client_id, EntryRequest, EntryRoute,
                             };
                             let client_id = new_entry_client_id(final_is_long);
                             let route = if force_maker {
@@ -5077,7 +5110,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 client_order_id: &client_id,
                                 route,
                             };
-                            let entry_result = dispatch_entry(entry_executor.as_ref(), &entry_request).await;
+                            let entry_result = entry_oms.dispatch_entry(
+                                &entry_session, entry_executor.as_ref(), &entry_request, &arena_clone,
+                            ).await;
 
                             match entry_result {
                                 Err(e) if e.starts_with("AMBIGUOUS")
@@ -5203,8 +5238,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                             // sobre posición flat genera -2022 → retry ×3 → X-009
                                             // emergency-close sobre nada → falsa escalada.
                                             {
-                                                let still_open = exec_clone
-                                                    .load()
+                                                let still_open = entry_executor
                                                     .fetch_position_risk()
                                                     .await
                                                     .map(|ps| {
@@ -5225,8 +5259,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                                 }
                                             }
                                             let qty_intent = cantidad_llenada;
-                                            let qty_bracket = exec_clone
-                                                .load()
+                                            let qty_bracket = entry_executor
                                                 .fetch_position_risk()
                                                 .await
                                                 .ok()
@@ -5248,7 +5281,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                                 );
                                             }
                                             let base_id = format!("CONT_oco_{}_{}", std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_micros(), retry);
-                                            match exec_clone.load().execute_oco_order(&parsed_sym_str, final_is_long, qty_bracket, order_tp_price, order_sl_price, dyn_step_size, dyn_tick_size, &base_id).await {
+                                            match entry_executor.execute_oco_order(&parsed_sym_str, final_is_long, qty_bracket, order_tp_price, order_sl_price, dyn_step_size, dyn_tick_size, &base_id).await {
                                                 Ok(_) => {
                                                     oco_success = true;
                                                     // B2.7 — DIARIO DE CONTEXTO: persistir qué procesos y
@@ -5297,8 +5330,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                             // OCO-F2: cerrar la posición REAL del exchange,
                                             // no la qty teórica (reduceOnly con qty > posición
                                             // ⇒ rechazo -2022 y posición naked).
-                                            let close_qty = exec_clone
-                                                .load()
+                                            let close_qty = entry_executor
                                                 .fetch_position_risk()
                                                 .await
                                                 .ok()
@@ -5311,16 +5343,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                                 })
                                                 .filter(|a| *a > 0.0)
                                                 .unwrap_or(final_qty.abs());
-                                            let close_res = exec_clone
-                                                .load()
+                                            let close_res = entry_executor
                                                 .execute_reduce_only_market(&parsed_sym_str, is_long_close, close_qty, dyn_step_size)
                                                 .await;
                                             let close_res = match close_res {
                                                 Ok(()) => Ok(()),
                                                 Err(e1) => {
                                                     tokio::time::sleep(std::time::Duration::from_millis(150)).await;
-                                                    exec_clone
-                                                        .load()
+                                                    entry_executor
                                                         .execute_reduce_only_market(&parsed_sym_str, is_long_close, close_qty, dyn_step_size)
                                                         .await
                                                         .map_err(|e2| format!("{} / retry: {}", e1, e2))
@@ -5331,7 +5361,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                             // CL-12: sólo las del LADO cerrado; la purga
                                             // de todo el símbolo borraba el TP/SL de la
                                             // posición del lado contrario.
-                                            if let Err(ce) = exec_clone.load().cancel_position_oco_orders(&parsed_sym_str, is_long_close).await {
+                                            if let Err(ce) = entry_executor.cancel_position_oco_orders(&parsed_sym_str, is_long_close).await {
                                                 telemetry_engine::telemetry_err!("⚠️ [EMERGENCY] Purga de órdenes de {} falló: {}", parsed_sym_str, ce);
                                             }
                                             match close_res {
@@ -5359,7 +5389,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                                         "🚨🚨 [X-009 ESCALADA] {} SIN CERRAR tras retry ({}): posición potencialmente naked en el exchange. Kill-switch ARMADO + estado local conservado para el ciclo de reconciliación.",
                                                         parsed_sym_str, es
                                                     );
-                                                    exec_clone.load().trigger_kill_switch();
+                                                    entry_executor.trigger_kill_switch();
                                                     arena_clone.kill_switch_active.store(true, Ordering::SeqCst);
                                                     // CL-44 (ADR-0015): el latch no abandona
                                                     // la posición. El vigilante la audita en
