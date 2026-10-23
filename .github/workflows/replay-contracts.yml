@@ -189,3 +189,17 @@ jobs:
         # operador exige que no se corrompa. Se ejecuta aqui, con el resto de
         # suites de contrato, ~4 s.
         run: cargo +nightly-2026-06-30 test -p storage-engine --locked -- --test-threads=1
+
+      - name: Crates whose tests never ran in CI (F1-095)
+        # F1-095: `check --workspace --all-targets` sólo COMPILA. Los tests se
+        # lanzan por paquete y estos seis no aparecían en ningún workflow, así
+        # que sus 51 tests de lib (y los 2 contratos de omniscient-registry)
+        # nunca se ejecutaron en CI: flight-recorder (5), graph-4d (4),
+        # graph-architecture (5), omniscient-registry (11 + 3 de contrato),
+        # os-guardian (16, afinidad/prioridades del hot path) y
+        # telemetry-engine (7, observabilidad). Verificados en local: 51/51 en
+        # verde, < 1 s de ejecución efectiva.
+        # `telemetry-server` (61 tests) queda FUERA a propósito: su build local
+        # no terminó en la ventana de este ciclo y no se conecta una suite sin
+        # verificar. Es el primer átomo del siguiente.
+        run: cargo +nightly-2026-06-30 test -p flight-recorder -p graph-4d -p graph-architecture -p omniscient-registry -p os-guardian -p telemetry-engine --locked -- --test-threads=1
