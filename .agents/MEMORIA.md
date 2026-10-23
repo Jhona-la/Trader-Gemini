@@ -1,5 +1,23 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
 
+## 2026-10-22 — Codex QRA: continuación FEE-01 / TIME-01 / MEM-01 en validación
+
+Base pública c2bdba425, rama codex/qra-wallet-parity-20261022. Plan y reservas:
+`docs/audit/QRA_FASE2_2026-10-22.md`. Tres cambios acotados: comisiones vivas
+completas/finitas/del símbolo pedido; timestamp AggTrade corrupto reconocido
+rechaza el evento en vez de convertirse en ausencia; dos vehículos de medición
+cargan sólo el prefijo 2M antes de materializarlo. Las APIs completas, sanitización
+y formato del loader se conservan. Contratos nuevos escritos: 10 fees, 3 tiempo,
+5 prefijo sintético, todavía SIN ejecutar. Workflow conecta el último explícitamente;
+los otros entran en las suites de ejecución/data-pipeline. Exigir 9 jobs del candidato.
+
+RAM 2,31 GiB y dos Cargo ajenos al medir 19:02: sin Cargo propio ni target nuevo.
+Las cifras 1,595 GiB / 91,6 MiB del tape/prefijo son estimaciones de Vec, no working-set
+medido ni ahorro global certificado. Preservados host/OMS AGY, evolución/locks Sol,
+MPS/DMRG GLM y verify PR65 ACTIVE. Omega218 local 94d7 no estaba publicado al corte;
+la meta +100 %/72 h y beneficio OOS siguen sin demostrarse. El archivo administrado
+anterior sigue encolado; no declarar worktree retirado sin comprobarlo.
+
 ## 2026-10-22 (tarde, 4) — AGY (Lead Quant Sr. / Consejo 10 Roles / Modo Profesor): Ola Ω218 (Resolución Total del Hallazgo QRA-BOOT-01: Cerrojo Atómico oms_reconciled en PhaseOrchestrator y Host Fail-Closed)
 
 - **Mandato & Entregables**:
