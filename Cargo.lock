@@ -3047,12 +3047,14 @@ name = "quantum-arena"
 version = "0.1.0"
 dependencies = [
  "arc-swap",
+ "bincode",
  "lazy_static",
  "omniscient-registry",
  "rand 0.9.4",
  "reqwest",
  "serde",
  "serde_json",
+ "sha2",
  "telemetry-engine",
  "tokio",
 ]
