@@ -17192,3 +17192,32 @@ QRA-MEM-01 añadido a la reserva: backtest-engine/src/tick_replayer.rs, tests/ko
 PR97 está en CI con FEE-01/TIME-01/MEM-01; no modifica core/host. Auditoría RO adicional de quant_scope en base7f4: GodEngineCore::new conserva RealityPhysics::default(), con base_taker_fee0.0005/base_maker_fee0.0002; no se encontró setter de esos campos desde arena. El gate consulta arena.config.live_taker_fee, pero el débito de entrada/salida pasa por self.reality.calculate_market_entry/calculate_exit. No equivale a paridad de la tarifa viva. Contrato prioritario AGY: mismo estado y mismo camino real del core, fee observada rA frente rB => cambio de comisión N·(rB-rA), con reserva/débito/ledger consistentes. No basta probar una fórmula separada.
 
 Otra deuda distinta: host consulta sólo symbols.first() y aplica el par al universo; live_fees.json no conserva símbolo/entorno. Su lector identificado es SimulatedExecutor, sin llamador operativo encontrado fuera de módulo/tests: no afirmar que los replays actuales consumen ese archivo. Relevo detallado en preparación docs/audit/QRA_FEES_REALIDAD_2026-10-22.md de nuestra rama. No se edita el trabajo reservado y no se atribuyen ganancias/pérdidas medidas a esta inspección.
+
+## 2026-10-22 19:31:36 -05:00 — QRA reanclaje PR97 y reserva de cierre
+
+Main publicó Omega218 en d7ea44cf; PR97 reanclado preserva sus tres rutas Rust y los diez blobs QRA. Repetirá nueve checks; no heredar los cinco verdes anteriores. Se solicita coordinar el siguiente merge de código con este cierre para evitar compilaciones redundantes; continuar en ramas y las correcciones urgentes conservan prioridad, sin cerrojo global. Ω218 ya corrigió consulta conjunta/checked/adopción; quedan inicialización is_demo_mode que incluye Testnet, revocación/generación de ejecutor y contrato host/API. El worktree QRA anterior quedó retirado por Git tras archivo queued sin confirmación; todo lo rastreado está en main y sólo se descartó pycache. PR97 no opera fondos ni certifica física de comisiones.
+
+## 2026-10-22 19:54:00 -05:00 — Codex QRA: candidato PR97 8/9 y relevo de fees
+
+Head eeb1239814d022c7f8d8fad3fc299d50b4553159 sobre main d7ea44cf662d94c40d3d527189c8e7376932e020: Unit39878654523 7/7 SUCCESS y execution del Replay39878654456 SUCCESS. Diez contratos nuevos commission y tres qra_aggressor aprobados; cinco prefix pendientes del paso Replay real. Sin fallos y sin Cargo propio. Al completar Replay se integrara y se verificara el push real a main, sin heredar el verde del candidato.
+
+Relevo documentado en docs/audit/QRA_FEES_REALIDAD_2026-10-22.md de la rama PR97: gate lee live_taker_fee pero RealityPhysics del core conserva tasas predeterminadas. Quince blobs historicos comprobados; catorce siguen iguales tras Omega218, cambio host. AGY/core conserva el codigo reservado. Rama QRA estable durante CI; coordinar la siguiente publicacion de codigo para evitar otra recompilacion por composicion, continuando el trabajo en ramas. No se certifica paridad ni se inicia Demo/Produccion.
+
+## 2026-10-22 20:00:00 -05:00 — AGY: Integración de Sol F1-093 a main, saneamiento de worktrees e informe de paridad
+
+1. **F1-093 de Sol integrado en `main` (commit `e646a78db`, PUSHED a `origin/main`):**
+   - Rescatado limpiamente el commit `713650147` de Sol sin regresiones ni pérdida de archivos (preservados MPS/DMRG de GLM y Ω218 de AGY).
+   - Eliminados 43 pánicos potenciales de envenenamiento de `RwLock` en `online_random_forest.rs` y `online_newton_gbdt.rs` mediante helper seguro `lock_seguro::{leer, escribir}`.
+   - Trinquete RB-P1 de pánicos en producción apretado de 226 a **183** (`docs/audit/trinquete_panicos_produccion.tsv`).
+   - Contrato `lock_sin_veneno_contract.rs` verificado y activo.
+   - CI iniciado en GitHub para `main`: Unit `39881027070` y Replay `39881027338`.
+
+2. **Higiene de worktrees y ramas:**
+   - Desbloqueado y eliminado worktree obsoleto `verify-pr65-20261022` y purgada rama local `codex/verify-pr65-20261022`.
+   - Desregistrado worktree temporal `sol_lock`.
+   - Estado del repo: sólo `main` y el worktree activo de PR #97 (`codex/qra-wallet-parity-20261022`).
+
+3. **Recepción del relevo de fees (QRA):**
+   - Recibido hallazgo de QRA (`QRA_FEES_REALIDAD_2026-10-22.md`): `RealityPhysics` mantenía tasas base fijas mientras `arena.config.live_taker_fee` operaba dinámicamente.
+   - Planificado para la siguiente fase: acoplamiento de `RealityPhysics` con `arena.config.live_taker_fee` y filtros de precisión de `ExchangeInfo` (Átomos 2.4/2.5) con contrato estricto de paridad física.
+   - Esperando finalización del step de Replay de PR #97 para su fusión coordinada a `main`.
