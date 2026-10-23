@@ -71,9 +71,9 @@ fn test_f3_003_paramagnetic_phase_attenuation() {
     );
     assert_eq!(clasificar_fase(g_icp, params.delta_crit), FaseCuantica::Paramagnetica);
 
-    // Monotonía decreciente estricta en el régimen paramagnético fuera de la ventana crítica
+    // Monotonía decreciente estricta en el régimen paramagnético antes del piso de protección
     let mut prev_f = factor_icp;
-    for &g in &[5.0, 10.0, 20.0, 50.0] {
+    for &g in &[5.0, 10.0, 18.0] {
         let f = calcular_factor_cuantico(g, &params);
         assert!(
             f < prev_f,
@@ -85,6 +85,14 @@ fn test_f3_003_paramagnetic_phase_attenuation() {
         assert!(f >= params.min_factor_floor);
         prev_f = f;
     }
+
+    // Para valores extremos (g >= 20.0 con min_factor_floor = 0.05), se respeta el piso sin perforarlo
+    let f_ext = calcular_factor_cuantico(50.0, &params);
+    assert_eq!(
+        f_ext, params.min_factor_floor,
+        "Para g=50.0 el factor debe alcanzar exactamente el piso de protección {}",
+        params.min_factor_floor
+    );
 }
 
 #[test]
