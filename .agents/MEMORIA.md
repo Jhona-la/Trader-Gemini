@@ -1,12 +1,12 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
 
-## 2026-10-23T08:44:56-05:00 — QRA F0/F1 candidato; CI propio pendiente
+## 2026-10-23T09:56:51-05:00 — QRA F0/F1 integrado, candidato y main10/10
 
-Rama codex/qra-capital-20261023, WT qra-continuacion locked. Main75e (Sol1095/GLM154 preservados,9/9 propios) incorporado; AGYf174 preservado por merge49f9 con rescate exclusivo telemetry-server completo, sin duplicar seispaquetesSol/doctests. DAZ global excluido por UB documentadoRust; parsers sinllamadores vivos sóloenhistoria. Los854Rust y Cargo/config igualesamain75e.
+PR105 integrado en `68839f9683afdec64e4c992fdc6ce7e9d7c5441c`, padres75e/ebe, árbol `dded9f6ad0db349e956a34d8c28030267fd4897b` idéntico al candidato. Candidato Unit39964126655+Replay39964126563 y push real Unit39968864721+Replay39968864605:10/10 por separado. Logs propios por revisión:84 recursos,61 server,50 Sol,65 storage,16 Host OMS, all-targets y Golden1/56filtradas con2 testigos bitidénticos. Cinco rutas de comportamiento en ledger, anchorsHebe corregidos;854 Rust/Cargo/config iguales a75e. Recibo `docs/audit/QRA_F0_F1_RESULTADOS_2026-10-23.md` y expediente JSON sellado; Omega220 intacto.
 
-Treslaunchers evitanbypasssemáforo,targetúnico/jobs2, errores75/101visibles,sinClippyduplicado ni bufferindefinido. Cleanup de medidor revierteúnicamentecopia propia idéntica/sinstageenalta propia y preservaajenos. Guardas3variablesRUSTFLAGS.32métodos existen (16nuevos), verificacioneslocales28full+6focused+12negativosparametrizados PASS, ambosPSreales, ceroCargo real. CIcandidate10/pushmain10/84recursos/61server pendientes,noheredar. Plan docs/audit/QRA_CONTINUACION_PLAN_2026-10-23.md, censo2193histórico yledger5rutas. SelloOmegaintacto.
+Tres launchers pasan por semáforo real/target canónico/jobs2, guardan flags, propagan75/101 y el medidor retira sólo sus altas sin cambios ajenos. Rescate AGY103 sólo cobertura telemetry-server; no DAZ global incompatible con Rust ni parsers sin consumidores. Metadata cargo tree68 entradas/65 pares, sin poda. Censo231309 archivos/76.31GB lógicos completo, sin ahorro; no garantía de16GB global ni300GB futuro. RAM local<4GiB: cero Cargo real, sin cerrar procesos ajenos.
 
-RAM libre0.46–2.02 y13:34Z0.75GiB<4; sincompilar/matarprocesosajenos. Censo20s44.36GBlógicosparcial,no total300GBni ahorrocertificados. cargotreependiente. PrimaryAGY/Verifylocked preservados. HallazgoF2vivo: wb0se pierdeentrescapas; noaceptarwbmissingdefault0. FFI3fallback13 tambiénpendiente. Sinoperaciones/modelos/promoción/ROIacreditado.
+F2 sigue pendiente: capital cero/ausencia/sesión/cache y endpointUDS, diseños RO publicados; los FFI13 deM no se corrigen aquí. AGY PR106 es independiente y recibió revisión pública de compilación/cache/tests. Primary y nuevos AGY/Sol1097/GLM155/Verify ACTIVE preservados. Reserva QRA liberada; retirar rama/WT propios tras merge del recibo y confirmar en PR105. Sin motor, fondos, promoción ni rentabilidad acreditada.
 
 ## Omega220 E2E — PR102 en main con CI propio 9/9
 
