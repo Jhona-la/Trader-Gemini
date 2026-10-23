@@ -121,6 +121,9 @@ impl TrackedOrder {
     /// cobertura DISJUNTA entre REST y WS que el max(ack, ws) anterior
     /// descartaba (sub-cuenta ~43%); el max() sólo sobrevive para payloads
     /// degradados sin tradeId, donde no existe clave de dedup.
+    /// That unidentified max/absolute-value heuristic does not establish exact
+    /// REST/WS overlap or preserve native no-ID rebates. Labeled adoption
+    /// estimates use a separate path and are not independent fill evidence.
     fn recompute_total_commission(&mut self) {
         let by_id: f64 = self.fees_by_trade.values().sum();
         self.total_commission = by_id + self.ack_fee_no_id.max(self.ws_fee_no_id);
@@ -307,6 +310,41 @@ impl OrderRegistry {
 
     /// Aplica un ack REST (respuesta de POST o GET /fapi/v1/order).
     pub fn apply_ack(&self, ack: &OrderAck, now_ms: u64) {
+        self.apply_ack_internal(ack, None, now_ms);
+    }
+
+    /// A current-rate adoption estimate is not an independently identified fill.
+    /// Keep its sign under the same write lock, outside native REST/WS dedup.
+    /// No automatic historical-fee correction is implied by this synthetic ID.
+    pub fn adopt_estimated_ack(&self, ack: &OrderAck, estimated_fee: f64, now_ms: u64) -> bool {
+        if !estimated_fee.is_finite()
+            || !ack.client_order_id.starts_with("adopted_")
+            || ack.order_type != "ADOPTED_ESTIMATE"
+            || ack.order_id != 0
+            || ack.status != "FILLED"
+            || !matches!(ack.side.as_str(), "BUY" | "SELL")
+            || ack.symbol.is_empty()
+            || !ack.executed_qty.is_finite()
+            || ack.executed_qty <= 0.0
+            || ack.orig_qty != ack.executed_qty
+            || !ack.avg_price.is_finite()
+            || ack.avg_price <= 0.0
+            || !ack.cum_quote.is_finite()
+            || ack.cum_quote != ack.executed_qty * ack.avg_price
+            || ack.fills.len() != 1
+            || ack.fills.iter().any(|fill| {
+                fill.trade_id != 0
+                    || fill.qty != ack.executed_qty
+                    || fill.price != ack.avg_price
+                    || fill.commission != estimated_fee
+            })
+        {
+            return false;
+        }
+        self.apply_ack_internal(ack, Some(estimated_fee), now_ms)
+    }
+
+    fn apply_ack_internal(&self, ack: &OrderAck, estimated_fee: Option<f64>, now_ms: u64) -> bool {
         let mut map = self.orders.write().unwrap_or_else(|p| p.into_inner());
         let pos_side = infer_position_side(&ack.client_order_id, &ack.side);
         let entry = map
@@ -334,6 +372,17 @@ impl OrderRegistry {
                 last_fill_qty: 0.0,
                 last_fill_price: 0.0,
             });
+        if estimated_fee.is_some()
+            && (entry.order_id != 0
+                || entry.order_type != "ADOPTED_ESTIMATE"
+                || !entry.fees_by_trade.is_empty()
+                || entry.ws_fee_no_id != 0.0
+                || !entry.symbol.eq_ignore_ascii_case(&ack.symbol)
+                || (entry.executed_qty > 0.0 && entry.executed_qty != ack.executed_qty)
+                || (entry.avg_price > 0.0 && entry.avg_price != ack.avg_price))
+        {
+            return false;
+        }
         if entry.position_side.is_empty() {
             entry.position_side = pos_side;
         }
@@ -352,31 +401,41 @@ impl OrderRegistry {
         if ack.order_id > 0 {
             entry.order_id = ack.order_id;
         }
-        // R3.4: Deduplicación REST vs WS — un ack REST trae la comisión acumulada en fills.
-        let fills_commission: f64 = ack.fills.iter().map(|f| f.commission).sum();
-        if fills_commission > entry.ack_commission {
-            entry.ack_commission = fills_commission;
-        }
-        // MOD1/4-015 (INFORME-14): además del canal acumulado, cada fill con
-        // tradeId entra al mapa de unión — deduplica el solapamiento con WS y
-        // conserva los fills que SOLO este canal vio.
-        let mut no_id_sum = 0.0f64;
-        for f in &ack.fills {
-            if f.trade_id != 0 {
-                entry.fees_by_trade.insert(f.trade_id, f.commission.abs());
-            } else {
-                no_id_sum += f.commission.abs();
+        if let Some(estimate) = estimated_fee {
+            // No-ID native max/abs heuristics do not apply to this labeled estimate.
+            entry.ack_commission = estimate;
+            entry.ack_fee_no_id = estimate;
+            entry.total_commission = estimate;
+        } else {
+            // R3.4: Deduplicación REST vs WS — un ack REST trae la comisión acumulada en fills.
+            let fills_commission: f64 = ack.fills.iter().map(|f| f.commission).sum();
+            if fills_commission.is_finite() && fills_commission > entry.ack_commission {
+                entry.ack_commission = fills_commission;
             }
+            // MOD1/4-015 (INFORME-14): además del canal acumulado, cada fill con
+            // tradeId entra al mapa de unión — deduplica el solapamiento con WS y
+            // conserva los fills que SOLO este canal vio.
+            let mut no_id_sum = 0.0f64;
+            for f in &ack.fills {
+                if f.trade_id != 0 {
+                    if f.commission.is_finite() {
+                        entry.fees_by_trade.insert(f.trade_id, f.commission);
+                    }
+                } else {
+                    no_id_sum += f.commission.abs();
+                }
+            }
+            if no_id_sum > entry.ack_fee_no_id {
+                entry.ack_fee_no_id = no_id_sum;
+            }
+            entry.recompute_total_commission();
         }
-        if no_id_sum > entry.ack_fee_no_id {
-            entry.ack_fee_no_id = no_id_sum;
-        }
-        entry.recompute_total_commission();
 
         // R3.4: Monotonic status guard — impedir que acks tardíos o de retries degraden estados terminales
         let new_status = OrderStatus::parse(&ack.status);
         entry.status = entry.status.merge(new_status);
         entry.updated_ms = now_ms;
+        true
     }
 
     /// Aplica un ORDER_TRADE_UPDATE del user-data stream.
@@ -433,14 +492,17 @@ impl OrderRegistry {
             );
         }
         // R3.4: Comisión acumulativa por fill WS + deduplicación con ACK REST
-        if u.last_filled_qty > 0.0 && u.commission > 0.0 {
-            entry.ws_commission += u.commission;
+        if u.last_filled_qty > 0.0 && u.commission.is_finite() {
             // MOD1/4-015 (INFORME-14): fill con tradeId → unión por id (el
             // mismo fill que REST ya reportó SOBRESCRIBE, no duplica; un fill
             // que REST NO vio se SUMA — antes el max() lo descartaba).
             if u.trade_id != 0 {
-                entry.fees_by_trade.insert(u.trade_id, u.commission.abs());
-            } else {
+                entry.ws_commission += u.commission;
+                entry.fees_by_trade.insert(u.trade_id, u.commission);
+            } else if u.commission > 0.0 {
+                // Degraded no-ID observations retain the historical heuristic.
+                // Their exact overlap and signed rebates are still unresolved.
+                entry.ws_commission += u.commission;
                 entry.ws_fee_no_id += u.commission.abs();
             }
         }
@@ -592,7 +654,13 @@ mod tests {
 
         // Una orden que el exchange ya reconoció (order_id) no se toca.
         r.register_intent("ioc-2", "BTCUSDT", "BUY", "LONG", "LIMIT", 1.0, 1_000);
-        r.apply_ack(&OrderAck { order_id: 7, ..ack("ioc-2", "NEW", 0.0, 0.0) }, 1_500);
+        r.apply_ack(
+            &OrderAck {
+                order_id: 7,
+                ..ack("ioc-2", "NEW", 0.0, 0.0)
+            },
+            1_500,
+        );
         assert!(!r.mark_local_reject("ioc-2", 2_000));
         assert_eq!(r.get_status("ioc-2"), Some(OrderStatus::New));
         assert!(!r.mark_local_reject("desconocida", 2_000));

@@ -221,56 +221,73 @@ pub fn reconcile(remote: &[PositionRiskEntry], registry: &OrderRegistry) -> Reco
 }
 
 impl ReconciliationReport {
-    /// Adopta automáticamente las posiciones del exchange al OrderRegistry y reconcilia el estado local (#121-#140, #1405)
-    ///
-    /// D-632 (DÉCIMA OLA): `taker_fee_rate` es la comisión taker vigente de la
-    /// cuenta. Se usa para imputar la comisión de entrada de la posición
-    /// adoptada, que antes entraba con `fills` vacío y por tanto con comisión
-    /// cero: un sesgo optimista permanente en su PnL que se propagaba al win
-    /// rate, al profit factor, al dimensionamiento de Kelly y a la aptitud del
-    /// daemon online. La entrada real pudo ser maker, así que la imputación
-    /// taker es la cota conservadora.
+    /// Legacy explicit-scenario wrapper. Its historical positive-rate/VIP0
+    /// fallback remains for existing callers; it is not live symbol evidence.
+    /// The host must use `apply_to_registry_with_rates` instead.
     pub fn apply_to_registry(&self, registry: &OrderRegistry, taker_fee_rate: f64) -> usize {
-        // Tarifa taker VIP0 de Binance USDT-M como último recurso si la cuenta
-        // no aportó la suya: mismo valor inicial que usa QuantumConfig.
         let fee = if taker_fee_rate.is_finite() && taker_fee_rate > 0.0 {
             taker_fee_rate
         } else {
             0.0005
         };
+        self.apply_to_registry_with_rates(registry, |_| Some(fee))
+    }
+
+    /// Adopt with a current rate for each symbol, preserving signed rebates and
+    /// zero. Missing/nonfinite rates or unrepresentable estimates skip adoption.
+    ///
+    /// `ADOPTED_ESTIMATE`, order_id=0 and trade_id=0 identify a scenario estimate,
+    /// not an observed historical fill/fee. A later native reconciliation is not
+    /// by itself proof that this imputation has been replaced correctly.
+    pub fn apply_to_registry_with_rates(
+        &self,
+        registry: &OrderRegistry,
+        taker_rate_for: impl Fn(&str) -> Option<f64>,
+    ) -> usize {
         let mut adopted = 0;
         for pos in &self.open_positions {
+            let Some(fee) = taker_rate_for(&pos.symbol).filter(|rate| rate.is_finite()) else {
+                continue;
+            };
             let qty = pos.position_amt.abs();
-            let imputed_commission = qty * pos.entry_price * fee;
+            let notional = qty * pos.entry_price;
+            let imputed_commission = notional * fee;
+            if !qty.is_finite()
+                || qty <= 0.0
+                || !pos.entry_price.is_finite()
+                || pos.entry_price <= 0.0
+                || !notional.is_finite()
+                || notional <= 0.0
+                || !imputed_commission.is_finite()
+            {
+                continue;
+            }
             let side = if pos.is_long() { "BUY" } else { "SELL" };
             let client_id = format!("adopted_{}_{}", pos.symbol, pos.update_time);
             let ack = crate::order_types::OrderAck {
                 client_order_id: client_id,
                 symbol: pos.symbol.clone(),
                 side: side.to_string(),
-                order_type: "MARKET".to_string(),
+                order_type: "ADOPTED_ESTIMATE".to_string(),
                 orig_qty: pos.position_amt.abs(),
                 executed_qty: pos.position_amt.abs(),
                 avg_price: pos.entry_price,
                 price: pos.entry_price,
-                cum_quote: pos.position_amt.abs() * pos.entry_price,
+                cum_quote: notional,
                 status: "FILLED".to_string(),
                 order_id: 0,
                 update_time: pos.update_time,
                 fills: vec![crate::order_types::Fill {
                     price: pos.entry_price,
                     qty,
-                    commission: if imputed_commission.is_finite() {
-                        imputed_commission
-                    } else {
-                        0.0
-                    },
+                    commission: imputed_commission,
                     commission_asset: "USDT".to_string(),
                     trade_id: 0,
                 }],
             };
-            registry.apply_ack(&ack, pos.update_time);
-            adopted += 1;
+            if registry.adopt_estimated_ack(&ack, imputed_commission, pos.update_time) {
+                adopted += 1;
+            }
         }
         adopted
     }
@@ -286,7 +303,10 @@ impl ReconciliationReport {
             .collect();
 
         for o in registry.active_orders() {
-            let is_remote_open = remote_map.get(o.symbol.as_str()).map(|p| p.is_open()).unwrap_or(false);
+            let is_remote_open = remote_map
+                .get(o.symbol.as_str())
+                .map(|p| p.is_open())
+                .unwrap_or(false);
             if !is_remote_open {
                 // Posición remota plana: la orden local activa es un fantasma.
                 let ack = crate::order_types::OrderAck {
@@ -535,6 +555,8 @@ pub fn reconcile_arena_checked(
                             .fetch_sub(m, std::sync::atomic::Ordering::Relaxed);
                     }
 
+                    // With the current flat projection remote_price is zero, so this
+                    // historical accounting branch does not prove an observed close fee.
                     if qty > 0.0 && exit_price > 0.0 && entry_p > 0.0 {
                         let gross_pnl =
                             crate::trade_accounting::gross_pnl(was_long, entry_p, exit_price, qty);
@@ -616,17 +638,29 @@ pub fn reconcile_arena_checked(
                     CANONICAL_MICRO_LEVERAGE
                 };
                 let margin = notional / lev;
-                // CERT-M4-H05: imputar entry_fee de la adopción con el fee
-                // taker estándar (0.04% VIP default — el arena config no es
-                // accesible desde aquí sin refactor de firma; el fee exacto
-                // se corrige en la primera reconciliación con tradeId).
-                // Antes entry_fee=0 → Kelly sobreestimaba en adoptadas.
+                // This is an estimate using the currently available symbol rate,
+                // not the historical fee of the original fill. Missing evidence
+                // cannot become a zero fee or a rate borrowed from another symbol.
+                let Some((_, taker_rate)) = arena.config.fee_rates_for(coin_idx) else {
+                    report.unresolved.push(ReconciliationIssue {
+                        symbol: sym,
+                        kind: MissingRemoteEvidence,
+                    });
+                    continue;
+                };
+                let adopted_entry_fee = notional * taker_rate;
+                if !adopted_entry_fee.is_finite() {
+                    report.unresolved.push(ReconciliationIssue {
+                        symbol: sym,
+                        kind: InvalidRemoteEvidence,
+                    });
+                    continue;
+                }
                 // FIX R7-0 (CRÍTICO): el fee iba en el slot TP de
                 // open_with_horizon — instalaba un TP en ~$0.04 y el fee
                 // jamás llegaba al modelo. open_with_fee es la firma correcta.
                 // D-729 (unión): además, si la entrada no es válida (precio o
                 // cantidad), la posición NO se abre y tampoco se reserva margen.
-                let adopted_entry_fee = notional * 0.0004;
                 // #595: el reloj de la adopción es el del EXCHANGE (updateTime,
                 // cota inferior de la edad), no el arranque del proceso.
                 let adoptada = coin.positions.slot_2.open_with_fee(
@@ -711,7 +745,10 @@ pub fn reconcile_arena_checked(
                     let lev_deriva = if remote_leverage.is_finite() && remote_leverage >= 1.0 {
                         remote_leverage
                     } else {
-                        let old_qty = target_slot.quantity.load(std::sync::atomic::Ordering::Relaxed).abs();
+                        let old_qty = target_slot
+                            .quantity
+                            .load(std::sync::atomic::Ordering::Relaxed)
+                            .abs();
                         if old_margin > 0.0 && old_qty > 0.0 && safe_price > 0.0 {
                             let implied = (old_qty * safe_price) / old_margin;
                             if implied.is_finite() && implied >= 1.0 {
@@ -961,7 +998,9 @@ mod tests {
     fn f4_h1_drift_reconciliation_zero_or_nan_leverage_immunity() {
         quantum_arena::symbols::update_dynamic_universe(vec!["BTCUSDT".into()]);
         let arena = quantum_arena::GlobalArena::build_in_own_stack(13.0);
-        arena.coins[0].current_price.store(60_000.0, std::sync::atomic::Ordering::Relaxed);
+        arena.coins[0]
+            .current_price
+            .store(60_000.0, std::sync::atomic::Ordering::Relaxed);
         arena.coins[0].positions.slot_2.open_with_horizon(
             true,
             60_000.0,
@@ -972,7 +1011,9 @@ mod tests {
             59_000.0,
             quantum_arena::position::PositionHorizon::Continuous,
         );
-        arena.used_margin.store(6.0, std::sync::atomic::Ordering::Relaxed);
+        arena
+            .used_margin
+            .store(6.0, std::sync::atomic::Ordering::Relaxed);
 
         // Remote reports quantity drift with leverage = 5.0
         let remote = vec![PositionRiskEntry {
@@ -992,9 +1033,21 @@ mod tests {
         assert!(used.is_finite(), "used_margin must be finite, got {}", used);
         assert_eq!(used, 24.0, "used_margin must be 24.0, got {}", used);
 
-        let slot_margin = arena.coins[0].positions.slot_2.margin_used.load(std::sync::atomic::Ordering::Relaxed);
-        assert!(slot_margin.is_finite(), "slot margin must be finite, got {}", slot_margin);
-        assert_eq!(slot_margin, 24.0, "slot margin must be 24.0, got {}", slot_margin);
+        let slot_margin = arena.coins[0]
+            .positions
+            .slot_2
+            .margin_used
+            .load(std::sync::atomic::Ordering::Relaxed);
+        assert!(
+            slot_margin.is_finite(),
+            "slot margin must be finite, got {}",
+            slot_margin
+        );
+        assert_eq!(
+            slot_margin, 24.0,
+            "slot margin must be 24.0, got {}",
+            slot_margin
+        );
     }
 
     #[test]
@@ -1002,7 +1055,9 @@ mod tests {
         assert_eq!(CANONICAL_MICRO_LEVERAGE, 5.0);
         quantum_arena::symbols::update_dynamic_universe(vec!["BTCUSDT".into()]);
         let arena = quantum_arena::GlobalArena::build_in_own_stack(13.0);
-        arena.coins[0].current_price.store(50_000.0, std::sync::atomic::Ordering::Relaxed);
+        arena.coins[0]
+            .current_price
+            .store(50_000.0, std::sync::atomic::Ordering::Relaxed);
 
         // Remote reports position with canonical micro leverage 5.0
         let remote = vec![PositionRiskEntry {
@@ -1019,7 +1074,15 @@ mod tests {
 
         // Notional = 0.001 * 50_000 = 50.0.
         // Margin = 50.0 / 5.0 = 10.0.
-        let slot_margin = arena.coins[0].positions.slot_2.margin_used.load(std::sync::atomic::Ordering::Relaxed);
-        assert_eq!(slot_margin, 10.0, "slot margin must be 10.0, got {}", slot_margin);
+        let slot_margin = arena.coins[0]
+            .positions
+            .slot_2
+            .margin_used
+            .load(std::sync::atomic::Ordering::Relaxed);
+        assert_eq!(
+            slot_margin, 10.0,
+            "slot margin must be 10.0, got {}",
+            slot_margin
+        );
     }
 }
