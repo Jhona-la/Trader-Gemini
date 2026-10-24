@@ -2339,6 +2339,7 @@ dependencies = [
  "lazy_static",
  "libc",
  "quantum-arena",
+ "sha2",
  "sysinfo 0.39.6",
  "telemetry-engine",
  "winapi",

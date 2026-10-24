@@ -1523,8 +1523,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         "🧬 [INIT] Genome Initialized Successfully. DarwinDaemon is ready to evolve."
     );
 
+    // CL-156 (G021): el calentamiento REST usa el venue del ejecutor, no el modo demo.
     let historical_klines = god_engine_core::bootloader::SystemDiagnostics::execute_phase_3_warmup(
-        is_demo_mode,
+        is_testnet,
         &symbols,
     )
     .await;

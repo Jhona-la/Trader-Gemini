@@ -65,7 +65,7 @@ No se simplifica matemática existente para salir de un error. No se presentan `
 
 ## 4. FASE 2 — Primer átomo de código: procedencia de capital e informe
 
-**Archivo previsto:** `crates/backtest-engine/src/bin/continuous_evolution_backtest.rs` y su conexión a `.github/workflows/replay-contracts.yml`.
+**Archivos previstos:** `crates/backtest-engine/src/bin/continuous_evolution_backtest.rs`, `tests/continuous_capital_contract.rs` y `.github/workflows/replay-contracts.yml`. Aunque la fuente vive bajo `crates/backtest-engine`, el binario está declarado en el paquete raíz `trader-gemini-v5`; no se usará `-p backtest-engine`.
 
 **Fallos actuales:** capital fijo 13 USD; `equity_curve.csv` se crea/trunca antes de validar configuración; el crecimiento vuelve a usar 13 USD; el binario promueve al final sin que este átomo certifique una puerta de rendimiento.
 
@@ -73,11 +73,11 @@ No se simplifica matemática existente para salir de un error. No se presentan `
 
 1. Validar `INITIAL_CAPITAL` como primera operación de `main`, antes de `set_var`, crear archivos, leer ticks o genomas. Ausencia, vacío, texto inválido, NaN, ±Inf, cero y negativos retornan error no cero sin efectos laterales.
 2. Extraer funciones puras para parseo y crecimiento; el informe real debe llamarlas. Usar la misma variable validada en simulación, “Capital Inicial” y crecimiento, etiquetado como escenario backtest, no wallet.
-3. RED conductual: inicial 20/final 30 ⇒ 50 %. Casos ausente/vacío/malformado/NaN/±Inf/cero/negativo/válido distinto de 13. CSV centinela que demuestra no creación ni truncamiento ni promoción tras configuración inválida.
-4. Conectar explícitamente en Replay:
-   `cargo +nightly-2026-06-30 test -p backtest-engine --bin continuous_evolution_backtest --locked -- --test-threads=1`.
+3. RED conductual: inicial 20/final 30 ⇒ 50 %. Casos ausente/vacío/malformado/NaN/±Inf/cero/negativo/válido distinto de 13. En `tests/continuous_capital_contract.rs`, ejecutar el binario real con `CARGO_BIN_EXE_continuous_evolution_backtest` y un CSV/config_dir centinela: la configuración inválida no debe crear, truncar ni promover nada. Los tests puros no sustituyen esta prueba de arranque.
+4. Conectar explícitamente en Replay el binario y su contrato:
+   `cargo +nightly-2026-06-30 test -p trader-gemini-v5 --bin continuous_evolution_backtest --test continuous_capital_contract --locked -- --test-threads=1`.
    Verificar nombres y número de tests en el log; `check --all-targets` solo compila.
-5. Puerta local cuando el semáforo admita: fmt, clippy del binario con `-D warnings`, test del binario y `check --workspace --all-targets --locked`.
+5. Puerta local cuando el semáforo admita: fmt, clippy del binario con `-D warnings`, el comando anterior y `check --workspace --all-targets --locked`.
 
 **Fuera de este átomo:** promoción por rendimiento, wallet API y los fallbacks de `evolver`, `evolution`, `multi_coin_simulator`, `benchmark` y `ReplayConfig`. Quedan registrados, no ocultos.
 
@@ -133,7 +133,7 @@ Cada nueva teoría exige: definición operativa, estimadores, guardas NaN/Inf, c
 
 ## 9. Censo archivo por archivo y recepción entre agentes
 
-Se mantendrá un ledger incremental `docs/audit/V33_REVISIONES_2026-10-24.tsv` cuando comience el siguiente ciclo de revisión, sin reescribir los censos históricos. Campos mínimos:
+El inventario mecánico `docs/audit/V33_INVENTARIO_2026-10-24.tsv` contiene las 2.174 rutas del índice fusionado actual con blob y cola explícita: 27 marcadas `REVISADO_ESTATICO` y 2.147 `INVENTORIADO`. No es una certificación de revisión completa. El ledger incremental `docs/audit/V33_REVISIONES_2026-10-24.tsv` conserva los 34 hallazgos concretos sin reescribir censos históricos. Campos mínimos:
 
 `ruta | blob | dueño | ruta_viva | hallazgo | severidad | prueba | CI_SHA | estado | siguiente`
 
@@ -147,8 +147,8 @@ Cuando la RAM lo permita:
 
 ```bash
 cargo fmt --all -- --check
-bash scripts/cargo_semaforo.sh clippy -p backtest-engine --bin continuous_evolution_backtest --locked -- -D warnings
-bash scripts/cargo_semaforo.sh test -p backtest-engine --bin continuous_evolution_backtest --locked -- --test-threads=1
+bash scripts/cargo_semaforo.sh clippy -p trader-gemini-v5 --bin continuous_evolution_backtest --locked -- -D warnings
+bash scripts/cargo_semaforo.sh test -p trader-gemini-v5 --bin continuous_evolution_backtest --test continuous_capital_contract --locked -- --test-threads=1
 bash scripts/cargo_semaforo.sh check --workspace --all-targets --locked
 cargo tree --workspace --duplicates --locked
 ```

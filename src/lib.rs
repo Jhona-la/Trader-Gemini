@@ -3,7 +3,6 @@ pub mod dark_alpha_router;
 pub mod dark_alpha_sniffer;
 pub mod dashboard;
 pub mod env_manager;
-pub mod features;
 pub mod host_oms;
 pub mod model_manifest;
 pub mod orderbook;
