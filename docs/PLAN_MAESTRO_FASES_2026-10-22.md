@@ -105,7 +105,7 @@ Orden de ataques posteriores, cada uno con su propio RED y reserva. Los seis pri
 1. Medir esperanza neta después de comisión real por símbolo/sesión, funding, spread, slippage y selección adversa; Maker no equivale a fill gratis ni garantizado.
 2. Exigir reconciliación OMS completa antes de admisión: balance real Demo/Prod, posiciones, órdenes, mismo ejecutor/entorno y cero incidencias no resueltas.
 3. Línea I lidera la descomposición `recv−E` frente a espera local; otros agentes no duplican su bloque. Después medir p50/p95/p99, freshness, cola, pérdidas y reconexiones por segmento.
-4. Auditar `reqwest`/WS y duplicados con `cargo tree --workspace --duplicates --locked` solo como metadata. Unificar versiones cuando sea compatible, sin forzar semver ni añadir dependencias por costumbre.
+4. Auditar `reqwest`/WS y duplicados con metadata (`Cargo.lock`/`cargo tree`). El inventario V33 encontró 40 paquetes duplicados (`docs/audit/V33_DEPENDENCIAS_2026-10-24.md`): `telemetry-server` usa Axum/Hyper 1.10/tungstenite 0.24, mientras warp/reqwest usan Hyper 0.14/tungstenite 0.21. Unificar solo si la convergencia de frameworks demuestra beneficio y conserva comportamiento; no hacer bumps ciegos ni añadir dependencias por costumbre.
 5. Acotar buffers y persistencia; restaurar el último estado al recuperar. Ningún drop, canal desconectado o dato obsoleto puede quedar invisible.
 6. Validar continuidad temporal, NaN/Inf, partial fills, reduceOnly y Mark/Last Price antes de optimizar instrucciones o silicio.
 
