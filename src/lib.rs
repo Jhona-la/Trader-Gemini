@@ -10,8 +10,6 @@ pub mod orderbook;
 pub mod parsers;
 pub mod symbol_manager;
 pub mod sa_params;
-pub mod trailing;
-pub use trailing::{evaluate_quantum_trailing, TrailingResult};
 
 // NOTA: Las funciones FFI extern "C" (quantum_ring_new, quantum_ring_free, quantum_ring_read_tick)
 // han sido eliminadas en la Fase 4 de Auditoría Suprema.
