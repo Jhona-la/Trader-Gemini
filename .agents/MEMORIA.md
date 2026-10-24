@@ -1,5 +1,13 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
 
+## 2026-10-24T18:01:57-05:00 — Kimi V33: revalidación publicada; capital bloqueado por recursos
+
+- Base revalidada: `main=60981662e`; el merge de Fase 11 `58f90ced6` tiene 10/10 checks SUCCESS. El cierre documental `19d6ec254706cea311d10817e245a2507d20b9bc` coincide con `origin/main` y no tiene checks por `paths-ignore`; no se certificó Rust nuevo.
+- Ramas remotas Fase 10 (PR #135) y Fase 11 (PR #137) eliminadas tras comprobar merges, ancestria, cero commits exclusivos y ausencia de worktree. Remoto: `main` + PR #138 activo. Los cinco worktrees locales, el PR y el stash ajeno se preservan.
+- Inventario validado mecánicamente contra `git ls-files`: **2.193 rutas = 26 REVISADO_ESTATICO + 1 RED + 2.166 INVENTORIADO**, 838 archivos Rust; no hubo bajas. Esto no equivale a revisión semántica completa.
+- Capital/ROI sigue RED y sin cambio de código. Revisión independiente: validar como primera sentencia de `main` (`continuous_evolution_backtest.rs:78`), antes de `set_var` (`:82`), eliminar el shadowing de 13 (`:228`) y conectar informe (`:983/:992`). El contrato debe aislar cwd, `TGM_CONFIG_DIR` y `TG_CONFIG_ROOT`, cubrir CSV presente/ausente y `config_dir`; `20→30=50 %` será prueba aritmética pura, no ROI ni E2E financiero.
+- Dos decisiones del semáforo devolvieron 75; última lectura **0,97 GiB disponibles** con Cargo/Rustc ajenos. No hubo edición Rust, censo SSD, Demo ni operación financiera. ROI/PnL/WR/Sharpe/EV: `N/D`. Reanudar solo cuando RAM y semáforo admitan toda la puerta local.
+
 ## 2026-10-24T15:51:51-05:00 — Kimi V33: CI 10/10, Fase 9 retirada y Línea I integrada
 
 - Higiene Git `e5b4b53dc` certificada con **10/10 checks SUCCESS**: Unit `40127951016` (17m26s) y Replay `40127951030` (40m15s). No heredar ese verde a otros commits.
