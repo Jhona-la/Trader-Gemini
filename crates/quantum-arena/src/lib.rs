@@ -45,7 +45,7 @@ pub use quantum_phase::{
     calcular_factor_cuantico, clasificar_fase, evaluar_fase_cuantica, FaseCuantica,
     QuantumCouplingParams, QuantumPhaseState,
 };
-pub use spectral_regime::{LegacyRegimeView, SpectralRegimeField, SpectralRegimeParams};
+pub use spectral_regime::{SpectralRegimeField, SpectralRegimeParams};
 pub use state::GlobalArena;
 pub use tick_source::TickEvent;
 pub use topological_persistence::{
