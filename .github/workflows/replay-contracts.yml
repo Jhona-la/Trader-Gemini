@@ -202,4 +202,8 @@ jobs:
         # `telemetry-server` (61 tests) queda FUERA a propósito: su build local
         # no terminó en la ventana de este ciclo y no se conecta una suite sin
         # verificar. Es el primer átomo del siguiente.
-        run: cargo +nightly-2026-06-30 test -p flight-recorder -p graph-4d -p graph-architecture -p omniscient-registry -p os-guardian -p telemetry-engine --locked -- --test-threads=1
+        # RET-6/RET-8 (2026-10-24, Línea C, censo C-F7b): telemetry-engine pasa
+        # de 7 a 3 tests (se retiraron TradeStats, TensorRecord y DnsOptimizer,
+        # sin consumidor) y graph-4d (4) salió del workspace: quedan cinco
+        # crates y 43 de aquellos 51 tests.
+        run: cargo +nightly-2026-06-30 test -p flight-recorder -p graph-architecture -p omniscient-registry -p os-guardian -p telemetry-engine --locked -- --test-threads=1

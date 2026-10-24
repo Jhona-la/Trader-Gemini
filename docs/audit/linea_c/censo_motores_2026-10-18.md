@@ -374,7 +374,8 @@ lo que cambió desde entonces; las filas del TSV no se reescriben.
 | #80 | 24 |
 | #81 | 2, 5, 15, 28a |
 | #120 | 4, 25, 26, 20 |
-| tanda RET-3a…RET-16 | 3a (F317–F320, F328, R160), 37, 49, 17 (F177, F475), 29, 43a (F309 envoltorio, F395, R167, F310/F396 siete constantes, F311, F397), 46, 16 |
+| #122 | 3a (F317–F320, F328, R160), 37, 49, 17 (F177, F475), 29, 43a (F309 envoltorio, F395, R167, F310/F396 siete constantes, F311, F397), 46, 16 |
+| tanda RET-6…RET-12a | 6, 7 (resto del manifiesto), 8 (sin F352), 10 (más K24 como RET-10b, sólo diagnóstico), 11, 12a |
 
 **Hecho por otros agentes**: lote 9 entero (Sol, d18b3735), lote 45 entero
 (Codex RB, 906a9c6a), parte del 7 (Sol retiró el bin main.rs de
@@ -413,9 +414,39 @@ un escéptico por lote listo):
   `5 + 100·r`); mide la concentración en nivel de un flujo acotado. Las
   cifras de la regla 2 están en el commit RET-46.
 
+- Lote 8 (F352): el retiro del indexador de AST no depende del tema 4.
+  Las dos opciones que se plantean al dueño (construir la topología 4D de
+  liquidez como motor nuevo o corregir el documento) no usan este código.
+  Siguen desfasados, hasta que responda, docs/INVENTORY.md:32,
+  ARCHITECTURE.md:153 y los planes maestros del 2026-10-13 (:519, :572) y
+  del 2026-10-14 (:203). La tarjeta del tema 4 debe decir que el crate ya
+  no existe.
+- Lote 10 (K24): la lectura del umbral técnico en SIGNAL-PATH era de una
+  clave de registro que nadie escribe (imprimía siempre 0). Va como
+  RET-10b, sólo diagnóstico, con test.
+- Lote 11: se separa de F377 (tema 1). Compartían archivo de test, pero
+  sus líneas no se solapan.
+- Lote 11 (F220/F375): no se portó a dynamic_ranker la deduplicación
+  (ConflictingDuplicate) ni el desempate por símbolo de DynamicSelector.
+  El ranker vivo no deduplica (un símbolo repetido en el feed ocupa dos
+  asientos) y desempata con partial_cmp, así que manda el orden del feed.
+  Queda como átomo abierto con test, en dynamic_ranker.rs, coordinado con
+  AGY (Ω215) y Sol (F1-091).
+- Lote 12: se parte en 12a (hecho) y 12b. El 12b lleva F94 (spot_feed y
+  los mocks de AGY y Sol), F105/R97 (HistoricalLoader, que ejercita el
+  contrato cero_dato de Sol en CI) y F108/R94/R95 (api_client, único
+  lector de producción de cero_dato::monto_de_json); F214/F463 siguen en
+  el tema 2 y F107 en el tema 4.
+
 **Restos de lotes ejecutados**: del 3, net_multiplexer (a AGY, para
 unificar con data_pipeline::http_cliente) y active_universe/
 symbol_ranker_engine (tema 4 y gen 37); del 17, F196 (tema 2, por
 F214/F463); del 43, F394 (tema 1, con F305) y los literales 12/30 de
 online_daemon.rs (a Sol); del 28, el 28b (Navier, espera al dueño de
-Ω121).
+Ω121); del 7, detect_collisions de omniscient-registry (devuelve
+siempre un vector vacío y sólo lo prueban tests; átomo propio); del 11,
+bump/take_pending/peek_pending de god-engine-core liquidation_feed.rs
+(sólo tests); del 12a, comentarios que siguen nombrando módulos
+retirados: data-pipeline cero_dato.rs:88-89 y
+tests/cero_dato_contract.rs:24, :33 (de Sol), dynamic_ranker.rs:101 y
+parser.rs:142-143 (cita tensor_parser).

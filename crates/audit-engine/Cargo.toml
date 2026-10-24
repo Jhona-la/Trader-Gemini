@@ -5,14 +5,10 @@ edition = "2021"
 
 [dependencies]
 serde = { version = "1.0", features = ["derive"] }
-tokio = { version = "1", features = ["full"] }
-crossbeam = "0.8"
 omniscient-registry = { path = "../omniscient-registry" }
 crossbeam-channel = "0.5.16"
 once_cell = "1.21.4"
 quantum-arena = { path = "../quantum-arena" }
-regex = "1.13.1"
-walkdir = "2.5.0"
 
 [dev-dependencies]
 # F412/F413/F271 (censo C-F7b §3, prioridad 1): el contrato RED→GREEN ejercita
