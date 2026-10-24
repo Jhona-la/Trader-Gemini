@@ -1,10 +1,19 @@
 pub mod anomaly_detector;
 pub mod ebpf_core;
+pub mod large_pages;
 pub mod memory_audit;
 pub mod memory_compaction;
 pub mod observability_plane;
 pub mod pmu_sensor;
+pub mod silicon_topology;
+pub mod simd_crypto;
+pub mod subnormal_control;
 pub mod telemetry;
+
+pub use large_pages::{LargePageArena, CANONICAL_LARGE_PAGE_SIZE, STANDARD_PAGE_SIZE};
+pub use silicon_topology::{CoreType, CpuTopologyInfo};
+pub use simd_crypto::{constant_time_eq_32, sha256_hmac_stack, sha256_stack, verify_payload_integrity};
+pub use subnormal_control::{SubnormalHardwareController, SubnormalStatus};
 
 use std::sync::atomic::{AtomicBool, Ordering};
 
@@ -123,15 +132,23 @@ pub fn init_guardian(affinity_mask: usize, max_memory_mb: usize, arena: Arc<Glob
     };
     obs_plane.spawn_isolated(obs_core);
 
+    // 5. Supresión activa de subnormales de hardware (FTZ + DAZ)
+    if SubnormalHardwareController::enable_suppression() {
+        println!("⚡ [OS-GUARDIAN] Supresión de subnormales de silicio (FTZ/DAZ) activada exitosamente.");
+    }
+
     #[cfg(not(windows))]
     {
         println!("[OS-GUARDIAN] Ejecutando en modo NO-Windows. Guardián inactivo.");
     }
 }
 
-/// FASE 24: Configura el hilo actual para operar en máxima prioridad física.
-/// Solo debe llamarse desde el HFT Spin Loop (GodEngineScalp).
+/// FASE 8 / FASE 24: Configura el hilo actual para operar en máxima prioridad física y con supresión de subnormales.
+/// Solo debe llamarse desde el bucle de decisión continuo en tiempo real (GodEngineCore).
 pub fn set_current_thread_time_critical() {
+    // 1. Activar supresión de subnormales de hardware (FTZ + DAZ) en el hilo actual
+    SubnormalHardwareController::enable_suppression();
+
     #[cfg(windows)]
     unsafe {
         let thread = GetCurrentThread();
