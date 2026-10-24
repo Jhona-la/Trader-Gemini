@@ -1,5 +1,14 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
 
+## 2026-10-24T13:46:25-05:00 — Kimi Quant Sr V33: plan, sincronización y censo estático inicial
+
+- Revisión desde `main` 8741b3d, actualización por fast-forward y fusión documental publicada como `f18285c1c` en `origin/main`. GitHub devolvió `total_count=0` para ese SHA porque el cambio fue exclusivamente documental; no es un 10/10 de código ni una certificación de comportamiento.
+- `docs/PLAN_MAESTRO_FASES_2026-10-22.md` queda como plan canónico V33; `docs/ARCHITECTURE.md` queda marcado como legado Python y la bitácora corrige el perfil vigente a `debug=0`/`strip="symbols"`. El merge preserva el relevo Codex QRA y GLM 160, sin incorporar `.workbuddy-ai/` ni `docs/audit/RELEVO_CODEX_PR65_QRA_2026-10-24.md`, que son ajenos.
+- Las ramas integradas Fase 5/Fase 6/Línea C fueron retiradas por terceros; no hubo borrado V33. Se preservan PR #128, PR #129 y todos los worktrees. El E0689 inicial de Fase 7 ya tiene candidato corregido en CI; Sol publicó un ajuste posterior para su contrato F1-101.
+- Tres revisiones estáticas independientes cubrieron ejecución/fricciones, evolución/paridad y recursos/conectividad. Los hallazgos y sus pruebas propuestas quedan en `docs/audit/V33_REVISIONES_2026-10-24.tsv`. Puntos críticos contrastados directamente: campos `positionRisk` que pueden fingir cuenta plana, contabilidad/aprendizaje antes del fill, ACK con cero ejecutado, sizing sobre otro plano de capital y TP modelado maker mientras la ruta viva usa MARKET.
+- RAM disponible 0,65 GiB con cargo/rustc ajenos: cero Cargo, cero edición Rust y cero barrido SSD. Los procesos `du`/`sort` propios terminaron; ningún proceso ajeno fue detenido. Primer átomo preparado pero no editado: capital/ROI de `continuous_evolution_backtest`, condicionado al semáforo y a pruebas locales reales.
+- No se ejecutó Demo, backtest ni operación financiera. Periodo/datos: revisión estática de `main@8741b3d` y contraste en el checkout posterior. ROI/PnL/WR antes y después de fees, Sharpe y EV/trade: `N/D`. La meta +100 %/72 h sigue sin demostrarse.
+
 ## 2026-10-24 — Claude (cloud, Línea C): lotes de retiro 47, 38, 39, 41, 42a, 51a, 19, 27a y 31
 
 Cuarta tanda del censo C-F7b (la tercera es el PR #124). Un commit por

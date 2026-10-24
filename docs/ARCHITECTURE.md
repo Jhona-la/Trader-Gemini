@@ -1,10 +1,17 @@
-# 🏛️ TRADER GEMINI: THE MASTER ARCHITECTURE MAP
+# TRADER GEMINI — Arquitectura (documento histórico)
 
-Este documento cartografía la arquitectura definitiva de grado institucional del proyecto **Trader Gemini**, un sistema de High-Frequency Trading (HFT) Multi-Horizonte (Scalping + Swing) diseñado para operar con latencias submilisegundo en Binance.
+> **Aviso de vigencia V33 (2026-10-24):** el contenido inferior describe el sistema Python/Numba histórico, no el workspace Rust actual. No debe usarse para inferir módulos vivos, capital, latencia ni conectividad. El inventario Rust vigente parte de `Cargo.toml` (21 crates + paquete raíz); la coordinación actual está en `AGENT_SYNC.md` y `docs/PLAN_MAESTRO_FASES_2026-10-22.md`. `docs/ARQUITECTURA_VIVA.md` aporta otro mapa, pero su fecha 2026-10-06 también exige verificación contra código.
+>
+> Mapa mínimo de paquetes del sistema Rust, no certificación exhaustiva de cada arista: `data-pipeline`/`data-ingest` → `quantum-arena` → `god-engine-core` → `risk-engine` → `execution-engine`; `evolution-engine` realimenta configuración y `telemetry-*`/`flight-recorder`/`storage-engine` sostienen observabilidad y persistencia. La procedencia y existencia de cada conexión se auditan por llamada real, no por este diagrama.
 
-**Última Actualización:** 2026-05-20  
-**Capital Base:** $13 USD → Duplicación exponencial cada 15 días  
-**Activos:** 25 pares trading con modelos XGBoost individuales
+---
+
+# 🏛️ TRADER GEMINI: THE MASTER ARCHITECTURE MAP (LEGADO PYTHON)
+
+Este documento cartografía la arquitectura histórica del proyecto **Trader Gemini** en su etapa Python/Numba. Las cifras de capital, activos, modelos y latencia de esta sección no están validadas para el workspace Rust actual y no constituyen objetivos ni resultados certificados.
+
+**Última actualización del documento histórico:** 2026-05-20
+**Estado:** legado; conservado solo como referencia de evolución arquitectónica.
 
 ---
 
