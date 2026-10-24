@@ -70,7 +70,10 @@
 //! reversión mucho más rápida que la rejilla (t½ ≪ Δ) el instrumento se
 //! debilita: a la escala de decisión esa base es ruido blanco. «Se abstiene»
 //! sólo es cierto con poco ruido de medida; con más de una desviación típica
-//! el tamaño de esta prueba sola sube al 7-10 % (ver arriba, EST-2).
+//! el tamaño de esta prueba sola sube al 7-10 % (ver arriba, EST-2). Sus
+//! sumas son momentos respecto al origen (el primer par) que se centran al
+//! final: con la base a D del origen su t pierde ≈ (D/σ)²·ε (medido:
+//! 2·10⁻⁸ con 10³σ, 2·10⁻⁴ con 10⁵σ; la prueba larga no, ver `Largo`).
 //!
 //! Prueba a la escala de decisión (C-F5b, EST-3 de la revisión del PR #60;
 //! estimador de C-F5e). La prueba de retardos cortos extrapola de Δ y 2Δ a

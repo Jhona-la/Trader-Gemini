@@ -149,26 +149,48 @@ fn cf5b_el_estadistico_incremental_es_el_de_la_definicion() {
     comparar_con_la_definicion(&serie(700, 41));
 }
 
-/// C-F5e (precisión, revisión de C-F5b). Verdad: lo mismo con la base
-/// alejándose del origen (el primer par) hasta 10³σ y 10⁵σ. En C-F5b las
-/// sumas eran de cuarto orden respecto al origen y su error crecía como
-/// (D/σ)⁴·ε: con 10³σ el t cambiaba hasta 0,1 y con 3·10³σ la varianza
-/// salía ≤ 0. Ahora x es la desviación respecto a la media del nodo e y una
-/// diferencia de muestras: las sumas no dependen del origen.
+/// C-F5e (precisión, revisión de C-F5b) y C-F5f (revisión de C-F5e). Verdad:
+/// el estadístico de la prueba larga no depende de lo lejos que quede la
+/// base del origen (el
+/// primer par). La base salta D = 10³σ y 10⁵σ justo después del primer par;
+/// cuando el transitorio del salto ya salió de las dos memorias (25 000
+/// celdas, peso e^{−49}), el estado es el de la misma serie sin salto, y
+/// también es el de la definición con el salto. Observado (windows-gnu y
+/// nativo): error relativo del t largo de 5·10⁻¹² y 5·10⁻¹⁰. Con el código de
+/// C-F5b (sumas de cuarto orden respecto al origen) este mismo test da
+/// 1,1·10⁻² con 10³σ y t = −∞ con 10⁵σ. Antes usaba una rampa: sus filas
+/// seguían en la memoria, dominaban las sumas y la desviación respecto a la
+/// media del nodo crecía con D, así que el código de C-F5b también lo pasaba.
+/// La prueba corta (CL-97) sí guarda momentos respecto al origen y los
+/// centra al final: pierde ≈ (D/σ)²·ε (2·10⁻⁸ con 10³σ, 2·10⁻⁴ con 10⁵σ),
+/// así que sólo se le exige 10⁻⁶ con 10³σ.
 #[test]
 fn cf5e_el_estadistico_no_pierde_precision_lejos_del_origen() {
+    let sin_salto = serie(25_000, 43);
+    let p0 = una_por_celda(&sin_salto);
+    let l0 = p0.estado_largo(NODO).expect("prueba larga sin salto");
+    let c0 = p0.estado_nodo(NODO).expect("prueba corta sin salto");
+    assert!(l0.madura && l0.t.is_finite() && c0.t.is_finite(), "{l0:?} {c0:?}");
+    let salto = |s: &[f64], d: f64| -> Vec<f64> {
+        s.iter().enumerate().map(|(c, v)| if c == 0 { *v } else { v + d }).collect()
+    };
     for d in [0.1, 10.0] {
-        let b: Vec<f64> = serie(2_000, 43)
-            .iter()
-            .enumerate()
-            .map(|(c, v)| v + d * (c as f64 / 600.0).min(1.0))
-            .collect();
-        comparar_con_la_definicion(&b);
+        let p = una_por_celda(&salto(&sin_salto, d));
+        let l = p.estado_largo(NODO).expect("prueba larga con salto");
+        let c = p.estado_nodo(NODO).expect("prueba corta con salto");
+        println!("observado: D = {d}: t {} vs {}, R̂ {} vs {}, t corto {} vs {}", l.t, l0.t, l.reversion, l0.reversion, c.t, c0.t);
+        assert!((l.t - l0.t).abs() <= 1e-8 * l0.t.abs().max(1.0), "D = {d}: {l:?} vs {l0:?}");
+        assert!((l.reversion - l0.reversion).abs() <= 1e-8, "D = {d}: {l:?} vs {l0:?}");
+        assert!((l.n - l0.n).abs() <= 1e-8 * l0.n, "D = {d}: {l:?} vs {l0:?}");
+        if d <= 0.1 {
+            assert!((c.t - c0.t).abs() <= 1e-6 * c0.t.abs().max(1.0), "D = {d}: {c:?} vs {c0:?}");
+        }
+        comparar_con_la_definicion(&salto(&serie(2_000, 43), d));
     }
 }
 
 /// Verdad: R̂, n y t no dependen del origen ni de la escala de la base
-/// (sumas centradas; t es homogéneo de grado 0). El desplazamiento lo
+/// (x e y son diferencias; t es homogéneo de grado 0). El desplazamiento lo
 /// absorbe el origen; el alejamiento del origen lo prueba
 /// `cf5e_el_estadistico_no_pierde_precision_lejos_del_origen`.
 #[test]
