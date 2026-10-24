@@ -238,26 +238,93 @@ impl TopologicalPersistenceEngine {
         let mut betti_0_arr = [1.0f64; NUM_FILTRATION_SCALES];
         let mut betti_1_arr = [0.0f64; NUM_FILTRATION_SCALES];
 
-        // 3. Filtración de Vietoris-Rips sobre cada escala
+        // 3. Filtración de Vietoris-Rips sobre cada escala calculando homología simplicial H_1 = Z_1 / B_1 exacta en F_2
         for (k, &eps_sq) in scales_sq.iter().enumerate() {
             let mut dsu = Dsu16::new(n);
-            let mut cycles = 0usize;
+            let mut active_edges = [0u64; 2];
+            let mut edge_count = 0usize;
             let mut p_idx = 0;
 
             for i in 0..n {
                 for j in (i + 1)..n {
                     if dist_sq[p_idx] <= eps_sq {
-                        let united = dsu.union(i as u8, j as u8);
-                        if !united {
-                            // Arista redundante entre vértices ya conectados engendra un 1-ciclo
-                            cycles += 1;
-                        }
+                        let word = p_idx / 64;
+                        let bit = p_idx % 64;
+                        active_edges[word] |= 1u64 << bit;
+                        dsu.union(i as u8, j as u8);
+                        edge_count += 1;
                     }
                     p_idx += 1;
                 }
             }
+
             betti_0_arr[k] = dsu.count as f64;
-            betti_1_arr[k] = cycles as f64;
+
+            // Dimensión del espacio de 1-ciclos en el 1-esqueleto: Z_1 = |E| - |V| + beta_0
+            let z1 = edge_count.saturating_sub(n).saturating_add(dsu.count);
+            if z1 == 0 {
+                betti_1_arr[k] = 0.0;
+                continue;
+            }
+
+            // Eliminación gaussiana sobre F_2 para calcular rango(boundary_2) de los 2-símplices (triángulos)
+            let mut basis = [[0u64; 2]; 120];
+            let mut has_basis = [false; 120];
+            let mut rank_b1 = 0usize;
+
+            'outer: for i in 0..n {
+                for j in (i + 1)..n {
+                    let e_ij = (i * (2 * n - 1 - i)) / 2 + (j - i - 1);
+                    let w_ij = e_ij / 64;
+                    let b_ij = e_ij % 64;
+                    if (active_edges[w_ij] & (1u64 << b_ij)) == 0 {
+                        continue;
+                    }
+
+                    for m in (j + 1)..n {
+                        let e_jm = (j * (2 * n - 1 - j)) / 2 + (m - j - 1);
+                        let w_jm = e_jm / 64;
+                        let b_jm = e_jm % 64;
+                        if (active_edges[w_jm] & (1u64 << b_jm)) == 0 {
+                            continue;
+                        }
+
+                        let e_im = (i * (2 * n - 1 - i)) / 2 + (m - i - 1);
+                        let w_im = e_im / 64;
+                        let b_im = e_im % 64;
+                        if (active_edges[w_im] & (1u64 << b_im)) == 0 {
+                            continue;
+                        }
+
+                        // Triángulo [i, j, m] activo en Vietoris-Rips: su frontera es e_ij + e_jm + e_im en F_2
+                        let mut v = [0u64; 2];
+                        v[w_ij] ^= 1u64 << b_ij;
+                        v[w_jm] ^= 1u64 << b_jm;
+                        v[w_im] ^= 1u64 << b_im;
+
+                        for pivot in 0..num_pairs {
+                            let pw = pivot / 64;
+                            let pb = pivot % 64;
+                            if (v[pw] & (1u64 << pb)) != 0 {
+                                if has_basis[pivot] {
+                                    v[0] ^= basis[pivot][0];
+                                    v[1] ^= basis[pivot][1];
+                                } else {
+                                    basis[pivot] = v;
+                                    has_basis[pivot] = true;
+                                    rank_b1 += 1;
+                                    if rank_b1 >= z1 {
+                                        break 'outer;
+                                    }
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            betti_1_arr[k] = (z1.saturating_sub(rank_b1)) as f64;
         }
 
         // 4. Entropía Persistente de Shannon sobre los 1-ciclos observados
