@@ -18,3 +18,4 @@ winapi = { version = "0.3", features = ["memoryapi", "processthreadsapi", "errha
 sysinfo = "0.39.6"
 quantum-arena = { path = "../quantum-arena" }
 telemetry-engine = { path = "../telemetry-engine" }
+sha2 = "0.10"
