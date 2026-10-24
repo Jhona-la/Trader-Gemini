@@ -35,16 +35,17 @@ fn test_f4_001_stateful_engine_koopman_and_quantum_streaming() {
     assert!(fe.quantum_delta_s.is_nan(), "quantum_delta_s debe arrancar en NaN");
     assert!(fe.quantum_entropy.is_nan(), "quantum_entropy debe arrancar en NaN");
 
-    let base_price = 50_000.0;
+    let mut price = 50_000.0;
     let mut ts = 1_700_000_000_000u64;
+    let mut rng = 123456789u64;
 
-    // Inyectar 130 ticks con dinámica oscilatoria no lineal continua
-    for i in 0..130 {
+    // Inyectar 130 ticks con dinámica estocástica no lineal rica (rango completo para Hankel)
+    for _ in 0..130 {
         ts += 100;
-        let phase = i as f64 * 0.15;
-        let delta = 50.0 * phase.sin() + 20.0 * (phase * 2.3).cos();
-        let price = base_price + delta;
-        let vol = 1.5 + 0.5 * (phase * 0.5).sin().abs();
+        rng = rng.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+        let ret = ((rng >> 32) as i32 as f64 / 2147483648.0) * 0.002;
+        price *= 1.0 + ret;
+        let vol = 1.0;
 
         fe.process_tick(price, vol, ts);
     }
