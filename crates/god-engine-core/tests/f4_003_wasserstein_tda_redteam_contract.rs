@@ -15,6 +15,9 @@ use execution_engine::{
 use god_engine_core::GodEngineCore;
 use quantum_arena::topological_persistence::TopologicalPersistenceEngine;
 use quantum_arena::{symbol_registry, symbols, GlobalArena};
+use std::sync::Mutex;
+
+static TEST_LOCK: Mutex<()> = Mutex::new(());
 
 #[test]
 fn test_c1_tda_betti_homology_zero_alloc() {
@@ -124,6 +127,7 @@ fn test_c4_red_team_nan_inf_immunity_and_fail_closed() {
 
 #[test]
 fn test_c5_god_engine_registry_tda_and_red_team_observables() {
+    let _guard = TEST_LOCK.lock().unwrap();
     const SIM: &str = "ETHUSDT";
     symbols::update_dynamic_universe(vec![SIM.into()]);
     symbol_registry::update_registry(vec![symbol_registry::get_official_binance_spec(SIM)]);
@@ -147,7 +151,7 @@ fn test_c5_god_engine_registry_tda_and_red_team_observables() {
             event_time,
             &[0.0; 54],
             true,
-            false,
+            true,
         );
     }
 
