@@ -565,13 +565,7 @@ impl StanfordDiscoveryEngine {
         metrics: &[SandboxEvaluationMetrics],
         aumann_shapley_weights: Option<[f64; PILLAR_COUNT]>,
     ) -> DistilledChampion {
-        assert_eq!(
-            candidates.len(),
-            metrics.len(),
-            "La cantidad de hipótesis y métricas debe ser idéntica"
-        );
-
-        if candidates.is_empty() {
+        if candidates.len() != metrics.len() || candidates.is_empty() {
             return DistilledChampion {
                 generation: self.current_generation,
                 champion_hypothesis: self.incumbent_hypothesis,
