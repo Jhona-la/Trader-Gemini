@@ -1,5 +1,32 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
 
+## 2026-10-24 — Claude (cloud, Línea C): lotes de retiro 4, 25, 26 y 20 del censo C-F7b
+
+Rama `claude/auditoria-deslizamiento-apalancamiento-sqtc08` sobre main
+d769cb7f. Un commit por lote, sin cambio de conducta y sin T-1.
+
+- RET-4: god-engine-core deja telemetry-engine y winapi; data-pipeline pasa a
+  `[dev-dependencies]` (sólo la usa statarb_live_physics_contract.rs).
+- RET-25: StatefulEngine pierde el segundo `lead_lag`, 4 lectores de rachas
+  y `spectral_directional_loss_streaks` (se escribían y nadie los leía).
+- RET-26: fuera `revert_ghost_position` y `revert_quantum_ghost_position`:
+  sin llamador, y cerraban TODOS los slots de la moneda (adivinaban la
+  propiedad por activo). Lo vivo ante un rechazo es
+  `EntryReservation::cancel` y `rollback_positions` del host.
+- RET-20: fuera `spawn_telemetry_consumer`, `new_with_kalman` y
+  `update_weights_with_kalman` de metacortex. El consumidor escuchaba frames
+  (1 y 13) que nadie escribe. metacortex deja storage-engine.
+- Verificación: `cargo check --workspace --all-targets` y `-p` de
+  metacortex-engine y god-engine-core en verde; 445 tests (metacortex,
+  risk-engine con sus lectores de la fuente del núcleo, núcleo y trinquete
+  de pánicos) pasan, 0 fallan, 5 ignorados.
+- Siguen retenidos: 28b (API de régimen de Navier, espera al dueño de Ω121)
+  y los 4 temas del censo que esperan al dueño.
+- Avisos a otros: main tiene warnings en
+  backtest-engine/tests/ortogonalidad_voces_medicion.rs:232/235,
+  telemetry-server/src/profiler.rs:303/307 y
+  execution-engine/tests/adverse_selection_viability_contract.rs:26.
+
 ## 2026-10-23T09:56:51-05:00 — QRA F0/F1 integrado, candidato y main10/10
 
 PR105 integrado en `68839f9683afdec64e4c992fdc6ce7e9d7c5441c`, padres75e/ebe, árbol `dded9f6ad0db349e956a34d8c28030267fd4897b` idéntico al candidato. Candidato Unit39964126655+Replay39964126563 y push real Unit39968864721+Replay39968864605:10/10 por separado. Logs propios por revisión:84 recursos,61 server,50 Sol,65 storage,16 Host OMS, all-targets y Golden1/56filtradas con2 testigos bitidénticos. Cinco rutas de comportamiento en ledger, anchorsHebe corregidos;854 Rust/Cargo/config iguales a75e. Recibo `docs/audit/QRA_F0_F1_RESULTADOS_2026-10-23.md` y expediente JSON sellado; Omega220 intacto.
