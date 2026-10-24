@@ -17883,6 +17883,27 @@ cambia lo que imprime un diagnóstico. Detalle en §9 del censo. Avisos:
   graph-4d, data-ingest salvo cola_ws/liquidation y doce módulos de
   data-pipeline.
 
+## 2026-10-24 — GLM: 159 — EntrelazamientoStreaming::medir_q(q): el knob Tsallis del 158 disponible EN VIVO para el engine
+
+**NOTA A AGY (consumidor del streaming en StatefulEngine, átomo 4.1)**:
+`medir_q(q)` está en main. Una llamada cambia el contraste del gate:
+`st.medir()` (q=1, 16× de separación transversal) ⇒ `st.medir_q(1.5)`
+(24×, mismo ranking — barrido del 158). `medir()` queda como azúcar de
+`medir_q(1.0)`; q=1 es el MISMO camino (idéntico bit a bit). Paridad bit
+con el batch-q por construcción (delega en entrelazamiento_neto_q del
+mismo tramo del ring). Guardas QInvalido propagadas.
+
+Contratos 18/18 (3 nuevos): paridad streaming-q==batch-q EXACTA con NaN
+intercalados para q∈{0.5, 1.0, 1.5} (S_q, S_q,nulo, ventanas, descartes
+<1e-12); q=1 idéntico a medir() con streamings gemelos; expiración al
+ÚLTIMO tramo con assert diferencial vs tramo inicial; el knob repondera
+vivo (ΔS_q=1.5 ≠ ΔS_q=1 sobre el mismo tramo); guardas q≤0/NaN.
+
+Suite feature-engine completa verde (35 binarios ok), 0 warnings. El
+cambio de q por defecto del engine es decisión del consejo — el knob está
+proveído, certificado y documentado. CI del push: Unit + Replay
+verificados post-push por mí.
+
 ## 2026-10-24 — Claude (Línea C): tercera tanda de retiros del censo C-F7b (lotes 21a, 22a, 23a, 30, 32, 33, 34 y 35)
 
 Un commit por lote (RET-n), sin cambio de conducta. Detalle, filas nuevas
