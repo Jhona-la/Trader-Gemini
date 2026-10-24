@@ -26,9 +26,9 @@
 //! - EST-3: en el caso del revisor (OU de 2 celdas más OU de 1 676 celdas
 //!   con 10,4 veces su desviación) la prueba corta sola vota en ≥ 10 % de
 //!   los instantes y el veredicto en ≤ 3 %;
-//! - contrato de decisión: con bases de dos escalas en las que la desviación
-//!   media revierte justo la mitad en τ_k, lo que se vota revierte al
-//!   menos la mitad;
+//! - bases de dos escalas: en las dos familias medidas, con la desviación
+//!   media revirtiendo justo la mitad en τ_k, lo que se vota revierte al
+//!   menos la mitad (es una medición en esas bases, no una garantía);
 //! - EST-2: con ruido de medida fuerte en la frontera de la prueba corta,
 //!   el veredicto no vota;
 //! - potencia: con t½ = τ_k/5 y sin ruido, el veredicto rechaza en ≥ 84 %
@@ -284,9 +284,10 @@ fn cf5b_el_caso_del_revisor_no_vota() {
     }
 }
 
-/// Esperado (contrato de decisión): con bases de dos escalas ajustadas para
-/// que la desviación media respecto a la media del nodo revierta justo la
-/// mitad en τ_k, lo que se vota revierte al menos la mitad (observado: 0,72
+/// Esperado (medido en estas dos familias, no garantizado en toda base de
+/// dos escalas): con las amplitudes ajustadas para que la desviación media
+/// respecto a la media del nodo revierta justo la mitad en τ_k, lo que se
+/// vota revierte al menos la mitad (observado: 0,72
 /// y 0,76 con todos los votos; prototipo: 0,65 y 0,67). Familias: OU de 2
 /// celdas + caminata, y OU de 2 celdas + OU de 1 676 celdas (las amplitudes
 /// del prototipo, `frontera.json`). En ellas el veredicto vota en el 8-16 %

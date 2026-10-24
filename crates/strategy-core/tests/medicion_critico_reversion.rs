@@ -17,7 +17,8 @@
 //! decisión (`SESGO_LARGO`) en su frontera: el OU cuya
 //! desviación votada estima justo ½ con la extrapolación de orden 2 (vida
 //! media de 7,7591 celdas sin ruido, 7,011 con ruido de ¼ σ y 5,2285 con
-//! ½ σ; con ruido ≥ 0,8 σ ningún OU único sale de H0). Nodos 17 y 18, pares
+//! ½ σ; con ruido ≥ 1 σ todo OU único está en H0 y entre ≈ 0,82 σ y 1 σ
+//! ninguno llega al ½ del estimando). Nodos 17 y 18, pares
 //! cada 0,25 a 4 s, edades de 2,2 a 16 memorias, N = 5 000; además, con
 //! ruido de 1 a 10 σ y t½ = τ_k/5 (dentro de H0) y con volatilidad por
 //! rachas en la frontera sin ruido. Calibrada con el prototipo numpy del
