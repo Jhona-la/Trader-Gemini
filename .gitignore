@@ -133,3 +133,7 @@ NUL.*
 # ni los diagnósticos de agentes (outputs/, 19 MB de Sol sin versionar) suben al repo.
 *.bin
 outputs/
+
+# V33: transacciones de rescate y semáforo de compilación solo locales.
+/.agent_tx/
+/.cargo_compile.lock
