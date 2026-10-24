@@ -278,10 +278,7 @@ pub trait ExecutionProvider: Send + Sync {
     async fn cancel_order(&self, symbol: &str, client_order_id: &str) -> Result<(), String>;
 
     /// Cancela todas las órdenes activas para un símbolo en Binance (ej: OCO TP/SL huérfanos)
-    async fn cancel_all_symbol_orders(&self, symbol: &str) -> Result<(), String> {
-        let _ = symbol;
-        Ok(())
-    }
+    async fn cancel_all_symbol_orders(&self, symbol: &str) -> Result<(), String>;
 
     /// D-371: Cancela únicamente órdenes OCO de la posición específica (LONG/SHORT)
     async fn cancel_position_oco_orders(

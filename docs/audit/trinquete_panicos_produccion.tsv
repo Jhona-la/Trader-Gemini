@@ -9,7 +9,6 @@ evolution-engine	crates/evolution-engine/src/cma_es.rs	0	1	0	0
 evolution-engine	crates/evolution-engine/src/online_daemon.rs	0	1	0	0
 evolution-engine	crates/evolution-engine/src/polars_evolver.rs	1	0	0	0
 execution-engine	crates/execution-engine/src/executor.rs	0	1	0	0
-execution-engine	crates/execution-engine/src/shadow.rs	1	0	0	0
 execution-engine	crates/execution-engine/src/simulator.rs	2	0	0	0
 feature-engine	crates/feature-engine/src/correlation.rs	0	1	0	0
 feature-engine	crates/feature-engine/src/ewma.rs	0	2	0	0
