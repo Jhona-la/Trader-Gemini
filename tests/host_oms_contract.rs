@@ -3,7 +3,10 @@
 use arc_swap::ArcSwap;
 use execution_engine::{
     entry_dispatch::{EntryRequest, EntryRoute, EntryTransport},
-    executor::OrderExecutor,
+    executor::{
+        EDAD_MINIMA_INEXISTENCIA_MS, HORIZONTE_CONSULTA_ORDEN_MS, OrderExecutor,
+        error_es_orden_inexistente, inexistencia_probada,
+    },
     order_types::OrderAck,
     reconciliation::PositionRiskEntry,
 };
@@ -975,4 +978,112 @@ async fn refresh_freezes_new_entries_and_drains_submission_without_closing_its_u
         "an already admitted request is not retracted"
     );
     assert_eq!(transport.submitted.load(Ordering::Relaxed), 1);
+}
+
+/// LG-32: cuerpo real del -2013 tal como lo formatea el cliente HTTP.
+const ORDEN_INEXISTENTE: &str =
+    r#"Binance API Error: status=400 Bad Request body={"code":-2013,"msg":"Order does not exist."}"#;
+
+/// LG-32: una intención pura (sin orderId ni fills) ausente de openOrders bloqueaba
+/// las entradas para siempre: nada la consultaba y `unresolved_orders` no bajaba de 1.
+/// Ahora una consulta que responde -2013 pasado el plazo de la ventana de Binance la
+/// cierra y el OMS vuelve a autorizar. Un -2013 demasiado pronto o cualquier otro
+/// error no cierran nada.
+#[test]
+fn lg32_intencion_pura_con_inexistencia_probada_deja_de_bloquear() {
+    let _universe = universe();
+    let arena = GlobalArena::build_in_own_stack(100.0);
+    let (session, ready) = session(true, false);
+    session.initialize_arena(&arena);
+    let token = session.snapshot_token();
+    let executor = token.executor();
+    let registry = executor.registry();
+    let creada = 1_000_000;
+    registry.register_intent("lg32_nunca_aceptada", "BTCUSDT", "BUY", "LONG", "MARKET", 0.01, creada);
+    let bloqueado = session.apply_snapshot(
+        &token,
+        Ok(flat_positions()),
+        Ok(Vec::new()),
+        fees(&token),
+        &arena,
+        creada + 1,
+    );
+    assert_eq!(bloqueado.status, SnapshotStatus::Blocked);
+    assert_eq!(bloqueado.unresolved_orders, 1);
+
+    let orden = registry.get("lg32_nunca_aceptada").expect("intención registrada");
+    let pronto = creada + EDAD_MINIMA_INEXISTENCIA_MS - 1;
+    assert!(!executor.aplicar_consulta_de_intencion_ausente(&orden, pronto, Err(ORDEN_INEXISTENTE)));
+    assert!(!executor.aplicar_consulta_de_intencion_ausente(
+        &orden,
+        creada + 60_000,
+        Err("Network Error: operation timed out")
+    ));
+    assert_eq!(registry.active_orders().len(), 1, "sin prueba la intención sigue activa");
+
+    let a_tiempo = creada + EDAD_MINIMA_INEXISTENCIA_MS;
+    assert!(executor.aplicar_consulta_de_intencion_ausente(&orden, a_tiempo, Err(ORDEN_INEXISTENTE)));
+    let listo = session.apply_snapshot(
+        &token,
+        Ok(flat_positions()),
+        Ok(Vec::new()),
+        fees(&token),
+        &arena,
+        a_tiempo + 1,
+    );
+    assert_eq!(listo.status, SnapshotStatus::Ready);
+    assert_eq!(listo.unresolved_orders, 0);
+    assert!(ready.load(Ordering::Acquire));
+}
+
+/// LG-32: una orden que el exchange ya reconoció (orderId) no se cierra con un -2013:
+/// existió, y el registro local no prueba que no tuviera fills. Un ack terminal válido
+/// sin ejecución sí la cierra, por la misma validación que el resto de consultas.
+#[test]
+fn lg32_orden_reconocida_solo_se_cierra_con_un_ack_terminal_valido() {
+    let _universe = universe();
+    let (session, _ready) = session(true, false);
+    let token = session.snapshot_token();
+    let executor = token.executor();
+    let registry = executor.registry();
+    let creada = 2_000_000;
+    registry.register_intent("lg32_reconocida", "BTCUSDT", "BUY", "LONG", "LIMIT", 0.01, creada);
+    let nueva = OrderAck {
+        symbol: "BTCUSDT".into(),
+        client_order_id: "lg32_reconocida".into(),
+        order_id: 77,
+        side: "BUY".into(),
+        status: "NEW".into(),
+        order_type: "LIMIT".into(),
+        orig_qty: 0.01,
+        ..Default::default()
+    };
+    registry.apply_ack(&nueva, creada + 10);
+    let orden = registry.get("lg32_reconocida").expect("orden reconocida");
+    assert!(!executor.aplicar_consulta_de_intencion_ausente(&orden, creada + 60_000, Err(ORDEN_INEXISTENTE)));
+    assert_eq!(registry.active_orders().len(), 1);
+
+    let cancelada = OrderAck {
+        status: "CANCELED".into(),
+        ..nueva
+    };
+    assert!(executor.aplicar_consulta_de_intencion_ausente(&orden, creada + 60_000, Ok(&cancelada)));
+    assert!(registry.active_orders().is_empty());
+}
+
+/// LG-32: sólo el código -2013 leído del JSON cuenta, y sólo dentro del horizonte en
+/// que Binance garantiza encontrar las órdenes con fills (90 días).
+#[test]
+fn lg32_la_inexistencia_exige_el_codigo_y_el_horizonte_documentados() {
+    assert!(error_es_orden_inexistente(ORDEN_INEXISTENTE));
+    assert!(!error_es_orden_inexistente("-2013"));
+    assert!(!error_es_orden_inexistente(
+        r#"Binance API Error: status=400 Bad Request body={"code":-2011,"msg":"Unknown order sent."}"#
+    ));
+    assert!(!error_es_orden_inexistente("Binance API Error: status=502 body=<html>"));
+    assert!(!inexistencia_probada(0, EDAD_MINIMA_INEXISTENCIA_MS));
+    assert!(inexistencia_probada(1, 1 + EDAD_MINIMA_INEXISTENCIA_MS));
+    assert!(!inexistencia_probada(1, EDAD_MINIMA_INEXISTENCIA_MS));
+    assert!(!inexistencia_probada(1, 1 + HORIZONTE_CONSULTA_ORDEN_MS));
+    assert!(!inexistencia_probada(10_000, 5_000), "reloj hacia atrás");
 }

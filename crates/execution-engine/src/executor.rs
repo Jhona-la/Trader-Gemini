@@ -367,6 +367,56 @@ pub enum OrderResolution {
     Timeout,
 }
 
+/// LG-32: ventana de validez por defecto de Binance para una petición firmada
+/// que no envía `recvWindow` (documentación USDⓈ-M Futures, «Timing
+/// security»). Ninguna petición del motor envía `recvWindow`.
+pub const VENTANA_RECV_BINANCE_MS: u64 = 5_000;
+/// LG-32: Binance rechaza un `timestamp` más de 1 000 ms por delante de su
+/// propio reloj (misma documentación).
+pub const TOLERANCIA_FUTURO_BINANCE_MS: u64 = 1_000;
+/// LG-32: GET /fapi/v1/order no encuentra órdenes creadas hace más de 90 días.
+pub const HORIZONTE_CONSULTA_ORDEN_MS: u64 = 90 * 86_400_000;
+/// LG-32: edad mínima de una intención, en el reloj sincronizado, para que un
+/// -2013 pruebe que su orden nunca se ejecutó. Ver [`inexistencia_probada`].
+pub const EDAD_MINIMA_INEXISTENCIA_MS: u64 =
+    2 * VENTANA_RECV_BINANCE_MS + TOLERANCIA_FUTURO_BINANCE_MS;
+
+/// LG-32: el error de una consulta es el código -2013 («Order does not
+/// exist») de Binance. El cliente formatea los errores HTTP como
+/// `... body=<json>`; sólo se acepta el código leído del JSON.
+pub fn error_es_orden_inexistente(error: &str) -> bool {
+    let Some((_, cuerpo)) = error.split_once("body=") else {
+        return false;
+    };
+    serde_json::from_str::<serde_json::Value>(cuerpo.trim())
+        .ok()
+        .and_then(|v| v.get("code").and_then(serde_json::Value::as_i64))
+        == Some(-2013)
+}
+
+/// LG-32: ¿prueba un -2013 que la orden de una intención creada en
+/// `creada_ms` nunca se ejecutó, si la consulta se firmó en `consulta_ms`?
+///
+/// GET /fapi/v1/order encuentra toda orden con algún fill creada hace menos de
+/// 90 días; sólo deja de encontrar las canceladas o expiradas sin fills de más
+/// de 3 días. Un -2013 dentro del horizonte significa «ningún fill», salvo que
+/// la orden todavía no haya llegado al motor de casamiento:
+/// - la petición de la orden se firmó con `timestamp = creada_ms`
+///   (`register_intent` recibe el mismo valor), y el gateway sólo la acepta si
+///   llega antes de `creada_ms + W` en el reloj de Binance (W = recvWindow);
+/// - la consulta fue respondida, así que su `timestamp` no iba más de 1 000 ms
+///   por delante: el reloj de Binance al recibirla superaba `consulta_ms − 1 000`.
+///
+/// Con `consulta_ms − creada_ms ≥ 2W + 1 000`, la consulta llega más de W
+/// después del último instante en que la orden pudo aceptarse. Ese W de
+/// margen es para el paso del gateway al motor de casamiento: Binance no
+/// documenta esa latencia (el -1007 deja el estado «desconocido»), así que es
+/// un supuesto, no una garantía; el coste de ampliarlo es sólo esperar más.
+pub fn inexistencia_probada(creada_ms: u64, consulta_ms: u64) -> bool {
+    let edad = consulta_ms.saturating_sub(creada_ms);
+    creada_ms > 0 && edad >= EDAD_MINIMA_INEXISTENCIA_MS && edad < HORIZONTE_CONSULTA_ORDEN_MS
+}
+
 impl OrderExecutor {
     pub fn new(api_key: String, api_secret: String, is_testnet: bool) -> Self {
         let reloj = Arc::new(ArcSwapOption::empty());
@@ -502,8 +552,9 @@ impl OrderExecutor {
         if resolution == OrderResolution::Timeout {
             return resolution;
         }
-        // CL-191: inalcanzable (un error de consulta ya es Timeout arriba), pero
-        // sin expect: un error nunca prueba ni rechazo ni ejecución.
+        // CL-191/LG-32: inalcanzable (un error de consulta ya es Timeout
+        // arriba), pero sin expect: un error nunca prueba ni rechazo ni
+        // ejecución.
         let Ok(ack) = result else {
             return OrderResolution::Timeout;
         };
@@ -523,6 +574,83 @@ impl OrderExecutor {
             }
         }
         resolution
+    }
+
+    /// LG-32: aplica la consulta REST de una intención local activa que no
+    /// aparece en openOrders. Devuelve `true` si la intención dejó de estar
+    /// activa.
+    ///
+    /// Un ack válido entra por `record_query_resolution` (misma validación de
+    /// identidad que el resto de consultas). Un -2013 sólo cierra la
+    /// intención si [`inexistencia_probada`] lo permite, y aun así
+    /// `mark_local_reject` sólo toca una intención pura: `New`, sin `orderId`
+    /// ni ejecución. Cualquier otro error deja la intención como estaba.
+    pub fn aplicar_consulta_de_intencion_ausente(
+        &self,
+        orden: &crate::order_registry::TrackedOrder,
+        consulta_ms: u64,
+        resultado: Result<&OrderAck, &str>,
+    ) -> bool {
+        match resultado {
+            Ok(_) => {
+                self.record_query_resolution(&orden.symbol, &orden.client_order_id, resultado);
+            }
+            Err(error) => {
+                if error_es_orden_inexistente(error)
+                    && inexistencia_probada(orden.created_ms, consulta_ms)
+                {
+                    self.order_registry
+                        .mark_local_reject(&orden.client_order_id, consulta_ms);
+                }
+            }
+        }
+        self.order_registry
+            .get_status(&orden.client_order_id)
+            .is_some_and(|s| !s.is_active())
+    }
+
+    /// LG-32: consulta por REST, de la más antigua a la más reciente, las
+    /// intenciones activas del registro que no están en `abiertas` (la lista
+    /// de openOrders recién leída), como mucho `max_consultas`. Devuelve
+    /// cuántas dejaron de estar activas.
+    ///
+    /// Antes nada consultaba estas intenciones: una orden que el exchange
+    /// nunca aceptó quedaba activa para siempre y el OMS bloqueaba las
+    /// entradas de toda la sesión (estado absorbente).
+    pub async fn resolver_intenciones_ausentes(
+        &self,
+        abiertas: &[OrderAck],
+        max_consultas: usize,
+    ) -> usize {
+        if self.is_paper_trading || max_consultas == 0 {
+            return 0;
+        }
+        let presentes: std::collections::HashSet<&str> =
+            abiertas.iter().map(|o| o.client_order_id.as_str()).collect();
+        let mut ausentes: Vec<crate::order_registry::TrackedOrder> = self
+            .order_registry
+            .active_orders()
+            .into_iter()
+            .filter(|o| !presentes.contains(o.client_order_id.as_str()))
+            .collect();
+        ausentes.sort_by_key(|o| o.created_ms);
+        let mut resueltas = 0;
+        for orden in ausentes.into_iter().take(max_consultas) {
+            // La marca se toma ANTES de consultar: `query_order` firma con un
+            // reloj igual o posterior (salvo un ajuste del offset NTP entre
+            // las dos lecturas, que cubre el margen W de `inexistencia_probada`),
+            // así que la edad no se sobrestima.
+            let consulta_ms = self.get_synced_timestamp();
+            let resultado = self.query_order(&orden.symbol, &orden.client_order_id).await;
+            if self.aplicar_consulta_de_intencion_ausente(
+                &orden,
+                consulta_ms,
+                resultado.as_ref().map_err(String::as_str),
+            ) {
+                resueltas += 1;
+            }
+        }
+        resueltas
     }
 
     /// FIX M4-C01: gate de confirmación para envíos WS. Retorna Ok(()) SOLO

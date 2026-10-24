@@ -20,6 +20,11 @@ use std::sync::{
 };
 use tokio::sync::Notify;
 
+/// LG-32: consultas REST por refresco para intenciones ausentes de openOrders (peso 1
+/// cada una). Una por ranura de entrada del arena; el resto espera al refresco siguiente.
+pub const MAX_CONSULTAS_INTENCIONES_AUSENTES: usize =
+    quantum_arena::state::MAX_COINS * quantum_arena::position::MAX_SPECTRAL_SLOTS;
+
 pub struct OmsSession {
     executors: Arc<ArcSwap<OrderExecutor>>,
     ready: Arc<AtomicBool>,
@@ -529,6 +534,15 @@ impl OmsSession {
             return self.apply_snapshot(&token, positions, Ok(Vec::new()), fees, arena, now_ms());
         }
         let orders = token.executor.fetch_all_open_orders().await;
+        // LG-32: una intención local activa ausente de openOrders se consulta por REST
+        // antes de decidir. Sin esto, una orden que el exchange nunca aceptó dejaba
+        // `unresolved_orders > 0` para siempre y el OMS no volvía a autorizar entradas.
+        if let Ok(abiertas) = &orders {
+            token
+                .executor
+                .resolver_intenciones_ausentes(abiertas, MAX_CONSULTAS_INTENCIONES_AUSENTES)
+                .await;
+        }
         self.apply_snapshot(&token, positions, orders, fees, arena, now_ms())
     }
 

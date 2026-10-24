@@ -3805,7 +3805,10 @@ mod tests_cl162 {
             }
         }
         assert!(tope_muta, "control: el gen 33 (kelly_clamp_max) sigue mutando");
+    }
+}
 
+#[cfg(test)]
 mod tests_lg30 {
     use super::*;
 
