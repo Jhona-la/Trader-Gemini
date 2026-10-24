@@ -406,21 +406,25 @@ impl ChannelWelfordStats {
         }
     }
 
-    /// N-11: Normalización sin mutación de estado (estadísticos congelados).
-    /// Evita que media/varianza muten durante la inferencia (predict), garantizando
-    /// determinismo y consistencia exacta entre backtest y live.
+    /// RET-47a (censo C-F7b, F47): el z de inferencia, uno solo para las dos
+    /// ramas vivas de `predict_in_context` (normalizadores congelados y
+    /// adaptativos). Sin varianza suficiente (σ ≤ 1e-6, arranque en frío) el
+    /// z es 0 neutral (D-252); un z no finito devuelve `None` y el llamador
+    /// no infiere; si no, la cola suave de `soft_tail_winsorize` sobre el z
+    /// recortado a ±5. Sustituye a `transform`, que no tenía llamador y se
+    /// apartaba de las dos copias en línea (recortaba el desborde en vez de
+    /// abstenerse y no winsorizaba). `normalize`, el z de `fit`, sigue
+    /// aparte hasta decidir F50.
     #[inline(always)]
-    pub fn transform(&self, val: f64) -> f64 {
-        if !val.is_finite() {
-            return 0.0;
-        }
+    fn z_acotado(&self, raw: f64) -> Option<f64> {
         let std = self.std_dev();
-        if std > 1e-6 {
-            ((val - self.mean) / std).clamp(-5.0, 5.0)
+        let z = if std > 1e-6 {
+            (raw - self.mean) / std
         } else {
-            // D-252: Si no hay varianza suficiente (cold start), retornar 0.0 neutral en vez de saturar en +/-5.0
             0.0
-        }
+        };
+        z.is_finite()
+            .then(|| soft_tail_winsorize(z.clamp(-5.0, 5.0)))
     }
 }
 
@@ -615,16 +619,7 @@ impl DarkAlphaEngine {
                     .and_then(|v| v.get(i))
                     .filter(|s| s.is_ready());
                 let stats = global.or(local)?;
-                let std = stats.std_dev();
-                let z = if std > 1e-6 {
-                    (raw - stats.mean) / std
-                } else {
-                    0.0
-                };
-                if !z.is_finite() {
-                    return None;
-                }
-                self.buf_scaled[i] = soft_tail_winsorize(z.clamp(-5.0, 5.0));
+                self.buf_scaled[i] = stats.z_acotado(raw)?;
             }
         } else {
             let stats = if let Some(c) = coin_id {
@@ -650,16 +645,7 @@ impl DarkAlphaEngine {
                 if !next.is_valid() {
                     return None;
                 }
-                let std = next.std_dev();
-                let z = if std > 1e-6 {
-                    (raw - next.mean) / std
-                } else {
-                    0.0
-                };
-                if !z.is_finite() {
-                    return None;
-                }
-                self.buf_scaled[i] = soft_tail_winsorize(z.clamp(-5.0, 5.0));
+                self.buf_scaled[i] = next.z_acotado(raw)?;
             }
             for (stats, &raw) in stats.iter_mut().zip(&features[..dim]) {
                 stats.update(raw);
@@ -1032,6 +1018,53 @@ mod tests {
         assert!(final_pred.is_finite());
         // For target 1.0, final_pred should stay high or increase towards 1.0
         assert!(final_pred >= initial_pred || final_pred > 0.50);
+    }
+
+    /// RET-47a: `z_acotado` reproduce bit a bit la fórmula que las dos ramas
+    /// de `predict_in_context` llevaban en línea, también en los bordes:
+    /// σ en el umbral 1e-6, z más allá de ±5 y desborde a ±∞.
+    #[test]
+    fn ret47a_z_acotado_reproduce_la_formula_en_linea() {
+        fn en_linea(s: &ChannelWelfordStats, raw: f64) -> Option<f64> {
+            let std = s.std_dev();
+            let z = if std > 1e-6 {
+                (raw - s.mean) / std
+            } else {
+                0.0
+            };
+            if !z.is_finite() {
+                return None;
+            }
+            Some(soft_tail_winsorize(z.clamp(-5.0, 5.0)))
+        }
+        let regimenes = [(1.0, false), (2.0, false), (50.0, false), (50.0, true)];
+        let mut casos = 0usize;
+        let mut nones = 0usize;
+        for &mean in &[0.0, -3.0, 1e300, -1e300] {
+            for &m2 in &[0.0, 1e-14, 1e-12, 1.0000001e-12, 4.0, 1e-300, 1e300] {
+                for &(count, is_decay) in &regimenes {
+                    let s = ChannelWelfordStats {
+                        count,
+                        mean,
+                        m2,
+                        is_decay,
+                    };
+                    for &raw in &[0.0, 1.0, -1.0, 4.999, 5.0, 7.5, -1e6, 1e308, -1e308] {
+                        let nuevo = s.z_acotado(raw);
+                        let viejo = en_linea(&s, raw);
+                        assert_eq!(
+                            nuevo.map(f64::to_bits),
+                            viejo.map(f64::to_bits),
+                            "mean={mean} m2={m2} count={count} decay={is_decay} raw={raw}"
+                        );
+                        casos += 1;
+                        nones += usize::from(nuevo.is_none());
+                    }
+                }
+            }
+        }
+        assert!(casos > 1000);
+        assert!(nones > 0, "la rejilla debe cubrir el desborde a ±∞");
     }
 
     #[test]
