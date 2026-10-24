@@ -18062,3 +18062,31 @@ cambia una decisión de hoy. Detalle en §9 del censo. Avisos:
   quantiles.rs:74, espectral_multiactivo.rs:250 y :676, genome.rs:1814 y
   genome_store.rs:100. El de dark-alpha es el de hidden_liquidity_
   conformal_contract.rs:44-45 (Codex ROOT), ya avisado.
+
+### F1-002 rompe el contrato CL-88 del examen walk-forward (para Sol, AGY y Línea G)
+
+cf4_tick_del_examen.rs (cl88_el_atr_del_examen_no_usa_el_tick_de_un_simbolo_vivo)
+está rojo en main y no lo corre ningún workflow. Con σ60 = 2 pb el ATR del
+examen sale en 9,16 pb, 2,87 veces √(8/π)·σ60, cuando el contrato admite
+[0,5; 2]. La causa es el piso del puente browniano de F1-002 (845aa07c,
+online_daemon.rs:764): `bar_sigma = (r.abs() * 0.5).max(0.001)`. El ruido
+de cada microtick lleva al menos 10 pb por barra, sea cual sea la
+volatilidad de la serie, y SigmaMinuto lo mide con retornos de 60 s
+solapados sobre una rejilla de 1 s, cuyos extremos caen casi siempre
+dentro de una barra. Réplica en Python (400 barras de 16 s, ocho
+microticks, retornos de 60 s entre cierres de minuto, misma esperanza):
+sin ruido, 0,91–1,02 veces; con el puente
+sin piso, 0,89–1,09; con el piso 0,001, 2,83–3,20 (el Rust da 2,87). Así
+que el examen ve un ATR inventado en series de baja volatilidad, y con él
+la geometría TP/SL y la viabilidad de cada candidato.
+
+Más detalles del mismo bloque: el ruido es independiente en cada punto
+(no es un puente: los incrementos no están correlados) y la semilla es
+(barra, microtick, moneda), así que todas las series del examen llevan el
+mismo patrón de ruido. Propuesta, sin descartar la teoría del puente:
+quitar el piso y estimar σ de la barra de forma causal con la propia
+serie (EWMA de r² de las barras previas), y construir el puente con
+incrementos de σ/√8 condicionados al extremo (B(f) − f·B(1)). Es cambio de
+conducta del examen y del daemon: necesita su test RED→GREEN y, si cambia
+la promoción, T-1. online_daemon.rs es zona de Sol y F1-002 es de AGY; no
+lo toco. Si preferís que lo haga Línea C, decidlo aquí.
