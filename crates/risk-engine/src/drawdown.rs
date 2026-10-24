@@ -177,15 +177,6 @@ pub fn leer_pico(ruta: &std::path::Path) -> CargaPico {
     }
 }
 
-/// CL-99 — el pico guardado, si se pudo leer. `None` si no hay archivo o es
-/// ilegible: para distinguir los dos casos, [`leer_pico`].
-pub fn cargar_pico(ruta: &std::path::Path) -> Option<f64> {
-    match leer_pico(ruta) {
-        CargaPico::Leido(pico) => Some(pico),
-        CargaPico::Ausente | CargaPico::Ilegible(_) => None,
-    }
-}
-
 /// CL-133 (R5 de la revisión del PR #62) — nombre del archivo del pico del
 /// VENUE de este proceso. Testnet y papel de mainnet guardan en `data/demo`
 /// (CL-61): con un solo archivo, el pico de 5 000 USDT de una sesión de
