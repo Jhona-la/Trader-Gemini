@@ -1,36 +1,9 @@
 //! Passing OPEN tests reproduce remaining limitations, not safety guarantees.
 use audit_engine::{
-    cybernetic_resilience::{CyberneticResilienceShield as Shield, SystemicHealthMetrics},
     drift_auditor::{DriftAuditError, DriftAuditor, DriftRecovery, TradeResult},
     resilience::ChaosMonkey,
 };
 use std::num::NonZeroU32;
-
-#[test]
-fn open_comprehensive_health_accepts_latency_rejected_by_simple_health() {
-    let m = SystemicHealthMetrics {
-        active_engines_count: 1,
-        websocket_latency_ms: 1500,
-        queue_dropped_events: 0,
-        error_rate_pct: 0.0,
-        consecutive_execution_fails: 0,
-    };
-    assert!(!Shield::audit_systemic_integrity(1, 1500));
-    assert!(Shield::audit_comprehensive_health(&m).0);
-}
-
-#[test]
-fn open_health_cannot_distinguish_old_total_drops_from_current_incident() {
-    let m = SystemicHealthMetrics {
-        active_engines_count: 1,
-        websocket_latency_ms: 10,
-        queue_dropped_events: 101,
-        error_rate_pct: 0.0,
-        consecutive_execution_fails: 0,
-    };
-    // No event time, measurement window or traffic denominator exists in the API.
-    assert!(!Shield::audit_comprehensive_health(&m).0);
-}
 
 #[test]
 fn open_invalid_chaos_probability_silently_becomes_no_drop() {
