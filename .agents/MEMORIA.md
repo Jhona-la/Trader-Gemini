@@ -1,5 +1,27 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
 
+## 2026-10-24 — Claude (cloud, Línea C): C-F5f, seguimiento de la revisión de C-F5e
+
+Revisión adversaria de C-F5e (#79) por dimensión (estadística, código,
+integración), cada hallazgo con verificador y escéptico: 7 hallazgos, todos
+de severidad baja, ninguno cambia el nivel calibrado ni una orden.
+
+- Documentación de `prueba_reversion`: con ruido 0,8σ el estimando aún llega
+  a 0,509 (r* ≈ 0,817; todo OU en H0 sólo con r ≥ 1); las bases de dos
+  escalas votan un 7-8 % también en régimen estacionario; «≤ 5 %» vale para
+  el H0 de un OU único; R̂ ≤ R supone ruido de medida sin correlación entre
+  celdas (con AR(1) φ = ½ y r = ½ el veredicto votaría 7-16 %).
+- `StatArbEngine::veredicto`: fuera `v.sigma.max(piso)`, que no cambiaba
+  ninguna salida.
+- El barrido de los tests guarda el t del nodo k (antes, el del nodo que
+  contrasta el veredicto). Medición del crítico corto rehecha en nativo
+  release: cuantil 95 máximo 1,761 (igual que el 2026-10-12).
+- El test de precisión lejos del origen ahora falla con el código de C-F5b
+  (1,1·10⁻² con 10³σ, t = −∞ con 10⁵σ) y pasa con el actual (≤ 5,5·10⁻¹⁰).
+  Hallazgo nuevo, sólo documentado: la prueba CORTA pierde ≈ (D/σ)²·ε lejos
+  del primer par (2·10⁻⁸ con 10³σ, 2·10⁻⁴ con 10⁵σ). Abierto, prioridad baja.
+- Comentarios de 3 fixtures del núcleo corregidos para el respaldo de CL-150.
+
 ## 2026-10-24 — Claude (cloud, Línea C): lotes de retiro 4, 25, 26 y 20 del censo C-F7b
 
 Rama `claude/auditoria-deslizamiento-apalancamiento-sqtc08` sobre main
