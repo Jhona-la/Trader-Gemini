@@ -12,7 +12,7 @@ pub fn get_global_client() -> &'static Client {
             .pool_idle_timeout(None)
             .pool_max_idle_per_host(50)
             .timeout(Duration::from_secs(5))
-                        .build()
-            .expect("Fallo al inicializar Quantum Global HTTP Client")
+            .build()
+            .unwrap_or_else(|_| Client::new())
     })
 }
