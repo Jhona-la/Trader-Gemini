@@ -917,11 +917,13 @@ impl SuperGenotype {
             global_max_drawdown: 0.96,
             // D-644: misma banda que la mutación y los bounds.
             global_leverage: rand::rng().random_range(1.0..50.0),
+            // LG-30 (enmendado GLM-166): los 7 congelados nacen en el valor del
+            // genoma base; btc/eth_volatility_multiplier siguen VIVOS (random).
             btc_volatility_multiplier: rand::rng().random_range(0.5..3.0),
             eth_volatility_multiplier: rand::rng().random_range(0.5..3.0),
             min_trades_per_day: rand::rng().random_range(1.0..50.0),
             survival_capital_threshold: rand::rng().random_range(0.5..0.95),
-            funding_rate_sensitivity: rand::rng().random_range(0.1..2.0),
+            funding_rate_sensitivity: 0.55, // LG-30: w_base del genoma base
             global_correlation_threshold: rand::rng().random_range(0.2..0.9),
             trend_threshold: rand::rng().random_range(0.52..0.85),
             range_threshold: rand::rng().random_range(0.1..0.9),
@@ -991,10 +993,10 @@ impl SuperGenotype {
             capital_split_scalp: rand::rng().random_range(0.1..1.0),
             kelly_clamp_min: rand::rng().random_range(0.001..0.1),
             kelly_clamp_max: rand::rng().random_range(0.1..1.0),
-            explosive_leverage_multiplier: rand::rng().random_range(1.0..10.0),
+            explosive_leverage_multiplier: std::f64::consts::FRAC_PI_2, // LG-30
             quantum_mutation_rate: rand::rng().random_range(0.01..0.5),
             temporal_memory_decay: rand::rng().random_range(0.8..0.9999),
-            leverage_cap: rand::rng().random_range(10.0..125.0),
+            leverage_cap: 100.0, // LG-30: 1/(taker·20) con el taker canónico 5e-4
             explosive_confidence_threshold: rand::rng().random_range(0.7..0.99),
             weight_obi: rand::rng().random_range(0.1..1.0),
             weight_ofi: rand::rng().random_range(0.1..1.0),
@@ -1069,8 +1071,8 @@ impl SuperGenotype {
 
             kelly_survival_cap_ratio: rand::rng().random_range(1.0..3.0),
             kelly_expansion_mult: rand::rng().random_range(1.0..3.0),
-            guard_dd_sigmoid_steepness: rand::rng().random_range(1.0..5.0),
-            guard_dd_sigmoid_center: rand::rng().random_range(1.0..5.0),
+            guard_dd_sigmoid_steepness: std::f64::consts::PI, // LG-30
+            guard_dd_sigmoid_center: std::f64::consts::PI, // LG-30
             // F1-084: genes de Fase 8 congelados a defaults canónicos neutrales (sin caller en producción)
             portfolio_perf_mult_steepness: std::f64::consts::E * 3.0,
             portfolio_dd_penalty_decay: std::f64::consts::PI * 5.0,
@@ -1097,8 +1099,8 @@ impl SuperGenotype {
             scalp_accel_min_samples: rand::rng().random_range(10.0..50.0),
             executor_max_orders_10s: rand::rng().random_range(100.0..500.0),
             executor_max_weight_1m: rand::rng().random_range(1000.0..5000.0),
-            iceberg_volume_threshold: rand::rng().random_range(100.0..2000.0),
-            iceberg_slice_count: rand::rng().random_range(3.0..10.0),
+            iceberg_volume_threshold: 500.0, // LG-30
+            iceberg_slice_count: 5.0, // LG-30
             swing_obi_threshold: rand::rng().random_range(0.10..0.95),
             swing_accel_min_samples: rand::rng().random_range(10.0..50.0),
             temporal_scale: rand::rng().random_range(0.05..0.95),
@@ -1872,11 +1874,16 @@ impl SuperGenotype {
             // pasa a [1, 50], la misma que aplica el motor al leer el gen, de
             // modo que la prudencia vuelve a ser explorable y seleccionable.
             global_leverage: mutate_val(self.global_leverage, 1.0, 50.0),
+            // RESCATE GLM-166 (enmienda a LG-30): btc/eth_volatility_multiplier
+            // SIGUEN MUTANDO. El censo de LG trazó la ruta hacia leverage_matrix
+            // (_safe_vol_mult, sin uso) pero existe una llamada VIVA directa:
+            // risk-engine/lib.rs:1087 → arena.volatility_multiplier_for(coin_id)
+            // en la ruta de sizing/stop por identidad de símbolo (ADR-0011/LC-F1-03).
             btc_volatility_multiplier: mutate_val(self.btc_volatility_multiplier, 0.5, 3.0),
             eth_volatility_multiplier: mutate_val(self.eth_volatility_multiplier, 0.5, 3.0),
             min_trades_per_day: mutate_val(self.min_trades_per_day, 1.0, 50.0),
             survival_capital_threshold: mutate_val(self.survival_capital_threshold, 0.5, 0.95),
-            funding_rate_sensitivity: mutate_val(self.funding_rate_sensitivity, 0.1, 2.0),
+            funding_rate_sensitivity: self.funding_rate_sensitivity, // LG-30: sin lector desde F1-102
             global_correlation_threshold: mutate_val(self.global_correlation_threshold, 0.2, 0.9),
             trend_threshold: mutate_val(self.trend_threshold, 0.52, 0.85),
             range_threshold: mutate_val(self.range_threshold, 0.1, 0.9),
@@ -1920,15 +1927,13 @@ impl SuperGenotype {
             capital_split_scalp: self.capital_split_scalp, // G0-4: congelado sin mutacion (sizing gobernado por kelly_at_tau)
             kelly_clamp_min: self.kelly_clamp_min, // CL-162
             kelly_clamp_max: mutate_val(self.kelly_clamp_max, 0.1, 1.0),
-            explosive_leverage_multiplier: mutate_val(
-                self.explosive_leverage_multiplier,
-                1.0,
-                10.0,
-            ),
+            // LG-30: sólo lo lee VolatileMomentumBooster (llamado desde tests) y el
+            // Genotype legado de Darwin, que lo reescribe en el mismo átomo.
+            explosive_leverage_multiplier: self.explosive_leverage_multiplier, // LG-30
             quantum_mutation_rate: mutate_val(self.quantum_mutation_rate, 0.01, 0.5),
             // LG-21: genes sin lector (censo estático, plan §13); congelados como LG-18.
             temporal_memory_decay: self.temporal_memory_decay, // LG-21
-            leverage_cap: mutate_val(self.leverage_cap, 10.0, 125.0),
+            leverage_cap: self.leverage_cap, // LG-30: sólo SymbolRankerEngine, sin constructor vivo
             explosive_confidence_threshold: mutate_val(
                 self.explosive_confidence_threshold,
                 0.7,
@@ -2013,8 +2018,10 @@ impl SuperGenotype {
 
             kelly_survival_cap_ratio: mutate_val(self.kelly_survival_cap_ratio, 1.0, 3.0),
             kelly_expansion_mult: mutate_val(self.kelly_expansion_mult, 1.0, 3.0),
-            guard_dd_sigmoid_steepness: mutate_val(self.guard_dd_sigmoid_steepness, 1.0, 5.0),
-            guard_dd_sigmoid_center: mutate_val(self.guard_dd_sigmoid_center, 1.0, 5.0),
+            // LG-30: `guard::check_drawdown_limit` no tiene llamadores vivos (el freno de
+            // cuenta es `freno_duro`, ADR-0017).
+            guard_dd_sigmoid_steepness: self.guard_dd_sigmoid_steepness, // LG-30
+            guard_dd_sigmoid_center: self.guard_dd_sigmoid_center, // LG-30
             // F1-084: 5 genes de redistribución de rendimiento Fase 8 congelados sin mutación
             // (PortfolioOrchestrator::calculate_dynamic_allocation inactiva/sin consumidor en el host).
             portfolio_perf_mult_steepness: self.portfolio_perf_mult_steepness,
@@ -2038,12 +2045,9 @@ impl SuperGenotype {
             // LG-18: desde LG-12 los límites de peticiones son los del exchange.
             executor_max_orders_10s: self.executor_max_orders_10s,
             executor_max_weight_1m: self.executor_max_weight_1m, // LG-18
-            iceberg_volume_threshold: mutate_val(
-                self.iceberg_volume_threshold,
-                10_000.0,
-                100_000.0,
-            ),
-            iceberg_slice_count: mutate_val(self.iceberg_slice_count, 2.0, 10.0),
+            // LG-30: la ruta iceberg exige `SUPPORTS_NATIVE_ICEBERG` (false en Binance).
+            iceberg_volume_threshold: self.iceberg_volume_threshold, // LG-30
+            iceberg_slice_count: self.iceberg_slice_count, // LG-30
             swing_obi_threshold: mutate_val(self.swing_obi_threshold, 0.10, 0.95),
             swing_accel_min_samples: self.swing_accel_min_samples, // LG-18
             temporal_scale: mutate_val(self.temporal_scale, 0.05, 0.95),
@@ -3801,5 +3805,68 @@ mod tests_cl162 {
             }
         }
         assert!(tope_muta, "control: el gen 33 (kelly_clamp_max) sigue mutando");
+
+mod tests_lg30 {
+    use super::*;
+
+    /// LG-30 (relevo del F-A2 de Fable y revisión de la ola 10), ENMIENDADO
+    /// por el rescate GLM-166 a SIETE genes: btc/eth_volatility_multiplier
+    /// (2, 3) quedan FUERA — tienen llamada VIVA directa desde
+    /// risk-engine/lib.rs:1087 (volatility_multiplier_for, ADR-0011).
+    /// Los siete restantes tienen lector, pero ninguno cambia una decisión viva:
+    /// - `funding_rate_sensitivity` (6): su único lector, `vectorized.rs`, se
+    ///   retiró en F1-102;
+    /// - `explosive_leverage_multiplier` (34): sólo VolatileMomentumBooster
+    ///   (llamado desde tests) y el Genotype legado de Darwin;
+    /// - `leverage_cap` (37): sólo SymbolRankerEngine, sin constructor vivo;
+    /// - `guard_dd_sigmoid_*` (115, 116): `check_drawdown_limit` sin llamadores;
+    /// - `iceberg_*` (135, 136): la ruta exige `SUPPORTS_NATIVE_ICEBERG = false`.
+    ///
+    /// Mutarlos gastaba dimensiones de búsqueda y presupuesto del DSR sin efecto
+    /// en el fenotipo. Se congelan en el valor del genoma base sin cambiar
+    /// DIMENSION (precedente LG-18/LG-21, F1-084, F1-085).
+    const CONGELADOS: [(usize, &str, fn(&SuperGenotype) -> f64); 7] = [
+        (6, "funding_rate_sensitivity", |g| g.funding_rate_sensitivity),
+        (34, "explosive_leverage_multiplier", |g| g.explosive_leverage_multiplier),
+        (37, "leverage_cap", |g| g.leverage_cap),
+        (115, "guard_dd_sigmoid_steepness", |g| g.guard_dd_sigmoid_steepness),
+        (116, "guard_dd_sigmoid_center", |g| g.guard_dd_sigmoid_center),
+        (135, "iceberg_volume_threshold", |g| g.iceberg_volume_threshold),
+        (136, "iceberg_slice_count", |g| g.iceberg_slice_count),
+    ];
+
+    #[test]
+    fn lg30_genes_sin_efecto_vivo_no_mutan() {
+        let base = SuperGenotype::default();
+        let mut algun_vivo_muta = false;
+        for semilla in 0..64u64 {
+            let m = base.mutate_cmaes_seeded(1.0, semilla);
+            for (slot, nombre, leer) in CONGELADOS {
+                assert_eq!(
+                    leer(&m).to_bits(),
+                    leer(&base).to_bits(),
+                    "{nombre} (vec[{slot}]) mutó (semilla {semilla})"
+                );
+            }
+            algun_vivo_muta |= m.min_confidence_btc.to_bits() != base.min_confidence_btc.to_bits();
+        }
+        assert!(algun_vivo_muta, "control: los genes vivos sí mutan");
+    }
+
+    #[test]
+    fn lg30_genes_congelados_nacen_en_el_genoma_base_y_dentro_de_sus_cotas() {
+        let base = SuperGenotype::new_baseline(0.0002, 0.0005);
+        let lo = SuperGenotype::get_lower_bounds();
+        let hi = SuperGenotype::get_upper_bounds();
+        for _ in 0..16 {
+            let r = SuperGenotype::new_random();
+            let v = r.to_vector();
+            for (slot, nombre, leer) in CONGELADOS {
+                assert_eq!(leer(&r).to_bits(), leer(&base).to_bits(), "{nombre} nace distinto del base");
+                assert_eq!(v[slot].to_bits(), leer(&r).to_bits(), "{nombre} no está en vec[{slot}]");
+                assert!(lo[slot] <= v[slot] && v[slot] <= hi[slot], "{nombre} fuera de cotas");
+            }
+        }
+        assert_eq!(base.funding_rate_sensitivity, 0.55);
     }
 }

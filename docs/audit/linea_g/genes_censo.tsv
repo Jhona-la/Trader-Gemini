@@ -1,11 +1,11 @@
 indice	gen	lectores_productivos	archivos_lector	sensible_T1	estado
 0	global_max_drawdown	16	crates/evolution-engine/src/ast_mutator.rs crates/evolution-engine/src/lib.rs crates/evolution-engine/src/polars_evolver.rs crates/god-engine-core/src/darwin.rs	no	vivo
 1	global_leverage	17	crates/backtest-engine/src/vectorized.rs crates/evolution-engine/src/lib.rs crates/god-engine-core/src/darwin.rs crates/god-engine-core/src/lib.rs	sí	vivo
-2	btc_volatility_multiplier	1	crates/risk-engine/src/lib.rs	no	vivo
-3	eth_volatility_multiplier	1	crates/risk-engine/src/lib.rs	no	vivo
+2	btc_volatility_multiplier	1	crates/risk-engine/src/lib.rs	si	viva (GLM-166: llamada directa volatility_multiplier_for, ADR-0011)
+3	eth_volatility_multiplier	1	crates/risk-engine/src/lib.rs	si	viva (GLM-166: llamada directa volatility_multiplier_for, ADR-0011)
 4	min_trades_per_day	3	crates/evolution-engine/src/ast_mutator.rs crates/evolution-engine/src/lib.rs src/bin/evolution.rs	no	vivo
 5	survival_capital_threshold	1	src/bin/evolution.rs	no	vivo
-6	funding_rate_sensitivity	2	crates/backtest-engine/src/vectorized.rs crates/evolution-engine/src/lib.rs	no	vivo
+6	funding_rate_sensitivity	2	crates/backtest-engine/src/vectorized.rs crates/evolution-engine/src/lib.rs	no	congelada (LG-30: lector sin efecto en decisiones vivas)
 7	global_correlation_threshold	4	crates/backtest-engine/src/bin/continuous_evolution_backtest.rs crates/evolution-engine/src/online_daemon.rs crates/risk-engine/src/correlation_guard.rs crates/risk-engine/src/lib.rs	no	vivo
 8	trend_threshold	9	crates/backtest-engine/src/bin/continuous_evolution_backtest.rs crates/backtest-engine/src/vectorized.rs crates/evolution-engine/src/online_daemon.rs crates/god-engine-core/src/darwin.rs	no	vivo
 9	range_threshold	1	src/bin/evolver.rs	no	vivo
@@ -33,10 +33,10 @@ indice	gen	lectores_productivos	archivos_lector	sensible_T1	estado
 31	capital_split_scalp	2	crates/god-engine-core/src/darwin.rs src/bin/evolver.rs	no	congelado G0-4
 32	kelly_clamp_min	3	crates/god-engine-core/src/lib.rs crates/risk-engine/src/capital_compounder.rs crates/risk-engine/src/lib.rs	sí	vivo
 33	kelly_clamp_max	3	crates/god-engine-core/src/lib.rs crates/risk-engine/src/capital_compounder.rs crates/risk-engine/src/lib.rs	sí	vivo
-34	explosive_leverage_multiplier	4	crates/backtest-engine/src/bin/continuous_evolution_backtest.rs crates/evolution-engine/src/online_daemon.rs crates/god-engine-core/src/darwin.rs crates/strategy-core/src/momentum_booster.rs	no	vivo
+34	explosive_leverage_multiplier	4	crates/backtest-engine/src/bin/continuous_evolution_backtest.rs crates/evolution-engine/src/online_daemon.rs crates/god-engine-core/src/darwin.rs crates/strategy-core/src/momentum_booster.rs	no	congelada (LG-30: lector sin efecto en decisiones vivas)
 35	quantum_mutation_rate	2	crates/evolution-engine/src/lib.rs src/bin/god_engine.rs	no	vivo
 36	temporal_memory_decay	0		no	congelado LG-21 (sin lector)
-37	leverage_cap	1	crates/quantum-arena/src/symbol_ranker_engine.rs	no	vivo
+37	leverage_cap	1	crates/quantum-arena/src/symbol_ranker_engine.rs	no	congelada (LG-30: lector sin efecto en decisiones vivas)
 38	explosive_confidence_threshold	3	crates/backtest-engine/src/bin/continuous_evolution_backtest.rs crates/evolution-engine/src/online_daemon.rs crates/signal-engine/src/orchestrator.rs	no	vivo
 39	weight_obi	5	crates/backtest-engine/src/bin/continuous_evolution_backtest.rs crates/evolution-engine/src/online_daemon.rs crates/god-engine-core/src/lib.rs crates/signal-engine/src/flow_impulse.rs	sí	vivo
 40	weight_ofi	2	crates/signal-engine/src/flow_impulse.rs src/bin/evolution.rs	no	vivo
@@ -114,8 +114,8 @@ indice	gen	lectores_productivos	archivos_lector	sensible_T1	estado
 112	base_duration_ms	5	crates/backtest-engine/src/bin/continuous_evolution_backtest.rs crates/signal-engine/src/coaxial_breakout.rs crates/signal-engine/src/flow_impulse.rs crates/signal-engine/src/orchestrator.rs	no	vivo
 113	kelly_survival_cap_ratio	2	crates/god-engine-core/src/lib.rs crates/risk-engine/src/kelly.rs	no	vivo
 114	kelly_expansion_mult	2	crates/god-engine-core/src/lib.rs crates/risk-engine/src/kelly.rs	no	vivo
-115	guard_dd_sigmoid_steepness	1	crates/risk-engine/src/guard.rs	no	vivo
-116	guard_dd_sigmoid_center	1	crates/risk-engine/src/guard.rs	no	vivo
+115	guard_dd_sigmoid_steepness	1	crates/risk-engine/src/guard.rs	no	congelada (LG-30: lector sin efecto en decisiones vivas)
+116	guard_dd_sigmoid_center	1	crates/risk-engine/src/guard.rs	no	congelada (LG-30: lector sin efecto en decisiones vivas)
 117	portfolio_perf_mult_steepness	1	crates/risk-engine/src/orchestrator.rs	no	vivo
 118	portfolio_dd_penalty_decay	1	crates/risk-engine/src/orchestrator.rs	no	vivo
 119	portfolio_perf_mult_min	1	crates/risk-engine/src/orchestrator.rs	no	vivo
@@ -134,8 +134,8 @@ indice	gen	lectores_productivos	archivos_lector	sensible_T1	estado
 132	scalp_accel_min_samples	1	crates/quantum-arena/src/genome_store.rs	no	congelado LG-18 (sin lector)
 133	executor_max_orders_10s	1	crates/quantum-arena/src/genome_store.rs	no	congelado LG-18 (sin lector)
 134	executor_max_weight_1m	1	crates/quantum-arena/src/genome_store.rs	no	congelado LG-18 (sin lector)
-135	iceberg_volume_threshold	2	crates/execution-engine/src/entry_dispatch.rs src/bin/god_engine.rs	no	vivo
-136	iceberg_slice_count	1	src/bin/god_engine.rs	no	vivo
+135	iceberg_volume_threshold	2	crates/execution-engine/src/entry_dispatch.rs src/bin/god_engine.rs	no	congelada (LG-30: lector sin efecto en decisiones vivas)
+136	iceberg_slice_count	1	src/bin/god_engine.rs	no	congelada (LG-30: lector sin efecto en decisiones vivas)
 137	swing_obi_threshold	1	crates/quantum-arena/src/genome_store.rs	no	vivo
 138	swing_accel_min_samples	1	crates/quantum-arena/src/genome_store.rs	no	congelado LG-18 (sin lector)
 139	temporal_scale	7	crates/god-engine-core/src/lib.rs crates/quantum-arena/src/state.rs crates/quantum-arena/src/temporal_spectrum.rs crates/risk-engine/src/leverage_matrix.rs	no	vivo

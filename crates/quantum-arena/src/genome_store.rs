@@ -1031,6 +1031,11 @@ mod tests {
         for i in [10, 11, 20, 32] {
             v[i] = lo[i] + 0.41 * (hi[i] - lo[i]);
         }
+        // LG-30 (enmendado GLM-166): 7 genes congelados — 2 y 3 excluidos
+        // (llamada viva risk-engine/lib.rs:1087, ADR-0011).
+        for i in [6, 34, 37, 115, 116, 135, 136] {
+            v[i] = lo[i] + 0.37 * (hi[i] - lo[i]);
+        }
         let g = SuperGenotype::from_vector(&v);
 
         // Camino A: arranque en frío.

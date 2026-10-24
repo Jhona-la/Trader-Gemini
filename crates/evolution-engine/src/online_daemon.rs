@@ -1893,8 +1893,9 @@ impl LiveEvolutionDaemon {
                     // porque el examen walk-forward fija obi = 0.0 y usa spread del mercado (D-742, D-745).
                     candidate.explosive_confidence_threshold +=
                         (rng.random::<f64>() - 0.5) * dynamic_mutation_rate * 0.05;
-                    candidate.explosive_leverage_multiplier +=
-                        (rng.random::<f64>() - 0.5) * dynamic_mutation_rate * 0.05;
+                    // LG-30: explosive_leverage_multiplier (vec[34]) no tiene lector
+                    // vivo (sólo VolatileMomentumBooster, llamado desde tests): no se
+                    // perturba, igual que en SuperGenotype::mutate_with_rng.
                     candidate.trend_threshold +=
                         (rng.random::<f64>() - 0.5) * dynamic_mutation_rate * 0.1;
                     candidate.sl_atr_multiplier +=

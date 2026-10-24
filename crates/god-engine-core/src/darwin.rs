@@ -626,9 +626,8 @@ impl DarwinDaemon {
                 if rand::rng().random_bool(mutation_rate) {
                     child.min_confidence *= rand::rng().random_range(0.9..1.1);
                 }
-                if rand::rng().random_bool(mutation_rate) {
-                    child.explosive_leverage_multiplier *= rand::rng().random_range(0.5..2.0);
-                }
+                // LG-30: explosive_leverage_multiplier congelado sin mutación (gen sin
+                // lector vivo; ver SuperGenotype::mutate_with_rng), como G0-4.
 
                 child.global_leverage = child.global_leverage.clamp(1.0, 125.0);
                 child.trend_threshold = child.trend_threshold.clamp(0.1, 0.9);
