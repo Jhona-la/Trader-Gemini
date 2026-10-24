@@ -2087,8 +2087,8 @@ impl SuperGenotype {
     /// del nicho nunca llegaba al arena y el walk-forward exploraba
     /// dimensiones muertas en ese eje (hallazgo H0-1). Este método convierte
     /// las anclas ACTUALES del struct en la fuente de una reconstrucción:
-    /// curva por dos puntos canónicos (el patrón de
-    /// `QuantumConfig::update_tp_curve`), coeficientes a sus bandas fuente
+    /// curva por dos puntos canónicos (`HorizonCurve::through_two_points`
+    /// sobre las anclas canónicas), coeficientes a sus bandas fuente
     /// única (la envolvente física GANA a la intención del nicho — si la
     /// intención no es expresible, las anclas re-derivadas reportan lo
     /// lograble), y el pipeline estándar de cierre (RR sobre el espectro,
