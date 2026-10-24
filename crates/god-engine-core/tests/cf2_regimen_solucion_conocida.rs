@@ -128,13 +128,14 @@ fn cf2_rw_crash_flux_es_bajo_en_ruido() {
 /// Núcleo real (corrección del escéptico del espectro): el mismo ruido por
 /// `GodEngineCore::process_event` (eventos de depth a 1 Hz), leyendo lo que
 /// publica el núcleo en `spectral_crash_flux` y `spectral_coherence`. Al
-/// escribir la prueba, el lector vivo era el recorte en línea del núcleo
+/// escribir la prueba lo leían dos sitios: el recorte en línea del núcleo
 /// free_cap ×= 1 − 0,95·flux con marea adversa (tide < 0 para un largo,
-/// tide > 0 para un corto). F1-054 (AGY, 508f1597) lo quitó; hoy crash_flux
-/// entra en risk-engine: `PortfolioOrchestrator::available_margin_headroom`
-/// toma el máximo de las monedas con marea adversa y
-/// `continuous_exposure_limit` resta 0,25·flux a la fracción de capital
-/// expuesta. El factor 1 − 0,95·flux de abajo se conserva como vara del
+/// tide > 0 para un corto) y risk-engine. F1-054 (AGY, 508f1597) quitó el
+/// del núcleo; queda el de risk-engine:
+/// `PortfolioOrchestrator::available_margin_headroom` toma el máximo de las
+/// monedas con marea adversa y `continuous_exposure_limit` resta
+/// 0,25·max(flux, presión sistémica) del colchón (Hermite entre 0,80 y 0,90
+/// de presión, 0 desde 0,90). El factor 1 − 0,95·flux de abajo se conserva como vara del
 /// contrato de efecto neutro en ruido: E[factor] ≥ 0,95 para cada lado
 /// (política, como el umbral de 0,10 de la media). Comprobación cruzada
 /// hecha al escribir la prueba: con las mismas 21 600 entradas que la

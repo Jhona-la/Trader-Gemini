@@ -5,7 +5,7 @@
 Tanda del PR #130 del censo C-F7b. Un commit por bloque y sin T-1:
 
 - Revisión adversarial de los PR #123, #124 y #126 (un verificador por
-  tanda): 15 hallazgos confirmados y 3 refutados, todos de documentación.
+  tanda): 15 hallazgos confirmados (uno salió dos veces) y 2 refutados, todos de documentación.
   RV-12a: el comentario de macro_ml_features decía que el poller vivo
   publica FRED; publica Yahoo. RV-plan: las REGLAS de plan_linea_c.py
   nombraban 41 archivos retirados; `asignacion` vuelve a código 0 y desde
@@ -20,7 +20,8 @@ Tanda del PR #130 del censo C-F7b. Un commit por bloque y sin T-1:
 - RET-44a (CL-156, G021 de Línea G): con USE_TESTNET=true el
   calentamiento REST sembraba los estimadores con velas de mainnet; ahora
   pide las K-lines al venue del ejecutor (is_testnet). RET-44b:
-  SystemBootloader y state_continuity fuera; FMT-150 cerrado por retiro.
+  SystemBootloader y state_continuity fuera; FMT-150 cerrado por retiro
+  (queda EspectralMultiactivo::cargar_checkpoint, sin versión ni llamador).
 - RET-13a (CL-157): FIX #1454 portado al OmniStrategyEngine vivo (una
   entrada no finita no toca el estado y ningún rasgo sale no finito);
   inerte en vivo porque los llamadores validan antes. RET-13b: src/features

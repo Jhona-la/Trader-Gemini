@@ -368,9 +368,10 @@ El censo es una foto del 2026-10-18. Esta sección registra lo ejecutado y
 lo que cambió desde entonces; las filas del TSV no se reescriben.
 
 **Fusionado** (un commit por lote, sin T-1; sin cambio de conducta salvo
-RET-10b, RET-41, RET-51a, CL-154, RET-44a (CL-156, sólo con
-USE_TESTNET=true) y RET-13a (CL-157, inerte con entradas validadas), que
-cambian diagnóstico o conducta inalcanzable, como dice su lote):
+RET-10b, RET-41, RET-51a, CL-154 y RET-13a (CL-157, inerte con entradas
+validadas), que cambian diagnóstico o conducta inalcanzable, y RET-44a
+(CL-156), que cambia la conducta viva con USE_TESTNET=true, la demo, como
+dice su lote):
 
 | PR | Lotes |
 |---|---|
@@ -556,7 +557,10 @@ un escéptico por lote listo):
     LH-04 en risk-engine lib.rs:1508-1519. No es polizón; los únicos
     polizones del lote son los campos portfolio_* de config.rs.
   - Las REGLAS de scripts/plan_linea_c.py nombraban 41 rutas inexistentes
-    tras la tanda 4: 8 de antes del censo, 9 de la tanda 1, 13 de los
+    tras la tanda 4: 8 de antes de la tanda 1 (5 de lotes del censo: 15 y
+    28a del #81 y el 9 de Sol, d18b3735; 3 de otros agentes: macro_data.rs
+    y market_context.rs por RB-R1, 566a9c8c, y vectorized.rs por Ω160,
+    fcab8e1c), 9 de la tanda 1, 13 de los
     lotes 8 y 12a, 4 del 30 y 7 de los lotes 19, 38 y 39 (con
     history_store.rs). Salen todas en RV-plan y `asignacion` vuelve a
     código 0. Desde ahora, el lote que retira un archivo lo quita de
@@ -574,19 +578,34 @@ un escéptico por lote listo):
   effective_quantum_margin_multiplier sobre free_cap en el núcleo, T12
   falla a propósito y se sustituye por una prueba de propiedad sobre la
   función; si la conecta en risk-engine (available_margin_headroom), T12
-  no se entera. F2.3-05 sigue abierto: crash_flux ≈ 0,41 en ruido lo resta
-  ahora risk-engine del margen admisible (0,25·flux en
-  continuous_exposure_limit), no el núcleo.
-- Lote 44: retiro_plan 43 decía borrar bootloader.rs y su mod; el archivo
-  se queda (ROSTER y SystemDiagnostics son el arranque vivo) y sólo sale
+  no se entera. La revisión de la tanda 5 vio que el T12 de RET-50b sólo
+  cazaba las dos grafías literales (`free_cap *=` y `0.95 *
+  directional_flux`): un sombreado `let free_cap = free_cap * …`, un
+  recorte en la puerta o la misma copia con otra variable pasaban. RV5-T12
+  lo endurece: entre el cálculo de free_cap y su puerta, free_cap se asigna
+  una sola vez y no aparece margin_multiplier. F2.3-05 sigue abierto: el
+  núcleo publica crash_flux ≈ 0,41 en ruido y risk-engine resta
+  0,25·max(flux, presión sistémica) del colchón en
+  continuous_exposure_limit (Hermite entre 0,80 y 0,90 de presión y 0
+  desde 0,90). El flux sólo cuenta cuando supera la presión sistémica.
+  risk-engine ya lo leía antes de F1-054, que sólo quitó el recorte
+  duplicado del núcleo.
+- Lote 44: como ya corregía la redacción (§4, fila 44), bootloader.rs se
+  queda (ROSTER y SystemDiagnostics son el arranque vivo) y sólo sale
   SystemBootloader. El paso 1 es CL-156: el host pasa a
   execute_phase_3_warmup el venue del ejecutor (is_testnet), no
   is_demo_mode, y la URL sale de warmup_klines_url; ninguna lectura nueva
   de USE_TESTNET. LC-F1-40 sigue abierto: la sonda de OI elige venue con
   is_demo_env (god_engine.rs:2939), igual que symbol_manager.rs:36/:49.
-  Golden y T-1 no recorren el calentamiento del host. FMT-150 (Codex,
-  auditoría XIII) queda cerrado por retiro: no queda ningún cargador de
-  checkpoints.
+  Golden y T-1 no recorren el calentamiento del host. Con USE_TESTNET=true
+  y un BEST_WS_ENDPOINT de mainnet, el WS va a mainnet y el calentamiento a
+  testnet (antes, los dos a mainnet). Ese caso es parte de LC-F1-40 (un
+  venue único). FMT-150 (Codex, auditoría XIII) queda cerrado por retiro
+  en lo que auditaba: sale el cargador de posiciones de state_continuity
+  (load_checkpoint y su checksum XOR). Queda
+  EspectralMultiactivo::cargar_checkpoint (F1-078, fila N3), sin llamador
+  de producción y sin versión ni comprobación de integridad: quien lo
+  cablee hereda el contrato de formato que pedía FMT-150.
 - Lote 13: R182 y R197 decían que portar FIX #1454 «sobra»; se portó
   porque lo pedía el crítico (§4, tabla del lote 13), con dos pruebas
   RED→GREEN, y es inerte en vivo: los dos llamadores validan antes
@@ -595,7 +614,10 @@ un escéptico por lote listo):
   usuario» ya no aplica (RET-8); graph-architecture se queda por
   src/bin/graph_server.rs:1 (lote 18). Se cierra FMT-140. feature-engine
   pierde 10 pruebas en los dos binarios #[path] (3 propias y 7 de los
-  módulos incluidos) y gana 2; la lib de la raíz pierde 9.
+  módulos incluidos) y gana 2; la lib de la raíz pierde 9. La copia de
+  correlation duplicaba feature_engine::MarketCorrelationHeatmap, que
+  tampoco tiene consumidor de producción (F188, R179: SOLO_TESTS,
+  RETIRAR); el mensaje de RET-13b la cuenta por error entre las vivas.
 
 **Filas nuevas** (salieron al ejecutar; no están en el TSV):
 
@@ -655,7 +677,11 @@ el comentario de TensorConfig «We always use mainnet data»
 (los extremos del trailing; el diario vivo, position_journal.jsonl, ya
 lleva ts y age_hours, y PositionSnapshot nunca tuvo productor, así que no
 hay datos que portar: es el abierto de MEMORIA «adopción con
-entry_time_ms = now»); del 13, el guard de finitud del resultado de la
+entry_time_ms = now») y el reintento de la fase 3 retirada (hasta 3
+intentos con 500 ms tras un error de transporte, y el aviso «Falló la
+carga de klines»), que no se portó: el calentamiento vivo
+(bootloader.rs:261) hace un solo intento y el fallo sólo se ve como
+«Inyectadas 0 K-lines» en el host (átomo propio, con test); del 13, el guard de finitud del resultado de la
 copia ewma (R180), que el Ewma vivo no tiene y sólo actúa cerca de
 1e308; del 21, el comentario de god_engine.rs:5458-5460 (zona AGY), que
 cita read_recent_events de un módulo que ya no existe; del 42,
