@@ -254,3 +254,37 @@ fn mps_estado_denso_recupera_exacto_ida_y_vuelta() {
         assert!((norma - 1.0).abs() < 1e-10, "{nombre}: norma {norma}");
     }
 }
+
+/// GLM 158 — `espectro_schmidt`: el espectro de Schmidt NORMALIZADO del
+/// corte. Anclas: GHZ ⇒ {½, ½} (suma 1, un autovalor ~0); producto ⇒ {1}.
+/// Es la única diagonalización que consumen von Neumann Y Tsallis.
+#[test]
+fn mps_espectro_schmidt_anclas_ghz_y_producto() {
+    let l = 4;
+    let dim = 1usize << l;
+    // GHZ: Schmidt del corte medio = (½, ½, ~0, ~0).
+    let mut ghz = vec![0.0; dim];
+    ghz[0] = std::f64::consts::FRAC_1_SQRT_2;
+    ghz[dim - 1] = std::f64::consts::FRAC_1_SQRT_2;
+    let espectro = feature_engine::mps::espectro_schmidt(&ghz, l, l / 2).expect("espectro");
+    let suma: f64 = espectro.iter().sum();
+    assert!((suma - 1.0).abs() < 1e-10, "normalizado: {suma}");
+    let grandes: Vec<f64> = {
+        let mut v = espectro.clone();
+        v.sort_by(|a, b| b.partial_cmp(a).unwrap_or(std::cmp::Ordering::Equal));
+        v
+    };
+    assert!((grandes[0] - 0.5).abs() < 1e-10, "Schmidt₁ = ½: {g0}", g0 = grandes[0]);
+    assert!((grandes[1] - 0.5).abs() < 1e-10, "Schmidt₂ = ½: {g1}", g1 = grandes[1]);
+    assert!(grandes[2] < 1e-10, "el resto ≈ 0");
+    // Producto: un solo Schmidt = 1.
+    let mut producto = vec![0.0; dim];
+    producto[0b0101] = 1.0;
+    let espectro_p = feature_engine::mps::espectro_schmidt(&producto, l, l / 2).expect("esp p");
+    let suma_p: f64 = espectro_p.iter().sum();
+    assert!((suma_p - 1.0).abs() < 1e-10);
+    let maximo = espectro_p
+        .iter()
+        .fold(0.0f64, |m, x| if *x > m { *x } else { m });
+    assert!((maximo - 1.0).abs() < 1e-10, "producto ⇒ rango 1: {maximo}");
+}

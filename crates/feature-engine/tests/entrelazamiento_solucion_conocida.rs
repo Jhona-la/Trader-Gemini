@@ -396,3 +396,121 @@ fn streaming_iid_no_inventa_y_bordes_son_honestos() {
     assert_eq!(m3.descartados, 0, "recuento por tramo, reiniciado");
     assert_eq!(st2.descartados_totales(), 2, "total acumulado");
 }
+
+// ══════════════════════════════════════════════════════════════════════
+// GLM 158 — ENTRELAZAMIENTO DE TSALLIS S_q (familia no extensiva, mandato
+// §10). Límite q→1 = von Neumann exacto; ancla GHZ = ln_q(2) cerrado;
+// iid sin señal; monotonía en q; guardas honestas.
+// ══════════════════════════════════════════════════════════════════════
+
+#[test]
+fn tsallis_limite_q1_es_von_neumann_exacto() {
+    // Sobre el psi empírico de un Markov: q=1.0 EXACTO (mismo camino) y
+    // q=1.0001 converge al von Neumann a <1e-6 (límite analítico real).
+    let serie = serie_markov(30_000, 0.8, 0x158_CAFE);
+    let (psi, _, _) = estado_empirico(&serie, L, ModoBinarizacion::Signo).expect("estado");
+    let s_vn = feature_engine::mps::entrelazamiento_corte(&psi, L, L / 2).expect("VN");
+    let s_q1 = feature_engine::entrelazamiento::entrelazamiento_tsallis(&psi, L, L / 2, 1.0)
+        .expect("q=1");
+    assert_eq!(s_q1, s_vn, "q=1.0: EXACTO (camino von Neumann)");
+    let s_q1e4 =
+        feature_engine::entrelazamiento::entrelazamiento_tsallis(&psi, L, L / 2, 1.0001)
+            .expect("q→1");
+    // El límite es de PRIMER orden: dS_q/dq|_{q=1} ≠ 0 (relacionado con la
+    // varianza de ln p del espectro) ⇒ |S_{1+ε} − S| ≤ C·ε con C acotado.
+    // Con ε=1e-4, exigir <1e-4 (derivada de orden unidad) es lo honesto;
+    // exigir 1e-6 confundiría orden de convergencia con exactitud.
+    assert!(
+        (s_q1e4 - s_vn).abs() < 1e-4,
+        "límite de primer orden: |S_{{1+ε}} − S| = {d} ≤ ε·C",
+        d = (s_q1e4 - s_vn).abs()
+    );
+    // El pipeline neto también: q=1 ⇒ idéntico al neto clásico.
+    let m_q1 = feature_engine::entrelazamiento::entrelazamiento_neto_q(
+        &serie, L, ModoBinarizacion::Signo, 1.0,
+    )
+    .expect("neto q=1");
+    let m_clasico = entrelazamiento_neto(&serie, L, ModoBinarizacion::Signo).expect("neto");
+    assert_eq!(m_q1.s, m_clasico.s);
+    assert_eq!(m_q1.delta, m_clasico.delta);
+}
+
+#[test]
+fn tsallis_ghz_recupera_ln_q_de_2_cerrado() {
+    // La serie alternante produce el gato (Schmidt ½,½): S_q = ln_q(2) =
+    // (2^{1−q} − 1)/(1−q) forma cerrada para TODO q > 0.
+    let rets: Vec<f64> = (0..100_000).map(|i| if i % 2 == 0 { 1.0 } else { -1.0 }).collect();
+    let (psi, _, _) = estado_empirico(&rets, L, ModoBinarizacion::Signo).expect("estado");
+    for q in [0.5f64, 1.0, 1.5, 2.0, 3.0] {
+        let s_q = feature_engine::entrelazamiento::entrelazamiento_tsallis(&psi, L, L / 2, q)
+            .expect("S_q del gato");
+        let ln_q2 = if (q - 1.0).abs() < 1e-12 {
+            std::f64::consts::LN_2
+        } else {
+            (2.0f64.powf(1.0 - q) - 1.0) / (1.0 - q)
+        };
+        assert!(
+            (s_q - ln_q2).abs() < 1e-9,
+            "q={q}: S_q {s_q} = ln_q(2) {ln_q2}"
+        );
+    }
+    // Producto ⇒ S_q = 0 para toda q.
+    let plano: Vec<f64> = vec![1.0; 20_000];
+    let (psi_p, _, _) = estado_empirico(&plano, L, ModoBinarizacion::Signo).expect("producto");
+    for q in [0.5f64, 1.5] {
+        let s_q = feature_engine::entrelazamiento::entrelazamiento_tsallis(&psi_p, L, L / 2, q)
+            .expect("S_q del producto");
+        assert!(s_q.abs() < 1e-9, "producto ⇒ S_q=0 (q={q})");
+    }
+}
+
+#[test]
+fn tsallis_neto_iid_no_inventa_y_monotonia_en_q() {
+    // iid: |ΔS_q| pequeño — con tolerancia DEPENDIENTE de q: q<1 eleva
+    // p pequeños (p^q > p), amplificando el ruido de muestreo de los bins
+    // raros ⇒ el nulo cancela menos bien (medido: ~8e-3 con 200k ventanas
+    // a q=0.5). Propiedad del estimador, no bug.
+    let mut rng = Rng(0x158_777);
+    let iid: Vec<f64> = (0..200_000)
+        .map(|_| if rng.uniforme() < 0.35 { 1.0 } else { -1.0 })
+        .collect();
+    for (q, tol) in [(0.5f64, 2e-2), (1.5, 5e-3)] {
+        let m = feature_engine::entrelazamiento::entrelazamiento_neto_q(
+            &iid, L, ModoBinarizacion::Signo, q,
+        )
+        .expect("iid medible");
+        assert!(
+            m.delta.abs() < tol,
+            "iid q={q}: |ΔS_q| {d} < {tol}",
+            d = m.delta
+        );
+    }
+    // Monotonía: S_q NO creciente en q para un espectro fijo con p_max>1/2
+    // (Tsallis penaliza la cola ancha al crecer q). Markov persistente.
+    let serie = serie_markov(30_000, 0.85, 0x158_ABCD);
+    let (psi, _, _) = estado_empirico(&serie, L, ModoBinarizacion::Signo).expect("estado");
+    let mut anterior = f64::INFINITY;
+    for q in [0.5f64, 0.8, 1.0, 1.2, 1.5, 2.0] {
+        let s_q = feature_engine::entrelazamiento::entrelazamiento_tsallis(&psi, L, L / 2, q)
+            .expect("S_q");
+        assert!(
+            s_q <= anterior + 1e-12,
+            "monotonía en q: S_{q} {s_q} ≤ anterior {anterior}"
+        );
+        anterior = s_q;
+    }
+    // Guardas: q inválido ⇒ error honesto, jamás NaN (el caso q=NaN se
+    // verifica aparte porque NaN ≠ NaN en assert_eq de campos).
+    for q in [0.0f64, -1.0, f64::INFINITY] {
+        assert_eq!(
+            feature_engine::entrelazamiento::entrelazamiento_tsallis(&psi, L, L / 2, q),
+            Err(feature_engine::entrelazamiento::EntrelazamientoError::QInvalido { q })
+        );
+    }
+    match feature_engine::entrelazamiento::entrelazamiento_tsallis(&psi, L, L / 2, f64::NAN) {
+        Err(feature_engine::entrelazamiento::EntrelazamientoError::QInvalido { q }) => {
+            assert!(q.is_nan(), "el error preserva el q=NaN");
+        }
+        otro => panic!("q=NaN ⇒ QInvalido, llegó {otro:?}"),
+    }
+}

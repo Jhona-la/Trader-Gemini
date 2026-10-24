@@ -401,11 +401,16 @@ pub fn mps_desde_estado(
     )
 }
 
-/// Entropía de entrelazamiento de von Neumann S = −Σ p·ln p del corte:
-/// rho = estado.reshape(2^corte, 2^{L-corte}); p = autovalores de
-/// rho·rhoᵀ normalizados por la traza (espectro de Schmidt al cuadrado).
-/// Solución conocida: producto ⇒ 0; GHZ ⇒ ln 2; W ⇒ < ln 2.
-pub fn entrelazamiento_corte(estado: &[f64], l: usize, corte: usize) -> Result<f64, MpsError> {
+/// Espectro de Schmidt NORMALIZADO del corte: p = autovalores de
+/// ρ·ρᵀ (ρ = estado.reshape(2^corte, 2^{L−corte})) divididos por la traza.
+/// Consumido por `entrelazamiento_corte` (von Neumann) y por la familia
+/// Tsallis S_q del 158 — UNA sola diagonalización, entropías intercambiables.
+/// Solución conocida: producto ⇒ {1}; GHZ ⇒ {½, ½}.
+pub fn espectro_schmidt(
+    estado: &[f64],
+    l: usize,
+    corte: usize,
+) -> Result<Vec<f64>, MpsError> {
     if l == 0 || l > MPS_MAX_L || corte == 0 || corte >= l {
         return Err(MpsError::LongitudInvalida { l });
     }
@@ -434,9 +439,17 @@ pub fn entrelazamiento_corte(estado: &[f64], l: usize, corte: usize) -> Result<f
     if !(traza.is_finite() && traza > 1e-300) {
         return Err(MpsError::NormaDegenerada { valor: traza });
     }
+    Ok(espectro.iter().map(|lam| lam / traza).collect())
+}
+
+/// Entropía de entrelazamiento de von Neumann S = −Σ p·ln p del corte:
+/// rho = estado.reshape(2^corte, 2^{L-corte}); p = autovalores de
+/// rho·rhoᵀ normalizados por la traza (espectro de Schmidt al cuadrado).
+/// Solución conocida: producto ⇒ 0; GHZ ⇒ ln 2; W ⇒ < ln 2.
+pub fn entrelazamiento_corte(estado: &[f64], l: usize, corte: usize) -> Result<f64, MpsError> {
+    let espectro = espectro_schmidt(estado, l, corte)?;
     let mut entropia = 0.0f64;
-    for lam in espectro {
-        let p = lam / traza;
+    for p in espectro {
         if p > 1e-15 {
             entropia -= p * p.ln();
         }
