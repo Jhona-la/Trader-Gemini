@@ -44,7 +44,7 @@ para todo el universo (26–30 símbolos).
 | # | Átomo | Hipótesis | Aceptación | Estado |
 |---|---|---|---|---|
 | I-1 | Auditoría del camino socket → cola → métrica → consumidores | La métrica mezcla los cuatro términos | 27 hallazgos con ruta:línea (`docs/audit/linea_i/i1_lectores.json`), verificados por escéptico | lectores hechos; verificación en curso |
-| I-1b | Rutas `/public` y `/market` (un lector WS por categoría) | En producción la URL heredada no recibe velas ni liquidaciones | Sondas (`SONDAS_WS_2026-10-24.md`) + contrato `data-ingest/tests/rutas_feed_contract.rs` que falla en main | **implementado, en verificación** |
+| I-1b | Rutas `/public` y `/market` (un lector WS por categoría) | En producción la URL heredada no recibe velas ni liquidaciones | Sondas (`SONDAS_WS_2026-10-24.md`) + contrato `data-ingest/tests/rutas_feed_contract.rs` que falla en main | **en la rama (48dc9ffa0); GREEN/RED hechos** |
 | I-2 | Sello de recepción en el lector WS y métrica descompuesta | Separar red+reloj (`recv − E`) de espera local (`proc − recv`) | Test que falla antes: un evento que espera en cola no cuenta como red lenta | pendiente |
 | I-3 | El inmune y el interlock usan su componente | Hoy 3 lecturas puntuales de la métrica mezclada aplanan todo y latchean el kill-switch | Contratos por consumidor; atraso local ⇒ recortar carga, no aplanar | pendiente |
 | I-4 | Umbral derivado de la distribución medida | Hoy el umbral es un gen aleatorio (500–10 000 ms) sin presión selectiva | Cuantil medido de la red con piso físico; gen congelado | pendiente |
@@ -69,6 +69,11 @@ trading llevan T-1 antes de entrar a `main`.
 - 2026-10-24 ~14:40 — I-1b implementado en la rama: `data_ingest::rutas_feed`, dos lectores
   (público anclado y crítico; mercado sin anuncio de reconexión ni marca de stall) y la salud
   del feed escrita sólo por eventos públicos.
+- 2026-10-24 ~14:45 — I-1b verificado por el semáforo (`-j1`, target compartido):
+  `cargo test -p data-ingest` GREEN (12 unitarios, 7 de liquidaciones, 4 del contrato).
+  RED: con el `god_engine.rs` de `main` fallan en aserción los tres tests que leen el host
+  (`rutas_feed_contract.rs:20`, `:36`, `:58`); el de propiedades pasa. Commit `48dc9ffa0`,
+  integrado con `main` 4fb8ca8dd sin conflictos (trae CL-156 en el host).
 
 - 2026-10-24 13:25 — Línea abierta; heartbeat en `AGENT_SYNC.md` (commit `2831cf5bd`).
   Auditoría I-1 lanzada (3 lectores, escépticos, diseñador).
