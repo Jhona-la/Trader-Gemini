@@ -43,14 +43,18 @@ para todo el universo (26–30 símbolos).
 
 | # | Átomo | Hipótesis | Aceptación | Estado |
 |---|---|---|---|---|
-| I-1 | Auditoría del camino socket → cola → métrica → consumidores | La métrica mezcla los cuatro términos | 27 hallazgos con ruta:línea (`docs/audit/linea_i/i1_lectores.json`), verificados por escéptico | lectores hechos; verificación en curso |
+| I-1 | Auditoría del camino socket → cola → métrica → consumidores | La métrica mezcla los cuatro términos | 3 lectores; 18 hallazgos verificados (8 confirmados, 10 plausibles, 0 refutados) y diseño en `docs/audit/linea_i/i1_verificacion_y_diseno.json` | **hecho** |
 | I-1b | Rutas `/public` y `/market` (un lector WS por categoría) | En producción la URL heredada no recibe velas ni liquidaciones | Sondas (`SONDAS_WS_2026-10-24.md`) + contrato `data-ingest/tests/rutas_feed_contract.rs` que falla en main | **en la rama (48dc9ffa0); GREEN/RED hechos** |
-| I-2 | Sello de recepción en el lector WS y métrica descompuesta | Separar red+reloj (`recv − E`) de espera local (`proc − recv`) | Test que falla antes: un evento que espera en cola no cuenta como red lenta | pendiente |
-| I-3 | El inmune y el interlock usan su componente | Hoy 3 lecturas puntuales de la métrica mezclada aplanan todo y latchean el kill-switch | Contratos por consumidor; atraso local ⇒ recortar carga, no aplanar | pendiente |
-| I-4 | Umbral derivado de la distribución medida | Hoy el umbral es un gen aleatorio (500–10 000 ms) sin presión selectiva | Cuantil medido de la red con piso físico; gen congelado | pendiente |
-| I-5 | Reloj consistente | `Instant` + offset medido contra `SystemTime` | Test de corrección del reloj de pared simulada | pendiente |
-| I-6 | El lector arranca cuando el consumidor está listo | Cada arranque empieza con miles de eventos viejos en cola | Contrato de orden de arranque | pendiente |
-| I-7 | Sin E/S bloqueante en el hilo caliente | `promote`/`load_active` con fsync y espera de lock (≤ 5 s) cada 5000 mensajes | E/S fuera del hilo, como `model_rx` | pendiente |
+| I-2a | Sello de recepción (`MensajeWs { datos, recibido: Instant }`) transportado por la cola | Hoy la cola lleva bytes sin sello: nadie puede separar red de espera local | Test: el sello sobrevive a la cola y el descarte sigue reconociendo el centinela | pendiente (sin cambio de conducta) |
+| I-2b | Métrica descompuesta `EdadEvento { total, red_reloj, espera_local }` publicada en el arena y en cada aviso | Un evento que esperó 5 s en cola cuenta hoy como red de 5 s | Test puro: E=1000, ahora=6150, espera 5 s ⇒ red 150, local 5000 | pendiente (sin cambio de conducta) |
+| I-2c | Contrapresión observable (descartes por periodo, profundidad, espera máxima) por `telemetry_log!` | El monitor sólo imprime con la cola llena y por `println!` | Tests de las ventanas por periodo + contrato de fuente | pendiente (sin cambio de conducta) |
+| I-3a | El inmune cuenta strikes con red+reloj, no con la espera local | Un atraso local aplana posiciones como si la red estuviera caída | `strikes_latencia` puro con paridad CERT-M4-H04 | pendiente (cambia conducta) |
+| I-3b | El rearme del inmune reinicia los strikes de latencia | Tras rearmar, los strikes viejos vuelven a disparar | Contrato de fuente | pendiente (cambia conducta) |
+| I-3c | Recorte del bosque sombra con atraso local | El bosque sombra corre en el mismo hilo aunque la cola se atrase | `toca_sombra` puro | pendiente (condicional a I-2) |
+| I-4 | Umbral de edad sin deriva evolutiva | El umbral es un gen que la cosecha muta en [500, 10 000] ms sin presión selectiva | 1000 mutaciones lo dejan en 1000·π; aplicar un genoma viejo no lo mueve | pendiente (cambia conducta) |
+| I-5 | Reloj coherente: offset del feed medido contra la misma proyección monótona | Offset contra `SystemTime` aplicado sobre `Instant` fijado al arranque | Simulación de una corrección de w32time de −2 s | pendiente (cambia conducta) |
+| I-6 | El lector conecta cuando el consumidor está listo | Cada arranque empieza con miles de eventos viejos en cola | Contrato de orden de arranque | pendiente (cambia conducta) |
+| I-7 | Sin E/S del almacén de genomas en el hilo caliente | `promote`/`load_active` con fsync cada 5000 mensajes | Contrato de fuente | pendiente (condicional a I-2) |
 
 Ningún átomo toca geometría de órdenes ni dimensionamiento. Los que cambien conducta de
 trading llevan T-1 antes de entrar a `main`.
