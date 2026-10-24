@@ -353,6 +353,17 @@ class SemaforoBarridoTests(unittest.TestCase):
         self.assertFalse(self.sello.exists(), "un barrido fallido no sella: se reintenta en el próximo turno")
         self.assertIn("cargo check", self.traza.read_text())
 
+    def test_si_el_turno_se_pierde_durante_el_barrido_no_compila(self):
+        # LG-36: otro agente declaró huérfano el cerrojo mientras barríamos y lo
+        # tomó; compilar ahora serían dos builds a la vez.
+        otro = "otro-agente pid=9 t=1 cargo test"
+        r = self.correr(SEMAFORO_PRUEBA_ROBO_BARRIDO=otro)
+        self.assertEqual(r.returncode, 75, r.stdout + r.stderr)
+        self.assertFalse(self.traza.exists(), "no se lanza cargo con el turno perdido")
+        self.assertIn("TURNO PERDIDO durante el barrido", self.bitacora())
+        dueno = self.raiz / "target" / ".semaforo.lock" / "dueno"
+        self.assertEqual(dueno.read_text(encoding="utf-8").strip(), otro, "el cerrojo ajeno no se borra")
+
 
 if __name__ == "__main__":
     unittest.main()

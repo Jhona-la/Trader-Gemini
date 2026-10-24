@@ -277,14 +277,41 @@ barrido_si_toca() {
     return 0
   fi
   echo "[semaforo] barrido automático de target/ (RB-H1, cada ${cada_h} h)..." >&2
+  # LG-36: latido. El barrido no tiene cargo/rustc vivo y sólo renueva `creado`
+  # mientras borra; en sus enumeraciones largas otro agente veía el cerrojo con
+  # más de la gracia y 0 procesos, lo declaraba huérfano y compilaba a la vez.
+  # Mientras el turno siga siendo propio, `creado` se renueva cada cuarto de gracia.
+  local latido=$(( gracia_s / 4 ))
+  [ "$latido" -ge 1 ] || latido=1
+  (
+    while sleep "$latido"; do
+      [ "$(cat "$cerrojo/dueno" 2> /dev/null)" = "$ficha" ] || exit 0
+      ahora > "$cerrojo/creado"
+    done
+  ) &
+  local pid_latido=$!
   salida=$(APLICAR=1 BARRIDO_RAIZ="$raiz" BARRIDO_CERROJO_PROPIO=1 BARRIDO_FICHA="$ficha" \
     BARRIDO_AGENTE="$agente" "$BASH" "$dir_scripts/barrido_target.sh" 2>&1)
   codigo_b=$?
+  kill "$pid_latido" 2> /dev/null
+  wait "$pid_latido" 2> /dev/null
   if [ "$codigo_b" = "0" ]; then ahora > "$sello"; fi
   echo "[semaforo] ${salida##*$'\n'}" >&2
   registrar "barrido automático codigo=$codigo_b: ${salida##*$'\n'}"
 }
 barrido_si_toca
+if [ -n "${SEMAFORO_PRUEBA_ROBO_BARRIDO:-}" ]; then
+  # Costura de prueba: otro agente toma el cerrojo durante el barrido.
+  printf '%s\n' "$SEMAFORO_PRUEBA_ROBO_BARRIDO" > "$cerrojo/dueno"
+fi
+# LG-36: si el turno dejó de ser propio (otro lo declaró huérfano durante el
+# barrido), no se compila: dos builds a la vez es lo que el semáforo impide.
+if [ "$(cat "$cerrojo/dueno" 2> /dev/null)" != "$ficha" ]; then
+  echo "[semaforo] el turno se perdió durante el barrido; no compilo" >&2
+  registrar "TURNO PERDIDO durante el barrido (dueño: $(cat "$cerrojo/dueno" 2> /dev/null || echo '?')): cargo $*"
+  exit 75
+fi
+ahora > "$cerrojo/creado"
 
 cargo "$@"
 codigo=$?
