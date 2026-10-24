@@ -14,23 +14,8 @@
 //! backtests y evolver no conectan ninguno) la línea se descarta, como
 //! antes, pero sin reservar una cola que nadie lee.
 
-pub mod atomic_telemetry;
-
 use std::fmt;
 use std::sync::OnceLock;
-
-/// Crea la cola de telemetría binaria con `capacity` huecos, recortada a
-/// [16, 65 536]. Si la cola ya existía (la crea con 16 384 el primer push o
-/// pop, o la creó un init anterior), devuelve Err con su capacidad real y no
-/// la cambia (RET-51a).
-pub fn init_telemetry(capacity: usize) -> Result<(), usize> {
-    atomic_telemetry::init_binary_telemetry(capacity)
-}
-
-pub fn pop_telemetry() -> Option<String> {
-    atomic_telemetry::pop_binary_telemetry()
-        .map(|(buf, len)| String::from_utf8_lossy(&buf[..len]).into_owned())
-}
 
 /// Destino de las líneas de `telemetry!` y `telemetry_err!`. Recibe el
 /// mensaje sin formatear y corre en el hilo que emite: no debe bloquear.
