@@ -207,17 +207,19 @@ impl MirofishLattice {
                 let exponent = (up_moves - down_moves) as f64;
                 let price = safe_spot * u.powf(exponent);
 
-                // Recombinación probabilística binomial ponderada
+                // Recombinación probabilística binomial ponderada:
+                // Un movimiento UP mantiene el índice i (precio * u).
+                // Un movimiento DOWN incrementa el índice i (precio * d).
                 let mut prob = 0.0;
                 if i < step {
-                    // Contribución desde el nodo i del nivel anterior al bajar
+                    // Contribución desde el nodo i del nivel anterior al subir (* p_up)
                     let prev_node_a = &prev_level.nodes[i];
-                    prob += prev_node_a.probability * p_down;
+                    prob += prev_node_a.probability * p_up;
                 }
                 if i > 0 {
-                    // Contribución desde el nodo i-1 del nivel anterior al subir
+                    // Contribución desde el nodo i-1 del nivel anterior al bajar (* p_down)
                     let prev_node_b = &prev_level.nodes[i - 1];
-                    prob += prev_node_b.probability * p_up;
+                    prob += prev_node_b.probability * p_down;
                 }
 
                 next_nodes.push(LatticeNode {
