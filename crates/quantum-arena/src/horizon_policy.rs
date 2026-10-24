@@ -6,9 +6,6 @@
 //! This module does not authorize an order or certify evidence at a scale.
 use crate::temporal_spectrum::{HorizonCurve, TAU_ANCHOR_FAST_MS, TAU_ANCHOR_SLOW_MS};
 
-/// Identifies the read formulas, not a transactional genome generation.
-pub const HORIZON_READ_POLICY_VERSION: &str = "runtime-v1";
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum HorizonParameter {
     TakeProfit,

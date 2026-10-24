@@ -63,7 +63,7 @@ fn cf2_eproceso_nivel_bajo_el_nulo() {
         let mut e = EProceso::new();
         for _ in 0..t_max {
             e.observar(1.0, if g.u() < 0.5 { 1.0 } else { -1.0 });
-            if e.significativo() {
+            if e.significativo_familia(1) {
                 cruza += 1;
                 break;
             }
