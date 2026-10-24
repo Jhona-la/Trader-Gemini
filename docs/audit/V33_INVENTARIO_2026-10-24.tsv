@@ -1,5 +1,5 @@
 # V33 — Inventario mecánico completo de rutas versionadas
-# Base: 358017977b0ce81efa0e2e92f632f245157820b4; generado con git ls-files --stage en una sola lectura del índice.
+# Base: 4fb8ca8dd22e3837b573488cc8dc45d9f8f208bd; generado con git ls-files --stage en una sola lectura del índice.
 # INVENTORIADO sólo asigna cola; REVISADO_ESTATICO remite al ledger de hallazgos. Ninguna fila certifica build/tests/Demo por sí sola.
 # ROI/PnL/WR/Sharpe/EV y periodos de mercado: N/D. No hubo ejecución financiera en esta revisión.
 ruta	blob	estado	siguiente
@@ -26,13 +26,13 @@ ruta	blob	estado	siguiente
 .github/workflows/unit-suites.yml	2455ad0a8b536052b590481f212ecad370bfccd8	INVENTORIADO	Asignar dueño y revisar ruta viva
 .gitignore	700e710e0fedd8798a7dc481b4955f41196fa3a7	INVENTORIADO	Asignar dueño y revisar ruta viva
 AGENTS.md	ac2a382e16e139cf87bcbbab0c16b298f4e0a2aa	INVENTORIADO	Asignar dueño y revisar ruta viva
-AGENT_SYNC.md	3c59963632a63de691fb1a0b92ad657cc91c203f	INVENTORIADO	Asignar dueño y revisar ruta viva
+AGENT_SYNC.md	204e12dd149fdc6fb2ee356d06c5345b7304a777	INVENTORIADO	Asignar dueño y revisar ruta viva
 ARCHITECTURE.md	137f5757efbf6456828ad976b83972ce8f884f4c	INVENTORIADO	Asignar dueño y revisar ruta viva
 ATLAS_ANALITICO.md	a2015cda11ec2a533d55861f438f90f0c2ec373a	INVENTORIADO	Asignar dueño y revisar ruta viva
 CERTIFICADO_SISTEMA_v1.md	d8db49a332cb547b0ef0a4be4d8fa6df1d4a02a8	INVENTORIADO	Asignar dueño y revisar ruta viva
 CLAUDE.md	741cc93d7399c33e91f3c6621ac0718275aaf257	INVENTORIADO	Asignar dueño y revisar ruta viva
 COORDINACION_CODEX_2026-09-28.md	3825258fed1bb146d980f1bfeb434ddbdd5c0ce5	INVENTORIADO	Asignar dueño y revisar ruta viva
-Cargo.lock	fa892cf5b503b644ddbf0ad52d3f02d99a6c37bf	INVENTORIADO	Asignar dueño y revisar ruta viva
+Cargo.lock	6fcabd3e1d9e11c0d3e0a274042fe0ed4247046c	INVENTORIADO	Asignar dueño y revisar ruta viva
 Cargo.toml	1423e9d306f5e71372005175587085de1f2b53db	INVENTORIADO	Asignar dueño y revisar ruta viva
 Dockerfile	102047b2bc8245491f5eb0f76cd1882750e1d9d5	INVENTORIADO	Asignar dueño y revisar ruta viva
 FORENSIC_INTELLIGENCE_AUDIT.md	0a1a985bdbe4e8b3f0640d64cce03ffba0cae451	INVENTORIADO	Asignar dueño y revisar ruta viva
@@ -562,15 +562,20 @@ crates/omniscient-registry/src/lib.rs	c6fa5a7918d182d801d8d1588913d3402686ae17	I
 crates/omniscient-registry/src/tests.rs	9065eab34f1a1b08ae1d328048d7aa79ab4621cb	INVENTORIADO	Asignar dueño y revisar ruta viva
 crates/omniscient-registry/tests/aislamiento_ambito_multiactivo_contract.rs	b0ed0e5a65c651b9aa8ab7f2c6444b150e380962	INVENTORIADO	Asignar dueño y revisar ruta viva
 crates/omniscient-registry/tests/desconocido_no_es_cero_contract.rs	a17ad68d1b776235ef23da606292958e21939154	INVENTORIADO	Asignar dueño y revisar ruta viva
-crates/os-guardian/Cargo.toml	cde7cfd009179bf629e0c02bda846496bdb41441	INVENTORIADO	Asignar dueño y revisar ruta viva
+crates/os-guardian/Cargo.toml	e4671c9728bc3954a393f8affe87788f017d341a	INVENTORIADO	Asignar dueño y revisar ruta viva
 crates/os-guardian/src/anomaly_detector.rs	171167933dad984bb198ad02e3b333d2c7fb985e	INVENTORIADO	Asignar dueño y revisar ruta viva
 crates/os-guardian/src/ebpf_core.rs	af2a0dcd4899198493b080c6be6c38607f62cae8	INVENTORIADO	Asignar dueño y revisar ruta viva
-crates/os-guardian/src/lib.rs	72697f491e3f6cf36b7800b6060b9b28d276040f	INVENTORIADO	Asignar dueño y revisar ruta viva
+crates/os-guardian/src/large_pages.rs	46b7c7ca55d5c2b216c6f44e8f08a2067557d370	INVENTORIADO	Asignar dueño y revisar ruta viva
+crates/os-guardian/src/lib.rs	613c42f6578e28da1999a9e832f70b987241be3f	INVENTORIADO	Asignar dueño y revisar ruta viva
 crates/os-guardian/src/memory_audit.rs	d835fec128f451fdc8d57376c39faa9120a66b49	INVENTORIADO	Asignar dueño y revisar ruta viva
 crates/os-guardian/src/memory_compaction.rs	ce2ed4759dd08dffcda112f5b4aa080b32cc18af	INVENTORIADO	Asignar dueño y revisar ruta viva
 crates/os-guardian/src/observability_plane.rs	53565bd5219018c0ed7a423016d778db2c749a3f	INVENTORIADO	Asignar dueño y revisar ruta viva
 crates/os-guardian/src/pmu_sensor.rs	acbbd82bef3643e3f6b2ff740568f168185ca62e	INVENTORIADO	Asignar dueño y revisar ruta viva
+crates/os-guardian/src/silicon_topology.rs	da7fd643a4d19d0b757330489f57e6de1473a2f5	INVENTORIADO	Asignar dueño y revisar ruta viva
+crates/os-guardian/src/simd_crypto.rs	636710b3acf176d122f0a5bfee27a2ff98b76fd2	INVENTORIADO	Asignar dueño y revisar ruta viva
+crates/os-guardian/src/subnormal_control.rs	c7891be6acf3fe33d09e22a5136f636ff33b2e8b	INVENTORIADO	Asignar dueño y revisar ruta viva
 crates/os-guardian/src/telemetry.rs	eb3382676f679295756ba3ac00256f045d80ac4e	INVENTORIADO	Asignar dueño y revisar ruta viva
+crates/os-guardian/tests/f8_001_silicon_physics_contract.rs	91072badce41a868fa6661e5f97809254839449a	INVENTORIADO	Asignar dueño y revisar ruta viva
 crates/quantum-arena/Cargo.toml	7b371100caf1e44f7fe0be265c85cd3a90acefd3	INVENTORIADO	Asignar dueño y revisar ruta viva
 crates/quantum-arena/src/active_universe.rs	3a9fd67225e58fb1024ed95c342866f5a3128df4	INVENTORIADO	Asignar dueño y revisar ruta viva
 crates/quantum-arena/src/adaptive_quantiles.rs	65e3f533335d8d1e0c553045f703bf323d3e08ec	INVENTORIADO	Asignar dueño y revisar ruta viva
@@ -1249,7 +1254,7 @@ docs/audit/SOL_CONTABILIDAD_REPLAY_2026-10-15.md	10dab4f5406a7e68e63c3b9eeccf63f
 docs/audit/SOL_CONTRATOS_R4_2026-10-07.json	d2880884ab583c05cbf896e15d9bb77ccd9ad4df	INVENTORIADO	Asignar dueño y revisar ruta viva
 docs/audit/SOL_RAMAS_2026-10-07.md	a9c88782caf6ad90525d3358236abbf8753b9dff	INVENTORIADO	Asignar dueño y revisar ruta viva
 docs/audit/TRIAGE_PR64_69_MAIN_CD9.json	21d342cad97db12be2daa63bd4ef23749485d364	INVENTORIADO	Asignar dueño y revisar ruta viva
-docs/audit/V33_INVENTARIO_2026-10-24.tsv	58cd491297f2af7020a3812678f385015c86f4d3	INVENTORIADO	Asignar dueño y revisar ruta viva
+docs/audit/V33_INVENTARIO_2026-10-24.tsv	cc3b0a47ebda6a86330ebf0cbe9794ec83bc3b6e	INVENTORIADO	Asignar dueño y revisar ruta viva
 docs/audit/V33_REVISIONES_2026-10-24.tsv	b7f354f8a59fd5ba95ff04e291091897b718f3ac	INVENTORIADO	Asignar dueño y revisar ruta viva
 docs/audit/VALIDACION_B15_14_2026-10-15.json	30a44a4ff5c2739df35b129101f2f524d1d89de5	INVENTORIADO	Asignar dueño y revisar ruta viva
 docs/audit/VALIDACION_BASE15_2026-10-15.json	f052083ced126d37f9d6ac61cd19933164972249	INVENTORIADO	Asignar dueño y revisar ruta viva
