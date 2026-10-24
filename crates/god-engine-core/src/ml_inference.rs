@@ -422,7 +422,7 @@ impl NanoForest {
 /// B3.4 — BLOQUE MACRO del vector ML (dims 44..48, tras swing 34 ⊕ espectral 10).
 ///
 /// Contrato ÚNICO entre inferencia viva y train_forest: los niveles FRED que
-/// el feed vivo (`macro_feed.rs`) ya publica en `omni_features` —
+/// el feed vivo (`omni_multiplexer::run_macro_rest_poller`) ya publica en `omni_features` —
 /// DXY=DTWEXBGS [21], SP500 [22], NASDAQ=NASDAQCOM [23], VIX=VIXCLS [24] —
 /// y que el trainer junta as-of (cierre t-1) desde `data/macro/*.csv`.
 ///

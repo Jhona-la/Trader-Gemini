@@ -1,7 +1,6 @@
 use data_ingest::liquidation::{
     decode_liquidation_snapshots as decode, LiquidationParseError as Error, LiquidationSide,
 };
-use data_ingest::TensorParser;
 use serde_json::{json, Value};
 
 fn snapshot() -> Value {
@@ -145,35 +144,4 @@ fn malformed_json_and_invalid_envelope_cannot_emit_partial_records() {
             Error::InvalidEnvelope
         );
     }
-}
-
-#[test]
-fn legacy_number_scanner_reads_scientific_exponents() {
-    // CERRADO por AGY-AUD-P11 (ad560626, Ola 4): el escáner genérico lee la
-    // notación científica. Antes este testigo OPEN afirmaba la pérdida del
-    // exponente (`1e3` -> 1,0) y quedó rojo en main cuando se arregló.
-    let casos: [(&[u8], f64); 5] = [
-        (b"1e3", 1_000.0),
-        (b"5E+3", 5_000.0),
-        (b"2.45e-4", 2.45e-4),
-        (b"-1.5e-2", -1.5e-2),
-        (b"42", 42.0),
-    ];
-    for (bytes, esperado) in casos {
-        let leido = TensorParser::fast_parse_f64(bytes);
-        assert!(
-            ((leido - esperado) / esperado).abs() < 1e-12,
-            "{}: leído {leido}, esperado {esperado}",
-            String::from_utf8_lossy(bytes)
-        );
-    }
-}
-
-#[test]
-fn legacy_liquidation_scanner_mixes_requested_with_executed_notional() {
-    // OPEN compatibility API: retained but removed from the operational producer.
-    let p = br#"{"e":"forceOrder","E":1000,"o":{"s":"BTCUSDT","S":"SELL","q":"10","p":"100","ap":"90","z":"2","l":"2","X":"PARTIALLY_FILLED","T":999}}"#;
-    let mut observed = Vec::new();
-    TensorParser::parse_force_orders(p, |price, qty| observed.push(price * qty));
-    assert_eq!(observed, vec![1000.0]); // reported execution snapshot should be 180
 }

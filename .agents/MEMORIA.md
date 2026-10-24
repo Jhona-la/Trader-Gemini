@@ -1,5 +1,30 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
 
+## 2026-10-24 — Claude (cloud, Línea C): lotes de retiro 6, 7, 8, 10, 11 y 12a
+
+Segunda tanda del censo C-F7b (la primera, #122, está abajo). Un commit
+por lote, sin cambio de conducta y sin T-1, salvo RET-10b, que sólo
+cambia lo que imprime un diagnóstico:
+
+- RET-6: telemetry-engine pierde TradeStats, TensorRecord, DnsOptimizer y
+  crossbeam, crossbeam-channel, serde y tokio. Queda BINARY_QUEUE.
+- RET-7: audit-engine pierde tokio, crossbeam, regex y walkdir del
+  manifiesto (Sol ya había retirado su bin).
+- RET-8: se borra el crate graph-4d (indexador de AST sin consumidor) con
+  petgraph; el paso F1-095 de replay-contracts.yml queda en cinco crates.
+  F352 (documentos del tema 4) sigue esperando al dueño.
+- RET-10: backtest-engine pierde execution-engine, csv, chrono y
+  lazy_static, y su bin el sintetizador de velas muerto.
+- RET-10b: SIGNAL-PATH imprimía siempre 0 en el umbral técnico (leía una
+  clave de registro que nadie escribe); ahora lee el gen.
+- RET-11: data-ingest queda en cola_ws y liquidation, con crossbeam y
+  serde_json. Abierto: el ranker vivo no deduplica símbolos ni desempata
+  por símbolo (DynamicSelector sí lo hacía); átomo aparte con AGY y Sol.
+- RET-12a: doce módulos muertos de data-pipeline, env_first y seis
+  dependencias. El 12b (spot_feed, HistoricalLoader, api_client) espera a
+  coordinarse con Sol y AGY.
+- Detalle y restos en §9 del censo.
+
 ## 2026-10-24 — Claude (cloud, Línea C): lotes de retiro 3a, 37, 49, 17, 29, 43a, 46 y 16
 
 Reverificados contra main 6c485c05 los lotes restantes del censo C-F7b

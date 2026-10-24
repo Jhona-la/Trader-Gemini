@@ -18,7 +18,6 @@ members = [
     "crates/omniscient-registry",
     "crates/strategy-core",
     "crates/data-ingest",
-    "crates/graph-4d",
     "crates/audit-engine",
     "crates/telemetry-engine",
     "crates/storage-engine",
@@ -51,13 +50,11 @@ graph-architecture = { version = "0.1.0", path = "crates/graph-architecture" }
 omniscient-registry = { path = "crates/omniscient-registry" }
 strategy-core = { path = "crates/strategy-core" }
 data-ingest = { path = "crates/data-ingest" }
-graph-4d = { path = "crates/graph-4d" }
 audit-engine = { path = "crates/audit-engine" }
 telemetry-engine = { path = "crates/telemetry-engine" }
 metacortex-engine = { path = "crates/metacortex-engine" }
 
 syn = { version = "2.0", features = ["full", "visit"] }
-petgraph = "0.6.4"
 rkyv = { version = "0.7", features = ["validation"] }
 uuid = { version = "1.8", features = ["v7"] }
 warp = "0.3"

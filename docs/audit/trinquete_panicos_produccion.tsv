@@ -4,7 +4,6 @@
 paquete	archivo	unwrap	expect	panico	aserto
 backtest-engine	crates/backtest-engine/src/label_evidence.rs	4	0	0	0
 data-pipeline	crates/data-pipeline/src/historical.rs	1	0	0	0
-data-pipeline	crates/data-pipeline/src/telemetry_bus.rs	1	0	1	0
 data-pipeline	crates/data-pipeline/src/ws_client.rs	0	1	0	0
 evolution-engine	crates/evolution-engine/src/cma_es.rs	0	1	0	0
 evolution-engine	crates/evolution-engine/src/online_daemon.rs	0	1	0	0
@@ -30,7 +29,6 @@ risk-engine	crates/risk-engine/src/ville_e_process.rs	0	1	0	0
 storage-engine	crates/storage-engine/src/history_store.rs	0	1	0	0
 storage-engine	crates/storage-engine/src/lakehouse.rs	0	2	0	0
 storage-engine	crates/storage-engine/src/ledger.rs	0	1	0	0
-telemetry-engine	crates/telemetry-engine/src/dns_optimizer.rs	1	0	0	0
 telemetry-server	crates/telemetry-server/src/flight_recorder.rs	0	4	0	0
 telemetry-server	crates/telemetry-server/src/zero_copy_bus.rs	0	0	1	0
 telemetry-server	crates/telemetry-server/src/zero_copy_ring.rs	0	2	0	0
