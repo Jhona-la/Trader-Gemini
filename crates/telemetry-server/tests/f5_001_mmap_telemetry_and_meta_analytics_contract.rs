@@ -15,7 +15,9 @@ use telemetry_server::hyperdimensional_graph::{
     HyperdimensionalGraphSnapshot, PodIsolationState,
 };
 use telemetry_server::mirofish_lattice::{MirofishLattice, TailRidge3D};
-use telemetry_server::mmap_viz_stream::{MmapVizStreamReader, TelemetrySnapshot};
+use telemetry_server::mmap_viz_stream::{
+    MmapVizStreamReader, MmapVizStreamWriter, TelemetrySnapshot,
+};
 
 /// Contrato C1: Desacoplamiento Lock-Free & Integridad Mmap Zero-Copy
 #[test]
@@ -40,8 +42,9 @@ fn test_c1_mmap_lock_free_decoupling_and_readback() {
         win_rate: 0.80,
         tensor_drift: 0.0,
     };
-    let bytes: [u8; std::mem::size_of::<TelemetrySnapshot>()] = unsafe { std::mem::transmute(snap_init) };
-    std::fs::write(&path, &bytes).expect("write bytes");
+
+    let mut writer = MmapVizStreamWriter::new(&path).expect("writer init");
+    writer.write_snapshot(&snap_init).expect("write initial snapshot");
 
     // Lector desacoplado
     let mut reader = MmapVizStreamReader::new(&path_str);
@@ -54,19 +57,20 @@ fn test_c1_mmap_lock_free_decoupling_and_readback() {
     assert_eq!(snap.pnl_realized, 25.0);
     assert!((snap.global_roi - 50.0).abs() < 1e-4); // (150 - 100)/100 = 50%
 
-    // Segunda escritura concurrente
+    // Segunda escritura concurrente vía el escritor mmap compartido
     let snap_update = TelemetrySnapshot {
         tick_counter: 5000,
         unified_capital: 200.0,
         ..snap_init
     };
-    let bytes2: [u8; std::mem::size_of::<TelemetrySnapshot>()] = unsafe { std::mem::transmute(snap_update) };
-    std::fs::write(&path, &bytes2).expect("second write");
+    writer.write_snapshot(&snap_update).expect("second write");
 
     let snap2 = reader.read_snapshot().expect("segunda lectura");
     assert_eq!(snap2.tick_counter, 5000);
     assert_eq!(snap2.unified_capital, 200.0);
 
+    drop(reader);
+    drop(writer);
     let _ = std::fs::remove_file(path);
 }
 

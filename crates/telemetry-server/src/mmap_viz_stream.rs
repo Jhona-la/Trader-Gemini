@@ -31,7 +31,7 @@
 use crate::causal_attribution::{CausalAttributionEngine, CausalMetaAnalyticsReport};
 use crate::hyperdimensional_graph::HyperdimensionalGraphSnapshot;
 use crate::mirofish_lattice::{MirofishLattice, TailRidge3D};
-use memmap2::{Mmap, MmapOptions};
+use memmap2::{Mmap, MmapMut, MmapOptions};
 use serde::{Deserialize, Serialize};
 use std::fs::OpenOptions;
 use std::path::{Path, PathBuf};
@@ -122,7 +122,7 @@ impl MmapVizStreamReader {
         }
 
         let snap: TelemetrySnapshot = unsafe {
-            std::ptr::read_unaligned(mmap.as_ptr() as *const TelemetrySnapshot)
+            std::ptr::read_volatile(mmap.as_ptr() as *const TelemetrySnapshot)
         };
 
         // Sanitización defensiva de flotantes
@@ -217,6 +217,56 @@ impl MmapVizStreamReader {
             tail_ridge,
             hypergraph,
             causal_report,
+        }
+    }
+}
+
+/// Escritor atómico de telemetría por memoria compartida (mmap lock-free).
+///
+/// Permite al motor de ejecución escribir snapshots de telemetría directamente
+/// en el archivo mapeado sin locks y con visibilidad instantánea para lectores.
+pub struct MmapVizStreamWriter {
+    mmap_path: PathBuf,
+    mmap_handle: Option<MmapMut>,
+}
+
+impl MmapVizStreamWriter {
+    /// Inicializa o crea el archivo mapeado en memoria para escritura zero-copy.
+    pub fn new<P: AsRef<Path>>(path: P) -> std::io::Result<Self> {
+        let p = path.as_ref().to_path_buf();
+        let expected_size = std::mem::size_of::<TelemetrySnapshot>();
+        let mut opts = OpenOptions::new();
+        opts.read(true).write(true).create(true).truncate(false);
+        #[cfg(windows)]
+        {
+            use std::os::windows::fs::OpenOptionsExt;
+            opts.share_mode(3); // FILE_SHARE_READ | FILE_SHARE_WRITE
+        }
+        let file = opts.open(&p)?;
+        if file.metadata()?.len() < expected_size as u64 {
+            file.set_len(expected_size as u64)?;
+        }
+        let mmap = unsafe { MmapOptions::new().map_mut(&file)? };
+        Ok(Self {
+            mmap_path: p,
+            mmap_handle: Some(mmap),
+        })
+    }
+
+    /// Escribe un snapshot atómico en la región mapeada compartida.
+    pub fn write_snapshot(&mut self, snapshot: &TelemetrySnapshot) -> std::io::Result<()> {
+        if let Some(mmap) = self.mmap_handle.as_mut() {
+            let bytes = unsafe {
+                std::slice::from_raw_parts(
+                    snapshot as *const TelemetrySnapshot as *const u8,
+                    std::mem::size_of::<TelemetrySnapshot>(),
+                )
+            };
+            mmap[..bytes.len()].copy_from_slice(bytes);
+            let _ = mmap.flush();
+            Ok(())
+        } else {
+            Err(std::io::Error::new(std::io::ErrorKind::Other, "mmap mut handle not available"))
         }
     }
 }
