@@ -6,13 +6,10 @@ pub mod env_manager;
 pub mod features;
 pub mod host_oms;
 pub mod model_manifest;
-pub mod multi_asset_orchestrator;
 pub mod orderbook;
 pub mod parsers;
 pub mod symbol_manager;
 pub mod sa_params;
-pub mod trailing;
-pub use trailing::{evaluate_quantum_trailing, TrailingResult};
 
 // NOTA: Las funciones FFI extern "C" (quantum_ring_new, quantum_ring_free, quantum_ring_read_tick)
 // han sido eliminadas en la Fase 4 de Auditoría Suprema.

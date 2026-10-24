@@ -13,7 +13,6 @@ pub mod hot_swap_controller;
 pub mod immune_system;
 pub mod online_learning;
 pub mod prospect_theory;
-pub mod reminiscence_and_adn;
 pub mod shadow_graph_auditor;
 
 use std::path::{Path, PathBuf};
@@ -51,7 +50,6 @@ pub use fases_autonomous::{FaseAutonomous, FaseAutonomousManager, HealthMetrics}
 pub use hot_swap_controller::{EpigenomaSymbolParams, HotSwapController};
 pub use immune_system::{LivingImmuneSystem, TraumaRecord};
 pub use online_learning::OnlineLearningModule;
-pub use reminiscence_and_adn::{AdnBackupCatalog, GenerationMetadata, ReminiscenceModule};
 pub use shadow_graph_auditor::{ShadowEvent, ShadowGraphAuditor};
 
 pub struct MetacortexEngine {

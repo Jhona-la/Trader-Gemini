@@ -383,9 +383,8 @@ impl ShannonEntropy {
     /// Máxima entropía teórica para 10 bins en nats: ln(10.0).
     pub const MAX_SHANNON_NATS_10BINS: f64 = 2.302_585_092_994_046;
 
-    /// Entropía normalizada en [0, 1] (D-1 / R7-R2-D-1).
-    /// El gemelo de feature-engine normaliza por log2(num_bins).
-    /// Aquí normalizamos por ln(10) para calibración uniforme en [0, 1].
+    /// Entropía normalizada en [0, 1] (D-1 / R7-R2-D-1): se divide por
+    /// ln(10), la entropía máxima de los 10 bins en nats.
     #[inline(always)]
     pub fn current(&self) -> f64 {
         let nats = self.current_nats();

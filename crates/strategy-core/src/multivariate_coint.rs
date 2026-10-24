@@ -281,11 +281,6 @@ impl MultivariateCointegrationEngine {
         }
     }
 
-    #[inline(always)]
-    pub fn get_half_life(&self) -> f64 {
-        self.half_life()
-    }
-
     /// Retorna los pesos normalizados del cluster para cada pata del arbitraje (Long/Short por pata)
     #[inline(always)]
     pub fn get_basket_allocations(&self, signal_type: SignalType) -> [f64; MAX_ASSETS] {

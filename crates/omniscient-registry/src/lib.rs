@@ -300,14 +300,6 @@ impl OmniscientRegistry {
         })
     }
 
-    /// D-07: Lectura estricta escopada por símbolo con default SIN fallback al parámetro global (Aislamiento Multi-Activo).
-    #[inline(always)]
-    pub fn get_scoped_strict_or(&self, symbol: &str, name: &str, default: f64) -> f64 {
-        self.get_scoped_strict(symbol, name)
-            .filter(|v| v.is_finite())
-            .unwrap_or(default)
-    }
-
     /// D38: Namespacing por índice numérico de activo con stack buffer (Zero Heap Allocation Hot-Path).
     #[inline(always)]
     pub fn set_for_coin(&self, coin_id: usize, name: &str, val: f64) {

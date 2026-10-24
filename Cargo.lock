@@ -3846,7 +3846,6 @@ dependencies = [
  "lazy_static",
  "memmap2 0.9.11",
  "rusqlite",
- "serde",
  "telemetry-engine",
 ]
 

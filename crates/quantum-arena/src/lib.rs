@@ -1,6 +1,5 @@
 pub mod active_universe;
 pub mod adaptive_quantiles;
-pub mod arena_alloc;
 pub mod atomic_float;
 pub mod config;
 pub mod espectral_multiactivo;
@@ -15,7 +14,6 @@ pub mod paths;
 pub mod position;
 pub mod protection_health;
 pub mod quantum_phase;
-pub mod ring_buffer;
 pub mod state;
 pub mod state_continuity;
 pub mod symbol_ranker_engine;
@@ -27,8 +25,6 @@ pub mod temporal_spectrum;
 pub mod tick_source;
 pub mod topological_persistence;
 pub mod wasserstein_kantorovich;
-pub mod zero_alloc_pool;
-pub mod zero_copy_stream;
 
 // Re-exportamos los componentes principales
 pub use adaptive_quantiles::{
@@ -51,7 +47,7 @@ pub use quantum_phase::{
 };
 pub use spectral_regime::{LegacyRegimeView, SpectralRegimeField, SpectralRegimeParams};
 pub use state::{GlobalArena, ScalpState};
-pub use tick_source::{TickEvent, TickSource};
+pub use tick_source::TickEvent;
 pub use topological_persistence::{
     MicroPoint3D, TopologicalMetrics, TopologicalPersistenceEngine,
     NUM_FILTRATION_SCALES, TOPOLOGICAL_WINDOW_CAP,

@@ -361,3 +361,61 @@ Cada tema se presenta como una sola tarjeta de decisión. En todos los temas, la
 - Violaciones de la regla 6 vistas de paso, no corregidas: `freno_estrategia.rs:62`, `KalmanFilter1D::new`, `ewma.rs:19/:40` y `math_kernels.rs:1030`, con `expect`; `contagion_publisher.rs:38` y `raw_zone::from_bytes`, con `unwrap`.
 - Genes sin ningún lector ya hoy, fuera del alcance del censo: 36, 42, 43, 49, 50, 64, 65, 70–74, 77–79, 84, 85, 90–94, 96, 97, 102–105, 111 y 122–128. Cuentan como no sensibles en T-1.
 - Nada de este censo autoriza a operar ni valida la meta de crecimiento. Es un inventario con un plan, sin ejecutar.
+
+## 9. Ejecución (se actualiza con cada tanda)
+
+El censo es una foto del 2026-10-18. Esta sección registra lo ejecutado y
+lo que cambió desde entonces; las filas del TSV no se reescriben.
+
+**Fusionado** (un commit por lote, sin cambio de conducta, sin T-1):
+
+| PR | Lotes |
+|---|---|
+| #80 | 24 |
+| #81 | 2, 5, 15, 28a |
+| #120 | 4, 25, 26, 20 |
+| tanda RET-3a…RET-16 | 3a (F317–F320, F328, R160), 37, 49, 17 (F177, F475), 29, 43a (F309 envoltorio, F395, R167, F310/F396 siete constantes, F311, F397), 46, 16 |
+
+**Hecho por otros agentes**: lote 9 entero (Sol, d18b3735), lote 45 entero
+(Codex RB, 906a9c6a), parte del 7 (Sol retiró el bin main.rs de
+audit-engine en d18b3735), mitad del 38 (AGY, 7bdd3bb3) y la parte central
+del 50 (AGY, 508f1597). AGY reconectó net_multiplexer (PR #114).
+
+**Reverificación del 2026-10-24 sobre main 6c485c05** (triaje por lote y
+un escéptico por lote listo):
+
+- Listos (con los subconjuntos que dice cada plan): 6, 7, 8, 10, 11, 12,
+  18 (sólo la dependencia quote), 19, 21, 22, 23 (F76/F78), 27 (sin K12),
+  30, 32, 33, 34, 35 (sin F44), 38 (commit 2), 39, 41, 42, 47 (parcial),
+  51. Los lotes 1 y 8 obligan a editar el paso F1-095 de
+  replay-contracts.yml (prueba flight-recorder y graph-4d).
+- Lote 31: el escéptico lo refuta tal como estaba. F244
+  (UserDataStreamer::dispatch) es la entrada pública por bytes del diseño
+  F2 de Codex QRA (QRA_F2_CAPITAL_DISENO_2026-10-23.md:103) y AGY le añadió
+  llamadas de test el 2026-10-23. Los otros 10 ítems pueden ir sin F244.
+- Bloqueados por tema del dueño: 1 (tema 1), 14 (tema 4), 40 (tema 3).
+  Por orden: 36 (CazadorConstantes). Por zona: 55. Cambian conducta: 13,
+  44, 48. Revisar: 52 (exige 30 y 31 antes).
+
+**Correcciones al censo** que salieron al ejecutar:
+
+- F431 (lote 49): la columna 23 dice «BORRA: las 2 funciones», pero
+  get_scoped_strict se conserva: siete sitios de test (lf1, cf3) necesitan
+  la lectura cruda con NaN. Sólo se retiró get_scoped_strict_or.
+- Lote 16 (F477): el rótulo estaba invertido. El legado era el único que
+  leía trail_f1/f2/runner como distancias por fase; el núcleo los descarta
+  y usa literales 1,20/0,90/0,65/0,45. En vivo, trail_step y la ranura
+  runner no tienen fenotipo (trail_act sí, por trail_max). Va a C-F5 DER /
+  R8-A (G017) o a los genes polizones del tema 4.
+- F208/F459 (StatArbEngine::update, zona de Línea G): tras RET-17 pasa de
+  SIN_LLAMADOR a SOLO_TESTS.
+- Lote 46 (F191): el gemelo no es «el vivo antes de D-713» (aquél usaba
+  `5 + 100·r`); mide la concentración en nivel de un flujo acotado. Las
+  cifras de la regla 2 están en el commit RET-46.
+
+**Restos de lotes ejecutados**: del 3, net_multiplexer (a AGY, para
+unificar con data_pipeline::http_cliente) y active_universe/
+symbol_ranker_engine (tema 4 y gen 37); del 17, F196 (tema 2, por
+F214/F463); del 43, F394 (tema 1, con F305) y los literales 12/30 de
+online_daemon.rs (a Sol); del 28, el 28b (Navier, espera al dueño de
+Ω121).

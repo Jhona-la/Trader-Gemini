@@ -1,5 +1,33 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
 
+## 2026-10-24 — Claude (cloud, Línea C): lotes de retiro 3a, 37, 49, 17, 29, 43a, 46 y 16
+
+Reverificados contra main 6c485c05 los lotes restantes del censo C-F7b
+(triaje y un escéptico por lote; resultado en §9 del censo). Esta tanda
+retira ocho, un commit por lote, sin cambio de conducta y sin T-1:
+
+- RET-3a: cuatro motores de memoria sin lector de quantum-arena
+  (ZeroHeapArena, LockFreeRingBuffer, ZeroAllocArenaPoolEngine,
+  ZeroCopyBinTick) y el trait TickSource. Queda TickEvent.
+- RET-37: reminiscence_and_adn de metacortex; el log del host anunciaba un
+  supervisor de auto-reminiscencia que no existía.
+- RET-49: get_scoped_strict_or; el test gana las sondas de clave global y
+  de NaN por símbolo. get_scoped_strict se queda (lectura cruda con NaN).
+- RET-17: MultiAssetOrchestrator y el alias signal_engine::StatArbEngine.
+- RET-29: StrategyOrchestrator, strategy_telemetry, evaluate_scoped,
+  SignalIntent::drift y ::trajectory_volatility, get_half_life.
+- RET-43a: en mmap_bus, el envoltorio sin _ext, siete constantes que sólo
+  usaban los tests y el derive Serialize con su dependencia serde.
+- RET-46: el gemelo ShannonEntropyEngine, tras comparar con el vivo en
+  cinco señales; su forma cerrada se portó al estimador vivo.
+- RET-16: src/trailing.rs legado, tras comparar con el núcleo. Hallazgo:
+  en vivo trail_step y la ranura runner no tienen fenotipo (el núcleo usa
+  literales en T1; trail_act sí actúa por trail_max). Va a C-F5 DER /
+  R8-A o a los polizones del tema 4; no se arregló aquí.
+- Lote 31 refutado tal como estaba: F244 (dispatch) es la costura del
+  diseño F2 de Codex QRA. Los otros diez ítems pueden ir sin él.
+- Siguen retenidos 28b (Navier) y los cuatro temas del dueño.
+
 ## 2026-10-24 — Claude (cloud, Línea C): C-F5f, seguimiento de la revisión de C-F5e
 
 Revisión adversaria de C-F5e (#79) por dimensión (estadística, código,

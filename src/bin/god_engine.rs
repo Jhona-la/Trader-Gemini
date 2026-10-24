@@ -2621,10 +2621,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 online_daemon.run_online_learning_loop().await;
             });
 
-            // #26: Supervisor de Meta-Aprendizaje y Memoria Inmune Metacortex
+            // #26: Supervisor de Memoria Inmune Metacortex
             rt_for_darwin.spawn(async move {
                 telemetry_server::telemetry_log!(
-                    "🧠 [METACORTEX] Iniciando supervisor de auto-reminiscencia y memoria de trauma..."
+                    "🧠 [METACORTEX] Iniciando supervisor de memoria de trauma (pruebas inmunes)..."
                 );
                 let metacortex = metacortex_engine::MetacortexEngine::new(".");
                 if let Ok(tests) = metacortex.immune_system.generate_immune_tests() {
