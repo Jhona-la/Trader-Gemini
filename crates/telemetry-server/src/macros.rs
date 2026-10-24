@@ -730,6 +730,16 @@ fn vaciar_telemetria_en(queue: Option<&ColaDeLog>, sumidero: Option<&std::sync::
     queue.map(|q| vaciar_en(sumidero, q)).unwrap_or(0)
 }
 
+/// RET-51b (CL-160, censo C-F7b, F155): destino que el host conecta con
+/// `telemetry_engine::conectar`. Escribe la línea de `telemetry!` o
+/// `telemetry_err!` en la cola del log, en el hilo que la emite, como
+/// `telemetry_log!` (mismo corte en frontera de carácter, LG-19); sin cola,
+/// en stdout. Así el apagado (`vaciar_telemetria`) también la vacía y sale
+/// en el orden en que se emitió.
+pub fn linea_de_telemetria(args: fmt::Arguments<'_>) {
+    crate::telemetry_log!("{}", args);
+}
+
 #[cfg(test)]
 mod tests_lg11 {
     use super::*;
