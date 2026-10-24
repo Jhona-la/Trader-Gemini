@@ -324,7 +324,8 @@ impl HelmholtzHodgeFlowEngine {
         ofis: &[f64],
         returns: &[f64],
     ) -> Option<CrossMarketHodgeReport> {
-        let (flow_matrix, active_n) = self.build_cross_microstructure_flow_matrix(ofis, returns)?;
+        let (flow_matrix, active_n) =
+            Self::build_cross_microstructure_flow_matrix_with_params(ofis, returns, &self.params)?;
         let (decomp, potentials) = self.decompose(&flow_matrix, active_n)?;
 
         let mut leader_idx = 0usize;

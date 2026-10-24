@@ -148,7 +148,7 @@ fn test_c5_template_mismatch_rejection() {
 
     // Intentar decodificar como Depth5 (Template 103)
     match SbeDepth5Snapshot::decode(&buf) {
-        Err(SbeDecodeError::BufferTooShort { .. }) => {} // Buffer de BookTicker (48B) es menor que Depth5 (184B)
+        Err(SbeDecodeError::BufferTooShort { .. }) => {} // Buffer de BookTicker (52B) es menor que Depth5 (188B)
         other => panic!("Esperaba BufferTooShort, obtuve {:?}", other),
     }
 }

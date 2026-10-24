@@ -93,7 +93,7 @@ impl SbeHeader {
 }
 
 /// Mensaje binario decodificado de mejor postura de libro (`@bookTicker`, Template 101).
-/// Tamaño del bloque raíz: 40 bytes (Payload total con header: 48 bytes).
+/// Tamaño del bloque raíz: 44 bytes (Payload total con header: 52 bytes).
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct SbeBookTicker {
     /// Timestamp del evento en microsegundos Epoch UNIX.
@@ -111,7 +111,7 @@ pub struct SbeBookTicker {
 }
 
 impl SbeBookTicker {
-    pub const PAYLOAD_LEN: usize = 40;
+    pub const PAYLOAD_LEN: usize = 44;
     pub const TOTAL_LEN: usize = SBE_HEADER_LEN + Self::PAYLOAD_LEN;
 
     /// Decodifica directamente desde los bytes de red.
@@ -202,7 +202,7 @@ impl SbeBookTicker {
 }
 
 /// Mensaje binario decodificado de ejecución de operación individual (`@trade`, Template 102).
-/// Tamaño del bloque raíz: 36 bytes (Payload total con header: 44 bytes).
+/// Tamaño del bloque raíz: 37 bytes (Payload total con header: 45 bytes).
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct SbeTrade {
     /// Timestamp del evento en microsegundos Epoch UNIX.
@@ -220,7 +220,7 @@ pub struct SbeTrade {
 }
 
 impl SbeTrade {
-    pub const PAYLOAD_LEN: usize = 36;
+    pub const PAYLOAD_LEN: usize = 37;
     pub const TOTAL_LEN: usize = SBE_HEADER_LEN + Self::PAYLOAD_LEN;
 
     /// Decodifica directamente desde la secuencia de bytes.
@@ -313,7 +313,7 @@ pub struct SbePriceLevel {
 }
 
 /// Mensaje binario decodificado de los mejores 5 niveles de profundidad (`@depth5`, Template 103).
-/// Tamaño del bloque raíz: 16 bytes + 5 bids (80B) + 5 asks (80B) = 176 bytes. Total con header: 184 bytes.
+/// Tamaño del bloque raíz: 20 bytes + 5 bids (80B) + 5 asks (80B) = 180 bytes. Total con header: 188 bytes.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct SbeDepth5Snapshot {
     pub event_time_us: u64,
@@ -324,7 +324,7 @@ pub struct SbeDepth5Snapshot {
 }
 
 impl SbeDepth5Snapshot {
-    pub const PAYLOAD_LEN: usize = 176;
+    pub const PAYLOAD_LEN: usize = 180;
     pub const TOTAL_LEN: usize = SBE_HEADER_LEN + Self::PAYLOAD_LEN;
 
     /// Decodifica de forma zero-alloc desde el búfer de red.
