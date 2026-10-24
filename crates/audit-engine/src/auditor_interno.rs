@@ -575,6 +575,16 @@ impl AuditorInterno {
         !self.fills_independientes.is_empty()
     }
 
+    /// LG-33: cierres de posición del canal independiente (la muestra de la
+    /// que salen el win rate y el PnL realizado que se comparan).
+    #[inline]
+    pub fn cierres_independientes(&self) -> usize {
+        self.fills_independientes
+            .iter()
+            .filter(|f| f.is_closed_position)
+            .count()
+    }
+
     /// F412/F413/F271 (censo C-F7b §3, prioridad 1): discrepancia con PUERTA DE
     /// EVIDENCIA. `None` = sin fuente independiente ⇒ el asiento
     /// SeniorAuditorInterno NO debe vetar (clave ausente en el registro ⇒
@@ -584,11 +594,16 @@ impl AuditorInterno {
     /// sobre fills que el núcleo no produjo).
     ///
     /// SOL (2026-10-20, censo C-F7b §3-4): la pata de WIN RATE se evalúa por su
-    /// COTA INFERIOR (`|disc| − ee` por bloques) cuando hay evidencia
-    /// suficiente (n ≥ MIN_FILLS_SOMBRA). El ruido de muestreo de un WR de
-    /// pocos cierres ya no veta: sólo veta la discrepancia que sobrevive a su
-    /// propio intervalo. Con menos de MIN_FILLS_SOMBRA la pata queda como
-    /// estaba (puntual) — el ajuste no inventa precisión que no existe.
+    /// COTA INFERIOR (`|disc| − ee` por bloques). El ruido de muestreo de un WR
+    /// de pocos cierres ya no veta: sólo veta la discrepancia que sobrevive a
+    /// su propio intervalo.
+    ///
+    /// LG-33: con menos de `MIN_FILLS_SOMBRA` cierres independientes no se
+    /// devuelve nada. Antes bastaba UN fill: en vivo ese canal sólo recibe los
+    /// cierres por bracket, el primer SL daba WR independiente 0/1 frente al
+    /// WR de todos los cierres del núcleo, la discrepancia superaba el umbral
+    /// y el consejo vetaba la moneda; como el valor sólo se recalcula cuando
+    /// la moneda cierra y el veto le impide abrir, el veto era absorbente.
     ///
     /// Contrato de recuperación: el veto deja de dispararse con datos
     /// tautológicos y sólo vuelve a hacerlo cuando la evidencia independiente
@@ -599,7 +614,7 @@ impl AuditorInterno {
         internal_win_rate: f64,
         internal_drawdown: f64,
     ) -> Option<f64> {
-        if !self.tiene_fuente_independiente() {
+        if self.cierres_independientes() < MIN_FILLS_SOMBRA {
             return None;
         }
         let independent = VerificadorResultados::compute_metrics_with_capital(
@@ -612,9 +627,9 @@ impl AuditorInterno {
             internal_drawdown,
             &independent,
         );
-        // §3-4: cota inferior del intervalo de la pata WR. `sombra_wr_disc`
-        // devuelve `None` con < MIN_FILLS_SOMBRA cierres ⇒ comportamiento
-        // previo intacto (pata puntual).
+        // §3-4: cota inferior del intervalo de la pata WR. Con la puerta de
+        // LG-33 hay ≥ MIN_FILLS_SOMBRA cierres; `sombra_wr_disc` sólo devuelve
+        // `None` si el WR interno no es finito, y entonces la pata es puntual.
         let wr_ajustada = match self.sombra_wr_disc(internal_win_rate) {
             Some(s) => (wr_disc - s.ee_real).max(0.0),
             None => wr_disc,
@@ -635,6 +650,13 @@ impl AuditorInterno {
     #[inline]
     pub fn fills_independientes_len(&self) -> usize {
         self.fills_independientes.len()
+    }
+
+    /// LG-33b: caída máxima pico-valle del diario INTERNO (los cierres tal como
+    /// los contabilizó el núcleo), la misma definición que la referencia del
+    /// canal independiente. Es la afirmación de drawdown que se contrasta.
+    pub fn drawdown_maximo_interno(&self) -> f64 {
+        self.compute_independent_metrics().calculated_max_drawdown
     }
 
     /// Computa directamente las métricas de rendimiento independientes calculadas desde los fills reales

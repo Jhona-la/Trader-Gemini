@@ -13,7 +13,7 @@
 //!   es legítimo.
 //! - Higiene: fills no finitos rechazados; journal acotado.
 
-use audit_engine::auditor_interno::{ExchangeFillRecord, MAX_FILLS_INDEPENDIENTES};
+use audit_engine::auditor_interno::{ExchangeFillRecord, MAX_FILLS_INDEPENDIENTES, MIN_FILLS_SOMBRA};
 use god_engine_core::GodEngineCore;
 use quantum_arena::GlobalArena;
 
@@ -48,8 +48,10 @@ fn canal_hook_habilita_veto_solo_con_evidencia_real() {
     let arena = GlobalArena::build_in_own_stack(13.0);
     let mut core = GodEngineCore::new(arena);
 
-    // 4 cierres del host: WR real 0.5 (+0.5, +0.5, −0.2, −0.2, sin comisión).
-    for (i, pnl) in [0.5, 0.5, -0.2, -0.2].iter().enumerate() {
+    // 20 cierres del host: WR real 0.5 (+0.5, +0.5, −0.2, −0.2 en ciclo, sin
+    // comisión). LG-33: con menos de MIN_FILLS_SOMBRA cierres no hay evidencia.
+    let patron = [0.5, 0.5, -0.2, -0.2];
+    for (i, pnl) in patron.iter().cycle().take(MIN_FILLS_SOMBRA).enumerate() {
         core.registrar_fill_independiente_host(fill(1_700_000_000_000_000_000 + i as u64 * 1_000_000_000, *pnl, 0.0));
     }
     assert!(
@@ -75,16 +77,20 @@ fn canal_hook_habilita_veto_solo_con_evidencia_real() {
         "afirmación honesta vs canal host ⇒ disc ≈ 0"
     );
 
-    // Claim inflado (WR 0.9 vs real 0.5) ⇒ disc = 0.4 > umbral 0.20:
-    // el veto PUEDE disparar, ahora respaldado por evidencia independiente.
+    // Claim inflado (WR 0.9 vs real 0.5) ⇒ la pata WR vale 0.4 menos su error
+    // estándar por bloques, por encima del umbral 0.20: el veto PUEDE disparar,
+    // ahora respaldado por evidencia independiente.
     let disc_inflada = core
         .auditor_interno
         .compute_internal_discrepancy_evidenciada(indep.calculated_sharpe, 0.9, 0.0);
+    let sombra = core.auditor_interno.sombra_wr_disc(0.9).expect("20 cierres ⇒ sombra");
+    let esperado = (0.4 - sombra.ee_real).max(0.0).max(indep.calculated_max_drawdown);
     assert!(
-        (disc_inflada.unwrap_or(0.0) - 0.4).abs() < 1e-9,
-        "WR inflado 0.9 vs real 0.5 ⇒ disc 0.4 (obtuvo {:?})",
+        (disc_inflada.unwrap_or(0.0) - esperado).abs() < 1e-9,
+        "WR inflado 0.9 vs real 0.5 ⇒ disc {esperado} (obtuvo {:?})",
         disc_inflada
     );
+    assert!(disc_inflada.unwrap_or(0.0) > 0.20);
 }
 
 #[test]

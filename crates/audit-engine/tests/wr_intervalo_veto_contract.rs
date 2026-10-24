@@ -119,20 +119,21 @@ fn la_discrepancia_real_sobrevive_a_su_ruido_y_veta() {
     assert_eq!(v, TribunalVerdict::AutoengañoDetectado, "discrepancia real ⇒ veta");
 }
 
+/// LG-33: con menos de MIN_FILLS_SOMBRA cierres ya no hay pata puntual: no se
+/// publica discrepancia (antes la pata puntual de pocos cierres vetaba por ruido).
 #[test]
-fn con_menos_de_n_min_la_pata_queda_puntual() {
+fn con_menos_de_n_min_no_hay_discrepancia() {
     let mut a = AuditorInterno::with_capital(13.0);
     for i in 0..19u64 {
         let pnl = if i < 10 { 0.5 } else { -0.2 };
         a.record_fill_independiente(cierre(1_700_000_000_000_000_000 + i * 1_000_000_000, pnl));
     }
     assert!(a.sombra_wr_disc(0.9).is_none(), "19 < MIN_FILLS_SOMBRA ⇒ sin sombra");
-    let disc = disc_aislando_wr(&a, 0.9);
-    // WR real 10/19 ≈ 0,5263 ⇒ pata |0,9 − 0,5263| ≈ 0,3737 SIN ajuste.
-    let esperado: f64 = (0.9_f64 - 10.0_f64 / 19.0).abs();
-    assert!(
-        (disc - esperado).abs() < 1e-9,
-        "sin evidencia suficiente no hay ajuste: {esperado}, obtuvo {disc}"
+    let indep = a.compute_independent_metrics_from_host();
+    assert_eq!(
+        a.compute_internal_discrepancy_evidenciada(0.0, 0.9, indep.calculated_max_drawdown),
+        None,
+        "sin evidencia suficiente no se publica discrepancia"
     );
     assert_eq!(MIN_FILLS_SOMBRA, 20, "el umbral del contrato");
 }

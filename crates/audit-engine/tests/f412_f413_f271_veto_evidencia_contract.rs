@@ -20,6 +20,7 @@
 
 use audit_engine::auditor_interno::{
     calculate_max_discrepancy, AuditorInterno, ExchangeFillRecord, MAX_FILLS_INDEPENDIENTES,
+    MIN_FILLS_SOMBRA,
 };
 use metacortex_engine::consejo_seniors::{
     evaluate_auditor_interno_opinion, MarketSnapshotPayload, DEFAULT_DISCREPANCY_VETO_THRESHOLD,
@@ -125,8 +126,10 @@ fn fuente_independiente_habilita_veto_solo_con_evidencia_real() {
     let mut auditor = AuditorInterno::with_capital(13.0);
     assert_eq!(auditor.compute_internal_discrepancy_evidenciada(0.0, 0.5, 0.0), None);
 
-    // Canal independiente: 4 cierres del host con WR real 0.5.
-    for (i, pnl) in [0.5, 0.5, -0.2, -0.2].iter().enumerate() {
+    // Canal independiente: 20 cierres del host con WR real 0.5. LG-33: con menos
+    // de MIN_FILLS_SOMBRA cierres no hay evidencia y no se publica discrepancia.
+    let patron = [0.5, 0.5, -0.2, -0.2];
+    for (i, pnl) in patron.iter().cycle().take(MIN_FILLS_SOMBRA).enumerate() {
         auditor.record_fill_independiente(ExchangeFillRecord {
             timestamp_ns: 1_700_000_000_000_000_000 + i as u64 * 1_000_000_000,
             symbol_id: 0,
@@ -153,14 +156,19 @@ fn fuente_independiente_habilita_veto_solo_con_evidencia_real() {
         "afirmación honesta vs canal independiente ⇒ disc ≈ 0"
     );
 
-    // Afirmación inflada (WR 0.9 vs real 0.5) ⇒ Some(0.4) ⇒ el veto PUEDE
-    // disparar, ahora con evidencia independiente de respaldo.
+    // Afirmación inflada (WR 0.9 vs real 0.5) ⇒ la pata WR vale |0.9 − 0.5| menos
+    // su error estándar por bloques (SOL §3-4) ⇒ el veto PUEDE disparar, ahora
+    // con evidencia independiente de respaldo.
     let disc_inflada =
         auditor.compute_internal_discrepancy_evidenciada(indep.calculated_sharpe, 0.9, 0.0);
+    let sombra = auditor.sombra_wr_disc(0.9).expect("20 cierres ⇒ sombra");
+    let pata_wr = (0.4 - sombra.ee_real).max(0.0);
     assert!(
-        (disc_inflada.unwrap_or(0.0) - 0.4).abs() < 1e-9,
-        "WR inflado 0.9 vs 0.5 ⇒ disc 0.4"
+        (disc_inflada.unwrap_or(0.0) - pata_wr.max(indep.calculated_max_drawdown)).abs() < 1e-9,
+        "WR inflado 0.9 vs 0.5 ⇒ disc = max(0.4 − ee, dd) ({disc_inflada:?}, ee {})",
+        sombra.ee_real
     );
+    assert!(disc_inflada.unwrap_or(0.0) > DEFAULT_DISCREPANCY_VETO_THRESHOLD);
     let mut payload = MarketSnapshotPayload::default();
     payload.internal_discrepancy = disc_inflada.unwrap_or(0.0);
     let op = evaluate_auditor_interno_opinion(&payload);

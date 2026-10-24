@@ -1901,6 +1901,41 @@ impl GodEngineCore {
         self.auditor_interno.record_fill_independiente(fill);
     }
 
+    /// F412/F413/F271 (censo C-F7b §3, prioridad 1, 2026-10-18): publica la
+    /// discrepancia del Auditor Interno de `coin_id` con PUERTA DE EVIDENCIA.
+    /// Sin canal independiente suficiente no se publica `internal_discrepancy`
+    /// (se retira con NaN, que el consejo lee como ausente: no veta). Las tres
+    /// patas eran tautológicas sin canal independiente (sharpe sin escritor ⇒
+    /// claim 0.0; wr del mismo cierre con el mismo predicado; dd actual vs
+    /// máximo histórico del diario de cartera) y el veto disparaba solo sin
+    /// decaer (13 → 16,9 ⇒ 0,231 > 0,20 vetando todas las monedas). Sin
+    /// `registry.set` global: contaminaba entre monedas vía el fallback al
+    /// global de get_for_coin_or / get_scoped_value_or.
+    ///
+    /// LG-33b: la afirmación de drawdown es la caída máxima pico-valle del diario
+    /// interno, la misma definición que la referencia independiente. Antes era la
+    /// caída ACTUAL desde la base (0 con la cuenta sobre la base): tras una caída
+    /// de más del 20 % desde un pico, el veto quedaba fijo y era absorbente.
+    pub fn publicar_discrepancia_auditor(&self, coin_id: usize, internal_wr: f64) {
+        // F1-006 (Ola Ω152): lectura estricta por moneda de internal_sharpe (0.0 si ausente).
+        let internal_sharpe = self.arena.registry.get_for_coin_strict_or(coin_id, "internal_sharpe", 0.0);
+        let dd_interno = self.auditor_interno.drawdown_maximo_interno();
+        if let Some(disc) = self.auditor_interno.compute_internal_discrepancy_evidenciada(
+            internal_sharpe,
+            internal_wr,
+            dd_interno,
+        ) {
+            self.arena.registry.set_for_coin(coin_id, "internal_discrepancy", disc);
+        } else {
+            // LG-33: sin evidencia (< MIN_FILLS_SOMBRA cierres independientes)
+            // se retira cualquier valor anterior: NaN se lee como ausente y el
+            // asiento no veta.
+            self.arena
+                .registry
+                .set_for_coin(coin_id, "internal_discrepancy", f64::NAN);
+        }
+    }
+
     /// SOL (2026-10-19, censo C-F7b §3-2): publica las SOMBRAS del auditor
     /// para `coin_id` — sólo telemetría por moneda, NINGUNA decisión las lee
     /// hoy. Existen para medir con intervalo y estabilidad OOS las dos patas
@@ -5563,36 +5598,7 @@ impl GodEngineCore {
                     } else {
                         0.0
                     };
-                    // F1-006 (Ola Ω152): Lectura estricta por moneda de internal_sharpe (0.0 si ausente).
-                    let internal_sharpe = self.arena.registry.get_for_coin_strict_or(coin_id, "internal_sharpe", 0.0);
-                    let internal_dd = self.arena.unified_capital.load(Ordering::Relaxed);
-                    let base_cap = self.arena.config.base_capital.load(Ordering::Relaxed);
-                    let dd_pct = if base_cap > 0.0 && internal_dd < base_cap {
-                        (base_cap - internal_dd) / base_cap
-                    } else {
-                        0.0
-                    };
-
-                    // F412/F413/F271 (censo C-F7b §3, prioridad 1, 2026-10-18):
-                    // PUERTA DE EVIDENCIA. Sin canal independiente (host
-                    // ORDER_TRADE_UPDATE → record_fill_independiente) NO se
-                    // publica `internal_discrepancy`: las tres patas eran
-                    // tautológicas (sharpe sin escritor ⇒ claim 0.0; wr del
-                    // mismo cierre con el mismo predicado; dd actual vs máximo
-                    // histórico del diario de cartera) y el veto del Auditor
-                    // Interno disparaba solo sin decaer (13 → 16,9 ⇒ 0,231 > 0,20
-                    // vetando todas las monedas). Clave ausente ⇒ payload 0.0 ⇒
-                    // sin veto. El `registry.set` global se retira: contaminaba
-                    // entre monedas vía el fallback al global de
-                    // get_for_coin_or / get_scoped_value_or y el valor rancio
-                    // nunca expiraba.
-                    if let Some(disc) = self.auditor_interno.compute_internal_discrepancy_evidenciada(
-                        internal_sharpe,
-                        internal_wr,
-                        dd_pct,
-                    ) {
-                        self.arena.registry.set_for_coin(coin_id, "internal_discrepancy", disc);
-                    }
+                    self.publicar_discrepancia_auditor(coin_id, internal_wr);
 
                     // SOL (2026-10-19, censo C-F7b §3-2): SOMBRAS del auditor.
                     // Telemetría pura (ninguna decisión las lee hoy): la pata
