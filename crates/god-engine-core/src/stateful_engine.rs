@@ -142,6 +142,13 @@ pub struct StatefulEngine {
     pub koopman_modulo: f32,
     pub koopman_angulo: f32,
     pub koopman_bifurcacion: f32,
+    /// GLM 157 & Átomo 4.1 (Ola Omega220): Medidor continuo streaming de entrelazamiento cuántico
+    /// temporal neto ΔS = S(ψ) - S_nulo en MPS (L=8, binarización por signo, ring 256).
+    pub entrelazamiento: feature_engine::entrelazamiento::EntrelazamientoStreaming,
+    /// Entrelazamiento cuántico temporal neto medido streaming: ΔS.
+    pub quantum_delta_s: f32,
+    /// Entropía cuántica de von Neumann del estado empírico streaming.
+    pub quantum_entropy: f32,
     pub hurst_micro: f32,
     pub hurst_meso: f32,
     pub hurst_macro: f32,
@@ -266,6 +273,9 @@ impl StatefulEngine {
             koopman_modulo: f32::NAN,
             koopman_angulo: f32::NAN,
             koopman_bifurcacion: f32::NAN,
+            entrelazamiento: feature_engine::entrelazamiento::EntrelazamientoStreaming::default(),
+            quantum_delta_s: f32::NAN,
+            quantum_entropy: f32::NAN,
             multifractal: feature_engine::MultiScaleHurstConfluence::new(),
             lead_lag: feature_engine::LeadLagAlphaEngine::new(50),
             regime: MarketRegime::Neutral,
@@ -858,6 +868,14 @@ impl StatefulEngine {
                 }
                 // Err (warmup/ridge degenerado) ⇒ los campos quedan con su
                 // último valor válido o NaN inicial — ausencia honesta.
+            }
+            // GLM 157 & Átomo 4.1: Entrelazamiento cuántico temporal neto streaming O(1)/tick:
+            self.entrelazamiento.push(norm_return);
+            if self.entrelazamiento.activos() >= 64 && self.tick_count % 64 == 0 {
+                if let Ok(m) = self.entrelazamiento.medir() {
+                    self.quantum_delta_s = m.delta as f32;
+                    self.quantum_entropy = m.s as f32;
+                }
             }
             // D-434: Invocar análisis espectral FFT Radix-2 periódicamente cada 64 ticks
             if self.tick_count % 64 == 0 {

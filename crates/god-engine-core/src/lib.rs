@@ -7115,6 +7115,24 @@ impl GodEngineCore {
                 set_reg("navier_energy_dissipation", dissipation);
                 set_reg("kinematic_viscosity", ns_engine.kinematic_viscosity);
             }
+
+            // Átomo 4.1 (Ola Omega220): Registro vivo de Operadores Dinámicos Koopman/DMD & Entrelazamiento Cuántico
+            let fe = &self.feature_engines[coin_id];
+            if fe.koopman_modulo.is_finite() {
+                set_reg("koopman_modulo", fe.koopman_modulo as f64);
+            }
+            if fe.koopman_angulo.is_finite() {
+                set_reg("koopman_angulo", fe.koopman_angulo as f64);
+            }
+            if fe.koopman_bifurcacion.is_finite() {
+                set_reg("koopman_bifurcacion", fe.koopman_bifurcacion as f64);
+            }
+            if fe.quantum_delta_s.is_finite() {
+                set_reg("quantum_delta_s", fe.quantum_delta_s as f64);
+            }
+            if fe.quantum_entropy.is_finite() {
+                set_reg("quantum_entropy", fe.quantum_entropy as f64);
+            }
             // #625 (Ola 46) — EL SLOT HAWKES DEL PPO LLEVA LA EXCITACIÓN
             // REAL λ/μ̂. La decisión de consejo abierta desde #554 se
             // ejecuta: el slot 2 llevaba la magnitud del OBI con nombre
@@ -7340,8 +7358,14 @@ impl GodEngineCore {
                 .tp_at_tau(tau_dom)
                 .min(sigma_tau)
                 .max(0.0);
+            // Átomo 4.1 (Ola Omega220): Modulación hidrodinámica Navier-Stokes sobre fricción y spread
+            let ns_laminar = self.navier_stokes_engines.get(coin_id)
+                .map(|ns| ns.laminar_share)
+                .filter(|s| s.is_finite() && *s >= 0.0)
+                .unwrap_or(1.0);
+            let friccion_hidrodinamica = friccion_ida_vuelta * (1.0 + (1.0 - ns_laminar.clamp(0.0, 1.0)) * 0.5);
             let dynamic_max_spread =
-                (recorrido_alcanzable - friccion_ida_vuelta).max(tick_pct);
+                (recorrido_alcanzable - friccion_hidrodinamica).max(tick_pct);
             let spread_ok = spread_pct <= dynamic_max_spread;
 
             // MOD2/7-014 / Ω99: clasificación continua de Hurst adaptada a la densidad muestral N.
@@ -7390,7 +7414,15 @@ impl GodEngineCore {
             let cooldown_ok =
                 self.feature_engines[coin_id].can_open_position_ms(enfriamiento_base_ms);
             let atr_ok = atr_pct > dynamic_atr_min;
-            let viable_para_entrar = atr_ok && spread_ok && cooldown_ok;
+            // Átomo 4.1: Filtro anti-whipsaw por divergencia modal Koopman/DMD
+            // Si el autovalor dominante de Koopman tiene modulo > 1.15 y ángulo próximo a Nyquist (> 2.85 rad),
+            // el mercado está en régimen alternante explosivo de alta frecuencia (whipsaw tick-a-tick).
+            let fe = &self.feature_engines[coin_id];
+            let koopman_whipsaw = fe.koopman_modulo.is_finite()
+                && fe.koopman_angulo.is_finite()
+                && fe.koopman_modulo > 1.15
+                && fe.koopman_angulo > 2.85;
+            let viable_para_entrar = atr_ok && spread_ok && cooldown_ok && !koopman_whipsaw;
             // D-750: cuando el motor pasa un mes entero sin evaluar una sola
             // señal, hay que poder decir POR CUÁL de las tres condiciones. El
             // diagnóstico de abajo vive dentro del bloque viable, así que
@@ -7400,7 +7432,7 @@ impl GodEngineCore {
                 && self.arena.tick_counter.load(Ordering::Relaxed) % 50_000 == 0
             {
                 telemetry_server::telemetry_log!(
-                    "🚧 [VIABILIDAD] tick={} INVIABLE · atr {:.6} > min {:.6}? {} · spread {:.6} ≤ max {:.6}? {} · enfriamiento? {}",
+                    "🚧 [VIABILIDAD] tick={} INVIABLE · atr {:.6} > min {:.6}? {} · spread {:.6} ≤ max {:.6}? {} · enfriamiento? {} · koopman_whipsaw? {}",
                     self.arena.tick_counter.load(Ordering::Relaxed),
                     atr_pct,
                     dynamic_atr_min,
@@ -7408,7 +7440,8 @@ impl GodEngineCore {
                     spread_pct,
                     dynamic_max_spread,
                     spread_ok,
-                    cooldown_ok
+                    cooldown_ok,
+                    koopman_whipsaw,
                 );
             }
             let ema_slow_continuo = if self.feature_engines[coin_id].kline_ema_slow > 0.0 {

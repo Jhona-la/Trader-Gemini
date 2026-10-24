@@ -372,6 +372,20 @@ pub struct EntrelazamientoStreaming {
     descartados_totales: usize,
 }
 
+impl Default for EntrelazamientoStreaming {
+    fn default() -> Self {
+        Self {
+            l: 8,
+            modo: ModoBinarizacion::Signo,
+            buffer: vec![0.0; 256],
+            cabeza: 0,
+            n: 0,
+            descartados_desde_medida: 0,
+            descartados_totales: 0,
+        }
+    }
+}
+
 impl EntrelazamientoStreaming {
     /// Crea el medidor. `capacidad` = retornos finitos retenidos (la medida
     /// cubre sus últimas `capacidad − L + 1` ventanas). Errores tempranos en
