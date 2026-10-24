@@ -1,5 +1,6 @@
 pub mod cola_ws;
 pub mod liquidation;
+pub mod rutas_feed;
 pub mod sbe_decoder;
 
 pub use sbe_decoder::{
