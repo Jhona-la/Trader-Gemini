@@ -368,8 +368,9 @@ El censo es una foto del 2026-10-18. Esta sección registra lo ejecutado y
 lo que cambió desde entonces; las filas del TSV no se reescriben.
 
 **Fusionado** (un commit por lote, sin T-1; sin cambio de conducta salvo
-RET-10b, RET-41, RET-51a y CL-154, que cambian diagnóstico o conducta
-inalcanzable, como dice su lote):
+RET-10b, RET-41, RET-51a, CL-154, RET-44a (CL-156, sólo con
+USE_TESTNET=true) y RET-13a (CL-157, inerte con entradas validadas), que
+cambian diagnóstico o conducta inalcanzable, como dice su lote):
 
 | PR | Lotes |
 |---|---|
@@ -380,6 +381,7 @@ inalcanzable, como dice su lote):
 | #123 | 6, 7 (resto del manifiesto), 8 (sin F352), 10 (más K24 como RET-10b, sólo diagnóstico), 11, 12a |
 | #124 | 21a (F64–F70, R172), 22a (F19–F23, R145; sin R73), 23a (F76, F78), 30 (F226, R15, F228–F230, R107, parte de F247), 32, 33 (sin capital, umbral_familia ni n), 34 (F325 parcial: sale roundtrip_fee_cost, queda validate_order; sin open_positions_count), 35 (sin F44; más RET-35c, tres avisos de clippy en pruebas) |
 | #126 | 47 (parcial: 47a F47 y 47b F58, con CL-154), 38 (commit 2: F282, F436), 39 (39a: F277, F403, F278, F402, F280, F405, R86, R88, F415 y parte de F274/F414; 39b: F411), 41 (F251 sin margen_insuf), 42a (F254/R165, F260), 51a (F386 y la parte neutra de F155), 19 (19a: R115; 19b: F302, F303, F306, F307, F313, F387, F389–F391, F399, R166, R76, R77), 27a (F62, F187 y cuatro claves de F338), 31 (sin F244, F233, get_status ni cleanup_stale_orders), 18a (la dependencia quote de graph-architecture: F15, R67 y su parte de F368) |
+| #130 | 50 (residuo: 50a legacy_view, LegacyRegimeView y su re-export; 50b, el T12 de cf3_fuente_contract como guarda de F1-054), 44 (44a CL-156: G021; 44b: R114, F327), 13 (13a CL-157: FIX #1454 portado al OmniStrategyEngine vivo; 13b: src/features y los dos #[path] de FMT-140; sin F315, F385, R105 ni F184); más RV-12a, RV-plan y RV-docs (revisión de las tandas 2 a 4) |
 
 **Hecho por otros agentes**: lote 9 entero (Sol, d18b3735), lote 45 entero
 (Codex RB, 906a9c6a), parte del 7 (Sol retiró el bin main.rs de
@@ -402,8 +404,8 @@ un escéptico por lote listo):
   llamadas de test el 2026-10-23. Los otros 11 ítems pueden ir sin F244.
 - Bloqueados por tema del dueño: 1 (tema 1), 14 (tema 4), 40 (tema 3),
   53 (F268, tema 1), 54 (ws_client, parser y validation, tema 2).
-  Por orden: 36 (CazadorConstantes). Por zona: 55. Cambian conducta: 13,
-  44, 48. Revisar: 52 (exige 30 y 31 antes).
+  Por orden: 36 (CazadorConstantes). Por zona: 55. Cambian conducta: 48
+  (13 y 44 hechos en la tanda 5). Revisar: 52 (exige 30 y 31 antes).
 
 **Correcciones al censo** que salieron al ejecutar:
 
@@ -565,6 +567,36 @@ un escéptico por lote listo):
     se llama desde lib.rs), y que el recuento de os-guardian del paso F1-095
     se olvidara (ya se avisó a Sol en la tanda 3).
 
+- Lote 50: la fila 199 del plan («cambia conducta (min_margin_floor)»)
+  ya no aplica: el recorte en línea de free_cap lo quitó AGY en F1-054
+  (508f1597) y este lote no lo valida. F3.3-10 queda cerrado: el T12 pasa
+  a guarda de regresión. Si alguien conecta
+  effective_quantum_margin_multiplier sobre free_cap en el núcleo, T12
+  falla a propósito y se sustituye por una prueba de propiedad sobre la
+  función; si la conecta en risk-engine (available_margin_headroom), T12
+  no se entera. F2.3-05 sigue abierto: crash_flux ≈ 0,41 en ruido lo resta
+  ahora risk-engine del margen admisible (0,25·flux en
+  continuous_exposure_limit), no el núcleo.
+- Lote 44: retiro_plan 43 decía borrar bootloader.rs y su mod; el archivo
+  se queda (ROSTER y SystemDiagnostics son el arranque vivo) y sólo sale
+  SystemBootloader. El paso 1 es CL-156: el host pasa a
+  execute_phase_3_warmup el venue del ejecutor (is_testnet), no
+  is_demo_mode, y la URL sale de warmup_klines_url; ninguna lectura nueva
+  de USE_TESTNET. LC-F1-40 sigue abierto: la sonda de OI elige venue con
+  is_demo_env (god_engine.rs:2939), igual que symbol_manager.rs:36/:49.
+  Golden y T-1 no recorren el calentamiento del host. FMT-150 (Codex,
+  auditoría XIII) queda cerrado por retiro: no queda ningún cargador de
+  checkpoints.
+- Lote 13: R182 y R197 decían que portar FIX #1454 «sobra»; se portó
+  porque lo pedía el crítico (§4, tabla del lote 13), con dos pruebas
+  RED→GREEN, y es inerte en vivo: los dos llamadores validan antes
+  (stateful_engine.rs:718-736 y :1061-1077) y la sanitización sólo actúa
+  si un cociente desborda f32. El riesgo del plan «graph-4d se queda sin
+  usuario» ya no aplica (RET-8); graph-architecture se queda por
+  src/bin/graph_server.rs:1 (lote 18). Se cierra FMT-140. feature-engine
+  pierde 10 pruebas en los dos binarios #[path] (3 propias y 7 de los
+  módulos incluidos) y gana 2; la lib de la raíz pierde 9.
+
 **Filas nuevas** (salieron al ejecutar; no están en el TSV):
 
 - N1: spot_bid_qty y spot_ask_qty (quantum-arena state.rs:260-261) sin
@@ -580,7 +612,9 @@ un escéptico por lote listo):
   producción: SnapshotParEscala, guardar/cargar_checkpoint,
   exportar/importar_snapshots, estado_gate_ville y el campo
   state_continuity.espectral_snapshots (AGY y Línea C; toca el lote 44,
-  R114).
+  R114). RET-44b retiró ArenaCheckpoint con su campo espectral_snapshots;
+  queda la API de espectral_multiactivo.rs (guardar/cargar_checkpoint y
+  exportar/importar_snapshots), sin llamador de producción.
 - N4: Position::entry_tau_ms() (position.rs:683) sin llamadores.
 - N5 (F229, cambio de conducta): la cuota de peticiones por criticidad
   (salidas a 98 %, entradas a 90 %) que el censo pedía portar del
@@ -605,11 +639,25 @@ bump/take_pending/peek_pending de god-engine-core liquidation_feed.rs
 (sólo tests); del 12a, comentarios que siguen nombrando módulos
 retirados: data-pipeline cero_dato.rs:88-89 y
 tests/cero_dato_contract.rs:24, :33 (de Sol), dynamic_ranker.rs:101 y
-parser.rs:142-143 (cita tensor_parser); del 50, legacy_view,
-LegacyRegimeView y margin_multiplier*/effective_quantum_margin_multiplier
-(spectral_regime.rs:260-361, sólo con llamadores de test) y el #[ignore]
-OPEN F3.3-10 de cf3_fuente_contract.rs:107, que hay que quitar o poner al
-día; del 21, el comentario de god_engine.rs:5455-5457 (zona AGY), que
+parser.rs:142-143 (cita tensor_parser); del 50, la familia
+margin_multiplier*/with_quantum_phase/effective_quantum_margin_multiplier y
+la cadena quantum_phase (sin consumidor de producción; a AGY, que la
+amplió en el Átomo 3.3), los campos margin_contraction_scale,
+min_margin_floor y w_quantum_coupling de SpectralRegimeParams, que sólo
+ella lee, los dos from_registry_or_default (SpectralRegimeParams y
+EspectralMultiactivoParams, sin ningún llamador desde e468491b) y
+cushion_symmetry_contract.rs:9-99 (AGY, Ω59: prueba una copia local de la
+fórmula que F1-054 quitó del núcleo); del 44, los stubs
+execute_phase_4_training (devuelve Some(()) y el host lo guarda en
+_swing_nn, god_engine.rs:1529) y execute_phase_6_hft de SystemDiagnostics,
+el comentario de TensorConfig «We always use mainnet data»
+(god_engine.rs:1146) y lo que F327 quería llevar al diario de posiciones
+(los extremos del trailing; el diario vivo, position_journal.jsonl, ya
+lleva ts y age_hours, y PositionSnapshot nunca tuvo productor, así que no
+hay datos que portar: es el abierto de MEMORIA «adopción con
+entry_time_ms = now»); del 13, el guard de finitud del resultado de la
+copia ewma (R180), que el Ewma vivo no tiene y sólo actúa cerca de
+1e308; del 21, el comentario de god_engine.rs:5458-5460 (zona AGY), que
 cita read_recent_events de un módulo que ya no existe; del 42,
 genome.rs:2013-2014 (Fable) y f1_084_genome_portfolio_perf_freeze_contract.rs:7
 (AGY), que nombran calculate_dynamic_allocation; del 39,
