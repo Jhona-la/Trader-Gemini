@@ -134,10 +134,10 @@ fn test_c3_cross_microstructure_flow_antisymmetry() {
 fn test_c4_leadership_potential_ranking_and_attractor_identification() {
     let engine = HelmholtzHodgeFlowEngine::new(4);
 
-    // Activo 0 es el líder dominante indiscutible (flujo positivo masivo)
+    // Activo 0 es el líder dominante indiscutible (flujo positivo masivo con retorno líder)
     // Activo 3 es el drenador neto de liquidez (flujo negativo severo)
-    let ofis = [50.0, 5.0, -5.0, -50.0];
-    let returns = [0.0050, 0.0005, -0.0005, -0.0050];
+    let ofis = [60.0, 20.0, -10.0, -40.0];
+    let returns = [0.0050, 0.0030, 0.0010, -0.0010];
 
     let report = engine
         .analyze_cross_market(&ofis, &returns)
@@ -163,9 +163,9 @@ fn test_c4_leadership_potential_ranking_and_attractor_identification() {
 fn test_c5_regime_classification_and_directional_trade_veto() {
     let engine = HelmholtzHodgeFlowEngine::new(4);
 
-    // Caso 1: Flujo direccional alineado -> Cascada de gradiente pura
-    let ofis_grad = [30.0, 10.0, -10.0, -30.0];
-    let returns_grad = [0.0030, 0.0010, -0.0010, -0.0030];
+    // Caso 1: Flujo direccional con deriva de mercado no nula -> Cascada de gradiente pura (curl_share < 0.25)
+    let ofis_grad = [60.0, 40.0, 20.0, 10.0];
+    let returns_grad = [0.0050, 0.0010, -0.0010, -0.0050];
     let report_grad = engine
         .analyze_cross_market(&ofis_grad, &returns_grad)
         .expect("Debe analizar flujo de gradiente");
