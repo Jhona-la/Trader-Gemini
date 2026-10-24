@@ -376,11 +376,11 @@ pub fn record_tsc_span(name: &'static str, start: u64, end: u64) {
 /// it the rate follows the core clock and a single calibration is only an
 /// approximation — the report says so instead of pretending otherwise.
 fn tsc_is_invariant() -> Option<bool> {
-    let max_extended = unsafe { core::arch::x86_64::__cpuid(0x8000_0000) }.eax;
+    let max_extended = core::arch::x86_64::__cpuid(0x8000_0000).eax;
     if max_extended < 0x8000_0007 {
         return None;
     }
-    let features = unsafe { core::arch::x86_64::__cpuid(0x8000_0007) };
+    let features = core::arch::x86_64::__cpuid(0x8000_0007);
     Some(features.edx & (1 << 8) != 0)
 }
 

@@ -229,10 +229,10 @@ fn ortogonalidad_voces_rango_efectivo_btc_sep() {
             }
             let tf = t as f64;
             let mut corr = vec![vec![0.0f64; m]; m];
-            for (a, &ca) in core.iter().enumerate() {
+            for a in 0..core.len() {
                 corr[a][a] = 1.0;
                 let vx = (suma2[a] - suma[a] * suma[a] / tf) / (tf - 1.0);
-                for (b, &cb) in core.iter().enumerate().skip(a + 1) {
+                for b in (a + 1)..core.len() {
                     let vy = (suma2[b] - suma[b] * suma[b] / tf) / (tf - 1.0);
                     let cov = (sxy[a][b] - suma[a] * suma[b] / tf) / (tf - 1.0);
                     let r = if vx > 1e-18 && vy > 1e-18 {

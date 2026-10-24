@@ -23,7 +23,7 @@
 
 use arc_swap::ArcSwap;
 use execution_engine::executor::OrderExecutor;
-use execution_engine::router::{AdverseSelectionGuard, OrderViability, QuantumOrderRouter};
+use execution_engine::router::QuantumOrderRouter;
 use quantum_arena::fee_schedule::{FeeSchedule, SymbolFees};
 use quantum_arena::{symbols, GlobalArena};
 use signal_engine::orchestrator::TensorDecision;
