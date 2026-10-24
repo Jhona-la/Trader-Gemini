@@ -317,4 +317,78 @@ impl HelmholtzHodgeFlowEngine {
     ) -> Option<([[f64; MAX_HODGE_ASSETS]; MAX_HODGE_ASSETS], usize)> {
         Self::build_cross_microstructure_flow_matrix_with_params(ofis, returns, &HelmholtzHodgeParams::default())
     }
+
+    /// Ejecuta el análisis unificado de flujo cruzado multiactivo a partir de OFIs y retornos instantáneos.
+    pub fn analyze_cross_market(
+        &self,
+        ofis: &[f64],
+        returns: &[f64],
+    ) -> Option<CrossMarketHodgeReport> {
+        let (flow_matrix, active_n) = self.build_cross_microstructure_flow_matrix(ofis, returns)?;
+        let (decomp, potentials) = self.decompose(&flow_matrix, active_n)?;
+
+        let mut leader_idx = 0usize;
+        let mut laggard_idx = 0usize;
+        let mut max_pot = f64::NEG_INFINITY;
+        let mut min_pot = f64::INFINITY;
+
+        for i in 0..active_n {
+            let p = potentials[i];
+            if p > max_pot {
+                max_pot = p;
+                leader_idx = i;
+            }
+            if p < min_pot {
+                min_pot = p;
+                laggard_idx = i;
+            }
+        }
+
+        let regime = if decomp.curl_share < 0.25 {
+            HodgeRegime::ConservativeGradient
+        } else if decomp.curl_share > 0.65 {
+            HodgeRegime::VortexManipulative
+        } else {
+            HodgeRegime::MixedTurbulent
+        };
+
+        let should_veto = decomp.curl_share > 0.65;
+
+        Some(CrossMarketHodgeReport {
+            decomposition: decomp,
+            regime,
+            leadership_potentials: potentials,
+            leader_asset_idx: leader_idx,
+            laggard_asset_idx: laggard_idx,
+            should_veto_directional_trades: should_veto,
+        })
+    }
+}
+
+/// Clasificación del régimen físico de flujo de Helmholtz-Hodge.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum HodgeRegime {
+    /// Cascada direccional de liquidez: curl_share < 0.25 (Alpha direccional macro puro).
+    ConservativeGradient,
+    /// Transición mixta con turbulencia moderada: 0.25 <= curl_share <= 0.65.
+    MixedTurbulent,
+    /// Vórtice manipulativo / spoofing / arbitraje cerrado: curl_share > 0.65 (Veto a señales tendenciales).
+    VortexManipulative,
+}
+
+/// Diagnóstico completo de flujo cruzado de mercado.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct CrossMarketHodgeReport {
+    /// Resultado de la descomposición ortogonal de energías.
+    pub decomposition: HodgeDecompositionResult,
+    /// Régimen físico del flujo de mercado.
+    pub regime: HodgeRegime,
+    /// Vector de potencial escalar de liderazgo por activo phi_i.
+    pub leadership_potentials: [f64; MAX_HODGE_ASSETS],
+    /// Activo con mayor potencial de liderazgo (atractor de liquidez).
+    pub leader_asset_idx: usize,
+    /// Activo con menor potencial (fuente neta / drenador de liquidez).
+    pub laggard_asset_idx: usize,
+    /// Veto direccional activado ante dominancia de vórtice.
+    pub should_veto_directional_trades: bool,
 }
