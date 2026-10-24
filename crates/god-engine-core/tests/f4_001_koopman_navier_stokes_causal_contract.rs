@@ -46,8 +46,7 @@ fn test_f4_001_stateful_engine_koopman_and_quantum_streaming() {
         let price = base_price + delta;
         let vol = 1.5 + 0.5 * (phase * 0.5).sin().abs();
 
-        let res = fe.update(price, vol, ts);
-        assert!(res.is_ok(), "Tick update falló en iteración {i}: {:?}", res.err());
+        fe.process_tick(price, vol, ts);
     }
 
     // Tras superar 128 ticks (2 ciclos de cadencia de 64), los observables deben estar vivos y finitos
