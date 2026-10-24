@@ -156,51 +156,6 @@ impl OnlineLearningModule {
         }
     }
 
-    /// Actualiza los pesos de forma continua usando un Filtro de Kalman Tensorial
-    /// td_error es el (Reward Observado - Predicción).
-    /// lyapunov_chaos determina si la actualización es segura (filtro de drift).
-    #[inline(always)]
-    pub fn update_weights_with_kalman(
-        &mut self,
-        features: &[f32; 64],
-        td_error: f32,
-        lyapunov_chaos: f32,
-    ) {
-        // Estimar volatilidad instantánea a partir de la dispersión de features y magnitud de innovación
-        let mut sum = 0.0;
-        let mut count = 0.0;
-        for &f in features {
-            if f.is_finite() && f != 0.0 {
-                sum += f.abs();
-                count += 1.0;
-            }
-        }
-        let feat_dispersion = if count > 0.0 { sum / count } else { 0.01 };
-        let inst_vol = (feat_dispersion * 0.5 + td_error.abs() * 0.5).clamp(1e-4, 10.0);
-
-        self.update_weights_with_kalman_adaptive_vol(features, td_error, lyapunov_chaos, inst_vol);
-    }
-
-    /// Constructor extendido con parámetros Kalman evolucionables
-    pub fn new_with_kalman(
-        learning_rate: f32,
-        momentum: f32,
-        q_noise: f32,
-        r_noise: f32,
-        l2_decay: f32,
-    ) -> Self {
-        Self {
-            weights: [0.0; 64],
-            learning_rate,
-            momentum,
-            velocity: [0.0; 64],
-            p_covariance: [1.0; 64],
-            q_noise,
-            r_noise,
-            l2_decay,
-        }
-    }
-
     /// OLA Ω119: Actualiza los hiperparámetros de aprendizaje online y filtro de Kalman de forma dinámica y desacoplada.
     #[inline(always)]
     pub fn update_hyperparameters(
@@ -239,70 +194,6 @@ impl OnlineLearningModule {
     }
 }
 
-use std::sync::Arc;
-use storage_engine::MmapTelemetryReader;
-use tokio::sync::Mutex;
-
-
-/// U-4 (MOTOR UNIVERSAL CONTINUO): consumidor de telemetría mmap para el
-/// aprendizaje online — UN módulo, UN buffer. La versión gemela
-/// (scalping_module/swing_module con buffers duplicados y el MISMO net_pnl
-/// entrenando dos predictores) duplicaba cada observación del dataset
-/// cuando el horizonte era Continuous. El horizonte del frame ya no bifurca
-/// NADA: una sola cabeza aprende del PnL real del motor continuo.
-/// (El consumidor aún no está cableado al god_engine — firma lista.)
-pub fn spawn_telemetry_consumer<P: AsRef<std::path::Path> + Send + 'static>(
-    learning_module: Arc<Mutex<OnlineLearningModule>>,
-    mmap_path: P,
-) {
-    tokio::spawn(async move {
-        let mut reader = MmapTelemetryReader::new(mmap_path.as_ref());
-
-        // FASE 23: buffer de correlación decisión→resultado por moneda.
-        let mut last_features = [[0.0_f32; 64]; 30];
-        let mut last_entropy = [1.0_f32; 30];
-
-        loop {
-            tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
-
-            if let Ok(frames) = reader.read_latest_frames() {
-                if !frames.is_empty() {
-                    let mut module = learning_module.lock().await;
-
-                    for frame in frames {
-                        let coin_id = frame.payload[0] as usize;
-                        if coin_id >= 30 {
-                            continue;
-                        }
-
-                        // Frame type 1 = Decision Trace (Features)
-                        if frame.frame_type == 1 {
-                            let hawkes = frame.payload[3] as f32;
-                            let entropy = frame.payload[4] as f32;
-                            let ml_prob = frame.payload[5] as f32;
-                            last_features[coin_id][0] = hawkes;
-                            last_features[coin_id][1] = entropy;
-                            last_features[coin_id][2] = ml_prob;
-                            last_entropy[coin_id] = entropy;
-                        }
-                        // Frame type 13 = ROI Metrics (Real Reward)
-                        else if frame.frame_type == 13 {
-                            let net_pnl = frame.payload[2] as f32;
-                            let prior_pred = module.predict(&last_features[coin_id]);
-                            let td_error = net_pnl - prior_pred;
-                            module.update_weights_with_kalman(
-                                &last_features[coin_id],
-                                td_error,
-                                last_entropy[coin_id],
-                            );
-                        }
-                    }
-                }
-            }
-        }
-    });
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -319,7 +210,8 @@ mod tests {
 
         let reward = 0.05f32;
         let td_error = reward - pred_initial;
-        module.update_weights_with_kalman(&features, td_error, 0.2);
+        // inst_vol = 0,4: el proxy que calculaba el envoltorio retirado (RET-20).
+        module.update_weights_with_kalman_adaptive_vol(&features, td_error, 0.2, 0.4);
 
         let pred_updated = module.predict(&features);
         assert!(

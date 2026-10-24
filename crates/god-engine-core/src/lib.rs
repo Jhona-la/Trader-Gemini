@@ -4171,11 +4171,6 @@ impl GodEngineCore {
         })
     }
 
-    /// Revierte una posición fantasma (Ghost Position) cuando la API de Binance la rechaza.
-    pub fn revert_ghost_position(&mut self, coin_id: usize, _is_scalp: bool, _is_long: bool) {
-        self.revert_quantum_ghost_position(coin_id);
-    }
-
     /// Changes only this core's drift entry veto, never a shared risk latch.
     pub fn set_drift_entry_veto(&mut self, blocked: bool) {
         self.drift_entry_veto = blocked;
@@ -4183,30 +4178,6 @@ impl GodEngineCore {
 
     pub fn drift_entry_veto(&self) -> bool {
         self.drift_entry_veto
-    }
-
-    /// Revierte de inmediato una posición cuántica continua rechazada por el exchange
-    pub fn revert_quantum_ghost_position(&mut self, coin_id: usize) {
-        if coin_id >= self.arena.coins.len() {
-            return;
-        }
-        let coin = &self.arena.coins[coin_id];
-        for p in coin.positions.slots() {
-            if p.is_open() {
-                telemetry_server::telemetry_log!(
-                    "👻 [GHOST REVERT] Revertiendo posición cuántica fantasma para coin {}",
-                    coin_id
-                );
-                let (_, _, _, margin) = p.close();
-                if margin > 0.0 {
-                    let _ = self.arena.used_margin.fetch_update(
-                        Ordering::Relaxed,
-                        Ordering::Relaxed,
-                        |v| Some((v - margin).max(0.0)),
-                    );
-                }
-            }
-        }
     }
 
     /// #657 (F3-A1) — UMBRALES DINÁMICOS DE PARIDAD evaluate/update: la
