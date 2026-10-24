@@ -3,7 +3,7 @@ use crossbeam::queue::ArrayQueue;
 use lazy_static::lazy_static;
 use std::collections::HashMap;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicU64, Ordering, fence};
 use std::thread;
 use std::time::Duration;
 
@@ -193,13 +193,86 @@ impl Profiler {
     }
 }
 
+/// Coherent view of the five financial fields, all taken from one update.
+///
+/// F1-101: the auditor used to load the five atomics one by one. With the
+/// engine writer interleaved, it could publish `gross` from tick N beside `net`
+/// from tick N+1 — a fee that was never charged, possibly negative or larger
+/// than the gross itself. The council reads these numbers to judge
+/// profitability; a mixed tuple is worse than an absent one.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct FinancialSnapshot {
+    pub gross_pnl: f64,
+    pub net_pnl: f64,
+    pub total_fees: f64,
+    pub win_rate: f64,
+    pub roi_net: f64,
+}
+
+/// Seqlock over the five financial atomics. Even = stable, odd = write in
+/// progress. Writers are single (one call site in the engine), readers are the
+/// auditor and tests.
+static FINANCIAL_SEQ: AtomicU64 = AtomicU64::new(0);
+
+/// Retry budget for one coherent read. A write is five stores plus two fences,
+/// so 64 spins is orders of magnitude longer; exhausting it means pathological
+/// contention and the caller must report absence, never a guess.
+pub const FINANCIAL_SNAPSHOT_RETRIES: u32 = 64;
+
+/// Read all five financial fields from the same update, or nothing.
+///
+/// `None` means the reader could not obtain a coherent view within
+/// [`FINANCIAL_SNAPSHOT_RETRIES`]; it never returns a tuple assembled from two
+/// different ticks.
+pub fn read_financials_snapshot() -> Option<FinancialSnapshot> {
+    for _ in 0..FINANCIAL_SNAPSHOT_RETRIES {
+        let before = FINANCIAL_SEQ.load(Ordering::Acquire);
+        if before & 1 != 0 {
+            // A write is in progress; retrying now would only burn the budget.
+            std::hint::spin_loop();
+            continue;
+        }
+        let snapshot = FinancialSnapshot {
+            gross_pnl: f64::from_bits(TOTAL_GROSS_PNL.load(Ordering::Relaxed)),
+            net_pnl: f64::from_bits(TOTAL_NET_PNL.load(Ordering::Relaxed)),
+            total_fees: f64::from_bits(TOTAL_FEES.load(Ordering::Relaxed)),
+            win_rate: f64::from_bits(WIN_RATE.load(Ordering::Relaxed)),
+            roi_net: f64::from_bits(ROI_NET.load(Ordering::Relaxed)),
+        };
+        fence(Ordering::Acquire);
+        if FINANCIAL_SEQ.load(Ordering::Relaxed) == before {
+            return Some(snapshot);
+        }
+        std::hint::spin_loop();
+    }
+    None
+}
+
 /// Atomic variant of [`Profiler::update_financials`], read by the auditor
 /// thread. Stores the raw bits, so a forensic reader can recover exactly what
 /// arrived; the report decides availability from `is_finite()`.
 ///
 /// F1-099: same contract as the struct version — no silent zero substitution,
 /// no fee derived from a missing net, no clamped ROI.
+///
+/// F1-101: the five stores are bracketed by the seqlock so a concurrent reader
+/// either sees this whole update or none of it. The bracket must stay
+/// panic-free: it contains only stores, one comparison and one branch, because
+/// an unwind between the odd and the even store would leave the sequence odd
+/// and wedge every later read as UNAVAILABLE.
 pub fn update_financials_atomic(gross: f64, net: f64, win_rate: f64, capital: f64) {
+    let start = FINANCIAL_SEQ.load(Ordering::Relaxed);
+    // A second concurrent writer would interleave the two odd/even brackets and
+    // leave the sequence odd forever, wedging the report as UNAVAILABLE. There
+    // is exactly one call site today; this catches a future second one in debug.
+    debug_assert_eq!(
+        start & 1,
+        0,
+        "escritor financiero concurrente: el seqlock exige un único productor"
+    );
+    FINANCIAL_SEQ.store(start.wrapping_add(1), Ordering::Relaxed);
+    fence(Ordering::Release);
+
     TOTAL_GROSS_PNL.store(gross.to_bits(), Ordering::Relaxed);
     TOTAL_NET_PNL.store(net.to_bits(), Ordering::Relaxed);
     TOTAL_FEES.store((gross - net).to_bits(), Ordering::Relaxed);
@@ -210,6 +283,9 @@ pub fn update_financials_atomic(gross: f64, net: f64, win_rate: f64, capital: f6
         f64::NAN
     };
     ROI_NET.store(roi.to_bits(), Ordering::Relaxed);
+
+    fence(Ordering::Release);
+    FINANCIAL_SEQ.store(start.wrapping_add(2), Ordering::Relaxed);
 }
 
 /// Convert a TSC delta to nanoseconds with a Q32 fixed-point factor.
@@ -457,11 +533,14 @@ pub fn start_profiler_auditor() {
             let mut aggregator = (**GLOBAL_AGGREGATOR.load()).clone();
             aggregator.drain_queue();
             let averages = aggregator.get_averages();
-            let roi_net = f64::from_bits(ROI_NET.load(Ordering::Relaxed));
-            let total_fees = f64::from_bits(TOTAL_FEES.load(Ordering::Relaxed));
-            let win_rate = f64::from_bits(WIN_RATE.load(Ordering::Relaxed));
-            let gross_pnl = f64::from_bits(TOTAL_GROSS_PNL.load(Ordering::Relaxed));
-            let net_pnl = f64::from_bits(TOTAL_NET_PNL.load(Ordering::Relaxed));
+            // F1-101: one coherent snapshot instead of five independent loads.
+            // On contention the whole block is reported unavailable, with its
+            // real cause; mixing two ticks would publish a fee never charged.
+            let financials = read_financials_snapshot();
+            let (gross_pnl, net_pnl, total_fees, win_rate, roi_net) = match financials {
+                Some(f) => (f.gross_pnl, f.net_pnl, f.total_fees, f.win_rate, f.roi_net),
+                None => (f64::NAN, f64::NAN, f64::NAN, f64::NAN, f64::NAN),
+            };
 
             aggregator.roi_net = roi_net;
             aggregator.total_fees = total_fees;
@@ -485,23 +564,39 @@ pub fn start_profiler_auditor() {
             // `if !averages.is_empty()`, so an idle profiler hid the financial
             // state entirely instead of reporting it as unavailable.
             //
-            // Availability is decided PER FIELD: a readable gross is shown as a
-            // number even when the net is unreadable, instead of demoting the
-            // whole line to hex. Allocation here is fine — this is the auditor
-            // thread at a 10 s cadence, never the hot path.
-            crate::telemetry_log!(
-                "💰 Gross PnL: {} | Net PnL: {} | Fees: {} | Win-Rate: {}%",
-                campo_financiero(gross_pnl, 4),
-                campo_financiero(net_pnl, 4),
-                campo_financiero(total_fees, 4),
-                campo_financiero(win_rate, 2)
-            );
-            if roi_net.is_finite() {
-                crate::telemetry_log!("📈 ROI Net (on wallet capital): {:.4}%", roi_net);
-            } else {
-                crate::telemetry_log!(
-                    "📈 ROI Net: UNAVAILABLE — capital was not finite or not positive; 0.0% would falsely assert that nothing was earned"
-                );
+            // F1-101: availability is decided PER FIELD *within one coherent
+            // snapshot*: a readable gross is shown as a number even when the net
+            // is unreadable. When no coherent snapshot exists the cause is
+            // stated as what it is — writer contention — instead of blaming the
+            // engine's capital, which would be a false causal claim.
+            // Allocation here is fine: auditor thread, 10 s cadence, not the
+            // hot path.
+            match financials {
+                Some(_) => {
+                    crate::telemetry_log!(
+                        "💰 Gross PnL: {} | Net PnL: {} | Fees: {} | Win-Rate: {}%",
+                        campo_financiero(gross_pnl, 4),
+                        campo_financiero(net_pnl, 4),
+                        campo_financiero(total_fees, 4),
+                        campo_financiero(win_rate, 2)
+                    );
+                    if roi_net.is_finite() {
+                        crate::telemetry_log!("📈 ROI Net (on wallet capital): {:.4}%", roi_net);
+                    } else {
+                        crate::telemetry_log!(
+                            "📈 ROI Net: UNAVAILABLE — capital was not finite or not positive; 0.0% would falsely assert that nothing was earned"
+                        );
+                    }
+                }
+                None => {
+                    crate::telemetry_log!(
+                        "💰 Gross/Net/Fees/Win-Rate: UNAVAILABLE — sin instantánea coherente tras {} reintentos (contención del escritor), NO datos ausentes; no se mezclan dos ticks",
+                        FINANCIAL_SNAPSHOT_RETRIES
+                    );
+                    crate::telemetry_log!(
+                        "📈 ROI Net: UNAVAILABLE — misma causa: sin instantánea coherente, no capital inválido"
+                    );
+                }
             }
 
             // F1-100: the header states which rate produced the numbers and how
@@ -551,6 +646,9 @@ pub fn start_profiler_auditor() {
 #[cfg(test)]
 mod tests {
     use super::*;
+    // Only the concurrency contract needs it, so it stays out of the module
+    // import: an unused import would warn in a normal (non-test) build.
+    use std::sync::atomic::AtomicBool;
 
     #[test]
     fn test_profiler_queue_and_averages() {
@@ -638,6 +736,10 @@ mod tests {
         finite_update_lands_exactly();
         atomic_roundtrip_preserves_bits_for_forensics();
         extreme_finite_roi_is_not_clamped();
+        snapshot_matches_the_last_update();
+        // Last: it leaves the globals on whichever state the writer finished
+        // with. No later scenario in this test reads them, so that is harmless.
+        concurrent_writes_never_publish_a_mixed_tuple();
     }
 
     fn unreadable_stays_unreadable() {
@@ -694,6 +796,70 @@ mod tests {
         assert_eq!(
             f64::from_bits(ROI_NET.load(Ordering::Relaxed)),
             200_000_000.0
+        );
+    }
+
+    fn snapshot_matches_the_last_update() {
+        // F1-101: with no concurrent writer the snapshot is exactly what the
+        // engine stored, field by field, including the derived fee and ROI.
+        update_financials_atomic(12.5, 11.0, 0.6, 50.0);
+        let s = read_financials_snapshot().expect("sin contención la lectura debe ser coherente");
+        assert_eq!(s.gross_pnl.to_bits(), 12.5_f64.to_bits());
+        assert_eq!(s.net_pnl.to_bits(), 11.0_f64.to_bits());
+        assert_eq!(s.total_fees.to_bits(), 1.5_f64.to_bits());
+        assert_eq!(s.win_rate.to_bits(), 0.6_f64.to_bits());
+        assert_eq!(s.roi_net.to_bits(), 22.0_f64.to_bits());
+    }
+
+    fn concurrent_writes_never_publish_a_mixed_tuple() {
+        // F1-101: two coherent states alternate. Every snapshot the reader
+        // accepts must satisfy `fees == gross - net` exactly; a torn read would
+        // pair the gross of one state with the net of the other and break it.
+        // The assertion is an invariant, not a timing claim: it either always
+        // holds or the seqlock is wrong.
+        const A: (f64, f64) = (10.0, 9.0); // fees 1.0
+        const B: (f64, f64) = (20.0, 18.0); // fees 2.0
+        // Pin the initial state to A before the race starts. The previous
+        // scenario leaves (12.5, 11.0) in the globals, which is coherent but is
+        // neither A nor B: without this the first read would be counted as a
+        // mix when it is only the leftover of the previous contract.
+        update_financials_atomic(A.0, A.1, 0.5, 100.0);
+        let stop = AtomicBool::new(false);
+        let observed = AtomicU64::new(0);
+        let mixed = AtomicU64::new(0);
+        thread::scope(|scope| {
+            scope.spawn(|| {
+                while !stop.load(Ordering::Relaxed) {
+                    update_financials_atomic(A.0, A.1, 0.5, 100.0);
+                    update_financials_atomic(B.0, B.1, 0.5, 100.0);
+                }
+            });
+            for _ in 0..20_000 {
+                if let Some(s) = read_financials_snapshot() {
+                    observed.fetch_add(1, Ordering::Relaxed);
+                    // The accepted snapshot must be one of the two coherent
+                    // states, never a cross between them, and its fee must be
+                    // the one that state implies.
+                    let pair_a = s.gross_pnl.to_bits() == A.0.to_bits()
+                        && s.net_pnl.to_bits() == A.1.to_bits();
+                    let pair_b = s.gross_pnl.to_bits() == B.0.to_bits()
+                        && s.net_pnl.to_bits() == B.1.to_bits();
+                    let fee_ok = s.total_fees.to_bits() == (s.gross_pnl - s.net_pnl).to_bits();
+                    if !(pair_a || pair_b) || !fee_ok {
+                        mixed.fetch_add(1, Ordering::Relaxed);
+                    }
+                }
+            }
+            stop.store(true, Ordering::Relaxed);
+        });
+        assert_eq!(
+            mixed.load(Ordering::Relaxed),
+            0,
+            "instantánea mezclada de dos ticks distintos"
+        );
+        assert!(
+            observed.load(Ordering::Relaxed) > 0,
+            "el contrato no observó ninguna instantánea: la prueba sería vacía"
         );
     }
 
