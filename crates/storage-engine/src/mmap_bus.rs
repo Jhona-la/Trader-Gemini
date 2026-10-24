@@ -11,7 +11,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 /// repr(C) fixes this process ABI layout; it does not guarantee persistence,
 /// a portable wire format, atomic publication, or interprocess consistency.
 #[repr(C, align(64))]
-#[derive(Clone, Copy, Default, serde::Serialize)]
+#[derive(Clone, Copy, Default)]
 pub struct TelemetryFrame {
     pub timestamp_ns: u64, // 8 bytes
     pub subsystem_id: u8,  // 1 byte (Ej: 0 = Risk, 1 = ML, 2 = Execution, 3 = OS Memory)
@@ -25,11 +25,6 @@ pub struct TelemetryFrame {
     pub payload: [f64; 6], // 48 bytes (total 64). Multiplexado según frame_type.
 }
 
-// Constantes de Sub-sistemas de Telemetría (FASE XLIII)
-pub const SUBSYSTEM_RISK_KELLY: u8 = 0;
-pub const SUBSYSTEM_TENSOR_ML: u8 = 1;
-pub const SUBSYSTEM_QUANT_MATH: u8 = 2;
-pub const SUBSYSTEM_OS_MEM: u8 = 3;
 /// Feedback de autoevolución: predicción ML vs resultado real.
 /// Consumido por online_daemon para el Shadow Forest.
 pub const SUBSYSTEM_TENSOR_PREDICTOR: u8 = 12;
@@ -52,13 +47,9 @@ pub fn init_global_telemetry(path: &str) {
     }
 }
 
-/// Escribe un frame de predicción-vs-realidad al bus global (si inicializado).
-/// No-op si el bus no existe (compatible con tests y backtests sin telemetría).
-pub fn write_prediction_vs_reality(ml_prob: f64, is_long: bool, net_pnl_pct: f64, atr_pct: f64) {
-    write_prediction_vs_reality_ext(ml_prob, is_long, net_pnl_pct, atr_pct, 0.0, 0.50);
-}
-
 /// #23: Escribe predicción-vs-realidad con el vector completo de 6 variables microestructurales
+/// al bus global (si inicializado). No-op si el bus no existe (compatible con tests y
+/// backtests sin telemetría).
 pub fn write_prediction_vs_reality_ext(
     ml_prob: f64,
     is_long: bool,
@@ -82,11 +73,6 @@ pub fn write_prediction_vs_reality_ext(
         );
     }
 }
-
-// Tipos de frames Multiplexados
-pub const FRAME_TYPE_TENSOR_ENTROPY: u8 = 10;
-pub const FRAME_TYPE_BAYESIAN_PROB: u8 = 11;
-pub const FRAME_TYPE_HURST_EXPONENT: u8 = 12;
 
 const RING_CAPACITY: usize = 1_000_000; // ~64 MB
 const HEADER_SIZE: usize = 64; // Guardamos metadatos atómicos al principio
@@ -434,6 +420,15 @@ mod tests {
     }
 
     use super::*;
+
+    // Ids de prueba con los valores de las constantes retiradas en RET-43a
+    // (sólo las usaban estos tests): los frames escritos no cambian.
+    const SUBSYSTEM_RISK_KELLY: u8 = 0;
+    const SUBSYSTEM_TENSOR_ML: u8 = 1;
+    const SUBSYSTEM_QUANT_MATH: u8 = 2;
+    const FRAME_TYPE_TENSOR_ENTROPY: u8 = 10;
+    const FRAME_TYPE_BAYESIAN_PROB: u8 = 11;
+    const FRAME_TYPE_HURST_EXPONENT: u8 = 12;
 
     #[test]
     fn test_mmap_telemetry_bus_write_and_read() {
