@@ -4,7 +4,7 @@
 //! steal each other's samples even under the default parallel test runner.
 //! No background auditor is started in this executable.
 
-use telemetry_server::profiler::{Profiler, TELEMETRY_QUEUE, record_profile_sample};
+use telemetry_server::profiler::{Profiler, TELEMETRY_QUEUE, calibrate_tsc, record_profile_sample};
 
 #[test]
 fn profiler_loss_end_to_end_real_queue_macro_and_snapshot() {
@@ -52,6 +52,14 @@ fn full_real_ring_reports_rejections_and_recovers() {
 }
 
 fn exported_macro_records_rejection_without_changing_result() {
+    // F1-100: the macro converts its cycle span with the measured TSC rate.
+    // Without calibration it counts the span instead of inventing a duration,
+    // so this contract must calibrate first. A failure here is a real
+    // measurement failure, not a skipped assertion.
+    assert!(
+        calibrate_tsc().is_some(),
+        "el reloj TSC debe poder calibrarse para que el macro registre spans"
+    );
     let mut report = Profiler::new();
     report.drain_queue();
     let losses_before = report.dropped_samples;
@@ -69,5 +77,7 @@ fn exported_macro_records_rejection_without_changing_result() {
     report.drain_queue();
     assert_eq!(report.counts.get("F1098_macro"), Some(&1));
     assert_eq!(report.dropped_samples, losses_before + 1);
-    // This contract checks lineage, not the existing uncalibrated /3 time unit.
+    // This contract checks lineage, not the converted duration: the nanosecond
+    // value depends on the host's measured TSC rate and is contracted by the
+    // unit tests for `nanos_from_q32` and `calibrate_tsc`.
 }

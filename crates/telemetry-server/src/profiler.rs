@@ -11,6 +11,34 @@ use std::time::Duration;
 // queue. Saturation means at least u64::MAX drops, never a fabricated reset.
 static DROPPED_PROFILE_SAMPLES: AtomicU64 = AtomicU64::new(0);
 
+// F1-100: TSC calibration. `profile_node!` divided the cycle delta by a
+// hardcoded `3` — an assumption of exactly 3 GHz — so every reported latency
+// was wrong by the ratio between the real TSC rate and 3 GHz, and the integer
+// division quantised the measurement to 3-cycle steps.
+//
+// The rate is now measured once against the monotonic clock and stored as a
+// Q32 fixed-point nanoseconds-per-cycle, so the hot path converts with a
+// multiply and a shift instead of a division. Zero means "not calibrated": the
+// span is then counted, never assigned a fabricated duration.
+static TSC_HZ: AtomicU64 = AtomicU64::new(0);
+static TSC_NS_PER_CYCLE_Q32: AtomicU64 = AtomicU64::new(0);
+/// Cost of the instrument itself: the `lfence`+`rdtsc` pair the macro runs
+/// inside every measured span. Reported so a reader can tell a fast node from
+/// the profiler's own resolution floor.
+static TSC_INSTRUMENT_FLOOR_NS: AtomicU64 = AtomicU64::new(0);
+/// 0 = never calibrated, 1 = calibration claimed or done. Guarantees a single
+/// background calibration instead of one per unmeasured span.
+static CALIBRATION_STATE: AtomicU64 = AtomicU64::new(0);
+
+/// No x86_64 part this system can run on ticks below 100 MHz; a reading under
+/// that is a broken measurement, not a slow clock.
+const MIN_TSC_HZ: u64 = 100_000_000;
+
+// Spans that could not be turned into a duration, split by reason so the report
+// distinguishes "no samples yet" from "samples we could not time".
+static UNMEASURED_PROFILE_SAMPLES: AtomicU64 = AtomicU64::new(0);
+static REVERSED_TSC_SAMPLES: AtomicU64 = AtomicU64::new(0);
+
 lazy_static! {
     // Bounded lock-free queue for profiler samples (capacity 65536).
     // ArrayQueue may retry under contention: do not claim wait-free latency.
@@ -184,18 +212,211 @@ pub fn update_financials_atomic(gross: f64, net: f64, win_rate: f64, capital: f6
     ROI_NET.store(roi.to_bits(), Ordering::Relaxed);
 }
 
-/// Helper macro to measure execution time using _rdtsc
+/// Convert a TSC delta to nanoseconds with a Q32 fixed-point factor.
+///
+/// Pure function, so the arithmetic can be contracted without touching the
+/// process-global calibration (parallel tests would race otherwise). `q32` is
+/// nanoseconds-per-cycle scaled by 2^32; zero means uncalibrated and yields
+/// `None` — an untimed span is unknown, not zero.
+///
+/// Rounding is to nearest, not truncation: truncating would systematically
+/// understate latency, which is the wrong direction for a slowness detector.
+/// The resolution is one nanosecond, so a span shorter than that reports `0` —
+/// a real quantisation floor, not a fabricated zero. The macro's own
+/// instrument floor is measured and published separately.
+#[inline]
+fn nanos_from_q32(cycles: u64, q32: u64) -> Option<u64> {
+    if q32 == 0 {
+        return None;
+    }
+    // u128 keeps the product exact for any u64 cycle count: even a full u64
+    // span cannot overflow before the shift.
+    let exact = cycles as u128 * q32 as u128 + (1_u128 << 31);
+    let ns = exact >> 32;
+    // Saturate rather than truncate: a wrapped duration would look plausible.
+    Some(ns.min(u64::MAX as u128) as u64)
+}
+
+/// Convert a measured TSC delta to nanoseconds with the calibrated rate.
+///
+/// `None` when calibration has not run. Callers must not substitute a default.
+#[inline]
+pub fn cycles_to_nanos(cycles: u64) -> Option<u64> {
+    nanos_from_q32(cycles, TSC_NS_PER_CYCLE_Q32.load(Ordering::Acquire))
+}
+
+/// Start a background calibration at most once, for binaries that never call
+/// [`start_profiler_auditor`] (backtest, simulators, latency audits).
+///
+/// Calibration must never run on the caller's thread: a ~50 ms spin inside a
+/// measured block would stall the engine it is measuring. Spans emitted while
+/// it runs are counted as unmeasured, so a process that never calibrates
+/// reports "no latency data" instead of a wrong number.
+fn ensure_tsc_calibrated() {
+    if CALIBRATION_STATE
+        .compare_exchange(0, 1, Ordering::AcqRel, Ordering::Relaxed)
+        .is_ok()
+    {
+        // Detached on purpose: the caller must never wait for the ~50 ms
+        // measurement. `Builder::spawn` returns a Result instead of panicking
+        // when the OS refuses a thread, so telemetry cannot abort the measured
+        // block. A refusal releases the claim so a later span can retry.
+        match thread::Builder::new()
+            .name("tsc-calibration".to_string())
+            .spawn(calibrate_tsc)
+        {
+            Ok(handle) => drop(handle),
+            Err(_) => CALIBRATION_STATE.store(0, Ordering::Relaxed),
+        }
+    }
+}
+
+/// Record one measured span without ever inventing a duration.
+///
+/// Telemetry must not change the control flow of the measured block, so every
+/// failure mode is counted and reported instead of panicking or defaulting.
+#[inline]
+pub fn record_tsc_span(name: &'static str, start: u64, end: u64) {
+    match end.checked_sub(start) {
+        // A span that runs backwards is not a duration: the reads were
+        // reordered around the block. Counting it beats underflowing into a
+        // ~1.8e19 ns "measurement" that poisons every average and every
+        // relative-anomaly threshold derived from them.
+        None => count_rejected_sample(&REVERSED_TSC_SAMPLES),
+        Some(cycles) => match cycles_to_nanos(cycles) {
+            Some(ns) => record_profile_sample(name, ns),
+            None => {
+                ensure_tsc_calibrated();
+                count_rejected_sample(&UNMEASURED_PROFILE_SAMPLES);
+            }
+        },
+    }
+}
+
+/// Whether the CPU advertises an invariant TSC (CPUID 0x80000007 EDX bit 8).
+///
+/// With an invariant TSC the rate is fixed for the life of the process, so one
+/// calibration stays valid across turbo, C-states and core migration. Without
+/// it the rate follows the core clock and a single calibration is only an
+/// approximation — the report says so instead of pretending otherwise.
+fn tsc_is_invariant() -> Option<bool> {
+    let max_extended = unsafe { core::arch::x86_64::__cpuid(0x8000_0000) }.eax;
+    if max_extended < 0x8000_0007 {
+        return None;
+    }
+    let features = unsafe { core::arch::x86_64::__cpuid(0x8000_0007) };
+    Some(features.edx & (1 << 8) != 0)
+}
+
+/// Measure the TSC rate against the monotonic system clock.
+///
+/// Five 10 ms rounds, median. On a CPU with an invariant TSC the rate is fixed
+/// and preemption cannot bias the ratio (both clocks advance in real time
+/// together), so a descheduled round stays on the same ratio and the median
+/// only discards outliers. Without an invariant TSC the rate follows the core
+/// clock and this single calibration is an approximation — the log says so.
+///
+/// Also measures the instrument floor: the macro's own `lfence`+`rdtsc` pair
+/// runs inside every span, so it is a real, reportable resolution floor.
+///
+/// Returns the measured rate in Hz. On failure the previous calibration, if
+/// any, is left untouched.
+pub fn calibrate_tsc() -> Option<u64> {
+    // Claim the state so a concurrent `ensure_tsc_calibrated` does not spawn a
+    // second calibration thread.
+    CALIBRATION_STATE.store(1, Ordering::Relaxed);
+
+    let mut samples: Vec<u64> = Vec::with_capacity(5);
+    for _ in 0..5 {
+        let t0 = std::time::Instant::now();
+        let c0 = unsafe { core::arch::x86_64::_rdtsc() };
+        while t0.elapsed() < Duration::from_millis(10) {
+            std::hint::spin_loop();
+        }
+        let c1 = unsafe { core::arch::x86_64::_rdtsc() };
+        let seconds = t0.elapsed().as_secs_f64();
+        if seconds <= 0.0 {
+            continue;
+        }
+        let Some(cycles) = c1.checked_sub(c0) else {
+            continue;
+        };
+        let hz = (cycles as f64 / seconds).round();
+        if !hz.is_finite() {
+            continue;
+        }
+        if hz < MIN_TSC_HZ as f64 {
+            continue;
+        }
+        if hz >= u64::MAX as f64 {
+            continue;
+        }
+        samples.push(hz as u64);
+    }
+    if samples.is_empty() {
+        return None;
+    }
+    samples.sort_unstable();
+    let hz = samples[samples.len() / 2];
+    let q32 = (1_000_000_000.0 / hz as f64 * 4_294_967_296.0).round();
+    if q32 < 1.0 {
+        return None;
+    }
+    let q32 = q32 as u64;
+
+    let mut floors: Vec<u64> = Vec::with_capacity(64);
+    for _ in 0..64 {
+        unsafe { core::arch::x86_64::_mm_lfence() };
+        let a = unsafe { core::arch::x86_64::_rdtsc() };
+        unsafe { core::arch::x86_64::_mm_lfence() };
+        let b = unsafe { core::arch::x86_64::_rdtsc() };
+        if let Some(cycles) = b.checked_sub(a) {
+            floors.push(cycles);
+        }
+    }
+    floors.sort_unstable();
+    let floor_ns = floors
+        .get(floors.len() / 2)
+        .and_then(|cycles| nanos_from_q32(*cycles, q32))
+        .unwrap_or(0);
+
+    TSC_HZ.store(hz, Ordering::Relaxed);
+    TSC_INSTRUMENT_FLOOR_NS.store(floor_ns, Ordering::Relaxed);
+    // Release publishes the rate together with the fixed-point factor, so a
+    // reader that observes a non-zero factor also observes the matching TSC_HZ.
+    TSC_NS_PER_CYCLE_Q32.store(q32, Ordering::Release);
+    crate::telemetry_log!(
+        "[TSC] frecuencia medida {:.4} GHz (invariante={:?}); conversion en punto fijo Q32, no una constante de 3 GHz; suelo del instrumento={} ns",
+        hz as f64 / 1_000_000_000.0,
+        tsc_is_invariant(),
+        floor_ns
+    );
+    Some(hz)
+}
+
+/// Helper macro to measure execution time with the calibrated TSC rate.
+///
+/// F1-100: the previous body computed `(end - start) / 3`, i.e. it assumed the
+/// CPU ticks at exactly 3 GHz and truncated to 3-cycle steps. On a 4.5 GHz part
+/// every latency was reported ~33 % too low; on a 2.0 GHz part ~50 % too high.
+///
+/// The two `lfence` reads keep the block from being hoisted above the opening
+/// read or sunk below the closing one, which otherwise yields a backwards span.
+/// The closing `lfence` executes inside the measured window, so every span
+/// carries the instrument's own serialisation cost; that cost is measured at
+/// calibration and published as [`TSC_INSTRUMENT_FLOOR_NS`] instead of being
+/// left as an undisclosed offset.
 #[macro_export]
 macro_rules! profile_node {
     ($name:expr, $block:block) => {{
+        unsafe { core::arch::x86_64::_mm_lfence() };
         let start = unsafe { core::arch::x86_64::_rdtsc() };
         let result = $block;
+        unsafe { core::arch::x86_64::_mm_lfence() };
         let end = unsafe { core::arch::x86_64::_rdtsc() };
-        // Approximate conversion: 1 CPU cycle ~ 0.3ns (on 3GHz CPU)
-        let latency_ns = (end - start) / 3;
         // Bounded recording; rejected samples are counted, never silently
         // treated as unbiased sampling. Formatting stays on the auditor thread.
-        $crate::profiler::record_profile_sample($name, latency_ns);
+        $crate::profiler::record_tsc_span($name, start, end);
         result
     }};
 }
@@ -219,6 +440,15 @@ fn campo_financiero(valor: f64, decimales: usize) -> String {
 /// Inicia el auditor de latencias en un hilo secundario.
 pub fn start_profiler_auditor() {
     thread::spawn(move || {
+        // F1-100: calibrate before the first report. This runs on the auditor
+        // thread, not on the engine runtime, so the ~50 ms of measurement never
+        // stalls a tick. Spans emitted before this completes are counted as
+        // unmeasured rather than given a fabricated duration.
+        if calibrate_tsc().is_none() {
+            crate::telemetry_log!(
+                "⚠️ [TSC] no se pudo calibrar el reloj; las latencias se reportaran como NO DISPONIBLES en vez de inventarse"
+            );
+        }
         crate::telemetry_log!("[TELEMETRY] ⏱️ Auditor de Latencia y Rendimiento Iniciado.");
         loop {
             thread::sleep(Duration::from_secs(10));
@@ -274,10 +504,26 @@ pub fn start_profiler_auditor() {
                 );
             }
 
+            // F1-100: the header states which rate produced the numbers and how
+            // many spans could not be timed. Without it a reader cannot tell a
+            // 3 GHz assumption from a measured rate, nor see silent gaps.
+            //
+            // The Q32 factor is read FIRST: it is the Acquire that publishes
+            // the rate and the floor, so reading it first guarantees the header
+            // can never print `calibrated=true` beside a zero rate.
+            let tsc_q32 = TSC_NS_PER_CYCLE_Q32.load(Ordering::Acquire);
+            let tsc_hz = TSC_HZ.load(Ordering::Relaxed);
+            crate::telemetry_log!(
+                "--- [TELEMETRY LATENCY REPORT] tsc={:.4}GHz calibrated={} instrument_floor={}ns unmeasured_spans={} reversed_spans={} ---",
+                tsc_hz as f64 / 1_000_000_000.0,
+                tsc_q32 != 0,
+                TSC_INSTRUMENT_FLOOR_NS.load(Ordering::Relaxed),
+                UNMEASURED_PROFILE_SAMPLES.load(Ordering::Relaxed),
+                REVERSED_TSC_SAMPLES.load(Ordering::Relaxed)
+            );
+
             // Mostrar promedios si existen
             if !averages.is_empty() {
-                crate::telemetry_log!("--- [TELEMETRY LATENCY REPORT] ---");
-
                 let mut all_latencies: Vec<u64> = averages.values().cloned().collect();
                 all_latencies.sort_unstable();
                 let median_latency = *all_latencies.get(all_latencies.len() / 2).unwrap_or(&0);
@@ -524,5 +770,63 @@ mod tests {
         profiler.update_financials(2_000_000.0, 2_000_000.0, 1.0, 1.0);
         assert_eq!(profiler.total_fees, 0.0);
         assert_eq!(profiler.roi_net, 200_000_000.0);
+    }
+
+    #[test]
+    fn tsc_conversion_is_exact_and_uncalibrated_stays_unknown() {
+        // 2.5 GHz -> 0.4 ns per cycle.
+        let q32 = (0.4_f64 * 4_294_967_296.0) as u64;
+        assert_eq!(nanos_from_q32(0, q32), Some(0));
+        assert_eq!(nanos_from_q32(1_000_000_000, q32), Some(400_000_000));
+        // Uncalibrated is unknown, not zero: no fabricated duration.
+        assert_eq!(nanos_from_q32(1_000_000_000, 0), None);
+    }
+
+    #[test]
+    fn tsc_conversion_erradicates_the_three_cycle_floor() {
+        // The old body computed `cycles / 3`, i.e. it assumed exactly 3 GHz and
+        // quantised to 3-cycle steps. A 25-cycle span is 10 ns at 2.5 GHz, but
+        // the old formula reported 8 ns — a 20 % understatement of latency.
+        assert_eq!(25_u64 / 3, 8);
+        let q32 = (0.4_f64 * 4_294_967_296.0) as u64;
+        assert_eq!(nanos_from_q32(25, q32), Some(10));
+        assert_eq!(nanos_from_q32(3, q32), Some(1));
+    }
+
+    #[test]
+    fn tsc_backwards_span_is_counted_and_never_becomes_a_duration() {
+        // Without serialisation a short block can be reordered so that the
+        // closing read precedes the opening one. `end - start` would underflow
+        // to ~1.8e19 ns and poison every average derived from it; it must be
+        // counted instead of recorded.
+        let before = REVERSED_TSC_SAMPLES.load(Ordering::Relaxed);
+        record_tsc_span("F1100_reversed", 1_000, 999);
+        let after = REVERSED_TSC_SAMPLES.load(Ordering::Relaxed);
+        assert_eq!(after, before + 1, "un span invertido debe contarse");
+    }
+
+    #[test]
+    fn tsc_calibration_measures_a_plausible_rate_and_one_second_round_trips() {
+        let hz = calibrate_tsc().expect("el reloj TSC debe poder calibrarse en x86_64");
+        assert!(
+            hz > 500_000_000 && hz < 10_000_000_000,
+            "frecuencia TSC fuera del rango fisico plausible: {hz} Hz"
+        );
+        assert!(
+            TSC_NS_PER_CYCLE_Q32.load(Ordering::Acquire) > 0,
+            "la calibracion debe publicar el factor Q32"
+        );
+        // One second's worth of cycles must convert back to one second.
+        let ns = cycles_to_nanos(hz).expect("calibrado");
+        let error = (ns as f64 - 1_000_000_000.0).abs() / 1_000_000_000.0;
+        assert!(error < 0.01, "1 s de ciclos debe dar 1 s, error {error}");
+        // The instrument floor is measured, not assumed: positive, and far
+        // below a microsecond on any part this system runs on.
+        let floor = TSC_INSTRUMENT_FLOOR_NS.load(Ordering::Relaxed);
+        assert!(floor > 0, "el suelo del instrumento debe medirse");
+        assert!(
+            floor < 10_000,
+            "suelo del instrumento fuera de rango plausible: {floor} ns"
+        );
     }
 }
