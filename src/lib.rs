@@ -6,7 +6,6 @@ pub mod env_manager;
 pub mod features;
 pub mod host_oms;
 pub mod model_manifest;
-pub mod multi_asset_orchestrator;
 pub mod orderbook;
 pub mod parsers;
 pub mod symbol_manager;
