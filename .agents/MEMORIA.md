@@ -1,5 +1,43 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
 
+## 2026-10-24 — Claude (cloud, Línea C): lotes de retiro 21a, 22a, 23a, 30, 32, 33, 34 y 35
+
+Tercera tanda del censo C-F7b (la segunda es el PR #123). Un commit por
+lote, sin cambio de conducta y sin T-1:
+
+- RET-21a: siete buses y loggers sin lector de telemetry-server (1 397
+  líneas); quedan estrangulador, flight_recorder, forensic_auditor,
+  macros, profiler y telegram_bot. La vía mmap viva es
+  storage_engine::mmap_bus. Sus pruebas de lib bajan de 73 a 57.
+- RET-22a: os-guardian pierde el volcado de emergencia, la telemetría de
+  latencia cero, el pin de hilos, lock_memory_region y cinco dependencias
+  (winapi se queda: zona GLM). fast-rng de uuid pasa a execution-engine y
+  omniscient-registry para no cambiar el generador de clientOrderId.
+- RET-23a: los eventos LatencyUpdate, LogUpdate y CapitalUpdate y los
+  endpoints /api/tensor y /api/genome. LogUpdate se emitía también en
+  entradas vetadas. spot_bid_qty/ask_qty quedan sin lector (fila N1).
+- RET-30: ShadowExecutor, HotSwapController, QuantumMultiplexer,
+  QuantumSocketPool y el default de cancel_all_symbol_orders. El router
+  (F225) se queda con AGY; la cuota por criticidad de F229 queda como
+  átomo con cambio de conducta (N5).
+- RET-32: CoinTensorArena (sólo se escribía, cuatro escrituras atómicas
+  por evento en el camino caliente), dos envoltorios epigenéticos y
+  update_tp/sl_curve. Hallazgo N6: darwin.rs escribe curvas sin seqlock.
+- RET-33: seis consultas del espectro, con_parametros, significativo() y
+  HORIZON_READ_POLICY_VERSION; las pruebas de gradiente pasan a signal_at.
+- RET-34: spec() con su panic!, roundtrip_fee_cost, is_flattening y la
+  última clasificación por bandas de posiciones. F325 (validate_order)
+  queda para un lote con cambio de conducta, golden y T-1.
+- RET-35 (+35c): métodos y capas sin llamador de dark-alpha-engine; F44
+  espera a Codex ROOT (RET-35b).
+- Pruebas en la nube: dos fallos que también da main, no la tanda. El test
+  sanitizer de telemetry-server aborta bajo wine (PdhEnumObjectsW sin
+  implementar; en Windows corre), y test_fase3_ultra_low_latency de
+  risk-engine mide 10,8–15,3 µs en debug bajo wine frente a su tope de
+  10 µs (test de AGY, Ω207).
+- Filas nuevas N1–N7 y correcciones de la revisión del #122 en §9 del
+  censo.
+
 ## 2026-10-24 — Claude (cloud, Línea C): lotes de retiro 6, 7, 8, 10, 11 y 12a
 
 Segunda tanda del censo C-F7b (la primera, #122, está abajo). Un commit
@@ -41,8 +79,9 @@ retira ocho, un commit por lote, sin cambio de conducta y sin T-1:
 - RET-17: MultiAssetOrchestrator y el alias signal_engine::StatArbEngine.
 - RET-29: StrategyOrchestrator, strategy_telemetry, evaluate_scoped,
   SignalIntent::drift y ::trajectory_volatility, get_half_life.
-- RET-43a: en mmap_bus, el envoltorio sin _ext, siete constantes que sólo
-  usaban los tests y el derive Serialize con su dependencia serde.
+- RET-43a: en mmap_bus, el envoltorio sin _ext, seis constantes que sólo
+  usaban los tests (pasan a locales del módulo de tests), SUBSYSTEM_OS_MEM
+  (sin ningún lector) y el derive Serialize con su dependencia serde.
 - RET-46: el gemelo ShannonEntropyEngine, tras comparar con el vivo en
   cinco señales; su forma cerrada se portó al estimador vivo.
 - RET-16: src/trailing.rs legado, tras comparar con el núcleo. Hallazgo:
@@ -50,7 +89,7 @@ retira ocho, un commit por lote, sin cambio de conducta y sin T-1:
   literales en T1; trail_act sí actúa por trail_max). Va a C-F5 DER /
   R8-A o a los polizones del tema 4; no se arregló aquí.
 - Lote 31 refutado tal como estaba: F244 (dispatch) es la costura del
-  diseño F2 de Codex QRA. Los otros diez ítems pueden ir sin él.
+  diseño F2 de Codex QRA. Los otros once ítems pueden ir sin él.
 - Siguen retenidos 28b (Navier) y los cuatro temas del dueño.
 
 ## 2026-10-24 — Claude (cloud, Línea C): C-F5f, seguimiento de la revisión de C-F5e
