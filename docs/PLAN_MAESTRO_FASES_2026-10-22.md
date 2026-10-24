@@ -133,7 +133,7 @@ Cada nueva teoría exige: definición operativa, estimadores, guardas NaN/Inf, c
 
 ## 9. Censo archivo por archivo y recepción entre agentes
 
-Se mantendrá un ledger incremental `docs/audit/V33_REVISIONES_2026-10-24.tsv` cuando comience el siguiente ciclo de revisión, sin reescribir los censos históricos. Campos mínimos:
+El inventario mecánico `docs/audit/V33_INVENTARIO_2026-10-24.tsv` contiene las 2.182 rutas del índice actual con blob y cola explícita: 27 marcadas `REVISADO_ESTATICO` y 2.155 `INVENTORIADO`. No es una certificación de revisión completa. El ledger incremental `docs/audit/V33_REVISIONES_2026-10-24.tsv` conserva los 34 hallazgos concretos sin reescribir censos históricos. Campos mínimos:
 
 `ruta | blob | dueño | ruta_viva | hallazgo | severidad | prueba | CI_SHA | estado | siguiente`
 
