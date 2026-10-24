@@ -131,6 +131,19 @@ Las teorías no se integran por catálogo o prestigio. Se prioriza por utilidad 
 
 Cada nueva teoría exige: definición operativa, estimadores, guardas NaN/Inf, causalidad, complejidad de tiempo/memoria, consumidor en la decisión, prueba de solución conocida, datos reales OOS, ablación y recibo de impacto. Si no hay evidencia, permanece como investigación, no como verdad operativa.
 
+## 8B. Backlog científico V33.1 — mandato de fases 28/29
+
+Estas familias se incorporan a la cola, **no** a la lista de capacidades certificadas. Fase 9 (Marchenko-Pastur/Wilson/Lyapunov) sigue en PR #132 y no existe todavía en `main`; no tiene llamadores ni evidencia OOS que auditar en este checkout. La revisión independiente confirmó la ausencia de `random_matrix_wilson.rs` y `f9_001_wilson_rg_contract.rs`.
+
+1. **Motor de capital:** descomposición logarítmica de la meta, Grinold-Kahn con apuestas efectivas y Grossman-Zhou. Aceptación: crecimiento neto OOS con intervalos de confianza, límites de liquidez y drawdown; nunca invertir la fórmula para forzar trades o apalancamiento. Las cifras de bps por ciclo son hipótesis, no expectativa.
+2. **Ejecución multi-riel:** libro implícito triangular, idempotencia `newClientOrderId`, predictor de Smith, socket sharding y numerario anti-depeg. Aceptación: inventario real de mercados y fees, paridad de filtros/cantidades, cola FIFO y selección adversa; prueba de que reintentos no duplican ni provocan rechazos inesperados; medición por segmento de latencia, sin llamar “exacto” a RTT/2. Un libro sintético no crea liquidez gratuita.
+3. **Aprendizaje online:** Cover-Vovk y potenciales de Orabona. Aceptación: derivación correcta del potencial y del arrepentimiento, implementación con guardas numéricas, comparación contra el incumbente y ablación. No se afirma best-in-hindsight ni eliminación de todos los hiperparámetros sin demostrar el alcance del teorema.
+4. **Modelos de localización y campo:** Filoche-Mayboroda, nemáticos activos y Wetterich FRG. Aceptación: operadores discretos bien definidos, solución conocida, interpretación física de parámetros, datos suficientes y superioridad neta OOS; no se adopta por analogía estética.
+5. **Optimización y muestras finitas:** Hadamard/geodésica y Malliavin-Stein. Aceptación: demostrar geodésica-convexidad real del objetivo (no suponerla por el espacio), cotas aplicables al estimador y robustez ante muestras cortas, con control de colinealidad y multiplicidad.
+6. **Silicio y recursos:** IMC throttling, SIMD-DFA, RNS, Elias-Fano y compresión. Aceptación: benchmark antes/después con latencia p50/p95/p99, RAM/SSD, exactitud bit a bit y fallback cuando la CPU no soporte la instrucción. La velocidad nunca sustituye validación ni reduce el presupuesto de 16 GB.
+
+Ningún elemento de este backlog justifica prometer +100 %/72 h, ruina cero, 0 ns o fees insignificantes. Cada candidato entra primero como medición desacoplada y solo avanza con consumidor, causalidad y mejora neta OOS.
+
 ## 9. Censo archivo por archivo y recepción entre agentes
 
 El inventario mecánico `docs/audit/V33_INVENTARIO_2026-10-24.tsv` contiene las 2.180 rutas del índice actual: 26 `REVISADO_ESTATICO`, 1 `RED` (capital inválido con evidencia ejecutada) y 2.153 `INVENTORIADO`. No es una certificación de revisión completa. El ledger incremental `docs/audit/V33_REVISIONES_2026-10-24.tsv` conserva los 34 hallazgos concretos sin reescribir censos históricos. Campos mínimos:

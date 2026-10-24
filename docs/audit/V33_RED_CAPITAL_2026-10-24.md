@@ -26,6 +26,26 @@ Salida capturada en `logs/v33_red_capital_invalid.log`.
 - No se creó `config_dir`.
 - El log solo informa `Archivo binario no encontrado: "data/BTCUSDT_ticks.bin"`; no rechaza el capital inválido.
 
+## Matriz ampliada ejecutada
+
+Se repitió el experimento con el mismo binario y centinela fresco por caso:
+
+| Caso `INITIAL_CAPITAL` | Exit | Centinela preservado | `config_dir` |
+|---|---:|---|---|
+| Ausente | 0 | No | No creado |
+| Vacío/espacio | 0 | No | No creado |
+| NaN | 0 | No | No creado |
+| +Inf | 0 | No | No creado |
+| −Inf | 0 | No | No creado |
+| 0 | 0 | No | No creado |
+| −1 | 0 | No | No creado |
+
+Los logs están en `logs/v33_red_capital_{absent,empty,nan,inf,ninf,zero,neg}.log`. Todos los casos continúan hasta la ausencia del tape en vez de rechazar configuración.
+
+## Comprobación algebraica estática del ROI
+
+En `continuous_evolution_backtest.rs:992`, la fórmula actual es `((current_capital - 13.0) / 13.0) * 100.0`. Para un escenario cuyo capital inicial válido sea 20 y el final 30, esa expresión devuelve 100 %, mientras que la correcta `(30 - 20) / 20 * 100` devuelve 50 %. Este cálculo es evidencia estática del segundo defecto, no una corrida del binario ni una medición financiera.
+
 ## Veredicto RED
 
 La entrada inválida no se rechaza antes de los efectos laterales: el proceso continúa, trunca el CSV y finaliza con éxito. Esto confirma comportamiento defectuoso, no solamente una sospecha estática. La fórmula de crecimiento con literal 13 USD sigue siendo un hallazgo estático separado; este experimento no ejecutó una corrida completa ni midió ROI.
