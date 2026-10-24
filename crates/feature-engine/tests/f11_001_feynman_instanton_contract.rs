@@ -23,10 +23,10 @@ fn test_c1_analytical_instanton_action_and_path_convergence() {
     };
     let engine = FeynmanInstantonEngine::new(params);
 
-    // Acción analítica continua: S_0 = (4/3) * a^3 * sqrt(2 * m * lambda)
-    // Para m = 1, lambda = 2, a = 1 -> S_0 = (4/3) * 1 * sqrt(4) = 8/3 ≈ 2.666666667
+    // Acción analítica continua: S_0 = (2/3) * a^3 * sqrt(2 * m * lambda)
+    // Para m = 1, lambda = 2, a = 1 -> S_0 = (2/3) * 1 * sqrt(4) = 4/3 ≈ 1.333333333
     let s0 = engine.analytical_instanton_action();
-    let expected_s0 = 8.0 / 3.0;
+    let expected_s0 = 4.0 / 3.0;
     assert!(
         (s0 - expected_s0).abs() < 1e-12,
         "Acción analítica esperada: {}, obtenida: {}",

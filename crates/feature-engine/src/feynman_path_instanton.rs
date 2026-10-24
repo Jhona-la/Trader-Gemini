@@ -196,13 +196,13 @@ impl FeynmanInstantonEngine {
         }
     }
 
-    /// Calcula la acción analítica del instantón continuo $\mathcal{S}_0 = \frac{4}{3} a^3 \sqrt{2 m \lambda}$.
+    /// Calcula la acción analítica del instantón continuo $\mathcal{S}_0 = \frac{2}{3} a^3 \sqrt{2 m \lambda}$.
     #[inline]
     pub fn analytical_instanton_action(&self) -> f64 {
         let a = self.params.well_separation_a;
         let m = self.params.effective_mass;
         let lambda = self.params.lambda_coupling;
-        (4.0 / 3.0) * a.powi(3) * (2.0 * m * lambda).sqrt()
+        (2.0 / 3.0) * a.powi(3) * (2.0 * m * lambda).sqrt()
     }
 
     /// Evalúa la probabilidad de tunelamiento Gamow / WKB a través de la barrera de liquidez.
