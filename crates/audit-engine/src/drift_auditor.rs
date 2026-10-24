@@ -72,8 +72,17 @@ impl DriftRecovery {
     /// el sistema no puede acumular cierres limpios porque las entradas están vetadas.
     /// Si han transcurrido al menos `cooldown_ms` desde el bloqueo sin nuevos incidentes,
     /// libera el veto y devuelve `true`.
+    ///
+    /// LG-35: `now_ms` y el `timestamp_ms` de `observe_at` deben venir del MISMO reloj.
+    /// Si `now_ms` es anterior al instante del bloqueo (reloj que retrocede u otra
+    /// base), la espera se reinicia en `now_ms`: nunca libera antes de tiempo. El host
+    /// fechaba el bloqueo en ms epoch y consultaba con ms del proceso, y la espera no
+    /// se cumplía nunca (veto absorbente hasta reiniciar).
     pub fn try_idle_recovery(&mut self, now_ms: u64, cooldown_ms: u64, open_positions: usize) -> bool {
         if self.blocked && open_positions == 0 {
+            if now_ms < self.blocked_since_ms {
+                self.blocked_since_ms = now_ms;
+            }
             let inicio = if self.blocked_since_ms == 0 {
                 self.blocked_since_ms = now_ms;
                 now_ms

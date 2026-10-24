@@ -4640,10 +4640,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             pnl / exit_notional
                         } else { f64::NAN };
                         {
-                            let ts_now = std::time::SystemTime::now()
-                                .duration_since(std::time::UNIX_EPOCH)
-                                .unwrap_or_default()
-                                .as_millis() as u64;
+                            // LG-35: el bloqueo se fecha con el mismo reloj monótono del proceso
+                            // con que `try_idle_recovery` mide la espera (antes ms epoch: la
+                            // espera de 60 s no se cumplía nunca).
+                            let ts_now = instant_baseline.elapsed().as_millis() as u64;
                             // F1-062 (Ola Ω171): Centinela contable directo en O(1) con cero asignaciones.
                             // Erradica la sombra sintética real·0.95 que requería |real| > 100% y
                             // evita la creación de dos TradeResult ficticios en el camino crítico.

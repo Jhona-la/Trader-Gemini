@@ -80,3 +80,29 @@ fn one_observation_policy_and_repeated_cycles_have_no_stale_state() {
         assert!(!r.is_blocked());
     }
 }
+
+/// LG-35 (Línea G, ola 10; hallazgo LG10-INFRA-03): el host fechaba el bloqueo en
+/// ms epoch (≈ 1,76·10¹²) y consultaba la autorrecuperación con ms del proceso
+/// (≈ 10⁷): `now − inicio` saturaba en 0 y el veto de deriva no se liberaba nunca
+/// sin reiniciar. Un `now` anterior al bloqueo reinicia la espera en `now`.
+#[test]
+fn lg35_reloj_de_otra_base_reinicia_la_espera_y_libera_a_los_60_s() {
+    let mut r = recovery();
+    r.observe_at(&Err(E::NonfinitePnl), 1_760_000_000_000);
+    assert!(r.is_blocked());
+    assert!(!r.try_idle_recovery(5_000, 60_000, 0), "reinicia la espera en 5 000");
+    assert!(!r.try_idle_recovery(64_999, 60_000, 0), "aún no pasan 60 s");
+    assert!(r.try_idle_recovery(65_000, 60_000, 0), "60 s planos y sin incidentes: libera");
+    assert!(!r.is_blocked());
+}
+
+/// LG-35: si el reloj retrocede, la espera se mide desde la lectura más baja: libera
+/// 60 s después de ella, nunca antes (desde el bloqueo real han pasado al menos 60 s).
+#[test]
+fn lg35_un_reloj_que_retrocede_reinicia_la_espera() {
+    let mut r = recovery();
+    r.observe_at(&Err(E::NonfinitePnl), 100_000);
+    assert!(!r.try_idle_recovery(90_000, 60_000, 0));
+    assert!(!r.try_idle_recovery(149_999, 60_000, 0));
+    assert!(r.try_idle_recovery(150_000, 60_000, 0));
+}
