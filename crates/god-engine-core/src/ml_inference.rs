@@ -421,10 +421,11 @@ impl NanoForest {
 
 /// B3.4 — BLOQUE MACRO del vector ML (dims 44..48, tras swing 34 ⊕ espectral 10).
 ///
-/// Contrato ÚNICO entre inferencia viva y train_forest: los niveles FRED que
-/// el feed vivo (`omni_multiplexer::run_macro_rest_poller`) ya publica en `omni_features` —
-/// DXY=DTWEXBGS [21], SP500 [22], NASDAQ=NASDAQCOM [23], VIX=VIXCLS [24] —
-/// y que el trainer junta as-of (cierre t-1) desde `data/macro/*.csv`.
+/// Contrato ÚNICO entre inferencia viva y train_forest: los cierres t-1 de
+/// Yahoo v8 que el feed vivo (`omni_multiplexer::run_macro_rest_poller`)
+/// publica en `omni_features` — DXY=DX-Y.NYB (ICE) [21], SP500=^GSPC [22],
+/// NASDAQ=^IXIC [23], VIX=^VIX [24] — y que el trainer junta as-of (cierre
+/// t-1) de los mismos símbolos desde `data/macro/*.csv` (`macro_history_sync`).
 ///
 /// Las constantes son de UNIDADES (centro/escala típicos de cada serie),
 /// no de información: un GBDT es invariante a transformaciones afines
@@ -439,13 +440,13 @@ pub fn macro_ml_features(omni: &[f64; 54]) -> [f32; 4] {
         }
     };
     [
-        aff(omni[24], 20.0, 10.0),    // VIXCLS — nivel de miedo
-        aff(omni[22], 5000.0, 500.0), // SP500 — nivel riesgo global
+        aff(omni[24], 20.0, 10.0),    // ^VIX — nivel de miedo
+        aff(omni[22], 5000.0, 500.0), // ^GSPC — nivel riesgo global
         // B3.23: ICE DXY (DX-Y.NYB ~99-105) en trainer y vivo — la serie
         // Fed DTWEXBGS (~120) quedó fuera (FRED bloquea la red); paridad
         // por MISMA SERIE en ambos lados del contrato.
         aff(omni[21], 100.0, 5.0),      // ICE DXY — nivel dólar
-        aff(omni[23], 18000.0, 2000.0), // NASDAQCOM — nivel tech
+        aff(omni[23], 18000.0, 2000.0), // ^IXIC — nivel tech
     ]
 }
 
@@ -655,10 +656,10 @@ mod tests {
     #[test]
     fn b34_macro_ml_features_mapea_el_omni_vivo() {
         let mut omni = [0.0f64; 54];
-        omni[24] = 30.0; // VIXCLS
+        omni[24] = 30.0; // ^VIX
         omni[21] = 105.0; // ICE DXY (DX-Y.NYB — B3.23)
-        omni[22] = 5500.0; // SP500
-        omni[23] = 20000.0; // NASDAQCOM
+        omni[22] = 5500.0; // ^GSPC
+        omni[23] = 20000.0; // ^IXIC
         let m = macro_ml_features(&omni);
         assert!((m[0] - 1.0).abs() < 1e-6, "VIX (30-20)/10 = +1");
         assert!((m[1] - 1.0).abs() < 1e-6, "SP500 (5500-5000)/500 = +1");

@@ -103,3 +103,50 @@ fn cl52_el_bucle_reinicia_aunque_el_centinela_se_perdiera() {
     assert!(reinicio.contains("book_seq_guard=parsers::BookSequenceGuard::new("));
     assert!(reinicio.contains("ifes_centinela{continue;}"));
 }
+
+/// CL-156 (G021 de Línea G) — el calentamiento REST pide las K-lines al
+/// venue que el host eligió para el cliente REST y el ejecutor (`is_testnet`,
+/// de USE_TESTNET), no a mainnet fijo. Antes `execute_phase_3_warmup`
+/// ignoraba su argumento y fijaba `fapi.binance.com`: en testnet sembraba
+/// Hurst, FFT, multifractal y σ̂ con la serie de otro mercado, y el empalme
+/// con el WS de testnet saltaba. El modo demo (`is_demo_mode`) no sirve:
+/// SHADOW_MODE y BINANCE_USE_DEMO operan papel contra mainnet.
+#[test]
+fn cl156_el_calentamiento_rest_usa_el_venue_del_ejecutor() {
+    let b: String = include_str!("../src/bootloader.rs")
+        .lines()
+        .filter(|l| !l.trim_start().starts_with("//"))
+        .collect::<String>()
+        .split_whitespace()
+        .collect();
+    let cuerpo = tramo(
+        &b,
+        "pubasyncfnexecute_phase_3_warmup(",
+        "pubasyncfnexecute_phase_4_training(",
+    );
+    assert!(
+        !cuerpo.contains("fapi.binance.com"),
+        "el calentamiento vivo no fija el host de mainnet"
+    );
+    assert!(cuerpo.starts_with("pubasyncfnexecute_phase_3_warmup(usa_testnet:bool,"));
+    assert!(
+        cuerpo.contains("warmup_klines_url(usa_testnet,"),
+        "la URL sale del venue recibido"
+    );
+
+    let h = host();
+    let t = tramo(
+        &h,
+        "let(active_key,active_secret,is_testnet)=",
+        "SystemDiagnostics::execute_phase_3_warmup(",
+    );
+    assert!(t.contains("OrderExecutor::new(active_key,active_secret,is_testnet);"));
+    assert!(
+        !t.contains("letis_testnet") && !t.contains("letmutis_testnet"),
+        "nadie redefine el venue entre el ejecutor y el calentamiento"
+    );
+    assert!(
+        h.contains("SystemDiagnostics::execute_phase_3_warmup(is_testnet,&symbols"),
+        "el host pasa el venue del ejecutor, no is_demo_mode"
+    );
+}
