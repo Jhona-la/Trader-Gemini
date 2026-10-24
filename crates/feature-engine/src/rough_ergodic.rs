@@ -198,10 +198,16 @@ impl ErgodicGrowthEngine {
         };
 
         // Cota de Cramér-Lundberg sobre la riqueza: P(ruina) <= exp(-2 * g_opt / sigma^2 * log_drawdown_barrier)
-        let ruin_bound = if best_g > 0.0 && g_var > 1e-8 {
-            let theta = (2.0 * best_g / g_var).clamp(0.0, 50.0);
-            // Para una caída crítica del 30% en capital (ln(1 / 0.70) ~ 0.35667)
-            (-theta * 0.35667).exp().clamp(0.0, 1.0)
+        let ruin_bound = if best_g > 0.0 {
+            if g_var <= 1e-8 {
+                // Si la dispersión es despreciable y el crecimiento temporal es positivo,
+                // la dinámica es determinista monótonamente creciente (probabilidad de ruina nula).
+                0.0
+            } else {
+                let theta = (2.0 * best_g / g_var).clamp(0.0, 50.0);
+                // Para una caída crítica del 30% en capital (ln(1 / 0.70) ~ 0.35667)
+                (-theta * 0.35667).exp().clamp(0.0, 1.0)
+            }
         } else {
             1.0
         };

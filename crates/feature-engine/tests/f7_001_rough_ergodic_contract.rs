@@ -130,6 +130,19 @@ fn test_c3_cramer_lundberg_wealth_ruin_bound() {
         res_losing.ruin_probability_bound, 1.0,
         "Ante retornos perdedores la probabilidad de ruina debe saturar en 1.0"
     );
+
+    // Caso C: Flujo estocástico con deriva positiva y dispersión finita
+    let mut stochastic_returns = Vec::new();
+    for _ in 0..50 {
+        stochastic_returns.push(0.03);
+        stochastic_returns.push(0.01);
+    }
+    let res_stoch = engine.optimize_growth(&stochastic_returns, 0.0001);
+    assert!(
+        res_stoch.ruin_probability_bound < 0.10,
+        "Para flujo estocástico con deriva neta positiva la ruina debe ser baja (fue {})",
+        res_stoch.ruin_probability_bound
+    );
 }
 
 /// Contrato C4: Predictor Rough Bergomi (H < 0.50) & Núcleo Markoviano Multi-Factor
