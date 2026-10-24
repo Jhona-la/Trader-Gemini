@@ -8,7 +8,10 @@ use omniscient_registry::{OmniscientRegistry, Parameter, ParameterKind};
 /// 3. `get_value_or` ante `NaN` devuelve el `default` seguro, nunca un 0.0 fabricado.
 /// 4. `timestamp` atómico en `Parameter`: se actualiza en cada `set_value` / `set`.
 /// 5. Aislamiento multi-activo: `get_for_coin_strict` y `get_for_coin_strict_or` garantizan
-///    que una moneda nunca lea el valor de otra moneda si la suya está indefinida.
+///    que una moneda nunca lea el valor de otra moneda si la suya está indefinida. Lo mismo por
+///    símbolo: `get_scoped_strict` devuelve el dato crudo (NaN incluido, para que el decisor vea
+///    la falta de evidencia), y `get_scoped_val_strict(_or)` no cae ni a otra moneda ni a la
+///    clave global, y trata un NaN escrito como ausente.
 #[test]
 fn test_desconocido_no_es_cero_preservacion_nan() {
     let registry = OmniscientRegistry::new();
@@ -80,6 +83,19 @@ fn test_aislamiento_estricto_entre_activos() {
     registry.set_scoped("BTCUSDT", "liquidity_density", 450.0);
     assert_eq!(registry.get_scoped_strict("BTCUSDT", "liquidity_density"), Some(450.0));
     assert_eq!(registry.get_scoped_strict("ETHUSDT", "liquidity_density"), None);
-    assert_eq!(registry.get_scoped_strict_or("ETHUSDT", "liquidity_density", 10.0), 10.0);
+    assert_eq!(registry.get_scoped_val_strict_or(Some("ETHUSDT"), None, "liquidity_density", 10.0), 10.0);
     assert_eq!(registry.get_scoped_value_or("ETHUSDT", "liquidity_density", 10.0), 10.0);
+
+    // 5. Con la clave global escrita, la lectura no estricta cae a ella y la estricta no.
+    registry.set("liquidity_density", 99.0);
+    assert_eq!(registry.get_scoped_value_or("ETHUSDT", "liquidity_density", 10.0), 99.0);
+    assert_eq!(registry.get_scoped_val_strict_or(Some("ETHUSDT"), None, "liquidity_density", 10.0), 10.0);
+    assert_eq!(registry.get_scoped_val_strict(Some("ETHUSDT"), None, "liquidity_density"), None);
+    assert_eq!(registry.get_scoped_val_strict_or(Some("BTCUSDT"), None, "liquidity_density", 10.0), 450.0);
+
+    // 6. Un NaN escrito por símbolo: la lectura cruda lo conserva y la estricta lo trata como ausente.
+    registry.set_scoped("BTCUSDT", "liquidez_desconocida", f64::NAN);
+    assert!(registry.get_scoped_strict("BTCUSDT", "liquidez_desconocida").is_some_and(f64::is_nan));
+    assert_eq!(registry.get_scoped_val_strict(Some("BTCUSDT"), None, "liquidez_desconocida"), None);
+    assert_eq!(registry.get_scoped_val_strict_or(Some("BTCUSDT"), None, "liquidez_desconocida", 10.0), 10.0);
 }
