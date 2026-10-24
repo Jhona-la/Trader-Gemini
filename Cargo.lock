@@ -2022,7 +2022,6 @@ dependencies = [
  "rkyv",
  "serde",
  "serde_json",
- "storage-engine",
  "syn 2.0.118",
  "tempfile",
  "tokio",

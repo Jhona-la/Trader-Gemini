@@ -124,7 +124,8 @@ fn test_05_online_learning_module_hyperparameter_adaptation() {
     let pred_before = learner.predict(&features);
     assert!(pred_before.is_finite());
 
-    learner.update_weights_with_kalman(&features, 1.0, 0.0);
+    // inst_vol = 0,55: el proxy que calculaba el envoltorio retirado (RET-20).
+    learner.update_weights_with_kalman_adaptive_vol(&features, 1.0, 0.0, 0.55);
     let pred_after = learner.predict(&features);
     assert!(pred_after.is_finite());
 }
