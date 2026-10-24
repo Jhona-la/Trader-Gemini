@@ -10,16 +10,9 @@ use axum::{
 pub mod estrangulador;
 pub mod flight_recorder;
 pub mod forensic_auditor;
-pub mod lock_free_logger;
-pub mod lockfree_bus;
 pub mod macros;
 pub mod profiler;
-pub mod stream;
 pub mod telegram_bot;
-pub mod telemetry_mmap;
-pub mod tensor_telemetry;
-pub mod zero_copy_bus;
-pub mod zero_copy_ring;
 pub use flight_recorder::{FlightEvent, FlightRecorder};
 pub use forensic_auditor::ForensicAuditor;
 use quantum_arena::GlobalArena;
