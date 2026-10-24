@@ -257,8 +257,8 @@ impl RoughBergomiPredictor {
 
         // Discretización geométrica de escalas temporales:
         // lambda_m = lambda_0 * beta^(m-1), cubriendo desde alta frecuencia (1 tick) hasta regímenes amplios
-        let lambda_0 = 0.10;
-        let beta = 2.40;
+        let lambda_0: f64 = 0.10;
+        let beta: f64 = 2.40;
 
         // Aproximación de Gamma(H + 0.5) para H ~ 0.12: Gamma(0.62) ~ 1.43
         let gamma_h_plus_half = 1.432;
