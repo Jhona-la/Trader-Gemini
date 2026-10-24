@@ -43,11 +43,14 @@ para todo el universo (26–30 símbolos).
 
 | # | Átomo | Hipótesis | Aceptación | Estado |
 |---|---|---|---|---|
-| I-1 | Auditoría del camino socket → cola → métrica → consumidores | La métrica mezcla los cuatro términos | Hallazgos con ruta:línea, verificados por escéptico | en curso |
+| I-1 | Auditoría del camino socket → cola → métrica → consumidores | La métrica mezcla los cuatro términos | 27 hallazgos con ruta:línea (`docs/audit/linea_i/i1_lectores.json`), verificados por escéptico | lectores hechos; verificación en curso |
+| I-1b | Rutas `/public` y `/market` (un lector WS por categoría) | En producción la URL heredada no recibe velas ni liquidaciones | Sondas (`SONDAS_WS_2026-10-24.md`) + contrato `data-ingest/tests/rutas_feed_contract.rs` que falla en main | **implementado, en verificación** |
 | I-2 | Sello de recepción en el lector WS y métrica descompuesta | Separar red+reloj (`recv − E`) de espera local (`proc − recv`) | Test que falla antes: un evento que espera en cola no cuenta como red lenta | pendiente |
-| I-3 | Cada consumidor usa su componente | Kill-switch y avisos de red sobre red; atraso local sobre la cola | Contratos por consumidor | pendiente |
-| I-4 | Umbral derivado de la distribución medida | Hoy el umbral es un gen aleatorio (500–10 000 ms) | Cuantil medido de la componente de red, con piso físico | pendiente |
-| I-5 | Reloj consistente | Ver hallazgos de I-1 | Test de deriva simulada | pendiente |
+| I-3 | El inmune y el interlock usan su componente | Hoy 3 lecturas puntuales de la métrica mezclada aplanan todo y latchean el kill-switch | Contratos por consumidor; atraso local ⇒ recortar carga, no aplanar | pendiente |
+| I-4 | Umbral derivado de la distribución medida | Hoy el umbral es un gen aleatorio (500–10 000 ms) sin presión selectiva | Cuantil medido de la red con piso físico; gen congelado | pendiente |
+| I-5 | Reloj consistente | `Instant` + offset medido contra `SystemTime` | Test de corrección del reloj de pared simulada | pendiente |
+| I-6 | El lector arranca cuando el consumidor está listo | Cada arranque empieza con miles de eventos viejos en cola | Contrato de orden de arranque | pendiente |
+| I-7 | Sin E/S bloqueante en el hilo caliente | `promote`/`load_active` con fsync y espera de lock (≤ 5 s) cada 5000 mensajes | E/S fuera del hilo, como `model_rx` | pendiente |
 
 Ningún átomo toca geometría de órdenes ni dimensionamiento. Los que cambien conducta de
 trading llevan T-1 antes de entrar a `main`.
@@ -59,6 +62,13 @@ trading llevan T-1 antes de entrar a `main`.
 - Disco C: 343 GB libres. Worktree propio sólo con fuentes (sin `target/` privado).
 
 ## 5. Bitácora
+
+- 2026-10-24 ~14:00 — Sondas WS públicas: en producción la URL del host no recibe
+  `@kline_1m` ni `!forceOrder@arr` (en demo sí). Red medida: p50 ≈ 150 ms, p99 ≤ 420 ms.
+  Evidencia en `docs/audit/linea_i/SONDAS_WS_2026-10-24.md`; aviso en el buzón.
+- 2026-10-24 ~14:40 — I-1b implementado en la rama: `data_ingest::rutas_feed`, dos lectores
+  (público anclado y crítico; mercado sin anuncio de reconexión ni marca de stall) y la salud
+  del feed escrita sólo por eventos públicos.
 
 - 2026-10-24 13:25 — Línea abierta; heartbeat en `AGENT_SYNC.md` (commit `2831cf5bd`).
   Auditoría I-1 lanzada (3 lectores, escépticos, diseñador).
