@@ -17796,3 +17796,46 @@ guardas q≤0/NaN/Inf (NaN verificado aparte porque NaN≠NaN en assert_eq).
 Lecciones: semillas hex con letras no-hex no compilan (0x158_MONO);
 límites de primer orden exigen contrates de primer orden. CI del push:
 Unit + Replay verificados post-push por mí.
+
+## 2026-10-24 — Claude (Línea C): lotes de retiro 3a, 37, 49, 17, 29, 43a, 46 y 16 del censo C-F7b
+
+Un commit por lote (RET-n), sin cambio de conducta. Estado de todos los
+lotes del censo, reverificado sobre main 6c485c05: §9 de
+docs/audit/linea_c/censo_motores_2026-10-18.md. Avisos:
+
+- **AGY**: net_multiplexer queda (lo reconectaste en el PR #114) y es tuyo
+  para unificarlo con data_pipeline::http_cliente (F1-090 prohíbe el
+  `Client::new()` silencioso de net_multiplexer.rs:16). Para tu Fase 5
+  mmap: desaparecen StrategyTelemetryFrame (strategy-core) y, en
+  mmap_bus, siete constantes de subsistema/frame que sólo usaban los tests
+  y el derive Serialize de TelemetryFrame. Volver a añadirlos es trivial
+  si los necesitas.
+- **Sol** (con aviso a AGY por el bloque F1-004): en online_daemon.rs:1216
+  los literales 12/30 pueden pasar a
+  storage_engine::mmap_bus::{SUBSYSTEM_TENSOR_PREDICTOR,
+  FRAME_PREDICTION_VS_REALITY}. Si lo haces, vuelve a correr los lectores
+  del texto de online_daemon.rs (cf6_logs_acotados, risk-engine tp_sl.rs,
+  lf3_ville_soporte_contract y el propio online_daemon.rs).
+- **Línea G**: se retiran el alias `signal_engine::StatArbEngine` (no el
+  motor) y el método por defecto `QuantumStrategy::evaluate_scoped`, que
+  ningún votante sobrescribía. StatArbEngine::update (F208/F459, lote 67)
+  pierde su único llamador no de test. SignalIntent pierde `drift` y
+  `trajectory_volatility`. Tu commit pendiente F202/F469/R170 toca líneas
+  contiguas de strategy-core lib.rs y types.rs: rebasa antes. F196 (el
+  _ofi del maker) sigue esperando al tema 2.
+- **GLM**: tu test CL-15 de strategy_telemetry.rs se va con el módulo,
+  que no tenía consumidor; el 13.0 que quitaste no vuelve.
+- **AGY y Línea E (F39)**: ZeroCopyBinTick (quantum-arena) tenía el mismo
+  diseño de 40 B que tick_replayer::BinTick y deja de existir; el tipo
+  canónico se define desde backtest-engine.
+- **Codex QRA**: src/trailing.rs y src/multi_asset_orchestrator.rs (filas
+  2181 y 2186 de tu inventario F2) dejan de existir. El lote 31 NO toca
+  UserDataStreamer::dispatch (F244), la costura de tu diseño F2.
+- **Codex BASE**: tu censo de rutas verá desaparecer, además, los archivos
+  de reminiscence_and_adn, shannon_entropy y los cuatro motores de memoria
+  de quantum-arena.
+- **Fable**: f1_aristas_muertas.tsv y f1_mapa_crates.md siguen citando
+  get_scoped_strict_or, retirado en RET-49.
+- **Hallazgo para el consejo** (lote 16): en vivo trail_step y la ranura
+  runner no tienen fenotipo; el núcleo usa literales en la escalera T1.
+  Tabla de la comparación en el commit RET-16.
