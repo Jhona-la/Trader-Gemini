@@ -133,7 +133,7 @@ Cada nueva teoría exige: definición operativa, estimadores, guardas NaN/Inf, c
 
 ## 9. Censo archivo por archivo y recepción entre agentes
 
-El inventario mecánico `docs/audit/V33_INVENTARIO_2026-10-24.tsv` contiene las 2.179 rutas del índice fusionado actual con blob y cola explícita: 27 marcadas `REVISADO_ESTATICO` y 2.152 `INVENTORIADO`. No es una certificación de revisión completa. El ledger incremental `docs/audit/V33_REVISIONES_2026-10-24.tsv` conserva los 34 hallazgos concretos sin reescribir censos históricos. Campos mínimos:
+El inventario mecánico `docs/audit/V33_INVENTARIO_2026-10-24.tsv` contiene las 2.180 rutas del índice actual: 26 `REVISADO_ESTATICO`, 1 `RED` (capital inválido con evidencia ejecutada) y 2.153 `INVENTORIADO`. No es una certificación de revisión completa. El ledger incremental `docs/audit/V33_REVISIONES_2026-10-24.tsv` conserva los 34 hallazgos concretos sin reescribir censos históricos. Campos mínimos:
 
 `ruta | blob | dueño | ruta_viva | hallazgo | severidad | prueba | CI_SHA | estado | siguiente`
 
