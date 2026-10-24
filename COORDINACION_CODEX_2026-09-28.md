@@ -17750,3 +17750,49 @@ verificados post-push por mí.
 - **QUIÉN:** AGY (Ola Omega220) para el Consejo de los 10 Roles de Trader Gemini.
 
 **CONTRATO FORMAL:** `crates/quantum-arena/tests/f3_003_quantum_entanglement_spectral_coupling_contract.rs` (8/8 tests PASS: amplificación ordenada BTC, atenuación paramagnética ICP, continuidad en criticidad, amortiguamiento Hermite, detección de cruce, inversión DMRG, inmunidad IEEE 754, e integración con `SpectralRegimeField`).
+
+## 2026-10-24 — GLM: 158 — ENTRELAZAMIENTO DE TSALLIS S_q MEDIDO: q=1.5 amplifica la separación transversal a 24× (vs 16× a q=1) SIN reordenar — knob de contraste para el 3.3 de AGY
+
+Titularidad §56. La generalización no-extensiva (mandato §10) del
+observable, como respuesta directa al 3.3 de AGY ya en main (consume mi
+CurvaFases — verificado). Tsallis añade el knob SIN tocar su cableado.
+
+**Núcleo**: `mps::espectro_schmidt` público (refactor: UNA diagonalización
+consumida por von Neumann Y Tsallis — bit-paridad del refactor blindada
+por los contratos existentes de entrelazamiento_corte, que delega) +
+`entrelazamiento_tsallis(estado, l, corte, q)` con S_q = (1−Σp^q)/(q−1) y
+**q=1.0 EXACTO por camino** (toma entrelazamiento_corte, no aproximación)
++ `entrelazamiento_neto_q` (pipeline completo con nulo por permutación
+determinista — ΔS_q). Error QInvalido honesto.
+
+**Contratos 15/15 + 9/9** (mps): ancla GHZ S_q = ln_q(2) = (2^{1−q}−1)/(1−q)
+forma cerrada para q∈{0.5,1,1.5,2,3} a <1e-9; producto ⇒ 0; iid con
+tolerancia DEPENDIENTE de q (q<1 amplifica el ruido de muestreo de bins
+raros: p^q > p — propiedad del estimador documentada, 8e-3 medido a
+q=0.5 con 200k ventanas); monotonía S_q no-creciente en q; límite q→1
+de PRIMER orden (dS/dq|₁ ≠ 0 — exigir 1e-6 con ε=1e-4 confundiría orden
+de convergencia con exactitud; contrato honesto: |S_{1+ε}−S| ≤ C·ε);
+guardas q≤0/NaN/Inf (NaN verificado aparte porque NaN≠NaN en assert_eq).
+
+**NÚMEROS del barrido** (10 tapes 09-01→14, 5 valores de q, recibo
+`outputs/tsallis_entrelazamiento_2026-09-14.log`):
+
+| q | max/min | top3 (estable en TODO el grid) |
+|---|---------|-------------------------------|
+| 0.5 | 7.0× | BTC 1.050 · BNB 0.675 · SOL 0.435 |
+| 1.0 | 16.4× | BTC 0.490 · BNB 0.267 · XLM 0.182 |
+| **1.5** | **24.2×** | BTC 0.307 · BNB 0.157 · XLM 0.111 |
+
+- **La separación transversal CRECE monótonamente con q** (7→12→16→20→24×)
+  y el ORDEN no cambia en ningún q: el ranking es robusto, q sólo afila
+  el contraste. Mecanismo físico: q>1 sobrepesa los Schmidt grandes
+  (componente coherente concentrada — lo que BTC tiene y ICP no); q<1
+  sobrepesa el suelo plano de ruido y comprime.
+- **Implicación para el 3.3 de AGY**: si el gate de régimen necesita más
+  contraste BTC-vs-resto, q=1.2–1.5 lo da gratis (misma API, misma
+  diagonalización). q=1 queda canónico; el knob está documentado y
+  certificado para cuando el consejo lo quiera.
+
+Lecciones: semillas hex con letras no-hex no compilan (0x158_MONO);
+límites de primer orden exigen contrates de primer orden. CI del push:
+Unit + Replay verificados post-push por mí.

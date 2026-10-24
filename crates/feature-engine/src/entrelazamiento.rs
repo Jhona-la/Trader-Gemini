@@ -53,6 +53,9 @@ pub enum EntrelazamientoError {
     /// ΔS fuera de la curva S(g): si s > s_max el mercado es SUPERCRÍTICO
     /// en entrelazamiento y NO se inventa rama (ausencia honesta CL-15).
     FueraDeCurva { s: f64, s_min: f64, s_max: f64 },
+    /// Índice Tsallis q inválido (debe ser > 0 y finito; q=1 es el límite
+    /// von Neumann y se acepta como camino exacto). GLM 158.
+    QInvalido { q: f64 },
 }
 
 /// Resultado de una medición de entrelazamiento temporal neto.
@@ -466,4 +469,85 @@ impl EntrelazamientoStreaming {
         let m = entrelazamiento_neto(&tramo, self.l, self.modo)?;
         Ok(MedidaEntrelazamiento { descartados: desc, ..m })
     }
+}
+
+// ══════════════════════════════════════════════════════════════════════
+// GLM 158 — ENTRELAZAMIENTO DE TSALLIS S_q: la generalización no-extensiva
+// (mandato §10) del observable. S_q(ρ) = (1 − Σ p_i^q)/(q−1) sobre el
+// MISMO espectro de Schmidt (una diagonalización, entropías intercambiables
+// — `mps::espectro_schmidt`). q>1 acentúa la coherencia CONCENTRADA (cola
+// del espectro dominada por pocos Schmidt grandes), q<1 acentúa el espectro
+// plano; q→1 recupera von Neumann (límite analítico, y q=1 exacto toma el
+// camino de `entrelazamiento_corte`). Ancla GHZ: Schmidt (½,½) ⇒ S_q =
+// ln_q(2) = (2^{1−q} − 1)/(1−q).
+// ══════════════════════════════════════════════════════════════════════
+
+/// Entropía de entrelazamiento de Tsallis S_q del corte (familia no
+/// extensiva). q=1.0 ⇒ von Neumann EXACTO (mismo camino que
+/// `entrelazamiento_corte`, sin tolerancia). Guardas: q > 0 finito.
+pub fn entrelazamiento_tsallis(
+    estado: &[f64],
+    l: usize,
+    corte: usize,
+    q: f64,
+) -> Result<f64, EntrelazamientoError> {
+    if !q.is_finite() || q <= 0.0 {
+        return Err(EntrelazamientoError::QInvalido { q });
+    }
+    if (q - 1.0).abs() < 1e-12 {
+        // q=1: el límite ES von Neumann — camino exacto, jamás aproximado.
+        return mps::entrelazamiento_corte(estado, l, corte)
+            .map_err(|_| EntrelazamientoError::NucleoDegenerado);
+    }
+    let espectro = mps::espectro_schmidt(estado, l, corte)
+        .map_err(|_| EntrelazamientoError::NucleoDegenerado)?;
+    let mut suma_q = 0.0f64;
+    for p in espectro {
+        if p > 1e-15 {
+            suma_q += p.powf(q);
+        }
+    }
+    let s_q = (1.0 - suma_q) / (q - 1.0);
+    if !s_q.is_finite() {
+        return Err(EntrelazamientoError::NucleoDegenerado);
+    }
+    Ok(s_q)
+}
+
+/// Entrelazamiento temporal neto con entropía de Tsallis: el pipeline
+/// completo del `entrelazamiento_neto` (estado empírico + nulo por
+/// permutación determinista) bajo S_q — ΔS_q. q=1 ⇒ idéntico a
+/// `entrelazamiento_neto` (por construcción: mismo camino exacto).
+pub fn entrelazamiento_neto_q(
+    rets: &[f64],
+    l: usize,
+    modo: ModoBinarizacion,
+    q: f64,
+) -> Result<MedidaEntrelazamiento, EntrelazamientoError> {
+    if !q.is_finite() || q <= 0.0 {
+        return Err(EntrelazamientoError::QInvalido { q });
+    }
+    if (q - 1.0).abs() < 1e-12 {
+        return entrelazamiento_neto(rets, l, modo);
+    }
+    let (psi, ventanas, descartados) = estado_empirico(rets, l, modo)?;
+    if ventanas == 0 {
+        return Err(EntrelazamientoError::SinVentanas);
+    }
+    let corte = l / 2;
+    let s = entrelazamiento_tsallis(&psi, l, corte, q)?;
+    // Nulo: misma marginal, orden destruido — determinista y reproducible
+    // (misma semilla que el pipeline q=1).
+    let (limpios, _) = filtrar_finitos(rets);
+    let mut perm = limpios;
+    permutacion_determinista(&mut perm);
+    let (psi_nulo, _, _) = estado_empirico(&perm, l, modo)?;
+    let s_nulo = entrelazamiento_tsallis(&psi_nulo, l, corte, q)?;
+    Ok(MedidaEntrelazamiento {
+        s,
+        s_nulo,
+        delta: s - s_nulo,
+        ventanas,
+        descartados,
+    })
 }
