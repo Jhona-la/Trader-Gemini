@@ -751,6 +751,7 @@ name = "dark-alpha-engine"
 version = "0.1.0"
 dependencies = [
  "bincode",
+ "quantum-arena",
  "serde",
  "serde_json",
  "telemetry-server",

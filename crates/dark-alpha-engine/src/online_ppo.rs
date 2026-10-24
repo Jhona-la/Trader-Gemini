@@ -1,52 +1,6 @@
 use std::f64;
 use std::sync::atomic::Ordering;
 
-pub mod atomic_compat {
-    use std::sync::atomic::{AtomicU64, Ordering};
-
-    #[repr(transparent)]
-    pub struct AtomicF64(AtomicU64);
-
-    impl AtomicF64 {
-        pub const fn new(val: f64) -> Self {
-            Self(AtomicU64::new(val.to_bits()))
-        }
-        pub fn load(&self, order: Ordering) -> f64 {
-            f64::from_bits(self.0.load(order))
-        }
-        pub fn store(&self, val: f64, order: Ordering) {
-            self.0.store(val.to_bits(), order)
-        }
-        pub fn fetch_update<F>(
-            &self,
-            set_order: Ordering,
-            fetch_order: Ordering,
-            mut f: F,
-        ) -> Result<f64, f64>
-        where
-            F: FnMut(f64) -> Option<f64>,
-        {
-            let mut prev_bits = self.0.load(fetch_order);
-            loop {
-                let prev_val = f64::from_bits(prev_bits);
-                let next_val = match f(prev_val) {
-                    Some(v) => v,
-                    None => return Err(prev_val),
-                };
-                match self.0.compare_exchange_weak(
-                    prev_bits,
-                    next_val.to_bits(),
-                    set_order,
-                    fetch_order,
-                ) {
-                    Ok(_) => return Ok(prev_val),
-                    Err(actual) => prev_bits = actual,
-                }
-            }
-        }
-    }
-}
-
 use serde::{Deserialize, Serialize};
 
 /// Hiperparámetros configurables y desacoplados del motor de política PPO en vivo.
@@ -83,7 +37,10 @@ impl PpoHyperParams {
     }
 }
 
-use atomic_compat::AtomicF64;
+// RET-47b (censo C-F7b, F58): el tipo atómico del estado PPO es el de
+// quantum-arena, que canoniza −0,0 y NaN (CL-154); antes había aquí una
+// copia propia que guardaba los bits crudos.
+use quantum_arena::AtomicF64;
 
 /// 🧬 MOTOR DE APRENDIZAJE POR REFUERZO CONTINUO PPO (ONLINE PPO POLICY ENGINE)
 /// Algoritmo Proximal Policy Optimization (PPO) en vivo para la adaptación continua de pesos de estrategia.
@@ -354,7 +311,7 @@ mod tests {
     }
 
     #[test]
-    fn test_online_ppo_short_action_and_atomic_compat() {
+    fn test_online_ppo_short_action_and_atomic_f64() {
         let engine = OnlinePpoPolicyEngine::default();
         let features = [0.8, -0.4, 0.3, -0.1, 0.5];
 
@@ -368,7 +325,7 @@ mod tests {
         assert!(eval.is_finite());
 
         // Test AtomicF64 fetch_update
-        let atomic = atomic_compat::AtomicF64::new(10.0);
+        let atomic = AtomicF64::new(10.0);
         assert_eq!(atomic.load(Ordering::Relaxed), 10.0);
         atomic.store(20.0, Ordering::Relaxed);
         assert_eq!(atomic.load(Ordering::Relaxed), 20.0);
