@@ -189,7 +189,6 @@ REGLAS = {
         "crates/strategy-core/src/{stat_arb.rs, vecm_arbitrage.rs, maker.rs, momentum_booster.rs, multivariate_coint.rs}",
         "crates/dark-alpha-engine/src/lib.rs",
         "crates/risk-engine/src/regime.rs",
-        "src/features/",
     ],
     "C-F4": [
         "crates/risk-engine/src/{lib.rs, tp_sl.rs, correlation_guard.rs, kelly_envelope.rs, leverage_matrix.rs, drawdown.rs, ruin.rs, capital_regime.rs, kelly.rs, orchestrator.rs, copulas_store.rs, guard.rs}",
