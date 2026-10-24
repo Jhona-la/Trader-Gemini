@@ -123,8 +123,11 @@ impl Mercado {
 
 /// Núcleo con una base OU rápida (t½ = 14 s ≈ τ_18/5) hasta que la guarda
 /// pasa un minuto seguido, con al menos 40 min de pares. C-F5b: la prueba a
-/// la escala de decisión madura a media memoria larga, 33·τ_k (≈ 38 min en
-/// el nodo 18); antes de eso la guarda no pasa. C-F5e: recién madura, el
+/// la escala de decisión del nodo k madura a media memoria larga, 33·τ_k
+/// (≈ 38 min en el nodo 18). Antes de eso la guarda ya puede pasar: desde
+/// CL-150 el veredicto contrasta el nodo más grande ya maduro (aquí el 17),
+/// y la revisión de C-F5e midió que entre los min 10 y 38 pasa en ≈ 10 % de
+/// los instantes. Los 40 min dejan madurar el nodo 18. C-F5e: recién madura, el
 /// estadístico ronda su crítico unos minutos (en la semilla 3 la guarda
 /// pasa 11, 7 y 2 de 60 s entre los min 48 y 50, y no pasa un minuto entero
 /// hasta el 53), así que la primera pasada no basta para llamarla

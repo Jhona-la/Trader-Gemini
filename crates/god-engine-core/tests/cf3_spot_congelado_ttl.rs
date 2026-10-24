@@ -36,7 +36,8 @@ use quantum_arena::{symbol_registry, symbols, GlobalArena};
 /// El futuro sigue con un evento por segundo (el stream de futuros no cae)
 /// durante 45 s. Precondición: la prueba demostró la reversión y publicó
 /// z ≠ 0, y en algún evento con el spot caducado la prueba seguía
-/// demostrada (τ* puede saltar a un nodo sin madurar).
+/// demostrada (cerca del crítico la guarda parpadea, y si τ* salta a un
+/// nodo sin madurar el veredicto contrasta el de respaldo, CL-150).
 ///
 /// CL-97 (F3.7-02 v2): antes la precondición era la SDE OU madura con 12
 /// ticks contra un spot fijo; ahora un spot que no se refresca no forma
