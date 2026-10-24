@@ -110,10 +110,12 @@
 //! último r con raíz es ≈ 0,817, y con r = 1 el máximo es 0,41. Con r ≥ 1
 //! todo OU único está en H0 (R < 1/(1 + r²) ≤ ½). Entre r ≈ 0,82 y 1 hay
 //! OU en H1 (lo votado revierte 0,52-0,61) cuyo estimando no llega a ½: la
-//! prueba casi no los vota, y es pérdida de potencia, no de nivel. Medido
-//! con el prototipo en esa banda (r de 0,6 a 0,8, en la frontera), el tamaño
-//! no pasa del 4,2 %. Hay una segunda raíz, por debajo de
-//! 0,57-0,75 celdas: la extrapolación de orden 2 falla con una reversión mucho más
+//! prueba casi no los vota, y es pérdida de potencia, no de nivel. Las
+//! fronteras con r de 0,6 a 0,8 no entran en la calibración; la revisión de
+//! C-F5e midió en ellas el tamaño de la prueba larga sola en ≤ 4,2 % con el
+//! prototipo y ≤ 2,8 % con un port propio. Hay una segunda raíz, por debajo
+//! de 0,57-0,75 celdas con r = 0, ¼ y ½ (sube con r: 1,49 con r = 0,8): la
+//! extrapolación de orden 2 falla con una reversión mucho más
 //! rápida que la rejilla y R̂ cae aunque lo votado revierta casi entero; es
 //! pérdida de potencia, no de nivel, y esas configuraciones no entran en la
 //! calibración del tamaño.
