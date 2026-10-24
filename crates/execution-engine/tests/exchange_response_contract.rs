@@ -7,16 +7,6 @@ use std::time::Duration;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
 #[test]
-fn error_codes_distinguish_minimum_notional_and_throttling() {
-    use execution_engine::order_types::error_codes::*;
-    assert_eq!(MIN_NOTIONAL, -4164);
-    assert_eq!(PARAM_EMPTY, -1105);
-    assert_eq!(TOO_MANY_PARAMETERS, -1101);
-    assert_eq!(TOO_MANY_REQUESTS, -1003);
-    assert_ne!(MIN_NOTIONAL, TOO_MANY_REQUESTS);
-}
-
-#[test]
 fn all_shared_numeric_deserializers_reject_nonfinite_strings() {
     for bad in ["NaN", "inf", "-inf", "Infinity", "1e999"] {
         let field = |name| format!(r#"{{"{name}":"{bad}"}}"#);

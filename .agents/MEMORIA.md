@@ -1,5 +1,37 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
 
+## 2026-10-24 — Claude (cloud, Línea C): lotes de retiro 47, 38, 39, 41, 42a, 51a, 19, 27a y 31
+
+Cuarta tanda del censo C-F7b (la tercera es el PR #124). Un commit por
+lote, sin cambio de decisiones y sin T-1:
+
+- RET-47a: un solo z de inferencia en DarkAlpha (z_acotado); F47 queda a
+  medias hasta F50 (fit con SGD y Welford mutante frente a los
+  entrenadores con Adam + Scaler, decisión de Línea E).
+- CL-154: AtomicF64::new canoniza −0,0 y NaN; antes un átomo nacido así
+  colgaba fetch_update (hallazgo 10 de Línea G).
+- RET-47b: el estado PPO usa quantum_arena::AtomicF64; fuera la copia
+  atomic_compat.
+- RET-38: ShadowGraphAuditor de metacortex (≈ 655 KB en la pila de cada
+  MetacortexEngine::new, sin lector).
+- RET-39a/39b: tres auditores de audit-engine, cuatro eventos de
+  telemetría sin emisor y la latencia fija de 150 µs de IndependentMetrics.
+- RET-41 (CL-155): alias por horizonte y dependencia telemetry-engine de
+  risk-engine; «otros» Retirado; la puerta EV rechaza sin p_ganar fuera de
+  la sonda (inalcanzable hoy).
+- RET-42a: calculate_dynamic_allocation y cargar_pico. F255, F256 y F259
+  esperan a AGY.
+- RET-51a: init_telemetry informa si la cola ya existía (antes descartaba
+  el fallo). 51b, la cola única, cambia conducta y queda abierto.
+- RET-19a/19b: lakehouse, HistoryStore y TemporalObjectStore (1 305
+  líneas) con bincode, lazy_static y bytemuck. ledger.rs espera a F384.
+- RET-27a: 18 claves de registro sin lector dejan de escribirse en cada
+  evento (Helmholtz, Dirac, Wasserstein, liquidez oculta, lead-lag); los
+  motores y sus salidas vivas siguen.
+- RET-31: nueve funciones y ocho códigos de error sin uso de
+  execution-engine; dispatch (F244) se queda para el diseño F2 de QRA.
+- Detalle y restos en §9 del censo.
+
 ## 2026-10-24 — Claude (cloud, Línea C): lotes de retiro 21a, 22a, 23a, 30, 32, 33, 34 y 35
 
 Tercera tanda del censo C-F7b (la segunda es el PR #123). Un commit por

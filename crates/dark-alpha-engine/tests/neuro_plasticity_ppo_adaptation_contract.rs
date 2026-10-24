@@ -169,3 +169,32 @@ fn test_ppo_hyperparams_validation_and_dynamic_update() {
     );
     assert!(engine.reward_ema.load(std::sync::atomic::Ordering::Relaxed).is_finite());
 }
+
+/// RET-47b (censo C-F7b, F58) + CL-154: los pesos PPO usan el `AtomicF64`
+/// de quantum-arena, que canoniza al construir. Un peso inicial −0,0 o un
+/// NaN no canónico (0/0 en x86) ya no puede dejar `fetch_update` en un
+/// bucle sin fin dentro de `update_policy`. Los bits se comprueban antes de
+/// actualizar, para que una regresión falle en vez de colgarse.
+#[test]
+fn ret47b_pesos_iniciales_no_canonicos_no_cuelgan_la_politica() {
+    use std::sync::atomic::Ordering;
+    let nan_x86 = f64::from_bits(0xFFF8_0000_0000_0000);
+    let engine = OnlinePpoPolicyEngine::new([-0.0, nan_x86, 1.0, 1.0, 1.0]);
+    assert_eq!(
+        engine.weights[0].load(Ordering::Relaxed).to_bits(),
+        0.0f64.to_bits()
+    );
+    assert_eq!(
+        engine.weights[1].load(Ordering::Relaxed).to_bits(),
+        f64::NAN.to_bits()
+    );
+
+    engine.update_policy(0.10, &[1.0; 5], 1.0, 1.0, 0.05, 0.01, 0.2, 0.01);
+    for w in &engine.weights {
+        let v = w.load(Ordering::Relaxed);
+        assert!(
+            v.is_finite() && v >= 0.01,
+            "peso fuera de [min_clip, ∞): {v}"
+        );
+    }
+}

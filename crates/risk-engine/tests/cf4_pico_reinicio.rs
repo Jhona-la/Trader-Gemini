@@ -12,14 +12,14 @@
 //! la tarea inmune del host, que nacía con el capital del arranque. Ninguno
 //! se guardaba y ninguno veía al otro. Ahora el pico vive en el arena, los dos
 //! lo actualizan con `drawdown::registrar_pico` y el host lo guarda con
-//! `guardar_pico` y lo recupera con `cargar_pico`. Los umbrales no cambian.
+//! `guardar_pico` y lo recupera con `leer_pico`. Los umbrales no cambian.
 //!
 //! Fixture. Cuenta de 13 USD con el gen de drawdown por defecto. Una caída
 //! de 50 a 13 USD es del 74 %, por encima de d* = 0,632, la cota superior de
 //! cualquier umbral del veto: se veta con cualquier gen.
 
 use quantum_arena::GlobalArena;
-use risk_engine::drawdown::{cargar_pico, guardar_pico, registrar_pico};
+use risk_engine::drawdown::{guardar_pico, leer_pico, registrar_pico, CargaPico};
 use risk_engine::{RiskEngine, REJECT_NAMES};
 use signal_engine::{SignalIntent, SignalType};
 use std::sync::{atomic::Ordering::Relaxed, Arc};
@@ -86,7 +86,10 @@ fn cl99_el_pico_guardado_sobrevive_al_reinicio() {
 
     // Reinicio restaurando el pico guardado.
     let restaurado = cuenta(13.0);
-    let guardado = cargar_pico(&ruta).expect("leer el pico guardado");
+    let guardado = match leer_pico(&ruta) {
+        CargaPico::Leido(p) => p,
+        otro => panic!("leer el pico guardado: {otro:?}"),
+    };
     registrar_pico(&restaurado.pico_capital, guardado);
     let veta_con = veto_de_drawdown(&restaurado, 13.0);
     let _ = std::fs::remove_file(&ruta);
@@ -114,12 +117,15 @@ fn cl99_guardar_y_leer_el_pico_es_exacto() {
     let ruta = ruta_temporal("pico_exacto.txt");
     let pico = 13.000_000_000_000_002_f64;
     guardar_pico(&ruta, pico).expect("guardar");
-    assert_eq!(cargar_pico(&ruta).map(f64::to_bits), Some(pico.to_bits()));
+    assert!(matches!(leer_pico(&ruta), CargaPico::Leido(p) if p.to_bits() == pico.to_bits()));
     for corrupto in ["", "abc", "NaN", "inf", "-5", "0"] {
         std::fs::write(&ruta, corrupto).unwrap();
-        assert_eq!(cargar_pico(&ruta), None, "contenido {corrupto:?}");
+        assert!(
+            matches!(leer_pico(&ruta), CargaPico::Ilegible(_)),
+            "contenido {corrupto:?}"
+        );
     }
     let _ = std::fs::remove_file(&ruta);
-    assert_eq!(cargar_pico(&ruta), None, "sin archivo");
+    assert!(matches!(leer_pico(&ruta), CargaPico::Ausente), "sin archivo");
     assert!(guardar_pico(&ruta, f64::NAN).is_err());
 }

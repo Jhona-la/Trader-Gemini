@@ -143,7 +143,6 @@ fn cl133_un_pico_ilegible_no_es_un_pico_ausente() {
             matches!(drawdown::leer_pico(&ruta), CargaPico::Ilegible(ref m) if m.contains(&archivo)),
             "contenido {ilegible:?}"
         );
-        assert_eq!(drawdown::cargar_pico(&ruta), None);
     }
     let _ = std::fs::remove_file(&ruta);
 }

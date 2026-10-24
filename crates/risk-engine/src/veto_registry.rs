@@ -261,12 +261,19 @@ pub const REGISTRO_VETOS: &[EntradaVeto] = &[
         nombre: "sin_evidencia",
         causa: "sin historial suficiente para opinar (el gate exige evidencia, no fe)",
         fuente_umbral: "literal (mínimos de muestra)",
-        datos: "métricas por símbolo (trade_count, win_rate)",
-        responsable: "heredado, censo XLI; certificado Ola Ω58",
+        datos: "métricas por símbolo (trade_count, win_rate); rej(REJ_SIN_EVIDENCIA) en la \
+                puerta EV fuera de la fase de sonda cuando no hay p_ganar",
+        responsable: "heredado, censo XLI; certificado Ola Ω58; emisor fail-closed CL-155/RET-41 \
+                      (Claude, censo C-F7b F251), 2026-10-24",
         clase: ClaseVeto::Logica,
         estado: EstadoVeto::Activo,
         test: Some("insufficient_evidence_contract_without_deadlock"),
-        deuda: None,
+        deuda: Some(
+            "RET-41: el emisor es hoy inalcanzable (trade_count 0 ⇒ sonda: \
+             resolve_max_cierres_sonda ≥ 1 y el SPRT exige n ≥ 2; fuera de sonda p_ganar \
+             es Some por la contracción jerárquica), así que no hay contrato que lo dispare \
+             por la API pública. Antes esa rama se saltaba la puerta EV (fail-open).",
+        ),
     },
     EntradaVeto {
         id: "V-LOGIC-010",
@@ -381,12 +388,17 @@ pub const REGISTRO_VETOS: &[EntradaVeto] = &[
         nombre: "otros",
         causa: "rechazo sin clasificar (bucket catch-all) — cada uso debería reclasificarse a su compuerta real",
         fuente_umbral: "literal (fallback de conteo)",
-        datos: "rej(9) en rutas sin compuerta específica",
-        responsable: "heredado, puesto al día GLM/LXVII, 2026-10-01",
+        datos: "ningún rej(REJ_OTROS) en risk-engine: cada rechazo ya tiene su compuerta",
+        responsable: "heredado, puesto al día GLM/LXVII, 2026-10-01; retirado CL-155/RET-41 \
+                      (Claude, censo C-F7b F251), 2026-10-24",
         clase: ClaseVeto::Logica,
-        estado: EstadoVeto::Activo,
+        estado: EstadoVeto::Retirado,
         test: None,
-        deuda: Some("bucket catch-all: auditoría de sus usos para reclasificar cada uno a su compuerta real (deuda estructural del REJECT_NAMES)"),
+        deuda: Some(
+            "retirado — sólo linaje; el índice 9 se conserva para no renumerar REJECT_NAMES \
+             ni los contadores; la guarda ret41_las_compuertas_retiradas_no_tienen_emisor \
+             falla si alguien vuelve a emitirlo sin reactivar la entrada",
+        ),
     },
     EntradaVeto {
         id: "V-TECH-004",
@@ -771,6 +783,51 @@ mod tests {
         if let Some(cl28) = buscar("V-LOGIC-003") {
             assert_eq!(cl28.estado, EstadoVeto::Retirado);
         }
+    }
+
+    /// RET-41 (censo C-F7b, F251): una entrada Retirada cuyo nombre es una
+    /// compuerta de REJECT_NAMES no puede tener emisor en el código de
+    /// producción de risk-engine (`rej(REJ_…)` antes de `#[cfg(test)]`).
+    /// Si una rama la vuelve a emitir, la entrada debe reactivarse en el
+    /// mismo commit. Y la puerta EV fuera de sonda emite sin_evidencia
+    /// (fail-closed) en vez de saltarse la puerta.
+    #[test]
+    fn ret41_las_compuertas_retiradas_no_tienen_emisor() {
+        let fuente = include_str!("lib.rs");
+        let produccion = fuente.split("\n#[cfg(test)]\n").next().unwrap_or(fuente);
+        let constante_de = |indice: usize| -> Option<String> {
+            produccion.lines().find_map(|l| {
+                let resto = l.trim().strip_prefix("pub const ")?;
+                let (nombre, valor) = resto.split_once(": usize = ")?;
+                (nombre.starts_with("REJ_") && valor.trim_end_matches(';') == indice.to_string())
+                    .then(|| nombre.to_string())
+            })
+        };
+        let mut retiradas_con_slot = 0usize;
+        for e in REGISTRO_VETOS
+            .iter()
+            .filter(|e| e.estado == EstadoVeto::Retirado)
+        {
+            let Some(indice) = crate::REJECT_NAMES.iter().position(|n| *n == e.nombre) else {
+                continue;
+            };
+            let constante = constante_de(indice)
+                .unwrap_or_else(|| panic!("{}: sin constante REJ_ para el índice {indice}", e.id));
+            assert!(
+                !produccion.contains(&format!("rej({constante})")),
+                "{} está Retirado pero rej({constante}) sigue en producción",
+                e.id
+            );
+            retiradas_con_slot += 1;
+        }
+        assert!(
+            retiradas_con_slot >= 1,
+            "V-TECH-003 (otros) es una retirada con slot"
+        );
+        assert!(
+            produccion.contains("rej(REJ_SIN_EVIDENCIA)"),
+            "la puerta EV fuera de sonda debe rechazar sin p_ganar (V-LOGIC-009)"
+        );
     }
 
     /// FUENTES DE UMBRAL: censo de literales vs medidos vs gen — el mapa

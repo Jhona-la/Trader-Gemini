@@ -100,7 +100,8 @@ impl ValidatedOrder {
 /// DIAGNÓSTICO SIGNAL-PATH: contadores de rechazo por compuerta de
 /// evaluate_single_intent. Índices:
 /// 0=flat/coin 1=exposure0 2=correlación 3=spec 4=EV 5=fee_impact
-/// 6=min_notional 7=margen_insuf 8=orchestrator 9=otros
+/// 6=min_notional 7=margen_insuf 8=orchestrator 9=otros (sin emisor; slot
+/// conservado para no renumerar, RET-41)
 /// 10=drawdown 11=suelo TP/SL 12=confianza.
 /// 13=viabilidad (D-750: la orden mínima ya arriesga más de lo que el control
 /// de ruina permite) 14=sin evidencia (D-751) 15=entrada inválida
@@ -127,7 +128,9 @@ pub const REJ_CONFIDENCE: usize = 12;
 /// el control de ruina permite: la operación es INVIABLE, no «pequeña».
 pub const REJ_VIABILIDAD: usize = 13;
 /// D-751 — no hay probabilidad de ganar (ni calibrada ni observada) con la que
-/// evaluar el valor esperado: se rechaza por falta de evidencia.
+/// evaluar el valor esperado: se rechaza por falta de evidencia. RET-41: lo
+/// emite la puerta EV fuera de la fase de sonda; antes esa rama se saltaba
+/// la puerta (hoy es inalcanzable: sin cierres la orden siempre es sonda).
 pub const REJ_SIN_EVIDENCIA: usize = 14;
 pub const REJ_INVALID_INPUT: usize = 15;
 pub const REJ_TARGET_GEOMETRY: usize = 16;
@@ -526,17 +529,6 @@ impl RiskEngine {
             temporal_scale,
             arena,
         )
-    }
-
-    /// Evalúa la intención cuántica continua (alias para compatibilidad)
-    pub fn evaluate_quantum_order_by_horizon(
-        &mut self,
-        coin_id: usize,
-        intent: &SignalIntent,
-        _is_scalp: bool,
-        arena: &GlobalArena,
-    ) -> ValidatedOrder {
-        self.evaluate_quantum_order(coin_id, intent, arena)
     }
 
     fn evaluate_single_intent(
@@ -1391,7 +1383,16 @@ impl RiskEngine {
             if expected_win <= friccion_total {
                 return rej(REJ_EV);
             }
-        } else if p_ganar.is_some() {
+        } else {
+            // RET-41 (censo C-F7b, F251): fuera de la fase de sonda, una orden
+            // sin probabilidad de ganar no tiene EV que juzgar y se rechaza
+            // (D-751). Antes la rama `p_ganar.is_some()` se saltaba la puerta
+            // EV en ese caso (fail-open). Hoy es inalcanzable —con
+            // trade_count 0 la orden es sonda: resolve_max_cierres_sonda ≥ 1
+            // y el SPRT exige n ≥ 2—, pero ya no depende de esa cadena.
+            if p_ganar.is_none() {
+                return rej(REJ_SIN_EVIDENCIA);
+            }
             let ev_minimo_requerido = friccion_total * ev_fee_multiplier;
             if expected_value_pct <= ev_minimo_requerido {
                 return rej(REJ_EV);
@@ -1961,27 +1962,6 @@ impl RiskEngine {
             tau_ms: tau_for_sizing,
         }
     }
-}
-
-/// D-637 — HORIZONTE OPERATIVO EN MILISEGUNDOS.
-///
-/// D-638b (DÉCIMA OLA): la versión anterior interpolaba sobre los EXTREMOS
-/// del espectro. Al ampliarse éste a 1 ns–146 años, `temporal_scale = 0,05`
-/// producía ~9 ns y 0,95 ~17 años: el gate de TP/SL rechazaba por «no
-/// operable» o dimensionaba stops de décadas. Ahora delega en
-/// `temporal_spectrum::operating_tau_ms`, la fuente única.
-///
-/// Puente temporal mientras `SignalIntent` conserva el enum `TradeHorizon`
-/// (D-602). El orden de preferencia respeta la jerarquía correcta:
-///   1. la duración esperada que la señal declara — información real;
-///   2. el eje temporal continuo del arena, mapeado log-linealmente sobre el
-///      espectro, cuando la señal no declara duración.
-///
-/// En ningún caso se consulta la etiqueta discreta para elegir parámetros:
-/// ésta sólo desempata el extremo del continuo cuando no hay nada mejor.
-#[allow(dead_code)]
-fn horizon_tau_ms(intent: &SignalIntent, arena: &GlobalArena) -> f64 {
-    horizon_tau_ms_coin(intent, arena, usize::MAX)
 }
 
 /// D-745 — EL HORIZONTE DE LA ORDEN ES EL QUE EL MERCADO MUESTRA, NO UN GEN.

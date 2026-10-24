@@ -23,8 +23,6 @@ quantum-arena	crates/quantum-arena/src/adaptive_quantiles.rs	0	1	0	0
 quantum-arena	crates/quantum-arena/src/state.rs	0	4	1	0
 risk-engine	crates/risk-engine/src/freno_estrategia.rs	0	1	0	0
 risk-engine	crates/risk-engine/src/ville_e_process.rs	0	1	0	0
-storage-engine	crates/storage-engine/src/history_store.rs	0	1	0	0
-storage-engine	crates/storage-engine/src/lakehouse.rs	0	2	0	0
 storage-engine	crates/storage-engine/src/ledger.rs	0	1	0	0
 telemetry-server	crates/telemetry-server/src/flight_recorder.rs	0	4	0	0
 trader-gemini-v5	crates/backtest-engine/src/bin/continuous_evolution_backtest.rs	4	1	0	0

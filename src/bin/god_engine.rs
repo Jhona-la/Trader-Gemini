@@ -992,7 +992,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // os_guardian init happens inside init_guardian or similar, we just use the module's time_critical if needed
     // FASE 12: Zero-Latency Telemetry Engine
-    telemetry_engine::init_telemetry(100_000);
+    // RET-51a: si algo hubiera empujado telemetría antes, la cola ya existiría
+    // con otra capacidad; se avisa en vez de descartarlo en silencio.
+    if let Err(capacidad) = telemetry_engine::init_telemetry(100_000) {
+        telemetry_server::telemetry_log!(
+            "⚠️ [TELEMETRY] la cola binaria ya existía con capacidad {}; no se recrea",
+            capacidad
+        );
+    }
     std::thread::spawn(|| {
         loop {
             if let Some(msg) = telemetry_engine::pop_telemetry() {

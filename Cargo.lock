@@ -751,6 +751,7 @@ name = "dark-alpha-engine"
 version = "0.1.0"
 dependencies = [
  "bincode",
+ "quantum-arena",
  "serde",
  "serde_json",
  "telemetry-server",
@@ -1273,7 +1274,6 @@ name = "graph-architecture"
 version = "0.1.0"
 dependencies = [
  "proc-macro2",
- "quote",
  "serde",
  "serde_json",
  "syn 2.0.118",
@@ -3317,7 +3317,6 @@ version = "0.1.0"
 dependencies = [
  "quantum-arena",
  "signal-engine",
- "telemetry-engine",
 ]
 
 [[package]]
@@ -3790,10 +3789,7 @@ checksum = "a2eb9349b6444b326872e140eb1cf5e7c522154d69e7a0ffb0fb81c06b37543f"
 name = "storage-engine"
 version = "0.1.0"
 dependencies = [
- "bincode",
- "bytemuck",
  "crossbeam-channel",
- "lazy_static",
  "memmap2 0.9.11",
  "rusqlite",
  "telemetry-engine",

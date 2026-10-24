@@ -8,7 +8,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 pub struct AtomicF64(AtomicU64);
 
 #[inline(always)]
-fn canonical_bits(val: f64) -> u64 {
+const fn canonical_bits(val: f64) -> u64 {
     if val == 0.0 {
         0.0f64.to_bits()
     } else if val.is_nan() {
@@ -19,9 +19,15 @@ fn canonical_bits(val: f64) -> u64 {
 }
 
 impl AtomicF64 {
+    /// CL-154 (hallazgo de Línea G, `docs/audit/linea_g/hallazgos.tsv:10`):
+    /// `new` canoniza como `store`, `swap` y los CAS. Antes guardaba los bits
+    /// tal cual: un átomo nacido con −0,0 o con un NaN no canónico (0/0 en
+    /// x86 da 0xFFF8…) dejaba `fetch_update` en un bucle sin fin, porque
+    /// `compare_exchange_weak` canoniza el valor esperado y no coincidía
+    /// nunca con los bits guardados. Para cualquier otro valor no cambia nada.
     #[inline(always)]
     pub const fn new(val: f64) -> Self {
-        Self(AtomicU64::new(val.to_bits()))
+        Self(AtomicU64::new(canonical_bits(val)))
     }
 
     #[inline(always)]
@@ -198,5 +204,52 @@ mod tests {
         let update_res = atomic.fetch_update(Ordering::SeqCst, Ordering::SeqCst, |v| Some(v * 2.0));
         assert_eq!(update_res, Ok(30.0));
         assert_eq!(atomic.load(Ordering::SeqCst), 60.0);
+    }
+
+    /// CL-154: un átomo nacido con −0,0 o con un NaN no canónico queda en la
+    /// forma canónica, y `fetch_update` termina. Los bits se comprueban
+    /// ANTES de `fetch_update` para que, sin el arreglo, la prueba falle en
+    /// vez de colgarse.
+    #[test]
+    fn cl154_new_canoniza_y_fetch_update_termina() {
+        let nan_no_canonico = f64::from_bits(0xFFF8_0000_0000_0000);
+        assert!(nan_no_canonico.is_nan());
+        assert_ne!(nan_no_canonico.to_bits(), f64::NAN.to_bits());
+
+        let cero_negativo = AtomicF64::new(-0.0);
+        assert_eq!(
+            cero_negativo.load(Ordering::SeqCst).to_bits(),
+            0.0f64.to_bits()
+        );
+        let nan = AtomicF64::new(nan_no_canonico);
+        assert_eq!(nan.load(Ordering::SeqCst).to_bits(), f64::NAN.to_bits());
+        static EN_ESTATICO: AtomicF64 = AtomicF64::new(-0.0);
+        assert_eq!(
+            EN_ESTATICO.load(Ordering::SeqCst).to_bits(),
+            0.0f64.to_bits()
+        );
+
+        assert_eq!(
+            cero_negativo.fetch_update(Ordering::SeqCst, Ordering::SeqCst, |v| Some(v + 1.0)),
+            Ok(0.0)
+        );
+        assert_eq!(cero_negativo.load(Ordering::SeqCst), 1.0);
+        let previo = nan.fetch_update(Ordering::SeqCst, Ordering::SeqCst, |_| Some(2.0));
+        assert!(matches!(previo, Ok(v) if v.is_nan()));
+        assert_eq!(nan.load(Ordering::SeqCst), 2.0);
+
+        // Los valores normales conservan sus bits.
+        for v in [
+            -0.01,
+            13.0,
+            f64::MIN_POSITIVE,
+            f64::INFINITY,
+            f64::NEG_INFINITY,
+        ] {
+            assert_eq!(
+                AtomicF64::new(v).load(Ordering::SeqCst).to_bits(),
+                v.to_bits()
+            );
+        }
     }
 }

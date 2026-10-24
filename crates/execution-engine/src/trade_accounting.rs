@@ -208,14 +208,6 @@ pub fn bracket_close_kind_by_client_id(client_order_id: &str) -> Option<&'static
     }
 }
 
-/// ¿Este fill cierra posición vía pierna de bracket? Por tipo de orden
-/// (canónico) o por convención de clientOrderId (respaldo ante conversión MARKET
-/// del servicio Algo). Es reconocimiento sintáctico, no autenticación del cierre.
-pub fn is_bracket_close_fill(order_type: &str, client_order_id: &str) -> bool {
-    is_closing_bracket_order(order_type)
-        || bracket_close_kind_by_client_id(client_order_id).is_some()
-}
-
 /// MOD1/4-012 (INFORME-14): escritura de diario en hilo de FONDO.
 ///
 /// Los handlers del user-data stream corrían `std::fs` write DENTRO del hilo
@@ -481,12 +473,12 @@ mod tests {
         // El fill real del repro: MARKET reduce-only con UUID simple — NO es
         // bracket (lo cuenta el core vía su despacho X-008).
         let repro_uuid = "01a0a929a0af73c28a7822088668d314";
-        assert!(!is_bracket_close_fill("MARKET", repro_uuid));
+        assert!(!is_closing_bracket_order("MARKET"));
         assert!(bracket_close_kind_by_client_id(repro_uuid).is_none());
         // Entradas: nunca bracket.
-        assert!(!is_bracket_close_fill("LIMIT", "mc_1789544472577123"));
-        assert!(!is_bracket_close_fill("MARKET", "cL_0123456789abcdef0123456789abcdef"));
-        assert!(!is_bracket_close_fill("LIMIT", "iceberg_01"));
+        assert!(bracket_close_kind_by_client_id("mc_1789544472577123").is_none());
+        assert!(bracket_close_kind_by_client_id("cL_0123456789abcdef0123456789abcdef").is_none());
+        assert!(bracket_close_kind_by_client_id("iceberg_01").is_none());
         // Pierna disparada convertida a MARKET: el id firmado la rescata.
         assert_eq!(
             bracket_close_kind_by_client_id("wdTP_1789544472_0"),
@@ -504,9 +496,10 @@ mod tests {
             bracket_close_kind_by_client_id("CONT_oco_1789544472577_2_SLR"),
             Some("SL")
         );
-        assert!(is_bracket_close_fill("MARKET", "CONT_oco_1_1_TPR"));
+        assert_eq!(bracket_close_kind_by_client_id("CONT_oco_1_1_TPR"), Some("TP"));
         // Canónico por tipo sigue mandando cuando está disponible.
-        assert!(is_bracket_close_fill("TAKE_PROFIT_MARKET", "otro_id"));
+        assert!(is_closing_bracket_order("TAKE_PROFIT_MARKET"));
+        assert!(bracket_close_kind_by_client_id("otro_id").is_none());
     }
 
     #[test]

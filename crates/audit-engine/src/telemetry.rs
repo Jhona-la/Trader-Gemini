@@ -5,10 +5,6 @@ use std::thread;
 /// Telemetry payload. No zero-latency or lock-free serialization guarantee.
 #[derive(Debug, Clone)]
 pub enum TelemetryEvent {
-    LatencyWarning {
-        dns_ms: u64,
-        ws_ms: u64,
-    },
     TradeExecution {
         coin_id: usize,
         is_long: bool,
@@ -18,22 +14,6 @@ pub enum TelemetryEvent {
         roi_post_fees: f64,
         trade_duration_ms: u64,
         current_wr: f64,
-    },
-    RegimeShift {
-        coin_id: usize,
-        old_regime: u8,
-        new_regime: u8,
-    },
-    NanoForestPrediction {
-        coin_id: usize,
-        ml_prob: f64,
-        threshold: f64,
-        execution_us: u64,
-    },
-    MemoryDiagnostic {
-        ram_used_mb: u64,
-        total_alloc_mb: u64,
-        cpu_cycles: u64,
     },
     ParityAlert {
         message: String,
@@ -262,9 +242,6 @@ impl TelemetryManager {
                         compounding_capital
                     );
                 }
-                TelemetryEvent::LatencyWarning { dns_ms, ws_ms } => {
-                    println!("⚠️ [TELEMETRÍA RED] DNS: {}ms | WS: {}ms", dns_ms, ws_ms);
-                }
                 TelemetryEvent::TradeExecution {
                     coin_id,
                     is_long,
@@ -314,29 +291,6 @@ impl TelemetryManager {
                                  trade_duration_ms, roi_pre_fees, roi_pre_fees - roi_post_fees, total_fees);
                     }
                 }
-                TelemetryEvent::RegimeShift {
-                    coin_id,
-                    old_regime,
-                    new_regime,
-                } => {
-                    println!(
-                        "🔄 [TELEMETRÍA RÉGIMEN] Coin: {} | Shift: {} -> {}",
-                        coin_id, old_regime, new_regime
-                    );
-                }
-                TelemetryEvent::NanoForestPrediction {
-                    coin_id: _,
-                    ml_prob: _,
-                    threshold: _,
-                    execution_us: _,
-                } => {}
-                TelemetryEvent::MemoryDiagnostic {
-                    ram_used_mb,
-                    total_alloc_mb,
-                    cpu_cycles,
-                } => {
-                    println!("💾 [TELEMETRÍA RENDIMIENTO] RAM Used: {}MB | Alloc: {}MB | Asymptotic CPU Cycles: {}", ram_used_mb, total_alloc_mb, cpu_cycles);
-                }
                 TelemetryEvent::ParityAlert {
                     message,
                     expected,
@@ -354,11 +308,6 @@ impl TelemetryManager {
 }
 
 /// Nonblocking telemetry helpers; latency has not been certified here.
-#[inline(always)]
-pub fn send_latency_warning(dns_ms: u64, ws_ms: u64) {
-    TELEMETRY.send(TelemetryEvent::LatencyWarning { dns_ms, ws_ms });
-}
-
 #[inline(always)]
 #[allow(clippy::too_many_arguments)]
 pub fn send_trade_execution(
@@ -384,16 +333,6 @@ pub fn send_trade_execution(
 }
 
 #[inline(always)]
-pub fn send_ml_prediction(coin_id: usize, ml_prob: f64, threshold: f64, execution_us: u64) {
-    TELEMETRY.send(TelemetryEvent::NanoForestPrediction {
-        coin_id,
-        ml_prob,
-        threshold,
-        execution_us,
-    });
-}
-
-#[inline(always)]
 pub fn send_parity_alert(message: &str, expected: f64, actual: f64, diff: f64) {
     TELEMETRY.send(TelemetryEvent::ParityAlert {
         message: message.to_string(),
@@ -406,15 +345,4 @@ pub fn send_parity_alert(message: &str, expected: f64, actual: f64, diff: f64) {
 #[inline(always)]
 pub fn update_dynamic_capital(real_capital: f64) {
     TELEMETRY.send(TelemetryEvent::UpdateCapital { real_capital });
-}
-
-/// Función auxiliar para capturar ciclos asintóticos de CPU en x86_64
-#[inline(always)]
-pub fn rdtsc() -> u64 {
-    #[cfg(target_arch = "x86_64")]
-    unsafe {
-        core::arch::x86_64::_rdtsc()
-    }
-    #[cfg(not(target_arch = "x86_64"))]
-    0
 }

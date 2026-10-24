@@ -376,7 +376,8 @@ lo que cambió desde entonces; las filas del TSV no se reescriben.
 | #120 | 4, 25, 26, 20 |
 | #122 | 3a (F317–F320, F328, R160), 37, 49, 17 (F177, F475), 29, 43a (F309 envoltorio, F395, R167, F310/F396: seis constantes que sólo usaban los tests, que pasan a locales del módulo de tests, y SUBSYSTEM_OS_MEM, sin ningún lector; F311, F397), 46, 16 |
 | #123 | 6, 7 (resto del manifiesto), 8 (sin F352), 10 (más K24 como RET-10b, sólo diagnóstico), 11, 12a |
-| tanda RET-21a…RET-35c | 21a (F64–F70, R172), 22a (F19–F23, R145; sin R73), 23a (F76, F78), 30 (F226, R15, F228–F230, R107, parte de F247), 32, 33 (sin capital, umbral_familia ni n), 34 (sin F325 ni open_positions_count), 35 (sin F44; más RET-35c, tres avisos de clippy en pruebas) |
+| #124 | 21a (F64–F70, R172), 22a (F19–F23, R145; sin R73), 23a (F76, F78), 30 (F226, R15, F228–F230, R107, parte de F247), 32, 33 (sin capital, umbral_familia ni n), 34 (sin F325 ni open_positions_count), 35 (sin F44; más RET-35c, tres avisos de clippy en pruebas) |
+| tanda RET-47a…RET-31 | 47 (parcial: 47a F47 y 47b F58, con CL-154), 38 (commit 2: F282, F436), 39 (39a: F277, F403, F278, F402, F280, F405, R86, R88, F415 y parte de F274/F414; 39b: F411), 41 (F251 sin margen_insuf), 42a (F254/R165, F260), 51a (F386 y la parte neutra de F155), 19 (19a: R115; 19b: F302, F303, F306, F307, F313, F387, F389–F391, F399, R166, R76, R77), 27a (F62, F187 y cuatro claves de F338), 31 (sin F244, F233, get_status ni cleanup_stale_orders) |
 
 **Hecho por otros agentes**: lote 9 entero (Sol, d18b3735), lote 45 entero
 (Codex RB, 906a9c6a), parte del 7 (Sol retiró el bin main.rs de
@@ -486,6 +487,52 @@ un escéptico por lote listo):
   probando una ida y vuelta bincode que ya no usa ninguna ruta de
   producción (la producción guarda JSON).
 
+- Lote 47: F47 queda cerrado en parte. Las dos ramas vivas del z de
+  inferencia comparten z_acotado, pero `normalize` (el z de `fit`) sigue
+  aparte hasta F50. F50 es regla 2 para Línea E: `fit` es SGD/BCE por
+  muestra con Welford mutante (lib.rs:893-1000) y los entrenadores usan
+  Adam + Scaler (train_dark_alpha.rs, auto_trainer_daemon.rs); no son
+  equivalentes por construcción.
+- CL-154 (hallazgo de Línea G, linea_g/hallazgos.tsv:10): AtomicF64::new
+  canoniza −0,0 y NaN como store y los CAS. Cierra el caso en todos los
+  átomos de GlobalArena, no sólo en los pesos PPO de RET-47b.
+- Lote 38: cerrado. El commit 1 (núcleo) lo hizo AGY en 7bdd3bb3
+  (F1-109) y el 2 (MetacortexEngine) es RET-38.
+- Lote 39: sigue abierto. R84 lo retiró GLM (9fb74315). Quedan R87 y
+  TradeExecution (recibo §52 de GLM, sin emisor de cierre), ParityAlert y
+  send_parity_alert (state_validator, tema 3) y F273/F417; «39 antes de
+  40» todavía no se cumple.
+- Lote 41: V-TECH-003 «otros» pasa a Retirado (índice 9 conservado). En
+  V-LOGIC-009 la puerta EV, fuera de la sonda, rechaza sin p_ganar en vez
+  de saltarse; hoy es inalcanzable. La prueba
+  ret41_las_compuertas_retiradas_no_tienen_emisor impide que una entrada
+  Retirada recupere un emisor sin cambiar el registro (choque posible con
+  LG5 de Codex ROOT). F269 va al lote 41b.
+- Lote 42: sólo 42a. F255 (fallback_discrete_veto), F256 (RegimeDetector)
+  y F259 (check_drawdown_limit) siguen muertos, pero esperan la
+  conformidad de AGY, que los declaró conservados en F1-119 y F1-085. La
+  teoría de la caída flotante (G055) no se descarta: su vehículo es la
+  equidad caja + Σ pnl_unrealized en evaluate_quantum_order.
+- Lote 51: 51a es preparatorio y neutro. El lote sigue abierto como 51b
+  (una sola cola con LOG_QUEUE), que cambia la conducta del log y exige
+  coordinar con Línea G (LG-11, LG-19) y CL-144.
+- Lote 19: partido. ledger.rs (F304/F388), su re-export y
+  ownership_read_contract esperan a F384 (tema 1). Sale bytemuck, que el
+  censo no nombraba (sólo lo usaba lakehouse.rs). Para la tarjeta del
+  tema 1: el lakehouse SQLite (depth, telemetría y tensores) era un
+  almacén que nadie leía; si el dueño conserva los almacenes, se rehace
+  desde git.
+- Lote 27: sólo 27a. K12 (nash_equilibrium_drift) cambia el voto Nash en
+  arranque frío y va aparte con test y golden; la variante «literal 0,50
+  sin clave» es equivalente bit a bit. Los re-exports de Wasserstein se
+  quedan: la evidencia del censo era falsa (el núcleo usa
+  WassersteinKantorovichEngine por esa ruta).
+- Lote 31: F244 (dispatch) se queda como costura pública del contrato
+  E2E del diseño F2 de Codex QRA; la fila pasa a CONSERVAR salvo que QRA y
+  AGY acuerden otra entrada. F233 sigue con AGY (Ω203, Ω220) y el tema 2.
+  get_status y cleanup_stale_orders esperan a F235 (tema 2). Los genes 133
+  y 134 (umbrales de cuota) siguen sin lector vivo.
+
 **Filas nuevas** (salieron al ejecutar; no están en el TSV):
 
 - N1: spot_bid_qty y spot_ask_qty (quantum-arena state.rs:260-261) sin
@@ -532,4 +579,16 @@ OPEN F3.3-10 de cf3_fuente_contract.rs:107, que hay que quitar o poner al
 día; del 21, el comentario de god_engine.rs:5448-5450 (zona AGY), que
 cita read_recent_events de un módulo que ya no existe; del 30,
 scripts/plan_linea_c.py:201, que sigue listando shadow.rs,
-quantum_multiplexer.rs, quantum_socket.rs y hot_swap.rs.
+quantum_multiplexer.rs, quantum_socket.rs y hot_swap.rs; del 42,
+genome.rs:2013-2014 (Fable) y f1_084_genome_portfolio_perf_freeze_contract.rs:7
+(AGY), que nombran calculate_dynamic_allocation; de los lotes 19, 38 y 39,
+las REGLAS de scripts/plan_linea_c.py (lakehouse.rs, temporal_store.rs,
+shadow_graph_auditor.rs, behavioral_auditor.rs, cybernetic_resilience.rs
+y forensics.rs; `asignacion` ya fallaba por otras ocho rutas); del 39,
+docs/DISENO_META_ANALITICA_INTEGRAL.md:19 (GLM), que da behavioral_auditor.rs
+como fuente de las sombras (es auditor_interno.rs), y
+docs/TRIAJE_ROJOS_PERPETUOS.md:12, que cita auditor_open_diagnostics.rs:40
+(ahora :39); del 19 y el 51, los recuentos de replay-contracts.yml
+(storage-engine pasa de 39 a 17 tests de lib y telemetry-engine de 3 a
+4); del 27, los bloques de MEMORIA de las olas Ω137, Ω142 y Ω143 y de
+la liquidez oculta documentan claves que ya no se publican.

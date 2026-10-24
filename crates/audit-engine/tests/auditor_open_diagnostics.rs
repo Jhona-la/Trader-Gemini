@@ -1,4 +1,3 @@
-use audit_engine::behavioral_auditor::BehavioralAuditorEngine;
 use audit_engine::drift_auditor::{DriftAuditor, TradeResult};
 use audit_engine::trajectory_auditor::{TrajectoryAuditor, TrajectoryStatus};
 
@@ -65,31 +64,4 @@ fn open_perfect_trajectory_returns_zero_error_not_one_fidelity() {
     let mut a = TrajectoryAuditor::new(1);
     a.record_entry(0, 0, 1, true, 100.0, 1_000, 0.01, 0.0, 1_000);
     assert_eq!(a.record_exit(0, 0, 101.0, 2_000), Some(0.0));
-}
-
-#[test]
-fn open_gaussian_likelihood_does_not_accumulate_null_evidence_at_its_mean() {
-    let mut a = BehavioralAuditorEngine::default();
-    for _ in 0..20 {
-        a.audit_observation(0.5);
-    }
-    // For two distinct normal means with shared finite variance, the exact
-    // log-likelihood increment at mu0 is negative, not zero. No variance is supplied here.
-    assert_eq!(a.log_likelihood_ratio, 0.0);
-}
-
-#[test]
-fn open_invalid_behavioral_observation_has_same_return_as_nominal() {
-    let mut a = BehavioralAuditorEngine::default();
-    assert_eq!(a.audit_observation(f64::NAN), None);
-    assert_eq!(a.total_audits, 0);
-    assert_eq!(a.audit_observation(0.5), None);
-    assert_eq!(a.total_audits, 1);
-}
-
-#[test]
-fn open_infinite_cusum_parameters_are_accepted() {
-    let a = BehavioralAuditorEngine::new(0.5, f64::INFINITY, f64::INFINITY);
-    assert!(a.slack_k.is_infinite());
-    assert!(a.threshold_h.is_infinite());
 }

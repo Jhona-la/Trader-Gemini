@@ -1,8 +1,11 @@
 pub mod atomic_telemetry;
 
-/// Initialize the telemetry engine with a fixed capacity ring buffer
-pub fn init_telemetry(capacity: usize) {
-    atomic_telemetry::init_binary_telemetry(capacity);
+/// Crea la cola de telemetría binaria con `capacity` huecos, recortada a
+/// [16, 65 536]. Si la cola ya existía (la crea con 16 384 el primer push o
+/// pop, o la creó un init anterior), devuelve Err con su capacidad real y no
+/// la cambia (RET-51a).
+pub fn init_telemetry(capacity: usize) -> Result<(), usize> {
+    atomic_telemetry::init_binary_telemetry(capacity)
 }
 
 pub fn pop_telemetry() -> Option<String> {
@@ -43,7 +46,8 @@ mod tests {
 
     #[test]
     fn test_macro_telemetry_stack_buffer_and_pop() {
-        init_telemetry(32);
+        // Ok o Err: otra prueba del proceso pudo crear la cola global antes.
+        let _ = init_telemetry(32);
         telemetry!("TEST_SYSTEM_NOMINAL_TICK: {}", 42);
         telemetry_err!("TEST_SIMULATED_REJECTION: code={}", 500);
 
