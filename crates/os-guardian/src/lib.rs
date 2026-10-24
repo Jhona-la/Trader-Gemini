@@ -1,16 +1,12 @@
 pub mod anomaly_detector;
-pub mod crash_dump;
 pub mod ebpf_core;
 pub mod memory_audit;
 pub mod memory_compaction;
 pub mod observability_plane;
 pub mod pmu_sensor;
 pub mod telemetry;
-pub mod zero_latency_telemetry;
 
-pub use crash_dump::{EmergencyCrashDump, PositionDumpEntry};
 use std::sync::atomic::{AtomicBool, Ordering};
-use uuid::Uuid;
 
 use windows::Win32::System::JobObjects::{
     AssignProcessToJobObject, CreateJobObjectW, JobObjectExtendedLimitInformation,
@@ -18,8 +14,8 @@ use windows::Win32::System::JobObjects::{
 };
 use windows::Win32::System::Threading::{
     GetCurrentProcess, GetCurrentThread, SetPriorityClass, SetProcessAffinityMask,
-    SetProcessWorkingSetSize, SetThreadAffinityMask, SetThreadIdealProcessor, SetThreadPriority,
-    HIGH_PRIORITY_CLASS, NORMAL_PRIORITY_CLASS, THREAD_PRIORITY_HIGHEST,
+    SetProcessWorkingSetSize, SetThreadPriority, HIGH_PRIORITY_CLASS, NORMAL_PRIORITY_CLASS,
+    THREAD_PRIORITY_HIGHEST,
 };
 
 use std::ffi::c_void;
@@ -31,13 +27,9 @@ use std::sync::Arc;
 
 /// Inicializa la protección del sistema operativo Windows.
 /// Configura la prioridad del proceso y la afinidad de núcleos.
-pub fn init_guardian(affinity_mask: usize, max_memory_mb: usize, arena: Arc<GlobalArena>) -> Uuid {
-    // Generate UUIDv7 for process tracking (timestamp sortable)
-    let process_id = Uuid::now_v7();
-    println!("[OS-GUARDIAN] 🛡️ Process UUIDv7 Tracker: {}", process_id);
-
+pub fn init_guardian(affinity_mask: usize, max_memory_mb: usize, arena: Arc<GlobalArena>) {
     if INITIALIZED.swap(true, Ordering::SeqCst) {
-        return process_id; // Ya inicializado
+        return; // Ya inicializado
     }
 
     #[cfg(windows)]
@@ -135,24 +127,6 @@ pub fn init_guardian(affinity_mask: usize, max_memory_mb: usize, arena: Arc<Glob
     {
         println!("[OS-GUARDIAN] Ejecutando en modo NO-Windows. Guardián inactivo.");
     }
-
-    process_id
-}
-
-/// FASE 29: Lock Memory Region (VirtualLock). Evita que Windows haga page-out (swapping al disco) de regiones de memoria críticas como el MmapTelemetry y pesos de ML.
-/// # Safety
-/// Caller must ensure `ptr` and `size` describe a valid region of memory
-pub unsafe fn lock_memory_region(ptr: *mut std::ffi::c_void, size: usize) -> bool {
-    #[cfg(target_os = "windows")]
-    {
-        use windows::Win32::System::Memory::VirtualLock;
-        crate::memory_compaction::ensure_working_set_size(size);
-        VirtualLock(ptr, size).is_ok()
-    }
-    #[cfg(not(windows))]
-    {
-        false
-    }
 }
 
 /// FASE 24: Configura el hilo actual para operar en máxima prioridad física.
@@ -183,46 +157,12 @@ pub fn set_current_thread_time_critical() {
     }
 }
 
-/// FASE 24 & Punto #244: Fija la afinidad estricta del hilo actual a un núcleo físico específico
-pub fn pin_current_thread_to_core(core_id: usize) -> bool {
-    #[cfg(windows)]
-    unsafe {
-        let thread = GetCurrentThread();
-        let _ = SetThreadIdealProcessor(thread, core_id as u32);
-        let mask = 1usize << (core_id % 64);
-        let old_mask = SetThreadAffinityMask(thread, mask);
-        old_mask != 0
-    }
-    #[cfg(not(windows))]
-    {
-        let _ = core_id;
-        false
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
-    fn test_pin_current_thread_to_core() {
-        let ok = pin_current_thread_to_core(0);
-        #[cfg(windows)]
-        assert!(
-            ok,
-            "On Windows, thread affinity pinning to core 0 should succeed"
-        );
-        #[cfg(not(windows))]
-        let _ = ok;
-    }
-
-    #[test]
-    fn test_set_current_thread_time_critical_and_virtual_lock() {
+    fn test_set_current_thread_time_critical() {
         set_current_thread_time_critical();
-
-        let mut buffer = vec![0u8; 4096];
-        let ptr = buffer.as_mut_ptr() as *mut std::ffi::c_void;
-        let _locked = unsafe { lock_memory_region(ptr, buffer.len()) };
-        // Validates safe execution without panics or memory corruption
     }
 }

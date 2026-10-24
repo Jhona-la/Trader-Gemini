@@ -20,7 +20,6 @@ god-engine-core	crates/god-engine-core/src/dataset_recorder.rs	0	1	1	0
 metacortex-engine	crates/metacortex-engine/src/immune_system.rs	1	0	0	0
 os-guardian	crates/os-guardian/src/observability_plane.rs	0	1	0	0
 os-guardian	crates/os-guardian/src/telemetry.rs	1	0	0	0
-os-guardian	crates/os-guardian/src/zero_latency_telemetry.rs	0	1	0	0
 quantum-arena	crates/quantum-arena/src/adaptive_quantiles.rs	0	1	0	0
 quantum-arena	crates/quantum-arena/src/state.rs	0	4	1	0
 quantum-arena	crates/quantum-arena/src/symbol_registry.rs	0	0	1	0
