@@ -24,7 +24,9 @@ impl Lcg {
 /// Resultado de un barrido, por edad (inmaduro cuenta como no rechazo):
 /// - `rechazo`: el veredicto (las dos pruebas);
 /// - `rechazo_corta` y `rechazo_larga`: cada prueba por separado;
-/// - `q95` y `q95_largo`: cuantil 95 de cada estadístico;
+/// - `q95` y `q95_largo`: cuantil 95 del estadístico de cada prueba en el
+///   nodo k (C-F5f: no el del nodo que contrasta el veredicto, que antes de
+///   madurar la prueba larga del k es otro más pequeño, CL-150);
 /// - `reversion`: fracción de la desviación votada que revierte en τ_k,
 ///   −Σ d·Δx/Σ d², con d = base observada − media del nodo en el voto y Δx
 ///   el cambio de la base verdadera (sin ruido de medida) en τ_k. NaN con
@@ -185,8 +187,8 @@ fn barrido_con(
                     .is_some_and(|l| l.madura && l.t > CRITICO_LARGO);
                 rech_c[e] += u64::from(corta);
                 rech_l[e] += u64::from(larga);
-                ts_t[e].push(v.t);
-                ts_l[e].push(v.t_largo);
+                ts_t[e].push(p.estado_nodo(k).map_or(f64::NEG_INFINITY, |s| s.t));
+                ts_l[e].push(p.estado_largo(k).map_or(f64::NEG_INFINITY, |l| l.t));
                 e += 1;
             }
         }

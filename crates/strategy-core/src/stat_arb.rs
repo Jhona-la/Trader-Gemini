@@ -179,8 +179,8 @@ impl StatArbEngine {
     }
 
     /// CL-97: veredicto a la τ de decisión `tau_decision_ms`, con `piso` como
-    /// resolución de la base (≥ 0, la σ mínima del z). `None` sin prueba o
-    /// sin ningún par.
+    /// resolución de la base (≥ 0): sin σ > piso no hay voto. `None` sin
+    /// prueba o sin ningún par.
     ///
     /// CL-111 (EST-5 de la revisión del PR #60): sin la resolución de la base
     /// (piso ≤ 0, sin spec de tick) no hay voto. Con los mids redondeados a un
@@ -197,8 +197,9 @@ impl StatArbEngine {
     pub fn veredicto(&self, tau_decision_ms: f64, piso: f64) -> Option<VeredictoStatArb> {
         let v = self.prueba.as_ref()?.veredicto(tau_decision_ms)?;
         let piso = if piso.is_finite() { piso.max(0.0) } else { 0.0 };
-        let sigma = v.sigma.max(piso);
-        let z = (v.base - v.media) / sigma;
+        // Con σ ≤ piso no se publica z (abajo), así que no hace falta un piso
+        // de la σ en el cociente.
+        let z = (v.base - v.media) / v.sigma;
         let demostrada = v.demostrada && piso > 0.0 && v.sigma > piso && z.is_finite();
         Some(VeredictoStatArb {
             z: if demostrada { z } else { 0.0 },

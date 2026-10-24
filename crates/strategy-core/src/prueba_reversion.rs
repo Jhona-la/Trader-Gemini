@@ -65,11 +65,15 @@
 //!
 //! Lo que no hace: no estima la vida media (sólo la acota), no corrige la
 //! repetición de miradas en el tiempo (el nivel es por decisión: en cada
-//! instante la probabilidad de pasar la guarda bajo H0 es ≤ 5 %), y con una
+//! instante la probabilidad de pasar la guarda bajo el H0 de un OU único es
+//! ≤ 5 %; con bases de dos escalas no lo es, ver «Resultado»), y con una
 //! reversión mucho más rápida que la rejilla (t½ ≪ Δ) el instrumento se
 //! debilita: a la escala de decisión esa base es ruido blanco. «Se abstiene»
 //! sólo es cierto con poco ruido de medida; con más de una desviación típica
-//! el tamaño de esta prueba sola sube al 7-10 % (ver arriba, EST-2).
+//! el tamaño de esta prueba sola sube al 7-10 % (ver arriba, EST-2). Sus
+//! sumas son momentos respecto al origen (el primer par) que se centran al
+//! final: con la base a D del origen su t pierde ≈ (D/σ)²·ε (medido:
+//! 2·10⁻⁸ con 10³σ, 2·10⁻⁴ con 10⁵σ; la prueba larga no, ver `Largo`).
 //!
 //! Prueba a la escala de decisión (C-F5b, EST-3 de la revisión del PR #60;
 //! estimador de C-F5e). La prueba de retardos cortos extrapola de Δ y 2Δ a
@@ -82,7 +86,8 @@
 //! la desviación observada d = b − m respecto a la media del nodo (ruido de
 //! medida incluido). Fila x = d_{t−L}, y = b_t − (2b_{t−L−1} − b_{t−L−2}) con
 //! L = 8 celdas, y R̂ = −Σw·x·y/Σw·x² es la fracción de la desviación votada
-//! que revierte en τ_k (cota inferior; ver `Largo`). H0: R ≤ ½. Error típico
+//! que revierte en τ_k (cota inferior si el ruido de medida no está
+//! correlado entre celdas; ver `Largo`). H0: R ≤ ½. Error típico
 //! sándwich con núcleo uniforme de retardo L; memoria de 64·τ_k (512
 //! celdas), madurez a media memoria (unas 266 celdas seguidas). Estadístico
 //! t = (R̂ − ½ − `SESGO_LARGO`/n)·Σw·x²/√V, con n = min(n_ef, n_x); rechazo
@@ -101,9 +106,16 @@
 //!
 //! Frontera. Para un OU de vida media t½ (celdas) con ruido r, el estimando
 //! estacionario vale ½ en t½ = 7,76 celdas sin ruido, 7,01 con r = ¼ y 5,23
-//! con r = ½; con r ≥ 0,8 ningún OU único llega a ½ (con r = 1 el máximo es
-//! 0,41) y todos están en H0. Hay una segunda raíz, por debajo de
-//! 0,57-0,75 celdas: la extrapolación de orden 2 falla con una reversión mucho más
+//! con r = ½. Con r = 0,8 aún llega a 0,509 (t½ de 1,5 a 2,4 celdas); el
+//! último r con raíz es ≈ 0,817, y con r = 1 el máximo es 0,41. Con r ≥ 1
+//! todo OU único está en H0 (R < 1/(1 + r²) ≤ ½). Entre r ≈ 0,82 y 1 hay
+//! OU en H1 (lo votado revierte 0,52-0,61) cuyo estimando no llega a ½: la
+//! prueba casi no los vota, y es pérdida de potencia, no de nivel. Las
+//! fronteras con r de 0,6 a 0,8 no entran en la calibración; la revisión de
+//! C-F5e midió en ellas el tamaño de la prueba larga sola en ≤ 4,2 % con el
+//! prototipo y ≤ 2,8 % con un port propio. Hay una segunda raíz, por debajo
+//! de 0,57-0,75 celdas con r = 0, ¼ y ½ (sube con r: 1,49 con r = 0,8): la
+//! extrapolación de orden 2 falla con una reversión mucho más
 //! rápida que la rejilla y R̂ cae aunque lo votado revierta casi entero; es
 //! pérdida de potencia, no de nivel, y esas configuraciones no entran en la
 //! calibración del tamaño.
@@ -128,12 +140,15 @@
 //! ruido de ½ σ, del 16 % al 81 % entre 270 y 2 048 celdas (lo votado
 //! revierte 0,79). En el caso del revisor vota ≤ 0,9 %. Con bases de dos
 //! escalas en la frontera (la desviación media revierte la mitad en τ_k)
-//! vota hasta el 16 % de los instantes en las edades jóvenes, y lo votado
-//! revierte de 0,49 a 0,74 (todas las edades juntas): la prueba mide lo que
-//! revierte la desviación en la ventana, y una ventana en la que la
-//! componente lenta está quieta sí revierte. Ese es el contrato de
-//! decisión: se vota lo que revierte al menos la mitad en τ_k; el tamaño
-//! sobre trayectorias de esas bases no está acotado al 5 %. La prueba corta
+//! vota hasta el 16 % de los instantes en las edades jóvenes y un 7-8 % en
+//! régimen estacionario (hasta 8 192 celdas): el exceso baja con la edad
+//! pero no desaparece, y queda en ≈ 1,5 veces el nominal. Lo votado
+//! revierte de 0,49 a 0,74 de media (todas las edades juntas): la prueba
+//! mide lo que revierte la desviación en la ventana, y una ventana en la
+//! que la componente lenta está quieta sí revierte. Son medias medidas en
+//! esas bases, no una garantía: en bases dentro de H0 lo votado revierte
+//! 0,29-0,44, y el tamaño sobre trayectorias de bases de dos escalas no
+//! está acotado al 5 %. La prueba corta
 //! añade poco: en un OU, rechazar la larga implica t½ < τ_k y por tanto la
 //! H1 de la corta; en lo medido le quita al veredicto ≤ 6 puntos de
 //! potencia. Coste: la prueba larga madura más tarde (unas 266 celdas,
@@ -485,6 +500,17 @@ const VENTANA: usize = HORIZONTE_CELDAS + 3;
 /// y pierde (1 − ρ)² (0,007 en la frontera; 0,12 con t½ = τ_k/5). Sólo exige
 /// muestra en esas cuatro celdas y media en t − L; los huecos de en medio no
 /// cortan la fila.
+///
+/// Supuesto: el ruido de medida no está correlado entre celdas (retardo
+/// ≥ 1). Si lo está, por ejemplo con una pata de cotización atrasada, el
+/// ruido de t − L correla con el de t − L − 1 y t − L − 2, y su reversión
+/// cuenta como reversión de la base: el estimando sube en
+/// ≈ (2φ − φ² − φ^L)·σ_e²/E[d²] con un ruido AR(1) de coeficiente φ, y
+/// R̂ ≤ R deja de valer. Con un OU en la frontera, ruido de ½ σ y φ = ½,
+/// el veredicto votaría del 7 % al 16 % de los instantes entre 512 y
+/// 2 048 celdas (con ruido iid, ≤ 0,02 %), con R limpio de 0,38-0,41.
+/// Con los mids en la rejilla del tick y σ por encima del piso no se ha
+/// visto (≤ 0,5 %), y el redondeo con σ ≤ piso ya no vota (C-F5e).
 ///
 /// Por el origen y sobre d, no centrado en la propia muestra: centrar x en
 /// su media de la memoria larga quitaba la parte de d que no revierte (la

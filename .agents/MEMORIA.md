@@ -1,5 +1,27 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
 
+## 2026-10-24 — Claude (cloud, Línea C): C-F5f, seguimiento de la revisión de C-F5e
+
+Revisión adversaria de C-F5e (#79) por dimensión (estadística, código,
+integración), cada hallazgo con verificador y escéptico: 7 hallazgos, todos
+de severidad baja, ninguno cambia el nivel calibrado ni una orden.
+
+- Documentación de `prueba_reversion`: con ruido 0,8σ el estimando aún llega
+  a 0,509 (r* ≈ 0,817; todo OU en H0 sólo con r ≥ 1); las bases de dos
+  escalas votan un 7-8 % también en régimen estacionario; «≤ 5 %» vale para
+  el H0 de un OU único; R̂ ≤ R supone ruido de medida sin correlación entre
+  celdas (con AR(1) φ = ½ y r = ½ el veredicto votaría 7-16 %).
+- `StatArbEngine::veredicto`: fuera `v.sigma.max(piso)`, que no cambiaba
+  ninguna salida.
+- El barrido de los tests guarda el t del nodo k (antes, el del nodo que
+  contrasta el veredicto). Medición del crítico corto rehecha en nativo
+  release: cuantil 95 máximo 1,761 (igual que el 2026-10-12).
+- El test de precisión lejos del origen ahora falla con el código de C-F5b
+  (1,1·10⁻² con 10³σ, t = −∞ con 10⁵σ) y pasa con el actual (≤ 5,5·10⁻¹⁰).
+  Hallazgo nuevo, sólo documentado: la prueba CORTA pierde ≈ (D/σ)²·ε lejos
+  del primer par (2·10⁻⁸ con 10³σ, 2·10⁻⁴ con 10⁵σ). Abierto, prioridad baja.
+- Comentarios de 3 fixtures del núcleo corregidos para el respaldo de CL-150.
+
 ## 2026-10-24 — Claude (cloud, Línea C): lotes de retiro 4, 25, 26 y 20 del censo C-F7b
 
 Rama `claude/auditoria-deslizamiento-apalancamiento-sqtc08` sobre main
@@ -1279,13 +1301,13 @@ ROOT del 20 de octubre conserva 4/7 pares privados históricos; Hidden04 numéri
   - x = d_{t−L} (base − media del nodo); y = b_t − (2b_{t−L−1} − b_{t−L−2}); R̂ = −Σwxy/Σwx² es una cota inferior de lo que revierte en τ_k.
   - n = min(n_ef, 3(Σwx²)²/Σw²x⁴); `SESGO_LARGO` = 19 y crítico z95, sin exceso.
   - Tamaño máximo 4,96 % en 47 configuraciones de H0 (frontera con ruido 0-½σ, rachas, ruido 1-10σ); el del veredicto, 4,4 %.
-  - Fronteras: t½ = 7,76 celdas sin ruido, 7,01 con ¼σ, 5,23 con ½σ; con ruido ≥ 0,8σ ningún OU único sale de H0.
+  - Fronteras: t½ = 7,76 celdas sin ruido, 7,01 con ¼σ, 5,23 con ½σ; con ruido ≥ 1σ todo OU único está en H0, y con r ≳ 0,82σ ninguno llega al ½ del estimando (corregido en C-F5f: con 0,8σ aún llega a 0,509).
   - Potencia con t½ = τ_k/5: 70/89/97 % a 270/384/512 celdas (antes 95/99 % a 384/512).
   - Un núcleo HAC de L+2 no mejora el tamaño y pierde potencia; se queda L.
 - **CL-150**: el veredicto contrasta el nodo maduro más grande j ≤ k(τ*) y publica τ_j.
 - **CL-151**: StatArb no vota si σ ≤ piso (la resolución del tick).
 - **CL-152**: el test de caminatas corre 45 min y exige que el nodo contrastado esté maduro.
-- Límite documentado (contrato condicional): con bases de dos escalas en la frontera, el veredicto vota hasta el 16 % de los instantes en edades jóvenes, y lo votado revierte 0,49-0,74. El tamaño sobre esas bases no está acotado al 5 %.
+- Límite documentado (contrato condicional): con bases de dos escalas en la frontera, el veredicto vota hasta el 16 % de los instantes en edades jóvenes y un 7-8 % en régimen estacionario (C-F5f), y lo votado revierte 0,49-0,74 de media (medido, no garantizado). El tamaño sobre esas bases no está acotado al 5 %.
 - La prueba corta resta ≤ 6 puntos de potencia; se mantiene en el veredicto.
 - T-1 no aplica: StatArb no vota en el replay.
 

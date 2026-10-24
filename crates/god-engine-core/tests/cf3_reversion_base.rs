@@ -191,8 +191,9 @@ fn cl97_tras_un_hueco_largo_del_spot_vuelve_a_madurar() {
 /// Verdad (potencia y cableado): con la reversión demostrada, una
 /// dislocación de la base de +5 pb (el spot cae; σ de la base = 1 pb) da
 /// z > 1,5 y el lector vota corto en el futuro. Se mira el evento de la
-/// dislocación sólo si en él la guarda sigue abierta (τ* puede saltar a un
-/// nodo sin madurar); debe ocurrir en alguno de 20 intentos.
+/// dislocación sólo si en él la guarda sigue abierta (cerca del crítico la
+/// guarda parpadea, y si τ* salta a un nodo sin madurar el veredicto
+/// contrasta el de respaldo, CL-150); debe ocurrir en alguno de 20 intentos.
 #[test]
 fn cl97_con_la_reversion_demostrada_el_lector_vota() {
     let _g = bloqueo();
