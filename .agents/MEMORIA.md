@@ -1,5 +1,49 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
 
+## 2026-10-24T14:43:21-05:00 — Kimi V33: Fase 8 retirada y RED de capital ejecutado
+
+- `origin/agy/fase8-fisica-silicio-cpuid` fue eliminada después de verificar PR #131 MERGED, SHA `e2f7d989e`, cero commits exclusivos (`25 0`) y ausencia de worktree. Fase 9 y Línea C se preservaron. Registro publicado en `5da522e35`; no se forzó ningún push.
+- RED real sin compilar: con `INITIAL_CAPITAL=abc`, `target/debug/continuous_evolution_backtest.exe` terminó con `PROCESS_EXIT=0`, reemplazó el CSV centinela por su cabecera y no creó `config_dir`. Evidencia en `docs/audit/V33_RED_CAPITAL_2026-10-24.md` y `logs/v33_red_capital_invalid.log`; commit `836ab1f27`. La corrección sigue pendiente: validar capital como primera operación de `main` y exigir error + centinela intacto.
+- Inventario y ledger actualizados en `4aa0ff395`: 2.180 rutas = 26 `REVISADO_ESTATICO` + 1 `RED` + 2.153 `INVENTORIADO`. El paquete del contrato es `trader-gemini-v5`; prueba E2E prevista `tests/continuous_capital_contract.rs`.
+- RAM disponible 0,71 GiB con cargo/rustc ajenos: no se editó Rust, no hubo builds, censo SSD, Demo ni operación financiera. La implementación permanece bloqueada hasta disponer de ≥4 GiB y semáforo. ROI/PnL/WR/Sharpe/EV: `N/D`. Los commits V33 son documentales y tienen cero checks por paths-ignore; no se afirma CI verde de código.
+
+## 2026-10-24 14:07 -05:00 — Codex: relevo PR65/QRA recuperado; ejecución pendiente
+
+El operador seleccionó retomar validación PR65 y auditoría QRA en el chat del
+relevo. Informe `docs/audit/RELEVO_CODEX_PR65_QRA_2026-10-24.md`; respaldos y
+candidatos en `.agent_tx/codex-relevo-20261024`. Sin ramas/worktrees nuevos,
+Cargo propio, cambios de fuente Rust, commits, push ni limpieza ajena.
+
+PR65 cerrada sin merge; su código llegó por676. Controles Verify conservan
+`verification_complete=false`, ROOT/QRA como ejecutor y runners legacy
+deshabilitados. Siguen pendientes check workspace/all-targets y tests
+execution/feature exactos, secuenciales. Nuevo helper privado `pr65_guard.py`
+SHAa8b011877a1376ea60b322a8431755ce68369fb06a845a71abd6afc90ab47ce4,
+12/12 contratos propios PASS con Python real en Job128MiB, no Rust. Mantiene
+semáforo real, lock acoplado, target canónico/jobs1, lld y hashes antes/después.
+Excepción RAM recuperada de respuesta humana directa01a16989-84f4:
+«Hazlo con esa cantidad de ram», ante0,94GiB; piso privado0,94GiB sin falsear
+sensores ni modificar la política compartida. Primer intento rechazado antes
+de Cargo por lock LíneaG, Cargo270036 iniciado12:33:48; seguía compilando al
+cierre y RAM llegó a102MiB. No cerrar procesos ni robar el turno.
+
+QRA F2: PR106 ya resolvió wb ausente/cero y parte de FFI. Persisten sesión,
+cache completo, readiness y equity. Dos fixes acotados preparados juntos en
+`composed/composed.patch`: URL privada Prod y cache transaccional ante delta
+incompleto/overflow, 10 contratos nuevos y12 anteriores conservados, dos
+revisiones RO y apply-check0. Fuente viva sigue SHA5766db78482a4826222aa8879d432104b1e694bd775a749d89c6fe15b66e4ed0;
+candidato SHA30faa94738100584fb126ac0a4ae76a1c61e199394bfa2cc242db4acfaf1408d.
+No instalado ni compilado; próximo relevo cotejar fuente y turno antes de usar
+el instalador con respaldo y ambos locks. Reserva de código liberada.
+
+Rescate ampliado `RECUPERACION_QRA.md` + `CENSO_PREPARADOS_QRA.json`:31paquetes,
+50copias/26rutas, hashes históricos preservados;12átomos pendientes yS07
+pospuesto, S03 retenido por decimales. Candidatos viejos contienen APIs ya
+retiradas: reanclar hunks, nunca reemplazar archivos completos. CI actual
+observada para código7b70 seguía pendiente; no transferir verdes históricos.
+Verify locked, sus artefactos y controles se conservaron. No hay certificación
+nueva de rentabilidad, operación de cuenta ni integración funcional completa.
+
 ## 2026-10-24 — Claude (cloud, Línea C): lotes de retiro 50, 44 y 13, y revisión de las tandas 2 a 4
 
 Tanda del PR #130 del censo C-F7b. Un commit por bloque y sin T-1:
