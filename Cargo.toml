@@ -201,6 +201,10 @@ name = "dashboard"
 path = "src/bin/dashboard.rs"
 
 [[bin]]
+name = "trader_viz"
+path = "src/bin/trader_viz.rs"
+
+[[bin]]
 name = "audit_forensic_backtest"
 path = "src/bin/audit_forensic_backtest.rs"
 
