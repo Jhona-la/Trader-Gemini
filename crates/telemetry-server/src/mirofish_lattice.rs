@@ -336,13 +336,13 @@ impl TailRidge3D {
             let kurtosis_excess = (6.0 / (1.0 + (tau_ms / 1_000.0).sqrt())).clamp(0.1, 12.0);
 
             // Left Tail Expected Shortfall (CVaR al 1% con corrección de Cornish-Fisher)
-            let z_alpha = 2.3263; // Cuantil 99% normal
-            let cf_correction = (kurtosis_excess / 24.0) * (z_alpha.powi(3) - 3.0 * z_alpha);
-            let z_cf = z_alpha + cf_correction;
+            let z_alpha: f64 = 2.3263; // Cuantil 99% normal
+            let cf_correction: f64 = (kurtosis_excess / 24.0) * (z_alpha * z_alpha * z_alpha - 3.0 * z_alpha);
+            let z_cf: f64 = z_alpha + cf_correction;
             let left_tail_cvar = (safe_spot * (sigma_tau * z_cf * 0.1).tanh()).clamp(0.0, safe_spot * 0.95);
 
             // Densidad de cola derecha
-            let right_tail_density = (0.5 * (-0.5 * (z_cf * 0.8).powi(2)).exp() / (2.0 * std::f64::consts::PI).sqrt()).clamp(1e-6, 1.0);
+            let right_tail_density = (0.5 * (-0.5 * (z_cf * 0.8) * (z_cf * 0.8)).exp() / (2.0 * std::f64::consts::PI).sqrt()).clamp(1e-6, 1.0);
 
             // Bandas conformales dinámicas
             let q_conformal = (1.0 - safe_alpha).clamp(0.5, 0.999);

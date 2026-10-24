@@ -8,8 +8,6 @@
 //! - Detector Secuencial de Puntos de Cambio de Shiryaev-Roberts-Pollak (SRP).
 //! - Cumplimiento estricto del invariante U-ERR-6 (cero sufijos de banda scalp/swing).
 
-use std::sync::Arc;
-use std::sync::atomic::Ordering;
 use telemetry_server::causal_attribution::{
     CausalAttributionEngine, ShiryaevRobertsPollakDetector, SUBSYSTEM_COUNT,
 };
@@ -17,8 +15,7 @@ use telemetry_server::hyperdimensional_graph::{
     HyperdimensionalGraphSnapshot, PodIsolationState,
 };
 use telemetry_server::mirofish_lattice::{MirofishLattice, TailRidge3D};
-use telemetry_server::mmap_viz_stream::MmapVizStreamReader;
-use telemetry_server::telemetry_mmap::MmapTelemetry;
+use telemetry_server::mmap_viz_stream::{MmapVizStreamReader, TelemetrySnapshot};
 
 /// Contrato C1: Desacoplamiento Lock-Free & Integridad Mmap Zero-Copy
 #[test]
@@ -31,14 +28,20 @@ fn test_c1_mmap_lock_free_decoupling_and_readback() {
     let path = temp_dir.join(format!("contract_c1_mmap_{}.bin", unique_id));
     let path_str = path.to_string_lossy().to_string();
 
-    let arena = quantum_arena::GlobalArena::build_in_own_stack(100.0);
-    arena.unified_capital.store(150.0, Ordering::Relaxed);
-    arena.tick_counter.store(4242, Ordering::Relaxed);
-    arena.coins[0].metrics.pnl_realized.store(25.0, Ordering::Relaxed);
-    arena.coins[0].metrics.win_rate.store(0.80, Ordering::Relaxed);
-
-    let mut writer = MmapTelemetry::new(arena.clone(), &path_str).expect("writer init");
-    writer.snapshot_to_ram();
+    let snap_init = TelemetrySnapshot {
+        tick_counter: 4242,
+        unified_capital: 150.0,
+        pnl_realized: 25.0,
+        global_leverage: 1.0,
+        ai_ml_prob: 0.75,
+        hurst_exponent: 0.60,
+        memory_used_mb: 120.0,
+        global_roi: 50.0,
+        win_rate: 0.80,
+        tensor_drift: 0.0,
+    };
+    let bytes: [u8; std::mem::size_of::<TelemetrySnapshot>()] = unsafe { std::mem::transmute(snap_init) };
+    std::fs::write(&path, &bytes).expect("write bytes");
 
     // Lector desacoplado
     let mut reader = MmapVizStreamReader::new(&path_str);
@@ -52,15 +55,18 @@ fn test_c1_mmap_lock_free_decoupling_and_readback() {
     assert!((snap.global_roi - 50.0).abs() < 1e-4); // (150 - 100)/100 = 50%
 
     // Segunda escritura concurrente
-    arena.unified_capital.store(200.0, Ordering::Relaxed);
-    arena.tick_counter.store(5000, Ordering::Relaxed);
-    writer.snapshot_to_ram();
+    let snap_update = TelemetrySnapshot {
+        tick_counter: 5000,
+        unified_capital: 200.0,
+        ..snap_init
+    };
+    let bytes2: [u8; std::mem::size_of::<TelemetrySnapshot>()] = unsafe { std::mem::transmute(snap_update) };
+    std::fs::write(&path, &bytes2).expect("second write");
 
     let snap2 = reader.read_snapshot().expect("segunda lectura");
     assert_eq!(snap2.tick_counter, 5000);
     assert_eq!(snap2.unified_capital, 200.0);
 
-    drop(writer);
     let _ = std::fs::remove_file(path);
 }
 

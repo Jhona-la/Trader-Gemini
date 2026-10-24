@@ -31,11 +31,26 @@
 use crate::causal_attribution::{CausalAttributionEngine, CausalMetaAnalyticsReport};
 use crate::hyperdimensional_graph::HyperdimensionalGraphSnapshot;
 use crate::mirofish_lattice::{MirofishLattice, TailRidge3D};
-use crate::telemetry_mmap::TelemetrySnapshot;
 use memmap2::{Mmap, MmapOptions};
 use serde::{Deserialize, Serialize};
 use std::fs::OpenOptions;
 use std::path::{Path, PathBuf};
+
+/// Snapshot de telemetría de memoria compartida (SHM).
+#[repr(C)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct TelemetrySnapshot {
+    pub tick_counter: u64,
+    pub unified_capital: f64,
+    pub pnl_realized: f64,
+    pub global_leverage: f64,
+    pub ai_ml_prob: f64,
+    pub hurst_exponent: f64,
+    pub memory_used_mb: f64,
+    pub global_roi: f64,
+    pub win_rate: f64,
+    pub tensor_drift: f64,
+}
 
 /// Paquete completo de visualización desacoplada para la Suite Visual.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
