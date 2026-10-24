@@ -4,43 +4,46 @@
 //! POR QUÉ: Los observables Koopman streaming (|λ|, Δ_bif) de GLM 149 estaban desacoplados de riesgo.
 //! PARA QUÉ: Evitar sobre-exposición durante rupturas de régimen en cuentas micro ($13 USD).
 //! CÓMO: 4 contratos matemáticos validando régimen estable, régimen divergente, inmunidad NaN y pisos.
+//!
+//! LG-31: el productor publica `bifurcacion_max` = max_i |λ_i| (umbral 1,0, igual
+//! que el módulo), así que las entradas posibles tienen bif = |λ| dominante. Los
+//! valores anteriores (bif 0,05–0,35 con |λ| ≥ 0,98) no podían darse.
 
 use risk_engine::kelly_envelope::{nocional_por_riesgo, RiskEnvelope};
 
 #[test]
 fn c1_koopman_stable_regime_preserves_full_kelly_fraction() {
-    // Para modos asintóticamente estables (|λ| <= 1.0) y baja bifurcación (<= 0.10)
-    let dampener = RiskEnvelope::koopman_stability_dampener(0.98, 0.05);
+    // Para modos asintóticamente estables (|λ| <= 1.0)
+    let dampener = RiskEnvelope::koopman_stability_dampener(0.98, 0.98);
     assert_eq!(
         dampener, 1.0,
         "Modos contractivos (|λ| <= 1.0) no deben atenuar la fracción de Kelly"
     );
 
-    let dampener_boundary = RiskEnvelope::koopman_stability_dampener(1.00, 0.10);
+    let dampener_boundary = RiskEnvelope::koopman_stability_dampener(1.00, 1.00);
     assert_eq!(
         dampener_boundary, 1.0,
-        "Frontera unitaria (|λ| = 1.0, bif = 0.10) preserva fracción 1.0"
+        "Frontera unitaria (|λ| = 1.0) preserva fracción 1.0"
     );
 }
 
 #[test]
 fn c2_koopman_divergent_bifurcation_dampens_hyperbolically() {
-    // Modo divergente (|λ| = 1.20, bif = 0.10):
-    // exceso_modulo = 0.20, exceso_bif = 0.0
-    // dampener = 1.0 / (1.0 + 3.0 * 0.20) = 1.0 / 1.60 = 0.625
-    let dampener_divergent = RiskEnvelope::koopman_stability_dampener(1.20, 0.10);
-    let expected = 1.0 / 1.60;
+    // Modo divergente (|λ| = 1.20 = bif):
+    // exceso_modulo = 0.20, exceso_bif = 0.20
+    // dampener = 1.0 / (1.0 + 3.0 * 0.20 + 5.0 * 0.20) = 1.0 / 2.60 ≈ 0.384615
+    let dampener_divergent = RiskEnvelope::koopman_stability_dampener(1.20, 1.20);
+    let expected = 1.0 / 2.60;
     assert!(
         (dampener_divergent - expected).abs() < 1e-9,
-        "Atenuación por divergencia |λ|=1.20 debe ser 0.625: got {}",
+        "Atenuación por divergencia |λ|=1.20 debe ser 1/2,60: got {}",
         dampener_divergent
     );
 
-    // Bifurcación severa (|λ| = 1.20, bif = 0.30):
-    // exceso_modulo = 0.20, exceso_bif = 0.20
-    // dampener = 1.0 / (1.0 + 3.0 * 0.20 + 5.0 * 0.20) = 1.0 / (1.0 + 0.60 + 1.00) = 1.0 / 2.60 ≈ 0.384615
-    let dampener_bifurcated = RiskEnvelope::koopman_stability_dampener(1.20, 0.30);
-    let expected_bif = 1.0 / 2.60;
+    // Divergencia mayor (|λ| = 1.40 = bif):
+    // dampener = 1.0 / (1.0 + 3.0 * 0.40 + 5.0 * 0.40) = 1.0 / 4.20 ≈ 0.238095
+    let dampener_bifurcated = RiskEnvelope::koopman_stability_dampener(1.40, 1.40);
+    let expected_bif = 1.0 / 4.20;
     assert!(
         (dampener_bifurcated - expected_bif).abs() < 1e-9,
         "Atenuación con bifurcación combinada: {} vs {}",
@@ -92,9 +95,12 @@ fn c4_koopman_spectral_exposure_budget_continuity() {
     let stop_pct = 0.015; // 1.5% stop
     let cost_pct = 0.001; // 0.1% roundtrip taker fee
 
-    // 1. Régimen estable y 2. régimen caótico / bifurcación
-    let f_stable = env.risk_fraction_spectral(1.64, 10.0, 0.95, 0.05);
-    let f_chaotic = env.risk_fraction_spectral(1.64, 10.0, 1.30, 0.35);
+    // 1. Régimen estable y 2. régimen caótico / bifurcación.
+    // LG-31 (rescate GLM-166): bif ≡ |λ| dominante del productor (umbral 1,0),
+    // así que bif acompaña al módulo (0.95/0.95 y 1.30/1.30) — los valores
+    // legacy (bif 0.05–0.35 con |λ| ≥ 0.98) no podían darse.
+    let f_stable = env.risk_fraction_spectral(1.64, 10.0, 0.95, 0.95);
+    let f_chaotic = env.risk_fraction_spectral(1.64, 10.0, 1.30, 1.30);
     let budget_stable = capital * f_stable;
     let budget_chaotic = capital * f_chaotic;
     let notional_stable =

@@ -244,11 +244,17 @@ impl RiskEnvelope {
     /// Modula la fracción de riesgo de Kelly según el módulo dominante (|λ|)
     /// y la métrica de bifurcación espectral del operador Koopman streaming:
     ///
-    /// - Régimen Asintóticamente Estable (|λ| <= 1.0 y bifurcacion <= 0.10):
+    /// - Régimen Asintóticamente Estable (|λ| <= 1.0 y bifurcacion <= 1.0):
     ///   El flujo en el espacio de Hilbert es contractivo o unitario; el factor es 1.0.
-    /// - Régimen Divergente / Bifurcación Caótica (|λ| > 1.0 o bifurcacion > 0.10):
+    /// - Régimen Divergente / Bifurcación (|λ| > 1.0 o bifurcacion > 1.0):
     ///   Atenuación hiperbólica suave:
-    ///   \phi = 1.0 / (1.0 + 3.0 * (|λ| - 1.0).max(0.0) + 5.0 * (bifurcacion - 0.10).max(0.0))
+    ///   \phi = 1.0 / (1.0 + 3.0 * (|λ| - 1.0).max(0.0) + 5.0 * (bifurcacion - 1.0).max(0.0))
+    ///
+    /// LG-31: el productor (`koopman_dmd`, campo `bifurcacion_max`) publica
+    /// max_i |λ_i| y documenta «≥ 1,0 es régimen de bifurcación», el mismo
+    /// umbral que el módulo. Antes se comparaba con 0,10: con el |λ| ≈ 0,77
+    /// medido en tape real (régimen contractivo) el factor quedaba en 0,23 en
+    /// cada orden y la sonda micro se vetaba con un espectro estable.
     ///
     /// Protege matemáticamente las micro-cuentas ($13 USD) de entrar con tamaño pleno
     /// durante bifurcaciones no lineales o regímenes explosivos.
@@ -261,7 +267,7 @@ impl RiskEnvelope {
             return 1.0; // Fallback neutral si aún no hay lecturas maduras de Koopman
         }
         let excess_modulo = (koopman_modulo - 1.0).max(0.0);
-        let excess_bif = (koopman_bifurcacion - 0.10).max(0.0);
+        let excess_bif = (koopman_bifurcacion - 1.0).max(0.0);
         let dampener = 1.0 / (1.0 + 3.0 * excess_modulo + 5.0 * excess_bif);
         dampener.clamp(0.05, 1.0)
     }
@@ -620,15 +626,17 @@ mod tests {
 
     #[test]
     fn test_koopman_stability_dampener_and_spectral_risk_fraction() {
-        // 1. Modos asintóticamente estables (|λ| <= 1.0, bif <= 0.10) => factor 1.0
-        assert_eq!(RiskEnvelope::koopman_stability_dampener(0.95, 0.05), 1.0);
-        assert_eq!(RiskEnvelope::koopman_stability_dampener(1.00, 0.10), 1.0);
+        // LG-31: el productor publica bifurcacion = max|λ|, así que las entradas
+        // posibles tienen bif = |λ| dominante.
+        // 1. Modos asintóticamente estables (|λ| <= 1.0) => factor 1.0
+        assert_eq!(RiskEnvelope::koopman_stability_dampener(0.95, 0.95), 1.0);
+        assert_eq!(RiskEnvelope::koopman_stability_dampener(1.00, 1.00), 1.0);
 
         // 2. Modos inestables / divergentes atenúan el riesgo
-        let damp_mild = RiskEnvelope::koopman_stability_dampener(1.10, 0.10);
+        let damp_mild = RiskEnvelope::koopman_stability_dampener(1.10, 1.10);
         assert!(damp_mild < 1.0 && damp_mild > 0.5, "1.10 |λ| debe atenuar suavemente");
 
-        let damp_severe = RiskEnvelope::koopman_stability_dampener(1.30, 0.25);
+        let damp_severe = RiskEnvelope::koopman_stability_dampener(1.30, 1.30);
         assert!(damp_severe < damp_mild, "Mayor inestabilidad debe atenuar más");
 
         // 3. Inmunidad a NaN / Inf => fallback 1.0
@@ -647,10 +655,10 @@ mod tests {
         let base_f = env.risk_fraction(1.64, 10.0);
         assert!(base_f > 0.0);
 
-        let f_stable = env.risk_fraction_spectral(1.64, 10.0, 0.95, 0.05);
+        let f_stable = env.risk_fraction_spectral(1.64, 10.0, 0.95, 0.95);
         assert_eq!(f_stable, base_f);
 
-        let f_chaotic = env.risk_fraction_spectral(1.64, 10.0, 1.25, 0.20);
+        let f_chaotic = env.risk_fraction_spectral(1.64, 10.0, 1.25, 1.25);
         assert!(f_chaotic < base_f && f_chaotic > 0.0);
     }
 
@@ -668,12 +676,12 @@ mod tests {
         assert!(base_lev > 0.0);
 
         // Modo estable: debe ser idéntico al base
-        let (stable_lev, stable_operable) = env.max_leverage_spectral(cap, stop, min_notional, 1.64, 10.0, 0.95, 0.05);
+        let (stable_lev, stable_operable) = env.max_leverage_spectral(cap, stop, min_notional, 1.64, 10.0, 0.95, 0.95);
         assert!(stable_operable);
         assert_eq!(stable_lev, base_lev);
 
         // Modo caótico / bifurcación: amortigua apalancamiento
-        let (chaotic_lev, _chaotic_operable) = env.max_leverage_spectral(cap, stop, min_notional, 1.64, 10.0, 1.25, 0.30);
+        let (chaotic_lev, _chaotic_operable) = env.max_leverage_spectral(cap, stop, min_notional, 1.64, 10.0, 1.25, 1.25);
         assert!(chaotic_lev < stable_lev);
 
         // Extremo caótico: si la fracción cae bajo el mínimo ejecutable, se veta fail-closed
@@ -682,7 +690,7 @@ mod tests {
 
         // Cuenta en frío sin edge probado bajo bifurcación caótica: veto absoluto de exploración
         let fresh_env = RiskEnvelope::new();
-        let (_cold_lev, cold_operable) = fresh_env.max_leverage_spectral(13.0, 0.01, 5.0, 1.64, 10.0, 1.25, 0.30);
+        let (_cold_lev, cold_operable) = fresh_env.max_leverage_spectral(13.0, 0.01, 5.0, 1.64, 10.0, 1.25, 1.25);
         assert!(!cold_operable, "Cuenta en frío bajo régimen caótico debe vetar exploración");
     }
 
