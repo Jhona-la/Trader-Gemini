@@ -51,6 +51,8 @@ pub enum AdversarialTrapReason {
     SpoofingPhantomTrap,
     /// Choque o explosión anómala de spread (spread > 3.5x volatilidad local).
     SpreadExplosionTrap,
+    /// Trampa de vacío topológico de liquidez o fractura geodésica Wasserstein-Kantorovich (Ola Ω220 Átomo 4.3).
+    TopologicalVoidTrap,
     /// Riesgo adversarial compuesto generalizado.
     HostileEnvironmentCompound,
     /// Parámetros no finitos detectados en la evaluación (defensivo fail-closed).
@@ -68,6 +70,8 @@ pub struct AdversarialClearance {
     pub spoof_risk: f64,
     /// Severidad de choque de spread T_spread ∈ [0.0, 1.0].
     pub spread_shock_risk: f64,
+    /// Riesgo de vacío topológico y deformación geodésica T_void ∈ [0.0, 1.0] (Ola Ω220 Átomo 4.3).
+    pub topological_void_risk: f64,
 }
 
 /// Compuerta de evaluación adversarial pre-trade en tiempo real.
@@ -116,6 +120,36 @@ impl RedTeamPreTradeGate {
         cancellation_ratio: f64,
         bbo_to_l2_ratio: f64,
     ) -> Result<AdversarialClearance, AdversarialTrapReason> {
+        self.evaluate_order_topological(
+            is_buy,
+            spread_pct,
+            local_volatility,
+            order_book_imbalance,
+            same_side_depth_usd,
+            median_depth_usd,
+            cancellation_ratio,
+            bbo_to_l2_ratio,
+            0.0,
+            0.0,
+        )
+    }
+
+    /// OLA Ω220 (Átomo 4.3): Evaluación adversarial enriquecida con análisis topológico TDA
+    /// (riesgo de vacío $\beta_1$) y deformación geodésica de Wasserstein-Kantorovich ($W_2$).
+    #[inline]
+    pub fn evaluate_order_topological(
+        &self,
+        is_buy: bool,
+        spread_pct: f64,
+        local_volatility: f64,
+        order_book_imbalance: f64,
+        same_side_depth_usd: f64,
+        median_depth_usd: f64,
+        cancellation_ratio: f64,
+        bbo_to_l2_ratio: f64,
+        topological_void_risk: f64,
+        wasserstein_shape_deformation: f64,
+    ) -> Result<AdversarialClearance, AdversarialTrapReason> {
         // 0. Validación de sanidad numérica (fail-closed)
         if !spread_pct.is_finite()
             || !local_volatility.is_finite()
@@ -124,6 +158,8 @@ impl RedTeamPreTradeGate {
             || !median_depth_usd.is_finite()
             || !cancellation_ratio.is_finite()
             || !bbo_to_l2_ratio.is_finite()
+            || !topological_void_risk.is_finite()
+            || !wasserstein_shape_deformation.is_finite()
             || median_depth_usd <= 0.0
             || same_side_depth_usd < 0.0
         {
@@ -131,23 +167,19 @@ impl RedTeamPreTradeGate {
         }
 
         // 1. Vector I: Trampa de Barredura de Liquidez (Stop-Hunt Sweep Trap)
-        // OBI adverso: si compramos, un OBI fuertemente negativo indica presión masiva de venta.
-        // Si vendemos, un OBI fuertemente positivo indica presión masiva de compra.
         let adverse_obi = if is_buy {
             -order_book_imbalance.clamp(-1.0, 1.0)
         } else {
             order_book_imbalance.clamp(-1.0, 1.0)
         };
 
-        // Colapso de profundidad pasiva de soporte: ratio profundidad actual vs mediana
         let depth_ratio = (same_side_depth_usd / median_depth_usd).clamp(0.01, 10.0);
         let depth_cushion_penalty = if depth_ratio < 0.35 {
-            (0.35 - depth_ratio) * 2.85 // escala de 0.0 a 1.0 cuando profundidad cae a 0
+            (0.35 - depth_ratio) * 2.85
         } else {
             0.0
         };
 
-        // Activación no lineal de sweep trap: sigmoid centrada en OBI adverso 0.50
         let sweep_logit = 4.0 * (adverse_obi - 0.40) + 3.0 * depth_cushion_penalty;
         let t_sweep = (1.0 / (1.0 + (-sweep_logit).exp())).clamp(0.0, 1.0);
 
@@ -156,7 +188,6 @@ impl RedTeamPreTradeGate {
         }
 
         // 2. Vector II: Liquidez Fantasma y Spoofing (Flashing / Phantom Trap)
-        // Alta tasa de cancelación en BBO (> 0.70) + volumen concentrado excesivamente en nivel 1 (> 3.5x L2-L5)
         let safe_cancel = cancellation_ratio.clamp(0.0, 1.0);
         let safe_bbo_ratio = bbo_to_l2_ratio.clamp(0.0, 20.0);
         let spoof_intensity = safe_cancel * (safe_bbo_ratio / (safe_bbo_ratio + 2.0));
@@ -167,10 +198,8 @@ impl RedTeamPreTradeGate {
         }
 
         // 3. Vector III: Choque Dinámico de Spread (Spread Shock Trap)
-        // Spread normalizado por la volatilidad instantánea
         let safe_vol = local_volatility.max(1e-5);
         let spread_to_vol = (spread_pct / safe_vol).max(0.0);
-        // Si el spread supera 3.5x la volatilidad esperada por tick, el arrastre de comisiones es destructivo
         let t_spread = if spread_to_vol > 1.5 {
             let z = (spread_to_vol - 1.5) / 2.0;
             (1.0 - (-z).exp()).clamp(0.0, 1.0)
@@ -182,8 +211,17 @@ impl RedTeamPreTradeGate {
             return Err(AdversarialTrapReason::SpreadExplosionTrap);
         }
 
-        // 4. Agregación de Hostilidad Compuesta (Fórmula de Independencia de Amenazas)
-        let compound_risk = 1.0 - (1.0 - t_sweep) * (1.0 - t_spoof) * (1.0 - t_spread);
+        // 4. Vector IV: Trampa de Vacío Topológico y Fractura Geodésica Wasserstein (Ola Ω220 Átomo 4.3)
+        let safe_void = topological_void_risk.clamp(0.0, 1.0);
+        let safe_shape_def = (wasserstein_shape_deformation.clamp(0.0, 2.0) / 2.0).clamp(0.0, 1.0);
+        let t_void = (0.60 * safe_void + 0.40 * safe_shape_def).clamp(0.0, 1.0);
+
+        if t_void >= 0.85 {
+            return Err(AdversarialTrapReason::TopologicalVoidTrap);
+        }
+
+        // 5. Agregación de Hostilidad Compuesta (Fórmula de Independencia de 4 Amenazas)
+        let compound_risk = 1.0 - (1.0 - t_sweep) * (1.0 - t_spoof) * (1.0 - t_spread) * (1.0 - t_void);
 
         if compound_risk >= self.hostile_threshold {
             return Err(AdversarialTrapReason::HostileEnvironmentCompound);
@@ -194,6 +232,7 @@ impl RedTeamPreTradeGate {
             sweep_risk: t_sweep,
             spoof_risk: t_spoof,
             spread_shock_risk: t_spread,
+            topological_void_risk: t_void,
         })
     }
 }
@@ -293,6 +332,27 @@ mod tests {
         );
 
         assert_eq!(result, Err(AdversarialTrapReason::InvalidMicrostructureTelemetry));
+    }
+
+    #[test]
+    fn test_topological_void_trap_rejected() {
+        let gate = RedTeamPreTradeGate::default();
+        // Orden con parámetros de microestructura sanos, pero con alto riesgo de vacío topológico
+        // y fractura geodésica Wasserstein (t_void >= 0.85)
+        let result = gate.evaluate_order_topological(
+            true,
+            0.0002,
+            0.0010,
+            0.0,
+            10_000.0,
+            10_000.0,
+            0.15,
+            1.1,
+            0.90, // void_risk extremo (1-ciclos de Betti persistentes)
+            1.80, // deformación de forma Wasserstein severa (fractura geodésica)
+        );
+
+        assert_eq!(result, Err(AdversarialTrapReason::TopologicalVoidTrap));
     }
 
     #[test]

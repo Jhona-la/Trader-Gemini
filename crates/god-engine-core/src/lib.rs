@@ -1204,6 +1204,10 @@ pub struct GodEngineCore {
     pub dirac_engines: Vec<dark_alpha_engine::AtiyahSingerDiracEngine>,
     /// OLA Ω143: Motor cuántico-hidrodinámico de Transporte Óptimo de Wasserstein-Kantorovich W_2 (Benamou-Brenier)
     pub wasserstein_engines: Vec<quantum_arena::WassersteinKantorovichEngine>,
+    /// OLA Ω220 (Átomo 4.3): Motor de Persistencia Topológica TDA y números de Betti en stack.
+    pub topological_engines: Vec<quantum_arena::TopologicalPersistenceEngine>,
+    /// OLA Ω220 (Átomo 4.3): Compuerta de defensa adversarial pre-trade determinista en tiempo real.
+    pub red_team_gate: execution_engine::RedTeamPreTradeGate,
     /// OLA Ω53: Motor hidrodinámico de Navier-Stokes y número de Reynolds para flujos L2/L3
     pub navier_stokes_engines: Vec<feature_engine::NavierStokesReynoldsEngine>,
     pub latest_prices: Vec<f64>,
@@ -1618,6 +1622,10 @@ impl GodEngineCore {
             wasserstein_engines: (0..n_coins)
                 .map(|_| quantum_arena::WassersteinKantorovichEngine::new())
                 .collect(),
+            topological_engines: (0..n_coins)
+                .map(|_| quantum_arena::TopologicalPersistenceEngine::new())
+                .collect(),
+            red_team_gate: execution_engine::RedTeamPreTradeGate::default(),
             navier_stokes_engines: (0..n_coins)
                 .map(|_| feature_engine::NavierStokesReynoldsEngine::new())
                 .collect(),
@@ -7107,7 +7115,7 @@ impl GodEngineCore {
             }
 
             // OLA Ω143: Transporte Óptimo de Wasserstein-Kantorovich W_2 y Dinámica de Benamou-Brenier
-            if let Some(wk_engine) = self.wasserstein_engines.get_mut(coin_id) {
+            let shape_def = if let Some(wk_engine) = self.wasserstein_engines.get_mut(coin_id) {
                 let spectral_coord = pos_dev + 0.50 * ofi_norm;
                 let wk_metrics = wk_engine.observe_spectral_measure(spectral_coord);
                 set_reg("wasserstein_w2_distance", wk_metrics.wasserstein_w2_distance);
@@ -7116,7 +7124,53 @@ impl GodEngineCore {
                 set_reg("wasserstein_geodesic_coherence", wk_metrics.geodesic_coherence_ratio);
                 set_reg("wasserstein_shape_deformation", wk_metrics.shape_deformation_energy);
                 set_reg("wasserstein_conviction_modulation", wk_metrics.wasserstein_conviction_modulation);
-            }
+                wk_metrics.shape_deformation_energy
+            } else {
+                0.0
+            };
+
+            // OLA Ω220 (Átomo 4.3): Persistencia Topológica TDA & Números de Betti
+            let (tda_void_risk, _tda_b0, _tda_b1, _tda_entropy) = if let Some(tda_engine) = self.topological_engines.get_mut(coin_id) {
+                let ret = self.latest_returns.get(coin_id).copied().unwrap_or(0.0);
+                let m = tda_engine.observe(ret, ofi_norm, spread_pct);
+                set_reg("tda_betti_0", m.betti_0);
+                set_reg("tda_betti_1", m.betti_1);
+                set_reg("tda_persistent_entropy", m.persistent_entropy);
+                set_reg("tda_void_risk", m.void_risk);
+                (m.void_risk, m.betti_0, m.betti_1, m.persistent_entropy)
+            } else {
+                (0.0, 1.0, 0.0, 0.0)
+            };
+
+            // OLA Ω220 (Átomo 4.3): Evaluación Pre-Trade de la Compuerta Adversarial RedTeam
+            let same_side_depth = if ofi_norm >= 0.0 { bid_qty * bid } else { ask_qty * ask };
+            let median_depth = (bid_qty * bid + ask_qty * ask).max(100.0);
+            let cancellation_ratio = 0.15;
+            let bbo_to_l2 = 1.2;
+
+            let red_team_long = self.red_team_gate.evaluate_order_topological(
+                true, spread_pct, atr_pct, ofi_norm, same_side_depth, median_depth,
+                cancellation_ratio, bbo_to_l2, tda_void_risk, shape_def,
+            );
+            let red_team_short = self.red_team_gate.evaluate_order_topological(
+                false, spread_pct, atr_pct, ofi_norm, same_side_depth, median_depth,
+                cancellation_ratio, bbo_to_l2, tda_void_risk, shape_def,
+            );
+
+            let (rt_comp_risk, rt_clearance_long, rt_veto_long) = match red_team_long {
+                Ok(c) => (c.compound_risk, 1.0, 0.0),
+                Err(_) => (1.0, 0.0, 1.0),
+            };
+            let (rt_clearance_short, rt_veto_short) = match red_team_short {
+                Ok(_) => (1.0, 0.0),
+                Err(_) => (0.0, 1.0),
+            };
+
+            set_reg("red_team_compound_risk", rt_comp_risk);
+            set_reg("red_team_clearance_long", rt_clearance_long);
+            set_reg("red_team_clearance_short", rt_clearance_short);
+            set_reg("red_team_veto_long", rt_veto_long);
+            set_reg("red_team_veto_short", rt_veto_short);
 
             // OLA Ω53: Ecuaciones del Milenio - Hidrodinámica de Navier-Stokes y Número de Reynolds L2/L3
             if let Some(ns_engine) = self.navier_stokes_engines.get_mut(coin_id) {
