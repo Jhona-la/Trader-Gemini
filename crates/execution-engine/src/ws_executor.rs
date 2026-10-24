@@ -2,7 +2,7 @@
 //!
 //! ESTADO HONESTO: la ruta WS de ejecución NO está implementada. `is_connected()`
 //! devuelve siempre `false`, por lo que `OrderExecutor` cae de forma inmediata y
-//! determinista a la ruta REST (QuantumSocketPool HFT), que es la única ruta
+//! determinista a la ruta REST (`BinanceClient`, client.rs), que es la única ruta
 //! sancionada para tocar dinero real.
 //!
 //! Historial: el archivo original se perdió sin commit; una reconstrucción y una

@@ -2336,16 +2336,11 @@ dependencies = [
 name = "os-guardian"
 version = "0.1.0"
 dependencies = [
- "crossbeam-queue",
  "lazy_static",
  "libc",
- "once_cell",
  "quantum-arena",
- "serde",
- "serde_json",
  "sysinfo 0.39.6",
  "telemetry-engine",
- "uuid",
  "winapi",
  "windows 0.58.0",
 ]

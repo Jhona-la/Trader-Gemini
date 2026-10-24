@@ -9,7 +9,6 @@ evolution-engine	crates/evolution-engine/src/cma_es.rs	0	1	0	0
 evolution-engine	crates/evolution-engine/src/online_daemon.rs	0	1	0	0
 evolution-engine	crates/evolution-engine/src/polars_evolver.rs	1	0	0	0
 execution-engine	crates/execution-engine/src/executor.rs	0	1	0	0
-execution-engine	crates/execution-engine/src/shadow.rs	1	0	0	0
 execution-engine	crates/execution-engine/src/simulator.rs	2	0	0	0
 feature-engine	crates/feature-engine/src/correlation.rs	0	1	0	0
 feature-engine	crates/feature-engine/src/ewma.rs	0	2	0	0
@@ -20,18 +19,14 @@ god-engine-core	crates/god-engine-core/src/dataset_recorder.rs	0	1	1	0
 metacortex-engine	crates/metacortex-engine/src/immune_system.rs	1	0	0	0
 os-guardian	crates/os-guardian/src/observability_plane.rs	0	1	0	0
 os-guardian	crates/os-guardian/src/telemetry.rs	1	0	0	0
-os-guardian	crates/os-guardian/src/zero_latency_telemetry.rs	0	1	0	0
 quantum-arena	crates/quantum-arena/src/adaptive_quantiles.rs	0	1	0	0
 quantum-arena	crates/quantum-arena/src/state.rs	0	4	1	0
-quantum-arena	crates/quantum-arena/src/symbol_registry.rs	0	0	1	0
 risk-engine	crates/risk-engine/src/freno_estrategia.rs	0	1	0	0
 risk-engine	crates/risk-engine/src/ville_e_process.rs	0	1	0	0
 storage-engine	crates/storage-engine/src/history_store.rs	0	1	0	0
 storage-engine	crates/storage-engine/src/lakehouse.rs	0	2	0	0
 storage-engine	crates/storage-engine/src/ledger.rs	0	1	0	0
 telemetry-server	crates/telemetry-server/src/flight_recorder.rs	0	4	0	0
-telemetry-server	crates/telemetry-server/src/zero_copy_bus.rs	0	0	1	0
-telemetry-server	crates/telemetry-server/src/zero_copy_ring.rs	0	2	0	0
 trader-gemini-v5	crates/backtest-engine/src/bin/continuous_evolution_backtest.rs	4	1	0	0
 trader-gemini-v5	src/bin/audit_forensic_backtest.rs	2	2	0	0
 trader-gemini-v5	src/bin/auto_trainer_daemon.rs	4	0	0	0

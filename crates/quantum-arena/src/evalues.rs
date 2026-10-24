@@ -67,7 +67,8 @@ pub const N_MIN_EVALUE: u64 = 20;
 pub struct EProceso {
     /// Capital del apostador (producto de factores). Arranca en 1.0.
     capital: f64,
-    /// Con parámetro finito, lambda en [1e-4, 0.5]: factor en [0.5, 1.5].
+    /// lambda = LAMBDA_APOSTADA (fija); observar_adaptativo deriva su
+    /// lambda_t de ella en [0.05, 0.40].
     lambda: f64,
     /// α del gate; umbral = 1/α.
     alfa: f64,
@@ -85,19 +86,6 @@ impl EProceso {
             capital: 1.0,
             lambda: LAMBDA_APOSTADA,
             alfa: ALFA_SIGNIFICANCIA,
-            n: 0,
-            aciertos: 0,
-            fallos: 0,
-        }
-    }
-
-    /// Constructor con parámetros finitos (tests/calibración).
-    /// Acota lambda y alfa a [1e-4, 0.5]; no valida parámetros NaN.
-    pub fn con_parametros(lambda: f64, alfa: f64) -> Self {
-        Self {
-            capital: 1.0,
-            lambda: lambda.clamp(1e-4, 0.5),
-            alfa: alfa.clamp(1e-4, 0.5),
             n: 0,
             aciertos: 0,
             fallos: 0,
@@ -174,15 +162,6 @@ impl EProceso {
         self.fallos
     }
 
-    /// ¿El proceso ha cruzado el umbral de Ville (capital ≥ 1/α)?
-    /// Puede consultarse continuamente bajo el nulo condicional declarado:
-    /// la cota de Ville es POR PROCESO y para la historia cubierta.
-    /// El booleano no demuestra esas hipótesis ni vigencia tras drift.
-    #[inline]
-    pub fn significativo(&self) -> bool {
-        self.n >= N_MIN_EVALUE && self.capital >= 1.0 / self.alfa
-    }
-
     /// #663 (G1-1): significancia corregida por MULTIPLICIDAD de
     /// FAMILIA. Ville acota P(∃t: e ≥ 1/α) ≤ α POR PROCESO; con M
     /// procesos consultados en la misma selección, la unión da
@@ -208,7 +187,8 @@ impl EProceso {
         (num_pruebas.max(1) as f64) / ALFA_SIGNIFICANCIA
     }
 
-    /// Capital actual (telemetría: qo_661_evalue).
+    /// Capital actual. Lo leen exportar_snapshots y estado_gate_ville de
+    /// EspectralMultiactivo (F1-078), hoy sin llamador de producción.
     #[inline]
     pub fn capital(&self) -> f64 {
         self.capital
@@ -249,7 +229,7 @@ mod tests {
                     let ruido_signo = if rng() % 2 == 0 { 1.0 } else { -1.0 };
                     // señal arbitraria, retorno aleatorio: sin habilidad
                     e.observar(1.0, ruido_signo * 0.01);
-                    if e.significativo() {
+                    if e.significativo_familia(1) {
                         return true; // cruce en ALGÚN momento (optional stopping)
                     }
                 }
@@ -286,7 +266,7 @@ mod tests {
             let acierta = (rng() % 100) < 58;
             let r = if acierta { 0.02 } else { -0.019 };
             e.observar(1.0, r);
-            if e.significativo() {
+            if e.significativo_familia(1) {
                 cruzo = true;
                 break;
             }
@@ -308,7 +288,7 @@ mod tests {
         let mut e2 = EProceso::new();
         e2.observar(1.0, 1e12);
         e2.observar(1.0, -1e-6);
-        assert!(!e2.significativo(), "un outlier aislado no declara");
+        assert!(!e2.significativo_familia(1), "un outlier aislado no declara");
         // y el proceso nunca es NaN/0:
         assert!(e2.capital().is_finite() && e2.capital() > 0.0);
     }
@@ -322,7 +302,7 @@ mod tests {
         e.observar(0.5, 0.0);
         assert_eq!(e.capital(), 1.0);
         assert_eq!(e.n(), 3);
-        assert!(!e.significativo());
+        assert!(!e.significativo_familia(1));
     }
 }
 
@@ -344,7 +324,7 @@ mod qo_663_tests {
         for _ in 0..30 {
             e.observar(1.0, 0.01); // capital = 1.1^30 ≈ 17.4
         }
-        assert!(e.significativo() == false); // 17.4 < 20
+        assert!(!e.significativo_familia(1)); // 17.4 < 20
         for _ in 30..67 {
             e.observar(1.0, 0.01); // capital = 1.1^67 ≈ 591
         }

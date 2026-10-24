@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-/// Parámetros adaptativos del motor de neuro-plasticidad y reconexión sináptica.
+/// Parámetros adaptativos del motor de neuro-plasticidad.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub struct NeuroPlasticityParams {
     pub min_multiplier: f64,
@@ -42,55 +42,16 @@ impl NeuroPlasticityParams {
     }
 }
 
-/// ⚡ ALGORITMO #40: MOTOR DE NEURO-PLASTICIDAD Y RECONEXIÓN SINÁPTICA EN TIEMPO REAL (NEURO-PLASTICITY ENGINE)
-/// Reconecta pesos y conexiones sinápticas neuronales en tiempo real durante la ejecución
-/// ante la detección de anomalías CUSUM/SPRT o cambios drásticos de régimen en el mercado.
+/// ⚡ ALGORITMO #40: MOTOR DE NEURO-PLASTICIDAD (NEURO-PLASTICITY ENGINE)
+/// Modula la plasticidad de la red con la entropía del libro
+/// (`compute_plasticity_multiplier_with_params`) y aplica la regla de Oja.
+/// RET-35 (censo C-F7b, F55): la reconexión sináptica ante drift se retiró
+/// sin llamador.
 #[derive(Debug, Clone, Copy, Default)]
 #[repr(C, align(64))]
 pub struct NeuroPlasticityEngine;
 
 impl NeuroPlasticityEngine {
-    /// Aplica reconexión sináptica sobre la matriz de pesos de la red neuronal si detecta drift
-    #[inline(always)]
-    pub fn rewires_synapses_if_drift(
-        weights: &mut [f64],
-        anomaly_detected: bool,
-        learning_rate: f64,
-    ) -> usize {
-        if !anomaly_detected {
-            return 0;
-        }
-
-        // FIX #632: Sanitizar learning_rate para prevenir introducción de NaNs
-        let lr = if learning_rate.is_finite() && learning_rate > 0.0 {
-            learning_rate.clamp(0.0001, 1.0)
-        } else {
-            0.01
-        };
-
-        // Quantum PICOSECOND entropía mediante RDTSC (Timestamp Counter) y XORShift
-        let mut count = 0;
-        let mut seed = unsafe { std::arch::x86_64::_rdtsc() };
-        let len = weights.len();
-
-        for weight in weights.iter_mut().take(len) {
-            if weight.abs() < 0.01 {
-                // Xorshift64 simple, rápido, ~1 ciclo de reloj
-                seed ^= seed << 13;
-                seed ^= seed >> 7;
-                seed ^= seed << 17;
-
-                // Mapear el u64 resultante a un float pseudoaleatorio entre -1.0 y 1.0
-                let rand_f64 = ((seed % 2000) as f64 - 1000.0) / 1000.0;
-
-                // Reconexión sináptica adaptativa ultra rápida
-                *weight = rand_f64 * lr;
-                count += 1;
-            }
-        }
-        count
-    }
-
     /// 🛡️ FASE 7: META-EVOLUCIÓN CONTINUA C^1
     /// Conecta la entropía cuántica del Order Book para alterar cómo el bot aprende de forma continua.
     /// Si el mercado entra en alta entropía (pánico / turbulencia), la red incrementa suavemente
@@ -141,16 +102,6 @@ impl NeuroPlasticityEngine {
         } else {
             1.0
         }
-    }
-
-    /// Cálculo con parámetros por defecto (compatibilidad con API existente)
-    #[inline(always)]
-    pub fn compute_plasticity_multiplier(entropy: f64, capital: f64) -> f64 {
-        Self::compute_plasticity_multiplier_with_params(
-            &NeuroPlasticityParams::default(),
-            entropy,
-            capital,
-        )
     }
 
     /// Plasticidad de Oja (Hebbian Learning Modificado)
@@ -210,19 +161,28 @@ mod tests {
 
     #[test]
     fn test_compute_plasticity_multiplier() {
-        let mult_high = NeuroPlasticityEngine::compute_plasticity_multiplier(0.90, 13.0);
+        // RET-35: la envoltura sin parámetros se retiró sin llamador; se prueba
+        // la función viva con los parámetros por defecto, que es lo que delegaba.
+        let p = NeuroPlasticityParams::default();
+        let mult_high =
+            NeuroPlasticityEngine::compute_plasticity_multiplier_with_params(&p, 0.90, 13.0);
         assert!(
             mult_high > 1.5,
             "High entropy should boost plasticity multiplier"
         );
 
-        let mult_low = NeuroPlasticityEngine::compute_plasticity_multiplier(0.10, 13.0);
+        let mult_low =
+            NeuroPlasticityEngine::compute_plasticity_multiplier_with_params(&p, 0.10, 13.0);
         assert!(
             mult_low < 1.0,
             "Low entropy should suppress plasticity multiplier"
         );
 
-        let mult_nan = NeuroPlasticityEngine::compute_plasticity_multiplier(f64::NAN, f64::NAN);
+        let mult_nan = NeuroPlasticityEngine::compute_plasticity_multiplier_with_params(
+            &p,
+            f64::NAN,
+            f64::NAN,
+        );
         assert!(mult_nan.is_finite());
     }
 
@@ -273,13 +233,6 @@ mod tests {
     }
 
     #[test]
-    fn test_rewires_synapses_if_drift() {
-        let mut weights = vec![0.001, 0.5, -0.002, 0.8];
-        let rewired = NeuroPlasticityEngine::rewires_synapses_if_drift(&mut weights, true, 0.05);
-        assert_eq!(rewired, 2, "Near-zero weights should be rewired upon drift");
-    }
-
-    #[test]
     fn test_oja_plasticity_mismatched_dimensions_and_nan() {
         let mut weights = vec![0.5; 4];
         let short_inputs = vec![1.0]; // shorter than in_features=2
@@ -305,24 +258,6 @@ mod tests {
             0.01,
         );
         assert!(weights[0].is_finite());
-    }
-
-    #[test]
-    fn test_rewires_synapses_no_drift_and_nan_learning_rate() {
-        let mut weights = vec![0.001, 0.5, -0.002, 0.8];
-        let rewired_no_anomaly =
-            NeuroPlasticityEngine::rewires_synapses_if_drift(&mut weights, false, 0.05);
-        assert_eq!(
-            rewired_no_anomaly, 0,
-            "No rewiring when anomaly_detected is false"
-        );
-
-        // NaN learning rate falls back to safe default (0.01) without crashing
-        let rewired_nan_lr =
-            NeuroPlasticityEngine::rewires_synapses_if_drift(&mut weights, true, f64::NAN);
-        assert_eq!(rewired_nan_lr, 2);
-        assert!(weights[0].is_finite());
-        assert!(weights[2].is_finite());
     }
 
     #[test]

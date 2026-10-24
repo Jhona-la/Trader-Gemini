@@ -47,7 +47,7 @@ pub fn terminal_events_seen() -> u64 {
 /// permanently impossible. Callers still need to reconcile current coverage.
 /// Future work: carry a typed, endpoint-correlated outcome through the client
 /// instead of flattening status/provenance into a string (FMT-213).
-pub fn is_exchange_rejection(msg: &str) -> bool {
+fn is_exchange_rejection(msg: &str) -> bool {
     let msg = msg.trim();
     if msg.starts_with("AMBIGUOUS") {
         return false;
@@ -149,11 +149,6 @@ pub fn begin_flatten() -> FlattenGuard {
     FlattenGuard(())
 }
 
-#[inline(always)]
-pub fn is_flattening() -> bool {
-    FLATTENS_ACTIVE.load(Ordering::SeqCst) > 0
-}
-
 /// Auditoría del vigilante en curso mientras viva.
 #[must_use = "la auditoría sólo está anunciada mientras vive la guarda"]
 pub struct AuditGuard(());
@@ -239,18 +234,18 @@ mod tests {
     /// es visible para el aplanado que llega después.
     #[test]
     fn cl44b_aplanado_y_auditoria_no_se_solapan() {
-        assert!(!is_flattening());
+        assert!(FLATTENS_ACTIVE.load(Ordering::SeqCst) == 0);
         let auditoria = try_begin_audit().expect("sin aplanado se audita");
         assert_eq!(audits_in_progress(), 1);
         let aplanado = begin_flatten();
-        assert!(is_flattening());
+        assert!(FLATTENS_ACTIVE.load(Ordering::SeqCst) > 0);
         assert_eq!(audits_in_progress(), 1, "el aplanado ve la auditoría en curso y la espera");
         drop(auditoria);
         assert_eq!(audits_in_progress(), 0);
         assert!(try_begin_audit().is_none(), "con aplanado en curso no empieza ninguna auditoría");
         assert_eq!(audits_in_progress(), 0, "la auditoría rechazada no queda anunciada");
         drop(aplanado);
-        assert!(!is_flattening());
+        assert!(FLATTENS_ACTIVE.load(Ordering::SeqCst) == 0);
         assert!(try_begin_audit().is_some(), "terminado el aplanado se vuelve a auditar");
         assert_eq!(audits_in_progress(), 0);
     }

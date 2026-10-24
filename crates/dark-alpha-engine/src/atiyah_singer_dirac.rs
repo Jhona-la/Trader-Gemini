@@ -143,11 +143,6 @@ impl AtiyahSingerDiracEngine {
         }
     }
 
-    #[inline]
-    pub const fn current_metrics(&self) -> AtiyahSingerDiracMetrics {
-        self.last_metrics
-    }
-
     /// Observa un nuevo estado espinorial $(x_t, A_t)$ y actualiza el índice topológico de Atiyah-Singer
     /// y la densidad de modos cero quirales $\ker D_\pm$ en tiempo $O(1)$ y 0 asignaciones en heap.
     #[inline]

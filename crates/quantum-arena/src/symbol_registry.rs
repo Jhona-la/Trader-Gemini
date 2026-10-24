@@ -69,11 +69,6 @@ impl SymbolSpec {
         }
         Ok(adjusted_qty)
     }
-
-    #[inline]
-    pub fn roundtrip_fee_cost(&self, notional: f64) -> f64 {
-        notional * (self.maker_fee + self.taker_fee)
-    }
 }
 
 lazy_static! {
@@ -220,14 +215,6 @@ pub fn try_index(symbol: &str) -> Option<usize> {
     registry
         .iter()
         .position(|s| s.symbol.to_uppercase() == sym_upper)
-}
-
-#[inline(always)]
-pub fn spec(coin_id: usize) -> SymbolSpec {
-    match try_spec(coin_id) {
-        Some(s) => s,
-        None => panic!("⚠️ [CRITICAL] Intento de acceder a SymbolSpec no inicializado o fuera de rango (ID: {}).", coin_id),
-    }
 }
 
 pub fn get_official_binance_spec(symbol: &str) -> SymbolSpec {

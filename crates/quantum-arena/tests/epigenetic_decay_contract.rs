@@ -98,3 +98,26 @@ fn first_feedback_retains_the_existing_update_policy() {
     assert_eq!(coin.last_scalp_close_ts.load(Relaxed), 123_000);
     assert_eq!(coin.last_swing_close_ts.load(Relaxed), 123_000);
 }
+
+/// RET-32: event_time_ms == 0 sigue siendo el centinela de reloj de pared
+/// aunque se retiraron los envoltorios que lo pasaban; el núcleo aún puede
+/// pasar 0. Sin el centinela, el cierre quedaría con marca 0 y el siguiente
+/// cierre con marca real arrastraría un decaimiento desde 1970.
+#[test]
+fn ret32_event_time_cero_usa_el_reloj_de_pared() {
+    let arena = GlobalArena::build_in_own_stack(13.0);
+    let coin = &arena.coins[0];
+    let antes = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis() as u64;
+    coin.apply_spectral_epigenetic_feedback_with_time(0.002, 10_000, 30_000.0, 0);
+    let despues = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis() as u64;
+    let marca = coin.last_close_ts.load(Relaxed);
+    assert!(marca >= antes && marca <= despues, "{antes} <= {marca} <= {despues}");
+    assert!((coin.epigenetic_bias.load(Relaxed) - 1.08).abs() < 1e-12);
+    assert!(coin.last_close_was_win.load(Relaxed));
+}

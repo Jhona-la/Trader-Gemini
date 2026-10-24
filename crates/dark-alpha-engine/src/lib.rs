@@ -196,56 +196,6 @@ impl DenseLayer {
         }
     }
 
-    /// Forward pass con Tanh activation (óptimo para señales simétricas y bidireccionales Long/Short)
-    #[inline(always)]
-    pub fn forward_tanh(&self, input: &[f64], output: &mut [f64]) {
-        // D-613/D-614 (DÉCIMA OLA): guarda de memoria y de proceso. Antes:
-        // `assert_eq!` sobre entrada y salida —que con `panic = "abort"` mata el
-        // motor con posiciones abiertas— y ninguna comprobación de pesos y sesgos
-        // antes de indexarlos: una capa deserializada con el tensor truncado
-        // producía lectura fuera de límites. Ahora una capa o unos buffers
-        // incoherentes producen salida NaN y retorno inmediato; el motor
-        // comprueba `layers_valid()` antes de inferir y responde `None`.
-        if input.len() < self.in_features || output.len() < self.out_features || !self.is_valid() {
-            output.iter_mut().for_each(|o| *o = f64::NAN);
-            return;
-        }
-
-        for i in 0..self.out_features {
-            let row_offset = i * self.in_features;
-            let mut sum = unsafe { *self.biases.get_unchecked(i) };
-
-            let mut j = 0;
-            let len = self.in_features;
-            while j + 4 <= len {
-                unsafe {
-                    sum += *self.weights.get_unchecked(row_offset + j) * *input.get_unchecked(j)
-                        + *self.weights.get_unchecked(row_offset + j + 1)
-                            * *input.get_unchecked(j + 1)
-                        + *self.weights.get_unchecked(row_offset + j + 2)
-                            * *input.get_unchecked(j + 2)
-                        + *self.weights.get_unchecked(row_offset + j + 3)
-                            * *input.get_unchecked(j + 3);
-                }
-                j += 4;
-            }
-            while j < len {
-                unsafe {
-                    sum += *self.weights.get_unchecked(row_offset + j) * *input.get_unchecked(j);
-                }
-                j += 1;
-            }
-
-            unsafe {
-                *output.get_unchecked_mut(i) = if sum.is_finite() {
-                    sum.tanh()
-                } else {
-                    f64::NAN
-                };
-            }
-        }
-    }
-
     /// Forward pass con Sigmoid activation (capa final)
     #[inline(always)]
     pub fn forward_sigmoid(&self, input: &[f64], output: &mut [f64]) {
@@ -299,135 +249,7 @@ impl DenseLayer {
             }
         }
     }
-
-    /// Cuantiza los pesos de la capa a Int8 simétrico para aceleración en CPU y L1 Cache (Punto #072)
-    pub fn quantize_int8(&self) -> QuantizedDenseLayer {
-        let max_abs = self
-            .weights
-            .iter()
-            .fold(0.0_f64, |acc, &w| acc.max(w.abs()))
-            .max(1e-8);
-        let scale_w = max_abs / 127.0;
-        let inv_scale = 127.0 / max_abs;
-
-        let mut weights_q = Vec::with_capacity(self.weights.len());
-        for &w in &self.weights {
-            let q = (w * inv_scale).round().clamp(-127.0, 127.0) as i8;
-            weights_q.push(q);
-        }
-
-        QuantizedDenseLayer {
-            weights_q,
-            scale_w,
-            biases: self.biases.clone(),
-            in_features: self.in_features,
-            out_features: self.out_features,
-        }
-    }
 }
-
-/// Capa lineal cuantizada en Int8 con escalamiento punto fijo (Punto #072)
-#[derive(Serialize, Deserialize, Debug, Clone)]
-pub struct QuantizedDenseLayer {
-    pub weights_q: Vec<i8>,
-    pub scale_w: f64,
-    pub biases: Vec<f64>,
-    pub in_features: usize,
-    pub out_features: usize,
-}
-
-impl QuantizedDenseLayer {
-    /// D-613 (DÉCIMA OLA): coherencia estructural de la capa cuantizada.
-    pub fn is_valid(&self) -> bool {
-        self.in_features > 0
-            && self.out_features > 0
-            && self.in_features.checked_mul(self.out_features) == Some(self.weights_q.len())
-            && self.biases.len() == self.out_features
-            && self.scale_w.is_finite()
-    }
-
-    #[inline(always)]
-    pub fn forward_relu(&self, input: &[f64], output: &mut [f64]) {
-        // D-613/D-614 (DÉCIMA OLA): guarda de memoria y de proceso. Antes:
-        // `assert_eq!` sobre entrada y salida —que con `panic = "abort"` mata el
-        // motor con posiciones abiertas— y ninguna comprobación de pesos y sesgos
-        // antes de indexarlos: una capa deserializada con el tensor truncado
-        // producía lectura fuera de límites. Ahora una capa o unos buffers
-        // incoherentes producen salida NaN y retorno inmediato; el motor
-        // comprueba `layers_valid()` antes de inferir y responde `None`.
-        if input.len() < self.in_features || output.len() < self.out_features || !self.is_valid() {
-            output.iter_mut().for_each(|o| *o = f64::NAN);
-            return;
-        }
-
-        let scale = self.scale_w;
-        for i in 0..self.out_features {
-            let row_offset = i * self.in_features;
-            let mut sum_dot = 0.0;
-            let mut j = 0;
-            let len = self.in_features;
-
-            while j + 4 <= len {
-                sum_dot += (self.weights_q[row_offset + j] as f64) * input[j]
-                    + (self.weights_q[row_offset + j + 1] as f64) * input[j + 1]
-                    + (self.weights_q[row_offset + j + 2] as f64) * input[j + 2]
-                    + (self.weights_q[row_offset + j + 3] as f64) * input[j + 3];
-                j += 4;
-            }
-            while j < len {
-                sum_dot += (self.weights_q[row_offset + j] as f64) * input[j];
-                j += 1;
-            }
-
-            let total = self.biases[i] + sum_dot * scale;
-            output[i] = if total > 0.0 { total } else { 0.0 };
-        }
-    }
-
-    #[inline(always)]
-    pub fn forward_sigmoid(&self, input: &[f64], output: &mut [f64]) {
-        // D-613/D-614 (DÉCIMA OLA): guarda de memoria y de proceso. Antes:
-        // `assert_eq!` sobre entrada y salida —que con `panic = "abort"` mata el
-        // motor con posiciones abiertas— y ninguna comprobación de pesos y sesgos
-        // antes de indexarlos: una capa deserializada con el tensor truncado
-        // producía lectura fuera de límites. Ahora una capa o unos buffers
-        // incoherentes producen salida NaN y retorno inmediato; el motor
-        // comprueba `layers_valid()` antes de inferir y responde `None`.
-        if input.len() < self.in_features || output.len() < self.out_features || !self.is_valid() {
-            output.iter_mut().for_each(|o| *o = f64::NAN);
-            return;
-        }
-
-        let scale = self.scale_w;
-        for i in 0..self.out_features {
-            let row_offset = i * self.in_features;
-            let mut sum_dot = 0.0;
-            let mut j = 0;
-            let len = self.in_features;
-
-            while j + 4 <= len {
-                sum_dot += (self.weights_q[row_offset + j] as f64) * input[j]
-                    + (self.weights_q[row_offset + j + 1] as f64) * input[j + 1]
-                    + (self.weights_q[row_offset + j + 2] as f64) * input[j + 2]
-                    + (self.weights_q[row_offset + j + 3] as f64) * input[j + 3];
-                j += 4;
-            }
-            while j < len {
-                sum_dot += (self.weights_q[row_offset + j] as f64) * input[j];
-                j += 1;
-            }
-
-            let raw_total = self.biases[i] + sum_dot * scale;
-            output[i] = if raw_total.is_finite() {
-                let clamped = raw_total.clamp(-700.0, 700.0);
-                1.0 / (1.0 + (-clamped).exp())
-            } else {
-                f64::NAN
-            };
-        }
-    }
-}
-
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Scaler {
     pub mean: Vec<f64>,
@@ -694,8 +516,8 @@ impl DarkAlphaEngine {
     /// input_dim=20 features (price, vol, obi, atr, ema, vix, dxy, sp500, etc.)
     pub fn new(input_dim: usize, hidden1: usize, hidden2: usize) -> Self {
         Self {
-            layer1: DenseLayer::new_xavier(input_dim, hidden1), // Xavier init para Tanh
-            layer2: DenseLayer::new_xavier(hidden1, hidden2),   // Xavier init para Tanh
+            layer1: DenseLayer::new_xavier(input_dim, hidden1), // capa oculta ReLU, init Xavier
+            layer2: DenseLayer::new_xavier(hidden1, hidden2),   // capa oculta ReLU, init Xavier
             layer3: DenseLayer::new_xavier(hidden2, 1),         // Xavier init para Sigmoid
             scaler: None,
             channel_normalizers: vec![ChannelWelfordStats::new(); input_dim],
@@ -715,7 +537,7 @@ impl DarkAlphaEngine {
 
     /// Garantiza que los buffers pre-alocados para inferencia tengan el tamaño correcto
     /// sin alterar parámetros aprendidos ni ocultar corrupción numérica.
-    /// Indispensable tras deserialización con serde / bincode.
+    /// Indispensable tras deserialización con serde.
     pub fn init_buffers(&mut self) {
         let in_dim = self.layer1.in_features;
         if self.channel_normalizers.len() != in_dim {
@@ -1023,22 +845,6 @@ impl DarkAlphaEngine {
         );
     }
 
-    /// Guardar modelo a disco en formato bincode (más rápido que JSON)
-    pub fn save(&self, path: &str) -> Result<(), Box<dyn std::error::Error>> {
-        let data = bincode::serialize(self)?;
-        std::fs::write(path, data)?;
-        Ok(())
-    }
-
-    /// Cargar modelo desde disco
-    pub fn load(path: &str) -> Result<Self, Box<dyn std::error::Error>> {
-        let data = std::fs::read(path)?;
-        let mut model: Self = bincode::deserialize(&data)?;
-        model.validate()?;
-        model.init_buffers();
-        Ok(model)
-    }
-
     /// Cargar desde JSON (compatibilidad con formato anterior)
     pub fn load_json(path: &str) -> Result<Self, Box<dyn std::error::Error>> {
         let content = std::fs::read_to_string(path)?;
@@ -1053,55 +859,6 @@ impl DarkAlphaEngine {
         let content = serde_json::to_string_pretty(self)?;
         std::fs::write(path, content)?;
         Ok(())
-    }
-
-    /// Guardar modelo a disco en formato bincode
-    pub fn save_to_disk(&self, path: &str) -> Result<(), Box<dyn std::error::Error>> {
-        self.save(path)
-    }
-
-    /// Hiper-mutación de pesos para exploración evolutiva en línea
-    // FIX #716: Acotamiento estricto de pesos en hipermutación para prevenir explosión sináptica
-    pub fn force_hyper_mutation(&mut self, _capital: f64) {
-        let mut seed: u64 = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map(|d| d.as_nanos() as u64)
-            .unwrap_or(42);
-
-        let mut next_rand = || {
-            seed = seed
-                .wrapping_mul(6364136223846793005)
-                .wrapping_add(1442695040888963407);
-            (seed >> 33) as f64 / (1u64 << 31) as f64 - 0.5
-        };
-
-        for w in self.layer1.weights.iter_mut() {
-            let delta = next_rand() * 0.05;
-            let new_w = *w + delta;
-            *w = if new_w.is_finite() {
-                new_w.clamp(-100.0, 100.0)
-            } else {
-                0.0
-            };
-        }
-        for w in self.layer2.weights.iter_mut() {
-            let delta = next_rand() * 0.05;
-            let new_w = *w + delta;
-            *w = if new_w.is_finite() {
-                new_w.clamp(-100.0, 100.0)
-            } else {
-                0.0
-            };
-        }
-        for w in self.layer3.weights.iter_mut() {
-            let delta = next_rand() * 0.05;
-            let new_w = *w + delta;
-            *w = if new_w.is_finite() {
-                new_w.clamp(-100.0, 100.0)
-            } else {
-                0.0
-            };
-        }
     }
 }
 
@@ -1136,10 +893,6 @@ mod tests {
         let mut out = vec![0.0f64; 2];
         layer.forward_relu(&input, &mut out);
         assert!(out.iter().all(|v| v.is_nan()));
-        let q = layer.quantize_int8();
-        let mut out_q = vec![0.0f64; 2];
-        q.forward_sigmoid(&input, &mut out_q);
-        assert!(out_q.iter().all(|v| v.is_nan()));
     }
 
     /// Las guardas no alteran a un modelo sano.
@@ -1149,7 +902,7 @@ mod tests {
         m.init_buffers();
         assert!(m.layers_valid());
         assert!(m.validate().is_ok());
-        assert!(m.predict(&vec![0.1f64; 8]).is_some());
+        assert!(m.predict(&[0.1f64; 8]).is_some());
     }
 
     #[test]
@@ -1200,27 +953,6 @@ mod tests {
     }
 
     #[test]
-    fn test_quantized_dense_layer_accuracy_and_speed() {
-        let layer = DenseLayer::new(34, 64);
-        let q_layer = layer.quantize_int8();
-        let input = vec![0.5; 34];
-        let mut out_f64 = vec![0.0; 64];
-        let mut out_q = vec![0.0; 64];
-
-        layer.forward_relu(&input, &mut out_f64);
-        q_layer.forward_relu(&input, &mut out_q);
-
-        for (f, q) in out_f64.iter().zip(&out_q) {
-            assert!(
-                (f - q).abs() < 0.20,
-                "Int8 quantization error should be bounded: f64={}, int8={}",
-                f,
-                q
-            );
-        }
-    }
-
-    #[test]
     fn test_load_json_roundtrip() {
         let model = DarkAlphaEngine::default_model();
         let json_str = serde_json::to_string(&model).expect("serialization to JSON should succeed");
@@ -1231,36 +963,12 @@ mod tests {
     }
 
     #[test]
-    fn test_quantized_dense_layer_sigmoid() {
-        let layer = DenseLayer::new_xavier(32, 1);
-        let q_layer = layer.quantize_int8();
-        let input = vec![0.2; 32];
-        let mut out_f64 = vec![0.0; 1];
-        let mut out_q = vec![0.0; 1];
-
-        layer.forward_sigmoid(&input, &mut out_f64);
-        q_layer.forward_sigmoid(&input, &mut out_q);
-
-        assert!((0.0..=1.0).contains(&out_f64[0]));
-        assert!((0.0..=1.0).contains(&out_q[0]));
-        assert!((out_f64[0] - out_q[0]).abs() < 0.25);
-    }
-
-    #[test]
-    fn test_scaler_and_mutate() {
+    fn test_scaler_scales() {
         let scaler = Scaler::new(vec![10.0, 20.0], vec![2.0, 5.0]);
         let mut feat = vec![12.0, 25.0];
         scaler.scale(&mut feat);
         assert_eq!(feat[0], 1.0);
         assert_eq!(feat[1], 1.0);
-
-        let mut engine = DarkAlphaEngine::default_model();
-        engine.force_hyper_mutation(13.0);
-        let features = vec![0.1; 34];
-        let result = engine
-            .predict(&features)
-            .expect("mutated engine should predict");
-        assert!((0.0..=1.0).contains(&result));
     }
 
     #[test]
@@ -1287,24 +995,6 @@ mod tests {
             feat.iter().all(|x| x.is_nan()),
             "invalid scaler must not fabricate coordinates"
         );
-    }
-
-    #[test]
-    fn test_quantized_dense_layers_3stage_pipeline() {
-        let l1 = DenseLayer::new(34, 64).quantize_int8();
-        let l2 = DenseLayer::new(64, 32).quantize_int8();
-        let l3 = DenseLayer::new_xavier(32, 1).quantize_int8();
-
-        let input = vec![0.05; 34];
-        let mut h1 = vec![0.0; 64];
-        let mut h2 = vec![0.0; 32];
-        let mut out = vec![0.0; 1];
-
-        l1.forward_relu(&input, &mut h1);
-        l2.forward_relu(&h1, &mut h2);
-        l3.forward_sigmoid(&h2, &mut out);
-
-        assert!((0.0..=1.0).contains(&out[0]));
     }
 
     #[test]
@@ -1345,34 +1035,6 @@ mod tests {
     }
 
     #[test]
-    fn test_dark_alpha_engine_quantized_forward_pipeline_nan_immunity() {
-        let l1 = DenseLayer::new(34, 64).quantize_int8();
-        let l2 = DenseLayer::new(64, 32).quantize_int8();
-        let l3 = DenseLayer::new_xavier(32, 1).quantize_int8();
-
-        let mut input = vec![0.0; 34];
-        input[0] = f64::NAN;
-        input[5] = f64::INFINITY;
-        let mut h1 = vec![0.0; 64];
-        let mut h2 = vec![0.0; 32];
-        let mut out = vec![0.0; 1];
-
-        // Sanitize input before quantized layers
-        for x in input.iter_mut() {
-            if !x.is_finite() {
-                *x = 0.0;
-            }
-        }
-
-        l1.forward_relu(&input, &mut h1);
-        l2.forward_relu(&h1, &mut h2);
-        l3.forward_sigmoid(&h2, &mut out);
-
-        assert!(out[0].is_finite());
-        assert!((0.0..=1.0).contains(&out[0]));
-    }
-
-    #[test]
     fn test_channel_welford_stats_o1_and_decay() {
         let mut w = ChannelWelfordStats::new();
         for i in 1..=100 {
@@ -1398,8 +1060,8 @@ mod tests {
             feats[0] = 60000.0 + (i as f64) * 10.0;
             feats[1] = 0.05 + ((i % 5) as f64) * 0.01;
             feats[2] = 50.0 + ((i % 10) as f64) * 2.0;
-            for k in 3..34 {
-                feats[k] = ((k + i) as f64) * 0.1;
+            for (k, f) in feats.iter_mut().enumerate().skip(3) {
+                *f = ((k + i) as f64) * 0.1;
             }
 
             let pred = engine.predict(&feats);
@@ -1436,14 +1098,15 @@ mod tests {
     }
 
     #[test]
-    fn test_r5_b4_forward_quantized_nan_on_infinite_raw_total() {
+    fn test_r5_b4_forward_sigmoid_nan_on_infinite_raw_total() {
+        // RET-35: la capa Int8 se retiró sin llamador; el contrato R5-B4 se
+        // conserva sobre la capa f64 que usa la red viva.
         let mut layer = DenseLayer::new(2, 2);
         layer.biases[0] = f64::INFINITY;
         layer.biases[1] = 0.0;
-        let quantized = layer.quantize_int8();
         let input: Vec<f64> = vec![1.0, 1.0];
         let mut output: Vec<f64> = vec![0.0, 0.0];
-        quantized.forward_sigmoid(&input, &mut output);
+        layer.forward_sigmoid(&input, &mut output);
         assert!(output[0].is_nan(), "raw_total = +Inf debe producir NaN y no 1.0 por clamp espurio");
         assert!(output[1].is_finite());
     }

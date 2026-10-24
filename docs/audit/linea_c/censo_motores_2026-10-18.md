@@ -374,13 +374,16 @@ lo que cambió desde entonces; las filas del TSV no se reescriben.
 | #80 | 24 |
 | #81 | 2, 5, 15, 28a |
 | #120 | 4, 25, 26, 20 |
-| #122 | 3a (F317–F320, F328, R160), 37, 49, 17 (F177, F475), 29, 43a (F309 envoltorio, F395, R167, F310/F396 siete constantes, F311, F397), 46, 16 |
-| tanda RET-6…RET-12a | 6, 7 (resto del manifiesto), 8 (sin F352), 10 (más K24 como RET-10b, sólo diagnóstico), 11, 12a |
+| #122 | 3a (F317–F320, F328, R160), 37, 49, 17 (F177, F475), 29, 43a (F309 envoltorio, F395, R167, F310/F396: seis constantes que sólo usaban los tests, que pasan a locales del módulo de tests, y SUBSYSTEM_OS_MEM, sin ningún lector; F311, F397), 46, 16 |
+| #123 | 6, 7 (resto del manifiesto), 8 (sin F352), 10 (más K24 como RET-10b, sólo diagnóstico), 11, 12a |
+| tanda RET-21a…RET-35c | 21a (F64–F70, R172), 22a (F19–F23, R145; sin R73), 23a (F76, F78), 30 (F226, R15, F228–F230, R107, parte de F247), 32, 33 (sin capital, umbral_familia ni n), 34 (sin F325 ni open_positions_count), 35 (sin F44; más RET-35c, tres avisos de clippy en pruebas) |
 
 **Hecho por otros agentes**: lote 9 entero (Sol, d18b3735), lote 45 entero
 (Codex RB, 906a9c6a), parte del 7 (Sol retiró el bin main.rs de
 audit-engine en d18b3735), mitad del 38 (AGY, 7bdd3bb3) y la parte central
-del 50 (AGY, 508f1597). AGY reconectó net_multiplexer (PR #114).
+del 50 (AGY, 508f1597). AGY re-exportó net_multiplexer y le puso un test
+de contrato (C1 de f4_001, PR #114); sigue sin lector de producción
+(SOLO_TESTS).
 
 **Reverificación del 2026-10-24 sobre main 6c485c05** (triaje por lote y
 un escéptico por lote listo):
@@ -393,8 +396,9 @@ un escéptico por lote listo):
 - Lote 31: el escéptico lo refuta tal como estaba. F244
   (UserDataStreamer::dispatch) es la entrada pública por bytes del diseño
   F2 de Codex QRA (QRA_F2_CAPITAL_DISENO_2026-10-23.md:103) y AGY le añadió
-  llamadas de test el 2026-10-23. Los otros 10 ítems pueden ir sin F244.
-- Bloqueados por tema del dueño: 1 (tema 1), 14 (tema 4), 40 (tema 3).
+  llamadas de test el 2026-10-23. Los otros 11 ítems pueden ir sin F244.
+- Bloqueados por tema del dueño: 1 (tema 1), 14 (tema 4), 40 (tema 3),
+  53 (F268, tema 1), 54 (ws_client, parser y validation, tema 2).
   Por orden: 36 (CazadorConstantes). Por zona: 55. Cambian conducta: 13,
   44, 48. Revisar: 52 (exige 30 y 31 antes).
 
@@ -412,7 +416,11 @@ un escéptico por lote listo):
   SIN_LLAMADOR a SOLO_TESTS.
 - Lote 46 (F191): el gemelo no es «el vivo antes de D-713» (aquél usaba
   `5 + 100·r`); mide la concentración en nivel de un flujo acotado. Las
-  cifras de la regla 2 están en el commit RET-46.
+  cifras de la regla 2 están en el commit RET-46. Generadores de las filas
+  4 y 5, que el commit no dice: fila 4 (OBI 0,8 ± 0,05) = Lcg(0x0B1),
+  0,8 + 0,05·N(0,1) recortado a [−1, 1] (sin el recorte el vivo da
+  0,9696082620, no 0,9696102199); fila 5 = Lcg(0x5A1), +1 si u < 0,5 y −1
+  si no.
 
 - Lote 8 (F352): el retiro del indexador de AST no depende del tema 4.
   Las dos opciones que se plantean al dueño (construir la topología 4D de
@@ -438,6 +446,74 @@ un escéptico por lote listo):
   lector de producción de cero_dato::monto_de_json); F214/F463 siguen en
   el tema 2 y F107 en el tema 4.
 
+- Lote 21: el tema 1 del triaje no aplica a sus ítems; sólo F71
+  (flight_recorder y su campo del núcleo) queda retenido, con F7 y el
+  lote 1. R172 duplica F68. F67 (MmapTelemetry) se retira sin portar su
+  WR ponderado, que ya vive en audit-engine telemetry.rs:182-191; queda
+  abierto que /api/state promedia el WR por moneda (cambio de conducta,
+  con su test). Las pruebas de lib de telemetry-server bajan de 73 a 57.
+- Lote 22: R73 (winapi) no entra; va a GLM con sus sensores (F24–F27,
+  R21, R22). uuid: con os-guardian fuera, fast-rng pasa a execution-engine
+  y omniscient-registry, los dos que llaman a Uuid::now_v7, para que el
+  generador de clientOrderId no cambie. Sin verificar: que
+  SetProcessAffinityMask de init_guardian no deshaga en Windows el pin
+  del núcleo unificado del host (F21). os-guardian pasa de 15 a 11 tests.
+- Lote 30: F247 queda partido. Sale sólo el default de
+  cancel_all_symbol_orders; los de cancel_position_oco_orders y
+  query_order los hereda SimulatedExecutor y van con F227 (tema 2). F225
+  (router) se queda con AGY: el host no llama a route_order ni a
+  route_trailing_stop, y con el router se quedan los lectores de
+  TensorDecision (K10, F156…).
+- Lote 32 (R154): el centinela event_time_ms == 0 de
+  apply_spectral_epigenetic_feedback_with_time NO cae, contra lo que dice
+  la fila: el núcleo aún puede pasar 0. Lo fija el test
+  ret32_event_time_cero_usa_el_reloj_de_pared.
+- Lote 33 (F336): capital() y umbral_familia() se quedan, pero no por un
+  lector vivo: sólo los leen las API F1-078 de AGY, sin llamador de
+  producción (fila N3). Las cinco pruebas de spectral_gradient_at se
+  migraron a signal_at, que está vivo y no tenía certificada su forma por
+  tramos.
+- Lote 34: F325 queda a medias. Sale roundtrip_fee_cost; la unificación de
+  validate_order cambia conducta (minNotional tras redondeo) y va en un
+  lote propio con golden y T-1 (execution-engine executor.rs:1433/1512 y
+  risk-engine capital_regime.rs:407). Anclas de R156 al día: los
+  duplicados vivos de maker+taker son core lib.rs:7386,
+  booktick_replay.rs:401 (AGY), active_universe.rs:138/:160 y
+  symbol_ranker_engine.rs:119; ninguno se tocó.
+- Lote 35: el único recorte de contrato es F44
+  (hidden_liquidity_conformal_contract.rs:47), que pasa a RET-35b cuando
+  Codex ROOT libere Hidden04. neural_evidence_contract.rs:144-157 sigue
+  probando una ida y vuelta bincode que ya no usa ninguna ruta de
+  producción (la producción guarda JSON).
+
+**Filas nuevas** (salieron al ejecutar; no están en el TSV):
+
+- N1: spot_bid_qty y spot_ask_qty (quantum-arena state.rs:260-261) sin
+  lector de producción desde RET-23a (/api/tensor era el último).
+  RECONECTAR como OBI del spot (candidata al «OBI L2» de FASE 3,
+  docs/PLAN_MAESTRO_SOL_2026-10-18.md:132) o RETIRAR con su escritor y los
+  tests de spot_feed.
+- N2: ewma_price_at, volatility_at y scale_gain_at (temporal_spectrum.rs)
+  sólo con lectores de test desde RET-33. volatility_at es un estimador
+  de volatilidad: antes de retirarlo, regla 2 contra el σ vivo
+  (sigma_forecast_at, dev_moment_by).
+- N3: API F1-078 de persistencia y diagnóstico sin consumidor de
+  producción: SnapshotParEscala, guardar/cargar_checkpoint,
+  exportar/importar_snapshots, estado_gate_ville y el campo
+  state_continuity.espectral_snapshots (AGY y Línea C; toca el lote 44,
+  R114).
+- N4: Position::entry_tau_ms() (position.rs:683) sin llamadores.
+- N5 (F229, cambio de conducta): la cuota de peticiones por criticidad
+  (salidas a 98 %, entradas a 90 %) que el censo pedía portar del
+  ShadowExecutor; hoy salidas y entradas comparten HEADROOM 0,8
+  (executor.rs:1405-1425). Átomo propio con test.
+- N6: darwin.rs:151-154 (Sol, F9-4) escribe tp/sl_curve_a/b sin
+  begin_write/end_write; tras RET-32 el único escritor de curvas bajo
+  seqlock es genome.rs (F1-073 de AGY). update_*_curve no lo arreglaría:
+  recibía anclas, no a/b.
+- N7: los defaults de cancel_position_oco_orders y query_order del trait
+  ExecutionProvider (resto de F247), con F227 en el tema 2.
+
 **Restos de lotes ejecutados**: del 3, net_multiplexer (a AGY, para
 unificar con data_pipeline::http_cliente) y active_universe/
 symbol_ranker_engine (tema 4 y gen 37); del 17, F196 (tema 2, por
@@ -449,4 +525,11 @@ bump/take_pending/peek_pending de god-engine-core liquidation_feed.rs
 (sólo tests); del 12a, comentarios que siguen nombrando módulos
 retirados: data-pipeline cero_dato.rs:88-89 y
 tests/cero_dato_contract.rs:24, :33 (de Sol), dynamic_ranker.rs:101 y
-parser.rs:142-143 (cita tensor_parser).
+parser.rs:142-143 (cita tensor_parser); del 50, legacy_view,
+LegacyRegimeView y margin_multiplier*/effective_quantum_margin_multiplier
+(spectral_regime.rs:260-361, sólo con llamadores de test) y el #[ignore]
+OPEN F3.3-10 de cf3_fuente_contract.rs:107, que hay que quitar o poner al
+día; del 21, el comentario de god_engine.rs:5448-5450 (zona AGY), que
+cita read_recent_events de un módulo que ya no existe; del 30,
+scripts/plan_linea_c.py:201, que sigue listando shadow.rs,
+quantum_multiplexer.rs, quantum_socket.rs y hot_swap.rs.

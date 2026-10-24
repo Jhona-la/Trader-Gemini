@@ -30,8 +30,6 @@ pub struct HelmholtzHodgeParams {
     pub enstrophy_threshold: f64,
     pub min_laminar_fraction: f64,
     pub smoothing_alpha: f64,
-    pub viscosity: f64,
-    pub lambda_regularization: f64,
 }
 
 impl Default for HelmholtzHodgeParams {
@@ -40,8 +38,6 @@ impl Default for HelmholtzHodgeParams {
             enstrophy_threshold: 0.75,
             min_laminar_fraction: 0.35,
             smoothing_alpha: 0.15,
-            viscosity: 0.05,
-            lambda_regularization: 1e-4,
         }
     }
 }

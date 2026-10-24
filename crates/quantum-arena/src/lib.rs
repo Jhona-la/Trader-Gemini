@@ -46,7 +46,7 @@ pub use quantum_phase::{
     QuantumCouplingParams, QuantumPhaseState,
 };
 pub use spectral_regime::{LegacyRegimeView, SpectralRegimeField, SpectralRegimeParams};
-pub use state::{GlobalArena, ScalpState};
+pub use state::GlobalArena;
 pub use tick_source::TickEvent;
 pub use topological_persistence::{
     MicroPoint3D, TopologicalMetrics, TopologicalPersistenceEngine,

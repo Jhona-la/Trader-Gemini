@@ -190,7 +190,7 @@ pub struct ScaleState {
     /// No es una desviación típica ni corrige por sí sola el sesgo de arranque.
     pub ewma_dev_vol: f64,
     pub momentum_z: f64,
-    /// En nodos actualizados: tanh(clamp(z,-5,5)). `state_at` interpola esta
+    /// En nodos actualizados: tanh(clamp(z,-5,5)). `signal_at` interpola esta
     /// observable por separado; no impone tanh al momentum interpolado.
     pub signal: f64,
     /// Autocorrelación de signo de retornos consecutivos de bloques no
@@ -935,15 +935,6 @@ impl TemporalSpectrum {
         }
         self.refresh_fusion();
     }
-
-    /// Snapshot compacto para modelos/telemetría: 32 señales + fusión.
-    pub fn signals_vector(&self) -> ([f32; 32], f32) {
-        let mut v = [0.0f32; 32];
-        for (i, s) in self.scales.iter().enumerate() {
-            v[i] = s.signal as f32;
-        }
-        (v, self.fused_score as f32)
-    }
 }
 
 /// Descriptores del banco de 32 filtros temporales sobre el precio.
@@ -960,7 +951,7 @@ pub struct SpectralFieldState {
     /// No mide desacuerdo direccional; todas las señales pueden coincidir con entropía 1.
     pub spectral_entropy: f64,
     /// Pendiente de regresión lineal de señal contra ln(τ) sobre toda la malla.
-    /// No es la derivada local que devuelve `spectral_gradient_at`.
+    /// No es una derivada local entre nodos.
     pub spectral_tilt: f64,
     /// Media direccional ponderada de señales, en [-1,1], orientada al lado consultado.
     pub global_coherence: f64,
@@ -1001,17 +992,6 @@ impl TemporalSpectrum {
         self.scales[i0].ewma_dev_vol * (1.0 - frac) + self.scales[i1].ewma_dev_vol * frac
     }
 
-    /// Desviación continua normalizada del precio respecto al consenso a escala τ.
-    #[inline]
-    pub fn deviation_at(&self, tau_ms: f64, price: f64) -> f64 {
-        let p_ewma = self.ewma_price_at(tau_ms);
-        if p_ewma > 1e-12 {
-            (price - p_ewma) / p_ewma
-        } else {
-            0.0
-        }
-    }
-
     /// Índice de persistencia de signo reescalado a [0,1].
     /// Nombre conservado por compatibilidad: NO es un estimador del exponente de Hurst.
     #[inline]
@@ -1022,7 +1002,7 @@ impl TemporalSpectrum {
 
     /// Interpolante de la masa nodal adimensional E_i = w_i*|signal_i|.
     /// No es energía física ni una densidad probabilística normalizada.
-    /// Entre nodos se calcula I[E], NO w(state_at(tau))*|signal_at(tau)|:
+    /// Entre nodos se calcula I[E], NO w(τ)·|signal_at(τ)| evaluado en un estado interpolado:
     /// señales vecinas opuestas conservan actividad aunque su media sea cero.
     /// Comparar esta masa no identifica por sí solo la mejor dirección.
     #[inline]
@@ -1045,69 +1025,6 @@ impl TemporalSpectrum {
         };
         // Interpolar la MISMA masa de la malla preserva su contrato en cada nodo.
         energy_at_node(i0) * (1.0 - frac) + energy_at_node(i1) * frac
-    }
-
-    /// Pendiente local exacta del interpolante lineal por tramos en ln(tau).
-    /// En cada nodo se devuelve la derivada DERECHA; no se afirma que exista
-    /// una derivada bilateral en los quiebres. Fuera de la malla la extensión
-    /// es constante (derivada cero), también a la derecha del último nodo.
-    /// Una tau inválida devuelve cero, como las otras consultas de señal.
-    #[inline]
-    pub fn spectral_gradient_at(&self, tau_ms: f64) -> f64 {
-        if !tau_ms.is_finite()
-            || tau_ms < SPECTRUM_SCALES_MS[0]
-            || tau_ms >= SPECTRUM_SCALES_MS[31]
-        {
-            return 0.0;
-        }
-        // Search actual nodes to avoid assigning a rounded logarithm to the
-        // wrong side of a knot. No multiplication of tau can overflow here.
-        let right = SPECTRUM_SCALES_MS.partition_point(|&node| node <= tau_ms);
-        (self.scales[right].signal - self.scales[right - 1].signal)
-            / (SPECTRUM_SCALES_MS[right].ln() - SPECTRUM_SCALES_MS[right - 1].ln())
-    }
-
-    /// Producto de dos señales reales, en [-1,1]. Conserva el nombre histórico.
-    /// Su magnitud depende de ambas amplitudes; no estima fase ni coherencia normalizada.
-    #[inline]
-    pub fn phase_resonance(&self, tau_fast_ms: f64, tau_slow_ms: f64) -> f64 {
-        let s_fast = self.signal_at(tau_fast_ms);
-        let s_slow = self.signal_at(tau_slow_ms);
-        (s_fast * s_slow).clamp(-1.0, 1.0)
-    }
-
-    /// Vista de observables interpolados independientemente a escala tau.
-    /// No es un filtro EWMA evolucionado a esa tau ni un estado reanudable:
-    /// el bloque de la persistencia no se reconstruye. En particular,
-    /// signal != tanh(momentum_z) en general. Las identidades nodales no
-    /// conmutan con la interpolación.
-    pub fn state_at(&self, tau_ms: f64) -> ScaleState {
-        ScaleState {
-            tau_ms,
-            ewma_price: self.ewma_price_at(tau_ms),
-            ewma_dev_vol: self.volatility_at(tau_ms),
-            momentum_z: self.momentum_z_at(tau_ms),
-            signal: self.signal_at(tau_ms),
-            persistence: self.persistence_at(tau_ms),
-            epigenetic_gain: self.scale_gain_at(tau_ms),
-            bloque_armado: false,
-            bloque_t0_ms: 0,
-            bloque_ln_p0: 0.0,
-            bloque_r_prev: 0.0,
-            raw_dev_vol: 0.0,
-            raw_dev_s2: 0.0,
-            raw_dev_s3: 0.0,
-            // #594: un nodo interpolado no es una escala de la malla con
-            // bloques maduros — sin habilidad medida (0 muestras → None).
-            skill_ws: 0.0,
-            skill_wr: 0.0,
-            skill_wsr: 0.0,
-            skill_n: 0,
-            skill_e: crate::evalues::EProceso::new(),
-            bloque_s0: 0.0,
-            ultimo_bloque_ts: 0,
-            ultimo_bloque_r: 0.0,
-        }
     }
 
     /// Descriptores de la distribución de masa w·|señal| sobre la malla.
@@ -1244,11 +1161,6 @@ impl TemporalSpectrum {
     /// Entropía espectral de Shannon normalizada ∈ [0.0, 1.0].
     pub fn spectral_entropy(&self) -> f64 {
         self.spectral_field(true).spectral_entropy
-    }
-
-    /// Wavelength o escala resonante continua central τ* (ms).
-    pub fn spectral_resonance_tau(&self) -> f64 {
-        self.spectral_field(true).resonant_tau_ms
     }
 
     /// Proyección armónica continua con filtro gaussiano logarítmico alrededor de tau_center.
@@ -2352,8 +2264,7 @@ mod tests {
             "rampa de 30d debe dar score positivo, dio {}",
             spec.fused_score
         );
-        let (v, _) = spec.signals_vector();
-        let slow_avg = (v[24] + v[25] + v[26]) / 3.0;
+        let slow_avg = (spec.scales[24].signal + spec.scales[25].signal + spec.scales[26].signal) / 3.0;
         assert!(slow_avg > 0.0, "escalas lentas deben ver la tendencia");
     }
 

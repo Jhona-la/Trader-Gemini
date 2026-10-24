@@ -527,7 +527,8 @@ impl CoinArena {
         if !pnl_pct.is_finite() {
             return;
         }
-        // Preserve the legacy zero sentinel used by the wall-clock wrappers.
+        // event_time_ms == 0 is the wall-clock sentinel (RET-32 removed the
+        // wrappers that passed it, but core callers can still pass 0).
         let close_ts = if event_time_ms > 0 {
             event_time_ms
         } else {
@@ -584,16 +585,6 @@ impl CoinArena {
         self.last_scalp_close_ts.store(close_ts, Ordering::Relaxed);
         self.last_swing_close_ts.store(close_ts, Ordering::Relaxed);
         self.last_close_was_win.store(pnl_pct > 0.0, Ordering::Relaxed);
-    }
-
-    #[inline(always)]
-    pub fn apply_spectral_epigenetic_feedback(&self, pnl_pct: f64, trade_duration_ms: u64, tau_trade_ms: f64) {
-        self.apply_spectral_epigenetic_feedback_with_time(pnl_pct, trade_duration_ms, tau_trade_ms, 0);
-    }
-
-    #[inline(always)]
-    pub fn apply_epigenetic_feedback(&self, pnl_pct: f64, trade_duration_ms: u64) {
-        self.apply_spectral_epigenetic_feedback_with_time(pnl_pct, trade_duration_ms, 30_000.0, 0);
     }
 }
 
@@ -684,7 +675,6 @@ impl CoinArena {
 pub struct GlobalArena {
     pub config: QuantumConfig,
     pub coins: Box<[CoinArena; MAX_COINS]>,
-    pub tensor_arena: Option<Box<CoinTensorArena>>, // FASE 8: SIMD Layer
 
     // Portfolio & Risk
     pub unified_capital: AtomicF64,
@@ -852,7 +842,6 @@ impl GlobalArena {
             global_covariance_tensor: AtomicF64::new(1.0), // Base variance multiplier
             global_momentum_vector: AtomicF64::new(0.0),   // Neutral momentum
             applied_generation: AtomicU64::new(0),
-            tensor_arena: Some(Box::new(CoinTensorArena::new())), // FASE 8 Tensor Allocation
         }
     }
 }
@@ -1016,11 +1005,6 @@ impl GlobalArena {
                 bid_qty,
                 ask_qty,
             });
-
-            // FASE 8: Propagación paralela al Tensor
-            if let Some(tensor) = &self.tensor_arena {
-                tensor.current_price[coin_id].store(mid_price.to_bits(), Ordering::Relaxed);
-            }
         }
     }
 
@@ -1051,14 +1035,6 @@ impl GlobalArena {
             self.coins[coin_id]
                 .spot_ts_ms
                 .store(self.registry.get_event_time().max(0) as u64, Ordering::Relaxed);
-
-            // FASE 8: Propagación paralela al Tensor
-            if let Some(tensor) = &self.tensor_arena {
-                if coin_id < tensor.spot_bid.len() {
-                    tensor.spot_bid[coin_id].store(bid_price.to_bits(), Ordering::Relaxed);
-                    tensor.spot_ask[coin_id].store(ask_price.to_bits(), Ordering::Relaxed);
-                }
-            }
         }
     }
 
@@ -1097,12 +1073,6 @@ impl GlobalArena {
             self.coins[coin_id]
                 .agg_sell_vol
                 .store(new_sell, Ordering::Relaxed);
-
-            // FASE 8: Propagación paralela al Tensor
-            if let Some(tensor) = &self.tensor_arena {
-                tensor.agg_buy_vol[coin_id].store(new_buy.to_bits(), Ordering::Relaxed);
-                tensor.agg_sell_vol[coin_id].store(new_sell.to_bits(), Ordering::Relaxed);
-            }
         }
     }
 
@@ -1115,64 +1085,6 @@ impl GlobalArena {
             self.coins[coin_id]
                 .l2_ask_wall
                 .store(ask_wall, Ordering::Relaxed);
-
-            // FASE 8: Propagación paralela al Tensor
-            if let Some(tensor) = &self.tensor_arena {
-                tensor.l2_bid_wall[coin_id].store(bid_wall.to_bits(), Ordering::Relaxed);
-                tensor.l2_ask_wall[coin_id].store(ask_wall.to_bits(), Ordering::Relaxed);
-            }
-        }
-    }
-}
-
-/// FASE 8: REPRESENTACIÓN TENSORIAL (Lock-Free SIMD-Ready)
-/// Esta estructura mapea el estado de todos los activos en memoria contigua (Structure of Arrays),
-/// alineada a 64-bytes (L1 Cache Line) para evitar False Sharing y permitir cargas matriciales/SIMD paralelas.
-#[repr(C, align(64))]
-pub struct CoinTensorArena {
-    pub current_price: [AtomicU64; 32],
-    pub ml_prob: [AtomicU64; 32],
-    pub current_atr: [AtomicU64; 32],
-    pub hurst_exponent: [AtomicU64; 32],
-    pub epigenetic_bias: [AtomicU64; 32],
-    pub epigenetic_threshold_modifier: [AtomicU64; 32],
-    pub spot_bid: [AtomicU64; 32],
-    pub spot_ask: [AtomicU64; 32],
-    pub agg_buy_vol: [AtomicU64; 32],
-    pub agg_sell_vol: [AtomicU64; 32],
-    pub l2_bid_wall: [AtomicU64; 32],
-    pub l2_ask_wall: [AtomicU64; 32],
-}
-
-impl Default for CoinTensorArena {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-impl CoinTensorArena {
-    pub fn new() -> Self {
-        let init_f64 = |val: f64| -> [AtomicU64; 32] {
-            let mut arr: [AtomicU64; 32] = Default::default();
-            for item in &mut arr {
-                *item = AtomicU64::new(val.to_bits());
-            }
-            arr
-        };
-
-        Self {
-            current_price: init_f64(0.0),
-            ml_prob: init_f64(0.5),
-            current_atr: init_f64(0.0),
-            hurst_exponent: init_f64(0.5),
-            epigenetic_bias: init_f64(1.0),
-            epigenetic_threshold_modifier: init_f64(1.0),
-            spot_bid: init_f64(0.0),
-            spot_ask: init_f64(0.0),
-            agg_buy_vol: init_f64(0.0),
-            agg_sell_vol: init_f64(0.0),
-            l2_bid_wall: init_f64(0.0),
-            l2_ask_wall: init_f64(0.0),
         }
     }
 }

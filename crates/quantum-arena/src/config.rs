@@ -905,42 +905,6 @@ impl QuantumConfig {
         HorizonParameter::ObiThreshold.evaluate(curve, tau_ms)
     }
 
-    /// Actualiza la curva continua de TP a partir de anclas rápida y lenta bajo Seqlock
-    #[inline(always)]
-    pub fn update_tp_curve(&self, fast_val: f64, slow_val: f64) {
-        use std::sync::atomic::Ordering;
-        // CERT-M5-C03: anclas CANÓNICAS 30s/12h (antes 10s/24h — Darwin
-        // reconstruía curvas sobre un eje diferente al del genoma store).
-        let curve = crate::temporal_spectrum::HorizonCurve::through_two_points(
-            crate::temporal_spectrum::TAU_ANCHOR_FAST_MS,
-            fast_val,
-            crate::temporal_spectrum::TAU_ANCHOR_SLOW_MS,
-            slow_val,
-        );
-        self.begin_write();
-        self.tp_curve_a.store(curve.a, Ordering::Relaxed);
-        self.tp_curve_b.store(curve.b, Ordering::Relaxed);
-        self.end_write();
-    }
-
-    /// Actualiza la curva continua de SL a partir de anclas rápida y lenta bajo Seqlock
-    #[inline(always)]
-    pub fn update_sl_curve(&self, fast_val: f64, slow_val: f64) {
-        use std::sync::atomic::Ordering;
-        // CERT-M5-C03: anclas CANÓNICAS 30s/12h (antes 10s/24h — Darwin
-        // reconstruía curvas sobre un eje diferente al del genoma store).
-        let curve = crate::temporal_spectrum::HorizonCurve::through_two_points(
-            crate::temporal_spectrum::TAU_ANCHOR_FAST_MS,
-            fast_val,
-            crate::temporal_spectrum::TAU_ANCHOR_SLOW_MS,
-            slow_val,
-        );
-        self.begin_write();
-        self.sl_curve_a.store(curve.a, Ordering::Relaxed);
-        self.sl_curve_b.store(curve.b, Ordering::Relaxed);
-        self.end_write();
-    }
-
     /// F1-009: Sincronización continua de parámetros adaptativos, deliberativos y físicos
     /// desde el `OmniscientRegistry` hacia los atómicos de `QuantumConfig`.
     /// Permite que los motores de optimización online, de aprendizaje por refuerzo,
