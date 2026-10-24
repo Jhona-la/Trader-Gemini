@@ -458,15 +458,26 @@ impl EntrelazamientoStreaming {
             .collect()
     }
 
-    /// Mide el entrelazamiento temporal neto del tramo actual: delega en
-    /// `entrelazamiento_neto` sobre el contenido del ring — paridad bit con
-    /// el batch por construcción. `descartados` del resultado = no finitos
-    /// desde la MEDICIÓN anterior (recuento por tramo, como el vehículo).
+    /// Mide el entrelazamiento temporal neto del tramo actual (von Neumann,
+    /// q=1): azúcar de `medir_q(1.0)` — paridad bit con el batch por
+    /// construcción. `descartados` = no finitos desde la MEDICIÓN anterior.
     pub fn medir(&mut self) -> Result<MedidaEntrelazamiento, EntrelazamientoError> {
+        self.medir_q(1.0)
+    }
+
+    /// Mide con el knob Tsallis del 158 (GLM 159): delega en
+    /// `entrelazamiento_neto_q` sobre el contenido actual del ring — paridad
+    /// bit con el batch-q por construcción (misma binarización, misma
+    /// permutación determinista, mismo espectro de Schmidt). q=1 EXACTO =
+    /// `medir()` (mismo camino); q∈(1.2, 1.5) amplifica el contraste
+    /// transversal medido en el 158 (16×→24×) para los consumidores vivos
+    /// del engine (Átomo 4.1 de AGY: una llamada cambia el contraste).
+    /// Guardas: `QInvalido` para q≤0/NaN/Inf; recuento por tramo idéntico.
+    pub fn medir_q(&mut self, q: f64) -> Result<MedidaEntrelazamiento, EntrelazamientoError> {
         let tramo = self.contenido();
         let desc = self.descartados_desde_medida;
         self.descartados_desde_medida = 0;
-        let m = entrelazamiento_neto(&tramo, self.l, self.modo)?;
+        let m = entrelazamiento_neto_q(&tramo, self.l, self.modo, q)?;
         Ok(MedidaEntrelazamiento { descartados: desc, ..m })
     }
 }

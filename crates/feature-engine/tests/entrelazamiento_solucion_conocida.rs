@@ -514,3 +514,109 @@ fn tsallis_neto_iid_no_inventa_y_monotonia_en_q() {
         otro => panic!("q=NaN ⇒ QInvalido, llegó {otro:?}"),
     }
 }
+
+// ══════════════════════════════════════════════════════════════════════
+// GLM 159 — STREAMING CON KNOB q: `medir_q(q)` pone el contraste Tsallis
+// del 158 (16×→24× a q=1.5) en manos de los consumidores vivos del
+// engine. Paridad bit con el batch-q, q=1 idéntico a medir(), expiración
+// al último tramo, guardas propagadas.
+// ══════════════════════════════════════════════════════════════════════
+
+#[test]
+fn streaming_medir_q_es_bit_paridad_con_batch_q() {
+    // Markov con NaN intercalados: el streaming con push uno a uno y el
+    // batch-q sobre la MISMA serie coinciden EXACTO en S_q, S_q,nulo,
+    // ventanas y descartes — para q a ambos lados de 1.
+    let limpia = serie_markov(30_000, 0.8, 0x159_CAFE);
+    let mut con_nan = limpia.clone();
+    let mut rng = Rng(0x159_DEAD_BEEF);
+    for k in (0..con_nan.len()).step_by(89) {
+        if rng.uniforme() < 0.5 {
+            con_nan[k] = f64::NAN;
+        }
+    }
+    for q in [0.5f64, 1.0, 1.5] {
+        let batch = feature_engine::entrelazamiento::entrelazamiento_neto_q(
+            &con_nan, L, ModoBinarizacion::Signo, q,
+        )
+        .expect("batch-q");
+        let mut st = EntrelazamientoStreaming::new(L, ModoBinarizacion::Signo, 100_000)
+            .expect("streaming válido");
+        for &r in &con_nan {
+            st.push(r);
+        }
+        let m = st.medir_q(q).expect("streaming-q mide");
+        assert_eq!(m.ventanas, batch.ventanas, "q={q}: ventanas");
+        assert_eq!(m.descartados, batch.descartados, "q={q}: descartes");
+        assert!(
+            (m.s - batch.s).abs() < 1e-12 && (m.s_nulo - batch.s_nulo).abs() < 1e-12,
+            "q={q}: S_q {s1} vs {s2} / S_q,nulo {n1} vs {n2}",
+            s1 = m.s,
+            s2 = batch.s,
+            n1 = m.s_nulo,
+            n2 = batch.s_nulo
+        );
+        assert!((m.delta - batch.delta).abs() < 1e-12, "q={q}: ΔS_q");
+    }
+}
+
+#[test]
+fn streaming_medir_q1_es_identico_a_medir() {
+    // q=1: MISMO camino ⇒ resultado bit a bit idéntico a medir() sobre el
+    // mismo ring (dos streamings gemelos, uno mide() y otro medir_q(1.0)).
+    let serie = serie_markov(20_000, 0.75, 0x159_6E4);
+    let mut a = EntrelazamientoStreaming::new(L, ModoBinarizacion::Signo, 50_000).unwrap();
+    let mut b = EntrelazamientoStreaming::new(L, ModoBinarizacion::Signo, 50_000).unwrap();
+    for &r in &serie {
+        a.push(r);
+        b.push(r);
+    }
+    let ma = a.medir().expect("medir");
+    let mb = b.medir_q(1.0).expect("medir_q(1.0)");
+    assert_eq!(ma.s, mb.s, "S idéntico bit a bit");
+    assert_eq!(ma.s_nulo, mb.s_nulo);
+    assert_eq!(ma.delta, mb.delta);
+    assert_eq!(ma.ventanas, mb.ventanas);
+}
+
+#[test]
+fn streaming_medir_q_expira_al_ultimo_tramo_y_guardas() {
+    // Capacidad W < N: medir_q(q) == batch-q sobre los ÚLTIMOS W retornos
+    // (y distinto del tramo inicial — assert diferencial).
+    let serie = serie_markov(5_000, 0.8, 0x159_E7F);
+    let w = 2_000;
+    let mut st = EntrelazamientoStreaming::new(L, ModoBinarizacion::Signo, w).unwrap();
+    for &r in &serie {
+        st.push(r);
+    }
+    let m = st.medir_q(1.5).expect("mide el tramo a q=1.5");
+    let cola = &serie[serie.len() - w..];
+    let batch_cola = feature_engine::entrelazamiento::entrelazamiento_neto_q(
+        cola, L, ModoBinarizacion::Signo, 1.5,
+    )
+    .expect("batch cola");
+    assert!((m.s - batch_cola.s).abs() < 1e-12, "ÚLTIMO tramo");
+    let batch_inicio = feature_engine::entrelazamiento::entrelazamiento_neto_q(
+        &serie[..w], L, ModoBinarizacion::Signo, 1.5,
+    )
+    .expect("batch inicio");
+    assert!((m.s - batch_inicio.s).abs() > 1e-9, "NO es el tramo inicial");
+    // El knob hace lo prometido: ΔS del mismo tramo con q=1.5 vs q=1
+    // difieren (contraste reponderado) — la familia es viva.
+    let m_q1 = st.medir_q(1.0).expect("mide a q=1");
+    assert!(
+        (m.delta - m_q1.delta).abs() > 1e-6,
+        "q=1.5 y q=1 reponderan distinto: {d1} vs {d0}",
+        d1 = m.delta,
+        d0 = m_q1.delta
+    );
+    // Guardas propagadas desde el núcleo.
+    assert!(matches!(
+        st.medir_q(0.0),
+        Err(feature_engine::entrelazamiento::EntrelazamientoError::QInvalido { q: 0.0 })
+    ));
+    assert!(matches!(
+        st.medir_q(f64::NAN),
+        Err(feature_engine::entrelazamiento::EntrelazamientoError::QInvalido { .. })
+    ));
+}
