@@ -21,9 +21,11 @@
 //!   `normalized_directional_divergence(swing_nn_pred, …)` y después la puerta
 //!   ML de `puertas_del_continuo` vuelve a multiplicar por (1 + 0,5·d) con el
 //!   mismo ensamble (F3.3-07).
-//! - El colchón de `free_cap` debe usar la función con contrato
-//!   (`SpectralRegimeField::{long_,short_,}margin_multiplier`), no una copia
-//!   en línea que su test de espejo no ejecuta (F3.3-10).
+//! - F3.3-10: el núcleo recortaba `free_cap` en línea con una copia de
+//!   `SpectralRegimeField::margin_multiplier`. Lo cerró F1-054 (AGY,
+//!   508f1597) quitando el recorte: el margen admisible lo decide
+//!   `PortfolioOrchestrator::available_margin_headroom` (risk-engine). T12
+//!   queda como guarda de regresión.
 //!
 //! Son contratos de fuente: frágiles ante un refactor que cambie los nombres.
 //! Si un arreglo legítimo los rompe por la forma y no por el fondo, se
@@ -98,19 +100,29 @@ fn cf3_rama_13_cuenta_el_ml_una_sola_vez() {
     );
 }
 
-/// T12 (F3.3-10). El colchón de `free_cap` reescribe en línea
-/// `(1 − 0,95·flux).clamp(0,05; 1)` con marea adversa, que es la fórmula de
-/// `SpectralRegimeField::margin_multiplier` (quantum-arena), sin llamador
-/// vivo. `cushion_symmetry_contract.rs` prueba una copia. Se exige que
-/// lib.rs llame a la función con contrato.
+/// T12 (F3.3-10, cerrado por F1-054 de AGY, 508f1597). El núcleo recortaba
+/// `free_cap` en línea con `(1 − 0,95·flux).clamp(0,05; 1)` bajo marea
+/// adversa: una copia de `SpectralRegimeField::margin_multiplier` que su
+/// test de espejo no ejecutaba. F1-054 quitó el recorte; el margen admisible
+/// lo decide `PortfolioOrchestrator::available_margin_headroom` (risk-engine)
+/// y el núcleo sólo descuenta el margen ya comprometido. Guarda de
+/// regresión: el núcleo no vuelve a recortar `free_cap` por su cuenta. Si un
+/// rediseño legítimo necesita aquí un recorte espectral, debe llamar a la
+/// función con contrato de quantum-arena y este test se sustituye por una
+/// prueba de propiedad sobre ella.
 #[test]
-#[ignore = "OPEN F3.3-10 (Línea C): el colchón de free_cap duplica en línea SpectralRegimeField::margin_multiplier y su test de espejo prueba una copia"]
-fn cf3_colchon_usa_la_funcion_con_contrato() {
+fn cf3_colchon_sin_copia_en_linea() {
     let src = codigo_produccion();
-    let en_linea = src.contains("free_cap*=(1.0-0.95*directional_flux)");
-    println!("observado: fórmula del colchón en línea = {en_linea}");
     assert!(
-        src.contains("margin_multiplier("),
-        "el colchón de free_cap duplica en línea SpectralRegimeField::margin_multiplier; su test de espejo prueba una copia"
+        !src.contains("free_cap*="),
+        "el núcleo vuelve a recortar free_cap en línea; el margen admisible lo decide PortfolioOrchestrator::available_margin_headroom"
+    );
+    assert!(
+        !src.contains("0.95*directional_flux"),
+        "reaparece en el núcleo la copia en línea de SpectralRegimeField::margin_multiplier"
+    );
+    assert!(
+        src.contains("letfree_cap=(current_cap-total_used).max(0.0);"),
+        "premisa: no encuentro el cálculo de free_cap del núcleo; actualizar el test"
     );
 }

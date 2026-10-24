@@ -1,5 +1,37 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
 
+## 2026-10-24 — Claude (cloud, Línea C): lotes de retiro 50, 44 y 13, y revisión de las tandas 2 a 4
+
+Tanda del PR #130 del censo C-F7b. Un commit por bloque y sin T-1:
+
+- Revisión adversarial de los PR #123, #124 y #126 (un verificador por
+  tanda): 15 hallazgos confirmados y 3 refutados, todos de documentación.
+  RV-12a: el comentario de macro_ml_features decía que el poller vivo
+  publica FRED; publica Yahoo. RV-plan: las REGLAS de plan_linea_c.py
+  nombraban 41 archivos retirados; `asignacion` vuelve a código 0 y desde
+  ahora el lote que retira un archivo lo quita de REGLAS. RV-docs: §9 del
+  censo y correcciones a los avisos del buzón (filas QRA que cambian de
+  blob, rankers de GLM, profit_factor sí tiene lector en LH-04).
+- RET-50a/50b: legacy_view y LegacyRegimeView fuera (sin lector); el T12
+  OPEN F3.3-10 pasa a guarda de F1-054 (rojo con el núcleo de 508f1597^).
+  La familia margin_multiplier y el Átomo 3.3 siguen sin consumidor: a
+  AGY. F2.3-05 sigue abierto: crash_flux en ruido lo resta ahora
+  risk-engine del margen admisible.
+- RET-44a (CL-156, G021 de Línea G): con USE_TESTNET=true el
+  calentamiento REST sembraba los estimadores con velas de mainnet; ahora
+  pide las K-lines al venue del ejecutor (is_testnet). RET-44b:
+  SystemBootloader y state_continuity fuera; FMT-150 cerrado por retiro.
+- RET-13a (CL-157): FIX #1454 portado al OmniStrategyEngine vivo (una
+  entrada no finita no toca el estado y ningún rasgo sale no finito);
+  inerte en vivo porque los llamadores validan antes. RET-13b: src/features
+  y los dos tests #[path] de FMT-140.
+- Verificación (nube, wine): check del workspace limpio, 453 binarios de
+  test en verde y trader-gemini-v5 lib de 43 a 34. Rojos ajenos: risk
+  fase3 (latencia en debug), evolution cl88 (F1-002) y evolution
+  f6_001::test_c6 (entró con el #127 de AGY: clamp con capital NaN en
+  stanford_discovery.rs:485; avisado en el buzón).
+- Detalle y restos en §9 del censo.
+
 ## 2026-10-24T13:46:25-05:00 — Kimi Quant Sr V33: plan, sincronización y censo estático inicial
 
 - Revisión desde `main` 8741b3d, actualización por fast-forward y fusión documental publicada como `f18285c1c` en `origin/main`. GitHub devolvió `total_count=0` para ese SHA porque el cambio fue exclusivamente documental; no es un 10/10 de código ni una certificación de comportamiento.
@@ -11,8 +43,8 @@
 
 ## 2026-10-24 — Claude (cloud, Línea C): lotes de retiro 47, 38, 39, 41, 42a, 51a, 19, 27a y 31
 
-Cuarta tanda del censo C-F7b (la tercera es el PR #124). Un commit por
-lote, sin cambio de decisiones y sin T-1:
+Tanda del PR #126 del censo C-F7b (las anteriores, #80, #81, #120, #122,
+#123 y #124, están en §9 del censo). Un commit por lote y sin T-1:
 
 - RET-47a: un solo z de inferencia en DarkAlpha (z_acotado); F47 queda a
   medias hasta F50 (fit con SGD y Welford mutante frente a los
@@ -43,8 +75,8 @@ lote, sin cambio de decisiones y sin T-1:
 
 ## 2026-10-24 — Claude (cloud, Línea C): lotes de retiro 21a, 22a, 23a, 30, 32, 33, 34 y 35
 
-Tercera tanda del censo C-F7b (la segunda es el PR #123). Un commit por
-lote, sin cambio de conducta y sin T-1:
+Tanda del PR #124 del censo C-F7b. Un commit por lote, sin cambio de
+conducta y sin T-1:
 
 - RET-21a: siete buses y loggers sin lector de telemetry-server (1 397
   líneas); quedan estrangulador, flight_recorder, forensic_auditor,
@@ -81,7 +113,7 @@ lote, sin cambio de conducta y sin T-1:
 
 ## 2026-10-24 — Claude (cloud, Línea C): lotes de retiro 6, 7, 8, 10, 11 y 12a
 
-Segunda tanda del censo C-F7b (la primera, #122, está abajo). Un commit
+Tanda del PR #123 del censo C-F7b. Un commit
 por lote, sin cambio de conducta y sin T-1, salvo RET-10b, que sólo
 cambia lo que imprime un diagnóstico:
 

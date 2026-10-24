@@ -15,7 +15,6 @@ pub mod position;
 pub mod protection_health;
 pub mod quantum_phase;
 pub mod state;
-pub mod state_continuity;
 pub mod symbol_ranker_engine;
 pub mod symbol_registry;
 pub mod symbols;
@@ -45,7 +44,7 @@ pub use quantum_phase::{
     calcular_factor_cuantico, clasificar_fase, evaluar_fase_cuantica, FaseCuantica,
     QuantumCouplingParams, QuantumPhaseState,
 };
-pub use spectral_regime::{LegacyRegimeView, SpectralRegimeField, SpectralRegimeParams};
+pub use spectral_regime::{SpectralRegimeField, SpectralRegimeParams};
 pub use state::GlobalArena;
 pub use tick_source::TickEvent;
 pub use topological_persistence::{

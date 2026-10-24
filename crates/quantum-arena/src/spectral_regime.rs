@@ -3,14 +3,12 @@
 //! Doctrina del universo multivariante continuo temporal espectral: NO hay
 //! "regímenes de mercado" discretos (bull/crash/range/chaos) — los regímenes
 //! son configuraciones del CAMPO espectral. Este módido expone el régimen
-//! como coordenadas continuas; el enum legado `MarketRegime` queda como VISTA
-//! derivada (umbrales sobre el campo) para el consejo y la telemetría.
+//! como coordenadas continuas y no emite ninguna etiqueta discreta.
 //!
 //! Contrato (protocolo del repo):
 //! - Variable: estado agregado del espectro de 32 escalas de UN símbolo.
 //! - Operador: funciones continuas de (H(τ) por banda, τ*, d ln τ*/dt,
-//!   entropía de masa, marea portadora). Sin etiquetas ni umbrales duros
-//!   salvo la vista legacy documentada.
+//!   entropía de masa, marea portadora), sin etiquetas discretas.
 //! - Unidades: adimensional (todas las coordenadas en [0,1] o [-1,1];
 //!   dominant_drift en saltos de nodo espectral [ln 4] por cadencia de referencia [60s], en [-1,1]).
 //! - Condiciones de contorno: espectro frío (sin masa) → campo neutro
@@ -18,9 +16,8 @@
 //! - Identificabilidad: cada coordenada es medible desde el espectro vivo;
 //!   la Fisher del campo (C3) declara cuándo el régimen ES identificable.
 //! - Coste: O(32) por actualización, sin alocación.
-//! - Falsación: ruido gaussiano sintético → crash_flux ≈ bajo y vista legacy
-//!   = Range/Chaotic según correlación; caída persistente sintética →
-//!   crash_flux alto. Los tests lo verifican.
+//! - Falsación: ruido gaussiano sintético → crash_flux ≈ bajo; caída
+//!   persistente sintética → crash_flux alto. Los tests lo verifican.
 
 use crate::temporal_spectrum::TemporalSpectrum;
 
@@ -253,28 +250,6 @@ impl SpectralRegimeField {
         out
     }
 
-    /// Vista LEGACY: umbrales sobre el campo que reproducen el detector
-    /// discreto histórico para el consejo y la telemetría. Documentada como
-    /// VISTA, no como estado del motor. El enum vive AQUÍ (sin dependencia
-    /// circular con risk-engine, que puede mapearlo 1:1).
-    pub fn legacy_view(&self, avg_correlation: f64) -> LegacyRegimeView {
-        if self.dominant_tau_ms <= 0.0 {
-            return LegacyRegimeView::Range;
-        }
-        let correlated = avg_correlation > 0.6;
-        if self.crash_flux > 0.80 && self.carrier_tide < -0.15 {
-            return LegacyRegimeView::Crash;
-        }
-        if self.crash_flux > 0.80 && self.carrier_tide > 0.15 {
-            return LegacyRegimeView::BullRun;
-        }
-        if correlated {
-            LegacyRegimeView::Range
-        } else {
-            LegacyRegimeView::Chaotic
-        }
-    }
-
     /// Multiplicador continuo de margen para largos bajo crash-ness creciente con parámetros default.
     #[inline]
     pub fn long_margin_multiplier(&self) -> f64 {
@@ -356,15 +331,6 @@ impl SpectralRegimeField {
     }
 }
 
-/// Vista legada del campo (mapeo 1:1 con risk-engine::regime::MarketRegime).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum LegacyRegimeView {
-    BullRun,
-    Crash,
-    Range,
-    Chaotic,
-}
-
 fn nonzero_ln(tau: f64) -> Option<f64> {
     (tau.is_finite() && tau > 0.0).then(|| tau.ln())
 }
@@ -374,7 +340,7 @@ mod tests {
     use super::*;
 
     /// Ruido: sin estructura direccional ni aceleración → crash-ness baja y
-    /// margen intacto; la vista legacy NO declara crash.
+    /// margen intacto.
     #[test]
     fn ruido_produce_crash_flux_bajo() {
         let spec = TemporalSpectrum::new();
@@ -400,7 +366,6 @@ mod tests {
         g.crash_flux = (0.35f64 * 1.0 + 0.30 * 1.0 + 0.20 * 1.0 + 0.15 * 0.4).clamp(0.0, 1.0);
         assert!(g.crash_flux > 0.7);
         assert!(g.long_margin_multiplier() < 0.3);
-        assert_eq!(g.legacy_view(0.8), LegacyRegimeView::Crash);
     }
 
     #[test]

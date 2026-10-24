@@ -1,9 +1,4 @@
-use crate::GodEngineCore;
-use quantum_arena::GlobalArena;
-use reqwest::Client;
 use serde_json::Value;
-use std::sync::Arc;
-use tokio::time::{Duration, sleep};
 
 /// Domain validation of exchange OHLCV strings, not an outlier or alpha filter.
 /// Preserves valid observations exactly. Time ordering/closure is a separate contract.
@@ -22,6 +17,21 @@ fn parse_warmup_kline(kline: &[Value]) -> Option<[f64; 5]> {
         && l <= c
         && c <= h)
         .then_some(bar)
+}
+
+/// CL-156 (G021 de Línea G) — URL de las K-lines REST del calentamiento en
+/// el venue del proceso: testnet si el host eligió testnet para el cliente
+/// REST y el ejecutor (`USE_TESTNET=true`), mainnet si no. Misma base que el
+/// ejecutor (`executor.rs`); el WS de testnet es `stream.binancefuture.com`.
+/// Antes el calentamiento vivo fijaba `fapi.binance.com` y en testnet
+/// sembraba Hurst, FFT, multifractal y σ̂ con la serie de otro mercado.
+fn warmup_klines_url(usa_testnet: bool, symbol: &str, limit: usize) -> String {
+    let base = if usa_testnet {
+        "https://testnet.binancefuture.com"
+    } else {
+        "https://fapi.binance.com"
+    };
+    format!("{base}/fapi/v1/klines?symbol={symbol}&interval=1m&limit={limit}")
 }
 
 #[cfg(test)]
@@ -70,6 +80,20 @@ mod audit_xiii_tests {
         assert_eq!(parse_warmup_kline(&[]), None);
     }
 
+    /// CL-156 (G021) — en testnet las K-lines salen de testnet; en mainnet
+    /// la URL es la de siempre, byte a byte.
+    #[test]
+    fn cl156_warmup_klines_url_sigue_al_venue() {
+        assert_eq!(
+            warmup_klines_url(true, "1000SHIBUSDT", 1000),
+            "https://testnet.binancefuture.com/fapi/v1/klines?symbol=1000SHIBUSDT&interval=1m&limit=1000"
+        );
+        assert_eq!(
+            warmup_klines_url(false, "1000SHIBUSDT", 1000),
+            "https://fapi.binance.com/fapi/v1/klines?symbol=1000SHIBUSDT&interval=1m&limit=1000"
+        );
+    }
+
     /// CL-37 — el universo de arranque sale en la grafía canónica, sin
     /// duplicados y dentro de la capacidad del arena: es el mapa slot↔símbolo
     /// que comparten host, núcleo, riesgo y reserva durante toda la sesión.
@@ -87,226 +111,6 @@ mod audit_xiii_tests {
             );
             assert!(vistos.insert(s.clone()), "{s} duplicado");
         }
-    }
-}
-
-/// Orquestador de Secuencia de Arranque (Fase 1: System Bootloader)
-pub struct SystemBootloader {
-    arena: Arc<GlobalArena>,
-}
-
-impl SystemBootloader {
-    pub fn new(arena: Arc<GlobalArena>) -> Self {
-        Self { arena }
-    }
-
-    /// Lanza la secuencia estricta de 6 fases
-    pub async fn execute_boot_sequence(
-        &self,
-        engine: &mut GodEngineCore,
-    ) -> Result<(), Box<dyn std::error::Error>> {
-        println!("🚀 [BOOTLOADER] Iniciando secuencia de arranque estricta...");
-
-        self.phase_1_integrity_check()?;
-        self.phase_2_asset_selection().await?;
-        self.phase_3_historical_warmup(engine).await?;
-        self.phase_4_state_recovery(engine).await?;
-        self.phase_5_ml_preload()?;
-        self.phase_6_ignition()?;
-
-        println!("✅ [BOOTLOADER] Secuencia completada. Sistema listo para operar en Producción.");
-        Ok(())
-    }
-
-    fn phase_1_integrity_check(&self) -> Result<(), Box<dyn std::error::Error>> {
-        println!(
-            "🔍 [FASE 1] Verificando integridad de configuración, topología de memoria y llaves..."
-        );
-        let base_cap = self
-            .arena
-            .config
-            .base_capital
-            .load(std::sync::atomic::Ordering::Relaxed);
-        if base_cap < 5.0 {
-            return Err(format!(
-                "Capital base inválido: ${:.2} (mínimo requerido: $5.00)",
-                base_cap
-            )
-            .into());
-        }
-        if self
-            .arena
-            .kill_switch_active
-            .load(std::sync::atomic::Ordering::Relaxed)
-        {
-            return Err("Kill switch activo al arranque. Abortando inicio por seguridad.".into());
-        }
-        if self.arena.coins.len() != 30 {
-            return Err(format!(
-                "Topología de memoria corrupta: {} slots en lugar de 30",
-                self.arena.coins.len()
-            )
-            .into());
-        }
-        println!("   -> Capital base validado: ${:.2} USD", base_cap);
-        println!("   -> Memoria contigua: 30 CoinArenas L1/L2 alineadas.");
-        println!("   -> Kill Switch: Desarmado (Estado Seguro).");
-        Ok(())
-    }
-
-    async fn phase_2_asset_selection(&self) -> Result<(), Box<dyn std::error::Error>> {
-        println!("📊 [FASE 2] Verificando y seleccionando universo activo de activos...");
-        let mut active_count = 0;
-        for (id, _coin) in self.arena.coins.iter().enumerate() {
-            if let Some(spec) = quantum_arena::symbol_registry::try_spec(id) {
-                if !spec.symbol.is_empty() {
-                    active_count += 1;
-                }
-            }
-        }
-        let cap = self
-            .arena
-            .unified_capital
-            .load(std::sync::atomic::Ordering::Relaxed);
-        println!("   -> {} activos registrados en memoria.", active_count);
-        println!(
-            "   -> Universo calibrado para capital actual: ${:.2} USD.",
-            cap
-        );
-        Ok(())
-    }
-
-    async fn phase_3_historical_warmup(
-        &self,
-        engine: &mut GodEngineCore,
-    ) -> Result<(), Box<dyn std::error::Error>> {
-        println!("🔥 [FASE 3] Calentando motores de características (Warm-Up)...");
-        let client = Client::builder()
-            .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
-            .timeout(Duration::from_secs(10))
-            .build()
-            .unwrap_or_else(|_| Client::new());
-        let limit = 1000;
-
-        for (coin_id, _coin) in self.arena.coins.iter().enumerate() {
-            let symbol = match quantum_arena::symbol_registry::try_spec(coin_id) {
-                Some(s) if !s.symbol.is_empty() => s.symbol,
-                _ => continue,
-            };
-
-            // FIX #1504: Endpoint adaptativo para Testnet vs Producción
-            let is_testnet = std::env::var("USE_TESTNET")
-                .unwrap_or_default()
-                .trim()
-                .to_lowercase()
-                == "true";
-            let base_url = if is_testnet {
-                "https://testnet.binancefuture.com"
-            } else {
-                "https://fapi.binance.com"
-            };
-            let url = format!(
-                "{}/fapi/v1/klines?symbol={}&interval=1m&limit={}",
-                base_url, symbol, limit
-            );
-
-            let mut retries = 3;
-            let mut klines_data = None;
-
-            while retries > 0 {
-                match client.get(&url).send().await {
-                    Ok(resp) => {
-                        if let Ok(json) = resp.json::<Value>().await {
-                            klines_data = Some(json);
-                            break;
-                        }
-                    }
-                    Err(e) => {
-                        println!("      ⚠️ Error fetching data: {}, retrying...", e);
-                        sleep(Duration::from_millis(500)).await;
-                    }
-                }
-                retries -= 1;
-            }
-
-            if let Some(Value::Array(klines)) = klines_data {
-                let mut accepted = 0;
-                for k in &klines {
-                    if let Value::Array(kline_arr) = k {
-                        if let Some([open, high, low, close, volume]) =
-                            parse_warmup_kline(kline_arr)
-                        {
-                            // Closure and event-time alignment are not established by this parser.
-                            engine.feature_engines[coin_id]
-                                .process_kline(open, high, low, close, volume);
-                            accepted += 1;
-                        }
-                    }
-                }
-                println!(
-                    "      {} klines aceptadas por StatefulEngine; {} rechazadas por esquema/OHLCV ({}).",
-                    accepted,
-                    klines.len() - accepted,
-                    symbol
-                );
-            } else {
-                println!("      ❌ Falló la carga de klines para {}", symbol);
-            }
-
-            // Limit API rate
-            sleep(Duration::from_millis(200)).await;
-        }
-
-        Ok(())
-    }
-
-    async fn phase_4_state_recovery(
-        &self,
-        _engine: &mut GodEngineCore,
-    ) -> Result<(), Box<dyn std::error::Error>> {
-        println!(
-            "💾 [FASE 4] Recuperando y verificando continuidad de estado (State Continuity Engine)..."
-        );
-        let mut total_open = 0;
-
-        for (id, coin) in self.arena.coins.iter().enumerate() {
-            for (slot_idx, pos) in coin.positions.slots().iter().enumerate() {
-                if pos.is_open() {
-                    total_open += 1;
-                    let chk =
-                        quantum_arena::state_continuity::StateContinuityEngine::compute_state_checksum(
-                            id,
-                            pos.quantity.load(std::sync::atomic::Ordering::Relaxed),
-                            pos.entry_price.load(std::sync::atomic::Ordering::Relaxed),
-                        );
-                    println!(
-                        "   -> [UNIVERSAL] Posición abierta en ID {} Slot {} detectada (Checksum: {:016X})",
-                        id, slot_idx, chk
-                    );
-                }
-            }
-        }
-        println!(
-            "   -> Continuidad verificada: {} posiciones universales continuas vivas.",
-            total_open
-        );
-        Ok(())
-    }
-
-    fn phase_5_ml_preload(&self) -> Result<(), Box<dyn std::error::Error>> {
-        println!("🧠 [FASE 5] Verificando modelos ML cargados...");
-        let count = crate::ml_inference::GLOBAL_FORESTS.load().len();
-        println!(
-            "   -> Modelos NanoForest globales listos en ArcSwap: {} cargados.",
-            count
-        );
-        Ok(())
-    }
-
-    fn phase_6_ignition(&self) -> Result<(), Box<dyn std::error::Error>> {
-        println!("⚡ [FASE 6] Ignite!");
-        // Aquí se da la señal verde a los websockets.
-        Ok(())
     }
 }
 
@@ -433,8 +237,13 @@ impl SystemDiagnostics {
     /// banda sintética ±0.05% y volumen fijo 10: v_t (volatilidad de rango)
     /// quedaba clavado en ~0.1% y el ATR vivo des-calibraba los stops por
     /// horas (get_atr_pct alimenta el sizing en vivo).
+    ///
+    /// CL-156 (G021): `usa_testnet` es el venue que el host eligió para el
+    /// cliente REST y el ejecutor (`is_testnet`); las K-lines salen de ese
+    /// mismo venue (`warmup_klines_url`). No es el modo demo: SHADOW_MODE y
+    /// BINANCE_USE_DEMO operan papel contra mainnet.
     pub async fn execute_phase_3_warmup(
-        _is_demo: bool,
+        usa_testnet: bool,
         symbols: &[String],
     ) -> std::collections::HashMap<String, Vec<[f64; 5]>> {
         let mut map = std::collections::HashMap::new();
@@ -447,11 +256,7 @@ impl SystemDiagnostics {
 
         for symbol in symbols {
             let mut klines_vec = Vec::new();
-            let url = format!(
-                "https://fapi.binance.com/fapi/v1/klines?symbol={}&interval=1m&limit={}",
-                symbol.to_uppercase(),
-                limit
-            );
+            let url = warmup_klines_url(usa_testnet, &symbol.to_uppercase(), limit);
 
             if let Ok(resp) = client.get(&url).send().await {
                 if let Ok(json) = resp.json::<serde_json::Value>().await {
