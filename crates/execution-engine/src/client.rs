@@ -1,8 +1,6 @@
 use arc_swap::ArcSwap;
 use reqwest::header::{HeaderMap, HeaderValue};
 use reqwest::{Client, ClientBuilder};
-use serde::{Deserialize, Serialize};
-use std::sync::Arc;
 use std::time::Duration;
 
 /// Buffer stack para cero-alocación en el hot-path.
@@ -82,12 +80,6 @@ impl ZeroAllocBuffer {
 pub const BINANCE_BASE_URL: &str = "https://fapi.binance.com";
 pub const BINANCE_TESTNET_URL: &str = "https://testnet.binancefuture.com";
 
-#[derive(Debug, Serialize, Deserialize)]
-pub struct BinanceErrorResponse {
-    pub code: i64,
-    pub msg: String,
-}
-
 #[derive(Debug, Default, Clone, Copy)]
 pub struct BinanceRateLimits {
     pub weight_1m: Option<usize>,
@@ -152,10 +144,11 @@ use std::sync::atomic::{AtomicBool, Ordering};
 #[derive(Clone)]
 pub struct BinanceClient {
     http: Client,
-    /// Arc: ArcSwap no es Clone por diseño; los clones comparten el swap
-    /// (hot-swap de credenciales coherente entre réplica del stream F1.6).
+    /// Arc: ArcSwap no es Clone por diseño; los clones (la réplica del stream,
+    /// F1.6) comparten la misma clave. RET-31: ya nada la cambia en caliente;
+    /// el host cambia de entorno construyendo otro cliente (new_with_shared).
     pub api_key: std::sync::Arc<ArcSwap<HeaderValue>>,
-    /// Arc interno: los clones comparten el flag (hot-swap coherente, F1.6).
+    /// Arc interno: los clones comparten el mismo entorno (F1.6).
     pub is_testnet: std::sync::Arc<AtomicBool>,
 }
 
@@ -192,23 +185,6 @@ impl BinanceClient {
         } else {
             BINANCE_BASE_URL
         }
-    }
-
-    pub fn set_testnet(&self, testnet: bool) {
-        self.is_testnet.store(testnet, Ordering::Relaxed);
-    }
-
-    pub fn update_api_key(&self, new_key: String) {
-        let header_val =
-            HeaderValue::from_str(&new_key).unwrap_or_else(|_| HeaderValue::from_static(""));
-        self.api_key.store(std::sync::Arc::new(header_val));
-    }
-
-    pub fn hot_swap_credentials(&self, new_key: String, is_testnet: bool) {
-        let header_val =
-            HeaderValue::from_str(&new_key).unwrap_or_else(|_| HeaderValue::from_static(""));
-        self.api_key.store(Arc::new(header_val));
-        self.is_testnet.store(is_testnet, Ordering::Relaxed);
     }
 
     /// F1.6: POST /fapi/v1/listenKey — crea la clave del user-data stream.
@@ -617,14 +593,13 @@ mod tests {
     }
 
     #[test]
-    fn test_binance_client_hot_swap_api_key_and_testnet() {
-        let client = BinanceClient::new("key1".to_string(), true);
-        assert_eq!(client.get_base_url(), BINANCE_TESTNET_URL);
+    fn test_binance_client_api_key_and_testnet() {
+        let testnet = BinanceClient::new("key1".to_string(), true);
+        assert_eq!(testnet.get_base_url(), BINANCE_TESTNET_URL);
+        assert_eq!(testnet.api_key.load().to_str().ok(), Some("key1"));
 
-        client.hot_swap_credentials("key2".to_string(), false);
-        assert_eq!(client.get_base_url(), BINANCE_BASE_URL);
-
-        let current_key = client.api_key.load();
-        assert_eq!(current_key.to_str().unwrap(), "key2");
+        let mainnet = BinanceClient::new("key2".to_string(), false);
+        assert_eq!(mainnet.get_base_url(), BINANCE_BASE_URL);
+        assert_eq!(mainnet.api_key.load().to_str().ok(), Some("key2"));
     }
 }

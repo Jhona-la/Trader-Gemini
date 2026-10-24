@@ -1187,12 +1187,6 @@ impl OrderExecutor {
         }
     }
 
-    pub fn set_rate_limit_thresholds(&self, weight_1m: usize, orders_10s: usize, orders_1m: usize) {
-        self.max_weight_1m.store(weight_1m, Ordering::Relaxed);
-        self.max_orders_10s.store(orders_10s, Ordering::Relaxed);
-        self.max_orders_1m.store(orders_1m, Ordering::Relaxed);
-    }
-
     pub fn set_paper_trading(&mut self, is_paper: bool) {
         self.is_paper_trading = is_paper;
     }
@@ -1204,11 +1198,6 @@ impl OrderExecutor {
     #[inline(always)]
     pub fn is_paper_trading(&self) -> bool {
         self.is_paper_trading
-    }
-
-    pub fn hot_swap_credentials(&self, new_key: String, new_secret: String, is_testnet: bool) {
-        self.api_secret.store(Arc::new(new_secret));
-        self.client.hot_swap_credentials(new_key, is_testnet);
     }
 
     #[inline(always)]

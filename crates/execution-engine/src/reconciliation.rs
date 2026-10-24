@@ -7,7 +7,6 @@
 //! CUÁNDO: al arranque (obligatorio, F7.1 lo gatea) y periódicamente.
 
 use crate::order_registry::OrderRegistry;
-use crate::user_data_stream::RemotePosition;
 use serde::Deserialize;
 
 /// Entrada de /fapi/v2/positionRisk.
@@ -329,20 +328,6 @@ impl ReconciliationReport {
             }
         }
         purged
-    }
-}
-
-impl PositionRiskEntry {
-    /// Conversión a la vista común del stream (F1.6).
-    pub fn to_remote_position(&self) -> RemotePosition {
-        RemotePosition {
-            symbol: self.symbol.clone(),
-            position_amt: self.position_amt,
-            entry_price: self.entry_price,
-            unrealized_pnl: self.unrealized_pnl,
-            isolated_wallet: 0.0,
-            position_side: self.position_side.clone(),
-        }
     }
 }
 
@@ -876,11 +861,6 @@ mod tests {
 
         assert!(short_entry.is_open());
         assert!(!short_entry.is_long());
-
-        let remote = short_entry.to_remote_position();
-        assert_eq!(remote.symbol, "SOLUSDT");
-        assert_eq!(remote.position_amt, -5.0);
-        assert_eq!(remote.position_side, "SHORT");
 
         let nan_entry = PositionRiskEntry {
             symbol: "NAN_COIN".to_string(),

@@ -539,15 +539,6 @@ impl OrderRegistry {
             .map(|o| o.status)
     }
 
-    /// Órdenes vivas por símbolo (para chase/cancel masivo).
-    pub fn active_for_symbol(&self, symbol: &str) -> Vec<TrackedOrder> {
-        let map = self.orders.read().unwrap_or_else(|p| p.into_inner());
-        map.values()
-            .filter(|o| o.symbol == symbol && o.status.is_active())
-            .cloned()
-            .collect()
-    }
-
     /// Todas las órdenes vivas en el registro global (para reconciliación O(N)).
     pub fn active_orders(&self) -> Vec<TrackedOrder> {
         let map = self.orders.read().unwrap_or_else(|p| p.into_inner());
@@ -555,21 +546,6 @@ impl OrderRegistry {
             .filter(|o| o.status.is_active())
             .cloned()
             .collect()
-    }
-
-    /// Cantidad neta llena (con signo según side) de órdenes activas del símbolo.
-    pub fn pending_qty_for_symbol(&self, symbol: &str) -> f64 {
-        self.active_for_symbol(symbol)
-            .iter()
-            .map(|o| {
-                let rem = o.remaining_qty();
-                if o.side == "BUY" {
-                    rem
-                } else {
-                    -rem
-                }
-            })
-            .sum()
     }
 
     pub fn stats(&self) -> RegistryStats {

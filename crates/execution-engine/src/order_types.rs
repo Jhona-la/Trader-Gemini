@@ -269,20 +269,8 @@ pub fn parse_reject_body(body: &str, http_status: u16) -> String {
 /// Códigos que exigen reacción específica del executor (mapa mínimo F1; crece en F1.8).
 pub mod error_codes {
     pub const DUPLICATED_ORDER: i64 = -4116; // newClientOrderId repetido activo
-    pub const NEW_ORDER_REJECTED: i64 = -2010; // saldo/posición insuficiente, etc.
-    pub const SIGNATURE_INVALID: i64 = -1022;
-    pub const TOO_MANY_PARAMETERS: i64 = -1101;
-    pub const PARAM_EMPTY: i64 = -1105;
-    pub const MIN_NOTIONAL: i64 = -4164;
-    pub const TOO_MANY_REQUESTS: i64 = -1003;
     pub const EXECUTION_STATUS_UNKNOWN: i64 = -1006;
     pub const BACKEND_TIMEOUT: i64 = -1007;
-    #[deprecated(note = "Use TOO_MANY_PARAMETERS; -1105 means PARAM_EMPTY")]
-    pub const PARAM_REPEAT: i64 = TOO_MANY_PARAMETERS;
-    #[deprecated(
-        note = "Use TOO_MANY_REQUESTS; the code alone does not distinguish throttling from an IP ban"
-    )]
-    pub const RATE_LIMIT_BAN: i64 = TOO_MANY_REQUESTS;
 }
 
 #[cfg(test)]
@@ -310,7 +298,7 @@ mod tests {
     fn parse_error_body() {
         let body = r#"{"code": -2010, "msg": "Account has insufficient balance"}"#;
         let e: BinanceApiError = serde_json::from_str(body).expect("parse error");
-        assert_eq!(e.code, error_codes::NEW_ORDER_REJECTED);
+        assert_eq!(e.code, -2010);
     }
 
     #[test]
