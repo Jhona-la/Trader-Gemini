@@ -4,9 +4,13 @@
 //!
 //! 1. Verificar que la admisión por defecto mantiene `DEFAULT_RESONANT_DELTA_LN = 0.80`
 //!    rechazando colisiones destructivas en la misma escala y dirección.
-//! 2. Verificar que con resolución unificada `UNIFIED_RESONANT_DELTA_LN = 0.60` (D-431),
-//!    escalas en el intervalo [0.60, 0.80) —como tau = 30s y tau = 60s (|Δlnτ| ≈ 0.693)—
-//!    son admitidas armónicamente en ranuras separadas.
+//! 2. Verificar que la parametrización `find_resonant_slot_with_threshold` con el
+//!    umbral 0.60 de D-431 admite escalas del intervalo [0.60, 0.80) —como
+//!    tau = 30s y tau = 60s (|Δlnτ| ≈ 0.693)— en ranuras separadas. Prueba la
+//!    parametrización, no la política viva: el consejo (#593,
+//!    `umbral_codespacho_armonico` del núcleo) fijó 0.80 en la misma dirección
+//!    y conservó 0.60 sólo para direcciones opuestas. La constante
+//!    `UNIFIED_RESONANT_DELTA_LN` se retiró en RET-34 por no tener lector.
 //! 3. Comprobar la coexistencia ortogonal multiescala (ej. 15s rápido y 1h lento) en la misma dirección.
 //! 4. Verificar que direcciones opuestas (Long vs Short) no colisionan por escala temporal.
 //! 5. Validar que entradas no finitas o anómalas fallan de forma segura (fail-closed).
@@ -30,6 +34,9 @@ fn open_slot(manager: &PositionManager, slot: usize, is_long: bool, tau_ms: u64)
     ));
 }
 
+
+/// Umbral |Δlnτ| de D-431 (direcciones opuestas en la política viva, #593).
+const UMBRAL_D431: f64 = 0.60;
 #[test]
 fn spectral_slot_resolucion_default_080_rechaza_colision_cercana() {
     let mgr = PositionManager::default();
@@ -54,12 +61,8 @@ fn spectral_slot_resolucion_unificada_060_admite_el_hueco_intermedio() {
     // Bajo el umbral 0.80 es rechazado:
     assert_eq!(mgr.find_resonant_slot(60_000.0, true), None);
 
-    // Bajo el umbral unificado 0.60 (D-431), 0.6931 >= 0.60: ¡ES ADMITIDO EN RANURA 1!
-    let slot_unificado = mgr.find_resonant_slot_with_threshold(
-        60_000.0,
-        true,
-        PositionManager::UNIFIED_RESONANT_DELTA_LN,
-    );
+    // Con el umbral 0.60 de D-431, 0.6931 >= 0.60: ¡ES ADMITIDO EN RANURA 1!
+    let slot_unificado = mgr.find_resonant_slot_with_threshold(60_000.0, true, UMBRAL_D431);
     assert_eq!(
         slot_unificado,
         Some(1),

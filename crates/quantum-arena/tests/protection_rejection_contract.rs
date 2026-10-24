@@ -1,4 +1,8 @@
-use quantum_arena::protection_health::{is_exchange_rejection, note_rejection, rejections_of};
+//! RET-34: `is_exchange_rejection` pasó a ser privada (sin lector fuera de
+//! protection_health). Estas pruebas la ejercitan por `note_rejection`,
+//! que con el mutex sano devuelve exactamente su veredicto; cada prueba usa
+//! su propio símbolo para no mezclar contadores.
+use quantum_arena::protection_health::{note_rejection, rejections_of};
 
 #[test]
 fn unknown_execution_status_is_not_confirmed_rejection() {
@@ -9,8 +13,9 @@ fn unknown_execution_status_is_not_confirmed_rejection() {
         "Binance API Error: {\"code\":-1000,\"msg\":\"Unknown error\"}",
         "AMBIGUOUS: previous code=-2019; current response unavailable",
     ] {
-        assert!(!is_exchange_rejection(msg), "{msg}");
+        assert!(!note_rejection("RET34_UNKNOWN_EXECUTION", msg), "{msg}");
     }
+    assert_eq!(rejections_of("RET34_UNKNOWN_EXECUTION"), 0);
 }
 
 #[test]
@@ -25,8 +30,9 @@ fn incidental_negative_numbers_are_not_exchange_evidence() {
         "Binance API Error: {\"msg\":\"previous -2019: error\"}",
         "REJECTED http=502 body=proxy upstream -2019: unknown",
     ] {
-        assert!(!is_exchange_rejection(msg), "{msg}");
+        assert!(!note_rejection("RET34_INCIDENTAL_NUMBERS", msg), "{msg}");
     }
+    assert_eq!(rejections_of("RET34_INCIDENTAL_NUMBERS"), 0);
 }
 
 #[test]
@@ -39,8 +45,9 @@ fn current_structured_and_legacy_display_rejections_remain_accepted() {
         "Binance API Error: {\"code\":-4164,\"msg\":\"Notional too small\"}",
         "{\"code\":-2019,\"msg\":\"Insufficient margin\"}",
     ] {
-        assert!(is_exchange_rejection(msg), "{msg}");
+        assert!(note_rejection("RET34_CURRENT_REJECTIONS", msg), "{msg}");
     }
+    assert_eq!(rejections_of("RET34_CURRENT_REJECTIONS"), 6);
 }
 
 #[test]
