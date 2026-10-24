@@ -343,10 +343,6 @@ impl strategy_core::QuantumStrategy for RenyiTsallisEntropyEngine {
             _ => 0.0, // voto neutralizado para no contaminar cross-coin (MOD2/7-009)
         }
     }
-
-    fn horizon(&self) -> strategy_core::TradeHorizon {
-        strategy_core::TradeHorizon::Continuous
-    }
 }
 
 #[cfg(test)]

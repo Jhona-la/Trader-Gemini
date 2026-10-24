@@ -111,7 +111,6 @@ impl CoaxialBreakoutEngine {
                 },
                 confidence: coaxial_squeeze,
                 expected_duration_ms: duration.max(5000),
-                horizon: strategy_core::TradeHorizon::Continuous,
                 ..Default::default()
             });
         }

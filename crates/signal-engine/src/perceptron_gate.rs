@@ -266,10 +266,6 @@ impl QuantumStrategy for PerceptronGateEngine {
 
         Self::infer_with_params(signal_score, weight, &effective_params)
     }
-
-    fn horizon(&self) -> strategy_core::TradeHorizon {
-        strategy_core::TradeHorizon::Continuous
-    }
 }
 
 #[cfg(test)]

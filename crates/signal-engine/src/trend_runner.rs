@@ -191,10 +191,6 @@ impl QuantumStrategy for HighPayoffTrendRunner {
         Ok(())
     }
 
-    fn horizon(&self) -> strategy_core::TradeHorizon {
-        strategy_core::TradeHorizon::Continuous
-    }
-
     fn evaluate(&self) -> f64 {
         self.evaluate_for_coin(0, "")
     }

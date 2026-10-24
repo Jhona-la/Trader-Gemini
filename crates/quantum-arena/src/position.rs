@@ -714,8 +714,8 @@ pub const MAX_SPECTRAL_SLOTS: usize = 3;
 /// `find_resonant_slot` admite posiciones en espacio log(τ) y el despacho
 /// multi-banda concurrente escribe en las tres. La fusión conserva la
 /// arquitectura de main (3 slots por moneda); el binario de horizonte
-/// sigue erradicado: los tres slots viven en `TradeHorizon::Continuous`
-/// y se distinguen por τ, no por etiqueta.
+/// sigue erradicado: los tres slots se distinguen por τ, no por etiqueta
+/// (LG-29 retiró además el enum de una variante `TradeHorizon`).
 ///
 /// H0-7-final (GLM 114): los CAMPOS pasaron a llamarse `slot_0/1/2` —
 /// pares por índice, alineados con `get_slot`/`slots()`. El nombre

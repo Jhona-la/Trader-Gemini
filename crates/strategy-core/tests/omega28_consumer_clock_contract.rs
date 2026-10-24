@@ -1,4 +1,4 @@
-use strategy_core::{MultivariateCointegrationEngine, SignalType, TradeHorizon};
+use strategy_core::{MultivariateCointegrationEngine, SignalType};
 
 #[test]
 fn continuous_ou_mature_clock_rejection_abstains_without_state_change() {
@@ -25,7 +25,6 @@ fn continuous_ou_mature_clock_rejection_abstains_without_state_change() {
         .update_and_evaluate(&[(0.1_f64).exp(), 1.0, 1.0, 1.0], 9_000)
         .expect("mature causal shock must emit before checking rejection");
     assert_eq!(first.signal, SignalType::Short);
-    assert_eq!(first.horizon, TradeHorizon::Continuous);
     assert!(first.expected_duration_ms > 0);
     let mature = engine.physical_sde.as_ref().expect("opt-in SDE");
     assert_eq!(mature.count, 10);
@@ -59,7 +58,6 @@ fn continuous_ou_mature_clock_rejection_abstains_without_state_change() {
         .update_and_evaluate(&[(0.2_f64).exp(), 1.0, 1.0, 1.0], 10_000)
         .expect("causal advancement must retain healthy emission");
     assert_eq!(next.signal, SignalType::Short);
-    assert_eq!(next.horizon, TradeHorizon::Continuous);
     assert!(next.expected_duration_ms > 0);
     let advanced = engine.physical_sde.as_ref().expect("opt-in SDE");
     assert_eq!(advanced.count, 11);

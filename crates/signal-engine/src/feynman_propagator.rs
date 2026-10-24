@@ -1,6 +1,6 @@
 use omniscient_registry::OmniscientRegistry;
 use std::sync::Arc;
-use strategy_core::{QuantumStrategy, TradeHorizon};
+use strategy_core::QuantumStrategy;
 use crate::voto_espectral::{VotoEspectral, ESCALAS_VOTO};
 
 /// ⚛️ ALGORITMO #101: COLECTOR DE INTEGRAL DE CAMINO DE FEYNMAN Y PROPAGADOR CUÁNTICO (FEYNMAN PROPAGATOR ENGINE)
@@ -474,10 +474,6 @@ impl QuantumStrategy for FeynmanPropagatorEngine {
         } else {
             0.0
         }
-    }
-
-    fn horizon(&self) -> TradeHorizon {
-        TradeHorizon::Continuous
     }
 
     fn is_operable_for_coin(&self, coin_id: usize, symbol: &str) -> bool {

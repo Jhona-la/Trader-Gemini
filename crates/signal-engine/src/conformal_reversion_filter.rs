@@ -13,8 +13,8 @@ use strategy_core::QuantumStrategy;
 ///
 /// El motor se llamaba `SwingConformalFilterEngine` y vivía en
 /// `swing_conformal_filter.rs`. El prefijo «swing» era una ETIQUETA DE BANDA
-/// DE HORIZONTE que este motor no decide: su horizonte declarado es
-/// `TradeHorizon::Continuous` y su regla no contiene ninguna escala temporal
+/// DE HORIZONTE que este motor no decide: su horizonte declarado era
+/// `TradeHorizon::Continuous` (enum retirado en LG-29) y su regla no contiene ninguna escala temporal
 /// —sólo significación estadística (α), dirección de tendencia y aceptación
 /// conformal—. El nombre ahora describe lo que mide. La clave de registro
 /// `ema_trend_swing` se conserva porque su PRODUCTOR vive fuera de este
@@ -208,10 +208,6 @@ impl QuantumStrategy for ConformalReversionFilterEngine {
         let alpha = get("conformal_alpha").unwrap_or(0.10);
         Self::score(z, trend, accept_long, accept_short, alpha)
     }
-
-    fn horizon(&self) -> strategy_core::TradeHorizon {
-        strategy_core::TradeHorizon::Continuous
-    }
 }
 
 #[cfg(test)]
@@ -276,7 +272,6 @@ mod tests {
         registry.set("conformal_alpha", 0.10);
         let mut engine = ConformalReversionFilterEngine::new();
         assert!(engine.init(registry.clone()).is_ok());
-        assert_eq!(engine.horizon(), strategy_core::TradeHorizon::Continuous);
         assert!(engine.evaluate() > 0.0);
         registry.set("conformal_accept_long", 0.0);
         assert_eq!(engine.evaluate(), 0.0);
@@ -295,7 +290,6 @@ mod tests {
                 && !n.to_ascii_lowercase().contains("scalp"),
             "el nombre publicado al registro arrastra una etiqueta de banda: {n}"
         );
-        assert_eq!(engine.horizon(), strategy_core::TradeHorizon::Continuous);
     }
 }
 

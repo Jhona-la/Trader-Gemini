@@ -513,10 +513,6 @@ impl QuantumStrategy for HawkesBesselEngine {
         // la magnitud proporcional a la fuerza real del desbalance de órdenes.
         direction.tanh() * excitacion_hawkes_norm(core_intensity).max(0.0)
     }
-
-    fn horizon(&self) -> strategy_core::TradeHorizon {
-        strategy_core::TradeHorizon::Continuous
-    }
 }
 
 #[cfg(test)]

@@ -1,7 +1,7 @@
 use crate::SignalType;
 use quantum_arena::atomic_float::AtomicF64;
 use std::sync::atomic::{AtomicU64, Ordering};
-use strategy_core::{QuantumStrategy, TradeHorizon};
+use strategy_core::QuantumStrategy;
 
 #[derive(Debug, Clone, Copy)]
 pub struct TensorDecision {
@@ -9,7 +9,6 @@ pub struct TensorDecision {
     pub net_confidence: f64,
     pub expected_volatility: f64, // To be used by QuantumOrderRouter for Slippage Defense
     pub expected_lifetime_ms: u64, // Time-in-force heuristic
-    pub horizon: TradeHorizon,
 }
 
 /// ORQUESTADOR DE VOTO TENSORIAL DEL MOTOR CONTINUO.
@@ -20,7 +19,7 @@ pub struct TensorDecision {
 /// la real, todas sin un solo llamador en el repositorio:
 ///
 /// * `evaluate_horizon_consensus` particionaba el ensamble por
-///   `TradeHorizon` y aplicaba su propio corte doble
+///   horizonte (el enum `TradeHorizon`, retirado en LG-29) y aplicaba su propio corte doble
 ///   (`ml_threshold_long/short × 2`). Dentro calculaba `confidence_cutoff`
 ///   desde el gen `explosive_confidence_threshold` y NO LO USABA: una lectura
 ///   atómica por tick cuyo resultado se descartaba, que además hacía creer que
@@ -291,9 +290,10 @@ impl TensorVoteOrchestrator {
         }
     }
 
-    /// LG8-145-04 (OLA Ω148): `TradeHorizon::Continuous` es la única variante representable;
-    /// delega directamente a `evaluate_continuous_consensus` eliminando el cuerpo inalcanzable.
-    pub fn evaluate_horizon_consensus(&self, _target_horizon: TradeHorizon) -> TensorDecision {
+    /// LG8-145-04 (OLA Ω148): delega directamente a `evaluate_continuous_consensus`.
+    /// LG-29: el argumento de horizonte desaparece con el enum `TradeHorizon`
+    /// (sólo tenía la variante `Continuous`).
+    pub fn evaluate_horizon_consensus(&self) -> TensorDecision {
         self.evaluate_continuous_consensus()
     }
 
@@ -342,7 +342,6 @@ impl TensorVoteOrchestrator {
                 net_confidence: 0.0,
                 expected_volatility: 0.0,
                 expected_lifetime_ms: 0,
-                horizon: TradeHorizon::Continuous,
             };
         }
         // #624 (Ola 45) — CONSUMO DEL CONSENSO ESPECTRAL: la sombra #623
@@ -565,7 +564,6 @@ impl TensorVoteOrchestrator {
                 net_confidence: 0.0,
                 expected_volatility: 0.0,
                 expected_lifetime_ms: 0,
-                horizon: TradeHorizon::Continuous,
             };
         }
         // Con ensamble escalar abstenido y espectro hablando, los ratios
@@ -726,7 +724,6 @@ impl TensorVoteOrchestrator {
                     net_confidence: net_confidence.abs(),
                     expected_volatility,
                     expected_lifetime_ms,
-                    horizon: TradeHorizon::Continuous,
                 }
             } else {
                 TensorDecision {
@@ -734,7 +731,6 @@ impl TensorVoteOrchestrator {
                     net_confidence: net_confidence.abs(),
                     expected_volatility,
                     expected_lifetime_ms,
-                    horizon: TradeHorizon::Continuous,
                 }
             }
         } else {
@@ -743,7 +739,6 @@ impl TensorVoteOrchestrator {
                 net_confidence: 0.0,
                 expected_volatility,
                 expected_lifetime_ms,
-                horizon: TradeHorizon::Continuous,
             }
         }
     }
@@ -851,7 +846,6 @@ mod tests {
         let decision = orch.evaluate_continuous_consensus_for_coin(0, "BTCUSDT");
         assert_eq!(decision.signal, SignalType::Long);
         assert!(decision.net_confidence > 0.2);
-        assert_eq!(decision.horizon, TradeHorizon::Continuous);
     }
 
     #[test]

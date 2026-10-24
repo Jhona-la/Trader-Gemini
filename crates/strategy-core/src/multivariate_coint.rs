@@ -1,7 +1,7 @@
 /// Legacy weighted-log basket and event-index mean-reversion proxy (#83-#95).
 /// Supplied weights are assumed, not estimated cointegration vectors. Neither
 /// stationarity nor a physical-time OU model is certified by this helper.
-use crate::types::{SignalIntent, SignalType, TradeHorizon};
+use crate::types::{SignalIntent, SignalType};
 use crate::vecm_arbitrage::ContinuousOrnsteinUhlenbeckSde;
 
 const MAX_ASSETS: usize = 4;
@@ -148,7 +148,6 @@ impl MultivariateCointegrationEngine {
                     return Some(SignalIntent {
                         signal,
                         confidence,
-                        horizon: TradeHorizon::Continuous,
                         expected_duration_ms: tau_rev_ms,
                         expected_magnitude,
                         ..Default::default()
@@ -251,7 +250,6 @@ impl MultivariateCointegrationEngine {
                 return Some(SignalIntent {
                     signal: SignalType::Long,
                     confidence,
-                    horizon: TradeHorizon::Continuous,
                     expected_magnitude,
                     ..Default::default()
                 });
@@ -261,7 +259,6 @@ impl MultivariateCointegrationEngine {
                 return Some(SignalIntent {
                     signal: SignalType::Short,
                     confidence,
-                    horizon: TradeHorizon::Continuous,
                     expected_magnitude,
                     ..Default::default()
                 });
@@ -339,7 +336,6 @@ mod tests {
         assert!(signal.is_some());
         let intent = signal.unwrap();
         assert_eq!(intent.signal, SignalType::Long);
-        assert_eq!(intent.horizon, TradeHorizon::Continuous);
     }
 
     #[test]
@@ -408,7 +404,6 @@ mod tests {
         assert!(signal.is_some());
         let intent = signal.unwrap();
         assert_eq!(intent.signal, SignalType::Short);
-        assert_eq!(intent.horizon, TradeHorizon::Continuous);
     }
 
     /// AGY-AUD-001: after a structural break (persistent jump), the
@@ -524,7 +519,6 @@ mod tests {
             .expect("debe emitir señal continua por shock de divergencia física");
 
         assert_eq!(signal.signal, SignalType::Short);
-        assert_eq!(signal.horizon, TradeHorizon::Continuous);
         assert!(
             signal.expected_duration_ms >= 500 && signal.expected_duration_ms <= 43_200_000,
             "duración esperada ({}) debe estar acotada al espectro temporal continuo",
@@ -562,7 +556,6 @@ mod tests {
                 intent.expected_duration_ms, 0,
                 "señal continua SDE jamás debe tener expected_duration_ms=0"
             );
-            assert_eq!(intent.horizon, TradeHorizon::Continuous);
         }
     }
 }

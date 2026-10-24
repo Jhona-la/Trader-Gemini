@@ -297,7 +297,7 @@ impl QuantumLeverageMatrix {
                 .load(Ordering::Relaxed)
                 .clamp(0.0, 1.0)
         };
-        // U-6: motor continuo — sólo existe TradeHorizon::Continuous; la
+        // U-6: motor continuo, sin etiqueta de horizonte (LG-29); la
         // escala s viene de la τ declarada o del arena (D-638b).
         let s = if signal.expected_duration_ms > 0 {
             quantum_arena::temporal_spectrum::temporal_scale_from_tau(

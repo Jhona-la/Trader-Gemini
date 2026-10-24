@@ -5,7 +5,8 @@ pub use strategy_core::stat_arb;
 pub mod coaxial_breakout;
 // U-ERR-1: `micro_scalp_trigger`, `swing_conformal_filter` y `turbo_scalper`
 // nombraban BANDAS DE HORIZONTE («micro-scalp», «swing», «turbo») que ninguno
-// de los tres motores decide: los tres declaran `TradeHorizon::Continuous`.
+// de los tres motores decide: los tres declaraban `TradeHorizon::Continuous`
+// (enum de una sola variante, retirado en LG-29).
 // Ahora se llaman por la magnitud que miden.
 pub mod conformal_reversion_filter;
 pub mod contagion_modulator;
@@ -38,5 +39,5 @@ pub use quantum_oscillator::{QuantumOscillatorEngine, QuantumOscillatorParams};
 pub use renyi_tsallis_entropy::{RenyiTsallisEntropyEngine, RenyiTsallisEntropyParams};
 pub use soliton_wave::{SolitonWaveEngine, SolitonWaveParams};
 pub use stochastic_resonance::{StochasticResonanceEngine, StochasticResonanceParams};
-pub use strategy_core::{SignalIntent, SignalType, TradeHorizon};
+pub use strategy_core::{SignalIntent, SignalType};
 pub use supersonic_shockwave::{SupersonicShockwaveEngine, SupersonicShockwaveParams};

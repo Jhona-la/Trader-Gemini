@@ -13,8 +13,8 @@ use strategy_core::QuantumStrategy;
 ///
 /// Este motor se llamaba `MicroScalpTriggerEngine` y vivía en
 /// `micro_scalp_trigger.rs`. El nombre describía una ETIQUETA DE HORIZONTE
-/// («micro-scalp») que este motor nunca decidió: su horizonte declarado es y
-/// era `TradeHorizon::Continuous`, y lo que realmente mide es la confluencia
+/// («micro-scalp») que este motor nunca decidió: su horizonte declarado era
+/// `TradeHorizon::Continuous` (enum retirado en LG-29), y lo que realmente mide es la confluencia
 /// excitación-flujo-lift descrita arriba. En un motor de continuo temporal-
 /// espectral la etiqueta era ruido para quien lee y para la evolución, que
 /// arrastraba genes con ese prefijo. El nombre ahora dice qué se mide.
@@ -811,10 +811,6 @@ impl QuantumStrategy for FlowExcitationConfluenceEngine {
 
         (pre_voto * mult_liq * field_mult).clamp(-1.0, 1.0)
     }
-
-    fn horizon(&self) -> strategy_core::TradeHorizon {
-        strategy_core::TradeHorizon::Continuous
-    }
 }
 
 #[cfg(test)]
@@ -834,7 +830,6 @@ mod tests {
         let mut engine = FlowExcitationConfluenceEngine::new();
         assert!(engine.init(registry).is_ok());
         assert_eq!(engine.name(), "FlowExcitationConfluenceEngine");
-        assert_eq!(engine.horizon(), strategy_core::TradeHorizon::Continuous);
 
         let val = engine.evaluate();
         assert!(val.is_finite());

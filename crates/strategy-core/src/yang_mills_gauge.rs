@@ -30,7 +30,7 @@
 //!    $$\mathcal{J}_i = \frac{1}{\binom{N-1}{2}} \sum_{j < k, j \neq i, k \neq i} F_{ijk}$$
 //!    Proporciona la fuerza de gradiente topológico para restaurar la paridad del activo $i$.
 
-use crate::{QuantumStrategy, TradeHorizon};
+use crate::QuantumStrategy;
 use omniscient_registry::OmniscientRegistry;
 use std::f64;
 use std::sync::Arc;
@@ -544,9 +544,5 @@ impl QuantumStrategy for YangMillsGaugeEngine {
         // exigir `active_triangles >= 1.0` garantiza que en replay monoactivo o con < 3 precios
         // frescos (donde active_triangles == 0.0) Yang-Mills se declare inoperable y no diluya.
         self.num_assets >= 3 && has_current && active_triangles >= 1.0
-    }
-
-    fn horizon(&self) -> TradeHorizon {
-        TradeHorizon::Continuous
     }
 }

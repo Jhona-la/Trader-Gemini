@@ -309,10 +309,6 @@ impl QuantumStrategy for StochasticResonanceEngine {
 
         Self::amplify_signal_with_params(weak_signal, noise_variance, &active_params).clamp(-1.0, 1.0)
     }
-
-    fn horizon(&self) -> strategy_core::TradeHorizon {
-        strategy_core::TradeHorizon::Continuous
-    }
 }
 
 #[cfg(test)]

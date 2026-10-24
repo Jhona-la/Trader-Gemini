@@ -1,6 +1,6 @@
 use signal_engine::navier_stokes_manifold::NavierStokesManifoldEngine;
 use signal_engine::voto_espectral::ESCALAS_VOTO;
-use strategy_core::{QuantumStrategy, TradeHorizon};
+use strategy_core::QuantumStrategy;
 
 #[test]
 fn modal_reynolds_monotonicity_across_dyadic_scales() {
@@ -149,7 +149,6 @@ fn fail_closed_nan_inf_immunity() {
 fn quantum_strategy_contract_compliance() {
     let engine = NavierStokesManifoldEngine::new();
     assert_eq!(engine.name(), "NavierStokesManifoldEngine");
-    assert_eq!(engine.horizon(), TradeHorizon::Continuous);
 
     // Sin registro conectado debe retornar 0.0 seguro sin pánico
     let eval = engine.evaluate();

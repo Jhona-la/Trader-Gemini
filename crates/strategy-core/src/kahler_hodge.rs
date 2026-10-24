@@ -39,7 +39,7 @@
 //! ### 4. Corrientes Holomorfas Restauradoras $\mathcal{J}_{\text{Kahler}, j}$
 //!   $$\mathcal{J}_{\text{Kahler}, j} = \tanh\left(-\alpha \cdot \text{Re}\left(\frac{\partial \mathcal{K}}{\partial \bar{z}_j}\right) - \beta \cdot \text{Im}\left(\frac{\partial \mathcal{K}}{\partial \bar{z}_j}\right)\right)$$
 
-use crate::{QuantumStrategy, TradeHorizon};
+use crate::QuantumStrategy;
 use omniscient_registry::OmniscientRegistry;
 use std::f64;
 use std::sync::Arc;
@@ -434,9 +434,5 @@ impl QuantumStrategy for KahlerHodgeEngine {
         }
 
         current.clamp(-1.0, 1.0)
-    }
-
-    fn horizon(&self) -> TradeHorizon {
-        TradeHorizon::Continuous
     }
 }

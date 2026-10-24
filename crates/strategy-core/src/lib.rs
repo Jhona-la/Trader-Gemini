@@ -45,9 +45,4 @@ pub trait QuantumStrategy: Send + Sync {
     fn is_operable_for_coin(&self, _coin_id: usize, _symbol: &str) -> bool {
         true
     }
-
-    /// Target operational trading horizon (Universal Continuous Temporal Spectrum)
-    fn horizon(&self) -> TradeHorizon {
-        TradeHorizon::Continuous
-    }
 }

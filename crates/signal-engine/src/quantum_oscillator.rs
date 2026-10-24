@@ -292,10 +292,6 @@ impl QuantumStrategy for QuantumOscillatorEngine {
         let confinement = (-alpha * pos * pos).exp().clamp(0.0, 1.0);
         (force * confinement).clamp(-1.0, 1.0)
     }
-
-    fn horizon(&self) -> strategy_core::TradeHorizon {
-        strategy_core::TradeHorizon::Continuous
-    }
 }
 
 #[cfg(test)]

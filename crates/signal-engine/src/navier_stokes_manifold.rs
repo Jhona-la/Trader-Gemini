@@ -1,6 +1,6 @@
 use omniscient_registry::OmniscientRegistry;
 use std::sync::Arc;
-use strategy_core::{QuantumStrategy, TradeHorizon};
+use strategy_core::QuantumStrategy;
 use crate::voto_espectral::{VotoEspectral, ESCALAS_VOTO};
 
 /// 🌊 ALGORITMO #99: COLECTOR ESPECTRAL DE NAVIER-STOKES Y CASCADA DE KOLMOGOROV (NAVIER-STOKES MANIFOLD ENGINE)
@@ -329,9 +329,5 @@ impl QuantumStrategy for NavierStokesManifoldEngine {
 
         let signal = safe_laminar * safe_ofi + (1.0 - safe_laminar) * safe_vel;
         signal.clamp(-1.0, 1.0)
-    }
-
-    fn horizon(&self) -> TradeHorizon {
-        TradeHorizon::Continuous
     }
 }

@@ -1,7 +1,7 @@
 use execution_engine::executor::OrderExecutor;
 use quantum_arena::GlobalArena;
 use risk_engine::RiskEngine;
-use signal_engine::{SignalIntent, SignalType, TradeHorizon};
+use signal_engine::{SignalIntent, SignalType};
 use std::env;
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
@@ -73,14 +73,12 @@ fn main() {
             SignalIntent {
                 signal: SignalType::Long,
                 confidence: obi.abs(),
-                horizon: TradeHorizon::Continuous,
                 ..Default::default()
             }
         } else if obi < -0.20 {
             SignalIntent {
                 signal: SignalType::Short,
                 confidence: obi.abs(),
-                horizon: TradeHorizon::Continuous,
                 ..Default::default()
             }
         } else {

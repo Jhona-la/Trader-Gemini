@@ -2280,7 +2280,6 @@ impl RiskEngine {
 /// respaldo es esa misma τ medida, y el gen sólo entra mientras el espectro no
 /// ha arrancado (arranque en frío).
 fn horizon_tau_ms_coin(intent: &SignalIntent, arena: &GlobalArena, coin_id: usize) -> f64 {
-    let _ = intent.horizon;
     if intent.expected_duration_ms > 0 {
         return intent.expected_duration_ms as f64;
     }

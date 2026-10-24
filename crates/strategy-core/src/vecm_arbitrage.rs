@@ -1,4 +1,4 @@
-use crate::{QuantumStrategy, TradeHorizon};
+use crate::QuantumStrategy;
 use omniscient_registry::{OmniscientRegistry, ParameterKind};
 use std::f64;
 use std::fmt;
@@ -374,10 +374,6 @@ impl QuantumStrategy for JohansenVecmEngine {
             .map(|p| p.get_value())
             .filter(|v| v.is_finite() && v.abs() > 1e-12)
             .is_some()
-    }
-
-    fn horizon(&self) -> TradeHorizon {
-        TradeHorizon::Continuous
     }
 }
 
@@ -829,7 +825,6 @@ mod tests {
             vecm.update(100.0, 100.0);
         }
         let _ = vecm.evaluate();
-        assert_eq!(vecm.horizon(), TradeHorizon::Continuous);
     }
 
     #[test]

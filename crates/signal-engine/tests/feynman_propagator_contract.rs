@@ -1,6 +1,6 @@
 use signal_engine::feynman_propagator::FeynmanPropagatorEngine;
 use signal_engine::voto_espectral::ESCALAS_VOTO;
-use strategy_core::{QuantumStrategy, TradeHorizon};
+use strategy_core::QuantumStrategy;
 use omniscient_registry::{OmniscientRegistry, ParameterKind};
 use std::sync::Arc;
 
@@ -108,7 +108,6 @@ fn test_fail_closed_nan_and_infinite_immunity() {
 fn test_quantum_strategy_contract_and_registry_evaluation() {
     let mut engine = FeynmanPropagatorEngine::new();
     assert_eq!(engine.name(), "FeynmanPropagatorEngine");
-    assert_eq!(engine.horizon(), TradeHorizon::Continuous);
 
     let registry = Arc::new(OmniscientRegistry::new());
     engine.init(registry.clone()).expect("Initialization must succeed");

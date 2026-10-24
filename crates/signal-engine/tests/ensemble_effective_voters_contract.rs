@@ -8,7 +8,7 @@ use omniscient_registry::OmniscientRegistry;
 use quantum_arena::GlobalArena;
 use signal_engine::orchestrator::{compute_ensemble_boost, TensorVoteOrchestrator};
 use std::sync::Arc;
-use strategy_core::{QuantumStrategy, TradeHorizon};
+use strategy_core::QuantumStrategy;
 
 struct MockStrategy {
     name: &'static str,
@@ -126,7 +126,7 @@ fn test_horizon_consensus_effective_voters() {
     orch.add_strategy(Box::new(MockStrategy { name: "Activa", val: 0.50 }));
     orch.add_strategy(Box::new(MockStrategy { name: "Silente1", val: 0.0 }));
 
-    let decision = orch.evaluate_horizon_consensus(TradeHorizon::Continuous);
+    let decision = orch.evaluate_horizon_consensus();
     // avg_conviction = 0.50 / 2 = 0.25.
     // active_voters = 1 -> boost = 1.0.
     // effective_conviction = 0.25 * 1.0 = 0.25.

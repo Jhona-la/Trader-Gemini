@@ -77,7 +77,6 @@ fn test_f1_035_puertas_del_continuo_monotone_contradiction_and_no_stretch_chasin
     let intencion = SignalIntent {
         signal: SignalType::Long,
         confidence: 0.80,
-        horizon: strategy_core::TradeHorizon::Continuous,
         ..Default::default()
     };
 

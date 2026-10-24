@@ -204,10 +204,6 @@ impl QuantumStrategy for GameTheoreticNashEngine {
 
         Self::compute_minimax_strategy(long_payoff, short_payoff, adversarial)
     }
-
-    fn horizon(&self) -> strategy_core::TradeHorizon {
-        strategy_core::TradeHorizon::Continuous
-    }
 }
 
 #[cfg(test)]

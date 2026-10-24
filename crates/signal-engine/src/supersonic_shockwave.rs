@@ -317,10 +317,6 @@ impl QuantumStrategy for SupersonicShockwaveEngine {
         };
         (speed_norm / sound_norm / scale).tanh() * jump
     }
-
-    fn horizon(&self) -> strategy_core::TradeHorizon {
-        strategy_core::TradeHorizon::Continuous
-    }
 }
 
 #[cfg(test)]

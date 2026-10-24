@@ -13,7 +13,7 @@ use risk_engine::tp_sl::{
     latency_slippage_pct, latency_slippage_pct_hurst, roundtrip_friction, roundtrip_friction_hurst,
 };
 use signal_engine::orchestrator::TensorDecision;
-use signal_engine::{SignalType, TradeHorizon};
+use signal_engine::SignalType;
 use std::sync::atomic::Ordering::Relaxed;
 use std::sync::Arc;
 
@@ -82,7 +82,6 @@ async fn test_router_dynamic_panic_latency_and_idempotency_preservation() {
         net_confidence: 0.90,
         expected_volatility: 0.020,
         expected_lifetime_ms: 60_000,
-        horizon: TradeHorizon::Continuous,
     };
 
     // Con latencia 250 ms (> 200 ms dinámico), el router debe activar la ruta de emergencia Market
@@ -124,7 +123,6 @@ async fn test_adverse_selection_guard_blocks_frictional_death_for_low_ev_orders(
         net_confidence: 0.20,
         expected_volatility: 0.0005,
         expected_lifetime_ms: 10_000,
-        horizon: TradeHorizon::Continuous,
     };
 
     let res = router

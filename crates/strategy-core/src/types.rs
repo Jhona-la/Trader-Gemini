@@ -6,17 +6,6 @@ pub enum SignalType {
     Flat,
 }
 
-/// U-6 (MOTOR UNIVERSAL CONTINUO): el horizonte de un trade NO es una
-/// etiqueta binaria — es una posición τ en el continuo espectral. Este enum
-/// conserva sólo `Continuous` como marcador de "el eje temporal vive en
-/// `expected_duration_ms` + `temporal_scale`"; las variantes Scalp/Swing
-/// fueron extirpadas (con sus mapas duplicados a 0.0/1.0).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
-pub enum TradeHorizon {
-    #[default]
-    Continuous,
-}
-
 #[derive(Debug, Clone, Copy, Default)]
 pub struct SignalIntent {
     pub signal: SignalType,
@@ -27,7 +16,6 @@ pub struct SignalIntent {
     pub expected_magnitude: f64,
     pub tp_price_target: f64,
     pub sl_price_target: f64,
-    pub horizon: TradeHorizon,
     /// D-690 / LC-F1-37 / SI: Probabilidad condicional de ganar neto bajo el lado y
     /// la geometría TP/SL de esta orden concreta: P(ganar neto | lado, geometría, τ).
     /// Reservada exclusivamente para el dimensionamiento (Kelly/Riesgo).

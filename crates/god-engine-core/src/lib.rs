@@ -7662,7 +7662,6 @@ impl GodEngineCore {
                             signal: SignalType::Long,
                             confidence: conviccion_de_rama(&registro_ml, conviction.min(1.0)),
                             volume_flow_rate: RAMA_ML_RECENTRADO,
-                            horizon: strategy_core::TradeHorizon::Continuous,
                             expected_duration_ms: fast_duration_ms,
                             ..Default::default()
                         };
@@ -7673,7 +7672,6 @@ impl GodEngineCore {
                             signal: SignalType::Short,
                             confidence: conviccion_de_rama(&registro_ml, conviction.min(1.0)),
                             volume_flow_rate: RAMA_ML_RECENTRADO,
-                            horizon: strategy_core::TradeHorizon::Continuous,
                             expected_duration_ms: fast_duration_ms,
                             ..Default::default()
                         };
@@ -7714,7 +7712,6 @@ impl GodEngineCore {
                                         sig_conf(fused),
                                     ),
                                     volume_flow_rate: RAMA_ESPECTRO_DIRECTO,
-                                    horizon: strategy_core::TradeHorizon::Continuous,
                                     expected_duration_ms: expected_tau,
                                     ..Default::default()
                                 };
@@ -7726,7 +7723,6 @@ impl GodEngineCore {
                                         sig_conf(fused),
                                     ),
                                     volume_flow_rate: RAMA_ESPECTRO_DIRECTO,
-                                    horizon: strategy_core::TradeHorizon::Continuous,
                                     expected_duration_ms: expected_tau,
                                     ..Default::default()
                                 };
@@ -7805,7 +7801,6 @@ impl GodEngineCore {
                                 signal: SignalType::Long,
                                 confidence: conviccion_de_rama(&registro_tend, piso_magnitud),
                                 volume_flow_rate: RAMA_TENDENCIA_PERSISTENTE,
-                                horizon: strategy_core::TradeHorizon::Continuous,
                                 expected_duration_ms: fast_duration_ms,
                                 ..Default::default()
                             };
@@ -7814,7 +7809,6 @@ impl GodEngineCore {
                                 signal: SignalType::Short,
                                 confidence: conviccion_de_rama(&registro_tend, piso_magnitud),
                                 volume_flow_rate: RAMA_TENDENCIA_PERSISTENTE,
-                                horizon: strategy_core::TradeHorizon::Continuous,
                                 expected_duration_ms: fast_duration_ms,
                                 ..Default::default()
                             };
@@ -7823,7 +7817,6 @@ impl GodEngineCore {
                                 signal: SignalType::Short,
                                 confidence: conviccion_de_rama(&registro_rev, piso_magnitud),
                                 volume_flow_rate: RAMA_REVERSION_ANTIPERSISTENTE,
-                                horizon: strategy_core::TradeHorizon::Continuous,
                                 expected_duration_ms: fast_duration_ms,
                                 ..Default::default()
                             };
@@ -7832,7 +7825,6 @@ impl GodEngineCore {
                                 signal: SignalType::Long,
                                 confidence: conviccion_de_rama(&registro_rev, piso_magnitud),
                                 volume_flow_rate: RAMA_REVERSION_ANTIPERSISTENTE,
-                                horizon: strategy_core::TradeHorizon::Continuous,
                                 expected_duration_ms: fast_duration_ms,
                                 ..Default::default()
                             };
@@ -7855,7 +7847,6 @@ impl GodEngineCore {
                                     piso_magnitud,
                                 ),
                                 volume_flow_rate: RAMA_MOMENTO_SIN_REGIMEN,
-                                horizon: strategy_core::TradeHorizon::Continuous,
                                 expected_duration_ms: fast_duration_ms,
                                 ..Default::default()
                             };
@@ -7872,7 +7863,6 @@ impl GodEngineCore {
                                     piso_magnitud,
                                 ),
                                 volume_flow_rate: RAMA_MOMENTO_SIN_REGIMEN,
-                                horizon: strategy_core::TradeHorizon::Continuous,
                                 expected_duration_ms: fast_duration_ms,
                                 ..Default::default()
                             };
@@ -7919,7 +7909,6 @@ impl GodEngineCore {
                                 &registro_ramas[1],
                                 sig_conf(composite_score),
                             ),
-                            horizon: strategy_core::TradeHorizon::Continuous,
                             expected_duration_ms: fast_duration_ms,
                             volume_flow_rate: 1.0,
                             ..Default::default()
@@ -7952,7 +7941,6 @@ impl GodEngineCore {
                                 &registro_ramas[2],
                                 sig_conf(composite_score.abs()),
                             ),
-                            horizon: strategy_core::TradeHorizon::Continuous,
                             expected_duration_ms: fast_duration_ms,
                             volume_flow_rate: 2.0,
                             ..Default::default()
@@ -8004,7 +7992,6 @@ impl GodEngineCore {
                                 &registro_ramas[4],
                                 sig_conf(composite_score),
                             ),
-                            horizon: strategy_core::TradeHorizon::Continuous,
                             expected_duration_ms: fast_duration_ms,
                             volume_flow_rate: 4.0,
                             ..Default::default()
@@ -8032,7 +8019,6 @@ impl GodEngineCore {
                                 &registro_ramas[5],
                                 sig_conf(composite_score),
                             ),
-                            horizon: strategy_core::TradeHorizon::Continuous,
                             expected_duration_ms: fast_duration_ms,
                             volume_flow_rate: 5.0,
                             ..Default::default()
@@ -8074,7 +8060,6 @@ impl GodEngineCore {
                                 &registro_ramas[7],
                                 sig_conf(composite_score),
                             ),
-                            horizon: strategy_core::TradeHorizon::Continuous,
                             expected_duration_ms: fast_duration_ms,
                             volume_flow_rate: 7.0,
                             ..Default::default()
@@ -8091,7 +8076,6 @@ impl GodEngineCore {
                                 &registro_ramas[8],
                                 sig_conf(composite_score),
                             ),
-                            horizon: strategy_core::TradeHorizon::Continuous,
                             expected_duration_ms: fast_duration_ms,
                             volume_flow_rate: 8.0,
                             ..Default::default()
@@ -8112,7 +8096,6 @@ impl GodEngineCore {
                                 &registro_ramas[9],
                                 sig_conf(effective_obi_short.abs().min(composite_score.abs())),
                             ),
-                            horizon: strategy_core::TradeHorizon::Continuous,
                             expected_duration_ms: fast_duration_ms,
                             volume_flow_rate: 9.0,
                             ..Default::default()
@@ -8137,7 +8120,6 @@ impl GodEngineCore {
                                 &registro_ramas[10],
                                 sig_conf(effective_obi_long.abs().min(composite_score.abs())),
                             ),
-                            horizon: strategy_core::TradeHorizon::Continuous,
                             expected_duration_ms: fast_duration_ms,
                             volume_flow_rate: 10.0,
                             ..Default::default()
@@ -8275,7 +8257,6 @@ impl GodEngineCore {
                         fast_intent = SignalIntent {
                             signal: tensor_cont.signal,
                             confidence,
-                            horizon: strategy_core::TradeHorizon::Continuous,
                             expected_duration_ms: escala.unwrap_or(fast_duration_ms),
                             volume_flow_rate: 11.0,
                             ..Default::default()
@@ -8542,7 +8523,6 @@ impl GodEngineCore {
                             signal: SignalType::Long,
                             confidence,
                             expected_duration_ms: swing_duration_ms,
-                            horizon: strategy_core::TradeHorizon::Continuous,
                             // D-678: rama 13 · camino de tendencia.
                             volume_flow_rate: 13.0,
                             ..Default::default()
@@ -8570,7 +8550,6 @@ impl GodEngineCore {
                             signal: SignalType::Short,
                             confidence,
                             expected_duration_ms: swing_duration_ms,
-                            horizon: strategy_core::TradeHorizon::Continuous,
                             // D-678: rama 13 · camino de tendencia.
                             volume_flow_rate: 13.0,
                             ..Default::default()
@@ -8661,7 +8640,6 @@ impl GodEngineCore {
                             },
                             confidence,
                             expected_duration_ms: tau_star_duration,
-                            horizon: strategy_core::TradeHorizon::Continuous,
                             volume_flow_rate: 15.0,
                             ..Default::default()
                         };
@@ -8725,7 +8703,6 @@ impl GodEngineCore {
                                 hurst_exponent,
                             )
                         }),
-                        horizon: strategy_core::TradeHorizon::Continuous,
                         expected_duration_ms: swing_duration_ms,
                         // D-678: rama 14 · consenso tensorial.
                         volume_flow_rate: 14.0,
@@ -8747,7 +8724,6 @@ impl GodEngineCore {
                                 hurst_exponent,
                             )
                         }),
-                        horizon: strategy_core::TradeHorizon::Continuous,
                         expected_duration_ms: swing_duration_ms,
                         // D-678: rama 14 · consenso tensorial.
                         volume_flow_rate: 14.0,
@@ -8883,7 +8859,6 @@ impl GodEngineCore {
                             signal: fast_intent.signal,
                             confidence: boosted_conf,
                             expected_duration_ms: best_duration,
-                            horizon: strategy_core::TradeHorizon::Continuous,
 
                             volume_flow_rate: etiqueta_conviccion,
 
@@ -10357,13 +10332,12 @@ impl GodEngineCore {
 
                                 if self.trazas_diagnosticas && self.diag_opened <= 100 {
                                     telemetry_server::telemetry_log!(
-                                        "🚀 [OPEN TRACE] #{} dir={} slot={} tau={}ms rama={:.0} h={:?} conf={:.4} lev={:.1}x margin=${:.2} notional=${:.2} sc={:.3} obi={:.3} ofi={:.3} cvd={:.3} ht={:.5} st={:.5} mac={:.5} mic={:.5} ts={}",
+                                        "🚀 [OPEN TRACE] #{} dir={} slot={} tau={}ms rama={:.0} conf={:.4} lev={:.1}x margin=${:.2} notional=${:.2} sc={:.3} obi={:.3} ofi={:.3} cvd={:.3} ht={:.5} st={:.5} mac={:.5} mic={:.5} ts={}",
                                         self.diag_opened,
                                         if is_long { "LONG" } else { "SHORT" },
                                         target_pos_slot,
                                         tau_entry,
                                         unified_intent.volume_flow_rate,
-                                        unified_intent.horizon,
                                         unified_intent.confidence,
                                         eff_leverage,
                                         margin_req,
@@ -11119,7 +11093,6 @@ mod tests_d743_puertas_del_continuo {
         SignalIntent {
             signal: SignalType::Long,
             confidence: 0.80,
-            horizon: strategy_core::TradeHorizon::Continuous,
             ..Default::default()
         }
     }
@@ -12201,7 +12174,6 @@ mod tests_cf3_puertas_espejo {
         SignalIntent {
             signal: s,
             confidence: 0.80,
-            horizon: strategy_core::TradeHorizon::Continuous,
             ..Default::default()
         }
     }

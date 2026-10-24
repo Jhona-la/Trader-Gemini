@@ -14,8 +14,8 @@ use strategy_core::{SignalIntent, SignalType};
 /// rendimiento que ninguna medición forense respalda. Ninguna de las dos
 /// describía la función real del motor, que no contiene ninguna escala
 /// temporal en su regla: pondera flujo por pesos genómicos, penaliza por
-/// entropía y exige significación estadística. El horizonte que emite es
-/// `TradeHorizon::Continuous`. Nombre y documentación ahora dicen qué mide.
+/// entropía y exige significación estadística. El horizonte que emitía era
+/// `TradeHorizon::Continuous` (enum retirado en LG-29). Nombre y documentación ahora dicen qué mide.
 #[derive(Clone, Default)]
 #[repr(C, align(64))]
 pub struct FlowImpulseEngine {
@@ -212,7 +212,6 @@ impl FlowImpulseEngine {
                 signal: signal_type,
                 confidence,
                 expected_duration_ms: base_duration,
-                horizon: strategy_core::TradeHorizon::Continuous,
                 ..Default::default()
             });
         }

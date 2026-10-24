@@ -27,7 +27,7 @@ use execution_engine::router::QuantumOrderRouter;
 use quantum_arena::fee_schedule::{FeeSchedule, SymbolFees};
 use quantum_arena::{symbols, GlobalArena};
 use signal_engine::orchestrator::TensorDecision;
-use signal_engine::{SignalType, TradeHorizon};
+use signal_engine::SignalType;
 use std::sync::Arc;
 
 #[tokio::test]
@@ -53,7 +53,6 @@ async fn test_contract_high_confidence_order_strictly_rejected_if_edge_insuffici
         net_confidence: 0.95,
         expected_volatility: 0.0001, // 1 bp
         expected_lifetime_ms: 10_000,
-        horizon: TradeHorizon::Continuous,
     };
 
     let result = router
@@ -120,7 +119,6 @@ async fn test_contract_router_resolves_live_maker_fee_from_published_schedule() 
         net_confidence: 0.60,
         expected_volatility: 0.0015,
         expected_lifetime_ms: 10_000,
-        horizon: TradeHorizon::Continuous,
     };
 
     let result = router
@@ -176,7 +174,6 @@ async fn test_contract_router_resolves_dynamic_funding_cost() {
         net_confidence: 0.70,
         expected_volatility: 0.0020,
         expected_lifetime_ms: 8 * 3600 * 1000, // 8h
-        horizon: TradeHorizon::Continuous,
     };
 
     let result = router
@@ -221,7 +218,6 @@ async fn test_contract_router_allows_genuinely_viable_orders() {
         net_confidence: 0.80,
         expected_volatility: 0.02,
         expected_lifetime_ms: 10_000,
-        horizon: TradeHorizon::Continuous,
     };
 
     let result = router

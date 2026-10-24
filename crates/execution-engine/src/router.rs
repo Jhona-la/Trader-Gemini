@@ -364,7 +364,7 @@ impl QuantumOrderRouter {
 mod tests {
     use super::*;
     use signal_engine::orchestrator::TensorDecision;
-    use signal_engine::{SignalType, TradeHorizon};
+    use signal_engine::SignalType;
 
     #[tokio::test]
     async fn test_quantum_order_router_invalid_inputs_and_flat_decision() {
@@ -380,7 +380,6 @@ mod tests {
             net_confidence: 0.0,
             expected_volatility: 0.0,
             expected_lifetime_ms: 1000,
-            horizon: TradeHorizon::Continuous,
         };
 
         // Flat decision returns Ok(()) immediately without calling executor
@@ -404,7 +403,6 @@ mod tests {
             net_confidence: 0.9,
             expected_volatility: 0.02,
             expected_lifetime_ms: 1000,
-            horizon: TradeHorizon::Continuous,
         };
 
         // Invalid price (NaN) returns Err
