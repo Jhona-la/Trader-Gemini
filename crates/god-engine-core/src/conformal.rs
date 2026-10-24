@@ -267,17 +267,17 @@ impl ConformalCalibrator {
         if !Self::valid_probability(p_hat) {
             return (0.0, false, self.effective_alpha, 0.0);
         }
-        let j_cur = if restoring_current.is_finite() {
-            restoring_current.clamp(-1.0, 1.0)
-        } else {
+        let j_cur = if restoring_current.is_nan() {
             0.0
+        } else {
+            restoring_current.clamp(-1.0, 1.0)
         };
         let j_align = if is_long { j_cur } else { -j_cur };
 
-        let h = if holonomy_density.is_finite() && holonomy_density >= 0.0 {
-            holonomy_density.min(1.0)
-        } else {
+        let h = if holonomy_density.is_nan() || holonomy_density < 0.0 {
             0.0
+        } else {
+            holonomy_density.min(1.0)
         };
 
         // Ensanchamiento de nivel alfa ante curvatura gauge dislocada
