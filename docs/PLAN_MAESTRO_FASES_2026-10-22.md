@@ -1,8 +1,8 @@
 # Plan maestro por fases V33 — revisión desde la base
 
 **Revisión vigente:** 2026-10-24, Kimi Quant Sr V33, en coordinación con los demás agentes.
-**Base inspeccionada:** `main = f6436716bee5c953d497d70d2104baf6c4a859cb`.
-**Alcance:** workspace Rust de 21 crates + paquete raíz, 2.175 rutas versionadas y 829 archivos Rust. Estas cifras describen el censo mecánico, **no** archivos ya auditados.
+**Base inspeccionada:** `main = 60981662ed3c4392a8e23f80e0ce74cba4dbd18d = origin/main`.
+**Alcance:** workspace Rust de 21 crates + paquete raíz, 2.193 rutas versionadas y 838 archivos Rust. Estas cifras describen el censo mecánico, **no** archivos ya auditados.
 **Objetivo de investigación:** crecimiento neto compuesto de +100 %/72 h. Es una hipótesis que debe demostrarse fuera de muestra y después de fees, funding y slippage; no una garantía ni una razón para aumentar riesgo. Producción permanece prohibida en esta revisión.
 
 Este es el plan canónico de coordinación. Los planes de líneas aportan detalle, no fuentes paralelas de verdad. `AGENT_SYNC.md` contiene reservas y heartbeats; `.agents/MEMORIA.md` conserva los recibos de cierre.
@@ -23,24 +23,22 @@ No se simplifica matemática existente para salir de un error. No se presentan `
 
 | Área | Estado verificado | Consecuencia |
 |---|---|---|
-| `main` | `f6436716b`, actualizado por fast-forward; solo `.workbuddy-ai/` untracked y ajeno | No hay cambios propios de código en el checkout |
-| CI del último código integrado | Fase 6 `e83be23c5`: Unit `40118206857` y Replay `40118206773`, ambos SUCCESS; el push posterior `f643` es solo docs | No se transfiere ese verde a commits futuros |
-| Ramas remotas | Solo `main`, `agy/fase7-ergocicidad-rough-paths` y `sol/f1101-snapshot-coherente` | Fase 5/Fase 6/Línea C ya fueron retiradas por terceros; no repetir borrados |
-| PR #128 / Fase 7 | Nuevo SHA `a0e15be457` tras el E0689 inicial de `rough_ergodic.rs`; CI del nuevo candidato en curso al corte | AGY conserva titularidad; no editar |
-| PR #129 / Sol F1-101 | Falló `test_profiler_financials_atomics_end_to_end` por mezcla de ticks; Sol ya publicó `45b319abb` para corregir el contrato | No tocar profiler ni la instantánea financiera |
-| RAM | 23,38 GiB visibles; lecturas de 1,03 GiB libre, luego 368 MiB y 699 MiB disponibles; cargo/rustc ajenos vivos | No compilar ni editar Rust en el checkout compartido hasta admisión del semáforo |
-| Disco | Volumen C: 305 GiB libres a las ~13:10; tamaño total del proyecto pendiente porque la medición se canceló para no competir con el build | No afirmar consumo actual ni limpiar por intuición |
-| Hooks | `core.hooksPath=.githooks`; solo existe `pre-commit` de whitespace | `pre-push` sigue pendiente |
+| `main` | `60981662e`, idéntico a `origin/main`; hay cambios locales de Codex y otros agentes preservados | Kimi no toca Rust ni arrastra cambios ajenos al staging |
+| CI del último código integrado | Merge Fase 11 `58f90ced6`: 10/10 checks SUCCESS; el HEAD `60981662e` solo cambia `AGENT_SYNC.md` y no dispara runs por los filtros de rutas | Verde acotado al código integrado; no se transfiere a commits futuros |
+| Ramas remotas | Solo `main` y `claude/auditoria-deslizamiento-apalancamiento-sqtc08` (PR #138 borrador) | Fases 10/11 retiradas por V33 tras PR fusionado, ancestria y cero commits exclusivos |
+| Ramas y worktrees locales | `main`, `glm/161`, `claude/linea-g-ola10`, `claude/linea-i-i3` y `codex/verify-pr65-20261022` bloqueado | Todos se preservan; el stash histórico ajeno también permanece intacto |
+| RAM | 23,38 GiB visibles; 1,17 GiB disponibles; Cargo y Rustc ajenos activos | No compilar ni editar Rust hasta admisión real del semáforo |
+| Disco | Tamaño total del proyecto pendiente; no se ejecutan `du` ni barridos durante el build ajeno | No afirmar consumo actual ni limpiar por intuición |
+| Hooks | `core.hooksPath=.githooks`; solo existe `pre-commit` de whitespace | `pre-push` sigue pendiente como átomo separado |
 | Arquitectura documental | `docs/ARCHITECTURE.md` describe el sistema Python histórico; `ARQUITECTURA_VIVA.md` está sincronizado al 2026-10-06 | El código y el linaje real mandan sobre diagramas históricos |
 
 ### Propietarios que no se pisan
 
-- **AGY:** Fase 7/rough paths y su worktree.
-- **Sol:** F1-101, instantánea financiera coherente y su worktree.
-- **Claude Línea I:** descomposición de latencia del feed y reloj/cola.
-- **Claude Línea G:** revisión estática de commits; Línea C: censo/retiros en su carril de nube.
-- **GLM:** trabajo local `glm/160`; `verify-pr65` permanece bloqueado.
-- **Kimi V33:** este plan, `AGENT_SYNC.md`, `docs/ARCHITECTURE.md`; después, un átomo de capital en backtest continuo cuando la RAM lo permita.
+- **AGY:** Fase 12 sobre `main`; Fases 10/11 ya fusionadas y sus ramas remotas retiradas.
+- **Codex QRA:** validación y cambios locales de `user_data_stream.rs`, `os-guardian`, `.agents/MEMORIA.md` y su fila de `AGENT_SYNC.md`; ninguno se incluye en commits de Kimi.
+- **Claude Línea I:** worktree `claude/linea-i-i3`; Línea C conserva el PR #138 activo; Línea G conserva su worktree de revisión.
+- **GLM:** worktree `tg-mps` en `glm/161`; `verify-pr65` permanece bloqueado.
+- **Kimi V33:** este plan, inventario y su propia fila de `AGENT_SYNC.md`; el átomo de capital queda pendiente hasta que la RAM y el semáforo admitan la puerta local.
 
 ## 2. FASE 0 — Recuperación, recursos y continuidad multiagente
 
@@ -56,7 +54,7 @@ No se simplifica matemática existente para salir de un error. No se presentan `
 ## 3. FASE 1 — Ramas, CI y puertas de publicación
 
 1. Revalidar refs antes de cualquier higiene: `git fetch --prune`, `git status`, ancestria y `git rev-list --left-right --count origin/main...origin/<rama>`. El lado derecho debe ser cero y la rama no debe tener reserva.
-2. Las tres ramas inicialmente candidatas ya desaparecieron del remoto por acción de terceros. No hay borrado V33 pendiente. Las dos ramas activas y todos los worktrees se preservan.
+2. V33 retiró las ramas remotas `agy/fase10-sbe-helmholtz-hodge` y `agy/fase11-feynman-instantones` tras confirmar PR #135/#137 fusionados, cero commits exclusivos, ancestria completa y ausencia de worktree. El remoto quedó con `main` y el PR #138 activo. Los cinco worktrees locales y el stash ajeno se preservan; no hay borrado local automático pendiente.
 3. Diagnosticar siempre el primer fallo dominante con `gh run view --log-failed`; no cambiar de tarea hasta repararlo o dejar bloqueo explícito.
 4. Crear `.githooks/pre-push` como átomo independiente: procesar stdin y validar el SHA exacto recibido, distinguir borrado/docs/código, rechazar pesos/prohibidos y ejecutar la validación Rust por semáforo. Añadir pruebas herméticas y conectarlas al job `resource-safety`.
 5. Antes de commit: `git status`, diff staged y `git add` solo de rutas propias. Separar docs de código. Después de push: `gh run watch <id> --exit-status` y confirmación de `headSha`; todos los workflows disparados deben quedar verdes.
@@ -146,7 +144,7 @@ Ningún elemento de este backlog justifica prometer +100 %/72 h, ruina cero, 0 n
 
 ## 9. Censo archivo por archivo y recepción entre agentes
 
-El inventario mecánico `docs/audit/V33_INVENTARIO_2026-10-24.tsv` contiene las 2.186 rutas del índice actual: 26 `REVISADO_ESTATICO`, 1 `RED` (capital inválido con evidencia ejecutada) y 2.159 `INVENTORIADO`. No es una certificación de revisión completa. El ledger incremental `docs/audit/V33_REVISIONES_2026-10-24.tsv` conserva los 34 hallazgos concretos sin reescribir censos históricos. Campos mínimos:
+El inventario mecánico `docs/audit/V33_INVENTARIO_2026-10-24.tsv` conserva las 2.186 rutas de la base de auditoría `2fb4633d3` y añade las siete altas detectadas al revalidar `main=60981662e`: **2.193 rutas**, 26 `REVISADO_ESTATICO`, 1 `RED` (capital inválido con evidencia ejecutada) y 2.166 `INVENTORIADO`; no hubo bajas. Las filas históricas conservan el blob de su base y las siete altas llevan el blob de `main`, como aclara la cabecera. No es una certificación de revisión completa. El ledger incremental `docs/audit/V33_REVISIONES_2026-10-24.tsv` conserva los 34 hallazgos concretos sin reescribir censos históricos. Campos mínimos:
 
 `ruta | blob | dueño | ruta_viva | hallazgo | severidad | prueba | CI_SHA | estado | siguiente`
 
