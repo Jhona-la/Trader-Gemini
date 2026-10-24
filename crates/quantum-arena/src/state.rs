@@ -729,6 +729,16 @@ pub struct GlobalArena {
     pub tick_counter: AtomicU64,
     pub kill_switch_active: AtomicBool,
     pub last_ws_latency_ms: AtomicU64,
+    /// I-2b (Línea I): componente red+reloj de la edad del último evento
+    /// público (ms, con signo). Incluye el error de la proyección del reloj:
+    /// un valor negativo delata que la proyección quedó por detrás de E.
+    pub last_ws_red_reloj_ms: std::sync::atomic::AtomicI64,
+    /// I-2b (Línea I): espera en la cola local del último evento público (ms).
+    pub last_ws_espera_local_ms: AtomicU64,
+    /// I-2b (Línea I): deriva D del reloj de pared frente a la proyección
+    /// monótona del bucle de eventos (ms, con signo). Entra en
+    /// `last_ws_red_reloj_ms` con el signo contrario hasta I-5.
+    pub deriva_reloj_pared_ms: std::sync::atomic::AtomicI64,
     pub server_time_offset_ms: std::sync::atomic::AtomicI64,
     pub market_regime: std::sync::atomic::AtomicU8, // 0: Range, 1: BullRun, 2: Crash, 3: Chaotic (MAP discreto)
     /// Distribución espectral continua del régimen de mercado [p_range, p_bull, p_crash, p_chaos]
@@ -831,6 +841,9 @@ impl GlobalArena {
             tick_counter: AtomicU64::new(0),
             kill_switch_active: AtomicBool::new(false),
             last_ws_latency_ms: AtomicU64::new(0),
+            last_ws_red_reloj_ms: std::sync::atomic::AtomicI64::new(0),
+            last_ws_espera_local_ms: AtomicU64::new(0),
+            deriva_reloj_pared_ms: std::sync::atomic::AtomicI64::new(0),
             server_time_offset_ms: std::sync::atomic::AtomicI64::new(0),
             market_regime: std::sync::atomic::AtomicU8::new(0),
             regime_p_range: AtomicF64::new(1.0),
