@@ -1187,7 +1187,6 @@ pub struct GodEngineCore {
     pub entry_learning_evidence: Vec<[Option<EntryLearningEvidence>; quantum_arena::position::MAX_SPECTRAL_SLOTS]>,
     /// CL-135 — la medida de la orden de cada ranura, hasta su cierre.
     pub medida_de_entrada: Vec<[Option<MedidaDeEntrada>; quantum_arena::position::MAX_SPECTRAL_SLOTS]>,
-    pub lakehouse: Option<Arc<storage_engine::LakehouseWarehouse>>,
     pub consejo_deliberacion: metacortex_engine::consejo_seniors::ConsejoDeliberacion,
     pub lead_lag_engine: feature_engine::LeadLagAlphaEngine,
     /// OLA Ω37/Ω38: Motor de descomposición ortogonal de Helmholtz-Hodge sobre flujos L2/L3
@@ -1604,7 +1603,6 @@ impl GodEngineCore {
             council_entry_evidence: (0..n_coins).map(|_| std::array::from_fn(|_| None)).collect(),
             entry_learning_evidence: (0..n_coins).map(|_| std::array::from_fn(|_| None)).collect(),
             medida_de_entrada: vec![[None; quantum_arena::position::MAX_SPECTRAL_SLOTS]; n_coins],
-            lakehouse: None,
             consejo_deliberacion: metacortex_engine::consejo_seniors::ConsejoDeliberacion::new(),
             lead_lag_engine: feature_engine::LeadLagAlphaEngine::new(50),
             hodge_flow_engine: feature_engine::HelmholtzHodgeFlowEngine::new(n_coins),
@@ -2261,10 +2259,6 @@ impl GodEngineCore {
         rx: std::sync::mpsc::Receiver<dark_alpha_engine::DarkAlphaEngine>,
     ) {
         self.model_rx = Some(rx);
-    }
-
-    pub fn set_lakehouse(&mut self, lakehouse: Arc<storage_engine::LakehouseWarehouse>) {
-        self.lakehouse = Some(lakehouse);
     }
 
     /// Legacy adapter: cancel only a captured proposal; never guess ownership by asset.
