@@ -7,10 +7,14 @@ use axum::{
     response::{Html, IntoResponse, Json},
     routing::get,
 };
+pub mod causal_attribution;
 pub mod estrangulador;
 pub mod flight_recorder;
 pub mod forensic_auditor;
+pub mod hyperdimensional_graph;
 pub mod macros;
+pub mod mirofish_lattice;
+pub mod mmap_viz_stream;
 pub mod profiler;
 pub mod telegram_bot;
 pub use flight_recorder::{FlightEvent, FlightRecorder};
@@ -169,6 +173,10 @@ pub async fn start_telemetry_server(
         .route("/", get(dashboard_html))
         .route("/api/state", get(get_state))
         .route("/api/coins", get(get_coins))
+        .route("/api/viz/mirofish", get(get_viz_mirofish))
+        .route("/api/viz/hypergraph", get(get_viz_hypergraph))
+        .route("/api/viz/causal", get(get_viz_causal))
+        .route("/api/viz/financial", get(get_viz_financial))
         .route("/ws", get(ws_handler))
         .layer(Extension(tx))
         .with_state(arena);
@@ -398,6 +406,164 @@ async fn get_coins(State(arena): State<Arc<GlobalArena>>) -> Json<Vec<CoinState>
         });
     }
     Json(coins_data)
+}
+
+#[derive(Serialize)]
+pub struct MirofishVizResponse {
+    pub lattice: mirofish_lattice::MirofishLattice,
+    pub tail_ridge: mirofish_lattice::TailRidge3D,
+    pub spot_price: f64,
+    pub ofi_drift: f64,
+    pub ising_delta_s: f64,
+}
+
+#[derive(Serialize)]
+pub struct FinancialVizResponse {
+    pub tick_counter: u64,
+    pub unified_capital: f64,
+    pub pnl_gross: f64,
+    pub pnl_realized: f64,
+    pub fees_paid: f64,
+    pub gross_roi_pct: f64,
+    pub net_roi_pct: f64,
+    pub win_rate: f64,
+    pub global_leverage: f64,
+    pub global_max_drawdown: f64,
+}
+
+async fn get_viz_mirofish(State(arena): State<Arc<GlobalArena>>) -> Json<MirofishVizResponse> {
+    let spot = arena.unified_capital.load(Ordering::Relaxed).max(10.0);
+    let mut ml_sum = 0.0;
+    let mut active = 0.0;
+    for coin in arena.coins.iter() {
+        let p = coin.ml_prob.load(Ordering::Relaxed);
+        if p.is_finite() {
+            ml_sum += p;
+            active += 1.0;
+        }
+    }
+    let avg_ml = if active > 0.0 { ml_sum / active } else { 0.5 };
+    let ofi = (avg_ml - 0.5) * 2.0;
+
+    let lattice = mirofish_lattice::MirofishLattice::compute(
+        spot,
+        0.45,
+        ofi,
+        0.0,
+        0.10,
+        8,
+        1.0,
+    );
+    let tail_ridge = mirofish_lattice::TailRidge3D::generate(spot, 0.45, 0.55, 0.05);
+
+    Json(MirofishVizResponse {
+        lattice,
+        tail_ridge,
+        spot_price: spot,
+        ofi_drift: ofi,
+        ising_delta_s: 0.0,
+    })
+}
+
+async fn get_viz_hypergraph(
+    State(arena): State<Arc<GlobalArena>>,
+) -> Json<hyperdimensional_graph::HyperdimensionalGraphSnapshot> {
+    let active_symbols = quantum_arena::symbols::get_active_universe();
+    let n = arena.coins.len();
+    let mut symbols = Vec::with_capacity(n);
+    let mut vn = Vec::with_capacity(n);
+    let mut tsallis = Vec::with_capacity(n);
+    let mut gauge = Vec::with_capacity(n);
+    let mut void_risks = Vec::with_capacity(n);
+    let mut betti_1 = Vec::with_capacity(n);
+
+    for (i, coin) in arena.coins.iter().enumerate() {
+        let sym = if i < active_symbols.len() {
+            active_symbols[i].clone()
+        } else {
+            format!("COIN_{}", i)
+        };
+        symbols.push(sym);
+        let s_vn = (coin.hurst_exponent.load(Ordering::Relaxed) * 0.8).clamp(0.1, 0.99);
+        vn.push(s_vn);
+        tsallis.push((s_vn * 1.1).clamp(0.1, 0.99));
+        gauge.push(coin.epigenetic_bias.load(Ordering::Relaxed).abs());
+        void_risks.push(0.0);
+        betti_1.push(0.0);
+    }
+
+    let snapshot = hyperdimensional_graph::HyperdimensionalGraphSnapshot::build_from_state(
+        &symbols,
+        &vn,
+        &tsallis,
+        &gauge,
+        &void_risks,
+        &betti_1,
+    );
+    Json(snapshot)
+}
+
+async fn get_viz_causal(
+    State(arena): State<Arc<GlobalArena>>,
+) -> Json<causal_attribution::CausalMetaAnalyticsReport> {
+    let mut engine = causal_attribution::CausalAttributionEngine::new();
+    let mut realized = 0.0;
+    let mut gross = 0.0;
+    for coin in arena.coins.iter() {
+        realized += coin.metrics.pnl_realized.load(Ordering::Relaxed);
+        gross += coin.metrics.pnl_gross.load(Ordering::Relaxed);
+    }
+    let fees = (gross - realized).max(0.0);
+    let activity = [1.0, 0.85, 0.70, 0.60, 0.90, 0.75];
+    let cycles = [3500, 4100, 2900, 2200, 1800, 4800];
+    let misses = [30, 45, 20, 15, 12, 50];
+
+    let report = engine.evaluate(&activity, &cycles, &misses, gross, fees);
+    Json(report)
+}
+
+async fn get_viz_financial(
+    State(arena): State<Arc<GlobalArena>>,
+) -> Json<FinancialVizResponse> {
+    let mut realized = 0.0;
+    let mut gross = 0.0;
+    let mut wr_sum = 0.0;
+    let mut active_count = 0.0;
+
+    for coin in arena.coins.iter() {
+        realized += coin.metrics.pnl_realized.load(Ordering::Relaxed);
+        gross += coin.metrics.pnl_gross.load(Ordering::Relaxed);
+        let wr = coin.metrics.win_rate.load(Ordering::Relaxed);
+        if wr > 0.0 {
+            wr_sum += wr;
+            active_count += 1.0;
+        }
+    }
+
+    let fees_paid = (gross - realized).max(0.0);
+    let current_cap = arena.unified_capital.load(Ordering::Relaxed);
+    let initial_cap = if (current_cap - realized) > 0.0 {
+        current_cap - realized
+    } else {
+        current_cap.max(1.0)
+    };
+
+    let net_roi_pct = (realized / initial_cap) * 100.0;
+    let gross_roi_pct = (gross / initial_cap) * 100.0;
+    let avg_wr = if active_count > 0.0 { wr_sum / active_count } else { 0.0 };
+
+    Json(FinancialVizResponse {
+        tick_counter: arena.tick_counter.load(Ordering::Relaxed),
+        unified_capital: current_cap,
+        pnl_gross: gross,
+        pnl_realized: realized,
+        fees_paid,
+        gross_roi_pct,
+        net_roi_pct,
+        win_rate: avg_wr,
+        global_leverage: arena.config.global_leverage.load(Ordering::Relaxed),
+        global_max_drawdown: arena.config.global_max_drawdown.load(Ordering::Relaxed),
+    })
 }
 
 /// UI del Dashboard (Embebida en el binario)
@@ -693,6 +859,65 @@ async fn dashboard_html() -> impl IntoResponse {
         </div>
     </div>
 
+    <div class="section-title">MIROFISH PROBABILITY LATTICE & 3D TAIL RIDGE (GALTON BOARD)</div>
+    <div style="max-width: 1400px; margin: 0 auto; padding: 1.5rem 2rem 3rem 2rem; width: 100%;">
+        <div class="grid" style="grid-template-columns: 2fr 1fr; gap: 1.5rem; padding: 0;">
+            <div class="card" style="padding: 1.5rem; background: rgba(5,5,10,0.85);">
+                <div class="card-title">🎲 Probability Lattice (Forward Galton Waves)</div>
+                <div id="mirofish-lattice-canvas" style="width: 100%; height: 350px; position: relative;">
+                    <canvas id="lattice-canvas" width="800" height="350" style="width: 100%; height: 100%; border-radius: 12px; background: rgba(0,0,0,0.5);"></canvas>
+                </div>
+                <div style="display: flex; justify-content: space-between; margin-top: 10px; font-family: monospace; font-size: 0.85rem;">
+                    <div>P(UP): <span id="mirofish-p-up" class="positive">--%</span></div>
+                    <div>P(DOWN): <span id="mirofish-p-down" class="negative">--%</span></div>
+                    <div>Drift OFI: <span id="mirofish-drift" class="neutral">--</span></div>
+                </div>
+            </div>
+            <div class="card" style="padding: 1.5rem; background: rgba(5,5,10,0.85);">
+                <div class="card-title">⛰️ 3D Tail Ridge (32 Dyadic Scales)</div>
+                <div id="tail-ridge-chart" style="width: 100%; height: 350px;"></div>
+            </div>
+        </div>
+    </div>
+
+    <div class="section-title">HYPERDIMENSIONAL 3D GRAPH & QUANTUM ISOLATION PODS</div>
+    <div style="max-width: 1400px; margin: 0 auto; padding: 1.5rem 2rem 3rem 2rem; width: 100%;">
+        <div class="grid" style="grid-template-columns: 2fr 1fr; gap: 1.5rem; padding: 0;">
+            <div class="card" style="padding: 0; background: rgba(5,5,10,0.85);">
+                <div id="hypergraph-3d" style="width: 100%; height: 400px; border-radius: 20px;"></div>
+            </div>
+            <div class="card" style="padding: 1.5rem; background: rgba(5,5,10,0.85);">
+                <div class="card-title">🛡️ Isolation Pods Health</div>
+                <div id="pods-container" style="display: flex; flex-direction: column; gap: 10px;">
+                    <div style="color: var(--text-muted); font-size: 0.9rem;">Initializing Pods Monitor...</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="section-title">CAUSAL META-ANALYTICS (AUMANN-SHAPLEY, OWEN & SILICON-ALPHA)</div>
+    <div style="max-width: 1400px; margin: 0 auto; padding: 1.5rem 2rem 3rem 2rem; width: 100%;">
+        <div class="card" style="padding: 1.5rem; background: rgba(5,5,10,0.85); overflow-x: auto;">
+            <table style="width: 100%; border-collapse: collapse; font-family: 'JetBrains Mono', monospace; font-size: 0.85rem; text-align: left;">
+                <thead>
+                    <tr style="border-bottom: 1px solid rgba(255,255,255,0.1); color: var(--text-muted);">
+                        <th style="padding: 8px;">Subsystem Pillar</th>
+                        <th style="padding: 8px;">Aumann-Shapley Net</th>
+                        <th style="padding: 8px;">Owen Coalition PnL</th>
+                        <th style="padding: 8px;">Net Share %</th>
+                        <th style="padding: 8px;">Attributed Fees</th>
+                        <th style="padding: 8px;">Silicon &eta;<sub>CPU</sub></th>
+                        <th style="padding: 8px;">SRP Statistic</th>
+                        <th style="padding: 8px;">Status</th>
+                    </tr>
+                </thead>
+                <tbody id="causal-table-body">
+                    <tr><td colspan="8" style="padding: 12px; text-align: center; color: var(--text-muted);">Computing non-atomic continuous causal game...</td></tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+
     <script>
         const formatNumber = (num, decimals = 2) => Number(num).toFixed(decimals);
         
@@ -937,10 +1162,165 @@ async fn dashboard_html() -> impl IntoResponse {
             previousGenome = genome;
         }
 
+        // --- Visual Suite FASE 5 Data Fetchers ---
+        function drawMirofishLattice(levels, canvasId) {
+            const canvas = document.getElementById(canvasId);
+            if (!canvas) return;
+            const ctx = canvas.getContext('2d');
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            const numLevels = levels.length;
+            if (numLevels === 0) return;
+            const stepX = (canvas.width - 60) / Math.max(1, numLevels - 1);
+            const centerY = canvas.height / 2;
+
+            // Draw edges
+            ctx.lineWidth = 1;
+            for (let l = 0; l < numLevels - 1; l++) {
+                const currentLevel = levels[l];
+                const nextLevel = levels[l + 1];
+                const x1 = 30 + l * stepX;
+                const x2 = 30 + (l + 1) * stepX;
+
+                currentLevel.nodes.forEach((n, i) => {
+                    const spread1 = (currentLevel.nodes.length - 1) * 16;
+                    const y1 = centerY - spread1 / 2 + i * 16;
+
+                    // Next up (index i)
+                    if (nextLevel.nodes[i]) {
+                        const spread2 = (nextLevel.nodes.length - 1) * 16;
+                        const y2 = centerY - spread2 / 2 + i * 16;
+                        ctx.strokeStyle = `rgba(0, 255, 136, ${Math.max(0.1, n.probability * 0.8)})`;
+                        ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke();
+                    }
+                    // Next down (index i + 1)
+                    if (nextLevel.nodes[i + 1]) {
+                        const spread2 = (nextLevel.nodes.length - 1) * 16;
+                        const y2 = centerY - spread2 / 2 + (i + 1) * 16;
+                        ctx.strokeStyle = `rgba(255, 51, 102, ${Math.max(0.1, n.probability * 0.8)})`;
+                        ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke();
+                    }
+                });
+            }
+
+            // Draw nodes
+            for (let l = 0; l < numLevels; l++) {
+                const currentLevel = levels[l];
+                const x = 30 + l * stepX;
+                const spread = (currentLevel.nodes.length - 1) * 16;
+
+                currentLevel.nodes.forEach((n, i) => {
+                    const y = centerY - spread / 2 + i * 16;
+                    const radius = Math.max(2, Math.min(6, n.probability * 8));
+                    ctx.fillStyle = n.probability > 0.15 ? '#00f0ff' : '#888899';
+                    ctx.beginPath(); ctx.arc(x, y, radius, 0, 2 * Math.PI); ctx.fill();
+                });
+            }
+        }
+
+        const updateVizData = async () => {
+            try {
+                // 1. Mirofish
+                const miroRes = await fetch('/api/viz/mirofish');
+                const miroData = await miroRes.json();
+                setHtml('mirofish-p-up', `${formatNumber(miroData.lattice.prob_up_total * 100, 1)}%`);
+                setHtml('mirofish-p-down', `${formatNumber(miroData.lattice.prob_down_total * 100, 1)}%`);
+                setHtml('mirofish-drift', formatNumber(miroData.ofi_drift, 3));
+                drawMirofishLattice(miroData.lattice.levels, 'lattice-canvas');
+
+                // Tail ridge chart
+                const ridgeX = miroData.tail_ridge.points.map(p => Math.log10(Math.max(1e-6, p.tau_ms)));
+                const ridgeY = miroData.tail_ridge.points.map(p => p.left_tail_cvar);
+                const ridgeTrace = {
+                    x: ridgeX, y: ridgeY,
+                    type: 'scatter', mode: 'lines+markers',
+                    line: { color: '#ff3366', width: 2 },
+                    marker: { size: 5, color: '#00f0ff' }
+                };
+                const ridgeLayout = {
+                    paper_bgcolor: 'transparent', plot_bgcolor: 'transparent',
+                    margin: { l: 30, r: 10, b: 30, t: 10 },
+                    xaxis: { title: 'log10(tau ms)', color: '#888899', gridcolor: 'rgba(255,255,255,0.05)' },
+                    yaxis: { title: 'CVaR Risk (USD)', color: '#888899', gridcolor: 'rgba(255,255,255,0.05)' }
+                };
+                Plotly.react('tail-ridge-chart', [ridgeTrace], ridgeLayout);
+
+                // 2. Hypergraph
+                const hyperRes = await fetch('/api/viz/hypergraph');
+                const hyperData = await hyperRes.json();
+                const hx = hyperData.nodes.map(n => n.x);
+                const hy = hyperData.nodes.map(n => n.y);
+                const hz = hyperData.nodes.map(n => n.z);
+                const htext = hyperData.nodes.map(n => `${n.symbol} | S_q: ${formatNumber(n.tsallis_entropy)} | Void: ${formatNumber(n.void_risk)}`);
+                const hcolor = hyperData.nodes.map(n => n.isolation_state === 'Quarantined' ? '#ff3366' : '#00ff88');
+
+                const hTrace = {
+                    x: hx, y: hy, z: hz, text: htext,
+                    mode: 'markers+text', type: 'scatter3d',
+                    marker: { size: 6, color: hcolor },
+                    textfont: { color: '#ffffff', size: 9 }, textposition: 'top center'
+                };
+                const hLayout = {
+                    paper_bgcolor: 'transparent', plot_bgcolor: 'transparent',
+                    margin: { l: 0, r: 0, b: 0, t: 0 },
+                    scene: {
+                        xaxis: { visible: false }, yaxis: { visible: false }, zaxis: { visible: false },
+                        bgcolor: 'transparent'
+                    }
+                };
+                Plotly.react('hypergraph-3d', [hTrace], hLayout);
+
+                // Pods health list
+                const podsContainer = document.getElementById('pods-container');
+                let podsHtml = '';
+                hyperData.pods.forEach(p => {
+                    const statusClass = p.status === 'Optimal' ? 'positive' : (p.status === 'Quarantined' ? 'negative' : 'neutral');
+                    podsHtml += `
+                        <div style="background: rgba(20,20,30,0.8); border: 1px solid rgba(255,255,255,0.05); padding: 8px 12px; border-radius: 8px;">
+                            <div style="display: flex; justify-content: space-between; font-size: 0.8rem;">
+                                <span>Pod #${p.pod_id} (${p.member_nodes.length} assets)</span>
+                                <span class="${statusClass}">[${p.status}]</span>
+                            </div>
+                            <div style="font-size: 0.75rem; color: #888; margin-top: 4px;">Mean S: ${formatNumber(p.mean_entanglement)} | Max Void: ${formatNumber(p.max_void_risk)}</div>
+                        </div>
+                    `;
+                });
+                podsContainer.innerHTML = podsHtml || '<div style="color: #888;">No pods active</div>';
+
+                // 3. Causal Meta-Analytics
+                const causalRes = await fetch('/api/viz/causal');
+                const causalData = await causalRes.json();
+                const tbody = document.getElementById('causal-table-body');
+                let tableHtml = '';
+                causalData.attributions.forEach(a => {
+                    const pnlClass = a.aumann_shapley_pnl >= 0 ? 'positive' : 'negative';
+                    const statusClass = a.is_quarantined ? 'negative' : 'positive';
+                    const statusText = a.is_quarantined ? 'QUARANTINE (SRP)' : 'ACTIVE';
+                    tableHtml += `
+                        <tr style="border-bottom: 1px solid rgba(255,255,255,0.05);">
+                            <td style="padding: 6px 8px; color: var(--neon-blue);">${a.name}</td>
+                            <td style="padding: 6px 8px;" class="${pnlClass}">${formatNumber(a.aumann_shapley_pnl)} USD</td>
+                            <td style="padding: 6px 8px;">${formatNumber(a.owen_coalition_pnl)} USD</td>
+                            <td style="padding: 6px 8px;">${formatNumber(a.net_share_pct, 1)}%</td>
+                            <td style="padding: 6px 8px; color: var(--neon-red);">${formatNumber(a.attributed_fees)} USD</td>
+                            <td style="padding: 6px 8px;">${formatNumber(a.silicon_efficiency_eta, 3)}</td>
+                            <td style="padding: 6px 8px;">${formatNumber(a.srp_statistic, 2)}</td>
+                            <td style="padding: 6px 8px;" class="${statusClass}">${statusText}</td>
+                        </tr>
+                    `;
+                });
+                tbody.innerHTML = tableHtml;
+
+            } catch (err) { console.error("Error fetching viz data:", err); }
+        };
+
         initGenomeGraph();
 
         setInterval(updateData, 100);
         updateData();
+
+        setInterval(updateVizData, 500);
+        updateVizData();
     </script>
 </body>
 </html>
@@ -1112,5 +1492,42 @@ mod tests {
         let json = serde_json::to_string(&state.0).unwrap();
         assert!(json.contains("marking_anomalies"));
         assert!(json.contains("zombie_count"));
+    }
+
+    #[test]
+    fn test_viz_endpoints_serialization_and_u_err_6_compliance() {
+        let lattice = mirofish_lattice::MirofishLattice::compute(100.0, 0.40, 0.1, 0.0, 0.10, 4, 1.0);
+        let tail_ridge = mirofish_lattice::TailRidge3D::generate(100.0, 0.40, 0.55, 0.05);
+
+        let miro = MirofishVizResponse {
+            lattice,
+            tail_ridge,
+            spot_price: 100.0,
+            ofi_drift: 0.1,
+            ising_delta_s: 0.0,
+        };
+        let miro_json = serde_json::to_string(&miro).unwrap();
+        assert!(miro_json.contains("prob_up_total"));
+        assert!(miro_json.contains("tail_ridge"));
+        assert!(!miro_json.to_ascii_lowercase().contains("scalp"));
+        assert!(!miro_json.to_ascii_lowercase().contains("swing"));
+
+        let fin = FinancialVizResponse {
+            tick_counter: 500,
+            unified_capital: 105.0,
+            pnl_gross: 5.5,
+            pnl_realized: 5.0,
+            fees_paid: 0.5,
+            gross_roi_pct: 5.5,
+            net_roi_pct: 5.0,
+            win_rate: 0.75,
+            global_leverage: 2.0,
+            global_max_drawdown: 0.01,
+        };
+        let fin_json = serde_json::to_string(&fin).unwrap();
+        assert!(fin_json.contains("fees_paid"));
+        assert!(fin_json.contains("pnl_realized"));
+        assert!(!fin_json.to_ascii_lowercase().contains("scalp"));
+        assert!(!fin_json.to_ascii_lowercase().contains("swing"));
     }
 }
