@@ -15,8 +15,12 @@
 //!
 //! `max_leverage` conserva la API antigua, pero expresa N_max/C, NO el
 //! multiplicador de margen del exchange. Cambiar margen N/L sin cambiar Q
-//! no cambia la pérdida al stop. `exposure_budget` expone el presupuesto y
-//! su proyección a lotes; el caller debe usar y revalidar la Q resultante.
+//! no cambia la pérdida al stop. El paso 5 con coste es
+//! `nocional_por_riesgo` (CL-159), el que usa LH-04 en el gate. La
+//! proyección a lotes la hace el ejecutor (`round_to_step_size`, hacia
+//! abajo) y el mínimo del exchange lo juzga D-750. RET-48 retiró
+//! `ExposureBudget`, `exposure_budget(_spectral)` y `project_quantity`, que
+//! no tenían consumidor operativo.
 //! No hay aquí modelo de gaps/liquidación ni garantía sobre fills futuros.
 //!
 //! El host/replay aún poseen un bootstrap explícito n<30 y un adaptador de
@@ -102,85 +106,6 @@ pub struct RiskEnvelope {
     pub avg_loss: f64,
     /// Ratio pago medio win/loss (b de Kelly). Debe venir de trades REALES.
     pub payoff_ratio: f64,
-}
-
-/// Presupuesto nominal en moneda de cuenta, sin garantía frente a gaps.
-/// Sólo se construye desde una envolvente válida; sus campos son inmutables
-/// para que la proyección no pueda recibir un presupuesto corrupto.
-#[derive(Debug, Clone, Copy)]
-pub struct ExposureBudget {
-    risk_budget_usd: f64,
-    loss_per_notional: f64,
-    max_notional: f64,
-}
-
-impl ExposureBudget {
-    pub fn risk_budget_usd(&self) -> f64 {
-        self.risk_budget_usd
-    }
-
-    /// Distancia al stop + reserva de fees/slippage, ambas fracciones.
-    pub fn loss_per_notional(&self) -> f64 {
-        self.loss_per_notional
-    }
-
-    pub fn max_notional(&self) -> f64 {
-        self.max_notional
-    }
-
-    /// Proyecta cantidad (unidades del activo) hacia abajo a lotes factibles.
-    /// `price` es moneda/unidad, `step_size` y `min_qty` son unidades;
-    /// `min_notional` está en la moneda del presupuesto. No aumenta la propuesta.
-    /// None significa dato inválido, precisión insuficiente o conjunto vacío.
-    /// Los mínimos deben ser los del símbolo vigente; esta API no consulta red.
-    /// Margen, inventario agregado y precio efectivo de fill se validan aparte.
-    pub fn project_quantity(
-        &self,
-        proposed_qty: f64,
-        price: f64,
-        step_size: f64,
-        min_qty: f64,
-        min_notional: f64,
-    ) -> Option<f64> {
-        if [proposed_qty, price, step_size, min_notional]
-            .iter()
-            .any(|v| !v.is_finite() || *v <= 0.0)
-            || !min_qty.is_finite()
-            || min_qty < 0.0
-        {
-            return None;
-        }
-        let limit_qty = proposed_qty.min(self.max_notional / price);
-        let lots = (limit_qty / step_size).floor();
-        // Beyond 2^53-1, decrementing a binary64 lot count cannot reliably
-        // move exactly one integer lot. Reject rather than claim precision.
-        if !lots.is_finite() || !(1.0..=9_007_199_254_740_991.0).contains(&lots) {
-            return None;
-        }
-        let within_budget = |qty: f64| {
-            let notional = qty * price;
-            let loss = notional * self.loss_per_notional;
-            qty.is_finite()
-                && qty > 0.0
-                && qty <= limit_qty
-                && notional.is_finite()
-                && notional > 0.0
-                && notional <= self.max_notional
-                && loss.is_finite()
-                && loss > 0.0
-                && loss <= self.risk_budget_usd
-        };
-        let mut qty = lots * step_size;
-        if !within_budget(qty) {
-            // A division/multiplication round trip can overshoot by an ULP.
-            // Drop a lot and recheck; never relax a risk inequality by epsilon.
-            qty = (lots - 1.0) * step_size;
-        }
-        if !within_budget(qty) || qty < min_qty || qty * price < min_notional {
-            return None;
-        }
-        Some(qty)
-    }
 }
 
 impl Default for RiskEnvelope {
@@ -357,80 +282,6 @@ impl RiskEnvelope {
         base_f * dampener
     }
 
-    /// Presupuesto de exposición con modulación espectral Koopman (§57 / Ola Ω215).
-    pub fn exposure_budget_spectral(
-        &self,
-        capital: f64,
-        stop_distance_pct: f64,
-        roundtrip_cost_pct: f64,
-        z: f64,
-        shrinkage_k: f64,
-        koopman_modulo: f64,
-        koopman_bifurcacion: f64,
-    ) -> Option<ExposureBudget> {
-        if !capital.is_finite()
-            || capital <= 0.0
-            || !stop_distance_pct.is_finite()
-            || stop_distance_pct <= 0.0
-            || !roundtrip_cost_pct.is_finite()
-            || roundtrip_cost_pct < 0.0
-        {
-            return None;
-        }
-        let f = self.risk_fraction_spectral(z, shrinkage_k, koopman_modulo, koopman_bifurcacion);
-        let risk_budget_usd = capital * f;
-        let loss_per_notional = stop_distance_pct + roundtrip_cost_pct;
-        let max_notional = risk_budget_usd / loss_per_notional;
-        if [risk_budget_usd, loss_per_notional, max_notional]
-            .iter()
-            .any(|v| !v.is_finite() || *v <= 0.0)
-        {
-            return None;
-        }
-        Some(ExposureBudget {
-            risk_budget_usd,
-            loss_per_notional,
-            max_notional,
-        })
-    }
-
-    /// B=C*f y N_max=B/(distancia+coste). No usa pisos de posición ni bootstrap.
-    /// El coste debe incluir la reserva de ida/vuelta elegida por el caller.
-    /// Valida representabilidad; no reemplaza inputs corruptos por un trade.
-    pub fn exposure_budget(
-        &self,
-        capital: f64,
-        stop_distance_pct: f64,
-        roundtrip_cost_pct: f64,
-        z: f64,
-        shrinkage_k: f64,
-    ) -> Option<ExposureBudget> {
-        if !capital.is_finite()
-            || capital <= 0.0
-            || !stop_distance_pct.is_finite()
-            || stop_distance_pct <= 0.0
-            || !roundtrip_cost_pct.is_finite()
-            || roundtrip_cost_pct < 0.0
-        {
-            return None;
-        }
-        let f = self.risk_fraction(z, shrinkage_k);
-        let risk_budget_usd = capital * f;
-        let loss_per_notional = stop_distance_pct + roundtrip_cost_pct;
-        let max_notional = risk_budget_usd / loss_per_notional;
-        if [risk_budget_usd, loss_per_notional, max_notional]
-            .iter()
-            .any(|v| !v.is_finite() || *v <= 0.0)
-        {
-            return None;
-        }
-        Some(ExposureBudget {
-            risk_budget_usd,
-            loss_per_notional,
-            max_notional,
-        })
-    }
-
     /// Compatibilidad: techo de exposición nominal N/C, NO leverage de margen.
     /// Cota superior de apalancamiento y filtro de admisibilidad con modulación espectral Koopman/DMD.
     ///
@@ -489,7 +340,7 @@ impl RiskEnvelope {
     }
 
     /// Conserva el piso prudencial histórico de 5 bps, sin inventar edge.
-    /// Excluye costes: para sizing final usar exposure_budget y project_quantity.
+    /// Excluye costes: el nocional con coste es `nocional_por_riesgo` (CL-159).
     /// Si el mínimo excede B, devuelve (0,false); no concede excepciones micro.
     pub fn max_leverage(
         &self,

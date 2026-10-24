@@ -5,7 +5,7 @@
 //! PARA QUÉ: Evitar sobre-exposición durante rupturas de régimen en cuentas micro ($13 USD).
 //! CÓMO: 4 contratos matemáticos validando régimen estable, régimen divergente, inmunidad NaN y pisos.
 
-use risk_engine::kelly_envelope::RiskEnvelope;
+use risk_engine::kelly_envelope::{nocional_por_riesgo, RiskEnvelope};
 
 #[test]
 fn c1_koopman_stable_regime_preserves_full_kelly_fraction() {
@@ -78,6 +78,10 @@ fn c3_koopman_nan_and_infinite_immunity() {
 
 #[test]
 fn c4_koopman_spectral_exposure_budget_continuity() {
+    // RET-48: `exposure_budget_spectral` se retiró (sin consumidor operativo).
+    // Su contrato se migra a la cadena viva: f = risk_fraction_spectral,
+    // B = C·f y N_max = B/(d + c) con `nocional_por_riesgo` (CL-159, el
+    // mismo paso que dimensiona LH-04 en el gate).
     let mut env = RiskEnvelope::new();
     // Registrar 100 operaciones con edge comprobado (60% WR, payoff 2.0)
     for i in 0..100 {
@@ -88,31 +92,45 @@ fn c4_koopman_spectral_exposure_budget_continuity() {
     let stop_pct = 0.015; // 1.5% stop
     let cost_pct = 0.001; // 0.1% roundtrip taker fee
 
-    // 1. Presupuesto en régimen estable
-    let budget_stable = env
-        .exposure_budget_spectral(capital, stop_pct, cost_pct, 1.64, 10.0, 0.95, 0.05)
-        .expect("Presupuesto estable debe existir");
-
-    // 2. Presupuesto en régimen caótico / bifurcación
-    let budget_chaotic = env
-        .exposure_budget_spectral(capital, stop_pct, cost_pct, 1.64, 10.0, 1.30, 0.35)
-        .expect("Presupuesto caótico debe existir");
+    // 1. Régimen estable y 2. régimen caótico / bifurcación
+    let f_stable = env.risk_fraction_spectral(1.64, 10.0, 0.95, 0.05);
+    let f_chaotic = env.risk_fraction_spectral(1.64, 10.0, 1.30, 0.35);
+    let budget_stable = capital * f_stable;
+    let budget_chaotic = capital * f_chaotic;
+    let notional_stable =
+        nocional_por_riesgo(f_stable, capital, stop_pct, cost_pct).unwrap_or(f64::NAN);
+    let notional_chaotic =
+        nocional_por_riesgo(f_chaotic, capital, stop_pct, cost_pct).unwrap_or(f64::NAN);
 
     assert!(
-        budget_chaotic.risk_budget_usd() < budget_stable.risk_budget_usd(),
+        budget_chaotic < budget_stable,
         "El presupuesto de riesgo en dólares debe reducirse en régimen caótico: {} vs {}",
-        budget_chaotic.risk_budget_usd(),
-        budget_stable.risk_budget_usd()
+        budget_chaotic,
+        budget_stable
     );
-
     assert!(
-        budget_chaotic.max_notional() < budget_stable.max_notional(),
+        notional_chaotic < notional_stable,
         "El nocional máximo autorizado debe reducirse en régimen caótico: {} vs {}",
-        budget_chaotic.max_notional(),
-        budget_stable.max_notional()
+        notional_chaotic,
+        notional_stable
+    );
+    // La pérdida al stop con el coste es el presupuesto: N·(d + c) = B.
+    assert!(
+        (notional_chaotic * (stop_pct + cost_pct) - budget_chaotic).abs()
+            <= 4.0 * f64::EPSILON * budget_chaotic
     );
 
     // Ambas deben mantenerse estrictamente positivas y por debajo del axioma de ruina
-    assert!(budget_chaotic.risk_budget_usd() > 0.0);
-    assert!(budget_chaotic.risk_budget_usd() <= capital * 0.25);
+    assert!(budget_chaotic > 0.0);
+    assert!(budget_chaotic <= capital * 0.25);
+
+    // El techo vivo del host (max_leverage_spectral, N_max/C sin coste) se
+    // atenúa con la misma fracción.
+    let (lev_stable, ok_stable) =
+        env.max_leverage_spectral(capital, stop_pct, 5.0, 1.64, 10.0, 0.95, 0.05);
+    let (lev_chaotic, ok_chaotic) =
+        env.max_leverage_spectral(capital, stop_pct, 5.0, 1.64, 10.0, 1.30, 0.35);
+    assert!(ok_stable && ok_chaotic);
+    assert_eq!(lev_stable, f_stable / stop_pct);
+    assert_eq!(lev_chaotic, f_chaotic / stop_pct);
 }
