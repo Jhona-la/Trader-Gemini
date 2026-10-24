@@ -127,17 +127,22 @@ fn cf2_rw_crash_flux_es_bajo_en_ruido() {
 
 /// Núcleo real (corrección del escéptico del espectro): el mismo ruido por
 /// `GodEngineCore::process_event` (eventos de depth a 1 Hz), leyendo lo que
-/// publica el núcleo en `spectral_crash_flux` y `spectral_coherence`, y el
-/// factor de margen que aplica el lector vivo a un largo:
-/// free_cap ×= 1 − 0,95·flux si la marea es adversa (tide < 0); a un corto
-/// si tide > 0. Contrato de efecto neutro en ruido: E[factor] ≥ 0,95 para
-/// cada lado (política, como el umbral de 0,10 de la media). Comprobación
-/// cruzada hecha al escribir la prueba: con las mismas 21 600 entradas que la
+/// publica el núcleo en `spectral_crash_flux` y `spectral_coherence`. Al
+/// escribir la prueba, el lector vivo era el recorte en línea del núcleo
+/// free_cap ×= 1 − 0,95·flux con marea adversa (tide < 0 para un largo,
+/// tide > 0 para un corto). F1-054 (AGY, 508f1597) lo quitó; hoy crash_flux
+/// entra en risk-engine: `PortfolioOrchestrator::available_margin_headroom`
+/// toma el máximo de las monedas con marea adversa y
+/// `continuous_exposure_limit` resta 0,25·flux a la fracción de capital
+/// expuesta. El factor 1 − 0,95·flux de abajo se conserva como vara del
+/// contrato de efecto neutro en ruido: E[factor] ≥ 0,95 para cada lado
+/// (política, como el umbral de 0,10 de la media). Comprobación cruzada
+/// hecha al escribir la prueba: con las mismas 21 600 entradas que la
 /// réplica de arriba, el núcleo publicó el mismo crash_flux medio (0,4059),
-/// así que la réplica reproduce el cableado. Hoy, con 14 400 eventos: media
-/// ≈ 0,41, factor medio ≈ 0,84 (largo) y ≈ 0,77 (corto).
+/// así que la réplica reproduce el cableado. Al escribirla, con 14 400
+/// eventos: media ≈ 0,41, factor medio ≈ 0,84 (largo) y ≈ 0,77 (corto).
 #[test]
-#[ignore = "OPEN F2.3-05 (Línea C, C-F2.3): el núcleo publica crash_flux ≈0,41 en ruido y recorta el margen libre un 16-23 % de media sin ninguna caída"]
+#[ignore = "OPEN F2.3-05 (Línea C, C-F2.3): el núcleo publica crash_flux ≈0,41 en ruido sin ninguna caída y risk-engine lo resta del margen admisible (available_margin_headroom)"]
 fn cf2_rw_crash_flux_es_bajo_en_ruido_en_el_nucleo() {
     let _guarda = ENTORNO_GLOBAL.lock().unwrap_or_else(|p| p.into_inner());
     symbols::update_dynamic_universe(vec!["CF2RUIDOUSDT".into()]);
