@@ -5,7 +5,6 @@ pub mod momentum_booster;
 pub mod multivariate_coint;
 pub mod prueba_reversion;
 pub mod stat_arb;
-pub mod strategy_telemetry;
 pub mod types;
 pub mod vecm_arbitrage;
 pub mod yang_mills_gauge;
@@ -36,15 +35,6 @@ pub trait QuantumStrategy: Send + Sync {
         self.evaluate()
     }
 
-    /// Evaluación escopada opcional por coin_id y símbolo
-    fn evaluate_scoped(&self, coin_id: Option<usize>, symbol: Option<&str>) -> f64 {
-        if let (Some(cid), Some(sym)) = (coin_id, symbol) {
-            self.evaluate_for_coin(cid, sym)
-        } else {
-            self.evaluate()
-        }
-    }
-
     /// OLA Ω145: Declara si la estrategia es contextualmente elegible/operable para este activo en este tick.
     /// Si una estrategia requiere condiciones de datos o dimensionales no cumplidas (e.g. universo
     /// multiactivo N >= 3, feed spot síncrono, o inputs ausentes), devuelve `false`.
@@ -59,25 +49,5 @@ pub trait QuantumStrategy: Send + Sync {
     /// Target operational trading horizon (Universal Continuous Temporal Spectrum)
     fn horizon(&self) -> TradeHorizon {
         TradeHorizon::Continuous
-    }
-}
-
-pub struct StrategyOrchestrator {
-    strategies: Vec<Box<dyn QuantumStrategy>>,
-    registry: Arc<OmniscientRegistry>,
-}
-
-impl StrategyOrchestrator {
-    pub fn new(registry: Arc<OmniscientRegistry>) -> Self {
-        Self {
-            strategies: Vec::new(),
-            registry,
-        }
-    }
-
-    pub fn add_strategy(&mut self, mut strategy: Box<dyn QuantumStrategy>) -> Result<(), String> {
-        strategy.init(self.registry.clone())?;
-        self.strategies.push(strategy);
-        Ok(())
     }
 }

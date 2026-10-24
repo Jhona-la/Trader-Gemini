@@ -24,11 +24,9 @@ pub struct SignalIntent {
     pub expected_duration_ms: u64,
     pub expected_volume_usd: f64,
     pub volume_flow_rate: f64,
-    pub drift: f64,
     pub expected_magnitude: f64,
     pub tp_price_target: f64,
     pub sl_price_target: f64,
-    pub trajectory_volatility: f64,
     pub horizon: TradeHorizon,
     /// D-690 / LC-F1-37 / SI: Probabilidad condicional de ganar neto bajo el lado y
     /// la geometría TP/SL de esta orden concreta: P(ganar neto | lado, geometría, τ).
