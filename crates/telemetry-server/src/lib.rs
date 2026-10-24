@@ -35,11 +35,13 @@ pub use telegram_bot::TelegramBot;
 /// literal `0.0` en `swing_pnl`: un nombre que mentía sobre su contenido más
 /// una mitad clavada a cero. Ahora hay UNA serie con el nombre de lo que
 /// transporta.
+///
+/// RET-23a (censo C-F7b, F76): `LatencyUpdate`, `LogUpdate` y
+/// `CapitalUpdate` tampoco tenían lector (ni el panel de este servidor ni
+/// ningún otro cliente del árbol; `static/app.js` es del panel retirado de
+/// `src/dashboard.rs`, con su propio enum). Se retiran con sus productores.
 #[derive(Clone, Serialize, Debug)]
 pub enum TelemetryEvent {
-    LatencyUpdate(u64),        // Nanoseconds
-    LogUpdate(String, String), // (type, message) e.g., ("info", "Connected...")
-    CapitalUpdate(f64),        // Current capital
     OmniUpdate {
         latency_ms: u64,
         latency_panic: bool,
@@ -167,8 +169,6 @@ pub async fn start_telemetry_server(
         .route("/", get(dashboard_html))
         .route("/api/state", get(get_state))
         .route("/api/coins", get(get_coins))
-        .route("/api/tensor/:coin_id", get(get_tensor))
-        .route("/api/genome", get(get_genome))
         .route("/ws", get(ws_handler))
         .layer(Extension(tx))
         .with_state(arena);
@@ -212,55 +212,6 @@ pub async fn start_telemetry_server(
             base_port + 9
         );
     }
-}
-
-#[derive(Serialize)]
-struct TensorResponse {
-    coin_id: usize,
-    omni_tensor: Vec<f32>,
-}
-
-async fn get_tensor(
-    axum::extract::Path(coin_id): axum::extract::Path<usize>,
-    State(arena): State<Arc<GlobalArena>>,
-) -> Json<TensorResponse> {
-    let tensor = if coin_id < arena.coins.len() {
-        let coin = &arena.coins[coin_id];
-        vec![
-            coin.current_price.load(Ordering::Relaxed) as f32,
-            coin.current_atr.load(Ordering::Relaxed) as f32,
-            coin.ml_prob.load(Ordering::Relaxed) as f32,
-            coin.hurst_exponent.load(Ordering::Relaxed) as f32,
-            coin.epigenetic_bias.load(Ordering::Relaxed) as f32,
-            coin.epigenetic_threshold_modifier.load(Ordering::Relaxed) as f32,
-            coin.spot_bid.load(Ordering::Relaxed) as f32,
-            coin.spot_ask.load(Ordering::Relaxed) as f32,
-            coin.spot_bid_qty.load(Ordering::Relaxed) as f32,
-            coin.spot_ask_qty.load(Ordering::Relaxed) as f32,
-            coin.agg_buy_vol.load(Ordering::Relaxed) as f32,
-            coin.agg_sell_vol.load(Ordering::Relaxed) as f32,
-            // U-1 / U-ERR-6 (MOTOR UNIVERSAL): el tensor sirve la métrica
-            // ÚNICA del motor continuo. Las dos últimas posiciones eran los
-            // antiguos slots por banda y se servían clavadas a 0.0 — dos
-            // columnas de ceros que ningún consumidor del repositorio lee
-            // (este endpoint no tiene ni un solo cliente en el árbol). Fuera.
-            coin.metrics.win_rate.load(Ordering::Relaxed) as f32,
-            coin.metrics.pnl_realized.load(Ordering::Relaxed) as f32,
-        ]
-    } else {
-        vec![]
-    };
-    Json(TensorResponse {
-        coin_id,
-        omni_tensor: tensor,
-    })
-}
-
-async fn get_genome(
-    State(arena): State<Arc<GlobalArena>>,
-) -> Json<quantum_arena::genome::SuperGenotype> {
-    let genome = quantum_arena::genome::SuperGenotype::current_from_arena(&arena);
-    Json(genome)
 }
 
 async fn ws_handler(

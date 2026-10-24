@@ -1162,28 +1162,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     });
     */
 
-    // Telemetry Async Formatter (Lock-Free Offload)
-    // Telemetry Async Formatter (Lock-Free Offload)
-    let (tx_log_worker, rx_log_worker) = crossbeam_channel::bounded::<(u64, bool, usize)>(1000);
-    let dash_tx_clone = telemetry_tx.clone();
-    let symbols_for_log = symbols.clone();
-    std::thread::spawn(move || {
-        while let Ok((tau_ms, is_long, coin_id)) = rx_log_worker.recv() {
-            let side_str = if is_long { "LONG" } else { "SHORT" };
-            // FIX #1518: Acceso seguro al símbolo por coin_id para evitar pánicos fuera de límites
-            let default_sym = format!("COIN_{}", coin_id);
-            let parsed_sym = symbols_for_log
-                .get(coin_id)
-                .map(|s| s.as_str())
-                .unwrap_or(&default_sym);
-            let tau_sec = if tau_ms > 0 { tau_ms as f64 / 1000.0 } else { 30.0 };
-            let _ = dash_tx_clone.send(telemetry_server::TelemetryEvent::LogUpdate(
-                "success".to_string(),
-                format!("🌌 CONTINUO [τ={:.1}s] {} on {}", tau_sec, side_str, parsed_sym),
-            ));
-        }
-    });
-
 
     let mut streams = String::new();
     for (i, sym) in symbols.iter().enumerate() {
@@ -4542,7 +4520,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         let roi_post_fees = if (qty * current_price) > 0.0 { (net / (qty * current_price)) * 100.0 } else { 0.0 };
                         telemetry!("🛑 [CONTINUOUS CORE] CLOSE HIT! Gross PnL: {:?} | Net PnL: {:.4} | ROI Post-Fees: {:.4}%", accounting.map(|a| a.gross_pnl), net, roi_post_fees);
                         let _ = db_tx.try_send((unified_cap, 0.0));
-                        let _ = loop_telemetry_tx.send(telemetry_server::TelemetryEvent::CapitalUpdate(unified_cap));
                         let ml_prob = engine_real.arena.coins[coin_id].ml_prob.load(Ordering::Relaxed);
                         let _ = loop_telemetry_tx.send(telemetry_server::TelemetryEvent::TradeClosed {
                             coin_id,
@@ -4697,17 +4674,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         // Sin esto: deadlock (0 trades → 0 evidencia → 0 trades).
                         // Es epsilon-greedy estándar: exploración forzada inicial.
                         let envelope_n = risk_envelope.posterior.n();
-                        let (tau_entry, apalancamiento_validado) = if let Some(r) = &entry_reservation {
+                        let apalancamiento_validado = if let Some(r) = &entry_reservation {
                             let ranura = engine_real.arena.coins[coin_id].positions.get_slot(r.slot);
                             let margen = ranura.margin_used.load(Ordering::Relaxed);
                             let nocional = ranura.quantity.load(Ordering::Relaxed).abs()
                                 * ranura.entry_price.load(Ordering::Relaxed);
-                            (
-                                ranura.entry_tau_ms.load(Ordering::Relaxed) as f64,
-                                risk_engine::envio::apalancamiento_validado(nocional, margen),
-                            )
+                            risk_engine::envio::apalancamiento_validado(nocional, margen)
                         } else {
-                            (0.0, None)
+                            None
                         };
 
                         if envelope_n < 30.0 {
@@ -4744,7 +4718,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         } else {
                             exec_leverage = 0; // SIN ORDEN: la matemática dijo NO (veto de la envolvente)
                         }
-                        let _ = tx_log_worker.try_send((tau_entry as u64, is_long, coin_id));
 
                         let ml_prob = engine_real.arena.coins[coin_id].ml_prob.load(Ordering::Relaxed);
                         if ml_prob > 0.80 || ml_prob < 0.20 {
@@ -5416,8 +5389,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 // LG-12: los límites de peticiones son los del exchange
                 // (constantes del ejecutor), no genes evolucionados.
 
-                let lat = start.elapsed().as_nanos();
-
                 // X-016/X-044 (REHAB-1): el espectro respira en telemetría —
                 // fusión y τ dominante por símbolo. Primera visibilidad del
                 // continuo en operación (antes: cero consumidores visibles).
@@ -5500,8 +5471,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     win_rate,
                     trade_duration_avg: 0.0,
                 });
-
-                let _ = loop_telemetry_tx.send(telemetry_server::TelemetryEvent::LatencyUpdate(lat as u64));
 
                 // FASE 8: Legacy process respawn removed in favor of in-memory Hot-Swap via PhaseOrchestrator.
             }
