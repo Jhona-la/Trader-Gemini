@@ -312,7 +312,7 @@ mod tests {
 
         // Actualizar política con reward positivo en Long
         let eps = OnlinePpoPolicyEngine::compute_dynamic_clipping_ratio(0.2, 0.02, 0.01);
-        assert!(eps >= 0.05 && eps <= 0.35);
+        assert!((0.05..=0.35).contains(&eps));
 
         engine.update_policy(
             0.05, // reward

@@ -902,7 +902,7 @@ mod tests {
         m.init_buffers();
         assert!(m.layers_valid());
         assert!(m.validate().is_ok());
-        assert!(m.predict(&vec![0.1f64; 8]).is_some());
+        assert!(m.predict(&[0.1f64; 8]).is_some());
     }
 
     #[test]
@@ -1060,8 +1060,8 @@ mod tests {
             feats[0] = 60000.0 + (i as f64) * 10.0;
             feats[1] = 0.05 + ((i % 5) as f64) * 0.01;
             feats[2] = 50.0 + ((i % 10) as f64) * 2.0;
-            for k in 3..34 {
-                feats[k] = ((k + i) as f64) * 0.1;
+            for (k, f) in feats.iter_mut().enumerate().skip(3) {
+                *f = ((k + i) as f64) * 0.1;
             }
 
             let pred = engine.predict(&feats);
