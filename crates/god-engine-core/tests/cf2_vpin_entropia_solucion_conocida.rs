@@ -13,6 +13,10 @@
 //!   retornos gaussianos su valor normalizado es la entropía de esos bins
 //!   (≈ 0,9695 menos el sesgo plug-in). La misma difusión con eventos de
 //!   retorno 0 intercalados debería dar el mismo desorden.
+//! - Con una entrada que alterna ±a, z ≈ ±1 cae en los bins 2 y 7 y, con
+//!   olvido λ = 0,999, los pesos en régimen son 1/(1+λ) y λ/(1+λ): la
+//!   entropía normalizada es (ln(1+λ) − λ·ln λ/(1+λ))/ln 10. Es la forma
+//!   cerrada que se portó del gemelo retirado de feature-engine (RET-46).
 //!
 //! Son pruebas de solución conocida de la fase C-F2
 //! (docs/audit/HALLAZGOS_C-F2_2026-10-11.md). Convención: un test que hoy
@@ -225,6 +229,21 @@ fn cf2_entropia_gaussiana_forma_cerrada() {
         (h - esperado).abs() < 0.015,
         "entropía {h:.4} frente a la forma cerrada {esperado:.4}"
     );
+}
+
+/// Verdad: H = (ln(1+λ) − λ·ln λ/(1+λ))/ln 10 con λ = 0,999. Tolerancia
+/// 1e-9: el transitorio pesa λ^30000 ≈ e^−30 y z ≈ ±1 cae a 0,45 bin de
+/// cualquier borde, así que no depende del olvido de la dispersión.
+#[test]
+fn cf2_entropia_alterna_forma_cerrada() {
+    let mut e = ShannonEntropy::new();
+    let mut h = f64::NAN;
+    for i in 0..30_000usize {
+        h = e.update(if i % 2 == 0 { 1e-4 } else { -1e-4 });
+    }
+    let l: f64 = 0.999;
+    let esperado = ((1.0 + l).ln() - l * l.ln() / (1.0 + l)) / 10f64.ln();
+    assert!((h - esperado).abs() < 1e-9, "{h} frente a {esperado}");
 }
 
 /// Especificación del reloj de la entropía (no solución conocida del
