@@ -1,5 +1,95 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
 
+## 2026-10-24T15:51:51-05:00 — Kimi V33: CI 10/10, Fase 9 retirada y Línea I integrada
+
+- Higiene Git `e5b4b53dc` certificada con **10/10 checks SUCCESS**: Unit `40127951016` (17m26s) y Replay `40127951030` (40m15s). No heredar ese verde a otros commits.
+- Fase 9 quedó integrada en `8c96ff25a` (PR #132); `origin/agy/fase9-matrices-aleatorias-wilson-rg` fue eliminada tras verificar SHA `dd7ff0ce`, ancestria (`13 0`) y ausencia de worktree. Fase 10 permanece activa.
+- Línea I (PR #134) se integró mediante merge. La restauración del buzón tuvo conflicto por ediciones concurrentes y se resolvió por UNIÓN, conservando las entradas de Línea I y Codex QRA. Solo se descartó el stash propio `kimi-v33-preserve-coordinacion-lineai`; el respaldo previo de otro agente permanece.
+- Inventario actualizado: **2.186 rutas = 26 REVISADO_ESTATICO + 1 RED + 2.159 INVENTORIADO**, validado contra `git ls-files`. Documentación publicada hasta `85b613e85`; sus checks son `total_count=0` por paths-ignore.
+- RAM <4 GiB y build ajeno: no se editó Rust, no hubo censo SSD, Demo ni operación financiera. Capital/ROI sigue pendiente de semáforo. Las nuevas suites de Fase 9 y Línea I en main se evalúan por separado; no se afirma CI verde global ni rentabilidad.
+
+## 2026-10-24 15:29 -05:00 — Codex: corrección DAZ aplicada; PR65/QRA sin validación Rust
+
+Mandato ampliado recibido y coordinado en `docs/audit/MANDATO_CODEX_2026-10-24.md`,
+complementario al plan canónico de Kimi. Censo mecánico congelado en
+`5da522e35ced7d890e20e1995ddf6fd819aa6c3d`: 2.179 rutas; no equivale a revisión
+semántica. Matriz de 64 familias y protocolo OOS en
+`.agent_tx/codex-mandato-20261024/PROTOCOLO_CIENTIFICO.md`; resultados económicos N/D.
+
+Corrección DAZ instalada localmente a las 15:18:32 -05:00 sobre main@2ca40b271:
+`crates/os-guardian/src/subnormal_control.rs`, `crates/os-guardian/src/lib.rs` y
+`crates/os-guardian/tests/f8_001_silicon_physics_contract.rs`. Elimina escritores
+propios MXCSR y llamadas que activaban DAZ; observa STMXCSR y valida el entorno
+antes de inicializar guardian. Incompatibilidad observada activa el freno real.
+Conserva prioridad Windows. Los tests preparados no cambian el control FP.
+No ejecutar F8 legacy: alterar DAZ y retornar a Rust viola su contrato documentado.
+
+Tres respaldos previos, índice idéntico, locks propios liberados y WAL/recibo en
+`.agent_tx/codex-mandato-20261024/daz/installation-Codex-DAZ-Install-c6dad52e5e184b15b7c719bebfba1c73/receipt.json`.
+Hashes instalados: subnormal957173192811ece324c38fd5dc6ddda967a06b21439846a4af2d15c372ebe3c7;
+lib7920818b1bf07aaa9ac5a9f9eb815d1440d66f09af028ea303a8e6a858cbeaf0;
+F8test73f5d2228215f95e979d4d0fd45f1e95e51dd5342f25bf905ab06a7916468b54.
+
+Intento F8 propio sesión39658: salida75 ANTES de Cargo por RAM inferior al piso
+humano0,94GiB; no fue fallo Rust ni prueba aprobada. Cola anterior44704 terminó
+75 sin comando nativo: auditoría independiente de293eventos en queue-audit-final.json.
+Instalador7/7 y guard12+7 prueban infraestructura, no código Rust. Sin Cargo,
+runner ni locks propios activos. A15:28 Cargo231472 de LíneaI seguía compilando;
+RAM libre917584KiB. No detenerlo ni reclamar turno por estos documentos.
+
+Próximo ejecutor: leer `.agent_tx/codex-mandato-20261024/validation/README.md`,
+revalidar HEAD/inputs/turno y ejecutar daz-tests, fmt, Clippy, check all-targets;
+con check aprobado e inputs idénticos, tests execution/feature de PR65.
+Guard SHA1f4eb75a736e6bcda171d9d25977f9a7ddfb3cc5f9d0d6802e8e6e0218a861fd.
+No commit/push ni CI propios de esta corrección. Reserva de edición liberada;
+WIP identificado y respaldado, pendiente de validación, no sobreescribir.
+UDS/cache sigue privado SIN aplicar; Verify locked y verification_complete=false.
+No se limpiaron datos, modelos, trabajo ajeno ni ramas activas.
+
+## 2026-10-24T14:43:21-05:00 — Kimi V33: Fase 8 retirada y RED de capital ejecutado
+
+- `origin/agy/fase8-fisica-silicio-cpuid` fue eliminada después de verificar PR #131 MERGED, SHA `e2f7d989e`, cero commits exclusivos (`25 0`) y ausencia de worktree. Fase 9 y Línea C se preservaron. Registro publicado en `5da522e35`; no se forzó ningún push.
+- RED real sin compilar: con `INITIAL_CAPITAL=abc`, `target/debug/continuous_evolution_backtest.exe` terminó con `PROCESS_EXIT=0`, reemplazó el CSV centinela por su cabecera y no creó `config_dir`. Evidencia en `docs/audit/V33_RED_CAPITAL_2026-10-24.md` y `logs/v33_red_capital_invalid.log`; commit `836ab1f27`. La corrección sigue pendiente: validar capital como primera operación de `main` y exigir error + centinela intacto.
+- Inventario y ledger actualizados en `4aa0ff395`: 2.180 rutas = 26 `REVISADO_ESTATICO` + 1 `RED` + 2.153 `INVENTORIADO`. El paquete del contrato es `trader-gemini-v5`; prueba E2E prevista `tests/continuous_capital_contract.rs`.
+- RAM disponible 0,71 GiB con cargo/rustc ajenos: no se editó Rust, no hubo builds, censo SSD, Demo ni operación financiera. La implementación permanece bloqueada hasta disponer de ≥4 GiB y semáforo. ROI/PnL/WR/Sharpe/EV: `N/D`. Los commits V33 son documentales y tienen cero checks por paths-ignore; no se afirma CI verde de código.
+
+## 2026-10-24 14:07 -05:00 — Codex: relevo PR65/QRA recuperado; ejecución pendiente
+
+El operador seleccionó retomar validación PR65 y auditoría QRA en el chat del
+relevo. Informe `docs/audit/RELEVO_CODEX_PR65_QRA_2026-10-24.md`; respaldos y
+candidatos en `.agent_tx/codex-relevo-20261024`. Sin ramas/worktrees nuevos,
+Cargo propio, cambios de fuente Rust, commits, push ni limpieza ajena.
+
+PR65 cerrada sin merge; su código llegó por676. Controles Verify conservan
+`verification_complete=false`, ROOT/QRA como ejecutor y runners legacy
+deshabilitados. Siguen pendientes check workspace/all-targets y tests
+execution/feature exactos, secuenciales. Nuevo helper privado `pr65_guard.py`
+SHAa8b011877a1376ea60b322a8431755ce68369fb06a845a71abd6afc90ab47ce4,
+12/12 contratos propios PASS con Python real en Job128MiB, no Rust. Mantiene
+semáforo real, lock acoplado, target canónico/jobs1, lld y hashes antes/después.
+Excepción RAM recuperada de respuesta humana directa01a16989-84f4:
+«Hazlo con esa cantidad de ram», ante0,94GiB; piso privado0,94GiB sin falsear
+sensores ni modificar la política compartida. Primer intento rechazado antes
+de Cargo por lock LíneaG, Cargo270036 iniciado12:33:48; seguía compilando al
+cierre y RAM llegó a102MiB. No cerrar procesos ni robar el turno.
+
+QRA F2: PR106 ya resolvió wb ausente/cero y parte de FFI. Persisten sesión,
+cache completo, readiness y equity. Dos fixes acotados preparados juntos en
+`composed/composed.patch`: URL privada Prod y cache transaccional ante delta
+incompleto/overflow, 10 contratos nuevos y12 anteriores conservados, dos
+revisiones RO y apply-check0. Fuente viva sigue SHA5766db78482a4826222aa8879d432104b1e694bd775a749d89c6fe15b66e4ed0;
+candidato SHA30faa94738100584fb126ac0a4ae76a1c61e199394bfa2cc242db4acfaf1408d.
+No instalado ni compilado; próximo relevo cotejar fuente y turno antes de usar
+el instalador con respaldo y ambos locks. Reserva de código liberada.
+
+Rescate ampliado `RECUPERACION_QRA.md` + `CENSO_PREPARADOS_QRA.json`:31paquetes,
+50copias/26rutas, hashes históricos preservados;12átomos pendientes yS07
+pospuesto, S03 retenido por decimales. Candidatos viejos contienen APIs ya
+retiradas: reanclar hunks, nunca reemplazar archivos completos. CI actual
+observada para código7b70 seguía pendiente; no transferir verdes históricos.
+Verify locked, sus artefactos y controles se conservaron. No hay certificación
+nueva de rentabilidad, operación de cuenta ni integración funcional completa.
+
 ## 2026-10-24 — Claude (cloud, Línea C): lotes de retiro 50, 44 y 13, y revisión de las tandas 2 a 4
 
 Tanda del PR #130 del censo C-F7b. Un commit por bloque y sin T-1:

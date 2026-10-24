@@ -16,6 +16,7 @@ pub mod navier_stokes;
 pub mod normalizer;
 pub mod omni_strategies;
 pub mod path_signatures;
+pub mod random_matrix_wilson;
 pub mod rough_ergodic;
 pub mod transfer_entropy;
 pub mod simd_neural_network;
@@ -41,6 +42,11 @@ pub use multifractal::{
 pub use navier_stokes::{HydrodynamicRegime, NavierStokesParams, NavierStokesReynoldsEngine};
 pub use normalizer::{GarmanKlassVolatilityEstimator, StatisticalNormalizer};
 pub use omni_strategies::OmniStrategyEngine;
+pub use random_matrix_wilson::{
+    jacobi_eigensolver_symmetric, ContinuousLyapunovEstimator, DenoisedCorrelationResult,
+    LyapunovDiagnostic, MarchenkoPasturBounds, MarchenkoPasturFilter, RandomMatrixWilsonEngine,
+    WilsonOperatorClass, WilsonRGEngine, WilsonRGScaleReport, MAX_ASSETS, MAX_DYADIC_SCALES,
+};
 pub use rough_ergodic::{
     ErgodicGrowthEngine, ErgodicGrowthResult, MalliavinEvaluator, MalliavinRoughGreeks,
     RoughBergomiPredictor, ROUGH_FACTORS_COUNT,
