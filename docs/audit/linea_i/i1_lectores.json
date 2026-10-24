@@ -1,0 +1,467 @@
+[
+ {
+  "map": "CAMINO AUDITADO (lector A: del socket a la cola). Base: main 2831cf5bd. Desde entonces HEAD avanzó a f6436716b, que solo añade docs; src/ y crates/ no cambiaron.\n\n1) UNIVERSO. god_engine.rs:1109 llama a execute_phase_1_and_2(false) en crates/god-engine-core/src/bootloader.rs:417-430. Esa función devuelve el dynamic_config validado (bootloader.rs:346-415, tope MAX_COINS=30 en crates/quantum-arena/src/state.rs:15) o el ROSTER de 26 símbolos (bootloader.rs:322-327). El data/dynamic_config.json del repo principal también lista 26. Se toma N=26.\n\n2) STREAMS (god_engine.rs:1173-1206). Por símbolo se suscriben @trade (:1178), @depth5 (:1180) y @kline_1m (:1197). Además hay un stream global !forceOrder@arr (:1206). Total 3N+1 = 79 streams en UNA sola conexión combinada. @depth5 va sin sufijo, así que usa la cadencia por defecto de Binance (250 ms). La premisa «@depth5@100ms» queda REFUTADA: no existe en el host. El único @100ms del código está en ws_client.rs:117, que es código muerto.\n\n3) HOST Y URL. BEST_WS_ENDPOINT se valida en :1213-1231. En testnet se usa stream.binancefuture.com (:1239-1240). En mainnet hay un selector por latencia de conexión TCP sobre fstream y fstream-auth (:1247-1282). La URL final es wss://{host}/stream?streams=... (:1285-1288), sin ruta /public ni /market. El symbol_manager ya no re-suscribe (src/symbol_manager.rs:21-24, parámetros ignorados). Nadie más envía por tx_ws_control (:1290, :1300).\n\n4) LECTOR (hilo ws-reader, god_engine.rs:5616-5790).\n- Fijado al core 2 con prioridad TIME_CRITICAL (:5617-5623), runtime current_thread.\n- Resuelve DNS (:5653), admite BINANCE_WS_IPS (:5662) y hace carrera de conexiones a todas las IP (:5686-5697).\n- set_nodelay (:5714) solo afecta a lo que se envía (pongs); no reduce la latencia de recepción.\n- client_async_tls (:5716) usa tokio-tungstenite 0.21 con native-tls (Cargo.toml:71). No se configuran extensiones (sin compresión) ni WebSocketConfig, SO_RCVBUF o keepalive.\n- El centinela solo se emite en reconexión (:5720-5726, cola_ws.rs:91-94).\n- split con la mitad de escritura descartada (:5728). El pong lo responde tungstenite dentro de read.\n- Watchdog de 15 s (30 s en testnet) en :5730-5734, con feed_health::stall en :5765. Reconexión por control en :5770, backoff en :5785.\n- ENCOLADO (:5740-5747): encolar(msg.into_data()) SIN NINGÚN SELLO LOCAL. También se encolan los frames de control (Ping y Close), cosa inocua.\n\n5) COLA. crossbeam bounded(5_000) de Vec<u8> (god_engine.rs:1310), con el receptor clonado para el descarte (:1311). crates/data-ingest/src/cola_ws.rs:54-76 descarta el más antiguo al llenarse, cuenta cada descarte (:68) y marca el centinela perdido (:69-71). El monitor está en god_engine.rs:1343-1355.\n\n6) CONSUMIDOR (solo lo que toca la medida).\n- recv en :3588; start=Instant::now() en :3659, después de sacar el mensaje de la cola.\n- Clasificación por memmem en :3661-3666. forceOrder sale en :3667-3698 sin medir latencia.\n- event_time: trade usa E y descarta T (parsers.rs:76-77 y god_engine.rs:3726-3727 con «_»); kline usa E (parsers.rs:107); depth usa E (parsers.rs:23) y T ni se lee.\n- latency_ms = now_ms − E en :3835-3837. Alimenta last_ws_latency_ms (:3846-3851), el kill-switch de 10 ticks (:3857-3870) y LATENCY_PANIC (:3872-3877), con avisos limitados a uno cada 10 s (:3579).\n\n7) OTROS CLIENTES WS.\n- ws_client.rs (BinanceStreamer) está MUERTO. Solo lo referencian el pub use de crates/data-pipeline/src/lib.rs:19,23 y sus propios tests (ws_client.rs:517,527). Si viviera, mediría SystemTime+offset−E de bookTicker justo después de leer, sin cola (ws_client.rs:415-440); en un timeout escribiría el umbral como latencia (:256-264).\n- Clientes vivos que NO escriben latencia: el spot @bookTicker ×26 (god_engine.rs:2302 → spot_feed.rs:216-230 y 320-372, en el runtime tokio compartido, por tanto compite por CPU) y el User Data Stream (god_engine.rs:1882).\n- Único escritor vivo de last_ws_latency_ms: god_engine.rs:3846-3850 (git grep).\n\n8) TASA DE LLEGADA (con N=26).\n- @depth5: 4/s × 26 = 104/s.\n- @kline_1m: hasta 4/s × 26 = 104/s (si Binance la sigue publicando, ver A3).\n- @trade: un mensaje por fill, variable y a ráfagas.\n- !forceOrder@arr: de todo el mercado, como mucho del orden de 1/s por símbolo liquidado.\n- Base sin trades: unos 210/s. Estimación del propio código para el total: «≈500 ev/s» (god_engine.rs:3576).\n- Cola llena (5000) = unos 10 s a 500 ev/s, unos 2,5 s a 2000 ev/s.\n\nVEREDICTO DE LA HIPÓTESIS\n- Red: incluida en la medida, pero no separable (A1).\n- Lote del exchange: REFUTADO en lo esencial. No hay @100ms y el host usa E (sello de emisión), no T. La espera del lote de 250 ms y la cola interna E−T del exchange no entran en now−E.\n- Cola local: CONFIRMADA en lo estructural (A1, A2, A4). No se puede cuantificar con lo que mide hoy el código (A5).\n- Error de reloj: fuera de mi zona.\n- 200 avisos con estrangulador de 10 s significan al menos 200 ventanas de 10 s con algún evento por encima del umbral. Encaja con arranques frecuentes (A4) o con paradas esporádicas del consumidor. Pista para el lector B: el bloque cada 5000 mensajes (:5484-5556) hace E/S de fichero y cosecha del shadow forest dentro del bucle.\n\nLO QUE ESTÁ BIEN: el descarte se cuenta y el centinela no se pierde (CL-52); la primera conexión no cuenta como reconexión (CL-50); la URL se valida sin expect (LG-28); solo se usan hosts USDⓈ-M (CL-54); el watchdog existe y marca stall; la carrera de conexiones es razonable; el lector no es cuello de botella (descifrado, frame y try_send, del orden de µs).",
+  "findings": [
+   {
+    "id": "A1",
+    "title": "Sin sello de recepción: latency_ms mezcla red, buffers, espera en cola, parseo y reloj en un solo número",
+    "severity": "HIGH",
+    "claim": "El lector WS encola los bytes sin ningún sello local. La «latencia de red» se calcula en el consumidor tras sacar el mensaje de la cola y parsear el JSON. Por eso todo el tiempo que el mensaje pasa en el buffer del kernel/TLS y en la cola de 5000 cuenta como red lenta.",
+    "evidence": [
+     "src/bin/god_engine.rs:5740-5747 — Ok(Some(Ok(msg))) => encolar(&tx_events, &rx_events_dropper, msg.into_data(), &estado_cola): solo bytes, sin Instant ni epoch",
+     "src/bin/god_engine.rs:1310 — crossbeam_channel::bounded::<Vec<u8>>(5_000): el tipo de la cola no deja sitio para un sello",
+     "crates/data-ingest/src/cola_ws.rs:54-59 — encolar(tx: &Sender<Vec<u8>>, ..., dato: Vec<u8>, ...)",
+     "src/bin/god_engine.rs:3588 y :3659 — recv() y después start=Instant::now(): el reloj del consumidor arranca DESPUÉS de la espera en cola",
+     "src/bin/god_engine.rs:3835-3837 — now_ms = epoch_baseline_ms + (offset_actual − offset_inicial) + instant_baseline.elapsed(); latency_ms = now_ms − event_time, calculado después del parse simd_json (:3726, :3743-3744)",
+     "src/bin/god_engine.rs:3846-3851, 3857-3870, 3872-3877 — ese mismo número va a arena.last_ws_latency_ms, al kill-switch de 10 ticks y a LATENCY_PANIC (que salta el scalp)"
+    ],
+    "mechanism": "latency_ms = (red + TLS + buffer del socket) + (espera en la cola de 5000) + (parseo) + (error de reloj). Con tasa de llegada λ y ritmo del consumidor μ, la espera en cola es aproximadamente Q/μ. Basta una parada del consumidor de más de Θ segundos (Θ = latency_ms_panic_threshold, unos 3141 ms en el genoma base), o un ρ=λ/μ cercano a 1, para que now−E supere Θ con la red perfecta. Ningún sitio del código separa los términos.",
+    "consequence": "El kill-switch, latency_panic y los avisos LATENCY_PANIC reaccionan a atascos locales como si fueran problemas de red. El operador no puede saber si cambiar de red/endpoint o abaratar el consumidor, y el sistema inmune y el core (last_ws_latency_ms, leído en god-engine-core/src/lib.rs:4378 y :10391) toman decisiones de red sobre un problema de CPU.",
+    "fix_hint": "En el lector, justo al volver de read.next(), tomar t_rx (Instant, más la proyección epoch con el mismo offset) y encolar struct {t_rx, bytes}. En el consumidor: red_ms = t_rx_epoch − E (red + reloj) y cola_ms = now − t_rx (espera local). Alimentar kill-switch y last_ws_latency_ms solo con red_ms y publicar cola_ms como métrica de contrapresión con su propio umbral. Test que falla antes del cambio: un evento con E reciente que espera 5 s en la cola no debe contar como red lenta."
+   },
+   {
+    "id": "A2",
+    "title": "Cola dimensionada en mensajes (5000) y descarte solo al llenarse: puede acumular segundos de atraso, por encima del umbral de pánico",
+    "severity": "HIGH",
+    "claim": "La política «descartar el más antiguo» solo actúa con la cola llena. La antigüedad máxima de lo que procesa el consumidor es 5000/μ segundos, unos 10 s al ritmo estimado por el propio código. En saturación la cola se queda llena y CADA evento sale con unos 5000/μ ms de «latencia», por encima del umbral base de 3141 ms. Además el descarte no distingue el tipo de mensaje.",
+    "evidence": [
+     "src/bin/god_engine.rs:1310 — capacidad 5_000 mensajes, no un tope de tiempo",
+     "crates/data-ingest/src/cola_ws.rs:61-74 — try_send; solo si Full se hace rx.try_recv() del más antiguo: sin cola llena no se descarta nada, por viejo que sea",
+     "src/bin/god_engine.rs:3576 — comentario CL-139: «≈ 3,7 GB/día a 500 ev/s» (tasa asumida por el código): 5000/500 = 10 s",
+     "src/bin/god_engine.rs:1185-1196 — D-705: la vela cerrada es el reloj que calibra el ensamble (update_with_outcome) y mueve las EMAs",
+     "src/bin/god_engine.rs:3739 y :4006 — is_kline_closed se pasa al núcleo; cola_ws.rs:67-68 descarta sin mirar si el mensaje era una vela cerrada o una liquidación"
+    ],
+    "mechanism": "Con ρ ≥ 1 sostenido la cola crece hasta 5000 y se estabiliza, con espera de unos 5000/μ. Con Θ=3141 ms y μ≈500/s, basta una cola de unos 1570 mensajes para disparar el pánico, y la cola admite 5000. Con μ < 1592/s, la propia capacidad permite que la espera local supere Θ. Los snapshots @depth5 antiguos ya quedaron obsoletos por los nuevos, pero se procesan uno a uno.",
+    "consequence": "LATENCY_PANIC y kill-switch continuos durante cualquier saturación, sin que la red tenga nada que ver. Se opera con precios de segundos de antigüedad. Cuando por fin hay descarte, puede llevarse velas cerradas (se pierde una barra de calibración de ese símbolo) o liquidaciones, porque el descarte ignora el tipo.",
+    "fix_hint": "Política por antigüedad, no por número: con el sello de A1, al sacar un mensaje descartar depth y klines no cerradas cuya cola_ms supere un tope, y preservar klines cerradas y forceOrder. Fusionar @depth5 por símbolo (quedarse solo con el último snapshot) para que el libro ocupe como mucho N entradas. Contar los descartes por tipo."
+   },
+   {
+    "id": "A3",
+    "title": "URL de mercado sin ruta (/public, /market) tras la migración de Binance: @kline_1m y !forceOrder@arr probablemente no se publican",
+    "severity": "HIGH",
+    "claim": "El host abre wss://{host}/stream?streams=..., una ruta sin categoría. Según el contrato vigente de Binance USDⓈ-M, una conexión sin ruta solo recibe la categoría pública (profundidad y bookTicker). Las streams de /market (kline, aggTrade, forceOrder) no publican en ella, y las URLs heredadas se retiraron el 2026-04-23. No está verificado en vivo, pero el código no cumple el contrato documentado.",
+    "evidence": [
+     "src/bin/god_engine.rs:1285-1288 — format!(\"wss://{}/stream?streams={}\", initial_ws_host, streams_str): sin /public ni /market",
+     "src/bin/god_engine.rs:1180, 1197, 1206 — @depth5 (categoría pública) en la MISMA conexión que @kline_1m y !forceOrder@arr (categoría /market)",
+     "docs/audit/QRA_F2_UDS_ENDPOINT_2026-10-23.md:19-30 — auditoría previa del repo: changelog del 2026-03-05 con las categorías /public, /market y /private, retirada el 2026-04-23, y «conexiones no migradas sólo podrán recibir tráfico de la categoría pública; /market y /private dejan de publicar en ellas»",
+     "Documentación de Binance (Connect, consultada el 2026-10-24): «Streams belonging to /market or /private will not push data on unrouted connections»; el aviso de cambio sitúa <symbol>@kline_<interval> y !forceOrder@arr en /market y <symbol>@depth<levels> en /public; @trade no aparece en esa tabla"
+    ],
+    "mechanism": "Si Binance aplica el enrutamiento, por la conexión solo llegan los @depth5 (y quizá @trade, cuya categoría no está documentada). La rama is_kline (:3732-3740) y la de forceOrder (:3667-3698) quedan sin datos sin dar ningún error: el watchdog de 15 s no salta porque los depth siguen entrando.",
+    "consequence": "El reloj de calibración de 1 minuto (D-705) y el feed de liquidaciones se quedarían en silencio, sin que el operador lo vea. Para esta auditoría significa que la mezcla y la tasa de mensajes reales (y por tanto ρ) son desconocidas: o bien la carga es solo de unos 104 depth/s más trades, o bien incluye las klines. Las cuentas de saturación de A2 dependen de cuál de los dos casos sea.",
+    "fix_hint": "Primero una sonda de 60 s que cuente eventos por campo \"e\" con la URL actual (o contadores por tipo en el consumidor). Si se confirma, partir en dos conexiones: wss://fstream.binance.com/public/stream?streams=<s>@depth5/... y wss://fstream.binance.com/market/stream?streams=<s>@aggTrade/<s>@kline_1m/.../!forceOrder@arr, cada una con su centinela y su watchdog."
+   },
+   {
+    "id": "A4",
+    "title": "El lector WS arranca antes de que el consumidor esté listo: acumula atraso y provoca KILL_SWITCH y LATENCY_PANIC en cada arranque",
+    "severity": "MED",
+    "claim": "El hilo ws-reader se lanza nada más crear el hilo del núcleo unificado y empieza a encolar mientras ese hilo todavía hace su inicialización (REST bloqueante, arena, modelos). Cuando el bucle de eventos arranca, los primeros miles de mensajes tienen segundos de antigüedad.",
+    "evidence": [
+     "src/bin/god_engine.rs:1972 — spawn del hilo del núcleo unificado (closure hasta :5608)",
+     "src/bin/god_engine.rs:2496 — rt_handle.block_on(oms_session.refresh(&arena_real)) dentro de esa inicialización, antes del bucle",
+     "src/bin/god_engine.rs:3588 — el bucle consumidor empieza aquí, cientos de líneas de inicialización después",
+     "src/bin/god_engine.rs:5609-5616 — el lector se lanza justo después del spawn del núcleo, sin oneshot ni señal de listo",
+     "src/bin/god_engine.rs:1191-1192 — D-705: «los arranques son frecuentes»",
+     "crates/data-ingest/src/cola_ws.rs:61-74 — con el consumidor sin arrancar, la cola guarda los 5000 más recientes (unos 10 s a 500 ev/s)"
+    ],
+    "mechanism": "Mientras se inicializa el núcleo (duración T_init, no medida), entran λ·T_init mensajes, con tope de 5000. Al arrancar el bucle, el primero tiene una antigüedad de unos min(T_init, 5000/λ). Si eso supera Θ, salen al menos 10 eventos seguidos por encima del umbral (:3857-3870) y se emiten KILL_SWITCH y LATENCY_PANIC, hasta que el consumidor se pone al día a ritmo μ−λ. Con unos 1 GB de RAM libre, la reserva y el bloqueo de memoria de la arena pueden alargar T_init.",
+    "consequence": "Al menos un aviso de cada tipo por arranque, más el procesamiento como vivos de ticks de varios segundos. Si hubo descartes en el arranque, el monitor de A5 avisa cada minuto para siempre. Con arranques frecuentes, esto contribuye directamente al recuento de más de 200 avisos.",
+    "fix_hint": "Lanzar el lector cuando el consumidor señale que está listo (oneshot antes de :3588), o al entrar en el bucle descartar todo lo que tenga cola_ms por encima de X (con el sello de A1). No armar el kill-switch hasta vaciar el atraso inicial."
+   },
+   {
+    "id": "A5",
+    "title": "Observabilidad de la contrapresión inservible: contador acumulado, por println!, culpando al lector y sin profundidad ni antigüedad de la cola",
+    "severity": "MED",
+    "claim": "El único indicio de saturación es una línea cada 60 s con el total de descartes desde el arranque. Va por println! (no llega a motor.log, donde sí están los LATENCY_PANIC) y atribuye el problema al lector cuando el descarte lo provoca un consumidor lento. No existe métrica de profundidad de cola, de antigüedad ni de coste por evento agregado.",
+    "evidence": [
+     "src/bin/god_engine.rs:1347-1352 — sleep(60 s); d = estado_cola.descartados(); if d > 0 { println!(\"... {} eventos WS descartados ... — throughput del lector insuficiente\") }: valor acumulado, nunca la diferencia por minuto",
+     "crates/data-ingest/src/cola_ws.rs:31-34 — descartados() devuelve el total desde el arranque",
+     "crates/telemetry-server/src/macros.rs:759-768 — telemetry_log! va a LOG_QUEUE (motor.log, :836); println! se lo salta",
+     "src/bin/god_engine.rs:5484-5485 — la única medida de coste es «Last tick: {} ns»: UNA muestra cada 5000 mensajes, sin media ni p99",
+     "git grep: no aparece rx_events.len() ni ninguna edad de cola en el bucle (awk sobre :3680-5560)"
+    ],
+    "mechanism": "El descarte ocurre cuando la cola está llena, es decir, cuando el consumidor no da abasto. El lector es el productor y es rápido. Tras el primer descarte (por ejemplo en el arranque, A4) la línea se repite cada minuto aunque no haya descartes nuevos, así que no se distingue una saturación en curso de una antigua.",
+    "consequence": "El operador ve más de 200 LATENCY_PANIC en motor.log y ningún dato del atraso local junto a ellos. Para confirmar o refutar la hipótesis de la cola hace falta instrumentar primero. El texto del aviso, además, manda a investigar el lugar equivocado.",
+    "fix_hint": "Por telemetry_log! y cada minuto: descartes del minuto (diferencia), rx_events.len() actual y máximo, cola_ms p50/p99/máx (con A1), tasa por tipo de evento, y p50/p99 de start.elapsed() por evento (el coste c, para estimar ρ=λ·c). Corregir el texto: «consumidor no da abasto»."
+   },
+   {
+    "id": "A6",
+    "title": "Se suscribe @trade (cada fill) en vez de @aggTrade: más mensajes y ráfagas justo en los barridos",
+    "severity": "MED",
+    "claim": "El host pide <sym>@trade, que emite un mensaje por cada fill de maker. @aggTrade agrupa los fills de una misma orden taker al mismo precio. El consumidor solo usa E, p, q, m y s, que también trae aggTrade. La elección multiplica λ y su variabilidad en los momentos de volatilidad, que es cuando el consumidor se satura.",
+    "evidence": [
+     "src/bin/god_engine.rs:1178 — streams.push_str(\"@trade/\")",
+     "src/parsers.rs:65-92 — parse_binance_trade lee E, T, p, q, m y s; el host descarta T (god_engine.rs:3726 con «_»)",
+     "src/bin/god_engine.rs:3661 — discriminador memmem \"e\":\"trade\"",
+     "src/bin/god_engine.rs:3923-3925 — el z-score de ballena se calcula sobre el nocional de cada fill, no de cada orden taker",
+     "crates/data-pipeline/src/ws_client.rs:117 — el diseño anterior usaba @aggTrade; documentación de Binance: @trade no figura en la tabla de rutas del aviso de cambio USDⓈ-M"
+    ],
+    "mechanism": "Una orden taker que barre k makers genera k mensajes @trade frente a aproximadamente un aggTrade por nivel de precio. Las ráfagas de barrido coinciden con la volatilidad, suben λ por encima de μ en ese momento, llenan la cola (A2) y producen picos de now−E.",
+    "consequence": "Más eventos que procesar por unidad de información, picos de cola en el peor momento y una métrica de ballena que mide fragmentación de fills en lugar de agresión. Además, si @trade no está soportado o enrutado en USDⓈ-M (A3), la rama de trades puede quedarse sin datos sin dar error.",
+    "fix_hint": "Cambiar a <sym>@aggTrade (en /market), adaptar el discriminador a \"e\":\"aggTrade\" y el parser (a, p, q, f, l, T, m). Verificar con el núcleo que el CVD sale idéntico (mismo volumen agregado)."
+   },
+   {
+    "id": "A7",
+    "title": "El selector de host cuenta una conexión fallida rápida como la más rápida, y la IP elegida no se usa",
+    "severity": "LOW",
+    "claim": "El acelerador de latencia trata Ok(Err(_)) de timeout(connect) como éxito. Una IP que rechaza la conexión o no es alcanzable (por ejemplo un AAAA sin ruta IPv6) gana con unos 0 ms. Luego solo se usa el nombre de host: el lector vuelve a resolver DNS y compite entre todas las IP, así que la IP del log no se usa.",
+    "evidence": [
+     "src/bin/god_engine.rs:1256-1261 — if let Ok(_) = tokio::time::timeout(500 ms, TcpStream::connect(addr)).await: Ok(Err(e)) también entra",
+     "src/bin/god_engine.rs:1263-1266 — actualiza best_host y best_ip con esa «latencia»",
+     "src/bin/god_engine.rs:1273-1279 — log «Selected WS IP {} ... with {}ms latency»; se devuelve solo best_host (:1279, :1281)",
+     "src/bin/god_engine.rs:5653 y :5686-5697 — el lector vuelve a resolver y hace la carrera de conexiones sobre todas las IP"
+    ],
+    "mechanism": "timeout devuelve Result<io::Result<TcpStream>, Elapsed>, y el patrón Ok(_) no comprueba el resultado interno.",
+    "consequence": "La elección entre fstream y fstream-auth puede ser arbitraria y el log de latencia es falso, lo que confunde el diagnóstico de red. El impacto en la latencia real es menor porque el lector compite entre todas las IP.",
+    "fix_hint": "matches!(timeout(..).await, Ok(Ok(_))). Pasar la IP ganadora al lector (o quitar el selector y quedarse con la carrera de conexiones) y registrar el RTT de la conexión realmente usada."
+   },
+   {
+    "id": "A8",
+    "title": "En modo demo/testnet la métrica mide el feed de testnet con un host distinto al documentado y con el mismo umbral",
+    "severity": "LOW",
+    "claim": "Con USE_TESTNET=true el feed de mercado sale de stream.binancefuture.com, que no coincide con la base demo publicada hoy por Binance. latency_ms compara E del feed de testnet con el reloj sincronizado contra el servidor del ejecutor activo, y se aplica el mismo umbral del genoma que en producción.",
+    "evidence": [
+     "src/bin/god_engine.rs:1239-1240 — testnet => \"stream.binancefuture.com\"",
+     "docs/audit/QRA_F2_UDS_ENDPOINT_2026-10-23.md:54-59 — base WS demo documentada: wss://demo-fstream.binance.com (histórica: wss://fstream.binancefuture.com), «distinta del stream.binancefuture.com que aparece en el código»",
+     "LAUNCHER.bat:126 — el modo testnet hace set USE_TESTNET=true",
+     "src/bin/god_engine.rs:5730-5734 — el propio lector sube el watchdog a 30 s en testnet (reconoce que ese feed es irregular)",
+     "src/bin/god_engine.rs:1146 — el comentario dice «We always use mainnet data», lo que contradice :1239-1240"
+    ],
+    "mechanism": "El feed de testnet tiene otra infraestructura y otra regularidad; el umbral y el kill-switch no distinguen el entorno.",
+    "consequence": "Los avisos de latencia en demo/testnet no son representativos de producción, y un host fuera de contrato puede degradarse o dejar de servir sin aviso.",
+    "fix_hint": "Alinear el host de testnet con el contrato demo vigente (como propone QRA F2) y etiquetar la métrica y el umbral por entorno, o no armar el kill-switch de red en testnet."
+   },
+   {
+    "id": "A9",
+    "title": "El «medidor de latencia de red real» de ws_client.rs es código muerto: no hay un segundo cliente que mida red sin cola",
+    "severity": "INFO",
+    "claim": "BinanceStreamer no se instancia en ningún sitio de producción. Su cálculo de latencia, que sí sería cercano a red + reloj porque se hace justo tras leer, nunca se ejecuta. El único escritor de last_ws_latency_ms es el bucle consumidor, después de la cola.",
+    "evidence": [
+     "crates/data-pipeline/src/lib.rs:19,23 — solo mod y pub use",
+     "crates/data-pipeline/src/ws_client.rs:517,527 — las únicas llamadas a BinanceStreamer::new, en tests",
+     "crates/data-pipeline/src/ws_client.rs:415-440 — «Medir latencia de red real»: SystemTime + server_time_offset − E de bookTicker, y solo guarda si synced ≥ E (sesgo al descartar negativos)",
+     "crates/data-pipeline/src/ws_client.rs:256-264 — en un timeout escribiría el umbral como latencia",
+     "git grep last_ws_latency_ms — único escritor vivo: src/bin/god_engine.rs:3846-3850",
+     "src/bin/god_engine.rs:1245-1246 — el host todavía cita data_pipeline::ws_client como referencia de la lista de hosts"
+    ],
+    "mechanism": "Los clientes WS vivos son el feed de mercado (god_engine.rs:5616), el spot @bookTicker (god_engine.rs:2302 → spot_feed.rs:320-372) y el UDS (god_engine.rs:1882). Ninguno de los dos últimos mide latencia.",
+    "consequence": "No existe hoy ninguna medida de red libre de cola contra la que contrastar latency_ms. El nombre del comentario puede hacer creer que sí.",
+    "fix_hint": "Retirar ws_client.rs o marcarlo como no usado. La medida de red real debe salir del sello de recepción del lector vivo (A1)."
+   }
+  ]
+ },
+ {
+  "map": "Raíz: C:\\Users\\jhona\\Documents\\Proyectos\\tg-lineai (main 2831cf5bd). Todo lo que sigue lo verifiqué leyendo el código (sin cargo).\n\nCAMINO\n1) Suscripción: src/bin/god_engine.rs:1173-1206. Por símbolo se piden @trade, @depth5 (sin @100ms, así que va a la cadencia por defecto del stream) y @kline_1m; además !forceOrder@arr. La URL se arma en 1285-1288. REST y WS siguen el mismo USE_TESTNET (1378-1393 y 1234-1240), así que no hay mezcla de venues.\n2) Lector WS: hilo TIME_CRITICAL en god_engine.rs:5616-5623. En 5741-5747 encola msg.into_data() sin sello de recepción. La cola es crossbeam bounded(5000) (1310) y descarta el más antiguo (crates/data-ingest/src/cola_ws.rs:54-76). El monitor de descartes (1343-1355) hace println cada 60 s y solo cuenta cuando la cola está llena.\n3) Consumidor: recv en god_engine.rs:3588, parse en 3659-3822. Todos los parsers devuelven E, nunca T (src/parsers.rs:23, 76, 110).\n4) Reloj:\n   - Al arrancar: ntp_offset_ms = server − local en god_engine.rs:1920-1947 (sin RTT/2, sesgo de −RTT/2). Se guarda en el arena en 2287.\n   - Se lanza el sincronizador en 2295-2299; un solo loop vivo gracias a la generación (721-753, HOST-016).\n   - crates/execution-engine/src/ntp.rs:106-137: muestra cada 15 s (el primer tick es inmediato). El Kalman (54-94) calcula raw = server − (t0 + RTT/2), con Q = 0,5 ms², R = max((RTT/2)², 4) y descarte si RTT > 350 ms. Publica en arena.server_time_offset_ms (126-129).\n   - Baseline en god_engine.rs:3543-3545. now_ms en 3831-3836. Algebraicamente ntp_offset_ms se cancela: now = W(t_b) + O_k(t) + ΔInstant.\n5) Métrica: latency_ms en 3837. Se guarda con .max(0) y limpia feed_health en 3846-3852. Umbral en 3854.\n6) Consumidores vivos:\n   - Racha de 10 del host (3857-3870): solo escribe un log.\n   - Chequeo por evento del host (3872-3877) → process_event(latency_panic) en 4005-4010 → crates/god-engine-core/src/lib.rs:4142 (allow_entries).\n   - Interlock del núcleo: lib.rs:4372-4409 (piso de 50 ms) → entries_blocked en 6620-6622. Bloquea TODAS las entradas, scalp y swing; las salidas siguen activas (correcto, X-012).\n   - Bosque sombra: recibe el flag del host (god_engine.rs:4021-4032).\n   - Sistema inmune: god_engine.rs:2123-2279. Cada 5 s, con 3 strikes, arma kill_switch_active + executor.trigger_kill_switch + flatten_all_positions.\n   - Gate maker ≤ 25 ms (lib.rs:10391-10393): la cotización no tiene consumidor (crates/god-engine-core/tests/cf3_maker_sin_consumidor.rs). Además no es alcanzable desde un host no colocado; es INFO.\n   - Telemetría OmniUpdate: god_engine.rs:5468-5470.\n7) No son consumidores:\n   - QuantumOrderRouter (crates/execution-engine/src/router.rs:149-207): no se instancia en producción.\n   - Slippage del risk-engine: usa el gen latency_penalty_ms (crates/risk-engine/src/lib.rs:933-937, 988-989), no la latencia medida.\n   - data-pipeline/src/ws_client.rs (BinanceStreamer): muerto, solo aparece en sus tests (517, 527).\n\nLO QUE ESTÁ BIEN\n- Signo y unidades del offset: ms y positivo cuando el servidor va adelantado (ntp.rs:62-64; t0/t1 con as_millis; serverTime en ms en client.rs:250-280).\n- El sesgo de −RTT/2 de ntp_offset_ms no afecta a la latencia porque se cancela.\n- El executor firma con SystemTime + offset, que es coherente (executor.rs:117-121).\n- Hay un solo sincronizador NTP vivo.\n- El interlock no bloquea salidas.\n- Los avisos tienen tope por tiempo (estrangulador.rs:30-42): como máximo 1 cada 10 s por fuente (host 3579, núcleo avisos.rs:18). Por tanto, más de 200 avisos implican al menos unos 17 min acumulados por encima del umbral si avisan ambas fuentes. Eso es un estado sostenido, no picos sueltos. El campo «+N eventos lentos sin aviso» de cada aviso permite distinguirlo: N ≈ tasa×10 s indica cola o reloj; N pequeño indica ráfagas de red.\n\nVEREDICTO SOBRE LA HIPÓTESIS\n- CONFIRMADA estructuralmente: la métrica mezcla red + espera en cola + error de reloj (B1, B2).\n- MATIZADA: el «lote del exchange» probablemente no entra en now−E. E es el sello de emisión y el lote cae en E−T; el parser de depth descarta T. No se puede verificar en el código; se puede medir guardando T.\n- El offset NTP bien aplicado da errores de decenas de ms (≤ RTT/2 más el retraso del filtro), no miles. Los miles solo salen de:\n  (a) la cola local (B1);\n  (b) la mezcla de reloj de pared y reloj monótono (B2);\n  (c) el NTP fallando siempre con el reloj local desviado (B7d).\n- Decisiones afectadas:\n  - Se bloquean todas las entradas en cada evento lento; el log dice «Scalp», pero son todas.\n  - El sistema inmune aplana a mercado y deja el latch puesto hasta reiniciar.\n  - «MARKET directo» del router: no ocurre (B9).\n  - Slippage del risk-engine: no depende de la métrica; el problema es el contrario, ignora el dato rancio (B5).\n  - Maker: sin efecto.",
+  "findings": [
+   {
+    "id": "B1",
+    "title": "latency_ms no mide la red: suma la espera en la cola local, la red y el error de reloj sin separarlos, y todos sus consumidores la tratan como red",
+    "severity": "HIGH",
+    "claim": "La latencia se calcula como now−E en el consumidor, después de desencolar y parsear. El lector WS encola los bytes sin sello de recepción, así que la espera en la cola local (hasta 5000 mensajes) entra entera en latency_ms. Si el consumidor no da abasto, la métrica llega a segundos aunque la red esté sana. Esto está confirmado por la estructura del código; para conocer la magnitud real hace falta el sello de recepción.",
+    "evidence": [
+     "src/bin/god_engine.rs:5741-5747 — encolar(..., msg.into_data(), ...) sin Instant ni hora de recepción",
+     "crates/data-ingest/src/cola_ws.rs:54-59 — encolar recibe dato: Vec<u8>: el canal solo transporta bytes",
+     "src/bin/god_engine.rs:1310 — crossbeam_channel::bounded::<Vec<u8>>(5_000)",
+     "src/bin/god_engine.rs:3588 — while let Ok(mut msg_bytes) = rx_events.recv()",
+     "src/bin/god_engine.rs:3831-3837 — now_ms y latency_ms se calculan después del parse (3659-3822)",
+     "src/bin/god_engine.rs:3574-3576 — el propio código estima ≈500 ev/s",
+     "src/bin/god_engine.rs:4005-4032 — process_event más el bosque sombra (10 motores cada 10 eventos) en el mismo hilo que mide",
+     "src/bin/god_engine.rs:1343-1355 — el monitor BACKPRESSURE solo imprime descartes, que solo ocurren con la cola llena",
+     "src/bin/god_engine.rs:3875 y crates/god-engine-core/src/lib.rs:4403 — los avisos dicen «Delta»/«Latencia» sin decir qué componente es"
+    ],
+    "mechanism": "Espera = longitud de la cola / tasa de servicio. Si coste por evento × tasa de llegada > 1, la cola crece hasta 5000 mensajes, que a unos 500 ev/s son unos 10 s de espera. Todos los eventos salen entonces con now−E ≈ espera. El umbral (≥ 500 ms) se cruza mucho antes de que haya un solo descarte, así que BACKPRESSURE no avisa. La latencia de ida hacia Binance es del orden de decenas a cientos de ms: un umbral de 500 a 10000 ms solo lo cruzan la cola, el reloj (B2/B7) o atascos TCP.",
+    "consequence": "Salen avisos sostenidos LATENCY_PANIC / LATENCY PANIC etiquetados como latencia de red. Se bloquean todas las entradas y el sistema inmune aplana (B3). El operador acaba buscando un problema de red que puede no existir.",
+    "fix_hint": "1) Sellar en el lector (Instant de recepción más la hora del servidor estimada) y que el sello viaje con los bytes, cambiando el tipo del canal a (recv, Vec<u8>). 2) Publicar dos métricas: red+reloj = recv_srv − E y cola = desencolado − recv. 3) Exponer rx_events.len() de forma periódica. Diagnóstico inmediato sin tocar código: mirar el «+N eventos lentos sin aviso» de cada aviso; si N ≈ tasa×10 s, el estado es sostenido (cola o reloj)."
+   },
+   {
+    "id": "B2",
+    "title": "Reloj mixto: el offset NTP se mide contra SystemTime pero se aplica sobre una proyección del reloj monótono (Instant); el error es la corrección acumulada del reloj de pared desde el arranque del bucle",
+    "severity": "HIGH",
+    "claim": "now_ms = W(t_b) + O_k(t) + [M(t) − M(t_b)], donde W es el reloj de pared (SystemTime) y M el monótono (Instant). Pero O_k estima S − W con el reloj de pared, no con el monótono. Por tanto latency_ms arrastra un sesgo igual a lo que el servicio de hora haya corregido el reloj de pared desde t_b. Este sesgo crece con el tiempo de vida del proceso y no depende de la carga. El fix #657 solo corrige el caso de reloj de pared libre; con reloj disciplinado no cambia nada. Es condicional: depende de que el sistema operativo ajuste el reloj de pared mientras el proceso corre.",
+    "evidence": [
+     "crates/execution-engine/src/ntp.rs:114-124 — t0 y t1 se toman con SystemTime::now()",
+     "crates/execution-engine/src/ntp.rs:62-64 — raw_offset = server − (t0 + RTT/2): offset respecto al reloj de pared",
+     "src/bin/god_engine.rs:3543-3545 — instant_baseline = Instant::now(); epoch_baseline_ms = SystemTime(t_b) + ntp_offset_ms",
+     "src/bin/god_engine.rs:3831-3836 — now_ms = epoch_baseline_ms + (ntp_offset_actual − ntp_offset_ms) + instant_baseline.elapsed()",
+     "src/bin/god_engine.rs:3825-3830 — intención de #657: seguir la deriva en sesiones largas",
+     "crates/execution-engine/src/executor.rs:117-121 — el timestamp firmado usa SystemTime::now() + offset (forma coherente)",
+     "walkthrough.md:47 — motivo para evitar SystemTime::now() en el bucle (~5 µs por llamada)"
+    ],
+    "mechanism": "Error e(t) = now − S = (O_k − O_true) + [W(t_b) + ΔM − W(t)]. El corchete vale menos el avance del reloj de pared menos el del monótono, es decir, la corrección que aplicó al reloj de pared, después de t_b, w32time (slew o step), un cambio manual o la sincronización de una VM. Con reloj de pared libre el corchete es 0 y O_k sigue la deriva. Con reloj disciplinado, O_true es constante y el corchete ≈ ρ·(t − t_b), con ρ la deriva del oscilador: el mismo error que tenía el offset congelado antes de #657. Un step de Δ aparece poco a poco, a medida que converge el Kalman (ganancia ≈ √(Q/R) = 1,41/RTT_ms; constante de tiempo de unos 9 min con RTT de 50 ms y unos 27 min con 150 ms), y después se queda fijo. Signo: si el reloj adelantaba y se corrige hacia atrás, la latencia se sobrestima en |Δ|; en el caso contrario se subestima y queda oculta por el clamp a 0 (B8). Con una deriva típica de decenas de ppm, el orden es de segundos por día de uptime (estimación, no medida).",
+    "consequence": "Sesgo monótono que crece con la vida del proceso. Cuando cruza el umbral, todos los eventos son «lentos»: se bloquean todas las entradas y el sistema inmune aplana a los ~15 s (B3), sin que la red ni la carga hayan cambiado.",
+    "fix_hint": "Usar now_ms = SystemTime::now() + O_k, el mismo reloj contra el que se mide el offset. Incluso con la cifra de walkthrough, 5 µs × 500 ev/s es un 0,25 % de una CPU. La alternativa es medir t0/t1 del NTP con el mismo ancla + Instant compartido. Diagnóstico: registrar cada minuto (W(t) − W(t_b)) − (M(t) − M(t_b)); si se separa de 0, B2 está activo. Reinicializar el Kalman cuando esa diferencia dé un salto (step del reloj)."
+   },
+   {
+    "id": "B3",
+    "title": "El sistema inmune cierra a mercado todas las posiciones y deja el kill-switch latcheado con 3 lecturas puntuales de una métrica que incluye cola y reloj",
+    "severity": "HIGH",
+    "claim": "Cada 5 s el inmune lee last_ws_latency_ms, que es la latencia del último evento procesado. Con 3 lecturas seguidas por encima del umbral arma kill_switch_active y el kill-switch del executor y aplana todo. El kill_switch_active del arena no se rearma sin reiniciar el proceso. Como la métrica incluye la espera en cola (B1) y el sesgo de reloj (B2), un atraso local sostenido o un reloj desviado aplanan la cuenta con la red sana.",
+    "evidence": [
+     "src/bin/god_engine.rs:2125 — sleep de 5 s por ciclo",
+     "src/bin/god_engine.rs:2194-2199 — lat = last_ws_latency_ms (un solo valor); umbral = gen .max(50)",
+     "src/bin/god_engine.rs:2211-2227 — 3 strikes ⇒ lat_breach",
+     "src/bin/god_engine.rs:2229-2279 — kill_switch_active=true, trigger_kill_switch(), flatten_all_positions()",
+     "src/bin/god_engine.rs:2034-2035 — rearme: reiniciar el proceso basta para el disparo por latencia",
+     "src/bin/god_engine.rs:2129-2137 — rearme_frenos.txt solo libera el `latched` local",
+     "git grep kill_switch_active.store — solo store(true): src/bin/god_engine.rs:2246, 5374; crates/god-engine-core/src/lib.rs:9274",
+     "crates/god-engine-core/src/lib.rs:4369, 4394-4399 — mientras esté armado, entries_blocked",
+     "src/bin/god_engine.rs:3851 — cualquier evento, aunque llegue con 10 s de cola, limpia el flag de stall"
+    ],
+    "mechanism": "Basta un atraso local de unos 10-15 s por encima del umbral para disparar: por ejemplo, una ráfaga de cierres de vela de 30 símbolos más el bosque sombra en el mismo hilo, o swapping con ~1 GB de RAM libre. También basta el sesgo de B2. La lectura es un punto (el último evento), no un cuantil ni una ventana, y no distingue atraso local, red o reloj.",
+    "consequence": "Se cierran a mercado todas las posiciones (spread malo y comisión taker) y no entra ninguna posición nueva hasta reiniciar, por un problema local o de reloj. El log dice «latencia X ms > Y ms sostenida». Ojo: un atraso de cola real sí deja ciegas a las salidas, así que la respuesta no debería ser idéntica a la de una caída de red.",
+    "fix_hint": "Alimentar el inmune con la componente que toca: para atraso de cola, primero aligerar la carga (saltar el bosque sombra o el depth) y pausar entradas, y aplanar solo si el atraso persiste; para red o stall, la acción actual. Usar una estadística de ventana (por ejemplo, la mediana de los últimos 15 s) en vez de un punto."
+   },
+   {
+    "id": "B4",
+    "title": "El umbral latency_ms_panic_threshold es un gen sin presión selectiva: deriva al azar en [500, 10000] ms y se usa con cuatro semánticas distintas",
+    "severity": "MED",
+    "claim": "En backtest, evolución y bosque sombra nadie escribe last_ws_latency_ms, y las sombras reciben el flag del host calculado con el genoma vivo. Por tanto el gen no influye en ningún fitness y la mutación lo pasea al azar dentro de sus límites. El mismo número se usa como umbral por evento (host), interlock del núcleo, umbral sostenido del inmune y, en código muerto, como umbral del router y timeout de lectura WS. No es una cantidad física coherente con lo que mide.",
+    "evidence": [
+     "crates/quantum-arena/src/genome.rs:814 — base 1000·π ≈ 3141 ms; :1019 — random_range(500..10000)",
+     "crates/quantum-arena/src/genome.rs:1858-1862 y :1953 — mutate_val: paseo aleatorio acotado a [500, 10000]; límites en :3157 y :3311",
+     "crates/quantum-arena/src/state.rs:833 — last_ws_latency_ms empieza en 0; único writer vivo src/bin/god_engine.rs:3847-3850 (ws_client.rs:262-264 y 433-435 son de BinanceStreamer, sin uso fuera de sus tests: ws_client.rs:517, 527)",
+     "crates/god-engine-core/src/lib.rs:4387 — en backtest 0 > umbral nunca se cumple",
+     "src/bin/god_engine.rs:4031 y crates/evolution-engine/src/random_forest.rs:198, 239 — las sombras usan el flag del host",
+     "Usos: god_engine.rs:3854-3877 (sin piso), lib.rs:4372-4377 (piso 50), god_engine.rs:2195-2199 (piso 50, 3×5 s), router.rs:158-166 (muerto), ws_client.rs:245-255 (timeout, muerto)",
+     "crates/quantum-arena/src/genome.rs:1865-1867 — precedente F1-085: gen congelado por no tener consumidor"
+    ],
+    "mechanism": "Sin selección, el genoma vivo puede llevar 600 ms (avisos ante cualquier atraso) o 9 s (opera con datos de 9 s sin avisar). Un mismo número no puede servir a la vez como umbral por evento y como umbral sostenido de 15 s. La red hacia Binance está una o dos órdenes de magnitud por debajo del rango, así que en la práctica el umbral solo detecta cola o reloj.",
+    "consequence": "Cuántos avisos y bloqueos hay depende de qué genoma esté activo, no de la red. El aviso imprime el umbral vivo («(>{panic_threshold}ms limit)», god_engine.rs:3875): conviene comprobar qué valor tiene en producción.",
+    "fix_hint": "Sacarlo de la evolución (congelarlo como F1-085) y derivar umbrales de la distribución medida de cada componente: cuantil alto de la red con un piso físico, y un objetivo en ms para la cola. Separar el umbral por evento del umbral sostenido."
+   },
+   {
+    "id": "B5",
+    "title": "La fricción del gate EV cobra la latencia del gen (≈13,6 ms) y no la antigüedad medida del dato: se entra con precios de hasta 0,5-10 s cobrando como si tuvieran 14 ms",
+    "severity": "MED",
+    "claim": "El slippage por latencia del risk-engine usa config.latency_penalty_ms (gen en [5, 100], base e·5 ≈ 13,6 ms), no last_ws_latency_ms. Las entradas solo se bloquean por encima del umbral de pánico, así que por debajo de él se decide con datos rancios y el coste de esa antigüedad no se cobra en ningún sitio.",
+    "evidence": [
+     "crates/risk-engine/src/lib.rs:933-937 — lat_ms = config.latency_penalty_ms",
+     "crates/risk-engine/src/lib.rs:988-989 — roundtrip_friction(..., lat_ms)",
+     "crates/quantum-arena/src/genome.rs:823 (e·5) y :1028 (5..100)",
+     "crates/risk-engine/src/tp_sl.rs:184-200 — σ·(t/τ_ref)^H con τ_ref = 60 000 ms (:136)",
+     "crates/god-engine-core/src/lib.rs:4387-4399 — la latencia medida solo actúa como veto binario por encima del umbral"
+    ],
+    "mechanism": "Con H = 0,5: √(2000/60000) = 0,18·ATR frente a √(13,6/60000) = 0,015·ATR. Con latency_ms = 2 s, que sigue por debajo del umbral base de 3141 ms, el gate infravalora unas 12 veces el desplazamiento esperado del precio. latency_penalty_ms modela el tramo decisión→fill; la antigüedad del dato es otro término que nadie modela.",
+    "consequence": "El gate EV certifica como rentables entradas decididas sobre precios desplazados, y la geometría TP/SL parte de un precio que ya no existe.",
+    "fix_hint": "Cuando exista la métrica descompuesta (B1), sumar la antigüedad real del dato (red + cola hasta la decisión) al término de latencia del gate, o vetar por antigüedad con un umbral físico ligado a τ."
+   },
+   {
+    "id": "B6",
+    "title": "El «kill-switch» de 10 ticks es cosmético: no tiene latch ni histéresis, el chequeo por evento ya lo cubre, y el permiso de entrada cambia con el ruido de cada evento",
+    "severity": "LOW",
+    "claim": "Una racha de 10 o más implica que el evento actual fue lento (si no, la racha vuelve a 0), y entonces el chequeo por evento ya puso latency_panic. El único caso distinto es event_time == 0, en el que no hay símbolo y no se procesa nada. La racha no toca kill_switch_active y se desarma con el primer evento rápido. El log anuncia un estado que no existe y dice «SCALP» cuando se bloquean todas las entradas.",
+    "evidence": [
+     "src/bin/god_engine.rs:3838 — latency_panic se reinicia en cada evento",
+     "src/bin/god_engine.rs:3857-3861 — racha que se pone a 0 con el primer evento rápido",
+     "src/bin/god_engine.rs:3863-3870 — latency_panic = true más el log «Volatilidad Sintética activada. SCALP DESACTIVADO»",
+     "src/bin/god_engine.rs:3872-3877 — el chequeo por evento usa la misma condición",
+     "crates/god-engine-core/src/lib.rs:4142 y :6620-6622 — se bloquean todas las entradas (scalp y swing) en ese evento"
+    ],
+    "mechanism": "El bloqueo dura un solo evento. Con jitter de red, entra en cuanto llega un evento rápido entre varios lentos; con atasco de cola, todos los eventos son lentos y el bloqueo es total. Host y núcleo hacen el mismo chequeo por duplicado y emiten dos avisos por ventana de 10 s.",
+    "consequence": "El operador lee «kill switch activado» mientras el motor sigue entrando, y los mensajes no dicen bien qué se bloquea.",
+    "fix_hint": "Un solo dueño (núcleo u host) con estado e histéresis: entrar tras N eventos lentos o T ms, salir tras M rápidos. Mensaje que diga correctamente qué se bloquea."
+   },
+   {
+    "id": "B7",
+    "title": "Robustez del NTP: umbral absoluto de 350 ms de RTT, primera muestra sin filtrar, descarte sin paso de predicción, RTT medido con el reloj de pared y vuelta silenciosa a offset 0",
+    "severity": "LOW",
+    "claim": "Con el Kalman bien alimentado, el error del offset es como mucho RTT/2 más el retraso del filtro (decenas de ms). Pero hay cuatro casos en que se degrada: (a) con RTT base ≥ ~350 ms se descartan todas las muestras salvo la primera y el offset queda congelado; (b) tras muchos descartes la varianza P no crece y la reconvergencia es lenta; (c) un step del reloj de pared durante la petición da rtt = 0 ⇒ R = 4 ⇒ ganancia ≈ 0,9 y una muestra falsa domina; (d) si /fapi/v1/time falla siempre, el offset queda en 0 y latency_ms absorbe entero el desfase del reloj de Windows.",
+    "evidence": [
+     "crates/execution-engine/src/ntp.rs:40 — OUTLIER_RTT_THRESHOLD_MS = 350 (absoluto)",
+     "crates/execution-engine/src/ntp.rs:57-60 — al descartar devuelve la estimación previa sin P += Q",
+     "crates/execution-engine/src/ntp.rs:70-76 — primera muestra sin descarte, P = (RTT/2)²",
+     "crates/execution-engine/src/ntp.rs:55 y 114-124 — rtt = t1 − t0 (saturating_sub) con SystemTime",
+     "crates/execution-engine/src/ntp.rs:82 — R mínimo de 4 ms²",
+     "crates/execution-engine/src/ntp.rs:132-134 — un fallo solo hace eprintln",
+     "src/bin/god_engine.rs:1928-1936 y 2287 — si falla al arrancar, offset 0",
+     "src/bin/god_engine.rs:1273-1278 — el log de latencia TCP del host WS permite estimar el RTT del entorno"
+    ],
+    "mechanism": "Los casos (a)-(c) dan sesgos de decenas a cientos de ms; el (d), segundos, según lo desviado que esté el reloj local. El mismo offset alimenta el timestamp firmado del executor (executor.rs:117-121).",
+    "consequence": "Sesgo en latency_ms y riesgo de rechazos -1021 (recvWindow) en las órdenes firmadas, sin telemetría periódica del offset, del RTT ni de los descartes.",
+    "fix_hint": "Medir el RTT con Instant. Umbral de outlier relativo (por ejemplo, > 2× la mediana móvil del RTT). Hacer P += Q también al descartar. Publicar offset, RTT y número de descartes, y avisar explícitamente si nunca hay una muestra válida."
+   },
+   {
+    "id": "B8",
+    "title": "La latencia negativa (now < E, físicamente imposible, es decir, error de reloj) se borra: clamp a 0 en el arena y desbordamiento a u64 en la telemetría",
+    "severity": "LOW",
+    "claim": "La única señal directa de error de reloj (now − E < 0) se descarta. El arena guarda .max(0) y el evento de telemetría hace la conversión i64→u64 sin clamp.",
+    "evidence": [
+     "src/bin/god_engine.rs:3850 — latency_ms.max(0) as u64",
+     "src/bin/god_engine.rs:5469 — latency_ms as u64 sin clamp",
+     "crates/telemetry-server/src/lib.rs:47-50 — TelemetryEvent::OmniUpdate { latency_ms: u64 } con derive(Serialize)",
+     "crates/telemetry-server/src/forensic_auditor.rs:180 — la conversión de vuelta (as i64) deja el valor negativo en SQLite"
+    ],
+    "mechanism": "Un sesgo negativo (B2 con corrección hacia delante, o un offset sobrestimado) aparece como 0 ms en el arena y como unos 1,8·10^19 ms en el evento serializado. Además, un valor de 0 enmascara una latencia de red real.",
+    "consequence": "Desde la telemetría no se puede observar el error de reloj, y la red lenta queda tapada cuando el sesgo es negativo.",
+    "fix_hint": "Contar y publicar los eventos con now < E y el mínimo de now−E por ventana: ese mínimo estima el error de reloj residual más la red mínima, y separa B2 de B1. Clamp coherente en la telemetría."
+   },
+   {
+    "id": "B9",
+    "title": "La rama High Latency → MARKET directo del router no está conectada en producción; la consecuencia «MARKET directo» de la hipótesis no ocurre",
+    "severity": "INFO",
+    "claim": "QuantumOrderRouter::route_order no se instancia ni se llama desde el binario ni desde el núcleo. La latencia nunca llega a router.rs:193.",
+    "evidence": [
+     "crates/execution-engine/src/router.rs:117 y 189-207 — rama MARKET por latencia > umbral",
+     "git grep QuantumOrderRouter|route_order: solo crates/execution-engine/src/lib.rs:31 (re-export), los tests de router.rs (376, 450) y crates/execution-engine/tests/*; nada en src/ ni en crates/god-engine-core/src",
+     "docs/PLAN_LINEA_I_CLAUDE_2026-10-24.md §1 da por hecho que el router decide MARKET por latencia"
+    ],
+    "mechanism": "No existe una instancia viva del router.",
+    "consequence": "El átomo I-3 no necesita contrato para el router salvo que se conecte. Si se conecta tal como está, una cola local por encima del umbral convertiría las entradas en MARKET.",
+    "fix_hint": "Sacarlo del alcance de I-3 o retirarlo. Si se conecta, alimentarlo solo con la componente de red."
+   }
+  ]
+ },
+ {
+  "map": "VEREDICTO SOBRE LA HIPÓTESIS: se confirma en lo estructural y la magnitud queda sin medir. latency_ms se calcula en el consumidor justo después de sacar el mensaje de la cola, así que incluye la espera en cola local. El lector WS no sella la hora de recepción. Ningún sitio mide la profundidad de la cola ni la espera en ella. No hay logs de ejecución en el repo (Trader Gemini/logs no contiene LATENCY_PANIC ni BACKPRESSURE) y no se ejecutó cargo, así que no pude medir ρ = λ·S.\n\nCAMINO AUDITADO (src/bin/god_engine.rs salvo que se indique otra ruta):\n- Cola: crossbeam bounded(5_000) de Vec<u8> en 1310-1311. data-ingest/src/cola_ws.rs:54-76 la gestiona: descarta el más antiguo cuando se llena, por NÚMERO de mensajes y no por edad, sin sello de tiempo. EstadoCola (cola_ws.rs:19-24) sólo cuenta descartes.\n- Productor: hilo ws-reader lanzado en 5616-5623, anclado al core 2, TIME_CRITICAL. Encola con msg.into_data() en 5741-5747. Streams en 1174-1206: @trade, @depth5 (SIN sufijo @100ms, o sea 250 ms por defecto de Binance; el contexto decía @100ms) y @kline_1m por símbolo, más !forceOrder@arr. El universo es de hasta 30 símbolos (quantum-arena/src/state.rs:15).\n- Consumidor: hilo unificado lanzado en 1972-1985, anclado al core 1, TIME_CRITICAL. Bucle while let Ok(..) = rx_events.recv() en 3588.\n  - Pre-trabajo por mensaje: drenaje de fills con try_recv (3598-3600); firma del estado cada 4096 mensajes, envío a hilo escritor (3603-3614); centinela de reconexión (3635-3654); `let start = Instant::now()` (3655); 4 memmem (3657-3666); forceOrder con `continue` (3667-3699); validación UTF-8 (3714-3720); parse simd_json (3722-3825).\n  - MEDIDA: now_ms y latency_ms en 3833-3837, ANTES de process_event (4006-4011). Por eso excluye el coste del propio evento e incluye el de todos los que iban delante en la cola.\n  - Efectos de la medida: se guarda en arena.last_ws_latency_ms y se llama a feed_health::clear() (3846-3852); umbral del genoma (3854); kill-switch y LATENCY_PANIC (3857-3877).\n  - Post-trabajo: whale/l2 (3918-3938), filtro de salto (3948-3970), process_event del núcleo (4006-4011), bosque sombra de 10 universos cada 10 mensajes (4018-4033), auditor de trayectoria (4040-4085), orchestrator.write() (4093), cierres de bracket (4115-4175), contabilidad y despacho asíncrono, margen total O(30) por evento (4630-4633), bloque %100 (5394-5480), bloque %5000 (5484-5556).\n- Núcleo (crates/god-engine-core/src/lib.rs): process_event (2891) envuelto en profile_node (2913). Hace refresh_models cuando tick%1000==0 (3173-3180 → 2405-2440). allow_entries = !latency_panic (4142). contagion cada 4096 ticks (4148-4150). Vuelve a leer last_ws_latency_ms y emite su propio aviso LATENCY PANIC (4378-4407). increment_tick en 4411. El maker exige latencia ≤25 ms con la misma métrica (10391-10393): con lotes de 250 ms, inalcanzable en eventos depth/kline (fuera de mi zona).\n- Consumidores de la métrica: sistema inmune cada 5 s, 3 strikes → kill-switch + flatten_all + latch (god_engine.rs:2193-2250).\n\nLO QUE ESTÁ BIEN (no son hallazgos):\n- Macros de telemetría sin locks con force_push, sin E/S en el hilo: telemetry-engine/src/lib.rs:19-41, atomic_telemetry.rs:42-48, telemetry-server/src/macros.rs:759-783.\n- persist_kelly_envelope_async usa spawn_blocking (god_engine.rs:638-659).\n- El estado aprendido lo escribe un hilo aparte (3420-3437).\n- Órdenes y cierres se despachan con rt_handle.spawn.\n- El RwLock del orquestador no tiene contención: el otro acceso sólo se lee al arrancar (2582).\n- La cola de cierres de bracket no usa locks (execution-engine/src/trade_accounting.rs:330-344).\n- El registro es un SkipMap sin locks (omniscient-registry/src/lib.rs:155-160, 206-214). OmniState son atómicos.\n- profile_node es rdtsc + ArrayQueue y la calibración TSC va fuera del hilo (telemetry-server/src/profiler.rs:410-421, 244-262).\n- No hay println! en el bucle ni en process_event.\n- tick_counter avanza en todo evento del núcleo vivo (lib.rs:4411, sin returns tempranos entre 3173 y 4411), así que refresh_models corre 1 de cada 1000.\n- contagion_publisher (contagion_publisher.rs:21-60, hawkes_cross.rs:136-170) es un pico periódico O(N²·L·n), no coste sostenido.\n- La base del reloj (instant y epoch) se toma en el mismo instante (3543-3545).\n\nRIESGO DE CONTEXTO, NO VERIFICADO: 11 arenas con VirtualLock (2017-2024, evolution-engine/src/random_forest.rs:112-118) en una máquina con ~1 GB libre pueden provocar paginación de estructuras calientes no bloqueadas. Además, el anclaje rígido a un core (1979-1983) impide migrar al hilo. Hay que medirlo.",
+  "findings": [
+   {
+    "id": "C1",
+    "title": "latency_ms mezcla la espera en la cola local con la latencia de red y alimenta frenos de red (inmune: flatten + latch)",
+    "severity": "HIGH",
+    "claim": "La métrica que el sistema trata como latencia de red es, en realidad, now−E medido al sacar el mensaje de la cola. Incluye el lote del exchange, la red, la espera en cola local (suma de los tiempos de servicio de todos los eventos anteriores) y el error de reloj. Excluye el coste del propio evento. Nada sella la recepción en el lector WS.",
+    "evidence": [
+     "src/bin/god_engine.rs:5741-5747 (el lector encola msg.into_data(): sólo bytes, sin Instant de recepción)",
+     "crates/data-ingest/src/cola_ws.rs:54-62 (encolar(tx: &Sender<Vec<u8>>, ..., dato: Vec<u8>): el tipo no admite sello)",
+     "src/bin/god_engine.rs:3588 (recv) → 3833-3837 (now_ms = epoch_baseline + Δntp + instant_baseline.elapsed(); latency_ms = now_ms - event_time) → 4006-4011 (process_event DESPUÉS de medir)",
+     "src/bin/god_engine.rs:3846-3850 (store en arena.last_ws_latency_ms)",
+     "crates/god-engine-core/src/lib.rs:4142 y 4378-4398 (latency_panic y last_ws_latency_ms bloquean TODAS las entradas)",
+     "src/bin/god_engine.rs:2193-2214 y 2240-2250 (inmune: 3 muestras > umbral → kill_switch_active + flatten_all_positions + latched)"
+    ],
+    "mechanism": "Al leer el evento i, la cola tiene Q mensajes. Su latencia es L_i = (E→envío) + red + Σ_{j<i} S_j + ε_reloj. Si λ·S̄ ≥ 1, o durante cualquier parón del consumidor, Q crece y L_i crece linealmente aunque la red esté sana. La cola sólo se acota en 5000/λ s (descarte del más antiguo), lo que supone unos 5-20 s con λ≈250-1000 ev/s (depth5 y kline a 4/s × 30 símbolos más trades). Eso está por encima del umbral base de 3141 ms (quantum-arena/src/genome.rs:814). Una cola de unos 3,1·λ mensajes basta para dispararlo.",
+    "consequence": "La saturación de CPU local se diagnostica como latencia de red. Bloquea entradas, emite los avisos LATENCY_PANIC/KILL_SWITCH (más de 200) y, si dura ≥15 s, el sistema inmune cierra todo a mercado y deja el kill-switch con latch. El operador investiga la red cuando el problema es el consumidor.",
+    "fix_hint": "Sellar la recepción en el lector (encolar (Instant, epoch_ms, bytes)). Calcular red = t_recv − E y atraso_local = t_deq − t_recv por separado. El interlock de red y el inmune deben usar sólo la primera. El atraso local necesita su propia política: descartar carga, no aplanar."
+   },
+   {
+    "id": "C3",
+    "title": "Al arrancar, la cola se llena antes de que exista el bucle: los primeros ~5000 eventos son viejos",
+    "severity": "HIGH",
+    "claim": "El hilo ws-reader se lanza en cuanto se crea el hilo unificado, sin barrera. Mientras el hilo unificado hace su inicialización (REST bloqueante, creación del motor, calentamiento, bosque de 10 arenas con VirtualLock), el WS ya encola. El bucle arranca con una cola de hasta 5000 mensajes, todos con segundos de antigüedad.",
+    "evidence": [
+     "src/bin/god_engine.rs:1972 (spawn del hilo unificado; el hilo principal sigue de inmediato)",
+     "src/bin/god_engine.rs:5609-5616 (cierre del spawn y, en seguida, spawn de ws-reader)",
+     "src/bin/god_engine.rs:2496 (rt_handle.block_on(oms_session.refresh) dentro del hilo unificado)",
+     "src/bin/god_engine.rs:3338 (GodEngineCore::new_with_outcome_context), 3480-3508 (calentamiento con K-lines), 3512 (ShadowForest::new(..., 10)) y 3519-3521 (load_active)",
+     "src/bin/god_engine.rs:3588 (el bucle empieza aquí, después de todo lo anterior)",
+     "crates/data-ingest/src/cola_ws.rs:78-95 (la 1ª conexión no envía centinela: nada marca el atraso inicial)",
+     "src/bin/god_engine.rs:1310 (capacidad 5_000, descarte del más antiguo)"
+    ],
+    "mechanism": "Atraso inicial B0 = min(5000, λ·(T_init − T_conexión)). El drenaje dura B0/(μ−λ). Si μ es sólo un poco mayor que λ (ver C5), el drenaje dura decenas de segundos. Durante todo ese tiempo, cada evento tiene now−E de varios segundos.",
+    "consequence": "Cada arranque o reinicio produce, como mínimo, una ráfaga de LATENCY_PANIC/KILL_SWITCH y entradas bloqueadas. Si el drenaje pasa de unos 15 s (3 strikes de 5 s), el inmune aplana y deja el latch. Un reinicio vuelve a provocar lo mismo.",
+    "fix_hint": "Lanzar el lector sólo cuando el bucle esté listo (oneshot o Barrier), o descartar en el primer recv todo lo encolado con t_recv anterior al arranque del bucle (requiere el sello de C1). Alternativa: poner un centinela de arranque que vacíe la cola."
+   },
+   {
+    "id": "C4",
+    "title": "E/S de disco síncrona con fsync y espera activa sobre un fichero de lock (hasta 5 s) dentro del hilo caliente",
+    "severity": "HIGH",
+    "claim": "La cosecha del bosque sombra (cada 5000 mensajes) llama a GenomeEnvelope::promote y a load_active desde el hilo del bucle. promote hace varios fsync y entra en un bucle create_new sobre active.json.lock con sleep(1ms) que puede durar hasta 5 s. Además, refresh_models del núcleo hace fs::metadata cada 1000 ticks y load_active cuando cambia la fecha del fichero. En demo la evolución en vivo está armada por defecto.",
+    "evidence": [
+     "src/bin/god_engine.rs:5484 (bloque %5000), 5493-5498 (fs::metadata y load_active), 5509 (harvest_best_genome), 5513 (filtro de armado), 5523-5527 (promote en el hilo), 5535-5541 (metadata, load_active y apply_to_arena)",
+     "crates/evolution-engine/src/online_daemon.rs:1047-1057 (armado por defecto si TG_GENOME_ENV=demo)",
+     "crates/quantum-arena/src/genome_store.rs:536-571 (create_dir_all, lectura de active.json, bucle create_new sobre gen_N.json), 590-600 (write_all + sync_all)",
+     "crates/quantum-arena/src/genome_store.rs:706-755 (bucle sobre el lock: AlreadyExists/PermissionDenied → thread::sleep(1ms), lock huérfano retirado a los 5 s; atomic_write y atomic_write_bytes dentro)",
+     "crates/quantum-arena/src/genome_store.rs:761-790 (File::create + sync_all + rename con reintentos y sleep(2ms))",
+     "crates/god-engine-core/src/lib.rs:3173-3180 → 2405-2440 (env::var_os + fs::metadata + load_active + apply_to_arena dentro de process_event)",
+     "Hay promotores concurrentes que compiten por el mismo lock: crates/evolution-engine/src/online_daemon.rs:2042 y crates/god-engine-core/src/darwin.rs:735"
+    ],
+    "mechanism": "Mientras el hilo está en FlushFileBuffers (en Windows, de decenas a cientos de ms) o esperando el lock que tiene el daemon o un proceso muerto, no se consume ningún evento. La cola crece a razón de λ por segundo. Al volver, los eventos acumulados salen con now−E igual a la duración del parón más la cola previa.",
+    "consequence": "Picos de LATENCY_PANIC correlacionados con cosechas y promociones de genoma, no con la red. Con el lock huérfano, un parón de unos 5 s equivale a entre 1250 y 5000 eventos atrasados, al borde de la saturación. Mientras dura el parón, last_ws_latency_ms se queda congelado en el último valor sano (ver C8).",
+    "fix_hint": "Sacar promote, load_active y fs::metadata del hilo caliente: spawn_blocking o un hilo vigilante que devuelva el sobre por canal y se aplique con try_recv, como ya hace model_rx en lib.rs:2934-2944. Nunca hacer espera activa sobre ficheros en el hilo del bucle."
+   },
+   {
+    "id": "C5",
+    "title": "Bosque sombra (10 núcleos) en el hilo caliente sin recorte de carga: dobla el coste medio y lo multiplica por 11 cada 10 mensajes, también durante el atraso",
+    "severity": "MED",
+    "claim": "Uno de cada 10 mensajes ejecuta process_event en los 10 universos sombra dentro del mismo hilo. Eso no se suspende ni con latency_panic ni con la cola llena: sólo con presión de RAM. El trabajo no crítico prolonga el atraso que él mismo provoca.",
+    "evidence": [
+     "src/bin/god_engine.rs:4018-4033 (if msg_count % 10 == 0 { shadow_forest.broadcast_tick(...) }, sin comprobar latencia ni cola)",
+     "src/bin/god_engine.rs:3512 (ShadowForest::new(..., 10))",
+     "crates/evolution-engine/src/random_forest.rs:216-238 (bucle sobre los 10 engines con engine.process_event completo)",
+     "crates/evolution-engine/src/random_forest.rs:204-214 (la única suspensión es panic_memory_dump)",
+     "src/bin/god_engine.rs:4040-4085 (auditor de trayectoria por evento) y 5509 (cosecha en el hilo)"
+    ],
+    "mechanism": "Coste medio por mensaje S̄ ≈ S_core·(1 + 10/10) + S_host ≈ 2·S_core. Cada 10º mensaje cuesta unas 11·S_core. Si 2·S_core·λ se acerca a 1, el margen μ−λ es pequeño: cualquier ráfaga de trades o parón (C4) deja un atraso que tarda mucho en drenarse. Con latency_panic=true el bosque sigue corriendo y, encima, sus universos reciben ese flag (4031), lo que también contamina su fitness con el estado de la CPU del host.",
+    "consequence": "La probabilidad de que la cola crezca es más alta y el drenaje más lento, así que hay más avisos de «latencia de red». Positive feedback: más atraso, más evaluaciones con datos viejos, mismo coste.",
+    "fix_hint": "Omitir broadcast_tick (y la trayectoria y la cosecha) cuando rx_events.len() > N o el atraso local supere un presupuesto, o llevar el bosque a su propio hilo alimentado por un canal con pérdidas. No reenviar a las sombras un latency_panic que viene de la CPU del host."
+   },
+   {
+    "id": "C6",
+    "title": "Se procesan como frescos eventos con varios segundos de antigüedad: la cola se acota por número, no hay recorte por edad ni conflación de snapshots",
+    "severity": "MED",
+    "claim": "La única cota de edad es indirecta: 5000/λ s. Todo evento que sale de la cola recorre el pipeline completo: actualización de estado, gestión de SL/TP, cierres y aprendizaje. Los streams de snapshot (@depth5 y @kline_1m sin cerrar) se procesan uno a uno aunque ya haya otro más nuevo del mismo símbolo en cola. El freno de entradas depende de un gen evolutivo (500-10000 ms) sin relación con la capacidad de la cola.",
+    "evidence": [
+     "crates/data-ingest/src/cola_ws.rs:61-74 (descarte del más antiguo sólo con la cola llena) y src/bin/god_engine.rs:1310 (5_000)",
+     "src/bin/god_engine.rs:3722-3825 (sin filtro por edad ni conflación por símbolo)",
+     "crates/god-engine-core/src/lib.rs:4142 y 4394-4398 (latency_panic bloquea entradas; la gestión de salidas sigue con el precio viejo)",
+     "src/bin/god_engine.rs:4425-4431 y 4510-4514 (PnL y Kelly con current_price del evento viejo) y 4547-4600 (cierre reduce-only a mercado provocado por ese precio)",
+     "quantum-arena/src/genome.rs:1019 y 1953 (umbral aleatorio o mutado en 500..10000 ms)",
+     "src/bin/god_engine.rs:1178-1197 (suscripción @depth5 y @kline_1m: snapshots que reemplazan al anterior)"
+    ],
+    "mechanism": "Con λ=1000 ev/s, una cola saturada tiene ~5 s de antigüedad. Si el gen vale más de 5000 ms, nunca hay latency_panic aunque todos los eventos lleguen 5 s tarde, y se abren entradas con datos de hace 5 s. Con cualquier umbral, los SL locales se evalúan sobre precios viejos y la contabilidad y Kelly aprenden de ellos. Procesar snapshots superados gasta tiempo de servicio que alarga el atraso.",
+    "consequence": "Decisiones y cierres con datos rancios sin marcarlos como tales, y sesgo en el aprendizaje (Kelly, contabilidad). El atraso dura más de lo necesario.",
+    "fix_hint": "Recortar por edad usando el sello de C1: descartar o conflar cuando t_deq − t_recv > presupuesto, quedándose con el último depth5/kline por símbolo y conservando todos los trades. Fijar la cota de frescura como constante del host, no como gen evolutivo."
+   },
+   {
+    "id": "C2",
+    "title": "Nada mide la profundidad de la cola, la espera en ella ni el tiempo de servicio del bucle; las pocas señales existentes engañan",
+    "severity": "MED",
+    "claim": "Ningún componente lee rx_events.len() ni mide la espera. El contador de descartes sólo se muestra como acumulado de por vida, con println cada 60 s, y atribuye la culpa al lector cuando la causa es el consumidor. `start` sólo se usa para un evento de cada 5000. El profiler da medias acumuladas de por vida y mezcla bajo el mismo nombre el process_event del núcleo vivo con el de los 10 universos sombra.",
+    "evidence": [
+     "crates/data-ingest/src/cola_ws.rs:19-24 (EstadoCola: sólo descartados y reconexion_perdida)",
+     "src/bin/god_engine.rs:1346-1353 (println!(\"... {} eventos WS descartados ... throughput del lector insuficiente\") con el acumulado, nunca se pone a cero ni se publica en el arena)",
+     "git grep: descartados() sólo se lee en src/bin/god_engine.rs:1349; ningún rx_events.len() en src/",
+     "src/bin/god_engine.rs:3655 y 5485 (start.elapsed() sólo en el mensaje número 5000, sin distribución)",
+     "crates/god-engine-core/src/lib.rs:2913 y crates/evolution-engine/src/random_forest.rs:216-233 (mismo nombre de span \"GodEngineCore::process_event\" para el vivo y las sombras)",
+     "crates/telemetry-server/src/profiler.rs:455-459 y 524-538 (agregador clonado y acumulado: media de por vida, sin máximo ni p99)"
+    ],
+    "mechanism": "Sin profundidad ni espera, el log no permite distinguir red lenta de cola larga. Las medias de por vida diluyen los picos 11× del bosque y los parones de E/S (C4). La mezcla vivo/sombra deforma la media del núcleo.",
+    "consequence": "Imposible diagnosticar en producción si ρ = λ·S ≥ 1. El operador ve «latencia de red» y, a lo sumo, un contador de descartes que culpa al lector.",
+    "fix_hint": "Publicar en el arena y en la telemetría, por ventana: rx_events.len() (crossbeam lo ofrece), espera máxima y p99 en cola, tiempo de servicio de la iteración completa (p50/p99/máx) y descartes por ventana. Nombres de span distintos para las sombras. Mensaje correcto: consumidor insuficiente."
+   },
+   {
+    "id": "C8",
+    "title": "Las señales de salud del feed las escribe el consumidor: un evento viejo borra la marca de stall y un consumidor bloqueado congela la latencia en un valor sano",
+    "severity": "MED",
+    "claim": "feed_health::clear() y last_ws_latency_ms se actualizan con cada evento consumido, sea cual sea su edad. Sólo el bucle los escribe. Por eso reflejan el avance del consumidor, no la frescura del feed.",
+    "evidence": [
+     "src/bin/god_engine.rs:3846-3852 (if event_time > 0 { store(latency); feed_health::clear(); } sin condición de frescura)",
+     "crates/quantum-arena/src/feed_health.rs:23-25 (clear() incondicional) y 9-11 («cualquier evento vivo del loop unificado lo limpia»)",
+     "src/bin/god_engine.rs:5763-5768 (stall() sólo lo marca el watchdog del lector tras watchdog_secs)",
+     "git grep last_ws_latency_ms: el único escritor activo en god_engine es 3846-3850 (data-pipeline/src/ws_client.rs no se usa: sólo aparece en un comentario en god_engine.rs:1246)",
+     "src/bin/god_engine.rs:2193-2214 (el inmune muestrea ese valor cada 5 s)"
+    ],
+    "mechanism": "(a) El WS muere y el watchdog marca stall, pero el consumidor sigue drenando una cola atrasada (posible si drenar 5000 mensajes lleva más de 15/30 s). Cada evento viejo vuelve a limpiar la marca. (b) El consumidor se bloquea (C4) con la red sana: last_ws_latency_ms se queda en el último valor bueno y el inmune no ve nada hasta que el bucle vuelve y salen los atrasados de golpe.",
+    "consequence": "La degradación se detecta tarde o se oculta. Los avisos llegan a ráfagas después del parón, no durante.",
+    "fix_hint": "Que el lector limpie el stall al recibir. El inmune debería vigilar también un latido del consumidor (edad del último evento consumido según el reloj monótono) y el atraso local medido en C1/C2."
+   },
+   {
+    "id": "C7",
+    "title": "Cada actualización de @kline_1m sin cerrar (~4/s por símbolo) se trata como un evento de decisión completo",
+    "severity": "LOW",
+    "claim": "Las klines sin cerrar pasan por process_event completo con allow_entries=true, además de 1/10 del bosque sombra, usando como precio el cierre parcial (el último trade). Repiten información que ya llega por @trade y suman carga fija al consumidor.",
+    "evidence": [
+     "src/bin/god_engine.rs:1197 (suscripción @kline_1m) y 3731-3738 (sin filtro por is_kline_closed: current_price = close y qty = volumen acumulado de la barra)",
+     "src/parsers.rs:96-136 (devuelve close y x, el flag de cerrada)",
+     "src/bin/god_engine.rs:4006-4011 (process_event para todo evento con símbolo)",
+     "crates/god-engine-core/src/lib.rs:4142 (allow_entries = !latency_panic && (!is_depth || is_trade): true para kline)"
+    ],
+    "mechanism": "A 250 ms por kline (cadencia documentada por Binance; no verificable en el repo) y 30 símbolos, son unas 120 evaluaciones completas por segundo, más 12 de sombras, que no aportan precio nuevo. Eso resta margen μ−λ.",
+    "consequence": "Más carga sostenida, más probabilidad de atraso en cola (C1/C5) y decisiones duplicadas sobre el mismo precio.",
+    "fix_hint": "Enviar a process_event sólo las klines con x=true. Las parciales, si se necesitan, por una ruta barata, o descartarlas cuando hay atraso."
+   },
+   {
+    "id": "C9",
+    "title": "Una misma medida produce dos o tres avisos y un «kill-switch» sin efecto propio; los textos describen mal la acción",
+    "severity": "LOW",
+    "claim": "Por cada ventana de 10 s lenta salen como mínimo dos avisos de la misma métrica: LATENCY_PANIC del host y LATENCY PANIC del núcleo. A eso se suma KILL_SWITCH cada 60 s. El kill-switch de 10 ticks es lógicamente idéntico a la condición por evento: no tiene histéresis y no activa ninguna «Volatilidad Sintética». El texto del host dice que sólo salta el scalp, pero se bloquean todas las entradas.",
+    "evidence": [
+     "src/bin/god_engine.rs:3857-3861 (consecutive_slow_ticks vuelve a 0 con el primer tick rápido) y 3863-3869 (KILL_SWITCH: sólo pone latency_panic, que 3872-3873 ya pone para el mismo evento)",
+     "src/bin/god_engine.rs:3872-3876 (aviso del host, Estrangulador de 10_000 ms en 3579) con el texto «Skiping O(1) Scalp execution»",
+     "crates/god-engine-core/src/lib.rs:4378-4407 (el núcleo relee la misma métrica y emite su aviso) y crates/god-engine-core/src/avisos.rs:17 (ventana de 10_000 ms)",
+     "crates/god-engine-core/src/lib.rs:4142 (allow_entries=false bloquea todas las entradas, no sólo el scalp)"
+    ],
+    "mechanism": "Los avisos se duplican en origen y el texto describe una acción que no ocurre.",
+    "consequence": "El recuento de avisos se infla: más de 200 avisos equivale a unos 17 minutos acumulados de lentitud, no a 200 incidentes. El operador no sabe qué se ha bloqueado de verdad.",
+    "fix_hint": "Un único emisor de aviso (host o núcleo) que distinga red y atraso local (C1). Quitar el kill-switch redundante o darle histéresis real. Corregir los textos."
+   }
+  ]
+ }
+]
