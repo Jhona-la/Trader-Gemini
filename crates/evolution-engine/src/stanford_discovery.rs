@@ -243,7 +243,7 @@ impl StanfordDiscoveryEngine {
 
         for i in 0..n {
             let hyp_id = self.current_generation * 1000 + i as u64 + 1;
-            let base = &self.incumbent_hypothesis;
+            let base = self.incumbent_hypothesis;
 
             // Decisión estocástica: salto Cauchy (20% de probabilidad) o refinamiento gaussiano (80%)
             let is_heavy_jump = self.next_random_f64() < 0.20;
@@ -585,7 +585,12 @@ impl StanfordDiscoveryEngine {
 
         // Clasificación NSGA-II
         let fronts = fast_non_dominated_sort(&pareto_items);
-        let best_front = if !fronts.is_empty() { &fronts[0] } else { &[0] };
+        let default_front = [0usize];
+        let best_front: &[usize] = if !fronts.is_empty() {
+            &fronts[0][..]
+        } else {
+            &default_front[..]
+        };
 
         // Seleccionar el mejor dentro del frente 0 priorizando tasa de crecimiento de Kelly y Sharpe
         let mut best_idx = best_front[0];
