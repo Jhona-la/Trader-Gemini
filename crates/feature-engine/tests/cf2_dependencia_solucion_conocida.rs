@@ -357,7 +357,7 @@ fn cf2_lead_lag_recupera_desfase_plantado_2000ms() {
 /// siendo ≥ 0,89, la misma cota derivada que el test gemelo de cadencia lenta
 /// (revisión cruzada, CL-65: exigía 0,90 con media 0,951 y sd 0,015, a 3,4 sd,
 /// y podía fallar tras el arreglo). Hoy: la ventana cubre 1,25 s, todos los objetivos t + 2000
-/// caen en el futuro, el alt se extrapola congelado (lead_lag.rs:316) y ρ = 0
+/// caen en el futuro, el alt se extrapola congelado (lead_lag.rs:318) y ρ = 0
 /// en 2000 ms: recuperación 0.
 #[test]
 #[ignore = "OPEN F2.4-07 (Línea C): la ventana del líder es de 50 muestras; a ~40 eventos/s cubre 1,25 s y el lag de 2000 ms sólo ve el alt congelado"]
@@ -399,7 +399,7 @@ fn cf2_lead_lag_desfase_plantado_a_cadencia_viva() {
 /// Verdad: líder y alt AR(1) independientes (φ = 0,9) cada 250 ms; todo lag
 /// declarado es un falso líder y el tamaño nominal del umbral t ≥ 2 es el
 /// 5 %. Tolerancia: 5 % + 3σ binomial con n = 400 (≤ 0,083), la del auditor.
-/// Hoy ≈ 0,83 medido (el espejo con extrapolación congelada, lead_lag.rs:316,
+/// Hoy ≈ 0,83 medido (el espejo con extrapolación congelada, lead_lag.rs:318,
 /// predecía ≈ 0,88):
 /// Pearson sobre niveles autocorrelados (Granger–Newbold) contra un umbral
 /// que supone muestras independientes, y máximo sobre 5 lags sin corregir.

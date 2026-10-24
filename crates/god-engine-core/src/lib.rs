@@ -6162,8 +6162,6 @@ impl GodEngineCore {
                 "weak_alpha_signal",
                 (ofi_value * 0.5 + obi_val * 0.5).clamp(-1.0, 1.0),
             );
-            set_reg("lead_lag_divergence", lead_lag_div);
-            set_reg("leader_momentum", leader_mom);
             set_reg("shannon_entropy", shannon_ent);
             set_reg("tsallis_q_entropy", tsallis_ent);
             set_reg("hurst_exponent", hurst_val);
@@ -6241,8 +6239,6 @@ impl GodEngineCore {
                     "hidden_liquidity_conformal_scale",
                     abs_state.conformal_band_scale,
                 );
-                set_reg("hidden_liquidity_ask_abs", abs_state.ask_absorption_ratio);
-                set_reg("hidden_liquidity_bid_abs", abs_state.bid_absorption_ratio);
             }
 
             // OLA Ω137: Descomposición Hidrodinámica de Helmholtz-Hodge (L² = ∇φ ⊕ ∇×A ⊕ h)
@@ -6253,15 +6249,6 @@ impl GodEngineCore {
                 0.0
             };
             let h_decomp = self.helmholtz_engines[coin_id].update(price_delta_bps, ofi_value);
-            set_reg("helmholtz_laminar_fraction", h_decomp.laminar_fraction);
-            set_reg("helmholtz_enstrophy", h_decomp.enstrophy);
-            set_reg("helmholtz_laminar_energy", h_decomp.laminar_energy);
-            set_reg("helmholtz_harmonic_energy", h_decomp.harmonic_energy);
-            set_reg("helmholtz_potential_dir", h_decomp.potential_direction);
-            set_reg(
-                "helmholtz_is_safe",
-                if h_decomp.is_laminar_safe { 1.0 } else { 0.0 },
-            );
             set_reg("helmholtz_conviction", h_decomp.conviction_factor);
 
             // #591 — PROYECCIÓN ESPECTRAL TEMPORAL al motor de señales. El
@@ -7071,10 +7058,6 @@ impl GodEngineCore {
             // OLA Ω142: Teorema del Índice de Atiyah-Singer y Modos Cero del Operador de Dirac
             if let Some(dirac_engine) = self.dirac_engines.get_mut(coin_id) {
                 let dirac_metrics = dirac_engine.observe_spinor_state(pos_dev, ofi_norm);
-                set_reg("dirac_a_roof_genus", dirac_metrics.a_roof_genus);
-                set_reg("dirac_chern_character", dirac_metrics.chern_character);
-                set_reg("dirac_atiyah_singer_index", dirac_metrics.atiyah_singer_index);
-                set_reg("dirac_chiral_asymmetry", dirac_metrics.chiral_zero_mode_asymmetry);
                 set_reg("dirac_chiral_current", dirac_metrics.chiral_anomaly_current);
                 set_reg("dirac_conviction_modulation", dirac_metrics.dirac_conviction_modulation);
             }
@@ -7083,11 +7066,7 @@ impl GodEngineCore {
             let shape_def = if let Some(wk_engine) = self.wasserstein_engines.get_mut(coin_id) {
                 let spectral_coord = pos_dev + 0.50 * ofi_norm;
                 let wk_metrics = wk_engine.observe_spectral_measure(spectral_coord);
-                set_reg("wasserstein_w2_distance", wk_metrics.wasserstein_w2_distance);
-                set_reg("wasserstein_kinetic_action", wk_metrics.kantorovich_kinetic_action);
                 set_reg("wasserstein_barycenter_velocity", wk_metrics.barycenter_transport_velocity);
-                set_reg("wasserstein_geodesic_coherence", wk_metrics.geodesic_coherence_ratio);
-                set_reg("wasserstein_shape_deformation", wk_metrics.shape_deformation_energy);
                 set_reg("wasserstein_conviction_modulation", wk_metrics.wasserstein_conviction_modulation);
                 wk_metrics.shape_deformation_energy
             } else {

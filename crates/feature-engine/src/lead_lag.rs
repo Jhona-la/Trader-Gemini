@@ -290,21 +290,6 @@ impl LeadLagAlphaEngine {
         let div = (exceso.clamp(-3.0, 3.0) * 0.8).tanh() * rho_btc;
         (leader_momentum, div)
     }
-
-    /// Compatibilidad: sin reloj no hay lead-lag medible — devuelve el
-    /// momentum fresco y SIN divergencia (abstención honesta).
-    pub fn predict_altcoin_impulse(&self, alt_ofi: f64) -> (f64, f64) {
-        if !alt_ofi.is_finite() {
-            return (0.0, 0.0);
-        }
-        let ahora = self
-            .btc_buf
-            .back()
-            .map(|&(t, _)| t)
-            .or_else(|| self.eth_buf.back().map(|&(t, _)| t))
-            .unwrap_or(0.0);
-        (self.momentum_lider(ahora), 0.0)
-    }
 }
 
 /// Interpolación lineal de (ts, v) en t objetivo; None fuera del rango.
@@ -396,14 +381,6 @@ mod tests {
         let (mom, div) = e.predict_altcoin_impulse_con_reloj(7, 0.05, t0 + 60_000.0);
         assert!(mom.abs() < 1e-9, "OFI viejo no es momentum: {mom}");
         assert!(div.abs() < 1e-9);
-    }
-
-    #[test]
-    fn qo_658_compatibilidad_sin_reloj_se_abstiene() {
-        let mut e = LeadLagAlphaEngine::new(200);
-        e.update_leader(true, 0.9, 1_000.0);
-        let (_, div) = e.predict_altcoin_impulse(0.05);
-        assert_eq!(div, 0.0, "sin reloj no hay lead-lag medible");
     }
 
     #[test]
