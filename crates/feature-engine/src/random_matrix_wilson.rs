@@ -515,12 +515,14 @@ impl WilsonRGEngine {
 
         // 4. Clasificación física del operador
         // En teoría de RG de Wilson:
-        // - Relevante: acoplamiento con persistencia macro masiva (g1[0] > 0.50) o flujo creciente (beta1 > 0.005).
-        // - Irrelevante: oscilación rápida de alta frecuencia (g1[0] < -0.30) o decaimiento severo (beta1 < -0.05).
+        // - Relevante: acoplamiento con persistencia macro positiva (g1[0] > 0.50) o amplificación de correlación (g1[0] > 0.05 && beta1 > 0.005).
+        // - Irrelevante: oscilación negativa/rebote de microestructura (g1[0] <= 0.0) o decaimiento severo (beta1 < -0.05).
         // - Marginal: escala crítica o ruido neutral.
-        report.operator_class = if report.g1_couplings[0] > 0.50 || report.effective_beta1 > 0.005 {
+        report.operator_class = if report.g1_couplings[0] > 0.50
+            || (report.g1_couplings[0] > 0.05 && report.effective_beta1 > 0.005)
+        {
             WilsonOperatorClass::Relevant
-        } else if report.g1_couplings[0] < -0.30 || (report.g1_couplings[0] < 0.20 && report.effective_beta1 < -0.05) {
+        } else if report.g1_couplings[0] <= 0.0 || report.effective_beta1 < -0.05 {
             WilsonOperatorClass::Irrelevant
         } else {
             WilsonOperatorClass::Marginal

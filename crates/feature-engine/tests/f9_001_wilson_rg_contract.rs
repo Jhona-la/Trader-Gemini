@@ -190,7 +190,8 @@ fn test_c4_wilson_rg_coarse_graining_and_operator_classification() {
         WilsonOperatorClass::Irrelevant,
         "Serie de rebote rápido debe clasificarse como Irrelevante"
     );
-    assert!(report_noisy.effective_beta1 < 0.0, "Beta efectiva debe ser negativa para ruido");
+    assert!(report_noisy.g1_couplings[0] < -0.50, "Autocorrelación base debe ser fuertemente negativa para rebote: {}", report_noisy.g1_couplings[0]);
+    assert!(report_noisy.g1_couplings[1].abs() < 1e-6, "A escala 1 el rebote se aniquila por completo: {}", report_noisy.g1_couplings[1]);
 
     // 3. Finitud y límites en todas las 8 escalas
     for scale in 0..feature_engine::random_matrix_wilson::MAX_DYADIC_SCALES {
