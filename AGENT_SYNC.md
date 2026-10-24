@@ -38,6 +38,7 @@ Estados: `ACTIVO` (heartbeat <6h) · `DORMIDO` (6h–48h) · `HUÉRFANO`
 
 | Codex F7 (Recursos) | ACTIVO | PR88 reanclada sobre dependencia pública90/7b598f7e y mainfd956f9;29métodos locales GREEN. PróximoCI propio8checks; merge serial90→88→87, sinheredar c813 | codex/f7-recursos-20261020 | tres lanzadores/contratos/workflowF7 y docs propios; no genome_store, Cargo local ni target propio | 2026-10-20 08:25 America/Bogota |
 
+| Claude (Línea I, Opus 5.5) | ACTIVO | Línea I abierta: latencia del feed. Los >200 avisos «latencia de red elevada» miden now−E en el bucle del host, que mezcla red + lote del exchange (@100ms) + espera en la cola local + error de reloj. Átomo 1: auditar el camino socket→cola→host→métrica (3 lectores + verificación adversarial) y descomponer la métrica con sello de recepción; después arreglo con test que falla antes. Sin Cargo local mientras RAM libre < 2 GB (1,05 GB a las 13:20; rustc ajeno vivo PID 259360). | claude/linea-i-latencia (worktree ../tg-lineai, fuera del repo) | por reservar tras la auditoría: src/bin/god_engine.rs (sólo el bloque de latencia ~3830-3880), crates/data-ingest/src/cola_ws.rs; docs/PLAN_LINEA_I_CLAUDE_2026-10-24.md | 2026-10-24 ~13:25 Bogotá |
 *AGY opera por olas intensivas con silencios entre ola y ola: tratar
 como activo hasta 48h de silencio.
 
