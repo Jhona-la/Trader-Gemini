@@ -598,7 +598,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 diag.max_obi = diag
                     .max_obi
                     .max(reg.get_value_or("orderbook_imbalance", 0.0).abs());
-                diag.tech_thr = reg.get_value_or("tech_threshold", 0.0);
+                diag.tech_thr = umbral_tecnico_del_motor(&engine.arena);
                 diag.max_micro_trend = diag
                     .max_micro_trend
                     .max(reg.get_value_or("ema_trend", 0.0).abs());
@@ -1094,6 +1094,14 @@ mod sim_close_contract {
     }
 }
 
+/// RET-10b (censo C-F7b, K24): el umbral técnico que imprime SIGNAL-PATH
+/// es el del genoma aplicado a la arena. Antes se leía la clave de
+/// registro `"tech_threshold"`, que nadie escribe, y el diagnóstico
+/// imprimía siempre 0,000000. Sólo diagnóstico: no cambia decisiones.
+fn umbral_tecnico_del_motor(arena: &GlobalArena) -> f64 {
+    arena.config.tech_threshold.load(Ordering::Relaxed)
+}
+
 /// DIAGNÓSTICO SIGNAL-PATH (R4-diag): contadores por etapa del pipeline.
 #[derive(Default)]
 struct SignalPathDiag {
@@ -1129,6 +1137,21 @@ mod reporting_contract {
         near(*sum, expected_equity - 100.0);
         near(arena.unified_capital.load(Ordering::Relaxed), cash);
         near(arena.used_margin.load(Ordering::Relaxed), margin);
+    }
+
+    /// RET-10b: el diagnóstico lee el gen aplicado, no una clave de
+    /// registro vacía (antes daba 0 con cualquier genoma).
+    #[test]
+    fn ret10b_diagnostico_lee_el_umbral_del_genoma() {
+        let arena = GlobalArena::build_in_own_stack(100.0);
+        let mut g = quantum_arena::genome::SuperGenotype::current_from_arena(&arena);
+        g.tech_threshold = 0.27;
+        g.apply_to_arena(&arena);
+        let leido = umbral_tecnico_del_motor(&arena);
+        let aplicado = arena.config.tech_threshold.load(Ordering::Relaxed);
+        assert!(leido.is_finite() && leido > 0.0, "leido={leido:?}");
+        assert_eq!(leido.to_bits(), aplicado.to_bits());
+        assert!(arena.registry.get_value_fast("tech_threshold").is_none());
     }
 
     #[test]
