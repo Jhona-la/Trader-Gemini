@@ -39,6 +39,7 @@
 //! egresa de la fase de sonda anticipadamente para operar con dimensionamiento óptimo
 //! de Kelly sin esperar ciegamente a un número fijo de cierres.
 
+use quantum_arena::genome::SuperGenotype;
 use quantum_arena::GlobalArena;
 use std::sync::atomic::Ordering;
 
@@ -135,8 +136,11 @@ pub fn resolve_max_cierres_sonda(arena: &GlobalArena, coin_id: usize) -> usize {
 ///
 /// OLA Ω193 (F1-090):
 /// 1. Fast-path O(1): Verificación inmediata de `n < 2` antes de lecturas del registro.
-/// 2. Inversión analítica Bayesiana: `SuperGenotype::posterior_win_rate` (prior k_prior=3.84, w0=0.55)
+/// 2. Inversión analítica Bayesiana: `SuperGenotype::posterior_win_rate` (k = 1,96² pseudo-operaciones,
+///    prior w0 = `WORST_TOLERATED_WR`, el valor con que nace cada moneda en `GlobalArena::build`)
 ///    comprime el win rate muestral temprano. Recuperamos los aciertos reales k sin sesgo hacia abajo.
+///    LG-34: antes se invertía con w0 = 0,55, que no es el prior vivo: con 4/4 salía k = 3 y la
+///    salida precoz que promete el punto 3 era inalcanzable.
 /// 3. Calibración analítica de horizonte: defaults canónicos p0=0.50, p1=0.85, alpha=0.10, beta=0.20
 ///    aseguran que con n_max=5 cierres, una racha de k=4 aciertos consecutivos alcanza la frontera
 ///    B = ln((1-beta)/alpha) = ln(8) ≈ 2.0794 (4 * ln(1.70) ≈ 2.1225 >= 2.0794), haciendo el
@@ -164,10 +168,12 @@ pub fn sprt_evalua_salida_sonda(arena: &GlobalArena, coin_id: usize) -> bool {
         return false;
     }
 
-    // Inversión de regularización Bayesiana:
-    // wr_posterior = (k + 3.84 * 0.55) / (n + 3.84)
-    // => k_inferred = wr * (n + 3.84) - 2.112
-    let k_raw_bayes = (wr * (n as f64 + 3.84) - 3.84 * 0.55).round();
+    // Inversión de regularización Bayesiana (forma cerrada de la recursión viva):
+    // wr_posterior = (k + K·w0) / (n + K), K = WR_PRIOR_PSEUDO_TRADES, w0 = WORST_TOLERATED_WR
+    // => k_inferred = wr·(n + K) − K·w0
+    let pseudo = SuperGenotype::WR_PRIOR_PSEUDO_TRADES;
+    let k_raw_bayes =
+        (wr * (n as f64 + pseudo) - pseudo * SuperGenotype::WORST_TOLERATED_WR).round();
     let k_direct = ((n as f64) * wr).round();
     let k_est = if k_raw_bayes >= 0.0 && k_raw_bayes <= (n as f64) {
         k_raw_bayes.max(k_direct)

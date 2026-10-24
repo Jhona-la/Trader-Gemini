@@ -18,13 +18,14 @@ fn test_f1_090_sprt_early_exit_reachable_with_production_defaults() {
     let coin = &arena.coins[0];
 
     // Precondición: NINGUNA clave configurada en el registro (pure defaults de producción).
-    // Con n=4 cierres y 4 aciertos sucesivos simulados con la actualización Bayesiana viva:
-    // wr_0 = 0.55
-    let mut wr = 0.55;
+    // Con n=4 cierres y 4 aciertos sucesivos simulados con la actualización Bayesiana viva.
+    // LG-34: el win rate nace en el prior vivo (GlobalArena::build), no en 0,55.
+    let mut wr = coin.metrics.win_rate.load(Relaxed);
+    assert_eq!(wr, SuperGenotype::WORST_TOLERATED_WR);
     for n_prev in 0..4 {
         wr = SuperGenotype::posterior_win_rate(wr, n_prev as f64, true);
     }
-    // wr ≈ 0.7796, pero el número real de aciertos k es exactamente 4
+    // wr ≈ 0.7061, pero el número real de aciertos k es exactamente 4
     coin.metrics.trade_count.store(4, Relaxed);
     coin.metrics.win_rate.store(wr, Relaxed);
 
@@ -42,7 +43,7 @@ fn test_f1_090_sprt_early_exit_reachable_with_production_defaults() {
     );
 
     // En cambio, con 3 aciertos y 1 pérdida:
-    let mut wr_with_loss = 0.55;
+    let mut wr_with_loss = SuperGenotype::WORST_TOLERATED_WR;
     wr_with_loss = SuperGenotype::posterior_win_rate(wr_with_loss, 0.0, true);
     wr_with_loss = SuperGenotype::posterior_win_rate(wr_with_loss, 1.0, true);
     wr_with_loss = SuperGenotype::posterior_win_rate(wr_with_loss, 2.0, true);
