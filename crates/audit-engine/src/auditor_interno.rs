@@ -25,8 +25,6 @@ pub struct IndependentMetrics {
     pub calculated_sharpe: f64,
     pub calculated_max_drawdown: f64,
     pub calculated_win_rate: f64,
-    pub calculated_latency_us: u32,
-    pub benchmark_alpha: f64,
 }
 
 /// OLA Ω120: Constantes canónicas por defecto para el Tribunal de Autoengaño y Auditor Interno
@@ -376,8 +374,6 @@ impl VerificadorResultados {
         let mut equity = safe_capital;
         let mut peak = safe_capital;
         let mut max_dd = 0.0;
-        let mut gross_pnl_sum = 0.0;
-        let mut total_fees_sum = 0.0;
 
         for f in fills.iter().filter(|f| f.is_closed_position) {
             count += 1;
@@ -418,9 +414,6 @@ impl VerificadorResultados {
             if dd > max_dd {
                 max_dd = dd;
             }
-
-            gross_pnl_sum += pnl;
-            total_fees_sum += fee;
         }
 
         if count == 0 {
@@ -449,17 +442,10 @@ impl VerificadorResultados {
             0.0
         };
 
-        let gross_pnl = gross_pnl_sum / safe_capital;
-        let total_fees = total_fees_sum / safe_capital;
-        let gross_alpha = gross_pnl / total_trades;
-        let fee_drag = total_fees / total_trades;
-
         IndependentMetrics {
             calculated_sharpe: sharpe,
             calculated_max_drawdown: max_dd,
             calculated_win_rate: win_rate,
-            calculated_latency_us: 150, // Standard baseline
-            benchmark_alpha: gross_alpha - (fee_drag * 0.5),
         }
     }
 }

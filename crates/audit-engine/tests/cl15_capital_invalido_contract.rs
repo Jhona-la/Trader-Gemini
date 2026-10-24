@@ -30,7 +30,6 @@ fn cl15_capital_invalido_deja_metricas_vacias() {
         assert_eq!(m.calculated_sharpe, 0.0, "sin capital no hay sharpe");
         assert_eq!(m.calculated_win_rate, 0.0, "sin capital no hay wr anclado");
         assert_eq!(m.calculated_max_drawdown, 0.0, "sin capital no hay dd");
-        assert_eq!(m.benchmark_alpha, 0.0, "sin capital no hay alpha");
     }
     // La MISMA evidencia con capital válido sí ancla (2 de 3 cierres netos > 0).
     let m = VerificadorResultados::compute_metrics_with_capital(&fills, 100.0);
