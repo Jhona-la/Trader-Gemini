@@ -49,6 +49,13 @@ impl OmniStrategyEngine {
 
     #[inline(always)]
     pub fn update(&mut self, price: f64, high: f64, low: f64) {
+        // FIX #1454 (RET-13a, portado de la copia muerta src/features): una
+        // observación con precio no finito o ≤ 0, o con high/low no finitos,
+        // no toca el estado. Los llamadores vivos ya la rechazan antes
+        // (StatefulEngine::try_process_tick / try_process_kline).
+        if !price.is_finite() || !high.is_finite() || !low.is_finite() || price <= 0.0 {
+            return;
+        }
         if self.last_price == 0.0 {
             self.last_price = price;
             self.local_max = high.max(price);
@@ -164,7 +171,7 @@ impl OmniStrategyEngine {
             0.0
         };
 
-        [
+        let mut feats = [
             (rsi / 100.0) as f32,
             (macd_line / safe_last_price) as f32,
             (macd_hist / safe_last_price) as f32,
@@ -189,7 +196,16 @@ impl OmniStrategyEngine {
             ((parkinson_vol / (atr / safe_last_price).max(1e-6)).clamp(0.0, 10.0)) as f32,
             (((macd_hist / safe_last_price) * bb_zscore).clamp(-0.1, 0.1)) as f32,
             (((rsi / 100.0) * pos_in_range).clamp(0.0, 1.0)) as f32,
-        ]
+        ];
+        // FIX #1454: ningún rasgo sale no finito (0,0 es el centinela «sin
+        // dato» del contrato C-02). Con entradas ya validadas sólo actúa si
+        // un cociente desborda f32 (saltos de escala absurdos).
+        for f in feats.iter_mut() {
+            if !f.is_finite() {
+                *f = 0.0;
+            }
+        }
+        feats
     }
 }
 
