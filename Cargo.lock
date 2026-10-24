@@ -1274,6 +1274,7 @@ dependencies = [
  "chrono",
  "dark-alpha-engine",
  "data-pipeline",
+ "execution-engine",
  "feature-engine",
  "lazy_static",
  "metacortex-engine",

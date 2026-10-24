@@ -27,6 +27,7 @@ data-pipeline = { path = "../data-pipeline" }
 strategy-core = { path = "../strategy-core" }
 storage-engine = { path = "../storage-engine" }
 metacortex-engine = { path = "../metacortex-engine" }
+execution-engine = { path = "../execution-engine" }
 chrono = { version = "0.4", features = ["serde"] }
 
 [target.'cfg(windows)'.dependencies]
