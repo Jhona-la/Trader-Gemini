@@ -105,7 +105,7 @@ Orden de ataques posteriores, cada uno con su propio RED y reserva. Los seis pri
 1. Medir esperanza neta después de comisión real por símbolo/sesión, funding, spread, slippage y selección adversa; Maker no equivale a fill gratis ni garantizado.
 2. Exigir reconciliación OMS completa antes de admisión: balance real Demo/Prod, posiciones, órdenes, mismo ejecutor/entorno y cero incidencias no resueltas.
 3. Línea I lidera la descomposición `recv−E` frente a espera local; otros agentes no duplican su bloque. Después medir p50/p95/p99, freshness, cola, pérdidas y reconexiones por segmento.
-4. Auditar `reqwest`/WS y duplicados con `cargo tree --workspace --duplicates --locked` solo como metadata. Unificar versiones cuando sea compatible, sin forzar semver ni añadir dependencias por costumbre.
+4. Auditar `reqwest`/WS y duplicados con metadata (`Cargo.lock`/`cargo tree`). El inventario V33 encontró 40 paquetes duplicados (`docs/audit/V33_DEPENDENCIAS_2026-10-24.md`): `telemetry-server` usa Axum/Hyper 1.10/tungstenite 0.24, mientras warp/reqwest usan Hyper 0.14/tungstenite 0.21. Unificar solo si la convergencia de frameworks demuestra beneficio y conserva comportamiento; no hacer bumps ciegos ni añadir dependencias por costumbre.
 5. Acotar buffers y persistencia; restaurar el último estado al recuperar. Ningún drop, canal desconectado o dato obsoleto puede quedar invisible.
 6. Validar continuidad temporal, NaN/Inf, partial fills, reduceOnly y Mark/Last Price antes de optimizar instrucciones o silicio.
 
@@ -133,7 +133,7 @@ Cada nueva teoría exige: definición operativa, estimadores, guardas NaN/Inf, c
 
 ## 8B. Backlog científico V33.1 — mandato de fases 28/29
 
-Estas familias se incorporan a la cola, **no** a la lista de capacidades certificadas. Fase 9 (Marchenko-Pastur/Wilson/Lyapunov) sigue en PR #132 y no existe todavía en `main`; no tiene llamadores ni evidencia OOS que auditar en este checkout. La revisión independiente confirmó la ausencia de `random_matrix_wilson.rs` y `f9_001_wilson_rg_contract.rs`.
+Estas familias se incorporan a la cola, **no** a la lista de capacidades certificadas. Fase 9 (Marchenko-Pastur/Wilson/Lyapunov) fue integrada posteriormente en `main` como `8c96ff25a` y su rama remota fue retirada tras verificar ancestria y ausencia de worktree. La revisión previa había confirmado su ausencia, por lo que no se le atribuía integración ni OOS. Su CI candidata terminó 10/10; la CI del push de `main` se evalúa por separado. La existencia de módulos no demuestra consumidor ni superioridad: esos puntos siguen en el backlog de linaje y ablación.
 
 1. **Motor de capital:** descomposición logarítmica de la meta, Grinold-Kahn con apuestas efectivas y Grossman-Zhou. Aceptación: crecimiento neto OOS con intervalos de confianza, límites de liquidez y drawdown; nunca invertir la fórmula para forzar trades o apalancamiento. Las cifras de bps por ciclo son hipótesis, no expectativa.
 2. **Ejecución multi-riel:** libro implícito triangular, idempotencia `newClientOrderId`, predictor de Smith, socket sharding y numerario anti-depeg. Aceptación: inventario real de mercados y fees, paridad de filtros/cantidades, cola FIFO y selección adversa; prueba de que reintentos no duplican ni provocan rechazos inesperados; medición por segmento de latencia, sin llamar “exacto” a RTT/2. Un libro sintético no crea liquidez gratuita.
@@ -146,7 +146,7 @@ Ningún elemento de este backlog justifica prometer +100 %/72 h, ruina cero, 0 n
 
 ## 9. Censo archivo por archivo y recepción entre agentes
 
-El inventario mecánico `docs/audit/V33_INVENTARIO_2026-10-24.tsv` contiene las 2.180 rutas del índice actual: 26 `REVISADO_ESTATICO`, 1 `RED` (capital inválido con evidencia ejecutada) y 2.153 `INVENTORIADO`. No es una certificación de revisión completa. El ledger incremental `docs/audit/V33_REVISIONES_2026-10-24.tsv` conserva los 34 hallazgos concretos sin reescribir censos históricos. Campos mínimos:
+El inventario mecánico `docs/audit/V33_INVENTARIO_2026-10-24.tsv` contiene las 2.186 rutas del índice actual: 26 `REVISADO_ESTATICO`, 1 `RED` (capital inválido con evidencia ejecutada) y 2.159 `INVENTORIADO`. No es una certificación de revisión completa. El ledger incremental `docs/audit/V33_REVISIONES_2026-10-24.tsv` conserva los 34 hallazgos concretos sin reescribir censos históricos. Campos mínimos:
 
 `ruta | blob | dueño | ruta_viva | hallazgo | severidad | prueba | CI_SHA | estado | siguiente`
 

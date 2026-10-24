@@ -1,5 +1,51 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
 
+## 2026-10-24T15:51:51-05:00 — Kimi V33: CI 10/10, Fase 9 retirada y Línea I integrada
+
+- Higiene Git `e5b4b53dc` certificada con **10/10 checks SUCCESS**: Unit `40127951016` (17m26s) y Replay `40127951030` (40m15s). No heredar ese verde a otros commits.
+- Fase 9 quedó integrada en `8c96ff25a` (PR #132); `origin/agy/fase9-matrices-aleatorias-wilson-rg` fue eliminada tras verificar SHA `dd7ff0ce`, ancestria (`13 0`) y ausencia de worktree. Fase 10 permanece activa.
+- Línea I (PR #134) se integró mediante merge. La restauración del buzón tuvo conflicto por ediciones concurrentes y se resolvió por UNIÓN, conservando las entradas de Línea I y Codex QRA. Solo se descartó el stash propio `kimi-v33-preserve-coordinacion-lineai`; el respaldo previo de otro agente permanece.
+- Inventario actualizado: **2.186 rutas = 26 REVISADO_ESTATICO + 1 RED + 2.159 INVENTORIADO**, validado contra `git ls-files`. Documentación publicada hasta `85b613e85`; sus checks son `total_count=0` por paths-ignore.
+- RAM <4 GiB y build ajeno: no se editó Rust, no hubo censo SSD, Demo ni operación financiera. Capital/ROI sigue pendiente de semáforo. Las nuevas suites de Fase 9 y Línea I en main se evalúan por separado; no se afirma CI verde global ni rentabilidad.
+
+## 2026-10-24 15:29 -05:00 — Codex: corrección DAZ aplicada; PR65/QRA sin validación Rust
+
+Mandato ampliado recibido y coordinado en `docs/audit/MANDATO_CODEX_2026-10-24.md`,
+complementario al plan canónico de Kimi. Censo mecánico congelado en
+`5da522e35ced7d890e20e1995ddf6fd819aa6c3d`: 2.179 rutas; no equivale a revisión
+semántica. Matriz de 64 familias y protocolo OOS en
+`.agent_tx/codex-mandato-20261024/PROTOCOLO_CIENTIFICO.md`; resultados económicos N/D.
+
+Corrección DAZ instalada localmente a las 15:18:32 -05:00 sobre main@2ca40b271:
+`crates/os-guardian/src/subnormal_control.rs`, `crates/os-guardian/src/lib.rs` y
+`crates/os-guardian/tests/f8_001_silicon_physics_contract.rs`. Elimina escritores
+propios MXCSR y llamadas que activaban DAZ; observa STMXCSR y valida el entorno
+antes de inicializar guardian. Incompatibilidad observada activa el freno real.
+Conserva prioridad Windows. Los tests preparados no cambian el control FP.
+No ejecutar F8 legacy: alterar DAZ y retornar a Rust viola su contrato documentado.
+
+Tres respaldos previos, índice idéntico, locks propios liberados y WAL/recibo en
+`.agent_tx/codex-mandato-20261024/daz/installation-Codex-DAZ-Install-c6dad52e5e184b15b7c719bebfba1c73/receipt.json`.
+Hashes instalados: subnormal957173192811ece324c38fd5dc6ddda967a06b21439846a4af2d15c372ebe3c7;
+lib7920818b1bf07aaa9ac5a9f9eb815d1440d66f09af028ea303a8e6a858cbeaf0;
+F8test73f5d2228215f95e979d4d0fd45f1e95e51dd5342f25bf905ab06a7916468b54.
+
+Intento F8 propio sesión39658: salida75 ANTES de Cargo por RAM inferior al piso
+humano0,94GiB; no fue fallo Rust ni prueba aprobada. Cola anterior44704 terminó
+75 sin comando nativo: auditoría independiente de293eventos en queue-audit-final.json.
+Instalador7/7 y guard12+7 prueban infraestructura, no código Rust. Sin Cargo,
+runner ni locks propios activos. A15:28 Cargo231472 de LíneaI seguía compilando;
+RAM libre917584KiB. No detenerlo ni reclamar turno por estos documentos.
+
+Próximo ejecutor: leer `.agent_tx/codex-mandato-20261024/validation/README.md`,
+revalidar HEAD/inputs/turno y ejecutar daz-tests, fmt, Clippy, check all-targets;
+con check aprobado e inputs idénticos, tests execution/feature de PR65.
+Guard SHA1f4eb75a736e6bcda171d9d25977f9a7ddfb3cc5f9d0d6802e8e6e0218a861fd.
+No commit/push ni CI propios de esta corrección. Reserva de edición liberada;
+WIP identificado y respaldado, pendiente de validación, no sobreescribir.
+UDS/cache sigue privado SIN aplicar; Verify locked y verification_complete=false.
+No se limpiaron datos, modelos, trabajo ajeno ni ramas activas.
+
 ## 2026-10-24T14:43:21-05:00 — Kimi V33: Fase 8 retirada y RED de capital ejecutado
 
 - `origin/agy/fase8-fisica-silicio-cpuid` fue eliminada después de verificar PR #131 MERGED, SHA `e2f7d989e`, cero commits exclusivos (`25 0`) y ausencia de worktree. Fase 9 y Línea C se preservaron. Registro publicado en `5da522e35`; no se forzó ningún push.

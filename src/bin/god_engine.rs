@@ -1164,41 +1164,29 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     */
 
 
-    let mut streams = String::new();
-    for (i, sym) in symbols.iter().enumerate() {
-        // Flujo pesado para TODO el universo dinámico (30 activos), permitiendo paralelismo masivo
-        let sym_lower = sym.to_lowercase();
-        streams.push_str(&sym_lower);
-        streams.push_str("@trade/");
-        streams.push_str(&sym_lower);
-        streams.push_str("@depth5/");
-        streams.push_str(&sym_lower);
-        // D-705 (DÉCIMA OLA · auditoría integral): EL RELOJ DE CALIBRACIÓN ES EL
-        // MISMO EN CALENTAMIENTO, VALIDACIÓN Y VIVO.
-        //
-        // La vela cerrada es, por diseño del núcleo, el reloj que evalúa las
-        // predicciones del ensamble contra la dirección realizada del bar
-        // (`update_with_outcome`, F4.7) y el que mueve las EMAs de kline del
-        // escudo macro. El calentamiento las llena con velas de 1 MINUTO
-        // (bootloader: `interval=1m`) y el forense marca frontera de vela cada
-        // minuto, pero en vivo se suscribía `@kline_1h`: 24 muestras diarias por
-        // símbolo, con los pesos del ensamble en su valor inicial [0,5; 0,5]
-        // durante la primera hora de cada arranque —y los arranques son
-        // frecuentes—. Desde B3.18 ese ensamble decide TODAS las entradas, así
-        // que su calibración no puede ir 60 veces más lenta que la decisión, ni
-        // el motor vivo puede alimentar con velas horarias unas EMAs calentadas
-        // con velas de un minuto.
-        streams.push_str("@kline_1m");
-
-        if i < symbols.len() - 1 {
-            streams.push('/');
-        }
-    }
+    // I-1b (Línea I): los streams del feed y sus URLs salen de
+    // `data_ingest::rutas_feed` (fuente única): por símbolo `@trade` y
+    // `@depth5` (categoría pública) y `@kline_1m` (mercado), más
+    // `!forceOrder@arr` (mercado). Notas históricas de esa lista:
+    // Flujo pesado para TODO el universo dinámico (30 activos), permitiendo paralelismo masivo
+    // D-705 (DÉCIMA OLA · auditoría integral): EL RELOJ DE CALIBRACIÓN ES EL
+    // MISMO EN CALENTAMIENTO, VALIDACIÓN Y VIVO.
+    //
+    // La vela cerrada es, por diseño del núcleo, el reloj que evalúa las
+    // predicciones del ensamble contra la dirección realizada del bar
+    // (`update_with_outcome`, F4.7) y el que mueve las EMAs de kline del
+    // escudo macro. El calentamiento las llena con velas de 1 MINUTO
+    // (bootloader: `interval=1m`) y el forense marca frontera de vela cada
+    // minuto, pero en vivo se suscribía `@kline_1h`: 24 muestras diarias por
+    // símbolo, con los pesos del ensamble en su valor inicial [0,5; 0,5]
+    // durante la primera hora de cada arranque —y los arranques son
+    // frecuentes—. Desde B3.18 ese ensamble decide TODAS las entradas, así
+    // que su calibración no puede ir 60 veces más lenta que la decisión, ni
+    // el motor vivo puede alimentar con velas horarias unas EMAs calentadas
+    // con velas de un minuto.
     // P-4 (PREDICTORES): stream de LIQUIDACIONES de todo el mercado. Cada
     // forceOrder conserva símbolo y reloj; alimenta snapshots locales del core.
     // La semivida actual es una configuración heredada, no calibración genómica.
-    streams.push_str("/!forceOrder@arr");
-    let streams_str = streams.clone();
     // LG-28 (auditoría de panics del camino vivo): un BEST_WS_ENDPOINT que no
     // forma una URL válida abortaba el proceso en el hilo del WS
     // (`Url::parse(..).expect`). Se valida aquí y, si no sirve, se ignora y
@@ -1276,12 +1264,31 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
         }
     };
-    let ws_url = Arc::new(arc_swap::ArcSwap::from_pointee(format!(
-        "wss://{}/stream?streams={}",
-        initial_ws_host, streams_str
-    )));
+    // I-1b (Línea I): una URL por categoría. La URL heredada sin categoría
+    // (`wss://{host}/stream?streams=…`) sólo recibe en producción la
+    // categoría pública: medido el 2026-10-24, cero velas y cero
+    // liquidaciones en 40 s mientras `/market` entregaba 122 velas y 5
+    // liquidaciones (docs/audit/linea_i/SONDAS_WS_2026-10-24.md). En testnet
+    // la ruta heredada sí lo entregaba todo: demo y producción divergían.
+    let urls_del_feed = match data_ingest::rutas_feed::urls_feed(&initial_ws_host, &symbols) {
+        Ok(urls) => urls,
+        Err(e) => {
+            telemetry_server::telemetry_log!(
+                "❌ [WS] No se pudieron armar las URLs del feed: {}. Sin feed no se opera: salida ordenada.",
+                e
+            );
+            telemetry_server::macros::vaciar_telemetria();
+            std::process::exit(1);
+        }
+    };
+    telemetry_server::telemetry_log!(
+        "🔗 [WS] Feed por categoría en {}: /public (libro y trades) y /market (velas y liquidaciones)",
+        initial_ws_host
+    );
+    let ws_url = Arc::new(arc_swap::ArcSwap::from_pointee(urls_del_feed.publica));
+    let ws_url_mercado = Arc::new(arc_swap::ArcSwap::from_pointee(urls_del_feed.mercado));
 
-    let (tx_ws_control, mut rx_ws_control) = tokio::sync::mpsc::channel::<()>(1);
+    let (tx_ws_control, rx_ws_control) = tokio::sync::mpsc::channel::<()>(1);
 
     // Spawn Dynamic Symbol Manager (Top 10 Evolver)
     // QO-U1b — UNIVERSO FANTASMA: el WS jamás re-suscribía al rotar el
@@ -1301,7 +1308,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         });
     }
 
-    let (tx_events, rx_events) = crossbeam_channel::bounded::<Vec<u8>>(5_000);
+    let (tx_events, rx_events) = crossbeam_channel::bounded::<data_ingest::cola_ws::MensajeWs>(
+        data_ingest::cola_ws::CAPACIDAD_COLA_WS,
+    );
     let rx_events_dropper = rx_events.clone();
     // CERT-M4-H02 — SHUTDOWN GRACEFUL: ^C #1 despierta el event loop con un
     // centinela para que drene ordenado (flatten-all + persistir estado);
@@ -1325,7 +1334,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     telemetry_server::telemetry_log!(
                         "🛑 [SHUTDOWN] ^C recibido — drenando posiciones y estado..."
                     );
-                    let _ = wake.try_send(vec![0xFF]); // despierta el event loop
+                    // despierta el event loop
+                    let _ = wake.try_send(data_ingest::cola_ws::MensajeWs::recibido_ahora(vec![0xFF]));
                 }
             }
         });
@@ -1335,17 +1345,34 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // CL-52: la cola cuenta TODO descarte (antes sólo los de la ruta del
     // centinela) y recuerda si se llevó un centinela de reconexión.
     let estado_cola = Arc::new(data_ingest::cola_ws::EstadoCola::new());
+    // I-2c (Línea I): una línea por minuto con la contrapresión del periodo
+    // (descartes, profundidad de la cola y espera local máxima), por la cola
+    // de telemetría. Antes sólo se imprimía el total por stdout y sólo con
+    // la cola ya llena: el atraso que la precede no se veía.
     {
         let estado_cola = Arc::clone(&estado_cola);
-        std::thread::Builder::new().name("ws-backpressure-monitor".into()).spawn(move || {
+        let rx_profundidad = rx_events.clone();
+        let lanzado = std::thread::Builder::new().name("ws-backpressure-monitor".into()).spawn(move || {
             loop {
                 std::thread::sleep(std::time::Duration::from_secs(60));
-                let d = estado_cola.descartados();
-                if d > 0 {
-                    println!("⚠️ [BACKPRESSURE] {} eventos WS descartados (drop-oldest) — throughput del lector insuficiente", d);
-                }
+                let descartes = estado_cola.tomar_descartes_del_periodo();
+                let espera_max = estado_cola.tomar_espera_max();
+                let profundidad = rx_profundidad.len();
+                let etiqueta = if descartes > 0 { "BACKPRESSURE" } else { "COLA-WS" };
+                telemetry_server::telemetry_log!(
+                    "📥 [{}] 60 s: descartes={} (total {}) profundidad={}/{} espera_local_max={} ms",
+                    etiqueta,
+                    descartes,
+                    estado_cola.descartados(),
+                    profundidad,
+                    data_ingest::cola_ws::CAPACIDAD_COLA_WS,
+                    espera_max
+                );
             }
-        }).ok();
+        });
+        if let Err(e) = lanzado {
+            telemetry_server::telemetry_log!("⚠️ [COLA-WS] monitor de contrapresión no lanzado: {}", e);
+        }
     }
 
     // FASE 3A: FETCH CLAVES Y CONEXIÓN API REST PARA CHEQUEO DE COMISIONES Y CAPITAL ANTES DEL WARMUP Y ENTRENAMIENTO
@@ -3538,6 +3565,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         let instant_baseline = std::time::Instant::now();
         let local_ms_now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_millis() as i64;
         let epoch_baseline_ms = local_ms_now + ntp_offset_ms;
+        // I-2b (Línea I): deriva D del reloj de pared frente a la proyección
+        // de arriba; se mide cada 100 mensajes y acompaña a los avisos.
+        let mut deriva_reloj_ms: i64 = 0;
 
         // RET-45 / F472 (RB-M1a, 2026-10-19): ya no hay un libro con BTreeMap
         // por símbolo. Se alimentaba con el nivel 0 de cada @depth5, nunca
@@ -3580,7 +3610,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         // FASE 6 (EVENT LOOP)
         god_engine_core::bootloader::SystemDiagnostics::execute_phase_6_hft();
 
-        while let Ok(mut msg_bytes) = rx_events.recv() {
+        while let Ok(mensaje_ws) = rx_events.recv() {
+            // I-2a (Línea I): el instante de recepción en el lector viaja con
+            // el mensaje; separa la espera en cola de la red (I-2b).
+            let recibido_ws = mensaje_ws.recibido;
+            let mut msg_bytes = mensaje_ws.datos;
             // CERT-M4-H02: el centinela de shutdown despierta el recv; el
             // flag ordena el drenaje (el mensaje mismo se descarta).
             if shutdown_flag.load(std::sync::atomic::Ordering::SeqCst) {
@@ -3827,9 +3861,21 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .arena
                 .server_time_offset_ms
                 .load(Ordering::Relaxed);
+            // I-2b (Línea I): un solo instante para la edad total y para la
+            // espera local; la edad se descompone en red+reloj y cola local.
+            // Las decisiones de entrada siguen con la edad TOTAL: un dato
+            // viejo no debe abrir posiciones aunque la red esté sana. Sólo
+            // el sistema inmune (aplanado total) pasa a red+reloj (I-3a).
+            let ahora_mono = Instant::now();
             let now_ms = epoch_baseline_ms + (ntp_offset_actual - ntp_offset_ms)
-                + instant_baseline.elapsed().as_millis() as i64;
-            let latency_ms = now_ms - event_time;
+                + ahora_mono.saturating_duration_since(instant_baseline).as_millis() as i64;
+            let edad = data_ingest::edad_feed::EdadEvento::medir(
+                event_time,
+                now_ms,
+                ahora_mono.saturating_duration_since(recibido_ws),
+            );
+            let latency_ms = edad.total_ms;
+            estado_cola.registrar_espera_local(edad.espera_local_ms.max(0) as u64);
             let mut latency_panic = false;
 
             // X-010 (REHAB-4): WRITER de latencia en el feed real. La métrica
@@ -3838,11 +3884,23 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             // latencia del sistema inmune jamás disparaban — ni ante muerte
             // silenciosa del feed. Ahora: cada evento vivo escribe la latencia
             // real y LIMPIA el flag de stall del watchdog (puente global).
-            if event_time > 0 {
+            // I-1b (Línea I): las señales de salud del feed de decisión las
+            // escriben sólo los eventos públicos (libro y trades). Con un lector
+            // por categoría, una vela del lector de mercado borraría la marca de
+            // stall que pone el lector público y ocultaría su corte.
+            if event_time > 0 && (is_trade || is_depth) {
                 engine_real
                     .arena
                     .last_ws_latency_ms
                     .store(latency_ms.max(0) as u64, Ordering::Relaxed);
+                engine_real
+                    .arena
+                    .last_ws_red_reloj_ms
+                    .store(edad.red_reloj_ms, Ordering::Relaxed);
+                engine_real
+                    .arena
+                    .last_ws_espera_local_ms
+                    .store(edad.espera_local_ms.max(0) as u64, Ordering::Relaxed);
                 quantum_arena::feed_health::clear();
             }
 
@@ -3859,7 +3917,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 latency_panic = true;
                 if consecutive_slow_ticks == 10 {
                     if let Some(n) = aviso_kill_switch.admitir(instant_baseline.elapsed().as_millis() as u64) {
-                        telemetry_server::telemetry_log!("🚨 [KILL_SWITCH] Latencia > {}ms detectada por 10 ticks. Volatilidad Sintética activada. SCALP DESACTIVADO. (+{} rachas sin aviso desde el anterior)", panic_threshold, n);
+                        telemetry_server::telemetry_log!("🚨 [KILL_SWITCH] Latencia > {}ms detectada por 10 ticks (última: red+reloj {} ms, cola local {} ms, deriva del reloj {} ms). Volatilidad Sintética activada. SCALP DESACTIVADO. (+{} rachas sin aviso desde el anterior)", panic_threshold, edad.red_reloj_ms, edad.espera_local_ms, deriva_reloj_ms, n);
                     }
                 }
             }
@@ -3867,7 +3925,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             if event_time > 0 && latency_ms > panic_threshold {
                 latency_panic = true;
                 if let Some(n) = aviso_latencia.admitir(instant_baseline.elapsed().as_millis() as u64) {
-                    telemetry_server::telemetry_log!("⚠️ [LATENCY_PANIC] Delta = {}ms (>{panic_threshold}ms limit). Skiping O(1) Scalp execution. (+{} eventos lentos sin aviso desde el anterior)", latency_ms, n);
+                    telemetry_server::telemetry_log!("⚠️ [LATENCY_PANIC] Delta = {}ms (>{panic_threshold}ms limit; red+reloj {} ms, cola local {} ms, deriva del reloj {} ms). Skiping O(1) Scalp execution. (+{} eventos lentos sin aviso desde el anterior)", latency_ms, edad.red_reloj_ms, edad.espera_local_ms, deriva_reloj_ms, n);
                 }
             }
 
@@ -5388,6 +5446,21 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
             msg_count += 1;
             if msg_count.is_multiple_of(100) {
+                // I-2b (Línea I): D = pared − (pared del arranque del bucle +
+                // tiempo monótono). Entra en red+reloj con el signo contrario
+                // hasta que I-5 unifique el reloj; sin D, una corrección de
+                // w32time se confunde con red.
+                if let Ok(pared) = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH) {
+                    deriva_reloj_ms = data_ingest::edad_feed::deriva_pared_frente_monotono(
+                        i64::try_from(pared.as_millis()).unwrap_or(i64::MAX),
+                        local_ms_now,
+                        instant_baseline.elapsed(),
+                    );
+                    engine_real
+                        .arena
+                        .deriva_reloj_pared_ms
+                        .store(deriva_reloj_ms, Ordering::Relaxed);
+                }
                 // LG-12: los límites de peticiones son los del exchange
                 // (constantes del ejecutor), no genes evolucionados.
 
@@ -5607,186 +5680,292 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         symbols.len()
     );
 
-    // Auto-Reconnecting WebSocket Loop (Isolated & Pinned)
-    std::thread::Builder::new().name("ws-reader".to_string()).spawn(move || {
-        if let Some(core_ids) = core_affinity::get_core_ids() {
-            if core_ids.len() > 2 {
-                core_affinity::set_for_current(core_ids[2]);
-                telemetry_server::telemetry_log!("🔒 [CPU PINNING] WS Reader pinned to CPU Core {}", core_ids[2].id);
-            }
-        }
-        os_guardian::set_current_thread_time_critical();
-
-        let rt = tokio::runtime::Builder::new_current_thread()
-            .enable_all()
-            .build()
-            .unwrap();
-
-        rt.block_on(async move {
-            let mut retry_count = 0;
-            // CL-50: sólo una reconexión se anuncia; la primera conexión no
-            // debe reiniciar los motores recién calentados.
-            let mut conexiones = data_ingest::cola_ws::ConexionesWs::new();
-        loop {
-            let current_url = ws_url.load().to_string();
-            // LG-28: sin `expect` en el hilo del WS (con panic = "abort" una URL
-            // inválida mataba el proceso con posiciones abiertas).
-            let url = match url::Url::parse(&current_url) {
-                Ok(url) => url,
-                Err(e) => {
-                    telemetry_server::telemetry_log!("❌ [WS] URL inválida «{}»: {}; reintento", current_url, e);
-                    tokio::time::sleep(std::time::Duration::from_millis(5_000)).await;
-                    continue;
-                }
-            };
-            let host = url.host_str().unwrap_or("stream.binancefuture.com");
-            let port = url.port_or_known_default().unwrap_or(443);
-
-            // FASE 8: Happy Eyeballs TCP Parallel Connection
-            // Resolve IPs dynamically instead of hardcoding AWS endpoints
-            let host_port = format!("{}:{}", host, port);
-            let mut resolved_addrs = match tokio::net::lookup_host(&host_port).await {
-                Ok(addrs) => addrs.collect::<Vec<std::net::SocketAddr>>(),
-                Err(e) => {
-                    telemetry_server::telemetry_log!("⚠️ [WS] DNS Resolution failed for {}: {}", host_port, e);
-                    vec![]
-                }
-            };
-
-            // Allow manual IP injection via ENV to bypass DNS if desired
-            if let Ok(env_ips) = std::env::var("BINANCE_WS_IPS") {
-                for ip_str in env_ips.split(',') {
-                    if let Ok(addr) = ip_str.trim().parse::<std::net::SocketAddr>() {
-                        if !resolved_addrs.contains(&addr) {
-                            resolved_addrs.push(addr);
-                        }
-                    }
+    // I-1b (Línea I): un lector por categoría sobre la misma cola. El público
+    // (libro y trades) sigue anclado a su núcleo con prioridad crítica; el de
+    // mercado (velas y liquidaciones, ~4 mensajes/s por símbolo) no compite
+    // por ese núcleo. Antes, un único lector con la URL heredada: en
+    // producción las velas y las liquidaciones no llegaban.
+    let lector_publico = LectorWs {
+        nombre: "publico",
+        url: Arc::clone(&ws_url),
+        anuncia_reconexion: true,
+        marca_stall: true,
+    };
+    let lector_mercado = LectorWs {
+        nombre: "mercado",
+        url: ws_url_mercado,
+        anuncia_reconexion: false,
+        marca_stall: false,
+    };
+    {
+        let tx_events = tx_events.clone();
+        let rx_events_dropper = rx_events_dropper.clone();
+        let estado_cola = Arc::clone(&estado_cola);
+        let lanzado = std::thread::Builder::new().name("ws-reader".to_string()).spawn(move || {
+            if let Some(core_ids) = core_affinity::get_core_ids() {
+                if core_ids.len() > 2 {
+                    core_affinity::set_for_current(core_ids[2]);
+                    telemetry_server::telemetry_log!("🔒 [CPU PINNING] WS Reader pinned to CPU Core {}", core_ids[2].id);
                 }
             }
-
-            if resolved_addrs.is_empty() {
-                // Safe fallback in worst case
-                if let Ok(fallback) = format!("{}:{}", host, port).parse::<std::net::SocketAddr>() {
-                    resolved_addrs.push(fallback);
-                } else {
-                    telemetry_server::telemetry_log!("❌ [WS] No IPs could be resolved or parsed. Retrying...");
-                    tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
-                    continue;
+            os_guardian::set_current_thread_time_critical();
+            match tokio::runtime::Builder::new_current_thread().enable_all().build() {
+                Ok(rt) => rt.block_on(bucle_lector_ws(
+                    lector_publico,
+                    tx_events,
+                    rx_events_dropper,
+                    estado_cola,
+                    Some(rx_ws_control),
+                )),
+                Err(e) => {
+                    telemetry_server::telemetry_log!("❌ [WS:publico] runtime no disponible: {}; feed de decisión caído", e);
+                    quantum_arena::feed_health::stall();
                 }
             }
-
-            telemetry_server::telemetry_log!("🔄 [WS] Parallel TCP Connection Race (Happy Eyeballs) to {} endpoints...", resolved_addrs.len());
-
-            let mut tasks = Vec::new();
-            for addr in resolved_addrs.iter() {
-                tasks.push(Box::pin(tokio::net::TcpStream::connect(*addr)));
-            }
-
-            // For TLS SNI, we still pass the original URL with the hostname (e.g. stream.binancefuture.com)
-            // but the underlying TCP stream is connected directly to the fastest raw IP.
-            let tcp_stream = match futures_util::future::select_ok(tasks).await {
-                Ok((stream, _)) => stream,
-                Err(e) => {
-                    telemetry_server::telemetry_log!("❌ [WS] Happy Eyeballs Parallel Connect failed on all IPs: {}", e);
-                    tokio::time::sleep(std::time::Duration::from_millis(1000)).await;
-                    continue;
-                }
-            };
-
-            // LG-28: el par puede cortar entre el connect y getpeername
-            // (WSAENOTCONN); antes el `unwrap` abortaba el proceso.
-            let target_addr = match tcp_stream.peer_addr() {
-                Ok(addr) => addr,
-                Err(e) => {
-                    telemetry_server::telemetry_log!("⚠️ [WS] conexión cortada antes de usarla: {}; reconecto", e);
-                    tokio::time::sleep(std::time::Duration::from_millis(1000)).await;
-                    continue;
-                }
-            };
-            telemetry_server::telemetry_log!("✅ [WS] Fast-Lane TCP Connection established to {}...", target_addr);
-
-            // FASE 22: Conexión directa TCP con Zero-Nagle para latencia nula
-            let _ = tcp_stream.set_nodelay(true);
-
-            match tokio_tungstenite::client_async_tls(url, tcp_stream).await {
-                Ok((ws_stream, _)) => {
-                    telemetry_server::telemetry_log!("✅ [WS] WebSocket TLS Connected with TCP_NODELAY.");
-                    retry_count = 0; // Reset retries on success
-                    if conexiones.establecida() {
-                        data_ingest::cola_ws::encolar(
-                            &tx_events,
-                            &rx_events_dropper,
-                            data_ingest::cola_ws::CENTINELA_RECONEXION.to_vec(),
-                            &estado_cola,
-                        );
-                    }
-                    let (_, mut read) = ws_stream.split();
-
-                    let is_testnet = std::env::var("USE_TESTNET").unwrap_or_default().trim().to_lowercase() == "true";
-                    let watchdog_secs: u64 = std::env::var("BINANCE_WS_TIMEOUT_SECS")
-                        .ok()
-                        .and_then(|s| s.parse().ok())
-                        .unwrap_or(if is_testnet { 30 } else { 15 });
-
-                    loop {
-                        tokio::select! {
-                            msg_opt = tokio::time::timeout(std::time::Duration::from_secs(watchdog_secs), read.next()) => {
-                                match msg_opt {
-                                    Ok(Some(Ok(msg))) => {
-                                        // Bounded Drop Oldest, contado (CL-52).
-                                        data_ingest::cola_ws::encolar(
-                                            &tx_events,
-                                            &rx_events_dropper,
-                                            msg.into_data(),
-                                            &estado_cola,
-                                        );
-                                    }
-                                    Ok(Some(Err(e))) => {
-                                        telemetry_server::telemetry_log!("⚠️ [WS] Connection Error: {:?}", e);
-                                        break;
-                                    }
-                                    Ok(None) => {
-                                        telemetry_server::telemetry_log!("⚠️ [WS] Stream ended.");
-                                        break;
-                                    }
-                                    Err(_) => {
-                                        telemetry_server::telemetry_log!(
-                                            "🚨 [WS] Watchdog Timeout: No data received for {} seconds! Forcing reconnect to prevent Zombie Stream.",
-                                            watchdog_secs
-                                        );
-                                        // X-010: el inmune y el interlock SABEN que el
-                                        // feed murió (antes la latencia quedaba
-                                        // congelada en el último latido sano).
-                                        quantum_arena::feed_health::stall();
-                                        break;
-                                    }
-                                }
-                            }
-                            _ = rx_ws_control.recv() => {
-                                telemetry_server::telemetry_log!("🔌 [WS] Control signal received. Dropping connection to reconnect to new URL...");
-                                break;
-                            }
-                        }
-                    }
-                    telemetry_server::telemetry_log!("⚠️ [WS] Reconnecting...");
-                }
-                Err(e) => {
-                    telemetry_server::telemetry_log!("❌ [WS] TLS Handshake failed: {:?}", e);
-                    retry_count += 1;
-                }
-            }
-
-            // Exponential backoff capped at 5 seconds
-            let backoff_ms = std::cmp::min(100 * (2u64.pow(retry_count.min(6))), 5000);
-            telemetry_server::telemetry_log!("⏳ [WS] Waiting {}ms before next attempt...", backoff_ms);
-            sleep(Duration::from_millis(backoff_ms)).await;
-        }
         });
-    }).unwrap();
+        if let Err(e) = lanzado {
+            telemetry_server::telemetry_log!("❌ [WS:publico] no se pudo lanzar el lector: {}. Sin feed no se opera: salida ordenada.", e);
+            telemetry_server::macros::vaciar_telemetria();
+            std::process::exit(1);
+        }
+    }
+    {
+        let lanzado = std::thread::Builder::new().name("ws-reader-mercado".to_string()).spawn(move || {
+            match tokio::runtime::Builder::new_current_thread().enable_all().build() {
+                Ok(rt) => rt.block_on(bucle_lector_ws(
+                    lector_mercado,
+                    tx_events,
+                    rx_events_dropper,
+                    estado_cola,
+                    None,
+                )),
+                Err(e) => telemetry_server::telemetry_log!(
+                    "❌ [WS:mercado] runtime no disponible: {}; sin velas ni liquidaciones en vivo",
+                    e
+                ),
+            }
+        });
+        if let Err(e) = lanzado {
+            telemetry_server::telemetry_log!(
+                "❌ [WS:mercado] no se pudo lanzar el lector: {}; sin velas ni liquidaciones en vivo",
+                e
+            );
+        }
+    }
 
     let _ = unified_handle.join();
 
     Ok(())
+}
+
+/// I-1b (Línea I): un lector WS del feed (una categoría de streams).
+struct LectorWs {
+    /// `publico` o `mercado`, para los avisos.
+    nombre: &'static str,
+    url: Arc<arc_swap::ArcSwap<String>>,
+    /// Sólo el público anuncia sus reconexiones: el reinicio que provoca el
+    /// centinela (motores y guardia de secuencia D-610) depende del libro.
+    anuncia_reconexion: bool,
+    /// Sólo el público marca el feed como caído: el inmune y el interlock de
+    /// entradas vigilan el feed de decisión.
+    marca_stall: bool,
+}
+
+/// Espera una orden de reconexión del canal de control. Sin canal, o con el
+/// canal cerrado (nadie puede pedir ya una reconexión), no se completa nunca:
+/// un canal cerrado no debe forzar reconexiones en bucle.
+async fn esperar_control(rx: &mut Option<tokio::sync::mpsc::Receiver<()>>) {
+    if let Some(r) = rx.as_mut() {
+        if r.recv().await.is_some() {
+            return;
+        }
+        *rx = None;
+    }
+    std::future::pending::<()>().await
+}
+
+/// Bucle de un lector WS: conecta, encola cada mensaje en la cola contada y
+/// reconecta con espera exponencial acotada.
+async fn bucle_lector_ws(
+    cfg: LectorWs,
+    tx_events: crossbeam_channel::Sender<data_ingest::cola_ws::MensajeWs>,
+    rx_events_dropper: crossbeam_channel::Receiver<data_ingest::cola_ws::MensajeWs>,
+    estado_cola: Arc<data_ingest::cola_ws::EstadoCola>,
+    mut rx_ws_control: Option<tokio::sync::mpsc::Receiver<()>>,
+) {
+    let mut retry_count = 0;
+    // CL-50: sólo una reconexión se anuncia; la primera conexión no
+    // debe reiniciar los motores recién calentados. I-1b: el lector de
+    // mercado no anuncia nunca.
+    let mut conexiones = if cfg.anuncia_reconexion {
+        data_ingest::cola_ws::ConexionesWs::new()
+    } else {
+        data_ingest::cola_ws::ConexionesWs::sin_anuncio()
+    };
+    loop {
+        let current_url = cfg.url.load().to_string();
+        // LG-28: sin `expect` en el hilo del WS (con panic = "abort" una URL
+        // inválida mataba el proceso con posiciones abiertas).
+        let url = match url::Url::parse(&current_url) {
+            Ok(url) => url,
+            Err(e) => {
+                telemetry_server::telemetry_log!("❌ [WS] URL inválida «{}»: {}; reintento", current_url, e);
+                tokio::time::sleep(std::time::Duration::from_millis(5_000)).await;
+                continue;
+            }
+        };
+        let host = url.host_str().unwrap_or("stream.binancefuture.com");
+        let port = url.port_or_known_default().unwrap_or(443);
+
+        // FASE 8: Happy Eyeballs TCP Parallel Connection
+        // Resolve IPs dynamically instead of hardcoding AWS endpoints
+        let host_port = format!("{}:{}", host, port);
+        let mut resolved_addrs = match tokio::net::lookup_host(&host_port).await {
+            Ok(addrs) => addrs.collect::<Vec<std::net::SocketAddr>>(),
+            Err(e) => {
+                telemetry_server::telemetry_log!("⚠️ [WS] DNS Resolution failed for {}: {}", host_port, e);
+                vec![]
+            }
+        };
+
+        // Allow manual IP injection via ENV to bypass DNS if desired
+        if let Ok(env_ips) = std::env::var("BINANCE_WS_IPS") {
+            for ip_str in env_ips.split(',') {
+                if let Ok(addr) = ip_str.trim().parse::<std::net::SocketAddr>() {
+                    if !resolved_addrs.contains(&addr) {
+                        resolved_addrs.push(addr);
+                    }
+                }
+            }
+        }
+
+        if resolved_addrs.is_empty() {
+            // Safe fallback in worst case
+            if let Ok(fallback) = format!("{}:{}", host, port).parse::<std::net::SocketAddr>() {
+                resolved_addrs.push(fallback);
+            } else {
+                telemetry_server::telemetry_log!("❌ [WS] No IPs could be resolved or parsed. Retrying...");
+                tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
+                continue;
+            }
+        }
+
+        telemetry_server::telemetry_log!("🔄 [WS] Parallel TCP Connection Race (Happy Eyeballs) to {} endpoints...", resolved_addrs.len());
+
+        let mut tasks = Vec::new();
+        for addr in resolved_addrs.iter() {
+            tasks.push(Box::pin(tokio::net::TcpStream::connect(*addr)));
+        }
+
+        // For TLS SNI, we still pass the original URL with the hostname (e.g. stream.binancefuture.com)
+        // but the underlying TCP stream is connected directly to the fastest raw IP.
+        let tcp_stream = match futures_util::future::select_ok(tasks).await {
+            Ok((stream, _)) => stream,
+            Err(e) => {
+                telemetry_server::telemetry_log!("❌ [WS] Happy Eyeballs Parallel Connect failed on all IPs: {}", e);
+                tokio::time::sleep(std::time::Duration::from_millis(1000)).await;
+                continue;
+            }
+        };
+
+        // LG-28: el par puede cortar entre el connect y getpeername
+        // (WSAENOTCONN); antes el `unwrap` abortaba el proceso.
+        let target_addr = match tcp_stream.peer_addr() {
+            Ok(addr) => addr,
+            Err(e) => {
+                telemetry_server::telemetry_log!("⚠️ [WS] conexión cortada antes de usarla: {}; reconecto", e);
+                tokio::time::sleep(std::time::Duration::from_millis(1000)).await;
+                continue;
+            }
+        };
+        telemetry_server::telemetry_log!("✅ [WS] Fast-Lane TCP Connection established to {}...", target_addr);
+
+        // FASE 22: Conexión directa TCP con Zero-Nagle para latencia nula.
+        // I-1b: un fallo se registra (antes `let _ =` lo descartaba).
+        if let Err(e) = tcp_stream.set_nodelay(true) {
+            telemetry_server::telemetry_log!("⚠️ [WS:{}] TCP_NODELAY no aplicado: {}", cfg.nombre, e);
+        }
+
+        match tokio_tungstenite::client_async_tls(url, tcp_stream).await {
+            Ok((ws_stream, _)) => {
+                telemetry_server::telemetry_log!("✅ [WS] WebSocket TLS Connected with TCP_NODELAY. ({})", cfg.nombre);
+                retry_count = 0; // Reset retries on success
+                if conexiones.establecida() {
+                    data_ingest::cola_ws::encolar(
+                        &tx_events,
+                        &rx_events_dropper,
+                        data_ingest::cola_ws::MensajeWs::recibido_ahora(
+                            data_ingest::cola_ws::CENTINELA_RECONEXION.to_vec(),
+                        ),
+                        &estado_cola,
+                    );
+                }
+                let (_, mut read) = ws_stream.split();
+
+                let is_testnet = std::env::var("USE_TESTNET").unwrap_or_default().trim().to_lowercase() == "true";
+                let watchdog_secs: u64 = std::env::var("BINANCE_WS_TIMEOUT_SECS")
+                    .ok()
+                    .and_then(|s| s.parse().ok())
+                    .unwrap_or(if is_testnet { 30 } else { 15 });
+
+                loop {
+                    tokio::select! {
+                        msg_opt = tokio::time::timeout(std::time::Duration::from_secs(watchdog_secs), read.next()) => {
+                            match msg_opt {
+                                Ok(Some(Ok(msg))) => {
+                                    // Bounded Drop Oldest, contado (CL-52). I-2a:
+                                    // sellado en el instante de recepción.
+                                    data_ingest::cola_ws::encolar(
+                                        &tx_events,
+                                        &rx_events_dropper,
+                                        data_ingest::cola_ws::MensajeWs::recibido_ahora(msg.into_data()),
+                                        &estado_cola,
+                                    );
+                                }
+                                Ok(Some(Err(e))) => {
+                                    telemetry_server::telemetry_log!("⚠️ [WS] Connection Error: {:?}", e);
+                                    break;
+                                }
+                                Ok(None) => {
+                                    telemetry_server::telemetry_log!("⚠️ [WS] Stream ended.");
+                                    break;
+                                }
+                                Err(_) => {
+                                    telemetry_server::telemetry_log!(
+                                        "🚨 [WS] Watchdog Timeout: No data received for {} seconds! Forcing reconnect to prevent Zombie Stream.",
+                                        watchdog_secs
+                                    );
+                                    // X-010: el inmune y el interlock SABEN que el
+                                    // feed murió (antes la latencia quedaba
+                                    // congelada en el último latido sano).
+                                    // I-1b: sólo el lector público vigila el feed de
+                                    // decisión; un corte del de mercado reconecta.
+                                    if cfg.marca_stall {
+                                        quantum_arena::feed_health::stall();
+                                    }
+                                    break;
+                                }
+                            }
+                        }
+                        _ = esperar_control(&mut rx_ws_control) => {
+                            telemetry_server::telemetry_log!("🔌 [WS] Control signal received. Dropping connection to reconnect to new URL...");
+                            break;
+                        }
+                    }
+                }
+                telemetry_server::telemetry_log!("⚠️ [WS] Reconnecting... ({})", cfg.nombre);
+            }
+            Err(e) => {
+                telemetry_server::telemetry_log!("❌ [WS] TLS Handshake failed: {:?}", e);
+                retry_count += 1;
+            }
+        }
+
+        // Exponential backoff capped at 5 seconds
+        let backoff_ms = std::cmp::min(100 * (2u64.pow(retry_count.min(6))), 5000);
+        telemetry_server::telemetry_log!("⏳ [WS] Waiting {}ms before next attempt...", backoff_ms);
+        sleep(Duration::from_millis(backoff_ms)).await;
+    }
 }
 
 /// X-040 (REHAB-4): STOP_TRADING.LOCK por RUTA ABSOLUTA. Antes: relativo al
