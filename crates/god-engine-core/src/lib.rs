@@ -9692,9 +9692,6 @@ impl GodEngineCore {
                         ((current_spread_bps * 0.5) + 0.5).max(base_slip_floor).clamp(0.5, 500.0)
                     };
 
-                    let council_horizon =
-                        metacortex_engine::consejo_seniors::TradingHorizon::Continuous;
-
                     // MOD2/7-006 (INFORME DECIMOCUARTO): el consejo delibera
                     // ahora sobre perspectivas GENUINAMENTE diversas, cada una
                     // con su propio dato crudo. El asiento "grafos" leía
@@ -9738,7 +9735,6 @@ impl GodEngineCore {
 
                     let council_snapshot =
                         metacortex_engine::consejo_seniors::MarketSnapshotPayload {
-                            horizon: council_horizon,
                             book_imbalance: obi,
                             hurst_exponent: hurst_val.clamp(0.0, 1.0),
                             ml_prob: ml_prob_pure.clamp(0.0, 1.0),

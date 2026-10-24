@@ -22,7 +22,7 @@
 //! el ledger QS-R1, no algo que este test oculte.
 
 use metacortex_engine::consejo_seniors::{
-    ConsejoDeliberacion, MarketSnapshotPayload, SeniorOpinion, TradingHorizon,
+    ConsejoDeliberacion, MarketSnapshotPayload, SeniorOpinion,
 };
 
 const TOL: f64 = 1e-9;
@@ -53,7 +53,6 @@ fn casos() -> Vec<MarketSnapshotPayload> {
                             // (límite 35..100 pb según τ).
                             for &slip in &[12.0, 140.0] {
                                 out.push(MarketSnapshotPayload {
-                                    horizon: TradingHorizon::Continuous,
                                     book_imbalance: obi,
                                     hurst_exponent: 0.62,
                                     ml_prob: 0.25,

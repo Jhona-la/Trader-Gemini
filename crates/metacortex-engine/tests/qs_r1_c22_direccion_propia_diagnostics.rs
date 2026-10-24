@@ -18,7 +18,7 @@
 //! +0,56. Desde QS-C22 la aprobación exige también el signo direccional.
 
 use metacortex_engine::consejo_seniors::{
-    ConsejoDeliberacion, MarketSnapshotPayload, SeniorOpinion, SeniorRole, TradingHorizon,
+    ConsejoDeliberacion, MarketSnapshotPayload, SeniorOpinion, SeniorRole,
 };
 
 fn direccional(o: &SeniorOpinion) -> bool {
@@ -54,7 +54,6 @@ fn senal_direccional(ops: &[SeniorOpinion]) -> f64 {
 
 fn carga(obi: f64, fused: f64, pers: f64, ml: f64) -> MarketSnapshotPayload {
     MarketSnapshotPayload {
-        horizon: TradingHorizon::Continuous,
         book_imbalance: obi,
         hurst_exponent: 0.62,
         ml_prob: ml,

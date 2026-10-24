@@ -12,12 +12,11 @@
 //!    con la política evaluada, respondiendo con fidelidad determinista y diagnóstico en caso de error.
 
 use metacortex_engine::consejo_seniors::{
-    ConsejoDeliberacion, CouncilParams, MarketSnapshotPayload, SeniorRole, TradingHorizon,
+    ConsejoDeliberacion, CouncilParams, MarketSnapshotPayload, SeniorRole,
 };
 
 fn test_snapshot() -> MarketSnapshotPayload {
     MarketSnapshotPayload {
-        horizon: TradingHorizon::Continuous,
         book_imbalance: 0.65,
         hurst_exponent: 0.60,
         ml_prob: 0.65,

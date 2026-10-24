@@ -18,12 +18,11 @@
 use metacortex_engine::consejo_seniors::{
     compute_teleonomy_utility_thresholds, ConsejoDeliberacion, CouncilParams,
     MarketSnapshotPayload, SeniorAgent, SeniorRole, SeniorTeleonomia,
-    TradingHorizon, UTILITY_VETO_FLOOR, UTILITY_VETO_WR,
+    UTILITY_VETO_FLOOR, UTILITY_VETO_WR,
 };
 
 fn base_payload() -> MarketSnapshotPayload {
     MarketSnapshotPayload {
-        horizon: TradingHorizon::Continuous,
         book_imbalance: 0.1,
         hurst_exponent: 0.5,
         ml_prob: 0.5,

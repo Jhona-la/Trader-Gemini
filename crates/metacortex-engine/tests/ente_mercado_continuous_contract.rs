@@ -1,10 +1,9 @@
 use metacortex_engine::consejo_seniors::{
-    MarketSnapshotPayload, SeniorAgent, SeniorEnteMercado, SeniorSeriesTemporales, TradingHorizon,
+    MarketSnapshotPayload, SeniorAgent, SeniorEnteMercado, SeniorSeriesTemporales,
 };
 
 fn base_payload() -> MarketSnapshotPayload {
     MarketSnapshotPayload {
-        horizon: TradingHorizon::Continuous,
         book_imbalance: 0.2,
         hurst_exponent: 0.55,
         ml_prob: 0.60,

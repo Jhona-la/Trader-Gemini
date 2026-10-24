@@ -1,4 +1,4 @@
-﻿use metacortex_engine::consejo_seniors::{ConsejoDeliberacion, MarketSnapshotPayload, TradingHorizon};
+﻿use metacortex_engine::consejo_seniors::{ConsejoDeliberacion, MarketSnapshotPayload};
 use metacortex_engine::prospect_theory::ProspectTheoryEngine;
 use signal_engine::feynman_propagator::FeynmanPropagatorEngine;
 
@@ -17,7 +17,6 @@ fn test_prospect_pressure_live_computation_in_god_engine() {
 
     // 2. Construcción de payload del consejo tal como se ejecuta en god-engine-core
     let payload = MarketSnapshotPayload {
-        horizon: TradingHorizon::Continuous,
         book_imbalance: 0.35,
         hurst_exponent: 0.65,
         ml_prob: p_bull,
@@ -108,7 +107,6 @@ fn test_feynman_and_prospect_confluence_in_god_engine() {
 
     // 3. Deliberación integrada: coherencia cuántica + capitulación conductual
     let payload = MarketSnapshotPayload {
-        horizon: TradingHorizon::Continuous,
         book_imbalance: 0.60,
         hurst_exponent: 0.70,
         ml_prob: 0.68,

@@ -36,15 +36,6 @@
 
 use serde::{Deserialize, Serialize};
 
-/// U-6 (MOTOR UNIVERSAL CONTINUO): variantes Scalping/Swing extirpadas —
-/// el eje temporal del consejo es `dominant_tau_ms` del payload (continuo).
-/// `Continuous` se conserva como único valor del contrato serde.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, Default)]
-pub enum TradingHorizon {
-    #[default]
-    Continuous,
-}
-
 #[inline(always)]
 fn default_navier_laminar_share() -> f64 {
     1.0
@@ -137,7 +128,9 @@ fn default_discrepancy_veto_threshold() -> f64 {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MarketSnapshotPayload {
-    pub horizon: TradingHorizon,
+    // LG-29b: el campo `horizon` (enum `TradingHorizon`, sólo `Continuous`)
+    // se retiró; el eje temporal del consejo es `dominant_tau_ms`. Sin
+    // `deny_unknown_fields`, un JSON antiguo con `"horizon"` sigue leyéndose.
     /// OBI del libro L2 — dato EXCLUSIVO del asiento Flujo (Microestructura).
     pub book_imbalance: f64,
     /// Hurst — usado SOLO por Teleonomia como escala de predictibilidad.
@@ -299,7 +292,6 @@ pub struct MarketSnapshotPayload {
 impl Default for MarketSnapshotPayload {
     fn default() -> Self {
         Self {
-            horizon: TradingHorizon::Continuous,
             book_imbalance: 0.0,
             hurst_exponent: 0.5,
             ml_prob: 0.5,
@@ -1677,8 +1669,8 @@ impl SeniorAgent for SeniorEjecucion {
             weight: 1.0,
             is_veto,
             justification: format!(
-                "Execution impact slippage: {:.2} bps (eff: {:.2} bps, max: {:.2} bps, Re: {:.2}, mode={:?})",
-                slippage_bps, effective_slippage_bps, max_slippage, payload.navier_reynolds_number, payload.horizon
+                "Execution impact slippage: {:.2} bps (eff: {:.2} bps, max: {:.2} bps, Re: {:.2})",
+                slippage_bps, effective_slippage_bps, max_slippage, payload.navier_reynolds_number
             ),
         }
     }
@@ -3103,7 +3095,6 @@ mod tests {
     /// al alza (flujo, espectro, ML) en un mercado tranquilo sin racha.
     fn diverse_bullish_payload() -> MarketSnapshotPayload {
         MarketSnapshotPayload {
-            horizon: TradingHorizon::Continuous,
             book_imbalance: 0.85,
             hurst_exponent: 0.72,
             ml_prob: 0.70,
@@ -3180,7 +3171,6 @@ mod tests {
     fn test_consejo_deliberacion_short_approval() {
         let consejo = ConsejoDeliberacion::new();
         let payload = MarketSnapshotPayload {
-            horizon: TradingHorizon::Continuous,
             book_imbalance: -0.85,
             hurst_exponent: 0.35,
             ml_prob: 0.28,
@@ -3260,7 +3250,6 @@ mod tests {
     fn test_consejo_deliberacion_nan_payload_immunity() {
         let consejo = ConsejoDeliberacion::new();
         let payload = MarketSnapshotPayload {
-            horizon: TradingHorizon::Continuous,
             book_imbalance: f64::NAN,
             hurst_exponent: f64::NAN,
             ml_prob: f64::NAN,

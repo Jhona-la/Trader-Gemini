@@ -10,7 +10,6 @@ fn test_quantum_organism_components() {
     // (ml/espectro/ATR/racha aparte del OBI; graph_correlation retirado).
     let consejo = ConsejoDeliberacion::new();
     let healthy_payload = MarketSnapshotPayload {
-        horizon: metacortex_engine::consejo_seniors::TradingHorizon::Continuous,
         book_imbalance: 0.1,
         hurst_exponent: 0.7,
         ml_prob: 0.62,

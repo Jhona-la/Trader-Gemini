@@ -1,5 +1,5 @@
 use metacortex_engine::consejo_seniors::{
-    ConsejoDeliberacion, MarketSnapshotPayload, SeniorAgent, SeniorEnteMercado, TradingHorizon,
+    ConsejoDeliberacion, MarketSnapshotPayload, SeniorAgent, SeniorEnteMercado,
 };
 use metacortex_engine::prospect_theory::ProspectTheoryEngine;
 
@@ -151,7 +151,6 @@ fn test_fail_closed_robustness_nan_inf() {
 #[test]
 fn test_consejo_deliberacion_prospect_theory_integration() {
     let base_payload = MarketSnapshotPayload {
-        horizon: TradingHorizon::Continuous,
         book_imbalance: 0.85,
         hurst_exponent: 0.72,
         ml_prob: 0.70,

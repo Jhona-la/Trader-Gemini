@@ -8,12 +8,11 @@
 
 use metacortex_engine::consejo_seniors::{
     evaluate_execution_slippage, evaluate_execution_slippage_with_bounds, ConsejoDeliberacion,
-    CouncilParams, MarketSnapshotPayload, SeniorAgent, SeniorEjecucion, SeniorRole, TradingHorizon,
+    CouncilParams, MarketSnapshotPayload, SeniorAgent, SeniorEjecucion, SeniorRole,
 };
 
 fn base_execution_payload() -> MarketSnapshotPayload {
     MarketSnapshotPayload {
-        horizon: TradingHorizon::Continuous,
         book_imbalance: 0.10,
         hurst_exponent: 0.55,
         ml_prob: 0.55,

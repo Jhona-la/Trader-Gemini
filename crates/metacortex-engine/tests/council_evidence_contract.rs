@@ -3,7 +3,6 @@ use metacortex_engine::consejo_seniors::*;
 
 fn snapshot() -> MarketSnapshotPayload {
     MarketSnapshotPayload {
-        horizon: TradingHorizon::Continuous,
         book_imbalance: 0.85,
         hurst_exponent: 0.72,
         ml_prob: 0.70,
