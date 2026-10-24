@@ -106,9 +106,13 @@ fn cf3_rama_13_cuenta_el_ml_una_sola_vez() {
 /// test de espejo no ejecutaba. F1-054 quitó el recorte; el margen admisible
 /// lo decide `PortfolioOrchestrator::available_margin_headroom` (risk-engine)
 /// y el núcleo sólo descuenta el margen ya comprometido. Guarda de
-/// regresión: el núcleo no vuelve a recortar `free_cap` por su cuenta. Si un
-/// rediseño legítimo necesita aquí un recorte espectral, debe llamar a la
-/// función con contrato de quantum-arena y este test se sustituye por una
+/// regresión: el núcleo no vuelve a recortar `free_cap` por su cuenta. Entre
+/// el cálculo de `free_cap` y su puerta (`margin_req <= free_cap`), `free_cap`
+/// se asigna una sola vez y no aparece `margin_multiplier`: así fallan el
+/// `*=` antiguo, un sombreado `let free_cap = free_cap * …`, la misma copia
+/// con otra variable y un recorte en la propia puerta (que rompe la premisa).
+/// Si un rediseño legítimo necesita aquí un recorte espectral, debe llamar a
+/// la función con contrato de quantum-arena y este test se sustituye por una
 /// prueba de propiedad sobre ella.
 #[test]
 fn cf3_colchon_sin_copia_en_linea() {
@@ -124,5 +128,24 @@ fn cf3_colchon_sin_copia_en_linea() {
     assert!(
         src.contains("letfree_cap=(current_cap-total_used).max(0.0);"),
         "premisa: no encuentro el cálculo de free_cap del núcleo; actualizar el test"
+    );
+    let bloque = tramo(
+        &src,
+        "letfree_cap=(current_cap-total_used).max(0.0);",
+        "margin_req<=free_cap{",
+    );
+    assert!(
+        bloque.is_some(),
+        "premisa: no encuentro el tramo de free_cap a su puerta (margin_req <= free_cap); actualizar el test"
+    );
+    let bloque = bloque.unwrap_or_default();
+    assert_eq!(
+        bloque.matches("free_cap=").count(),
+        1,
+        "el núcleo reasigna free_cap entre su cálculo y la puerta de margen"
+    );
+    assert!(
+        !bloque.contains("margin_multiplier"),
+        "el núcleo recorta free_cap con un multiplicador espectral antes de la puerta"
     );
 }
