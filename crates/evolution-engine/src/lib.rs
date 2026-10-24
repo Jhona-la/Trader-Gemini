@@ -41,6 +41,7 @@ pub mod online_daemon;
 pub mod return_evidence;
 pub use return_evidence::{SequentialVilleEvidence, VigilanciaDegradacion};
 pub mod online_random_forest;
+pub mod lock_seguro;
 pub mod online_newton_gbdt;
 pub use online_newton_gbdt::OnlineNewtonGbdt;
 pub mod polars_evolver;

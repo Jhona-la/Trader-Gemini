@@ -92,7 +92,10 @@ pub const MAX_CLOCK_JUMP_MS: u64 = 365 * 86_400_000;
 const MIN_REAL_EPOCH_ANCHOR_MS: u64 = 946_684_800_000;
 
 #[inline]
-fn plausible_evidence_timestamp_ms(candidate_ms: u64, current_clock_ms: Option<u64>) -> bool {
+pub(crate) fn plausible_evidence_timestamp_ms(
+    candidate_ms: u64,
+    current_clock_ms: Option<u64>,
+) -> bool {
     if candidate_ms > MAX_PLAUSIBLE_EPOCH_MS {
         return false;
     }
@@ -129,7 +132,20 @@ impl PlattCalibrator {
         self.ultimo_dato_ms
     }
 
-    /// Restaura el reloj guardado después de reproducir los datos retenidos.
+    /// Fecha que usaría una observación explícita, sin avanzar el reloj.
+    /// Una fecha corrupta conserva el ancla propia de este calibrador. Sin
+    /// ancla, `None` representa una observación sin fecha, que el formato
+    /// persistente `(score, won, u64)` no puede registrar fielmente.
+    pub(crate) fn effective_observation_timestamp_ms(&self, now_ms: u64) -> Option<u64> {
+        if plausible_evidence_timestamp_ms(now_ms, self.ultimo_dato_ms) {
+            Some(now_ms)
+        } else {
+            self.ultimo_dato_ms
+        }
+    }
+
+    /// Restaura el reloj máximo guardado; al reconstruir un snapshot, se
+    /// establece antes de reproducir sus filas retenidas, que pueden ser viejas.
     /// No admite rebobinado ni marcas de tiempo corruptas en el futuro (CSG-10).
     /// Reajusta fuera del camino caliente de consulta.
     pub fn restore_evidence_clock_ms(&mut self, clock_ms: u64) {
@@ -226,21 +242,21 @@ impl PlattCalibrator {
         if !valid_training_score(score) {
             return;
         }
-        if !plausible_evidence_timestamp_ms(now_ms, self.ultimo_dato_ms) {
-            self.push_observation(score, won, self.ultimo_dato_ms);
+        let Some(timestamp_ms) = self.effective_observation_timestamp_ms(now_ms) else {
+            self.push_observation(score, won, None);
             return;
-        }
+        };
         // La API sin fechas no permite reconstruir edades. Al recibir el
         // primer reloj explícito, sus datos se anclan una sola vez aquí.
         if self.ultimo_dato_ms.is_none() {
             for (_, _, timestamp) in &mut self.obs {
-                *timestamp = Some(now_ms);
+                *timestamp = Some(timestamp_ms);
             }
         }
-        self.ultimo_dato_ms = Some(self.ultimo_dato_ms.map_or(now_ms, |u| u.max(now_ms)));
+        self.ultimo_dato_ms = Some(self.ultimo_dato_ms.map_or(timestamp_ms, |u| u.max(timestamp_ms)));
         // Un cierre tardío conserva su fecha; el ajuste usa el reloj máximo
         // ya conocido, sin rebobinar ni rejuvenecer esa observación.
-        self.push_observation(score, won, Some(now_ms));
+        self.push_observation(score, won, Some(timestamp_ms));
     }
 
     /// Añade un resultado y reajusta el mapa. Puntuaciones fuera de [0,1]

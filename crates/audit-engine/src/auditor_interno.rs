@@ -29,17 +29,6 @@ pub struct IndependentMetrics {
     pub benchmark_alpha: f64,
 }
 
-/// Cognitive bias detection report
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
-pub struct CognitiveBiasReport {
-    pub overfitting_recent_past: bool,
-    pub illusion_of_control: bool,
-    pub selective_confirmation: bool,
-    pub complexity_inflation: bool,
-    pub unverified_mutation_claims: bool,
-    pub bias_detected: bool,
-}
-
 /// OLA Ω120: Constantes canónicas por defecto para el Tribunal de Autoengaño y Auditor Interno
 pub const DEFAULT_AUTOENGANO_THRESHOLD: f64 = 0.20;
 pub const DEFAULT_CULPABLE_PELIGROSO_THRESHOLD: f64 = 0.10;
@@ -238,30 +227,145 @@ pub struct DailyTribunalReport {
 /// crecimiento ilimitado de RAM y degradación cuadrática en sesiones largas.
 pub const MAX_FILLS_JOURNAL: usize = 4096;
 
+/// F412/F413/F271 (censo C-F7b, 2026-10-18): capacidad máxima acotada del diario
+/// del canal INDEPENDIENTE (fills del host/exchange). Misma higiene de RAM que
+/// MAX_FILLS_JOURNAL: buffer circular acotado, sin crecimiento ilimitado.
+pub const MAX_FILLS_INDEPENDIENTES: usize = 4096;
+
+/// SOL (2026-10-19, censo C-F7b §3-2): evidencia mínima para que una sombra
+/// del auditor se publique. Con menos fills la sombra es `None`: publicar
+/// ruido sería peor que no publicar — la ausencia de dato nunca es señal.
+pub const MIN_FILLS_SOMBRA: usize = 20;
+
+/// SOL (2026-10-19): bloques contiguos para el error estándar de las sombras.
+/// Los fills son una serie correlacionada (mismo régimen, misma sesión): la
+/// media por bloque y el desvío ENTRE bloques / sqrt(B) miden la precisión
+/// real sin asumir independencia que no existe.
+const BLOQUES_SOMBRA: usize = 4;
+
+/// SOL (2026-10-19, §3-2): sombra de la pata de win rate (F413) con intervalo
+/// y estabilidad. Sólo telemetría: ninguna decisión la consume hoy.
+#[derive(Debug, Clone, Copy)]
+pub struct SombraWr {
+    /// WR que afirma el núcleo (saneado a [0,1]).
+    pub wr_interno: f64,
+    /// WR reconstruido de los cierres del canal independiente (neto > 0).
+    pub wr_real: f64,
+    /// |interno − real|.
+    pub disc: f64,
+    /// Error estándar del WR real por bloques.
+    pub ee_real: f64,
+    /// Cierres usados (>= MIN_FILLS_SOMBRA).
+    pub n: usize,
+    /// |interno − WR real| en la primera mitad temporal (estabilidad OOS).
+    pub disc_mitad_a: f64,
+    /// |interno − WR real| en la segunda mitad temporal.
+    pub disc_mitad_b: f64,
+}
+
+/// SOL (2026-10-19, §3-2): sombra de fricción real menos modelada (bp).
+/// Positiva = se paga más de lo modelado. Sólo telemetría.
+#[derive(Debug, Clone, Copy)]
+pub struct SombraFriccion {
+    /// Media de (fee real en bp − fricción modelada en bp) por fill.
+    pub media_bp: f64,
+    /// Error estándar de esa media por bloques.
+    pub ee_bp: f64,
+    /// Fills usados (>= MIN_FILLS_SOMBRA).
+    pub n: usize,
+    /// Media en la primera mitad temporal (estabilidad OOS).
+    pub media_mitad_a_bp: f64,
+    /// Media en la segunda mitad temporal.
+    pub media_mitad_b_bp: f64,
+}
+
+/// SOL (2026-10-19): error estándar de una proporción por bloques contiguos +
+/// proporción de cada mitad. `(ee, prop_mitad_a, prop_mitad_b)`.
+/// Con menos elementos que bloques, `ee = 0` (no hay varianza medible: se
+/// dice 0, nunca NaN).
+fn ee_proporcion_bloques<T, F: Fn(&&T) -> bool>(items: &[&T], pred: F) -> (f64, f64, f64) {
+    let n = items.len();
+    if n == 0 {
+        return (0.0, 0.0, 0.0);
+    }
+    let proporcion = |ini: usize, fin: usize| -> f64 {
+        let total = fin - ini;
+        if total == 0 {
+            return 0.0;
+        }
+        items[ini..fin].iter().filter(|x| pred(x)).count() as f64 / total as f64
+    };
+    let (ee, _) = bloques_media_ee(items, |ini, fin| proporcion(ini, fin));
+    let mitad = n / 2;
+    (ee, proporcion(0, mitad), proporcion(mitad, n))
+}
+
+/// SOL (2026-10-19): `(media_global, ee_por_bloques, media_mitad_a,
+/// media_mitad_b)` de una serie ya saneada (todos finitos).
+fn media_ee_bloques(vals: &[f64]) -> (f64, f64, f64, f64) {
+    let n = vals.len();
+    if n == 0 {
+        return (0.0, 0.0, 0.0, 0.0);
+    }
+    let media = vals.iter().sum::<f64>() / n as f64;
+    let (ee, _) = bloques_media_ee(vals, |ini, fin| {
+        vals[ini..fin].iter().sum::<f64>() / (fin - ini) as f64
+    });
+    let mitad = n / 2;
+    let a = vals[..mitad].iter().sum::<f64>() / mitad.max(1) as f64;
+    let b = vals[mitad..].iter().sum::<f64>() / (n - mitad).max(1) as f64;
+    (media, ee, a, b)
+}
+
+/// SOL (2026-10-19): núcleo común de los errores estándar por bloques.
+/// `media_bloque` devuelve la media del bloque [ini, fin). Devuelve
+/// `(ee, nº de bloques)`; con < BLOQUES_SOMBRA elementos por bloque, ee = 0.
+/// sd muestral entre bloques / sqrt(B).
+fn bloques_media_ee<T, F: Fn(usize, usize) -> f64>(items: &[T], media_bloque: F) -> (f64, usize) {
+    let n = items.len();
+    let b = BLOQUES_SOMBRA;
+    if n < b {
+        return (0.0, 0);
+    }
+    let tam = n / b;
+    if tam == 0 {
+        return (0.0, 0);
+    }
+    let mut sum = 0.0;
+    let mut sum2 = 0.0;
+    for i in 0..b {
+        let ini = i * tam;
+        let fin = if i == b - 1 { n } else { ini + tam };
+        let m = media_bloque(ini, fin);
+        sum += m;
+        sum2 += m * m;
+    }
+    let media = sum / b as f64;
+    let var = ((sum2 - b as f64 * media * media) / (b - 1) as f64).max(0.0);
+    ((var / b as f64).sqrt(), b)
+}
+
 /// Dual Result Verifier
 pub struct VerificadorResultados;
 
 impl VerificadorResultados {
-    /// Computes independent metrics from raw exchange fill records with default base capital
-    pub fn compute_metrics(fills: &[ExchangeFillRecord]) -> IndependentMetrics {
-        Self::compute_metrics_with_capital(fills, 13.0)
-    }
-
     /// Computes independent metrics from raw exchange fill records anchored to explicit base capital.
     /// F1-006 (Ola Ω150): Single-pass zero-allocation Welford online variance + equity curve reconstruction.
+    /// CL-15 (GLM 144): capital inválido (NaN/≤0) ⇒ evidencia NO anclable ⇒
+    /// métricas vacías (igual que fills vacíos): el tribunal queda armado,
+    /// consistente con F412 («sin fuente independiente el veto no decae»).
+    /// Inventar 13.0 fabricaría retornos/drawdowns de una cuenta inexistente.
     pub fn compute_metrics_with_capital(
         fills: &[ExchangeFillRecord],
         base_capital: f64,
     ) -> IndependentMetrics {
-        if fills.is_empty() {
+        if fills.is_empty()
+            || !base_capital.is_finite()
+            || base_capital <= 0.0
+        {
             return IndependentMetrics::default();
         }
-
-        let safe_capital = if base_capital.is_finite() && base_capital > 0.0 {
-            base_capital
-        } else {
-            13.0
-        };
+        let safe_capital = base_capital;
 
         let mut count: u64 = 0;
         let mut winning_trades: u64 = 0;
@@ -363,6 +467,16 @@ impl VerificadorResultados {
 /// Auditor Interno Engine
 pub struct AuditorInterno {
     fills_journal: Vec<ExchangeFillRecord>,
+    /// F412/F413/F271 (censo C-F7b §3, prioridad 1): canal INDEPENDIENTE.
+    /// Sólo lo alimenta el host con fills del exchange (ORDER_TRADE_UPDATE del
+    /// user-data stream), nunca el cierre interno del núcleo. Mientras esté
+    /// vacío no existe fuente ajena contra la que verificar afirmaciones
+    /// internas: las tres patas de `calculate_max_discrepancy` serían
+    /// tautológicas (sharpe sin escritor de `internal_sharpe` ⇒ claim 0.0;
+    /// wr del mismo cierre con el mismo predicado net>0; dd actual contra el
+    /// máximo histórico del diario de cartera) y el veto dispararía solo,
+    /// sin decaer (13 → 16,9 ⇒ disc 0,231 > 0,20 vetando todas las monedas).
+    fills_independientes: Vec<ExchangeFillRecord>,
     base_capital: f64,
     pub thresholds: TribunalThresholds,
 }
@@ -371,7 +485,12 @@ impl Default for AuditorInterno {
     fn default() -> Self {
         Self {
             fills_journal: Vec::new(),
-            base_capital: 13.0,
+            fills_independientes: Vec::new(),
+            // CL-15 (GLM 144): el Default NO declara capital — inventar 13.0
+            // anclaría las métricas a una cuenta inexistente. Sin with_capital
+            // explícito la evidencia queda sin anclar (métricas vacías,
+            // tribunal armado). El host vivo usa with_capital(capital_real).
+            base_capital: f64::NAN,
             thresholds: TribunalThresholds::default(),
         }
     }
@@ -385,6 +504,7 @@ impl AuditorInterno {
     pub fn with_capital(base_capital: f64) -> Self {
         Self {
             fills_journal: Vec::new(),
+            fills_independientes: Vec::new(),
             base_capital: base_capital.max(1.0),
             thresholds: TribunalThresholds::default(),
         }
@@ -421,6 +541,10 @@ impl AuditorInterno {
 
     /// OLA Ω120: Calcula la discrepancia máxima normalizada entre métricas internas y realidad
     /// para alimentar el registro omnisciente y el asiento SeniorAuditorInterno en el Consejo.
+    ///
+    /// F412/F413/F271 (censo C-F7b): esta ruta usa el diario interno (alimentado por el
+    /// propio cierre del núcleo), que NO es una fuente independiente. Queda para
+    /// telemetría/tribunal; el veto vivo usa `compute_internal_discrepancy_evidenciada`.
     pub fn compute_internal_discrepancy(
         &self,
         internal_sharpe: f64,
@@ -440,12 +564,180 @@ impl AuditorInterno {
         max_disc
     }
 
+    /// F412/F413/F271 (censo C-F7b §3, prioridad 1): registra un fill del canal
+    /// INDEPENDIENTE (host/exchange vía ORDER_TRADE_UPDATE). Rechaza flotantes no
+    /// finitos (misma guarda que `record_fill`) y acota el diario en
+    /// MAX_FILLS_INDEPENDIENTES con drenaje del excedente más antiguo.
+    pub fn record_fill_independiente(&mut self, fill: ExchangeFillRecord) {
+        if !fill.price.is_finite()
+            || !fill.qty.is_finite()
+            || !fill.fee_usd.is_finite()
+            || !fill.realized_pnl.is_finite()
+        {
+            return;
+        }
+        if self.fills_independientes.len() >= MAX_FILLS_INDEPENDIENTES {
+            let overflow = self.fills_independientes.len() + 1 - MAX_FILLS_INDEPENDIENTES;
+            self.fills_independientes.drain(0..overflow);
+        }
+        self.fills_independientes.push(fill);
+    }
+
+    /// F412/F413/F271: ¿existe fuente independiente con al menos un fill?
+    #[inline]
+    pub fn tiene_fuente_independiente(&self) -> bool {
+        !self.fills_independientes.is_empty()
+    }
+
+    /// F412/F413/F271 (censo C-F7b §3, prioridad 1): discrepancia con PUERTA DE
+    /// EVIDENCIA. `None` = sin fuente independiente ⇒ el asiento
+    /// SeniorAuditorInterno NO debe vetar (clave ausente en el registro ⇒
+    /// payload 0.0 ⇒ `disc > umbral` falso). Con fuente independiente, devuelve
+    /// la máxima discrepancia de las tres patas contra las métricas
+    /// reconstruidas de ese canal ajeno (sharpe, win rate y drawdown medidos
+    /// sobre fills que el núcleo no produjo).
+    ///
+    /// SOL (2026-10-20, censo C-F7b §3-4): la pata de WIN RATE se evalúa por su
+    /// COTA INFERIOR (`|disc| − ee` por bloques) cuando hay evidencia
+    /// suficiente (n ≥ MIN_FILLS_SOMBRA). El ruido de muestreo de un WR de
+    /// pocos cierres ya no veta: sólo veta la discrepancia que sobrevive a su
+    /// propio intervalo. Con menos de MIN_FILLS_SOMBRA la pata queda como
+    /// estaba (puntual) — el ajuste no inventa precisión que no existe.
+    ///
+    /// Contrato de recuperación: el veto deja de dispararse con datos
+    /// tautológicos y sólo vuelve a hacerlo cuando la evidencia independiente
+    /// sostiene la discrepancia — nunca por ausencia de dato ni por ruido.
+    pub fn compute_internal_discrepancy_evidenciada(
+        &self,
+        internal_sharpe: f64,
+        internal_win_rate: f64,
+        internal_drawdown: f64,
+    ) -> Option<f64> {
+        if !self.tiene_fuente_independiente() {
+            return None;
+        }
+        let independent = VerificadorResultados::compute_metrics_with_capital(
+            &self.fills_independientes,
+            self.base_capital,
+        );
+        let (_, sharpe_disc, wr_disc, dd_disc) = calculate_max_discrepancy(
+            internal_sharpe,
+            internal_win_rate,
+            internal_drawdown,
+            &independent,
+        );
+        // §3-4: cota inferior del intervalo de la pata WR. `sombra_wr_disc`
+        // devuelve `None` con < MIN_FILLS_SOMBRA cierres ⇒ comportamiento
+        // previo intacto (pata puntual).
+        let wr_ajustada = match self.sombra_wr_disc(internal_win_rate) {
+            Some(s) => (wr_disc - s.ee_real).max(0.0),
+            None => wr_disc,
+        };
+        Some(sharpe_disc.max(wr_ajustada).max(dd_disc))
+    }
+
+    /// F412/F413/F271: métricas reconstruidas del canal independiente (host).
+    /// Sólo telemetría/contratos: el veto usa `compute_internal_discrepancy_evidenciada`.
+    pub fn compute_independent_metrics_from_host(&self) -> IndependentMetrics {
+        VerificadorResultados::compute_metrics_with_capital(
+            &self.fills_independientes,
+            self.base_capital,
+        )
+    }
+
+    /// F412/F413/F271: tamaño del diario del canal independiente (higiene de RAM).
+    #[inline]
+    pub fn fills_independientes_len(&self) -> usize {
+        self.fills_independientes.len()
+    }
+
     /// Computa directamente las métricas de rendimiento independientes calculadas desde los fills reales
     pub fn compute_independent_metrics(&self) -> IndependentMetrics {
         VerificadorResultados::compute_metrics_with_capital(
             &self.fills_journal,
             self.base_capital,
         )
+    }
+
+    // ------------------------------------------------------- sombras (fase 2)
+
+    /// SOL (2026-10-19, censo C-F7b §3-2): SOMBRA de la pata de win rate.
+    /// Publica `|WR interno − WR real|` contra el canal independiente con su
+    /// error estándar y su estabilidad en dos mitades OOS. Sólo telemetría:
+    /// ninguna decisión la lee hoy — mide, con intervalo, la pata que el
+    /// censo marcó como tautológica (F413).
+    ///
+    /// `None` (no se publica) si: el claim interno no es finito, o no hay
+    /// `MIN_FILLS_SOMBRA` cierres en el canal independiente.
+    pub fn sombra_wr_disc(&self, internal_wr: f64) -> Option<SombraWr> {
+        let wr_interno = if internal_wr.is_finite() {
+            internal_wr.clamp(0.0, 1.0)
+        } else {
+            return None;
+        };
+        let cierres: Vec<&ExchangeFillRecord> = self
+            .fills_independientes
+            .iter()
+            .filter(|f| f.is_closed_position)
+            .collect();
+        let n = cierres.len();
+        if n < MIN_FILLS_SOMBRA {
+            return None;
+        }
+        let neto_positivo = |f: &&ExchangeFillRecord| (f.realized_pnl - f.fee_usd) > 0.0;
+        let wr_real = cierres.iter().filter(|f| neto_positivo(f)).count() as f64 / n as f64;
+        let disc = (wr_interno - wr_real).abs();
+        let (ee_real, wr_a, wr_b) = ee_proporcion_bloques(&cierres, neto_positivo);
+        Some(SombraWr {
+            wr_interno,
+            wr_real,
+            disc,
+            ee_real,
+            n,
+            disc_mitad_a: (wr_interno - wr_a).abs(),
+            disc_mitad_b: (wr_interno - wr_b).abs(),
+        })
+    }
+
+    /// SOL (2026-10-19, censo C-F7b §3-2): SOMBRA de fricción REAL menos
+    /// MODELADA, en basis points, sobre el canal independiente. Positiva = el
+    /// sistema paga más de lo que su gate modela ⇒ el edge real es menor que
+    /// el creído. La fricción modelada la pasa quien conoce la receta del
+    /// gate (misma fuente que `sonda_de_banda`), nunca se hardcodea aquí.
+    ///
+    /// `None` si: la fricción modelada no es finita o es negativa, o hay
+    /// menos de `MIN_FILLS_SOMBRA` fills con nocional finito > 0 y fee finito.
+    pub fn sombra_friccion_bp(&self, friccion_modelada_bp: f64) -> Option<SombraFriccion> {
+        if !(friccion_modelada_bp.is_finite() && friccion_modelada_bp >= 0.0) {
+            return None;
+        }
+        let mut deltas: Vec<f64> = Vec::with_capacity(self.fills_independientes.len());
+        for f in &self.fills_independientes {
+            let nocional = f.price * f.qty;
+            if !(nocional.is_finite() && nocional > 0.0) {
+                continue;
+            }
+            if !(f.fee_usd.is_finite() && f.fee_usd >= 0.0) {
+                continue;
+            }
+            let fee_bp = f.fee_usd / nocional * 1e4;
+            if !fee_bp.is_finite() {
+                continue;
+            }
+            deltas.push(fee_bp - friccion_modelada_bp);
+        }
+        let n = deltas.len();
+        if n < MIN_FILLS_SOMBRA {
+            return None;
+        }
+        let (media_bp, ee_bp, a, b) = media_ee_bloques(&deltas);
+        Some(SombraFriccion {
+            media_bp,
+            ee_bp,
+            n,
+            media_mitad_a_bp: a,
+            media_mitad_b_bp: b,
+        })
     }
 
     /// Evaluates internal claims against independent exchange fill verification
@@ -488,39 +780,6 @@ impl AuditorInterno {
         }
     }
 
-    /// Detects cognitive biases in current trading behavior (lookahead-free)
-    // FIX #722: Calibrar umbral de complejidad (> 64) para respetar los 54 features nominales y sanitizar retornos
-    pub fn audit_biases(
-        &self,
-        num_features: usize,
-        recent_7d_ret: f64,
-        out_of_sample_ret: f64,
-    ) -> CognitiveBiasReport {
-        let safe_7d = if recent_7d_ret.is_finite() {
-            recent_7d_ret
-        } else {
-            0.0
-        };
-        let safe_oos = if out_of_sample_ret.is_finite() {
-            out_of_sample_ret
-        } else {
-            0.0
-        };
-        let overfitting = (safe_7d > self.thresholds.overfitting_recent_min)
-            && (safe_oos < self.thresholds.overfitting_oos_max);
-        let complexity_inflation = num_features > self.thresholds.max_features_nominal;
-
-        let bias_detected = overfitting || complexity_inflation;
-
-        CognitiveBiasReport {
-            overfitting_recent_past: overfitting,
-            illusion_of_control: false,
-            selective_confirmation: false,
-            complexity_inflation,
-            unverified_mutation_claims: false,
-            bias_detected,
-        }
-    }
 }
 
 #[cfg(test)]
@@ -529,7 +788,7 @@ mod tests {
 
     #[test]
     fn test_auditor_interno_verification_and_bias() {
-        let mut auditor = AuditorInterno::new();
+        let mut auditor = AuditorInterno::with_capital(13.0);
         auditor.record_fill(ExchangeFillRecord {
             timestamp_ns: 1_000_000,
             symbol_id: 0,
@@ -554,8 +813,6 @@ mod tests {
         let tribunal = auditor.verify_internal_claims(2.0, 0.50, 0.05);
         assert_ne!(tribunal.justification, "");
 
-        let bias = auditor.audit_biases(34, 0.02, 0.01);
-        assert!(!bias.bias_detected);
     }
 
     #[test]

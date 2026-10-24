@@ -88,7 +88,7 @@ jobs:
         run: |
           cargo +nightly-2026-06-30 test -p data-pipeline --locked --test parser_input_contract -- --test-threads=1
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          cargo +nightly-2026-06-30 test -p risk-engine --locked --test nonfinite_admission_contract --test c07_ruin_composition_contract -- --test-threads=1
+          cargo +nightly-2026-06-30 test -p risk-engine --locked --test nonfinite_admission_contract --test c07_ruin_composition_contract --test observed_zero_capital_contract -- --test-threads=1
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           cargo +nightly-2026-06-30 test -p backtest-engine --locked --test oos_context_contract -- --test-threads=1
 
@@ -96,6 +96,27 @@ jobs:
       - name: Shadow forest genome and observed capital contracts
         # Offline library tests; no training, promotion or live engine session.
         run: cargo +nightly-2026-06-30 test -p evolution-engine --lib --locked -- --test-threads=1
+
+      - name: Pre-screen numeraire invariance and poisoned-lock contracts
+        # F1-089d: este contrato existía desde GLM 145 pero NINGÚN workflow lo
+        # ejecutaba (`--lib` no corre tests de integración), así que la
+        # invariancia del numerario del pre-screen estaba certificada sólo en
+        # la máquina de quien la escribió. Aquí se ejecuta de verdad.
+        run: cargo +nightly-2026-06-30 test -p evolution-engine --locked --test wf_numerario_invariancia_contract --test lock_sin_veneno_contract -- --test-threads=1
+
+      - name: Shared HTTP client contract (F1-090)
+        # F1-090: un solo `reqwest::Client` por proceso con tcp_nodelay, pool
+        # acotado y timeouts explícitos. El contrato levanta un servidor HTTP
+        # local real (socket TCP) y exige instancia única + reutilización.
+        run: cargo +nightly-2026-06-30 test -p data-pipeline --locked --test http_cliente_compartido_contract -- --test-threads=1
+
+      - name: No-silent-zero data contract (F1-091)
+        # F1-091: un valor ilegible en el camino de dinero (saldo, libro,
+        # velas, estadística de símbolo) se DESCARTA, no se convierte en 0.
+        # Contrato con payloads reales de Binance y servidor HTTP local para
+        # las velas. Sin él, la regla viviría sólo en la máquina de quien la
+        # escribió — el error que este workflow ya corrigió dos veces.
+        run: cargo +nightly-2026-06-30 test -p data-pipeline --locked --test cero_dato_contract -- --test-threads=1
 
       - name: Accepted feature clock transition contracts
         # Synthetic rejected/accepted ticks; no live trading, models or training.
@@ -109,17 +130,13 @@ jobs:
         run: cargo +nightly-2026-06-30 test -p god-engine-core --locked --lib ml_registry::tests -- --test-threads=1
       - name: Replay, causality, metrics, labels and risk regressions
         # No --ignored: do not run manual real-tape experiments or exchange tests.
-        run: cargo +nightly-2026-06-30 test -p backtest-engine --locked --lib --test ex_post_metrics_contract --test label_evidence_contract --test spectral_risk_contract --test bt_vivo_parity_audit -- --test-threads=1
+        run: cargo +nightly-2026-06-30 test -p backtest-engine --locked --lib --test ex_post_metrics_contract --test label_evidence_contract --test spectral_risk_contract --test bt_vivo_parity_audit --test qra_tick_prefix_contract --test ffi_backtest_safety_contract -- --test-threads=1
       - name: Fast genome and synthetic reference contracts (no manual measurements)
         run: cargo +nightly-2026-06-30 test -p backtest-engine --locked --test t1_measurement_contract --test t3_ventaja_conocida -- --test-threads=1
-      - name: Execution, audit and data-ingest contract suites
-        # XC (GLM, 2026-10-06, F8-A-H2 of the exhaustive sweep): these 5
-        # crates had 223 tests that CI only COMPILED (--all-targets) but
-        # never ran — ioc_fill_contract was red in HEAD for days, invisible.
-        # Fast unit/contract suites (no --ignored: no testnet, no manual
-        # measurements); adds ~2-4 min against the ~46 min replay suite.
-        run: cargo +nightly-2026-06-30 test -p execution-engine -p audit-engine -p data-pipeline -p data-ingest -p dark-alpha-engine --locked -- --test-threads=1
-
+      - name: Golden accounting witness (one synthetic probe)
+        # Keep the full regression suite above. Print the independently checked
+        # quantity, physical prices and IEEE cash debits for both golden runs.
+        run: cargo +nightly-2026-06-30 test -p backtest-engine --locked --lib tests::golden_backtest_determinism -- --exact --nocapture --test-threads=1
       - name: Signed SA score and selection contracts (no evolution process)
         # Compile the actual standalone helpers; all-targets above checks the CLI wiring.
         run: |
@@ -131,3 +148,58 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           ./target/sa-selection-contract.exe --test-threads=1
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+  execution-contracts:
+    # QRA-03: run the existing five-crate suite from the start, rather than
+    # compiling Polars after all preceding replay contracts. Same command,
+    # compiler and limits; doctests remain enabled. Both jobs must pass.
+    # This trades another hosted runner for a shorter possible critical path;
+    # it does not claim lower total compute or use the laptop's shared target.
+    runs-on: windows-2022
+    timeout-minutes: 90
+    env:
+      CARGO_BUILD_JOBS: '2'
+      CARGO_INCREMENTAL: '0'
+      CARGO_PROFILE_DEV_DEBUG: '0'
+      CARGO_PROFILE_TEST_DEBUG: '0'
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - name: Checkout candidate merge
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # verified v4
+        with:
+          persist-credentials: false
+          fetch-depth: 2
+      - name: Install the compiler used for the local regression
+        run: |
+          rustup toolchain install nightly-2026-06-30 --profile minimal
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cargo +nightly-2026-06-30 --version
+          rustc +nightly-2026-06-30 --version
+      - name: Execution, audit and data-ingest contract suites
+        # XC (GLM, 2026-10-06, F8-A-H2): keep these five crates executed,
+        # including integration tests and doctests, rather than only checked.
+        run: cargo +nightly-2026-06-30 test -p execution-engine -p audit-engine -p data-pipeline -p data-ingest -p dark-alpha-engine --locked -- --test-threads=1
+
+      - name: Storage engine integrity contracts (F1-094)
+        # F1-094: `storage-engine` no aparecia en NINGUN workflow — ni sus 39
+        # tests de lib ni los contratos de mmap y de la zona raw corrian en CI.
+        # Es la capa de persistencia (ticks crudos, ADN, mmap): la que el
+        # operador exige que no se corrompa. Se ejecuta aqui, con el resto de
+        # suites de contrato, ~4 s.
+        run: cargo +nightly-2026-06-30 test -p storage-engine --locked -- --test-threads=1
+
+      - name: Crates whose tests never ran in CI (F1-095)
+        # F1-095: `check --workspace --all-targets` sólo COMPILA. Los tests se
+        # lanzan por paquete y estos seis no aparecían en ningún workflow, así
+        # que sus 51 tests de lib (y los 2 contratos de omniscient-registry)
+        # nunca se ejecutaron en CI: flight-recorder (5), graph-4d (4),
+        # graph-architecture (5), omniscient-registry (11 + 3 de contrato),
+        # os-guardian (16, afinidad/prioridades del hot path) y
+        # telemetry-engine (7, observabilidad). Verificados en local: 51/51 en
+        # verde, < 1 s de ejecución efectiva.
+        # `telemetry-server` (61 tests) queda FUERA a propósito: su build local
+        # no terminó en la ventana de este ciclo y no se conecta una suite sin
+        # verificar. Es el primer átomo del siguiente.
+        run: cargo +nightly-2026-06-30 test -p flight-recorder -p graph-4d -p graph-architecture -p omniscient-registry -p os-guardian -p telemetry-engine --locked -- --test-threads=1

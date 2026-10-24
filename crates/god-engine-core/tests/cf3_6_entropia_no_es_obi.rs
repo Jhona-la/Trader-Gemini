@@ -1,4 +1,4 @@
-//! C-F3 · F3.6-03 (Línea C): la entropía del libro que lee el votante
+﻿//! C-F3 · F3.6-03 (Línea C): la entropía del libro que lee el votante
 //! Rényi-Tsallis debe aportar algo que OBI no tenga.
 //!
 //! Teoría que se prueba: OBI = (b − a)/(b + a) y la fracción del libro del
@@ -43,7 +43,6 @@ fn cf3_6_entropia_publicada_no_es_funcion_de_obi() {
     let arena = GlobalArena::build_in_own_stack(100.0);
     let mut core = GodEngineCore::new(arena.clone());
     core.swing_nn = None;
-    core.scalp_forest = None;
     let omni = [0.0f64; 54];
     let libros = [
         (10.0, 2.0),

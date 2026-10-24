@@ -6,8 +6,15 @@
 //! POR QUÉ: directriz — "almacenar muy rápido, muy eficiente, y SIEMPRE
 //!      evitando corrupción". La zona raw es la fuente de verdad de la que
 //!      todo lo derivado (features, backtests) puede reconstruirse.
-//! FORMATO por segmento (little-endian):
-//!      [magic u32 "TGRW"][versión u16][ticks N × 40B][footer: count u32][fnv1a u64]
+//! FORMATO por segmento (little-endian), tal como lo escribe `rotate`:
+//!      [ticks N × 40B][footer: count u32][fnv1a u64]
+//! SIN cabecera: F1-094 corrigió este comentario, que anunciaba un
+//! `[magic u32][versión u16]` que el escritor NUNCA emite (las constantes
+//! `MAGIC`/`VERSION` existían sin uso, ocultas tras `#[allow(dead_code)]`).
+//! El lector (`verify_segment`) calcula el cuerpo como `len - 12`, que es
+//! correcto precisamente porque no hay cabecera. Añadirla ahora invalidaría
+//! todos los segmentos ya escritos: si algún día se versiona el formato, debe
+//! hacerse con un discriminador al final (footer) y compatibilidad de lectura.
 //! RENDIMIENTO: append directo a BufWriter; checksum FNV-1a incremental
 //!      (no criptográfico: detecta corrupción accidental, no adversarios —
 //!      suficiente y 100× más rápido que SHA sobre el hot-path).
@@ -15,11 +22,6 @@
 use std::fs::{File, OpenOptions};
 use std::io::{BufWriter, Read, Write};
 use std::path::{Path, PathBuf};
-
-#[allow(dead_code)]
-const MAGIC: u32 = 0x54524757; // "TGRW"
-#[allow(dead_code)]
-const VERSION: u16 = 1;
 
 #[repr(C)]
 #[derive(Debug, Clone, Copy, Default, PartialEq)]
@@ -41,14 +43,35 @@ impl RawTick {
         b[32..40].copy_from_slice(&self.ask_qty.to_le_bytes());
         b
     }
-    fn from_bytes(b: &[u8; 40]) -> Self {
-        Self {
-            ts_ms: u64::from_le_bytes(b[0..8].try_into().unwrap()),
-            bid: f64::from_le_bytes(b[8..16].try_into().unwrap()),
-            ask: f64::from_le_bytes(b[16..24].try_into().unwrap()),
-            bid_qty: f64::from_le_bytes(b[24..32].try_into().unwrap()),
-            ask_qty: f64::from_le_bytes(b[32..40].try_into().unwrap()),
+    /// Decodifica un tick de 40 bytes little-endian.
+    ///
+    /// F1-094 — `Option` en vez de `unwrap`: la aritmética de índices es
+    /// CONSTANTE (`b[0]`…`b[39]`), así que el compilador la verifica y no
+    /// puede paniquear; y un buffer corto se RECHAZA en vez de rebanarlo a
+    /// ciegas. Antes cada campo hacía `b[a..c].try_into().unwrap()`: correcto
+    /// sólo mientras el llamador garantizara los 40 bytes, y un pánico de
+    /// proceso (`panic = "abort"`) si esa garantía se relajaba.
+    fn from_bytes(b: &[u8]) -> Option<Self> {
+        if b.len() < 40 {
+            return None;
         }
+        Some(Self {
+            ts_ms: u64::from_le_bytes([
+                b[0], b[1], b[2], b[3], b[4], b[5], b[6], b[7],
+            ]),
+            bid: f64::from_le_bytes([
+                b[8], b[9], b[10], b[11], b[12], b[13], b[14], b[15],
+            ]),
+            ask: f64::from_le_bytes([
+                b[16], b[17], b[18], b[19], b[20], b[21], b[22], b[23],
+            ]),
+            bid_qty: f64::from_le_bytes([
+                b[24], b[25], b[26], b[27], b[28], b[29], b[30], b[31],
+            ]),
+            ask_qty: f64::from_le_bytes([
+                b[32], b[33], b[34], b[35], b[36], b[37], b[38], b[39],
+            ]),
+        })
     }
 }
 
@@ -197,8 +220,25 @@ pub fn verify_segment(path: impl AsRef<Path>) -> Result<Vec<RawTick>, String> {
             body_len
         ));
     }
-    let count = u32::from_le_bytes(buf[body_len..body_len + 4].try_into().unwrap());
-    let stored_hash = u64::from_le_bytes(buf[body_len + 4..].try_into().unwrap());
+    // F1-094 — índices constantes sobre la ventana del footer: con
+    // `buf.len() >= 12` (guardado arriba) y `body_len = buf.len() - 12`, las
+    // doce posiciones existen por aritmética, sin `try_into().unwrap()`.
+    let count = u32::from_le_bytes([
+        buf[body_len],
+        buf[body_len + 1],
+        buf[body_len + 2],
+        buf[body_len + 3],
+    ]);
+    let stored_hash = u64::from_le_bytes([
+        buf[body_len + 4],
+        buf[body_len + 5],
+        buf[body_len + 6],
+        buf[body_len + 7],
+        buf[body_len + 8],
+        buf[body_len + 9],
+        buf[body_len + 10],
+        buf[body_len + 11],
+    ]);
     let n_ticks = body_len / 40;
     if count as usize != n_ticks {
         return Err(format!(
@@ -212,9 +252,26 @@ pub fn verify_segment(path: impl AsRef<Path>) -> Result<Vec<RawTick>, String> {
         return Err("checksum NO coincide — los bytes mutaron tras la finalización".to_string());
     }
     let mut ticks = Vec::with_capacity(n_ticks);
-    for i in 0..n_ticks {
-        let chunk: [u8; 40] = buf[i * 40..(i + 1) * 40].try_into().unwrap();
-        ticks.push(RawTick::from_bytes(&chunk));
+    for chunk in buf[..body_len].chunks_exact(40) {
+        match RawTick::from_bytes(chunk) {
+            Some(t) => ticks.push(t),
+            // Inalcanzable: `chunks_exact(40)` sólo entrega trozos de 40.
+            // Si algún día dejara de serlo, el segmento se rechaza entero en
+            // vez de abortar el proceso con posiciones abiertas.
+            None => {
+                return Err(format!(
+                    "tick ilegible en el offset {} — segmento rechazado",
+                    ticks.len() * 40
+                ))
+            }
+        }
+    }
+    if ticks.len() != n_ticks {
+        return Err(format!(
+            "se decodificaron {} ticks de {} declarados — segmento incoherente",
+            ticks.len(),
+            n_ticks
+        ));
     }
     Ok(ticks)
 }
@@ -292,6 +349,13 @@ mod tests {
             bid_qty: 7.0,
             ask_qty: 8.0,
         };
-        assert_eq!(RawTick::from_bytes(&t.to_bytes()), t);
+        // F1-094: el decodificador devuelve `Option` — un buffer corto se
+        // rechaza en vez de rebanarse a ciegas.
+        assert_eq!(RawTick::from_bytes(&t.to_bytes()), Some(t));
+        assert_eq!(
+            RawTick::from_bytes(&t.to_bytes()[..39]),
+            None,
+            "39 bytes no son un tick: se rechaza, no se rellena con ceros"
+        );
     }
 }

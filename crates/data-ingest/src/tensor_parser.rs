@@ -6,12 +6,13 @@
 pub struct TensorParser;
 
 impl TensorParser {
-    /// Extrae un f64 desde un arreglo de bytes crudo (ASCII numérico).
-    /// Peligro: Asume que la entrada es un número válido. `unsafe` es intencional por HFT.
+    /// Parsea un f64 desde bytes ASCII de manera estricta y fail-closed (Ola Ω217).
+    /// Si los bytes están vacíos, no contienen dígitos, o contienen caracteres no numéricos
+    /// inesperados o valores no finitos, devuelve `None`.
     #[inline(always)]
-    pub fn fast_parse_f64(bytes: &[u8]) -> f64 {
+    pub fn try_fast_parse_f64(bytes: &[u8]) -> Option<f64> {
         if bytes.is_empty() {
-            return 0.0;
+            return None;
         }
         let mut i = 0;
         let mut sign = 1.0;
@@ -22,6 +23,7 @@ impl TensorParser {
             i += 1;
         }
 
+        let start_digits = i;
         let mut int_part = 0.0;
         while i < bytes.len() && bytes[i] >= b'0' && bytes[i] <= b'9' {
             int_part = int_part * 10.0 + (bytes[i] - b'0') as f64;
@@ -30,7 +32,9 @@ impl TensorParser {
 
         let mut frac_part = 0.0;
         let mut frac_scale = 1.0;
+        let mut has_frac = false;
         if i < bytes.len() && bytes[i] == b'.' {
+            has_frac = true;
             i += 1;
             let mut frac_digits = 0;
             while i < bytes.len() && bytes[i] >= b'0' && bytes[i] <= b'9' {
@@ -43,8 +47,11 @@ impl TensorParser {
             }
         }
 
+        if i == start_digits || (has_frac && i == start_digits + 1) {
+            return None;
+        }
+
         // AGY-AUD-P11: Soporte de notación científica (e.g. 1e-5, 2.45e-4, 5E+3)
-        // Crítico en Binance para monedas de bajo satoshi y cantidades fraccionarias.
         let mut exp_sign = 1.0;
         let mut exp_val = 0.0;
         if i < bytes.len() && (bytes[i] == b'e' || bytes[i] == b'E') {
@@ -57,10 +64,18 @@ impl TensorParser {
                     i += 1;
                 }
             }
+            let exp_start = i;
             while i < bytes.len() && bytes[i] >= b'0' && bytes[i] <= b'9' {
                 exp_val = exp_val * 10.0 + (bytes[i] - b'0') as f64;
                 i += 1;
             }
+            if i == exp_start {
+                return None;
+            }
+        }
+
+        if i != bytes.len() {
+            return None;
         }
 
         let base = sign * (int_part + frac_part / frac_scale);
@@ -70,12 +85,24 @@ impl TensorParser {
             base
         };
 
-        // FIX #636: Retorno estrictamente finito
         if res.is_finite() {
-            res
+            Some(res)
         } else {
-            0.0
+            None
         }
+    }
+
+    /// Extrae un f64 desde un arreglo de bytes crudo (ASCII numérico).
+    /// Peligro: Asume que la entrada es un número válido. Retorna 0.0 como fallback de compatibilidad.
+    ///
+    /// F1-092 — ATENCIÓN: el `0.0` de esta función es **AMBIGUO**. Vale tanto
+    /// para `"0"` (un cero real) como para `""`, `"abc"` o `"1e400"` (ilegible
+    /// o no finito). Sólo la consume `tests/liquidation_contract.rs`; ninguna
+    /// decisión ni cálculo debería tomarla como entrada. Cuando el cero tenga
+    /// significado propio, usar [`Self::try_fast_parse_f64`], que distingue.
+    #[inline(always)]
+    pub fn fast_parse_f64(bytes: &[u8]) -> f64 {
+        Self::try_fast_parse_f64(bytes).unwrap_or(0.0)
     }
 
     /// Busca la llave `"p":` (Precio) o `"q":` (Cantidad) en un flujo crudo de Binance
@@ -96,7 +123,7 @@ impl TensorParser {
                     while i < len && payload[i] != b'"' {
                         i += 1;
                     }
-                    return Some(Self::fast_parse_f64(&payload[val_start..i]));
+                    return Self::try_fast_parse_f64(&payload[val_start..i]);
                 } else {
                     let val_start = i;
                     while i < len
@@ -107,7 +134,7 @@ impl TensorParser {
                     {
                         i += 1;
                     }
-                    return Some(Self::fast_parse_f64(&payload[val_start..i]));
+                    return Self::try_fast_parse_f64(&payload[val_start..i]);
                 }
             }
             i += 1;
@@ -115,14 +142,29 @@ impl TensorParser {
         None
     }
 
-    /// Analiza un Tick crudo de Binance L1 y extrae Precio y Cantidad directamente a un Tensor
+    /// Decodifica de forma segura y fail-closed un Trade crudo a Tensor [price, qty] (Ola Ω217).
+    /// Si `p` o `q` no existen, son ilegibles, o no son finitos y estrictamente positivos (> 0.0),
+    /// devuelve `None` en lugar de fabricar un trade fantasma con precio o cantidad cero.
     #[inline]
-    pub fn decode_binance_trade_to_tensor(payload: &[u8]) -> [f64; 2] {
-        let price = Self::extract_tensor_feature(payload, b"\"p\":").unwrap_or(0.0);
-        let qty = Self::extract_tensor_feature(payload, b"\"q\":").unwrap_or(0.0);
-
-        [price, qty]
+    pub fn decode_binance_trade_to_tensor_checked(payload: &[u8]) -> Option<[f64; 2]> {
+        let price = Self::extract_tensor_feature(payload, b"\"p\":")?;
+        let qty = Self::extract_tensor_feature(payload, b"\"q\":")?;
+        if price.is_finite() && price > 0.0 && qty.is_finite() && qty > 0.0 {
+            Some([price, qty])
+        } else {
+            None
+        }
     }
+
+    /// Analiza un Tick crudo de Binance L1 y extrae Precio y Cantidad directamente a un Tensor.
+    ///
+    /// F1-092 — ELIMINADA la firma de compatibilidad
+    /// `decode_binance_trade_to_tensor(payload) -> [f64; 2]` que Ω217 había
+    /// conservado como `decode_..._checked(payload).unwrap_or([0.0, 0.0])`:
+    /// ese `unwrap_or` REINTRODUCÍA el trade a precio 0 que el átomo corrige.
+    /// No la consumía nada en producción (sólo su propio test), así que se borra
+    /// en vez de dejarla como trampa armada. El único punto de entrada es
+    /// [`Self::decode_binance_trade_to_tensor_checked`], que es fail-closed.
     /// Decodifica de forma zero-allocation todas las liquidaciones (p, q) en un payload crudo de Binance
     /// sin instanciar objetos JSON en el heap (Zero-allocation Byte-Scanner).
     #[inline]
@@ -179,9 +221,8 @@ mod tests {
     #[test]
     fn test_extract_tensor_feature_and_decode_binance_trade() {
         let payload = br#"{"e":"trade","E":1672531199000,"s":"BTCUSDT","t":12345,"p":"60050.25","q":"1.500","b":88,"a":89,"T":1672531199000,"m":true}"#;
-        let tensor = TensorParser::decode_binance_trade_to_tensor(payload);
-        assert_eq!(tensor[0], 60050.25);
-        assert_eq!(tensor[1], 1.500);
+        let tensor = TensorParser::decode_binance_trade_to_tensor_checked(payload);
+        assert_eq!(tensor, Some([60050.25, 1.500]));
     }
 
     #[test]
@@ -266,5 +307,31 @@ mod tests {
         let json_exp_quoted = br#"{"p":"4.56e-5","q":"1.0e2"}"#;
         assert!((TensorParser::extract_tensor_feature(json_exp_quoted, b"\"p\":").unwrap() - 0.0000456).abs() < 1e-11);
         assert_eq!(TensorParser::extract_tensor_feature(json_exp_quoted, b"\"q\":"), Some(100.0));
+    }
+
+    #[test]
+    fn test_decode_binance_trade_to_tensor_checked_fail_closed() {
+        // Payload válido
+        let valid = br#"{"p":"67850.50","q":"0.250"}"#;
+        assert_eq!(
+            TensorParser::decode_binance_trade_to_tensor_checked(valid),
+            Some([67850.50, 0.250])
+        );
+
+        // Clave ausente
+        let missing_q = br#"{"p":"67850.50"}"#;
+        assert_eq!(TensorParser::decode_binance_trade_to_tensor_checked(missing_q), None);
+
+        // Valor no numérico
+        let corrupt_price = br#"{"p":"corrupt","q":"1.0"}"#;
+        assert_eq!(TensorParser::decode_binance_trade_to_tensor_checked(corrupt_price), None);
+
+        // Precio cero o negativo (no es un trade válido)
+        let zero_price = br#"{"p":"0.0","q":"1.0"}"#;
+        assert_eq!(TensorParser::decode_binance_trade_to_tensor_checked(zero_price), None);
+
+        // Cantidad cero
+        let zero_qty = br#"{"p":"60000.0","q":"0.0"}"#;
+        assert_eq!(TensorParser::decode_binance_trade_to_tensor_checked(zero_qty), None);
     }
 }

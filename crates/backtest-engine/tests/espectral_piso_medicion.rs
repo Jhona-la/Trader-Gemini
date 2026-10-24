@@ -85,6 +85,9 @@ fn piso_espectral_distribucion_vdom_y_banda_critica_btc_sep() {
 
     // Acumuladores del muestreo (observer secuencial FnMut — sin sync).
     let mut vdom_activo: Vec<f64> = Vec::new();
+    // GLM 140 (punto 4 del diseño LH-06): τ del veredicto activo — la
+    // comparación directa con la base pre-fix de Claude H (55-128 s).
+    let mut tau_activo: Vec<f64> = Vec::new();
     let mut muestras_totales: u64 = 0;
     let mut min_conf_vigente: f64 = 0.0;
 
@@ -106,6 +109,7 @@ fn piso_espectral_distribucion_vdom_y_banda_critica_btc_sep() {
             const TAU_MIN_MS: f64 = 30_000.0;
             if v.is_finite() && v.abs() > 1e-9 && tau.is_finite() && tau >= TAU_MIN_MS {
                 vdom_activo.push(v.abs());
+                tau_activo.push(tau);
             }
         },
     );
@@ -146,6 +150,24 @@ fn piso_espectral_distribucion_vdom_y_banda_critica_btc_sep() {
         q(99.0),
         vdom_activo[vdom_activo.len() - 1]
     );
+
+    // GLM 140 — LH-06 punto 4: percentiles de τ del veredicto activo.
+    // Base pre-fix (Claude H, línea-h d7d805c8): τ 55-128 s EN TODAS las
+    // series (colapso a escalas nerviosas por el fallback P2 con 1/vol).
+    tau_activo.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+    let qt = |p: f64| -> f64 {
+        let i = ((p / 100.0) * (tau_activo.len() - 1) as f64).floor() as usize;
+        tau_activo[i.min(tau_activo.len() - 1)]
+    };
+    if !tau_activo.is_empty() {
+        eprintln!(
+            "LH-06(A) τ del veredicto activo: p10={:.0}ms p50={:.0}ms p90={:.0}ms p99={:.0}ms (base pre-fix: 55000-128000ms colapsado)",
+            qt(10.0),
+            qt(50.0),
+            qt(90.0),
+            qt(99.0)
+        );
+    }
 
     // Banda de decisión de la MODULACIÓN espectral. net = v·(0.70+0.30·coh)
     // con coh ∈ [-1,1] ⇒ factor ∈ [0.40, 1.00]: con coherencia NEUTRA el

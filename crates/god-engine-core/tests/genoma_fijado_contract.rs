@@ -1,4 +1,4 @@
-//! CL-40 — un núcleo que evalúa un genoma concreto no lo sustituye por el
+﻿//! CL-40 — un núcleo que evalúa un genoma concreto no lo sustituye por el
 //! activo del almacén. `refresh_models` (primer evento y cada 1000) aplicaba
 //! `config_dir/genomes/<env>/active.json` a CUALQUIER núcleo del proceso: en
 //! el host (`TG_GENOME_ENV` definida) el examen del demonio, los universos
@@ -85,7 +85,6 @@ fn nucleo_con_candidato(contexto: OutcomeContext) -> (GodEngineCore, Arc<GlobalA
     candidato.apply_to_arena(&arena);
     let mut core = GodEngineCore::new_with_outcome_context(arena.clone(), contexto);
     core.swing_nn = None;
-    core.scalp_forest = None;
     (core, arena)
 }
 

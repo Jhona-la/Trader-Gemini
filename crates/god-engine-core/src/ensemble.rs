@@ -194,20 +194,21 @@ impl ModelEnsemble {
         self.predictions
     }
 
+    /// X-023: Opiniones congeladas al arranque del bar actual.
+    pub fn bar_open_prediction_snapshot(&self) -> [Option<f64>; 2] {
+        self.bar_open_predictions
+    }
+
     /// Combinación ponderada de un juego de opiniones con los pesos actuales.
+    /// F1-056 (Ola Ω169): Erradicación de `nn_penalty`. El `SkillTracker` mide la
+    /// habilidad del ensamble combinado como telemetría pura (lib.rs:8915). Los pesos
+    /// de los modelos se gobiernan exclusivamente mediante el algoritmo Hedge por Brier,
+    /// eliminando la penalización artificial asimétrica sobre DarkAlphaNN.
     fn combine(&self, preds: &[Option<f64>; 2]) -> Option<f64> {
         // Normalizar sólo sobre participantes. Un modelo ausente con mayor
         // peso no debe subdesbordar a cero todos los votos disponibles.
-        let nn_penalty = self.skill.z().unwrap_or(0.0).clamp(-4.0, 0.0);
         let effective: [Option<f64>; 2] = std::array::from_fn(|i| {
-            preds[i].filter(|p| valid_probability(*p)).map(|_| {
-                self.log_weights[i]
-                    + if i == ModelId::DarkAlphaNN as usize {
-                        nn_penalty
-                    } else {
-                        0.0
-                    }
-            })
+            preds[i].filter(|p| valid_probability(*p)).map(|_| self.log_weights[i])
         });
         let max_lw = effective
             .iter()
@@ -254,6 +255,15 @@ impl ModelEnsemble {
             }
         }
         // Reset: nuevo bar — nueva primera opinión por aprender.
+        self.nuevo_bar();
+    }
+
+    /// X-023 / F1-060 (Ola Ω170): Reinicia las opiniones del bar (`predictions` y `bar_open_predictions`)
+    /// al cierre de cada kline (sea decisivo o neutro).
+    /// Garantiza que en bares neutros la opinión previa no quede congelada para calificar
+    /// indebidamente un bar futuro con un retorno de intervalo desalineado.
+    #[inline(always)]
+    pub fn nuevo_bar(&mut self) {
         self.predictions = [None, None];
         self.bar_open_predictions = [None, None];
     }

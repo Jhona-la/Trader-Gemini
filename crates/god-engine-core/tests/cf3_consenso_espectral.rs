@@ -1,4 +1,4 @@
-//! C-F3 · F3.1 (Línea C): el consenso espectral de 13 motores frente a un
+﻿//! C-F3 · F3.1 (Línea C): el consenso espectral de 13 motores frente a un
 //! nulo martingala. Eventos sintéticos de profundidad, sin red.
 //!
 //! Teoría que se prueba:
@@ -56,7 +56,6 @@ fn nucleo() -> (Arc<GlobalArena>, GodEngineCore) {
     let arena = GlobalArena::build_in_own_stack(100.0);
     let mut core = GodEngineCore::new(arena.clone());
     core.swing_nn = None;
-    core.scalp_forest = None;
     (arena, core)
 }
 

@@ -306,6 +306,32 @@ pub struct CoinArena {
     pub last_close_reason: AtomicU8,
     pub last_close_exit_price: AtomicF64,
     pub last_tick_timestamp_ms: AtomicU64,
+    /// F1-004: Registro del último trade cerrado en esta moneda con los rasgos
+    /// causales medidos en la apertura [obi, accel, spread_bps, atr_pct, hurst, velocity].
+    /// Consumido por el online_daemon para el aprendizaje del Shadow Forest sin fuga temporal.
+    pub last_closed_trade: std::sync::Mutex<Option<ClosedTradeRecord>>,
+}
+
+/// F1-004: Registro de trade cerrado con rasgos fotografiados en la apertura.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct ClosedTradeRecord {
+    pub is_long: bool,
+    pub net_pnl_pct: f64,
+    pub entry_shadow_features: [f64; 6],
+    pub close_ts_ms: u64,
+    pub generation: u64,
+}
+
+impl Default for ClosedTradeRecord {
+    fn default() -> Self {
+        Self {
+            is_long: true,
+            net_pnl_pct: 0.0,
+            entry_shadow_features: [0.0; 6],
+            close_ts_ms: 0,
+            generation: 0,
+        }
+    }
 }
 
 impl CoinArena {
@@ -632,7 +658,22 @@ impl CoinArena {
             last_close_reason: AtomicU8::new(0),
             last_close_exit_price: AtomicF64::new(0.0),
             last_tick_timestamp_ms: AtomicU64::new(0),
+            last_closed_trade: std::sync::Mutex::new(None),
         }
+    }
+
+    /// F1-004: Registra el último trade cerrado con sus rasgos causales de entrada.
+    #[inline]
+    pub fn record_closed_trade(&self, record: ClosedTradeRecord) {
+        if let Ok(mut g) = self.last_closed_trade.lock() {
+            *g = Some(record);
+        }
+    }
+
+    /// F1-004: Extrae el último trade cerrado consumiéndolo para el Shadow Forest.
+    #[inline]
+    pub fn take_last_closed_trade(&self) -> Option<ClosedTradeRecord> {
+        self.last_closed_trade.lock().ok().and_then(|mut g| g.take())
     }
 }
 
@@ -684,6 +725,8 @@ pub struct GlobalArena {
     /// `pico_en_stops − resultado_en_stops`.
     pub resultado_en_stops: AtomicF64,
     pub pico_en_stops: AtomicF64,
+    /// F1-011: Anillo de los últimos 200 resultados en stops para ventana deslizante de caída (nivel alpha = 0.05).
+    pub ventana_stops_buffer: std::sync::Mutex<([f64; 200], usize, usize)>,
     /// CL-132 (R3) — SALDO DEL EXCHANGE, que el host publica en cada ciclo de
     /// su sistema inmune. Los frenos de drawdown registran el pico y miden la
     /// caída con el mínimo entre éste y `unified_capital`
@@ -790,7 +833,10 @@ impl GlobalArena {
             perdida_en_stops: AtomicF64::new(0.0),
             resultado_en_stops: AtomicF64::new(0.0),
             pico_en_stops: AtomicF64::new(0.0),
-            capital_exchange: AtomicF64::new(0.0),
+            ventana_stops_buffer: std::sync::Mutex::new(([0.0; 200], 0, 0)),
+            // F2: capital_exchange nace en NAN (no observado). Permite distinguir
+            // ausencia de saldo exchange (backtest/offline) de un cero real observado (0.0).
+            capital_exchange: AtomicF64::new(f64::NAN),
             pico_ilegible: AtomicBool::new(false),
             tick_counter: AtomicU64::new(0),
             kill_switch_active: AtomicBool::new(false),
@@ -812,6 +858,55 @@ impl GlobalArena {
 }
 
 impl GlobalArena {
+    /// F1-011: Registra un resultado en stops en la ventana deslizante de 200 operaciones.
+    #[inline]
+    pub fn push_resultado_en_stops_ventana(&self, r: f64) {
+        if !r.is_finite() {
+            return;
+        }
+        if let Ok(mut g) = self.ventana_stops_buffer.lock() {
+            let (ref mut buf, ref mut head, ref mut count) = *g;
+            buf[*head] = r;
+            *head = (*head + 1) % 200;
+            if *count < 200 {
+                *count += 1;
+            }
+        }
+    }
+
+    /// F1-011: Caída máxima en stops calculada sobre la ventana deslizante de los últimos <= 200 cierres.
+    /// Si la ventana no tiene elementos, devuelve 0.0.
+    #[inline]
+    pub fn caida_en_stops_ventana(&self) -> f64 {
+        if let Ok(g) = self.ventana_stops_buffer.lock() {
+            let (ref buf, head, count) = *g;
+            if count == 0 {
+                return 0.0;
+            }
+            let start = if count < 200 { 0 } else { head };
+            let (mut acum, mut pico, mut max_dd) = (0.0f64, 0.0f64, 0.0f64);
+            for i in 0..count {
+                let idx = (start + i) % 200;
+                acum += buf[idx];
+                pico = pico.max(acum);
+                max_dd = max_dd.max(pico - acum);
+            }
+            max_dd
+        } else {
+            0.0
+        }
+    }
+
+    /// F1-011: Reinicia la ventana deslizante de stops.
+    #[inline]
+    pub fn reset_ventana_stops(&self) {
+        if let Ok(mut g) = self.ventana_stops_buffer.lock() {
+            g.0.fill(0.0);
+            g.1 = 0;
+            g.2 = 0;
+        }
+    }
+
     /// CL-62 (LC-F1-03): multiplicador ATR del stop de la moneda del slot.
     /// `sl_atr_mult_btc` es el gen de BTCUSDT por su IDENTIDAD (ADR-0011: el
     /// slot es una posición, el símbolo la identidad); las demás monedas

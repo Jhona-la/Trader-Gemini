@@ -192,17 +192,17 @@ pub fn win_rate_hierarchical_lcb(
 ///    $$\bar{p}_{\text{pool}} = \frac{\sum_{j \neq i} n_j \cdot w_j}{\sum_{j \neq i} n_j}$$
 ///    con pseudo-masa regularizadora $k_0 = \min(20.0, \max(5.0, \sqrt{N_{\text{total}}}))$.
 /// 3. Fallback canónico por defecto: (0.55, 10.0) garantizando paridad exacta bit a bit en arranque frío.
+///
+/// OLA Ω194 (F1-091): Uso de `get_for_coin_strict` con buffer en stack [u8; 64],
+/// erradicando asignaciones heap por format! en la ruta caliente.
 pub fn resolve_bayes_prior(arena: &GlobalArena, coin_id: usize) -> (f64, f64) {
-    let key_coin_p = format!("c{}:bayes_prior_win_rate", coin_id);
-    let key_coin_k = format!("c{}:bayes_prior_mass", coin_id);
-
     let reg_p = arena
         .registry
-        .get_value_fast(&key_coin_p)
+        .get_for_coin_strict(coin_id, "bayes_prior_win_rate")
         .or_else(|| arena.registry.get_value_fast("bayes_prior_win_rate"));
     let reg_k = arena
         .registry
-        .get_value_fast(&key_coin_k)
+        .get_for_coin_strict(coin_id, "bayes_prior_mass")
         .or_else(|| arena.registry.get_value_fast("bayes_prior_mass"));
 
     let p0 = if let Some(p) = reg_p {

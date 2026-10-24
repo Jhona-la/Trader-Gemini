@@ -47,6 +47,20 @@ impl ZeroAllocBuffer {
         self.push_str(b.format(v));
     }
 
+    /// Formatea un valor float usando punto fijo en stack según el número de decimales (o None si no representable).
+    /// Evita residuos float espurios que provocan el error Binance -1111 (precision overflow) sin forzar a entero pasos no representables.
+    #[inline(always)]
+    pub fn push_fixed_f64(&mut self, v: f64, decimals: Option<u8>) {
+        if let Some(dec) = decimals {
+            let s = crate::fixed_filter::format_decimal(v, dec);
+            if !s.is_empty() {
+                self.push_str(s.as_str());
+                return;
+            }
+        }
+        self.push_f64(v);
+    }
+
     #[inline(always)]
     pub fn push_u64(&mut self, v: u64) {
         let mut b = itoa::Buffer::new();

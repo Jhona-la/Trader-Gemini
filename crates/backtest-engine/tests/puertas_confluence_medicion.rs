@@ -39,7 +39,7 @@ fn puertas_confluence_cual_gate_domina_btc_sep() {
         eprintln!("[puertas] tape ausente — skip");
         return;
     };
-    let raw = backtest_engine::tick_replayer::load_binary_ticks(&path, 0)
+    let raw = backtest_engine::tick_replayer::load_binary_ticks_prefix(&path, 0, 2_000_000)
         .expect("tape legible");
     let n = raw.len().min(2_000_000);
     let ticks: Vec<ReplayTick> = raw[..n]

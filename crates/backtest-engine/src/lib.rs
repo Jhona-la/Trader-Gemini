@@ -4,18 +4,386 @@ pub mod metrics;
 pub mod network_jitter;
 pub mod oos_context;
 pub mod tick_replayer;
-pub mod vectorized;
 
+pub use metrics::compute_multi_coin_event_priority;
 pub use network_jitter::NetworkJitterSimulator;
 use quantum_arena::genome::SuperGenotype;
 pub use tick_replayer::*;
-pub use vectorized::{OrderBookL2DepthSlippageModel, run_vectorized_hybrid};
 
 /// F3.3: contrato de tamaño del buffer out_stats. El código anterior escribía
 /// 8 floats en buffers de 4 creados por los wrappers FFI → corrupción de heap
 /// y pánico garantizado en polars_evolver (vec![0.0] para pnl). Todo caller
 /// DEBE usar STATS_LEN.
 pub const STATS_LEN: usize = 8;
+
+#[cfg(test)]
+mod golden_ledger_oracle {
+    use god_engine_core::{GodEngineCore, close_accounting::LocalCloseAccounting};
+    use quantum_arena::position::PositionSnapshot;
+    use std::sync::atomic::Ordering::Relaxed;
+
+    const MAKER: f64 = 0.0002;
+    const TAKER: f64 = 0.0005;
+
+    /// One local probe, not an exchange-fill or price-formation oracle.
+    /// Fees are recomputed from the observed final quantity/physical prices;
+    /// no production fee calculator or runner fee estimate is called here.
+    pub(super) struct Oracle {
+        initial: f64,
+        cash: f64,
+        cash_after_entry: f64,
+        entry: Option<PositionSnapshot>,
+        receipt: Option<LocalCloseAccounting>,
+        slot: Option<usize>,
+        entries: usize,
+        closes: usize,
+        event_ms: u64,
+        bid: f64,
+        ask: f64,
+        close_bid: f64,
+        close_ask: f64,
+        tp_reconstructed: f64,
+        maker_exit: Option<bool>,
+        entry_fee: f64,
+        gross: f64,
+        exit_fee: f64,
+        net: f64,
+    }
+
+    impl Oracle {
+        pub(super) fn new(initial: f64) -> Self {
+            Self {
+                initial,
+                cash: initial,
+                cash_after_entry: f64::NAN,
+                entry: None,
+                receipt: None,
+                slot: None,
+                entries: 0,
+                closes: 0,
+                event_ms: 0,
+                bid: f64::NAN,
+                ask: f64::NAN,
+                close_bid: f64::NAN,
+                close_ask: f64::NAN,
+                tp_reconstructed: f64::NAN,
+                maker_exit: None,
+                entry_fee: f64::NAN,
+                gross: f64::NAN,
+                exit_fee: f64::NAN,
+                net: f64::NAN,
+            }
+        }
+
+        fn context(&self) -> String {
+            let mut context = format!(
+                "entry_ms={:?} close_ms={:?} observed_event_ms={} slot={:?} generation={:?} long={:?} entries={} closes={} maker_exit={:?}",
+                self.entry.map(|p| p.entry_time_ms),
+                self.receipt.map(|r| r.event_time_ms),
+                self.event_ms,
+                self.slot,
+                self.entry.map(|p| p.generation),
+                self.entry.map(|p| p.is_long),
+                self.entries,
+                self.closes,
+                self.maker_exit,
+            );
+            for (name, value) in [
+                ("C0", self.initial),
+                ("C1", self.cash_after_entry),
+                ("C2", if self.closes == 1 { self.cash } else { f64::NAN }),
+                ("Cexpected", self.cash),
+                ("q", self.entry.map_or(f64::NAN, |p| p.quantity)),
+                ("Pe", self.entry.map_or(f64::NAN, |p| p.entry_price)),
+                ("Px", self.receipt.map_or(f64::NAN, |r| r.exit_price)),
+                ("TP", self.entry.map_or(f64::NAN, |p| p.tp_price)),
+                ("SL", self.entry.map_or(f64::NAN, |p| p.sl_price)),
+                ("TP_reconstructed", self.tp_reconstructed),
+                ("bid", if self.receipt.is_some() { self.close_bid } else { self.bid }),
+                ("ask", if self.receipt.is_some() { self.close_ask } else { self.ask }),
+                ("observed_bid", self.bid),
+                ("observed_ask", self.ask),
+                ("rE", TAKER),
+                (
+                    "rX",
+                    self.maker_exit
+                        .map_or(f64::NAN, |maker| if maker { MAKER } else { TAKER }),
+                ),
+                ("Fe", self.entry_fee),
+                ("G", self.gross),
+                ("Fx", self.exit_fee),
+                ("net", self.net),
+            ] {
+                context.push_str(&format!(" {name}={value:.17e}/0x{:016x}", value.to_bits()));
+            }
+            context
+        }
+
+        fn require(&self, valid: bool, label: &str) -> Result<(), String> {
+            if valid {
+                Ok(())
+            } else {
+                Err(format!("{label}; {}", self.context()))
+            }
+        }
+
+        fn exact(&self, actual: f64, expected: f64, label: &str) -> Result<(), String> {
+            if actual.is_finite() && expected.is_finite() && actual.to_bits() == expected.to_bits()
+            {
+                Ok(())
+            } else {
+                Err(format!(
+                    "{label}: actual={actual:.17e}/0x{:016x} expected={expected:.17e}/0x{:016x}; {}",
+                    actual.to_bits(),
+                    expected.to_bits(),
+                    self.context(),
+                ))
+            }
+        }
+
+        pub(super) fn observe(
+            &mut self,
+            core: &mut GodEngineCore,
+            coin_id: usize,
+            event_ms: u64,
+            bid: f64,
+            ask: f64,
+            new_order: Option<(bool, f64, f64, f64, f64)>,
+            closed_order: Option<(bool, f64, f64)>,
+        ) -> Result<(), String> {
+            self.event_ms = event_ms;
+            self.bid = bid;
+            self.ask = ask;
+            self.require(
+                !(new_order.is_some() && closed_order.is_some()),
+                "golden cannot close and reenter on one tick",
+            )?;
+            self.require(
+                !core.arena.config.observed_fees_required.load(Relaxed),
+                "golden must remain an explicit scenario",
+            )?;
+            self.require(
+                core.arena.config.live_fee_schedule.load().is_none(),
+                "golden must not borrow an observed book",
+            )?;
+            self.require(
+                core.arena.config.fee_rates_for(coin_id) == Some((MAKER, TAKER)),
+                "golden rates changed",
+            )?;
+
+            // This hook runs AFTER the runner's envelope/margin gate. A
+            // rejected proposal cannot be counted as the positive probe.
+            if let Some((is_long, price, quantity, _, _)) = new_order {
+                self.require(
+                    self.entries == 0 && self.closes == 0,
+                    "golden must admit exactly one probe",
+                )?;
+                let token = core
+                    .entry_reservation(coin_id)
+                    .ok_or_else(|| format!("missing entry reservation; {}", self.context()))?;
+                let position = core.arena.coins[coin_id]
+                    .positions
+                    .get_slot(token.slot)
+                    .snapshot()
+                    .ok_or_else(|| {
+                        format!(
+                            "entry was not preserved by the envelope; {}",
+                            self.context()
+                        )
+                    })?;
+                self.entry = Some(position);
+                self.slot = Some(token.slot);
+                self.entries += 1;
+                self.require(
+                    position.generation == token.generation && position.entry_time_ms == event_ms,
+                    "entry identity/time mismatch",
+                )?;
+                self.require(
+                    position.is_long == is_long
+                        && position.tp_price.is_finite()
+                        && position.tp_price > 0.0
+                        && position.sl_price.is_finite()
+                        && position.sl_price > 0.0
+                        && if is_long {
+                            position.tp_price > position.entry_price
+                                && position.sl_price < position.entry_price
+                        } else {
+                            position.tp_price < position.entry_price
+                                && position.sl_price > position.entry_price
+                        },
+                    "entry side/bracket geometry unsupported by the golden role oracle",
+                )?;
+                self.exact(quantity, position.quantity, "returned entry quantity")?;
+                self.exact(price, position.entry_price, "returned physical entry price")?;
+                self.entry_fee = (position.quantity * position.entry_price) * TAKER;
+                self.exact(
+                    position.entry_fee,
+                    self.entry_fee,
+                    "entry fee uses actual notional",
+                )?;
+                self.cash -= self.entry_fee;
+                self.cash_after_entry = self.cash;
+            }
+
+            let receipt = core.take_local_close_accounting(coin_id);
+            if let Some((is_long, returned_net, quantity)) = closed_order {
+                self.require(
+                    self.entries == 1 && self.closes == 0,
+                    "golden must close its sole probe once",
+                )?;
+                let entry = self
+                    .entry
+                    .ok_or_else(|| format!("close has no entry; {}", self.context()))?;
+                let receipt = receipt
+                    .ok_or_else(|| format!("close has no local receipt; {}", self.context()))?;
+                self.receipt = Some(receipt);
+                self.close_bid = bid;
+                self.close_ask = ask;
+                self.require(
+                    receipt.event_time_ms == event_ms && is_long == entry.is_long,
+                    "close identity/time mismatch",
+                )?;
+                self.exact(quantity, entry.quantity, "returned closed quantity")?;
+                self.exact(receipt.quantity, entry.quantity, "receipt closed quantity")?;
+                self.exact(
+                    receipt.entry_price,
+                    entry.entry_price,
+                    "receipt historical entry price",
+                )?;
+                self.exact(
+                    receipt.entry_fee,
+                    self.entry_fee,
+                    "receipt historical entry fee",
+                )?;
+                self.exact(
+                    core.arena.coins[coin_id]
+                        .last_close_exit_price
+                        .load(Relaxed),
+                    receipt.exit_price,
+                    "receipt recorded physical exit price",
+                )?;
+                self.require(
+                    receipt.exit_price.is_finite() && receipt.exit_price > 0.0,
+                    "invalid physical exit",
+                )?;
+
+                // Independent role check from this tick's actual quotes and
+                // the TP frozen at opening. Refuse a spread-straddling TP:
+                // core's mid-based role must agree with quoted trade-through.
+                let tp_fraction = ((entry.tp_price - entry.entry_price) / entry.entry_price).abs();
+                self.tp_reconstructed = if is_long {
+                    entry.entry_price * (1.0 + tp_fraction)
+                } else {
+                    entry.entry_price * (1.0 - tp_fraction)
+                };
+                let through_quote = if is_long {
+                    bid >= self.tp_reconstructed
+                } else {
+                    ask <= self.tp_reconstructed
+                };
+                let mid = (bid + ask) / 2.0;
+                let pnl_pct = if is_long {
+                    (mid - entry.entry_price) / entry.entry_price
+                } else {
+                    (entry.entry_price - mid) / entry.entry_price
+                };
+                let through_mid = pnl_pct >= tp_fraction;
+                self.require(
+                    through_quote == through_mid,
+                    "ambiguous TP role: quote and mid disagree",
+                )?;
+                self.maker_exit = Some(through_quote);
+                let reason = core.arena.coins[coin_id].last_close_reason.load(Relaxed);
+                self.require(
+                    if through_quote {
+                        reason == 1
+                    } else {
+                        (2..=8).contains(&reason)
+                    },
+                    "close reason disagrees with independently selected maker/taker role",
+                )?;
+                let exit_rate = if through_quote { MAKER } else { TAKER };
+                self.gross = if is_long {
+                    (receipt.exit_price - entry.entry_price) * entry.quantity
+                } else {
+                    (entry.entry_price - receipt.exit_price) * entry.quantity
+                };
+                self.exit_fee = (entry.quantity * receipt.exit_price) * exit_rate;
+                let realized_after_exit_fee = self.gross - self.exit_fee;
+                self.net = realized_after_exit_fee - self.entry_fee;
+                self.cash += realized_after_exit_fee;
+                self.closes += 1;
+                self.exact(receipt.gross_pnl, self.gross, "receipt gross PnL")?;
+                self.exact(
+                    receipt.exit_fee,
+                    self.exit_fee,
+                    "exit fee uses actual notional and independently selected role",
+                )?;
+                self.exact(
+                    returned_net,
+                    self.net,
+                    "returned net includes both fees once",
+                )?;
+                self.require(
+                    core.take_local_close_accounting(coin_id).is_none(),
+                    "receipt consumed more than once",
+                )?;
+            } else {
+                self.require(receipt.is_none(), "receipt without a returned close")?;
+            }
+            self.exact(
+                core.arena.unified_capital.load(Relaxed),
+                self.cash,
+                "event cash follows IEEE debit/close order",
+            )
+        }
+
+        pub(super) fn finish(
+            &self,
+            core: &GodEngineCore,
+            trades: usize,
+            out_pnl: &[f64],
+            out_stats: &[f64],
+        ) -> Result<(), String> {
+            self.require(
+                self.entries == 1 && self.closes == 1 && trades == 1,
+                "golden requires one real entry and one close",
+            )?;
+            self.require(
+                core.arena
+                    .coins
+                    .iter()
+                    .all(|coin| coin.positions.slots().iter().all(|p| !p.is_open())),
+                "golden cannot hide terminal MTM or another open position",
+            )?;
+            self.exact(
+                core.arena.used_margin.load(Relaxed),
+                0.0,
+                "terminal margin released",
+            )?;
+            self.exact(
+                core.arena.unified_capital.load(Relaxed),
+                self.cash,
+                "terminal cash",
+            )?;
+            let returned_pnl = out_pnl
+                .first()
+                .copied()
+                .ok_or_else(|| format!("missing returned PnL; {}", self.context()))?;
+            self.exact(returned_pnl, self.net, "first returned trade net")?;
+            self.exact(
+                out_stats[2],
+                self.cash,
+                "terminal reported equity is closed cash",
+            )?;
+            self.exact(out_stats[6], self.net, "reported net PnL")?;
+            // Rust's test capture prints this exact input/accounting witness
+            // if the caller's still-frozen numeric golden later fails.
+            println!("[GOLDEN-LEDGER VERIFIED] {}", self.context());
+            Ok(())
+        }
+    }
+}
 
 /// B3.20 — CAUSA RAÍZ DEL ORÁCULO MUERTO: el registro dinámico nace VACÍO
 /// por diseño (lo puebla el symbol manager del motor en vivo); sin spec,
@@ -95,6 +463,8 @@ pub fn run_backtest_native(
     cfg.apply_to_arena(&arena);
 
     let mut core = GodEngineCore::new(arena.clone());
+    #[cfg(test)]
+    let mut golden_oracle = (symbol == "GOLDEN").then(|| golden_ledger_oracle::Oracle::new(initial_capital));
 
     let mut gross_wins = 0;
     let mut net_wins = 0;
@@ -122,10 +492,11 @@ pub fn run_backtest_native(
     // demo. Misma envolvente, mismo record_trade, mismo rollback.
     let mut risk_envelope = risk_engine::kelly_envelope::RiskEnvelope::new();
     let mut last_sim_buyer_maker = false;
-    let mut last_close_executed = closes.first().copied().unwrap_or(0.0);
+    let mut last_close_executed = match closes.first().copied() {
+        Some(c) if c.is_finite() && c > 0.0 => c,
+        _ => return 0, // Serie con precio inicial degenerado/no finito => abortar evaluación fail-closed
+    };
     let mut envelope_vetoes: u64 = 0;
-    let mut avg_win_abs = 0.0;
-    let mut avg_loss_abs = 0.0;
 
     // F3.2 — FIX LOOK-AHEAD: el OFI sintético se deriva ahora del delta de la
     // vela ANTERIOR (información disponible al abrir la vela actual). Antes:
@@ -419,28 +790,19 @@ pub fn run_backtest_native(
                 }
             }
 
-            // F5.1 (paridad host): alimentar el posterior del edge con cada
-            // cierre — mismos EWMAs y mismo record_trade que el replay/vivo.
+            #[cfg(test)]
+            if let Some(oracle) = golden_oracle.as_mut() {
+                let validation = oracle.observe(
+                    &mut core, target_coin_id, event_ts_ms, sim_bid, sim_ask, new_order, closed_order,
+                );
+                assert!(validation.is_ok(), "GOLDEN independent ledger: {validation:?}");
+            }
+
+            // F1-081 (paridad host): alimentar el posterior del edge con cada
+            // cierre individual, erradicando la doble EMA∘EMA.
             if let Some((_, pnl_net, _)) = &closed_order {
                 let pnl_net = *pnl_net;
-                if pnl_net >= 0.0 {
-                    avg_win_abs = if avg_win_abs == 0.0 {
-                        pnl_net.abs()
-                    } else {
-                        avg_win_abs * 0.95 + pnl_net.abs() * 0.05
-                    };
-                } else {
-                    avg_loss_abs = if avg_loss_abs == 0.0 {
-                        pnl_net.abs()
-                    } else {
-                        avg_loss_abs * 0.95 + pnl_net.abs() * 0.05
-                    };
-                }
-                risk_envelope.record_trade(
-                    pnl_net > 0.0,
-                    avg_win_abs.max(1e-9),
-                    -avg_loss_abs.max(1e-9),
-                );
+                risk_envelope.record_net_pnl(pnl_net);
             }
 
             if let Some((_is_long, net_pnl, qty)) = closed_order {
@@ -587,6 +949,12 @@ pub fn run_backtest_native(
         0.0
     };
 
+    #[cfg(test)]
+    if let Some(oracle) = golden_oracle.as_ref() {
+        let validation = oracle.finish(&core, trades, out_pnl, out_stats);
+        assert!(validation.is_ok(), "GOLDEN independent terminal ledger: {validation:?}");
+    }
+
     // B3.18-diag — contadores de veto del camino nativo: localiza EN QUÉ
     // etapa mueren los trades (señales jamás disparadas ⇒ todo 0; consejo ⇒
     // council alto; gate de predicción ⇒ ml_vetoes alto; llegó a abrir ⇒
@@ -619,10 +987,12 @@ pub unsafe extern "C" fn ffi_run_unified_backtest(
     if closes_ptr.is_null()
         || highs_ptr.is_null()
         || lows_ptr.is_null()
+        || volumes_ptr.is_null()
         || config.is_null()
         || out_pnl_ptr.is_null()
         || out_stats_ptr.is_null()
         || symbol_ptr.is_null()
+        || len == 0
     {
         return 0;
     }
@@ -638,10 +1008,18 @@ pub unsafe extern "C" fn ffi_run_unified_backtest(
     let sym_c = unsafe { std::ffi::CStr::from_ptr(symbol_ptr) };
     let sym_str = sym_c.to_str().unwrap_or("BTCUSDT");
 
-    let initial_capital = std::env::var("INITIAL_CAPITAL")
+    // F2: rechazo explícito fail-closed si INITIAL_CAPITAL es ausente o inválido (cero fabricación de 13 USD)
+    let initial_capital = match std::env::var("INITIAL_CAPITAL")
         .ok()
         .and_then(|v| v.parse::<f64>().ok())
-        .unwrap_or(13.0);
+        .filter(|&c| c > 0.0 && c.is_finite())
+    {
+        Some(c) => c,
+        None => {
+            eprintln!("⚠️ [FFI BACKTEST ERROR] INITIAL_CAPITAL ausente, <= 0.0 o inválido; rechazo explícito sin fabricar capital");
+            return 0;
+        }
+    };
     run_backtest_native(
         closes,
         highs,
@@ -701,7 +1079,16 @@ pub unsafe extern "C" fn ffi_run_unified_backtest_mmap(
         }
     };
 
-    let expected_bytes = len * 4 * 8;
+    let expected_bytes = match len.checked_mul(4 * 8) {
+        Some(b) => b,
+        None => {
+            eprintln!(
+                "⚠️ [BACKTEST MMAP ERROR] Desbordamiento aritmético en len {}",
+                len
+            );
+            return 0;
+        }
+    };
     if mmap.len() < expected_bytes {
         eprintln!(
             "⚠️ [BACKTEST MMAP ERROR] File '{}' too short: got {} bytes, expected {}",
@@ -725,10 +1112,18 @@ pub unsafe extern "C" fn ffi_run_unified_backtest_mmap(
     let sym_c = unsafe { std::ffi::CStr::from_ptr(symbol_ptr) };
     let sym_str = sym_c.to_str().unwrap_or("BTCUSDT");
 
-    let initial_capital = std::env::var("INITIAL_CAPITAL")
+    // F2: rechazo explícito fail-closed si INITIAL_CAPITAL es ausente o inválido (cero fabricación de 13 USD)
+    let initial_capital = match std::env::var("INITIAL_CAPITAL")
         .ok()
         .and_then(|v| v.parse::<f64>().ok())
-        .unwrap_or(13.0);
+        .filter(|&c| c > 0.0 && c.is_finite())
+    {
+        Some(c) => c,
+        None => {
+            eprintln!("⚠️ [BACKTEST MMAP ERROR] INITIAL_CAPITAL ausente, <= 0.0 o inválido; rechazo explícito sin fabricar capital");
+            return 0;
+        }
+    };
     run_backtest_native(
         closes,
         highs,
@@ -781,7 +1176,16 @@ pub unsafe extern "C" fn ffi_run_polars_backtest_mmap(
         }
     };
 
-    let expected_bytes = len * 4 * 8;
+    let expected_bytes = match len.checked_mul(4 * 8) {
+        Some(b) => b,
+        None => {
+            eprintln!(
+                "⚠️ [POLARS MMAP ERROR] Desbordamiento aritmético en len {}",
+                len
+            );
+            return 0;
+        }
+    };
     if mmap.len() < expected_bytes {
         eprintln!(
             "⚠️ [POLARS MMAP ERROR] File '{}' too short: got {} bytes, expected {}",
@@ -806,12 +1210,19 @@ pub unsafe extern "C" fn ffi_run_polars_backtest_mmap(
     // genoma y dimensiona cada operación con todo el capital. Nada en el
     // repositorio la invoca, pero cualquier consumidor externo obtenía métricas
     // de un sistema distinto al que se despliega. Ahora usa el mismo motor que
-    // producción y que los promotores de genomas, con el mismo capital por
-    // defecto que las otras dos exportaciones.
-    let initial_capital = std::env::var("INITIAL_CAPITAL")
+    // producción y que los promotores de genomas.
+    // F2: rechazo explícito fail-closed si INITIAL_CAPITAL es ausente o inválido (cero fabricación de 13 USD)
+    let initial_capital = match std::env::var("INITIAL_CAPITAL")
         .ok()
         .and_then(|v| v.parse::<f64>().ok())
-        .unwrap_or(13.0);
+        .filter(|&c| c > 0.0 && c.is_finite())
+    {
+        Some(c) => c,
+        None => {
+            eprintln!("⚠️ [POLARS MMAP ERROR] INITIAL_CAPITAL ausente, <= 0.0 o inválido; rechazo explícito sin fabricar capital");
+            return 0;
+        }
+    };
     let mut out_pnl = vec![0.0f64; len];
     run_backtest_native(
         closes,
@@ -1126,6 +1537,12 @@ mod tests {
         // BTC, que el ejecutor redondea a 0). La sonda sigue siendo la única
         // operación, con el mismo recorrido, y el beneficio escala con el
         // nocional (×11,76 = 60/5,10): 1000.02648643 → 1000.31148491.
-        assert_eq!(out_stats[2].to_bits(), 4652010048691470773u64);
+        // (Ola Ω220, recertificación 2026-10-23) Fees sobre el nocional
+        // contabilizado q*precio físico. El candidato 25dcb mantuvo una
+        // sonda y dos corridas idénticas, pero observó este nuevo bit de
+        // capital. Su aceptación exige además el oráculo cfg(test) de
+        // entrada/recibo/cash por evento y cierre terminal sin MTM arriba;
+        // no basta con sustituir el saldo congelado.
+        assert_eq!(out_stats[2].to_bits(), 4652010048665245399u64);
     }
 }

@@ -1,4 +1,4 @@
-//! CL-37 — con el universo del bootloader, el núcleo encuentra el bosque del
+﻿//! CL-37 — con el universo del bootloader, el núcleo encuentra el bosque del
 //! roster. El host publicaba la lista del bootloader en minúsculas y carga los
 //! bosques por el stem del archivo (`models/ATOMUSDT_MOTOR.json`): la clave
 //! `"atomusdt_MOTOR"` nunca coincidía, `has_roster_model` quedaba en falso en
@@ -39,7 +39,6 @@ fn cl37_el_nucleo_encuentra_el_bosque_del_roster_con_el_universo_del_bootloader(
     let arena = GlobalArena::build_in_own_stack(100.0);
     let mut core = GodEngineCore::new(arena.clone());
     core.swing_nn = None;
-    core.scalp_forest = None;
     let _ = core.process_tick_dual(0, 100.0, 100.01, 5.0, 5.0, 10_000, &[0.0; 54], true, false);
 
     let por_moneda = arena.registry.get_for_coin_or(0, "ml_model_base", f64::NAN);

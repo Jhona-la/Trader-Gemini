@@ -190,6 +190,9 @@ impl Default for RiskEnvelope {
 }
 
 impl RiskEnvelope {
+    pub const EMA_ALPHA: f64 = 0.05;
+    pub const EMA_EFFECTIVE_N: f64 = 39.0; // 2.0 / 0.05 - 1.0 = 39.0
+
     pub fn new() -> Self {
         Self {
             posterior: EdgePosterior::jeffreys(),
@@ -199,6 +202,9 @@ impl RiskEnvelope {
         }
     }
 
+    /// F1-081: Registrar el resultado de una operación individual.
+    /// Recibe directamente el PnL neto o magnitudes de trade individual, aplicando una única EMA(0.05).
+    /// Erradica la doble composición EMA∘EMA provocada por pre-filtrar el trade en los llamadores.
     pub fn record_trade(&mut self, won: bool, win_pnl: f64, loss_pnl: f64) {
         // FIX #637: Sanitizar finitud de PnLs para proteger las métricas del payoff ratio
         if !win_pnl.is_finite() || !loss_pnl.is_finite() {
@@ -211,14 +217,14 @@ impl RiskEnvelope {
             self.avg_win = if self.avg_win == 0.0 {
                 win_abs
             } else {
-                self.avg_win * 0.95 + win_abs * 0.05
+                self.avg_win * (1.0 - Self::EMA_ALPHA) + win_abs * Self::EMA_ALPHA
             };
         } else {
             let loss_abs = loss_pnl.abs().max(1e-6);
             self.avg_loss = if self.avg_loss == 0.0 {
                 loss_abs
             } else {
-                self.avg_loss * 0.95 + loss_abs * 0.05
+                self.avg_loss * (1.0 - Self::EMA_ALPHA) + loss_abs * Self::EMA_ALPHA
             };
         }
 
@@ -226,24 +232,40 @@ impl RiskEnvelope {
         self.payoff_ratio = (self.avg_win + eps) / (self.avg_loss + eps);
     }
 
+    /// F1-081: Conveniencia canónica para registrar un cierre directamente por su PnL neto individual.
+    #[inline]
+    pub fn record_net_pnl(&mut self, net_pnl: f64) {
+        let won = net_pnl > 0.0;
+        let abs_pnl = net_pnl.abs();
+        self.record_trade(won, abs_pnl, abs_pnl);
+    }
+
     /// Cota inferior conservadora (LCB) del payoff ratio b = win/loss.
-    /// Resuelve R7-R2-A-5: como d f*/d b = q/b² > 0, usar el b puntual
+    /// Resuelve R7-R2-A-5 y F1-081: como d f*/d b = q/b² > 0, usar el b puntual
     /// introducía un sesgo de optimismo en muestras pequeñas (n < 30).
     /// Descuenta la estimación muestral por incertidumbre asintótica:
-    /// b_lcb = b · exp(-z / sqrt(n)), garantizando simetría conservadora
+    /// b_lcb = b · exp(-z / sqrt(n_eff)), garantizando simetría conservadora
     /// en ambos parámetros de la fórmula de Kelly (p y b).
+    ///
+    /// F1-081: Dado que el payoff ratio se estima con una EMA(alpha = 0.05), su tamaño de muestra
+    /// efectivo está acotado por la memoria de la ventana (N_eff = min(n, 2/alpha - 1) = min(n, 39.0)).
+    /// Usar el n acumulativo de Bernoulli sin cota eliminaba el descuento por incertidumbre tras
+    /// cientos de trades, impidiendo que el dimensionamiento reaccionara a deterioros de spread/fricción.
     pub fn conservative_payoff_ratio(&self, z: f64) -> f64 {
         let n = self.posterior.n();
         if !self.payoff_ratio.is_finite() || self.payoff_ratio <= 0.0 || !n.is_finite() || n < 1.0 {
             return 1.0;
         }
         let z_eff = if z.is_finite() && z >= 0.0 { z } else { 1.0 };
+        // F1-081: Tamaño efectivo de muestra acotado por la memoria de la EMA (N_eff <= 39)
+        let n_eff = n.min(Self::EMA_EFFECTIVE_N);
+
         // R7-R2-A-5: Descontar el exceso de payoff (b - 1.0) hacia la paridad neutra 1.0
-        // bajo incertidumbre muestral: b_lcb = 1.0 + (b - 1.0) * exp(-z / sqrt(n)).
+        // bajo incertidumbre muestral: b_lcb = 1.0 + (b - 1.0) * exp(-z / sqrt(n_eff)).
         // Si b <= 1.0, el ratio ya es adverso de por sí.
         if self.payoff_ratio > 1.0 {
             let excess = self.payoff_ratio - 1.0;
-            let discount = (-z_eff / n.sqrt()).exp();
+            let discount = (-z_eff / n_eff.sqrt()).exp();
             1.0 + excess * discount
         } else {
             self.payoff_ratio
@@ -292,6 +314,86 @@ impl RiskEnvelope {
         shrunk.min(crate::ruin::streak_ruin_cap(q_lcb)).min(0.25) // axioma 25%
     }
 
+    /// Atenuador de estabilidad espectral Koopman/DMD (§57 / Ola Ω215).
+    ///
+    /// Modula la fracción de riesgo de Kelly según el módulo dominante (|λ|)
+    /// y la métrica de bifurcación espectral del operador Koopman streaming:
+    ///
+    /// - Régimen Asintóticamente Estable (|λ| <= 1.0 y bifurcacion <= 0.10):
+    ///   El flujo en el espacio de Hilbert es contractivo o unitario; el factor es 1.0.
+    /// - Régimen Divergente / Bifurcación Caótica (|λ| > 1.0 o bifurcacion > 0.10):
+    ///   Atenuación hiperbólica suave:
+    ///   \phi = 1.0 / (1.0 + 3.0 * (|λ| - 1.0).max(0.0) + 5.0 * (bifurcacion - 0.10).max(0.0))
+    ///
+    /// Protege matemáticamente las micro-cuentas ($13 USD) de entrar con tamaño pleno
+    /// durante bifurcaciones no lineales o regímenes explosivos.
+    #[inline]
+    pub fn koopman_stability_dampener(
+        koopman_modulo: f64,
+        koopman_bifurcacion: f64,
+    ) -> f64 {
+        if !koopman_modulo.is_finite() || !koopman_bifurcacion.is_finite() {
+            return 1.0; // Fallback neutral si aún no hay lecturas maduras de Koopman
+        }
+        let excess_modulo = (koopman_modulo - 1.0).max(0.0);
+        let excess_bif = (koopman_bifurcacion - 0.10).max(0.0);
+        let dampener = 1.0 / (1.0 + 3.0 * excess_modulo + 5.0 * excess_bif);
+        dampener.clamp(0.05, 1.0)
+    }
+
+    /// Fracción de riesgo final modulada espectralmente por Koopman/DMD (§57 / Ola Ω215).
+    pub fn risk_fraction_spectral(
+        &self,
+        z: f64,
+        shrinkage_k: f64,
+        koopman_modulo: f64,
+        koopman_bifurcacion: f64,
+    ) -> f64 {
+        let base_f = self.risk_fraction(z, shrinkage_k);
+        if base_f <= 0.0 {
+            return 0.0;
+        }
+        let dampener = Self::koopman_stability_dampener(koopman_modulo, koopman_bifurcacion);
+        base_f * dampener
+    }
+
+    /// Presupuesto de exposición con modulación espectral Koopman (§57 / Ola Ω215).
+    pub fn exposure_budget_spectral(
+        &self,
+        capital: f64,
+        stop_distance_pct: f64,
+        roundtrip_cost_pct: f64,
+        z: f64,
+        shrinkage_k: f64,
+        koopman_modulo: f64,
+        koopman_bifurcacion: f64,
+    ) -> Option<ExposureBudget> {
+        if !capital.is_finite()
+            || capital <= 0.0
+            || !stop_distance_pct.is_finite()
+            || stop_distance_pct <= 0.0
+            || !roundtrip_cost_pct.is_finite()
+            || roundtrip_cost_pct < 0.0
+        {
+            return None;
+        }
+        let f = self.risk_fraction_spectral(z, shrinkage_k, koopman_modulo, koopman_bifurcacion);
+        let risk_budget_usd = capital * f;
+        let loss_per_notional = stop_distance_pct + roundtrip_cost_pct;
+        let max_notional = risk_budget_usd / loss_per_notional;
+        if [risk_budget_usd, loss_per_notional, max_notional]
+            .iter()
+            .any(|v| !v.is_finite() || *v <= 0.0)
+        {
+            return None;
+        }
+        Some(ExposureBudget {
+            risk_budget_usd,
+            loss_per_notional,
+            max_notional,
+        })
+    }
+
     /// B=C*f y N_max=B/(distancia+coste). No usa pisos de posición ni bootstrap.
     /// El coste debe incluir la reserva de ida/vuelta elegida por el caller.
     /// Valida representabilidad; no reemplaza inputs corruptos por un trade.
@@ -330,16 +432,21 @@ impl RiskEnvelope {
     }
 
     /// Compatibilidad: techo de exposición nominal N/C, NO leverage de margen.
-    /// Conserva el piso prudencial histórico de 5 bps, sin inventar edge.
-    /// Excluye costes: para sizing final usar exposure_budget y project_quantity.
-    /// Si el mínimo excede B, devuelve (0,false); no concede excepciones micro.
-    pub fn max_leverage(
+    /// Cota superior de apalancamiento y filtro de admisibilidad con modulación espectral Koopman/DMD.
+    ///
+    /// Modula la fracción de riesgo mediante `koopman_stability_dampener`. Si el modo dinámico es estable
+    /// (|λ| <= 1.0), el dampener es exactamente 1.0. Ante divergencia o bifurcaciones (|λ| > 1.0),
+    /// la fracción se atenúa suavemente protegiendo el capital. Si `f < f_min_ejecutable`, la orden
+    /// se veta de forma fail-closed (`operable = false`).
+    pub fn max_leverage_spectral(
         &self,
         capital: f64,
         stop_distance_pct: f64,
         exchange_min_notional: f64,
         z: f64,
         shrinkage_k: f64,
+        koopman_modulo: f64,
+        koopman_bifurcacion: f64,
     ) -> (f64, bool) {
         // (fusión PR #5, fail-closed FMT): NaN no es capital positivo ni stop
         // ni mínimo ejecutables; se rechaza antes de que propague. Un
@@ -361,54 +468,46 @@ impl RiskEnvelope {
         let stop = stop_distance_pct.max(0.0005); // piso 5 bps: stop imposible de más cerca
 
         // D-750 — LA FRACCIÓN MÍNIMA EJECUTABLE ES UNA MEDIDA, NO UN NÚMERO.
-        //
-        // La orden más pequeña que el símbolo acepta tiene nocional
-        // `exchange_min_notional`; con este stop pierde
-        // `exchange_min_notional · stop` dólares si se toca, es decir esta
-        // fracción del capital. Es la unidad de riesgo indivisible de este
-        // símbolo: por debajo de ella no existe orden alguna. Nótese que el
-        // apalancamiento NO aparece — reparte el mismo nocional entre margen y
-        // préstamo, pero no cambia lo que se pierde.
         let f_min_ejecutable = exchange_min_notional * stop / capital;
 
-        let mut f = self.risk_fraction(z, shrinkage_k);
-        // FIX #702 / #793: arranque para cuentas en régimen micro — evita el
-        // bloqueo bayesiano en que la cota inferior da `f ≤ 0` con muestras
-        // pequeñas y el motor nunca genera la evidencia que necesita.
-        //
-        // D-750 — LA APUESTA DE EXPLORACIÓN ERA `0,015 · micro_w`: un 1,5 % del
-        // capital arriesgado SIN EDGE, inventado. La única apuesta defendible
-        // cuando no hay edge probado es la MÍNIMA EJECUTABLE: exactamente lo que
-        // el exchange obliga a arriesgar para que exista una orden, ni un
-        // céntimo más. Y se somete al mismo control de ruina que cualquier otra
-        // fracción del sistema: si ni el mínimo cabe bajo el tope de ruina, la
-        // exploración no es viable y se rechaza (abajo).
+        let mut f = self.risk_fraction_spectral(z, shrinkage_k, koopman_modulo, koopman_bifurcacion);
         let micro_w = crate::capital_regime::micro_weight(capital, exchange_min_notional);
         if f <= 0.0 && micro_w > 0.0 {
             let q_lcb = (1.0 - self.posterior.lcb(z)).clamp(0.01, 0.99);
-            f = crate::ruin::clamp_ruin(f_min_ejecutable, q_lcb);
+            let dampener = Self::koopman_stability_dampener(koopman_modulo, koopman_bifurcacion);
+            f = crate::ruin::clamp_ruin(f_min_ejecutable, q_lcb) * dampener;
         }
         if f <= 0.0 || !f.is_finite() {
             return (0.0, false);
         }
 
         // D-750 — SI NO CABE, SE RECHAZA; JAMÁS SE INFLA.
-        //
-        // Antes, cuando el presupuesto de riesgo no alcanzaba para la orden
-        // mínima, una puerta de escape devolvía `operable = true` con un
-        // apalancamiento escrito a mano —`(min_notional/capital).max(1).min(5)`,
-        // tras exigir `min_notional ≤ capital·5` y `f ≥ 0,005`: cuatro literales
-        // sin derivación— e inflaba así la apuesta por encima de lo que el
-        // propio control de ruina acababa de autorizar. Es el modo de fallo que
-        // CERT-M5-C02 declaró cerrado, sobreviviendo aquí.
-        //
-        // La respuesta correcta es la de la aritmética: si la unidad de riesgo
-        // indivisible del símbolo excede la fracción que el riesgo permite, NO
-        // HAY ORDEN POSIBLE en este símbolo con este capital y este stop.
         if f < f_min_ejecutable {
             return (0.0, false); // capital insuficiente: protección, no leverage suicida
         }
         (f / stop, true)
+    }
+
+    /// Conserva el piso prudencial histórico de 5 bps, sin inventar edge.
+    /// Excluye costes: para sizing final usar exposure_budget y project_quantity.
+    /// Si el mínimo excede B, devuelve (0,false); no concede excepciones micro.
+    pub fn max_leverage(
+        &self,
+        capital: f64,
+        stop_distance_pct: f64,
+        exchange_min_notional: f64,
+        z: f64,
+        shrinkage_k: f64,
+    ) -> (f64, bool) {
+        self.max_leverage_spectral(
+            capital,
+            stop_distance_pct,
+            exchange_min_notional,
+            z,
+            shrinkage_k,
+            f64::NAN,
+            f64::NAN,
+        )
     }
 }
 
@@ -636,5 +735,73 @@ mod tests {
         // Fracción con z > 0 debe ser menor o igual que sin descuento de payoff
         let f_conservadora = env.risk_fraction(1.64, 10.0);
         assert!(f_conservadora >= 0.0);
+    }
+
+    #[test]
+    fn test_koopman_stability_dampener_and_spectral_risk_fraction() {
+        // 1. Modos asintóticamente estables (|λ| <= 1.0, bif <= 0.10) => factor 1.0
+        assert_eq!(RiskEnvelope::koopman_stability_dampener(0.95, 0.05), 1.0);
+        assert_eq!(RiskEnvelope::koopman_stability_dampener(1.00, 0.10), 1.0);
+
+        // 2. Modos inestables / divergentes atenúan el riesgo
+        let damp_mild = RiskEnvelope::koopman_stability_dampener(1.10, 0.10);
+        assert!(damp_mild < 1.0 && damp_mild > 0.5, "1.10 |λ| debe atenuar suavemente");
+
+        let damp_severe = RiskEnvelope::koopman_stability_dampener(1.30, 0.25);
+        assert!(damp_severe < damp_mild, "Mayor inestabilidad debe atenuar más");
+
+        // 3. Inmunidad a NaN / Inf => fallback 1.0
+        assert_eq!(RiskEnvelope::koopman_stability_dampener(f64::NAN, 0.10), 1.0);
+        assert_eq!(RiskEnvelope::koopman_stability_dampener(1.0, f64::NAN), 1.0);
+
+        // 4. Piso de supervivencia (mínimo 0.05)
+        let damp_extreme = RiskEnvelope::koopman_stability_dampener(100.0, 100.0);
+        assert_eq!(damp_extreme, 0.05, "Piso de atenuación debe ser 0.05");
+
+        // 5. Acoplamiento en risk_fraction_spectral
+        let mut env = RiskEnvelope::new();
+        for i in 0..100 {
+            env.record_trade(i % 10 < 6, 20.0, -10.0); // Edge claro
+        }
+        let base_f = env.risk_fraction(1.64, 10.0);
+        assert!(base_f > 0.0);
+
+        let f_stable = env.risk_fraction_spectral(1.64, 10.0, 0.95, 0.05);
+        assert_eq!(f_stable, base_f);
+
+        let f_chaotic = env.risk_fraction_spectral(1.64, 10.0, 1.25, 0.20);
+        assert!(f_chaotic < base_f && f_chaotic > 0.0);
+    }
+
+    #[test]
+    fn test_max_leverage_spectral_koopman_coupling() {
+        let mut env = RiskEnvelope::new();
+        for i in 0..100 {
+            env.record_trade(i % 10 < 7, 25.0, -10.0); // 70% win rate
+        }
+        let cap = 50.0;
+        let stop = 0.005; // 0.5%
+        let min_notional = 5.0;
+        let (base_lev, base_operable) = env.max_leverage(cap, stop, min_notional, 1.64, 10.0);
+        assert!(base_operable);
+        assert!(base_lev > 0.0);
+
+        // Modo estable: debe ser idéntico al base
+        let (stable_lev, stable_operable) = env.max_leverage_spectral(cap, stop, min_notional, 1.64, 10.0, 0.95, 0.05);
+        assert!(stable_operable);
+        assert_eq!(stable_lev, base_lev);
+
+        // Modo caótico / bifurcación: amortigua apalancamiento
+        let (chaotic_lev, _chaotic_operable) = env.max_leverage_spectral(cap, stop, min_notional, 1.64, 10.0, 1.25, 0.30);
+        assert!(chaotic_lev < stable_lev);
+
+        // Extremo caótico: si la fracción cae bajo el mínimo ejecutable, se veta fail-closed
+        let (_extreme_lev, extreme_operable) = env.max_leverage_spectral(13.0, 0.04, 5.0, 1.64, 50.0, 10.0, 10.0);
+        assert!(!extreme_operable, "Divergencia extrema con fracción amortiguada bajo el mínimo debe vetar la orden");
+
+        // Cuenta en frío sin edge probado bajo bifurcación caótica: veto absoluto de exploración
+        let fresh_env = RiskEnvelope::new();
+        let (_cold_lev, cold_operable) = fresh_env.max_leverage_spectral(13.0, 0.01, 5.0, 1.64, 10.0, 1.25, 0.30);
+        assert!(!cold_operable, "Cuenta en frío bajo régimen caótico debe vetar exploración");
     }
 }

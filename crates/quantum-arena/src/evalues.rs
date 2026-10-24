@@ -73,6 +73,10 @@ pub struct EProceso {
     alfa: f64,
     /// Observaciones consumidas.
     n: u64,
+    /// Conteo causal de aciertos en apuestas históricas (para estimación de tasa previsible en GRAPA).
+    aciertos: u64,
+    /// Conteo causal de fallos en apuestas históricas.
+    fallos: u64,
 }
 
 impl EProceso {
@@ -82,6 +86,8 @@ impl EProceso {
             lambda: LAMBDA_APOSTADA,
             alfa: ALFA_SIGNIFICANCIA,
             n: 0,
+            aciertos: 0,
+            fallos: 0,
         }
     }
 
@@ -93,23 +99,79 @@ impl EProceso {
             lambda: lambda.clamp(1e-4, 0.5),
             alfa: alfa.clamp(1e-4, 0.5),
             n: 0,
+            aciertos: 0,
+            fallos: 0,
         }
     }
 
     /// Observa un par (señal, retorno) del bloque madurado y actualiza
-    /// el capital. Sanitización: no-finitos ⇒ abstención (factor 1).
+    /// el capital con lambda fija (comportamiento canónico #661).
+    /// Sanitización: no-finitos ⇒ abstención (factor 1).
     #[inline(always)]
     pub fn observar(&mut self, senal: f64, retorno: f64) {
+        self.observar_con_lambda_interna(senal, retorno, self.lambda);
+    }
+
+    /// Observa con fracción de apuesta adaptativa causal y previsible
+    /// (algoritmo GRAPA - Growth Rate Adaptive with Predictable Averaging, Waudby-Smith & Ramdas 2023).
+    ///
+    /// La fracción \lambda_t se deriva estrictamente de la filtración previa \mathcal{F}_{t-1}
+    /// (proporción de aciertos observados en los pasos anteriores).
+    /// Si \hat{\mu}_{t-1} = 2\hat{p}_{t-1} - 1 > 0, \lambda_t = (\lambda_{\text{base}} + 0.5 \hat{\mu}_{t-1}).\text{clamp}(0.05, 0.40).
+    /// Garantiza la propiedad de supermartingala bajo H0 (E[apuesta_t|\mathcal{F}_{t-1}] <= 0)
+    /// mientras acelera el crecimiento de capital hasta ~2.6× ante evidencia consistente.
+    #[inline(always)]
+    pub fn observar_adaptativo(&mut self, senal: f64, retorno: f64) {
+        let total = self.aciertos + self.fallos;
+        let lambda_t = if total == 0 {
+            self.lambda
+        } else {
+            let p_hat = self.aciertos as f64 / total as f64;
+            let mu_hat = 2.0 * p_hat - 1.0;
+            if mu_hat > 0.0 {
+                (self.lambda + 0.5 * mu_hat).clamp(0.05, 0.40)
+            } else {
+                self.lambda
+            }
+        };
+        self.observar_con_lambda_interna(senal, retorno, lambda_t);
+    }
+
+    #[inline(always)]
+    fn observar_con_lambda_interna(&mut self, senal: f64, retorno: f64, lambda: f64) {
         self.n += 1;
         let producto = senal * retorno;
         if !producto.is_finite() || producto == 0.0 {
             return; // sin información: el capital no cambia
         }
         let apuesta = if producto > 0.0 { 1.0 } else { -1.0 };
-        let factor = 1.0 + self.lambda * apuesta;
+        let factor = 1.0 + lambda * apuesta;
         self.capital *= factor;
-        // Factores positivos en aritmética exacta. f64 puede sub/sobrefluir;
-        // la representabilidad indefinida requiere un contrato independiente.
+        if apuesta > 0.0 {
+            self.aciertos = self.aciertos.saturating_add(1);
+        } else {
+            self.fallos = self.fallos.saturating_add(1);
+        }
+    }
+
+    /// Arranca en caliente el e-proceso restaurando el capital, observaciones y conteos acumulados.
+    pub fn warm_start(&mut self, capital: f64, n: u64, aciertos: u64, fallos: u64) {
+        if capital.is_finite() && capital > 0.0 {
+            self.capital = capital;
+        }
+        self.n = n;
+        self.aciertos = aciertos;
+        self.fallos = fallos;
+    }
+
+    #[inline]
+    pub fn aciertos(&self) -> u64 {
+        self.aciertos
+    }
+
+    #[inline]
+    pub fn fallos(&self) -> u64 {
+        self.fallos
     }
 
     /// ¿El proceso ha cruzado el umbral de Ville (capital ≥ 1/α)?

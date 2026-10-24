@@ -103,3 +103,48 @@ async fn test_router_dynamic_panic_latency_and_idempotency_preservation() {
 
     assert!(res.is_ok(), "El ruteo de emergencia con client_order_id debe completarse con éxito");
 }
+
+#[tokio::test]
+async fn test_adverse_selection_guard_blocks_frictional_death_for_low_ev_orders() {
+    let arena = GlobalArena::build_in_own_stack(13.0);
+    let mut executor = OrderExecutor::new(
+        "dummy_key".to_string(),
+        "dummy_secret".to_string(),
+        true,
+    );
+    executor.set_paper_trading(true);
+    executor.arena.store(Some(arena));
+
+    let router = QuantumOrderRouter::new(Arc::new(ArcSwap::from_pointee(executor)));
+
+    // Decisión con baja convicción (net_confidence: 0.20) y baja volatilidad (0.0005)
+    // El edge bruto no puede pagar comisiones + funding + selección adversa (fricción total > 1/3 EV)
+    let weak_decision = TensorDecision {
+        signal: SignalType::Long,
+        net_confidence: 0.20,
+        expected_volatility: 0.0005,
+        expected_lifetime_ms: 10_000,
+        horizon: TradeHorizon::Continuous,
+    };
+
+    let res = router
+        .route_order(
+            "BTCUSDT",
+            &weak_decision,
+            50000.0,
+            0.001,
+            0.001,
+            0.1,
+            15, // latencia baja y normal (15 ms)
+            0.0005, // spread 5 bps
+            "WEAK_CHURN_ORDER_01",
+        )
+        .await;
+
+    assert!(res.is_err(), "La orden de micro-edge devorada por fricciones DEBE ser rechazada");
+    let err_msg = res.unwrap_err();
+    assert!(
+        err_msg.contains("REJ_INSUFFICIENT_VIABILITY"),
+        "El mensaje de error debe indicar REJ_INSUFFICIENT_VIABILITY: {err_msg}"
+    );
+}

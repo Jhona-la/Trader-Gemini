@@ -133,7 +133,16 @@ impl AggTradeEvent {
         let (price, _) = BookTickerEvent::extract_f64_from(bytes, 0, b"\"p\":\"")?;
         let (qty, _) = BookTickerEvent::extract_f64_from(bytes, 0, b"\"q\":\"")?;
 
-        if !price.is_finite() || !qty.is_finite() || price <= 0.0 || qty < 0.0 {
+        // F1-092 — la cantidad debe ser ESTRICTAMENTE positiva, como el precio.
+        // La puerta era `qty < 0.0`, así que un trade con cantidad CERO entraba
+        // al flujo vivo: no es un trade (no hay volumen ni información de
+        // precio que agregar) y sin embargo alimentaba VWAP, OFI y los tensores.
+        // Detectado por el contrato `ra_aggressor_rejects_unreadable_price_or_quantity`
+        // al exigir aquí lo que sus tres hermanos ya exigían:
+        // `DepthEvent` línea 209 (`qty > 0.0`), `data-ingest/liquidation.rs:100`
+        // (`q > 0`) y el propio `tensor_parser` (`q > 0.0`). Esta puerta era la
+        // excepción inconsistente.
+        if !price.is_finite() || !qty.is_finite() || price <= 0.0 || qty <= 0.0 {
             return None;
         }
 
@@ -152,12 +161,26 @@ impl AggTradeEvent {
             return None;
         }
 
-        // #660 (F2-B5): "T" = transact time del exchange en ms (entero sin
-        // comillas); ausente ⇒ 0 (sin reloj: el decay físico no aplica
-        // hasta el primer ts válido).
-        let timestamp_ms = BookTickerEvent::extract_u64_from(bytes, 0, b"\"T\":")
-            .map(|(v, _)| v)
-            .unwrap_or(0);
+        // Missing T preserves the legacy "no clock" state. A present but
+        // unreadable clock must reject the event, not disable physical decay.
+        // Allow JSON whitespace before/after ':' while reusing the strict u64
+        // token parser. This scanner is still not a complete JSON validator.
+        let mut search = 0;
+        let timestamp_ms = loop {
+            let Some(relative) = memchr::memmem::find(&bytes[search..], b"\"T\"") else {
+                break 0;
+            };
+            let field = search + relative;
+            let mut colon = field + 3;
+            while bytes.get(colon).is_some_and(|b| json_whitespace(*b)) {
+                colon += 1;
+            }
+            if bytes.get(colon) == Some(&b':') {
+                break BookTickerEvent::extract_u64_from(bytes, colon, b":")?.0;
+            }
+            // A string VALUE "T" is not the transaction-time key.
+            search = field + 3;
+        };
 
         Some(Self {
             price,

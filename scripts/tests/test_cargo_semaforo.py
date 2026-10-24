@@ -34,7 +34,13 @@ class CargoSemaforoTests(unittest.TestCase):
             SEMAFORO_PROCESOS="0",
             SEMAFORO_RAM_GB="10",
         )
-        entorno.update({k: str(v) for k, v in env.items()})
+        # `None` BORRA la variable en vez de escribirla: las pruebas que
+        # ejercitan la medición real no pueden heredar la costura que la salta.
+        for clave, valor in env.items():
+            if valor is None:
+                entorno.pop(clave, None)
+            else:
+                entorno[clave] = str(valor)
         return subprocess.run(
             [BASH, str(SCRIPT), *args],
             env=entorno,
@@ -43,11 +49,33 @@ class CargoSemaforoTests(unittest.TestCase):
             timeout=120,
         )
 
+    def medidor_falso(self, respuesta):
+        """Antepone al PATH un `powershell` de mentira que responde `respuesta`
+        a la consulta de memoria y anota los argumentos que recibió."""
+        bin_dir = self.raiz / "bin-medidor"
+        bin_dir.mkdir(exist_ok=True)
+        registro = self.raiz / "invocaciones.txt"
+        shim = bin_dir / "powershell"
+        shim.write_text(
+            "#!/bin/bash\n"
+            f'printf "%s\\n" "$*" >> "{registro.as_posix()}"\n'
+            'case "$*" in\n'
+            '  *Get-Process*) printf "0\\n" ;;\n'
+            f"  *) printf '%s\\n' \"{respuesta}\" ;;\n"
+            "esac\n",
+            encoding="utf-8",
+        )
+        shim.chmod(0o700)
+        return bin_dir, registro
+
     def test_turno_libre_fuerza_target_compartido_y_dos_hilos(self):
         r = self.correr("check", SEMAFORO_SOLO_DECIDIR=1)
         self.assertEqual(r.returncode, 0, r.stderr)
         self.assertIn(f"CARGO_TARGET_DIR={self.raiz.as_posix()}/target", r.stdout.replace("\\", "/"))
         self.assertIn("CARGO_BUILD_JOBS=2", r.stdout)
+        # RB-H2: con el target compartido, frescura por contenido aunque la
+        # rama aún no traiga la clave en .cargo/config.toml.
+        self.assertIn("CARGO_UNSTABLE_CHECKSUM_FRESHNESS=true", r.stdout)
         self.assertFalse(self.cerrojo.exists(), "el cerrojo se libera al salir")
         log = self.bitacora.read_text(encoding="utf-8")
         self.assertIn("ADQUIERE", log)
@@ -139,15 +167,36 @@ class CargoSemaforoTests(unittest.TestCase):
 
     def test_sin_powershell_en_el_path_no_se_roba_un_cerrojo(self):
         # LG-25c, el caso real: un entorno sin powershell ni tasklist en el
-        # PATH (sólo las utilidades de bash). Antes `pgrep || echo 0` decía
+        # PATH, tampoco pgrep/pwsh aunque estén instalados en el host.
+        # Antes `pgrep || echo 0` decía
         # «0 procesos» y el cerrojo de un build en marcha se robaba como
         # huérfano pasada la gracia.
         self.cerrojo.mkdir(parents=True)
         (self.cerrojo / "creado").write_text(str(int(time.time()) - 600))
         (self.cerrojo / "dueno").write_text("agente-compilando pid=3 cargo check" + chr(10))
-        r = self.correr(
-            "check", SEMAFORO_SOLO_DECIDIR=1, SEMAFORO_PROCESOS="", SEMAFORO_ESPERA_MAX_MIN=0,
-            PATH=os.path.dirname(BASH),
+        bin_prueba = self.raiz / "bin"
+        bin_prueba.mkdir()
+        for nombre in ("mkdir", "cat", "awk", "grep", "tr", "rm", "sleep", "date"):
+            shim = bin_prueba / nombre
+            shim.write_text(f'#!/bin/bash\nexec "/usr/bin/{nombre}" "$@"\n', encoding="utf-8")
+            shim.chmod(0o700)
+        entorno = {k: v for k, v in os.environ.items()
+                   if not k.upper().startswith(("SEMAFORO_", "BASH_FUNC_"))
+                   and k not in ("BASH_ENV", "ENV", "CARGO_BUILD_JOBS")}
+        entorno.update(PATH=str(bin_prueba), SEMAFORO_RAIZ=str(self.raiz),
+                       SEMAFORO_AGENTE="prueba", SEMAFORO_SOLO_DECIDIR="1",
+                       SEMAFORO_PROCESOS="", SEMAFORO_RAM_GB="10",
+                       SEMAFORO_ESPERA_MAX_MIN="0", SEMAFORO_PAUSA_S="0")
+        probe = subprocess.run(
+            [BASH, "--noprofile", "--norc", "-c",
+             'for c in powershell powershell.exe pwsh pwsh.exe tasklist pgrep; do '
+             'if command -v "$c" >/dev/null 2>&1; then exit 91; fi; done'],
+            cwd=self.raiz, env=entorno, capture_output=True, text=True, timeout=10,
+        )
+        self.assertEqual(probe.returncode, 0, probe.stdout + probe.stderr)
+        r = subprocess.run(
+            [BASH, "--noprofile", "--norc", str(SCRIPT), "check"],
+            cwd=self.raiz, env=entorno, capture_output=True, text=True, timeout=20,
         )
         self.assertEqual(r.returncode, 75, r.stdout + r.stderr)
         self.assertTrue(self.cerrojo.exists(), "el cerrojo ajeno sigue en pie")
@@ -165,6 +214,53 @@ class CargoSemaforoTests(unittest.TestCase):
         r = self.correr("check", SEMAFORO_SOLO_DECIDIR=1, CARGO_BUILD_JOBS=1)
         self.assertEqual(r.returncode, 0, r.stderr)
         self.assertIn("CARGO_BUILD_JOBS=1", r.stdout)
+
+    def test_el_medidor_pide_memoria_disponible_y_no_solo_libre(self):
+        # F1-097: la puerta que gobierna TODOS los builds medía en Windows
+        # `FreePhysicalMemory` (sólo páginas libres) mientras en Linux medía
+        # `MemAvailable` (libre + reclamable). No es la misma magnitud: con un
+        # target/ de decenas de GB, el standby es la mayor parte de lo
+        # reclamable y el semáforo anunciaba «2 GB» donde el sistema podía
+        # entregar 9. Aquí se fija la magnitud, no el número.
+        bin_dir, registro = self.medidor_falso("9.5")
+        r = self.correr(
+            "check", SEMAFORO_SOLO_DECIDIR=1,
+            SEMAFORO_RAM_GB=None, SEMAFORO_PROCESOS=None,
+            PATH=str(bin_dir) + os.pathsep + os.environ["PATH"],
+        )
+        self.assertEqual(r.returncode, 0, r.stderr)
+        invocaciones = registro.read_text(encoding="utf-8")
+        self.assertIn("AvailableMBytes", invocaciones)
+        self.assertNotIn("FreePhysicalMemory", invocaciones)
+        # Y el valor medido es el que decide: 9.5 GB cubre el mínimo de 4.
+        self.assertIn("ram_libre=9.5GB", self.bitacora.read_text(encoding="utf-8"))
+
+    def test_una_medicion_ilegible_no_se_confunde_con_cero(self):
+        # F1-097: antes `ram=""` se coercionaba a 0 y el mensaje salía
+        # «RAM libre  GB < 4 GB». Un valor ilegible es DESCONOCIDO, no cero.
+        bin_dir, _ = self.medidor_falso("")
+        r = self.correr(
+            "check", SEMAFORO_ESPERA_MAX_MIN=0,
+            SEMAFORO_RAM_GB=None, SEMAFORO_PROCESOS=None,
+            PATH=str(bin_dir) + os.pathsep + os.environ["PATH"],
+        )
+        self.assertEqual(r.returncode, 75, r.stdout + r.stderr)
+        self.assertIn("DESCONOCIDA", r.stderr)
+        self.assertNotIn("RAM libre  GB", r.stderr)
+        self.assertIn("ram_libre=desconocida", self.bitacora.read_text(encoding="utf-8"))
+
+    def test_la_paciencia_no_se_salta_con_ram_desconocida(self):
+        # La paciencia (LG-25b) sólo puede ignorar builds ajenos si la RAM
+        # cubre mínimo + margen. Una medición ilegible no es «sobra RAM».
+        bin_dir, _ = self.medidor_falso("no-es-un-numero")
+        r = self.correr(
+            "check", SEMAFORO_PROCESOS=2, SEMAFORO_PACIENCIA_MIN=0,
+            SEMAFORO_ESPERA_MAX_MIN=0,
+            SEMAFORO_RAM_GB=None,
+            PATH=str(bin_dir) + os.pathsep + os.environ["PATH"],
+        )
+        self.assertEqual(r.returncode, 75, r.stdout + r.stderr)
+        self.assertIn("procesos cargo/rustc ajenos", r.stderr)
 
 
 if __name__ == "__main__":

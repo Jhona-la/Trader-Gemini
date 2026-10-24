@@ -207,24 +207,31 @@
 - **Recursos**: el disco C: llegó a 0 GB (target/debug 191 GB); se borró
   `target/debug/incremental` y quedaron ~159 GB libres.
 
-## Claude — Línea H (actualizado: 2026-10-17 ~11:30 local, prefijo LH-n; olas 1–3 en main; OLA 4 reservada: rama `claude/linea-h-ola4`, worktree `.claude/worktrees/linea-h`)
+## Claude — Línea H (actualizado: 2026-10-17 ~12:10 local, prefijo LH-n; olas 1–4 en main; OLA 5 reservada: rama `claude/linea-h-ola5`, worktree `.claude/worktrees/linea-h`)
 
-- **En main**: olas 1 y 2 (PR #63, revisión) y ola 3 por el PR #64 (T-3 v2:
-  generador gaussiano, filtro de Bayes como lector causal, módulo std-only
-  `tests/support/t3_synthetic.rs` con 10 contratos; LH-18/18b míos, LH-18c de
-  Codex por failover). `69ccd80e` (2026-10-17, 11:40 local)
-- **Haciendo ahora (ola 4)**: re-medir escalera, valle y E1–E5 con la v2
-  sobre `main` con el dimensionado LH-04 (GLM 117/118) — ¿el tamaño ya sigue
-  a la evidencia o sigue en la orden mínima?; verificación barata de LH-06
-  (τ mediana por peldaño y |Δln τ| fast–slow desde las trazas de apertura;
-  lista de aceptación de `docs/DISENO_LH06_TAU.md` §5).
+- **En main**: olas 1–3 (PR #63, #64) y ola 4 (T-3 v2 sobre `main` con
+  LH-04: escalera v2/v1, adaptación, valle, τ por serie con
+  `tau_por_peldano.py`; tablas `docs/audit/linea_h/ola4_*`, plan §9).
+- **Lo que dijo la ola 4**: LH-04 mueve el tamaño sólo donde hay ventaja
+  medible (sin ella, bit a bit la ola 2; con ella, nocional 6,7–7,1 USD a
+  2×, +14,7 %/+31,9 % en 50 h = 0,066/0,133 log por día frente a 0,231 de
+  la meta); **LH-20 cerrado en main** (nulo → ventaja: 0 → 172 cierres);
+  LH-22 nuevo (el tamaño heredado se paga en el nulo: −0,69 USD, ×3,9);
+  LH-06: τ en 55–128 s en todas las series y co-despacho muerto; LH-21: la
+  cota de Lundberg convierte R por el L_máx del spec (8–25× más estricta que
+  con el apalancamiento usado). Valle: **LH-02 y LH-03 cerrados en `main`, LH-04 compone**: la misma serie opera en los diez capitales de 13 a 1 000 USD (191 cierres en nueve de ellos; ola 3: 0 cierres en 35/50/65 USD y 5 en 100), el nocional mediano es ≈ 0,53 × C0 y el PnL en 50 h 28–41 % del capital en todo el rango (0,12–0,17 log/día); en 1 000 USD no hay envolvente absorbente (191 cierres). Mella residual en 35 USD: 522 `fee_impact` y 162 cierres (25,5 %) — LH-02b, LOW, al dueño del riesgo. Coste: DD máx 0,9–1,2 % (ola 3: 0,6–0,9 %) y la palanca cede de 3× a 2× por encima de 215 USD.
 - **Pedidos**: Qoder/AGY — `tau_hab=` en `[OPEN TRACE]` y tope de trazas
-  configurable (`god-engine-core/src/lib.rs:9875`); dueño/Línea C — LH-20
-  (el freno CL-107 es absorbente: 0 cierres en 50 h de ventaja tras un nulo).
-- **No toca**: núcleo, riesgo, espectro, runner. Sólo el T-3, su módulo y
-  docs de la Línea H. Compila por `scripts/cargo_semaforo.sh`.
-- **Recursos (17-10)**: proyecto 72,8 GB (target 41,6, data 23,9), C: 368 GB
-  libres.
+  configurable (`god-engine-core/src/lib.rs:9873`); dueño del riesgo
+  (Qoder #651 / Línea C) — LH-21; GLM — LH-22 y `regimen_velas` para el
+  punto 2 de LH-06.
+- **No toca**: núcleo, riesgo, espectro, runner, `run_backtest_native`.
+  Compila por `scripts/cargo_semaforo.sh`.
+- **Recursos (17-10, `scripts/disk_audit.sh` al cierre)**: proyecto ≈ 77 GB
+  (target 45 = debug 36 + release 8,4, incremental 8,7; data 24; .git 3,1;
+  graphify-out 1,6), C: 365 GB libres; RAM 3,9 GB libres de 23,4 con 4
+  procesos cargo/rustc ajenos vivos; ninguna carpeta `target` nueva ni
+  worktree huérfano mío. Las mediciones del T-3 no compilan (binario ya
+  construido) y corren con `--test-threads=1`.
 
 ## Codex — Línea H (15Oct2026, entrega T-3 v2)
 
@@ -250,15 +257,23 @@
   - PR #33 (REV-1/2/3/4, T-2; QS-P4 medido sin ganancia).
 - **Decidido (el dueño lo delegó)**: ADR-0016 (D1–D4).
 
-## Codex (observado por GLM: última actividad 2026-09-30 14:31 UTC)
+## Codex RB (DSH, consejo Quant Sr.; actualizado 2026-10-19 ~01:55 Bogotá)
 
-- **Último trabajo**: PR#25 MP (publicación concurrente de modelos,
-  ArcSwap RCU + extensión de caché) — aprobado por GLM CONDICIONAL.
-- **Commiteado**: MX (métricas replay, PR#21), CX (causalidad, PR#22),
-  GO (diagnóstico oráculo, PR#24), MR (registry evidencia, PR#23) —
-  todos mergeados.
-- **Falta / bloqueado**: PR#25 CI falló por TIMEOUT del job (45m máx) —
-  subir timeout del workflow o acortar contratos de publicación.
+- **Carril**: `docs/PLAN_CODEX_RB_2026-10-19.md` (complementa el V29). Sesión
+  distinta de Codex ROOT/BASE15. Ramas efímeras `codex/rb-*`, worktree propio
+  sin `target/`.
+- **Entregado — RB-H1**: `target/` llegó a 77,4 GB (37 GB el 17-10) por churn
+  de la caché incremental (27,7 GB) y variantes superadas en deps (30,9 GB).
+  Barrido por presupuesto automático en el semáforo (cada 6 h, fail-closed,
+  cerrojo renovado), paso 3b de higiene, cinco lanzadores con un solo
+  `target/` y copia de ejecución en `despliegue/`, kill-switch sin `taskkill`
+  global de python.exe. Contratos 21/21 + semáforo 13/13. Simulación real:
+  ≈ 57,7 GB liberables; la aplicación se detuvo sin borrar nada por builds
+  ajenos fuera del semáforo y queda armada.
+- **Siguiente**: RB-M1 (fugas de memoria en runtime del motor vivo), RB-V1
+  (LibroSombra: qué vetos destruyen valor), RB-S1 (cuarentena por motor),
+  RB-P1 (trinquete de pánicos).
+- *(Histórico Codex 2026-09-30: MX/CX/GO/MR/MP mergeados.)*
 
 ## Qoder (observado por GLM: actividad en checkout compartido 14:29 local)
 

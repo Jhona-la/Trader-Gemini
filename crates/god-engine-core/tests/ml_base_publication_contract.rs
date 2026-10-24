@@ -1,4 +1,4 @@
-//! CL-21 (FMT-159) — la base del modelo del roster llega al registro.
+﻿//! CL-21 (FMT-159) — la base del modelo del roster llega al registro.
 //! Eventos sintéticos locales; sin exchange.
 use god_engine_core::GodEngineCore;
 use god_engine_core::ml_inference::{NanoForest, NanoForestData};
@@ -29,7 +29,6 @@ fn cl21_la_base_del_modelo_se_publica_por_simbolo_y_moneda() {
     let arena = GlobalArena::build_in_own_stack(100.0);
     let mut core = GodEngineCore::new(arena.clone());
     core.swing_nn = None;
-    core.scalp_forest = None;
     let _ = core.process_tick_dual(0, 100.0, 100.01, 5.0, 5.0, 10_000, &[0.0; 54], true, false);
 
     let por_simbolo =

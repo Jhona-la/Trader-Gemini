@@ -1,4 +1,4 @@
-//! R5-A4 y R5-A6: Telemetría de las 13 sombras espectrales y enlace dinámico de Nash con CVPIN
+﻿//! R5-A4 y R5-A6: Telemetría de las 13 sombras espectrales y enlace dinámico de Nash con CVPIN
 //! Eventos sintéticos locales; sin exchange ni red.
 use god_engine_core::GodEngineCore;
 use quantum_arena::{GlobalArena, symbol_registry, symbols};
@@ -13,7 +13,6 @@ fn r5_a4_a6_telemetria_sombras_y_nash_enlace_cvpin() {
     let arena = GlobalArena::build_in_own_stack(100.0);
     let mut core = GodEngineCore::new(arena.clone());
     core.swing_nn = None;
-    core.scalp_forest = None;
 
     // Establecer un CVPIN medido no trivial para coin 0
     arena.registry.set_for_coin(0, "cvpin", 0.35);
@@ -92,7 +91,6 @@ fn h2_10_sombra_soliton_espeja_la_cascada_viva_de_amplitud() {
     let arena = GlobalArena::build_in_own_stack(100.0);
     let mut core = GodEngineCore::new(arena.clone());
     core.swing_nn = None;
-    core.scalp_forest = None;
     // OFI per-coin positivo y distinguible: el espejo debe usarlo como amp.
     // NOTA: sin set de soliton_amplitude — el knob muerto NO se publica,
     // eso es exactamente lo que el fix repara.

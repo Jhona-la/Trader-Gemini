@@ -21,6 +21,7 @@
 //!    en menos de 300 nanosegundos para el ensamble completo.
 
 use serde::{Deserialize, Serialize};
+use crate::lock_seguro::{escribir, leer};
 use std::sync::RwLock;
 
 pub const NUM_FEATURES: usize = 6;
@@ -203,7 +204,7 @@ impl OnlineNewtonGbdt {
         }
 
         let obs = GbdtObservation::new(features, net_pnl_pct, is_long);
-        let mut data = self.observations.write().unwrap();
+        let mut data = escribir(&self.observations);
         if data.len() >= self.max_memory_size {
             let drain_count = self.max_memory_size / 10;
             data.drain(0..drain_count);
@@ -211,7 +212,7 @@ impl OnlineNewtonGbdt {
         data.push(obs);
 
         // Actualización estocástica online de Newton si ya está entrenado
-        if *self.is_trained.read().unwrap() {
+        if *leer(&self.is_trained) {
             self.online_step(&obs);
         }
     }
@@ -227,8 +228,8 @@ impl OnlineNewtonGbdt {
             let g = (prob - target_y) as f32;
             let h = ((prob * (1.0 - prob)).max(0.01)) as f32;
 
-            let mut trees = self.class_trees.write().unwrap();
-            let count = *self.class_tree_count.read().unwrap();
+            let mut trees = escribir(&self.class_trees);
+            let count = *leer(&self.class_tree_count);
             if count > 0 {
                 let last_tree = &mut trees[count - 1];
                 let mut curr = 0usize;
@@ -259,16 +260,16 @@ impl OnlineNewtonGbdt {
             }
         }
 
-        if !*self.is_trained.read().unwrap() {
+        if !*leer(&self.is_trained) {
             return None;
         }
 
-        let base_logit = *self.base_class_logit.read().unwrap();
-        let base_reg = *self.base_reg_value.read().unwrap();
-        let class_trees = self.class_trees.read().unwrap();
-        let class_count = *self.class_tree_count.read().unwrap();
-        let reg_trees = self.reg_trees.read().unwrap();
-        let reg_count = *self.reg_tree_count.read().unwrap();
+        let base_logit = *leer(&self.base_class_logit);
+        let base_reg = *leer(&self.base_reg_value);
+        let class_trees = leer(&self.class_trees);
+        let class_count = *leer(&self.class_tree_count);
+        let reg_trees = leer(&self.reg_trees);
+        let reg_count = *leer(&self.reg_tree_count);
 
         // Acumulación lineal sobre el espacio de Hilbert L2
         let mut margin_logit = base_logit;
@@ -290,7 +291,7 @@ impl OnlineNewtonGbdt {
 
     /// Reentrenamiento completo con optimización exacta de Newton de 2º Orden
     pub fn retrain_models(&self) -> Result<(f64, f64), String> {
-        let data = self.observations.read().unwrap().clone();
+        let data = leer(&self.observations).clone();
         if data.len() < 50 {
             return Err("Insuficientes datos para entrenar el modelo (mínimo 50)".to_string());
         }
@@ -306,11 +307,11 @@ impl OnlineNewtonGbdt {
         // 1. Inicializar Logit Base del Clasificador: log(p / (1 - p))
         let prior_p = (count_pos as f64) / (n as f64);
         let base_logit = ((prior_p / (1.0 - prior_p)).ln() as f32).clamp(-3.0, 3.0);
-        *self.base_class_logit.write().unwrap() = base_logit;
+        *escribir(&self.base_class_logit) = base_logit;
 
         // 2. Inicializar Regresor Base: Media podada de retornos
         let mean_ret = (data.iter().map(|o| o.directional_pnl).sum::<f64>() / (n as f64)) as f32;
-        *self.base_reg_value.write().unwrap() = mean_ret;
+        *escribir(&self.base_reg_value) = mean_ret;
 
         // Buffer de predicciones acumuladas
         let mut margin_preds = vec![base_logit; n];
@@ -428,18 +429,18 @@ impl OnlineNewtonGbdt {
 
         let identificados = max_l > min_l && max_s > min_s;
         if identificados {
-            *self.shadow_threshold_long.write().unwrap() = best_th_long.clamp(0.50, 0.75);
-            *self.shadow_threshold_short.write().unwrap() = best_th_short.clamp(0.25, 0.50);
+            *escribir(&self.shadow_threshold_long) = best_th_long.clamp(0.50, 0.75);
+            *escribir(&self.shadow_threshold_short) = best_th_short.clamp(0.25, 0.50);
         }
-        *self.thresholds_identified.write().unwrap() = identificados;
+        *escribir(&self.thresholds_identified) = identificados;
 
-        *self.class_trees.write().unwrap() = trained_class_trees;
-        *self.class_tree_count.write().unwrap() = num_trees;
-        *self.reg_trees.write().unwrap() = trained_reg_trees;
-        *self.reg_tree_count.write().unwrap() = num_trees;
-        *self.last_accuracy.write().unwrap() = acc;
-        *self.last_mse.write().unwrap() = mse;
-        *self.is_trained.write().unwrap() = true;
+        *escribir(&self.class_trees) = trained_class_trees;
+        *escribir(&self.class_tree_count) = num_trees;
+        *escribir(&self.reg_trees) = trained_reg_trees;
+        *escribir(&self.reg_tree_count) = num_trees;
+        *escribir(&self.last_accuracy) = acc;
+        *escribir(&self.last_mse) = mse;
+        *escribir(&self.is_trained) = true;
 
         Ok((acc, mse))
     }
@@ -621,11 +622,11 @@ impl OnlineNewtonGbdt {
     }
 
     pub fn get_optimal_thresholds(&self) -> Option<(f32, f32)> {
-        if !*self.thresholds_identified.read().unwrap() {
+        if !*leer(&self.thresholds_identified) {
             return None;
         }
-        let th_long = *self.shadow_threshold_long.read().unwrap();
-        let th_short = *self.shadow_threshold_short.read().unwrap();
+        let th_long = *leer(&self.shadow_threshold_long);
+        let th_short = *leer(&self.shadow_threshold_short);
         Some((th_long, th_short))
     }
 }

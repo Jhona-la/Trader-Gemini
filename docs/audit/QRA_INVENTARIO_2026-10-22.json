@@ -1,0 +1,15 @@
+{
+  "base_sha": "636a3aa618c20638540bf0c850b0dc2db3a81110",
+  "tracked_paths": 2155,
+  "rust_paths": 836,
+  "by_phase": {
+    "P0-P5-resto": 1402,
+    "P0-P1": 48,
+    "P5": 46,
+    "P4": 303,
+    "P2": 99,
+    "P3": 250,
+    "P0": 7
+  },
+  "coverage": "Inventario por blob; no acredita lectura ni certificacion. Ver hallazgos QRA-01 separados."
+}

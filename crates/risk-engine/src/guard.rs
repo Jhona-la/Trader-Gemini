@@ -1,6 +1,14 @@
 /// Escudos Cortafuegos
 /// Reglas inquebrantables que bloquean operaciones perdedoras o que violan límites de Exchange.
 
+/// F1-085: Escudo auxiliar de drawdown (Dormant en producción viva).
+///
+/// NOTA ARQUITECTÓNICA (F1-085 / Ola Ω189): Esta función es una salvaguarda auxiliar
+/// conservada para contratos de diagnóstico de veto. En el motor de producción en vivo,
+/// el control de drawdown de cuenta y preservación de capital está gobernado íntegramente por
+/// `freno_duro` (CL-106 / ADR-0017) con cuantil Monte Carlo del 95% bajo H0 y cota superior
+/// teórica d*(c, α) = 0.632 (ADR-0016 / D3), operando sobre el pico compartido
+/// `GlobalArena::pico_capital` persistido por venue.
 #[inline(always)]
 pub fn check_drawdown_limit(
     current_capital: f64,

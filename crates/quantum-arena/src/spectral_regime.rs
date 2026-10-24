@@ -12,7 +12,7 @@
 //!   entropía de masa, marea portadora). Sin etiquetas ni umbrales duros
 //!   salvo la vista legacy documentada.
 //! - Unidades: adimensional (todas las coordenadas en [0,1] o [-1,1];
-//!   dominant_drift en 1/ms → se expone log-por-hora normalizado).
+//!   dominant_drift en saltos de nodo espectral [ln 4] por cadencia de referencia [60s], en [-1,1]).
 //! - Condiciones de contorno: espectro frío (sin masa) → campo neutro
 //!   (crash_flux = 0, marea 0), jamás un veto.
 //! - Identificabilidad: cada coordenada es medible desde el espectro vivo;
@@ -32,9 +32,10 @@ pub struct SpectralRegimeField {
     pub hurst_by_band: [f64; 3],
     /// Escala dominante viva (ms). 0 = espectro sin masa.
     pub dominant_tau_ms: f64,
-    /// Deriva de la escala dominante: velocidad de d(ln τ*)/dt normalizada a
-    /// por-hora, acotada a [-1,1]. Negativa = el campo ACELERA hacia escalas
-    /// rápidas (firma de ruptura); positiva = se ralentiza (consolidación).
+    /// Deriva de la escala dominante: velocidad de d(ln τ*)/dt en unidades de la
+    /// malla espectral (ln 4 = un nodo) por cadencia de referencia macro (60s),
+    /// acotada a [-1,1]. Negativa = el campo ACELERA hacia escalas rápidas
+    /// (firma de ruptura); positiva = se ralentiza (consolidación).
     pub dominant_drift: f64,
     /// Entropía de la masa espectral [0,1]: 1 = energía uniforme (sin régimen
     /// identificable), 0 = toda la energía en una escala (régimen nítido).
@@ -47,9 +48,14 @@ pub struct SpectralRegimeField {
     /// extrema en la banda micro (reversión violenta). No es una etiqueta:
     /// es la densidad de evidencia de caída del propio campo.
     pub crash_flux: f64,
+    /// Factor de modulación continuo derivado del régimen cuántico del Ising transverso [0.05, 2.0].
+    /// 1.0 = neutro / sin evidencia; >1.0 = coherencia ordenada (BTC); <1.0 = ruido paramagnético (ICP).
+    pub quantum_phase_factor: f64,
+    /// Acoplamiento transverso g estimado para el símbolo (def: 1.0).
+    pub quantum_coupling_g: f64,
 }
 
-/// Parámetros dinámicos desacoplados para la evaluación continua del Campo de Régimen Espectral (Ola Ω127).
+/// Parámetros dinámicos desacoplados para la evaluación continua del Campo de Régimen Espectral (Ola Ω127, Ω178).
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct SpectralRegimeParams {
     /// Peso de la componente de aceleración hacia escalas rápidas (ruptura).
@@ -62,10 +68,14 @@ pub struct SpectralRegimeParams {
     pub w_micro_anti: f64,
     /// Ventana mínima de regularización continua Hermite C^1 (ms) para la derivada de régimen.
     pub tau_min_drift_res_ms: f64,
+    /// Cadencia macro de referencia (ms) para normalizar la derivada espectral (def: 60_000 ms = 60s, CADENCIA_REGIMEN_MS).
+    pub cadence_regime_ms: f64,
     /// Escala de contracción de margen en condiciones adversas [0.0, 1.0].
     pub margin_contraction_scale: f64,
     /// Piso mínimo de margen para evitar la asfixia total de liquidez [0.01, 0.50].
     pub min_margin_floor: f64,
+    /// Peso de la modulación cuántica [0.0, 2.0] (def: 1.0).
+    pub w_quantum_coupling: f64,
 }
 
 impl Default for SpectralRegimeParams {
@@ -76,8 +86,10 @@ impl Default for SpectralRegimeParams {
             w_coherence_collapse: 0.20,
             w_micro_anti: 0.15,
             tau_min_drift_res_ms: 5_000.0,
+            cadence_regime_ms: 60_000.0,
             margin_contraction_scale: 0.95,
             min_margin_floor: 0.05,
+            w_quantum_coupling: 1.0,
         }
     }
 }
@@ -105,9 +117,17 @@ impl SpectralRegimeParams {
         if tau_res.is_finite() && tau_res > 0.0 {
             p.tau_min_drift_res_ms = tau_res;
         }
+        let cad = registry.get_value_or("regime_cadence_regime_ms", p.cadence_regime_ms);
+        if cad.is_finite() && cad > 0.0 {
+            p.cadence_regime_ms = cad;
+        }
         let floor = registry.get_value_or("regime_min_margin_floor", p.min_margin_floor);
         if floor.is_finite() && floor > 0.0 {
             p.min_margin_floor = floor.clamp(0.01, 0.50);
+        }
+        let w_q = registry.get_value_or("regime_w_quantum_coupling", p.w_quantum_coupling);
+        if w_q.is_finite() && w_q >= 0.0 {
+            p.w_quantum_coupling = w_q;
         }
         p
     }
@@ -146,13 +166,17 @@ impl SpectralRegimeField {
             dominant_tau_ms: field.resonant_tau_ms,
             dominant_drift: 0.0,
             mass_entropy: field.spectral_entropy,
-            carrier_tide: field.global_coherence,
+            // F1-077: Marea macro derivada de la coherencia canónica D-742 ("una sola verdad").
+            // Erradica discrepancia entre decisión de entrada (D-742, 1/vol) y carrier_tide (legacy persistencia).
+            carrier_tide: spec.spectral_coherence(true),
             crash_flux: 0.0,
+            quantum_phase_factor: 1.0,
+            quantum_coupling_g: 1.0,
         };
         if let (Some(prev_ln), Some(cur_ln)) = (prev_dominant_ln_tau, nonzero_ln(field.resonant_tau_ms))
         {
             if elapsed_ms > 0.0 && elapsed_ms.is_finite() {
-                // C-3 (R7-R2-C-3): Regularización continua C^1 para la derivada de régimen d ln(tau)/dt.
+                // C-3 (R7-R2-C-3) + F1-074 (Ola Ω178): Regularización continua C^1 para la derivada de régimen d ln(tau)/dt.
                 // Evita que un elapsed_ms infinitesimal (ej. 1 ms tras renovar el ancla) sature
                 // artificialmente a +/-1.0 por micro-ruido de ordering.
                 // Modulación de confianza suave con Hermite cúbico hasta la ventana mínima de
@@ -161,9 +185,17 @@ impl SpectralRegimeField {
                 let u_t = (elapsed_ms / tau_res).clamp(0.0, 1.0);
                 let w_t = u_t * u_t * (3.0 - 2.0 * u_t);
                 let eff_elapsed = elapsed_ms.max(tau_res);
-                let per_hour = (cur_ln - prev_ln) * 3_600_000.0 / eff_elapsed;
-                out.dominant_drift = if per_hour.is_finite() {
-                    per_hour.clamp(-1.0, 1.0) * w_t
+
+                // F1-074: Medir la velocidad de deriva d(ln tau*)/dt en unidades naturales de la malla
+                // espectral de base 4 (ln 4 = un nodo de salto espectral) y normalizada por la cadencia macro de
+                // referencia (CADENCIA_REGIMEN_MS = 60s), erradicando la extrapolación espuria "por hora" (3.6e6)
+                // que amplificaba el ruido x60..x720 y saturaba accel_fast a 0 ó 1 ante micro-jitter.
+                // Una migración estructural de 1 nodo espectral en 60s produce |drift| = 1.0.
+                const LN_GRID_NODE: f64 = 1.386_294_361_119_890_6; // ln(4) = 2 * ln(2)
+                let cadence_ms = params.cadence_regime_ms.max(1.0);
+                let drift_cadence = ((cur_ln - prev_ln) / LN_GRID_NODE) * (cadence_ms / eff_elapsed);
+                out.dominant_drift = if drift_cadence.is_finite() {
+                    drift_cadence.clamp(-1.0, 1.0) * w_t
                 } else {
                     0.0
                 };
@@ -290,6 +322,38 @@ impl SpectralRegimeField {
             self.short_margin_multiplier_with_params(params)
         }
     }
+
+    /// Modula el campo de régimen con el estado cuántico observado (Ola Omega220 — Átomo 3.3).
+    #[inline]
+    pub fn with_quantum_phase(&self, phase: &crate::quantum_phase::QuantumPhaseState) -> Self {
+        let mut out = *self;
+        out.quantum_phase_factor = phase.factor_cuantico;
+        out.quantum_coupling_g = phase.g;
+        out
+    }
+
+    /// Multiplicador de margen continuo simétrico integrando la modulación cuántica (Ola Omega220 — Átomo 3.3).
+    ///
+    /// Modula el margen clásico mediante el factor cuántico $f_{\text{cuantico}}$ derivado del modelo de Ising:
+    /// - En fase ordenada ($g < 1.0$, e.g. BTC): amplifica la capacidad de margen hasta 2.0x.
+    /// - En fase crítica ($g \approx 1.0$): aplica amortiguamiento Hermite para mitigar susceptibilidad divergente.
+    /// - En fase paramagnética ($g > 1.0$, e.g. ICP): contrae suavemente el margen según $1/g$.
+    pub fn effective_quantum_margin_multiplier(&self, is_long: bool, params: &SpectralRegimeParams) -> f64 {
+        let base_margin = self.margin_multiplier_with_params(is_long, params);
+        let q_factor = if self.quantum_phase_factor.is_finite() && self.quantum_phase_factor > 0.0 {
+            self.quantum_phase_factor
+        } else {
+            1.0
+        };
+        let w_q = if params.w_quantum_coupling.is_finite() && params.w_quantum_coupling >= 0.0 {
+            params.w_quantum_coupling
+        } else {
+            1.0
+        };
+        // Modulación convexa acotada: w_q modula la influencia cuántica sobre el margen base
+        let modulated = base_margin * (1.0 + w_q * (q_factor - 1.0));
+        modulated.clamp(params.min_margin_floor, 2.0)
+    }
 }
 
 /// Vista legada del campo (mapeo 1:1 con risk-engine::regime::MarketRegime).
@@ -329,6 +393,8 @@ mod tests {
             mass_entropy: 0.10,
             carrier_tide: -0.80,
             crash_flux: 0.0,
+            quantum_phase_factor: 1.0,
+            quantum_coupling_g: 1.0,
         };
         let mut g = f;
         g.crash_flux = (0.35f64 * 1.0 + 0.30 * 1.0 + 0.20 * 1.0 + 0.15 * 0.4).clamp(0.0, 1.0);
@@ -346,6 +412,8 @@ mod tests {
             mass_entropy: 0.5,
             carrier_tide: 0.9,
             crash_flux: 0.9,
+            quantum_phase_factor: 1.0,
+            quantum_coupling_g: 1.0,
         };
         assert_eq!(f.long_margin_multiplier(), 1.0);
     }
@@ -359,6 +427,8 @@ mod tests {
             mass_entropy: 0.10,
             carrier_tide: 0.80, // marea alcista intensa
             crash_flux: 0.85,
+            quantum_phase_factor: 1.0,
+            quantum_coupling_g: 1.0,
         };
         assert!(f.short_margin_multiplier() < 0.3);
         assert_eq!(f.long_margin_multiplier(), 1.0);
@@ -375,6 +445,8 @@ mod tests {
             mass_entropy: f64::NAN,
             carrier_tide: f64::NAN,
             crash_flux: f64::NAN,
+            quantum_phase_factor: f64::NAN,
+            quantum_coupling_g: f64::NAN,
         };
         assert_eq!(f.long_margin_multiplier(), 1.0);
         assert_eq!(f.short_margin_multiplier(), 1.0);
@@ -405,6 +477,73 @@ mod tests {
             f_60s.dominant_drift < -0.5,
             "a 60 s la derivada de migración rápida debe reflejarse plenamente: {}",
             f_60s.dominant_drift
+        );
+    }
+
+    /// F1-074: Δln = 0.05 a 30 s produce |drift| ≪ 1.0 (aprox 0.072), sin saturar accel_fast.
+    #[test]
+    fn test_f1_074_delta_ln_005_a_30s_da_drift_pequeno() {
+        let mut spec = crate::temporal_spectrum::TemporalSpectrum::new();
+        for t in 0..100u64 {
+            let p = 100.0 + 0.5 * ((t % 10) as f64);
+            spec.update(p, 1_000 + t * 1_000);
+        }
+        let cur_ln = spec.spectral_field(true).resonant_tau_ms.max(1e-6).ln();
+        let f_30s = SpectralRegimeField::from_spectrum(&spec, Some(cur_ln + 0.05), 30_000.0);
+        // Con cur_ln - prev_ln = -0.05 a 30s:
+        // drift_cadence = (-0.05 / ln(4)) * (60_000 / 30_000) = (-0.05 / 1.38629) * 2 ≈ -0.0721
+        assert!(
+            f_30s.dominant_drift.abs() < 0.15,
+            "fluctuación realista de 5% a 30s no debe saturar: drift = {}",
+            f_30s.dominant_drift
+        );
+        assert!(
+            f_30s.dominant_drift < 0.0,
+            "cur_ln < prev_ln debe dar deriva negativa (hacia rápido)"
+        );
+        // F1-074: accel_fast y su contribución a crash_flux no deben saltar bruscamente por micro-ruido:
+        let accel_fast = (-f_30s.dominant_drift).clamp(0.0, 1.0);
+        let accel_contrib = 0.35 * accel_fast;
+        assert!(
+            accel_contrib < 0.05,
+            "contribución de accel_fast a crash_flux debe ser < 0.05 (fue {}), erradicando el salto del 35%",
+            accel_contrib
+        );
+        // El incremento en crash_flux respecto a una ancla sin deriva (None) debe ser menor a 0.05:
+        let f_base = SpectralRegimeField::from_spectrum(&spec, None, 30_000.0);
+        let delta_flux = f_30s.crash_flux - f_base.crash_flux;
+        assert!(
+            delta_flux < 0.05,
+            "el incremento de crash_flux por fluctuación del 5% debe ser < 0.05: fue {}",
+            delta_flux
+        );
+    }
+
+    /// F1-074: Migración estructural de 1 nodo (Δln = ln 4) a 60 s produce |drift| ≈ 1.0.
+    #[test]
+    fn test_f1_074_delta_ln_ln4_a_60s_da_drift_unitario() {
+        let mut spec = crate::temporal_spectrum::TemporalSpectrum::new();
+        for t in 0..100u64 {
+            let p = 100.0 + 0.5 * ((t % 10) as f64);
+            spec.update(p, 1_000 + t * 1_000);
+        }
+        let cur_ln = spec.spectral_field(true).resonant_tau_ms.max(1e-6).ln();
+        const LN_4: f64 = 1.386_294_361_119_890_6;
+
+        // Hacia rápido (-ln 4)
+        let f_fast = SpectralRegimeField::from_spectrum(&spec, Some(cur_ln + LN_4), 60_000.0);
+        assert!(
+            (f_fast.dominant_drift - (-1.0)).abs() < 1e-4,
+            "salto de 1 nodo hacia rápido a 60s debe dar drift ≈ -1.0: {}",
+            f_fast.dominant_drift
+        );
+
+        // Hacia lento (+ln 4)
+        let f_slow = SpectralRegimeField::from_spectrum(&spec, Some(cur_ln - LN_4), 60_000.0);
+        assert!(
+            (f_slow.dominant_drift - 1.0).abs() < 1e-4,
+            "salto de 1 nodo hacia lento a 60s debe dar drift ≈ +1.0: {}",
+            f_slow.dominant_drift
         );
     }
 }

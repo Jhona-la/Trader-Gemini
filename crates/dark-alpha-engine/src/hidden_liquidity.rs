@@ -217,7 +217,13 @@ impl HiddenLiquidityEngine {
 
         let sum_abs = eff_ask_abs + eff_bid_abs;
         let net_pressure = if sum_abs > EPS {
-            ((eff_ask_abs - eff_bid_abs) / sum_abs).clamp(-1.0, 1.0)
+            let directional_diff = eff_ask_abs - eff_bid_abs;
+            // F1-041 (Ola Ω203): Evitar cancelación algebraica idéntica normalizando contra el
+            // umbral físico de absorción. Asegura que el volumen real negociado y la amortiguación física
+            // modulen monótonamente la magnitud en [-1.0, 1.0].
+            // Para volumen grande y precio quieto (iceberg genuino), satura a ±1.0.
+            // Para volumen pequeño (ruido de micro-trades), colapsa suavemente a 0.0 sin falsas alarmas.
+            (directional_diff / self.params.absorption_ratio_threshold.max(EPS)).tanh()
         } else {
             0.0
         };
@@ -227,6 +233,67 @@ impl HiddenLiquidityEngine {
 
         let band_scale = if is_active {
             // Con absorción activa, la volatilidad local está comprimida; la banda conformal se ajusta
+            self.params.conformal_shrink_factor
+        } else {
+            1.0
+        };
+
+        BlockAbsorptionState {
+            ask_absorption_ratio: eff_ask_abs,
+            bid_absorption_ratio: eff_bid_abs,
+            net_iceberg_pressure: net_pressure,
+            is_iceberg_active: is_active,
+            conformal_band_scale: band_scale,
+        }
+    }
+
+    /// Computa la absorción direccionada diferenciando volumen agresor comprador y vendedor (F1-041, Ola Ω203).
+    pub fn compute_absorption_directed(
+        &self,
+        taker_buy_volume: f64,
+        taker_sell_volume: f64,
+        bid_depth: f64,
+        ask_depth: f64,
+        delta_price: f64,
+        safe_atr: f64,
+    ) -> BlockAbsorptionState {
+        const EPS: f64 = 1e-8;
+
+        let total_vol = taker_buy_volume + taker_sell_volume;
+        if (!taker_buy_volume.is_finite() && !taker_sell_volume.is_finite())
+            || !bid_depth.is_finite()
+            || !ask_depth.is_finite()
+            || !delta_price.is_finite()
+            || !safe_atr.is_finite()
+            || total_vol < self.params.min_trade_volume
+            || safe_atr <= EPS
+        {
+            return BlockAbsorptionState {
+                ask_absorption_ratio: 0.0,
+                bid_absorption_ratio: 0.0,
+                net_iceberg_pressure: 0.0,
+                is_iceberg_active: false,
+                conformal_band_scale: 1.0,
+            };
+        }
+
+        let abs_dp = delta_price.abs();
+        let displacement_ratio = (self.params.price_displacement_decay * abs_dp) / (safe_atr + EPS);
+        let dampening = (-displacement_ratio).exp();
+
+        let ask_depth_safe = ask_depth.max(EPS);
+        let bid_depth_safe = bid_depth.max(EPS);
+
+        let eff_ask_abs = (taker_buy_volume.max(0.0) / ask_depth_safe) * dampening;
+        let eff_bid_abs = (taker_sell_volume.max(0.0) / bid_depth_safe) * dampening;
+
+        let directional_diff = eff_ask_abs - eff_bid_abs;
+        let net_pressure = (directional_diff / self.params.absorption_ratio_threshold.max(EPS)).tanh();
+
+        let is_active = eff_ask_abs >= self.params.absorption_ratio_threshold
+            || eff_bid_abs >= self.params.absorption_ratio_threshold;
+
+        let band_scale = if is_active {
             self.params.conformal_shrink_factor
         } else {
             1.0

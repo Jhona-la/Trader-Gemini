@@ -5,6 +5,104 @@ use signal_engine::orchestrator::TensorDecision;
 use signal_engine::SignalType;
 use std::sync::Arc;
 
+/// Métricas de posición en cola FIFO y selección adversa (Fase 3, Ola Ω210)
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct FifoQueueMetrics {
+    /// Profundidad nocional estimada por delante en la cola al mismo precio nivel L2 [USD]
+    pub queue_ahead_usd: f64,
+    /// Probabilidad de llenado pasivo sin selección adversa (P_clean_fill ∈ [0.0, 1.0])
+    pub clean_fill_probability: f64,
+    /// Costo esperado de selección adversa (deslizamiento post-fill por toxicidad de flujo agresor) [bps]
+    pub adverse_selection_bps: f64,
+    /// Fricción combinada total (comisión maker/taker + funding + medio spread + selección adversa) [fracción]
+    pub total_friction: f64,
+    /// Ganancia bruta esperada de la señal [fracción]
+    pub gross_expected_edge: f64,
+    /// Esperanza matemática neta: EV_gross - total_friction
+    pub net_expected_edge: f64,
+    /// Ratio de viabilidad matemática: EV_gross / total_friction (debe ser >= 3.0)
+    pub viability_ratio: f64,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum OrderViability {
+    /// Viable: EV_gross >= 3.0 * total_friction
+    Viable,
+    /// No viable: la fricción de comisiones, funding y selección adversa supera el tercio del edge
+    InsufficientEdge,
+}
+
+pub struct AdverseSelectionGuard;
+
+impl AdverseSelectionGuard {
+    /// Evalúa la posición en cola FIFO y el costo de selección adversa para una orden.
+    ///
+    /// Condición estricta de viabilidad financiera (Axioma de Viabilidad):
+    ///   E[ΔW_bruto] >= 3.0 * (fees + funding + spread + adverse_selection)
+    pub fn evaluate_viability(
+        expected_edge_fraction: f64,
+        spread_pct: f64,
+        expected_volatility: f64,
+        confidence: f64,
+        maker_fee_pct: f64,
+        funding_rate_pct: f64,
+        queue_depth_ahead_usd: f64,
+        passive_depth_level_usd: f64,
+    ) -> (OrderViability, FifoQueueMetrics) {
+        let safe_spread = if spread_pct.is_finite() && spread_pct >= 0.0 { spread_pct } else { 0.0002 };
+        let safe_vol = if expected_volatility.is_finite() && expected_volatility >= 0.0 { expected_volatility } else { 0.001 };
+        let safe_conf = if confidence.is_finite() { confidence.clamp(0.0, 1.0) } else { 0.5 };
+        let safe_maker_fee = if maker_fee_pct.is_finite() && maker_fee_pct >= 0.0 { maker_fee_pct } else { 0.0002 }; // 2 bps default
+        let safe_funding = if funding_rate_pct.is_finite() { funding_rate_pct.abs() } else { 0.0001 }; // 1 bp default
+
+        // 1. Toxicidad del flujo y probabilidad de llenado limpio (Glosten-Milgrom / VPIN proxy)
+        let vpin_proxy = ((safe_vol * 10.0) / (safe_conf + 0.1)).clamp(0.05, 0.95);
+        let q_ahead = if queue_depth_ahead_usd.is_finite() && queue_depth_ahead_usd >= 0.0 { queue_depth_ahead_usd } else { 1000.0 };
+        let p_level = if passive_depth_level_usd.is_finite() && passive_depth_level_usd > 0.0 { passive_depth_level_usd } else { 5000.0 };
+        let queue_ratio = (q_ahead / p_level).clamp(0.1, 10.0);
+
+        let clean_fill_prob = (1.0 / (1.0 + vpin_proxy * queue_ratio)).clamp(0.01, 0.99);
+
+        // 2. Costo de selección adversa: penetración del nivel por flujo agresor tóxico
+        let adverse_cost_fraction = safe_vol * (1.0 - clean_fill_prob) * 0.5;
+        let adverse_selection_bps = adverse_cost_fraction * 10_000.0;
+
+        // 3. Fricciones combinadas totales
+        let half_spread = safe_spread * 0.5;
+        let total_friction = (safe_maker_fee + safe_funding + half_spread + adverse_cost_fraction).max(1e-6);
+
+        // 4. Edge bruto esperado
+        let gross_edge = if expected_edge_fraction.is_finite() && expected_edge_fraction > 0.0 {
+            expected_edge_fraction
+        } else {
+            safe_conf * safe_vol * 1.5
+        };
+
+        let net_edge = gross_edge - total_friction;
+        let viability_ratio = gross_edge / total_friction;
+
+        // Viabilidad estricta: EV_gross >= 3.0 * total_friction
+        let status = if viability_ratio >= 3.0 && net_edge > 0.0 {
+            OrderViability::Viable
+        } else {
+            OrderViability::InsufficientEdge
+        };
+
+        (
+            status,
+            FifoQueueMetrics {
+                queue_ahead_usd: q_ahead,
+                clean_fill_probability: clean_fill_prob,
+                adverse_selection_bps,
+                total_friction,
+                gross_expected_edge: gross_edge,
+                net_expected_edge: net_edge,
+                viability_ratio,
+            },
+        )
+    }
+}
+
 pub struct QuantumOrderRouter {
     executor: Arc<ArcSwap<OrderExecutor>>,
 }
@@ -145,7 +243,62 @@ impl QuantumOrderRouter {
                 .await;
         }
 
-        // 3. Fallback a Market estándar pero filtrado por nuestro Risk Engine (execute_raw_qty)
+        // 3. Verificación de Viabilidad Financiera y Selección Adversa (Axioma: E[ΔW] >= 3x fricciones)
+        let (live_maker_fee, live_funding_cost) = {
+            let exec = self.executor.load();
+            match exec.arena.load_full() {
+                Some(arena) => {
+                    let coin_id_opt = quantum_arena::symbols::get_coin_id(symbol);
+                    let maker = coin_id_opt
+                        .and_then(|id| arena.config.fee_rates_for(id))
+                        .map(|(m, _t)| m)
+                        .unwrap_or(0.0002);
+                    let now_ms = std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .unwrap_or_default()
+                        .as_millis() as u64;
+                    let tau_ms = if decision.expected_lifetime_ms > 0 {
+                        decision.expected_lifetime_ms as f64
+                    } else {
+                        quantum_arena::temporal_spectrum::TAU_ANCHOR_FAST_MS
+                    };
+                    let funding = coin_id_opt
+                        .and_then(|id| arena.coins.get(id))
+                        .map(|coin| coin.expected_funding_cost(is_long, tau_ms, now_ms))
+                        .unwrap_or(0.0001);
+                    (maker, funding)
+                }
+                None => (0.0002, 0.0001),
+            }
+        };
+
+        let (viability, metrics) = AdverseSelectionGuard::evaluate_viability(
+            decision.net_confidence * decision.expected_volatility * 2.0,
+            spread_pct,
+            decision.expected_volatility,
+            decision.net_confidence,
+            live_maker_fee,
+            live_funding_cost,
+            quantity * current_price * 0.5,
+            quantity * current_price * 2.0,
+        );
+
+        if viability == OrderViability::InsufficientEdge {
+            println!(
+                "⚠️ [QUANTUM ROUTER] Rejection: Edge insuficiente para vencer fricciones y selección adversa. Viability: {:.2}x (< 3.0x), Friction: {:.2} bps (ID: {}).",
+                metrics.viability_ratio,
+                metrics.total_friction * 10_000.0,
+                client_order_id
+            );
+            return Err(format!(
+                "REJ_INSUFFICIENT_VIABILITY: EV_gross ({:.2} bps) < 3x friction ({:.2} bps). Viability ratio: {:.2}",
+                metrics.gross_expected_edge * 10_000.0,
+                metrics.total_friction * 10_000.0,
+                metrics.viability_ratio
+            ));
+        }
+
+        // 4. Fallback a Market estándar pero filtrado por nuestro Risk Engine (execute_raw_qty)
         // Ya que la orden viene validada y la latencia es baja.
         println!("🌊 [QUANTUM ROUTER] Optimal Conditions. Routing to Standard Market Execution (ID: {}).", client_order_id);
         // FIX #630: Preservar trazabilidad pasando client_order_id a la ejecución Market
@@ -325,5 +478,38 @@ mod tests {
             )
             .await;
         assert!(res_neg_qty.is_err());
+    }
+
+    #[test]
+    fn test_adverse_selection_guard_viability_and_queue_modeling() {
+        // Caso 1: Alto edge, baja fricción -> Viable
+        let (status, metrics) = AdverseSelectionGuard::evaluate_viability(
+            0.015,  // 150 bps edge
+            0.0001, // 1 bp spread
+            0.002,  // 20 bps vol
+            0.90,   // 90% conf
+            0.0002, // 2 bps fee
+            0.0001, // 1 bp funding
+            500.0,
+            10000.0,
+        );
+        assert_eq!(status, OrderViability::Viable);
+        assert!(metrics.viability_ratio >= 3.0);
+        assert!(metrics.net_expected_edge > 0.0);
+        assert!(metrics.clean_fill_probability > 0.50);
+
+        // Caso 2: Micro-edge devorado por fees y toxicidad -> InsufficientEdge
+        let (status_insuf, metrics_insuf) = AdverseSelectionGuard::evaluate_viability(
+            0.0003, // 3 bps edge bruto
+            0.0005, // 5 bps spread (2.5 bps half spread)
+            0.010,  // 100 bps vol
+            0.30,   // 30% conf
+            0.0004, // 4 bps fee
+            0.0002, // 2 bps funding
+            20000.0,
+            1000.0,
+        );
+        assert_eq!(status_insuf, OrderViability::InsufficientEdge);
+        assert!(metrics_insuf.viability_ratio < 3.0);
     }
 }

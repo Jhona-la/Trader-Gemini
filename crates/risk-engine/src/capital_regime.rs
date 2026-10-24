@@ -188,10 +188,13 @@ pub const DEFAULT_MICRO_MAX_FEE_PCT: f64 = 0.035;
 /// se retorna el límite canónico por defecto `DEFAULT_MICRO_MAX_FEE_PCT` (0.035 = 3.5%).
 #[inline]
 pub fn resolve_micro_max_fee_pct(arena: &quantum_arena::GlobalArena, coin_id: usize) -> f64 {
+    if arena.registry.is_empty() {
+        return DEFAULT_MICRO_MAX_FEE_PCT;
+    }
     let custom = arena.registry.get_for_coin_or(
         coin_id,
         "micro_max_fee_pct",
-        arena.registry.get_value_or("micro_max_fee_pct", DEFAULT_MICRO_MAX_FEE_PCT),
+        DEFAULT_MICRO_MAX_FEE_PCT,
     );
     if custom.is_finite() && custom > 0.0 {
         custom
@@ -291,16 +294,24 @@ pub fn resolve_margin_cap_limits(
     current_cap: f64,
     micro_w_alloc: f64,
 ) -> f64 {
-    let micro_ratio = arena.registry.get_for_coin_or(
-        coin_id,
-        "micro_margin_cap_ratio",
-        arena.registry.get_value_or("micro_margin_cap_ratio", DEFAULT_MICRO_MARGIN_CAP_RATIO),
-    );
-    let std_ratio = arena.registry.get_for_coin_or(
-        coin_id,
-        "standard_margin_cap_ratio",
-        arena.registry.get_value_or("standard_margin_cap_ratio", DEFAULT_STANDARD_MARGIN_CAP_RATIO),
-    );
+    let (micro_ratio, std_ratio) = if arena.registry.is_empty() {
+        (
+            DEFAULT_MICRO_MARGIN_CAP_RATIO,
+            DEFAULT_STANDARD_MARGIN_CAP_RATIO,
+        )
+    } else {
+        let m = arena.registry.get_for_coin_or(
+            coin_id,
+            "micro_margin_cap_ratio",
+            DEFAULT_MICRO_MARGIN_CAP_RATIO,
+        );
+        let s = arena.registry.get_for_coin_or(
+            coin_id,
+            "standard_margin_cap_ratio",
+            DEFAULT_STANDARD_MARGIN_CAP_RATIO,
+        );
+        (m, s)
+    };
 
     compute_safe_margin_limit(
         allocated_capital,

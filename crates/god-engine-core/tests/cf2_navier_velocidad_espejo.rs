@@ -1,4 +1,4 @@
-//! C-F2.6 (Línea C): simetría espejo (G-TEO §30.1.3) del voto escalar vivo de
+﻿//! C-F2.6 (Línea C): simetría espejo (G-TEO §30.1.3) del voto escalar vivo de
 //! `NavierStokesManifoldEngine` y del signo de `price_velocity`.
 //!
 //! Teoría: un mercado espejado debe producir el voto opuesto. En la rama
@@ -59,7 +59,6 @@ fn tramo(sym: &str, sube: bool) -> (f64, f64) {
     let arena = GlobalArena::build_in_own_stack(100.0);
     let mut core = GodEngineCore::new(arena.clone());
     core.swing_nn = None;
-    core.scalp_forest = None;
     for i in 0..50u64 {
         let (bid, ask) = libro(i, sube);
         let _ = core.process_tick_dual(

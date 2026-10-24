@@ -34,12 +34,19 @@ pub struct RemotePosition {
 pub trait AccountSink: Send + Sync {
     fn on_capital(&self, usdt_total_equity: f64);
     fn on_positions(&self, positions: &[RemotePosition]);
+    /// F412/F413/F271 (Sol, censo C-F7b §3): cierre confirmado por el
+    /// exchange, con PnL bruto y comisiones reales del fill. Es la fuente
+    /// INDEPENDIENTE del Auditor Interno: a diferencia del cierre interno
+    /// del núcleo (mismo bloque, mismo predicado), este registro nace del
+    /// user-data stream con dedupe por trade_id en el OrderRegistry.
+    fn on_bracket_close(&self, close: &crate::trade_accounting::BracketClose);
 }
 
 struct NoopSink;
 impl AccountSink for NoopSink {
     fn on_capital(&self, _usdt: f64) {}
     fn on_positions(&self, _p: &[RemotePosition]) {}
+    fn on_bracket_close(&self, _c: &crate::trade_accounting::BracketClose) {}
 }
 
 use std::collections::HashMap;
@@ -574,27 +581,32 @@ impl UserDataStreamer {
             } else {
                 0.0
             };
-            let fees = update.commission.abs()
+            let fees = update.commission
                 + if entry_qty > 0.0 {
                     entry_fee * (qty / entry_qty)
                 } else {
                     0.0
                 };
-            crate::trade_accounting::record_bracket_close(
-                crate::trade_accounting::BracketClose {
-                    ts_ms: update.trade_time_ms,
-                    symbol: update.symbol.clone(),
-                    was_long,
-                    qty,
-                    entry_price,
-                    exit_price: update.last_filled_price,
-                    stop_price: o.stop_price,
-                    pnl_gross,
-                    fees,
-                    trigger,
-                    slippage_bps,
-                },
-            );
+            let cierre = crate::trade_accounting::BracketClose {
+                ts_ms: update.trade_time_ms,
+                symbol: update.symbol.clone(),
+                was_long,
+                qty,
+                entry_price,
+                exit_price: update.last_filled_price,
+                stop_price: o.stop_price,
+                pnl_gross,
+                fees,
+                trigger,
+                slippage_bps,
+            };
+            crate::trade_accounting::record_bracket_close(cierre.clone());
+            // F412/F413/F271 (Sol, censo C-F7b §3): el cierre confirmado por
+            // el exchange alimenta el canal independiente del Auditor
+            // Interno vía el sink del host. Se notifica DESPUÉS del diario
+            // (mismo evento, una sola vez por trade_id gracias al dedupe
+            // del registry en apply_trade_update).
+            self.sink.on_bracket_close(&cierre);
         } else if update.last_filled_qty > 0.0
             && (update.client_order_id.starts_with("cL_")
                 || update.client_order_id.starts_with("cS_")
@@ -612,7 +624,7 @@ impl UserDataStreamer {
                 update.last_filled_qty,
                 update.last_filled_price,
                 o.is_maker,
-                update.commission.abs(),
+                update.commission,
             );
         }
 
@@ -726,8 +738,8 @@ impl UserDataStreamer {
             #[serde(rename = "a")]
             asset: String,
             #[serde(rename = "wb")]
-            #[serde(deserialize_with = "crate::order_types::string_or_f64", default)]
-            wallet_balance: f64,
+            #[serde(deserialize_with = "crate::order_types::string_or_f64_opt", default)]
+            wallet_balance: Option<f64>,
         }
         #[derive(Deserialize)]
         struct Position {
@@ -794,13 +806,17 @@ impl UserDataStreamer {
         };
 
         for b in &ev.a.balances {
-            if b.asset == "USDT" && b.wallet_balance > 0.0 && b.wallet_balance.is_finite() {
-                let total_equity = if (b.wallet_balance + total_unrealized_pnl).is_finite() {
-                    (b.wallet_balance + total_unrealized_pnl).max(0.0)
-                } else {
-                    b.wallet_balance
-                };
-                self.sink.on_capital(total_equity);
+            if b.asset == "USDT" {
+                if let Some(wb) = b.wallet_balance {
+                    if wb >= 0.0 && wb.is_finite() {
+                        let total_equity = if (wb + total_unrealized_pnl).is_finite() {
+                            (wb + total_unrealized_pnl).max(0.0)
+                        } else {
+                            wb
+                        };
+                        self.sink.on_capital(total_equity);
+                    }
+                }
             }
         }
 
@@ -901,6 +917,7 @@ mod tests {
                     .store((usdt * 100.0) as u64, std::sync::atomic::Ordering::Relaxed);
             }
             fn on_positions(&self, _p: &[RemotePosition]) {}
+            fn on_bracket_close(&self, _c: &crate::trade_accounting::BracketClose) {}
         }
         let sink = Arc::new(Cap(AtomicU64::new(0)));
         let streamer = UserDataStreamer::new(
@@ -910,6 +927,61 @@ mod tests {
         .with_sink(sink.clone());
         streamer.dispatch(raw.as_bytes());
         assert_eq!(sink.0.load(std::sync::atomic::Ordering::Relaxed), 10675);
+    }
+
+    #[test]
+    fn account_update_with_zero_balance_routes_to_sink_and_does_not_invent_missing_field() {
+        use std::sync::atomic::{AtomicBool, AtomicU64};
+
+        struct CapTrack {
+            called: AtomicBool,
+            val_bits: AtomicU64,
+        }
+        impl AccountSink for CapTrack {
+            fn on_capital(&self, usdt: f64) {
+                self.called.store(true, std::sync::atomic::Ordering::Relaxed);
+                self.val_bits
+                    .store(usdt.to_bits(), std::sync::atomic::Ordering::Relaxed);
+            }
+            fn on_positions(&self, _p: &[RemotePosition]) {}
+            fn on_bracket_close(&self, _c: &crate::trade_accounting::BracketClose) {}
+        }
+
+        // 1. Cero observado explícito: "wb": "0.0" debe emitir on_capital(0.0)
+        let sink_zero = Arc::new(CapTrack {
+            called: AtomicBool::new(false),
+            val_bits: AtomicU64::new(f64::NAN.to_bits()),
+        });
+        let streamer_zero = UserDataStreamer::new(
+            BinanceClient::new("k".into(), true),
+            Arc::new(OrderRegistry::new()),
+        )
+        .with_sink(sink_zero.clone());
+        let raw_zero = r#"{"e":"ACCOUNT_UPDATE","a":{"B":[{"a":"USDT","wb":"0.0"}],"P":[]}}"#;
+        streamer_zero.dispatch(raw_zero.as_bytes());
+        assert!(
+            sink_zero.called.load(std::sync::atomic::Ordering::Relaxed),
+            "on_capital DEBE llamarse cuando Binance reporta wb=0.0"
+        );
+        let val_zero = f64::from_bits(sink_zero.val_bits.load(std::sync::atomic::Ordering::Relaxed));
+        assert_eq!(val_zero, 0.0);
+
+        // 2. Campo "wb" ausente: NO debe inventar un 0.0 silencioso ni emitir on_capital
+        let sink_missing = Arc::new(CapTrack {
+            called: AtomicBool::new(false),
+            val_bits: AtomicU64::new(f64::NAN.to_bits()),
+        });
+        let streamer_missing = UserDataStreamer::new(
+            BinanceClient::new("k".into(), true),
+            Arc::new(OrderRegistry::new()),
+        )
+        .with_sink(sink_missing.clone());
+        let raw_missing = r#"{"e":"ACCOUNT_UPDATE","a":{"B":[{"a":"USDT"}],"P":[]}}"#;
+        streamer_missing.dispatch(raw_missing.as_bytes());
+        assert!(
+            !sink_missing.called.load(std::sync::atomic::Ordering::Relaxed),
+            "on_capital NO debe llamarse si el campo 'wb' está ausente (sin fabricación de cero)"
+        );
     }
 
     #[test]
@@ -1048,5 +1120,71 @@ mod tests {
             .expect("la pierna convertida a MARKET debe encolar BracketClose vía clientOrderId");
         assert_eq!(hit.trigger, "TP");
         assert!(!hit.was_long, "BUY cierra SHORT");
+    }
+
+    /// F412/F413/F271 (Sol, censo C-F7b §3): el cierre confirmado por el
+    /// exchange se notifica al sink del host — fuente independiente del
+    /// Auditor Interno (canal host → core).
+    #[test]
+    fn test_bracket_close_routes_to_sink() {
+        let _guard = crate::trade_accounting::TEST_QUEUE_LOCK.lock();
+        use std::sync::Mutex;
+        struct Captura(Mutex<Vec<crate::trade_accounting::BracketClose>>);
+        impl AccountSink for Captura {
+            fn on_capital(&self, _u: f64) {}
+            fn on_positions(&self, _p: &[RemotePosition]) {}
+            fn on_bracket_close(&self, c: &crate::trade_accounting::BracketClose) {
+                self.0.lock().unwrap_or_else(|e| e.into_inner()).push(c.clone());
+            }
+        }
+        let sink = Arc::new(Captura(Mutex::new(Vec::new())));
+        let registry = Arc::new(OrderRegistry::new());
+        let streamer =
+            UserDataStreamer::new(BinanceClient::new("key".into(), true), registry)
+                .with_sink(sink.clone());
+        let ev = r#"{"e":"ORDER_TRADE_UPDATE","E":1789544472795,"o":{"s":"BTCUSDT","c":"wdTP_1789544472_0","S":"SELL","ps":"LONG","o":"TAKE_PROFIT_MARKET","f":"GTC","q":"0.5","p":"0","ap":"61000","sp":"60000","X":"FILLED","i":99,"l":"0.5","z":"0.5","L":"61000","n":"0.02","N":"USDT","T":1789544472795,"t":42,"m":false}}"#;
+        streamer.dispatch(ev.as_bytes());
+        let capturados = sink.0.lock().unwrap_or_else(|e| e.into_inner());
+        assert_eq!(capturados.len(), 1, "el cierre por bracket debe notificarse al sink una vez");
+        let c = &capturados[0];
+        assert_eq!(c.symbol, "BTCUSDT");
+        assert!(c.was_long, "SELL cierra LONG");
+        assert!((c.exit_price - 61000.0).abs() < 1e-9, "precio de salida del fill");
+        assert!((c.fees - 0.02).abs() < 1e-9, "comisión real del fill");
+        assert_eq!(c.trigger, "TP");
+    }
+
+    #[test]
+    fn qra_private_fill_preserves_zero_and_rebate_in_registry_and_sink() {
+        let _guard = crate::trade_accounting::TEST_QUEUE_LOCK.lock();
+        struct Capture(std::sync::Mutex<Vec<crate::trade_accounting::BracketClose>>);
+        impl AccountSink for Capture {
+            fn on_capital(&self, _: f64) {}
+            fn on_positions(&self, _: &[RemotePosition]) {}
+            fn on_bracket_close(&self, close: &crate::trade_accounting::BracketClose) {
+                self.0.lock().unwrap_or_else(|e| e.into_inner()).push(close.clone());
+            }
+        }
+        for commission in [0.0, -0.02, 0.02] {
+            let sink = Arc::new(Capture(std::sync::Mutex::new(Vec::new())));
+            let registry = Arc::new(OrderRegistry::new());
+            let streamer = UserDataStreamer::new(
+                BinanceClient::new("offline-contract".into(), true), registry.clone(),
+            ).with_sink(sink.clone());
+            let event = serde_json::json!({
+                "e":"ORDER_TRADE_UPDATE", "E":1789544472795_u64,
+                "o":{"s":"QRAREBATEUSDT","c":"qra_signed_TP","S":"SELL","ps":"LONG",
+                    "o":"TAKE_PROFIT_MARKET","f":"GTC","q":"0.5","p":"0","ap":"100",
+                    "sp":"100","X":"FILLED","i":99,"l":"0.5","z":"0.5","L":"100",
+                    "n":commission.to_string(),"N":"USDT","T":1789544472795_u64,"t":42,"m":true}
+            });
+            streamer.dispatch(event.to_string().as_bytes());
+            let order = registry.get("qra_signed_TP").expect("private event enters registry");
+            assert_eq!(order.total_commission, commission);
+            let closes = sink.0.lock().unwrap_or_else(|e| e.into_inner());
+            assert_eq!(closes.len(), 1);
+            assert_eq!(closes[0].fees, commission);
+            assert!(closes[0].fees.is_finite());
+        }
     }
 }

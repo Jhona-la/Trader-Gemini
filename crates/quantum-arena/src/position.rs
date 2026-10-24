@@ -49,6 +49,10 @@ pub struct Position {
     /// retorno neto realizado) — SIN snapshot de entrada el label sería
     /// fuga (features post-hoc prediciendo su propio pasado).
     pub nn_entry_tensor: std::sync::Mutex<Vec<f64>>,
+    /// F1-004: Vector causal de 6 rasgos [obi, accel, spread_bps, atr_pct, hurst, velocity]
+    /// fotografiado en la APERTURA de la posición. Erradica la fuga temporal post-hoc
+    /// donde el Shadow Forest se entrenaba con rasgos leídos después del cierre.
+    pub entry_shadow_features: std::sync::Mutex<Option<[f64; 6]>>,
     pub confidence: AtomicF64,
     pub entry_fee: AtomicF64,
     /// REHAB-1b: τ DOMINANTE del espectro temporal en el instante de la
@@ -104,6 +108,7 @@ impl Default for Position {
             sl_price: AtomicF64::new(0.0),
             ml_prediction: AtomicF64::new(0.0),
             nn_entry_tensor: std::sync::Mutex::new(Vec::new()),
+            entry_shadow_features: std::sync::Mutex::new(None),
             confidence: AtomicF64::new(0.0),
             entry_fee: AtomicF64::new(0.0),
             entry_tau_ms: AtomicU64::new(0),
@@ -264,7 +269,7 @@ impl Position {
         } else {
             0.5
         };
-        let safe_fee = if entry_fee.is_finite() && entry_fee >= 0.0 {
+        let safe_fee = if entry_fee.is_finite() {
             entry_fee
         } else {
             0.0
@@ -312,6 +317,10 @@ impl Position {
         // R7-R4-C-1: toda apertura nueva limpia cualquier bandera de cierre previo
         // para que una ranura reutilizada no retenga last_close_confirmed añejo.
         self.last_close_confirmed.store(false, Ordering::Relaxed);
+        // F1-004: Limpiar rasgos del Shadow Forest de la posición saliente
+        if let Ok(mut g) = self.entry_shadow_features.lock() {
+            *g = None;
+        }
         // Publicar la posición completa: todo store previo es visible para
         // cualquier lector que observe is_open con Acquire.
         self.is_open.store(true, Ordering::Release);
@@ -364,6 +373,27 @@ impl Position {
             "encoding de horizonte fuera del modo continuo"
         );
         PositionHorizon::Continuous
+    }
+
+    /// F1-004: Asigna los rasgos pre-entrada [obi, accel, spread_bps, atr_pct, hurst, velocity]
+    /// fotografiados en la apertura para el aprendizaje causal del Shadow Forest.
+    #[inline]
+    pub fn set_entry_shadow_features(&self, feats: [f64; 6]) {
+        if let Ok(mut guard) = self.entry_shadow_features.lock() {
+            *guard = Some(feats);
+        }
+    }
+
+    /// F1-004: Extrae los rasgos causales de entrada consumiéndolos al cierre de la posición.
+    #[inline]
+    pub fn take_entry_shadow_features(&self) -> Option<[f64; 6]> {
+        self.entry_shadow_features.lock().ok().and_then(|mut g| g.take())
+    }
+
+    /// F1-004: Lectura no destructiva de los rasgos de entrada.
+    #[inline]
+    pub fn get_entry_shadow_features(&self) -> Option<[f64; 6]> {
+        self.entry_shadow_features.lock().ok().and_then(|g| *g)
     }
 
     pub fn close(&self) -> (bool, f64, f64, f64) {

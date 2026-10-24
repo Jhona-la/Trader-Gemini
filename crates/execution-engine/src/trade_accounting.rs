@@ -68,8 +68,8 @@ pub struct BracketClose {
     pub slippage_bps: f64,
 }
 
-static PENDING: LazyLock<Mutex<Vec<BracketClose>>> =
-    LazyLock::new(|| Mutex::new(Vec::new()));
+static PENDING_QUEUE: LazyLock<crossbeam_queue::ArrayQueue<BracketClose>> =
+    LazyLock::new(|| crossbeam_queue::ArrayQueue::new(1024));
 
 /// D-701 (DÉCIMA OLA · auditoría integral) — PnL BRUTO DE UN CIERRE, FUENTE ÚNICA.
 ///
@@ -304,23 +304,20 @@ pub fn record_bracket_close(rec: BracketClose) {
         }
     };
     journal_append(line);
-    if let Ok(mut q) = PENDING.lock() {
-        if q.len() < 1024 {
-            q.push(rec);
-        } else {
-            // D-710 (DÉCIMA OLA · auditoría integral): el descarte era SILENCIOSO.
-            // Cada cierre perdido es una operación que no alimenta el posterior
-            // de Kelly ni el win-rate, y la muestra queda censurada sin que nadie
-            // pueda saberlo — justo el defecto que esta contabilidad existe para
-            // cerrar. Se cuenta y se informa.
-            let n = DESCARTADOS.fetch_add(1, std::sync::atomic::Ordering::Relaxed) + 1;
-            if n == 1 || n % 50 == 0 {
-                println!(
-                    "🚨 [CONTABILIDAD] Cola de cierres llena (1024): {} cierres DESCARTADOS — la estadística de Kelly y el win-rate quedan censurados hasta que se drene",
-                    n
-                );
-            }
+    if let Err(rec) = PENDING_QUEUE.push(rec) {
+        // D-710 (DÉCIMA OLA · auditoría integral): el descarte era SILENCIOSO.
+        // Cada cierre perdido es una operación que no alimenta el posterior
+        // de Kelly ni el win-rate, y la muestra queda censurada sin que nadie
+        // pueda saberlo — justo el defecto que esta contabilidad existe para
+        // cerrar. Se cuenta y se informa.
+        let n = DESCARTADOS.fetch_add(1, std::sync::atomic::Ordering::Relaxed) + 1;
+        if n == 1 || n % 50 == 0 {
+            println!(
+                "🚨 [CONTABILIDAD] Cola de cierres llena (1024): {} cierres DESCARTADOS — la estadística de Kelly y el win-rate quedan censurados hasta que se drene",
+                n
+            );
         }
+        let _ = rec;
     }
 }
 
@@ -336,12 +333,30 @@ pub fn cierres_descartados() -> u64 {
     DESCARTADOS.load(std::sync::atomic::Ordering::Relaxed)
 }
 
-/// Drena la cola de cierres pendientes (el host la consume cada tick).
+/// F1-065 (Ola Ω172): Comprueba en nanosegundos (O(1) atómico lock-free) si existen cierres pendientes.
+#[inline(always)]
+pub fn has_pending_bracket_closes() -> bool {
+    !PENDING_QUEUE.is_empty()
+}
+
+/// Drena la cola de cierres pendientes de forma lock-free (el host la consume cada tick).
 pub fn drain_bracket_closes() -> Vec<BracketClose> {
-    PENDING
-        .lock()
-        .map(|mut q| std::mem::take(&mut *q))
-        .unwrap_or_default()
+    if PENDING_QUEUE.is_empty() {
+        return Vec::new();
+    }
+    let mut batch = Vec::with_capacity(PENDING_QUEUE.len());
+    while let Some(bc) = PENDING_QUEUE.pop() {
+        batch.push(bc);
+    }
+    batch
+}
+
+/// Drena la cola directamente en un buffer reutilizable preasignado para cero asignaciones.
+#[inline]
+pub fn drain_bracket_closes_into(target: &mut Vec<BracketClose>) {
+    while let Some(bc) = PENDING_QUEUE.pop() {
+        target.push(bc);
+    }
 }
 
 /// B3.10 — FILL DE ENTRADA al diario (evidencia, sin cola): con el flag

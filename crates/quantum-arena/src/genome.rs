@@ -75,6 +75,64 @@ fn default_obi_curve() -> crate::temporal_spectrum::HorizonCurve {
     )
 }
 
+/// Error tipado de reconstrucción y validación dimensional/numérica del genotipo (F1-113).
+#[derive(Debug, Clone)]
+pub enum GenomeError {
+    DimensionMismatch { expected: usize, actual: usize },
+    NonFiniteGene { index: usize, value: f64 },
+}
+
+impl PartialEq for GenomeError {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (
+                Self::DimensionMismatch {
+                    expected: e1,
+                    actual: a1,
+                },
+                Self::DimensionMismatch {
+                    expected: e2,
+                    actual: a2,
+                },
+            ) => e1 == e2 && a1 == a2,
+            (
+                Self::NonFiniteGene {
+                    index: i1,
+                    value: v1,
+                },
+                Self::NonFiniteGene {
+                    index: i2,
+                    value: v2,
+                },
+            ) => i1 == i2 && (v1 == v2 || (v1.is_nan() && v2.is_nan())),
+            _ => false,
+        }
+    }
+}
+
+impl std::fmt::Display for GenomeError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::DimensionMismatch { expected, actual } => {
+                write!(
+                    f,
+                    "Discrepancia dimensional de genoma: esperado {}, recibido {}",
+                    expected, actual
+                )
+            }
+            Self::NonFiniteGene { index, value } => {
+                write!(
+                    f,
+                    "Gen no finito en índice {} del vector: {}",
+                    index, value
+                )
+            }
+        }
+    }
+}
+
+impl std::error::Error for GenomeError {}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SuperGenotype {
     pub global_max_drawdown: f64,
@@ -576,32 +634,36 @@ impl SuperGenotype {
             );
             return envelope.genome;
         }
-        // D-507 / CERT-F-14: fallback de emergencia al ESPEJO DEL PROPIO
-        // ENTORNO si el envelope no resolvió. Antes leía la ruta compartida
-        // `active_genome.json`: un boot de prod con prod/active.json
-        // ausente cargaba silenciosamente lo que demo escribió en el
-        // espejo — herencia cross-env que D-651 prohibió para el linaje
-        // principal. quantum_champion.json (artefacto deliberado del
-        // config_compiler) sigue siendo válido como última instancia.
+        // D-507 / CERT-F-14 / F1-071: fallback de emergencia al ESPEJO DEL PROPIO
+        // ENTORNO si el envelope no resolvió. Antes leía la ruta relativa directa
+        // `config_dir/genotypes/quantum_champion.json` (dependiente de CWD) y
+        // devolvía el genoma crudo de serde SIN pasar por from_vector/enforce_curve_rr,
+        // permitiendo que genomas con Drawdown o SL fuera de bounds operaran capital.
+        // SANEAMIENTO OBLIGATORIO: Todo genoma de fallback DEBE pasar por
+        // `from_vector(&g.to_vector())`, garantizando cotas, gate RR y piso de fricción.
+        let champion_path = crate::paths::config_join("genotypes/quantum_champion.json");
         let legacy_data = crate::genome_store::legacy_mirror()
             .and_then(|mirror| std::fs::read_to_string(mirror).ok())
-            .or_else(|| std::fs::read_to_string("config_dir/genotypes/quantum_champion.json").ok());
+            .or_else(|| std::fs::read_to_string(&champion_path).ok());
         if let Some(data) = legacy_data {
             if let Ok(genome) = serde_json::from_str::<Self>(&data) {
-                telemetry_engine::telemetry!("🧬 [GENOMA] Loaded evolved SuperGenotype from config_dir/genotypes/active_genome.json (Emergency Fallback)");
-                return genome;
+                let sanitized = Self::from_vector(&genome.to_vector());
+                telemetry_engine::telemetry!("🧬 [GENOMA] Loaded evolved SuperGenotype from fallback (Emergency Fallback, sanitized via from_vector)");
+                return sanitized;
             }
         }
         if let Ok(data) = std::fs::read_to_string(crate::paths::data_join("genesis_genome.json")) {
             if let Ok(genome) = serde_json::from_str::<Self>(&data) {
+                let sanitized = Self::from_vector(&genome.to_vector());
                 telemetry_engine::telemetry!(
-                    "🧬 [GENOMA] Loaded surviving SuperGenotype from genesis_genome.json"
+                    "🧬 [GENOMA] Loaded surviving SuperGenotype from genesis_genome.json (sanitized via from_vector)"
                 );
-                return genome;
+                return sanitized;
             }
         }
         // telemetry_engine::telemetry!("🧬 [GENOMA] No valid SuperGenotype found, initializing mathematical baseline with live fees (Maker: {:.4}%, Taker: {:.4}%).", maker_base * 100.0, taker_base * 100.0);
-        Self::new_baseline(maker_base, taker_base)
+        let baseline = Self::new_baseline(maker_base, taker_base);
+        Self::from_vector(&baseline.to_vector())
     }
 
     pub fn save(&self) {
@@ -654,7 +716,7 @@ impl SuperGenotype {
             range_threshold: e_const / 6.0, // ~0.453
             scalp_kelly_fraction: k_scalp,
             swing_kelly_fraction: k_swing,
-            scalp_obi_threshold: taker_base * 50.0,
+            scalp_obi_threshold: 0.15, // F1-070: dentro de la banda unificada [0.10, 0.95]
             scalp_tp_base: scalp_tp_math,
             scalp_sl_base: scalp_sl_math,
             swing_tp_base: swing_tp_math,
@@ -703,9 +765,9 @@ impl SuperGenotype {
             ),
             obi_horizon_curve: crate::temporal_spectrum::HorizonCurve::through_two_points(
                 crate::temporal_spectrum::TAU_ANCHOR_FAST_MS,
-                taker_base * 50.0,
+                0.15,
                 crate::temporal_spectrum::TAU_ANCHOR_SLOW_MS,
-                taker_base * 100.0,
+                0.50,
             ),
             sl_atr_mult_btc: 1.0,
             tp_rr_ratio_btc: r_scalp,
@@ -734,16 +796,16 @@ impl SuperGenotype {
             weight_vpin: w_base * 0.35,
             regime_duration_ms: (1.0 / taker_base) * 60.0,
             regime_atr_multiplier: golden_ratio,
-            scalp_trail_act_atr: taker_base * 10.0,
-            scalp_trail_step_atr: pi,
+            scalp_trail_act_atr: 2.0, // F1-070: coincide con trail_act_horizon_curve fast anchor [1.5, 6.0]
+            scalp_trail_step_atr: 1.2, // F1-070: coincide con trail_step_horizon_curve fast anchor [0.5, 4.0]
             scalp_trail_max_atr: e_const * 2.0,
             scalp_trail_min_pnl: taker_base * 10000.0, // Dinámico según taker
-            scalp_trail_atr_mult_base: pi,
-            swing_trail_act_atr: taker_base * 20.0,
-            swing_trail_step_atr: pi * golden_ratio,
+            scalp_trail_atr_mult_base: 2.5, // F1-070: coincide con trail_mult_horizon_curve fast anchor [1.5, 6.0]
+            swing_trail_act_atr: 3.0, // F1-070: coincide con trail_act_horizon_curve slow anchor [1.5, 6.0]
+            swing_trail_step_atr: 1.8, // F1-070: coincide con trail_step_horizon_curve slow anchor [0.5, 4.0]
             swing_trail_max_atr: e_const * 2.5,
             swing_trail_min_pnl: taker_base * 15000.0,
-            swing_trail_atr_mult_base: pi * 1.5,
+            swing_trail_atr_mult_base: 3.5, // F1-070: coincide con trail_mult_horizon_curve slow anchor [1.5, 6.0]
             zombie_timeout_ms: 14_400_000.0, // D-649b: suelo de la banda (4 h)
             hurst_trend_threshold: golden_ratio - 1.0, // ~0.618
             cvd_veto_threshold: w_base * golden_ratio,
@@ -850,7 +912,9 @@ impl SuperGenotype {
 
     pub fn new_random() -> Self {
         let mut g = Self {
-            global_max_drawdown: rand::rng().random_range(0.5..0.99),
+            // F1-085: gen congelado a default canónico neutral (1 - taker*100) en [0.50, 0.99];
+            // el cortacircuitos de producción corre a través de freno_duro y d*=0.632 (ADR-0016).
+            global_max_drawdown: 0.96,
             // D-644: misma banda que la mutación y los bounds.
             global_leverage: rand::rng().random_range(1.0..50.0),
             btc_volatility_multiplier: rand::rng().random_range(0.5..3.0),
@@ -863,7 +927,7 @@ impl SuperGenotype {
             range_threshold: rand::rng().random_range(0.1..0.9),
             scalp_kelly_fraction: rand::rng().random_range(0.1..2.0),
             swing_kelly_fraction: rand::rng().random_range(0.01..1.0),
-            scalp_obi_threshold: rand::rng().random_range(0.05..1.0),
+            scalp_obi_threshold: rand::rng().random_range(0.10..0.95),
             scalp_tp_base: rand::rng().random_range(0.0060..0.0250),
             scalp_sl_base: rand::rng().random_range(0.0025..0.0080),
             swing_tp_base: rand::rng().random_range(0.0300..0.1200),
@@ -937,16 +1001,16 @@ impl SuperGenotype {
             weight_vpin: rand::rng().random_range(0.1..1.0),
             regime_duration_ms: rand::rng().random_range(30000.0..600000.0),
             regime_atr_multiplier: rand::rng().random_range(0.5..5.0),
-            scalp_trail_act_atr: rand::rng().random_range(0.001..20.0),
-            scalp_trail_step_atr: rand::rng().random_range(0.001..20.0),
+            scalp_trail_act_atr: rand::rng().random_range(1.5..6.0),
+            scalp_trail_step_atr: rand::rng().random_range(0.5..4.0),
             scalp_trail_max_atr: rand::rng().random_range(0.001..20.0),
             scalp_trail_min_pnl: rand::rng().random_range(0.001..20.0),
-            scalp_trail_atr_mult_base: rand::rng().random_range(0.001..20.0),
-            swing_trail_act_atr: rand::rng().random_range(0.001..20.0),
-            swing_trail_step_atr: rand::rng().random_range(0.001..20.0),
+            scalp_trail_atr_mult_base: rand::rng().random_range(1.5..6.0),
+            swing_trail_act_atr: rand::rng().random_range(1.5..6.0),
+            swing_trail_step_atr: rand::rng().random_range(0.5..4.0),
             swing_trail_max_atr: rand::rng().random_range(0.001..20.0),
             swing_trail_min_pnl: rand::rng().random_range(0.001..20.0),
-            swing_trail_atr_mult_base: rand::rng().random_range(0.001..20.0),
+            swing_trail_atr_mult_base: rand::rng().random_range(1.5..6.0),
             zombie_timeout_ms: rand::rng().random_range(14_400_000.0..28_800_000.0),
             hurst_trend_threshold: rand::rng().random_range(0.4..0.8),
             cvd_veto_threshold: rand::rng().random_range(0.1..1.5),
@@ -1007,11 +1071,12 @@ impl SuperGenotype {
             kelly_expansion_mult: rand::rng().random_range(1.0..3.0),
             guard_dd_sigmoid_steepness: rand::rng().random_range(1.0..5.0),
             guard_dd_sigmoid_center: rand::rng().random_range(1.0..5.0),
-            portfolio_perf_mult_steepness: rand::rng().random_range(3.0..15.0),
-            portfolio_dd_penalty_decay: rand::rng().random_range(5.0..25.0),
-            portfolio_perf_mult_min: rand::rng().random_range(0.1..0.5),
-            portfolio_perf_mult_max: rand::rng().random_range(1.5..3.0),
-            portfolio_perf_mult_center: rand::rng().random_range(0.3..0.8),
+            // F1-084: genes de Fase 8 congelados a defaults canónicos neutrales (sin caller en producción)
+            portfolio_perf_mult_steepness: std::f64::consts::E * 3.0,
+            portfolio_dd_penalty_decay: std::f64::consts::PI * 5.0,
+            portfolio_perf_mult_min: 0.55 * 0.5,
+            portfolio_perf_mult_max: 0.55 * 3.0,
+            portfolio_perf_mult_center: 0.55,
 
             macro_hurst_confidence_offset: rand::rng().random_range(0.35..0.55),
             macro_hurst_confidence_scale: rand::rng().random_range(1.0..20.0),
@@ -1034,7 +1099,7 @@ impl SuperGenotype {
             executor_max_weight_1m: rand::rng().random_range(1000.0..5000.0),
             iceberg_volume_threshold: rand::rng().random_range(100.0..2000.0),
             iceberg_slice_count: rand::rng().random_range(3.0..10.0),
-            swing_obi_threshold: rand::rng().random_range(0.05..1.0),
+            swing_obi_threshold: rand::rng().random_range(0.10..0.95),
             swing_accel_min_samples: rand::rng().random_range(10.0..50.0),
             temporal_scale: rand::rng().random_range(0.05..0.95),
         };
@@ -1064,6 +1129,10 @@ impl SuperGenotype {
         let slow_sl = self
             .sl_horizon_curve
             .eval(crate::temporal_spectrum::TAU_ANCHOR_SLOW_MS);
+
+        // F1-073: Iniciar sección crítica de Seqlock para actualización atómica de curvas de horizonte.
+        arena.config.begin_write();
+
         arena.config.scalp_tp_base.store(fast_tp, Ordering::Relaxed);
         arena.config.swing_tp_base.store(slow_tp, Ordering::Relaxed);
         arena.config.scalp_sl_base.store(fast_sl, Ordering::Relaxed);
@@ -1136,6 +1205,9 @@ impl SuperGenotype {
             .config
             .obi_curve_b
             .store(curvas.obi_horizon_curve.b, Ordering::Relaxed);
+
+        // F1-073: Finalizar sección crítica de Seqlock (incrementa genome_epoch a par con Release).
+        arena.config.end_write();
 
         arena
             .config
@@ -1790,7 +1862,9 @@ impl SuperGenotype {
         };
 
         let mut mutated = Self {
-            global_max_drawdown: mutate_val(self.global_max_drawdown, 0.5, 0.99),
+            // F1-085: gen congelado sin mutación (cortacircuitos vivo gobernado por freno_duro
+            // [CL-106 / ADR-0017] y d*=0.632 [ADR-0016]; sin consumidor vivo en live hot path).
+            global_max_drawdown: self.global_max_drawdown,
             // D-644 (DÉCIMA OLA): la banda era [25, 35] en inicialización,
             // mutación y validación. La evolución NO PODÍA bajar de 25×: un
             // genoma prudente con 5× era empujado a 25× en su primera mutación,
@@ -1808,7 +1882,7 @@ impl SuperGenotype {
             range_threshold: mutate_val(self.range_threshold, 0.1, 0.9),
             scalp_kelly_fraction: mutate_val(self.scalp_kelly_fraction, 0.1, 2.0),
             swing_kelly_fraction: mutate_val(self.swing_kelly_fraction, 0.01, 1.0),
-            scalp_obi_threshold: mutate_val(self.scalp_obi_threshold, 0.05, 1.0),
+            scalp_obi_threshold: mutate_val(self.scalp_obi_threshold, 0.10, 0.95),
             scalp_tp_base: self.scalp_tp_base, // X-005: vista — re-derivada de curvas post-literal
             scalp_sl_base: self.scalp_sl_base, // X-005: vista
             // F8: el GA evoluciona los COEFICIENTES de las curvas (a,b) — la
@@ -1860,17 +1934,17 @@ impl SuperGenotype {
             weight_vpin: mutate_val(self.weight_vpin, 0.1, 1.0),
             regime_duration_ms: self.regime_duration_ms, // LG-21
             regime_atr_multiplier: self.regime_atr_multiplier, // LG-21
-            scalp_trail_act_atr: mutate_val(self.scalp_trail_act_atr, 0.001, 20.0),
-            scalp_trail_step_atr: mutate_val(self.scalp_trail_step_atr, 0.001, 20.0),
+            scalp_trail_act_atr: mutate_val(self.scalp_trail_act_atr, 1.5, 6.0),
+            scalp_trail_step_atr: mutate_val(self.scalp_trail_step_atr, 0.5, 4.0),
             // LG-18: genes sin lector (R7-R1-2, inertes en el T-1): congelados.
             scalp_trail_max_atr: self.scalp_trail_max_atr,
             scalp_trail_min_pnl: self.scalp_trail_min_pnl, // LG-18
-            scalp_trail_atr_mult_base: mutate_val(self.scalp_trail_atr_mult_base, 0.001, 20.0),
-            swing_trail_act_atr: mutate_val(self.swing_trail_act_atr, 0.001, 20.0),
-            swing_trail_step_atr: mutate_val(self.swing_trail_step_atr, 0.001, 20.0),
+            scalp_trail_atr_mult_base: mutate_val(self.scalp_trail_atr_mult_base, 1.5, 6.0),
+            swing_trail_act_atr: mutate_val(self.swing_trail_act_atr, 1.5, 6.0),
+            swing_trail_step_atr: mutate_val(self.swing_trail_step_atr, 0.5, 4.0),
             swing_trail_max_atr: self.swing_trail_max_atr, // LG-18
             swing_trail_min_pnl: self.swing_trail_min_pnl, // LG-18
-            swing_trail_atr_mult_base: mutate_val(self.swing_trail_atr_mult_base, 0.001, 20.0),
+            swing_trail_atr_mult_base: mutate_val(self.swing_trail_atr_mult_base, 1.5, 6.0),
             zombie_timeout_ms: mutate_val(self.zombie_timeout_ms, 14_400_000.0, 28_800_000.0),
             hurst_trend_threshold: mutate_val(self.hurst_trend_threshold, 0.4, 0.8),
             cvd_veto_threshold: mutate_val(self.cvd_veto_threshold, 0.1, 2.0),
@@ -1936,15 +2010,13 @@ impl SuperGenotype {
             kelly_expansion_mult: mutate_val(self.kelly_expansion_mult, 1.0, 3.0),
             guard_dd_sigmoid_steepness: mutate_val(self.guard_dd_sigmoid_steepness, 1.0, 5.0),
             guard_dd_sigmoid_center: mutate_val(self.guard_dd_sigmoid_center, 1.0, 5.0),
-            portfolio_perf_mult_steepness: mutate_val(
-                self.portfolio_perf_mult_steepness,
-                3.0,
-                15.0,
-            ),
-            portfolio_dd_penalty_decay: mutate_val(self.portfolio_dd_penalty_decay, 5.0, 25.0),
-            portfolio_perf_mult_min: mutate_val(self.portfolio_perf_mult_min, 0.1, 0.5),
-            portfolio_perf_mult_max: mutate_val(self.portfolio_perf_mult_max, 1.1, 3.0),
-            portfolio_perf_mult_center: mutate_val(self.portfolio_perf_mult_center, 0.4, 0.6),
+            // F1-084: 5 genes de redistribución de rendimiento Fase 8 congelados sin mutación
+            // (PortfolioOrchestrator::calculate_dynamic_allocation inactiva/sin consumidor en el host).
+            portfolio_perf_mult_steepness: self.portfolio_perf_mult_steepness,
+            portfolio_dd_penalty_decay: self.portfolio_dd_penalty_decay,
+            portfolio_perf_mult_min: self.portfolio_perf_mult_min,
+            portfolio_perf_mult_max: self.portfolio_perf_mult_max,
+            portfolio_perf_mult_center: self.portfolio_perf_mult_center,
 
             macro_hurst_confidence_offset: self.macro_hurst_confidence_offset, // LG-21
             macro_hurst_confidence_scale: self.macro_hurst_confidence_scale, // LG-21
@@ -1967,7 +2039,7 @@ impl SuperGenotype {
                 100_000.0,
             ),
             iceberg_slice_count: mutate_val(self.iceberg_slice_count, 2.0, 10.0),
-            swing_obi_threshold: mutate_val(self.swing_obi_threshold, 0.05, 1.0),
+            swing_obi_threshold: mutate_val(self.swing_obi_threshold, 0.10, 0.95),
             swing_accel_min_samples: self.swing_accel_min_samples, // LG-18
             temporal_scale: mutate_val(self.temporal_scale, 0.05, 0.95),
         };
@@ -2751,6 +2823,9 @@ impl SuperGenotype {
     /// Reconstruye el genoma a partir de un vector unitario normalizado [0.0, 1.0]^DIMENSION.
     /// D-405: Aplica mapeo afín exacto x = lo + u * (hi - lo) previo a la reconstrucción física.
     pub fn from_normalized_vector(u: &[f64]) -> Self {
+        if u.len() != Self::DIMENSION {
+            return Self::default();
+        }
         let lo = Self::get_lower_bounds();
         let hi = Self::get_upper_bounds();
         let mut raw = Vec::with_capacity(u.len());
@@ -2766,7 +2841,21 @@ impl SuperGenotype {
         Self::from_vector(&raw)
     }
 
-    pub fn from_vector(vec: &[f64]) -> Self {
+    /// Reconstrucción falible y determinista desde un slice flotante `&[f64]` (F1-113).
+    /// Valida longitud exacta contra `Self::DIMENSION` (144) y finitud numérica estricta,
+    /// retornando un `GenomeError` tipado ante vectores truncados, sobredimensionados o con NaN/Inf.
+    pub fn try_from_vector(vec: &[f64]) -> Result<Self, GenomeError> {
+        if vec.len() != Self::DIMENSION {
+            return Err(GenomeError::DimensionMismatch {
+                expected: Self::DIMENSION,
+                actual: vec.len(),
+            });
+        }
+        for (i, &v) in vec.iter().enumerate() {
+            if v.is_nan() {
+                return Err(GenomeError::NonFiniteGene { index: i, value: v });
+            }
+        }
         // R1.1 — FUENTE ÚNICA DE VERDAD: los clamps se leen de los arrays de
         // bounds (las mismas cotas que GenomeStore::validate usa como gate y
         // que la evolución CMA-ES usa como espacio de búsqueda). Antes los
@@ -2947,7 +3036,14 @@ impl SuperGenotype {
         g.sl_horizon_curve = Self::normalize_sl_curve_friction_floor(g.sl_horizon_curve);
         g.derive_anchors_from_curves();
         g.sync_continuous_curves();
-        g
+        Ok(g)
+    }
+
+    /// Reconstrucción infalible delegada (F1-113): si el vector es inválido o incompatible
+    /// dimensionalmente/numéricamente, recurre a `Self::default()` garantizando cero panics
+    /// en tiempo de ejecución.
+    pub fn from_vector(vec: &[f64]) -> Self {
+        Self::try_from_vector(vec).unwrap_or_else(|_| Self::default())
     }
 
     /// D-649b (DÉCIMA OLA): la escala de caducidad de posiciones.
@@ -3008,7 +3104,7 @@ impl SuperGenotype {
             0.1,
             0.1,
             0.01,
-            0.01,
+            0.10, // Slot 12: scalp_obi_threshold (F1-070: unificado con ObiThreshold [0.10, 0.95])
             // X-004: anclas tp/sl (13-16) son VISTAS de las curvas — sus bounds
             // cubren el sobre alcanzable por (a,b) evolucionables, no cotas
             // evolutivas por sí mismas (las cotas reales viven en 140-143).
@@ -3043,16 +3139,16 @@ impl SuperGenotype {
             0.1,
             30000.0,
             0.5,
+            1.5, // Slot 44: scalp_trail_act_atr (F1-070: unificado con TrailActivation [1.5, 6.0])
+            0.5, // Slot 45: scalp_trail_step_atr (F1-070: unificado con TrailStep [0.5, 4.0])
             0.001,
             0.001,
+            1.5, // Slot 48: scalp_trail_atr_mult_base (F1-070: unificado con TrailMultiplier [1.5, 6.0])
+            1.5, // Slot 49: swing_trail_act_atr (F1-070: unificado con TrailActivation [1.5, 6.0])
+            0.5, // Slot 50: swing_trail_step_atr (F1-070: unificado con TrailStep [0.5, 4.0])
             0.001,
             0.001,
-            0.001,
-            0.001,
-            0.001,
-            0.001,
-            0.001,
-            0.001,
+            1.5, // Slot 53: swing_trail_atr_mult_base (F1-070: unificado con TrailMultiplier [1.5, 6.0])
             14_400_000.0, // D-649b: 4 h — reproduce el debounce previo
             0.4,
             0.1,
@@ -3136,7 +3232,7 @@ impl SuperGenotype {
             1000.0,
             100.0,
             2.0,
-            0.05,
+            0.10, // Slot 137: swing_obi_threshold (F1-070: unificado con ObiThreshold [0.10, 0.95])
             10.0,
             0.05,
             // X-004: bounds de coeficientes de curvas (tp_a, tp_b, sl_a, sl_b)
@@ -3162,7 +3258,7 @@ impl SuperGenotype {
             0.9,
             2.0,
             1.0,
-            1.0,
+            0.95, // Slot 12: scalp_obi_threshold (F1-070: unificado con ObiThreshold [0.10, 0.95])
             // X-004: techos de VISTAS — sobre máximo alcanzable por las curvas
             // en el ancla LENTA (exp(a_hi + b_hi·ln τ_slow): tp≈63.7, sl≈23.3),
             // con holgura. Las cotas evolutivas reales viven en 140-143.
@@ -3197,16 +3293,16 @@ impl SuperGenotype {
             1.0,
             600000.0,
             5.0,
+            6.0,  // Slot 44: scalp_trail_act_atr (F1-070: unificado con TrailActivation [1.5, 6.0])
+            4.0,  // Slot 45: scalp_trail_step_atr (F1-070: unificado con TrailStep [0.5, 4.0])
             20.0,
             20.0,
+            6.0,  // Slot 48: scalp_trail_atr_mult_base (F1-070: unificado con TrailMultiplier [1.5, 6.0])
+            6.0,  // Slot 49: swing_trail_act_atr (F1-070: unificado con TrailActivation [1.5, 6.0])
+            4.0,  // Slot 50: swing_trail_step_atr (F1-070: unificado con TrailStep [0.5, 4.0])
             20.0,
             20.0,
-            20.0,
-            20.0,
-            20.0,
-            20.0,
-            20.0,
-            20.0,
+            6.0,  // Slot 53: swing_trail_atr_mult_base (F1-070: unificado con TrailMultiplier [1.5, 6.0])
             28_800_000.0, // D-649b: 8 h
             0.8,
             2.0,
@@ -3290,7 +3386,7 @@ impl SuperGenotype {
             5000.0,
             100_000.0,
             10.0,
-            1.0,
+            0.95, // Slot 137: swing_obi_threshold (F1-070: unificado con ObiThreshold [0.10, 0.95])
             50.0,
             0.95,
             // X-004: techo de coeficientes de curvas.
@@ -3413,7 +3509,7 @@ mod tests {
         assert_eq!(
             vec.len(),
             SuperGenotype::DIMENSION,
-            "to_vector length must be exactly 139"
+            "to_vector length must be exactly DIMENSION (144)"
         );
         assert_eq!(
             SuperGenotype::get_lower_bounds().len(),
@@ -3426,6 +3522,30 @@ mod tests {
         let reconstructed = SuperGenotype::from_vector(&vec);
         let vec2 = reconstructed.to_vector();
         assert_eq!(vec.len(), vec2.len());
+
+        // F1-113: Verificación de try_from_vector y rechazo estricto
+        let try_ok = SuperGenotype::try_from_vector(&vec);
+        assert!(try_ok.is_ok(), "vector canónico debe ser admitido por try_from_vector");
+
+        // Vector corto debe retornar DimensionMismatch sin pánico
+        let short_vec = vec![0.5; 100];
+        assert_eq!(
+            SuperGenotype::try_from_vector(&short_vec).unwrap_err(),
+            GenomeError::DimensionMismatch {
+                expected: SuperGenotype::DIMENSION,
+                actual: 100
+            }
+        );
+        assert_eq!(SuperGenotype::from_vector(&short_vec).to_vector().len(), SuperGenotype::DIMENSION);
+
+        // Vector con NaN/Inf debe retornar NonFiniteGene
+        let mut nan_vec = vec.clone();
+        nan_vec[5] = f64::NAN;
+        assert_eq!(
+            SuperGenotype::try_from_vector(&nan_vec).unwrap_err(),
+            GenomeError::NonFiniteGene { index: 5, value: f64::NAN }
+        );
+        assert_eq!(SuperGenotype::from_vector(&nan_vec).to_vector().len(), SuperGenotype::DIMENSION);
     }
 
     /// D-658: la mutación lee las cotas de las curvas de `*_BOUNDS`. Con tasa
@@ -3625,6 +3745,7 @@ mod tests_lg21 {
                 g.hard_stop_base_limit,
                 g.kelly_bootstrap_ratio_threshold,
                 g.kelly_bootstrap_min_exposure,
+                g.maker_only_capital_threshold, // F1-069 / F1-117: congelado en host IOC
                 g.hawkes_volume_norm,
                 g.macro_hurst_confidence_offset,
                 g.macro_hurst_confidence_scale,

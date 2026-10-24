@@ -7,7 +7,6 @@ edition = "2024"
 backtest-engine = { version = "0.1.0", path = "../backtest-engine" }
 risk-engine = { version = "0.1.0", path = "../risk-engine" }
 god-engine-core = { version = "0.1.0", path = "../god-engine-core" }
-polars = { version = "0.43.1", features = ["lazy", "dtype-datetime", "performant", "chunked_ids", "rolling_window"] }
 quantum-arena = { path = "../quantum-arena" }
 rand = "0.10.1"
 rayon = "1.12.0"

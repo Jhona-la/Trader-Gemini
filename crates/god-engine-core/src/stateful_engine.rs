@@ -109,6 +109,12 @@ pub struct StatefulEngine {
     pub ema_slow: f64,
     pub omni: feature_engine::OmniStrategyEngine,
     pub spectral: feature_engine::SpectralCycleEngine,
+    /// GLM 149 (Koopman/DMD, titularidad del consejo Ω209): operador de
+    /// Koopman streaming del retorno normalizado — modo de crecimiento
+    /// |λ| dominante, frecuencia oculta y proximidad de bifurcación.
+    /// Observable PUB de medición (doctrina medir-antes-de-decidir): aún
+    /// NO alimenta decisiones ni el vector ML de 12 (que queda INTACTO).
+    pub koopman: feature_engine::koopman_dmd::StreamingDmd,
     pub multifractal: feature_engine::MultiScaleHurstConfluence,
     pub regime: MarketRegime,
     // Native Kline Aggregator
@@ -129,6 +135,19 @@ pub struct StatefulEngine {
     pub spectral_bin: f32,
     pub spectral_power: f32,
     pub spectral_centroid: f32,
+    /// GLM 149 — bloque Koopman publicado: tasa de crecimiento del modo
+    /// dominante, su frecuencia (rad/muestra) y máx|λ| (≥1 = bifurcación).
+    /// NaN hasta el primer análisis con warmup suficiente (ausencia honesta).
+    pub koopman_modulo: f32,
+    pub koopman_angulo: f32,
+    pub koopman_bifurcacion: f32,
+    /// GLM 157 & Átomo 4.1 (Ola Omega220): Medidor continuo streaming de entrelazamiento cuántico
+    /// temporal neto ΔS = S(ψ) - S_nulo en MPS (L=8, binarización por signo, ring 256).
+    pub entrelazamiento: feature_engine::entrelazamiento::EntrelazamientoStreaming,
+    /// Entrelazamiento cuántico temporal neto medido streaming: ΔS.
+    pub quantum_delta_s: f32,
+    /// Entropía cuántica de von Neumann del estado empírico streaming.
+    pub quantum_entropy: f32,
     pub hurst_micro: f32,
     pub hurst_meso: f32,
     pub hurst_macro: f32,
@@ -151,8 +170,6 @@ pub struct StatefulEngine {
     /// #18: Filtro de Kalman 1D para estimar el micro-precio justo en O(1)
     pub kalman: feature_engine::KalmanFilter1D,
     pub fair_price: f64,
-    /// #21: Motor de cuantiles adaptativos P^2 para estimación de percentiles sin alocar
-    pub quantiles: quantum_arena::AdaptiveQuantileEngine,
     /// #19: Anillo tensorial de precios para cálculo O(1) de derivadas cinemáticas multiescala
     pub price_ring: feature_engine::TensorRing<16>,
     /// #19: Jerk cinemático instantáneo (3ra derivada del precio: d(a_t)/dt)
@@ -250,6 +267,13 @@ impl StatefulEngine {
             ema_slow: 0.0,
             omni: feature_engine::OmniStrategyEngine::new(),
             spectral: feature_engine::SpectralCycleEngine::new(),
+            koopman: feature_engine::koopman_dmd::StreamingDmd::new(),
+            koopman_modulo: f32::NAN,
+            koopman_angulo: f32::NAN,
+            koopman_bifurcacion: f32::NAN,
+            entrelazamiento: feature_engine::entrelazamiento::EntrelazamientoStreaming::default(),
+            quantum_delta_s: f32::NAN,
+            quantum_entropy: f32::NAN,
             multifractal: feature_engine::MultiScaleHurstConfluence::new(),
             regime: MarketRegime::Neutral,
             kline_start_ms: 0,
@@ -280,7 +304,6 @@ impl StatefulEngine {
             last_trade_is_sell: false,
             kalman: feature_engine::KalmanFilter1D::new(0.0, 1.0, 1e-4, 0.1),
             fair_price: 0.0,
-            quantiles: quantum_arena::AdaptiveQuantileEngine::new(),
             price_ring: feature_engine::TensorRing::new(),
             jerk_t: 0.0,
             simd_nn: feature_engine::SimdNeuralNet::default(),
@@ -560,6 +583,42 @@ impl StatefulEngine {
         s.clamp(-1.0, 1.0)
     }
 
+    /// CL-xxx (F1-063, Ola Ω171): Reinicio por reconexión del feed: limpia únicamente
+    /// buffers dependientes de la secuencia de micro-ticks continuos y libros inmediatos
+    /// (order flow, aceleración OBI, micro-precio intra-tick, kline intra-minuto en formación,
+    /// Hawkes y derivadas cinemáticas instantáneas), pero PRESERVA la calibración de volatilidad
+    /// multiescala (v_t, vt_rasgo_ml, piso_resolucion, sigma60), las EMAs de velas históricas
+    /// (kline_ema_fast, kline_ema_slow, kline_ema_trend, kline_ema_macro), el exponente de Hurst,
+    /// el espectro multifractal, ciclos espectrales (spectral, omni, lead_lag) y calibradores adaptativos.
+    /// Antes, `reset_engines` llamaba a `StatefulEngine::new()`, borrando el calentamiento
+    /// REST de 1000 velas inyectado en el arranque y provocando que las posiciones abiertas
+    /// se gestionaran con ATR = 0 tras reconexiones del WS (watchdog o corte de 24h de Binance).
+    pub fn reset_on_reconnect(&mut self) {
+        self.order_flow = OrderFlowTracker::new();
+        self.ofi_model = feature_engine::OFIModel::new();
+        self.obi_accel = ObiAcceleration::new();
+        self.obi_noise = ObiNoise::new();
+        self.a_t = 0.0;
+        self.last_inst_v = 0.0;
+        self.dir_velocity = 0.0;
+        self.price_ring = feature_engine::TensorRing::new();
+        self.jerk_t = 0.0;
+        self.hawkes = feature_engine::HawkesProcessEngine::new(0.05, 0.35, 1.5);
+        self.last_hawkes_ratio = 0.0;
+        self.kline_start_ms = 0;
+        self.kline_open = 0.0;
+        self.kline_high = 0.0;
+        self.kline_low = 0.0;
+        self.kline_volume = 0.0;
+        self.ultima_cantidad_trade = 0.0;
+        self.last_event_ms = 0;
+        self.ruido_retorno_tick = ObiNoise::new();
+        // Preserva: v_t, vt_rasgo_ml, piso_resolucion, sigma60, hurst,
+        // spectral, multifractal, omni, lead_lag, regime, kline_ema_*,
+        // spectral_bin, spectral_power, spectral_centroid, hurst_micro,
+        // hurst_meso, hurst_macro, kalman, quantiles, rsi_rs, etc.
+    }
+
     /// Flushes all internal buffers. Used to auto-heal time-series glitches after network disconnects.
     pub fn reset(&mut self) {
         self.order_flow = OrderFlowTracker::new();
@@ -621,7 +680,6 @@ impl StatefulEngine {
 
         self.kalman = feature_engine::KalmanFilter1D::new(0.0, 1.0, 1e-4, 0.1);
         self.fair_price = 0.0;
-        self.quantiles = quantum_arena::AdaptiveQuantileEngine::new();
         self.price_ring = feature_engine::TensorRing::new();
         self.jerk_t = 0.0;
         self.simd_nn = feature_engine::SimdNeuralNet::default();
@@ -731,6 +789,27 @@ impl StatefulEngine {
             // (bin/potencia/centroide FFT + Hurst micro/meso/macro) viven
             // por esta vía — no dependen de klines cerrados.
             self.spectral.push(norm_return);
+            // GLM 149 — Koopman/DMD streaming: mismo alimento que el FFT
+            // (retorno normalizado por tick), análisis en la MISMA cadencia
+            // de 64 para repartir el coste O(M³) del eig (sub-microsegundo).
+            self.koopman.push(norm_return);
+            if self.koopman.validas() >= 16 && self.tick_count % 64 == 0 {
+                if let Ok(e) = self.koopman.analizar() {
+                    self.koopman_modulo = e.modulo_dominante as f32;
+                    self.koopman_angulo = e.angulo_rad as f32;
+                    self.koopman_bifurcacion = e.bifurcacion_max as f32;
+                }
+                // Err (warmup/ridge degenerado) ⇒ los campos quedan con su
+                // último valor válido o NaN inicial — ausencia honesta.
+            }
+            // GLM 157 & Átomo 4.1: Entrelazamiento cuántico temporal neto streaming O(1)/tick:
+            self.entrelazamiento.push(norm_return);
+            if self.entrelazamiento.activos() >= 64 && self.tick_count % 64 == 0 {
+                if let Ok(m) = self.entrelazamiento.medir() {
+                    self.quantum_delta_s = m.delta as f32;
+                    self.quantum_entropy = m.s as f32;
+                }
+            }
             // D-434: Invocar análisis espectral FFT Radix-2 periódicamente cada 64 ticks
             if self.tick_count % 64 == 0 {
                 let (dominant_bin, max_power, centroid) = self.spectral.analyze_spectrum();
@@ -768,8 +847,6 @@ impl StatefulEngine {
             // #19: Actualización del anillo tensorial de precios y extracción de derivadas cinemáticas
             self.price_ring.push(self.fair_price);
             self.jerk_t = self.price_ring.jerk();
-            // #21: Actualización de cuantiles adaptativos P^2 en O(1)
-            self.quantiles.update(self.ofi_model.ema_ofi, self.obi_accel.prev_obi, self.a_t, self.v_t / price.max(1e-6));
         }
 
         // D-615b: el Hurst YA NO se alimenta por evento (ver el cierre de la

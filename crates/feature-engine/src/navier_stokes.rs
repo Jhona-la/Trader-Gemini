@@ -94,6 +94,18 @@ pub struct NavierStokesReynoldsEngine {
     pub sample_count: u64,
     /// Tiempo de relajación característico del libro de órdenes τ_relax en segundos
     pub relaxation_time_s: f64,
+    /// Densidad de masa continua de liquidez en el libro de órdenes ρ = depth / spread [USD / USD]
+    pub order_book_density_rho: f64,
+    /// Velocidad acústica de propagación de perturbaciones de cotización c_s [USD / s]
+    pub sound_speed_cs: f64,
+    /// Número de Mach del libro de órdenes Ma = |u| / c_s (adimensional)
+    pub mach_number: f64,
+    /// Deriva óptima HJB del control de cotización de creadores de mercado
+    pub hjb_optimal_drift: f64,
+    /// Probabilidad analítica de vacío de liquidez (depleción de densidad) vía Fokker-Planck
+    pub liquidity_void_probability: f64,
+    /// Índice de estabilidad del juego de campo medio (MFG): S_MFG ∈ [0.0, 1.0]
+    pub mfg_stability_index: f64,
     /// OLA Ω121: Parámetros hidrodinámicos dinámicos
     pub params: NavierStokesParams,
 }
@@ -124,6 +136,12 @@ impl NavierStokesReynoldsEngine {
             laminar_share: 1.0,
             sample_count: 0,
             relaxation_time_s: Self::DEFAULT_RELAXATION_TIME_S,
+            order_book_density_rho: 1.0,
+            sound_speed_cs: 1.0,
+            mach_number: 0.0,
+            hjb_optimal_drift: 0.0,
+            liquidity_void_probability: 0.0,
+            mfg_stability_index: 1.0,
             params: NavierStokesParams::default(),
         }
     }
@@ -300,6 +318,41 @@ impl NavierStokesReynoldsEngine {
         let dissipation = self.kinematic_viscosity * velocity_gradient * velocity_gradient;
         self.energy_dissipation_rate = dissipation.clamp(0.0, 1000.0);
 
+        // 12. Densidad de masa continua del libro de órdenes ρ [USD / spread_USD]
+        let book_density = (passive_depth_usd / characteristic_length).max(1e-6);
+        self.order_book_density_rho = book_density;
+
+        // 13. Velocidad del sonido en el medio del libro de órdenes c_s [USD / s]
+        // Velocidad acústica finita a la que se propagan las cancelaciones y reposiciones pasivas a través del spread
+        let c_s = (characteristic_length / tau_relax).max(1e-4);
+        self.sound_speed_cs = c_s;
+
+        // 14. Número de Mach adimensional del libro de órdenes: Ma = |u| / c_s
+        // Flujo subsónico (Ma < 1.0): las perturbaciones de precio se disipan suavemente en el colchón de liquidez.
+        // Flujo supersónico (Ma >= 1.0): se forman ondas de choque acústicas (cascadas de liquidación violentas).
+        let mach = (self.velocity.abs() / c_s).clamp(0.0, 100.0);
+        self.mach_number = mach;
+
+        // 15. Control Óptimo HJB del Representative Market Maker:
+        // v* = -acceleration / (1.0 + kinematic_visc * book_density)
+        let denom_hjb = (1.0 + self.kinematic_viscosity * book_density * 1e-4).max(0.1);
+        self.hjb_optimal_drift = (-self.acceleration / denom_hjb).clamp(-1e4, 1e4);
+
+        // 16. Probabilidad de Vacío de Liquidez de Fokker-Planck (P_void):
+        // Solución de escape / colapso de densidad pasiva bajo flujo agresor:
+        // Hill/Cauchy absorption probability P_void = 1 / (1 + cushion^2)
+        let min_passive_scale = (characteristic_length * mid_price * 1e-4).max(10.0);
+        let effective_drain = aggressive_trade_usd + min_passive_scale;
+        let depth_cushion = (passive_depth_usd / effective_drain).clamp(0.0, 1000.0);
+        let p_void = (1.0 / (1.0 + depth_cushion * depth_cushion)).clamp(0.0, 1.0);
+        self.liquidity_void_probability = p_void;
+
+        // 17. Índice de Estabilidad MFG Acoplado S_MFG ∈ [0.0, 1.0]:
+        // S_MFG = laminar_share * (1.0 - P_void) * 1.0 / (1.0 + Ma^2)
+        let mach_factor = 1.0 / (1.0 + mach * mach);
+        let stability = (self.laminar_share * (1.0 - p_void) * mach_factor).clamp(0.0, 1.0);
+        self.mfg_stability_index = stability;
+
         self.prev_mid_price = mid_price;
         self.prev_event_time_ms = event_time_ms;
 
@@ -331,6 +384,48 @@ impl NavierStokesReynoldsEngine {
     #[inline(always)]
     pub fn is_turbulent(&self) -> bool {
         self.ewma_reynolds >= self.params.critical_reynolds_turbulent
+    }
+
+    /// Retorna el número de Mach adimensional del flujo del libro Ma = |u| / c_s
+    #[inline(always)]
+    pub fn mach_number(&self) -> f64 {
+        self.mach_number
+    }
+
+    /// Retorna si el flujo del libro es supersónico (Ma >= 1.0), indicando onda de choque
+    #[inline(always)]
+    pub fn is_supersonic(&self) -> bool {
+        self.mach_number >= 1.0
+    }
+
+    /// Retorna la probabilidad de vacío de liquidez Fokker-Planck P_void ∈ [0.0, 1.0]
+    #[inline(always)]
+    pub fn liquidity_void_probability(&self) -> f64 {
+        self.liquidity_void_probability
+    }
+
+    /// Retorna el índice acoplado de estabilidad de juego de campo medio (MFG) S_MFG ∈ [0.0, 1.0]
+    #[inline(always)]
+    pub fn mfg_stability_index(&self) -> f64 {
+        self.mfg_stability_index
+    }
+
+    /// Retorna la densidad de masa continua del libro ρ en [USD / spread_USD]
+    #[inline(always)]
+    pub fn order_book_density(&self) -> f64 {
+        self.order_book_density_rho
+    }
+
+    /// Retorna la velocidad acústica de propagación de perturbaciones c_s en [USD / s]
+    #[inline(always)]
+    pub fn sound_speed(&self) -> f64 {
+        self.sound_speed_cs
+    }
+
+    /// Retorna la deriva óptima del control HJB del creador de mercado v*
+    #[inline(always)]
+    pub fn hjb_optimal_drift(&self) -> f64 {
+        self.hjb_optimal_drift
     }
 }
 
@@ -407,5 +502,27 @@ mod tests {
         let l5 = NavierStokesReynoldsEngine::compute_laminar_share(5.0);
         assert!(l5 < 0.05);
         assert!(l0 > l1 && l1 > l5);
+    }
+
+    #[test]
+    fn test_mfg_stability_and_mach_supersonic_shockwave() {
+        let mut engine = NavierStokesReynoldsEngine::new();
+        // Calentar
+        engine.update(50_000.0, 50_001.0, 10.0, 10.0, 0.0, 0.0010, 1_000_000);
+        // Régimen tranquilo: subsónico y alta estabilidad MFG
+        engine.update(50_000.01, 50_001.01, 10.0, 10.0, 0.0, 0.0010, 1_000_100);
+        assert!(!engine.is_supersonic());
+        assert!(engine.mach_number() < 1.0);
+        assert!(engine.mfg_stability_index() > 0.30);
+        assert!(engine.order_book_density() > 0.0);
+        assert!(engine.sound_speed() > 0.0);
+
+        // Disparo violento con vaciado de profundidad: flujo supersónico
+        engine.update(50_200.0, 50_201.0, 0.1, 0.1, 500.0, 0.0010, 1_000_110);
+        assert!(engine.is_supersonic(), "Debe detectar flujo supersónico Ma={}", engine.mach_number());
+        assert!(engine.mach_number() >= 1.0);
+        assert!(engine.mfg_stability_index() < 0.05, "Estabilidad colapsa ante shockwave");
+        assert!(engine.liquidity_void_probability().is_finite());
+        assert!(engine.hjb_optimal_drift().is_finite());
     }
 }

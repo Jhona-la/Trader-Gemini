@@ -95,7 +95,7 @@ pub const REGISTRO_VETOS: &[EntradaVeto] = &[
         responsable: "B3.19/D-382 (heredado), 2026-09-24",
         clase: ClaseVeto::RiesgoDuro,
         estado: EstadoVeto::Activo,
-        test: Some("replay_con_envolvente_sigue_determinista"),
+        test: Some("margen_insuf_contract_rejects_excessive_notional_and_admits_viable"),
         deuda: None,
     },
     EntradaVeto {
@@ -137,14 +137,14 @@ pub const REGISTRO_VETOS: &[EntradaVeto] = &[
     EntradaVeto {
         id: "V-RISK-007",
         nombre: "sonda_ocupada",
-        causa: "D4 (ADR-0016, LC-F4-19, Ola Ω107): una moneda en fase de sonda sólo abre SONDAS, y la cartera tiene una sola sonda abierta a la vez. Egresa de la sonda al alcanzar resolve_max_cierres_sonda o prematuramente si el test secuencial SPRT de Wald demuestra ventaja estadística (H1: p >= p1) con significancia alpha=0.05. Una sonda es información, no alfa: abrir varias multiplica un riesgo sin medir.",
-        fuente_umbral: "dinámica / SPRT de Wald (ADR-0016 D4, Ola Ω107): resolve_max_cierres_sonda (default 5, configurable en registry por moneda o global) y egreso precoz por prueba secuencial SPRT de razón de verosimilitudes",
+        causa: "D4 (ADR-0016, LC-F4-19, Ola Ω107, Ola Ω193 F1-090): una moneda en fase de sonda sólo abre SONDAS, y la cartera tiene una sola sonda abierta a la vez. Egresa de la sonda al alcanzar resolve_max_cierres_sonda o prematuramente si el test secuencial SPRT de Wald demuestra ventaja estadística (H1: p >= p1, default p1=0.85 vs p0=0.50) con significancia alpha=0.10 y potencia 1-beta=0.80 calibradas al horizonte de 5 cierres. Una sonda es información, no alfa: abrir varias multiplica un riesgo sin medir.",
+        fuente_umbral: "dinámica / SPRT de Wald (ADR-0016 D4, Ola Ω107, Ola Ω193): resolve_max_cierres_sonda (default 5, configurable en registry por moneda o global con get_for_coin_or zero-alloc) y egreso precoz por prueba secuencial SPRT de razón de verosimilitudes con parámetros calibrados y alcanzables",
         datos: "metrics.trade_count y win_rate de cada moneda + positions.is_any_open() de cada moneda (sonda::hay_sonda_abierta)",
-        responsable: "CL-98 (Claude, Línea C), 2026-10-12; Antigravity Ola Ω107, 2026-10-14",
+        responsable: "CL-98 (Claude, Línea C), 2026-10-12; Antigravity Ola Ω107 / Ola Ω193, 2026-10-21",
         clase: ClaseVeto::RiesgoDuro,
         estado: EstadoVeto::Activo,
         test: Some("cl98_una_sola_sonda_abierta_en_la_cartera"),
-        deuda: Some("CL-108 guarda el recuento de cierres y la evidencia por moneda entre reinicios (estado_aprendido.json). Ola Ω107 resuelve la rigidez del 5 fijo introduciendo parada secuencial por SPRT de Wald y parametrización omnisciente en registry"),
+        deuda: Some("CL-108 guarda el recuento de cierres y la evidencia por moneda entre reinicios (estado_aprendido.json). Ola Ω193 erradica la inalcanzabilidad del SPRT, invierte la regularización Bayesiana en k y elimina allocs en resolve_max_cierres_sonda"),
     },
     EntradaVeto {
         id: "V-LOGIC-001",
@@ -155,7 +155,7 @@ pub const REGISTRO_VETOS: &[EntradaVeto] = &[
         responsable: "XLI·A1 (GLM), 2026-09-26",
         clase: ClaseVeto::Logica,
         estado: EstadoVeto::Activo,
-        test: Some("t1_diag_camino_nativo_una_evaluacion"),
+        test: Some("viabilidad_contract_rejects_unviable_geometry_and_admits_viable"),
         deuda: None,
     },
     EntradaVeto {
@@ -226,7 +226,7 @@ pub const REGISTRO_VETOS: &[EntradaVeto] = &[
         responsable: "XLIV-8/XLVI·B (Claude+GLM), 2026-09-29",
         clase: ClaseVeto::RiesgoDuro,
         estado: EstadoVeto::Activo,
-        test: Some("xliv_friccion_de_ida_y_vuelta_usa_la_ley_difusiva"),
+        test: Some("suelo_tp_sl_contract_rejects_sub_friction_brackets_and_admits_viable"),
         deuda: None,
     },
     EntradaVeto {
@@ -337,7 +337,7 @@ pub const REGISTRO_VETOS: &[EntradaVeto] = &[
         responsable: "heredado (D-747 unificación), puesto al día GLM/LXVII, 2026-10-01",
         clase: ClaseVeto::Logica,
         estado: EstadoVeto::Activo,
-        test: Some("xliv_friccion_de_ida_y_vuelta_usa_la_ley_difusiva"),
+        test: Some("ev_contract_rejects_negative_expectancy_and_admits_viable"),
         deuda: None,
     },
     EntradaVeto {
@@ -509,6 +509,10 @@ pub const TESTS_EXISTENTES_RIESGO: &[&str] = &[
     "spec_rejection_contract_handles_unregistered_coin",
     "invalid_input_contract_rejects_nan_and_infinities",
     "flat_coin_contract_rejects_flat_intent",
+    "margen_insuf_contract_rejects_excessive_notional_and_admits_viable",
+    "viabilidad_contract_rejects_unviable_geometry_and_admits_viable",
+    "suelo_tp_sl_contract_rejects_sub_friction_brackets_and_admits_viable",
+    "ev_contract_rejects_negative_expectancy_and_admits_viable",
 ];
 
 /// Fuentes cruzadas (mismo workspace) donde pueden vivir los contratos de
@@ -620,6 +624,37 @@ mod tests {
                 "TESTS_EXISTENTES_RIESGO incluye \"{}\" pero no existe como fn en \
                  risk-engine — la lista es una afirmación verificable, no un adorno.",
                 t
+            );
+        }
+
+        // F1-093 (Ola Ω196): Endurecer el diente del registro. Los contratos formales
+        // para margen_insuf, viabilidad, suelo_tp_sl y EV deben ejercer activamente
+        // tanto el caso de rechazo (FN / veto disparado) como el caso de admisión (FP / orden viable).
+        let contratos_criticos = [
+            ("margen_insuf_contract_rejects_excessive_notional_and_admits_viable", "V-RISK-003"),
+            ("viabilidad_contract_rejects_unviable_geometry_and_admits_viable", "V-LOGIC-001"),
+            ("suelo_tp_sl_contract_rejects_sub_friction_brackets_and_admits_viable", "V-LOGIC-006"),
+            ("ev_contract_rejects_negative_expectancy_and_admits_viable", "V-LOGIC-013"),
+        ];
+        for (test_name, veto_id) in contratos_criticos {
+            let fn_anchor = format!("fn {}(", test_name);
+            let test_pos = corpus.find(&fn_anchor).unwrap_or_else(|| {
+                panic!("{}: test '{}' no encontrado en el corpus de contratos", veto_id, test_name);
+            });
+            let snippet = &corpus[test_pos..test_pos + 2500.min(corpus.len() - test_pos)];
+            let tiene_rechazo = snippet.contains("ultimo_rechazo()")
+                || snippet.contains("SignalType::Flat")
+                || snippet.contains("VetoEnvio::Margen")
+                || snippet.contains("REJ_");
+            let tiene_admision = snippet.contains("SignalType::Long")
+                || snippet.contains("SignalType::Short")
+                || snippet.contains("is_ok()")
+                || snippet.contains("volume_usd > 0.0");
+            assert!(
+                tiene_rechazo && tiene_admision,
+                "{}: el contrato '{}' debe contener tanto caso de rechazo (FN) como de admisión (FP)",
+                veto_id,
+                test_name
             );
         }
     }

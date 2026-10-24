@@ -1,4 +1,4 @@
-//! C-F5c · R1 de la revisión posterior del PR #62 (CL-130): el freno duro de
+﻿//! C-F5c · R1 de la revisión posterior del PR #62 (CL-130): el freno duro de
 //! la cuenta mide la caída en stops DE CADA POSICIÓN.
 //!
 //! Teoría. `K(w, l)` es el cuantil 95 % de la caída máxima en stops de 200
@@ -50,7 +50,6 @@ fn nucleo() -> (Arc<GlobalArena>, GodEngineCore) {
         OutcomeContext::IsolatedSimulation,
     );
     core.swing_nn = None;
-    core.scalp_forest = None;
     arena.ganancia_en_stops.store(W, Relaxed);
     arena.perdida_en_stops.store(L, Relaxed);
     (arena, core)

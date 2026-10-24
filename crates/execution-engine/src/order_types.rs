@@ -39,6 +39,45 @@ where
     }
 }
 
+/// Deserializa números opcionales finitos como `Option<f64>` a partir de string o número JSON.
+/// Si el campo está ausente o es null o string vacía, produce `Ok(None)`.
+/// Si el campo contiene un número válido ("0.0", 0.0, 105.25), produce `Ok(Some(f64))`.
+/// Evita que campos ausentes se deserialicen silenciosamente como 0.0 cuando se usa serde(default).
+pub fn string_or_f64_opt<'de, D>(deserializer: D) -> Result<Option<f64>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    #[derive(Deserialize)]
+    #[serde(untagged)]
+    enum Val {
+        S(String),
+        F(f64),
+        N(serde_json::Number),
+    }
+    let opt = Option::<Val>::deserialize(deserializer)?;
+    let val = match opt {
+        None => return Ok(None),
+        Some(Val::F(f)) => f,
+        Some(Val::N(n)) => n
+            .as_f64()
+            .ok_or_else(|| serde::de::Error::custom("número fuera de rango f64"))?,
+        Some(Val::S(s)) => {
+            let trimmed = s.trim();
+            if trimmed.is_empty() {
+                return Ok(None);
+            }
+            trimmed
+                .parse::<f64>()
+                .map_err(|_| serde::de::Error::custom(format!("string no numérica: {}", s)))?
+        }
+    };
+    if val.is_finite() {
+        Ok(Some(val))
+    } else {
+        Err(serde::de::Error::custom("número no finito"))
+    }
+}
+
 /// Fill individual dentro de una orden ejecutada.
 #[derive(Debug, Clone, Deserialize, Default)]
 pub struct Fill {
@@ -150,6 +189,33 @@ impl OrderAck {
                 }
             })
             .sum()
+    }
+}
+
+/// F1-031: Informe estructurado de ejecución real para retroalimentación
+/// de slippage, comisiones y EV bayesiano.
+#[derive(Debug, Clone, PartialEq, Default, serde::Serialize, serde::Deserialize)]
+pub struct FillReport {
+    pub client_order_id: String,
+    pub symbol: String,
+    pub executed_qty: f64,
+    pub avg_price: f64,
+    pub commission: f64,
+    pub is_filled: bool,
+    pub status: String,
+}
+
+impl FillReport {
+    pub fn from_ack(ack: &OrderAck) -> Self {
+        Self {
+            client_order_id: ack.client_order_id.clone(),
+            symbol: ack.symbol.clone(),
+            executed_qty: ack.executed_qty,
+            avg_price: ack.avg_price,
+            commission: ack.total_commission(),
+            is_filled: ack.is_filled(),
+            status: ack.status.clone(),
+        }
     }
 }
 

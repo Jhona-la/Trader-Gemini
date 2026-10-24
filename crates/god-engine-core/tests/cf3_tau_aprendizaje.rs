@@ -76,7 +76,6 @@ fn core_con_posicion() -> (Arc<GlobalArena>, GodEngineCore) {
     let mut core =
         GodEngineCore::new_with_outcome_context(arena.clone(), OutcomeContext::IsolatedSimulation);
     core.swing_nn = None;
-    core.scalp_forest = None;
     let pos = &arena.coins[0].positions.slot_2;
     assert!(pos.open_with_horizon(
         true,
@@ -174,7 +173,6 @@ fn cf3_kelly_de_la_moneda_no_depende_de_la_tau_de_la_operacion_cerrada() {
 /// `epigenetic_gain` del espectro (igualdad exacta). Precondición: el cierre
 /// aprende (trade_count = 1).
 #[test]
-#[ignore = "OPEN F3.2-06 (Línea C, camino de cierre): con entry_tau_ms = 0, tau_trade_ms cae al nodo crudo dominant_tau_ms o al gen temporal_scale y apply_epigenetic_outcome castiga las escalas de alrededor sin evidencia de apertura"]
 fn cf3_posicion_sin_tau_de_decision_no_entrena_el_espectro() {
     let _g = ENVIRONMENT.lock().unwrap_or_else(|p| p.into_inner());
     let _d = FixtureDirectory::new();

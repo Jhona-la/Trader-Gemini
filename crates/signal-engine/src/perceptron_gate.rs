@@ -139,14 +139,14 @@ impl PerceptronGateEngine {
             if !x.is_finite() || x == 0.0 {
                 continue;
             }
-            // Peso espectral: campana en la banda operativa (8..23), decae
-            // linealmente hacia 0.5 en los extremos sub-ruido y macro.
-            let peso = if (8..=23).contains(&k) {
+            // F1-125: Perfil espectral continuo anclado a la banda física operativa [18..=22] ([30 s, 12 h]).
+            // Decae linealmente de forma C^0 hacia 0.5 en microestructura sub-30s (k < 18) y macroestructura secular (k > 22).
+            let peso = if (18..=22).contains(&k) {
                 1.0
-            } else if k < 8 {
-                0.5 + 0.5 * (k as f64 / 8.0)
+            } else if k < 18 {
+                0.5 + 0.5 * (k as f64 / 18.0)
             } else {
-                0.5 + 0.5 * ((31 - k) as f64 / 8.0).min(1.0)
+                0.5 + 0.5 * (((31 - k) as f64 / 9.0).clamp(0.0, 1.0))
             };
             por_escala[k] = Self::infer(x, peso);
         }
@@ -311,8 +311,15 @@ mod tests {
         assert_eq!(engine.evaluate(), 0.0);
 
         let registry = Arc::new(OmniscientRegistry::new());
-        registry.set("perceptron_candidate_signal", 0.9);
-        registry.set("perceptron_hebbian_weight", 1.2);
+        // F1-124 (Ø156, AGY): el motor ya NO lee 'perceptron_candidate_signal'
+        // (clave sin escritor en producción); la señal viva entra por
+        // 'order_flow_imbalance' con fallback a 'alpha_signal'.
+        registry.set("order_flow_imbalance", 0.9);
+        // F1-098 (Ø155, AGY): el peso Hebbiano se lee con aislamiento estricto
+        // por moneda/símbolo ('hebbian_weight'); la clave global compartida
+        // 'perceptron_hebbian_weight' quedó fuera del camino vivo a propósito
+        // (mezclaba el PnL de activos ajenos).
+        registry.set("hebbian_weight", 1.2);
 
         engine.init(registry).expect("init should succeed");
         let signal = engine.evaluate();

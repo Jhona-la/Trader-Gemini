@@ -139,7 +139,9 @@ impl StrategyTelemetryFrame {
                 } else {
                     1.0
                 },
-                if capital.is_finite() { capital } else { 13.0 },
+                // CL-15 (GLM 144): capital no finito ⇒ NaN (ausencia honesta);
+                // 13.0 fabricaría un patrimonio que el sistema no conoce.
+                if capital.is_finite() { capital } else { f64::NAN },
                 if vol.is_finite() { vol } else { 0.01 },
                 if conf.is_finite() { conf } else { 0.5 },
                 coin_id as f64,
@@ -198,6 +200,16 @@ mod tests {
         let evo = StrategyTelemetryFrame::evolution_mutation(1.5, 0.70, 2.0, 100, 0.05, true);
         assert_eq!(evo.subsystem, SUBSYSTEM_EVOLUTION_ENGINE);
         assert_eq!(evo.payload[5], 1.0);
+    }
+
+    /// CL-15 (GLM 144): capital no finito ⇒ NaN en el frame (ausencia
+    /// honesta); 13.0 fabricaría un patrimonio que el sistema no conoce.
+    #[test]
+    fn cl15_capital_nan_en_leverage_frame_viaja_como_nan() {
+        let lev = StrategyTelemetryFrame::leverage_computed(10.0, 5.0, f64::NAN, 0.02, 0.8, 3);
+        assert!(lev.payload[2].is_nan(), "capital NaN viaja como NaN");
+        let lev_ok = StrategyTelemetryFrame::leverage_computed(10.0, 5.0, 240.5, 0.02, 0.8, 3);
+        assert_eq!(lev_ok.payload[2], 240.5, "capital válido viaja intacto");
     }
 
     #[test]

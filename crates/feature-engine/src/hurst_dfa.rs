@@ -85,6 +85,8 @@ pub struct HurstDfa {
     /// Bondad descriptiva del ajuste log-log, en [0,1], no probabilidad de
     /// que exista una ley de potencias. R² alto no descarta crossovers o sesgo.
     pub r_squared: f64,
+    /// Error típico de la estimación de la pendiente \hat{H} (SE de OLS sobre escalas log-log).
+    pub std_error: f64,
     /// Pendiente sin clipping, incluso fuera de (0,1); None si no hubo ajuste.
     /// Permite diagnosticar mala especificación sin ocultarla en una frontera.
     pub raw_exponent: Option<f64>,
@@ -113,6 +115,7 @@ impl HurstDfa {
             since_recompute: 0,
             hurst: 0.5,
             r_squared: 0.0,
+            std_error: 1.0 / (MIN_SAMPLES as f64).sqrt(),
             raw_exponent: None,
             scales_used: 0,
             max_scale: 0,
@@ -268,6 +271,7 @@ impl HurstDfa {
             // declara no válido en lugar de devolver un número inventado.
             self.is_valid = false;
             self.r_squared = 0.0;
+            self.std_error = 1.0 / (n as f64).sqrt();
             return;
         }
 
@@ -285,24 +289,48 @@ impl HurstDfa {
             syy += dy * dy;
         }
         if !sxx.is_finite() || sxx <= 0.0 || !syy.is_finite() || syy <= 0.0 {
+            self.std_error = 1.0 / (n as f64).sqrt();
             return;
         }
         let slope = sxy / sxx;
         if !slope.is_finite() {
+            self.std_error = 1.0 / (n as f64).sqrt();
             return;
         }
         self.raw_exponent = Some(slope);
         // r²: cuánta de la variación de ln F(s) explica la ley de potencias.
         let r2 = sxy / sxx.sqrt() / syy.sqrt();
         if !r2.is_finite() {
+            self.std_error = 1.0 / (n as f64).sqrt();
             return;
         }
         self.r_squared = (r2 * r2).clamp(0.0, 1.0);
+        // Error típico analítico de la pendiente de regresión \hat{H}:
+        // SS_res = syy * (1 - r^2)
+        // SE(slope) = sqrt( (SS_res / (k - 2)) / sxx )
+        let k_df = (k - 2.0).max(1.0);
+        let ss_res = (syy * (1.0 - self.r_squared)).max(0.0);
+        let se_slope = (ss_res / (k_df * sxx)).sqrt();
+        self.std_error = if se_slope.is_finite() && se_slope > 0.0 {
+            se_slope
+        } else {
+            1.0 / (n as f64).sqrt()
+        };
         self.is_valid = slope > 0.0 && slope < 1.0;
         if self.is_valid {
             // Legacy output policy, not a physical law. Raw slope remains
             // available; an out-of-model slope is never certified by clipping.
             self.hurst = slope.clamp(0.05, 0.95);
+        }
+    }
+
+    /// Error típico de estimación de Hurst \sigma_H.
+    #[inline]
+    pub fn std_error(&self) -> f64 {
+        if self.std_error.is_finite() && self.std_error > 0.0 {
+            self.std_error
+        } else {
+            1.0 / (MIN_SAMPLES as f64).sqrt()
         }
     }
 

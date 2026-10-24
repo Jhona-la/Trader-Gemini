@@ -23,6 +23,10 @@ Plan y lectura de los resultados: `docs/PLAN_LINEA_H_CLAUDE_2026-10-12.md` §6.
 | `ola3_valle_v2.tsv` | Ola 3: el valle de capital con la v2 | `T3_GENERADOR=v2 … t3_valle_de_capital` |
 | `ola3_adaptacion_v2.tsv`, `ola3_adaptacion_v2_lineas.txt` | Ola 3: E1–E4 con la v2, más E4' (anti → anti) y E5 (antipersistencia larga por cuartiles) y el pago del segundo tramo y del fresco en la fila | `T3_GENERADOR=v2 … t3_adaptacion_en_el_tiempo` |
 | `ola3_escepticos.tsv`, `ola3_confirmaciones.tsv`, `ola3_escepticos_sintesis.md`, `ola3_escepticos_raw.json` | Ola 3: dos escépticos (matemática del filtro; generador y reproducibilidad) sobre el T-3 v2 | workflow `linea-h-escepticos-ola3` |
+| `ola4_escalera_v2_13usd.tsv`, `ola4_escalera_v1_13usd.tsv`, `ola4_*_lineas.txt` | Ola 4 (2026-10-17, `main` 09fe64db con LH-04): la escalera de 13 USD con los dos generadores sobre el mismo binario; comparación con `ola3_escalera_v2_13usd.tsv` y `ola2_post_pr62_escalera_13usd.tsv` en el plan §9.1 | `T3_GENERADOR=v2|v1 TG_TRACE_NATIVO=1 TG_GENOME_ENV=backtest … t3_escalera_de_ventaja_conocida` |
+| `ola4_adaptacion_v2.tsv`, `ola4_adaptacion_v2_ref.tsv`, `ola4_adaptacion_v2_lineas.txt` | Ola 4: E1–E5 y E4' con la v2 sobre `main`; E3 (nulo → ventaja) pasa de 0 a 172 cierres en el segundo tramo: LH-20 cerrado en `main` | `T3_GENERADOR=v2 … t3_adaptacion_en_el_tiempo` |
+| `ola4_valle_v2.tsv`, `ola4_valle_v2_lineas.txt` | Ola 4: el valle de capital con la v2 sobre `main` (plan §9.4) | `T3_GENERADOR=v2 … t3_valle_de_capital` |
+| `tau_por_peldano.py`, `ola4_tau_por_peldano_v2.tsv`, `ola4_tau_por_peldano_v1.tsv`, `ola4_tau_por_serie_adaptacion_v2.tsv`, `ola4_tau_por_serie_valle_v2.tsv` | Ola 4: τ, ranura, nocional, margen y apalancamiento por serie medida, leídos de las 100 primeras `[OPEN TRACE]` de cada núcleo (verificación barata de LH-06, `docs/DISENO_LH06_TAU.md` §5) | `python -I tau_por_peldano.py [--tramo-velas 3000] <log>` |
 
 Generadores: V1 conserva la serie histórica y su fuga conjunta OHLCV. V2
 separa los sorteos y usa ruido gaussiano; el canal intravela H1-01(iii) del

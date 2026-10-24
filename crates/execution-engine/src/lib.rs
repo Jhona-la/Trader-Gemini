@@ -1,9 +1,11 @@
+pub mod adversarial_gate;
 pub mod binance_api;
 pub mod client;
 pub mod dynamic_symbols;
 pub mod entry_dispatch;
 pub mod execution_evidence;
 pub mod executor;
+pub mod fixed_filter;
 pub mod hot_swap;
 pub mod income_evidence;
 pub mod ioc_evidence;
@@ -20,16 +22,20 @@ pub mod trade_accounting;
 pub mod user_data_stream;
 pub mod ws_executor;
 
+pub use adversarial_gate::{
+    AdversarialClearance, AdversarialTrapReason, RedTeamPreTradeGate, DEFAULT_HOSTILE_THRESHOLD,
+};
 pub use dynamic_symbols::DynamicSymbolSelector;
 pub use executor::OrderResolution;
+pub use fixed_filter::{BinanceFixedFilter, FilterRejectReason, QuantizedOrder, StackAsciiString};
 pub use hot_swap::HotSwapController;
 pub use ntp::start_ntp_synchronizer;
 pub use order_registry::{OrderRegistry, OrderStatus, TrackedOrder};
-pub use order_types::{Fill, OrderAck};
+pub use order_types::{Fill, FillReport, OrderAck};
 pub use quantum_multiplexer::QuantumMultiplexer;
 pub use quantum_socket::QuantumSocketPool;
 pub use reconciliation::{reconcile, PositionRiskEntry, ReconciliationReport};
-pub use router::QuantumOrderRouter;
+pub use router::{AdverseSelectionGuard, FifoQueueMetrics, OrderViability, QuantumOrderRouter};
 pub use shadow::ShadowExecutor;
 pub use user_data_stream::{AccountSink, RemotePosition, UserDataStreamer};
 

@@ -176,9 +176,10 @@ pub const RANGO_PARKINSON: f64 = 1.595_769_121_605_730_8;
 /// con exponente de Hurst $H \in [0.30, 0.75]$:
 /// $$\sigma(t) = \text{atr\_ratio} \cdot \left(\frac{t}{\tau_{\text{ref}}}\right)^H$$
 /// En $H = 0.50$, la ley reproduce bit-exacto la difusión Browniana estándar ($\sqrt{t/\tau_{\text{ref}}}$).
-/// En regímenes persistentes ($H > 0.50$), la difusión super-lineal amplifica el deslizamiento
-/// por momentum adverso; en regímenes anti-persistentes ($H < 0.50$), la compresión sub-difusiva
-/// mitiga el deslizamiento efectivo.
+/// Nota física (F1-119): Para latencias sub-minuto ($t < \tau_{\text{ref}}$, cociente $r < 1$),
+/// regímenes persistentes ($H > 0.50$) poseen trayectorias Hölder más suaves a escala sub-segundo ($r^H < r^{0.50}$);
+/// en regímenes anti-persistentes/rugosos ($H < 0.50$), la rugosidad fractal amplifica las micro-fluctuaciones ($r^H > r^{0.50}$).
+/// A escalas macro ($t > \tau_{\text{ref}}$), la difusión super-lineal $H > 0.50$ domina expansivamente.
 #[inline]
 pub fn latency_slippage_pct_hurst(atr_ratio: f64, latency_ms: f64, hurst: f64) -> f64 {
     if !atr_ratio.is_finite() || atr_ratio <= 0.0 {

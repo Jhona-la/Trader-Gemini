@@ -25,6 +25,7 @@ reqwest = { version = "0.11", features = ["blocking", "json"] }
 strategy-core = { path = "../strategy-core" }
 storage-engine = { path = "../storage-engine" }
 metacortex-engine = { path = "../metacortex-engine" }
+execution-engine = { path = "../execution-engine" }
 chrono = { version = "0.4", features = ["serde"] }
 
 [dev-dependencies]

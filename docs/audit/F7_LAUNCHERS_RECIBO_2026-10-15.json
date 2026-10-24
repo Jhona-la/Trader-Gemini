@@ -1,0 +1,139 @@
+{
+  "schema_version": 1,
+  "date_local": "2026-10-15",
+  "timezone": "America/Bogota",
+  "code_commit": "ef4cd9c4c5bf31ac21367350b4a6ddc7f8cb24a2",
+  "parent_commit": "16b02279c4b0ca79d66f6cac95ac44ddbe473077",
+  "shared_baseline": "ba445df79fa5f82402cd675af4b150f8a0398dea",
+  "scope": "Simulator launcher resource and invocation policy only; no Rust, model, data or economic criterion changes.",
+  "code_paths": [
+    "build_loop.ps1",
+    "run_sim_5.ps1",
+    "scripts/tests/test_sim_launchers.py"
+  ],
+  "integration": {
+    "state": "local_separate_handoff_to_ROOT",
+    "coordinator_thread": "01a116f0-2d58-7c72-a7a4-284816828e77",
+    "prior_train_pin": "16b02279c4b0ca79d66f6cac95ac44ddbe473077",
+    "published": false,
+    "pull_request": false,
+    "main_merged": false,
+    "local_all_targets": "Not run: no Rust changed and BASE retains Cargo turn; composition gates belong to integrator."
+  },
+  "contract": {
+    "argv": [
+      "run",
+      "--bin",
+      "multi_coin_simulator",
+      "-j",
+      "1"
+    ],
+    "max_cargo_invocations": 1,
+    "native_exit_code": "propagated unchanged, including 23",
+    "cwd": "PSScriptRoot with caller location restored in finally",
+    "default_target": "PSScriptRoot/target when CARGO_TARGET_DIR empty or absent",
+    "target_override": "text preserved; relative paths now interpreted from explicit project cwd",
+    "caller_target_restored": true,
+    "run_sim_5_incremental": "0 for invocation; caller value restored afterwards",
+    "cargo_absent": "nonzero; already passed in baseline, retained as regression protection",
+    "global_build_exclusion": false,
+    "explicit_target_override_not_policy_exception": true
+  },
+  "tests": {
+    "command": "python -B -m unittest scripts.tests.test_sim_launchers -v",
+    "harness_sha256": "ac9045c633f5291d9c9c4933cc006ca2f83e5dd9e4a6700b0c82135285b7b423",
+    "methods": 7,
+    "scenarios": 14,
+    "framework": "Real PowerShell 7, disposable fixtures with spaces, Cargo.cmd invokes only Python recorder; isolated PATH excludes real Cargo; Start-Sleep replaced only inside fixture.",
+    "real_cargo_invocations": 0,
+    "rust_compiled": false,
+    "actual_simulation": false,
+    "red": {
+      "baseline_script_blobs": {
+        "build_loop.ps1": "adb752a05e2ab8c31058e71f4d5eda88bc5bddb2",
+        "run_sim_5.ps1": "0badf8d62f9c47fffb59a7e6346ad646f00f3ceb"
+      },
+      "seconds": 66.648,
+      "exit_code": 1,
+      "failures": 10,
+      "errors": 0,
+      "skips": 0,
+      "already_passing_scenarios": 4,
+      "log": "logs/sim-launchers-red.log",
+      "sha256": "6d182ca79ca4648219d7513e408a65ea3ae740256b1bee2719e5b423182c172e"
+    },
+    "green": {
+      "seconds": 42.981,
+      "exit_code": 0,
+      "failures": 0,
+      "errors": 0,
+      "skips": 0,
+      "log": "logs/sim-launchers-green.log",
+      "sha256": "c89bd38ddc5244ae634a9285c804e31c0de537c4d19348b60e3a2f044732cf0c"
+    },
+    "unchanged_harness_red_green": true,
+    "notes": [
+      "Four missing-Cargo scenarios already passed baseline; do not count as demonstrated new fixes.",
+      "No claim of financial accuracy, latency, profitability or genetic T1 verification.",
+      "Relative target resolution is now explicitly project-relative; tests cover absolute overrides with spaces."
+    ]
+  },
+  "resources": {
+    "sample_utc": "2026-10-15T21:41:04.9861194Z",
+    "ram_visible_gib": 23.38,
+    "ram_free_gib": 5.55,
+    "disk_free_gib": 220.62,
+    "god_engine_observed": false,
+    "cargo_pids_observed": [
+      25468,
+      38360,
+      37688
+    ],
+    "stopped_processes": [],
+    "removed_foreign_worktrees": [],
+    "reclaimed_bytes_claimed": 0,
+    "main_target_scan_not_repeated": true
+  },
+  "telemetry_review": {
+    "lock_free_logger": "No production caller found; bounded channel and missing explicit shutdown barrier, not a demonstrated live leak.",
+    "flight_recorder": "No production activation found; high-water file size bounded for files created by this API, no proof of resident memory growth.",
+    "existing_defect_ids_reused": true,
+    "runtime_changes": false
+  },
+  "prior_T1_compatibility": {
+    "commit": "16b02279c4b0ca79d66f6cac95ac44ddbe473077",
+    "methods": 1,
+    "scenarios": 4,
+    "red_failures": 4,
+    "green_failures": 0,
+    "archive": "logs/recursos-t1-formatos-20261015",
+    "separate_from_wrapper_acceptance": true
+  },
+  "review": {
+    "resource_audit": "Read-only review approved, including native exit codes, finally state restoration and scope of preferences.",
+    "quant_foundations": "Independent frozen harness, baseline RED and corrected GREEN."
+  },
+  "archive": "logs/recursos-launchers-entrega-20261015",
+  "artifacts": [
+    {
+      "path": "build_loop.ps1",
+      "bytes": 740,
+      "sha256": "2e733979315db9446548efdc20e1de1b93e93969b36282fcf90df0220cf89d50"
+    },
+    {
+      "path": "run_sim_5.ps1",
+      "bytes": 865,
+      "sha256": "0353f0cb8a638b91c2b711d41e8787835284a3965350a4ce64da7e86f8c8c0c5"
+    },
+    {
+      "path": "scripts/tests/test_sim_launchers.py",
+      "bytes": 10945,
+      "sha256": "ac9045c633f5291d9c9c4933cc006ca2f83e5dd9e4a6700b0c82135285b7b423"
+    },
+    {
+      "path": "docs/audit/F7_LAUNCHERS_RECURSOS_2026-10-15.md",
+      "bytes": 9135,
+      "sha256": "b177edcc9626a4e3d109afa586299175e4c63648e4919edb96b0d5385a944c61"
+    }
+  ]
+}

@@ -157,6 +157,9 @@ pub struct HawkesBesselEngine {
     /// F-A6 — excitación acumulada S(t_last) = Σ α·e^{−β(t_last − tᵢ)},
     /// incluido el evento en t_last (que aporta α entero).
     excitacion: f64,
+    /// F1-016 (Ola Ω198) — excitación predecible S(t_last−) = decaida previa
+    /// antes de sumar α del evento actual.
+    pre_jump_excitacion: f64,
 }
 
 impl Default for HawkesBesselEngine {
@@ -175,6 +178,7 @@ impl std::fmt::Debug for HawkesBesselEngine {
             .field("n_seen", &self.n_seen)
             .field("last_ts", &self.last_ts)
             .field("excitacion", &self.excitacion)
+            .field("pre_jump_excitacion", &self.pre_jump_excitacion)
             .finish()
     }
 }
@@ -236,6 +240,7 @@ impl HawkesBesselEngine {
             last_ts: 0.0,
             n_seen: 0,
             excitacion: 0.0,
+            pre_jump_excitacion: 0.0,
         }
     }
 
@@ -275,6 +280,13 @@ impl HawkesBesselEngine {
         self.excitacion
     }
 
+    /// F1-016 (Ola Ω198) — Excitación predecible S(t_last−): la excitación previa decaída
+    /// hasta el instante del salto t_last, inmediatamente antes de sumar +α.
+    #[inline]
+    pub fn pre_jump_excitacion(&self) -> f64 {
+        self.pre_jump_excitacion
+    }
+
     /// Último timestamp registrado (segundos); `None` sin eventos.
     #[inline]
     pub fn ultimo_evento_s(&self) -> Option<f64> {
@@ -306,11 +318,13 @@ impl HawkesBesselEngine {
         // F-A6: la excitación previa decae hasta `ts` y el evento nuevo
         // aporta α entero (dt = 0 ⇒ e^0 = 1), exactamente como la suma.
         let decaida = if self.n_seen >= 1 {
-            let dt = ts - self.last_ts; // ≥ 0 por la guardia de arriba
+            let dt = (ts - self.last_ts).max(0.0); // ≥ 0 por la guardia de arriba
             self.excitacion * (-self.beta * dt).exp()
         } else {
             0.0
         };
+        // F1-016: almacenar la excitación predecible S(ts−) antes del salto +α
+        self.pre_jump_excitacion = if decaida.is_finite() { decaida } else { 0.0 };
         let nueva = decaida + self.alpha;
         // Fail-closed numérico: un estado no finito no se propaga; se
         // reinicia a la contribución del evento presente.
@@ -341,6 +355,30 @@ impl HawkesBesselEngine {
         }
     }
 
+    /// F1-016 (Ola Ω198) — Intensidad PREDECIBLE λ(t−):
+    /// En el instante del evento (t == t_last), evalúa el límite por la izquierda
+    /// excluyendo el +α del salto actual. Entre eventos (t > t_last), evalúa el
+    /// decaimiento continuo desde S(t_last).
+    #[inline]
+    pub fn intensity_predictable(&self, t: f64) -> f64 {
+        if self.n_seen == 0 || !t.is_finite() {
+            return self.mu;
+        }
+        let lambda = if (t - self.last_ts).abs() <= 1e-12 {
+            self.mu + self.pre_jump_excitacion
+        } else if t > self.last_ts {
+            let dt = t - self.last_ts;
+            self.mu + self.excitacion * (-self.beta * dt).exp()
+        } else {
+            self.mu + self.pre_jump_excitacion
+        };
+        if lambda.is_finite() {
+            lambda
+        } else {
+            self.mu
+        }
+    }
+
     /// Ratio de ramificación n = α/β. n < 1 = estacionario.
     #[inline]
     pub fn branching_ratio(&self) -> f64 {
@@ -357,18 +395,39 @@ impl HawkesBesselEngine {
         self.branching_ratio() < 1.0
     }
 
-    /// Intensidad NORMALIZADA contra μ̂: λ/μ > STEADY_STATE_RATIO = cascada
-    /// activa sobre el ritmo normal DEL SÍMBOLO. Un valor de 3.0 significa
-    /// "3× el ritmo base observado". Con μ̂ empírico (#535) la cantidad es
-    /// escala-libre: 1.6 ≈ régimen normal tanto a 30 tps como a 0.3 tps.
+    /// F1-016 (Ola Ω198) — Ratio predecible λ(t−)/μ̂ sin el sesgo de muestreo +α/μ̂
+    /// del evento presente.
     #[inline]
-    pub fn intensity_ratio(&self, t: f64) -> f64 {
+    pub fn intensity_ratio_predictable(&self, t: f64) -> f64 {
+        let lambda = self.intensity_predictable(t);
+        if self.mu > 1e-9 {
+            (lambda / self.mu).max(0.0)
+        } else {
+            1.0
+        }
+    }
+
+    /// Intensidad post-jump normalizada contra μ̂: λ(t+)/μ̂ (incluye +α del evento actual).
+    #[inline]
+    pub fn intensity_ratio_post_jump(&self, t: f64) -> f64 {
         let lambda = self.intensity(t);
         if self.mu > 1e-9 {
             (lambda / self.mu).max(0.0)
         } else {
             1.0
         }
+    }
+
+    /// Intensidad NORMALIZADA contra μ̂: λ/μ > STEADY_STATE_RATIO = cascada
+    /// activa sobre el ritmo normal DEL SÍMBOLO.
+    ///
+    /// F1-016 (Ola Ω198): Evalúa la intensidad PREDECIBLE λ(t−)/μ̂ en instantes
+    /// de evento (t == t_last), eliminando el artefacto de muestreo +α/μ̂ que sesgaba
+    /// la excitación en símbolos poco líquidos (altcoins) y garantizando paridad
+    /// matemática exacta entre el consenso espectral y los motores escalares.
+    #[inline]
+    pub fn intensity_ratio(&self, t: f64) -> f64 {
+        self.intensity_ratio_predictable(t)
     }
 
     /// API legacy: computar intensidad para un dt dado (sin historia).
@@ -416,58 +475,42 @@ impl QuantumStrategy for HawkesBesselEngine {
             None => return 0.0,
         };
 
-        let direction = r
-            .get_scoped_parameter(
-                sym_opt,
-                if symbol.is_empty() { None } else { Some(_coin_id) },
-                "order_flow_direction",
-                "HawkesBesselEngine",
-            )
-            .map(|p| p.get_value())
-            .unwrap_or(0.0);
+        let cid_opt = if symbol.is_empty() { None } else { Some(_coin_id) };
+
+        // F1-095: Leer flujo normalizado continuo O(1) en lugar del escritor binario
+        // order_flow_direction {-1, 0, 1} que fijaba tanh(±1.0) = ±0.7616 constante.
+        // Jerarquía Zero-Copy: order_book_imbalance ([-1, 1] continuo de L1) ->
+        // order_flow_imbalance (OFI continuo) -> order_flow_direction (compatibilidad legacy).
+        let direction = {
+            let obi = r.get_scoped_val_or(sym_opt, cid_opt, "order_book_imbalance", f64::NAN);
+            if obi.is_finite() && obi.abs() > 1e-6 {
+                obi
+            } else {
+                let ofi = r.get_scoped_val_or(sym_opt, cid_opt, "order_flow_imbalance", f64::NAN);
+                if ofi.is_finite() && ofi.abs() > 1e-6 {
+                    ofi
+                } else {
+                    r.get_scoped_val_or(sym_opt, cid_opt, "order_flow_direction", 0.0)
+                }
+            }
+        };
 
         if direction.abs() <= 1e-6 || !direction.is_finite() {
             return 0.0;
         }
 
-        // M2-C02 — CERRADO (R9, 2026-09-19; verificado H2-8 RONDA 3,
-        // 2026-10-07): el core excita el proceso real por SÍMBOLO
-        // (`hawkes_by_coin`, record_event por trade) y publica λ/μ
-        // VERDADERO al registry como 'hawkes_intensity'
-        // (god-engine-core/src/lib.rs:~4180,
-        // `hawkes_ratio_real.clamp(0.1, 10)`).
-        //
-        // HISTORIA CERRADA (no re-parar — era el riesgo de este bloque
-        // viejo, hallazgo H2-8): antes de M2-C02 el slot 'hawkes_intensity'
-        // llevaba un PROXY de aceleración 1+|a_t|/ATR (mislabel de la
-        // auditoría décima). Aquel texto advertía "FIX REAL pendiente, NO
-        // hecho" — PENDIENTE YA CUMPLIDO: la matemática Σα·e^(−βΔt) de
-        // este engine está VIVA en producción vía el proceso por símbolo
-        // del core. Los consumidores del slot
-        // (flow_excitation_confluence, flow_impulse) leen intensidad real
-        // desde entonces.
-        let core_intensity = r
-            .get_scoped_parameter(
-                sym_opt,
-                if symbol.is_empty() { None } else { Some(_coin_id) },
-                "hawkes_intensity",
-                "HawkesBesselEngine",
-            )
-            .map(|p| p.get_value())
-            .filter(|v| v.is_finite() && *v > 0.0)
-            .unwrap_or(1.0);
+        // M2-C02: lectura Zero-Copy de hawkes_intensity sin clonar Arc<Parameter>
+        let core_intensity = {
+            let val = r.get_scoped_val_or(sym_opt, cid_opt, "hawkes_intensity", 1.0);
+            if val.is_finite() && val > 0.0 {
+                val
+            } else {
+                1.0
+            }
+        };
 
-        // #657 (F2-A1) — ERRADICACIÓN sombra/vivo: el evaluate VIVO usa la
-        // MISMA moneda de la casa que el voto espectral #649 — exceso
-        // λ/μ̂ sobre STEADY_STATE_RATIO (0 en régimen normal = ABSTENCIÓN),
-        // firmado por el momentum CONTINUO (no signum: salto en dir=0).
-        // Antes: signum·tanh(λ/μ̂) votaba ±0.92 constante en régimen
-        // normal — el fallback escalar D-754 heredaba la física rota.
-        // #659 (F2-A4): la CALMA se abstiene (excit ≥ 0, paridad con
-        // flow_impulse #657) — antes la excitación negativa INVERTÍA el
-        // sentido del momentum: calma + flujo alcista votaba bajista.
-        // #666 (H2-2): divisor O(1) — direction es un flujo normalizado
-        // O(1); /1e-3 saturaba a signum encubierto.
+        // #657/#666: direction es un flujo normalizado continuo O(1); su tanh() modula
+        // la magnitud proporcional a la fuerza real del desbalance de órdenes.
         direction.tanh() * excitacion_hawkes_norm(core_intensity).max(0.0)
     }
 

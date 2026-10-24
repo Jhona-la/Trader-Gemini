@@ -1,0 +1,332 @@
+{
+  "date": "2026-10-20",
+  "implementation_base": "597de4af0efae7c64c34b618651c357d406d38c3",
+  "scope": "F7 launcher resource contracts; no financial runtime or semaphore implementation changes",
+  "sources": [
+    {
+      "path": "scripts/t1_oraculo.sh",
+      "bytes": 7319,
+      "sha256": "2a20b3835cf3a925c0c5a9542f4d1281b6963ce526962f1bffbca82f97dc7c52"
+    },
+    {
+      "path": "build_loop.ps1",
+      "bytes": 1397,
+      "sha256": "60e4aa126b25034e435be04ebfcaf5a2d71a16e4fb18270b3b7ecadb6b683e27"
+    },
+    {
+      "path": "run_sim_5.ps1",
+      "bytes": 1523,
+      "sha256": "3ac0ed3829b86ec1be591528b7eef3062a59ed8fc039801f61d5d51bf561278a"
+    },
+    {
+      "path": "scripts/tests/test_t1_oraculo.py",
+      "bytes": 16240,
+      "sha256": "5478e180d68270b20aff5a9134eb7146899e007810f1b13956793a82c3b6bac5"
+    },
+    {
+      "path": "scripts/tests/test_t1_thread_formats.py",
+      "bytes": 1822,
+      "sha256": "6c1729eb85ac355b60281e5b192c945baeb161c466bc32b563bf1310bf41920d"
+    },
+    {
+      "path": "scripts/tests/test_sim_launchers.py",
+      "bytes": 17523,
+      "sha256": "b068e51061064bd0574e72f1a1d0d76a6179c95b338fefa7fad2301007d89fc5"
+    },
+    {
+      "path": ".github/workflows/f7-resource-contracts.yml",
+      "bytes": 2714,
+      "sha256": "51637ec1bc633a254aeb104f7074792e8147675318830d60ced30bb36075c38e"
+    }
+  ],
+  "methods": {
+    "t1": 17,
+    "formats": 1,
+    "powershell": 10,
+    "total_green": 28
+  },
+  "results": [
+    {
+      "name": "t1-red-final",
+      "receipt": {
+        "phase": "RED",
+        "source": "597de4af0efae7c64c34b618651c357d406d38c3",
+        "harness_sha256": "5478e180d68270b20aff5a9134eb7146899e007810f1b13956793a82c3b6bac5",
+        "exit_code": 1,
+        "started_utc": "2026-10-20T12:01:48.0464878+00:00",
+        "elapsed_seconds": 434.6817446,
+        "cargo_kind": "stub only"
+      },
+      "log_sha256": "a78d25892bfef42d9874318f46b1ee6f8894c1483884fd871c6c4e0828a048d5",
+      "log_bytes": 47117
+    },
+    {
+      "name": "t1-green-final",
+      "receipt": {
+        "phase": "GREEN",
+        "source_sha256": "2a20b3835cf3a925c0c5a9542f4d1281b6963ce526962f1bffbca82f97dc7c52",
+        "harness_sha256": "5478e180d68270b20aff5a9134eb7146899e007810f1b13956793a82c3b6bac5",
+        "stable_inputs": true,
+        "exit_code": 0,
+        "started_utc": "2026-10-20T12:09:17.0475538+00:00",
+        "elapsed_seconds": 326.7533929,
+        "cargo_kind": "stub only"
+      },
+      "log_sha256": "0cff5411568eda7c50ed2b253d36fae5cc134f4780bcfb7fbda233cafa837b1c",
+      "log_bytes": 2729
+    },
+    {
+      "name": "t1-formats-green-final",
+      "receipt": {
+        "phase": "GREEN",
+        "source_sha256": "2a20b3835cf3a925c0c5a9542f4d1281b6963ce526962f1bffbca82f97dc7c52",
+        "harness_sha256": "6c1729eb85ac355b60281e5b192c945baeb161c466bc32b563bf1310bf41920d",
+        "base_harness_sha256": "5478e180d68270b20aff5a9134eb7146899e007810f1b13956793a82c3b6bac5",
+        "exit_code": 0,
+        "started_utc": "2026-10-20T12:15:08.6043763+00:00",
+        "elapsed_seconds": 50.5363902,
+        "cargo_kind": "stub only"
+      },
+      "log_sha256": "bbd88937956bb704bef143c42d556cbe8fa702bf553d7f64c1f0f79f83533eb5",
+      "log_bytes": 280
+    },
+    {
+      "name": "sim-red-final",
+      "receipt": {
+        "phase": "RED",
+        "source": "597de4af0efae7c64c34b618651c357d406d38c3",
+        "harness_sha256": "b068e51061064bd0574e72f1a1d0d76a6179c95b338fefa7fad2301007d89fc5",
+        "stable_inputs": true,
+        "exit_code": 1,
+        "started_utc": "2026-10-20T12:16:12.7151699+00:00",
+        "elapsed_seconds": 126.9132559,
+        "cargo_kind": "stub only"
+      },
+      "log_sha256": "ab13dd811933a534bacf0bc27681c62f54fee245fd73be24e6650a8d7bc67d6c",
+      "log_bytes": 42592
+    },
+    {
+      "name": "sim-green-final",
+      "receipt": {
+        "phase": "GREEN",
+        "build_loop_sha256": "60e4aa126b25034e435be04ebfcaf5a2d71a16e4fb18270b3b7ecadb6b683e27",
+        "run_sim_5_sha256": "3ac0ed3829b86ec1be591528b7eef3062a59ed8fc039801f61d5d51bf561278a",
+        "harness_sha256": "b068e51061064bd0574e72f1a1d0d76a6179c95b338fefa7fad2301007d89fc5",
+        "stable_inputs": true,
+        "exit_code": 0,
+        "started_utc": "2026-10-20T12:18:57.9948990+00:00",
+        "elapsed_seconds": 85.3715428,
+        "cargo_kind": "stub only"
+      },
+      "log_sha256": "6d9cf507882e94715c02e89295c52943a83fe2b60d777fe81d3ef246db2defaf",
+      "log_bytes": 1509
+    }
+  ],
+  "prior_attempts": {
+    "t1_first": "Invalid harness environment: MSYS coreutils absent from PATH; retained",
+    "t1_old_red": "33 FAIL + 1 ERROR with old e14 harness; stub protocol error corrected, final RED supersedes",
+    "t1_old_green": "16 PASS + 1 FAIL: canonical Windows/MSYS path alias comparison; source corrected",
+    "powershell_85e_red": "20 FAIL + 2 TimeoutExpired; no passing claim",
+    "powershell_85e_green": "21 FAIL from startup PATH comparison + 1 TimeoutExpired; harness corrected, final results supersede"
+  },
+  "limits": [
+    "Real Bash and PowerShell; Cargo recorder only. No local Rust compilation or financial T1 execution.",
+    "PS fixture copies the real semaphore, uses temporary shared primary/process and RAM seams, and disables barrido. No live target access.",
+    "T1 routing fixture semaphore does not prove actual resource admission, binary freshness or economic results.",
+    "Legacy T1 stamp/touch is outside semaphore acquisition; RB-H2 retains freshness scope.",
+    "CI still pending: require all eight current candidate checks and all-targets before main merge."
+  ],
+  "github_audit": {
+    "receipt_sha256": "190c39f7b2ccfc68a397e95d055571d5a27780f44ffb224673458a514692d7ca",
+    "open_reserved_drafts": [
+      65,
+      66
+    ],
+    "reference_only": {
+      "unit_run": 39360324015,
+      "replay_run": 39360324029,
+      "checkout": "ef1ce50"
+    },
+    "no_credential_contents_read": true
+  },
+  "publication_base": "7b598f7e2a44abba3f3fc83f1265a0ccfdee56b0",
+  "first_local_validation_commit": "c8131af02048e3cdfc3d514028d7292aeb0669a7",
+  "first_local_validation_status": "28 methods PASS locally; subsequent cloud attempt failed, not transferable to modified helpers/source",
+  "current_source_pins": [
+    {
+      "path": "scripts/t1_oraculo.sh",
+      "bytes": 8159,
+      "sha256": "74fb662b17b92fbff51b9638639ae71803ede9bde935892b135b9719af026716"
+    },
+    {
+      "path": "build_loop.ps1",
+      "bytes": 1397,
+      "sha256": "60e4aa126b25034e435be04ebfcaf5a2d71a16e4fb18270b3b7ecadb6b683e27"
+    },
+    {
+      "path": "run_sim_5.ps1",
+      "bytes": 1523,
+      "sha256": "3ac0ed3829b86ec1be591528b7eef3062a59ed8fc039801f61d5d51bf561278a"
+    },
+    {
+      "path": "scripts/tests/test_t1_oraculo.py",
+      "bytes": 17838,
+      "sha256": "645354b2024f8c5759aca816a02e1fff9ff6a28ee430feb821ef52a89fa9b15a"
+    },
+    {
+      "path": "scripts/tests/test_t1_thread_formats.py",
+      "bytes": 1822,
+      "sha256": "6c1729eb85ac355b60281e5b192c945baeb161c466bc32b563bf1310bf41920d"
+    },
+    {
+      "path": "scripts/tests/test_sim_launchers.py",
+      "bytes": 17640,
+      "sha256": "0592107a2fd9866c3d51604bdceee0552f84fce3a18d84c6f2bd5eaa8248b21d"
+    },
+    {
+      "path": ".github/workflows/f7-resource-contracts.yml",
+      "bytes": 2714,
+      "sha256": "51637ec1bc633a254aeb104f7074792e8147675318830d60ced30bb36075c38e"
+    }
+  ],
+  "follow_up_results": [
+    {
+      "name": "t1-8dot3-smoke",
+      "receipt": {
+        "phase": "8.3 regression smoke",
+        "source_sha256": "74fb662b17b92fbff51b9638639ae71803ede9bde935892b135b9719af026716",
+        "harness_sha256": "645354b2024f8c5759aca816a02e1fff9ff6a28ee430feb821ef52a89fa9b15a",
+        "stable_inputs": true,
+        "exit_code": 0,
+        "started_utc": "2026-10-20T12:35:07.9891411+00:00",
+        "elapsed_seconds": 37.3318256,
+        "cargo_kind": "stub only"
+      },
+      "log_sha256": "06f479aceb6b4c48fc7d9e4bb1a3bbb899b07406f4d9592359c71a99d5668cdb",
+      "log_bytes": 579
+    },
+    {
+      "name": "sim-green-realpath",
+      "receipt": {
+        "phase": "GREEN after8.3 helper fix",
+        "build_loop_sha256": "60e4aa126b25034e435be04ebfcaf5a2d71a16e4fb18270b3b7ecadb6b683e27",
+        "run_sim_5_sha256": "3ac0ed3829b86ec1be591528b7eef3062a59ed8fc039801f61d5d51bf561278a",
+        "harness_sha256": "0592107a2fd9866c3d51604bdceee0552f84fce3a18d84c6f2bd5eaa8248b21d",
+        "stable_inputs": true,
+        "exit_code": 0,
+        "started_utc": "2026-10-20T12:31:01.4037024+00:00",
+        "elapsed_seconds": 209.4228692,
+        "cargo_kind": "stub only"
+      },
+      "log_sha256": "552f0fd606119b6171faec5257d1171758ae2c16e108e55b877f8b97f259158c",
+      "log_bytes": 1510
+    },
+    {
+      "name": "t1-8dot3-red-c813",
+      "receipt": {
+        "phase": "RED8.3same-harness",
+        "source": "c8131af02048e3cdfc3d514028d7292aeb0669a7",
+        "source_sha256": "2a20b3835cf3a925c0c5a9542f4d1281b6963ce526962f1bffbca82f97dc7c52",
+        "harness_sha256": "645354b2024f8c5759aca816a02e1fff9ff6a28ee430feb821ef52a89fa9b15a",
+        "exit_code": 1,
+        "started_utc": "2026-10-20T12:40:06.0233074+00:00",
+        "elapsed_seconds": 3.5894591,
+        "cargo_kind": "stub only"
+      },
+      "log_sha256": "754a19a0c81b91ca95b00ed1674e6cf5b81fabab4e51ebe69d45d80847b937ef",
+      "log_bytes": 1070
+    },
+    {
+      "name": "t1-green-8dot3-full",
+      "receipt": {
+        "phase": "GREEN full after8.3fix",
+        "source_sha256": "74fb662b17b92fbff51b9638639ae71803ede9bde935892b135b9719af026716",
+        "harness_sha256": "645354b2024f8c5759aca816a02e1fff9ff6a28ee430feb821ef52a89fa9b15a",
+        "stable_inputs": true,
+        "exit_code": 0,
+        "started_utc": "2026-10-20T12:40:24.0708767+00:00",
+        "elapsed_seconds": 164.0472679,
+        "cargo_kind": "stub only"
+      },
+      "log_sha256": "54580293df7ab858f1f24dfb58820a64af96d13a0c0cc8d90b211000c4f4ddae",
+      "log_bytes": 2880
+    },
+    {
+      "name": "t1-formats-green-8dot3",
+      "receipt": {
+        "phase": "GREEN formats after8.3fix",
+        "source_sha256": "74fb662b17b92fbff51b9638639ae71803ede9bde935892b135b9719af026716",
+        "harness_sha256": "6c1729eb85ac355b60281e5b192c945baeb161c466bc32b563bf1310bf41920d",
+        "base_harness_sha256": "645354b2024f8c5759aca816a02e1fff9ff6a28ee430feb821ef52a89fa9b15a",
+        "exit_code": 0,
+        "started_utc": "2026-10-20T12:44:51.7128786+00:00",
+        "elapsed_seconds": 41.1045303,
+        "cargo_kind": "stub only"
+      },
+      "log_sha256": "5b26e24fcff375e173de77c8a047b7fb547774e13df26697448374af9714e543",
+      "log_bytes": 280
+    }
+  ],
+  "current_declared_methods": {
+    "t1": 18,
+    "formats": 1,
+    "powershell": 10,
+    "total": 29,
+    "full_current_ci_pending": true
+  },
+  "ci_attempts": [
+    {
+      "head": "c8131af02048e3cdfc3d514028d7292aeb0669a7",
+      "base": "28125c1ae71fb95b25dc25c4c78c1ecddb9d46a7",
+      "synthetic_merge": "2b1762f4f582472d28e3cd96fd540dd0432f28e8",
+      "tree": "26bbcfaeb8cf28e20a43c2c979c03608b035bea6",
+      "f7_run": 39421966227,
+      "f7_job": 118624894948,
+      "runner_id": 1000002003,
+      "runner_group": "GitHub Actions",
+      "conclusion": "failure",
+      "tests": 17,
+      "failures": 16,
+      "errors": 0,
+      "diagnosis": {
+        "harness_identity_comparisons": 15,
+        "source_canonical_target_rejected": 1,
+        "alias": "C:/Users/RUNNER~1 vs C:/Users/runneradmin"
+      },
+      "log_sha256": "60e657965bd30a69b218ad084fb345555de404a3b2b81c80dc330fedca403846",
+      "other_runs": {
+        "unit": 39421965697,
+        "replay": 39421965448
+      },
+      "other_runs_status": "in_progress at 12:28; no Green transfer",
+      "local_28": "passed old candidate; historical only for subsequent edits"
+    }
+  ],
+  "blocking_dependency": {
+    "existing_contract": "F1-072 concurrent genome promotion",
+    "unit_run": 39421965697,
+    "job": 118624893536,
+    "observed_active": 7,
+    "expected_active": 8,
+    "log_sha256": "7d625bacd6085836cb23631d40f692e7785b8caef2eb188f913c74433ed98978",
+    "diagnosis": "Unique generations/history pass; active.json publication can regress under concurrent writers. Source unchanged by F7.",
+    "owner": "SI PR90 repair included as public dependency; merge waits for its current checks and serial merge",
+    "merge_status": "blocked until repair composed and eight current checks pass",
+    "fix_head": "7b598f7e2a44abba3f3fc83f1265a0ccfdee56b0",
+    "fix_source_sha256": "c64413572f7b42c48a549c19fd7af40893728dac71b1e1c45ce0bb2e993c670f"
+  },
+  "main_base_at_publication": "fd956f9abf47e935ba84f76659b0ae1e631bce07",
+  "explicit_dependency": {
+    "pr": 90,
+    "head": "7b598f7e2a44abba3f3fc83f1265a0ccfdee56b0",
+    "merge_required_before_f7": true
+  },
+  "current_local_green_methods": {
+    "t1": 18,
+    "formats": 1,
+    "powershell": 10,
+    "total": 29,
+    "skips": 0,
+    "rust_executed": false
+  }
+}

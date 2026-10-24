@@ -1,0 +1,90 @@
+name: SI LG22 isolated causal RED GREEN
+
+# Draft destination: .github/workflows/si-lg22-causal.yml, private CI branch only.
+# Companion script: .github/ci/lg22_causal_red_green.py on that same CI branch.
+# No pull_request/workflow_dispatch event and no changes to existing workflows.
+"on":
+  push:
+    branches:
+      - codex/si-lg22-causal-ci-20261020
+
+permissions:
+  contents: read
+
+concurrency:
+  group: si-lg22-causal-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  causal-red-green:
+    runs-on: windows-2022
+    timeout-minutes: 120
+    env:
+      CARGO_BUILD_JOBS: '2'
+      CARGO_INCREMENTAL: '0'
+      CARGO_PROFILE_DEV_DEBUG: '0'
+      CARGO_PROFILE_TEST_DEBUG: '0'
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - name: Checkout isolated CI workflow commit and fetch pinned source objects
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Verify and persist sealed runner outside both source checkouts
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $expected = '8805263e490b0f0266940b6fdf3b0cfddcc6e70ce369ce7f533c095ea42a3dc4'
+          $source = Join-Path $env:GITHUB_WORKSPACE '.github/ci/lg22_causal_red_green.py'
+          $bootstrap = Join-Path $env:RUNNER_TEMP 'si-lg22-causal/bootstrap'
+          New-Item -ItemType Directory -Path $bootstrap -Force | Out-Null
+          $runner = Join-Path $bootstrap 'lg22_causal_red_green.py'
+          if ((Get-FileHash -LiteralPath $source -Algorithm SHA256).Hash.ToLowerInvariant() -ne $expected) {
+            throw 'Workflow companion runner hash differs from the sealed draft'
+          }
+          Copy-Item -LiteralPath $source -Destination $runner
+          if ((Get-FileHash -LiteralPath $runner -Algorithm SHA256).Hash.ToLowerInvariant() -ne $expected) {
+            throw 'Persisted runner hash mismatch'
+          }
+          $receipt = [ordered]@{
+            scope = 'bootstrap only; expected RED/GREEN is not observed evidence'
+            workflow_commit = $env:GITHUB_SHA
+            workflow_ref = $env:GITHUB_REF
+            run_id = $env:GITHUB_RUN_ID
+            run_attempt = $env:GITHUB_RUN_ATTEMPT
+            base = '28125c1ae71fb95b25dc25c4c78c1ecddb9d46a7'
+            candidate = 'd2bf352c4ea2fa8e17758362b22dce5509248b51'
+            runner_sha256 = $expected
+          } | ConvertTo-Json
+          [IO.File]::WriteAllText((Join-Path $bootstrap 'receipt.json'), $receipt + "`n", [Text.UTF8Encoding]::new($false))
+          "LG22_CAUSAL_RUNNER=$runner" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          python --version
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Install fixed compiler
+        run: |
+          rustup toolchain install nightly-2026-06-30 --profile minimal
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Observe BASE RED then candidate GREEN with one immutable corpus
+        run: |
+          python $env:LG22_CAUSAL_RUNNER `
+            --repo $env:GITHUB_WORKSPACE `
+            --out-dir (Join-Path $env:RUNNER_TEMP 'si-lg22-causal/evidence') `
+            --base '28125c1ae71fb95b25dc25c4c78c1ecddb9d46a7' `
+            --candidate 'd2bf352c4ea2fa8e17758362b22dce5509248b51' `
+            --expected-runner-sha256 '8805263e490b0f0266940b6fdf3b0cfddcc6e70ce369ce7f533c095ea42a3dc4'
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Preserve receipts, byte-exact producers/corpus and command logs
+        if: ${{ always() }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: si-lg22-causal-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/si-lg22-causal/
+          if-no-files-found: error
+          retention-days: 14

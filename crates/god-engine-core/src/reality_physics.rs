@@ -42,6 +42,57 @@ impl RealityPhysics {
         }
     }
 
+    /// Construye la estimación con tasas finitas explícitas. Ante una tasa no
+    /// finita utiliza un escenario VIP0; ese fallback no acredita una tarifa
+    /// observada ni autoriza nuevas entradas del core.
+    pub fn with_fees(mode: EngineMode, maker_fee: f64, taker_fee: f64) -> Self {
+        Self {
+            mode,
+            base_maker_fee: if maker_fee.is_finite() {
+                maker_fee
+            } else {
+                0.0002
+            },
+            base_taker_fee: if taker_fee.is_finite() {
+                taker_fee
+            } else {
+                0.0005
+            },
+        }
+    }
+
+    /// Sincroniza dinámicamente las comisiones con las observadas en la cuenta viva / arena.
+    /// Las tasas finitas conservan su signo (rebates incluidos). Una observación
+    /// no finita retiene la última estimación para cierres defensivos; el caller
+    /// debe bloquear entradas y no presentarla como una observación fresca.
+    pub fn sync_with_arena_fees(&mut self, maker_fee: f64, taker_fee: f64) {
+        if maker_fee.is_finite() {
+            self.base_maker_fee = maker_fee;
+        }
+        if taker_fee.is_finite() {
+            self.base_taker_fee = taker_fee;
+        }
+    }
+
+    #[inline(always)]
+    pub fn maker_fee(&self) -> f64 {
+        self.base_maker_fee
+    }
+
+    #[inline(always)]
+    pub fn taker_fee(&self) -> f64 {
+        self.base_taker_fee
+    }
+
+    /// Comisión local sobre el nocional ya cuantizado y el precio contabilizado.
+    /// No confirma ni convierte una comisión nativa del exchange.
+    pub fn commission_for_notional(&self, notional: f64, is_maker: bool) -> Option<f64> {
+        let rate = if is_maker { self.base_maker_fee } else { self.base_taker_fee };
+        let fee = notional * rate;
+        (notional.is_finite() && notional >= 0.0 && rate.is_finite() && fee.is_finite())
+            .then_some(fee)
+    }
+
     /// Estima precio/coste taker con la heurística local; no confirma una ejecución.
     /// Devuelve: (precio_ejecutado, fee_total_usd)
     pub fn calculate_market_entry(
@@ -67,7 +118,7 @@ impl RealityPhysics {
             0.0
         };
         // FIX #686: Sanitizar comisiones
-        let safe_taker_fee = if self.base_taker_fee.is_finite() && self.base_taker_fee >= 0.0 {
+        let safe_taker_fee = if self.base_taker_fee.is_finite() {
             self.base_taker_fee
         } else {
             0.0005
@@ -155,7 +206,7 @@ impl RealityPhysics {
         } else {
             0.0
         };
-        let safe_maker_fee = if self.base_maker_fee.is_finite() && self.base_maker_fee >= 0.0 {
+        let safe_maker_fee = if self.base_maker_fee.is_finite() {
             self.base_maker_fee
         } else {
             0.0002
@@ -189,12 +240,12 @@ impl RealityPhysics {
             0.0
         };
         // FIX #686: Sanitizar comisiones
-        let safe_maker_fee = if self.base_maker_fee.is_finite() && self.base_maker_fee >= 0.0 {
+        let safe_maker_fee = if self.base_maker_fee.is_finite() {
             self.base_maker_fee
         } else {
             0.0002
         };
-        let safe_taker_fee = if self.base_taker_fee.is_finite() && self.base_taker_fee >= 0.0 {
+        let safe_taker_fee = if self.base_taker_fee.is_finite() {
             self.base_taker_fee
         } else {
             0.0005
@@ -313,5 +364,27 @@ mod tests {
         let (p2, f2) = phys.calculate_exit(-50.0, false, f64::NAN, true, f64::NAN, 0.0005, 15.0);
         assert_eq!(p2, 0.0);
         assert_eq!(f2, 0.0);
+    }
+
+    #[test]
+    fn test_reality_physics_dynamic_fee_sync() {
+        let mut phys = RealityPhysics::with_fees(EngineMode::Optimistic, 0.0001, 0.0004);
+        let (_, fee_taker) =
+            phys.calculate_market_entry(50000.0, true, 100.0, 0.001, 0.0005, 10.0);
+        assert!((fee_taker - 100.0 * 0.0004).abs() < 1e-10);
+
+        let (_, fee_maker) =
+            phys.calculate_exit(50000.0, true, 100.0, true, 0.001, 0.0005, 10.0);
+        assert!((fee_maker - 100.0 * 0.0001).abs() < 1e-10);
+
+        // Sincronización dinámica de comisiones vivas desde arena (QRA-FEE-01)
+        phys.sync_with_arena_fees(0.00015, 0.00035);
+        let (_, fee_taker2) =
+            phys.calculate_market_entry(50000.0, true, 100.0, 0.001, 0.0005, 10.0);
+        assert!((fee_taker2 - 100.0 * 0.00035).abs() < 1e-10);
+
+        let (_, fee_maker2) =
+            phys.calculate_exit(50000.0, true, 100.0, true, 0.001, 0.0005, 10.0);
+        assert!((fee_maker2 - 100.0 * 0.00015).abs() < 1e-10);
     }
 }

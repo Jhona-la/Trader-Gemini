@@ -107,6 +107,26 @@ fn validate_alignment(len: usize, path: &Path) -> std::io::Result<()> {
 }
 
 pub fn load_binary_ticks(path: &Path, coin_id: usize) -> std::io::Result<Vec<TickEvent>> {
+    load_binary_ticks_with_limit(path, coin_id, None)
+}
+
+/// Load the same first `max_ticks` events as the complete loader, without
+/// allocating or converting the remaining records. Zero returns an empty Vec
+/// after validating the tape's header/alignment, including the unselected tail.
+/// The file stays memory-mapped; iteration touches only the selected records.
+pub fn load_binary_ticks_prefix(
+    path: &Path,
+    coin_id: usize,
+    max_ticks: usize,
+) -> std::io::Result<Vec<TickEvent>> {
+    load_binary_ticks_with_limit(path, coin_id, Some(max_ticks))
+}
+
+fn load_binary_ticks_with_limit(
+    path: &Path,
+    coin_id: usize,
+    max_ticks: Option<usize>,
+) -> std::io::Result<Vec<TickEvent>> {
     let file = std::fs::File::open(path)?;
     let mmap = unsafe { memmap2::MmapOptions::new().map(&file)? };
     let tick_size = std::mem::size_of::<BinTick>();
@@ -129,14 +149,21 @@ pub fn load_binary_ticks(path: &Path, coin_id: usize) -> std::io::Result<Vec<Tic
         );
     }
 
-    let num_ticks = data_len / tick_size;
+    let total_ticks = data_len / tick_size;
+    let num_ticks = max_ticks.map_or(total_ticks, |limit| total_ticks.min(limit));
     // Safety: el slice está alineado a 8 (header de 8 bytes + registros
     // repr(C) de 40 bytes sobre un mmap alineado a página).
     let slice = unsafe {
         std::slice::from_raw_parts(mmap.as_ptr().add(data_ptr) as *const BinTick, num_ticks)
     };
 
-    let mut ticks = Vec::with_capacity(num_ticks);
+    let mut ticks = Vec::new();
+    ticks.try_reserve_exact(num_ticks).map_err(|e| {
+        std::io::Error::new(
+            std::io::ErrorKind::OutOfMemory,
+            format!("{}: no memory for {num_ticks} tick events: {e}", path.display()),
+        )
+    })?;
     for t in slice {
         ticks.push(TickEvent {
             coin_id,

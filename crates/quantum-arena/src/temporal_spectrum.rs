@@ -279,6 +279,18 @@ impl ScaleState {
             None
         }
     }
+
+    /// F1-075: Habilidad direccional MEDIDA con significancia demostrada por el e-proceso de Ville
+    /// bajo corrección de familia Bonferroni (M = ESCALAS_OPERATIVAS_BANDA = 5).
+    /// Devuelve `Some(ic)` si y sólo si la escala es madura y su e-proceso cruza el umbral
+    /// de familia de Ville (M/α = 100 con α=0.05). En caso contrario, devuelve `None`.
+    #[inline]
+    pub fn habilidad_significativa(&self) -> Option<f64> {
+        if !self.skill_e.significativo_familia(ESCALAS_OPERATIVAS_BANDA) {
+            return None;
+        }
+        self.habilidad_medida()
+    }
 }
 
 /// CL-30: memoria de la persistencia, en bloques de τ. Peso 1/16 por bloque
@@ -350,6 +362,12 @@ pub struct TemporalSpectrum {
     /// prequential > 0, madura, observable, banda operativa); sin evidencia,
     /// el argmax de energía |w·s| dentro de la banda (C-05/AGY-AUD-P10).
     pub dominant_tau_ms: f64,
+    /// F1-076: Caché de observables y pesos espectrales calculados una sola vez por evento en refresh_fusion()
+    cached_observables: [f64; 32],
+    cached_pesos_obs: [f64; 32],
+    cached_pesos_esp: [f64; 32],
+    cached_mass: [f64; 32],
+    cached_resolucion_ms: f64,
 }
 
 impl Default for TemporalSpectrum {
@@ -376,6 +394,11 @@ impl TemporalSpectrum {
             updates: 0,
             fused_score: 0.0,
             dominant_tau_ms: 0.0,
+            cached_observables: [0.0; 32],
+            cached_pesos_obs: [0.0; 32],
+            cached_pesos_esp: [0.0; 32],
+            cached_mass: [0.0; 32],
+            cached_resolucion_ms: FEED_CLOCK_RESOLUTION_MS,
         }
     }
 
@@ -403,6 +426,60 @@ impl TemporalSpectrum {
             }
         }
         self.scales.get(best)?.habilidad_medida()
+    }
+
+    /// F1-075: IC medido de la escala de la malla MÁS CERCANA a `tau_ms`,
+    /// condicionado a que haya superado el test de significancia
+    /// anytime-valid de Ville para la familia de escalas operativas
+    /// (`ESCALAS_OPERATIVAS_BANDA = 5`).
+    /// Si la escala no es estadísticamente significativa según Ville, devuelve `None`.
+    pub fn habilidad_significativa_en(&self, tau_ms: f64) -> Option<f64> {
+        if !tau_ms.is_finite() || tau_ms <= 0.0 {
+            return None;
+        }
+        let target_ln = tau_ms.ln();
+        let mut best = usize::MAX;
+        let mut best_d = f64::INFINITY;
+        for (i, s) in self.scales.iter().enumerate() {
+            let d = (s.tau_ms.ln() - target_ln).abs();
+            if d < best_d {
+                best_d = d;
+                best = i;
+            }
+        }
+        self.scales.get(best)?.habilidad_significativa()
+    }
+
+    /// F1-075: Inyección de habilidad e información del e-proceso para contratos de verificación y testing.
+    pub fn set_habilidad_para_test(&mut self, escala: usize, n: u64, ic: f64, cruzar_ville: bool) {
+        if escala >= 32 {
+            return;
+        }
+        let s = &mut self.scales[escala];
+        s.skill_n = n;
+        s.skill_ws = 1.0;
+        s.skill_wr = 1.0;
+        s.skill_wsr = ic;
+        if cruzar_ville {
+            let n_e = if n >= MUESTRAS_SKILL_MADURAS && ic != 0.0 {
+                n.max(70)
+            } else {
+                n
+            };
+            for _ in 0..n_e {
+                s.skill_e.observar(1.0, ic.signum() * 0.01);
+            }
+        } else {
+            s.skill_e = crate::evalues::EProceso::default();
+        }
+    }
+
+    /// F1-075: Calibración de ventana temporal y conteo de actualizaciones para tests de integración.
+    pub fn set_test_time_window(&mut self, first_ts_ms: u64, last_ts_ms: u64, updates: u64) {
+        self.first_ts_ms = first_ts_ms;
+        self.last_ts_ms = last_ts_ms;
+        self.updates = updates;
+        self.refresh_fusion();
     }
 
     /// #607 — el ÚLTIMO bloque maduro de `escala`: (ts de cierre, retorno
@@ -465,12 +542,15 @@ impl TemporalSpectrum {
         let elapsed = (ts_ms - self.first_ts_ms) as f64;
         self.updates += 1;
 
-        // Relajación homeostática continua de las 32 escalas epigenéticas hacia 1.0 (tau_homeo = 30 min):
-        // Erradica la histeresis no-ergódica donde ganancias infladas o penalizadas se petrificaban sin disipación.
-        let homeo_decay = (-dt / 1_800_000.0).exp();
+        // F1-080: Relajación homeostática adaptativa continua de las 32 escalas epigenéticas hacia 1.0.
+        // La escala temporal de disipación es proporcional al horizonte físico tau de cada escala
+        // (tau_homeo = max(16 * tau, 30 min)), erradicando tanto la petrificación de escalas rápidas
+        // como la amnesia espuria de escalas lentas (que antes se disipaban a los 30 min sin completar un trade).
         let ln_p = price.ln();
 
         for s in self.scales.iter_mut() {
+            let tau_homeo_ms = (PERSISTENCIA_BLOQUES * s.tau_ms).max(1_800_000.0);
+            let homeo_decay = (-dt / tau_homeo_ms).exp();
             s.epigenetic_gain = 1.0 + (s.epigenetic_gain - 1.0) * homeo_decay;
             // CL-30: persistencia sobre bloques no solapados de duración ≥ τ.
             // La versión previa comparaba el signo de dos desviaciones
@@ -565,6 +645,9 @@ impl TemporalSpectrum {
             s.momentum_z = z;
             s.signal = z.clamp(-5.0, 5.0).tanh();
         }
+        // F1-076: refresh_fusion actualiza primero los pesos y observables en caché
+        self.refresh_fusion();
+
         // (Ola XLII·D) Snapshot de masa para el transporte de Wasserstein:
         // energía cruda w·|señal| por escala, anillo de MASS_RING.
         // #662 (F2-B3): el anillo indexa TIEMPO FÍSICO, no updates —
@@ -574,10 +657,9 @@ impl TemporalSpectrum {
         if self.mass_ring_len == 0
             || ts_ms.saturating_sub(self.last_snap_ts) >= W1_SNAP_CADENCIA_MS
         {
-            let pesos = self.pesos_espectrales();
             let mut snap = [0.0f64; 32];
             for (i, sc) in self.scales.iter().enumerate() {
-                snap[i] = (pesos[i] * sc.signal.abs()).max(0.0);
+                snap[i] = (self.cached_pesos_esp[i] * sc.signal.abs()).max(0.0);
             }
             let idx = self.mass_ring_len % MASS_RING;
             self.mass_ring[idx] = snap;
@@ -585,7 +667,6 @@ impl TemporalSpectrum {
             self.mass_ring_len = self.mass_ring_len.wrapping_add(1);
             self.last_snap_ts = ts_ms;
         }
-        self.refresh_fusion();
     }
 
     /// Actualiza el agregado también cuando cambia el aprendizaje sin tick
@@ -597,7 +678,31 @@ impl TemporalSpectrum {
     /// impide que escalas sin datos pesen. Lo no observado no opina. (El
     /// valor DIRECCIONAL del `fused_score` no está establecido: su IC es
     /// positivo en BTC y negativo en SOL; eso lo decide quien lo consuma.)
-    fn refresh_fusion(&mut self) {
+    pub fn refresh_fusion(&mut self) {
+        // F1-076: Cálculo único canónico de resolución temporal, masa y pesos de observabilidad.
+        // Elimina ~1,900 exp() y divisiones redundantes por evento entre los lectores del espectro.
+        let elapsed = (self.last_ts_ms.saturating_sub(self.first_ts_ms)) as f64;
+        let dt_medio = if self.updates > 1 {
+            elapsed / (self.updates - 1) as f64
+        } else {
+            0.0
+        };
+        let resolucion = FEED_CLOCK_RESOLUTION_MS.max(dt_medio);
+        self.cached_resolucion_ms = resolucion;
+
+        for (i, s) in self.scales.iter().enumerate() {
+            let mass = 1.0 - (-elapsed / s.tau_ms).exp();
+            let observable = mass * factor_de_resolucion(s.tau_ms, resolucion);
+            self.cached_mass[i] = mass;
+            self.cached_observables[i] = observable;
+            self.cached_pesos_obs[i] = if s.ewma_dev_vol > 1e-12 {
+                observable / s.ewma_dev_vol
+            } else {
+                0.0
+            };
+            self.cached_pesos_esp[i] = s.fusion_weight() * observable;
+        }
+
         let mut w_sum = 0.0;
         let mut w_sig_sum = 0.0;
         let mut best_contrib = 0.0f64;
@@ -608,10 +713,9 @@ impl TemporalSpectrum {
         // escala puede observar.
         let mut obs_sum = 0.0;
         let mut obs_sig_sum = 0.0;
-        let (observables, pesos) = self.pesos_observables();
         for (i, s) in self.scales.iter().enumerate() {
-            let observable = observables[i];
-            let w = pesos[i];
+            let observable = self.cached_observables[i];
+            let w = self.cached_pesos_obs[i];
             obs_sum += observable;
             obs_sig_sum += observable * s.signal;
             w_sum += w;
@@ -667,7 +771,7 @@ impl TemporalSpectrum {
         for (i, s) in self.scales.iter().enumerate() {
             if s.tau_ms < TAU_ANCHOR_FAST_MS
                 || s.tau_ms > TAU_ANCHOR_SLOW_MS
-                || observables[i] <= 0.0
+                || self.cached_observables[i] <= 0.0
             {
                 continue;
             }
@@ -798,26 +902,35 @@ impl TemporalSpectrum {
     /// Modula continuamente la ganancia informacional (`epigenetic_gain`) de las 32 escalas
     /// basándose en los resultados reales de trading en la longitud de onda `tau_trade_ms`.
     ///
-    /// - Escalas en resonancia con un trade exitoso reciben amplificación epigenética.
-    /// - Escalas en resonancia con un trade perdedor son amortiguadas defensivamente.
-    pub fn apply_epigenetic_outcome(&mut self, tau_trade_ms: f64, is_win: bool, pnl_pct: f64) {
+    /// F1-080: Actualización por gradiente multiplicativo / exponenciado simétrico y conservador de EV.
+    /// Erradica el sesgo anti-hot-hand y la asimetría arbitraria (0.06 vs 0.10, equilibrio espurio 62.5% WR)
+    /// que castigaba a estrategias de alto beneficio/riesgo (RR >= 2.25) reduciendo su ganancia al suelo 0.20
+    /// aun siendo altamente rentables.
+    ///
+    /// El núcleo de resonancia espectral gaussiano tiene ancho sigma = ln(4), coincidente con el espaciado
+    /// inter-nodo de la malla diádica en el espacio de Hilbert.
+    pub fn apply_epigenetic_outcome(&mut self, tau_trade_ms: f64, _is_win: bool, pnl_pct: f64) {
         if !tau_trade_ms.is_finite() || tau_trade_ms <= 0.0 || !pnl_pct.is_finite() {
             return;
         }
         let ln_trade = tau_trade_ms.max(1e-6).ln();
+        let sigma = 4.0f64.ln(); // Espaciado inter-escala de la malla diádica de Hilbert
+        let two_sigma_sq = 2.0 * sigma * sigma;
+
+        // Normalización simétrica del retorno: escala de referencia 100 bps (0.0100), acotado a [-3.0, 3.0]
+        let r_norm = (pnl_pct / 0.0100).clamp(-3.0, 3.0);
+        // Tasa de aprendizaje adaptativa acotada para estabilidad espectral (eta = 0.04)
+        let eta = 0.040;
+
         for s in self.scales.iter_mut() {
             let ln_scale = s.tau_ms.max(1e-6).ln();
-            let delta_ln = (ln_scale - ln_trade).abs();
-            // Núcleo de resonancia espectral gaussiano con ancho sigma = 0.8
-            let kernel = (-0.5 * (delta_ln / 0.8).powi(2)).exp();
-            if kernel > 0.05 {
-                if is_win {
-                    let boost = 0.06 * kernel * (1.0 + (pnl_pct.max(0.0) * 20.0).min(2.0));
-                    s.epigenetic_gain = (s.epigenetic_gain + boost).clamp(0.20, 3.00);
-                } else {
-                    let penalty = 0.10 * kernel * (1.0 + ((-pnl_pct).max(0.0) * 15.0).min(2.0));
-                    s.epigenetic_gain = (s.epigenetic_gain - penalty).clamp(0.20, 3.00);
-                }
+            let delta_ln = ln_scale - ln_trade;
+            let kernel = (-delta_ln * delta_ln / two_sigma_sq).exp();
+            if kernel > 0.01 {
+                // Gradiente exponenciado simétrico: g_new = g_old * exp(eta * kernel * r_norm)
+                // Preserva martingala exacta: retorno +x seguido de -x devuelve g exactamente a su valor previo.
+                let delta_ln_gain = eta * kernel * r_norm;
+                s.epigenetic_gain = (s.epigenetic_gain * delta_ln_gain.exp()).clamp(0.20, 3.00);
             }
         }
         self.refresh_fusion();
@@ -921,15 +1034,11 @@ impl TemporalSpectrum {
         let i0 = idx.floor().clamp(0.0, 30.0) as usize;
         let i1 = i0 + 1;
         let frac = (idx - i0 as f64).clamp(0.0, 1.0);
-        let elapsed = (self.last_ts_ms.saturating_sub(self.first_ts_ms)) as f64;
-        let resolucion = self.resolucion_efectiva_ms();
+        // F1-076: Uso directo de pesos espectrales cacheados sin re-evaluar exp()
         let energy_at_node = |i: usize| {
-            let s = &self.scales[i];
-            let mass = 1.0 - (-elapsed / s.tau_ms).exp();
-            let observable = mass * factor_de_resolucion(s.tau_ms, resolucion);
-            let w = s.fusion_weight() * observable;
+            let w = self.cached_pesos_esp[i];
             if w > 0.0 {
-                w * s.signal.abs()
+                w * self.scales[i].signal.abs()
             } else {
                 0.0
             }
@@ -1116,7 +1225,7 @@ impl TemporalSpectrum {
         let sign = if is_long { 1.0 } else { -1.0 };
         let mut total_w = 0.0;
         let mut coherent_sig = 0.0;
-        let (_, pesos) = self.pesos_observables();
+        let pesos = &self.cached_pesos_obs;
         for (i, s) in self.scales.iter().enumerate() {
             let w = pesos[i];
             if w == 0.0 {
@@ -1221,16 +1330,18 @@ impl TemporalSpectrum {
         }
     }
 
-    /// C-2 (R7-R2-C-2): Horizonte temporal unificado para el tick en curso.
+    /// C-2 (R7-R2-C-2) / F1-075: Horizonte temporal unificado para el tick en curso.
     /// Reconcilia la escala autoritativa de habilidad demostrada por Ville
     /// (`dominant_tau_ms`) con el centroide continuo de Hilbert (`continuous_resonant_tau_ms`).
-    /// Si existe habilidad medida positiva (IC > 0 validado), manda la escala con ventaja estadística.
-    /// Si aún no hay evidencia madura, opera con el centroide continuo resonante.
+    /// Si existe habilidad demostrada y estadísticamente significativa por Ville (IC > 0 validado),
+    /// manda la escala discreta con ventaja estadística demostrada fuera de muestra.
+    /// Si aún no hay evidencia con significancia demostrada por Ville (e.g. escala respaldada sólo
+    /// por energía o peldaño no significativo), opera con el centroide continuo resonante de Hilbert.
     /// Garantiza que el veto de grupo, el dimensionador de TP/SL y las ramas de señal hablen
-    /// exactamente del MISMO horizonte temporal sin disparidades.
+    /// exactamente del MISMO horizonte temporal sin disparidades ni saltos espurios por ruido estocástico.
     #[inline]
     pub fn tau_operativa_unificada(&self) -> f64 {
-        if let Some(h) = self.habilidad_en(self.dominant_tau_ms) {
+        if let Some(h) = self.habilidad_significativa_en(self.dominant_tau_ms) {
             if h > 0.0 {
                 return self.dominant_tau_ms.clamp(TAU_ANCHOR_FAST_MS, TAU_ANCHOR_SLOW_MS);
             }
@@ -1417,80 +1528,56 @@ impl TemporalSpectrum {
     /// escala de 12 h con cuatro segundos de datos pesaba igual que una de
     /// dos segundos: su persistencia arranca en 0 (suelo 0,02 del peso, el
     /// mismo para todas) y su |señal| es tanh(1) con una sola desviación.
+    /// CL-32 / F1-076: pesos de la masa espectral (entropía, Fisher, W₁, τ*, bandas):
+    /// el peso heredado de la persistencia por lo OBSERVABLE de cada escala.
+    /// Recuperación O(1) de la caché precomputada en refresh_fusion().
+    #[inline]
     pub fn pesos_espectrales(&self) -> [f64; 32] {
-        let (observables, _) = self.pesos_observables();
-        let mut w = [0.0f64; 32];
-        for (i, s) in self.scales.iter().enumerate() {
-            w[i] = s.fusion_weight() * observables[i];
-        }
-        w
+        self.cached_pesos_esp
     }
 
-    /// Pesos observables de la fusión D-742 (`fused_score`, τ dominante y
-    /// `spectral_coherence`): masa del núcleo llenada × fracción resuelta,
-    /// y ese observable dividido por la vol de desviación. Devuelve
-    /// `(observables, pesos)`.
-    ///
-    /// CL-32: la fracción resuelta usaba el reloj del exchange (1 ms), no la
-    /// resolución efectiva. Con eventos cada segundo las escalas de 4 ms a
-    /// 268 ms repetían el último evento con la vol más pequeña del espectro
-    /// —el mayor 1/vol— y gobernaban la fusión: el mismo defecto que XLIV-6
-    /// corrigió en las funciones de estructura.
-    fn pesos_observables(&self) -> ([f64; 32], [f64; 32]) {
-        let elapsed = (self.last_ts_ms.saturating_sub(self.first_ts_ms)) as f64;
-        let resolucion = self.resolucion_efectiva_ms();
-        let mut observables = [0.0f64; 32];
-        let mut pesos = [0.0f64; 32];
-        for (i, s) in self.scales.iter().enumerate() {
-            let mass = 1.0 - (-elapsed / s.tau_ms).exp();
-            let observable = mass * factor_de_resolucion(s.tau_ms, resolucion);
-            observables[i] = observable;
-            pesos[i] = if s.ewma_dev_vol > 1e-12 {
-                observable / s.ewma_dev_vol
-            } else {
-                0.0
-            };
-        }
-        (observables, pesos)
+    /// F1-076: Referencia directa zero-alloc a los pesos espectrales precomputados.
+    #[inline]
+    pub fn pesos_espectrales_ref(&self) -> &[f64; 32] {
+        &self.cached_pesos_esp
     }
 
-    /// Resolución temporal EFECTIVA del espectro (Ola XLIV): el mayor entre el
-    /// reloj del exchange y el intervalo medio entre eventos. Una escala con
-    /// τ por debajo de ella no está resuelta —su EWMA sólo repite el último
-    /// tick— y el momento que publica es el mismo en todas esas escalas.
+    /// Pesos observables de la fusión D-742 / F1-076:
+    /// Recuperación O(1) de observables y pesos normalizados precomputados en refresh_fusion().
+    #[inline]
+    pub fn pesos_observables(&self) -> ([f64; 32], [f64; 32]) {
+        (self.cached_observables, self.cached_pesos_obs)
+    }
+
+    /// F1-076: Referencia directa a los observables precomputados.
+    #[inline]
+    pub fn observables_ref(&self) -> &[f64; 32] {
+        &self.cached_observables
+    }
+
+    /// Resolución temporal EFECTIVA del espectro (Ola XLIV / F1-076):
+    /// Recuperación O(1) de la resolución efectiva precomputada en refresh_fusion().
+    #[inline]
     pub fn resolucion_efectiva_ms(&self) -> f64 {
-        let dt_medio = if self.updates > 1 {
-            (self.last_ts_ms.saturating_sub(self.first_ts_ms)) as f64 / (self.updates - 1) as f64
-        } else {
-            0.0
-        };
-        FEED_CLOCK_RESOLUTION_MS.max(dt_medio)
+        self.cached_resolucion_ms
     }
 
-    /// Regresión OLS ponderada de ln S_p contra ln τ. #662 (F2-B4): la
-    /// pertenencia de cada escala es un peso CONTINUO de su masa (rampa
-    /// C¹ centrada en el corte viejo de 0,10) — con pertenencia DURA,
-    /// ζ(p)/χ saltaban cada vez que una escala maduraba cruzando el umbral
-    /// (y χ modula pisos vivos).
+    /// Regresión OLS ponderada de ln S_p contra ln τ. #662 (F2-B4) / F1-076:
+    /// la pertenencia de cada escala es un peso CONTINUO de su masa precomputada en refresh_fusion().
+    /// Erradica 64 exp() por consulta de structure_functions().
     fn regress_log_log(&self, p: u32) -> Option<(f64, usize)> {
-        let elapsed = (self.last_ts_ms.saturating_sub(self.first_ts_ms)) as f64;
-        // Ola XLIV: las escalas por debajo de la resolución efectiva publican
-        // el mismo momento (el del último tick) y formaban un bloque plano que
-        // arrastraba la pendiente: ζ₃ ≈ 0,56 en un precio browniano cuyo
-        // valor sobre las escalas reales es 1,5.
-        let resolucion = self.resolucion_efectiva_ms();
+        let resolucion = self.cached_resolucion_ms;
         let mut n_eff = 0.0f64;
         let mut sx = 0.0;
         let mut sy = 0.0;
         let mut sxx = 0.0;
         let mut sxy = 0.0;
-        for s in self.scales.iter() {
+        for (i, s) in self.scales.iter().enumerate() {
             if s.tau_ms < resolucion {
                 continue;
             }
-            // Sólo escalas con algo de masa en el núcleo: lo aún semilla no
-            // representa la escala, pero madura CONTINUAMENTE (sin salto).
-            let mass = 1.0 - (-elapsed / s.tau_ms).exp();
+            // F1-076: Uso directo de la masa precomputada sin recomputar exp()
+            let mass = self.cached_mass[i];
             let w = peso_masa_continuo(mass);
             if w <= 1e-9 {
                 continue;

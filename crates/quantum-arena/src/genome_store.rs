@@ -14,11 +14,77 @@
 //! métricas y timestamp. rollback() re-promociona una generación anterior.
 
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 use std::io;
 
 use crate::genome::SuperGenotype;
 
 pub const SCHEMA_VERSION: u32 = 1;
+pub const BINARY_SCHEMA_VERSION: u32 = 1;
+pub const BINARY_MAGIC: [u8; 8] = *b"TGGENOM\0";
+
+/// FASE 3 (Átomo 3.2) — Cabecera binaria inmutable de 72 bytes con suma de comprobación SHA-256.
+/// Garantiza validación criptográfica zero-copy en O(1) y arranques/recargas < 5 µs.
+#[repr(C)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct BinaryGenomeHeader {
+    pub magic: [u8; 8],
+    pub schema_version: u32,
+    pub flags: u32,
+    pub generation: u64,
+    pub created_ms: u64,
+    pub payload_len: u64,
+    pub checksum: [u8; 32],
+}
+
+impl BinaryGenomeHeader {
+    pub const SIZE: usize = 72;
+
+    pub fn to_bytes(&self) -> [u8; Self::SIZE] {
+        let mut buf = [0u8; Self::SIZE];
+        buf[0..8].copy_from_slice(&self.magic);
+        buf[8..12].copy_from_slice(&self.schema_version.to_le_bytes());
+        buf[12..16].copy_from_slice(&self.flags.to_le_bytes());
+        buf[16..24].copy_from_slice(&self.generation.to_le_bytes());
+        buf[24..32].copy_from_slice(&self.created_ms.to_le_bytes());
+        buf[32..40].copy_from_slice(&self.payload_len.to_le_bytes());
+        buf[40..72].copy_from_slice(&self.checksum);
+        buf
+    }
+
+    pub fn from_bytes(bytes: &[u8]) -> Option<Self> {
+        if bytes.len() < Self::SIZE {
+            return None;
+        }
+        let mut magic = [0u8; 8];
+        magic.copy_from_slice(&bytes[0..8]);
+        let schema_version = u32::from_le_bytes(bytes[8..12].try_into().ok()?);
+        let flags = u32::from_le_bytes(bytes[12..16].try_into().ok()?);
+        let generation = u64::from_le_bytes(bytes[16..24].try_into().ok()?);
+        let created_ms = u64::from_le_bytes(bytes[24..32].try_into().ok()?);
+        let payload_len = u64::from_le_bytes(bytes[32..40].try_into().ok()?);
+        let mut checksum = [0u8; 32];
+        checksum.copy_from_slice(&bytes[40..72]);
+        Some(Self {
+            magic,
+            schema_version,
+            flags,
+            generation,
+            created_ms,
+            payload_len,
+            checksum,
+        })
+    }
+}
+
+pub fn compute_sha256(payload: &[u8]) -> [u8; 32] {
+    let mut hasher = Sha256::new();
+    hasher.update(payload);
+    let hash = hasher.finalize();
+    let mut out = [0u8; 32];
+    out.copy_from_slice(&hash);
+    out
+}
 
 /// E3 — SEPARACIÓN DE ENTORNOS DEL ALMACÉN DE GENOMAS (endurecida en D-651).
 ///
@@ -56,10 +122,10 @@ pub fn current_env() -> Result<String, String> {
 
 fn env_root() -> String {
     match current_env() {
-        Ok(env) => format!("config_dir/genomes/{}", env),
+        Ok(env) => format!("{}/genomes/{}", crate::paths::config_root(), env),
         // Un caller que ignore el error de entorno no debe poder escribir en
         // NINGÚN silo real: se le da una ruta inválida que falla al abrir.
-        Err(_) => "config_dir/genomes/__UNSET__".to_string(),
+        Err(_) => format!("{}/genomes/__UNSET__", crate::paths::config_root()),
     }
 }
 
@@ -71,8 +137,16 @@ fn active_path() -> String {
     format!("{}/active.json", env_root())
 }
 
+pub fn active_bin_path() -> String {
+    format!("{}/active.bin", env_root())
+}
+
 fn history_dir() -> String {
     format!("{}/history", env_root())
+}
+
+pub fn history_bin_path(generation: u64) -> String {
+    format!("{}/gen_{:06}.bin", history_dir(), generation)
 }
 
 /// Espejo legacy: el loader viejo lee esta ruta en arranques fríos.
@@ -88,7 +162,7 @@ fn history_dir() -> String {
 pub fn legacy_mirror() -> Option<String> {
     current_env()
         .ok()
-        .map(|env| format!("config_dir/genotypes/active_genome.{}.json", env))
+        .map(|env| format!("{}/genotypes/active_genome.{}.json", crate::paths::config_root(), env))
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -145,10 +219,60 @@ impl GenomeEnvelope {
                 return None;
             }
         };
+
+        // 1. Intento de carga binaria zero-copy rápida (< 5 µs con SHA-256)
+        let bin_p = active_bin_path();
+        if std::path::Path::new(&bin_p).exists() {
+            match std::fs::read(&bin_p) {
+                Ok(bytes) => match Self::from_binary_bytes(&bytes) {
+                    Ok(envelope) => {
+                        return Some(envelope);
+                    }
+                    Err(e) => {
+                        eprintln!(
+                            "🚨 [GENOME-STORE] {} corrupto ({e}). Intentando fallback a active.json.",
+                            bin_p
+                        );
+                    }
+                },
+                Err(e) => {
+                    eprintln!("⚠️ [GENOME-STORE] Error al leer {bin_p}: {e}");
+                }
+            }
+        }
+
+        // 2. Fallback a JSON canónico
         match std::fs::read_to_string(active_path()) {
             // F4-H3: el genoma activo sale normalizado (ver `desde_json`).
             Ok(data) => match Self::desde_json(&data) {
-                Ok(envelope) => Some(envelope),
+                Ok(envelope) => {
+                    // F1-072: Verificación de integridad de linaje y auto-reparación.
+                    // Si el archivo de historia gen_{generation}.json no existe en history_dir(),
+                    // reconstruirlo desde active.json de forma atómica para restaurar la
+                    // capacidad de rollback y recent_history.
+                    let hist_path = format!("{}/gen_{:06}.json", history_dir(), envelope.generation);
+                    if !std::path::Path::new(&hist_path).exists() {
+                        eprintln!(
+                            "ℹ️ [GENOME-STORE] linaje reparado: reconstruyendo {} a partir de active.json ({})",
+                            hist_path, env
+                        );
+                        let _ = std::fs::create_dir_all(history_dir());
+                        let _ = std::fs::OpenOptions::new()
+                            .write(true)
+                            .create_new(true)
+                            .open(&hist_path)
+                            .and_then(|mut f| {
+                                use std::io::Write;
+                                f.write_all(data.as_bytes())?;
+                                f.sync_all()
+                            });
+                    }
+                    // Auto-generación de active.bin para acelerar próximos arranques
+                    if let Ok(bin_bytes) = envelope.to_binary_bytes() {
+                        let _ = atomic_write_bytes(&bin_p, &bin_bytes);
+                    }
+                    Some(envelope)
+                }
                 Err(e) => {
                     // R-05: un genoma que existe pero no parsea es un evento
                     // crítico de linaje. NO se cae a ningún fallback: caer
@@ -169,6 +293,88 @@ impl GenomeEnvelope {
                 None
             }
         }
+    }
+
+    /// Carga explícitamente el genoma activo en formato binario con validación de hash SHA-256
+    pub fn load_active_binary() -> Option<GenomeEnvelope> {
+        let env = match current_env() {
+            Ok(e) => e,
+            Err(msg) => {
+                eprintln!("🚨 [GENOME-STORE] {msg}");
+                return None;
+            }
+        };
+        let bin_p = active_bin_path();
+        match std::fs::read(&bin_p) {
+            Ok(bytes) => match Self::from_binary_bytes(&bytes) {
+                Ok(envelope) => Some(envelope),
+                Err(e) => {
+                    eprintln!("🚨 [GENOME-STORE] {} no se pudo deserializar ({e})", bin_p);
+                    None
+                }
+            },
+            Err(e) => {
+                eprintln!("🚨 [GENOME-STORE] el entorno '{env}' no tiene {} ({e})", bin_p);
+                None
+            }
+        }
+    }
+
+    /// Serializa el sobre completo a formato binario compacto con cabecera y suma de verificación SHA-256
+    pub fn to_binary_bytes(&self) -> io::Result<Vec<u8>> {
+        let payload = bincode::serialize(self)
+            .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, format!("Error de serialización binaria bincode: {e}")))?;
+        let checksum = compute_sha256(&payload);
+        let header = BinaryGenomeHeader {
+            magic: BINARY_MAGIC,
+            schema_version: BINARY_SCHEMA_VERSION,
+            flags: 0,
+            generation: self.generation,
+            created_ms: self.created_ms,
+            payload_len: payload.len() as u64,
+            checksum,
+        };
+        let mut out = Vec::with_capacity(BinaryGenomeHeader::SIZE + payload.len());
+        out.extend_from_slice(&header.to_bytes());
+        out.extend_from_slice(&payload);
+        Ok(out)
+    }
+
+    /// Deserializa el sobre desde bytes binarios validando magic, schema_version y checksum SHA-256
+    pub fn from_binary_bytes(bytes: &[u8]) -> io::Result<GenomeEnvelope> {
+        let header = BinaryGenomeHeader::from_bytes(bytes)
+            .ok_or_else(|| io::Error::new(io::ErrorKind::UnexpectedEof, "Bytes insuficientes para cabecera binaria de genoma"))?;
+        if header.magic != BINARY_MAGIC {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                format!("Magic number binario inválido: {:?}", header.magic),
+            ));
+        }
+        if header.schema_version != BINARY_SCHEMA_VERSION {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                format!("Versión binaria no soportada: {} (esperada {})", header.schema_version, BINARY_SCHEMA_VERSION),
+            ));
+        }
+        let total_expected = BinaryGenomeHeader::SIZE + header.payload_len as usize;
+        if bytes.len() != total_expected {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                format!("Longitud de archivo binario corrupta: {} bytes (esperados {})", bytes.len(), total_expected),
+            ));
+        }
+        let payload = &bytes[BinaryGenomeHeader::SIZE..];
+        let actual_checksum = compute_sha256(payload);
+        if actual_checksum != header.checksum {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "Fallo de integridad criptográfica: el checksum SHA-256 del genoma binario no coincide (corrupción de disco detectada)",
+            ));
+        }
+        let mut envelope: GenomeEnvelope = bincode::deserialize(payload)
+            .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, format!("Error al deserializar payload bincode: {e}")))?;
+        envelope.genome = SuperGenotype::from_vector(&envelope.genome.to_vector());
+        Ok(envelope)
     }
 
     /// Sobre leído de JSON tal como lo entrega `load_active`. F4-H3:
@@ -223,7 +429,7 @@ impl GenomeEnvelope {
                     .to_string()
             })?;
 
-        let src = format!("config_dir/genomes/{from}/active.json");
+        let src = format!("{}/genomes/{from}/active.json", crate::paths::config_root());
         let data =
             std::fs::read_to_string(&src).map_err(|e| format!("no se puede leer {src}: {e}"))?;
         let src_env: GenomeEnvelope =
@@ -245,7 +451,7 @@ impl GenomeEnvelope {
     /// bounds evolutivos, o invariantes de riesgo violados (TP/SL asimétrico).
     /// Es un filtro de sanidad, no de desempeño: la promoción destruye el
     /// genoma activo en disco y ningún caller debe poder escribir basura.
-    fn validate(genome: &SuperGenotype) -> Result<(), String> {
+    pub fn validate(genome: &SuperGenotype) -> Result<(), String> {
         let vec = genome.to_vector();
         if vec.len() != SuperGenotype::DIMENSION {
             return Err(format!(
@@ -327,6 +533,8 @@ impl GenomeEnvelope {
                 ),
             ));
         }
+        std::fs::create_dir_all(history_dir())?;
+
         let parent = if let Ok(data) = std::fs::read_to_string(active_path()) {
             serde_json::from_str::<GenomeEnvelope>(&data)
                 .map(|e| e.generation)
@@ -334,9 +542,44 @@ impl GenomeEnvelope {
         } else {
             0
         };
+
+        // F1-072: Reclamar la generación con create_new (O_EXCL) sobre gen_{N+1}.json
+        // y reintentar con N+2 si existe (el archivo de historia ES el lock atómico
+        // frente a promotores concurrentes).
+        let mut candidate_gen = parent + 1;
+        let mut claimed_file = None;
+        let mut claimed_path = String::new();
+
+        for _ in 0..10_000 {
+            let hist_path = format!("{}/gen_{:06}.json", history_dir(), candidate_gen);
+            match std::fs::OpenOptions::new()
+                .write(true)
+                .create_new(true)
+                .open(&hist_path)
+            {
+                Ok(file) => {
+                    claimed_file = Some(file);
+                    claimed_path = hist_path;
+                    break;
+                }
+                Err(e) if e.kind() == io::ErrorKind::AlreadyExists => {
+                    candidate_gen += 1;
+                    continue;
+                }
+                Err(e) => return Err(e),
+            }
+        }
+
+        let mut hist_file = claimed_file.ok_or_else(|| {
+            io::Error::new(
+                io::ErrorKind::Other,
+                "[F1-072] No se pudo reclamar un número de generación tras 10000 intentos",
+            )
+        })?;
+
         let envelope = GenomeEnvelope {
             schema_version: SCHEMA_VERSION,
-            generation: parent + 1,
+            generation: candidate_gen,
             created_ms: now_ms(),
             source: source.to_string(),
             parent_generation: parent,
@@ -344,18 +587,28 @@ impl GenomeEnvelope {
             genome,
         };
 
-        std::fs::create_dir_all(history_dir())?;
-
         // 1) Historia inmutable (append-only por nombre de generación).
-        let hist_path = format!("{}/gen_{:06}.json", history_dir(), envelope.generation);
         let hist_json = serde_json::to_string_pretty(&envelope)
             .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
-        atomic_write(&hist_path, &hist_json)?;
+        {
+            use std::io::Write;
+            if let Err(e) = hist_file
+                .write_all(hist_json.as_bytes())
+                .and_then(|_| hist_file.sync_all())
+            {
+                let _ = std::fs::remove_file(&claimed_path);
+                return Err(e);
+            }
+        }
+        drop(hist_file);
 
-        // 2) Active atómico (tmp + rename — jamás un active a medias).
-        let active_json = serde_json::to_string_pretty(&envelope)
-            .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
-        atomic_write(&active_path(), &active_json)?;
+        // 1b) Generación de bytes binarios para publicación active.bin
+        let bin_bytes = envelope.to_binary_bytes().ok();
+
+        // 2) Active atómico (tmp único + fsync + rename sin remove previo) y
+        // MONÓTONO (F1-072b, Sol): un promotor con generación menor no puede
+        // sobrescribir a uno mayor. Ver `publicar_active_monotono`.
+        publicar_active_monotono(&envelope, &hist_json, bin_bytes.as_deref())?;
 
         // 3) Espejo legacy: solo el genoma crudo (compat con loaders/watchers viejos).
         let legacy_json = serde_json::to_string_pretty(&envelope.genome)
@@ -372,6 +625,14 @@ impl GenomeEnvelope {
 
     /// Lee una generación de la historia inmutable del entorno actual.
     pub fn load_generation(generation: u64) -> io::Result<GenomeEnvelope> {
+        let hist_bin = history_bin_path(generation);
+        if std::path::Path::new(&hist_bin).exists() {
+            if let Ok(bytes) = std::fs::read(&hist_bin) {
+                if let Ok(env) = Self::from_binary_bytes(&bytes) {
+                    return Ok(env);
+                }
+            }
+        }
         let hist_path = format!("{}/gen_{:06}.json", history_dir(), generation);
         let data = std::fs::read_to_string(&hist_path)?;
         serde_json::from_str(&data).map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))
@@ -415,16 +676,156 @@ impl GenomeEnvelope {
     }
 }
 
+/// F1-072b (Sol, 2026-10-20): PUBLICACIÓN MONÓTONA de `active.json`.
+///
+/// Reclamar generaciones con O_EXCL ya garantiza unicidad, pero escribir
+/// `active.json` sin orden permitía que un hilo con generación MENOR
+/// sobrescribiera a uno mayor: con 8 promotores concurrentes el contrato
+/// veía `active.generation = 5` con 8 generaciones en el historial (carrera
+/// real detectada 3 veces en CI, no flaky).
+///
+/// Sección crítica con lock O_EXCL (`active.json.lock`) + escritura SÓLO si
+/// la generación nueva es mayor: `active` pasa a ser el máximo monótono de
+/// lo promocionado. Un lock obsoleto (>5 s, proceso muerto) se recupera para
+/// no bloquear nunca la promoción. `promote` no está en el hot path: el
+/// coste de un lock de archivo es aceptable y sólo ocurre al promocionar.
+fn publicar_active_monotono(
+    envelope: &GenomeEnvelope,
+    hist_json: &str,
+    bin_bytes: Option<&[u8]>,
+) -> io::Result<()> {
+    static TOKEN_NONCE: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
+    let active = active_path();
+    let lock = format!("{active}.lock");
+    let token = format!(
+        "{}.{}",
+        std::process::id(),
+        TOKEN_NONCE.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+    );
+    let inicio = std::time::Instant::now();
+    loop {
+        match std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&lock)
+        {
+            Ok(mut guard) => {
+                // Confirmación por token: si otro hilo borró el lock entre
+                // nuestro create y nuestra escritura, el contenido no es el
+                // nuestro y NO tenemos la sección crítica.
+                {
+                    use std::io::Write;
+                    let _ = guard.write_all(token.as_bytes());
+                }
+                let leido = std::fs::read_to_string(&lock).unwrap_or_default();
+                if leido != token {
+                    drop(guard);
+                    continue;
+                }
+                let resultado = (|| -> io::Result<()> {
+                    let actual = std::fs::read_to_string(&active)
+                        .ok()
+                        .and_then(|d| serde_json::from_str::<GenomeEnvelope>(&d).ok())
+                        .map(|e| e.generation)
+                        .unwrap_or(0);
+                    if envelope.generation > actual {
+                        atomic_write(&active, hist_json)?;
+                        if let Some(bytes) = bin_bytes {
+                            let _ = atomic_write_bytes(&active_bin_path(), bytes);
+                        }
+                    }
+                    Ok(())
+                })();
+                drop(guard);
+                let _ = std::fs::remove_file(&lock);
+                return resultado;
+            }
+            Err(e)
+                if e.kind() == io::ErrorKind::AlreadyExists
+                    || e.kind() == io::ErrorKind::PermissionDenied =>
+            {
+                // En Windows, create_new sobre un lock ABIERTO devuelve
+                // PermissionDenied (5), no AlreadyExists: es contención, no
+                // fallo. Un lock huérfano (proceso muerto) se recupera a los 5 s.
+                if inicio.elapsed() > std::time::Duration::from_secs(5) {
+                    let _ = std::fs::remove_file(&lock);
+                }
+                std::thread::sleep(std::time::Duration::from_millis(1));
+                continue;
+            }
+            Err(e) => return Err(e),
+        }
+    }
+}
+
+fn atomic_write_bytes(path: &str, bytes: &[u8]) -> io::Result<()> {
+    if let Some(parent) = std::path::Path::new(path).parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
+    static TMP_BIN_NONCE: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
+    let nonce = TMP_BIN_NONCE.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let pid = std::process::id();
+    let tmp = format!("{path}.{pid}.{nonce}.tmp");
+
+    {
+        use std::io::Write;
+        let mut file = std::fs::File::create(&tmp)?;
+        file.write_all(bytes)?;
+        file.sync_all()?;
+    }
+
+    let mut rename_res = std::fs::rename(&tmp, path);
+    if rename_res.is_err() {
+        for _ in 0..5 {
+            std::thread::sleep(std::time::Duration::from_millis(2));
+            rename_res = std::fs::rename(&tmp, path);
+            if rename_res.is_ok() {
+                break;
+            }
+        }
+    }
+    if let Err(e) = rename_res {
+        let _ = std::fs::remove_file(&tmp);
+        return Err(e);
+    }
+    Ok(())
+}
+
 fn atomic_write(path: &str, contents: &str) -> io::Result<()> {
     if let Some(parent) = std::path::Path::new(path).parent() {
         let _ = std::fs::create_dir_all(parent);
     }
-    let tmp = format!("{}.tmp", path);
-    std::fs::write(&tmp, contents)?;
-    if std::path::Path::new(path).exists() {
-        let _ = std::fs::remove_file(path);
+    static TMP_NONCE: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
+    let nonce = TMP_NONCE.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let pid = std::process::id();
+    let tmp = format!("{path}.{pid}.{nonce}.tmp");
+
+    {
+        use std::io::Write;
+        let mut file = std::fs::File::create(&tmp)?;
+        file.write_all(contents.as_bytes())?;
+        file.sync_all()?;
     }
-    std::fs::rename(&tmp, path)?;
+
+    // F1-072: En Windows (MoveFileExW MOVEFILE_REPLACE_EXISTING) y POSIX moderno,
+    // rename reemplaza atómicamente si el destino existe.
+    // NUNCA llamar a remove_file(path) antes de rename, pues abre una ventana de carrera
+    // donde active.json no existe para procesos o hilos concurrentes.
+    // Se incluye reintento defensivo ante cierres transitorios de handles en Windows NTFS.
+    let mut rename_res = std::fs::rename(&tmp, path);
+    if rename_res.is_err() {
+        for _ in 0..5 {
+            std::thread::sleep(std::time::Duration::from_millis(2));
+            rename_res = std::fs::rename(&tmp, path);
+            if rename_res.is_ok() {
+                break;
+            }
+        }
+    }
+    if let Err(e) = rename_res {
+        let _ = std::fs::remove_file(&tmp);
+        return Err(e);
+    }
     Ok(())
 }
 

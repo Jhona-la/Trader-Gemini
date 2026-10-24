@@ -29,6 +29,9 @@ pub struct ArenaCheckpoint {
     pub unified_capital: f64,
     pub positions: Vec<PositionSnapshot>,
     pub global_checksum: u64,
+    /// F1-078: Evidencia espectral multiactivo para arranque en caliente de martingalas de Ville.
+    #[serde(default)]
+    pub espectral_snapshots: Vec<crate::espectral_multiactivo::SnapshotParEscala>,
 }
 
 /// 💾 ALGORITMO #50: CHECKPOINT DE CONTINUIDAD Y AUTO-RECUPERACIÓN CERO COPIA (STATE CONTINUITY ENGINE)
@@ -127,6 +130,7 @@ mod tests {
             unified_capital: 13.50,
             positions: vec![snap],
             global_checksum: 12345,
+            espectral_snapshots: Vec::new(),
         };
 
         let temp_dir = std::env::temp_dir();

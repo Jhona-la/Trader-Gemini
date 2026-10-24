@@ -300,3 +300,54 @@ contexto. No se borra nada de la rama.
 - `.exe`/`.pdb`: `find -maxdepth 1` con `-mtime`/`-mmin`.
 - Ramas: `git log origin/main..rama`, `git cherry`, `git merge-tree
   --write-tree --name-only`.
+
+## 7. Actualización 2026-10-21 09:15 Bogotá (Sol) — la presión ya no es del repo
+
+Medido sin compilar nada, con los dos workflows de main en rojo por F1-089.
+
+| Medida | 2026-10-18 (Línea C) | 2026-10-21 (Sol) | Lectura |
+|---|---:|---:|---|
+| RAM física libre | 1,73 GB | **1,22 GB** | sigue en el suelo |
+| Memoria comprometida / límite | 45,7 / 63,9 GB | **55,4 / 60,6 GB** | **90 % del commit**: el pagefile es el recurso escaso |
+| Procesos | 552 | **619** | +67 en 3 días |
+| Carpeta del proyecto | ≈ 82 GB | **63,9 GB** (target 37,4 · data 23,9 · .git 3,2) | 21 % del presupuesto de 300 GB |
+| Volumen C libre | 360 GB | **375 GB** | el disco no aprieta |
+
+### 7.1 Hallazgo nuevo: los servidores MCP se multiplican por sesión
+
+54 procesos `node`/`python` suman 5,79 GB privados, y la mayor parte son
+**copias del mismo servidor**, una por app/sesión de agente:
+
+| Servidor | Copias | Privado |
+|---|---:|---:|
+| `codex … cua_node … server.mjs` | 14 | 0,94 GB |
+| `chrome-devtools-mcp` (npx) | 6 | 0,50 GB |
+| `@microsoft/github-copilot-app-modernization-mcp` | 4 | 0,43 GB |
+| `hermes_cli` (python) | 24 | 1,40 GB |
+
+Ninguno se recicla al cerrar la sesión que lo lanzó. Es la fuga de RAM más
+barata de arreglar: cerrar una app de agente libera sus MCP, no sólo su UI.
+
+### 7.2 Worktrees: la regla del `target/` compartido se cumple casi entera
+
+12 worktrees registrados (11 previos + el mío, `~/.sol/wt/f1088`). Sólo dos
+conservan `target/` privado: `codex/root-lg5-main-1015` (1,71 GB) y
+`codex/base-audit-2026-10-15` (0,14 GB). El resto apunta al `target/`
+compartido del checkout principal. Total duplicado: **1,85 GB**.
+
+### 7.3 Reglas que propongo para todos (además de las de §3.3)
+
+1. **Reap de MCP al cerrar sesión.** Si tu app lanzó `chrome-devtools-mcp`,
+   `cua_node` o `copilot-app-modernization-mcp`, ciérrala al terminar la ola.
+   No dejes servidores huérfanos: nadie sabe de quién son.
+2. **Techo de sesiones, no de agentes.** Un agente puede reconectar cuando
+   quiera, pero no debe dejar dos sesiones vivas de la misma app: cada una
+   cuesta su MCP (0,07–0,11 GB) y su renderer.
+3. **Commit headroom.** Si la memoria comprometida supera el 90 % del límite,
+   no se compila ni se entrena: se avisa al operador y se espera.
+4. **`target/` privado = deuda.** Los dos worktrees de §7.2 deben apuntar al
+   `CARGO_TARGET_DIR` compartido o borrarse si su rama ya está fusionada.
+5. **Nada de `git add -A` en el checkout compartido.** Hoy el checkout estaba
+   en la rama de AGY con cambios sin commitear de su invariante de liquidación;
+   un `-A` habría metido trabajo ajeno en un commit propio (y mis hunks en el
+   suyo). Cada agente commitea rutas explícitas.

@@ -34,13 +34,133 @@ impl Default for QuantumHotSwapState {
 use quantum_arena::GlobalArena;
 use quantum_arena::genome::SuperGenotype;
 
-/// Numerario de capital del PRE-SCREEN. No es una constante de decisión: la
-/// simulación del pre-screen es puramente multiplicativa
-/// (`cap += net_ret · cap · kelly`), de modo que `cap_final/cap_inicial` —y
-/// con él `fitness::compute`, que sólo lee ese cociente en logaritmo— es
-/// INVARIANTE frente a este valor. Cambiarlo no reordena a ningún candidato.
-/// El JUEZ (`wf_evaluate_real`) no lo usa: arranca del capital VIVO del arena.
-const WF_INITIAL_CAPITAL: f64 = 13.0;
+/// Numerario de capital del PRE-SCREEN. No es una constante de decisión ni un
+/// saldo: la simulación del pre-screen es puramente multiplicativa
+/// (`cap += net_ret · cap · kelly`), de modo que `cap_final/cap_inicial` —y con
+/// él `fitness::compute`, que sólo lee ese cociente en logaritmo— es INVARIANTE
+/// frente a este valor. Cambiarlo no reordena a ningún candidato.
+/// El JUEZ (`wf_evaluate_real`) no lo usa: arranca del capital VIVO del arena,
+/// que `god_engine` extrae del balance real de la wallet por API (Demo y
+/// Producción) con reintento fail-closed.
+/// GLM 145: la invariancia está CERTIFICADA por
+/// `tests/wf_numerario_invariancia_contract.rs` (13,0 / 100 / 1 000 / 1e6 dan
+/// el mismo fitness), y el valor es parametrizable por `TG_WF_CAPITAL`
+/// (precedente TG_SA_* de F1-122) para re-certificarla sin recompilar.
+///
+/// F1-089d (Sol): el valor por defecto es **1,0**, la unidad multiplicativa.
+/// Antes era 13,0 —el «capital microscópico» del operador— y aunque era
+/// numéricamente inocuo (invariante certificada), un 13,0 en el motor que
+/// evoluciona estrategias se lee como un saldo ficticio y contradice la regla
+/// de paridad: el capital REAL sólo entra por la wallet. La unidad neutra dice
+/// la verdad: aquí no hay dólares, hay una escala.
+const WF_INITIAL_CAPITAL_DEFAULT: f64 = 1.0;
+
+/// Numeraire del pre-screen con override por entorno (TG_WF_CAPITAL).
+/// Guardas CL-15: valor ausente/NaN/≤0 ⇒ default documentado, jamás pánico.
+#[doc(hidden)]
+pub fn wf_initial_capital() -> f64 {
+    match std::env::var("TG_WF_CAPITAL") {
+        Ok(txt) => match txt.trim().parse::<f64>() {
+            Ok(v) if v.is_finite() && v > 0.0 => v,
+            _ => WF_INITIAL_CAPITAL_DEFAULT,
+        },
+        Err(_) => WF_INITIAL_CAPITAL_DEFAULT,
+    }
+}
+
+/// GLM 145 — evaluación de pre-screen EXTRAÍDA del bucle de mutación para
+/// poder CERTIFICAR la invariancia del numeraire con un contrato real (el
+/// test llama ESTA función, no una copia de la fórmula). Semántica idéntica
+/// al bloque que sustituye: puramente multiplicativa en `capital`.
+#[doc(hidden)]
+pub fn prescreen_evaluate(
+    tp: f64,
+    sl: f64,
+    kelly: f64,
+    ml_thr_long: f64,
+    ml_thr_short: f64,
+    series: &[Vec<f64>],
+    volatility: f64,
+    roundtrip_fee: f64,
+    capital: f64,
+) -> f64 {
+    let mut wf_wins = 0usize;
+    let mut wf_losses = 0usize;
+    let mut wf_capital = capital;
+    let mut wf_peak = capital;
+    let mut wf_dd = 0.0f64;
+
+    for coin_ret in series {
+        let n_returns = coin_ret.len();
+        let train_end = (n_returns * 6) / 10;
+        for i in train_end..n_returns {
+            let r = coin_ret[i];
+            let prev_r = if i > 0 { coin_ret[i - 1] } else { 0.0 };
+
+            let prev_sigma = if volatility > 1e-12 {
+                prev_r / volatility
+            } else {
+                0.0
+            };
+            let entry_bias = prescreen_entry_bias(prev_sigma, ml_thr_long, ml_thr_short);
+            if entry_bias == 0.0 {
+                continue;
+            }
+
+            let trade_ret = r * entry_bias;
+
+            let eff_sigma = volatility.max(0.0005);
+            let p_stop = if trade_ret <= -sl {
+                1.0
+            } else {
+                let arg = (2.0 * sl * (sl + trade_ret)) / (eff_sigma * eff_sigma);
+                (-arg.clamp(0.0, 50.0)).exp().clamp(0.0, 1.0)
+            };
+            let effective_ret = (-sl) * p_stop + trade_ret.min(tp) * (1.0 - p_stop);
+            let net_ret = effective_ret - roundtrip_fee;
+
+            wf_capital += net_ret * wf_capital * kelly;
+            if wf_capital > wf_peak {
+                wf_peak = wf_capital;
+            }
+            if wf_peak > 0.0 {
+                wf_dd = wf_dd.max((wf_peak - wf_capital) / wf_peak);
+            }
+            if net_ret > 0.0 {
+                wf_wins += 1;
+            } else {
+                wf_losses += 1;
+            }
+        }
+    }
+
+    let wf_trades = wf_wins + wf_losses;
+
+    if wf_trades > 0 && (wf_trades as u32) < WF_MIN_TRADES {
+        crate::fitness::compute_with_bayesian_prior(
+            &crate::fitness::FitnessInputs {
+                initial_capital: capital,
+                final_capital: wf_capital,
+                max_drawdown_pct: wf_dd,
+                total_trades: wf_trades as u32,
+                min_trades_required: WF_MIN_TRADES,
+                oos_start_capital: wf_capital,
+                oos_end_capital: wf_capital,
+            },
+            -0.05,
+        )
+    } else {
+        crate::fitness::compute(&crate::fitness::FitnessInputs {
+            initial_capital: capital,
+            final_capital: wf_capital,
+            max_drawdown_pct: wf_dd,
+            total_trades: wf_trades as u32,
+            min_trades_required: WF_MIN_TRADES,
+            oos_start_capital: wf_capital,
+            oos_end_capital: wf_capital,
+        })
+    }
+}
 
 /// C-10 / MOD3/5-012 (INFORME 14): mínimo estadístico de operaciones en la
 /// ventana OOS del daemon. 3 trades en la partición fuera de muestra es el
@@ -476,28 +596,12 @@ pub fn restaurar_genes_no_observables_en_examen(
     candidate.quantum_entropy_seed = incumbent.quantum_entropy_seed;
 }
 
-/// Registra specs sintéticos WFD{i} (idempotente) y devuelve sus coin_ids.
+/// F1-104 (Ø159, AGY): Asigna directamente los slots locales `0..n` para el examen
+/// walk-forward sin mutar el `DYNAMIC_REGISTRY` global ni invocar `update_registry`.
+/// Esto previene ~200 clones de Vec y llamadas a `nueva_generacion()` por ronda que
+/// invalidaban la `piso_cache` del núcleo vivo en el hot-path (lib.rs:3760-3766).
 fn wf_real_coin_ids(n: usize) -> Vec<usize> {
-    let mut ids = Vec::with_capacity(n);
-    for i in 0..n {
-        let sym = format!("WFD{}", i);
-        if quantum_arena::symbol_registry::try_index(&sym).is_none() {
-            let spec = quantum_arena::symbol_registry::SymbolSpec {
-                symbol: sym.clone(),
-                step_size: 0.001,
-                tick_size: WF_SYNTH_TICK,
-                min_qty: 0.001,
-                min_notional: 5.0,
-                max_leverage: 50,
-                maker_fee: 0.0002,
-                taker_fee: 0.0005,
-                is_shadow: true,
-            };
-            quantum_arena::symbol_registry::update_registry(vec![spec]);
-        }
-        ids.push(quantum_arena::symbol_registry::try_index(&sym).unwrap_or(i));
-    }
-    ids
+    (0..n).collect()
 }
 
 use god_engine_core::GodEngineCore;
@@ -566,7 +670,7 @@ fn nucleo_del_examen(
 /// prueba `cf6_arena_del_candidato`: el examen debe puntuar al candidato.
 #[doc(hidden)]
 pub fn genoma_del_examen(candidate: &SuperGenotype, market: &WfMarketEnv) -> SuperGenotype {
-    let (arena, _core) = nucleo_del_examen(candidate, WF_INITIAL_CAPITAL, market, &[0]);
+    let (arena, _core) = nucleo_del_examen(candidate, wf_initial_capital(), market, &[0]);
     SuperGenotype::current_from_arena(&arena)
 }
 
@@ -578,16 +682,40 @@ pub fn genoma_del_examen(candidate: &SuperGenotype, market: &WfMarketEnv) -> Sup
 pub fn atr_pct_del_examen(serie: &[f64], market: &WfMarketEnv) -> f64 {
     let coin_ids = wf_real_coin_ids(1);
     let coin_id = coin_ids[0].min(quantum_arena::state::MAX_COINS - 1);
+    let capital = wf_initial_capital();
     let (arena, mut core) =
-        nucleo_del_examen(&SuperGenotype::default(), WF_INITIAL_CAPITAL, market, &coin_ids);
+        nucleo_del_examen(&SuperGenotype::default(), capital, market, &coin_ids);
     let mut envelope = RiskEnvelope::new();
-    let mut st = WfReplayState::new(WF_INITIAL_CAPITAL);
+    let mut st = WfReplayState::new(capital);
     let mut precio = WF_SYNTH_PRICE_BASE;
     wf_replay_segment(
         &mut core, &arena, &mut envelope, &mut st, &mut precio, coin_id,
-        serie, 0, serie.len(), market, WF_INITIAL_CAPITAL, false,
+        serie, 0, serie.len(), market, capital, false,
     );
     core.feature_engines[coin_id].get_atr_pct()
+}
+
+/// F1-002: Generador pseudo-aleatorio determinista y reproducible sin heap allocations
+/// para la perturbación browniana condicionada en el examen walk-forward.
+#[inline]
+pub fn pseudo_gaussian_noise(seed1: u64, seed2: u64, seed3: u64) -> f64 {
+    let mut h = seed1
+        .wrapping_mul(0x517cc1b727220a95)
+        ^ seed2.wrapping_mul(0x4b7e1933)
+        ^ seed3.wrapping_mul(0x9e3779b97f4a7c15);
+    h ^= h >> 30;
+    h = h.wrapping_mul(0xbf58476d1ce4e5b9);
+    h ^= h >> 27;
+    h = h.wrapping_mul(0x94d049bb133111eb);
+    h ^= h >> 31;
+    let u1 = ((h as i64) as f64) / (i64::MAX as f64);
+    h = h.wrapping_add(0x9e3779b97f4a7c15);
+    h ^= h >> 30;
+    h = h.wrapping_mul(0xbf58476d1ce4e5b9);
+    let u2 = (((h as i64) as f64) / (i64::MAX as f64)).abs().max(1e-7);
+    let r_bm = (-2.0 * u2.ln()).sqrt();
+    let theta = 2.0 * std::f64::consts::PI * u1;
+    (r_bm * theta.cos()).clamp(-3.0, 3.0)
 }
 
 /// Reproduce el tramo `[from, to)` de una serie contra el MOTOR REAL.
@@ -616,70 +744,75 @@ fn wf_replay_segment(
     // CL-88 (atr-2): es la del examen, no la del símbolo vivo del slot.
     let tick_size = market.tick_del_examen();
     let to = to.min(rets.len());
+
+    // F1-003: Captura causal de la instantánea macro congelada del registro
+    let reg = &arena.registry;
+    let macro_funding = reg.get_value_or("macro_funding", 0.0001).clamp(-0.01, 0.01);
+    let macro_fear_greed = reg.get_value_or("macro_fear_greed", 50.0).clamp(0.0, 100.0);
+    let macro_dxy = reg.get_value_or("macro_dxy", 100.0).clamp(50.0, 200.0);
+    let macro_sp500 = reg.get_value_or("macro_sp500", 5000.0).clamp(1000.0, 10000.0);
+    let macro_nasdaq = reg.get_value_or("macro_nasdaq", 18000.0).clamp(5000.0, 30000.0);
+    let macro_vix = reg.get_value_or("macro_vix", 20.0).clamp(5.0, 100.0);
+    let macro_gold = reg.get_value_or("macro_gold", 2500.0).clamp(500.0, 5000.0);
+
     for ri in from..to {
         let r = rets[ri];
         let next_price = (*price * (1.0 + r)).max(1e-6);
-        let prev_ret = if ri > 0 { rets[ri - 1] } else { 0.0 };
         let base_price = *price;
+        let mut prev_mid = base_price;
+        // F1-002: Puente Browniano discreto. Volatilidad estimada de la barra
+        let bar_sigma = (r.abs() * 0.5).max(0.001);
+
         for t in 0..WF_REAL_MICRO_TICKS {
             st.ts += 2_000;
             let frac = (t + 1) as f64 / WF_REAL_MICRO_TICKS as f64;
-            let frac_prev = t as f64 / WF_REAL_MICRO_TICKS as f64;
-            let mid = base_price + (next_price - base_price) * frac;
-            let prev_mid = base_price + (next_price - base_price) * frac_prev;
+            let drift_mid = base_price + (next_price - base_price) * frac;
+            // Perturbación estocástica de puente browniano condicionado B(t) con B(0)=0 y B(1)=0:
+            let bridge_sd = (frac * (1.0 - frac)).max(0.0).sqrt();
+            let z = pseudo_gaussian_noise(ri as u64, t as u64, coin_id as u64);
+            let mid = if t == WF_REAL_MICRO_TICKS - 1 {
+                next_price
+            } else {
+                (drift_mid + base_price * bar_sigma * bridge_sd * z).max(1e-6)
+            };
 
-            // D-742 — SPREAD DEL MERCADO, NO DEL EXAMINADO. Antes:
-            // `candidate.maker_spread_pct` — el candidato se fabricaba el
-            // mercado en el que lo examinaban.
+            // D-742 — SPREAD DEL MERCADO, NO DEL EXAMINADO.
             let exam_tick_pct = if mid > 0.0 { tick_size / mid } else { 0.0 };
             let half_spread = market.half_spread(exam_tick_pct);
             let bid = mid * (1.0 - half_spread);
             let ask = mid * (1.0 + half_spread);
 
-            // D-745 — LIBRO SIMÉTRICO, OBI NEUTRO. Antes:
-            // `noise_qty = 0.5 + ((ts % 7)/7)` producía un ciclo DETERMINISTA
-            // de periodo 7 con bid_qty medio 7,5 contra ask_qty medio 12,5 —
-            // un sesgo vendedor permanente y aprendible. Las series del examen
-            // sólo contienen RETORNOS: no hay ni un dato de flujo de órdenes,
-            // de modo que cualquier OBI sería inventado. El examen declara el
-            // libro equilibrado (OBI = 0) y NO PUEDE JUZGAR las ramas de
-            // microestructura: un genoma que dependa del desequilibrio del
-            // libro no operará aquí y, por tanto, no será promovido por este
-            // camino. Es la única postura honesta con los datos disponibles.
+            // D-745 — LIBRO SIMÉTRICO, OBI NEUTRO.
             let depth = market.depth_qty(mid, capital_examen);
             let bid_qty = depth;
             let ask_qty = depth;
             let obi = 0.0f64;
-            // Clasificación del agresor por la REGLA DEL TICK (Lee & Ready):
-            // una impresión a precio superior la origina un comprador
-            // (is_buyer_maker = false) y una a precio inferior, un vendedor.
-            // Deriva del movimiento ya recorrido, no de un contador.
-            let is_buyer_maker = mid < prev_mid;
 
-            // omni 54D causal — mismos campos clave que el nativo
+            // F1-002: Clasificación del agresor por la REGLA DEL TICK (Lee & Ready):
+            // fluctúa honestamente con el incremento local mid - prev_mid
+            let is_buyer_maker = mid < prev_mid;
+            prev_mid = mid;
+
+            // F1-002: Fracción realista de volumen de trade en vez del 100% de la profundidad del libro
+            let trade_qty = (depth * 0.125).max(0.0001);
+
+            // F1-003: omni 54D causal — instantánea macro congelada sin síntesis espuria
+            // y podadas las 9 escrituras huérfanas sin lector (omni[1],[13],[32],[34],[35],[39],[41],[43],[49])
             let mut omni = [0.0f64; 54];
-            omni[1] = (2.0 * half_spread * 10.0).clamp(-5.0, 5.0);
-            omni[11] = (prev_ret * 0.005).clamp(-0.001, 0.001);
-            omni[13] = (1.0 + prev_ret * 5.0).clamp(0.5, 2.5);
-            omni[14] = (50.0 + prev_ret * 500.0).clamp(10.0, 90.0);
-            omni[24] = (15.0 + prev_ret.abs() * 200.0).clamp(10.0, 80.0);
+            omni[11] = macro_funding;
+            omni[14] = macro_fear_greed;
+            omni[21] = macro_dxy;
+            omni[22] = macro_sp500;
+            omni[23] = macro_nasdaq;
+            omni[24] = macro_vix;
+            omni[26] = macro_gold;
             omni[30] = obi * 5.0;
             omni[31] = obi * 6.0;
-            omni[32] = if ask_qty > 0.0 {
-                (bid_qty / ask_qty).clamp(0.1, 10.0)
-            } else {
-                1.0
-            };
-            omni[34] = mid * 1.01;
-            omni[35] = mid * 0.99;
-            omni[39] = obi;
-            omni[41] = (-prev_ret * 2.0).clamp(-0.25, 0.25);
-            omni[43] = mid;
-            omni[49] = prev_ret.abs() * 100.0;
+            omni[33] = 0.0;
 
             let is_kline = t == WF_REAL_MICRO_TICKS - 1;
             let (_, closed) = core.process_event(
-                coin_id, true, is_kline, true, mid, bid_qty.min(ask_qty),
+                coin_id, true, is_kline, true, mid, trade_qty,
                 bid, ask, bid_qty, ask_qty, obi, 0.0, st.ts, false, &omni, is_buyer_maker,
             );
             // Envelope del host sobre cada entrada recién abierta
@@ -694,21 +827,11 @@ fn wf_replay_segment(
             );
             st.pos_open_flags[coin_id] = arena.coins[coin_id].positions.is_any_open();
 
+            // F1-081: Registrar PnL neto individual directamente, erradicando la doble EMA.
             if let Some((_, pnl_net, _)) = closed {
-                if pnl_net >= 0.0 {
-                    st.avg_win = if st.avg_win == 0.0 {
-                        pnl_net.abs()
-                    } else {
-                        st.avg_win * 0.95 + pnl_net.abs() * 0.05
-                    };
-                } else {
-                    st.avg_loss = if st.avg_loss == 0.0 {
-                        pnl_net.abs()
-                    } else {
-                        st.avg_loss * 0.95 + pnl_net.abs() * 0.05
-                    };
-                }
-                envelope.record_trade(pnl_net > 0.0, st.avg_win.max(1e-9), -st.avg_loss.max(1e-9));
+                envelope.record_net_pnl(pnl_net);
+                st.avg_win = envelope.avg_win;
+                st.avg_loss = envelope.avg_loss;
                 // D-744: normalizado por el capital del MOMENTO (el que estaba
                 // en riesgo), no por el capital inicial de la simulación.
                 if puntua {
@@ -1091,24 +1214,10 @@ impl LiveEvolutionDaemon {
                         for f in frames {
                             // SUBSYSTEM_TENSOR_PREDICTOR = 12, FRAME_PREDICTION_VS_REALITY = 30
                             if f.subsystem_id == 12 && f.frame_type == 30 {
-                                // E-02 / #23: Inyectar variables reales leídas del bus mmap
-                                // payload[0]=ml_prob, [1]=is_long, [2]=obi, [3]=net_pnl_pct, [4]=atr_pct, [5]=hurst
-                                let ml_prob = f.payload[0];
-                                let is_long = f.payload[1] > 0.5;
-                                let obi = f.payload[2];
-                                let net_pnl_pct = f.payload[3];
-                                let atr_pct = f.payload[4];
-                                let hurst = if f.payload[5] > 0.0 { f.payload[5] } else { 0.50 };
-
-                                let features = [
-                                    obi,
-                                    0.0,
-                                    1.0,
-                                    atr_pct,
-                                    hurst,
-                                    if is_long { ml_prob - 0.50 } else { 0.50 - ml_prob },
-                                ];
-                                self.forest.shadow_evaluate_with_features_dir(features, net_pnl_pct, is_long);
+                                // F1-004: Telemetría de diagnóstico / logging solamente.
+                                // La ingesta causal al Shadow Forest se realiza de forma única y libre de fuga temporal
+                                // en sample_realized_returns a través de take_last_closed_trade, eliminando
+                                // la doble contabilización y la divergencia semántica de rasgos.
                                 pending_new_obs += 1;
                             }
                         }
@@ -1319,44 +1428,52 @@ impl LiveEvolutionDaemon {
                             }
                         }
 
-                        // E4a & Ω135: FEATURES REALES para el Shadow Forest con PARIDAD TOTAL (CL-96 y CL-73 resueltos).
-                        // Se leen las claves escopadas por moneda (get_for_coin_or) garantizando paridad exacta
-                        // con la inferencia de predict_6d y eliminando la contaminación cruzada entre activos.
-                        // Se incorpora además la dirección de la posición viva (is_long) para paridad direccional (LC-F1-18).
-                        let reg = &self.arena.registry;
-                        let spot_bid = coin.spot_bid.load(std::sync::atomic::Ordering::Relaxed);
-                        let spot_ask = coin.spot_ask.load(std::sync::atomic::Ordering::Relaxed);
-                        let spread_bps = if spot_bid > 0.0 && spot_ask > spot_bid {
-                            ((spot_ask - spot_bid) / spot_bid * 10_000.0).clamp(0.0, 500.0)
+                        // F1-004: Ingesta causal con rasgos fotografiados en la APERTURA.
+                        // Erradica la fuga temporal post-hoc donde el bosque aprendía con microestructura
+                        // post-movimiento leída del registro tras el cierre.
+                        if let Some(record) = coin.take_last_closed_trade() {
+                            self.forest.shadow_evaluate_with_features_dir(
+                                record.entry_shadow_features,
+                                record.net_pnl_pct,
+                                record.is_long,
+                            );
                         } else {
-                            1.0
-                        };
-                        let is_long = coin
-                            .positions
-                            .slots()
-                            .iter()
-                            .find(|p| p.is_open())
-                            .map(|p| p.is_long.load(std::sync::atomic::Ordering::Relaxed))
-                            .unwrap_or_else(|| {
-                                coin.positions
-                                    .slot_0
-                                    .is_long
+                            // Fallback causal pre-movimiento para eventos sintéticos/reconciliados sin snapshot previo
+                            let reg = &self.arena.registry;
+                            let spot_bid = coin.spot_bid.load(std::sync::atomic::Ordering::Relaxed);
+                            let spot_ask = coin.spot_ask.load(std::sync::atomic::Ordering::Relaxed);
+                            let spread_bps = if spot_bid > 0.0 && spot_ask > spot_bid {
+                                ((spot_ask - spot_bid) / spot_bid * 10_000.0).clamp(0.0, 500.0)
+                            } else {
+                                1.0
+                            };
+                            let is_long = coin
+                                .positions
+                                .slots()
+                                .iter()
+                                .find(|p| p.is_open())
+                                .map(|p| p.is_long.load(std::sync::atomic::Ordering::Relaxed))
+                                .unwrap_or_else(|| {
+                                    coin.positions
+                                        .slot_0
+                                        .is_long
+                                        .load(std::sync::atomic::Ordering::Relaxed)
+                                });
+                            let features = [
+                                reg.get_for_coin_or(coin_id, "orderbook_imbalance", 0.0)
+                                    .clamp(-1.0, 1.0),
+                                reg.get_for_coin_or(coin_id, "price_acceleration", 0.0)
+                                    .clamp(-10.0, 10.0),
+                                spread_bps,
+                                reg.get_for_coin_or(coin_id, "atr_pct", 0.002).clamp(0.0, 1.0),
+                                coin.hurst_exponent
                                     .load(std::sync::atomic::Ordering::Relaxed)
-                            });
-                        let features = [
-                            reg.get_for_coin_or(coin_id, "orderbook_imbalance", 0.0)
-                                .clamp(-1.0, 1.0),
-                            reg.get_for_coin_or(coin_id, "price_acceleration", 0.0)
-                                .clamp(-10.0, 10.0),
-                            spread_bps,
-                            reg.get_for_coin_or(coin_id, "atr_pct", 0.002).clamp(0.0, 1.0),
-                            coin.hurst_exponent
-                                .load(std::sync::atomic::Ordering::Relaxed)
-                                .clamp(0.0, 1.0),
-                            reg.get_for_coin_or(coin_id, "price_velocity", 0.0)
-                                .clamp(-10.0, 10.0),
-                        ];
-                        self.forest.shadow_evaluate_with_features_dir(features, ret, is_long);
+                                    .clamp(0.0, 1.0),
+                                reg.get_for_coin_or(coin_id, "price_velocity", 0.0)
+                                    .clamp(-10.0, 10.0),
+                            ];
+                            self.forest.shadow_evaluate_with_features_dir(features, ret, is_long);
+                        }
                     }
                 }
             }
@@ -1800,6 +1917,8 @@ impl LiveEvolutionDaemon {
                 // EVALUACIÓN ESPECTRAL CONTINUA (C-10 / FMT-134): se evalúan las CURVAS
                 // continuas al horizonte de la barra de examen (WF_BAR_MS = 16 000 ms),
                 // no anclas escalares estáticas aisladas del continuo.
+                // GLM 145: el bloque vive en `prescreen_evaluate` — testeable y con
+                // numeraire CERTIFICADO invariante (contrato del test suite).
                 let tau_bar = WF_BAR_MS as f64;
                 let tp = candidate.tp_at_tau(tau_bar).max(0.0001);
                 let sl = candidate.sl_at_tau(tau_bar).max(0.0001);
@@ -1807,96 +1926,22 @@ impl LiveEvolutionDaemon {
                 let ml_thr_long = candidate.ml_threshold_long;
                 let ml_thr_short = candidate.ml_threshold_short;
 
-                // Simulación walk-forward sobre retornos reales
-                let mut wf_wins = 0usize;
-                let mut wf_losses = 0usize;
-                let mut wf_pnl = 0.0f64;
-                let mut wf_capital = WF_INITIAL_CAPITAL;
-                let mut wf_peak = WF_INITIAL_CAPITAL;
-                let mut wf_dd = 0.0f64;
-                let mut candidate_net_returns: Vec<f64> = Vec::new();
-
                 let series: Vec<Vec<f64>> = per_coin_series
                     .iter()
                     .map(|sr| sr[sr.len().saturating_sub(300)..].to_vec())
                     .collect();
 
-                for coin_ret in &series {
-                    let n_returns = coin_ret.len();
-                    let train_end = (n_returns * 6) / 10;
-                    for i in train_end..n_returns {
-                        let r = coin_ret[i];
-                        let prev_r = if i > 0 { coin_ret[i - 1] } else { 0.0 };
-
-                        let prev_sigma = if volatility > 1e-12 {
-                            prev_r / volatility
-                        } else {
-                            0.0
-                        };
-                        let entry_bias =
-                            prescreen_entry_bias(prev_sigma, ml_thr_long, ml_thr_short);
-                        if entry_bias == 0.0 {
-                            continue;
-                        }
-
-                        let trade_ret = r * entry_bias;
-
-                        let eff_sigma = volatility.max(0.0005);
-                        let p_stop = if trade_ret <= -sl {
-                            1.0
-                        } else {
-                            let arg = (2.0 * sl * (sl + trade_ret)) / (eff_sigma * eff_sigma);
-                            (-arg.clamp(0.0, 50.0)).exp().clamp(0.0, 1.0)
-                        };
-                        let effective_ret = (-sl) * p_stop + trade_ret.min(tp) * (1.0 - p_stop);
-                        let net_ret = effective_ret - roundtrip_fee;
-
-                        wf_pnl += net_ret * wf_capital * kelly;
-                        wf_capital += net_ret * wf_capital * kelly;
-                        if wf_capital > wf_peak {
-                            wf_peak = wf_capital;
-                        }
-                        if wf_peak > 0.0 {
-                            wf_dd = wf_dd.max((wf_peak - wf_capital) / wf_peak);
-                        }
-                        if net_ret > 0.0 {
-                            wf_wins += 1;
-                        } else {
-                            wf_losses += 1;
-                        }
-                        candidate_net_returns.push(net_ret);
-                    }
-                }
-
-                let wf_trades = wf_wins + wf_losses;
-
-                let fitness = if wf_trades > 0 && (wf_trades as u32) < WF_MIN_TRADES {
-                    crate::fitness::compute_with_bayesian_prior(
-                        &crate::fitness::FitnessInputs {
-                            initial_capital: WF_INITIAL_CAPITAL,
-                            final_capital: wf_capital,
-                            max_drawdown_pct: wf_dd,
-                            total_trades: wf_trades as u32,
-                            min_trades_required: WF_MIN_TRADES,
-                            oos_start_capital: wf_capital,
-                            oos_end_capital: wf_capital,
-                        },
-                        -0.05,
-                    )
-                } else {
-                    crate::fitness::compute(&crate::fitness::FitnessInputs {
-                        initial_capital: WF_INITIAL_CAPITAL,
-                        final_capital: wf_capital,
-                        max_drawdown_pct: wf_dd,
-                        total_trades: wf_trades as u32,
-                        min_trades_required: WF_MIN_TRADES,
-                        oos_start_capital: wf_capital,
-                        oos_end_capital: wf_capital,
-                    })
-                };
-                let _ = wf_pnl;
-                let _ = candidate_net_returns;
-
+                let fitness = prescreen_evaluate(
+                    tp,
+                    sl,
+                    kelly,
+                    ml_thr_long,
+                    ml_thr_short,
+                    &series,
+                    volatility,
+                    roundtrip_fee,
+                    wf_initial_capital(),
+                );
                 prescreened.push((fitness, candidate));
             }
 
@@ -2593,5 +2638,16 @@ mod tests {
             .expect("ancla de la ronda");
         assert!(!ronda.contains("[HEURISTICGATE]"));
         assert!(!ronda.contains("heuristic_gate_score"));
+    }
+
+    /// F1-104: Aislamiento estricto de wf_real_coin_ids sin mutar generacion ni polucionar el registry.
+    #[test]
+    fn f1_104_wf_real_coin_ids_is_isolated_and_zero_churn() {
+        let g_before = quantum_arena::symbol_registry::generacion();
+        let ids = wf_real_coin_ids(8);
+        let g_after = quantum_arena::symbol_registry::generacion();
+        assert_eq!(ids, vec![0, 1, 2, 3, 4, 5, 6, 7]);
+        assert_eq!(g_before, g_after, "wf_real_coin_ids no debe alterar la generacion del registry");
+        assert!(quantum_arena::symbol_registry::try_index("WFD0").is_none());
     }
 }

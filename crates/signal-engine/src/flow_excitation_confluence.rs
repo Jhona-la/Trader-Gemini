@@ -69,8 +69,9 @@ impl FlowExcitationConfluenceEngine {
     /// OLA Ω141 — VOTO ESPECTRAL CON CONJETURA DE BIRCH Y SWINNERTON-DYER (BSD), RIEMANN ZETA GUE, KÄHLER-HODGE, YANG-MILLS Y HELMHOLTZ
     /// OLA Ω142 — VOTO ESPECTRAL CON TEOREMA DEL ÍNDICE DE ATIYAH-SINGER Y OPERADOR DE DIRAC, BSD, RIEMANN ZETA GUE, KÄHLER-HODGE, YANG-MILLS Y HELMHOLTZ
     /// OLA Ω143 — VOTO ESPECTRAL CON TRANSPORTE ÓPTIMO WASSERSTEIN-KANTOROVICH W_2 (BENAMOU-BRENIER), DIRAC, BSD, RIEMANN ZETA GUE, KÄHLER-HODGE, YANG-MILLS Y HELMHOLTZ
+    /// OLA Ω197 (F1-094) — VOTO ESPECTRAL CON ORDER BOOK IMBALANCE (OBI) Y LIFT DIRECCIONAL ML
     #[allow(clippy::too_many_arguments)]
-    pub fn voto_espectral_con_wasserstein_dirac_bsd_riemann_kahler_gauge_y_helmholtz(
+    pub fn voto_espectral_con_obi_ml_wasserstein_y_fisica(
         desplazamientos: &[f64; 32],
         ratio_lambda_mu: f64,
         hidden_liq_pressure: f64,
@@ -84,6 +85,8 @@ impl FlowExcitationConfluenceEngine {
         dirac_conviction_modulation: f64,
         wasserstein_barycenter_velocity: f64,
         wasserstein_conviction_modulation: f64,
+        obi: f64,
+        ml_directional_lift: f64,
     ) -> crate::voto_espectral::VotoEspectral {
         let excitacion = crate::hawkes_bessel::excitacion_hawkes_norm(
             ratio_lambda_mu,
@@ -145,31 +148,91 @@ impl FlowExcitationConfluenceEngine {
         } else {
             1.0
         };
+
+        // F1-094 (Ola Ω197): Acoplamiento espectral continuo de OBI y ML Lift
+        // G8-OMEGA-09: obi_eff proviene estrictamente del desequilibrio de libro medido;
+        // no absorbe p_ice aquí para evitar doble cuenta con current_sum y preservar
+        // la ley física de atenuación sin inversión de signo ante corrientes opuestas.
+        let obi_eff = if obi.is_finite() {
+            obi.clamp(-1.0, 1.0)
+        } else {
+            0.0
+        };
+        let ml_lift = if ml_directional_lift.is_finite() {
+            ml_directional_lift.clamp(-2.0, 2.0)
+        } else {
+            0.0
+        };
+
         for k in 0..32 {
             let x = desplazamientos[k];
-            if !x.is_finite() || x.abs() <= 1e-12 {
-                continue;
-            }
+            let x_val = if x.is_finite() { x } else { 0.0 };
+
             // G8-OMEGA-10: Perfiles continuos de acoplamiento espectral sobre k ∈ [0, 31]:
-            // - micro_factor: rampa lineal decreciente desde 1.0 (k=0) hacia 0.0 (k=32) para absorción iceberg y anomalía quiral de Dirac.
+            // - micro_factor: rampa lineal decreciente desde 1.0 (k=0) hacia 0.0 (k=32) para microestructura (OBI) y absorción iceberg.
             // - meso_factor: perfil triangular centrado en k=16 para corrientes restauradoras Kähleriana, elíptica BSD y geodésica Wasserstein.
-            // - macro_factor: rampa lineal creciente desde 0.0 (k=0) hacia 31/32 (k=31) para curvatura gauge Yang-Mills y advección Wasserstein.
+            // - macro_factor: rampa lineal creciente desde 0.0 (k=0) hacia 31/32 (k=31) para ML lift, curvatura gauge Yang-Mills y advección Wasserstein.
             let micro_factor = (1.0 - (k as f64 / 32.0)).max(0.0);
             let meso_factor = (1.0 - ((k as f64 - 16.0) / 16.0).abs()).max(0.0);
             let macro_factor = (k as f64 / 32.0).clamp(0.0, 1.0);
             let current_sum = (p_ice * 0.5 + j_dirac * 0.25) * micro_factor
                 + (j_kh * 0.35 + j_bsd * 0.25 + v_wk * 0.20) * meso_factor
                 + (j_ym * 0.35 + v_wk * 0.20) * macro_factor;
-            // G8-OMEGA-09: Proyección direccional sin inversión de signo.
-            // Las corrientes físicas amplifican la magnitud cuando están alineadas con x(τ_k)
-            // y la atenúan suavemente hacia 0.0 cuando se oponen, pero NUNCA invierten el signo
-            // del desplazamiento espectral x(τ_k) ni fabrican señal cuando x(τ_k) == 0.
-            let flujo = x.signum() * (x.abs() + x.signum() * current_sum).clamp(0.0, 10.0);
+
+            // F1-094: Confluencia genuina del flujo espectral base con microestructura OBI y predicción ML Lift.
+            let obi_contrib = obi_eff * micro_factor * 1.5;
+            let ml_contrib = ml_lift * macro_factor * 0.50;
+            let flujo_base = x_val + obi_contrib + ml_contrib;
+
+            if flujo_base.abs() <= 1e-12 {
+                continue;
+            }
+
+            // G8-OMEGA-09 & F1-094: Proyección direccional sobre el flujo base confluente.
+            // Las corrientes físicas amplifican la magnitud cuando están alineadas con flujo_base
+            // y la atenúan suavemente hacia 0.0 cuando se oponen.
+            let sign = flujo_base.signum();
+            let flujo = sign * (flujo_base.abs() + sign * current_sum).clamp(0.0, 10.0);
             let direccion = flujo.tanh();
             let coherencia = (flujo.abs().min(1.0) * excitacion * lam_scale).sqrt();
             por_escala[k] = (direccion * coherencia * gue_mod * bsd_mod * dirac_mod * wk_mod).clamp(-1.0, 1.0);
         }
         crate::voto_espectral::VotoEspectral::desde_arr(&por_escala)
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn voto_espectral_con_wasserstein_dirac_bsd_riemann_kahler_gauge_y_helmholtz(
+        desplazamientos: &[f64; 32],
+        ratio_lambda_mu: f64,
+        hidden_liq_pressure: f64,
+        laminar_fraction: f64,
+        yang_mills_current: f64,
+        kahler_restoring_current: f64,
+        riemann_gue_conviction: f64,
+        bsd_restoring_current: f64,
+        bsd_conviction_modulation: f64,
+        dirac_chiral_current: f64,
+        dirac_conviction_modulation: f64,
+        wasserstein_barycenter_velocity: f64,
+        wasserstein_conviction_modulation: f64,
+    ) -> crate::voto_espectral::VotoEspectral {
+        Self::voto_espectral_con_obi_ml_wasserstein_y_fisica(
+            desplazamientos,
+            ratio_lambda_mu,
+            hidden_liq_pressure,
+            laminar_fraction,
+            yang_mills_current,
+            kahler_restoring_current,
+            riemann_gue_conviction,
+            bsd_restoring_current,
+            bsd_conviction_modulation,
+            dirac_chiral_current,
+            dirac_conviction_modulation,
+            wasserstein_barycenter_velocity,
+            wasserstein_conviction_modulation,
+            0.0,
+            0.0,
+        )
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -343,40 +406,23 @@ impl QuantumStrategy for FlowExcitationConfluenceEngine {
             None => return 0.0,
         };
 
-        let hawkes = r
-            .get_scoped_parameter(
-                sym_opt,
-                cid_opt,
-                "hawkes_intensity",
-                "FlowExcitationConfluenceEngine",
-            )
-            .map(|p| p.get_value())
-            .unwrap_or(1.0);
-        let obi = r
-            .get_scoped_parameter(
-                sym_opt,
-                cid_opt,
-                "order_book_imbalance",
-                "FlowExcitationConfluenceEngine",
-            )
-            .or_else(|| {
-                r.get_scoped_parameter(
-                    sym_opt,
-                    cid_opt,
-                    "orderbook_imbalance",
-                    "FlowExcitationConfluenceEngine",
-                )
-            })
-            .or_else(|| {
-                r.get_scoped_parameter(
-                    sym_opt,
-                    cid_opt,
-                    "order_flow_imbalance",
-                    "FlowExcitationConfluenceEngine",
-                )
-            })
-            .map(|p| p.get_value())
-            .unwrap_or(0.0);
+        // F1-097 (Ola Ω164): Lecturas directas de atómicos sin alocar ni clonar Arc<Parameter> (Zero-Copy).
+        // Elimina ~25 Arc::clone y drop por moneda y evento (hasta 1,500 RMWs atómicos por tick).
+        let hawkes = r.get_scoped_val_or(sym_opt, cid_opt, "hawkes_intensity", 1.0);
+        let obi = {
+            let v = r.get_scoped_val_or(sym_opt, cid_opt, "order_book_imbalance", f64::NAN);
+            if v.is_finite() {
+                v
+            } else {
+                let v2 = r.get_scoped_val_or(sym_opt, cid_opt, "orderbook_imbalance", f64::NAN);
+                if v2.is_finite() {
+                    v2
+                } else {
+                    r.get_scoped_val_or(sym_opt, cid_opt, "order_flow_imbalance", 0.0)
+                }
+            }
+        };
+
         // TRIAJE B (GLM 109) — CL-15: "no opina es AUSENCIA, no un 0,5".
         // Los fallbacks 0.5 fabricaban lift: con ml_prob 0.36 real y base
         // inventada 0.5, la pata short votaba −0.33 QUE NO EXISTIRÍA con la
@@ -384,23 +430,16 @@ impl QuantumStrategy for FlowExcitationConfluenceEngine {
         // cae a 0.5 cuando NO hay bosque). Sin prob o sin base medible, el
         // motor ML NO OPINA (voto 0) — misma doctrina que el
         // DarkAlpha-fallback-None de B-H1.
-        let ml_prob = r
-            .get_scoped_parameter(
-                sym_opt,
-                cid_opt,
-                "ml_prob_motor",
-                "FlowExcitationConfluenceEngine",
-            )
-            .map(|p| p.get_value())
-            .filter(|v| v.is_finite());
+        let ml_prob_raw = r.get_scoped_val_or(sym_opt, cid_opt, "ml_prob_motor", f64::NAN);
 
         // FIX #643: Guarda de finitud estricta en indicadores de entrada
         if !hawkes.is_finite() || !obi.is_finite() {
             return 0.0;
         }
-        let ml_prob = match ml_prob {
-            Some(v) if v.is_finite() => v,
-            _ => return 0.0, // CL-15: sin prob del modelo, no opina
+        let ml_prob = if ml_prob_raw.is_finite() {
+            ml_prob_raw
+        } else {
+            return 0.0; // CL-15: sin prob del modelo, no opina
         };
 
         // CERT-M2-C03: el gate anterior usaba `ml_prob >= 0.5` absoluto —
@@ -410,53 +449,33 @@ impl QuantumStrategy for FlowExcitationConfluenceEngine {
         // base del modelo (misma doctrina que B3.18/B3.36): gatea en
         // AGY-AUD-P05: `ml_prob >= base + lift` / `ml_prob <= base − lift` con lift
         // dinámico vía registro o genoma, con fallback seguro a 0.05 (5 puntos).
-        let ml_base = r
-            .get_scoped_parameter(
-                sym_opt,
-                cid_opt,
-                "ml_model_base",
-                "FlowExcitationConfluenceEngine",
-            )
-            .map(|p| p.get_value())
-            .filter(|v| v.is_finite() && *v > 0.0 && *v < 1.0);
-        let ml_base = match ml_base {
-            Some(v) => v,
-            None => return 0.0, // CL-15: sin base medida, el lift no es medible — no opina
+        let ml_base_raw = r.get_scoped_val_or(sym_opt, cid_opt, "ml_model_base", f64::NAN);
+        let ml_base = if ml_base_raw.is_finite() && ml_base_raw > 0.0 && ml_base_raw < 1.0 {
+            ml_base_raw
+        } else {
+            return 0.0; // CL-15: sin base medida, el lift no es medible — no opina
         };
+
         // G8-OMEGA-11: `ml_model_lift` admite llave explícita (`ml_model_lift`), llave dinámica
         // (`ml_lift_dynamic`) o escalamiento continuo por dispersión (`atr_pct`), con fallback seguro a 0.05.
-        let ml_lift = r
-            .get_scoped_parameter(
-                sym_opt,
-                cid_opt,
-                "ml_model_lift",
-                "FlowExcitationConfluenceEngine",
-            )
-            .or_else(|| {
-                r.get_scoped_parameter(
-                    sym_opt,
-                    cid_opt,
-                    "ml_lift_dynamic",
-                    "FlowExcitationConfluenceEngine",
-                )
-            })
-            .map(|p| p.get_value())
-            .filter(|v| v.is_finite() && *v > 0.0 && *v < 0.5)
-            .unwrap_or_else(|| {
-                let atr = r
-                    .get_scoped_parameter(
-                        sym_opt,
-                        cid_opt,
-                        "atr_pct",
-                        "FlowExcitationConfluenceEngine",
-                    )
-                    .map(|p| p.get_value())
-                    .filter(|v| v.is_finite() && *v > 0.0);
-                match atr {
-                    Some(a) => (0.05 * (a / 0.002).sqrt()).clamp(0.02, 0.15),
-                    None => 0.05,
+        let ml_lift = {
+            let l1 = r.get_scoped_val_or(sym_opt, cid_opt, "ml_model_lift", f64::NAN);
+            if l1.is_finite() && l1 > 0.0 && l1 < 0.5 {
+                l1
+            } else {
+                let l2 = r.get_scoped_val_or(sym_opt, cid_opt, "ml_lift_dynamic", f64::NAN);
+                if l2.is_finite() && l2 > 0.0 && l2 < 0.5 {
+                    l2
+                } else {
+                    let atr = r.get_scoped_val_or(sym_opt, cid_opt, "atr_pct", f64::NAN);
+                    if atr.is_finite() && atr > 0.0 {
+                        (0.05 * (atr / 0.002).sqrt()).clamp(0.02, 0.15)
+                    } else {
+                        0.05
+                    }
                 }
-            });
+            }
+        };
 
         // #535 (3ª iteración): el umbral de excitación vuelve a ser del
         // GEN, anclado al estado estacionario del proceso. El gen

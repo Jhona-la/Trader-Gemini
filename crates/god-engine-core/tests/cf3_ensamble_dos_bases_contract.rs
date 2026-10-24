@@ -1,4 +1,4 @@
-//! C-F3.5 (Línea C), hallazgo F3.5-05: el ensamble bosque⊕DarkAlpha promedia
+﻿//! C-F3.5 (Línea C), hallazgo F3.5-05: el ensamble bosque⊕DarkAlpha promedia
 //! probabilidades de eventos distintos y todos los consumidores lo miden
 //! contra la base del bosque.
 //!
@@ -74,7 +74,6 @@ fn cf3_dos_modelos_sin_informacion_dejan_neutro_el_canal_ml() {
 
     let arena = GlobalArena::build_in_own_stack(100.0);
     let mut core = GodEngineCore::new(arena.clone());
-    core.scalp_forest = None;
     core.swing_nn = Some(red_constante(0.45));
     let _ = core.process_tick_dual(0, 100.0, 100.01, 5.0, 5.0, 10_000, &[0.0; 54], true, false);
 

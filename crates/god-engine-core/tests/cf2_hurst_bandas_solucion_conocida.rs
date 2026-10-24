@@ -129,7 +129,7 @@ fn cf2_paseo_garch_no_se_clasifica_persistente() {
 /// SD 0,035). Hoy, con H mediano ≈ 0,52, el factor es 2^((H − 0,5)/0,02) ≈
 /// 1,9-2 (recortado a 2).
 #[test]
-#[ignore = "OPEN F2.3b-01 (Línea C): bajo un paseo aleatorio hurst_duration_modulation duplica la duración mediana y satura la mayoría de los casos"]
+// F1-055 (Ola Ω168): Resuelto — modulación continua adaptativa por dynamic_hurst_thresholds e incertidumbre DFA
 fn cf2_duracion_no_se_modula_bajo_paseo_aleatorio() {
     let hs = hurst_paseos(PASEOS, 0xB0A5_2027, None);
     let mut f: Vec<f64> = hs

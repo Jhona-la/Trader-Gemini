@@ -53,7 +53,7 @@
 //! Tampoco cambia el ML-GATE: una moneda sin `_MOTOR` sigue necesitando un
 //! modelo después de su primera sonda.
 
-use crate::calibration::{PlattCalibrator, WINDOW};
+use crate::calibration::{plausible_evidence_timestamp_ms, PlattCalibrator, WINDOW};
 use crate::GodEngineCore;
 use serde::{Deserialize, Serialize};
 use std::collections::VecDeque;
@@ -99,7 +99,7 @@ pub struct EpigeneticaGuardada {
 pub struct MonedaGuardada {
     pub simbolo: String,
     pub metricas: MetricasGuardadas,
-    pub calibrador: Vec<Observacion>,
+    pub calibrador: VecDeque<Observacion>,
     /// LH-12: máximo conocido, no necesariamente presente en la ventana.
     /// Estados anteriores sin este campo infieren sólo el máximo retenido.
     #[serde(default)]
@@ -113,6 +113,9 @@ pub struct MonedaGuardada {
     /// arrancan el detector de cero, como antes.
     #[serde(default)]
     pub detector_lg22: Option<crate::resultado_orden::DetectorGuardado>,
+    /// F1-057 (Ola Ω169): Calibrador conformal de la moneda para evitar fail-open tras reinicio.
+    #[serde(default)]
+    pub conformal: Option<crate::conformal::ConformalGuardado>,
 }
 
 /// El proceso e del freno de la estrategia y si ya rechazó.
@@ -132,7 +135,7 @@ pub struct FrenoGuardado {
 pub struct EstadoAprendido {
     pub version: u32,
     pub monedas: Vec<MonedaGuardada>,
-    pub calibrador_global: Vec<Observacion>,
+    pub calibrador_global: VecDeque<Observacion>,
     #[serde(default)]
     pub calibrador_global_reloj_ms: Option<u64>,
     pub freno_estrategia: FrenoGuardado,
@@ -147,6 +150,9 @@ pub struct EstadoAprendido {
     pub resultado_en_stops: f64,
     #[serde(default)]
     pub pico_en_stops: f64,
+    /// F1-057 (Ola Ω169): Calibrador conformal global.
+    #[serde(default)]
+    pub conformal_global: Option<crate::conformal::ConformalGuardado>,
 }
 
 /// Anota una observación en un registro acotado a la ventana del calibrador.
@@ -161,6 +167,79 @@ fn anotar(registro: &mut VecDeque<Observacion>, obs: Observacion) {
 /// calibrador descarta no se anota.
 fn puntuacion_valida(score: f64) -> bool {
     score.is_finite() && (0.0..=1.0).contains(&score)
+}
+
+/// El modelo y su registro deben consumir la misma fecha efectiva (CSG-10).
+/// Sin un ancla válida, una fecha corrupta no cabe en `Observacion`: se
+/// omite ese destino completo en vez de aprender una fila que no se pueda
+/// restaurar. Un cierre tardío válido conserva su propia fecha.
+fn alimentar_calibrador(
+    calibrador: &mut PlattCalibrator,
+    registro: Option<&mut VecDeque<Observacion>>,
+    (score, won, ts_ms): Observacion,
+) {
+    if !puntuacion_valida(score) {
+        return;
+    }
+    let Some(timestamp_ms) = calibrador.effective_observation_timestamp_ms(ts_ms) else {
+        return;
+    };
+    calibrador.update_at(score, won, timestamp_ms);
+    if let Some(registro) = registro {
+        anotar(registro, (score, won, timestamp_ms));
+    }
+}
+
+fn observacion_restaurable(obs: &Observacion) -> bool {
+    puntuacion_valida(obs.0) && plausible_evidence_timestamp_ms(obs.2, None)
+}
+
+/// Una fila histórica no es un evento futuro nuevo. Sin un reloj guardado
+/// utilizable se infiere el máximo retenido, antes de reproducir las filas.
+/// Una fecha imposible ya persistida se descarta: no se puede reconstruir
+/// retrospectivamente su fecha efectiva ni imputarla a otra observación.
+///
+/// ORDEN (CSG-10, certificado por `csg10_calibration_persistence_contract`):
+/// el reloj se restaura ANTES de reproducir las filas. Es corrección, no
+/// estilo: sin el reloj preestablecido, una fila cuya fecha supera el ancla en
+/// más de `MAX_CLOCK_JUMP_MS` se consideraría un salto futuro prohibido y
+/// quedaría fechada con el ancla anterior, pervirtiendo tanto su edad como el
+/// reloj resultante (contrato
+/// `csg10_legacy_without_clock_infers_maximum_before_replay`).
+///
+/// CONSECUENCIA NUMÉRICA (LH-12): el ajuste de Platt arranca en caliente desde
+/// el `(a, b)` de la fila anterior y el solver para por tolerancia de gradiente
+/// proyectado (1e-9), no en un punto fijo exacto. Una restauración que
+/// reproduce N filas no puede reproducir la trayectoria del calibrador vivo
+/// —ésta vio además la fila que ya salió de la ventana—, así que los
+/// coeficores convergen a puntos distintos dentro de esa tolerancia: medido
+/// 1,2e-7 en `a` (5,0e-8 en `calibrate_at`) con N = 512. Por eso
+/// `platt_evidence_restore_contract` compara probabilidades con la tolerancia
+/// del solver (4e-5, la misma derivación que usa el contrato de CSG-10) y
+/// compara el reloj y las observaciones de forma EXACTA.
+fn restaurar_calibrador(
+    calibrador: &mut PlattCalibrator,
+    registro: &mut VecDeque<Observacion>,
+    observaciones: &VecDeque<Observacion>,
+    reloj_guardado_ms: Option<u64>,
+) {
+    *calibrador = PlattCalibrator::new();
+    registro.clear();
+    let reloj = reloj_guardado_ms
+        .filter(|&t| plausible_evidence_timestamp_ms(t, None))
+        .or_else(|| {
+            observaciones
+                .iter()
+                .filter(|obs| observacion_restaurable(obs))
+                .map(|obs| obs.2)
+                .max()
+        });
+    if let Some(reloj) = reloj {
+        calibrador.restore_evidence_clock_ms(reloj);
+    }
+    for &obs in observaciones.iter().filter(|obs| observacion_restaurable(obs)) {
+        alimentar_calibrador(calibrador, Some(&mut *registro), obs);
+    }
 }
 
 /// Cota inferior de R de Lundberg que se publica: z = 1,645 (95 %
@@ -194,13 +273,9 @@ pub(crate) fn alimentar(
         return;
     }
     if let Some(c) = por_moneda.get_mut(coin_id) {
-        c.update_at(score, won, ts_ms);
-        if let Some(r) = registro.get_mut(coin_id) {
-            anotar(r, (score, won, ts_ms));
-        }
+        alimentar_calibrador(c, registro.get_mut(coin_id), (score, won, ts_ms));
     }
-    global.update_at(score, won, ts_ms);
-    anotar(registro_global, (score, won, ts_ms));
+    alimentar_calibrador(global, Some(registro_global), (score, won, ts_ms));
 }
 
 impl GodEngineCore {
@@ -269,7 +344,7 @@ impl GodEngineCore {
                 calibrador: self
                     .registro_calibrador
                     .get(coin_id)
-                    .map(|r| r.iter().copied().collect())
+                    .cloned()
                     .unwrap_or_default(),
                 calibrador_reloj_ms: self.calibrator_by_coin.get(coin_id)
                     .and_then(PlattCalibrator::evidence_clock_ms),
@@ -286,6 +361,7 @@ impl GodEngineCore {
                     .map(|e| e.observaciones())
                     .unwrap_or_default(),
                 detector_lg22: self.lg22_detectores.get(coin_id).map(|d| d.guardado()),
+                conformal: self.conformal_by_coin.get(coin_id).map(|c| c.snapshot()),
             });
         }
         // CL-118: y las que se restauraron sin estar en este universo.
@@ -294,8 +370,9 @@ impl GodEngineCore {
         EstadoAprendido {
             version: VERSION_ESTADO,
             monedas,
-            calibrador_global: self.registro_calibrador_global.iter().copied().collect(),
+            calibrador_global: self.registro_calibrador_global.clone(),
             calibrador_global_reloj_ms: self.confidence_calibrator.evidence_clock_ms(),
+            conformal_global: Some(self.conformal.snapshot()),
             freno_estrategia: FrenoGuardado {
                 e_value: v.e_value,
                 log_wealth: v.log_wealth,
@@ -397,27 +474,28 @@ impl GodEngineCore {
                 );
             }
             if let Some(c) = self.calibrator_by_coin.get_mut(coin_id) {
-                *c = PlattCalibrator::new();
-                let r = &mut self.registro_calibrador[coin_id];
-                r.clear();
-                for &(score, won, ts) in g.calibrador.iter().filter(|o| puntuacion_valida(o.0)) {
-                    c.update_at(score, won, ts);
-                    anotar(r, (score, won, ts));
-                }
-                if let Some(clock) = g.calibrador_reloj_ms {
-                    c.restore_evidence_clock_ms(clock);
+                restaurar_calibrador(
+                    c,
+                    &mut self.registro_calibrador[coin_id],
+                    &g.calibrador,
+                    g.calibrador_reloj_ms,
+                );
+            }
+            if let Some(guardado_conf) = &g.conformal {
+                if let Some(conf) = self.conformal_by_coin.get_mut(coin_id) {
+                    conf.restaurar(guardado_conf);
                 }
             }
             restauradas += 1;
         }
-        self.confidence_calibrator = PlattCalibrator::new();
-        self.registro_calibrador_global.clear();
-        for &(score, won, ts) in e.calibrador_global.iter().filter(|o| puntuacion_valida(o.0)) {
-            self.confidence_calibrator.update_at(score, won, ts);
-            anotar(&mut self.registro_calibrador_global, (score, won, ts));
-        }
-        if let Some(clock) = e.calibrador_global_reloj_ms {
-            self.confidence_calibrator.restore_evidence_clock_ms(clock);
+        restaurar_calibrador(
+            &mut self.confidence_calibrator,
+            &mut self.registro_calibrador_global,
+            &e.calibrador_global,
+            e.calibrador_global_reloj_ms,
+        );
+        if let Some(guardado_conf) = &e.conformal_global {
+            self.conformal.restaurar(guardado_conf);
         }
         let f = &e.freno_estrategia;
         let freno = &mut self.risk_engine.freno_estrategia;
@@ -507,6 +585,15 @@ pub fn validar(e: &EstadoAprendido) -> Result<(), String> {
         if g.siniestros.iter().any(|y| !y.is_finite()) {
             return Err(format!("{s}.siniestros con un valor no finito"));
         }
+        if let Some(c) = &g.conformal {
+            rango(&format!("{s}.conformal.effective_alpha"), c.effective_alpha, 1e-4, 0.5)?;
+            if c.scores.len() > 256 {
+                return Err(format!("{s}.conformal.scores excede 256 elementos"));
+            }
+            if c.scores.iter().any(|&score| !score.is_finite() || score < 0.0 || score > 1.0) {
+                return Err(format!("{s}.conformal.scores contiene un valor fuera de [0, 1]"));
+            }
+        }
         // LG-27: el detector no se valida aquí. Uno inservible se descarta al
         // restaurar (la moneda empieza ese detector de cero) en vez de
         // bloquear el estado entero.
@@ -516,6 +603,15 @@ pub fn validar(e: &EstadoAprendido) -> Result<(), String> {
     }
     if e.calibrador_global_reloj_ms.is_some_and(|t| e.calibrador_global.iter().any(|o| o.2 > t)) {
         return Err("calibrador_global_reloj_ms anterior a una observación".into());
+    }
+    if let Some(c) = &e.conformal_global {
+        rango("conformal_global.effective_alpha", c.effective_alpha, 1e-4, 0.5)?;
+        if c.scores.len() > 256 {
+            return Err("conformal_global.scores excede 256 elementos".into());
+        }
+        if c.scores.iter().any(|&score| !score.is_finite() || score < 0.0 || score > 1.0) {
+            return Err("conformal_global.scores contiene un valor fuera de [0, 1]".into());
+        }
     }
     let f = &e.freno_estrategia;
     rango("freno.e_value", f.e_value, 0.0, todo)?;

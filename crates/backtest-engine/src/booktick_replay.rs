@@ -411,8 +411,6 @@ fn run_booktick_replay_observed(
     // B3.19 — envolvente del host replicada (D-442/D-116/D-382): misma
     // maquinaria que god_engine mantiene vivo entre eventos.
     let mut risk_envelope = RiskEnvelope::new();
-    let mut avg_win_abs = 0.0f64;
-    let mut avg_loss_abs = 0.0f64;
 
     let mut pnl_list: Vec<f64> = Vec::new();
     // XLVIII·A: nocional bruto operado (entrada+salida) para turnover.
@@ -716,32 +714,16 @@ fn run_booktick_replay_observed(
             ultimo_mid_admitido[0] = mid;
         }
 
-        // F5.1 (paridad host): alimentar el posterior del edge con CADA
-        // cierre — mismos EWMAs y mismo record_trade que god_engine. Las
-        // entradas vetadas nunca llegan aquí (rollback ⇒ sin cierre, B3.14).
-        if let Some((_, pnl_net, _)) = c1.or(c2) {
-            if pnl_net >= 0.0 {
-                avg_win_abs = if avg_win_abs == 0.0 {
-                    pnl_net.abs()
-                } else {
-                    avg_win_abs * 0.95 + pnl_net.abs() * 0.05
-                };
-            } else {
-                avg_loss_abs = if avg_loss_abs == 0.0 {
-                    pnl_net.abs()
-                } else {
-                    avg_loss_abs * 0.95 + pnl_net.abs() * 0.05
-                };
-            }
-            risk_envelope.record_trade(
-                pnl_net > 0.0,
-                avg_win_abs.max(1e-9),
-                -avg_loss_abs.max(1e-9),
-            );
+        // F5.1 (paridad host) & F1-101 (Ω160): alimentar el posterior del edge con CADA
+        // F1-081 (paridad host): alimentar el posterior del edge con cada
+        // cierre — pasando el trade neto individual para erradicar la doble EMA.
+        // Las entradas vetadas nunca llegan aquí (rollback ⇒ sin cierre, B3.14).
+        for (_, pnl_net, _) in [c1, c2].into_iter().flatten() {
+            risk_envelope.record_net_pnl(pnl_net);
         }
 
         if i >= warmup {
-            if let Some((_, pnl_net, qty)) = c1.or(c2) {
+            for (_, pnl_net, qty) in [c1, c2].into_iter().flatten() {
                 let notional = qty * mid;
                 let fee = notional * roundtrip_fee;
                 stats.trades += 1;
@@ -913,24 +895,16 @@ pub fn live_envelope_gate_for_slot(
     let env_k = risk_engine::capital_regime::log_lerp(50.0, 10.0, env_w);
     let (env_lev, operable) = envelope.max_leverage(cap_now, stop_pct, env_min_notional, env_z, env_k);
 
-    // D-116: envolvente AUTORITATIVA + bootstrap exploratorio (leverage 1).
+    // D-116 / F1-061 (Ola Ω170): Unificación de autoridad de dimensionamiento (paridad 1:1 con el vivo).
+    // La cantidad (notional / qty) y margen son autoritativos del RiskEngine del core.
+    // La envolvente bayesiana (LCB + shrinkage + guard de ruina) actúa como supervisor
+    // de admisibilidad (operable) y techo de apalancamiento (env_cap = env_lev * vol_brake).
     let envelope_n = envelope.posterior.n();
     let notional_ord = qty.abs() * entry_price;
+    let validado = risk_engine::envio::apalancamiento_validado(notional_ord, pos_margin);
     let exec_leverage: u32 = if envelope_n < 30.0 {
-        let boot_lev = if pos_margin > 0.0 && notional_ord > 0.0 {
-            (notional_ord / pos_margin).round().clamp(1.0, 10.0) as u32
-        } else {
-            (5.05 / (cap_now * 0.10).max(1.0)).ceil().clamp(1.0, 10.0) as u32
-        };
-        boot_lev.clamp(1, 10)
+        validado.unwrap_or(5).clamp(1, 10)
     } else if operable {
-        let cap = env_lev.floor().clamp(1.0, 20.0) as u32;
-        let kelly_frac = envelope.risk_fraction(env_z, env_k);
-        let tau_entry = pos.entry_tau_ms.load(Ordering::Relaxed) as f64;
-        let sl_frac = arena
-            .config
-            .sl_at_tau(if tau_entry > 0.0 { tau_entry } else { 30_000.0 });
-        let risk_budget = 0.05 * kelly_frac;
         let vol_fc = arena
             .registry
             .get_for_coin_or(coin_id, "vol_forecast_pct", 0.0);
@@ -938,8 +912,8 @@ pub fn live_envelope_gate_for_slot(
             .registry
             .get_for_coin_or(coin_id, "vol_forecast_base", 0.0);
         let vol_brake = vol_brake_factor(vol_fc, vol_base);
-        let lev_from_risk = (risk_budget * vol_brake / sl_frac.max(1e-4)).clamp(1.0, 20.0);
-        ((lev_from_risk as u32).min(cap)).max(1)
+        let env_cap = ((env_lev.floor() * vol_brake) as u32).clamp(1, risk_engine::envio::TOPE_ENVIO);
+        validado.unwrap_or(1).min(env_cap).max(1)
     } else {
         0
     };
@@ -950,7 +924,6 @@ pub fn live_envelope_gate_for_slot(
         arena.used_margin.load(Ordering::Relaxed),
         pos_margin,
     );
-    let validado = risk_engine::envio::apalancamiento_validado(notional_ord, pos_margin);
     match risk_engine::envio::apalancamiento_de_envio(
         exec_leverage,
         validado,

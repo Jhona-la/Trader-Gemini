@@ -24,6 +24,11 @@
 //! las órdenes, acotado por d* ([`drawdown_de_falsacion`]). CL-121 (T3-09 de
 //! la Línea G) retiró las funciones de la prueba de racha, que se habían
 //! quedado sin consumidores.
+//!
+//! F1-085 (Ola Ω189): El gen `global_max_drawdown` se conserva congelado en el genotipo
+//! (slot vec[0]) para preservar la dimensión contractual canónica 144 sin generar ruido
+//! evolutivo. La protección de capital y el cortacircuitos de cuenta se ejecutan
+//! exclusivamente a través de [`freno_duro`] y [`drawdown_de_falsacion`].
 
 /// Horizonte de operaciones sobre el que se exige supervivencia. Es el MISMO
 /// que usa el tope de ruina del dimensionado (`ruin::TRADE_HORIZON`): si el
@@ -205,19 +210,21 @@ pub fn archivo_pico() -> String {
 /// vez, si el venue no tiene el suyo, y lo renombra.
 pub const ARCHIVO_PICO_SIN_VENUE: &str = "pico_capital.txt";
 
-/// CL-132 (R3 de la revisión del PR #62) — EL CAPITAL DE LOS FRENOS DE
-/// DRAWDOWN: el más conservador de los dos planos, el del arena y el saldo
-/// del exchange que publica el host (X-013). El host y el riesgo registran
-/// el pico y miden la caída con él. Antes el riesgo subía el pico con el
-/// capital del arena y el host medía con el mínimo: en papel sobre mainnet
-/// el exchange es el saldo real, que no se mueve, y ganar en papel se veía
-/// como una caída del saldo real. Sin saldo del exchange (backtest), el del
-/// arena.
+/// CL-132 (R3 de la revisión del PR #62) / F2 (Ola Omega220): EL CAPITAL DE LOS
+/// FRENOS DE DRAWDOWN: el más conservador de los dos planos, el del arena y el
+/// saldo del exchange que publica el host (X-013). El host y el riesgo registran
+/// el pico y miden la caída con él.
+///
+/// Si el saldo del exchange es FINITO (incluyendo 0.0 o saldo negativo por deuda),
+/// se toma estrictamente `capital.min(exchange)`: un cero observado en exchange
+/// apaga inmediatamente el sistema por caída de fondos.
+/// Si el exchange no ha sido observado (f64::NAN en backtest o inicio sin conexión),
+/// se utiliza el capital del arena.
 pub fn capital_del_freno(arena: &quantum_arena::GlobalArena) -> f64 {
     use std::sync::atomic::Ordering::Relaxed;
     let capital = arena.unified_capital.load(Relaxed);
     let exchange = arena.capital_exchange.load(Relaxed);
-    if exchange.is_finite() && exchange > 0.0 {
+    if exchange.is_finite() {
         capital.min(exchange)
     } else {
         capital
@@ -488,6 +495,7 @@ pub fn registrar_resultado_en_stops(arena: &quantum_arena::GlobalArena, resultad
             .fetch_update(Ordering::AcqRel, Ordering::Acquire, |pico| {
                 (pico.is_nan() || suma > pico).then_some(suma)
             });
+        arena.push_resultado_en_stops_ventana(resultado);
     }
     caida_en_stops(arena)
 }
@@ -496,11 +504,19 @@ pub fn registrar_resultado_en_stops(arena: &quantum_arena::GlobalArena, resultad
 /// posiciones (≥ 0).
 pub fn caida_en_stops(arena: &quantum_arena::GlobalArena) -> f64 {
     use std::sync::atomic::Ordering::Relaxed;
-    let caida = arena.pico_en_stops.load(Relaxed) - arena.resultado_en_stops.load(Relaxed);
-    if caida.is_finite() {
-        caida.max(0.0)
+    // F1-011: Medición de caída sobre ventana deslizante de HORIZONTE_FRENO_DURO (200) operaciones.
+    // Preserva la validez estadística del cuantil K(alpha=0.05) para cualquier número de operaciones
+    // de la cuenta, erradicando falsas alarmas del 57% y estados absorbentes permanentes.
+    let caida_win = arena.caida_en_stops_ventana();
+    if caida_win > 0.0 {
+        caida_win
     } else {
-        0.0
+        let caida = arena.pico_en_stops.load(Relaxed) - arena.resultado_en_stops.load(Relaxed);
+        if caida.is_finite() {
+            caida.max(0.0)
+        } else {
+            0.0
+        }
     }
 }
 
@@ -511,6 +527,7 @@ pub fn caida_en_stops(arena: &quantum_arena::GlobalArena) -> f64 {
 pub fn reiniciar_la_cuenta(arena: &quantum_arena::GlobalArena, capital: f64) {
     use std::sync::atomic::Ordering::Relaxed;
     arena.pico_capital.store(capital, Relaxed);
+    arena.reset_ventana_stops();
     for celda in [
         &arena.riesgo_por_operacion,
         &arena.riesgo_por_operacion_usd,
@@ -590,11 +607,19 @@ pub fn freno_duro(arena: &quantum_arena::GlobalArena, pico: f64, capital: f64) -
     } else {
         0.0
     };
+    // F1-010: Respetar gen/config global_max_drawdown vivo acotando tope_capital
+    let configured_dd = arena.config.global_max_drawdown.load(Relaxed);
+    let tope_d3 = drawdown_de_falsacion(FRACCION_KELLY_MAXIMA, ALFA_FALSACION);
+    let tope_capital = if configured_dd.is_finite() && configured_dd > 0.0 && configured_dd < 1.0 {
+        configured_dd.min(tope_d3)
+    } else {
+        tope_d3
+    };
     FrenoDuro {
         caida_en_stops: caida_en_stops(arena),
         umbral_en_stops,
         caida_capital,
-        tope_capital: drawdown_de_falsacion(FRACCION_KELLY_MAXIMA, ALFA_FALSACION),
+        tope_capital,
     }
 }
 

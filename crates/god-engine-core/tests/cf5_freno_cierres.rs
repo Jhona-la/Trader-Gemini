@@ -1,4 +1,4 @@
-//! C-F5 · T1-04 y T1-05 de la revisión de la Línea G (Línea C, CL-115):
+﻿//! C-F5 · T1-04 y T1-05 de la revisión de la Línea G (Línea C, CL-115):
 //! qué cierres alimentan el freno de la estrategia.
 //!
 //! El freno contrasta H0 «la estrategia tiene +0,30 R por operación» con la
@@ -57,7 +57,6 @@ fn observaciones_del_freno(cierres_previos: usize, stop_propio: bool) -> usize {
     let arena: Arc<GlobalArena> = GlobalArena::build_in_own_stack(100.0);
     let mut core = GodEngineCore::new_with_outcome_context(arena.clone(), OutcomeContext::IsolatedSimulation);
     core.swing_nn = None;
-    core.scalp_forest = None;
     arena.coins[0].metrics.trade_count.store(cierres_previos, Ordering::Relaxed);
     let (tp, sl) = if stop_propio { (101.0, 99.0) } else { (0.0, 0.0) };
     let pos = arena.coins[0].positions.slots()[0];
@@ -102,7 +101,6 @@ fn firma_tras_cierre(contexto: OutcomeContext, confirmada: bool) -> (u64, u64) {
     let arena: Arc<GlobalArena> = GlobalArena::build_in_own_stack(100.0);
     let mut core = GodEngineCore::new_with_outcome_context(arena.clone(), contexto);
     core.swing_nn = None;
-    core.scalp_forest = None;
     arena.coins[0].metrics.trade_count.store(10, Ordering::Relaxed);
     let pos = arena.coins[0].positions.slots()[0];
     assert!(pos.open_with_horizon(true, 100.0, 1.0, 10.0, 1_000, 101.0, 99.0, PositionHorizon::Continuous));

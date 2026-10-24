@@ -479,6 +479,12 @@ impl RecursiveHurst {
         if self.dfa.is_valid { self.dfa.r_squared } else { 0.0 }
     }
 
+    /// Error típico de estimación de Hurst \sigma_H (SE de la regresión log-log).
+    #[inline(always)]
+    pub fn std_error(&self) -> f64 {
+        self.dfa.std_error()
+    }
+
     /// Retornos acumulados por el estimador.
     #[inline(always)]
     pub fn samples(&self) -> usize {

@@ -189,10 +189,20 @@ mod tests {
         let mutator = ASTMutator::new();
 
         let initial_val = config.ml_threshold_long.load(Ordering::Relaxed);
+        // Sol (2026-10-19): el objetivo se DERIVA del inicial en vez de
+        // hardcodear 0.62 — la ola-174 (AGY) movió los defaults del genoma y
+        // 0.62 pasó a ser el valor inicial, con lo que `assert_ne` fallaba
+        // aunque la mutación escribiera bien. La intención del test es que la
+        // mutación ESCRIBE un valor nuevo verificable, no cuál es el default.
+        let objetivo = if initial_val < 0.5 {
+            initial_val + 0.25
+        } else {
+            initial_val - 0.25
+        };
         mutator
-            .mutate_atomic_config(&config, "ml_threshold_long", 0.62)
+            .mutate_atomic_config(&config, "ml_threshold_long", objetivo)
             .expect("atomic mutation must succeed");
-        assert_eq!(config.ml_threshold_long.load(Ordering::Relaxed), 0.62);
+        assert_eq!(config.ml_threshold_long.load(Ordering::Relaxed), objetivo);
         assert_ne!(config.ml_threshold_long.load(Ordering::Relaxed), initial_val);
 
         // H0-8 (RONDA 3): las anclas TP/SL/kelly escalares de

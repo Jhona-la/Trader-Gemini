@@ -9,6 +9,12 @@
 /target*
 /**/target*
 **/*.rs.bk
+# RB-H1: copias de ejecución de los lanzadores (el binario vive en target\;
+# se ejecuta su copia para no bloquear el .exe del target compartido).
+/despliegue/
+# Bytecode de Python de los contratos de scripts/tests (regenerable).
+__pycache__/
+*.pyc
 
 # Environment files (secretos — JAMÁS al repo)
 .env
@@ -17,6 +23,11 @@
 !template.env
 !*.env.example
 !.env.example
+
+# QRA: claves API asimétricas y credenciales locales, nunca material público.
+*.key
+*.pem
+credentials.json
 
 # Logs y outputs de diagnóstico
 *.log

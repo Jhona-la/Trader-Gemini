@@ -51,6 +51,7 @@ fn diagnostic_loader_accepts_unsupported_version_and_unverified_global_state() {
         unified_capital: -100.0,
         positions: vec![position()],
         global_checksum: 12345,
+        espectral_snapshots: Vec::new(),
     };
     let nonce = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)

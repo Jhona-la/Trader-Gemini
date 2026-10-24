@@ -10,7 +10,7 @@ pub mod telemetry;
 pub mod trajectory_auditor;
 
 pub use auditor_interno::{
-    calculate_max_discrepancy, evaluate_tribunal_verdict, AuditorInterno, CognitiveBiasReport,
+    calculate_max_discrepancy, evaluate_tribunal_verdict, AuditorInterno,
     DailyTribunalReport, ExchangeFillRecord, IndependentMetrics, TribunalThresholds,
     TribunalVerdict, VerificadorResultados, DEFAULT_AUTOENGANO_THRESHOLD,
     DEFAULT_CULPABLE_PELIGROSO_THRESHOLD, DEFAULT_CULPABLE_RECUPERABLE_THRESHOLD,

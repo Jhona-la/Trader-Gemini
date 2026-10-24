@@ -33,7 +33,10 @@ pub use evidence::{
     DEFAULT_BAYES_PRIOR_MASS, DEFAULT_BAYES_PRIOR_WIN_RATE,
 };
 pub use kelly_envelope::{EdgePosterior, RiskEnvelope, SURVIVAL_FLOOR, TRADE_HORIZON};
-pub use sonda::{en_fase_de_sonda, resolve_max_cierres_sonda, sprt_bernoulli, SprtDecision, CIERRES_DE_SONDA};
+pub use sonda::{
+    admite_sonda, admite_sonda_con_fase, en_fase_de_sonda, resolve_max_cierres_sonda,
+    sprt_bernoulli, SprtDecision, CIERRES_DE_SONDA,
+};
 pub use tp_sl::{
     compute_tp_sl, compute_tp_sl_with_target_rr, latency_slippage_pct, latency_slippage_pct_hurst,
     roundtrip_friction, roundtrip_friction_hurst, try_compute_tp_sl, TpSl, TpSlInputs,
@@ -395,6 +398,13 @@ impl RiskEngine {
         if arena.pico_ilegible.load(Ordering::Relaxed) {
             return rej(REJ_DRAWDOWN);
         }
+        // FASE 3 DEFENSE-IN-DEPTH: Si el kill-switch del sistema inmune está armado
+        // (por latencia sostenida, insolvencia, o cerrojo STOP_TRADING.LOCK),
+        // vetar de inmediato cualquier intento de orden nueva en la puerta de entrada
+        // del motor de riesgo (fail-closed, CL-43/ADR-0015).
+        if arena.kill_switch_active.load(Ordering::Acquire) {
+            return rej(REJ_DRAWDOWN);
+        }
         // O-04 → CL-106 → CL-130 (LC-F4-10, decisión del dueño «Ambos»;
         // R1 de la revisión del PR #62): FRENO DURO DE LA CUENTA, la MISMA
         // función del sistema inmune del host. No se abre posición nueva
@@ -455,6 +465,9 @@ impl RiskEngine {
             .metrics
             .kelly_fraction
             .load(Ordering::Relaxed);
+        if !raw_kelly.is_finite() {
+            return rej(REJ_INVALID_INPUT);
+        }
 
         // CERT-M5-C01: el bootstrap anterior clampeaba a [0.05, 0.35] con
         // baseline 0.5 → 0.35. Con PF ≤ 1 (probado SIN edge), una moneda
@@ -478,7 +491,11 @@ impl RiskEngine {
         let kelly_frac = if trades_n == 0 || raw_kelly <= 0.0 {
             kelly_cold
         } else {
-            raw_kelly.clamp(clamp_min, clamp_max)
+            // F1-087 (Ola Ω191): No re-clampear a clamp_min. Si PF <= 1.0, calculate_kelly_fraction
+            // produce exploración en [0, 0.25·clamp_min]. Re-clampear a clamp_min destruía
+            // la exploración fraccional de kelly.rs (CERT-M5-C01) inflando el riesgo 4x-15x
+            // en monedas sin edge probado. Si PF > 1.0, kelly.rs ya aplicó clamp_min internamente.
+            raw_kelly.min(clamp_max)
         };
         // CERT-M5-H03: el camino bootstrap/micro YA NO bypassa el tope de
         // ruina — mismo streak-bound + axioma 25% que kelly/envelope. q del
@@ -552,7 +569,7 @@ impl RiskEngine {
             return rej(REJ_ESTRATEGIA_FALSADA);
         }
         let es_sonda = crate::sonda::en_fase_de_sonda(arena, coin_id);
-        if !crate::sonda::admite_sonda(arena, coin_id) {
+        if !crate::sonda::admite_sonda_con_fase(arena, es_sonda) {
             return rej(REJ_SONDA_OCUPADA);
         }
         // D-750 — EL NOCIONAL MÍNIMO ES EL DEL SÍMBOLO, NO UN LITERAL DE
@@ -696,10 +713,12 @@ impl RiskEngine {
             1.0
         };
         // Ola Ω100 / Ola Ω109 (F3.4-07): Relajación continua Ornstein-Uhlenbeck del sesgo
-        // epigenético en [0.50, 2.00] evaluada al reloj causal `now_ts`. Erradica la
-        // petrificación estática no-ergódica de rachas históricas.
+        // epigenético evaluada al reloj causal `now_ts`. Erradica la petrificación no-ergódica.
+        // F1-087 (Ola Ω191): Asimetría anti-hot-hand unificada con la doctrina canónica de LH-04 (:1503-1505).
+        // Racha perdedora (bias < 1.0) encoge confianza y tamaño (información honesta de quiebre de régimen).
+        // Racha ganadora (bias > 1.0) NO infla (techo 1.00): la cota de vida ya es el techo honesto (anti-hot-hand).
         let effective_confidence =
-            (signal_prob * epi_bias.clamp(0.50, 2.00)).clamp(0.05, 0.98);
+            (signal_prob * epi_bias.clamp(0.50, 1.00)).clamp(0.05, 0.98);
         let raw_exposure = dir * effective_confidence * kelly_for_scale * allocated_capital;
         if !raw_exposure.is_finite() {
             return rej(REJ_INVALID_INPUT);
@@ -766,8 +785,14 @@ impl RiskEngine {
         } else {
             tope / 8.0 // arranque frío: mismo proxy que el veto legado
         };
-        let mut riesgos = dependence.same_bet_riesgos_hibridos(tope / 8.0);
-        riesgos.push(riesgo_candidata);
+        // OLA Ω194 (Zero-Alloc Hot Path / F1-089): Copia de riesgos híbridos en buffer de stack
+        let mut riesgos_buf = [0.0f64; quantum_arena::state::MAX_COINS * 3 + 1];
+        let num_riesgos = dependence.same_bet_riesgos_hibridos_into(
+            tope / 8.0,
+            riesgo_candidata,
+            &mut riesgos_buf,
+        );
+        let riesgos = &riesgos_buf[..num_riesgos];
         // #602 (Ola 24): el tope del grupo se APRIETA con la cota actuarial
         // de Cramér-Lundberg cuando existe R medido para esta moneda
         // (`c{id}:lundberg_r_nocional`, publicado por el estimador #600 en
@@ -839,7 +864,7 @@ impl RiskEngine {
             None => rho_escalar,
         };
         if correlation_guard::veto_por_riesgo_cramer_lundberg(
-            &riesgos,
+            riesgos,
             rho_final,
             tope,
             r_lundberg,
@@ -898,8 +923,9 @@ impl RiskEngine {
         // viva única.
         let real_win_rate = coin.metrics.win_rate.load(Ordering::Relaxed);
 
-        let _maker_fee = arena.config.live_maker_fee.load(Ordering::Relaxed);
-        let taker_fee = arena.config.live_taker_fee.load(Ordering::Relaxed);
+        let Some((_maker_fee, taker_fee)) = arena.config.fee_rates_for(coin_id) else {
+            return rej(REJ_INVALID_INPUT);
+        };
         // D-01 — FRICCIÓN REAL EN EL EV GATE: antes el gate comparaba contra
         // solo maker+taker (~7bps), pero el motor EJECUTA 2×(taker + slippage)
         // por roundtrip bajo HyperRealistic. El gate subestimaba la fricción
@@ -1167,10 +1193,25 @@ impl RiskEngine {
         // cadena razone con el mismo entero que verá el exchange. La
         // discretización no es una constante arbitraria: la impone el contrato del
         // endpoint.
+        // F1-088 (Ola Ω192): Tasa de margen de mantenimiento del símbolo (MMR)
+        // y distancia física total al stop con fricción y colchón de liquidación.
+        let mmr_spec = arena
+            .registry
+            .get_for_coin_or(coin_id, "maintenance_margin_rate", 0.01)
+            .clamp(0.001, 0.05);
+        let dist_stop_full = expected_loss + friccion_total + mmr_spec;
+        if dist_stop_full >= 1.0 {
+            return rej(REJ_TARGET_GEOMETRY);
+        }
+        let max_safe_lev_liq = ((1.0 - 1e-4) / dist_stop_full).floor().max(1.0);
+
         if !dynamic_leverage.is_finite() || dynamic_leverage < 1.0 {
             return rej(REJ_INVALID_INPUT);
         }
-        dynamic_leverage = dynamic_leverage.min(genome_max_leverage).floor();
+        dynamic_leverage = dynamic_leverage
+            .min(genome_max_leverage)
+            .min(max_safe_lev_liq)
+            .floor();
 
 
         // D-642 (DÉCIMA OLA): la confianza entra tal cual. El suelo `.max(0.51)`
@@ -1383,11 +1424,6 @@ impl RiskEngine {
             current_price,
         )
         .unwrap_or(dynamic_min_notional + 0.1);
-        let _max_safe_leverage = if roundtrip_fee > 0.0 {
-            max_acceptable_fee_pct / roundtrip_fee
-        } else {
-            100.0
-        };
 
         // D-750 — PISO DE VIABILIDAD DERIVADO, Y RECHAZO SI NO CABE.
         //
@@ -1458,7 +1494,8 @@ impl RiskEngine {
         // OLA Ω127: Desacoplamiento de constantes estáticas hacia el registro omnisciente con fallbacks canónicos.
         let z_lcb_lh04 = arena.registry.get_value_or("lh04_z_lcb", 1.64);
         let half_kelly_lh04 = arena.registry.get_value_or("lh04_kelly_fraction", 0.5);
-        let muestras_min_lh04 = arena.registry.get_value_or("lh04_muestras_min", 10.0);
+        // F1-116: Muestras mínimas continuas (n >= 1.0) con decaimiento natural de Wilson LCB.
+        let muestras_min_lh04 = arena.registry.get_value_or("lh04_muestras_min", 1.0);
         let lh04_wr = arena.coins[coin_id]
             .metrics
             .win_rate
@@ -1497,6 +1534,19 @@ impl RiskEngine {
             lh04_p_lcb = p_lcb;
             lh04_b = b;
         }
+
+        // F1-087 (Ola Ω191): Detección de ausencia de edge con evidencia madura.
+        // Si la moneda tiene muestras suficientes (lh04_n >= muestras_min_lh04) y la cota inferior
+        // de Wilson demuestra que no hay ventaja (lh04_f == 0.0), o sus métricas son degradadas
+        // (PF <= 1.0 o WR <= 0.0), se activa `lh04_sin_edge`. Esto cierra el fail-open impidiendo
+        // que una moneda sin edge reciba una apuesta de Kelly legado completo, dimensionándola
+        // estrictamente a la orden mínima de exploración (sonda).
+        let lh04_tiene_evidencia = lh04_wr.is_finite()
+            && (0.0..=1.0).contains(&lh04_wr)
+            && lh04_n >= muestras_min_lh04
+            && lh04_pf.is_finite();
+        let lh04_sin_edge = lh04_tiene_evidencia
+            && (lh04_f == 0.0 || lh04_pf <= 1.0 || lh04_wr <= 0.0);
         // Streak-adaptación (GLM 118): la síntesis bias×LH-04. El bias
         // epigenético (racha, OU-relajado Ω109, rango [0.5, 2.0], leído
         // al RELOJ CAUSAL del último tick — mismo acceso que el camino de
@@ -1545,32 +1595,23 @@ impl RiskEngine {
             let nocional_obj = lh04_f_efectiva * allocated_capital / stop_real;
             let margen_obj = nocional_obj / dynamic_leverage;
             if margen_obj.is_finite() && margen_obj > 0.0 {
-                // P1 (GLM 120, mea culpa): con stop ceñido el nocional
-                // objetivo (f·C/SL) puede exigir un margen mayor que todo
-                // el capital — el clamps a allocated_capital COMPLETO
-                // hacía que el orquestador (colchón de exposición +
-                // posiciones abiertas) rechazara sistemáticamente
-                // (REJ_ORCHESTRATOR ×7 corridas CI: contrato
-                // flat_producer de god-engine-core). El margen se acota
-                // por el MISMO tope del axioma de ruina que acota f
-                // (≤25%): el riesgo-al-stop OBJETIVO sigue siendo f·C;
-                // cuando el stop ceñido lo haría inalcanzable, la orden
-                // se coloca al máximo que el axioma permite (no se
-                // rechaza) — riesgo realizado acotado por exposición.
-                let tope_margen_lh04 = if lh04_n >= muestras_min_lh04 {
-                    crate::ruin::clamp_ruin(
-                        1.0,
-                        crate::ruin::conservative_loss_q(lh04_wr, lh04_n),
-                    )
-                } else {
-                    0.25
-                };
-                final_margin = margen_obj.min(allocated_capital * tope_margen_lh04);
-                // F-A5: riesgo al stop que ESTE dimensionado realiza, en
-                // fracción del capital asignado, tras el tope de ruina y
-                // antes de los rescates de nocional mínimo. Igual a f cuando
-                // el tope no muerde; menor cuando muerde. Auditable junto a
-                // `lh04_f_riesgo` (el objetivo).
+                // F1-086 (Ola Ω190): Desacoplamiento del recorte erróneo de margen P1.
+                // En LH-04, el riesgo al stop objetivo (f·C) YA está acotado por el axioma
+                // de ruina (clamp_ruin <= 0.25 sobre f_raw en :1491).
+                // El recorte P1 anterior imponía `final_margin = margen_obj.min(C · tope_ruina)`
+                // aplicando un tope de RIESGO (25%) directamente a MARGEN (colateral).
+                // Esto equivalía a riesgo <= tope sólo si L·SL == 1; con L·SL < 1 (el caso
+                // normal de trading apalancado) restringía el riesgo efectivo a
+                // f <= 0.25·L·SL (apenas ~1% para stops ceñidos), impidiendo que una orden
+                // con evidencia estadística sólida tomara el riesgo calibrado por Kelly
+                // e imposibilitando el crecimiento exponencial (+100%/72h).
+                // Se asigna `final_margin = margen_obj` directamente: el colateral queda
+                // acotado por capacidad y liquidez real downstream vía `resolve_margin_cap_limits`
+                // y `available_margin_headroom` (Sol A2).
+                final_margin = margen_obj;
+                // F-A5 / F1-086: riesgo al stop que este dimensionado realiza, en
+                // fracción del capital asignado, antes de rescates de nocional mínimo y
+                // de techos de liquidez downstream.
                 lh04_f_realizado = if allocated_capital > 0.0 {
                     final_margin * dynamic_leverage * stop_real / allocated_capital
                 } else {
@@ -1625,7 +1666,17 @@ impl RiskEngine {
 
         let conf_t = ((intent.confidence - conf_center) / conf_width).clamp(0.0, 1.0);
         let micro_lev_cap = lev_base + lev_bonus * conf_t * conf_t * (3.0 - 2.0 * conf_t);
-        let max_lev_cap = crate::capital_regime::log_lerp(macro_cap, micro_lev_cap, micro_w_alloc);
+        let mut max_lev_cap = crate::capital_regime::log_lerp(macro_cap, micro_lev_cap, micro_w_alloc);
+
+        // F1-037: Acotación actuarial por cota de ruina de Cramér-Lundberg ψ ≤ e^{-R_capital · m} ≤ ε (ε = 0.05).
+        // Si la moneda posee estimación madura de R_nocional > 0, el apalancamiento máximo seguro
+        // no excede L_lundberg = (R_nocional · cushion) / ln(1/ε).
+        let r_nocional = arena.registry.get_for_coin_or(coin_id, "lundberg_r_nocional", 0.0);
+        if r_nocional.is_finite() && r_nocional > 0.0 {
+            let ln_inv_eps = 2.995732273553991; // ln(1 / 0.05)
+            let lundberg_lev_bound = (r_nocional * safe_cushion / ln_inv_eps).clamp(1.0, macro_cap);
+            max_lev_cap = max_lev_cap.min(lundberg_lev_bound);
+        }
 
         // D-130: Evaluar si el notional real de la orden (final_margin * dynamic_leverage) cumple con el mínimo
         if final_margin > 0.0 && final_margin * dynamic_leverage < dynamic_min_notional {
@@ -1639,11 +1690,16 @@ impl RiskEngine {
             // check de abajo sigue limitando el costo.
             // CL-6 / AGY-AUD: usar .ceil() antes del cap para que el apalancamiento
             // alcance el mínimo sin forzar margen adicional innecesario.
+            // F1-088 (Ola Ω192): El apalancamiento candidato queda estrictamente
+            // acotado por el techo físico de liquidación `max_safe_lev_liq`
+            // (`L · (SL + f + mmr) < 1.0`), garantizando que el stop loss ejecute
+            // antes del precio de liquidación del exchange en futuros perpetuos.
             let candidate_leverage = (dynamic_min_notional / final_margin.max(0.01)) * 1.02;
             dynamic_leverage = candidate_leverage
                 .ceil()
                 .min(genome_max_leverage)
                 .min(max_lev_cap)
+                .min(max_safe_lev_liq)
                 .floor();
         }
 
@@ -1663,10 +1719,10 @@ impl RiskEngine {
             // relativo de 5 bps de margen cierra la frontera.
             final_margin = required_margin_for_min_notional * 1.0005;
         }
-        // D4 (ADR-0016, CL-98): la sonda es la orden mínima del símbolo, con
-        // el apalancamiento ya decidido. Es información, no alfa: su tamaño no
-        // sale del Kelly de arranque en frío.
-        if es_sonda {
+        // D4 (ADR-0016, CL-98, F1-087): la sonda o la orden en moneda sin edge demostrado
+        // es la orden mínima del símbolo, con el apalancamiento ya decidido.
+        // Es información para adquirir muestras, no alfa: su tamaño se acota al nocional mínimo viable.
+        if es_sonda || lh04_sin_edge {
             final_margin = final_margin.min(required_margin_for_min_notional * 1.0005);
         }
 
@@ -1692,6 +1748,9 @@ impl RiskEngine {
         let orchestrator = orchestrator::PortfolioOrchestrator::new(arena);
         let portfolio_headroom = orchestrator
             .available_margin_headroom(bounded_exposure > 0.0, dynamic_min_notional);
+        if !portfolio_headroom.is_finite() || portfolio_headroom <= 0.0 {
+            return rej(REJ_ORCHESTRATOR);
+        }
         let single_asset_cap = crate::capital_regime::resolve_margin_cap_limits(
             arena,
             coin_id,
@@ -1725,17 +1784,36 @@ impl RiskEngine {
             );
             final_margin = safe_limit;
             if final_margin > 0.0 && final_margin * dynamic_leverage < safe_min_notional {
-                // CL-6: el apalancamiento ENTERO que alcanza el mínimo es el
-                // techo del cociente, no su suelo (`floor(1,98) = 1` dejaba la
-                // orden a la mitad del mínimo), acotado por los MISMOS techos
-                // que el primer rescate. Si no cabe, el invariante terminal de
-                // abajo rechaza; el coste lo juzga el presupuesto de comisiones.
+                // CL-6 / F1-088: el apalancamiento ENTERO que alcanza el mínimo es el
+                // techo del cociente, no su suelo, acotado por los MISMOS techos
+                // que el primer rescate incluyendo max_safe_lev_liq.
                 let needed_leverage = (safe_min_notional / final_margin).ceil();
                 dynamic_leverage = needed_leverage
                     .min(genome_max_leverage)
                     .min(max_lev_cap)
+                    .min(max_safe_lev_liq)
                     .floor()
                     .max(dynamic_leverage);
+            }
+        }
+
+        // F1-092 (Ola Ω195): Axioma de Ruina sobre el Riesgo Realizado al Stop.
+        // En cualquier camino (LH-04, camino legado o tras rescates de nocional mínimo),
+        // el riesgo total realizado en dólares al tocar el stop:
+        //   riesgo_usd = final_margin * dynamic_leverage * expected_loss
+        // NUNCA debe exceder el tope actuarial de ruina `tope_riesgo_evento` (<= 0.25 * capital).
+        // Si el riesgo excede este límite, se recorta `final_margin` a la cota máxima segura:
+        //   margin_cap_ruin = (tope_riesgo_evento * allocated_capital) / (dynamic_leverage * expected_loss)
+        // Y si el margen recortado no satisface el nocional mínimo de Binance, la comprobación
+        // terminal de REJ_MIN_NOTIONAL rechaza la orden de forma fail-closed.
+        if dynamic_leverage > 0.0 && expected_loss > 0.0 && allocated_capital > 0.0 {
+            let max_riesgo_usd = tope_riesgo_evento * allocated_capital;
+            let riesgo_propuesto_usd = final_margin * dynamic_leverage * expected_loss;
+            if riesgo_propuesto_usd > max_riesgo_usd {
+                let margin_cap = max_riesgo_usd / (dynamic_leverage * expected_loss);
+                if margin_cap < final_margin {
+                    final_margin = margin_cap;
+                }
             }
         }
         // Terminal invariants after every size/leverage adjustment. No
@@ -1746,6 +1824,15 @@ impl RiskEngine {
             || dynamic_leverage > genome_max_leverage
         {
             return rej(REJ_INVALID_INPUT);
+        }
+
+        // F1-088: Invariante terminal de liquidación física en futuros:
+        // L · (expected_loss + friccion_total + mmr_spec) < 1.0.
+        // Si el stop loss más la fricción queda a o más allá de la distancia de liquidación,
+        // el exchange liquida la posición antes de ejecutar el SL, causando pérdida del 100%
+        // de colateral más comisión de liquidación mientras el registro modelaría un SL ficticio.
+        if dynamic_leverage * dist_stop_full >= 1.0 {
+            return rej(REJ_TARGET_GEOMETRY);
         }
         let final_fee_impact = friccion_total * dynamic_leverage;
         // LH-02 (Línea H / AGY): En el valle de capital ($35–$65 USD), allocated_capital
@@ -1816,6 +1903,20 @@ impl RiskEngine {
             || (intent.signal != SignalType::Flat && (safe_tp <= 0.0 || safe_sl <= 0.0))
         {
             return rej(REJ_INVALID_INPUT);
+        }
+
+        // F1-086 (Ola Ω190): Publicar el riesgo realmente realizado por la orden
+        // emitida (`safe_vol · safe_lev · stop_real / allocated_capital`) en el
+        // registro omnisciente `lh04_f_realizado`. Si la orden fue recortada
+        // downstream por límite de margen o colchón del portfolio (Sol A2),
+        // `lh04_f_realizado` refleja la fracción real de capital que se arriesga al
+        // stop, sin mentir publicando f_objetivo cuando el colateral ejecutado fue menor.
+        if lh04_f_efectiva > 0.0 && allocated_capital > 0.0 {
+            let f_realizado_final = (safe_vol * safe_lev * stop_real / allocated_capital)
+                .min(lh04_f_efectiva);
+            arena
+                .registry
+                .set_for_coin(coin_id, "lh04_f_realizado", f_realizado_final);
         }
 
         // D-744: el RIESGO REALMENTE TOMADO por esta orden —lo que se pierde

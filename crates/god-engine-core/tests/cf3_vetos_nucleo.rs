@@ -1,4 +1,4 @@
-//! C-F3.4 (Línea C): vetos del núcleo contra soluciones conocidas.
+﻿//! C-F3.4 (Línea C): vetos del núcleo contra soluciones conocidas.
 //!
 //! Teoría que se prueba:
 //! - Escudo de momento adverso (F3.4-03). La regla viva (lib.rs, D-758 +
@@ -303,7 +303,6 @@ fn fixture() -> (Arc<GlobalArena>, GodEngineCore) {
     let arena = GlobalArena::build_in_own_stack(100.0);
     let mut core = GodEngineCore::new(arena.clone());
     core.swing_nn = None;
-    core.scalp_forest = None;
     (arena, core)
 }
 

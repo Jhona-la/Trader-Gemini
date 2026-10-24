@@ -30,6 +30,7 @@ struct StorePares {
 }
 
 static STORE: OnceLock<StorePares> = OnceLock::new();
+static MANIFEST_RAW: OnceLock<Option<String>> = OnceLock::new();
 
 /// Resuelve símbolo → coin_id vía el universo dinámico del arena.
 /// Depende de quantum_arena::symbols (la única fuente de verdad del
@@ -53,6 +54,9 @@ pub fn cargar_pares_desde_json(texto: &str) -> Result<usize, String> {
 /// archivo ausente ⇒ store VACÍO (legado bit-exact), y NO se reintenta
 /// por proceso — el watcher de modelos no aplica a este insumo estático
 /// (se regenerará por ola, no por sesión).
+///
+/// OLA Ω194 (F1-091): Se cachea el texto del manifest en `MANIFEST_RAW` (OnceLock)
+/// para erradicar lecturas repetidas de disco cuando el universo está en fase de arranque temprano.
 fn asegurar_cargado() {
     if STORE.get().is_some() {
         return;
@@ -60,10 +64,12 @@ fn asegurar_cargado() {
     // Rutas en orden: cwd vivo (raíz del workspace) y cwd de crate bajo
     // el workspace (los tests de backtest-engine corren desde su crate —
     // sin este fallback el oráculo T-1 no ejercitaría el inflado).
-    let texto = std::fs::read_to_string("config_dir/copulas_manifest.json")
-        .or_else(|_| std::fs::read_to_string("../config_dir/copulas_manifest.json"))
-        .ok();
-    let Some(texto) = texto else {
+    let raw = MANIFEST_RAW.get_or_init(|| {
+        std::fs::read_to_string("config_dir/copulas_manifest.json")
+            .or_else(|_| std::fs::read_to_string("../config_dir/copulas_manifest.json"))
+            .ok()
+    });
+    let Some(texto) = raw.as_ref() else {
         // Sin manifest ⇒ store vacío PERMANENTE del proceso: legado
         // bit-exact, sin reintentos (el insumo es estático por ola).
         let _ = STORE.set(StorePares {
@@ -72,7 +78,7 @@ fn asegurar_cargado() {
         });
         return;
     };
-    match parsear(&texto) {
+    match parsear(texto) {
         Ok(inner) => {
             // Si TODOS los pares quedaron fuera de roster porque el
             // universo dinámico aún no fue poblado (llamada temprana),

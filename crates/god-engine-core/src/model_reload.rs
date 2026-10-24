@@ -258,3 +258,22 @@ pub fn preload_models_from_disk() -> usize {
     }
 }
 
+/// F1-106 (Ola Ω164): Carga explícitamente el modelo DarkAlpha para un símbolo (e.g. BTCUSDT)
+/// desde models/ resolviendo la ruta canónica centralizada.
+///
+/// Cumple la doctrina LG-23 ("construir el núcleo NO carga modelos del disco") permitiendo
+/// que los evaluadores de mutantes y oráculos no paguen E/S ni alocación JSON involuntaria.
+pub fn load_dark_alpha_model(symbol: &str) -> Option<dark_alpha_engine::DarkAlphaEngine> {
+    let filename = format!("DarkAlpha_{}.json", symbol);
+    let path = resolve_models_directory()?.join(filename);
+    if !path.is_file() {
+        return None;
+    }
+    let json_data = std::fs::read_to_string(&path).ok()?;
+    let mut model = serde_json::from_str::<dark_alpha_engine::DarkAlphaEngine>(&json_data).ok()?;
+    model.init_buffers();
+    model.sanitize_denormals();
+    model.freeze();
+    Some(model)
+}
+

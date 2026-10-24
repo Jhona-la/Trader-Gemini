@@ -6,10 +6,12 @@
 //!   v7 download de Yahoo murió y el reqwest raíz (0.11+rustls) recibe
 //!   connection-reset del CDN de FRED (fingerprint TLS, verificado
 //!   2026-09-15); el v8 chart responde y curl+UA de navegador pasa.
-//! - DXY: DTWEXBGS de FRED vía curl — el dólar trade-weighted de la Fed,
-//!   SIN equivalente en Yahoo (el ICE DX-Y.NYB es otra serie). Se
-//!   reintenta; si FRED no responde, la serie queda pendiente y el exit
-//!   code es 1 — train_forest no entrena sin las cuatro reales.
+//! - DXY: Yahoo v8 chart DX-Y.NYB (ICE Dollar Index) desde B3.23 — la
+//!   paridad exige la MISMA serie en el trainer y en el vivo, y ambos usan
+//!   DX-Y.NYB (el DTWEXBGS de FRED quedó bloqueado desde esta red; su
+//!   cliente `fred_daily` se retiró en RET-45). Si alguna de las cuatro
+//!   series falla, el exit code es 1 — train_forest no entrena sin las
+//!   cuatro reales.
 //!
 //! Uso: macro_history_sync
 //! Salida: data/macro/{VIX,SP500,DXY,NASDAQ}.csv — date_ms,value ascendente.
@@ -22,8 +24,8 @@ use std::path::Path;
 
 const UA: &str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
 
-/// GET vía curl (stdout del proceso). Transporte verificado contra los
-/// CDNs de Yahoo y FRED desde esta red.
+/// GET vía curl (stdout del proceso). Transporte verificado contra el CDN
+/// de Yahoo desde esta red.
 fn http_get(url: &str) -> Option<String> {
     let out = std::process::Command::new("curl")
         .args(["-s", "-m", "30", "-A", UA, url])
@@ -88,52 +90,14 @@ fn yahoo_daily(symbol: &str, range: &str) -> Option<Vec<(u64, f64)>> {
     Some(rows)
 }
 
-/// FRED fredgraph.csv (curl): (date_ms al mediodía, value).
-#[allow(dead_code)]
-fn fred_daily(series: &str) -> Option<Vec<(u64, f64)>> {
-    let url = format!("https://fred.stlouisfed.org/graph/fredgraph.csv?id={series}");
-
-    // "2026-08-14" → ms UTC del mediodía (evita ambigüedad de TZ en el as-of).
-    let parse_date_ms = |s: &str| -> Option<u64> {
-        let mut it = s.split('-');
-        let y: i64 = it.next()?.parse().ok()?;
-        let m: i64 = it.next()?.parse().ok()?;
-        let d: i64 = it.next()?.parse().ok()?;
-        if !(1..=12).contains(&m) || !(1..=31).contains(&d) {
-            return None;
-        }
-        let yy = if m <= 2 { y - 1 } else { y };
-        let era = if yy >= 0 { yy } else { yy - 399 } / 400;
-        let yoe = yy - era * 400;
-        let mp = (m + 9) % 12;
-        let doy = (153 * mp + 2) / 5 + d - 1;
-        let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
-        let days = era * 146_097 + doe - 719_468;
-        Some(((days * 86_400 + 43_200) * 1000) as u64)
-    };
-
-    let body = http_get(&url)?;
-    let mut rows = Vec::new();
-    for line in body.lines().skip(1) {
-        let mut parts = line.split(',');
-        let (Some(d), Some(v)) = (parts.next(), parts.next()) else {
-            continue;
-        };
-        let (Some(ms), Ok(val)) = (parse_date_ms(d.trim()), v.trim().parse::<f64>()) else {
-            continue;
-        };
-        if val.is_finite() && val > 0.0 {
-            rows.push((ms, val));
-        }
-    }
-    Some(rows)
-}
-
 fn main() {
     println!("============================================================");
-    println!("🌍 MACRO HISTORY SYNC — Yahoo v8 (índices) + FRED (DTWEXBGS)");
+    println!("🌍 MACRO HISTORY SYNC — Yahoo v8 (VIX, SP500, NASDAQ y DXY)");
     println!("============================================================");
-    std::fs::create_dir_all("data/macro").unwrap();
+    if let Err(e) = std::fs::create_dir_all("data/macro") {
+        eprintln!("🚨 no se pudo crear data/macro: {e}");
+        std::process::exit(1);
+    }
 
     let mut failures = 0usize;
 

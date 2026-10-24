@@ -22,6 +22,7 @@ fn contrato_espectral_multiactivo_adaptacion_dinamica() {
         olvido: 0.05,
         muestras_maduras: 15,
         familia_veto_override: Some(50),
+        lambda_adaptativa: false,
     };
     let mut ma = EspectralMultiactivo::with_params(4, initial_params);
     assert_eq!(ma.params().muestras_maduras, 15);
@@ -193,8 +194,10 @@ fn contrato_spectral_regime_params_normalizacion_convexa_y_margen() {
         w_coherence_collapse: 0.10,
         w_micro_anti: 0.10,
         tau_min_drift_res_ms: 3_000.0,
+        cadence_regime_ms: 60_000.0,
         margin_contraction_scale: 0.80,
         min_margin_floor: 0.12,
+        w_quantum_coupling: 1.0,
     };
 
     let field = SpectralRegimeField::from_spectrum_with_params(&spec, None, 10_000.0, &custom_params);

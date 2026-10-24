@@ -1,4 +1,4 @@
-//! CL-66 (C-F4, LC-F3-02): el núcleo no publica `atr_1s`, `atr_5s` ni
+﻿//! CL-66 (C-F4, LC-F3-02): el núcleo no publica `atr_1s`, `atr_5s` ni
 //! `atr_1m`, y el coaxial no vota con escalas fabricadas.
 //!
 //! Antes del arreglo las tres claves eran el mismo `v_t` del motor con
@@ -36,7 +36,6 @@ fn cl66_moneda_de_cinco_centavos_sin_atr_por_escala_ni_voto_fabricado() {
     let arena = GlobalArena::build_in_own_stack(100.0);
     let mut core = GodEngineCore::new(arena.clone());
     core.swing_nn = None;
-    core.scalp_forest = None;
     // 120 eventos de depth separados 1 s alrededor de 0,05 USD (dos velas
     // internas de 60 s cerradas: el ATR ya pasó por su EMA).
     for i in 0..120u64 {

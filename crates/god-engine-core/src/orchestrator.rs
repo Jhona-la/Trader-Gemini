@@ -14,6 +14,7 @@ pub enum SystemPhase {
 pub struct PhaseOrchestrator {
     pub current_phase: SystemPhase,
     pub darwin_approved: Arc<AtomicBool>,
+    pub oms_reconciled: Arc<AtomicBool>,
     pub warmup_ticks_required: u64,
     pub current_ticks: u64,
     pub is_demo_mode: bool,
@@ -25,9 +26,24 @@ impl PhaseOrchestrator {
         is_demo_mode: bool,
         darwin_approved: Arc<AtomicBool>,
     ) -> Self {
+        Self::new_with_oms(
+            warmup_ticks_required,
+            is_demo_mode,
+            darwin_approved,
+            Arc::new(AtomicBool::new(true)),
+        )
+    }
+
+    pub fn new_with_oms(
+        warmup_ticks_required: u64,
+        is_demo_mode: bool,
+        darwin_approved: Arc<AtomicBool>,
+        oms_reconciled: Arc<AtomicBool>,
+    ) -> Self {
         Self {
             current_phase: SystemPhase::Initialization,
             darwin_approved,
+            oms_reconciled,
             warmup_ticks_required: warmup_ticks_required.max(1),
             current_ticks: 0,
             is_demo_mode,
@@ -36,12 +52,15 @@ impl PhaseOrchestrator {
 
     /// Llamado en cada tick del Market Data. Mueve la máquina de estados.
     pub fn on_tick(&mut self) -> SystemPhase {
-        // Readiness is revocable. Elapsed ticks cannot replace authorization.
-        // This gates new admission; it does not cancel orders or close positions.
+        // Readiness is revocable. Elapsed ticks cannot replace authorization or OMS reconciliation.
+        // Both trade admission and phase transition strictly require confirmed OMS reconciliation.
+        let darwin_ok = self.darwin_approved.load(Ordering::Acquire);
+        let oms_ok = self.oms_reconciled.load(Ordering::Acquire);
+
         if matches!(
             self.current_phase,
             SystemPhase::DemoVerify | SystemPhase::PaperTrading | SystemPhase::ProductionMainnet
-        ) && !self.darwin_approved.load(Ordering::Acquire)
+        ) && (!darwin_ok || !oms_ok)
         {
             self.current_phase = SystemPhase::GenomicAudit;
             return self.current_phase;
@@ -65,9 +84,10 @@ impl PhaseOrchestrator {
             SystemPhase::GenomicAudit => {
                 self.current_ticks = self.current_ticks.saturating_add(1);
                 // A timeout may be diagnosed, but never grants trading permission.
-                if self.darwin_approved.load(Ordering::Acquire) {
+                // Both Darwin approval and OMS reconciliation are required in live trading.
+                if darwin_ok && oms_ok {
                     println!(
-                        "🚀 [ORCHESTRATOR] Fase: GenomicAudit -> DemoVerify (approval flag observed)"
+                        "🚀 [ORCHESTRATOR] Fase: GenomicAudit -> DemoVerify (approval & OMS reconciliation confirmed)"
                     );
                     self.current_phase = SystemPhase::DemoVerify;
                 }
@@ -97,6 +117,7 @@ impl PhaseOrchestrator {
             self.current_phase,
             SystemPhase::PaperTrading | SystemPhase::ProductionMainnet
         ) && self.darwin_approved.load(Ordering::Acquire)
+            && self.oms_reconciled.load(Ordering::Acquire)
     }
 
     pub fn is_paper_trading(&self) -> bool {
@@ -155,5 +176,39 @@ mod tests {
         assert_eq!(orch.current_phase, SystemPhase::ProductionMainnet);
         assert!(orch.is_trading_allowed());
         assert!(!orch.is_paper_trading());
+    }
+
+    #[test]
+    fn test_phase_orchestrator_production_blocks_when_oms_not_reconciled() {
+        let darwin = Arc::new(AtomicBool::new(true));
+        let oms_reconciled = Arc::new(AtomicBool::new(false));
+        let mut orch = PhaseOrchestrator::new_with_oms(1, false, darwin.clone(), oms_reconciled.clone());
+
+        orch.on_tick(); // Init -> DataWarmup
+        orch.on_tick(); // DataWarmup -> GenomicAudit
+        assert_eq!(orch.current_phase, SystemPhase::GenomicAudit);
+
+        // Darwin is approved, but OMS is NOT reconciled: must stay in GenomicAudit and forbid trading
+        for _ in 0..150 {
+            orch.on_tick();
+            assert_eq!(orch.current_phase, SystemPhase::GenomicAudit);
+            assert!(!orch.is_trading_allowed());
+        }
+
+        // Once OMS snapshot succeeds and reconciles:
+        oms_reconciled.store(true, Ordering::Release);
+        orch.on_tick(); // GenomicAudit -> DemoVerify
+        assert_eq!(orch.current_phase, SystemPhase::DemoVerify);
+
+        orch.on_tick(); // DemoVerify -> ProductionMainnet
+        assert_eq!(orch.current_phase, SystemPhase::ProductionMainnet);
+        assert!(orch.is_trading_allowed());
+
+        // Revoking OMS reconciliation immediately locks the system back to GenomicAudit
+        oms_reconciled.store(false, Ordering::Release);
+        assert!(!orch.is_trading_allowed());
+        orch.on_tick();
+        assert_eq!(orch.current_phase, SystemPhase::GenomicAudit);
+        assert!(!orch.is_trading_allowed());
     }
 }

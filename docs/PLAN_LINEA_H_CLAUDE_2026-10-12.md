@@ -589,3 +589,225 @@ peldaño y |Δln τ| fast–slow desde `[OPEN TRACE]`, con el pedido a Qoder/AGY
 `tau_hab=` en la traza y del tope de 100 trazas configurable); (3) LH-21: los
 rechazos `correlacion` en un fixture monoactivo; (4) LH-20 (freno absorbente
 CL-107) al dueño y a la Línea C.
+
+## 9. Ola 4 (2026-10-17): el T-3 v2 sobre `main` con el dimensionado LH-04, la verificación barata de LH-06 y la anatomía de LH-21
+
+Árbol medido: `main` 09fe64db (= el PR #64 + el cierre documental), binario
+release `t3_ventaja_conocida-78e0bc9d9551cd27` compilado por el semáforo
+LG-25, `TG_TRACE_NATIVO=1 TG_GENOME_ENV=backtest --test-threads=1`. Tablas en
+`docs/audit/linea_h/ola4_*` (escalera v2 y v1, adaptación v2, valle v2, τ por
+serie); comparaciones con las tablas históricas de las olas 2 y 3 (árbol
+`aecc33d4`, anteriores a LH-04 y a Ω126–Ω146).
+
+### 9.1 LH-04 ya mueve el tamaño, pero sólo donde la evidencia lo permite
+
+Escalera de 13 USD, 3 000 velas (50 h) por peldaño (trades / PnL USD /
+máx |PnL| por cierre):
+
+| peldaño | v2 ola 3 | v2 ola 4 | v1 ola 2 | v1 ola 4 |
+|---|---|---|---|---|
+| a 0,50 d 0 (nulo) | 43 / −0,26 / 0,055 | 42 / −0,18 / 0,043 | 36 / −0,13 / 0,064 | 28 / −0,27 / 0,035 |
+| a 0,60 d 0,1 % | 37 / −0,16 / 0,056 | 40 / −0,14 / 0,050 | 63 / +0,06 / 0,072 | 63 / +0,06 / 0,072 (idéntico) |
+| a 0,70 d 0,1 % | 75 / −0,01 / 0,060 | 72 / +0,19 / 0,052 | 107 / +0,10 / 0,067 | 107 / +0,11 / 0,067 |
+| a 0,80 d 0,1 % | 36 / −0,28 / 0,073 | 101 / +0,67 / 0,067 | 90 / +0,05 / 0,065 | 89 / +0,14 / 0,065 |
+| a 0,90 d 0,1 % | 87 / +0,85 / 0,059 | 32 / +0,18 / 0,055 | 44 / −0,12 / 0,058 | 44 / −0,12 / 0,058 (idéntico) |
+| a 0,95 d 0,1 % | 144 / +0,97 / 0,144 | 175 / +1,91 / 0,099 | 111 / +1,25 / 0,087 | 108 / +1,75 / 0,199 |
+| a 0,90 d 0,05 % | 103 / +0,09 / 0,060 | 101 / +0,25 / 0,075 | 81 / −0,14 / 0,053 | 88 / +0,05 / 0,053 |
+| a 0,90 d 0,2 % | 169 / +2,33 / 0,058 | 191 / +4,15 / 0,102 | 89 / +1,41 / 0,098 | 93 / +1,75 / 0,251 |
+
+- **Donde no hay ventaja medible el motor es bit a bit el de la ola 2**: los
+  peldaños v1 0,60 y 0,90/0,1 % reproducen trades, acierto, PnL y máx |PnL|
+  exactos de `ola2_post_pr62_escalera_13usd.tsv`; 0,70 y 0,80 difieren en
+  un trade. LH-04 (f = ½·máx(0, p_LCB − q/b)) da 0 cuando p_LCB ≤ q/b y el
+  tamaño vuelve a la orden mínima (nocional mediano 5,3–5,5 USD a 6×,
+  margen 0,9 USD).
+- **Donde la ventaja es fuerte el tamaño sigue a la evidencia**: a = 0,95 y
+  a = 0,9/0,2 % abren con nocional mediano 6,7–7,1 USD (máximo 10–19 USD),
+  apalancamiento mediano 2× y margen 3,4–3,5 USD (26 % de la cuenta): el
+  dimensionado en espacio de riesgo baja el apalancamiento y sube el
+  margen, con el riesgo al stop por cierre en 0,10–0,25 USD (0,8–1,9 % del
+  capital; máx |PnL| ×1,7–2,6 frente a la ola 3). PnL v2: +14,7 % y +31,9 %
+  en 50 h (0,066 y 0,133 de crecimiento log por día; la meta pide 0,231)
+  frente a +7,5 % y +17,9 % en la ola 3. El drawdown máximo sube con el
+  tamaño: v1 a = 0,9/0,2 % de 0,86 % a 3,08 %.
+- **La racha nula ya la corta el freno de la estrategia también en la v1**:
+  `estrategia_falsada = 1 604` (antes `EV = 929`): LH-20 (freno absorbente
+  CL-107) se confirma con el generador antiguo.
+- **No atribuible sin bisección**: v2 a = 0,9/0,1 % baja de 87 a 32 cierres
+  (PnL de +0,85 a +0,18 USD) y v2 a = 0,8 sube de 36 a 101. Entre `aecc33d4`
+  y `main` hay ~40 olas ajenas (Ω126–Ω146, LG-22…25, CL-105…108); la escalera
+  no separa LH-04 de ellas. Las filas v1 idénticas acotan: lo que cambió no
+  toca el camino sin ventaja medida.
+
+### 9.2 LH-06, verificación barata (`docs/DISENO_LH06_TAU.md` §5)
+
+Medido con `tau_por_peldano.py` sobre las trazas de apertura (las 100
+primeras por núcleo, tope literal de `god-engine-core/src/lib.rs:9873`):
+
+| serie (v2) | trazas | τ mediana (q25–q75) s | nodo moda | ranura 0 | pares en ranuras distintas | de ellos con Δln τ ≥ 0,80 | nocional med./máx. USD | lev. |
+|---|---|---|---|---|---|---|---|---|
+| nulo | 42 | 91 (60–128) | 67 | 0,98 | 2 | 1,00 | 5,5 / 5,7 | 6 |
+| 0,60 | 40 | 72 (64–99) | 67 | 1,00 | 0 | — | 5,4 / 5,7 | 6 |
+| 0,70 | 75 | 84 (64–128) | 67 | 0,99 | 2 | 1,00 | 5,4 / 5,8 | 6 |
+| 0,80 | 100 | 90 (71–104) | 67 | 0,97 | 6 | 0,67 | 5,5 / 6,9 | 6 |
+| 0,90/0,1 | 100 | 128 (78–128) | 67 | 1,00 | 0 | — | 5,2 / 5,7 | 6 |
+| 0,95/0,1 | 100 | 128 (87–139) | 67 | 0,96 | 8 | 0,62 | 6,7 / 10,3 | 2 |
+| 0,90/0,05 | 100 | 88 (64–128) | 67 | 0,98 | 4 | 0,50 | 5,4 / 5,7 | 6 |
+| 0,90/0,2 | 100 | 128 (65–128) | 67 | 0,98 | 4 | 0,75 | 7,1 / 11,4 | 2 |
+
+(v1 en `ola4_tau_por_peldano_v1.tsv`: medianas 55–128 s, nodo moda 67 s en
+7/8 series y 268 s en a = 0,95.)
+
+1. **τ mediana ≠ nodo único: se cumple en la letra, no en el espíritu.** Hay
+   dispersión (q25–q75 de 38 a 179 s, nodos 17/67/268 s), pero la mediana
+   vive en 55–128 s en las 16 series y apenas sigue al peldaño: del nulo a
+   la persistencia 0,95 sube ×1,4–2,3 cuando el horizonte en que la deriva
+   paga (Σ(2a−1)^j velas de 60 s) pasa de 0 a ~20 velas. La rama 15 firma el
+   96–100 % de las aperturas.
+2. **τ sigue a la deriva por régimen: no medible con este T-3.** El
+   generador no tiene longitud de régimen (`Peldano` = a, d, σ, n); la
+   «deriva de k velas» del diseño exige un parámetro `regimen_velas` (ola 5,
+   T-3 v3) o el T-2 de GLM. Queda pedido en el buzón.
+3. **Δln τ fast–slow: el co-despacho no revive.** El 96–100 % de las
+   aperturas van a la ranura 0; en 100 aperturas hay 0–8 pares consecutivos
+   en ranuras distintas y, entre esos pocos, el 50–100 % separa más de 0,80
+   en ln τ (la puerta D-431 funciona cuando se la invoca; casi nunca se la
+   invoca).
+4. **T-1 ≥ 16/144 post-fix**: compuerta del dueño del fix, no de esta ola.
+
+Para la verificación completa hace falta `tau_hab=` (el `tau_habilidad` de
+la moneda: ¿la τ es elegida por habilidad #594 o es el respaldo por
+energía?) en `[OPEN TRACE]` y el tope de 100 trazas por entorno: pedido a
+Qoder/AGY (zona núcleo), reiterado.
+
+### 9.3 LH-21: los rechazos `correlacion` de un fixture monoactivo son la cota de Cramér-Lundberg dividida por el apalancamiento MÁXIMO del spec
+
+Reproducido en aislamiento (diagnóstico a = 0,95, d = 0,1 %, 2 000 velas, v2):
+`correlacion = 2 593` evaluaciones (≈ 86 velas, 1,4 h de 33 h), 45 cierres,
+**todas las aperturas en la ranura 0** (`ola4_diag_v2_solo.log`). Con k = 1
+el grupo misma-apuesta es la candidata sola (`riesgos = [riesgo_EWMA]`), así
+que `veto_por_riesgo_cramer_lundberg` (`risk-engine/src/lib.rs:812`,
+`correlation_guard.rs:557`) sólo puede vetar por `tope_efectivo = tope/m`:
+
+- tope = `clamp_ruin(1, q)` con q = 1 − p_LCB(0,556; 45) = 0,564 ⇒ racha
+  9,3 ⇒ 0,276, recortado al axioma 0,25;
+- m = ln(20)/R_capital y, por #651, R_capital = R_nocional / **L_máx del
+  spec** (50 en el fixture; 125 en BTCUSDT real), «conservador para L
+  menores»;
+- cota = 0,25·R_nocional/(50·2,996) = 1,67·10⁻³·R_nocional. El riesgo EWMA
+  de la candidata es 0,3–0,8 % del capital ⇒ **veto siempre que
+  R_nocional < 1,8–4,8**. Con el apalancamiento que las órdenes USAN (6× en
+  la orden mínima, 2× con LH-04) el umbral sería 0,07–0,58: la conversión
+  por L_máx hace la cota **8–25× más estricta** que la física del capital en
+  riesgo, y en BTCUSDT real (125×) 20–60×.
+- En la escalera (3 000 velas) el mismo peldaño no veta: el estimador #600
+  sólo publica R > 0 en tramos con ventaja medida débil; la serie de 2 000
+  velas cae en uno y queda 1,4 h sin entradas.
+
+Entrega al dueño del riesgo (Qoder #651 / Línea C): convertir con el
+apalancamiento efectivo (EWMA del apalancamiento ejecutado o el de la
+candidata, que se decide después de la geometría, CL-2), no con el máximo
+del spec. Monótono en R (F2.1-01) sigue valiendo. Certificación posible sin
+tocar el núcleo: exponer `qo_602_veto_lundberg` al T-3 exige que
+`run_backtest_native` devuelva el registro (compartido con el T-1): no lo
+cambio en esta ola.
+
+### 9.4 Adaptación E1–E5 y valle de capital con la v2 sobre `main`
+
+Adaptación (`ola4_adaptacion_v2.tsv`, `_ref.tsv`, `_lineas.txt`; 3 000 velas
+por tramo, ventaja = a 0,9 / d 0,2 %, nulo = a 0,5, anti = a 0,1 / d 0,2 %):
+
+| experimento | ola 3: 2.º tramo (cierres / PnL USD) · rechazos | ola 4: 2.º tramo · rechazos | fresco ola 4 |
+|---|---|---|---|
+| E2 ventaja → nulo | 82 / −0,30 · `falsada` 649 | 61 / **−0,69** · sin freno | nulo 42 / −0,18 |
+| E3 nulo → ventaja | **0 / 0** · `falsada` 2 075 | **172 / +3,48** · sin freno | ventaja 191 / +4,15 |
+| E4 ventaja → anti | 119 / −0,21 · sin freno | 139 / −0,17 · `falsada` 836 | anti 46 / −0,18 |
+| E4' anti → anti | 20 / +0,02 · `falsada` 209 | 0 / 0 · `falsada` 5 121 | anti 46 / −0,18 |
+
+- **LH-20 queda CERRADO en `main`**: tras 50 h de nulo el motor vuelve a
+  entrar en la ventaja (172 cierres, +3,48 USD = 84 % del fresco). Entre
+  `aecc33d4` y `main` el freno de la estrategia y lo que lo alimenta
+  cambiaron por manos ajenas (C-F5c PR #70 CL-130…134, LG-22/22b, GLM 117/118
+  y la reversión de Ω110): la ola no bisecta cuál lo desabsorbió; lo que
+  mide es que ya no es absorbente ante nulo → ventaja. La racha nula v2
+  ya ni dispara el freno (`EV` 409 → 1, `falsada` 687 → 0).
+- **El freno sigue cortando donde debe**: anti → anti 0 cierres en el
+  segundo tramo (`falsada` 5 121) y ventaja → anti 836 rechazos con 139
+  cierres a −0,17 USD (el fresco anti pierde lo mismo con 46).
+- **Lo que LH-04 empeora**: ventaja → nulo pierde −0,69 USD en el nulo
+  (×2,3 la ola 3, ×3,9 el nulo fresco): el estado caliente hereda el tamaño
+  de la ventaja hacia el régimen sin ventaja (clase LH-13, «el estado
+  multiplica la exposición adversa»). El dimensionado sigue a la evidencia
+  con retardo y el retardo se paga en tamaño.
+- **E1 (ventaja larga, 6 000 velas)**: 320 cierres, +8,29 USD (+63,8 % en
+  100 h = 0,118 de crecimiento log por día), acierto por cuartiles
+  0,71 / 0,71 / 0,74 / 0,63 y PnL medio por cierre 0,025 / 0,028 / 0,030 /
+  0,020 USD: sin curva de aprendizaje en la selección; el tamaño se
+  estabiliza (nocional mediano 7,3 USD, máximo 14,0). **E5** (anti larga):
+  26 cierres, acierto 0,33 / 0,29 / 0,33 / 0,29 y freno (`falsada` 811):
+  nada invierte el lado (LH-13 sigue abierto).
+- **τ por tramo (LH-06 punto 2, lo poco medible)**: en E3 las 58 aperturas
+  trazadas del segundo tramo (ventaja) tienen τ mediana 98 s frente a 95 s
+  del nulo y 128 s de la ventaja fresca: el cambio de régimen no mueve τ.
+
+Valle de capital (`ola4_valle_v2.tsv`, `ola4_tau_por_serie_valle_v2.tsv`; la
+misma serie a = 0,9 / d = 0,2 %, 3 000 velas, diez capitales):
+
+| C0 USD | ola 3: cierres / PnL / rechazos | ola 4: cierres / PnL (% ) / rechazos | nocional med. / máx. USD | margen med. USD | lev. | máx abs PnL USD | DD máx |
+|---|---|---|---|---|---|---|---|
+| 13 | 169 / +2,33 / sonda 7 | 191 / +4,15 (31,9 %) / sonda 9 | 7,1 / 11,4 | 3,5 | 2 | 0,10 | 0,95 % |
+| 20 | 169 / +2,39 / sonda 7 | 191 / +6,44 (32,2 %) | 11,0 / 17,5 | 5,4 | 2 | 0,16 | 0,95 % |
+| 26 | 169 / +2,47 / sonda 7 | 191 / +9,85 (37,9 %) | 20,5 / 23,4 | 7,1 | 3 | 0,25 | 1,1 % |
+| 35 | **0 / 0 / `fee_impact` 8 900** | 162 / +8,92 (25,5 %) / `fee_impact` 522 | 26,6 / 38,4 | 9,0 | 3 | 0,32 | 1,2 % |
+| 50 | **0 / 0 / `fee_impact` 8 900** | 191 / +20,74 (41,5 %) | 41,1 / 60,9 | 13,8 | 3 | 0,51 | 1,2 % |
+| 65 | **0 / 0 / `fee_impact` 8 900** | 191 / +26,69 (41,1 %) | 53,3 / 78,8 | 17,9 | 3 | 0,66 | 1,2 % |
+| 100 | 5 / −0,02 / `fee_impact` 4 936 | 191 / +40,88 (40,9 %) | 81,8 / 121,1 | 27,5 | 3 | 1,02 | 1,2 % |
+| 215 | 30 / +0,27 / sonda 7 | 191 / +80,76 (37,6 %) | 175,1 / 241,7 | 59,0 | 3 | 2,06 | 1,2 % |
+| 500 | 39 / +0,85 / sonda 7 | 191 / +150,83 (30,2 %) | 270,8 / 431,2 | 133,3 | 2 | 3,86 | 0,95 % |
+| 1 000 | 169 / +42,32 / sonda 7 | 191 / +281,60 (28,2 %) | 532,4 / 852,8 | 265,6 | 2 | 7,14 | 0,92 % |
+
+- **LH-02 queda CERRADO en `main` salvo una mella en 35 USD**: la cuenta
+  opera en los diez capitales (ola 3: 0 cierres en 35, 50 y 65 USD y 5 en
+  100). En 35 USD sobreviven 522 rechazos `fee_impact` (de 8 900) y se
+  pierden 29 cierres (25,5 % frente a 41 %): la transición micro → estándar
+  del techo de fricción sigue mordiendo ahí (LH-02b, LOW, dueño del riesgo).
+- **LH-03 no aparece**: con 1 000 USD hay 191 cierres y ningún `rollback`
+  de envolvente (ola 1: envolvente absorbente al cierre 30 y 5 574
+  reversiones; ola 3: 169 cierres).
+- **El tamaño compone**: el nocional mediano es ≈ 0,53 × C0 en todo el
+  rango (7,1 USD en 13; 532 USD en 1 000), el margen ≈ 27 % de C0 a 2–3× y
+  el riesgo por cierre (máx |PnL|) ≈ 0,7 % de C0; el PnL en 50 h es 28–41 %
+  del capital en todos los peldaños (0,12–0,17 de crecimiento log por día;
+  la meta pide 0,231). LH-04 de la ola 1 («aritmético, no compuesto»: ×3,4
+  de nocional con ×4,65 de capital) queda CERRADO. Las 100 primeras
+  aperturas tienen τ mediana 128 s y nodo 67 s en los diez capitales: la
+  geometría no depende del capital, sólo el tamaño.
+- **Coste del tamaño**: el drawdown máximo sube de 0,6–0,9 % (ola 3) a
+  0,9–1,2 %, y la fracción de PnL cae de 41 % (50–100 USD) a 28 % (1 000
+  USD) porque el apalancamiento baja de 3× a 2× por encima de 215 USD
+  (dimensionado en espacio de riesgo: el margen crece y la palanca cede).
+
+### 9.5 Lo que queda y a quién
+
+- **Cerrados en `main` por trabajo ajeno, medidos aquí**: LH-20 (freno
+  absorbente), LH-02 (valle 35–65 USD), LH-03 (envolvente absorbente a
+  1 000 USD) y LH-04 de la ola 1 (tamaño aritmético). Quedan LH-02b (mella
+  en 35 USD: 522 `fee_impact`, LOW) para el dueño del riesgo.
+- **LH-21 (MED, dueño del riesgo: Qoder #651 / Línea C)**: la cota de
+  Cramér-Lundberg convierte R por el apalancamiento MÁXIMO del spec; con el
+  apalancamiento usado (2–6×) sería 8–25× más laxa. Propuesta: EWMA del
+  apalancamiento ejecutado o el de la candidata tras la geometría.
+- **LH-22 (nuevo, MED, GLM/LH-04)**: el tamaño heredado de la ventaja se
+  paga en el régimen sin ventaja (E2: −0,69 USD, ×3,9 el nulo fresco); la
+  contracción del tamaño necesita la misma velocidad que la expansión
+  (streak-adaptación GLM 118 es asimétrica por diseño: medir si la
+  asimetría es la causa).
+- **LH-06 (GLM 122)**: puntos 1 y 3 medidos (τ en 55–128 s en todas las
+  series; co-despacho muerto); punto 2 exige `regimen_velas` en el T-3
+  (ola 5) y `tau_hab=` + tope configurable en `[OPEN TRACE]` (Qoder/AGY).
+- **Atribución**: 218 commits (116 con `.rs`) entre `aecc33d4` y `main`;
+  la escalera y la adaptación miden el agregado. Quien quiera atribuir un
+  peldaño a una ola concreta tiene el binario y las tablas: bisección por
+  merge como en la ola 2 del T-1.
+- **No tocado**: núcleo, riesgo, espectro, runner, `run_backtest_native`.
+  Esta ola añade `tau_por_peldano.py` y tablas; no cambia el T-3.

@@ -16,7 +16,6 @@ members = [
     "crates/god-engine-core",
     "crates/graph-architecture",
     "crates/omniscient-registry",
-    "crates/phase-runner",
     "crates/strategy-core",
     "crates/data-ingest",
     "crates/graph-4d",
@@ -50,7 +49,6 @@ dark-alpha-engine = { path = "crates/dark-alpha-engine" }
 telemetry-server = { path = "crates/telemetry-server" }
 graph-architecture = { version = "0.1.0", path = "crates/graph-architecture" }
 omniscient-registry = { path = "crates/omniscient-registry" }
-phase-runner = { path = "crates/phase-runner" }
 strategy-core = { path = "crates/strategy-core" }
 data-ingest = { path = "crates/data-ingest" }
 graph-4d = { path = "crates/graph-4d" }
@@ -253,11 +251,11 @@ name = "backtest_windows"
 path = "src/bin/backtest_windows.rs"
 
 [profile.dev]
-# Línea base para desarrollo y suites de pruebas: debug=1 (line-tables-only).
-# Preserva trazas de pánico completas (RUST_BACKTRACE=1 con líneas y ficheros)
-# pero reduce los archivos .pdb y la huella de memoria del enlazador link.exe en >85%,
-# protegiendo el entorno con 16 GB de RAM y evitando el colapso de disco C.
-debug = 1
+# QRA: mandato del operador del 22-Oct: evitar PDB y símbolos masivos.
+# Cambia la huella de Cargo; aplicar entre builds, siempre en target/ compartido.
+debug = 0
+strip = "symbols"
 
 [profile.test]
-debug = 1
+debug = 0
+strip = "symbols"

@@ -482,7 +482,11 @@ pub async fn run_okx_ws(state: Arc<OmniState>, symbol: String) {
 /// (los árboles no parten por series constantes en el entrenamiento).
 pub async fn run_macro_rest_poller(state: Arc<OmniState>) {
     let mut ticker = interval(Duration::from_secs(60));
-    let client = reqwest::Client::new();
+    // F1-090: cliente compartido del proceso (pool único, tcp_nodelay, keep-alive).
+    let Some(client) = crate::http_cliente::cliente_compartido() else {
+        eprintln!("⚠️ [OMNI] sin transporte HTTP; el poller macro REST no arranca");
+        return;
+    };
     let mut fail_count: u64 = 0;
     let mut cycle_count: u64 = 0;
 
@@ -623,7 +627,11 @@ pub async fn run_macro_rest_poller(state: Arc<OmniState>) {
 
 pub async fn run_sentiment_onchain_poller(state: Arc<OmniState>) {
     let mut ticker = interval(Duration::from_secs(120));
-    let client = reqwest::Client::new();
+    // F1-090: mismo cliente compartido que el resto de pollers.
+    let Some(client) = crate::http_cliente::cliente_compartido() else {
+        eprintln!("⚠️ [OMNI] sin transporte HTTP; el poller de sentimiento/on-chain no arranca");
+        return;
+    };
     let fear_url = "https://api.alternative.me/fng/";
     let is_testnet = std::env::var("USE_TESTNET")
         .unwrap_or_default()
@@ -787,7 +795,11 @@ pub async fn run_sentiment_onchain_poller(state: Arc<OmniState>) {
 
 pub async fn run_world_bank_poller(state: Arc<OmniState>) {
     let mut ticker = interval(Duration::from_secs(3600));
-    let client = reqwest::Client::new();
+    // F1-090: mismo cliente compartido que el resto de pollers.
+    let Some(client) = crate::http_cliente::cliente_compartido() else {
+        eprintln!("⚠️ [OMNI] sin transporte HTTP; el poller de World Bank no arranca");
+        return;
+    };
 
     let cpi_url = "https://api.worldbank.org/v2/country/USA/indicator/FP.CPI.TOTL.ZG?format=json";
     // R2.3 — indicador CORRECTO: FM.LBL.BMNY.CD es "Broad money (current LCU)"

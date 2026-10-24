@@ -31,7 +31,7 @@ pub use feynman_propagator::{FeynmanPropagatorEngine, FeynmanPropagatorParams};
 pub use hawkes_bessel::{HawkesBesselEngine, HawkesBesselParams};
 pub use maker::{MakerEngine, MakerQuote};
 pub use navier_stokes_manifold::{NavierStokesManifoldEngine, NavierStokesManifoldParams};
-pub use orchestrator::compute_ensemble_boost;
+pub use orchestrator::{compute_ensemble_boost, compute_ensemble_boost_effective};
 pub use perceptron_gate::{PerceptronGateEngine, PerceptronGateParams};
 pub use proyeccion_espectral::{ProyeccionEspectralEngine, ProyeccionEspectralParams};
 pub use quantum_oscillator::{QuantumOscillatorEngine, QuantumOscillatorParams};

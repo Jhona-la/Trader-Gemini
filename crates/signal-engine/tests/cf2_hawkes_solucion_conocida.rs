@@ -236,12 +236,9 @@ fn cf2_hawkes_lotes_mismo_ms_fase_uniforme_ancla_1_6() {
 /// Poisson a 1/s leído en cada evento, como en vivo. Verdadero (PASTA): la
 /// intensidad predecible λ(t⁻) en los eventos tiene la ley de la fase
 /// uniforme ⇒ 1,6 y excitación 0. Tolerancia ±0,05 (EE por bloques ≈ 0,005).
-/// Efecto de Palm residual tras el arreglo: μ̂ se lee justo después de su
-/// propio salto (+1/(60·r) relativo), así que a 1/s el esperado queda ≈ 1,59,
-/// dentro de la banda; NO extrapolar este test a ritmos por debajo de 0,5/s.
-/// Hoy la lectura incluye el propio evento (dt = 0 ⇒ +α): 1,6 + α/μ̂ ≈ 1,89.
+/// F1-016 (Ola Ω198 / Qoder OPEN F2.4-03 RESUELTO): intensity_ratio evalúa
+/// la intensidad predecible λ(t⁻)/μ̂ excluyendo el +α del salto actual.
 #[test]
-#[ignore = "OPEN F2.4-03 (Qoder/GLM): la intensidad viva incluye el propio evento (dt = 0 ⇒ +α) y en Poisson a 1/s da ~1,89"]
 fn cf2_hawkes_poisson_1hz_lectura_en_evento_excitacion_nula() {
     let mut rng = Lcg(0xA4A4_0004);
     let ev = tiempos_poisson(&mut rng, 1.0, 10_800.0);

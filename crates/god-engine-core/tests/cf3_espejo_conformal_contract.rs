@@ -1,4 +1,4 @@
-//! C-F3.8 (Línea C): K-26 ejecutando el núcleo con base honesta, espejo del
+﻿//! C-F3.8 (Línea C): K-26 ejecutando el núcleo con base honesta, espejo del
 //! sesgo spot (F3.8-01) y el fixture de #714 (F3.8-03).
 //!
 //! Teoría que se prueba:
@@ -65,7 +65,6 @@ fn nucleo_caliente() -> (Arc<GlobalArena>, GodEngineCore) {
     let arena = GlobalArena::build_in_own_stack(100.0);
     let mut core = GodEngineCore::new(arena.clone());
     core.swing_nn = None;
-    core.scalp_forest = None;
     arena.config.conformal_alpha.store(0.05, Relaxed);
     // 40 cierres en rejilla: calibrador caliente (mínimo 30), sin empates en 0,25 ni 0,75.
     for i in 0..40 {
@@ -203,7 +202,6 @@ fn cf3_fixture_714_no_alcanza_la_base_que_declara() {
     let arena = GlobalArena::build_in_own_stack(100.0);
     let mut core = GodEngineCore::new(arena.clone());
     core.swing_nn = None;
-    core.scalp_forest = None;
     arena.config.conformal_alpha.store(0.05, Relaxed);
     arena.registry.set_for_coin(0, "ml_model_base", 0.25);
     let _ = core.process_tick_dual(0, 100.0, 100.01, 5.0, 5.0, 10_000, &[0.0; 54], true, false);

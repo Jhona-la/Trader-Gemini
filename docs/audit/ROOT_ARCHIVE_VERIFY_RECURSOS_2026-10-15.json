@@ -1,0 +1,164 @@
+{
+  "schema": "independent.root.archive.verification.v1",
+  "verified_at_utc": "2026-10-15T22:25:45.470003+00:00",
+  "archive": "C:\\Users\\jhona\\.codex\\audit-evidence\\trader-gemini\\lg5-omega133-continuity-2026-10-15-7d024c7f-6a8c-4996-a8b9-e4b274461862",
+  "archive_integrity_passed": true,
+  "head": "019e6d471c00518515054033033e2b499eb7e17d",
+  "scope": "Bounded serial verification of sealed archive only; four exact working documents and immutable Git blobs compared. Later drafts excluded. No Cargo, rustc, test execution, cache/ref/process mutation, cleanup or publication.",
+  "seals": {
+    "MANIFEST.json": {
+      "sha256": "7619e24532e345a838b11b174477c9780cf4ae026763eddea347ce623d39fe49",
+      "bytes": 243766,
+      "crlf_pairs": null
+    },
+    "COMPLETE.json": {
+      "sha256": "92d7dd88eea79411316696022d7789c417c8c831f045846d1afe1c3d069076d6",
+      "bytes": 312,
+      "crlf_pairs": null
+    }
+  },
+  "expected_seals": {
+    "MANIFEST.json": "7619e24532e345a838b11b174477c9780cf4ae026763eddea347ce623d39fe49",
+    "COMPLETE.json": "92d7dd88eea79411316696022d7789c417c8c831f045846d1afe1c3d069076d6"
+  },
+  "payload_count": 545,
+  "payload_bytes": 9843199,
+  "counts_match": true,
+  "reparse_entries": [],
+  "extra_files": [],
+  "missing_files": [],
+  "duplicate_paths": [],
+  "extra_directories": [],
+  "errors": [],
+  "doc_comparisons": [
+    {
+      "git_path": ".agents/MEMORIA.md",
+      "archived_working_sha256": "fe52385b24b12ea75397e600b2a46875c4eba02fef366b05c5a9754aa6dfd9d9",
+      "archived_git_sha256": "2083ab05d1ebbbac9fa87cde098618d6e393b53312781041b52e9298ad3136f2",
+      "archive_raw_bytes_equal": false,
+      "crlf_normalized_equal": true,
+      "archive_working_crlf_pairs": 42,
+      "archive_git_crlf_pairs": 0,
+      "physical_source_reparse": false,
+      "physical_source": "C:\\Users\\jhona\\.codex\\worktrees\\root-lg5-main-1015\\Trader Gemini\\.agents\\MEMORIA.md",
+      "physical_current": {
+        "sha256": "fe52385b24b12ea75397e600b2a46875c4eba02fef366b05c5a9754aa6dfd9d9",
+        "bytes": 691051,
+        "crlf_pairs": null
+      },
+      "physical_matches_archived_working": true,
+      "read_only_git_blob": {
+        "commit": "019e6d471c00518515054033033e2b499eb7e17d",
+        "exit": 0,
+        "bytes": 691009,
+        "sha256": "2083ab05d1ebbbac9fa87cde098618d6e393b53312781041b52e9298ad3136f2",
+        "matches_archived_git": true,
+        "stderr": ""
+      }
+    },
+    {
+      "git_path": "COORDINACION_CODEX_2026-09-28.md",
+      "archived_working_sha256": "d5da34595d38912ca7dee22209fd1280a739cc56cb87b04fd8ab783b20febd02",
+      "archived_git_sha256": "427b5c28c99a384d204864c57693e937d72b56f303894cdcc50ef70dc9e4d434",
+      "archive_raw_bytes_equal": false,
+      "crlf_normalized_equal": true,
+      "archive_working_crlf_pairs": 40,
+      "archive_git_crlf_pairs": 0,
+      "physical_source_reparse": false,
+      "physical_source": "C:\\Users\\jhona\\.codex\\worktrees\\root-lg5-main-1015\\Trader Gemini\\COORDINACION_CODEX_2026-09-28.md",
+      "physical_current": {
+        "sha256": "d5da34595d38912ca7dee22209fd1280a739cc56cb87b04fd8ab783b20febd02",
+        "bytes": 816903,
+        "crlf_pairs": null
+      },
+      "physical_matches_archived_working": true,
+      "read_only_git_blob": {
+        "commit": "019e6d471c00518515054033033e2b499eb7e17d",
+        "exit": 0,
+        "bytes": 816863,
+        "sha256": "427b5c28c99a384d204864c57693e937d72b56f303894cdcc50ef70dc9e4d434",
+        "matches_archived_git": true,
+        "stderr": ""
+      }
+    },
+    {
+      "git_path": "docs/audit/INTEGRACION_LG5_MAIN_2026-10-15.md",
+      "archived_working_sha256": "eef5e0da2ea96cb065da70a732de38fb916e50d199eb62e66121aa120771881c",
+      "archived_git_sha256": "35eb2cbfcf642e85bbab04961292df14fa03ba5813e6c45d531295307bb29b3e",
+      "archive_raw_bytes_equal": false,
+      "crlf_normalized_equal": true,
+      "archive_working_crlf_pairs": 80,
+      "archive_git_crlf_pairs": 0,
+      "physical_source_reparse": false,
+      "physical_source": "C:\\Users\\jhona\\.codex\\worktrees\\root-lg5-main-1015\\Trader Gemini\\docs\\audit\\INTEGRACION_LG5_MAIN_2026-10-15.md",
+      "physical_current": {
+        "sha256": "eef5e0da2ea96cb065da70a732de38fb916e50d199eb62e66121aa120771881c",
+        "bytes": 53469,
+        "crlf_pairs": null
+      },
+      "physical_matches_archived_working": true,
+      "read_only_git_blob": {
+        "commit": "019e6d471c00518515054033033e2b499eb7e17d",
+        "exit": 0,
+        "bytes": 53389,
+        "sha256": "35eb2cbfcf642e85bbab04961292df14fa03ba5813e6c45d531295307bb29b3e",
+        "matches_archived_git": true,
+        "stderr": ""
+      }
+    },
+    {
+      "git_path": "docs/PLAN_MAESTRO_REVISION_BASE_UNIVERSO_ESPECTRAL_2026-10-15.md",
+      "archived_working_sha256": "cb4db234f746cb4dec23c507ef379ca41ba2c5c0cd3676971962abc03d2ec7e9",
+      "archived_git_sha256": "cb4db234f746cb4dec23c507ef379ca41ba2c5c0cd3676971962abc03d2ec7e9",
+      "archive_raw_bytes_equal": true,
+      "crlf_normalized_equal": true,
+      "archive_working_crlf_pairs": 0,
+      "archive_git_crlf_pairs": 0,
+      "physical_source_reparse": false,
+      "physical_source": "C:\\Users\\jhona\\.codex\\worktrees\\root-lg5-main-1015\\Trader Gemini\\docs\\PLAN_MAESTRO_REVISION_BASE_UNIVERSO_ESPECTRAL_2026-10-15.md",
+      "physical_current": {
+        "sha256": "cb4db234f746cb4dec23c507ef379ca41ba2c5c0cd3676971962abc03d2ec7e9",
+        "bytes": 35493,
+        "crlf_pairs": null
+      },
+      "physical_matches_archived_working": true,
+      "read_only_git_blob": {
+        "commit": "019e6d471c00518515054033033e2b499eb7e17d",
+        "exit": 0,
+        "bytes": 35493,
+        "sha256": "cb4db234f746cb4dec23c507ef379ca41ba2c5c0cd3676971962abc03d2ec7e9",
+        "matches_archived_git": true,
+        "stderr": ""
+      }
+    }
+  ],
+  "bundle": {
+    "bytes": 526625,
+    "header": [
+      "# v2 git bundle",
+      "-3327300a24a6c65bac2971fce236140e4781260a R4: documenta cierre efectivo y verificación entre agentes",
+      "-b9cd773538fae9467751883eafdf3ee6ed5142f9 feat(feature-engine): continuidad C1 en multifractal, microestructura y fill realista (Ola Ω128)",
+      "019e6d471c00518515054033033e2b499eb7e17d refs/heads/codex/root-lg5-main-2026-10-15",
+      "9f602ad49f323860e8cf754e039b260025eaae95 refs/heads/codex/root-omega131-expiry-fixtures-2026-10-15",
+      "7c24796b9b5eaf57509ba528272060cc7a837e8f refs/heads/codex/root-omega132-expiry-fixtures-2026-10-15"
+    ],
+    "refs_match_sealed_metadata": true,
+    "prerequisites": [
+      "3327300a24a6c65bac2971fce236140e4781260a",
+      "b9cd773538fae9467751883eafdf3ee6ed5142f9"
+    ],
+    "required_prerequisites_recorded": true,
+    "execution_limit": "Bundle header/hash checked; no restore, fetch, bundle verify, ref mutation or independence claim."
+  },
+  "limitations": [
+    "Physical source files can change after the sealed snapshot; source drift is reported separately from archive integrity.",
+    "Bundle requires its recorded prerequisites; this is not a standalone restore certification.",
+    "The 535 ignored-proof current sources were not rescanned; their archived payloads were all verified against the manifest.",
+    "Git operations were four immutable cat-file blob reads only; no Git refs changed."
+  ],
+  "full_verification_report": {
+    "path": "C:/Users/jhona/Documents/Proyectos/Trader Gemini/logs/ci-triage-20261015/ROOT_ARCHIVE_VERIFY.json",
+    "sha256": "3c3b71c92338e09bb446c14d106e6a2d45fddf081706c71cfd69d92b5b74db51",
+    "payload_entries": 545
+  }
+}

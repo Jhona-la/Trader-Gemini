@@ -159,6 +159,18 @@ impl OmniscientRegistry {
         }
     }
 
+    /// F1-115: Comprueba si el registro está vacío sin locks ni clones.
+    #[inline(always)]
+    pub fn is_empty(&self) -> bool {
+        self.map.is_empty()
+    }
+
+    /// F1-115: Retorna el número de parámetros registrados.
+    #[inline(always)]
+    pub fn len(&self) -> usize {
+        self.map.len()
+    }
+
     /// P1: Actualiza el reloj de eventos en el registro (1 atomic write por evento, 0.3 ns).
     #[inline(always)]
     pub fn update_event_time(&self, event_time_ms: i64) {

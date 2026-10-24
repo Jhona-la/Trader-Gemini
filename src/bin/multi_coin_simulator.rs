@@ -3,7 +3,6 @@ use data_pipeline::historical::Kline;
 use data_pipeline::multiplexer::multiplex_ticks;
 use data_pipeline::omni_multiplexer::OmniState;
 use god_engine_core::GodEngineCore;
-use phase_runner::{Phase, PhaseExecutor};
 use polars::prelude::{ParquetReader, SerReader};
 use quantum_arena::{GlobalArena, TickEvent};
 use std::path::Path;
@@ -500,11 +499,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 }
                 if dd_pct > max_drawdown_pct {
                     max_drawdown_pct = dd_pct;
-                }
-
-                // Disparo de PhaseRunner cada 1,000,000 de ticks para simulación de auditoría
-                if total_ticks_len > 0 && arena.tick_counter.load(Ordering::Relaxed) % 1_000_000 == 0 {
-                    let _result = PhaseExecutor::run(Phase::Zeta, std::time::Duration::from_millis(10));
                 }
             }
 

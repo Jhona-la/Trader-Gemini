@@ -1,4 +1,4 @@
-//! CL-50 / CL-50b / CL-51 / CL-52 / CL-54: la ingesta del WS y su reinicio.
+﻿//! CL-50 / CL-50b / CL-51 / CL-52 / CL-54: la ingesta del WS y su reinicio.
 //!
 //! El bucle de eventos reinicia el estado de mercado cuando el lector del WS
 //! se reconecta. Tres defectos: la primera conexión también se anunciaba
@@ -38,7 +38,6 @@ fn cl51_una_reconexion_no_olvida_el_pico_del_drawdown() {
     let arena = GlobalArena::build_in_own_stack(13.0);
     let mut core = GodEngineCore::new(arena);
     core.swing_nn = None;
-    core.scalp_forest = None;
     core.risk_engine.peak_capital = 20.0;
     core.reset_engines();
     assert_eq!(core.risk_engine.peak_capital, 20.0);

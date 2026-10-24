@@ -1,4 +1,4 @@
-//! C-F3.7 (Línea C), F3.7-07: el núcleo no debe calcular una cotización
+﻿//! C-F3.7 (Línea C), F3.7-07: el núcleo no debe calcular una cotización
 //! maker que nadie consume.
 //!
 //! Teoría que se prueba: `process_tick_dual` devuelve como tercer valor una
@@ -33,7 +33,6 @@ fn cf3_el_nucleo_no_calcula_cotizacion_sin_consumidor() {
     let arena = GlobalArena::build_in_own_stack(100.0);
     let mut core = GodEngineCore::new(arena.clone());
     core.swing_nn = None;
-    core.scalp_forest = None;
     let latencia = arena.last_ws_latency_ms.load(Ordering::Relaxed);
     assert!(
         latencia <= 25,
