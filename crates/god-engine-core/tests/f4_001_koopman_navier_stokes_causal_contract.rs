@@ -221,6 +221,6 @@ fn test_f4_001_entrelazamiento_streaming_capacity_and_nan_rejection() {
     let res = st.medir();
     assert!(res.is_ok(), "La medición de entrelazamiento streaming falló: {:?}", res.err());
     let medida = res.unwrap();
-    assert!(medida.delta_s.is_finite(), "delta_s debe ser finito");
-    assert!(medida.entropia_von_neumann.is_finite(), "entropía von Neumann debe ser finita");
+    assert!(medida.delta.is_finite(), "delta debe ser finito");
+    assert!(medida.s.is_finite(), "entropía von Neumann s debe ser finita");
 }

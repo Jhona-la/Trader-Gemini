@@ -883,8 +883,8 @@ impl StatefulEngine {
             self.entrelazamiento.push(norm_return);
             if self.entrelazamiento.activos() >= 64 && self.tick_count % 64 == 0 {
                 if let Ok(m) = self.entrelazamiento.medir() {
-                    self.quantum_delta_s = m.delta_s as f32;
-                    self.quantum_entropy = m.entropia_von_neumann as f32;
+                    self.quantum_delta_s = m.delta as f32;
+                    self.quantum_entropy = m.s as f32;
                 }
             }
             // D-434: Invocar análisis espectral FFT Radix-2 periódicamente cada 64 ticks
