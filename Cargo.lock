@@ -3318,7 +3318,6 @@ version = "0.1.0"
 dependencies = [
  "quantum-arena",
  "signal-engine",
- "telemetry-engine",
 ]
 
 [[package]]

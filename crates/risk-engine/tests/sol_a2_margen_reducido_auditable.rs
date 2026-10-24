@@ -11,8 +11,6 @@
 //! impacto en OOS y decidir con el consejo). Exige lo mínimo defendible:
 //! que el recorte sea AUDITABLE y POR MONEDA.
 
-use std::sync::Arc;
-
 /// El recorte de margen debe escribir telemetría por moneda: contador de
 /// eventos y cociente de recorte (margen impuesto / margen pedido).
 #[test]
@@ -97,6 +95,3 @@ fn la_viabilidad_no_se_resuelve_con_apalancamiento() {
     // El mismo símbolo con stop del 0,5% cabe.
     assert!(risk_engine::capital_regime::orden_viable(100.0, 0.005, 13.0, 0.25));
 }
-
-#[allow(dead_code)]
-fn _arena(_: Arc<()>) {}

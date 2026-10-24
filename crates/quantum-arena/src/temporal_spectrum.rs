@@ -135,10 +135,11 @@ pub const ESCALAS_OPERATIVAS_BANDA: usize = 5;
 ///
 /// Tras ampliar el espectro a 1 ns–146 años convivían TRES conversiones del
 /// horizonte de una intención:
-///   · `risk-engine::horizon_tau_ms` interpolaba sobre los EXTREMOS del
-///     espectro: con el rango nuevo, `temporal_scale = 0,05` daba ~9 ns y
-///     0,95 daba ~17 años, de modo que el gate de TP/SL rechazaba por «no
-///     operable» o dimensionaba stops de décadas;
+///   · `risk-engine::horizon_tau_ms` (retirado en RET-41) interpolaba
+///     sobre los EXTREMOS del espectro: con el rango nuevo,
+///     `temporal_scale = 0,05` daba ~9 ns y 0,95 daba ~17 años, de modo que
+///     el gate de TP/SL rechazaba por «no operable» o dimensionaba stops de
+///     décadas;
 ///   · el bloque de Kelly interpolaba entre 10 s y 24 h;
 ///   · la matriz de apalancamiento invertía otra fórmula sobre 10 s–24 h.
 ///

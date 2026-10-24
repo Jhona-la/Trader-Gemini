@@ -333,11 +333,6 @@ impl QuantumLeverageMatrix {
 
         let clamped = final_leverage.clamp(1.0, effective_max_leverage);
 
-        // telemetry_engine::telemetry!(
-        //     "Leverage Matrix: {:?} [Scalp={}] (Hurst: {:.2}, VolFactor: {:.2}, PF: {:.2}) -> {:.2}x",
-        //     signal.signal, is_scalp, hurst_bonus, final_vol_factor, real_profit_factor, clamped
-        // );
-
         clamped
     }
 }
