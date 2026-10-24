@@ -46,6 +46,11 @@ pub mod online_newton_gbdt;
 pub use online_newton_gbdt::OnlineNewtonGbdt;
 pub mod polars_evolver;
 pub mod random_forest;
+pub mod stanford_discovery;
 
 pub use crossover_cauchy::EvolutionaryOperators;
 pub use moe_neat_arena::{ParetoCandidate, fast_non_dominated_sort};
+pub use stanford_discovery::{
+    CypherValidationResult, CypherVerdict, DistilledChampion, QuantitativeHypothesis,
+    SandboxEvaluationMetrics, StanfordDiscoveryEngine, PILLAR_COUNT,
+};
