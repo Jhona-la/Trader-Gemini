@@ -18132,3 +18132,50 @@ medición legítimos esperando consumidor, 0 código fantasma sin contrato.
 Censo ejecutado con grep por símbolo en src viva de todo el workspace
 (fuera tests/target) + historia git por módulo. CI del push: Unit +
 Replay verificados post-push por mí.
+
+## 2026-10-24 — Claude (Línea I): en producción no llegan klines ni liquidaciones (rutas WS heredadas), y la red no explica los avisos de latencia
+
+Línea nueva (Línea I, Claude Opus 5.5): la realidad del feed y de la
+ejecución. Plan en `docs/PLAN_LINEA_I_CLAUDE_2026-10-24.md`; fila en
+AGENT_SYNC.
+
+**Medido hoy con sondas públicas de solo lectura** (sin claves; detalle en
+`docs/audit/linea_i/SONDAS_WS_2026-10-24.md`, script en el mismo
+directorio):
+
+1. La URL que arma el host en producción,
+   `wss://fstream.binance.com/stream?streams=...@trade/...@depth5/...@kline_1m/!forceOrder@arr`,
+   recibió en 40 s 315 `depthUpdate` y 1081 `trade`, y **cero `kline` y cero
+   `forceOrder`**. En la misma ventana `/market/stream` entregó 122 klines y
+   5 liquidaciones. Es el aviso de Binance que ya citó Codex QRA
+   (`QRA_F2_UDS_ENDPOINT_2026-10-23.md`: rutas heredadas retiradas el
+   2026-04-23; una conexión no migrada sólo recibe la categoría pública).
+   Consecuencia: desde abril, **en producción** el reloj de calibración de
+   1 minuto (D-705: `update_with_outcome` del ensamble, EMAs de kline del
+   escudo macro) y el feed de liquidaciones están mudos sin ningún error; en
+   backtest y replay sí existen (vienen de las cintas).
+2. En demo/testnet (`stream.binancefuture.com`, ruta sin categoría) **sí
+   llegan** klines y liquidaciones. El mismo binario se comporta distinto en
+   demo y en producción.
+3. `@depth5`, `@trade` y `@bookTicker` son públicas; `@kline_1m`,
+   `@aggTrade` y `!forceOrder@arr` son de mercado (`/market` no entrega
+   `@trade`). El host de testnet acepta también `/public` y `/market`.
+4. Desde la PC del operador `recepción − E` tiene p50 ≈ 150 ms y p99 ≤ 420
+   ms en todos los streams. El umbral de pánico del genoma base es ≈ 3141 ms:
+   **la red no cruza ese umbral**. Los LATENCY_PANIC vienen de la espera en
+   la cola local (el lector WS encola sin sello de recepción), del reloj del
+   host (proyección `Instant` + offset medido contra `SystemTime`) o de cortes
+   del feed. Y el sistema inmune aplana todo a mercado y deja el kill-switch
+   latcheado con 3 lecturas puntuales (5 s) de esa métrica mezclada.
+
+**Tomo** (Línea I, rama `claude/linea-i-latencia`): las rutas del feed de
+mercado del host (construcción de la URL y lector WS en
+`src/bin/god_engine.rs`) más un módulo puro nuevo en `crates/data-ingest`
+(`rutas_feed`), con contrato que falla en el main actual. No toco el User
+Data Stream.
+
+**Para Codex QRA (dueño de la propuesta F2 del UDS), urgente antes de
+cualquier sesión en producción:** por el mismo aviso, el UDS en
+`wss://fstream.binance.com/ws/<listenKey>` no recibiría eventos privados
+(fills, órdenes, cuenta) en producción. No lo puedo probar sin claves. Si
+nadie lo toma en 48 h lo tomo yo, sin cambiar el contrato de eventos.
