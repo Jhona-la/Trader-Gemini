@@ -44,10 +44,10 @@ para todo el universo (26–30 símbolos).
 | # | Átomo | Hipótesis | Aceptación | Estado |
 |---|---|---|---|---|
 | I-1 | Auditoría del camino socket → cola → métrica → consumidores | La métrica mezcla los cuatro términos | 3 lectores; 18 hallazgos verificados (8 confirmados, 10 plausibles, 0 refutados) y diseño en `docs/audit/linea_i/i1_verificacion_y_diseno.json` | **hecho** |
-| I-1b | Rutas `/public` y `/market` (un lector WS por categoría) | En producción la URL heredada no recibe velas ni liquidaciones | Sondas (`SONDAS_WS_2026-10-24.md`) + contrato `data-ingest/tests/rutas_feed_contract.rs` que falla en main | **en la rama (48dc9ffa0); GREEN/RED hechos** |
-| I-2a | Sello de recepción (`MensajeWs { datos, recibido: Instant }`) transportado por la cola | Hoy la cola lleva bytes sin sello: nadie puede separar red de espera local | Test: el sello sobrevive a la cola y el descarte sigue reconociendo el centinela | pendiente (sin cambio de conducta) |
-| I-2b | Métrica descompuesta `EdadEvento { total, red_reloj, espera_local }` publicada en el arena y en cada aviso | Un evento que esperó 5 s en cola cuenta hoy como red de 5 s | Test puro: E=1000, ahora=6150, espera 5 s ⇒ red 150, local 5000 | pendiente (sin cambio de conducta) |
-| I-2c | Contrapresión observable (descartes por periodo, profundidad, espera máxima) por `telemetry_log!` | El monitor sólo imprime con la cola llena y por `println!` | Tests de las ventanas por periodo + contrato de fuente | pendiente (sin cambio de conducta) |
+| I-1b | Rutas `/public` y `/market` (un lector WS por categoría) | En producción la URL heredada no recibe velas ni liquidaciones | Sondas (`SONDAS_WS_2026-10-24.md`) + contrato `data-ingest/tests/rutas_feed_contract.rs` que falla en main | **en main (PR #134, a6472e330)** |
+| I-2a | Sello de recepción (`MensajeWs { datos, recibido: Instant }`) transportado por la cola | Hoy la cola lleva bytes sin sello: nadie puede separar red de espera local | Test: el sello sobrevive a la cola y el descarte sigue reconociendo el centinela | **hecho en rama** (sin cambio de conducta) |
+| I-2b | Métrica descompuesta `EdadEvento { total, red_reloj, espera_local }` publicada en el arena y en cada aviso | Un evento que esperó 5 s en cola cuenta hoy como red de 5 s | Test puro: E=1000, ahora=6150, espera 5 s ⇒ red 150, local 5000; deriva D del reloj de pared | **hecho en rama** (sin cambio de conducta) |
+| I-2c | Contrapresión observable (descartes por periodo, profundidad, espera máxima) por `telemetry_log!` | El monitor sólo imprime con la cola llena y por `println!` | Tests de las ventanas por periodo + contrato de fuente | **hecho en rama** (sin cambio de conducta) |
 | I-3a | El inmune cuenta strikes con red+reloj, no con la espera local | Un atraso local aplana posiciones como si la red estuviera caída | `strikes_latencia` puro con paridad CERT-M4-H04 | pendiente (cambia conducta) |
 | I-3b | El rearme del inmune reinicia los strikes de latencia | Tras rearmar, los strikes viejos vuelven a disparar | Contrato de fuente | pendiente (cambia conducta) |
 | I-3c | Recorte del bosque sombra con atraso local | El bosque sombra corre en el mismo hilo aunque la cola se atrase | `toca_sombra` puro | pendiente (condicional a I-2) |
@@ -78,6 +78,15 @@ trading llevan T-1 antes de entrar a `main`.
   RED: con el `god_engine.rs` de `main` fallan en aserción los tres tests que leen el host
   (`rutas_feed_contract.rs:20`, `:36`, `:58`); el de propiedades pasa. Commit `48dc9ffa0`,
   integrado con `main` 4fb8ca8dd sin conflictos (trae CL-156 en el host).
+- 2026-10-24 ~15:30 — I-1b en `main` (PR #134, 10/10 checks). I-1 cerrado: 18 hallazgos
+  verificados, 0 refutados; diseño de I-2..I-7 en `docs/audit/linea_i/i1_verificacion_y_diseno.json`.
+- 2026-10-24 ~16:00 — I-2 (I-2a/b/c) en la rama `claude/linea-i-i2`. Revisión adversarial antes
+  del commit (4 lentes, 2 escépticos por hallazgo): 13 hallazgos, ninguno refutado. Todos
+  incorporados: contrato del lado consumidor (`edad_feed_contract.rs`), deriva D del reloj de
+  pared en el arena y en los avisos, doc correcta del red+reloj negativo (error de reloj, no
+  «reloj adelantado»), `fetch_max` sólo con máximo nuevo y en su propia línea de caché.
+  GREEN: `data-ingest` 23+4+7+4, `check --bin god_engine`, `ingesta_ws_host_contract` 7/7.
+  RED: con el host de `main` fallan los 4 tests de `edad_feed_contract.rs`.
 
 - 2026-10-24 13:25 — Línea abierta; heartbeat en `AGENT_SYNC.md` (commit `2831cf5bd`).
   Auditoría I-1 lanzada (3 lectores, escépticos, diseñador).

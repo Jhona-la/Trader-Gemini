@@ -50,7 +50,7 @@ fn cl50_solo_una_reconexion_anuncia_el_reinicio() {
     let h = host();
     let t = tramo(&h, "WebSocketTLSConnectedwithTCP_NODELAY", "ws_stream.split()");
     assert!(
-        t.contains("ifconexiones.establecida(){data_ingest::cola_ws::encolar(&tx_events,&rx_events_dropper,data_ingest::cola_ws::CENTINELA_RECONEXION.to_vec(),"),
+        t.contains("ifconexiones.establecida(){data_ingest::cola_ws::encolar(&tx_events,&rx_events_dropper,data_ingest::cola_ws::MensajeWs::recibido_ahora(data_ingest::cola_ws::CENTINELA_RECONEXION.to_vec(),),"),
         "el centinela sólo sale en una reconexión"
     );
 }
@@ -86,7 +86,7 @@ fn cl52_el_lector_encola_siempre_por_la_cola_contada() {
     let t = tramo(&h, "WebSocketTLSConnectedwithTCP_NODELAY", "[WS]Reconnecting...");
     assert!(!t.contains("try_send("), "sin envíos que eludan la cola contada");
     assert!(!t.contains("rx_events_dropper.try_recv()"));
-    assert!(t.contains("data_ingest::cola_ws::encolar(&tx_events,&rx_events_dropper,msg.into_data(),&estado_cola,)"));
+    assert!(t.contains("data_ingest::cola_ws::encolar(&tx_events,&rx_events_dropper,data_ingest::cola_ws::MensajeWs::recibido_ahora(msg.into_data()),&estado_cola,)"));
 }
 
 /// Si la cola se llevó el centinela, el bucle reinicia igual, antes de
@@ -94,7 +94,7 @@ fn cl52_el_lector_encola_siempre_por_la_cola_contada() {
 #[test]
 fn cl52_el_bucle_reinicia_aunque_el_centinela_se_perdiera() {
     let h = host();
-    let t = tramo(&h, "whileletOk(mutmsg_bytes)=rx_events.recv(){", "decode_liquidation_snapshots(");
+    let t = tramo(&h, "whileletOk(mensaje_ws)=rx_events.recv(){", "decode_liquidation_snapshots(");
     let i = t
         .find("letcentinela_perdido=estado_cola.tomar_reconexion_perdida();ifes_centinela||centinela_perdido{")
         .expect("el bucle consulta la marca de la cola antes de consumir el mensaje");

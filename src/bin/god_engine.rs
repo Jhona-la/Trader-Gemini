@@ -1314,7 +1314,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         });
     }
 
-    let (tx_events, rx_events) = crossbeam_channel::bounded::<Vec<u8>>(5_000);
+    let (tx_events, rx_events) = crossbeam_channel::bounded::<data_ingest::cola_ws::MensajeWs>(
+        data_ingest::cola_ws::CAPACIDAD_COLA_WS,
+    );
     let rx_events_dropper = rx_events.clone();
     // CERT-M4-H02 — SHUTDOWN GRACEFUL: ^C #1 despierta el event loop con un
     // centinela para que drene ordenado (flatten-all + persistir estado);
@@ -1338,7 +1340,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     telemetry_server::telemetry_log!(
                         "🛑 [SHUTDOWN] ^C recibido — drenando posiciones y estado..."
                     );
-                    let _ = wake.try_send(vec![0xFF]); // despierta el event loop
+                    // despierta el event loop
+                    let _ = wake.try_send(data_ingest::cola_ws::MensajeWs::recibido_ahora(vec![0xFF]));
                 }
             }
         });
@@ -1348,17 +1351,34 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // CL-52: la cola cuenta TODO descarte (antes sólo los de la ruta del
     // centinela) y recuerda si se llevó un centinela de reconexión.
     let estado_cola = Arc::new(data_ingest::cola_ws::EstadoCola::new());
+    // I-2c (Línea I): una línea por minuto con la contrapresión del periodo
+    // (descartes, profundidad de la cola y espera local máxima), por la cola
+    // de telemetría. Antes sólo se imprimía el total por stdout y sólo con
+    // la cola ya llena: el atraso que la precede no se veía.
     {
         let estado_cola = Arc::clone(&estado_cola);
-        std::thread::Builder::new().name("ws-backpressure-monitor".into()).spawn(move || {
+        let rx_profundidad = rx_events.clone();
+        let lanzado = std::thread::Builder::new().name("ws-backpressure-monitor".into()).spawn(move || {
             loop {
                 std::thread::sleep(std::time::Duration::from_secs(60));
-                let d = estado_cola.descartados();
-                if d > 0 {
-                    println!("⚠️ [BACKPRESSURE] {} eventos WS descartados (drop-oldest) — throughput del lector insuficiente", d);
-                }
+                let descartes = estado_cola.tomar_descartes_del_periodo();
+                let espera_max = estado_cola.tomar_espera_max();
+                let profundidad = rx_profundidad.len();
+                let etiqueta = if descartes > 0 { "BACKPRESSURE" } else { "COLA-WS" };
+                telemetry_server::telemetry_log!(
+                    "📥 [{}] 60 s: descartes={} (total {}) profundidad={}/{} espera_local_max={} ms",
+                    etiqueta,
+                    descartes,
+                    estado_cola.descartados(),
+                    profundidad,
+                    data_ingest::cola_ws::CAPACIDAD_COLA_WS,
+                    espera_max
+                );
             }
-        }).ok();
+        });
+        if let Err(e) = lanzado {
+            telemetry_server::telemetry_log!("⚠️ [COLA-WS] monitor de contrapresión no lanzado: {}", e);
+        }
     }
 
     // FASE 3A: FETCH CLAVES Y CONEXIÓN API REST PARA CHEQUEO DE COMISIONES Y CAPITAL ANTES DEL WARMUP Y ENTRENAMIENTO
@@ -3551,6 +3571,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         let instant_baseline = std::time::Instant::now();
         let local_ms_now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_millis() as i64;
         let epoch_baseline_ms = local_ms_now + ntp_offset_ms;
+        // I-2b (Línea I): deriva D del reloj de pared frente a la proyección
+        // de arriba; se mide cada 100 mensajes y acompaña a los avisos.
+        let mut deriva_reloj_ms: i64 = 0;
 
         // RET-45 / F472 (RB-M1a, 2026-10-19): ya no hay un libro con BTreeMap
         // por símbolo. Se alimentaba con el nivel 0 de cada @depth5, nunca
@@ -3593,7 +3616,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         // FASE 6 (EVENT LOOP)
         god_engine_core::bootloader::SystemDiagnostics::execute_phase_6_hft();
 
-        while let Ok(mut msg_bytes) = rx_events.recv() {
+        while let Ok(mensaje_ws) = rx_events.recv() {
+            // I-2a (Línea I): el instante de recepción en el lector viaja con
+            // el mensaje; separa la espera en cola de la red (I-2b).
+            let recibido_ws = mensaje_ws.recibido;
+            let mut msg_bytes = mensaje_ws.datos;
             // CERT-M4-H02: el centinela de shutdown despierta el recv; el
             // flag ordena el drenaje (el mensaje mismo se descarta).
             if shutdown_flag.load(std::sync::atomic::Ordering::SeqCst) {
@@ -3840,9 +3867,21 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .arena
                 .server_time_offset_ms
                 .load(Ordering::Relaxed);
+            // I-2b (Línea I): un solo instante para la edad total y para la
+            // espera local; la edad se descompone en red+reloj y cola local.
+            // Las decisiones de entrada siguen con la edad TOTAL: un dato
+            // viejo no debe abrir posiciones aunque la red esté sana. Sólo
+            // el sistema inmune (aplanado total) pasa a red+reloj (I-3a).
+            let ahora_mono = Instant::now();
             let now_ms = epoch_baseline_ms + (ntp_offset_actual - ntp_offset_ms)
-                + instant_baseline.elapsed().as_millis() as i64;
-            let latency_ms = now_ms - event_time;
+                + ahora_mono.saturating_duration_since(instant_baseline).as_millis() as i64;
+            let edad = data_ingest::edad_feed::EdadEvento::medir(
+                event_time,
+                now_ms,
+                ahora_mono.saturating_duration_since(recibido_ws),
+            );
+            let latency_ms = edad.total_ms;
+            estado_cola.registrar_espera_local(edad.espera_local_ms.max(0) as u64);
             let mut latency_panic = false;
 
             // X-010 (REHAB-4): WRITER de latencia en el feed real. La métrica
@@ -3860,6 +3899,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     .arena
                     .last_ws_latency_ms
                     .store(latency_ms.max(0) as u64, Ordering::Relaxed);
+                engine_real
+                    .arena
+                    .last_ws_red_reloj_ms
+                    .store(edad.red_reloj_ms, Ordering::Relaxed);
+                engine_real
+                    .arena
+                    .last_ws_espera_local_ms
+                    .store(edad.espera_local_ms.max(0) as u64, Ordering::Relaxed);
                 quantum_arena::feed_health::clear();
             }
 
@@ -3876,7 +3923,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 latency_panic = true;
                 if consecutive_slow_ticks == 10 {
                     if let Some(n) = aviso_kill_switch.admitir(instant_baseline.elapsed().as_millis() as u64) {
-                        telemetry_server::telemetry_log!("🚨 [KILL_SWITCH] Latencia > {}ms detectada por 10 ticks. Volatilidad Sintética activada. SCALP DESACTIVADO. (+{} rachas sin aviso desde el anterior)", panic_threshold, n);
+                        telemetry_server::telemetry_log!("🚨 [KILL_SWITCH] Latencia > {}ms detectada por 10 ticks (última: red+reloj {} ms, cola local {} ms, deriva del reloj {} ms). Volatilidad Sintética activada. SCALP DESACTIVADO. (+{} rachas sin aviso desde el anterior)", panic_threshold, edad.red_reloj_ms, edad.espera_local_ms, deriva_reloj_ms, n);
                     }
                 }
             }
@@ -3884,7 +3931,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             if event_time > 0 && latency_ms > panic_threshold {
                 latency_panic = true;
                 if let Some(n) = aviso_latencia.admitir(instant_baseline.elapsed().as_millis() as u64) {
-                    telemetry_server::telemetry_log!("⚠️ [LATENCY_PANIC] Delta = {}ms (>{panic_threshold}ms limit). Skiping O(1) Scalp execution. (+{} eventos lentos sin aviso desde el anterior)", latency_ms, n);
+                    telemetry_server::telemetry_log!("⚠️ [LATENCY_PANIC] Delta = {}ms (>{panic_threshold}ms limit; red+reloj {} ms, cola local {} ms, deriva del reloj {} ms). Skiping O(1) Scalp execution. (+{} eventos lentos sin aviso desde el anterior)", latency_ms, edad.red_reloj_ms, edad.espera_local_ms, deriva_reloj_ms, n);
                 }
             }
 
@@ -5405,6 +5452,21 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
             msg_count += 1;
             if msg_count.is_multiple_of(100) {
+                // I-2b (Línea I): D = pared − (pared del arranque del bucle +
+                // tiempo monótono). Entra en red+reloj con el signo contrario
+                // hasta que I-5 unifique el reloj; sin D, una corrección de
+                // w32time se confunde con red.
+                if let Ok(pared) = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH) {
+                    deriva_reloj_ms = data_ingest::edad_feed::deriva_pared_frente_monotono(
+                        i64::try_from(pared.as_millis()).unwrap_or(i64::MAX),
+                        local_ms_now,
+                        instant_baseline.elapsed(),
+                    );
+                    engine_real
+                        .arena
+                        .deriva_reloj_pared_ms
+                        .store(deriva_reloj_ms, Ordering::Relaxed);
+                }
                 // LG-12: los límites de peticiones son los del exchange
                 // (constantes del ejecutor), no genes evolucionados.
 
@@ -5732,8 +5794,8 @@ async fn esperar_control(rx: &mut Option<tokio::sync::mpsc::Receiver<()>>) {
 /// reconecta con espera exponencial acotada.
 async fn bucle_lector_ws(
     cfg: LectorWs,
-    tx_events: crossbeam_channel::Sender<Vec<u8>>,
-    rx_events_dropper: crossbeam_channel::Receiver<Vec<u8>>,
+    tx_events: crossbeam_channel::Sender<data_ingest::cola_ws::MensajeWs>,
+    rx_events_dropper: crossbeam_channel::Receiver<data_ingest::cola_ws::MensajeWs>,
     estado_cola: Arc<data_ingest::cola_ws::EstadoCola>,
     mut rx_ws_control: Option<tokio::sync::mpsc::Receiver<()>>,
 ) {
@@ -5838,7 +5900,9 @@ async fn bucle_lector_ws(
                     data_ingest::cola_ws::encolar(
                         &tx_events,
                         &rx_events_dropper,
-                        data_ingest::cola_ws::CENTINELA_RECONEXION.to_vec(),
+                        data_ingest::cola_ws::MensajeWs::recibido_ahora(
+                            data_ingest::cola_ws::CENTINELA_RECONEXION.to_vec(),
+                        ),
                         &estado_cola,
                     );
                 }
@@ -5855,11 +5919,12 @@ async fn bucle_lector_ws(
                         msg_opt = tokio::time::timeout(std::time::Duration::from_secs(watchdog_secs), read.next()) => {
                             match msg_opt {
                                 Ok(Some(Ok(msg))) => {
-                                    // Bounded Drop Oldest, contado (CL-52).
+                                    // Bounded Drop Oldest, contado (CL-52). I-2a:
+                                    // sellado en el instante de recepción.
                                     data_ingest::cola_ws::encolar(
                                         &tx_events,
                                         &rx_events_dropper,
-                                        msg.into_data(),
+                                        data_ingest::cola_ws::MensajeWs::recibido_ahora(msg.into_data()),
                                         &estado_cola,
                                     );
                                 }
