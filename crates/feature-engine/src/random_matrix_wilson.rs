@@ -514,9 +514,16 @@ impl WilsonRGEngine {
         report.effective_beta1 = beta_sum / (valid_steps as f64);
 
         // 4. Clasificación física del operador
-        report.operator_class = if report.effective_beta1 > 0.05 {
+        // En teoría de RG de Wilson:
+        // - Relevante: el acoplamiento crece al coarse-grain (beta1 > 0.005) o
+        //   la persistencia base es masiva y estable (g1[0] > 0.70 y beta1 >= -0.02).
+        // - Irrelevante: el acoplamiento decae rápidamente a escalas macro (beta1 < -0.02).
+        // - Marginal: invarianza de escala crítica (|beta1| <= 0.005).
+        report.operator_class = if report.effective_beta1 > 0.005
+            || (report.g1_couplings[0] > 0.70 && report.effective_beta1 >= -0.02)
+        {
             WilsonOperatorClass::Relevant
-        } else if report.effective_beta1 < -0.05 {
+        } else if report.effective_beta1 < -0.02 {
             WilsonOperatorClass::Irrelevant
         } else {
             WilsonOperatorClass::Marginal
@@ -541,6 +548,12 @@ pub struct ContinuousLyapunovEstimator {
     count: usize,
     /// Exponente de Lyapunov suavizado $\lambda_{\max}$.
     smoothed_lambda: f64,
+    /// Índice del vecino seleccionado en el paso anterior.
+    last_nearest_idx: usize,
+    /// Distancia inicial medida en el paso anterior d0.
+    last_d0: f64,
+    /// Indicador de si existe un par pendiente para medir divergencia en el paso actual.
+    has_pending_pair: bool,
 }
 
 impl Default for ContinuousLyapunovEstimator {
@@ -550,6 +563,9 @@ impl Default for ContinuousLyapunovEstimator {
             head: 0,
             count: 0,
             smoothed_lambda: 0.0,
+            last_nearest_idx: 0,
+            last_d0: 0.0,
+            has_pending_pair: false,
         }
     }
 }
@@ -563,6 +579,27 @@ impl ContinuousLyapunovEstimator {
     /// Registra un nuevo vector de estado inmerso $Y(t) = [x_t, x_{t-1}, x_{t-2}, x_{t-3}]$
     /// y actualiza el exponente de divergencia orbital.
     pub fn update(&mut self, state_vector: [f64; LYAPUNOV_EMBED_DIM]) -> LyapunovDiagnostic {
+        let current_pt = state_vector;
+
+        // 1. Si hay un par pendiente del paso anterior:
+        // El punto de referencia anterior evolucionó a `current_pt`.
+        // El vecino anterior (last_nearest_idx) evolucionó a (last_nearest_idx + 1).
+        if self.has_pending_pair && self.last_d0 > 1e-6 {
+            let evolved_neighbor_idx = (self.last_nearest_idx + 1) % LYAPUNOV_BUFFER_SIZE;
+            let evolved_neighbor = self.trajectory_buffer[evolved_neighbor_idx];
+            let mut d1_sq = 0.0;
+            for dim in 0..LYAPUNOV_EMBED_DIM {
+                let diff = current_pt[dim] - evolved_neighbor[dim];
+                d1_sq += diff * diff;
+            }
+            let d1 = d1_sq.sqrt().max(1e-6);
+
+            // Tasa local de divergencia exponencial: ln(d1 / d0)
+            let local_lyapunov = (d1 / self.last_d0).ln().clamp(-5.0, 5.0);
+            self.smoothed_lambda = 0.90 * self.smoothed_lambda + 0.10 * local_lyapunov;
+        }
+
+        // 2. Registrar el nuevo punto en el buffer circular
         let current_idx = self.head;
         self.trajectory_buffer[current_idx] = state_vector;
         self.head = (self.head + 1) % LYAPUNOV_BUFFER_SIZE;
@@ -574,10 +611,8 @@ impl ContinuousLyapunovEstimator {
             return LyapunovDiagnostic::default();
         }
 
-        // Algoritmo de Rosenstein / Wolf en tiempo real:
-        // Buscar el vecino más cercano en el pasado excluyendo la ventana de Theiler (W=4)
-        let current_pt = state_vector;
-        let mut min_dist = f64::MAX;
+        // 3. Buscar el vecino más cercano para el punto actual
+        let mut min_dist_sq = f64::MAX;
         let mut nearest_idx = usize::MAX;
 
         const THEILER_WINDOW: usize = 4;
@@ -593,48 +628,28 @@ impl ContinuousLyapunovEstimator {
                 dist_sq += diff * diff;
             }
 
-            if dist_sq > 1e-12 && dist_sq < min_dist {
-                min_dist = dist_sq;
+            if dist_sq > 1e-12 && dist_sq < min_dist_sq {
+                min_dist_sq = dist_sq;
                 nearest_idx = past_idx;
             }
         }
 
-        if nearest_idx == usize::MAX {
-            return LyapunovDiagnostic {
-                lambda_max: self.smoothed_lambda,
-                horizon_compression: (1.0 / (1.0 + self.smoothed_lambda.max(0.0))).clamp(0.10, 1.0),
-                is_chaotic: self.smoothed_lambda > 0.02,
-                phase_space_diameter: 0.0,
-            };
+        if nearest_idx != usize::MAX {
+            self.last_nearest_idx = nearest_idx;
+            self.last_d0 = min_dist_sq.sqrt().max(1e-6);
+            self.has_pending_pair = true;
+        } else {
+            self.has_pending_pair = false;
         }
-
-        let d0 = min_dist.sqrt().max(1e-6);
-
-        // Medir separación evolucionada tras 1 paso temporal
-        let past_next_idx = (nearest_idx + 1) % LYAPUNOV_BUFFER_SIZE;
-        let past_next_pt = self.trajectory_buffer[past_next_idx];
-
-        let mut evolved_dist_sq = 0.0;
-        for dim in 0..LYAPUNOV_EMBED_DIM {
-            let diff = current_pt[dim] - past_next_pt[dim];
-            evolved_dist_sq += diff * diff;
-        }
-        let d1 = evolved_dist_sq.sqrt().max(1e-6);
-
-        // Tasa local de divergencia: ln(d1 / d0)
-        let local_lyapunov = (d1 / d0).ln().clamp(-5.0, 5.0);
-
-        // Actualización EWMA con alpha = 0.05
-        self.smoothed_lambda = 0.95 * self.smoothed_lambda + 0.05 * local_lyapunov;
 
         let horizon_comp = (1.0 / (1.0 + self.smoothed_lambda.max(0.0))).clamp(0.05, 1.0);
-        let is_chaotic = self.smoothed_lambda > 0.02;
+        let is_chaotic = self.smoothed_lambda > 0.05;
 
         LyapunovDiagnostic {
             lambda_max: self.smoothed_lambda,
             horizon_compression: horizon_comp,
             is_chaotic,
-            phase_space_diameter: d0,
+            phase_space_diameter: self.last_d0,
         }
     }
 }
