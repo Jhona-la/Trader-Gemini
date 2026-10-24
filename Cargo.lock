@@ -767,13 +767,7 @@ name = "data-ingest"
 version = "0.1.0"
 dependencies = [
  "crossbeam",
- "data-pipeline",
- "memmap2 0.9.11",
- "polars",
- "quantum-arena",
- "reqwest",
  "serde_json",
- "tokio",
 ]
 
 [[package]]
