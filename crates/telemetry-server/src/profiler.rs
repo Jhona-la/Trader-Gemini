@@ -819,6 +819,11 @@ mod tests {
         // holds or the seqlock is wrong.
         const A: (f64, f64) = (10.0, 9.0); // fees 1.0
         const B: (f64, f64) = (20.0, 18.0); // fees 2.0
+        // Pin the initial state to A before the race starts. The previous
+        // scenario leaves (12.5, 11.0) in the globals, which is coherent but is
+        // neither A nor B: without this the first read would be counted as a
+        // mix when it is only the leftover of the previous contract.
+        update_financials_atomic(A.0, A.1, 0.5, 100.0);
         let stop = AtomicBool::new(false);
         let observed = AtomicU64::new(0);
         let mixed = AtomicU64::new(0);
