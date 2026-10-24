@@ -3,6 +3,7 @@ pub mod copulas;
 pub mod correlation;
 pub mod ewma;
 pub mod entrelazamiento;
+pub mod feynman_path_instanton;
 pub mod hawkes;
 pub mod hawkes_cross;
 pub mod hodge_flow;
@@ -27,6 +28,10 @@ pub mod welford;
 // Re-exportar primitivas matemáticas O(1)
 pub use correlation::MarketCorrelationHeatmap;
 pub use ewma::Ewma;
+pub use feynman_path_instanton::{
+    FeynmanInstantonEngine, InstantonParams, InstantonRegime, InstantonTunnelingReport,
+    MAX_PATH_POINTS,
+};
 pub use hawkes::HawkesProcessEngine;
 pub use hodge_flow::{
     CrossMarketHodgeReport, HelmholtzHodgeFlowEngine, HelmholtzHodgeParams,
