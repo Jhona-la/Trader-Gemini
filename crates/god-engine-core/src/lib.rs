@@ -5629,10 +5629,11 @@ impl GodEngineCore {
                             }
                         };
                         let p_win_at_entry = crate::calibration::p_win_directional(is_long, ml_at_entry, ml_model_base);
+                        let ym_action = self.yang_mills_engine.current_metrics().action_density;
                         if coin_id < self.conformal_by_coin.len() {
-                            self.conformal_by_coin[coin_id].update(p_win_at_entry, is_win);
+                            self.conformal_by_coin[coin_id].update_with_gauge(p_win_at_entry, is_win, ym_action);
                         } else {
-                            self.conformal.update(p_win_at_entry, is_win);
+                            self.conformal.update_with_gauge(p_win_at_entry, is_win, ym_action);
                         }
                     }
                     // D-619: el calibrador aprende de la puntuación CRUDA y del
@@ -6599,12 +6600,27 @@ impl GodEngineCore {
             // Erradica el sesgo donde 1.0 - ml_prob en base ~0.25 inflaba la probabilidad corta neutral a 0.75.
             let p_win_long = crate::calibration::p_win_directional(true, ml_prob, ml_model_base);
             let p_win_short = crate::calibration::p_win_directional(false, ml_prob, ml_model_base);
-            let (conformal_p, accept_long) = calibrator.eval_prediction(p_win_long);
-            let (conformal_p_short, accept_short) = calibrator.eval_prediction(p_win_short);
+            // OLA Ω220 (Átomo 4.2): Acoplamiento Causal Gauge Yang-Mills a Conformal ACI
+            let ym_metrics = self.yang_mills_engine.current_metrics();
+            let ym_currents = self.yang_mills_engine.current_currents();
+            let ym_coin_curr = if coin_id < ym_currents.len() { ym_currents[coin_id] } else { 0.0 };
+
+            let (conformal_p, accept_long, a_gauge_long, j_align_long) =
+                calibrator.eval_prediction_gauge(p_win_long, ym_metrics.holonomy_density, ym_coin_curr, true);
+            let (conformal_p_short, accept_short, a_gauge_short, j_align_short) =
+                calibrator.eval_prediction_gauge(p_win_short, ym_metrics.holonomy_density, ym_coin_curr, false);
+
             set_reg("conformal_p_value", conformal_p);
             set_reg("conformal_p_value_short", conformal_p_short);
             set_reg("conformal_alpha", conf_alpha);
             set_reg("conformal_alpha_eff", calibrator.effective_alpha());
+            set_reg("conformal_alpha_gauge", a_gauge_long);
+            set_reg("conformal_alpha_gauge_short", a_gauge_short);
+            set_reg("conformal_gamma_aci", calibrator.last_gamma());
+            set_reg("conformal_ym_alignment_long", j_align_long);
+            set_reg("conformal_ym_alignment_short", j_align_short);
+            set_reg("conformal_gauge_veto_long", if j_align_long < -0.70 { 1.0 } else { 0.0 });
+            set_reg("conformal_gauge_veto_short", if j_align_short < -0.70 { 1.0 } else { 0.0 });
             set_reg("conformal_accept_long", if accept_long { 1.0 } else { 0.0 });
             set_reg("conformal_accept_short", if accept_short { 1.0 } else { 0.0 });
 
