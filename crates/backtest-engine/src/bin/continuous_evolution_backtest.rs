@@ -1,87 +1,11 @@
-use data_pipeline::historical::Kline;
-
 use god_engine_core::GodEngineCore;
 
-use quantum_arena::{GlobalArena, TickEvent};
+use quantum_arena::GlobalArena;
 use std::path::Path;
 use std::sync::atomic::Ordering;
 
 #[global_allocator]
 static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
-
-// Simplificamos a 1 moneda primaria (BTCUSDT) para validar el loop continuo más rápido.
-#[allow(dead_code)]
-const COINS: [&str; 1] = ["BTCUSDT"];
-
-#[allow(dead_code)]
-fn simple_kline_to_ticks(coin_id: usize, kline: &Kline) -> Vec<TickEvent> {
-    let mut ticks = Vec::with_capacity(4);
-    let duration = kline.close_time.saturating_sub(kline.open_time);
-
-    let o = if kline.open.is_finite() && kline.open > 0.0 {
-        kline.open
-    } else {
-        1.0
-    };
-    let h = if kline.high.is_finite() && kline.high > 0.0 {
-        kline.high.max(o)
-    } else {
-        o
-    };
-    let l = if kline.low.is_finite() && kline.low > 0.0 {
-        kline.low.min(o).max(1e-6)
-    } else {
-        o * 0.999
-    };
-    let c = if kline.close.is_finite() && kline.close > 0.0 {
-        kline.close
-    } else {
-        o
-    };
-    let total_v = if kline.volume.is_finite() && kline.volume > 0.0 {
-        kline.volume
-    } else {
-        1.0
-    };
-
-    let _v_per_tick = total_v / 4.0;
-    let step = duration / 4;
-
-    // FIX #D16: Eliminación de Lookahead Bias (c >= o).
-    // No se conoce el cierre futuro 'c' para ordenar el path intra-barra.
-    // Se utiliza la proximidad causal del precio de apertura al extremo más cercano.
-    let open_closer_to_low = (o - l).abs() <= (h - o).abs();
-    let points = if open_closer_to_low {
-        vec![
-            (kline.open_time, o),
-            (kline.open_time + step, l),
-            (kline.open_time + step * 2, h),
-            (kline.close_time, c),
-        ]
-    } else {
-        vec![
-            (kline.open_time, o),
-            (kline.open_time + step, h),
-            (kline.open_time + step * 2, l),
-            (kline.close_time, c),
-        ]
-    };
-
-    for (ts, price) in points {
-        let spread_half = (price * 0.00005).max(0.00001); // 1 bps spread
-        ticks.push(TickEvent {
-            coin_id,
-            timestamp: ts,
-            bid_price: (price - spread_half).max(1e-6),
-            ask_price: price + spread_half,
-            bid_qty: 15.0 + (price % 5.0), // Simulated dynamic L1 Bid Depth
-            ask_qty: 15.0 + ((price * 1.5) % 5.0), // Simulated dynamic L1 Ask Depth
-        });
-    }
-
-    ticks
-}
-
 
 /// #667 (H0-1): los nichos del walk-forward mutan las CURVAS continuas
 /// (tp a + b·ln τ — la fuente única que `apply_to_arena` sirve) y
@@ -100,7 +24,6 @@ fn nicho_curva_tp(g: &mut quantum_arena::genome::SuperGenotype, tp_fast: f64, tp
     g.derive_anchors_from_curves();
 }
 
-#[allow(dead_code)]
 fn nicho_curva_sl(g: &mut quantum_arena::genome::SuperGenotype, sl_fast: f64, sl_slow: f64) {
     use quantum_arena::temporal_spectrum::{HorizonCurve, TAU_ANCHOR_FAST_MS, TAU_ANCHOR_SLOW_MS};
     g.sl_horizon_curve = HorizonCurve::through_two_points(
@@ -564,9 +487,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 e.arena.config.tech_threshold.load(Ordering::Relaxed),
             );
         }
-
-        let _synthetic_macro = [0.0f64; 54];
-        let _pseudo_rng = 42u64;
 
         // DIAGNÓSTICO SIGNAL-PATH: contar en cada etapa del pipeline para
         // localizar dónde mueren las señales. Imprime al cierre del día.

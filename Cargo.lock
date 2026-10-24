@@ -258,13 +258,9 @@ dependencies = [
 name = "backtest-engine"
 version = "0.1.0"
 dependencies = [
- "chrono",
- "csv",
  "data-pipeline",
- "execution-engine",
  "feature-engine",
  "god-engine-core",
- "lazy_static",
  "memmap2 0.9.11",
  "mimalloc",
  "quantum-arena",
