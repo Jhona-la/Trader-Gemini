@@ -24,6 +24,21 @@ fn parse_warmup_kline(kline: &[Value]) -> Option<[f64; 5]> {
         .then_some(bar)
 }
 
+/// CL-156 (G021 de Línea G) — URL de las K-lines REST del calentamiento en
+/// el venue del proceso: testnet si el host eligió testnet para el cliente
+/// REST y el ejecutor (`USE_TESTNET=true`), mainnet si no. Misma base que el
+/// ejecutor (`executor.rs`); el WS de testnet es `stream.binancefuture.com`.
+/// Antes el calentamiento vivo fijaba `fapi.binance.com` y en testnet
+/// sembraba Hurst, FFT, multifractal y σ̂ con la serie de otro mercado.
+fn warmup_klines_url(usa_testnet: bool, symbol: &str, limit: usize) -> String {
+    let base = if usa_testnet {
+        "https://testnet.binancefuture.com"
+    } else {
+        "https://fapi.binance.com"
+    };
+    format!("{base}/fapi/v1/klines?symbol={symbol}&interval=1m&limit={limit}")
+}
+
 #[cfg(test)]
 mod audit_xiii_tests {
     use super::*;
@@ -68,6 +83,20 @@ mod audit_xiii_tests {
             Some([10.0, 12.0, 9.0, 11.0, 0.0])
         );
         assert_eq!(parse_warmup_kline(&[]), None);
+    }
+
+    /// CL-156 (G021) — en testnet las K-lines salen de testnet; en mainnet
+    /// la URL es la de siempre, byte a byte.
+    #[test]
+    fn cl156_warmup_klines_url_sigue_al_venue() {
+        assert_eq!(
+            warmup_klines_url(true, "1000SHIBUSDT", 1000),
+            "https://testnet.binancefuture.com/fapi/v1/klines?symbol=1000SHIBUSDT&interval=1m&limit=1000"
+        );
+        assert_eq!(
+            warmup_klines_url(false, "1000SHIBUSDT", 1000),
+            "https://fapi.binance.com/fapi/v1/klines?symbol=1000SHIBUSDT&interval=1m&limit=1000"
+        );
     }
 
     /// CL-37 — el universo de arranque sale en la grafía canónica, sin
@@ -433,8 +462,13 @@ impl SystemDiagnostics {
     /// banda sintética ±0.05% y volumen fijo 10: v_t (volatilidad de rango)
     /// quedaba clavado en ~0.1% y el ATR vivo des-calibraba los stops por
     /// horas (get_atr_pct alimenta el sizing en vivo).
+    ///
+    /// CL-156 (G021): `usa_testnet` es el venue que el host eligió para el
+    /// cliente REST y el ejecutor (`is_testnet`); las K-lines salen de ese
+    /// mismo venue (`warmup_klines_url`). No es el modo demo: SHADOW_MODE y
+    /// BINANCE_USE_DEMO operan papel contra mainnet.
     pub async fn execute_phase_3_warmup(
-        _is_demo: bool,
+        usa_testnet: bool,
         symbols: &[String],
     ) -> std::collections::HashMap<String, Vec<[f64; 5]>> {
         let mut map = std::collections::HashMap::new();
@@ -447,11 +481,7 @@ impl SystemDiagnostics {
 
         for symbol in symbols {
             let mut klines_vec = Vec::new();
-            let url = format!(
-                "https://fapi.binance.com/fapi/v1/klines?symbol={}&interval=1m&limit={}",
-                symbol.to_uppercase(),
-                limit
-            );
+            let url = warmup_klines_url(usa_testnet, &symbol.to_uppercase(), limit);
 
             if let Ok(resp) = client.get(&url).send().await {
                 if let Ok(json) = resp.json::<serde_json::Value>().await {
