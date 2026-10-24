@@ -4,7 +4,6 @@
 paquete	archivo	unwrap	expect	panico	aserto
 backtest-engine	crates/backtest-engine/src/label_evidence.rs	4	0	0	0
 data-pipeline	crates/data-pipeline/src/historical.rs	1	0	0	0
-data-pipeline	crates/data-pipeline/src/telemetry_bus.rs	1	0	1	0
 data-pipeline	crates/data-pipeline/src/ws_client.rs	0	1	0	0
 evolution-engine	crates/evolution-engine/src/cma_es.rs	0	1	0	0
 evolution-engine	crates/evolution-engine/src/online_daemon.rs	0	1	0	0

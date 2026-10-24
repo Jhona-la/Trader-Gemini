@@ -80,11 +80,6 @@ fn resolve_credentials(is_testnet: bool) -> Result<(String, String), String> {
     resolve_credentials_from_lookup(is_testnet, |k| std::env::var(k).ok())
 }
 
-#[allow(dead_code)]
-fn env_first(names: &[&str]) -> String {
-    lookup_first(names, &|k| std::env::var(k).ok())
-}
-
 pub async fn get_real_wallet_balance() -> Result<f64, String> {
     let is_testnet = std::env::var("USE_TESTNET")
         .unwrap_or_default()

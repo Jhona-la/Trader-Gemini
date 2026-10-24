@@ -774,21 +774,15 @@ dependencies = [
 name = "data-pipeline"
 version = "0.1.0"
 dependencies = [
- "bincode",
- "bytemuck",
- "csv",
  "fast-float",
  "futures-util",
  "hex",
  "hickory-resolver",
  "hmac",
- "lazy_static",
  "memchr",
  "memmap2 0.9.11",
  "quantum-arena",
- "rand 0.8.6",
  "reqwest",
- "rusqlite",
  "serde",
  "serde_json",
  "sha2",
