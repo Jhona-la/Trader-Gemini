@@ -1486,7 +1486,8 @@ impl RiskEngine {
         //
         // El margen se deriva del nocional objetivo al apalancamiento YA
         // decidido por la matriz (L no depende del margen — :981), de
-        // modo que el riesgo al stop de la orden final ≈ f·C. TODOS los
+        // modo que la pérdida al stop de la orden final, CON la fricción
+        // de ida y vuelta (CL-159), ≈ f·C. TODOS los
         // floors downstream (viabilidad D-750, rescate de nocional
         // mínimo, fee_impact LH-02, invariantes) se aplican IGUAL sobre
         // este margen. Sin evidencia (n < mínimo, p̂ degenerado, PF ≤ 0):
@@ -1591,9 +1592,26 @@ impl RiskEngine {
         } else {
             continuous_sl
         };
+        // CL-159: la pérdida al tocar el stop es N·(stop_real + roundtrip_fee),
+        // no N·stop_real. f es una fracción de Kelly de pérdida NETA: b sale
+        // del PF, y el PF suma PnL neto de comisiones (god-engine-core
+        // acumula `net_trade_pnl` en gross_wins/gross_losses). Con el divisor
+        // sin fricción la pérdida al stop era f·C·(1 + c/SL): 1,29·f con
+        // SL 0,5 % y c 14,5 pb, un 0,645 de Kelly en vez del ½ declarado; la
+        // caída de falsación d* (drawdown.rs, válida con c ≤ ½) se rebasaba
+        // con probabilidad ≈ 12 % en vez del 5 % (24 % en el suelo de
+        // fricción de la geometría, c = 0,65·SL). Es la misma l = (SL + c)/SL
+        // del freno duro y de la medida D-744 (abajo). El carry de funding no
+        // entra: es un coste esperado sobre τ, no se pierde al tocar el stop.
         let mut lh04_f_realizado = 0.0_f64;
         if lh04_f_efectiva > 0.0 && dynamic_leverage >= 1.0 {
-            let nocional_obj = lh04_f_efectiva * allocated_capital / stop_real;
+            let nocional_obj = crate::kelly_envelope::nocional_por_riesgo(
+                lh04_f_efectiva,
+                allocated_capital,
+                stop_real,
+                roundtrip_fee,
+            )
+            .unwrap_or(0.0);
             let margen_obj = nocional_obj / dynamic_leverage;
             if margen_obj.is_finite() && margen_obj > 0.0 {
                 // F1-086 (Ola Ω190): Desacoplamiento del recorte erróneo de margen P1.
@@ -1610,11 +1628,12 @@ impl RiskEngine {
                 // acotado por capacidad y liquidez real downstream vía `resolve_margin_cap_limits`
                 // y `available_margin_headroom` (Sol A2).
                 final_margin = margen_obj;
-                // F-A5 / F1-086: riesgo al stop que este dimensionado realiza, en
-                // fracción del capital asignado, antes de rescates de nocional mínimo y
-                // de techos de liquidez downstream.
+                // F-A5 / F1-086 / CL-159: pérdida al stop (con la fricción) que este
+                // dimensionado realiza, en fracción del capital asignado, antes de
+                // rescates de nocional mínimo y de techos de liquidez downstream.
                 lh04_f_realizado = if allocated_capital > 0.0 {
-                    final_margin * dynamic_leverage * stop_real / allocated_capital
+                    final_margin * dynamic_leverage * (stop_real + roundtrip_fee)
+                        / allocated_capital
                 } else {
                     0.0
                 };
@@ -1907,13 +1926,15 @@ impl RiskEngine {
         }
 
         // F1-086 (Ola Ω190): Publicar el riesgo realmente realizado por la orden
-        // emitida (`safe_vol · safe_lev · stop_real / allocated_capital`) en el
+        // emitida (`safe_vol · safe_lev · (stop_real + roundtrip_fee) /
+        // allocated_capital`, CL-159: la pérdida al stop con la fricción) en el
         // registro omnisciente `lh04_f_realizado`. Si la orden fue recortada
         // downstream por límite de margen o colchón del portfolio (Sol A2),
         // `lh04_f_realizado` refleja la fracción real de capital que se arriesga al
         // stop, sin mentir publicando f_objetivo cuando el colateral ejecutado fue menor.
         if lh04_f_efectiva > 0.0 && allocated_capital > 0.0 {
-            let f_realizado_final = (safe_vol * safe_lev * stop_real / allocated_capital)
+            let f_realizado_final = (safe_vol * safe_lev * (stop_real + roundtrip_fee)
+                / allocated_capital)
                 .min(lh04_f_efectiva);
             arena
                 .registry

@@ -511,6 +511,36 @@ impl RiskEnvelope {
     }
 }
 
+/// CL-159 — PASO 5 DE LA CADENA COMO FUNCIÓN ÚNICA: el nocional cuya pérdida
+/// al stop es exactamente la fracción `fraccion` del capital `capital`.
+///
+/// Una orden de nocional N que toca su stop pierde N·(d + c): la distancia
+/// relativa d y la fricción de ida y vuelta c (`tp_sl::roundtrip_friction`:
+/// dos comisiones taker y dos deslizamientos; la misma l = (d + c)/d del
+/// freno duro y de la medida D-744). Igualar esa pérdida a f·C da
+/// N = f·C/(d + c). Con c = 0 es exactamente f·C/d. El carry de funding NO
+/// entra: es un coste esperado sobre τ, no se realiza al tocar el stop.
+///
+/// None si f, C o d no son finitos y positivos, si c no es finito o es
+/// negativo, o si el cociente no es representable. Sin pisos ni rescates:
+/// el mínimo del exchange lo juzga quien emite la orden (D-750).
+#[inline]
+pub fn nocional_por_riesgo(fraccion: f64, capital: f64, stop: f64, friccion: f64) -> Option<f64> {
+    if !(fraccion.is_finite()
+        && fraccion > 0.0
+        && capital.is_finite()
+        && capital > 0.0
+        && stop.is_finite()
+        && stop > 0.0
+        && friccion.is_finite()
+        && friccion >= 0.0)
+    {
+        return None;
+    }
+    let nocional = fraccion * capital / (stop + friccion);
+    (nocional.is_finite() && nocional > 0.0).then_some(nocional)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -803,5 +833,64 @@ mod tests {
         let fresh_env = RiskEnvelope::new();
         let (_cold_lev, cold_operable) = fresh_env.max_leverage_spectral(13.0, 0.01, 5.0, 1.64, 10.0, 1.25, 0.30);
         assert!(!cold_operable, "Cuenta en frío bajo régimen caótico debe vetar exploración");
+    }
+
+    /// CL-159: la pérdida al stop del nocional es f·C con la fricción dentro;
+    /// sin fricción es bit a bit el f·C/d de antes (LH-04 hasta CL-159).
+    #[test]
+    fn cl159_nocional_por_riesgo_iguala_la_perdida_al_stop_a_f_por_c() {
+        for &(f, capital, stop, friccion) in &[
+            (0.0099, 1_000.0, 0.07746, 0.00082),
+            (0.1304, 1_000.0, 0.01, 0.00082),
+            (0.0913, 13.0, 0.005, 0.00145),
+            (0.25, 1e9, 0.0005, 0.05),
+        ] {
+            let n = nocional_por_riesgo(f, capital, stop, friccion);
+            assert!(n.is_some(), "entradas válidas: {f} {capital} {stop} {friccion}");
+            let n = n.unwrap_or(f64::NAN);
+            let presupuesto = f * capital;
+            assert!(
+                (n * (stop + friccion) - presupuesto).abs() <= 4.0 * f64::EPSILON * presupuesto,
+                "N·(d + c) = f·C: {} vs {presupuesto}",
+                n * (stop + friccion)
+            );
+            assert!(n < presupuesto / stop, "la fricción reduce el nocional");
+            assert_eq!(
+                nocional_por_riesgo(f, capital, stop, 0.0).map(f64::to_bits),
+                Some((f * capital / stop).to_bits()),
+                "con c = 0 es exactamente f·C/d"
+            );
+        }
+    }
+
+    #[test]
+    fn cl159_nocional_por_riesgo_decrece_con_la_friccion_y_escala_con_la_moneda() {
+        let mut previo = f64::INFINITY;
+        for friccion in [0.0, 0.0001, 0.001, 0.01, 0.10, 1.0] {
+            let n = nocional_por_riesgo(0.05, 100.0, 0.01, friccion).unwrap_or(f64::NAN);
+            assert!(n < previo, "c = {friccion}: {n} ≥ {previo}");
+            previo = n;
+        }
+        let base = nocional_por_riesgo(0.05, 100.0, 0.01, 0.001).unwrap_or(f64::NAN) / 100.0;
+        assert!(base.is_finite() && base > 0.0, "base: {base}");
+        for k in [0.01, 1.0, 10.0, 1000.0] {
+            let n = nocional_por_riesgo(0.05, 100.0 * k, 0.01, 0.001).unwrap_or(f64::NAN);
+            assert!((n / (100.0 * k) - base).abs() <= 1e-12 * base, "k = {k}");
+        }
+    }
+
+    #[test]
+    fn cl159_nocional_por_riesgo_rechaza_entradas_invalidas() {
+        for bad in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY, -1.0, 0.0] {
+            assert_eq!(nocional_por_riesgo(bad, 100.0, 0.01, 0.001), None);
+            assert_eq!(nocional_por_riesgo(0.05, bad, 0.01, 0.001), None);
+            assert_eq!(nocional_por_riesgo(0.05, 100.0, bad, 0.001), None);
+            if bad != 0.0 {
+                assert_eq!(nocional_por_riesgo(0.05, 100.0, 0.01, bad), None);
+            }
+        }
+        assert!(nocional_por_riesgo(0.05, 100.0, 0.01, 0.0).is_some(), "c = 0 es válido");
+        assert_eq!(nocional_por_riesgo(0.25, f64::MAX, f64::MIN_POSITIVE, 0.0), None);
+        assert_eq!(nocional_por_riesgo(0.05, 100.0, f64::MAX, f64::MAX), None);
     }
 }

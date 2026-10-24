@@ -3,7 +3,8 @@
 //! LLEVA, no con la curva genómica `sl_at_tau`.
 //!
 //! Teoría que se prueba. LH-04 define el tamaño por el riesgo al stop:
-//! nocional = f·C/SL, de modo que si el stop se toca se pierde exactamente
+//! nocional = f·C/(SL + c) desde CL-159 (c = fricción de ida y vuelta; antes
+//! f·C/SL), de modo que si el stop se toca se pierde exactamente
 //! f·C (hasta el tope de ruina). Hasta F-A5 el divisor era `sl_at_tau(τ)`,
 //! una curva del genoma sin relación con el stop ATR-difusivo que la orden
 //! lleva (`expected_loss` = k·ATR·(τ/τ_ref)^H), así que el riesgo realizado
@@ -81,7 +82,9 @@ fn intencion() -> SignalIntent {
 struct Medida {
     f_objetivo: f64,
     f_realizado: f64,
-    /// nocional·stop/C de la orden EMITIDA.
+    /// nocional·stop/C de la orden EMITIDA, sin la fricción. En este fixture
+    /// c/SL ≤ 2,8 % (ATR 0,5) y cabe en las bandas de ±5 %; la identidad exacta con la
+    /// fricción la prueba cl159_lh04_friccion_al_stop_contract.rs.
     f_emitido: f64,
     stop: f64,
     capital: f64,

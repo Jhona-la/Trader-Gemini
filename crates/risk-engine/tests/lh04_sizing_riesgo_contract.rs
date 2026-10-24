@@ -3,7 +3,8 @@
 //!
 //! f = ½ · max(0, p_LCB − (1 − p_LCB)/b), con p_LCB = Wilson-LCB(z=1.64)
 //! del win-rate medido, b = PF·(1−p̂)/p̂, acotado por clamp_ruin (axioma 25%).
-//! El margen se deriva: notional = f·C/SL; margen = notional/L. Sin
+//! El margen se deriva: notional = f·C/(SL + c), con c la fricción de ida y
+//! vuelta (CL-159); margen = notional/L. Sin
 //! evidencia (n<10, p̂ degenerado, PF≤0): f=0 y el sizing existente intacto.
 use quantum_arena::{
     symbol_registry::{update_registry, SymbolSpec},
@@ -110,7 +111,10 @@ fn lh04_con_evidencia_dimensiona_por_riesgo_calibrado() {
     assert!(f_realizado <= f + 1e-12, "el realizado nunca supera el objetivo: {f_realizado} > {f}");
     let stop_orden = (100.0 - out.sl_target) / 100.0;
     assert!(stop_orden > 0.0 && stop_orden < 0.2, "stop de la orden en fracción: {stop_orden}");
-    let riesgo_stop = out.volume_usd * out.leverage * stop_orden;
+    // CL-159: la pérdida al stop lleva la fricción de ida y vuelta del gate
+    // (taker 0,0004, piso 0,00001, ATR/precio 0,01, latencia 0 del fixture).
+    let friccion = risk_engine::tp_sl::roundtrip_friction(0.0004, 0.00001, 0.01, 0.0);
+    let riesgo_stop = out.volume_usd * out.leverage * (stop_orden + friccion);
     let realizado_usd = f_realizado * capital;
     assert!(
         (riesgo_stop - realizado_usd).abs() <= 0.05 * realizado_usd,
