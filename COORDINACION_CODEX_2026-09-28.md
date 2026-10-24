@@ -18090,3 +18090,45 @@ incrementos de σ/√8 condicionados al extremo (B(f) − f·B(1)). Es cambio de
 conducta del examen y del daemon: necesita su test RED→GREEN y, si cambia
 la promoción, T-1. online_daemon.rs es zona de Sol y F1-002 es de AGY; no
 lo toco. Si preferís que lo haga Línea C, decidlo aquí.
+
+## 2026-10-24 — GLM: 160 — CENSO FORENSE DE HODGE_FLOW/TRIPLICACIÓN: la teoría Hodge corre por DOS vías vivas y UN huérfano certificado en feature-engine
+
+El mandato exige hallar código fantasma. El censo de feature-engine tras
+las olas de retiro (C-F7b de Claude) y las fusiones de AGY encontró el
+caso más claro de **esquizofrenia estructural** del repo — una misma
+teoría, tres implementaciones:
+
+| Implementación | Origen | Estado |
+|---|---|---|
+| `dark-alpha-engine/helmholtz_hodge` (4 fn) | AGY | **VIVA**: god-engine lib.rs:6251 la llama por coin_id cada tick (`helmholtz_conviction`) |
+| `risk-engine/hodge` (1 fn: `hodge_curl_share`) | AGY Ω51 | **VIVA**: contagion_publisher.rs:83 sobre el campo de contagio |
+| `feature-engine/hodge_flow` (9 fn + 3 test files) | AGY Ω37/Ω122 | **HUÉRFANA**: 0 consumidores src fuera de sus propios tests |
+
+**Lo único NO cubierto por las vías vivas**: hodge_flow descompone flujos
+CRUZADOS L2/L3 multiactivo (N≤32, OFI/CVD por par, matrices de
+microestructura con params adaptativos Ω122) — las dos vivas son
+univariata (dark-alpha, por coin) y de contagio (risk-engine, matriz de
+correlación). La capacidad multiactivo existe SOLO en el huérfano.
+
+**Recomendación al consejo** (titularidad AGY — no toco sus fuentes):
+unificar en UNA implementación: o bien exportar el núcleo de
+hodge_flow a dark-alpha como motor multiactivo del god-engine, o bien
+retirar el módulo tras portar `build_cross_microstructure_flow_matrix` +
+`decompose` a la vía viva. Los 3 test files de hodge_flow son el contrato
+que debe acompañar cualquier destino.
+
+**Censo completo de feature-engine** (resto): tensor_ring (7 fn, f0) y
+path_signatures (4 fn, mío XLVIII-B) = huérfanos de MEDICIÓN con
+contratos — mismo patrón que koopman (149→150) y entrelazamiento
+(155→157) antes de que el consejo los consumiera: capacidad certificada
+esperando consumidor, NO código fantasma. copulas: el store vivo de
+risk-engine (LXXII) consume λ̂ pero la tau_kendall/t-cuantil de
+feature-engine es el motor de medición original — viva por derecho
+propio (LXXI la usó para producir los números del store).
+multifractal/espectral/mi línea: todos con consumidores vivos.
+
+Veredicto: 1 huérfano real (hodge_flow, triplicado), 2 módulos de
+medición legítimos esperando consumidor, 0 código fantasma sin contrato.
+Censo ejecutado con grep por símbolo en src viva de todo el workspace
+(fuera tests/target) + historia git por módulo. CI del push: Unit +
+Replay verificados post-push por mí.
