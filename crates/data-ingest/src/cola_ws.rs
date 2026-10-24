@@ -77,20 +77,45 @@ pub fn encolar(
 
 /// Conexiones del lector. La primera no es una reconexión: anunciarla
 /// reiniciaba los motores recién calentados.
-#[derive(Debug, Default)]
+///
+/// I-1b (Línea I): el host abre un lector por categoría de streams. Sólo el
+/// público (libro y trades) anuncia sus reconexiones: el reinicio que
+/// provoca el centinela (motores y guardia de secuencia del libro, D-610)
+/// depende de la continuidad del libro. Una reconexión del lector de
+/// mercado (velas y liquidaciones) no rompe esa continuidad.
+#[derive(Debug)]
 pub struct ConexionesWs {
     establecidas: u64,
+    anuncia: bool,
+}
+
+impl Default for ConexionesWs {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl ConexionesWs {
+    /// Lector que anuncia sus reconexiones (el público).
     pub fn new() -> Self {
-        Self::default()
+        Self { establecidas: 0, anuncia: true }
     }
 
-    /// Registra una conexión nueva; `true` si hubo otra antes (reconexión).
+    /// Lector que nunca anuncia reconexiones (el de mercado).
+    pub fn sin_anuncio() -> Self {
+        Self { establecidas: 0, anuncia: false }
+    }
+
+    /// Conexiones establecidas desde el arranque.
+    pub fn establecidas(&self) -> u64 {
+        self.establecidas
+    }
+
+    /// Registra una conexión nueva; `true` si hubo otra antes (reconexión) y
+    /// este lector anuncia sus reconexiones.
     pub fn establecida(&mut self) -> bool {
-        self.establecidas += 1;
-        self.establecidas > 1
+        self.establecidas = self.establecidas.saturating_add(1);
+        self.anuncia && self.establecidas > 1
     }
 }
 
@@ -142,5 +167,18 @@ mod tests {
         assert!(!c.establecida());
         assert!(c.establecida());
         assert!(c.establecida());
+    }
+
+    #[test]
+    fn i1b_el_lector_de_mercado_nunca_anuncia_reconexion() {
+        let mut c = ConexionesWs::sin_anuncio();
+        assert!(!c.establecida());
+        assert!(!c.establecida());
+        assert!(!c.establecida());
+        assert_eq!(c.establecidas(), 3);
+        // Default conserva la conducta de `new` (anuncia).
+        let mut d = ConexionesWs::default();
+        assert!(!d.establecida());
+        assert!(d.establecida());
     }
 }
