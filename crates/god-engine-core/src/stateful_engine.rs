@@ -273,17 +273,7 @@ impl StatefulEngine {
             koopman_modulo: f32::NAN,
             koopman_angulo: f32::NAN,
             koopman_bifurcacion: f32::NAN,
-            entrelazamiento: feature_engine::entrelazamiento::EntrelazamientoStreaming::new(
-                8,
-                feature_engine::entrelazamiento::ModoBinarizacion::Signo,
-                256,
-            ).unwrap_or_else(|_| {
-                feature_engine::entrelazamiento::EntrelazamientoStreaming::new(
-                    4,
-                    feature_engine::entrelazamiento::ModoBinarizacion::Signo,
-                    64,
-                ).expect("fallback streaming entrelazamiento")
-            }),
+            entrelazamiento: feature_engine::entrelazamiento::EntrelazamientoStreaming::default(),
             quantum_delta_s: f32::NAN,
             quantum_entropy: f32::NAN,
             multifractal: feature_engine::MultiScaleHurstConfluence::new(),
