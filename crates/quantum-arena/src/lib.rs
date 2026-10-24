@@ -15,7 +15,6 @@ pub mod position;
 pub mod protection_health;
 pub mod quantum_phase;
 pub mod state;
-pub mod state_continuity;
 pub mod symbol_ranker_engine;
 pub mod symbol_registry;
 pub mod symbols;

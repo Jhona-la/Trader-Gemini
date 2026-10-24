@@ -234,7 +234,6 @@ REGLAS = {
     ],
     "C-F8": [
         "crates/god-engine-core/src/{orchestrator.rs, direction_diag.rs, ml_coverage.rs}",
-        "crates/quantum-arena/src/state_continuity.rs",
         "src/{dashboard.rs, bin/dashboard.rs, dark_alpha_router.rs, dark_alpha_sniffer.rs}",
         "crates/storage-engine/src/{mmap_bus.rs, ledger.rs}",
         "crates/os-guardian/src/",
