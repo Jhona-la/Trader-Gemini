@@ -1,4 +1,5 @@
-//! OPEN diagnostics plus FMT-175 regression checks repaired in round XVIII.
+//! OPEN diagnostics. The FMT-175 regression checks repaired in round XVIII moved to
+//! execution-engine/tests/order_quantity_contract.rs (RET-34b, F325).
 //! A passing OPEN diagnostic is not remediation.
 use quantum_arena::{
     symbol_registry::{self, SymbolSpec},
@@ -37,26 +38,6 @@ fn open_debt_universe_rotation_rebinds_positions_while_cached_host_ids_do_not() 
         symbol_registry::try_symbol(startup_ids["XVIIAAAUSDT"]).as_deref(),
         Some("XVIICCCUSDT")
     );
-}
-
-#[test]
-fn regression_order_validation_rejects_nonfinite_numbers() {
-    let s = spec("XVIIAAAUSDT");
-    assert!(s.validate_order(1.0, f64::NAN).is_err());
-    assert!(s.validate_order(f64::NAN, 100.0).is_err());
-}
-
-#[test]
-fn regression_rounding_preserves_lot_count_and_never_increases_quantity() {
-    let s = spec("XVIIAAAUSDT");
-    let q = s.validate_order(0.06, 100.0).unwrap();
-    // XVIII removes decimal-count rounding, which previously gave 0.1.
-    assert_eq!(q, 0.05);
-    let mut s = s;
-    s.step_size = 0.025;
-    s.min_qty = 0.025;
-    let q = s.validate_order(0.09, 100.0).unwrap();
-    assert_eq!(q, 3.0 * 0.025);
 }
 
 #[test]
