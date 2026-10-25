@@ -408,7 +408,7 @@ dice su lote):
 | #144 | N12, la fricción en la pérdida al stop (CL-172: la viabilidad de la orden mínima; CL-173: el tope de ruina F1-092; RV12-T, RV12-docs); f_min_ejecutable de la envolvente queda para el dueño |
 | #145 | N4 (RET-N4: Position::entry_tau_ms(), sin llamadores), N2 (RET-N2: ewma_price_at, scale_gain_at y volatility_at, tras la regla 2), N9 (CL-174: sin VPIN medido la sombra TrendRunner se abstiene), N10 (CL-175: la presión adversarial de Nash es el cvpin medido), N15 (CL-176: la escalada desnuda reporta el fallo de la purga de brackets); más RV13-docs; abre N10b, N15, N16 y N17 |
 | #146 | N5, la cuota del exchange para las salidas (CL-177: uso por contador con su sello y sin bajar por una respuesta tardía; CL-178: las salidas sin consulta respetan el freno 429/418 y el barrido no purga dos veces; CL-179: las críticas pasan hasta el límite del exchange con las críticas en vuelo contadas); más N5-docs; abre N18 a N22; y sus dos revisiones antes de fusionar (CL-180: el máximo exacto de las cabeceras vigentes, con el sello futuro acotado por la siguiente cabecera; CL-181: un contador sin coste no frena por lo que está en vuelo; CL-182: la cabecera se registra con el cupo vivo; CL-183: en X-026 un re-snapshot sin respuesta no da la posición por plana; RV14-c, RV14-T, RV14-docs, RV15-c, RV15-docs) |
-| #147 | N20, peticiones fuera de la cuota (CL-184: exchangeInfo dentro del freno; CL-185: un exchangeInfo sin filtros no borra la caché; CL-186: un símbolo ausente de un exchangeInfo completo no se vuelve a descargar; CL-187: modo hedge y hora dentro del freno, con la cabecera del modo registrada; CL-188: un freno por ejecutor compartido por los clones de su cliente; CL-189: la hora del NTP y el listenKey miran y arman el freno; CL-190: la cancelación de la pierna hermana mira el freno; CL-191: sin el último expect de producción del ejecutor); más N20-docs; abre N23 a N39; y sus cuatro revisiones antes de fusionar (CL-192: el freno no deja un símbolo en la caché negativa; CL-193: el 2xx del NTP y del listenKey reinicia la racha de 429; CL-194: su 429 ya registrado no cuenta dos veces; CL-195: la caché negativa decide por la descarga de esa llamada; RV16-T a RV19-T, RV16-docs) |
+| #147 | N20, peticiones fuera de la cuota (CL-184: exchangeInfo dentro del freno; CL-185: un exchangeInfo sin filtros no borra la caché; CL-186: un símbolo ausente de un exchangeInfo completo no se vuelve a descargar; CL-187: modo hedge y hora dentro del freno, con la cabecera del modo registrada; CL-188: un freno por ejecutor compartido por los clones de su cliente; CL-189: la hora del NTP y el listenKey miran y arman el freno; CL-190: la cancelación de la pierna hermana mira el freno; CL-191: sin el último expect de producción del ejecutor); más N20-docs; abre N23 a N39; y sus cinco revisiones antes de fusionar (CL-192: el freno no deja un símbolo en la caché negativa; CL-193: el 2xx del NTP y del listenKey reinicia la racha de 429; CL-194: su 429 ya registrado no cuenta dos veces; CL-195: la caché negativa decide por la descarga de esa llamada; RV16-T a RV20-T, RV16-docs) |
 
 **Hecho por otros agentes**: lote 9 entero (Sol, d18b3735), lote 45 entero
 (Codex RB, 906a9c6a), parte del 7 (Sol retiró el bin main.rs de
@@ -1272,7 +1272,13 @@ un escéptico por lote listo):
     de conducta) y una prueba con un servidor local recorre el 429, el 418
     y el 503 de verdad (cuatro mutaciones en rojo). Refutado: una segunda
     lectura del freno anidada en el paso 5 esquiva la guarda de texto, pero
-    el ejecutor sólo lee el freno por `check_backoff`.
+    el ejecutor sólo lee el freno por `check_backoff`. Quinta, sólo de
+    RV19-T (2 confirmados, bajos, y 3 refutados): RV20-T, ninguna prueba
+    servía el reintento, y quedarse con el primer error perdía un 429/418
+    del reintento (el servidor local da ahora una respuesta por conexión y
+    las cuenta); y la prueba local podía colgar el binario con un proxy del
+    sistema que no deje pasar el loopback (ahora tiene plazo y el servidor
+    se aborta).
 - N21 (de la tanda 13): las respuestas de error tiran sus cabeceras de uso,
   así que tras un 4xx/5xx el uso no se actualiza. En client.rs:296, :420 y
   :508 extract_limits sólo corre en la rama 2xx; en :355
