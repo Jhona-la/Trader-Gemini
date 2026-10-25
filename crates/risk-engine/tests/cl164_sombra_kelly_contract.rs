@@ -13,6 +13,11 @@
 //! la marca y deja de sumarle cierres. El libro suma además R y R² en
 //! unidades de stop, y `informe_sombra_kelly` lo publica (el forense lo
 //! imprime como `SOMBRA_KELLY`).
+//!
+//! CL-168: en el informe, el `logw` de una regla arruinada sale como null
+//! (JSON no tiene −∞) y cualquier número no finito también; antes salía la
+//! suma congelada hasta la ruina (0 si se arruinaba en el primer cierre), que
+//! la hacía comparable con las vivas.
 
 use quantum_arena::{
     symbol_registry::{update_registry, SymbolSpec},
@@ -203,8 +208,17 @@ fn cl166_el_informe_publica_el_libro() {
     println!("observado: {linea}");
     assert!(linea.starts_with("{\"coin\":0,\"n\":2,"), "{linea}");
     assert!(linea.contains("\"ruina_lh04\":true"), "el hueco arruina a LH-04: {linea}");
-    let logw = clave(&arena, "sombra_kelly_logw_lh04").unwrap_or(f64::NAN);
-    assert!(linea.contains(&format!("\"logw_lh04\":{logw:.6}")), "{linea}");
+    // CL-168: la log-riqueza de una regla arruinada es −∞; el informe la
+    // publica como null, no como la suma congelada hasta la ruina.
+    assert!(linea.contains("\"logw_lh04\":null"), "{linea}");
+    let vivas: Vec<&str> = ["legado", "min"]
+        .into_iter()
+        .filter(|r| clave(&arena, &format!("sombra_kelly_ruina_{r}")).unwrap_or(0.0) == 0.0)
+        .collect();
+    for regla in vivas {
+        let logw = clave(&arena, &format!("sombra_kelly_logw_{regla}")).unwrap_or(0.0);
+        assert!(linea.contains(&format!("\"logw_{regla}\":{logw:.6}")), "{regla} viva: {linea}");
+    }
     let r_media = clave(&arena, "sombra_kelly_suma_r").unwrap_or(f64::NAN) / 2.0;
     assert!(linea.contains(&format!("\"r_media\":{r_media:.6}")), "{linea}");
     assert!(linea.ends_with('}') && !linea.contains("NaN") && !linea.contains("inf"), "{linea}");

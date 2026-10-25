@@ -402,24 +402,42 @@ impl RiskEngine {
     /// se arruinó. `None` sin cierres. El forense la imprime al terminar
     /// (`SOMBRA_KELLY`); cada mitad del forense es una corrida aparte
     /// (`FORENSIC_START_TICK`, `MAX_TICKS`) y trae su propio libro.
+    ///
+    /// CL-168: la log-riqueza de una regla arruinada es −∞ y sale como null
+    /// (JSON no tiene ±∞ ni NaN), igual que cualquier número no finito. La
+    /// suma congelada hasta la ruina sigue en el registro, pero el informe no
+    /// la publica como si fuera comparable con la de una regla viva.
     pub fn informe_sombra_kelly(arena: &GlobalArena, coin_id: usize) -> Option<String> {
         let leer = |clave: &str| arena.registry.get_for_coin_or(coin_id, clave, 0.0);
+        let numero = |x: f64| {
+            if x.is_finite() {
+                format!("{x:.6}")
+            } else {
+                "null".to_string()
+            }
+        };
         let n = leer("sombra_kelly_n");
         if !(n.is_finite() && n >= 1.0) {
             return None;
         }
         let mut linea = format!(
-            "{{\"coin\":{},\"n\":{},\"r_media\":{:.6},\"r2_media\":{:.6}",
+            "{{\"coin\":{},\"n\":{},\"r_media\":{},\"r2_media\":{}",
             coin_id,
             n,
-            leer("sombra_kelly_suma_r") / n,
-            leer("sombra_kelly_suma_r2") / n
+            numero(leer("sombra_kelly_suma_r") / n),
+            numero(leer("sombra_kelly_suma_r2") / n)
         );
         for regla in ["lh04", "legado", "min"] {
+            let ruina = leer(&format!("sombra_kelly_ruina_{regla}")) > 0.0;
+            let logw = if ruina {
+                f64::NEG_INFINITY
+            } else {
+                leer(&format!("sombra_kelly_logw_{regla}"))
+            };
             linea.push_str(&format!(
-                ",\"logw_{regla}\":{:.6},\"ruina_{regla}\":{}",
-                leer(&format!("sombra_kelly_logw_{regla}")),
-                leer(&format!("sombra_kelly_ruina_{regla}")) > 0.0
+                ",\"logw_{regla}\":{},\"ruina_{regla}\":{}",
+                numero(logw),
+                ruina
             ));
         }
         linea.push('}');
