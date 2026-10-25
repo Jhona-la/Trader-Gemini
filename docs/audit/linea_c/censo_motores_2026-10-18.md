@@ -1541,7 +1541,14 @@ un escéptico por lote listo):
   (c) el -1106 real de Binance podría escribir el parámetro en minúsculas
   («'reduceonly' sent when not required»): `modo_rechazado` busca
   «reduceOnly» y entonces no reintentaría en el otro modo. Sin la
-  documentación (PC del dueño) no se cambia; decidir con ella.
+  documentación (PC del dueño) no se cambia; decidir con ella. (d) El plazo
+  total que vence mientras conecta cuenta como salida (reqwest 0.11 no dice
+  en qué fase venció). En Windows una conexión rechazada tarda unos 2 s en
+  fallar, más que los 1,2 s de las órdenes (lo vio la CI de la tanda 16):
+  con el exchange inalcanzable cada crítica fallida deja su coste como
+  perdido hasta que caduca su ventana. Cuenta de más, del lado seguro;
+  candidato si molesta: un `connect_timeout` menor que el plazo total, para
+  que esa fase falle como conexión.
 - N42 (de la tanda 16, Línea I): el recuento de rechazos de la escalada
   B3.5b compara un acumulado de vida (`protection_health::rejections_of`,
   BRACKET_REJECTIONS nunca se pone a cero) con una foto que se borra cuando

@@ -872,7 +872,11 @@ fn error_de_orden(
 
 /// N24 (CL-201): si una petición fallida pudo llegar al exchange. No llega si
 /// no se pudo construir ni si falló al conectar (TCP, TLS o proxy, antes de
-/// escribir nada); un timeout o una conexión cortada después sí pudo.
+/// escribir nada); un timeout o una conexión cortada después sí pudo. El plazo
+/// total que vence mientras conecta también cuenta como salida (reqwest 0.11
+/// no dice en qué fase venció): en Windows una conexión rechazada tarda unos
+/// 2 s en fallar, más que los 1,2 s de las órdenes, y cuenta así de más, del
+/// lado seguro (fila N41 del censo).
 fn salio(e: &reqwest::Error) -> bool {
     !(e.is_connect() || e.is_builder())
 }
@@ -1366,6 +1370,10 @@ mod tests_n23 {
         });
         assert!(direccion.is_some(), "puerto ligado sin escuchar");
         if let Some(direccion) = direccion {
+            // Windows tarda unos 2 s en dar por rechazada la conexión: con el
+            // plazo de 500 ms vencería el plazo total, que cuenta como salida
+            // (`salio`). Con 5 s llega el rechazo, como en cl201.
+            let c = BinanceClient::with_timeout("k".into(), true, Duration::from_secs(5));
             let url = format!("http://{direccion}/fapi/v1/order{CONSULTA}");
             for (k, nombre) in TRANSPORTES.iter().enumerate() {
                 let r = tokio::time::timeout(Duration::from_secs(20), enviar(&c, k, &url)).await;
