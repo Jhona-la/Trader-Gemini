@@ -367,7 +367,7 @@ Cada tema se presenta como una sola tarjeta de decisión. En todos los temas, la
 El censo es una foto del 2026-10-18. Esta sección registra lo ejecutado y
 lo que cambió desde entonces; las filas del TSV no se reescriben.
 
-**Fusionado** (un commit por lote, sin T-1 salvo CL-159 y la tanda 7; sin
+**Fusionado** (un commit por lote, sin T-1 salvo CL-159, la tanda 7 y la 11; sin
 cambio de conducta salvo RET-10b, RET-41, RET-51a, CL-154, RET-13a (CL-157,
 inerte con entradas validadas) y RET-27b (CL-158, inalcanzable), que cambian
 diagnóstico o conducta inalcanzable; RET-44a (CL-156), que cambia la
@@ -382,7 +382,10 @@ telemetría, y la tanda 9: CL-167 cambia la conducta sólo con un bias
 activo corrupto y f = 0, CL-168 es el formato del informe y CL-169 la
 lectura del libro de la sombra y de su informe (telemetría; sólo cambia
 con un acumulado no finito), y la tanda 10: CL-170 y CL-171 completan esa
-lectura (telemetría, sólo con un contador o una marca de ruina corruptos); como
+lectura (telemetría, sólo con un contador o una marca de ruina corruptos), y
+la tanda 11 (fila N12): CL-172 y CL-173 cambian la conducta sólo junto a la
+frontera del tope de riesgo por evento (T-1 14/144, la misma lista que
+main); como
 dice su lote):
 
 | PR | Lotes |
@@ -400,6 +403,7 @@ dice su lote):
 | #140 | N13, correcciones de la revisión de la tanda 7 (CL-165: LH-04 valida el bias crudo y las entradas antes de toda clase; CL-166: la sombra Kelly congela la regla arruinada, suma R y R² y el forense la imprime); más RV7-T y RV7-docs; abre N14 (banda del gen 33) |
 | #142 | N13, correcciones de la revisión de la tanda 8 (CL-167: el bias activo se valida también con f = 0; CL-168: el informe publica null como log-riqueza de una regla arruinada); más RV8-T y RV8-docs, y las de su propia revisión antes de fusionar (CL-169: el libro de la sombra lee sin respaldo y un acumulado no finito sale null; RV9-T, RV9-docs) |
 | #143 | N13, precisiones de la revisión de las correcciones del #142 (CL-170: el contador y las marcas de ruina de la sombra también sin respaldo; RV10-T, RV10-docs), y la de su propia revisión antes de fusionar (CL-171: el libro no repara un contador corrupto; RV11-docs) |
+| #144 | N12, la fricción en la pérdida al stop (CL-172: la viabilidad de la orden mínima; CL-173: el tope de ruina F1-092; RV12-T, RV12-docs); f_min_ejecutable de la envolvente queda para el dueño |
 
 **Hecho por otros agentes**: lote 9 entero (Sol, d18b3735), lote 45 entero
 (Codex RB, 906a9c6a), parte del 7 (Sol retiró el bin main.rs de
@@ -709,7 +713,8 @@ un escéptico por lote listo):
   el tope de ruina F1-092 (lib.rs:1820-1837, con expected_loss),
   `capital_regime::orden_viable` (:387, ya en linea_g/vetos.tsv:1129) y
   f_min_ejecutable de max_leverage_spectral (kelly_envelope.rs:322): fila
-  N12. `lh04_f_realizado` cambia de semántica (ahora con la fricción): es
+  N12 (los dos primeros los cierran CL-172 y CL-173 en la tanda 11; el
+  tercero espera al dueño). `lh04_f_realizado` cambia de semántica (ahora con la fricción): es
   F252, decisión del dueño, sin lectores fuera de pruebas. El fix sketch
   de G045 (Línea G) nombraba la API retirada.
 
@@ -779,7 +784,9 @@ un escéptico por lote listo):
   `orden_viable` y f_min_ejecutable (lote 48). Con CL-159, LH-04 dimensiona
   con SL + c y esos tres siguen con SL: admiten más pérdida real de la que
   declaran (un 29 % más con SL 0,5 % y 14,5 pb). Átomo propio con test (AGY es el último
-  autor de F1-092).
+  autor de F1-092). Ejecutada en la tanda 11 (PR #144): CL-172 y CL-173
+  cierran la viabilidad y F1-092; f_min_ejecutable queda para el dueño
+  (ADR-0013, Decisión 5).
 - N13 (no es de esta tanda): main mide en el T-1 14/144 (9,7 %), bajo el
   trinquete de 11,0 %. Bisección por commit con el oráculo de los genes
   10, 33 y 141 (release bajo wine): 24dfc19c8 sensible, primer commit malo
@@ -948,6 +955,39 @@ un escéptico por lote listo):
     escribe 1, con uno válido n + 1 y con otro no escribe nada.
   - RV11-docs: estas precisiones aquí, en MEMORIA, AGENT_SYNC, el buzón y
     el cuerpo del PR #143.
+  Ejecutado en la tanda 11 (PR #144), fila N12 (diseño con un panel de tres
+  diseñadores y un juez; revisión adversarial antes de fusionar: 2 hallazgos
+  leves, 2 refutados):
+  - CL-172: la viabilidad D-750 (`capital_regime::orden_viable`, un solo
+    llamador de producción) recibe `expected_loss + roundtrip_fee`, la
+    pérdida al stop por unidad de nocional con la misma c de LH-04 (CL-159)
+    y de D-744. Ni carry ni MMR. La orden mínima con
+    N_min·SL ≤ tope·C < N_min·(SL + c) pasa de salir a REJ_VIABILIDAD
+    (roja sobre main con SL 63,68 % a 13 USD: 3,2521 USD al stop con un
+    tope de 3,25).
+  - CL-173: el tope de ruina F1-092 es
+    `nocional_por_riesgo(tope, C, stop_real, roundtrip_fee) / L`, la función
+    de LH-04. Una orden de LH-04 sin rescate no se recorta ni en un ulp (su
+    f nunca pasa del tope); muerde sólo tras los rescates (piso ×1,0005,
+    D-130, Sol-A2). Rojo sin el arreglo: con un lote grueso (orden mínima de
+    50 USD a 140 USD) la orden rescatada y la sonda salían con 35,0087 USD
+    al stop y tope 35.
+  - RV12-T: la guarda bit a bit de CL-173 corre con L = 3 (300 USD, SL a
+    69,4), donde la forma ingenua del cociente sí recortaría un ulp (con
+    L = 2 el cociente es exacto y no distinguía nada). Comprobado por
+    mutación: con F1-092 en la forma ingenua la guarda falla.
+  - RV12-docs: ADR-0016 (corrigendum de CL-159 y viñeta D-750), las dos
+    filas de linea_g/vetos.tsv (REJ_VIABILIDAD), esta sección, MEMORIA,
+    AGENT_SYNC y el buzón.
+  - Sitio 3, f_min_ejecutable de `max_leverage_spectral` (host, replay y
+    juez del daemon): NO se toca. Es política de riesgo del dueño
+    (ADR-0013, Decisión 5) y la decisión está en el hilo. Por la réplica
+    del diseño, contar c ahí sólo endurece, pero ensancha ×(1 + c/SL) la
+    ventana no monótona 0 < f < f_min (sin decidir) y puede mover el T-1.
+    Diseño preparado, a la espera de esa decisión: un helper único de c
+    para el gate y el host, el parámetro del stop pasa a ser la pérdida al
+    stop SL + c con el cuerpo intacto, y un solo commit para host, replay y
+    daemon (paridad B3.19).
 - N14 (de la revisión de la tanda 7): la banda del gen 33, [0,1; 1,0], es
   inerte por encima del axioma de ruina (f ≤ 0,25): el 83 % de la banda,
   la línea base (0,55) y los tres genomas guardados (0,8245). Por lectura

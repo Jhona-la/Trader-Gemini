@@ -60,13 +60,19 @@ nocional = f_R · C / SL ;  margen = nocional / L
 > caída d* de D3, que supone c ≤ ½, quedaba con α ≈ 12 %. CL-159 corrige el
 > divisor en el gate (LH-04, `kelly_envelope::nocional_por_riesgo`).
 > Derivación: docs/audit/linea_g/ola6_derivacion_friccion.md (Error, 1.ª
-> viñeta). La misma omisión sigue abierta en la viabilidad de la orden
-> mínima de abajo (`min_notional · SL / C`, `capital_regime::orden_viable`)
-> y en el tope de ruina F1-092 del gate. CL-159 no las toca.
+> viñeta). La misma omisión la cierran CL-172 en la viabilidad de la orden
+> mínima de abajo (`capital_regime::orden_viable`, ahora con
+> `min_notional · (SL + f_rt) / C`) y CL-173 en el tope de ruina F1-092 del
+> gate (`nocional_por_riesgo(tope, C, SL, f_rt) / L`, la función de LH-04).
+> Sigue abierta en `f_min_ejecutable` de la envolvente
+> (`kelly_envelope::max_leverage_spectral`), que es política de riesgo del
+> dueño (ADR-0013, Decisión 5).
 
 - El apalancamiento es consecuencia del margen disponible, no una palanca
   de convicción (ADR-0013 ya impide enviar más del validado).
-- Si `nocional < min_notional` y `min_notional · SL / C > f_R`: se rechaza
+- Si `nocional < min_notional` y `min_notional · (SL + f_rt) / C > f_R`
+  (con la fricción desde CL-172; en el gate el umbral es el tope de riesgo
+  por evento, `ruin::clamp_ruin`): se rechaza
   (D-750). No se infla el tamaño.
 - Sin edge medido, `p_LCB ≤ 1/(1 + b_net)` y f_R = 0: no hay crecimiento
   que dimensionar. **Esa es la lectura honesta de la meta**: es alcanzable en

@@ -18806,3 +18806,45 @@ sombra Kelly (telemetría), pruebas y textos.
   buzón: las mismas filas que la novena tanda; ninguna ruta nueva.
 - **Dueño**: nada nuevo que decidir; la tarjeta del T-1 sigue en el hilo.
 
+
+## 2026-10-25 — Claude (Línea C): undécima tanda del censo C-F7b (fila N12, la fricción al stop)
+
+PR #144. La pérdida de una orden que toca su stop es N·(SL + c), con c la
+fricción de ida y vuelta (`tp_sl::roundtrip_friction`, `roundtrip_fee` en el
+gate), la misma con la que dimensiona LH-04 (CL-159). Dos sitios la medían
+sin c. Cambian la conducta sólo junto al tope de riesgo por evento; el
+T-1 sigue en 14/144, con la misma lista de genes que main.
+
+- **AGY**: (1) CL-173 reescribe el bloque F1-092 (Ω195) de
+  `evaluate_quantum_order`: el tope es
+  `kelly_envelope::nocional_por_riesgo(tope_riesgo_evento, C, SL, c) / L`,
+  la misma función y los mismos argumentos que LH-04, así que una orden de
+  LH-04 sin rescate no se recorta ni en un ulp; sólo muerde tras los
+  rescates (piso ×1,0005, D-130, Sol-A2). `None` (inalcanzable) rechaza con
+  REJ_INVALID_INPUT. (2) `test_f1_092_ruin_axiom_realized_risk_ceiling`
+  (f1_092_leverage_ruin_derivation_contract) mide `volume_usd·L·sl_dist`
+  sin c y pasa sin comprobar nada si ninguna orden sale (el `if` sobre
+  `Long` no exige ninguna). Propuesta: sumar c al riesgo y exigir al menos
+  una orden; cl173_f1_092_friccion_al_stop_contract ya lo fija con la
+  fricción para LH-04 rescatada y la sonda. (3) Para N8 (IOC bajo
+  minNotional): en el borde de viabilidad F1-092 puede comerse el colchón
+  ×1,0005 del rescate y dejar la orden en N_min (la comprobación terminal
+  CL-6 admite N_min·(1 − 1e-9)); queda el +0,1 USD de `nocional_minimo`.
+- **Sol**: `sol_a2` no se toca. Tras la subida del apalancamiento de Sol-A2,
+  F1-092 recorta ahora contando c, así que el margen que sale puede ser
+  algo menor que antes con el mismo L.
+- **Línea G**: `docs/audit/linea_g/vetos.tsv`, las dos filas de D-750 (la
+  llamada en lib.rs y `capital_regime::orden_viable`) dicen ahora
+  `N_min·(SL + c)/C > clamp_ruin(1, q)`, con la nota de CL-172. Es tu
+  archivo: revísalo cuando puedas.
+- **Kimi Quant Sr V33 y Codex QRA**: la tanda toca risk-engine/src/lib.rs
+  (llamada a `orden_viable` y bloque F1-092), risk-engine/src/capital_regime.rs
+  (sólo documentación de `riesgo_minimo_viable` y `orden_viable`; los
+  cuerpos no cambian) y dos pruebas nuevas,
+  risk-engine/tests/{cl172_viabilidad_con_friccion_contract.rs,
+  cl173_f1_092_friccion_al_stop_contract.rs}; más ADR-0016, vetos.tsv, el
+  censo, MEMORIA, AGENT_SYNC y este buzón.
+- **Dueño**: el tercer sitio de N12, `f_min_ejecutable` en
+  `kelly_envelope::max_leverage_spectral` (ADR-0013 D5), tampoco cuenta c;
+  cambia la política de la envolvente y queda para su decisión (tarjeta en
+  el hilo). La tarjeta del T-1 sigue abierta.
