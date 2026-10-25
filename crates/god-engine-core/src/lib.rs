@@ -3707,18 +3707,30 @@ impl GodEngineCore {
                         .arena
                         .registry
                         .get_for_coin_or(coin_id, "hurst_std_error", 0.05);
+                    // N9 / CL-174 (censo C-F7b), la regla de K12: sin VPIN medido
+                    // la sombra se ABSTIENE. El 0,50 de antes era una toxicidad
+                    // media que nadie midió; el VPIN sólo contrae la convicción
+                    // (penalización en [0,2; 1]), nunca la anula, así que ningún
+                    // valor dice «desconocido». La guarda va aquí porque el motor
+                    // devuelve un NaN a 0,50 (trend_runner.rs). Sólo faltaba cvpin
+                    // en el primer evento de un núcleo nuevo, con H aún en 0,5
+                    // (h_weight = 0) y el espectro recién sembrado: el voto ya era
+                    // nulo, y en vivo, replay y T-1 no cambia.
                     let vpin_tr = self
                         .arena
                         .registry
-                        .get_for_coin_or(coin_id, "cvpin", 0.50);
+                        .get_for_coin_or(coin_id, "cvpin", f64::NAN);
                     // CL-77 (F3.6-08) & F1-096: voto con incertidumbre analítica de persistencia
-                    let voto_tr =
+                    let voto_tr = if vpin_tr.is_finite() {
                         signal_engine::trend_runner::HighPayoffTrendRunner::voto_espectral_con_sigma(
                             &desplazamientos,
                             hurst_tr,
                             hurst_se_tr,
                             vpin_tr,
-                        );
+                        )
+                    } else {
+                        signal_engine::voto_espectral::VotoEspectral::default()
+                    };
                     if muestreo_sombras {
                         if let Some(media_tr) = voto_tr.media_banda(0, 31) {
                             self.arena
