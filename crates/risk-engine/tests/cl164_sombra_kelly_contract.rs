@@ -28,6 +28,12 @@
 //! n = 1 sobre las sumas de todos los cierres), y una marca +∞ es ruina para
 //! el libro y para el informe.
 //!
+//! CL-171: CL-170 sólo dejaba quieto un n no finito; uno finito pero
+//! corrupto (0, 0,5, −2) o fraccionario volvía a ser un n válido uno o pocos
+//! cierres después, sobre las sumas de todos los cierres. Ahora el libro y
+//! el informe aceptan sólo un entero finito ≥ 1: cualquier otro n se queda
+//! como está y sale null.
+//!
 //! RV9-T: en el fixture f_lh04 ≈ 0,13 ≤ f_legado = 0,25 (las dos acotadas
 //! por κ = 0,25), así que el mínimo es f_lh04 y un hueco que arruina a LH-04
 //! arruina también al legado y al mínimo. Una regla viva junto a una
@@ -366,3 +372,30 @@ fn cl170_una_marca_de_ruina_corrupta_la_leen_igual_el_libro_y_el_informe() {
     );
 }
 
+
+#[test]
+fn cl171_un_n_finito_corrupto_tampoco_se_repara() {
+    let _serie = SERIE.lock().unwrap_or_else(|e| e.into_inner());
+    for corrupto in [0.0, 0.5, -2.0, 2.5, f64::NEG_INFINITY] {
+        let (arena, medida) = orden_medida();
+        let sl = arena.registry.get_for_coin_or(0, "lh04_stop_real", f64::NAN);
+        RiskEngine::registrar_sombra_kelly(&arena, &medida, -sl);
+        arena.registry.set_for_coin(0, "sombra_kelly_n", corrupto);
+        // −2 volvía a ser un n válido tres cierres después.
+        for cierre in 1..=4 {
+            let linea = RiskEngine::informe_sombra_kelly(&arena, 0);
+            println!("n = {corrupto}, tras {cierre} cierre(s): {linea:?}");
+            let linea = linea.unwrap_or_else(|| panic!("un n corrupto no borra la línea de la moneda"));
+            assert!(
+                linea.starts_with("{\"coin\":0,\"n\":null,\"r_media\":null,\"r2_media\":null,"),
+                "n = {corrupto}: sin n válido no hay media: {linea}"
+            );
+            RiskEngine::registrar_sombra_kelly(&arena, &medida, -sl);
+        }
+        assert_eq!(
+            clave(&arena, "sombra_kelly_n").map(f64::to_bits),
+            Some(corrupto.to_bits()),
+            "el libro no repara un contador corrupto"
+        );
+    }
+}

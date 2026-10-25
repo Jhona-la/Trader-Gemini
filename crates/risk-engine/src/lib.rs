@@ -376,6 +376,13 @@ impl RiskEngine {
     /// para el libro y «arruinada» para el informe. Ahora el libro y el
     /// informe usan el mismo predicado: una marca ausente o NaN es viva y una
     /// > 0 (+∞ incluido) es ruina.
+    ///
+    /// CL-171: el contador tampoco se repara. CL-170 sólo dejaba quieto un n
+    /// no finito: uno finito pero corrupto (0, 0,5, −2) volvía a ser un n
+    /// válido uno o pocos cierres después, sobre las sumas de todos los
+    /// cierres, y el informe publicaba una media falsa. Ahora un n que no es
+    /// un entero finito ≥ 1 se queda como está y el informe lo sigue
+    /// publicando null.
     pub fn registrar_sombra_kelly(arena: &GlobalArena, m: &MedidaOrden, retorno_neto: f64) {
         if !(retorno_neto.is_finite() && m.perdida_al_stop.is_finite() && m.perdida_al_stop > 0.0) {
             return;
@@ -417,11 +424,27 @@ impl RiskEngine {
                 .unwrap_or(0.0);
             arena.registry.set_for_coin(m.coin_id, clave, previo + x);
         }
-        let n = arena
+        match arena
             .registry
             .get_for_coin_strict(m.coin_id, "sombra_kelly_n")
-            .unwrap_or(0.0);
-        arena.registry.set_for_coin(m.coin_id, "sombra_kelly_n", n + 1.0);
+        {
+            None => arena
+                .registry
+                .set_for_coin(m.coin_id, "sombra_kelly_n", 1.0),
+            Some(n) if Self::contador_sombra_valido(n) => {
+                arena
+                    .registry
+                    .set_for_coin(m.coin_id, "sombra_kelly_n", n + 1.0)
+            }
+            // CL-171: un contador corrupto se queda como está.
+            Some(_) => {}
+        }
+    }
+
+    /// CL-171 — el contador `sombra_kelly_n` que escribe el libro: un entero
+    /// finito ≥ 1. El libro y su informe usan este mismo predicado.
+    fn contador_sombra_valido(n: f64) -> bool {
+        n.is_finite() && n >= 1.0 && n.fract() == 0.0
     }
 
     /// CL-166 — el lector del libro de la sombra (CL-164): una línea JSON por
@@ -444,6 +467,10 @@ impl RiskEngine {
     /// presente pero no finito o menor que 1 (el libro sólo escribe n ≥ 1) es
     /// un contador corrupto: la línea sale con n, r_media y r2_media en null,
     /// en vez de desaparecer.
+    ///
+    /// CL-171: también un n fraccionario, y el libro ya no lo repara (mismo
+    /// predicado, `contador_sombra_valido`): la línea sigue en null en
+    /// los cierres siguientes.
     pub fn informe_sombra_kelly(arena: &GlobalArena, coin_id: usize) -> Option<String> {
         let leer = |clave: &str| {
             arena
@@ -459,7 +486,7 @@ impl RiskEngine {
             }
         };
         let n = arena.registry.get_for_coin_strict(coin_id, "sombra_kelly_n")?;
-        let n_valido = n.is_finite() && n >= 1.0;
+        let n_valido = Self::contador_sombra_valido(n);
         let media = |clave: &str| {
             if n_valido {
                 numero(leer(clave) / n)
