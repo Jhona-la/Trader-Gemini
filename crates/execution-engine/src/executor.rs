@@ -1900,13 +1900,8 @@ impl OrderExecutor {
 
         // 5. Ni exchangeInfo ni el registro lo aportan. F1-105: caché negativa
         // 60 s, para no repetir en cada llamada una descarga que falla (hasta
-        // ~20 s cada una). N20 (CL-192, CL-195): no si la descarga de ESTA
-        // llamada la paró el freno o la cuota (su rechazo local o su 429/418)
-        // sin un exchangeInfo guardado: nada prueba la ausencia, mientras dure
-        // el freno el paso 3 ya vuelve sin red, y la entrada sobreviviría al
-        // freno hasta 60 s. Un mapa guardado (nunca vacío, CL-185) que no trae
-        // el símbolo sí la prueba, como en el paso 4.
-        if !frenada || !self.symbol_filters.load().is_empty() {
+        // ~20 s cada una), salvo lo que dice `guarda_ausencia` (CL-192, CL-195).
+        if Self::guarda_ausencia(frenada, !self.symbol_filters.load().is_empty()) {
             if let Ok(mut neg_cache) = self.negative_symbol_cache.write() {
                 neg_cache.insert(symbol.to_string(), now);
             }
@@ -1925,6 +1920,20 @@ impl OrderExecutor {
         ["RATE_BRAKE", "RATE_LIMIT_COOLDOWN", "HTTP_429_RATE_LIMITED", "HTTP_418_IP_BANNED"]
             .iter()
             .any(|p| e.starts_with(p))
+    }
+
+    /// N20 (CL-192, CL-195): si el paso 5 de `get_symbol_filter` guarda en la
+    /// caché negativa un símbolo que ni exchangeInfo ni el registro aportan.
+    /// No cuando la descarga de esa llamada la paró el freno o la cuota
+    /// (`frenada`) y no hay un exchangeInfo guardado: nada prueba la ausencia,
+    /// mientras dure el freno la descarga ya vuelve sin red, y la entrada
+    /// sobreviviría al freno hasta 60 s. Un mapa guardado (nunca vacío,
+    /// CL-185) que no trae el símbolo sí la prueba, como en el paso 4. Otro
+    /// fallo de la descarga cuenta como en F1-105, aunque otra petición haya
+    /// armado el freno entretanto.
+    #[inline]
+    fn guarda_ausencia(frenada: bool, hay_mapa: bool) -> bool {
+        !frenada || hay_mapa
     }
 
     /// F1-105: Limpia la caché negativa de filtros de símbolos.
@@ -6035,9 +6044,10 @@ mod tests_n20 {
 
     /// RED antes de CL-195: CL-192 decidía con el freno armado al llegar al
     /// paso 5, no con lo que pasó en la descarga. Con un exchangeInfo completo
-    /// guardado que no trae el símbolo la ausencia está probada aunque haya
-    /// freno (el criterio de CL-186), y un freno armado por OTRA petición
-    /// mientras la descarga caía por red no dice nada de ella.
+    /// guardado que no trae el símbolo la ausencia está probada aunque la
+    /// descarga de esta llamada la parase el freno (el criterio de CL-186).
+    /// El caso del freno armado por otra petición mientras la descarga caía
+    /// por red lo cubren rv18_* (la decisión pura y su cableado).
     #[tokio::test]
     async fn cl195_un_mapa_guardado_prueba_la_ausencia_con_freno() {
         let ex = ex();
@@ -6051,9 +6061,9 @@ mod tests_n20 {
         assert_eq!(ex.negative_symbol_cache_len(), 1, "el mapa guardado prueba la ausencia");
     }
 
-    /// CL-195: sólo el fallo de la PROPIA descarga por el freno o la cuota (el
-    /// rechazo local o su 429/418) no prueba la ausencia; otro error cuenta
-    /// como en F1-105 aunque otra petición haya armado el freno entretanto.
+    /// CL-195: los prefijos que `descarga_frenada` reconoce y los errores que
+    /// no (cuentan como en F1-105). Los textos de los productores reales los
+    /// comprueba rv18_los_productores_del_freno_son_descargas_frenadas.
     #[test]
     fn cl195_solo_el_freno_de_la_descarga_no_prueba_nada() {
         for e in [
@@ -6071,5 +6081,81 @@ mod tests_n20 {
         ] {
             assert!(!OrderExecutor::descarga_frenada(e), "{e}: cuenta como F1-105");
         }
+    }
+
+    /// RV18-T (revisión de CL-195): los textos que de verdad devuelve la
+    /// descarga cuando la para el freno o la cuota son descargas frenadas. Se
+    /// generan con los productores reales: el rechazo local de
+    /// `check_backoff` (cooldown tras un 429, freno tras tres 429 y tras un
+    /// 418) y lo que `handle_rate_limit_error` devuelve del 429/418 que
+    /// `classify_rate_limit_or_ban` saca de la respuesta. Un cambio de
+    /// formato en un productor la pone en rojo.
+    #[test]
+    fn rv18_los_productores_del_freno_son_descargas_frenadas() {
+        use reqwest::header::{HeaderMap, HeaderValue};
+        let mut cab = HeaderMap::new();
+        cab.insert("Retry-After", HeaderValue::from_static("30"));
+        let e429 = crate::client::classify_rate_limit_or_ban(429, &cab).unwrap_or_default();
+        let e418 = crate::client::classify_rate_limit_or_ban(418, &HeaderMap::new()).unwrap_or_default();
+        assert!(e429.starts_with("HTTP_429") && e418.starts_with("HTTP_418"), "{e429} / {e418}");
+
+        let ex = ex();
+        let ahora = ex.get_synced_timestamp();
+        let mut textos = Vec::new();
+        for _ in 0..3 {
+            textos.push(ex.handle_rate_limit_error(&e429));
+            textos.push(ex.check_backoff(ahora).err().unwrap_or_default());
+        }
+        assert!(textos[1].starts_with("RATE_LIMIT_COOLDOWN"), "{textos:?}");
+        assert!(textos[5].starts_with("RATE_BRAKE"), "el tercer 429 escala: {textos:?}");
+        let ex = self::ex();
+        textos.push(ex.handle_rate_limit_error(&e418));
+        textos.push(ex.check_backoff(ex.get_synced_timestamp()).err().unwrap_or_default());
+        for t in &textos {
+            assert!(OrderExecutor::descarga_frenada(t), "«{t}» es una descarga frenada");
+        }
+    }
+
+    /// RV18-T (revisión de CL-195): la decisión del paso 5 entera. Sólo una
+    /// descarga frenada sin un exchangeInfo guardado deja el símbolo fuera de
+    /// la caché negativa. Un fallo por red, un exchangeInfo sin filtros o un
+    /// 5xx cuentan como en F1-105, también cuando otra petición armó el freno
+    /// entretanto: la decisión sólo mira lo que devolvió esta descarga.
+    #[test]
+    fn rv18_la_decision_del_paso_5() {
+        for (e, frenada) in [
+            ("RATE_BRAKE: freno temporal activo hasta 2 (ahora 1)", true),
+            ("RATE_LIMIT_COOLDOWN: activo hasta 2 (ahora 1)", true),
+            ("HTTP_429_RATE_LIMITED retry_after=30", true),
+            ("HTTP_418_IP_BANNED retry_after=300", true),
+            ("Network Error: operation timed out", false),
+            ("EXCHANGE_INFO_SIN_FILTROS: {}", false),
+            ("Binance API Error: status=503 body=", false),
+        ] {
+            assert_eq!(OrderExecutor::descarga_frenada(e), frenada, "{e}");
+            assert!(OrderExecutor::guarda_ausencia(frenada, true), "{e}: un mapa guardado prueba la ausencia");
+            assert_eq!(OrderExecutor::guarda_ausencia(frenada, false), !frenada, "{e}: sin mapa");
+        }
+    }
+
+    /// RV18-T (revisión de CL-195): get_symbol_filter decide el paso 5 por la
+    /// descarga de esa llamada (`descarga_frenada` sobre su resultado) y por
+    /// el mapa guardado (`guarda_ausencia`), nunca por el estado del freno al
+    /// llegar al paso 5 (CL-192 llamaba a `check_backoff`).
+    #[test]
+    fn rv18_get_symbol_filter_decide_por_su_descarga() {
+        let c = cuerpo("get_symbol_filter");
+        let descarga = "let descarga = self.fetch_all_symbol_filters().await;";
+        let frenada = "let frenada = matches!(&descarga, Err(e) if Self::descarga_frenada(e));";
+        let decision = "if Self::guarda_ausencia(frenada, !self.symbol_filters.load().is_empty()) {";
+        for linea in [descarga, frenada, decision] {
+            assert_eq!(c.matches(linea).count(), 1, "falta o se repite: {linea}");
+        }
+        let [a, b, d] = [descarga, frenada, decision].map(|l| c.find(l).unwrap_or(usize::MAX));
+        assert!(a < b && b < d, "descarga, luego su clasificación, luego la decisión");
+        assert_eq!(c.matches("fetch_all_symbol_filters(").count(), 1, "una sola descarga");
+        assert!(!c.contains("check_backoff("), "el paso 5 no mira el freno de ahora");
+        assert_eq!(c.matches("frenada =").count(), 1, "frenada no se reasigna");
+        assert_eq!(c.matches("neg_cache.insert(").count(), 2, "pasos 4 y 5");
     }
 }
