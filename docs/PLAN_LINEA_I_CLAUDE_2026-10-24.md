@@ -48,12 +48,13 @@ para todo el universo (26–30 símbolos).
 | I-2a | Sello de recepción (`MensajeWs { datos, recibido: Instant }`) transportado por la cola | Hoy la cola lleva bytes sin sello: nadie puede separar red de espera local | Test: el sello sobrevive a la cola y el descarte sigue reconociendo el centinela | **en main (PR #136, 0d0b07e01)** |
 | I-2b | Métrica descompuesta `EdadEvento { total, red_reloj, espera_local }` publicada en el arena y en cada aviso | Un evento que esperó 5 s en cola cuenta hoy como red de 5 s | Test puro: E=1000, ahora=6150, espera 5 s ⇒ red 150, local 5000; deriva D del reloj de pared | **en main (PR #136, 0d0b07e01)** |
 | I-2c | Contrapresión observable (descartes por periodo, profundidad, espera máxima) por `telemetry_log!` | El monitor sólo imprime con la cola llena y por `println!` | Tests de las ventanas por periodo + contrato de fuente | **en main (PR #136, 0d0b07e01)** |
-| I-3a | El inmune cuenta strikes con red+reloj, no con la espera local | Un atraso local aplana posiciones como si la red estuviera caída | `ciclo_strikes` puro; rejilla: nunca suma ni reinicia donde CERT-M4-H04 no lo hacía | **hecho en rama** (cambia conducta del aplanado total) |
-| I-3b | El rearme del inmune reinicia los strikes de latencia | Tras rearmar, los strikes viejos vuelven a disparar | Contrato de fuente | **hecho en rama** (cambia conducta) |
+| I-3a | El inmune cuenta strikes con red+reloj, no con la espera local | Un atraso local aplana posiciones como si la red estuviera caída | `ciclo_strikes` puro; rejilla: nunca suma ni reinicia donde CERT-M4-H04 no lo hacía | **en main (PR #141, 1b8382d20)** |
+| I-3b | El rearme del inmune reinicia los strikes de latencia | Tras rearmar, los strikes viejos vuelven a disparar | Contrato de fuente | **en main (PR #141, 1b8382d20)** |
 | I-3c | Recorte del bosque sombra con atraso local | El bosque sombra corre en el mismo hilo aunque la cola se atrase | `toca_sombra` puro | pendiente (condicional a I-2) |
 | I-4 | Umbral de edad sin deriva evolutiva | El umbral es un gen que la cosecha muta en [500, 10 000] ms sin presión selectiva | 1000 mutaciones lo dejan en 1000·π; aplicar un genoma viejo no lo mueve | pendiente (cambia conducta) |
 | I-5 | Reloj coherente: offset del feed medido contra la misma proyección monótona | Offset contra `SystemTime` aplicado sobre `Instant` fijado al arranque | Simulación de una corrección de w32time de −2 s | pendiente (cambia conducta) |
-| I-6 | El lector conecta cuando el consumidor está listo | Cada arranque empieza con miles de eventos viejos en cola | Contrato de orden de arranque | pendiente (cambia conducta) |
+| I-6 | El lector conecta cuando el consumidor está listo | Cada arranque empieza con miles de eventos viejos en cola | `arranque_feed_contract.rs`: el emisor sólo se crea y se suelta tras la fase 6; cada lector espera antes de conectar | **hecho en rama** (cambia conducta del arranque) |
+| I-6b | Timeout de conexión y de handshake en `bucle_lector_ws`; stall si no hay primera conexión en `watchdog_secs` | `TcpStream::connect` y `client_async_tls` no tienen timeout: un TLS colgado deja el feed mudo sin stall | Test de la política de espera | pendiente (cambia conducta) |
 | I-7 | Sin E/S del almacén de genomas en el hilo caliente | `promote`/`load_active` con fsync cada 5000 mensajes | Contrato de fuente | pendiente (condicional a I-2) |
 
 Ningún átomo toca geometría de órdenes ni dimensionamiento. Los que cambien conducta de
@@ -97,6 +98,14 @@ trading llevan T-1 antes de entrar a `main`.
   sólo salen cuando se conserva. T-1 no se corre: no ejecuta el host, y lo único que
   comparte con I-3 es un atómico nuevo del arena que el núcleo no lee. Abierto (LOW): los
   strikes conservados no caducan mientras el feed siga degradado.
+- 2026-10-25 ~03:00 UTC — I-3 en `main` (PR #141, 1b8382d20). I-6 en la rama `claude/linea-i-i6`.
+  Revisión adversarial del parche antes de aplicarlo (3 lentes, 2 escépticos): ningún defecto;
+  5 hallazgos (1 LOW, 4 INFO). El LOW: el contrato no impedía que un clon mantuviera vivo el
+  emisor y dejara a los lectores esperando para siempre; ahora fija que el emisor sólo aparece
+  al crear el canal y al soltarlo. Riesgo aceptado: el arranque queda equivalente a una
+  reconexión (unos 0,5–1,5 s sin eventos tras la inicialización, sin el periodo de gracia
+  accidental de antes) y los fallos de conexión van en serie tras la inicialización; acotarlos
+  es I-6b.
 - 2026-10-25 ~02:00 UTC — Sonda de RTT a `GET /fapi/v1/time` desde la máquina del operador
   (HttpClient con conexión reutilizada, 40 muestras por host, la primera descartada por el
   handshake; `docs/audit/linea_i/rtt_probe.ps1`; el CSV de las muestras queda local porque
