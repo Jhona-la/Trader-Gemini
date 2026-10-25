@@ -368,6 +368,21 @@ impl RiskEngine {
     /// cierre siguiente lo reiniciaba en silencio. Ahora un acumulado no
     /// finito (corrupto, o una suma desbordada) se queda como está y el
     /// informe lo publica como null.
+    ///
+    /// CL-170: también el contador `sombra_kelly_n` y las marcas de ruina.
+    /// CL-169 dejó esas dos lecturas con respaldo: un n no finito volvía a 1
+    /// en el cierre siguiente (y las sumas, ya estrictas, seguían con todos
+    /// los cierres, así que la media salía falsa), y una marca +∞ era «viva»
+    /// para el libro y «arruinada» para el informe. Ahora el libro y el
+    /// informe usan el mismo predicado: una marca ausente o NaN es viva y una
+    /// > 0 (+∞ incluido) es ruina.
+    ///
+    /// CL-171: el contador tampoco se repara. CL-170 sólo dejaba quieto un n
+    /// no finito: uno finito pero corrupto (0, 0,5, −2) volvía a ser un n
+    /// válido uno o pocos cierres después, sobre las sumas de todos los
+    /// cierres, y el informe publicaba una media falsa. Ahora un n que no es
+    /// un entero finito ≥ 1 se queda como está y el informe lo sigue
+    /// publicando null.
     pub fn registrar_sombra_kelly(arena: &GlobalArena, m: &MedidaOrden, retorno_neto: f64) {
         if !(retorno_neto.is_finite() && m.perdida_al_stop.is_finite() && m.perdida_al_stop > 0.0) {
             return;
@@ -382,7 +397,11 @@ impl RiskEngine {
             ("sombra_kelly_logw_min", "sombra_kelly_ruina_min", m.f_lh04.min(m.f_legado)),
         ];
         for (clave_logw, clave_ruina, f) in reglas {
-            if arena.registry.get_for_coin_or(m.coin_id, clave_ruina, 0.0) > 0.0 {
+            if arena
+                .registry
+                .get_for_coin_strict(m.coin_id, clave_ruina)
+                .is_some_and(|v| v > 0.0)
+            {
                 continue;
             }
             let crecimiento = 1.0 + f * r;
@@ -405,8 +424,27 @@ impl RiskEngine {
                 .unwrap_or(0.0);
             arena.registry.set_for_coin(m.coin_id, clave, previo + x);
         }
-        let n = arena.registry.get_for_coin_or(m.coin_id, "sombra_kelly_n", 0.0);
-        arena.registry.set_for_coin(m.coin_id, "sombra_kelly_n", n + 1.0);
+        match arena
+            .registry
+            .get_for_coin_strict(m.coin_id, "sombra_kelly_n")
+        {
+            None => arena
+                .registry
+                .set_for_coin(m.coin_id, "sombra_kelly_n", 1.0),
+            Some(n) if Self::contador_sombra_valido(n) => {
+                arena
+                    .registry
+                    .set_for_coin(m.coin_id, "sombra_kelly_n", n + 1.0)
+            }
+            // CL-171: un contador corrupto se queda como está.
+            Some(_) => {}
+        }
+    }
+
+    /// CL-171 — el contador `sombra_kelly_n` que escribe el libro: un entero
+    /// finito ≥ 1. El libro y su informe usan este mismo predicado.
+    fn contador_sombra_valido(n: f64) -> bool {
+        n.is_finite() && n >= 1.0 && n.fract() == 0.0
     }
 
     /// CL-166 — el lector del libro de la sombra (CL-164): una línea JSON por
@@ -424,6 +462,15 @@ impl RiskEngine {
     /// `get_for_coin_or` un acumulado no finito llegaba como 0 (o como el
     /// valor global) y salía un 0.000000 creíble. Ahora un acumulado ausente
     /// o no finito sale como null, igual que la regla arruinada.
+    ///
+    /// CL-170: sin `sombra_kelly_n` (ningún cierre) no hay informe. Un n
+    /// presente pero no finito o menor que 1 (el libro sólo escribe n ≥ 1) es
+    /// un contador corrupto: la línea sale con n, r_media y r2_media en null,
+    /// en vez de desaparecer.
+    ///
+    /// CL-171: también un n fraccionario, y el libro ya no lo repara (mismo
+    /// predicado, `contador_sombra_valido`): la línea sigue en null en
+    /// los cierres siguientes.
     pub fn informe_sombra_kelly(arena: &GlobalArena, coin_id: usize) -> Option<String> {
         let leer = |clave: &str| {
             arena
@@ -438,16 +485,21 @@ impl RiskEngine {
                 "null".to_string()
             }
         };
-        let n = leer("sombra_kelly_n");
-        if !(n.is_finite() && n >= 1.0) {
-            return None;
-        }
+        let n = arena.registry.get_for_coin_strict(coin_id, "sombra_kelly_n")?;
+        let n_valido = Self::contador_sombra_valido(n);
+        let media = |clave: &str| {
+            if n_valido {
+                numero(leer(clave) / n)
+            } else {
+                "null".to_string()
+            }
+        };
         let mut linea = format!(
             "{{\"coin\":{},\"n\":{},\"r_media\":{},\"r2_media\":{}",
             coin_id,
-            n,
-            numero(leer("sombra_kelly_suma_r") / n),
-            numero(leer("sombra_kelly_suma_r2") / n)
+            if n_valido { n.to_string() } else { "null".to_string() },
+            media("sombra_kelly_suma_r"),
+            media("sombra_kelly_suma_r2")
         );
         for regla in ["lh04", "legado", "min"] {
             let ruina = leer(&format!("sombra_kelly_ruina_{regla}")) > 0.0;
@@ -1727,8 +1779,10 @@ impl RiskEngine {
         // ≤ 0 salía a la orden mínima. Es el activo, no el almacenado: con un
         // cierre registrado y el reloj ya pasado el cierre,
         // `epigenetic_bias_at` (quantum-arena state.rs) lleva un almacenado
-        // ±∞ o NaN a 1,0 y uno ≤ 0 a 0,5, y llega neutralizado. Validar el
-        // almacenado haría absorbente el rechazo: el escritor del cierre no
+        // ±∞ o NaN a 1,0 y uno s ≤ 0 a max(0,5; 1 − (1 − s)·e^{−Δ/30 min}):
+        // 0,5 durante 30·ln(2·(1 − s)) min tras el cierre (≈ 21 con s = 0,
+        // ≈ 42 con s = −1) y después sube hacia 1. Llega neutralizado. Validar
+        // el almacenado haría absorbente el rechazo: el escritor del cierre no
         // toca un bias no finito.
         let lh04_bias_bruto = if coin_id < arena.coins.len() {
             let now_ts = arena.coins[coin_id]

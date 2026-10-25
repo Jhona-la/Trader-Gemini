@@ -22,6 +22,18 @@
 //! Un acumulado no finito sale como null y el cierre siguiente no lo
 //! reinicia; antes llegaba como 0 y se publicaba un 0.000000 creíble.
 //!
+//! CL-170: CL-169 dejó con respaldo, en el libro, el contador n y las marcas
+//! de ruina. Ahora también son estrictas: un n corrupto no vuelve a 1 y sale
+//! null (antes la línea desaparecía y el cierre siguiente la reabría con
+//! n = 1 sobre las sumas de todos los cierres), y una marca +∞ es ruina para
+//! el libro y para el informe.
+//!
+//! CL-171: CL-170 sólo dejaba quieto un n no finito; uno finito pero
+//! corrupto (0, 0,5, −2) o fraccionario volvía a ser un n válido uno o pocos
+//! cierres después, sobre las sumas de todos los cierres. Ahora el libro y
+//! el informe aceptan sólo un entero finito ≥ 1: cualquier otro n se queda
+//! como está y sale null.
+//!
 //! RV9-T: en el fixture f_lh04 ≈ 0,13 ≤ f_legado = 0,25 (las dos acotadas
 //! por κ = 0,25), así que el mínimo es f_lh04 y un hueco que arruina a LH-04
 //! arruina también al legado y al mínimo. Una regla viva junto a una
@@ -308,4 +320,82 @@ fn cl169_un_acumulado_no_finito_sale_null_y_no_se_reinicia() {
     assert!(!clave(&arena, "sombra_kelly_suma_r2").is_some_and(f64::is_finite));
     assert!(!clave(&arena, "sombra_kelly_logw_legado").is_some_and(f64::is_finite));
     assert_eq!(clave(&arena, "sombra_kelly_n"), Some(3.0));
+}
+
+#[test]
+fn cl170_un_n_corrupto_no_se_reinicia_y_sale_null() {
+    let _serie = SERIE.lock().unwrap_or_else(|e| e.into_inner());
+    let (arena, medida) = orden_medida();
+    let sl = arena.registry.get_for_coin_or(0, "lh04_stop_real", f64::NAN);
+    RiskEngine::registrar_sombra_kelly(&arena, &medida, -sl);
+    arena.registry.set_for_coin(0, "sombra_kelly_n", f64::NAN);
+    for cierre in 1..=2 {
+        let linea = RiskEngine::informe_sombra_kelly(&arena, 0);
+        println!("observado tras {cierre} cierre(s): {linea:?}");
+        let linea = linea.unwrap_or_else(|| panic!("un n corrupto no borra la línea de la moneda"));
+        assert!(
+            linea.starts_with("{\"coin\":0,\"n\":null,\"r_media\":null,\"r2_media\":null,"),
+            "sin n válido no hay media: {linea}"
+        );
+        assert!(linea.ends_with('}') && !linea.contains("NaN") && !linea.contains("inf"), "{linea}");
+        // El cierre siguiente no lo reinicia a 1 sobre las sumas de todos.
+        RiskEngine::registrar_sombra_kelly(&arena, &medida, -sl);
+    }
+    assert!(!clave(&arena, "sombra_kelly_n").is_some_and(f64::is_finite));
+}
+
+#[test]
+fn cl170_una_marca_de_ruina_corrupta_la_leen_igual_el_libro_y_el_informe() {
+    let _serie = SERIE.lock().unwrap_or_else(|e| e.into_inner());
+    let (arena, medida) = orden_medida();
+    let sl = arena.registry.get_for_coin_or(0, "lh04_stop_real", f64::NAN);
+    RiskEngine::registrar_sombra_kelly(&arena, &medida, -sl);
+    // +∞ es ruina en los dos; NaN no lo es en ninguno.
+    arena.registry.set_for_coin(0, "sombra_kelly_ruina_lh04", f64::INFINITY);
+    arena.registry.set_for_coin(0, "sombra_kelly_ruina_legado", f64::NAN);
+    let lh04 = clave(&arena, "sombra_kelly_logw_lh04");
+    let legado = clave(&arena, "sombra_kelly_logw_legado").unwrap_or(f64::NAN);
+    RiskEngine::registrar_sombra_kelly(&arena, &medida, -sl);
+    let linea = RiskEngine::informe_sombra_kelly(&arena, 0).unwrap_or_default();
+    println!("observado: {linea}");
+    assert_eq!(
+        clave(&arena, "sombra_kelly_logw_lh04").map(f64::to_bits),
+        lh04.map(f64::to_bits),
+        "el libro no compone una regla que el informe da por arruinada"
+    );
+    assert!(linea.contains("\"logw_lh04\":null,\"ruina_lh04\":true"), "{linea}");
+    let ahora = clave(&arena, "sombra_kelly_logw_legado").unwrap_or(f64::NAN);
+    assert!(ahora < legado, "con la marca NaN el legado sigue vivo y suma la pérdida: {legado} → {ahora}");
+    assert!(
+        linea.contains(&format!("\"logw_legado\":{ahora:.6},\"ruina_legado\":false")),
+        "{linea}"
+    );
+}
+
+
+#[test]
+fn cl171_un_n_finito_corrupto_tampoco_se_repara() {
+    let _serie = SERIE.lock().unwrap_or_else(|e| e.into_inner());
+    for corrupto in [0.0, 0.5, -2.0, 2.5, f64::NEG_INFINITY] {
+        let (arena, medida) = orden_medida();
+        let sl = arena.registry.get_for_coin_or(0, "lh04_stop_real", f64::NAN);
+        RiskEngine::registrar_sombra_kelly(&arena, &medida, -sl);
+        arena.registry.set_for_coin(0, "sombra_kelly_n", corrupto);
+        // −2 volvía a ser un n válido tres cierres después.
+        for cierre in 1..=4 {
+            let linea = RiskEngine::informe_sombra_kelly(&arena, 0);
+            println!("n = {corrupto}, tras {cierre} cierre(s): {linea:?}");
+            let linea = linea.unwrap_or_else(|| panic!("un n corrupto no borra la línea de la moneda"));
+            assert!(
+                linea.starts_with("{\"coin\":0,\"n\":null,\"r_media\":null,\"r2_media\":null,"),
+                "n = {corrupto}: sin n válido no hay media: {linea}"
+            );
+            RiskEngine::registrar_sombra_kelly(&arena, &medida, -sl);
+        }
+        assert_eq!(
+            clave(&arena, "sombra_kelly_n").map(f64::to_bits),
+            Some(corrupto.to_bits()),
+            "el libro no repara un contador corrupto"
+        );
+    }
 }

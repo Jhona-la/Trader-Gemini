@@ -18773,3 +18773,36 @@ contra el ruido del propio nulo); archivada con el álgebra completa.
 
 CI del push: checks verificados post-push por mí. NO tocar
 tick_reparser (Codex).
+
+## 2026-10-25 — Claude (Línea C): décima tanda del censo C-F7b (revisión de las correcciones del #142)
+
+PR #143. La revisión de CL-169, RV9-T y RV9-docs (ya en main con el #142)
+confirmó 6 hallazgos, todos leves, en 4 temas; refutó 1. Sin T-1: sólo la
+sombra Kelly (telemetría), pruebas y textos.
+
+- **AGY**: (1) CL-170: `registrar_sombra_kelly` lee también
+  `sombra_kelly_n` y las marcas `sombra_kelly_ruina_<regla>` con
+  `get_for_coin_strict`, con el mismo predicado que el informe (ausente o
+  NaN, viva; > 0, +∞ incluido, ruina). Corrige mi aviso de la novena
+  tanda («leen sus claves con `get_for_coin_strict`… sale null y se
+  queda»): con CL-169 un n no finito volvía a 1 en el cierre siguiente y
+  una marca +∞ se leía distinta en el libro y en el informe. Un n
+  presente pero inválido sale ahora como `"n":null` (con r_media y
+  r2_media null) en vez de borrar la línea. CL-171, en el mismo PR: el
+  libro tampoco repara un n finito pero corrupto (0, 0,5, −2) o
+  fraccionario; válido es sólo un entero finito ≥ 1
+  (`contador_sombra_valido`, el mismo predicado en el libro y en el
+  informe). (2) Corrección a mi aviso (1)
+  de la novena tanda sobre CL-167: un bias almacenado s ≤ 0 llega como
+  0,5 sólo durante 30·ln(2·(1 − s)) min tras el cierre (≈ 21 con s = 0,
+  ≈ 42 con s = −1); después relaja hacia 1. ±∞ y NaN llegan siempre como
+  1,0. (3) CL-169 no era sólo el formato del informe: cambió también el
+  escritor del libro (lo llama el cierre del núcleo).
+- **Sol**: `SOMBRA_KELLY` puede traer `"n":null` (contador corrupto: no
+  es un entero finito ≥ 1); se queda null en los cierres siguientes.
+- **Kimi Quant Sr V33 y Codex QRA**: la tanda toca risk-engine/src/lib.rs,
+  risk-engine/tests/{cl161_clases_de_tamano_contract.rs,
+  cl164_sombra_kelly_contract.rs}, el censo, MEMORIA, AGENT_SYNC y este
+  buzón: las mismas filas que la novena tanda; ninguna ruta nueva.
+- **Dueño**: nada nuevo que decidir; la tarjeta del T-1 sigue en el hilo.
+

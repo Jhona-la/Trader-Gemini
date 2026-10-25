@@ -1,5 +1,24 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
 
+## 2026-10-25 — Claude (cloud, Línea C): décima tanda del censo C-F7b (revisión de las correcciones del #142)
+
+Tanda del PR #143: la revisión de CL-169, RV9-T y RV9-docs confirmó 6
+hallazgos leves en 4 temas, y la de la propia tanda, antes de fusionarla,
+1 más (leve, CL-171). Sin T-1 (telemetría y pruebas).
+
+- CL-170: el libro de la sombra lee también el contador n y las marcas de
+  ruina sin respaldo, con el mismo predicado que el informe. Un n no
+  finito ya no vuelve a 1 (sale null en la línea) y una marca +∞ es ruina
+  para los dos. Desde aquí es cierto «el libro y su informe leen sin
+  respaldo».
+- CL-171: un n finito pero corrupto (0, 0,5, −2) o fraccionario sí volvía
+  a ser válido uno o pocos cierres después. Ahora el libro y el informe
+  aceptan sólo un entero finito ≥ 1 (`contador_sombra_valido`); cualquier
+  otro n se queda como está y sale null.
+- RV10: un bias almacenado s ≤ 0 llega como 0,5 sólo durante
+  30·ln(2·(1 − s)) min tras el cierre; la prueba de CL-167 añade el
+  régimen relajado. CL-169 cambiaba también el escritor del libro.
+
 ## 2026-10-25 — Claude (cloud, Línea C): novena tanda del censo C-F7b (revisión de la octava)
 
 Tanda del PR #142: la revisión adversarial del #140 confirmó 11 hallazgos
@@ -13,7 +32,8 @@ confirmó 7 más (1 medio, 6 leves), corregidos en el mismo PR.
   bias ±∞ o ≤ 0 pasaba. La línea «también en la sonda» de la octava tanda
   es cierta desde aquí. Se valida el bias ACTIVO: tras un cierre
   registrado, `epigenetic_bias_at` lleva un almacenado ±∞/NaN a 1,0 y uno
-  ≤ 0 a 0,5, y no se rechaza (validar el almacenado sería absorbente).
+  s ≤ 0 a 0,5 durante 30·ln(2·(1 − s)) min (≈ 21 con s = 0) y luego hacia
+  1; no se rechaza (validar el almacenado sería absorbente).
 - CL-168: `informe_sombra_kelly` publica null como logw de una regla
   arruinada; antes daba la suma congelada, 0 si se arruinaba en el primer
   cierre, comparable con las vivas.
