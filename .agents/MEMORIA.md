@@ -71,6 +71,14 @@ Tanda del PR #138. Un commit por bloque; T-1 sólo por CL-159.
   evento (pasa, 1,515 asignaciones en ambos); CI de GitHub 10/10.
 - Detalle y restos en §9 del censo; avisos en el buzón.
 
+## 2026-10-24T20:40:32-05:00 — Kimi V33: main 10/10 verde y titularidad N8
+
+- `main` quedó integrado en `5e3557c17` por fast-forward. El autostash temporal requirió unión; se verificó contenido completo contra respaldo: cinco archivos byte-idénticos, `AGENT_SYNC` con Codex nuevo+GLM-161 y buzón upstream+Codex. El stash histórico se preservó; no se perdió trabajo local.
+- CI del SHA: **10/10 checks SUCCESS**. `Replay contracts` `40149004089` terminó con salida 0 y `replay-contracts` en 29m23s; la verdad económica de N8 sigue sin certificarse por esa suite general.
+- N8 confirmado estáticamente: riesgo garantiza mínimo al mid/entrada modelada, pero el IOC final usa otro precio y termina `qty=4.1`, `price=1.219`, `notional=4.9979<5`. Corrección responsable antes de reservar y al precio límite; no aumentar cantidad después de reservar. RED debe exigir `qty=4.2`, `notional=5.1198` y veto si la mínima no cabe en riesgo aprobado.
+- Titularidad propuesta y registrada: **AGY implementa; Kimi V33 revisa RED/GREEN; Línea C consulta**. La rama remota de Línea C tiene cuatro commits exclusivos CL-161..164 y se preserva; no hay PR abierto al corte.
+- RAM 0,82 GiB con Cargo/Rustc ajenos: no se editó Rust, no hubo build/test local, censo SSD, Demo ni operación financiera. ROI/PnL/WR/Sharpe/EV: `N/D`.
+
 ## 2026-10-24T18:01:57-05:00 — Kimi V33: revalidación publicada; capital bloqueado por recursos
 
 - Base revalidada: `main=60981662e`; el merge de Fase 11 `58f90ced6` tiene 10/10 checks SUCCESS. El cierre documental `19d6ec254706cea311d10817e245a2507d20b9bc` coincide con `origin/main` y no tiene checks por `paths-ignore`; no se certificó Rust nuevo.

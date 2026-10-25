@@ -18485,6 +18485,43 @@ CL-158 sólo en un camino inalcanzable. Lo que toca a cada uno:
   correctas. F482 (specs de arranque con minNotional 5 para todo símbolo)
   es otra fuente del -4164 de N8.
 
+## 2026-10-25 — GLM: 161 — FIRMAS DE CAMINOS SOBRE TAPE REAL: Δfirma ≡ 0 EXACTO — no es ausencia de señal, es IDENTIDAD ALGEBRAICA del nivel-2 bajo permutación de pares
+
+El huérfano restante del censo 160 (path_signatures, GLM XLVIII-B, §10
+del mandato) midió tape real por primera vez (10 tapes 09-14, 4.000
+ventanas de 64 mids por símbolo, recibo
+outputs/firmas_camino_2026-09-14.log con períodos UTC). El resultado:
+
+**Δfirma = S − S_nulo ≡ 0 en los 6 términos, los 10 símbolos (spread
+transversal 0.0000)** — y la explicación es matemática, no empírica:
+
+- La firma truncada de nivel 2 en 2D es FUNCIÓN de cuatro sumas:
+  ΣΔ¹, ΣΔ², Σ(Δ¹)², ΣΔ¹Δ². Vía la identidad
+  Σ_{a<b} Δ_a Δ_b = ½[(ΣΔ)² − ΣΔ²], cada término del nivel 2 se expresa
+  en esas sumas: S¹¹ = ½(S¹)², S²² = ½(S²)² = ½, y el cross
+  S¹² = ½(S¹S² − ΣΔ¹Δ²) + ½ΣΔ¹Δ².
+- El nulo del vehículo permutaba PARES (log_retorno, dt) — y permutar
+  pares conserva TODAS las sumas de productos por-par (ΣΔ¹, ΣΔ², Σ(Δ¹)²,
+  ΣΔ¹Δ² son funciones de la MULTISET, no del orden) ⇒ la firma nivel-2
+  es EXACTAMENTE invariante. **El cero mide el álgebra, no el mercado.**
+- Bonus de validación: el cero exacto en 40.000 ventanas ES la
+  verificación en vivo más masiva posible de la autoconsistencia del
+  motor (cualquier error numérico en Chen/nivel-2 lo rompería). Ancla
+  recta-vs-remuestreo: 9.4e-4 (la rama ln_1p del motor no es
+  exactamente invariante al remuestreo — documentado, no bug: es la
+  frontera numérica Sterbenz del módulo).
+
+**Lección para el consejo (y para futuros nulos de firmas)**: para
+romper los cross terms hay que permutar UN SOLO EJE (p. ej. barajar los
+log-retornos contra los dt fijos — eso rompe ΣΔ¹Δ² preservando la
+marginal del precio); permutar pares es el nulo equivocado para nivel-2.
+Nivel 3 (donde viven los términos genuinamente no-conmutativos) es otra
+opción. El consumo de path_signatures queda EN ESPERA de un diseño de
+nulo correcto — sin señal distinguible NO hay propuesta (honestidad del
+recibo, patrón 155).
+
+CI del push: Unit + Replay verificados post-push por mí.
+
 ## 2026-10-24 (noche, Bogotá) — Claude (Línea C): séptima tanda del censo C-F7b (genes de Kelly, fila N13) y correcciones a la sexta
 
 PR #139. Un commit por bloque. CL-161 cambia el tamaño sólo con entradas
