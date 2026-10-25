@@ -120,8 +120,11 @@ fn extract_retry_after(headers: &HeaderMap) -> u64 {
 }
 
 /// F1-005 (Ola Ω150): Clasificador canónico de control de cuota HTTP (429 / 418)
-/// compartido por todas las rutas de transporte (`execute_order_payload`,
-/// `execute_order_payload_body`, `cancel_order_payload`, `get_payload_with_timeout`, `post_payload`).
+/// compartido por todas las rutas del cliente: los transportes de las peticiones
+/// firmadas (`execute_order_payload`, `execute_order_payload_body`,
+/// `cancel_order_payload`, `get_payload_with_timeout`, `post_payload`), cuyo
+/// error registra el ejecutor, y las tres rutas sin ejecutor (hora del NTP, alta
+/// y renovación del listenKey), que lo registran ellas (CL-189).
 #[inline(always)]
 pub fn classify_rate_limit_or_ban(status_code: u16, headers: &HeaderMap) -> Option<String> {
     if status_code == 429 {
@@ -178,6 +181,19 @@ impl FrenoExchange {
     #[inline(always)]
     pub(crate) fn ahora_ms(&self) -> u64 {
         crate::executor::current_synced_timestamp_ms(self.reloj.load_full().as_deref())
+    }
+
+    /// N20 (CL-189): el freno con el reloj del ejecutor, para quien no lo trae
+    /// (las rutas sin ejecutor y la cancelación del stream). Hasta el primer
+    /// 429/418 del ejecutor no lee el reloj: los dos sellos nunca vuelven a 0.
+    #[inline(always)]
+    pub(crate) fn comprobar_ahora(&self) -> Result<(), String> {
+        if self.rate_brake_until_ms.load(Ordering::Relaxed) == 0
+            && self.cooldown_until_ms.load(Ordering::Relaxed) == 0
+        {
+            return Ok(());
+        }
+        self.comprobar(self.ahora_ms())
     }
 
     /// Los dos frenos que ya puso el exchange (`OrderExecutor::check_backoff`).
@@ -355,6 +371,14 @@ impl BinanceClient {
         &self.freno
     }
 
+    /// N20 (CL-189): el 429/418 de una ruta sin ejecutor arma el freno con su
+    /// Retry-After. Es su ÚNICO registro: el ejecutor no llama a estas rutas, y
+    /// el NTP y el stream sólo imprimen el error.
+    #[inline]
+    fn freno_de_respuesta(&self, estado: u16, cabeceras: &HeaderMap) -> Option<String> {
+        classify_rate_limit_or_ban(estado, cabeceras).map(|e| self.freno.registrar(&e))
+    }
+
     pub fn get_base_url(&self) -> &str {
         if self.is_testnet.load(Ordering::Relaxed) {
             BINANCE_TESTNET_URL
@@ -366,6 +390,7 @@ impl BinanceClient {
     /// F1.6: POST /fapi/v1/listenKey — crea la clave del user-data stream.
     /// NO requiere firma: solo el header X-MBX-APIKEY.
     pub async fn create_listen_key(&self) -> Result<String, String> {
+        self.freno.comprobar_ahora()?;
         let api_key = self.api_key.load();
         let url = format!("{}/fapi/v1/listenKey", self.get_base_url());
         let response = self
@@ -378,6 +403,9 @@ impl BinanceClient {
 
         if !response.status().is_success() {
             let status = response.status();
+            if let Some(e) = self.freno_de_respuesta(status.as_u16(), response.headers()) {
+                return Err(e);
+            }
             let body = response.text().await.unwrap_or_default();
             return Err(crate::order_types::parse_reject_body(
                 &body,
@@ -400,6 +428,7 @@ impl BinanceClient {
 
     /// F1.6: PUT /fapi/v1/listenKey — keepalive (expira a los 60 min; refrescar a los 30).
     pub async fn keep_alive_listen_key(&self) -> Result<(), String> {
+        self.freno.comprobar_ahora()?;
         let api_key = self.api_key.load();
         let url = format!("{}/fapi/v1/listenKey", self.get_base_url());
         let response = self
@@ -414,6 +443,9 @@ impl BinanceClient {
             Ok(())
         } else {
             let status = response.status();
+            if let Some(e) = self.freno_de_respuesta(status.as_u16(), response.headers()) {
+                return Err(e);
+            }
             let body = response.text().await.unwrap_or_default();
             Err(crate::order_types::parse_reject_body(
                 &body,
@@ -424,6 +456,7 @@ impl BinanceClient {
 
     /// Fetches server time directly from Binance endpoint GET /fapi/v1/time
     pub async fn fetch_server_time(&self) -> Result<u64, String> {
+        self.freno.comprobar_ahora()?;
         let url = format!("{}/fapi/v1/time", self.get_base_url());
         let response = self
             .http
@@ -434,6 +467,9 @@ impl BinanceClient {
 
         if !response.status().is_success() {
             let status = response.status();
+            if let Some(e) = self.freno_de_respuesta(status.as_u16(), response.headers()) {
+                return Err(e);
+            }
             let body = response.text().await.unwrap_or_default();
             return Err(crate::order_types::parse_reject_body(
                 &body,
@@ -777,5 +813,110 @@ mod tests {
         let mainnet = BinanceClient::new("key2".to_string(), false);
         assert_eq!(mainnet.get_base_url(), BINANCE_BASE_URL);
         assert_eq!(mainnet.api_key.load().to_str().ok(), Some("key2"));
+    }
+
+    /// CL-189: el 429/418 de una ruta sin ejecutor arma el freno compartido
+    /// una sola vez y con su Retry-After; los tres 429 escalan como en el
+    /// ejecutor y otro estado no toca nada. Sin 429 previo no frena.
+    #[test]
+    fn cl189_el_429_de_una_ruta_cruda_arma_el_freno_una_vez() {
+        let c = BinanceClient::new("k".into(), true);
+        assert!(c.freno().comprobar_ahora().is_ok(), "sin 429 no frena");
+        let mut cab = HeaderMap::new();
+        cab.insert("Retry-After", HeaderValue::from_static("7"));
+        let antes = c.freno().ahora_ms();
+        assert_eq!(
+            c.freno_de_respuesta(429, &cab).as_deref(),
+            Some("HTTP_429_RATE_LIMITED retry_after=7")
+        );
+        let despues = c.freno().ahora_ms();
+        let hasta = c.freno().cooldown_until_ms.load(Ordering::Relaxed);
+        assert!(hasta >= antes + 7_000 && hasta <= despues + 7_000, "Retry-After de 7 s");
+        assert!(matches!(c.freno().comprobar_ahora(), Err(ref e) if e.starts_with("RATE_LIMIT_COOLDOWN")));
+        assert_eq!(c.freno().consecutive_429.load(Ordering::Relaxed), 1);
+        assert_eq!(c.freno_de_respuesta(503, &cab), None);
+        assert_eq!(c.freno().consecutive_429.load(Ordering::Relaxed), 1);
+        let clon = c.clone();
+        clon.freno_de_respuesta(429, &cab);
+        clon.clone().freno_de_respuesta(429, &cab);
+        assert_eq!(c.freno().consecutive_429.load(Ordering::Relaxed), 3);
+        assert!(matches!(c.freno().comprobar_ahora(), Err(ref e) if e.starts_with("RATE_BRAKE")));
+        assert!(c.freno().rate_brake_until_ms.load(Ordering::Relaxed) >= antes + 67_000);
+
+        let c = BinanceClient::new("k".into(), true);
+        let mut cab = HeaderMap::new();
+        cab.insert("Retry-After", HeaderValue::from_static("120"));
+        let antes = c.freno().ahora_ms();
+        assert_eq!(
+            c.freno_de_respuesta(418, &cab).as_deref(),
+            Some("HTTP_418_IP_BANNED retry_after=120")
+        );
+        assert!(matches!(c.freno().comprobar_ahora(), Err(ref e) if e.starts_with("RATE_BRAKE")));
+        assert!(c.freno().rate_brake_until_ms.load(Ordering::Relaxed) >= antes + 120_000);
+        assert_eq!(c.freno().consecutive_429.load(Ordering::Relaxed), 0);
+    }
+
+    const CLIENTE: &str = include_str!("client.rs");
+    const EJECUTOR: &str = include_str!("executor.rs");
+
+    fn produccion(codigo: &'static str) -> &'static str {
+        codigo.split("#[cfg(test)]").next().unwrap_or("")
+    }
+
+    /// Cuerpo de `fn {f}(` en el cliente de producción, hasta la siguiente función.
+    fn cuerpo(f: &str) -> &'static str {
+        let codigo = produccion(CLIENTE);
+        let Some(i) = codigo.find(&format!("fn {f}(")) else {
+            return "";
+        };
+        let fin = ["\n    pub ", "\n    fn ", "\n    async fn "]
+            .iter()
+            .filter_map(|m| codigo[i + 3..].find(m).map(|k| i + 3 + k))
+            .min()
+            .unwrap_or(codigo.len());
+        &codigo[i..fin]
+    }
+
+    fn antes(c: &str, primero: &str, despues: &str) -> bool {
+        matches!((c.find(primero), c.find(despues)), (Some(a), Some(b)) if a < b)
+    }
+
+    /// Los siete transportes de las peticiones firmadas del ejecutor: su
+    /// 429/418 lo registra el ejecutor (`handle_rate_limit_error`), no ellos.
+    const TRANSPORTES: [&str; 7] = [
+        "execute_order_payload",
+        "execute_order_payload_typed",
+        "execute_order_payload_body",
+        "cancel_order_payload",
+        "get_payload",
+        "get_payload_with_timeout",
+        "post_payload",
+    ];
+
+    /// RED antes de CL-189: las tres rutas sin ejecutor (hora del NTP, alta
+    /// y renovación del listenKey) no miraban el freno ni lo armaban con su
+    /// propio 429/418 (lo leían como «REJECTED http=429»). Cada respuesta se
+    /// registra una sola vez: los transportes del ejecutor no registran y el
+    /// ejecutor no llama a las rutas crudas.
+    #[test]
+    fn cl189_las_rutas_crudas_frenan_y_registran_una_vez() {
+        for f in ["create_listen_key", "keep_alive_listen_key", "fetch_server_time"] {
+            let c = cuerpo(f);
+            assert!(antes(c, "self.freno.comprobar_ahora()?;", ".send()"), "{f} sale sin freno");
+            assert!(
+                antes(c, "self.freno_de_respuesta(", "parse_reject_body("),
+                "{f} no arma el freno con su 429/418"
+            );
+        }
+        for f in TRANSPORTES {
+            let c = cuerpo(f);
+            assert!(!c.is_empty(), "{f} no encontrado");
+            assert!(!c.contains("freno_de_respuesta(") && !c.contains(".registrar("), "{f} registra");
+        }
+        assert_eq!(produccion(CLIENTE).matches("consecutive_429.fetch_add").count(), 1);
+        assert_eq!(produccion(EJECUTOR).matches("consecutive_429.fetch_add").count(), 0);
+        for llamada in [".create_listen_key(", ".keep_alive_listen_key(", "client.fetch_server_time("] {
+            assert!(!produccion(EJECUTOR).contains(llamada), "el ejecutor llama a {llamada}");
+        }
     }
 }

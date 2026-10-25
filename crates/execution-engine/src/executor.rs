@@ -1348,10 +1348,11 @@ impl OrderExecutor {
     /// petición que lo consulte (directamente o por `check_exit_rate_limits`)
     /// sale mientras duran, salidas incluidas: Binance pide no enviar durante
     /// el Retry-After de un 429, y seguir enviando acumula 429 hasta el freno
-    /// escalado (3 consecutivos) o el ban de IP (418). Las que aún no lo
-    /// consultan (NTP, listenKey y la cancelación de la pierna hermana del
-    /// user-data stream) son la fila N20 del censo C-F7b. Todo llamador de
-    /// `get_payload_account` frena antes de llamarla (CL-187).
+    /// escalado (3 consecutivos) o el ban de IP (418). Las rutas sin ejecutor
+    /// (la hora del NTP y el listenKey) lo miran y lo arman en el cliente
+    /// (CL-189); la cancelación de la pierna hermana del user-data stream aún
+    /// no (fila N20 del censo C-F7b). Todo llamador de `get_payload_account`
+    /// frena antes de llamarla (CL-187).
     fn check_backoff(&self, timestamp_ms: u64) -> Result<(), String> {
         // N20 (CL-188): el freno de `FrenoExchange` (RATE_BRAKE de M4-C02 y el
         // cooldown post-429 de F1.8), el mismo que ven los clones del cliente.
@@ -5883,5 +5884,27 @@ mod tests_n20 {
 
         let solo = crate::client::BinanceClient::new("k".into(), true);
         assert!(solo.freno().comprobar(ahora).is_ok(), "un cliente suelto empieza sin freno");
+    }
+
+    /// RED antes de CL-189: la hora del NTP y las dos rutas del listenKey
+    /// salen por un clon del cliente, sin ejecutor, y no miraban el freno:
+    /// con un 418 o dentro del Retry-After de un 429 salían igual (el primer
+    /// sondeo quedaba esperando a la red). Sin freno armado salen.
+    #[tokio::test]
+    async fn cl189_las_rutas_sin_ejecutor_no_salen_dentro_del_freno() {
+        for (error, prefijo) in [
+            ("HTTP_418_IP_BANNED retry_after=300", "RATE_BRAKE"),
+            ("HTTP_429_RATE_LIMITED retry_after=30", "RATE_LIMIT_COOLDOWN"),
+        ] {
+            let ex = ex();
+            let c = ex.client().clone();
+            ex.handle_rate_limit_error(error);
+            assert!(rechazo(c.fetch_server_time().now_or_never(), prefijo), "hora: {error}");
+            assert!(rechazo(c.create_listen_key().now_or_never(), prefijo), "alta: {error}");
+            assert!(rechazo(c.keep_alive_listen_key().now_or_never(), prefijo), "renovación: {error}");
+        }
+        let c = ex().client().clone();
+        assert!(!rechazo(c.fetch_server_time().now_or_never(), "RATE_"), "sin freno sale");
+        assert!(!rechazo(c.keep_alive_listen_key().now_or_never(), "RATE_"), "sin freno sale");
     }
 }
