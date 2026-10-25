@@ -1697,7 +1697,16 @@ impl OrderExecutor {
         } else {
             buf.push_str("https://fapi.binance.com/fapi/v1/exchangeInfo");
         }
+        self.descargar_filtros(buf.as_str()).await
+    }
 
+    /// La descarga de exchangeInfo desde `url` (RV19-T: separada de la
+    /// elección del entorno para probarla contra un servidor local). Su error
+    /// sale tal cual: `get_symbol_filter` lo clasifica con `descarga_frenada`.
+    async fn descargar_filtros(
+        &self,
+        url: &str,
+    ) -> Result<std::collections::HashMap<String, SymbolFilter>, String> {
         // exchangeInfo pesa MBs: el timeout HFT global (1.2s) lo mata
         // intermitentemente. Presupuesto dedicado + 1 reintento.
         // N20 (CL-184): ni la descarga ni su reintento salen dentro del
@@ -1706,7 +1715,7 @@ impl OrderExecutor {
         self.check_backoff(self.get_synced_timestamp())?;
         let mut res = self
             .client
-            .get_payload_with_timeout(buf.as_str(), Some(std::time::Duration::from_secs(10)))
+            .get_payload_with_timeout(url, Some(std::time::Duration::from_secs(10)))
             .await;
         if let Err(ref e) = res {
             if !e.starts_with("HTTP_429_RATE_LIMITED") && !e.starts_with("HTTP_418_IP_BANNED") {
@@ -1715,7 +1724,7 @@ impl OrderExecutor {
                 if self.check_backoff(self.get_synced_timestamp()).is_ok() {
                     res = self
                         .client
-                        .get_payload_with_timeout(buf.as_str(), Some(std::time::Duration::from_secs(10)))
+                        .get_payload_with_timeout(url, Some(std::time::Duration::from_secs(10)))
                         .await;
                 }
             }
@@ -5687,7 +5696,7 @@ mod tests_n20 {
     /// freno. Sólo el freno, sin el 80 %: los cierres necesitan los filtros.
     #[test]
     fn cl184_los_dos_envios_de_exchange_info_frenan() {
-        let c = cuerpo("fetch_all_symbol_filters");
+        let c = cuerpo("descargar_filtros");
         let envios: Vec<usize> = c.match_indices(".get_payload_with_timeout(").map(|(i, _)| i).collect();
         assert_eq!(envios.len(), 2, "descarga y reintento");
         assert!(c[..envios[0]].contains("check_backoff("), "freno antes de la descarga");
@@ -5728,7 +5737,7 @@ mod tests_n20 {
     /// estuviera vacío.
     #[test]
     fn cl185_la_descarga_no_devuelve_un_mapa_vacio() {
-        let c = cuerpo("fetch_all_symbol_filters");
+        let c = cuerpo("descargar_filtros");
         assert!(c.contains("Self::filtros_de_exchange_info(&text)"));
         assert!(!c.contains("Ok(map)"));
     }
@@ -6083,13 +6092,13 @@ mod tests_n20 {
         }
     }
 
-    /// RV18-T (revisión de CL-195): los textos que de verdad devuelve la
-    /// descarga cuando la para el freno o la cuota son descargas frenadas. Se
-    /// generan con los productores reales: el rechazo local de
-    /// `check_backoff` (cooldown tras un 429, freno tras tres 429 y tras un
-    /// 418) y lo que `handle_rate_limit_error` devuelve del 429/418 que
+    /// RV18-T (revisión de CL-195): los textos de los productores del freno
+    /// son descargas frenadas: el rechazo local de `check_backoff` (cooldown
+    /// tras un 429, freno tras tres 429 y tras un 418) y lo que
+    /// `handle_rate_limit_error` devuelve del 429/418 que
     /// `classify_rate_limit_or_ban` saca de la respuesta. Un cambio de
-    /// formato en un productor la pone en rojo.
+    /// formato en uno de ellos la pone en rojo. El camino entero de la
+    /// descarga, con un 429/418 de verdad, lo recorre rv19_*.
     #[test]
     fn rv18_los_productores_del_freno_son_descargas_frenadas() {
         use reqwest::header::{HeaderMap, HeaderValue};
@@ -6157,5 +6166,78 @@ mod tests_n20 {
         assert!(!c.contains("check_backoff("), "el paso 5 no mira el freno de ahora");
         assert_eq!(c.matches("frenada =").count(), 1, "frenada no se reasigna");
         assert_eq!(c.matches("neg_cache.insert(").count(), 2, "pasos 4 y 5");
+    }
+
+    /// Un servidor HTTP de una sola respuesta en loopback, como
+    /// tests/exchange_response_contract.rs: sin exchange, claves ni cuenta.
+    /// Acepta UNA conexión; un reintento encontraría el puerto cerrado.
+    async fn una_respuesta(wire: String) -> Option<(String, tokio::task::JoinHandle<()>)> {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        let oyente = tokio::net::TcpListener::bind("127.0.0.1:0").await.ok()?;
+        let url = format!("http://{}/fapi/v1/exchangeInfo", oyente.local_addr().ok()?);
+        let servidor = tokio::spawn(async move {
+            if let Ok((mut s, _)) = oyente.accept().await {
+                let mut peticion = [0u8; 4096];
+                let _ = s.read(&mut peticion).await;
+                let _ = s.write_all(wire.as_bytes()).await;
+                let _ = s.shutdown().await;
+            }
+        });
+        Some((url, servidor))
+    }
+
+    /// RV19-T (cuarta revisión): el 429/418 de la PROPIA descarga, por el
+    /// camino entero (transporte, brazo de error de `descargar_filtros` y
+    /// `handle_rate_limit_error`), llega a `get_symbol_filter` como descarga
+    /// frenada, arma el freno y no se reintenta. Antes ninguna prueba
+    /// recorría ese brazo: añadirle contexto al error («exchangeInfo: …»)
+    /// dejaba el freno armado pero el símbolo en la caché negativa 60 s. Un
+    /// 5xx no es una descarga frenada (cuenta como en F1-105).
+    #[tokio::test]
+    async fn rv19_el_429_y_el_418_de_la_descarga_llegan_como_descarga_frenada() {
+        for (estado, cabecera, freno) in [
+            ("429 Too Many Requests", "Retry-After: 30\r\n", Some("RATE_LIMIT_COOLDOWN")),
+            ("418 I'm a teapot", "", Some("RATE_BRAKE")),
+            ("503 Service Unavailable", "", None),
+        ] {
+            let wire = format!(
+                "HTTP/1.1 {estado}\r\n{cabecera}Content-Length: 0\r\nConnection: close\r\n\r\n"
+            );
+            let servido = una_respuesta(wire).await;
+            assert!(servido.is_some(), "{estado}: servidor local");
+            let Some((url, servidor)) = servido else { return };
+            let ex = ex();
+            let e = ex.descargar_filtros(&url).await.err().unwrap_or_default();
+            let _ = servidor.await;
+            let frenado = ex.check_backoff(ex.get_synced_timestamp()).err();
+            match freno {
+                Some(prefijo) => {
+                    assert!(OrderExecutor::descarga_frenada(&e), "{estado}: «{e}»");
+                    assert!(
+                        frenado.as_deref().is_some_and(|f| f.starts_with(prefijo)),
+                        "{estado}: la propia respuesta arma el freno: {frenado:?}"
+                    );
+                }
+                None => {
+                    assert!(!e.is_empty() && !OrderExecutor::descarga_frenada(&e), "{estado}: «{e}»");
+                    assert_eq!(frenado, None, "{estado}: no arma el freno");
+                }
+            }
+        }
+    }
+
+    /// RV19-T: `fetch_all_symbol_filters` sólo elige el entorno y devuelve la
+    /// descarga tal cual; el brazo de error de la descarga no envuelve el
+    /// texto que clasifica `descarga_frenada`.
+    #[test]
+    fn rv19_la_descarga_devuelve_su_error_tal_cual() {
+        let f = cuerpo("fetch_all_symbol_filters");
+        assert_eq!(f.matches("self.descargar_filtros(buf.as_str()).await\n    }").count(), 1, "{f}");
+        let d = cuerpo("descargar_filtros");
+        assert_eq!(d.matches("Err(e) => Err(self.handle_rate_limit_error(&e)),").count(), 1, "{d}");
+        assert_eq!(d.matches("self.check_backoff(self.get_synced_timestamp())?;").count(), 1);
+        for envoltura in ["map_err(", "format!("] {
+            assert!(!f.contains(envoltura) && !d.contains(envoltura), "{envoltura}");
+        }
     }
 }
