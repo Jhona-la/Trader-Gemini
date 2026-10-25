@@ -1532,7 +1532,20 @@ impl RiskEngine {
             let f_raw = half_kelly_lh04 * (p_lcb - (1.0 - p_lcb) / b).max(0.0);
             let q_lh04 = crate::ruin::conservative_loss_q(lh04_wr, lh04_n);
             let tope_lh04 = crate::ruin::clamp_ruin(1.0, q_lh04);
-            lh04_f = if f_raw.is_finite() { f_raw.min(tope_lh04) } else { 0.0 };
+            // CL-163: el gen 33 (`kelly_clamp_max`, «apuesta Kelly máxima») es
+            // el techo de f. En el motor legado acotaba W·(1 − 1/PF)·λ, una
+            // fracción del capital arriesgada como f; desde F1-116 + F1-087 ese
+            // motor ya no fija tamaños y el gen no tenía efecto. Sólo aprieta:
+            // con κ ≥ f (la línea base 0,55 frente al axioma 0,25) no cambia
+            // nada, y κ = 0 lleva a la orden mínima por `lh04_sin_edge`. Es un
+            // límite evolucionable al riesgo de modelo que la cota de Wilson no
+            // ve (un acierto medido del 98 % sólo lo frena el axioma).
+            let tope_gen = arena.config.kelly_clamp_max.load(Ordering::Relaxed);
+            lh04_f = if f_raw.is_finite() && tope_gen.is_finite() {
+                f_raw.min(tope_lh04).min(tope_gen.max(0.0))
+            } else {
+                0.0
+            };
             lh04_p_lcb = p_lcb;
             lh04_b = b;
         }
