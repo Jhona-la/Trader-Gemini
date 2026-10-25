@@ -184,9 +184,18 @@ fn cl166_el_libro_suma_r_en_unidades_de_stop() {
     let sl = arena.registry.get_for_coin_or(0, "lh04_stop_real", f64::NAN);
     assert!(sl > 0.0, "premisa: la orden publica su stop real");
     // Tocar el stop sin fricción en la salida: R = −SL/(SL + c), algo más que −1.
+    // RV8-T: c es la fricción de ida y vuelta del fixture (taker 4 pb, suelo
+    // de deslizamiento 0,1 pb, ATR 1 %, latencia 0), la misma función que usa
+    // el riesgo. Un divisor sin c daría R = −1 y la prueba lo ve.
+    let c = risk_engine::tp_sl::roundtrip_friction(0.0004, 0.00001, 0.01, 0.0);
+    assert!(c > 0.0008, "premisa: la fricción cuenta al menos las dos comisiones: {c}");
     RiskEngine::registrar_sombra_kelly(&arena, &medida, -sl);
     let r1 = r_de_lh04(&arena, clave(&arena, "sombra_kelly_logw_lh04").unwrap_or(f64::NAN));
-    assert!((-1.0..-0.9).contains(&r1), "un stop es R ≈ −1 en unidades de SL + c: {r1}");
+    let esperado = -sl / (sl + c);
+    assert!(
+        (r1 - esperado).abs() < 1e-9,
+        "un stop es R = −SL/(SL + c) = {esperado}, no −1: {r1}"
+    );
     let suma_r = clave(&arena, "sombra_kelly_suma_r").unwrap_or(f64::NAN);
     assert!((suma_r - r1).abs() < 1e-9 * r1.abs(), "suma de R {suma_r} frente a R del log {r1}");
     RiskEngine::registrar_sombra_kelly(&arena, &medida, 2.0 * sl);

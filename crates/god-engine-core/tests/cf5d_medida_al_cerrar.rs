@@ -186,6 +186,7 @@ fn cl135_lo_medido_entra_al_cerrar_y_no_lo_hereda_otra_posicion() {
     // Cierre por el camino del núcleo: el precio cruza el stop de la ranura.
     let (entrada, sl) = (ranura.entry_price.load(Relaxed), ranura.sl_price.load(Relaxed));
     assert!(sl > 0.0 && entrada > 0.0, "la orden lleva su stop: entrada {entrada}, SL {sl}");
+    let apalancamiento = ranura.quantity.load(Relaxed) * entrada / ranura.margin_used.load(Relaxed);
     let salida = if medida.is_long { sl * 0.999 } else { sl * 1.001 };
     t += 5_000;
     let (_, cierre, _) =
@@ -215,11 +216,20 @@ fn cl135_lo_medido_entra_al_cerrar_y_no_lo_hereda_otra_posicion() {
     }
     // CL-166: el núcleo pasa el retorno neto sobre el nocional de entrada y el
     // riesgo lo divide por SL + c: un cierre en el stop (un 0,1 % más allá,
-    // más la fricción de la salida) es R ≈ −1, no R·L (el retorno sobre el
-    // margen) ni R·100 (en porcentaje).
+    // más la fricción de la salida) es R ≈ −1, no R·100 (en porcentaje).
+    // RV8-T: un R sobre el margen sería R·L, y en este fixture la orden sale
+    // con L = 1 (se observa 1,0), así que margen y nocional coinciden y esta
+    // prueba no distingue ese error. Si el fixture llega a dar L ≥ 2, la
+    // última aserción lo comprueba.
     let r = sombra("sombra_kelly_suma_r").unwrap_or(f64::NAN);
-    println!("observado: R del cierre en el stop {r}");
+    println!("observado: R del cierre en el stop {r}, apalancamiento {apalancamiento}");
     assert!((-2.0..=-0.9).contains(&r), "un cierre en el stop es R ≈ −1 en unidades de SL + c: {r}");
+    if apalancamiento >= 2.0 {
+        assert!(
+            !(-2.0..=-0.9).contains(&(r * apalancamiento)),
+            "con L = {apalancamiento} un R sobre el margen saldría de la banda"
+        );
+    }
 
     // La ranura revertida no deja su medida a la siguiente ocupante.
     core.medida_de_entrada[0][k] = Some(medida);
