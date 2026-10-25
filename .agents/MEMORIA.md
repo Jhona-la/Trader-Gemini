@@ -1,5 +1,36 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
 
+## 2026-10-25 — Claude (cloud, Línea C): decimocuarta tanda del censo C-F7b (fila N20, peticiones fuera de la cuota)
+
+Tanda del PR #147. Cambia la conducta sólo en ejecución real con un 429/418
+activo (y, en CL-186, con un símbolo del registro que el exchangeInfo no
+trae); el backtest no usa OrderExecutor (golden, T-1 y T-2 no lo ven). Sólo
+toca execution-engine (executor.rs y client.rs): ni ntp.rs, ni
+user_data_stream.rs, ni host_oms.rs, ni el host.
+
+- El freno 429/418 vive en `client::FrenoExchange` (CL-188), uno por
+  ejecutor y compartido por los clones de su cliente, con el reloj de
+  `OrderExecutor::arena` (ahora `Arc<ArcSwapOption<GlobalArena>>`).
+- Dentro del freno ya no salen: exchangeInfo (CL-184), el modo hedge y la
+  hora del ejecutor (CL-187), la hora del NTP y el listenKey (CL-189, que
+  además arman el freno con su 429/418 y reinician la racha con su 2xx,
+  CL-193) y la cancelación de la pierna hermana del stream (CL-190, sólo
+  mira). El 429 ya registrado por una ruta sin ejecutor vuelve como
+  «FRENO_ARMADO: …» y no cuenta dos veces (CL-194).
+- exchangeInfo: uno sin filtros no borra la caché (CL-185); un símbolo
+  ausente de un mapa completo no se vuelve a descargar en cada llamada
+  (CL-186); el freno no deja un símbolo en la caché negativa, decidido por
+  la descarga de esa llamada (CL-192, CL-195).
+- CL-191: sale el último `.expect` de producción de executor.rs/client.rs.
+- Dos revisiones adversariales antes de fusionar: 10 confirmados y 3
+  refutados; luego 1 confirmado (baja) y 1 dividido. Todo atendido en
+  CL-192 a CL-195, RV16-T y RV17-T.
+- Filas nuevas N23 a N39 (resto de N20 y N21 con su dueño): cabeceras de
+  los errores, coste sin respuesta y marca AMBIGUOUS (Línea C); freno a
+  cero tras el cambio de ejecutor (N26); cancelación hermana y ritmo del
+  stream (QRA/Línea I); sondeos con su propio cliente HTTP (host, Sol,
+  bootloader); NTP lento (Línea I/AGY); aviso falso del preflight (N39).
+
 ## 2026-10-25 — Claude (cloud, Línea C): decimotercera tanda del censo C-F7b (fila N5, la cuota del exchange)
 
 Tanda del PR #146. Cambia la conducta sólo en ejecución real con la cuota

@@ -408,6 +408,7 @@ dice su lote):
 | #144 | N12, la fricción en la pérdida al stop (CL-172: la viabilidad de la orden mínima; CL-173: el tope de ruina F1-092; RV12-T, RV12-docs); f_min_ejecutable de la envolvente queda para el dueño |
 | #145 | N4 (RET-N4: Position::entry_tau_ms(), sin llamadores), N2 (RET-N2: ewma_price_at, scale_gain_at y volatility_at, tras la regla 2), N9 (CL-174: sin VPIN medido la sombra TrendRunner se abstiene), N10 (CL-175: la presión adversarial de Nash es el cvpin medido), N15 (CL-176: la escalada desnuda reporta el fallo de la purga de brackets); más RV13-docs; abre N10b, N15, N16 y N17 |
 | #146 | N5, la cuota del exchange para las salidas (CL-177: uso por contador con su sello y sin bajar por una respuesta tardía; CL-178: las salidas sin consulta respetan el freno 429/418 y el barrido no purga dos veces; CL-179: las críticas pasan hasta el límite del exchange con las críticas en vuelo contadas); más N5-docs; abre N18 a N22; y sus dos revisiones antes de fusionar (CL-180: el máximo exacto de las cabeceras vigentes, con el sello futuro acotado por la siguiente cabecera; CL-181: un contador sin coste no frena por lo que está en vuelo; CL-182: la cabecera se registra con el cupo vivo; CL-183: en X-026 un re-snapshot sin respuesta no da la posición por plana; RV14-c, RV14-T, RV14-docs, RV15-c, RV15-docs) |
+| #147 | N20, peticiones fuera de la cuota (CL-184: exchangeInfo dentro del freno; CL-185: un exchangeInfo sin filtros no borra la caché; CL-186: un símbolo ausente de un exchangeInfo completo no se vuelve a descargar; CL-187: modo hedge y hora dentro del freno, con la cabecera del modo registrada; CL-188: un freno por ejecutor compartido por los clones de su cliente; CL-189: la hora del NTP y el listenKey miran y arman el freno; CL-190: la cancelación de la pierna hermana mira el freno; CL-191: sin el último expect de producción del ejecutor); más N20-docs; abre N23 a N39; y sus dos revisiones antes de fusionar (CL-192: el freno no deja un símbolo en la caché negativa; CL-193: el 2xx del NTP y del listenKey reinicia la racha de 429; CL-194: su 429 ya registrado no cuenta dos veces; CL-195: la caché negativa decide por la descarga de esa llamada; RV16-T, RV17-T, RV16-docs) |
 
 **Hecho por otros agentes**: lote 9 entero (Sol, d18b3735), lote 45 entero
 (Codex RB, 906a9c6a), parte del 7 (Sol retiró el bin main.rs de
@@ -1196,6 +1197,67 @@ un escéptico por lote listo):
   freno; hoy su Err ya marca la protección sucia y la purga el vigilante. get_payload_account sólo mira el freno antes de su
   reintento: el primer GET de fetch_hedge_mode y ensure_hedge_mode sale
   siempre. Átomo propio (Línea C).
+  Ejecutada en la tanda 14 (CL-184 a CL-191), sólo en execution-engine
+  (executor.rs y client.rs), sin tocar ntp.rs, user_data_stream.rs,
+  host_oms.rs ni el host. Lo que queda va a las filas N26 a N33.
+  - CL-184: la descarga de exchangeInfo y su reintento miran el freno
+    (sólo el freno, sin la franja del 80 %: los cierres necesitan los
+    filtros).
+  - CL-185: un exchangeInfo sin filtros utilizables (cuerpo ilegible,
+    «TEXT_ERR…», lista vacía) es un error y no borra la caché buena
+    (`filtros_de_exchange_info`); antes era un mapa vacío que
+    get_symbol_filter guardaba encima.
+  - CL-186: un símbolo ausente de un exchangeInfo completo va a la caché
+    negativa (F1-105), así que cuesta como mucho una descarga por símbolo
+    cada 60 s, no una por llamada.
+  - CL-187: el GET de modo de fetch_hedge_mode y ensure_hedge_mode va por
+    el tramo de lectura y registra su cabecera; el POST de activación
+    mira el freno; la hora de `ExecutionProvider::fetch_server_time` mira
+    el freno. Todo llamador de `get_payload_account` frena antes de
+    llamarla (guarda).
+  - CL-188 (refactor sin cambio de conducta): el freno 429/418 vive en
+    `client::FrenoExchange`, uno por ejecutor y compartido por los clones
+    de su cliente (el NTP y el user-data stream los toman con
+    `client().clone()`), con el mismo reloj que `OrderExecutor::arena`
+    (ahora `Arc<ArcSwapOption<GlobalArena>>`).
+  - CL-189: la hora del NTP y el alta y la renovación del listenKey, que
+    salen por un clon sin ejecutor, miran el freno y lo arman con su
+    propio 429/418 (una sola vez: los transportes del ejecutor no
+    registran y el ejecutor no llama a estas rutas). Antes su 429 se leía
+    como «REJECTED http=429»; ahora vuelve como «FRENO_ARMADO:
+    HTTP_429_RATE_LIMITED retry_after=N» (CL-194). Sólo lo leen los logs.
+  - CL-190: la cancelación de la pierna hermana (user-data stream) mira el
+    freno en `cancel_order_payload`; no registra (su 429 lo imprime el
+    stream, fila N27).
+  - CL-191 (fila N35): sale el último `.expect` de producción de
+    executor.rs y client.rs (`record_query_resolution`, inalcanzable), con
+    una guarda que cuenta unwrap, expect y panic en los dos archivos.
+  - Decisión por defecto, sin tarjeta: durante un cooldown o un freno no
+    salen tampoco el NTP, el listenKey ni la cancelación hermana. El NTP se
+    salta sus ticks (corrige al acabar), un keepalive rechazado lo cubre la
+    validez de 60 min del listenKey salvo un freno de más de unos 35 min, y
+    la cancelación rechazada marca la protección sucia, como un rechazo del
+    exchange, y la purga el vigilante al acabar el freno.
+  - Revisión antes de fusionar (revisor por grupo de átomos y dos
+    escépticos, 10 confirmados y 3 refutados): CL-192, durante el freno un
+    símbolo sin spec en el registro entraba en la caché negativa por el
+    rechazo local de la descarga y la entrada (60 s) sobrevivía al freno;
+    CL-193, el 2xx del NTP y del listenKey reinicia la racha de 429 (desde
+    CL-189 sus 429 cuentan, y en papel, con el ejecutor casi sin tráfico,
+    tres 429 aislados en un día armaban RATE_BRAKE); CL-194, el 429/418 que
+    una ruta sin ejecutor ya registró vuelve marcado y no cuenta dos veces
+    aunque el stream o el NTP lo registren (la guarda no leía a esos
+    llamadores); RV16-T, las pruebas de CL-186, CL-187 y CL-188 prueban lo
+    que dicen (mutaciones comprobadas). El aviso falso del arranque con el
+    modo sin consultar va a la fila N39; el freno a cero tras el cambio de
+    ejecutor (refutado como defecto de la tanda: ya pasaba) es N26.
+    Segunda revisión, sobre esos arreglos (1 confirmado, baja, y 1
+    dividido): CL-195, CL-192 decidía con el freno armado al llegar al paso
+    5, no con lo que pasó en la descarga; ahora no guarda sólo si la
+    descarga de esa llamada la paró el freno o la cuota (su rechazo local o
+    su 429/418) y no hay un exchangeInfo guardado, que sí prueba la
+    ausencia; RV17-T, la guarda de CL-193 exige el reinicio fuera de la rama
+    de error.
 - N21 (de la tanda 13): las respuestas de error tiran sus cabeceras de uso,
   así que tras un 4xx/5xx el uso no se actualiza. En client.rs:296, :420 y
   :508 extract_limits sólo corre en la rama 2xx; en :355
@@ -1208,6 +1270,10 @@ un escéptico por lote listo):
   revisión en los reintentos D-02 de la OCO). Candidato: devolver los
   límites también en el Err y, con un Err ambiguo, sumar el coste a un uso
   local sellado que caduque con su ventana. Átomo propio, con la fila N20.
+  En la tanda 14, CL-189 sólo arregla las tres rutas sin ejecutor (hora del
+  NTP y listenKey): su 429/418 ya no es «REJECTED http=429», arma el freno
+  con su Retry-After. El resto pasa a N23 (cabeceras de los siete
+  transportes), N24 (coste sin respuesta) y N25 (marca AMBIGUOUS).
 - N22 (de la tanda 13): literales y pesos sin derivar en la cuota. El 0,8
   de entradas y lecturas (executor.rs, `HEADROOM`) y los +60 s del freno
   escalado de M4-C02 (`until.saturating_add(60_000)`). Y tres pesos del
@@ -1225,6 +1291,117 @@ un escéptico por lote listo):
   cuenta, 10 s en exchangeInfo) tras la mayor prueba un reinicio, y el
   contador podría soltar la mayor antes de su caducidad (hoy la conserva,
   lo conservador; CL-180).
+  Desde la tanda 14 los 429 del NTP y del listenKey cuentan también para
+  el freno escalado (CL-189), así que sus +60 s se arman más a menudo; con
+  N18 (X-009 arma el kill-switch permanente si un rechazo local bloquea
+  los brackets) eso sube la prioridad de N18. El riesgo añadido es pequeño:
+  un 429 del NTP o del listenKey significa que la IP ya pasó el límite, y la
+  siguiente petición del ejecutor recibiría el suyo.
+- N23 (de la tanda 14, resto de N21, Línea C): las respuestas de error de
+  los siete transportes de las peticiones firmadas (client.rs
+  `execute_order_payload`, `_body`, `cancel_order_payload`,
+  `get_payload_with_timeout`, `post_payload`) siguen tirando su cabecera de
+  uso. Diseño: un `ErrorRest { texto, limits }` con `Deref<Target = str>` y
+  `Display`, sin `From<ErrorRest> for String`; registrar por
+  `observar_limites` (nunca `update_limits`, que reinicia la racha) y nunca
+  la cabecera de un 429/418. Al hacerlo, juntar los cinco
+  `let _ = self.handle_rate_limit_error(` del ejecutor y cuidar que ningún
+  envío registre dos veces su 429 (en `execute_order` el 429 ya vuelve por
+  `handle_rate_limit_error`). Hace falta un banco de pruebas en loopback para
+  las rutas `full_url`.
+- N24 (de la tanda 14, Línea C, con N22): el coste de una petición sin
+  respuesta (timeout AMBIGUOUS o error de transporte) sale del libro en
+  vuelo sin entrar en el uso, y el reintento de `get_payload_account` envía
+  dos veces con una sola reserva. Candidato: `Cupo::sin_respuesta(ahora)`,
+  una muestra local sellada que caduca con su ventana.
+- N25 (de la tanda 14, Línea C, cambio de conducta): la marca AMBIGUOUS es
+  desigual. En `execute_order_payload` un 5xx, un 408 o -1006/-1007 salen
+  como «Binance API Error»; en `cancel_order_payload`,
+  `get_payload_with_timeout` y `post_payload` un error de transporte no es
+  AMBIGUOUS; `get_payload_with_timeout` devuelve Ok con «TEXT_ERR…» si no
+  pudo leer el cuerpo, y `_typed` tira los límites de un 2xx cuyo ACK no
+  se puede leer. Cambia cómo se resuelven las órdenes: átomo propio.
+- N26 (de la tanda 14; método de Línea C, línea del host de Línea I o AGY):
+  el cambio de ejecutor en caliente (god_engine.rs:4410-4431, mismo
+  USE_TESTNET y la misma arena que el anterior; `new_with_shared`) estrena
+  un freno a cero aunque el exchange siga frenando la IP. Parche:
+  `OrderExecutor::heredar_cuota(&self, previo) -> bool` sólo con la misma
+  URL base y la misma clave (plazos y `consecutive_429` con `fetch_max`,
+  muestras de uso copiadas sin anidar candados; nunca `en_vuelo` ni el
+  kill-switch), llamado por el host antes de publicar el nuevo
+  (god_engine.rs:4431) o en `OmsSession::replace_executor`. El método entra
+  con su llamada.
+- N27 (de la tanda 14; Codex QRA, Línea I desde el 2026-10-26, con Línea C):
+  lo que queda de la cancelación de la pierna hermana
+  (user_data_stream.rs:631-731). (a) Su 429/418 sólo se imprime: registrarlo
+  con `client.freno().registrar(&e)` y salir del bucle de candidatos con un
+  HTTP_4xx. (b) Los candidatos `_SLR`/`_TPR` están muertos desde LG-6
+  (:650-657). (c) No pide cupo crítico y tira la cabecera: con un
+  `Arc<OrderExecutor>` cancelaría por `cancel_algo_order` (necesita el
+  cableado del host). (d) La era demo firma con la hora local sin corregir
+  (:675-677, arena None) aunque con USE_TESTNET=true opera la testnet real:
+  firmar con `client.freno().ahora_ms()`. (e) URLs literales (:688-694).
+- N28 (de la tanda 14; dueño de `start()`, Codex QRA o Línea I): el ritmo del
+  bucle del user-data stream. El backoff se reinicia antes de conectar el
+  WS (:135, un bucle de ~0,5 s); tras un cierre del servidor espera 1 s
+  fijo (:260-261); durante un freno debería dormir hasta su fin con jitter
+  (pide `FrenoExchange::activo_hasta_ms()`) y reintentar el keepalive al
+  acabar; el bucle del listenKey corre también en papel (C8).
+- N29 (de la tanda 14, Línea I): el sondeo de OI del host
+  (god_engine.rs:3066-3144) tiene su propio cliente reqwest de 8 s, envía N
+  peticiones seguidas cada 120 s, se traga el 429/418 con `if let Ok` y elige
+  el entorno con `is_demo_env`. Si el entorno es el del ejecutor: saltar el
+  ciclo con el freno armado (`exec.load().client().freno()`, hace falta un
+  acceso público), clasificar y registrar el 429/418 y cortar al primero.
+- N30 (de la tanda 14, Sol): sondeos de data-pipeline en la misma IP.
+  omni_multiplexer pide PAXG cada 60 s y premiumIndex, OI y hasta 60
+  `/futures/data` cada 120 s (:578, :673-773); dynamic_ranker,
+  ticker/24hr (peso 40) y exchangeInfo cada hora (:81-140); spot_feed abre
+  N peticiones ante cualquier no-2xx (:284-290). Todos se tragan el
+  429/418. data-pipeline no puede nombrar `FrenoExchange`: el host
+  inyectaría un asa del freno (un trait o un cierre en quantum-arena). Parar
+  el abanico del spot con un 429/418.
+- N31 (de la tanda 14; god-engine-core, coordina Línea I): el calentamiento
+  de velas del bootloader (bootloader.rs:245-284, llamado en
+  god_engine.rs:1541) no mira el estado HTTP: un 429/418 da una serie vacía
+  sin aviso (unos 150 de peso con N = 30).
+- N32 (de la tanda 14, Línea C, documentación): los binarios de operador
+  (system_health, income_report, oco_probe, algo_fetch_probe,
+  audit_forensic_backtest) usan la misma IP y cuenta con su propia cuota.
+  Regla operativa: no correrlos durante un freno. Falta documentarla.
+- N33 (de la tanda 14, Línea C): sin un exchangeInfo guardado y con la
+  descarga fallando fuera de un freno, get_symbol_filter vuelve a descargar
+  en cada llamada (hasta unos 20 s cada una con una red lenta). Candidato:
+  un plazo global de reintento tras una descarga fallida y la precarga al
+  arrancar.
+- N34 (de la tanda 14, Línea I): entre 0,8·L y L, `purge_orphan_legs` se
+  traga el rechazo del tramo de lectura de `fetch_all_open_algo_orders`
+  (`if let Ok`, god_engine.rs:286) y la auditoría limpia la marca de sucio
+  (:3495). Durante un 429/418 la auditoría para antes (:3251), así que
+  CL-190 es seguro. Pregunta abierta de N5: ¿openAlgoOrders sin símbolo es
+  lectura aunque la purga sea protectora?
+- N35 (de la tanda 14): el `.expect` de `record_query_resolution`. Hecha en
+  CL-191.
+- N36 (de la tanda 14, Línea I): el comentario D-702 (god_engine.rs:1916-1921)
+  dice que la era demo es papel; con USE_TESTNET=true es falso
+  (`set_paper_trading(is_demo_mode && !is_env_testnet)`, :1433): esa era
+  opera la testnet real con un streamer sin arena.
+- N37 (de la tanda 14; Línea I, I-5, o AGY, Ω209; inferido, sin medir): el
+  filtro de Kalman del NTP es lento con el RTT de producción (K ≈ 0,006,
+  constante de tiempo de unos 41 min). Un salto de +1,5 s del reloj del
+  equipo dejaría toda petición firmada, salidas incluidas, en -1021 unos
+  17 min.
+- N38 (de la tanda 14, Línea C, con N22): las respuestas 2xx de las rutas sin
+  ejecutor (NTP, listenKey) no observan el uso: su cabecera no entra en los
+  contadores. Desde CL-193 sí reinician la racha de 429. Decidir con N22
+  (alineación de las ventanas y los +60 s).
+- N39 (de la revisión de la tanda 14, Línea I): el preflight de arranque
+  (god_engine.rs:1747-1756) imprime «No se pudo garantizar modo hedge … TODA
+  orden fallará (-4061)» ante cualquier error de ensure_hedge_mode. Desde
+  CL-187 puede ser un rechazo local (uso por encima del 80 %, cooldown o
+  RATE_BRAKE) sin haber consultado el modo, con `is_hedge_mode` aún en true
+  y las órdenes funcionando. Candidato: con un error que empieza por RATE_,
+  registrar «modo no consultado por cuota; lo confirma el refresco OMS».
 
 **Restos de lotes ejecutados**: del 3, net_multiplexer (a AGY, para
 unificar con data_pipeline::http_cliente) y active_universe/
