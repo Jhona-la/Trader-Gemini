@@ -84,9 +84,14 @@ fn utc_legible(ms: u64) -> String {
 }
 
 /// Reconstruye los incrementos de una ventana igual que el motor y aplica
-/// el nulo: permuta los PARES (log_return, dt_frac) — rompe el orden
-/// temporal preservando la marginal de ambos ejes — y re-firma.
-fn firma_nula_ventana(mids: &[f64], ts_ms: &[u64]) -> Option<Signature2> {
+/// el nulo UNIEJE (GLM 162, corrección que exige el hallazgo del 161):
+/// permuta SÓLO el vector de log-retornos contra los dt en su orden
+/// original. Bajo este nulo ΣΔ¹, Σ(Δ¹)² — y por la identidad del 161
+/// S¹ y S¹¹ — se conservan EXACTO (marginal del precio intacta); los
+/// cross S¹²/S²¹ sí se rompen (ΣΔ¹Δ² cambia): son los ÚNICOS términos
+/// que pueden llevar Δfirma ≠ 0. Permutar pares (el nulo del 161)
+/// conservaba hasta los cross — el cero medido era álgebra, no mercado.
+fn incrementos_ventana(mids: &[f64], ts_ms: &[u64]) -> Option<Vec<(f64, f64)>> {
     let span = ts_ms.last()?.checked_sub(*ts_ms.first()?)?;
     if span == 0 {
         return None;
@@ -101,7 +106,17 @@ fn firma_nula_ventana(mids: &[f64], ts_ms: &[u64]) -> Option<Signature2> {
         let log_return = (p / p_prev).ln();
         incs.push((log_return, (t - t_prev) as f64 / span as f64));
     }
-    permutacion_determinista(&mut incs);
+    Some(incs)
+}
+
+/// Nulo unieje: baraja SOLO los log-retornos, dt quedan en orden original.
+fn firma_nula_unieje(mids: &[f64], ts_ms: &[u64]) -> Option<Signature2> {
+    let mut incs = incrementos_ventana(mids, ts_ms)?;
+    let mut rets: Vec<f64> = incs.iter().map(|(r, _)| *r).collect();
+    permutacion_determinista(&mut rets);
+    for (par, r) in incs.iter_mut().zip(rets.iter()) {
+        par.0 = *r;
+    }
     let s = firma_nivel2_incrementos(&incs);
     s.to_features().iter().all(|x| x.is_finite()).then_some(s)
 }
@@ -144,9 +159,13 @@ fn firmas_camino_sobre_tapes_2026_09_14() {
     w(format!("ancla recta vs remuestreo: max|Δtérmino| = {d_ancla:.2e} (esperado ≈ 0)"));
     w(String::new());
 
-    // ── Por símbolo.
+    // ── Por símbolo. Además de la MEDIA del Δ (lo único que reportó el
+    // 161 y que ocultó la señal por cancelación de signo), este ciclo
+    // reporta mean|Δ| y std del Δ de los CROSS — la métrica honesta.
     struct Acum {
         delta_sum: [f64; 6],
+        abs_sum: [f64; 6],
+        sq_sum: [f64; 6],
         n: usize,
     }
     let mut tabla: Vec<(String, Acum)> = Vec::new();
@@ -172,7 +191,7 @@ fn firmas_camino_sobre_tapes_2026_09_14() {
         drop(raw);
 
         let paso = ((n - VENTANA) / N_VENTANAS).max(1);
-        let mut acum = Acum { delta_sum: [0.0; 6], n: 0 };
+        let mut acum = Acum { delta_sum: [0.0; 6], abs_sum: [0.0; 6], sq_sum: [0.0; 6], n: 0 };
         let mut ventanas_usadas = 0usize;
         for i in (0..=n - VENTANA).step_by(paso) {
             if ventanas_usadas >= N_VENTANAS {
@@ -182,42 +201,58 @@ fn firmas_camino_sobre_tapes_2026_09_14() {
             let Some(f) = firma_ventana_logprecio(p_v, t_v) else {
                 continue;
             };
-            let Some(f_nulo) = firma_nula_ventana(p_v, t_v) else {
+            let Some(f_nulo) = firma_nula_unieje(p_v, t_v) else {
                 continue;
             };
             let (fr, fn_) = (f.to_features(), f_nulo.to_features());
             for k in 0..6 {
-                acum.delta_sum[k] += fr[k] - fn_[k];
+                let d = fr[k] - fn_[k];
+                acum.delta_sum[k] += d;
+                acum.abs_sum[k] += d.abs();
+                acum.sq_sum[k] += d * d;
             }
             acum.n += 1;
             ventanas_usadas += 1;
         }
         let simbolo = nombre_tape.trim_end_matches("_2026-09-14_REAL.bin");
         if acum.n > 0 {
+            // to_features orden: (S¹, S², S¹¹, S¹², S²¹, S²²) — los cross
+            // son los índices 3 y 4 (la cabecera del 161 los rotuló mal).
             let medias: Vec<String> = acum
                 .delta_sum
                 .iter()
                 .map(|d| format!("{:+.5}", d / acum.n as f64))
                 .collect();
+            let mean_abs_cross = acum.abs_sum[3] / acum.n as f64;
+            let var = (acum.sq_sum[3] / acum.n as f64)
+                - (acum.delta_sum[3] / acum.n as f64).powi(2);
+            let std_cross = var.max(0.0).sqrt();
             w(format!(
-                "{simbolo:9} [{} → {}] n={} Δf=({})",
+                "{simbolo:9} [{} → {}] n={} Δmedia=({}) · |ΔS¹²|med={:.5} σ(ΔS¹²)={:.5}",
                 utc_legible(ts[0]),
                 utc_legible(ts[n - 1]),
                 acum.n,
-                medias.join(", ")
+                medias.join(", "),
+                mean_abs_cross,
+                std_cross
             ));
             tabla.push((simbolo.to_string(), acum));
         }
     }
 
-    // ── Resumen: los cross terms son la señal no-lineal genuina.
+    // ── Resumen por término (media Y magnitud — la lección del 162).
     w(String::new());
-    w("──── LECTURA POR TÉRMINO (media transversal del Δfirma) ────".into());
-    let nombres = ["S¹", "S²", "S¹¹", "S²²", "S¹²", "S²¹"];
+    w("──── LECTURA POR TÉRMINO (media y mean|Δ| transversales) ────".into());
+    // to_features orden: (S¹, S², S¹¹, S¹², S²¹, S²²).
+    let nombres = ["S¹", "S²", "S¹¹", "S¹²", "S²¹", "S²²"];
     for k in 0..6 {
         let vals: Vec<f64> = tabla
             .iter()
             .map(|(_, a)| a.delta_sum[k] / a.n as f64)
+            .collect();
+        let abss: Vec<f64> = tabla
+            .iter()
+            .map(|(_, a)| a.abs_sum[k] / a.n as f64)
             .collect();
         if vals.is_empty() {
             continue;
@@ -225,20 +260,23 @@ fn firmas_camino_sobre_tapes_2026_09_14() {
         let media = vals.iter().sum::<f64>() / vals.len() as f64;
         let max = vals.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
         let min = vals.iter().cloned().fold(f64::INFINITY, f64::min);
+        let abs_med = abss.iter().sum::<f64>() / abss.len() as f64;
         w(format!(
-            "{:3} Δf media {media:+.5} · min {min:+.5} · max {max:+.5} · spread {s:.4}",
+            "{:3} Δmedia {media:+.5} · [|Δ|]med {abs_med:.5} · min {min:+.5} · max {max:+.5} · spread {s:.5}",
             nombres[k],
             s = max - min
         ));
     }
     w(String::new());
-    w("NOTA HONESTA: S² ≡ 1 y S²² ≡ ½ en TODA ventana (el eje del tiempo es".into());
-    w("determinista: Σ dt = 1, Σ dt² < Σ dt·dt = 1) — su Δfirma mide SÓLO la".into());
-    w("sensibilidad del nulo a la permutación de dt's, no señal de mercado.".into());
-    w("La señal genuina vive en S¹ (dirección acumulada), S¹¹ (varianza del".into());
-    w("camino) y los cross S¹²/S²¹ (acoplamiento precio-tiempo: momentum".into());
-    w("temporal asimétrico). Consumo: propuesta al consejo SOLO si el recibo".into());
-    w("muestra separación transversal distinguible en los cross.".into());
+    w("RECTIFICACIÓN DEL 161 (lección del contrato 162): la identidad de".into());
+    w("permutación de pares cubre S¹,S²,S¹¹,S²² y la SUMA S¹²+S²¹=S¹S²;".into());
+    w("los cross INDIVIDUALES cambian por ventana (~0.02 en sintético).".into());
+    w("El 'Δfirma≡0 EXACTO' del 161 fue sobre-redondeo de MEDIAS ±1e-5:".into());
+    w("la media con signo cancela; mean|Δ| y σ son la métrica honesta.".into());
+    w("Bajo el nulo UNIEJE (retornos barajados, dt fijos): S¹,S²,S¹¹,S²²".into());
+    w("conservados EXACTO (contrato CI) — TODO el Δ vive en los cross.".into());
+    w("Consumo: propuesta al consejo SOLO si mean|ΔS¹²| separa símbolos".into());
+    w("transversalmente más allá del ruido del nulo.".into());
     w("==========================================================================".into());
 
     let reporte = lineas.join("\n");

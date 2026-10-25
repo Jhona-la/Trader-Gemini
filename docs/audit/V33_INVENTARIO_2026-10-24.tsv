@@ -1,6 +1,6 @@
 # V33 — Inventario mecánico completo de rutas versionadas
 # Base: 2fb4633d3ea3f447483cddcf49665a513f11d45c; generado con git ls-files --stage en una sola lectura del índice.
-# Revalidación 2026-10-24 21:02: merge=4ee89fd422733c3b8c3a5bf26d193d34320a81a2; 2.201 rutas (26 REVISADO_ESTATICO+1 RED+2.174 INVENTORIADO), cuatro altas del PR #139 y ninguna baja. Las filas previas conservan el blob de su base de auditoría; las altas llevan blob del índice vigente.
+# Revalidación 2026-10-24 22:50: main=4f9ada0980fdcd155bdce522993d7ec0ac0f30c9; 2.203 rutas (26 REVISADO_ESTATICO+1 RED+2.176 INVENTORIADO), dos altas y ninguna baja. Las filas previas conservan el blob de su base de auditoría; las altas llevan blob del índice vigente.
 # INVENTORIADO asigna cola; REVISADO_ESTATICO/RED remiten al ledger y evidencia. Ninguna fila certifica build/tests/Demo por sí sola.
 # ROI/PnL/WR/Sharpe/EV y periodos de mercado: N/D. No hubo ejecución financiera en esta revisión.
 ruta	blob	estado	siguiente
@@ -174,6 +174,7 @@ crates/data-ingest/src/rutas_feed.rs	50c61dc06b29ed8b94c9ba8c7289eb78217a9c35	IN
 crates/data-ingest/src/sbe_decoder.rs	f7a392ee500ad59c24cc1248c49c6f064919c2d9	INVENTORIADO	Asignar dueño y revisar ruta viva
 crates/data-ingest/tests/edad_feed_contract.rs	d19b4ab6ab6f998ae9b4592f061ea1a0003da8ab	INVENTORIADO	Asignar dueño y revisar ruta viva
 crates/data-ingest/tests/f10_001_sbe_contracts.rs	be23eccb6dba3cf81243a16f012b45096b190d1b	INVENTORIADO	Asignar dueño y revisar ruta viva
+crates/data-ingest/tests/inmune_latencia_contract.rs	3bb310be9da6a0e89b8afc1525e727b6d29129c9	INVENTORIADO	Asignar dueño y revisar ruta viva
 crates/data-ingest/tests/liquidation_contract.rs	dbde422f909719f4fc8b5f32305c810a6b8ef39e	INVENTORIADO	Asignar dueño y revisar ruta viva
 crates/data-ingest/tests/rutas_feed_contract.rs	5ae80da0898703b88b926c6f7c465768ebc1e1c8	INVENTORIADO	Asignar dueño y revisar ruta viva
 crates/data-pipeline/Cargo.toml	1d6115627c55eef414aa18f244e141f40cc301c8	INVENTORIADO	Asignar dueño y revisar ruta viva
@@ -1420,6 +1421,7 @@ docs/audit/linea_h/verificacion.tsv	23f1774303c15fd87bc784b0795f681b31c46aa2	INV
 docs/audit/linea_i/SONDAS_WS_2026-10-24.md	33ce8bc62b695400f4a1d49e427b2e7ac6f47b1f	INVENTORIADO	Asignar dueño y revisar ruta viva
 docs/audit/linea_i/i1_lectores.json	253f6813c1f19d19c1b9fa54f8350f7a482f5c41	INVENTORIADO	Asignar dueño y revisar ruta viva
 docs/audit/linea_i/i1_verificacion_y_diseno.json	9bdd220ba787e8e62f283ee0abd9175bf34408ed	INVENTORIADO	Asignar dueño y revisar ruta viva
+docs/audit/linea_i/rtt_probe.ps1	3f7389c375b557f6ec8387745f06e8e016bbe086	INVENTORIADO	Asignar dueño y revisar ruta viva
 docs/audit/linea_i/ws_probe.ps1	6743a3ae91b2b654cb2a4e59d91542b19e3da57b	INVENTORIADO	Asignar dueño y revisar ruta viva
 docs/audit/meta_analitica/area_impacto.tsv	aecaeedde2bc359b4429fc8b1f9712327786da22	INVENTORIADO	Asignar dueño y revisar ruta viva
 docs/audit/meta_analitica/familias_atomo.tsv	ec523c4bf2475b4115acfec3dfe35926f1c2728a	INVENTORIADO	Asignar dueño y revisar ruta viva

@@ -1,8 +1,8 @@
 # Plan maestro por fases V33 — revisión desde la base
 
 **Revisión vigente:** 2026-10-24, Kimi Quant Sr V33, en coordinación con los demás agentes.
-**Base inspeccionada:** `main = 4ee89fd422733c3b8c3a5bf26d193d34320a81a2`, merge de `84868151f` y `origin/main=234561adf`.
-**Alcance:** workspace Rust de 21 crates + paquete raíz, 2.201 rutas versionadas y 846 archivos Rust. Estas cifras describen el censo mecánico, **no** archivos ya auditados.
+**Base inspeccionada:** `main = 4f9ada0980fdcd155bdce522993d7ec0ac0f30c9 = origin/main`, con PR #140 integrado por fast-forward preservando los siete WIP y el stash histórico.
+**Alcance:** workspace Rust de 21 crates + paquete raíz, 2.203 rutas versionadas y 847 archivos Rust. Estas cifras describen el censo mecánico, **no** archivos ya auditados.
 **Objetivo de investigación:** crecimiento neto compuesto de +100 %/72 h. Es una hipótesis que debe demostrarse fuera de muestra y después de fees, funding y slippage; no una garantía ni una razón para aumentar riesgo. Producción permanece prohibida en esta revisión.
 
 Este es el plan canónico de coordinación. Los planes de líneas aportan detalle, no fuentes paralelas de verdad. `AGENT_SYNC.md` contiene reservas y heartbeats; `.agents/MEMORIA.md` conserva los recibos de cierre.
@@ -23,11 +23,11 @@ No se simplifica matemática existente para salir de un error. No se presentan `
 
 | Área | Estado verificado | Consecuencia |
 |---|---|---|
-| `main` | `4ee89fd42`, merge de `84868151f` con `234561adf`; los siete archivos locales y el stash histórico fueron preservados | Kimi no toca Rust ni arrastra cambios ajenos al staging |
-| CI del último código integrado | `234561adf`: **10/10 checks SUCCESS**; Unit `40152016510` y Replay `40152016533` con salida 0 y `replay-contracts` en 28m15s | Verde acotado al código integrado; el siguiente merge se valida por su propio SHA |
-| Ramas remotas | `main=234561adf` y `claude/auditoria-deslizamiento-apalancamiento-sqtc08=9d0c52bce`; PR #139 fusionado y sin PR abierto al corte | La rama activa de Línea C se preserva; no se borra por antigüedad |
-| Ramas y worktrees locales | `main`, `glm/161`, `claude/linea-g-ola10`, `claude/linea-i-i3` y `codex/verify-pr65-20261022` bloqueado | Todos se preservan; el stash histórico ajeno también permanece intacto |
-| RAM | 23,38 GiB visibles; 0,45 GiB disponibles en la última medición; hosts de agentes y navegadores dominan el working set | No compilar ni editar Rust hasta admisión real del semáforo; no cerrar procesos ajenos para forzar admisión |
+| `main` | `4f9ada098`, integrado por fast-forward; los siete archivos locales y el stash histórico fueron preservados | Kimi no toca Rust ni arrastra cambios ajenos al staging |
+| CI del último código integrado | `4f9ada098`: **10/10 checks SUCCESS**; Unit `40159701782` y Replay `40159701719`, ambos con salida 0 | Verde acotado al código integrado; el siguiente push se valida por su propio SHA |
+| Ramas remotas | `main=4f9ada098` y `claude/auditoria-deslizamiento-apalancamiento-sqtc08=2beda16c3`; PR #140 fusionado y sin PR abierto al corte | La rama activa de Línea C se preserva; no se borra por antigüedad |
+| Ramas y worktrees locales | `main`, `glm/162`, `claude/linea-g-ola10`, `claude/linea-i-i6` y `codex/verify-pr65-20261022` bloqueado | Todos se preservan; el stash histórico ajeno también permanece intacto |
+| RAM | 23,38 GiB visibles; 0,81 GiB disponibles en la última medición; Cargo y Rustc ajenos activos | No compilar ni editar Rust hasta admisión real del semáforo; no cerrar procesos ajenos para forzar admisión |
 | Disco | Tamaño total del proyecto pendiente; no se ejecutan `du` ni barridos durante el build ajeno | No afirmar consumo actual ni limpiar por intuición |
 | Hooks | `core.hooksPath=.githooks`; solo existe `pre-commit` de whitespace | `pre-push` sigue pendiente como átomo separado |
 | Arquitectura documental | `docs/ARCHITECTURE.md` describe el sistema Python histórico; `ARQUITECTURA_VIVA.md` está sincronizado al 2026-10-06 | El código y el linaje real mandan sobre diagramas históricos |
@@ -35,9 +35,9 @@ No se simplifica matemática existente para salir de un error. No se presentan `
 ### Propietarios que no se pisan
 
 - **AGY:** titular propuesto de la implementación N8 al precio límite antes de reservar; Kimi V33 revisa RED/GREEN y Línea C consulta. Fases 10/11 ya fusionadas y sus ramas remotas retiradas.
-- **Codex QRA:** validación y cambios locales de `user_data_stream.rs`, `os-guardian`, `.agents/MEMORIA.md` y su fila de `AGENT_SYNC.md`; ninguno se incluye en commits de Kimi.
-- **Claude Línea I:** worktree `claude/linea-i-i3`; Línea C conserva su rama activa; Línea G conserva su worktree de revisión.
-- **GLM:** worktree `tg-mps` en `glm/161`; `verify-pr65` permanece bloqueado.
+- **Codex QRA:** PR #141 incorporado; preparación de formato y gates. Sus cambios locales de `user_data_stream.rs`, `os-guardian`, `.agents/MEMORIA.md` y su fila de `AGENT_SYNC.md` no se incluyen en commits de Kimi.
+- **Claude Línea I:** worktree `claude/linea-i-i6`; Línea C conserva su rama activa; Línea G conserva su worktree de revisión.
+- **GLM:** worktree `tg-mps` en `glm/162`; `verify-pr65` permanece bloqueado.
 - **Kimi V33:** revisión N8, este plan, inventario y su propia fila de `AGENT_SYNC.md`; el átomo de capital queda pendiente hasta que la RAM y el semáforo admitan la puerta local.
 
 ## 2. FASE 0 — Recuperación, recursos y continuidad multiagente
@@ -146,9 +146,19 @@ Estas familias se incorporan a la cola, **no** a la lista de capacidades certifi
 
 Ningún elemento de este backlog justifica prometer +100 %/72 h, ruina cero, 0 ns o fees insignificantes. Cada candidato entra primero como medición desacoplada y solo avanza con consumidor, causalidad y mejora neta OOS.
 
+## 8C. Gobernanza anti-cosmética, tres relojes y ejecución de próxima generación (fase 30)
+
+Estas reglas elevan el contrato de admisión, **no** certifican que las capacidades ya existan ni autorizan a activarlas. Toda implementación debe demostrar la ley que dice implementar, su procedencia de datos y su consumidor en la decisión real.
+
+1. **Puerta de invariantes analíticos exactos:** cada motor nuevo o modificado debe probar la invariante correspondiente a su teoría, no una aproximación con el mismo nombre. Para Lindblad, traza uno y positividad del estado; para haces/Hodge, `δ²=0` y ortogonalidad; para integradores simplécticos, `JᵀΩJ=Ω` (la conservación `det(J)=1` es consecuencia, no sustituto de la estructura); para PDEs, convergencia contra solución analítica y orden esperado. Añadir dimensiones, estabilidad NaN/Inf, fronteras y casos degenerados. El test debe cruzar la ruta productor→decisión→efecto; un test aislado con el nombre de la teoría no basta.
+2. **Tres relojes espectrales:** Tier-0 queda limitado a operaciones acotadas demostradas en el hot path; Tier-1 a filtros de streaming; Tier-2 a física profunda y evolución. Publicar solo instantáneas coherentes de un escritor mediante SeqLock, sin bloqueos en el lector y sin valores parciales. Aceptación: p50/p95/p99 por anillo, frescura, cola, RAM, canary de linaje extremo a extremo y fallback de CPU. No afirmar `<40 ns`, picosegundos ni swap JIT seguro antes de medirlos; el intercambio de ecuaciones exige versión validada y rollback.
+3. **Inferencia temprana de llenado propio:** cola FIFO y flujo público de trades/depth se evalúan primero como **sombra**. No confirmar fill, aprenderlo dos veces ni disparar TP/cobertura con una estimación no certificada. Aceptación: replay con posición en cola conocida, selección adversa, fills parciales, paquetes ausentes y reconciliación idempotente con `ORDER_TRADE_UPDATE`. Solo tras paridad Demo se evalúa actuación temprana, nunca como sustituto del user data stream.
+4. **Margen multi-activo y comisiones:** `multiAssetsMargin`, `commissionRate`/BNB, colateral multi-moneda y tensor de liquidaciones requieren descubrimiento de capacidades y compatibilidad de cuenta, balance real, numerario anti-depeg, escalones MMR y prueba de rollback. No activar modos por literal ni afirmar cero comisiones. Certificar en Demo reconciliación de wallet/margen/liquidación antes de cualquier Producción.
+5. **Backlog matemático nuevo:** Wasserstein-Fisher-Rao, Eyring-Kramers, Ramanujan/expander, conexiones duales de Amari y Sonine/Krasovskii. Cada candidato exige mapeo operacional, estimador estable, unidades, modelo nulo, causalidad, costo de tiempo/memoria, comparación con incumbente y ablación OOS. El nombre de la geometría no demuestra ventaja predictiva ni económica.
+
 ## 9. Censo archivo por archivo y recepción entre agentes
 
-El inventario mecánico `docs/audit/V33_INVENTARIO_2026-10-24.tsv` conserva las 2.186 rutas de la base de auditoría `2fb4633d3` y los deltas posteriores hasta `merge=4ee89fd42`: **2.201 rutas**, 26 `REVISADO_ESTATICO`, 1 `RED` (capital inválido con evidencia ejecutada) y 2.174 `INVENTORIADO`. La integración del PR #139 añadió cuatro contratos y ninguna baja; el conjunto completo fue comparado en orden y sin duplicados contra `git ls-files`. Las filas históricas conservan el blob de su base y las altas llevan el blob del índice vigente, como aclara la cabecera. No es una certificación de revisión completa. El ledger incremental `docs/audit/V33_REVISIONES_2026-10-24.tsv` conserva los 34 hallazgos concretos, con N8 revalidado y asignado, sin reescribir censos históricos. Campos mínimos:
+El inventario mecánico `docs/audit/V33_INVENTARIO_2026-10-24.tsv` conserva las 2.186 rutas de la base de auditoría `2fb4633d3` y los deltas posteriores hasta `main=4f9ada098`: **2.203 rutas**, 26 `REVISADO_ESTATICO`, 1 `RED` (capital inválido con evidencia ejecutada) y 2.176 `INVENTORIADO`. La revalidación actual añadió `crates/data-ingest/tests/inmune_latencia_contract.rs` y `docs/audit/linea_i/rtt_probe.ps1`, sin bajas; el conjunto completo fue comparado en orden y sin duplicados contra `git ls-files`. Las filas históricas conservan el blob de su base y las altas llevan el blob del índice vigente, como aclara la cabecera. No es una certificación de revisión completa. El ledger incremental `docs/audit/V33_REVISIONES_2026-10-24.tsv` conserva los 34 hallazgos concretos, con N8 revalidado y asignado, sin reescribir censos históricos. Campos mínimos:
 
 `ruta | blob | dueño | ruta_viva | hallazgo | severidad | prueba | CI_SHA | estado | siguiente`
 

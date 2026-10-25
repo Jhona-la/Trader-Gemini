@@ -144,3 +144,85 @@ fn shuffle_identity_exposes_redundant_level_two_coordinates() {
         }
     }
 }
+
+/// GLM 162 — RECTIFICACIÓN del 161 + diseño del nulo unieje, blindado
+/// algebraicamente. La identidad de permutación de PARES verdadera es:
+/// S¹, S², S¹¹, S²² y la SUMA S¹²+S²¹ = S¹·S² se conservan EXACTO (función
+/// de ΣΔ¹, ΣΔ², Σ(Δ¹)², Σ(Δ²)²); los cross INDIVIDUALES S¹² y S²¹ SÍ
+/// cambian por ventana (~O(‖r‖·‖d‖)) — el "Δfirma≡0 EXACTO" del 161 fue
+/// sobre-redondeo de MEDIAS ±1e-5, no identidad de los términos sueltos.
+/// El nulo unieje (barajar SÓLO log-retornos, dt fijos) rompe además la
+/// suma parcial E[Σ_{a<b} r_a d_b] bajo permutación ⇒ cross con sesgo
+/// distinto. Contrato: (i) invariante exacta de los 5 términos bajo
+/// permutación de pares; (ii) cross individuales se mueven bajo ambos
+/// nulos; (iii) caso degenerado VERDADERO: retornos idénticos BAJO NULO
+/// UNIEJE (dt no se tocan ⇒ firma idéntica).
+#[test]
+fn nulo_unieje_y_rectificacion_identidad_pares() {
+    let incs: Vec<(f64, f64)> = vec![
+        (0.30, 0.05), (-0.20, 0.10), (0.15, 0.05), (0.05, 0.30),
+        (-0.10, 0.20), (0.25, 0.15), (-0.05, 0.10), (0.10, 0.05),
+    ];
+    let original = firma_nivel2_incrementos(&incs);
+
+    // (i) Permutación de PARES (rotación fija de pares completos):
+    // S¹, S², S¹¹, S²² y S¹²+S²¹ EXACTO.
+    let mut pares_rot = incs.clone();
+    pares_rot.rotate_left(3);
+    let nulo_pares = firma_nivel2_incrementos(&pares_rot);
+    close(original.level1[0], nulo_pares.level1[0]);
+    close(original.level1[1], nulo_pares.level1[1]);
+    close(original.level2[0][0], nulo_pares.level2[0][0]);
+    close(original.level2[1][1], nulo_pares.level2[1][1]);
+    close(
+        original.level2[0][1] + original.level2[1][0],
+        nulo_pares.level2[0][1] + nulo_pares.level2[1][0],
+    );
+    // Y la identidad estructural que la explica: S¹²+S²¹ = S¹·S² SIEMPRE.
+    close(original.level2[0][1] + original.level2[1][0], original.level1[0] * original.level1[1]);
+    // (ii) Los cross individuales se mueven bajo permutación de pares.
+    assert!((original.level2[0][1] - nulo_pares.level2[0][1]).abs() > 1e-6);
+
+    // Nulo UNIEJE: retornos rotados, dt en orden original.
+    let mut rets: Vec<f64> = incs.iter().map(|(r, _)| *r).collect();
+    rets.rotate_left(3);
+    let unieje: Vec<(f64, f64)> =
+        rets.iter().map(|r| (*r, 0.0)).collect();
+    let mut mezclados = unieje;
+    for (par, (_, dt)) in mezclados.iter_mut().zip(incs.iter()) {
+        par.1 = *dt;
+    }
+    let nulo_unieje = firma_nivel2_incrementos(&mezclados);
+    // Marginal del precio intacta ⇒ S¹ y S¹¹ EXACTO; dt intactos ⇒ S² y S²².
+    close(original.level1[0], nulo_unieje.level1[0]);
+    close(original.level2[0][0], nulo_unieje.level2[0][0]);
+    close(original.level1[1], nulo_unieje.level1[1]);
+    close(original.level2[1][1], nulo_unieje.level2[1][1]);
+    // La suma sigue atada por la identidad S¹²+S²¹=S¹S²...
+    close(
+        nulo_unieje.level2[0][1] + nulo_unieje.level2[1][0],
+        nulo_unieje.level1[0] * nulo_unieje.level1[1],
+    );
+    // ...pero el cross individual toma OTRO valor que el original.
+    assert!(
+        (original.level2[0][1] - nulo_unieje.level2[0][1]).abs() > 1e-6,
+        "el cross S¹² cambia bajo nulo unieje: {} vs {}",
+        original.level2[0][1],
+        nulo_unieje.level2[0][1]
+    );
+
+    // (iii) Degeneración VERDADERA: retornos idénticos bajo nulo UNIEJE
+    // (los dt no se tocan y todo retorno es igual ⇒ el camino es el mismo).
+    let planos: Vec<(f64, f64)> = (0..6).map(|k| (0.10, 0.05 + 0.01 * k as f64)).collect();
+    let mut planos_rets: Vec<f64> = planos.iter().map(|(r, _)| *r).collect();
+    planos_rets.rotate_left(2); // rotar idénticos = no hacer nada
+    let planos_unieje: Vec<(f64, f64)> = planos
+        .iter()
+        .zip(planos_rets.iter())
+        .map(|((_, dt), r)| (*r, *dt))
+        .collect();
+    same(
+        firma_nivel2_incrementos(&planos),
+        firma_nivel2_incrementos(&planos_unieje),
+    );
+}

@@ -18731,3 +18731,41 @@ mismo PR, sin T-1 (sólo el informe de la sombra y pruebas).
 - **Sol**: `SOMBRA_KELLY`: null también marca un acumulado no finito,
   no sólo una regla arruinada (`ruina_<regla>` dice cuál de las dos).
 - **Dueño**: nada nuevo que decidir; la tarjeta del T-1 sigue en el hilo.
+
+## 2026-10-25 — GLM: 162 — RECTIFICACIÓN del 161 + nulo UNIEJE medido: los cross S¹²/S²¹ llevan Δ real |ΔS¹²|med 5e-5…8e-4 por símbolo (dispersión 15× transversal), pero 20-100× menor que el sintético
+
+**RECTIFICACIÓN del 161** (la primera lectura fue parcialmente errónea —
+lo destapó mi propio contrato de diseño del nulo): la identidad de
+permutación de PARES cubre S¹, S², S¹¹, S²² y la SUMA S¹²+S²¹=S¹·S²;
+los cross INDIVIDUALES S¹² y S²¹ **sí cambian por ventana** (~0.02 en
+sintético, verificado por simulación y por el contrato). El "Δfirma ≡ 0
+EXACTO" del 161 fue **sobre-redondeo de MEDIAS con signo** (±1e-5, que
+cancelan); la métrica honesta es mean|Δ| y σ. Lección de método gemela
+a la 128: medir antes de concluir identidad — y reportar magnitudes,
+no sólo medias.
+
+**Nulo UNIEJE implementado y medido** (10 tapes, 4.000 ventanas/símbolo,
+recibo outputs/firmas_camino_2026-09-14.log): barajar SÓLO log-retornos
+contra dt fijos. Contrato CI (path_signature_contract 14/14) blinda la
+identidad verdadera: bajo unieje S¹,S²,S¹¹,S²² conservados EXACTO ⇒
+TODO el Δ vive en los cross.
+
+**NÚMEROS** (|ΔS¹²|med · σ por símbolo): BTC 5e-5/7e-5 (el más
+ordenado) · BNB 9e-5 · SOL 1.9e-4 · XRP 1.7e-4 · XLM 2.6e-4 · XMR
+3.1e-4 · **ICP 6.8e-4 · NEAR 7.6e-4** (los más sensibles) — dispersión
+transversal ~15×, con ranking DISTINTO del de entrelazamiento (BTC era
+el más estructurado; aquí es el MÁS invariante). Las Δmedia con signo
+siguen ~0 (cancelación) — la señal vive en la magnitud.
+
+**Lectura honesta**: el cross precio-tiempo cambia bajo permutación de
+retornos con una magnitud que separa símbolos 15× — pero es 20-100×
+menor que el sintético (~0.02): el acoplamiento real es débil. El Δ
+medido mezcla señal y ruido del nulo (una sola permutación por ventana);
+para separarlos haría falta el nulo de máxima entropía (E[S¹²_perm]
+analítico bajo permutación uniforme, restablecido por término) — eso es
+un átomo futuro si el consejo quiere la línea. Propuesta actual:
+SIN propuesta de consumo (la magnitud es separable pero no validada
+contra el ruido del propio nulo); archivada con el álgebra completa.
+
+CI del push: checks verificados post-push por mí. NO tocar
+tick_reparser (Codex).
