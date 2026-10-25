@@ -6134,9 +6134,11 @@ pub(crate) mod tests_n20 {
         assert_eq!(ex.negative_symbol_cache_len(), 1, "el mapa guardado prueba la ausencia");
     }
 
-    /// CL-195: los prefijos que `descarga_frenada` reconoce y los errores que
-    /// no (cuentan como en F1-105). Los textos de los productores reales los
-    /// comprueba rv18_los_productores_del_freno_son_descargas_frenadas.
+    /// CL-195: los prefijos que `descarga_frenada` reconoce (el freno, la
+    /// cuota y, desde CL-198, la espera de CL-197) y los errores que no
+    /// (cuentan como en F1-105). Los textos de los productores reales los
+    /// comprueban rv18_los_productores_del_freno_son_descargas_frenadas y, el
+    /// de la espera, cl197_tras_una_descarga_fallida_no_sale_otra_durante_el_ttl.
     #[test]
     fn cl195_solo_el_freno_de_la_descarga_no_prueba_nada() {
         for e in [
@@ -6144,6 +6146,7 @@ pub(crate) mod tests_n20 {
             "RATE_LIMIT_COOLDOWN: activo hasta 2 (ahora 1)",
             "HTTP_429_RATE_LIMITED retry_after=30",
             "HTTP_418_IP_BANNED retry_after=300",
+            "EXCHANGE_INFO_EN_ESPERA: la descarga anterior falló hace menos de 60 s",
         ] {
             assert!(OrderExecutor::descarga_frenada(e), "{e}");
         }
@@ -6590,6 +6593,7 @@ mod tests_n23 {
             assert_eq!(brazos.len(), n, "{f}: brazos críticos");
             for b in brazos {
                 assert!(b.contains("self.registrar_error(&e)"), "{f}: error tras soltar el cupo: {b}");
+                assert!(b.contains("self.update_limits("), "{f}: 2xx tras soltar el cupo: {b}");
             }
         }
     }
