@@ -1293,6 +1293,7 @@ impl OrderExecutor {
     ///   nunca el kill-switch.
     /// - 418: IP baneada → freno temporal RATE_BRAKE por la ventana del ban
     ///   (300 s por defecto), que caduca solo (M4-C02).
+    ///
     /// Antes: un SOLO 429 disparaba el kill-switch permanente — el sistema
     /// quedaba muerto hasta reinicio por un freno transitorio del exchange.
     fn handle_rate_limit_error(&self, e: &str) -> String {
