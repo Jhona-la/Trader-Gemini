@@ -37,6 +37,45 @@ pub const VENTANA_PESO_MS: u64 = 60_000;
 pub const VENTANA_ORDENES_10S_MS: u64 = 10_000;
 pub const VENTANA_ORDENES_1M_MS: u64 = 60_000;
 
+/// N5 (CL-179): lo que una petición suma a esos contadores: `peso` al de
+/// REQUEST_WEIGHT y `ordenes` a cada uno de los dos de ORDERS (10 s y 1 min).
+/// Fuente: docs/BINANCE_API_MAP.md §1/§2. Lo marcado SUPUESTO no está en el
+/// mapa; se toma el valor documentado más alto de un endpoint análogo, porque
+/// sobrestimar sólo frena antes y subestimar deja pasar una petición a un 429.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct CosteBinance {
+    pub peso: usize,
+    pub ordenes: usize,
+}
+
+impl CosteBinance {
+    pub const NULO: CosteBinance = CosteBinance { peso: 0, ordenes: 0 };
+
+    /// El coste de `n` peticiones iguales.
+    pub const fn por(self, n: usize) -> CosteBinance {
+        CosteBinance {
+            peso: self.peso.saturating_mul(n),
+            ordenes: self.ordenes.saturating_mul(n),
+        }
+    }
+}
+
+/// POST /fapi/v1/order: peso 0 (mapa §1) y una orden en cada contador ORDERS.
+pub const COSTE_ORDEN: CosteBinance = CosteBinance { peso: 0, ordenes: 1 };
+/// POST /fapi/v1/algoOrder (pierna TP/SL o trailing). SUPUESTO: peso 1 (el
+/// mayor de una orden suelta en el mapa) y una orden, como /fapi/v1/order.
+pub const COSTE_PIERNA_ALGO: CosteBinance = CosteBinance { peso: 1, ordenes: 1 };
+/// DELETE /fapi/v1/order: peso 1 (mapa §1). SUPUESTO el mismo para
+/// allOpenOrders, algoOrder y algoOpenOrders.
+pub const COSTE_CANCELACION: CosteBinance = CosteBinance { peso: 1, ordenes: 0 };
+/// GET /fapi/v1/order: peso 1 (mapa §1).
+pub const COSTE_CONSULTA_ORDEN: CosteBinance = CosteBinance { peso: 1, ordenes: 0 };
+/// GET /fapi/v2/positionRisk: peso 5 (mapa §1).
+pub const COSTE_POSITION_RISK: CosteBinance = CosteBinance { peso: 5, ordenes: 0 };
+/// GET /fapi/v1/openAlgoOrders con símbolo. SUPUESTO: peso 1, como
+/// /fapi/v1/openOrders con símbolo (mapa §2).
+pub const COSTE_ALGO_ABIERTAS_SIMBOLO: CosteBinance = CosteBinance { peso: 1, ordenes: 0 };
+
 /// A successful HTTP status alone does not confirm the requested configuration.
 /// This validates identity and leverage only, not account margin tiers/capacity.
 pub fn validate_leverage_confirmation(
