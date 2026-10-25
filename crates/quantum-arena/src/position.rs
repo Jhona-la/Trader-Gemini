@@ -677,12 +677,6 @@ impl Position {
         // posiblemente inconsistentes.
         None
     }
-
-    /// Retorna el valor continuo inmutable de tau (ms) con el que se abrió la posición.
-    #[inline(always)]
-    pub fn entry_tau_ms(&self) -> u64 {
-        self.entry_tau_ms.load(Ordering::Relaxed)
-    }
 }
 
 /// Vista coherente de una posición en un instante. Producida por
