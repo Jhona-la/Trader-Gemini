@@ -1604,6 +1604,7 @@ impl RiskEngine {
         // del freno duro y de la medida D-744 (abajo). El carry de funding no
         // entra: es un coste esperado sobre τ, no se pierde al tocar el stop.
         let mut lh04_f_realizado = 0.0_f64;
+        let mut lh04_dimensiona = false;
         if lh04_f_efectiva > 0.0 && dynamic_leverage >= 1.0 {
             let nocional_obj = crate::kelly_envelope::nocional_por_riesgo(
                 lh04_f_efectiva,
@@ -1628,6 +1629,7 @@ impl RiskEngine {
                 // acotado por capacidad y liquidez real downstream vía `resolve_margin_cap_limits`
                 // y `available_margin_headroom` (Sol A2).
                 final_margin = margen_obj;
+                lh04_dimensiona = true;
                 // F-A5 / F1-086 / CL-159: pérdida al stop (con la fricción) que este
                 // dimensionado realiza, en fracción del capital asignado, antes de
                 // rescates de nocional mínimo y de techos de liquidez downstream.
@@ -1661,6 +1663,30 @@ impl RiskEngine {
         arena
             .registry
             .set_for_coin(coin_id, "lh04_bias_factor", lh04_bias_factor);
+        // CL-161: clases de tamaño explícitas. Una orden la dimensiona LH-04
+        // (margen derivado de f arriba) o es la orden mínima del símbolo: la
+        // sonda, la moneda sin edge demostrado (F1-087), la que aún no reúne
+        // las muestras mínimas y aquella cuya f quedó en cero por la racha. Lo
+        // demás tiene entradas corruptas —win rate, profit factor o bias no
+        // finitos o fuera de dominio, o una f positiva sin nocional derivable—
+        // y se rechaza (FMT-212, F1-089). Antes dos de esos casos salían con
+        // el margen del Kelly legado (`raw_exposure`), el fail-open que F1-087
+        // decía cerrar: PF no finito tras la sonda y `lh04_muestras_min`
+        // sobreescrito por encima de n. Un bias NaN ya lo rechazaba la cadena
+        // legada al no ser finito `raw_exposure`; aquí no depende de ella.
+        let lh04_entradas_validas = lh04_wr.is_finite()
+            && (0.0..=1.0).contains(&lh04_wr)
+            && lh04_pf.is_finite()
+            && lh04_bias_factor.is_finite()
+            && lh04_f_efectiva.is_finite()
+            && lh04_f_efectiva >= 0.0;
+        let lh04_orden_minima = es_sonda
+            || lh04_sin_edge
+            || (lh04_entradas_validas
+                && (lh04_n < muestras_min_lh04 || lh04_f_efectiva == 0.0));
+        if !lh04_dimensiona && !lh04_orden_minima {
+            return rej(REJ_INVALID_INPUT);
+        }
 
         let margin_cushion_pct = arena.config.margin_cushion_pct.load(Ordering::Relaxed);
         // D-641: el colchón de margen sale SIEMPRE del gen; la escasez sólo lo
@@ -1739,10 +1765,11 @@ impl RiskEngine {
             // relativo de 5 bps de margen cierra la frontera.
             final_margin = required_margin_for_min_notional * 1.0005;
         }
-        // D4 (ADR-0016, CL-98, F1-087): la sonda o la orden en moneda sin edge demostrado
-        // es la orden mínima del símbolo, con el apalancamiento ya decidido.
+        // D4 (ADR-0016, CL-98, F1-087, CL-161): la sonda, la orden en moneda sin edge
+        // demostrado o sin las muestras mínimas es la orden mínima del símbolo, con el
+        // apalancamiento ya decidido.
         // Es información para adquirir muestras, no alfa: su tamaño se acota al nocional mínimo viable.
-        if es_sonda || lh04_sin_edge {
+        if lh04_orden_minima {
             final_margin = final_margin.min(required_margin_for_min_notional * 1.0005);
         }
 
