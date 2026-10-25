@@ -151,7 +151,10 @@ pub fn classify_rate_limit_or_ban(status_code: u16, headers: &HeaderMap) -> Opti
 /// cabecera sin pasar por `OrderExecutor::registrar_error`.
 ///
 /// Sin cabecera: sin respuesta (red, timeout, rechazo local del freno) y en un
-/// 429/418, cuya cabecera nunca se registra: manda su Retry-After.
+/// 429/418, cuya cabecera nunca se registra: manda su Retry-After. N24
+/// (CL-201): una petición que salió y no tuvo respuesta (`sin_respuesta`) pudo
+/// contar en el exchange sin que ninguna cabecera lo diga; el cupo de una
+/// crítica anota entonces su coste como usado.
 ///
 /// El prefijo AMBIGUOUS dice que la ejecución de una orden es desconocida, no
 /// que faltara la respuesta: el 503 o el -1007 de un envío de orden es
@@ -161,19 +164,44 @@ pub fn classify_rate_limit_or_ban(status_code: u16, headers: &HeaderMap) -> Opti
 pub struct ErrorRest {
     texto: String,
     limites: BinanceRateLimits,
+    sin_respuesta: bool,
 }
 
 impl ErrorRest {
-    /// Sin respuesta del exchange, o un 429/418.
+    /// Un 429/418, o un rechazo local que no llegó a salir (el freno).
     pub fn sin_cabecera(texto: impl Into<String>) -> Self {
         Self {
             texto: texto.into(),
             limites: BinanceRateLimits::default(),
+            sin_respuesta: false,
         }
     }
 
     fn con_cabecera(texto: String, limites: BinanceRateLimits) -> Self {
-        Self { texto, limites }
+        Self {
+            texto,
+            limites,
+            sin_respuesta: false,
+        }
+    }
+
+    /// N24 (CL-201): un error de transporte, sin cabecera. `salio` dice si
+    /// la petición pudo llegar al exchange (la función `salio` de abajo).
+    pub(crate) fn de_red(texto: String, salio: bool) -> Self {
+        Self {
+            texto,
+            limites: BinanceRateLimits::default(),
+            sin_respuesta: salio,
+        }
+    }
+
+    /// N24 (CL-201): la petición salió y no llegó respuesta (timeout,
+    /// conexión cortada a mitad): el exchange pudo contarla. Es falso con
+    /// cualquier respuesta, traiga o no cabecera, en un 429/418, en un
+    /// rechazo local y si no llegó a conectar. No se deduce del texto.
+    #[inline]
+    pub fn sin_respuesta(&self) -> bool {
+        self.sin_respuesta
     }
 
     /// El uso que trajo la respuesta de error.
@@ -600,7 +628,7 @@ impl BinanceClient {
                     }
                 }
             }
-            Err(e) => Err(ErrorRest::sin_cabecera(format!("AMBIGUOUS: Network Error: {}", e))),
+            Err(e) => Err(ErrorRest::de_red(format!("AMBIGUOUS: Network Error: {}", e), salio(&e))),
         }
     }
 
@@ -666,7 +694,7 @@ impl BinanceClient {
                     }))
                 }
             }
-            Err(e) => Err(ErrorRest::sin_cabecera(format!("AMBIGUOUS: Network Error: {}", e))),
+            Err(e) => Err(ErrorRest::de_red(format!("AMBIGUOUS: Network Error: {}", e), salio(&e))),
         }
     }
 
@@ -704,7 +732,7 @@ impl BinanceClient {
                     Err(ErrorRest::con_cabecera(format!("Binance API Error: {}", text), limits))
                 }
             }
-            Err(e) => Err(ErrorRest::sin_cabecera(format!("Network Error: {}", e))),
+            Err(e) => Err(ErrorRest::de_red(format!("Network Error: {}", e), salio(&e))),
         }
     }
     /// GET payload (used for fetching balances, etc)
@@ -756,7 +784,7 @@ impl BinanceClient {
                     ))
                 }
             }
-            Err(e) => Err(ErrorRest::sin_cabecera(format!("Network Error: {}", e))),
+            Err(e) => Err(ErrorRest::de_red(format!("Network Error: {}", e), salio(&e))),
         }
     }
 
@@ -794,7 +822,7 @@ impl BinanceClient {
                     Err(ErrorRest::con_cabecera(format!("Binance API Error: {}", text), limits))
                 }
             }
-            Err(e) => Err(ErrorRest::sin_cabecera(format!("Network Error: {}", e))),
+            Err(e) => Err(ErrorRest::de_red(format!("Network Error: {}", e), salio(&e))),
         }
     }
 }
@@ -840,6 +868,13 @@ fn error_de_orden(
     } else {
         ErrorRest::con_cabecera(firme(cuerpo), limites)
     }
+}
+
+/// N24 (CL-201): si una petición fallida pudo llegar al exchange. No llega si
+/// no se pudo construir ni si falló al conectar (TCP, TLS o proxy, antes de
+/// escribir nada); un timeout o una conexión cortada después sí pudo.
+fn salio(e: &reqwest::Error) -> bool {
+    !(e.is_connect() || e.is_builder())
 }
 
 /// N25 (CL-199): un envío de orden que respondió pero cuyo cuerpo no se pudo
@@ -1206,6 +1241,59 @@ mod tests_n23 {
             assert_eq!(e.and_then(|e| e.limites().weight_1m), None, "{nombre}");
         }
         mudo.abort();
+    }
+
+    /// CL-201 (N24-a): `sin_respuesta` es el origen tipado de un error, no su
+    /// texto. Cada transporte lo marca si la petición salió y la conexión se
+    /// cerró sin respuesta, con el mismo texto de antes («Network Error»), y
+    /// no lo marca si no llegó a conectar (un puerto ligado que no escucha),
+    /// ante una respuesta (400, 503, 429, 418, un ACK ilegible) ni ante el
+    /// rechazo local del freno.
+    #[tokio::test]
+    async fn cl201_sin_respuesta_es_el_origen_del_error() {
+        for (k, nombre) in TRANSPORTES.iter().enumerate() {
+            let e = error_ante(k, String::new()).await;
+            assert!(e.as_ref().is_some_and(|e| e.contains("Network Error")), "{nombre}: {e:?}");
+            assert!(e.as_ref().is_some_and(ErrorRest::sin_respuesta), "{nombre}: salió sin respuesta");
+        }
+
+        let enchufe = tokio::net::TcpSocket::new_v4().ok();
+        let direccion = enchufe.as_ref().and_then(|e| {
+            e.bind(std::net::SocketAddr::from(([127, 0, 0, 1], 0))).ok()?;
+            e.local_addr().ok()
+        });
+        assert!(direccion.is_some(), "puerto ligado sin escuchar");
+        if let Some(direccion) = direccion {
+            let url = format!("http://{direccion}/fapi/v1/order");
+            let c = BinanceClient::with_timeout("k".into(), true, Duration::from_secs(5));
+            for (k, nombre) in TRANSPORTES.iter().enumerate() {
+                let r = tokio::time::timeout(Duration::from_secs(20), enviar(&c, k, &url)).await;
+                let e = r.ok().and_then(|r| r.err());
+                assert!(e.as_ref().is_some_and(|e| e.contains("Network Error")), "{nombre}: {e:?}");
+                assert!(e.as_ref().is_some_and(|e| !e.sin_respuesta()), "{nombre}: no llegó a conectar: {e:?}");
+            }
+        }
+        drop(enchufe);
+
+        let cab = "X-MBX-USED-WEIGHT-1M: 777\r\n";
+        for (k, nombre) in TRANSPORTES.iter().enumerate() {
+            for wire in [
+                respuesta("400 Bad Request", cab, r#"{"code":-2019,"msg":"x"}"#),
+                respuesta("503 Service Unavailable", "", ""),
+                respuesta("429 Too Many Requests", "Retry-After: 7\r\n", ""),
+                respuesta("418 I'm a teapot", "", ""),
+            ] {
+                let e = error_ante(k, wire).await;
+                assert!(e.as_ref().is_some_and(|e| !e.sin_respuesta()), "{nombre}: hubo respuesta: {e:?}");
+            }
+        }
+        let e = error_ante(2, respuesta("200 OK", cab, "not json")).await;
+        assert!(e.as_ref().is_some_and(|e| e.starts_with("AMBIGUOUS:") && !e.sin_respuesta()), "{e:?}");
+
+        let c = BinanceClient::with_timeout("k".into(), true, Duration::from_secs(5));
+        let _ = c.freno().registrar("HTTP_429_RATE_LIMITED retry_after=30");
+        let e = c.cancel_order_payload("http://127.0.0.1:9/fapi/v1/order").await.err();
+        assert!(e.as_ref().is_some_and(|e| e.starts_with("RATE_LIMIT_COOLDOWN") && !e.sin_respuesta()), "{e:?}");
     }
 
     /// Las clases de ejecución desconocida de un envío de orden (5xx, 1xx/3xx,
