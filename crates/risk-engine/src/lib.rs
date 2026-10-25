@@ -274,6 +274,14 @@ pub struct MedidaOrden {
     riesgo: f64,
     riesgo_usd: f64,
     geometria: Option<(f64, f64)>,
+    /// CL-164 — las dos apuestas de la sombra, en fracción del capital que se
+    /// pierde al stop: la f de LH-04 (tras la racha) y la del Kelly legado
+    /// (`kelly_fraction` de esta evaluación, tras el tope del gen y la ruina).
+    f_lh04: f64,
+    f_legado: f64,
+    /// CL-164 — la pérdida al stop por unidad de nocional, con la fricción
+    /// conocida al entrar (SL + c): la unidad de R del libro de la sombra.
+    perdida_al_stop: f64,
 }
 
 impl RiskEngine {
@@ -330,6 +338,44 @@ impl RiskEngine {
             actualizar(&arena.ganancia_en_stops, ganancia);
             actualizar(&arena.perdida_en_stops, perdida);
         }
+    }
+
+    /// CL-164 — libro prequencial de crecimiento logarítmico de las reglas de
+    /// tamaño sobre la MISMA secuencia de operaciones: LH-04, el Kelly legado
+    /// y el mínimo de las dos. Con R = retorno neto / (SL + c), una apuesta f
+    /// multiplica el capital por 1 + f·R; el libro suma ln(1 + f·R) por
+    /// moneda y cuenta como ruina toda operación con 1 + f·R ≤ 0 (un hueco
+    /// más allá del stop), sin llevar nunca un NaN ni un infinito al
+    /// registro. Es el criterio de Kelly medido fuera de muestra: decide si
+    /// la cadena legada aporta algo antes de retirarla. No dimensiona nada.
+    /// `retorno_neto` es el PnL neto del cierre sobre su nocional.
+    pub fn registrar_sombra_kelly(arena: &GlobalArena, m: &MedidaOrden, retorno_neto: f64) {
+        if !(retorno_neto.is_finite() && m.perdida_al_stop.is_finite() && m.perdida_al_stop > 0.0) {
+            return;
+        }
+        let r = retorno_neto / m.perdida_al_stop;
+        if !r.is_finite() {
+            return;
+        }
+        let reglas = [
+            ("sombra_kelly_logw_lh04", "sombra_kelly_ruina_lh04", m.f_lh04),
+            ("sombra_kelly_logw_legado", "sombra_kelly_ruina_legado", m.f_legado),
+            ("sombra_kelly_logw_min", "sombra_kelly_ruina_min", m.f_lh04.min(m.f_legado)),
+        ];
+        for (clave_logw, clave_ruina, f) in reglas {
+            let crecimiento = 1.0 + f * r;
+            if crecimiento.is_finite() && crecimiento > 0.0 {
+                let previo = arena.registry.get_for_coin_or(m.coin_id, clave_logw, 0.0);
+                arena
+                    .registry
+                    .set_for_coin(m.coin_id, clave_logw, previo + crecimiento.ln());
+            } else {
+                let previo = arena.registry.get_for_coin_or(m.coin_id, clave_ruina, 0.0);
+                arena.registry.set_for_coin(m.coin_id, clave_ruina, previo + 1.0);
+            }
+        }
+        let n = arena.registry.get_for_coin_or(m.coin_id, "sombra_kelly_n", 0.0);
+        arena.registry.set_for_coin(m.coin_id, "sombra_kelly_n", n + 1.0);
     }
 
     /// U-3 (MOTOR UNIVERSAL CONTINUO): la API dual `evaluate_order`
@@ -2002,12 +2048,16 @@ impl RiskEngine {
             let riesgo_usd = safe_vol * safe_lev * sl_pct;
             let ganancia = (expected_win - roundtrip_fee) / sl_pct;
             let perdida = (sl_pct + roundtrip_fee) / sl_pct;
+            let no_negativa = |f: f64| if f.is_finite() { f.max(0.0) } else { 0.0 };
             self.medida_pendiente = Some(MedidaOrden {
                 coin_id,
                 riesgo: (riesgo_usd / current_cap).clamp(0.0, 1.0),
                 riesgo_usd,
                 geometria: (ganancia.is_finite() && perdida.is_finite() && perdida > 0.0)
                     .then_some((ganancia, perdida)),
+                f_lh04: no_negativa(lh04_f_efectiva),
+                f_legado: no_negativa(kelly_fraction),
+                perdida_al_stop: sl_pct + roundtrip_fee,
             });
         }
 
