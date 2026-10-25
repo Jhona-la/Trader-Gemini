@@ -22,9 +22,11 @@ user_data_stream.rs, ni host_oms.rs, ni el host.
   (CL-186); el freno no deja un símbolo en la caché negativa, decidido por
   la descarga de esa llamada (CL-192, CL-195).
 - CL-191: sale el último `.expect` de producción de executor.rs/client.rs.
-- Dos revisiones adversariales antes de fusionar: 10 confirmados y 3
-  refutados; luego 1 confirmado (baja) y 1 dividido. Todo atendido en
-  CL-192 a CL-195, RV16-T y RV17-T.
+- Tres revisiones adversariales antes de fusionar: 10 confirmados y 3
+  refutados; luego 1 confirmado (baja) y 1 dividido; la tercera, sólo de
+  CL-195, 1 confirmado (baja, sus pruebas) y 3 refutados. Todo atendido en
+  CL-192 a CL-195, RV16-T, RV17-T y RV18-T (la decisión del paso 5 es
+  `guarda_ausencia`, probada con los productores reales del freno).
 - Filas nuevas N23 a N39 (resto de N20 y N21 con su dueño): cabeceras de
   los errores, coste sin respuesta y marca AMBIGUOUS (Línea C); freno a
   cero tras el cambio de ejecutor (N26); cancelación hermana y ritmo del
