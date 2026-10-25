@@ -330,23 +330,14 @@ pub struct OrderExecutor {
     /// F1.5: memoria del ciclo de vida de órdenes — compartida con el
     /// user-data stream (F1.6) y la reconciliación (F1.7).
     order_registry: std::sync::Arc<crate::order_registry::OrderRegistry>,
-    /// F1.8: no enviar órdenes hasta este timestamp (cooldown post-429).
-    cooldown_until_ms: AtomicU64,
-    /// F1.8: 429s consecutivos — >=3 sugiere ban inminente → kill-switch real.
-    consecutive_429: AtomicUsize,
-    /// FIX M4-C02 (quinta ola, CRITICAL): freno TEMPORAL por rate-limit
-    /// (3×429 escalado o HTTP 418). A diferencia de `kill_switch` —permanente y
-    /// reservado para incidentes reales (immune/X-009/insolvencia)— este freno
-    /// AUTO-EXPIRA en este timestamp, porque un 429/418 es transitorio (Binance
-    /// indica retry_after). Antes: trigger_kill_switch() latcheaba la ejecución
-    /// PARA SIEMPRE por un burst de rate-limit, dejando posiciones vivas sin
-    /// poder cerrarse (riesgo de liquidación) hasta reiniciar el proceso.
-    rate_brake_until_ms: AtomicU64,
     /// Cache en RAM de filtros de símbolos (tickSize, stepSize, minNotional) O(1) < 5ns
     symbol_filters: ArcSwap<std::collections::HashMap<String, SymbolFilter>>,
     /// F1-105: Caché negativa de símbolos desconocidos/no parseables con TTL (60s)
     negative_symbol_cache: std::sync::RwLock<std::collections::HashMap<String, std::time::Instant>>,
-    pub arena: ArcSwapOption<quantum_arena::GlobalArena>,
+    /// N20 (CL-188): el MISMO Arc que el reloj del freno 429/418 de `client`
+    /// (`FrenoExchange`), para que el ejecutor y los clones de su cliente
+    /// decidan con una sola hora sincronizada.
+    pub arena: Arc<ArcSwapOption<quantum_arena::GlobalArena>>,
     pub ws: std::sync::Arc<crate::ws_executor::WsExecutor>,
     pub is_hedge_mode: AtomicBool,
 }
@@ -371,9 +362,10 @@ pub enum OrderResolution {
 
 impl OrderExecutor {
     pub fn new(api_key: String, api_secret: String, is_testnet: bool) -> Self {
+        let reloj = Arc::new(ArcSwapOption::empty());
         Self {
             api_secret: ArcSwap::from_pointee(api_secret.clone()),
-            client: BinanceClient::new(api_key.clone(), is_testnet),
+            client: BinanceClient::new(api_key.clone(), is_testnet).con_reloj(Arc::clone(&reloj)),
             rate_limit_counter: AtomicUsize::new(0),
             last_reset_timestamp: AtomicU64::new(0),
             uso_exchange: std::sync::Mutex::new(UsoExchange::default()),
@@ -385,12 +377,9 @@ impl OrderExecutor {
             active_leverage: ArcSwap::from_pointee(std::collections::HashMap::new()),
             is_paper_trading: false, // Desacoplado: false por defecto para permitir órdenes reales en Testnet/Mainnet; activar con set_paper_trading(true) si se desea simular
             order_registry: std::sync::Arc::new(crate::order_registry::OrderRegistry::new()),
-            cooldown_until_ms: AtomicU64::new(0),
-            consecutive_429: AtomicUsize::new(0),
-            rate_brake_until_ms: AtomicU64::new(0),
             symbol_filters: ArcSwap::from_pointee(std::collections::HashMap::new()),
             negative_symbol_cache: std::sync::RwLock::new(std::collections::HashMap::new()),
-            arena: ArcSwapOption::empty(),
+            arena: reloj,
             ws: std::sync::Arc::new(crate::ws_executor::WsExecutor::new(
                 api_key, api_secret, is_testnet,
             )),
@@ -408,9 +397,10 @@ impl OrderExecutor {
         order_registry: std::sync::Arc<crate::order_registry::OrderRegistry>,
         arena: Option<std::sync::Arc<quantum_arena::GlobalArena>>,
     ) -> Self {
+        let reloj = Arc::new(ArcSwapOption::new(arena));
         Self {
             api_secret: ArcSwap::from_pointee(api_secret.clone()),
-            client: BinanceClient::new(api_key.clone(), is_testnet),
+            client: BinanceClient::new(api_key.clone(), is_testnet).con_reloj(Arc::clone(&reloj)),
             rate_limit_counter: AtomicUsize::new(0),
             last_reset_timestamp: AtomicU64::new(0),
             uso_exchange: std::sync::Mutex::new(UsoExchange::default()),
@@ -422,12 +412,9 @@ impl OrderExecutor {
             active_leverage: ArcSwap::from_pointee(std::collections::HashMap::new()),
             is_paper_trading: false,
             order_registry,
-            cooldown_until_ms: AtomicU64::new(0),
-            consecutive_429: AtomicUsize::new(0),
-            rate_brake_until_ms: AtomicU64::new(0),
             symbol_filters: ArcSwap::from_pointee(std::collections::HashMap::new()),
             negative_symbol_cache: std::sync::RwLock::new(std::collections::HashMap::new()),
-            arena: ArcSwapOption::new(arena),
+            arena: reloj,
             ws: std::sync::Arc::new(crate::ws_executor::WsExecutor::new(
                 api_key, api_secret, is_testnet,
             )),
@@ -506,7 +493,11 @@ impl OrderExecutor {
         if resolution == OrderResolution::Timeout {
             return resolution;
         }
-        let ack = result.expect("validated query evidence");
+        // CL-191: inalcanzable (un error de consulta ya es Timeout arriba), pero
+        // sin expect: un error nunca prueba ni rechazo ni ejecución.
+        let Ok(ack) = result else {
+            return OrderResolution::Timeout;
+        };
         if let Some(prior) = self.order_registry.get(client_order_id) {
             if prior.symbol != symbol || prior.side != ack.side
                 || (prior.order_id != 0 && prior.order_id != ack.order_id)
@@ -589,6 +580,8 @@ impl OrderExecutor {
             return Err("POSITION_MODE_UNAVAILABLE_IN_PAPER".to_string());
         }
         let timestamp = self.get_synced_timestamp();
+        // N20 (CL-187): una lectura; con el freno o por encima del 80 % no sale.
+        let _cupo = self.check_exit_rate_limits(timestamp, Tramo::Lectura)?;
         let api_secret = self.api_secret.load();
         let mut buf = ZeroAllocBuffer::new();
         buf.push_str(self.client.get_base_url());
@@ -600,7 +593,8 @@ impl OrderExecutor {
         sign_payload_to_buffer(&buf.as_str()[payload_start..], &api_secret, &mut sig_buf);
         buf.push_str("&signature=");
         buf.push_str(unsafe { std::str::from_utf8_unchecked(&sig_buf) });
-        let (_, body) = self.get_payload_account(buf.as_str()).await?;
+        let (limits, body) = self.get_payload_account(buf.as_str()).await?;
+        self.update_limits(&limits);
         #[derive(serde::Deserialize)]
         struct ModeResp {
             #[serde(rename = "dualSidePosition")]
@@ -620,6 +614,9 @@ impl OrderExecutor {
             return Ok(true);
         }
         let timestamp = self.get_synced_timestamp();
+        // N20 (CL-187): el refresco OMS lo consulta cada 60 s; como toda
+        // lectura, no sale con el freno ni por encima del 80 %.
+        let _cupo = self.check_exit_rate_limits(timestamp, Tramo::Lectura)?;
         let api_secret = self.api_secret.load();
 
         // 1) Modo actual (GET firmado)
@@ -634,7 +631,8 @@ impl OrderExecutor {
         buf.push_str("&signature=");
         buf.push_str(unsafe { std::str::from_utf8_unchecked(&sig_buf) });
 
-        let (_, body) = self.get_payload_account(buf.as_str()).await?;
+        let (limits, body) = self.get_payload_account(buf.as_str()).await?;
+        self.update_limits(&limits);
         #[derive(serde::Deserialize)]
         struct ModeResp {
             #[serde(rename = "dualSidePosition")]
@@ -660,7 +658,14 @@ impl OrderExecutor {
         buf.push_str("&signature=");
         buf.push_str(unsafe { std::str::from_utf8_unchecked(&sig_buf) });
 
-        match self.client.post_payload(buf.as_str()).await {
+        // N20 (CL-187): un 429/418 pudo llegar durante el GET; entonces el
+        // POST no sale. Su rechazo cae en el brazo Err, donde la cuenta queda
+        // como la vio el GET (one-way).
+        let activado = match self.check_backoff(timestamp) {
+            Ok(()) => self.client.post_payload(buf.as_str()).await,
+            Err(e) => Err(e),
+        };
+        match activado {
             Ok((limits, _)) => {
                 self.update_limits(&limits);
                 self.is_hedge_mode.store(true, Ordering::Relaxed);
@@ -1261,12 +1266,9 @@ impl OrderExecutor {
     fn update_limits(&self, limits: &crate::client::BinanceRateLimits) {
         let now_ms = self.get_synced_timestamp();
         self.observar_limites(limits, now_ms);
-        // F1-005 (Ola Ω150): Solo reiniciar consecutive_429 cuando el cooldown activo ya expiró.
-        // Antes, cualquier 2xx concurrente durante una ráfaga reiniciaba consecutive_429 a 0
-        // en medio del cooldown, impidiendo alcanzar el umbral de 3+ 429 consecutivos.
-        if now_ms >= self.cooldown_until_ms.load(Ordering::Relaxed) {
-            self.consecutive_429.store(0, Ordering::Relaxed);
-        }
+        // F1-005 (Ola Ω150): sólo reinicia consecutive_429 con el cooldown ya
+        // expirado (FrenoExchange::exito, CL-188).
+        self.client.freno().exito(now_ms);
     }
 
     /// N5 (CL-177): registra el uso de una respuesta. Sólo los contadores cuya
@@ -1304,86 +1306,12 @@ impl OrderExecutor {
     ///
     /// Antes: un SOLO 429 disparaba el kill-switch permanente — el sistema
     /// quedaba muerto hasta reinicio por un freno transitorio del exchange.
+    ///
+    /// N20 (CL-188): el estado vive en `FrenoExchange`, compartido con los
+    /// clones del cliente; éste sigue siendo el único registro de las
+    /// respuestas del ejecutor.
     fn handle_rate_limit_error(&self, e: &str) -> String {
-        if e.starts_with("HTTP_429_RATE_LIMITED") {
-            let retry_after_s: u64 = e
-                .split("retry_after=")
-                .nth(1)
-                .and_then(|s| s.trim().parse().ok())
-                .unwrap_or(60);
-            let arena_guard = self.arena.load_full();
-            let now = current_synced_timestamp_ms(arena_guard.as_deref());
-            drop(arena_guard);
-            let until = now.saturating_add(retry_after_s.saturating_mul(1000));
-            // Máximo atómico: conservar cooldown mayor si ya existía.
-            let mut cur = self.cooldown_until_ms.load(Ordering::Relaxed);
-            while until > cur {
-                match self.cooldown_until_ms.compare_exchange(
-                    cur,
-                    until,
-                    Ordering::Relaxed,
-                    Ordering::Relaxed,
-                ) {
-                    Ok(_) => break,
-                    Err(v) => cur = v,
-                }
-            }
-            let n = self.consecutive_429.fetch_add(1, Ordering::Relaxed) + 1;
-            println!(
-                "⏳ [RATE-LIMIT] 429 consecutivo #{}: cooldown {}s (hasta ms {})",
-                n, retry_after_s, until
-            );
-            if n >= 3 {
-                // FIX M4-C02: freno TEMPORAL escalado, NO kill-switch permanente.
-                // Un burst de 429 es transitorio; latchear para siempre dejaba
-                // posiciones vivas sin cierre (liquidación) hasta reiniciar.
-                // Ventana = cooldown actual + 60s de margen de seguridad.
-                let brake_until = until.saturating_add(60_000);
-                self.extend_rate_brake(brake_until);
-                println!(
-                    "🚨 [RATE BRAKE] 3+ rate limits consecutivos — freno temporal hasta ms {} (auto-rearme).",
-                    brake_until
-                );
-            }
-        } else if e.starts_with("HTTP_418_IP_BANNED") {
-            // FIX M4-C02: el ban de IP es temporal (Binance lo levanta). Freno
-            // por la ventana indicada (o 5 min por defecto) — si sigue banneado
-            // al expirar, el próximo 418 re-latchea. Nunca permanente.
-            let ban_s: u64 = e
-                .split("retry_after=")
-                .nth(1)
-                .and_then(|s| s.trim().parse().ok())
-                .unwrap_or(300);
-            let arena_guard = self.arena.load_full();
-            let now = current_synced_timestamp_ms(arena_guard.as_deref());
-            drop(arena_guard);
-            let brake_until = now.saturating_add(ban_s.saturating_mul(1000));
-            self.extend_rate_brake(brake_until);
-            println!(
-                "🚨 [RATE BRAKE] HTTP 418: IP baneada — freno temporal {}s (auto-rearme hasta ms {}).",
-                ban_s, brake_until
-            );
-        }
-        e.to_string()
-    }
-
-    /// FIX M4-C02: extiende el freno temporal por rate-limit (máximo atómico —
-    /// nunca acorta una ventana ya activa). Auto-expira: check_rate_limits lo
-    /// libera cuando timestamp_ms >= rate_brake_until_ms.
-    #[inline(always)]
-    fn extend_rate_brake(&self, until_ms: u64) {
-        let mut cur = self.rate_brake_until_ms.load(Ordering::Relaxed);
-        while until_ms > cur {
-            match self.rate_brake_until_ms.compare_exchange(
-                cur,
-                until_ms,
-                Ordering::Relaxed,
-                Ordering::Relaxed,
-            ) {
-                Ok(_) => break,
-                Err(v) => cur = v,
-            }
-        }
+        self.client.freno().registrar(e)
     }
 
     /// B1.3: lector público del kill-switch para el watchdog de protección
@@ -1424,32 +1352,16 @@ impl OrderExecutor {
     /// petición que lo consulte (directamente o por `check_exit_rate_limits`)
     /// sale mientras duran, salidas incluidas: Binance pide no enviar durante
     /// el Retry-After de un 429, y seguir enviando acumula 429 hasta el freno
-    /// escalado (3 consecutivos) o el ban de IP (418). Las que aún no lo
-    /// consultan (modo hedge, filtros, hora, NTP, listenKey, la cancelación
-    /// de la pierna hermana del user-data stream y la primera lectura de
-    /// `get_payload_account`) son la fila N20 del censo C-F7b.
+    /// escalado (3 consecutivos) o el ban de IP (418). Las rutas sin ejecutor
+    /// lo miran en el cliente: la hora del NTP y el listenKey, que además lo
+    /// arman con su 429/418 (CL-189), y la cancelación de la pierna hermana del
+    /// user-data stream, que sólo lo mira (CL-190; el resto es la fila N27 del
+    /// censo C-F7b). Todo llamador de `get_payload_account` frena antes de
+    /// llamarla (CL-187).
     fn check_backoff(&self, timestamp_ms: u64) -> Result<(), String> {
-        // FIX M4-C02: freno TEMPORAL por rate-limit (3×429 escalado / HTTP 418).
-        // A diferencia del kill_switch permanente (incidentes reales), este
-        // auto-expira: cuando timestamp_ms >= rate_brake_until_ms la ejecución
-        // se libera sola, sin reinicio de proceso.
-        let brake_until = self.rate_brake_until_ms.load(Ordering::Relaxed);
-        if timestamp_ms < brake_until {
-            return Err(format!(
-                "RATE_BRAKE: freno temporal activo hasta {} (ahora {})",
-                brake_until, timestamp_ms
-            ));
-        }
-
-        // F1.8: cooldown post-429 — Binance ya nos frenó; respetar la ventana.
-        if timestamp_ms < self.cooldown_until_ms.load(Ordering::Relaxed) {
-            return Err(format!(
-                "RATE_LIMIT_COOLDOWN: activo hasta {} (ahora {})",
-                self.cooldown_until_ms.load(Ordering::Relaxed),
-                timestamp_ms
-            ));
-        }
-        Ok(())
+        // N20 (CL-188): el freno de `FrenoExchange` (RATE_BRAKE de M4-C02 y el
+        // cooldown post-429 de F1.8), el mismo que ven los clones del cliente.
+        self.client.freno().comprobar(timestamp_ms)
     }
 
     /// CL-3 — EL KILL-SWITCH BLOQUEA LO QUE AUMENTA EL RIESGO, NO LAS SALIDAS.
@@ -1785,94 +1697,128 @@ impl OrderExecutor {
         } else {
             buf.push_str("https://fapi.binance.com/fapi/v1/exchangeInfo");
         }
+        self.descargar_filtros(buf.as_str()).await
+    }
 
+    /// La descarga de exchangeInfo desde `url` (RV19-T: separada de la
+    /// elección del entorno para probarla contra un servidor local). Su error
+    /// sale tal cual: `get_symbol_filter` lo clasifica con `descarga_frenada`.
+    async fn descargar_filtros(
+        &self,
+        url: &str,
+    ) -> Result<std::collections::HashMap<String, SymbolFilter>, String> {
         // exchangeInfo pesa MBs: el timeout HFT global (1.2s) lo mata
         // intermitentemente. Presupuesto dedicado + 1 reintento.
+        // N20 (CL-184): ni la descarga ni su reintento salen dentro del
+        // Retry-After de un 429 ni del freno (3×429 o 418). Sólo el freno,
+        // sin el 80 %: los cierres necesitan los filtros.
+        self.check_backoff(self.get_synced_timestamp())?;
         let mut res = self
             .client
-            .get_payload_with_timeout(buf.as_str(), Some(std::time::Duration::from_secs(10)))
+            .get_payload_with_timeout(url, Some(std::time::Duration::from_secs(10)))
             .await;
         if let Err(ref e) = res {
             if !e.starts_with("HTTP_429_RATE_LIMITED") && !e.starts_with("HTTP_418_IP_BANNED") {
                 tokio::time::sleep(std::time::Duration::from_millis(250)).await;
-                res = self
-                    .client
-                    .get_payload_with_timeout(buf.as_str(), Some(std::time::Duration::from_secs(10)))
-                    .await;
+                // Como el reintento de get_payload_account (CL-178).
+                if self.check_backoff(self.get_synced_timestamp()).is_ok() {
+                    res = self
+                        .client
+                        .get_payload_with_timeout(url, Some(std::time::Duration::from_secs(10)))
+                        .await;
+                }
             }
         }
         match res {
             Ok((limits, text)) => {
                 self.update_limits(&limits);
-                let mut map = std::collections::HashMap::new();
-                if let Ok(json) = serde_json::from_str::<serde_json::Value>(&text) {
-                    if let Some(symbols) = json["symbols"].as_array() {
-                        for sym_info in symbols {
-                            if let Some(sym) = sym_info["symbol"].as_str() {
-                                let mut filter = SymbolFilter::default();
-                                // D-631 (DÉCIMA OLA): un paso o tick que no parsea ya
-                                // no se sustituye por los de BTCUSDT; el símbolo sólo
-                                // entra en el mapa si ambos se leyeron de verdad.
-                                let mut step_ok = false;
-                                let mut tick_ok = false;
-                                if let Some(filters) = sym_info["filters"].as_array() {
-                                    for f in filters {
-                                        match f["filterType"].as_str() {
-                                            Some("LOT_SIZE") => {
-                                                if let Some(v) = f["stepSize"]
-                                                    .as_str()
-                                                    .and_then(|s| s.parse::<f64>().ok())
-                                                    .filter(|v| v.is_finite() && *v > 0.0)
-                                                {
-                                                    filter.step_size = v;
-                                                    step_ok = true;
-                                                }
-                                            }
-                                            Some("PRICE_FILTER") => {
-                                                if let Some(v) = f["tickSize"]
-                                                    .as_str()
-                                                    .and_then(|t| t.parse::<f64>().ok())
-                                                    .filter(|v| v.is_finite() && *v > 0.0)
-                                                {
-                                                    filter.tick_size = v;
-                                                    tick_ok = true;
-                                                }
-                                            }
-                                            Some("MIN_NOTIONAL") => {
-                                                if let Some(n) = f["notional"].as_str() {
-                                                    if let Ok(v) = n.parse::<f64>() {
-                                                        if v.is_finite() && v > 0.0 {
-                                                            filter.min_notional = v;
-                                                        }
-                                                    }
-                                                }
-                                            }
-                                            _ => {}
-                                        }
-                                    }
-                                }
-                                if step_ok && tick_ok {
-                                    // F1-105: Si min_notional no vino o no parseó de exchangeInfo,
-                                    // consultar el registro de símbolos local si tiene spec válido
-                                    if filter.min_notional == 5.0 {
-                                        if let Some(cid) = quantum_arena::symbol_registry::try_index(sym) {
-                                            if let Some(spec) = quantum_arena::symbol_registry::try_spec(cid) {
-                                                if spec.min_notional.is_finite() && spec.min_notional > 0.0 {
-                                                    filter.min_notional = spec.min_notional;
-                                                }
-                                            }
-                                        }
-                                    }
-                                    map.insert(sym.to_string(), filter);
-                                }
-                            }
-                        }
-                    }
-                }
-                Ok(map)
+                Self::filtros_de_exchange_info(&text)
             }
             Err(e) => Err(self.handle_rate_limit_error(&e)),
         }
+    }
+
+    /// N20 (CL-185): los filtros de una respuesta de exchangeInfo. Una que no
+    /// trae ninguno utilizable (cuerpo ilegible —el cliente devuelve Ok con
+    /// «TEXT_ERR…» si un 2xx no se pudo leer—, JSON roto, sin `symbols` o sin
+    /// un solo símbolo con paso y tick) es un error: antes era un mapa vacío
+    /// que get_symbol_filter guardaba encima de la caché buena, y cada símbolo
+    /// volvía a descargar exchangeInfo.
+    fn filtros_de_exchange_info(
+        texto: &str,
+    ) -> Result<std::collections::HashMap<String, SymbolFilter>, String> {
+        let mut map = std::collections::HashMap::new();
+        if let Ok(json) = serde_json::from_str::<serde_json::Value>(texto) {
+            if let Some(symbols) = json["symbols"].as_array() {
+                for sym_info in symbols {
+                    if let Some(sym) = sym_info["symbol"].as_str() {
+                        let mut filter = SymbolFilter::default();
+                        // D-631 (DÉCIMA OLA): un paso o tick que no parsea ya
+                        // no se sustituye por los de BTCUSDT; el símbolo sólo
+                        // entra en el mapa si ambos se leyeron de verdad.
+                        let mut step_ok = false;
+                        let mut tick_ok = false;
+                        if let Some(filters) = sym_info["filters"].as_array() {
+                            for f in filters {
+                                match f["filterType"].as_str() {
+                                    Some("LOT_SIZE") => {
+                                        if let Some(v) = f["stepSize"]
+                                            .as_str()
+                                            .and_then(|s| s.parse::<f64>().ok())
+                                            .filter(|v| v.is_finite() && *v > 0.0)
+                                        {
+                                            filter.step_size = v;
+                                            step_ok = true;
+                                        }
+                                    }
+                                    Some("PRICE_FILTER") => {
+                                        if let Some(v) = f["tickSize"]
+                                            .as_str()
+                                            .and_then(|t| t.parse::<f64>().ok())
+                                            .filter(|v| v.is_finite() && *v > 0.0)
+                                        {
+                                            filter.tick_size = v;
+                                            tick_ok = true;
+                                        }
+                                    }
+                                    Some("MIN_NOTIONAL") => {
+                                        if let Some(n) = f["notional"].as_str() {
+                                            if let Ok(v) = n.parse::<f64>() {
+                                                if v.is_finite() && v > 0.0 {
+                                                    filter.min_notional = v;
+                                                }
+                                            }
+                                        }
+                                    }
+                                    _ => {}
+                                }
+                            }
+                        }
+                        if step_ok && tick_ok {
+                            // F1-105: Si min_notional no vino o no parseó de exchangeInfo,
+                            // consultar el registro de símbolos local si tiene spec válido
+                            if filter.min_notional == 5.0 {
+                                if let Some(cid) = quantum_arena::symbol_registry::try_index(sym) {
+                                    if let Some(spec) = quantum_arena::symbol_registry::try_spec(cid) {
+                                        if spec.min_notional.is_finite() && spec.min_notional > 0.0 {
+                                            filter.min_notional = spec.min_notional;
+                                        }
+                                    }
+                                }
+                            }
+                            map.insert(sym.to_string(), filter);
+                        }
+                    }
+                }
+            }
+        }
+        if map.is_empty() {
+            return Err(format!(
+                "EXCHANGE_INFO_SIN_FILTROS: {}",
+                crate::order_types::truncate(texto, 200)
+            ));
+        }
+        Ok(map)
     }
 
     /// Filtros reales de precisión de un símbolo.
@@ -1923,7 +1869,9 @@ impl OrderExecutor {
         }
 
         // 3. Descarga de exchangeInfo y actualización de caché positiva
-        if let Ok(filters) = self.fetch_all_symbol_filters().await {
+        let descarga = self.fetch_all_symbol_filters().await;
+        let frenada = matches!(&descarga, Err(e) if Self::descarga_frenada(e));
+        if let Ok(filters) = descarga {
             let res = filters.get(symbol).copied();
             self.symbol_filters.store(Arc::new(filters));
             if let Some(f) = res {
@@ -1939,6 +1887,17 @@ impl OrderExecutor {
                     && spec.tick_size.is_finite()
                     && spec.tick_size > 0.0
                 {
+                    // N20 (CL-186): con un exchangeInfo guardado (nunca vacío desde
+                    // CL-185) que no trae el símbolo, otra descarga tampoco lo
+                    // traería, y antes cada entrada, cierre y auditoría la repetía.
+                    // Entra en la caché negativa, cuyo paso 2 sirve este mismo spec
+                    // 60 s. Sin mapa guardado no: el fallo de la descarga no prueba
+                    // la ausencia.
+                    if !self.symbol_filters.load().is_empty() {
+                        if let Ok(mut neg_cache) = self.negative_symbol_cache.write() {
+                            neg_cache.insert(symbol.to_string(), now);
+                        }
+                    }
                     return Ok(SymbolFilter {
                         step_size: spec.step_size,
                         tick_size: spec.tick_size,
@@ -1948,15 +1907,42 @@ impl OrderExecutor {
             }
         }
 
-        // 5. Símbolo definitivamente ausente: almacenar en caché negativa con TTL 60s
-        if let Ok(mut neg_cache) = self.negative_symbol_cache.write() {
-            neg_cache.insert(symbol.to_string(), now);
+        // 5. Ni exchangeInfo ni el registro lo aportan. F1-105: caché negativa
+        // 60 s, para no repetir en cada llamada una descarga que falla (hasta
+        // ~20 s cada una), salvo lo que dice `guarda_ausencia` (CL-192, CL-195).
+        if Self::guarda_ausencia(frenada, !self.symbol_filters.load().is_empty()) {
+            if let Ok(mut neg_cache) = self.negative_symbol_cache.write() {
+                neg_cache.insert(symbol.to_string(), now);
+            }
         }
 
         Err(format!(
             "filtro de precisión desconocido para {symbol}: ni exchangeInfo ni el \
              registro de símbolos lo aportan; no se opera con los pasos de otro símbolo"
         ))
+    }
+
+    /// N20 (CL-195): la descarga de exchangeInfo de esta llamada la paró el
+    /// freno o la cuota: su rechazo local (CL-184) o el 429/418 de la propia
+    /// respuesta, que `handle_rate_limit_error` devuelve tal cual.
+    fn descarga_frenada(e: &str) -> bool {
+        ["RATE_BRAKE", "RATE_LIMIT_COOLDOWN", "HTTP_429_RATE_LIMITED", "HTTP_418_IP_BANNED"]
+            .iter()
+            .any(|p| e.starts_with(p))
+    }
+
+    /// N20 (CL-192, CL-195): si el paso 5 de `get_symbol_filter` guarda en la
+    /// caché negativa un símbolo que ni exchangeInfo ni el registro aportan.
+    /// No cuando la descarga de esa llamada la paró el freno o la cuota
+    /// (`frenada`) y no hay un exchangeInfo guardado: nada prueba la ausencia,
+    /// mientras dure el freno la descarga ya vuelve sin red, y la entrada
+    /// sobreviviría al freno hasta 60 s. Un mapa guardado (nunca vacío,
+    /// CL-185) que no trae el símbolo sí la prueba, como en el paso 4. Otro
+    /// fallo de la descarga cuenta como en F1-105, aunque otra petición haya
+    /// armado el freno entretanto.
+    #[inline]
+    fn guarda_ausencia(frenada: bool, hay_mapa: bool) -> bool {
+        !frenada || hay_mapa
     }
 
     /// F1-105: Limpia la caché negativa de filtros de símbolos.
@@ -4092,6 +4078,9 @@ impl ExecutionProvider for OrderExecutor {
     }
 
     async fn fetch_server_time(&self) -> Result<i64, String> {
+        // N20 (CL-187): sólo el freno; pesa 1 y fija el reloj del arranque,
+        // que con el freno cae a la hora local (god_engine.rs) y corrige el NTP.
+        self.check_backoff(self.get_synced_timestamp())?;
         let base_url = self.client.get_base_url();
         let url = format!("{}/fapi/v1/time", base_url);
 
@@ -5117,6 +5106,8 @@ mod tests_n5c {
             "fetch_account_balance",
             "fetch_commission_rate",
             "check_rate_limits",
+            "fetch_hedge_mode",
+            "ensure_hedge_mode",
         ] {
             let c = cuerpo(f);
             assert!(c.contains("Tramo::Lectura"), "{f} es lectura");
@@ -5614,7 +5605,7 @@ mod tests_m4_c02 {
         let ex = executor();
         ex.handle_rate_limit_error("HTTP_429_RATE_LIMITED retry_after=30");
         ex.handle_rate_limit_error("HTTP_429_RATE_LIMITED retry_after=30");
-        assert_eq!(ex.consecutive_429.load(Ordering::Relaxed), 2);
+        assert_eq!(ex.client.freno().consecutive_429.load(Ordering::Relaxed), 2);
 
         // Un 2xx concurrente llega mientras el cooldown de 30s sigue activo:
         ex.update_limits(&crate::client::BinanceRateLimits {
@@ -5623,14 +5614,14 @@ mod tests_m4_c02 {
             orders_1m: Some(20),
         });
         assert_eq!(
-            ex.consecutive_429.load(Ordering::Relaxed),
+            ex.client.freno().consecutive_429.load(Ordering::Relaxed),
             2,
             "un 2xx concurrente durante cooldown activo no debe borrar consecutive_429"
         );
 
         // Un tercer 429 en la misma ráfaga activa RATE_BRAKE temporal:
         ex.handle_rate_limit_error("HTTP_429_RATE_LIMITED retry_after=30");
-        assert_eq!(ex.consecutive_429.load(Ordering::Relaxed), 3);
+        assert_eq!(ex.client.freno().consecutive_429.load(Ordering::Relaxed), 3);
         let now = current_synced_timestamp_ms(None);
         assert!(
             matches!(ex.check_rate_limits(now), Err(e) if e.starts_with("RATE_BRAKE")),
@@ -5638,12 +5629,672 @@ mod tests_m4_c02 {
         );
 
         // Una vez expirado el cooldown, un 2xx sano sí restablece consecutive_429 a 0:
-        ex.cooldown_until_ms.store(0, Ordering::Relaxed);
+        ex.client.freno().cooldown_until_ms.store(0, Ordering::Relaxed);
         ex.update_limits(&crate::client::BinanceRateLimits {
             weight_1m: Some(100),
             orders_10s: Some(1),
             orders_1m: Some(5),
         });
-        assert_eq!(ex.consecutive_429.load(Ordering::Relaxed), 0);
+        assert_eq!(ex.client.freno().consecutive_429.load(Ordering::Relaxed), 0);
+    }
+}
+
+#[cfg(test)]
+mod tests_n20 {
+    use super::*;
+    use futures_util::FutureExt;
+
+    const CODIGO: &str = include_str!("executor.rs");
+
+    /// Cuerpo de la última `fn {f}(` del archivo (la del impl), como en tests_n5b.
+    fn cuerpo(f: &str) -> &'static str {
+        let Some(i) = CODIGO.rfind(&format!("fn {f}(")) else {
+            return "";
+        };
+        let fin = ["\n    pub ", "\n    fn ", "\n    async fn "]
+            .iter()
+            .filter_map(|m| CODIGO[i + 3..].find(m).map(|k| i + 3 + k))
+            .min()
+            .unwrap_or(CODIGO.len());
+        &CODIGO[i..fin]
+    }
+
+    fn ex() -> OrderExecutor {
+        OrderExecutor::new("k".into(), "s".into(), true)
+    }
+
+    fn rechazo<T: std::fmt::Debug>(r: Option<Result<T, String>>, prefijo: &str) -> bool {
+        matches!(r, Some(Err(ref e)) if e.starts_with(prefijo))
+    }
+
+    /// RED antes de CL-184: la descarga de exchangeInfo y su reintento no
+    /// miraban el freno; con un 418 o dentro del Retry-After de un 429
+    /// salían igual (el primer sondeo quedaba esperando a la red). El
+    /// rechazo local no cuenta como 429: hacen falta tres reales.
+    #[tokio::test]
+    async fn cl184_exchange_info_no_sale_dentro_del_freno() {
+        let ex = ex();
+        ex.handle_rate_limit_error("HTTP_418_IP_BANNED retry_after=300");
+        let r = ex.fetch_all_symbol_filters().now_or_never();
+        assert!(rechazo(r, "RATE_BRAKE"), "con un 418 exchangeInfo no sale");
+
+        let ex = self::ex();
+        ex.handle_rate_limit_error("HTTP_429_RATE_LIMITED retry_after=30");
+        let r = ex.fetch_all_symbol_filters().now_or_never();
+        assert!(rechazo(r, "RATE_LIMIT_COOLDOWN"), "dentro del Retry-After no sale");
+        ex.handle_rate_limit_error("HTTP_429_RATE_LIMITED retry_after=30");
+        let ahora = ex.get_synced_timestamp();
+        assert!(
+            matches!(ex.check_backoff(ahora), Err(ref e) if e.starts_with("RATE_LIMIT_COOLDOWN")),
+            "el rechazo local no contó como 429"
+        );
+        ex.handle_rate_limit_error("HTTP_429_RATE_LIMITED retry_after=30");
+        assert!(matches!(ex.check_backoff(ahora), Err(ref e) if e.starts_with("RATE_BRAKE")));
+    }
+
+    /// RED antes de CL-184: ninguno de los dos envíos de exchangeInfo tenía
+    /// freno. Sólo el freno, sin el 80 %: los cierres necesitan los filtros.
+    #[test]
+    fn cl184_los_dos_envios_de_exchange_info_frenan() {
+        let c = cuerpo("descargar_filtros");
+        let envios: Vec<usize> = c.match_indices(".get_payload_with_timeout(").map(|(i, _)| i).collect();
+        assert_eq!(envios.len(), 2, "descarga y reintento");
+        assert!(c[..envios[0]].contains("check_backoff("), "freno antes de la descarga");
+        assert!(c[envios[0]..envios[1]].contains("check_backoff("), "freno antes del reintento");
+        assert!(!c.contains("check_exit_rate_limits("), "sin el tramo del 80 %");
+    }
+
+    /// RED antes de CL-185: una respuesta 2xx sin filtros utilizables (el
+    /// cliente devuelve Ok con «TEXT_ERR…» si no pudo leer el cuerpo) era un
+    /// mapa vacío, y get_symbol_filter lo guardaba encima de la caché buena.
+    #[test]
+    fn cl185_un_exchange_info_sin_filtros_no_es_un_mapa_vacio() {
+        for texto in [
+            "TEXT_ERR: operation timed out",
+            "{}",
+            r#"{"symbols":[]}"#,
+            r#"{"symbols":[{"symbol":"CL185USDT","filters":[
+                {"filterType":"LOT_SIZE","stepSize":"0"},
+                {"filterType":"PRICE_FILTER","tickSize":"0.001"}]}]}"#,
+        ] {
+            let r = OrderExecutor::filtros_de_exchange_info(texto);
+            assert!(
+                matches!(r, Err(ref e) if e.starts_with("EXCHANGE_INFO_SIN_FILTROS")),
+                "{texto} → {r:?}"
+            );
+        }
+        let bueno = r#"{"symbols":[{"symbol":"CL185USDT","filters":[
+            {"filterType":"LOT_SIZE","stepSize":"0.01"},
+            {"filterType":"PRICE_FILTER","tickSize":"0.001"},
+            {"filterType":"MIN_NOTIONAL","notional":"10"}]}]}"#;
+        let mapa = OrderExecutor::filtros_de_exchange_info(bueno).unwrap_or_default();
+        assert_eq!(mapa.len(), 1);
+        let f = mapa.get("CL185USDT").copied().unwrap_or_default();
+        assert_eq!((f.step_size, f.tick_size, f.min_notional), (0.01, 0.001, 10.0));
+    }
+
+    /// RED antes de CL-185: la descarga devolvía `Ok(map)` aunque el mapa
+    /// estuviera vacío.
+    #[test]
+    fn cl185_la_descarga_no_devuelve_un_mapa_vacio() {
+        let c = cuerpo("descargar_filtros");
+        assert!(c.contains("Self::filtros_de_exchange_info(&text)"));
+        assert!(!c.contains("Ok(map)"));
+    }
+
+    /// BTCUSDT y ETHUSDT con los specs exactos de reconciliation.rs
+    /// (test_reconcile_arena_phantom_and_adoption): el registro es global y
+    /// los tests corren en paralelo; con los mismos valores no se pisan.
+    fn registro_btc_eth() {
+        use quantum_arena::symbol_registry::SymbolSpec;
+        let spec = |symbol: &str, paso: f64, tick: f64| SymbolSpec {
+            symbol: symbol.into(),
+            step_size: paso,
+            tick_size: tick,
+            min_qty: paso,
+            min_notional: 5.0,
+            max_leverage: 50,
+            maker_fee: 0.0002,
+            taker_fee: 0.0004,
+            is_shadow: false,
+        };
+        quantum_arena::symbol_registry::update_registry(vec![
+            spec("BTCUSDT", 0.001, 0.1),
+            spec("ETHUSDT", 0.01, 0.01),
+        ]);
+    }
+
+    /// RED antes de CL-186: un símbolo del registro que el exchangeInfo
+    /// guardado no trae salía por el paso 4 sin entrar en ninguna caché, así
+    /// que cada entrada, cierre y auditoría volvía a descargar exchangeInfo.
+    #[tokio::test]
+    async fn cl186_un_simbolo_ausente_de_exchange_info_no_redescarga() {
+        registro_btc_eth();
+        assert!(
+            quantum_arena::symbol_registry::try_index("BTCUSDT").is_some(),
+            "el registro de la prueba no tiene BTCUSDT"
+        );
+        let ex = ex();
+        ex.symbol_filters.store(Arc::new(std::collections::HashMap::from([(
+            "CL186OTROUSDT".to_string(),
+            SymbolFilter { step_size: 1.0, tick_size: 0.01, min_notional: 5.0 },
+        )])));
+        // El 418 rechaza la descarga sin red (CL-184).
+        ex.handle_rate_limit_error("HTTP_418_IP_BANNED retry_after=300");
+        let r = ex.get_symbol_filter("BTCUSDT").now_or_never();
+        assert!(
+            matches!(r, Some(Ok(f)) if f.step_size == 0.001 && f.tick_size == 0.1),
+            "{r:?}"
+        );
+        assert_eq!(ex.negative_symbol_cache_len(), 1, "entra en la caché negativa");
+        // RV16-T: sin freno, otra descarga quedaría esperando a la red (None);
+        // un Some en el primer sondeo prueba que la sirve la caché negativa.
+        ex.client.freno().rate_brake_until_ms.store(0, Ordering::Relaxed);
+        let r = ex.get_symbol_filter("BTCUSDT").now_or_never();
+        assert!(
+            matches!(r, Some(Ok(f)) if f.step_size == 0.001 && f.tick_size == 0.1),
+            "no redescarga: {r:?}"
+        );
+
+        // Sin exchangeInfo guardado el fallo no prueba la ausencia: no se cachea.
+        let ex = self::ex();
+        ex.handle_rate_limit_error("HTTP_418_IP_BANNED retry_after=300");
+        let r = ex.get_symbol_filter("BTCUSDT").now_or_never();
+        assert!(matches!(r, Some(Ok(f)) if f.step_size == 0.001), "{r:?}");
+        assert_eq!(ex.negative_symbol_cache_len(), 0);
+    }
+
+    /// El código de producción: lo anterior al primer módulo de pruebas.
+    fn produccion() -> &'static str {
+        CODIGO.split("#[cfg(test)]").next().unwrap_or("")
+    }
+
+    /// RED antes de CL-187: el modo hedge (la consulta del refresco OMS cada
+    /// 60 s y la del arranque) y la hora del servidor salían durante el
+    /// Retry-After de un 429 o el freno; el primer sondeo esperaba a la red.
+    #[tokio::test]
+    async fn cl187_modo_hedge_y_hora_no_salen_dentro_del_freno() {
+        for (armado, prefijo) in [
+            ("HTTP_429_RATE_LIMITED retry_after=30", "RATE_LIMIT_COOLDOWN"),
+            ("HTTP_418_IP_BANNED retry_after=300", "RATE_BRAKE"),
+        ] {
+            let ex = ex();
+            ex.handle_rate_limit_error(armado);
+            assert!(rechazo(ex.ensure_hedge_mode().now_or_never(), prefijo), "{armado}");
+            assert!(rechazo(ex.fetch_hedge_mode().now_or_never(), prefijo), "{armado}");
+            let hora = <OrderExecutor as ExecutionProvider>::fetch_server_time(&ex).now_or_never();
+            assert!(rechazo(hora, prefijo), "{armado}");
+            assert!(
+                ex.is_hedge_mode.load(Ordering::Relaxed),
+                "sin respuesta no hay evidencia de one-way"
+            );
+        }
+        let ex = ex();
+        ex.handle_rate_limit_error("HTTP_429_RATE_LIMITED retry_after=30");
+        let _ = ex.ensure_hedge_mode().now_or_never();
+        ex.handle_rate_limit_error("HTTP_429_RATE_LIMITED retry_after=30");
+        let ahora = ex.get_synced_timestamp();
+        assert!(
+            matches!(ex.check_backoff(ahora), Err(ref e) if e.starts_with("RATE_LIMIT_COOLDOWN")),
+            "el rechazo local no contó como 429"
+        );
+    }
+
+    /// RED antes de CL-187: por encima del 80 % el modo hedge salía igual.
+    #[tokio::test]
+    async fn cl187_el_modo_frena_en_la_franja_de_lectura() {
+        use super::tests_lg3::limites;
+        let ex = ex();
+        ex.observar_limites(&limites(Some(2_000), None, None), ex.get_synced_timestamp());
+        let esperado = "RATE_LIMIT_HEADROOM_WEIGHT: 2000/2400";
+        assert!(rechazo(ex.ensure_hedge_mode().now_or_never(), esperado));
+        assert!(rechazo(ex.fetch_hedge_mode().now_or_never(), esperado));
+    }
+
+    /// RED antes de CL-187: las dos consultas del modo hedge no miraban el
+    /// freno ni registraban la cabecera de su respuesta (`let (_, body)`).
+    /// Cada lectura de cuenta frena antes de get_payload_account, que sólo
+    /// mira el freno en su reintento; una nueva sin listar hace fallar el conteo.
+    #[test]
+    fn cl187_toda_lectura_de_cuenta_frena_y_registra_su_cabecera() {
+        let llamada = "self.get_payload_account(";
+        let lectores = [
+            "fetch_hedge_mode",
+            "ensure_hedge_mode",
+            "flatten_all_positions",
+            "fetch_income_page",
+            "fetch_position_risk",
+            "fetch_open_algo_orders_inner",
+            "fetch_open_orders_inner",
+            "fetch_open_positions",
+            "fetch_account_balance",
+            "fetch_commission_rate",
+        ];
+        // RV16-T: cada envío lleva su propio freno (entre el envío anterior, o
+        // el inicio, y él) y registra su cabecera justo después.
+        let mut total = 0;
+        for f in lectores {
+            let c = cuerpo(f);
+            let envios: Vec<usize> = c.match_indices(llamada).map(|(i, _)| i).collect();
+            assert!(!envios.is_empty(), "{f} ya no llama a get_payload_account");
+            let mut desde = 0;
+            for &i in &envios {
+                let tramo = &c[desde..i];
+                assert!(
+                    tramo.contains("check_backoff(") || tramo.contains("check_exit_rate_limits("),
+                    "{f}: un envío sin freno propio"
+                );
+                let fin = (i + 300..=c.len()).find(|&k| c.is_char_boundary(k)).unwrap_or(c.len());
+                assert!(c[i..fin].contains("self.update_limits(&limits)"), "{f}: la cabecera no se registra");
+                desde = i + llamada.len();
+            }
+            total += envios.len();
+        }
+        assert_eq!(total, produccion().matches(llamada).count(), "lector sin listar");
+        let modo = cuerpo("ensure_hedge_mode");
+        let post = modo.find(".post_payload(");
+        assert!(post.is_some(), "ensure_hedge_mode ya no activa el modo");
+        let post = post.unwrap_or(0);
+        let ini = modo[..post].char_indices().rev().nth(399).map_or(0, |(k, _)| k);
+        assert!(modo[ini..post].contains("check_backoff("), "el POST mira el freno");
+        assert!(modo[post..].contains("self.is_hedge_mode.store(false"));
+        let hora = cuerpo("fetch_server_time");
+        let get = hora.find(".get_payload(");
+        assert!(get.is_some(), "fetch_server_time ya no consulta la hora");
+        let get = get.unwrap_or(0);
+        assert!(hora[..get].contains("check_backoff("), "la hora mira el freno");
+        assert!(!hora.contains("Tramo::"), "sólo el freno: pesa 1 y fija el reloj");
+    }
+
+    /// CL-188 (refactor sin cambio de conducta): el freno 429/418 es uno por
+    /// ejecutor y lo comparten los clones de su cliente (stream y NTP), con
+    /// el reloj sincronizado del ejecutor. Cada ejecutor nuevo empieza sin él.
+    #[test]
+    fn cl188_los_clones_del_cliente_comparten_el_freno_y_el_reloj() {
+        let ex = ex();
+        let clon = ex.client().clone();
+        let ahora = ex.get_synced_timestamp();
+        assert!(clon.freno().comprobar(ahora).is_ok());
+        ex.handle_rate_limit_error("HTTP_418_IP_BANNED retry_after=300");
+        assert!(matches!(clon.freno().comprobar(ahora), Err(ref e) if e.starts_with("RATE_BRAKE")));
+
+        let ex = self::ex();
+        let clon = ex.client().clone();
+        clon.freno().registrar("HTTP_429_RATE_LIMITED retry_after=30");
+        clon.clone().freno().registrar("HTTP_429_RATE_LIMITED retry_after=30");
+        let ahora = ex.get_synced_timestamp();
+        assert!(matches!(ex.check_backoff(ahora), Err(ref e) if e.starts_with("RATE_LIMIT_COOLDOWN")));
+        ex.handle_rate_limit_error("HTTP_429_RATE_LIMITED retry_after=30");
+        assert!(matches!(ex.check_backoff(ahora), Err(ref e) if e.starts_with("RATE_BRAKE")));
+
+        let arena = quantum_arena::GlobalArena::build_in_own_stack(100.0);
+        arena.server_time_offset_ms.store(3_600_000, Ordering::Relaxed);
+        let ex = self::ex();
+        let clon = ex.client().clone();
+        ex.arena.store(Some(arena));
+        let esperado = current_timestamp_ms().saturating_add(3_600_000);
+        assert!(clon.freno().ahora_ms().abs_diff(esperado) < 1_000, "un solo reloj");
+
+        let solo = crate::client::BinanceClient::new("k".into(), true);
+        assert!(solo.freno().comprobar(ahora).is_ok(), "un cliente suelto empieza sin freno");
+
+        // RV16-T: el ejecutor de la transición (new_with_shared) comparte
+        // también su reloj con el freno, y lo sigue si el host cambia la arena.
+        let arena = quantum_arena::GlobalArena::build_in_own_stack(100.0);
+        arena.server_time_offset_ms.store(-2_000_000, Ordering::Relaxed);
+        let ex = OrderExecutor::new_with_shared(
+            "k".into(),
+            "s".into(),
+            true,
+            Arc::new(crate::order_registry::OrderRegistry::new()),
+            Some(arena),
+        );
+        let clon = ex.client().clone();
+        assert!(clon.freno().ahora_ms().abs_diff(ex.get_synced_timestamp()) < 1_000);
+        let otra = quantum_arena::GlobalArena::build_in_own_stack(100.0);
+        otra.server_time_offset_ms.store(5_000_000, Ordering::Relaxed);
+        ex.arena.store(Some(otra));
+        let esperado = current_timestamp_ms().saturating_add(5_000_000);
+        assert!(clon.freno().ahora_ms().abs_diff(esperado) < 1_000, "sigue a la arena nueva");
+    }
+
+    /// RED antes de CL-189: la hora del NTP y las dos rutas del listenKey
+    /// salen por un clon del cliente, sin ejecutor, y no miraban el freno:
+    /// con un 418 o dentro del Retry-After de un 429 salían igual (el primer
+    /// sondeo quedaba esperando a la red). Sin freno armado salen.
+    #[tokio::test]
+    async fn cl189_las_rutas_sin_ejecutor_no_salen_dentro_del_freno() {
+        for (error, prefijo) in [
+            ("HTTP_418_IP_BANNED retry_after=300", "RATE_BRAKE"),
+            ("HTTP_429_RATE_LIMITED retry_after=30", "RATE_LIMIT_COOLDOWN"),
+        ] {
+            let ex = ex();
+            let c = ex.client().clone();
+            ex.handle_rate_limit_error(error);
+            assert!(rechazo(c.fetch_server_time().now_or_never(), prefijo), "hora: {error}");
+            assert!(rechazo(c.create_listen_key().now_or_never(), prefijo), "alta: {error}");
+            assert!(rechazo(c.keep_alive_listen_key().now_or_never(), prefijo), "renovación: {error}");
+        }
+        let c = ex().client().clone();
+        assert!(!rechazo(c.fetch_server_time().now_or_never(), "RATE_"), "sin freno sale");
+        assert!(!rechazo(c.keep_alive_listen_key().now_or_never(), "RATE_"), "sin freno sale");
+    }
+
+    /// RED antes de CL-190: la cancelación de la pierna hermana sale del
+    /// user-data stream por un clon del cliente y no miraba el freno: dentro
+    /// del Retry-After de un 429 o con un 418 salía igual. Su rechazo local,
+    /// si vuelve al ejecutor, no cuenta como 429.
+    #[tokio::test]
+    async fn cl190_la_cancelacion_de_un_clon_no_sale_dentro_del_freno() {
+        const URL: &str = "https://testnet.binancefuture.com/fapi/v1/algoOrder\
+            ?symbol=BTCUSDT&clientAlgoId=cl190_SL&timestamp=1&signature=0";
+        let ex = ex();
+        let c = ex.client().clone();
+        ex.handle_rate_limit_error("HTTP_429_RATE_LIMITED retry_after=30");
+        let e = match c.cancel_order_payload(URL).now_or_never() {
+            Some(Err(e)) => e,
+            _ => String::new(),
+        };
+        assert!(e.starts_with("RATE_LIMIT_COOLDOWN"), "dentro del Retry-After no sale: {e}");
+        ex.handle_rate_limit_error(&e);
+        ex.handle_rate_limit_error("HTTP_429_RATE_LIMITED retry_after=30");
+        let ahora = ex.get_synced_timestamp();
+        assert!(
+            matches!(ex.check_backoff(ahora), Err(ref e) if e.starts_with("RATE_LIMIT_COOLDOWN")),
+            "el rechazo local no contó como 429"
+        );
+
+        let ex = self::ex();
+        ex.handle_rate_limit_error("HTTP_418_IP_BANNED retry_after=300");
+        let r = ex.client().clone().cancel_order_payload(URL).now_or_never();
+        assert!(rechazo(r, "RATE_BRAKE"), "con un 418 no sale");
+    }
+
+    /// RED antes de CL-191: `record_query_resolution` llevaba el único
+    /// `.expect` de producción del ejecutor y del cliente (inalcanzable: la
+    /// clasificación devuelve Timeout ante un error de consulta). Regla del
+    /// proyecto: ni unwrap, ni expect, ni panic en producción.
+    #[test]
+    fn cl191_ejecutor_y_cliente_sin_unwrap_expect_ni_panic() {
+        let cliente = include_str!("client.rs").split("#[cfg(test)]").next().unwrap_or("");
+        assert!(produccion().contains("fn record_query_resolution("), "corte de producción");
+        assert!(cliente.contains("fn cancel_order_payload("), "corte de producción");
+        for (archivo, codigo) in [("executor.rs", produccion()), ("client.rs", cliente)] {
+            for prohibido in [
+                ".unwrap()",
+                ".expect(",
+                "panic!(",
+                "unreachable!(",
+                "todo!(",
+                "unimplemented!(",
+            ] {
+                assert_eq!(codigo.matches(prohibido).count(), 0, "{archivo}: {prohibido}");
+            }
+        }
+    }
+
+    /// RED antes de CL-192: con el freno 429/418 armado, un símbolo sin spec en
+    /// el registro entraba en la caché negativa por el rechazo local de la
+    /// descarga, y la entrada (60 s) sobrevivía al freno: hasta caducar nadie
+    /// volvía a descargar exchangeInfo, aunque el exchange ya lo serviría.
+    #[tokio::test]
+    async fn cl192_el_freno_no_deja_un_simbolo_en_la_cache_negativa() {
+        for error in [
+            "HTTP_418_IP_BANNED retry_after=300",
+            "HTTP_429_RATE_LIMITED retry_after=30",
+        ] {
+            let ex = ex();
+            ex.handle_rate_limit_error(error);
+            let r = ex.get_symbol_filter("CL192SINSPECUSDT").now_or_never();
+            assert!(matches!(r, Some(Err(_))), "{error}: {r:?}");
+            assert_eq!(ex.negative_symbol_cache_len(), 0, "{error}: el freno no prueba la ausencia");
+        }
+    }
+
+    /// RED antes de CL-195: CL-192 decidía con el freno armado al llegar al
+    /// paso 5, no con lo que pasó en la descarga. Con un exchangeInfo completo
+    /// guardado que no trae el símbolo la ausencia está probada aunque la
+    /// descarga de esta llamada la parase el freno (el criterio de CL-186).
+    /// El caso del freno armado por otra petición mientras la descarga caía
+    /// por red lo cubren rv18_* (la decisión pura y su cableado).
+    #[tokio::test]
+    async fn cl195_un_mapa_guardado_prueba_la_ausencia_con_freno() {
+        let ex = ex();
+        ex.symbol_filters.store(Arc::new(std::collections::HashMap::from([(
+            "CL195OTROUSDT".to_string(),
+            SymbolFilter { step_size: 1.0, tick_size: 0.01, min_notional: 5.0 },
+        )])));
+        ex.handle_rate_limit_error("HTTP_418_IP_BANNED retry_after=300");
+        let r = ex.get_symbol_filter("CL195SINSPECUSDT").now_or_never();
+        assert!(matches!(r, Some(Err(_))), "{r:?}");
+        assert_eq!(ex.negative_symbol_cache_len(), 1, "el mapa guardado prueba la ausencia");
+    }
+
+    /// CL-195: los prefijos que `descarga_frenada` reconoce y los errores que
+    /// no (cuentan como en F1-105). Los textos de los productores reales los
+    /// comprueba rv18_los_productores_del_freno_son_descargas_frenadas.
+    #[test]
+    fn cl195_solo_el_freno_de_la_descarga_no_prueba_nada() {
+        for e in [
+            "RATE_BRAKE: freno temporal activo hasta 2 (ahora 1)",
+            "RATE_LIMIT_COOLDOWN: activo hasta 2 (ahora 1)",
+            "HTTP_429_RATE_LIMITED retry_after=30",
+            "HTTP_418_IP_BANNED retry_after=300",
+        ] {
+            assert!(OrderExecutor::descarga_frenada(e), "{e}");
+        }
+        for e in [
+            "Network Error: operation timed out",
+            "EXCHANGE_INFO_SIN_FILTROS: {}",
+            "Binance API Error: status=503 body=",
+        ] {
+            assert!(!OrderExecutor::descarga_frenada(e), "{e}: cuenta como F1-105");
+        }
+    }
+
+    /// RV18-T (revisión de CL-195): los textos de los productores del freno
+    /// son descargas frenadas: el rechazo local de `check_backoff` (cooldown
+    /// tras un 429, freno tras tres 429 y tras un 418) y lo que
+    /// `handle_rate_limit_error` devuelve del 429/418 que
+    /// `classify_rate_limit_or_ban` saca de la respuesta. Un cambio de
+    /// formato en uno de ellos la pone en rojo. El camino entero de la
+    /// descarga, con un 429/418 de verdad, lo recorre rv19_*.
+    #[test]
+    fn rv18_los_productores_del_freno_son_descargas_frenadas() {
+        use reqwest::header::{HeaderMap, HeaderValue};
+        let mut cab = HeaderMap::new();
+        cab.insert("Retry-After", HeaderValue::from_static("30"));
+        let e429 = crate::client::classify_rate_limit_or_ban(429, &cab).unwrap_or_default();
+        let e418 = crate::client::classify_rate_limit_or_ban(418, &HeaderMap::new()).unwrap_or_default();
+        assert!(e429.starts_with("HTTP_429") && e418.starts_with("HTTP_418"), "{e429} / {e418}");
+
+        let ex = ex();
+        let ahora = ex.get_synced_timestamp();
+        let mut textos = Vec::new();
+        for _ in 0..3 {
+            textos.push(ex.handle_rate_limit_error(&e429));
+            textos.push(ex.check_backoff(ahora).err().unwrap_or_default());
+        }
+        assert!(textos[1].starts_with("RATE_LIMIT_COOLDOWN"), "{textos:?}");
+        assert!(textos[5].starts_with("RATE_BRAKE"), "el tercer 429 escala: {textos:?}");
+        let ex = self::ex();
+        textos.push(ex.handle_rate_limit_error(&e418));
+        textos.push(ex.check_backoff(ex.get_synced_timestamp()).err().unwrap_or_default());
+        for t in &textos {
+            assert!(OrderExecutor::descarga_frenada(t), "«{t}» es una descarga frenada");
+        }
+    }
+
+    /// RV18-T (revisión de CL-195): la decisión del paso 5 entera. Sólo una
+    /// descarga frenada sin un exchangeInfo guardado deja el símbolo fuera de
+    /// la caché negativa. Un fallo por red, un exchangeInfo sin filtros o un
+    /// 5xx cuentan como en F1-105, también cuando otra petición armó el freno
+    /// entretanto: la decisión sólo mira lo que devolvió esta descarga.
+    #[test]
+    fn rv18_la_decision_del_paso_5() {
+        for (e, frenada) in [
+            ("RATE_BRAKE: freno temporal activo hasta 2 (ahora 1)", true),
+            ("RATE_LIMIT_COOLDOWN: activo hasta 2 (ahora 1)", true),
+            ("HTTP_429_RATE_LIMITED retry_after=30", true),
+            ("HTTP_418_IP_BANNED retry_after=300", true),
+            ("Network Error: operation timed out", false),
+            ("EXCHANGE_INFO_SIN_FILTROS: {}", false),
+            ("Binance API Error: status=503 body=", false),
+        ] {
+            assert_eq!(OrderExecutor::descarga_frenada(e), frenada, "{e}");
+            assert!(OrderExecutor::guarda_ausencia(frenada, true), "{e}: un mapa guardado prueba la ausencia");
+            assert_eq!(OrderExecutor::guarda_ausencia(frenada, false), !frenada, "{e}: sin mapa");
+        }
+    }
+
+    /// RV18-T (revisión de CL-195): get_symbol_filter decide el paso 5 por la
+    /// descarga de esa llamada (`descarga_frenada` sobre su resultado) y por
+    /// el mapa guardado (`guarda_ausencia`), nunca por el estado del freno al
+    /// llegar al paso 5 (CL-192 llamaba a `check_backoff`).
+    #[test]
+    fn rv18_get_symbol_filter_decide_por_su_descarga() {
+        let c = cuerpo("get_symbol_filter");
+        let descarga = "let descarga = self.fetch_all_symbol_filters().await;";
+        let frenada = "let frenada = matches!(&descarga, Err(e) if Self::descarga_frenada(e));";
+        let decision = "if Self::guarda_ausencia(frenada, !self.symbol_filters.load().is_empty()) {";
+        for linea in [descarga, frenada, decision] {
+            assert_eq!(c.matches(linea).count(), 1, "falta o se repite: {linea}");
+        }
+        let [a, b, d] = [descarga, frenada, decision].map(|l| c.find(l).unwrap_or(usize::MAX));
+        assert!(a < b && b < d, "descarga, luego su clasificación, luego la decisión");
+        assert_eq!(c.matches("fetch_all_symbol_filters(").count(), 1, "una sola descarga");
+        assert!(!c.contains("check_backoff("), "el paso 5 no mira el freno de ahora");
+        assert_eq!(c.matches("frenada =").count(), 1, "frenada no se reasigna");
+        assert_eq!(c.matches("neg_cache.insert(").count(), 2, "pasos 4 y 5");
+    }
+
+    /// Un servidor HTTP en loopback que da una respuesta por conexión, en
+    /// orden, como tests/exchange_response_contract.rs: sin exchange, claves
+    /// ni cuenta. Cuenta las conexiones aceptadas; tras la última respuesta el
+    /// puerto se cierra.
+    async fn respuestas(
+        wires: Vec<String>,
+    ) -> Option<(String, Arc<std::sync::atomic::AtomicUsize>, tokio::task::JoinHandle<()>)> {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        let oyente = tokio::net::TcpListener::bind("127.0.0.1:0").await.ok()?;
+        let url = format!("http://{}/fapi/v1/exchangeInfo", oyente.local_addr().ok()?);
+        let aceptadas = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let cuenta = Arc::clone(&aceptadas);
+        let servidor = tokio::spawn(async move {
+            for wire in wires {
+                let Ok((mut s, _)) = oyente.accept().await else { return };
+                cuenta.fetch_add(1, Ordering::SeqCst);
+                let mut peticion = [0u8; 4096];
+                let _ = s.read(&mut peticion).await;
+                let _ = s.write_all(wire.as_bytes()).await;
+                let _ = s.shutdown().await;
+            }
+        });
+        Some((url, aceptadas, servidor))
+    }
+
+    fn respuesta(estado: &str, cabecera: &str, cuerpo: &str) -> String {
+        format!(
+            "HTTP/1.1 {estado}\r\n{cabecera}Content-Length: {}\r\nConnection: close\r\n\r\n{cuerpo}",
+            cuerpo.len()
+        )
+    }
+
+    /// `descargar_filtros` contra esas respuestas: su error, el rechazo de
+    /// `check_backoff` al volver y las conexiones que llegaron al servidor.
+    /// Nunca se cuelga: cada envío tiene su plazo de 10 s, la llamada entera
+    /// 30 s, y el servidor se aborta al volver aunque espere otra conexión
+    /// (con un proxy del sistema que no deje pasar el loopback, la prueba
+    /// queda en rojo con 0 conexiones).
+    async fn descarga_contra(wires: Vec<String>) -> (String, Option<String>, usize) {
+        let servido = respuestas(wires).await;
+        assert!(servido.is_some(), "servidor local");
+        let Some((url, aceptadas, servidor)) = servido else {
+            return (String::new(), None, 0);
+        };
+        let ex = ex();
+        let r = tokio::time::timeout(
+            std::time::Duration::from_secs(30),
+            ex.descargar_filtros(&url),
+        )
+        .await;
+        servidor.abort();
+        let e = match r {
+            Ok(Err(e)) => e,
+            Ok(Ok(_)) => "Ok".to_string(),
+            Err(_) => "PLAZO".to_string(),
+        };
+        let frenado = ex.check_backoff(ex.get_synced_timestamp()).err();
+        (e, frenado, aceptadas.load(Ordering::SeqCst))
+    }
+
+    /// RV19-T (cuarta revisión): el 429/418 de la PROPIA descarga recorre el
+    /// transporte, el brazo de error de `descargar_filtros` y
+    /// `handle_rate_limit_error`, y vuelve como descarga frenada (lo que
+    /// clasifica el paso 3 de `get_symbol_filter`), arma el freno y no se
+    /// reintenta: la segunda respuesta, un 200, no llega a pedirse. Antes
+    /// ninguna prueba recorría ese brazo: añadirle contexto al error
+    /// («exchangeInfo: …») dejaba el freno armado pero el símbolo en la caché
+    /// negativa 60 s. Un 503 en los dos envíos vuelve con su propio texto,
+    /// que no es descarga frenada, y no arma nada (cuenta como en F1-105).
+    #[tokio::test]
+    async fn rv19_el_429_y_el_418_de_la_descarga_llegan_como_descarga_frenada() {
+        let ok = respuesta("200 OK", "", "{}");
+        for (primera, freno) in [
+            (respuesta("429 Too Many Requests", "Retry-After: 30\r\n", ""), "RATE_LIMIT_COOLDOWN"),
+            (respuesta("418 I'm a teapot", "", ""), "RATE_BRAKE"),
+        ] {
+            let (e, frenado, conexiones) = descarga_contra(vec![primera, ok.clone()]).await;
+            assert!(OrderExecutor::descarga_frenada(&e), "«{e}»");
+            assert!(
+                frenado.as_deref().is_some_and(|f| f.starts_with(freno)),
+                "«{e}»: la propia respuesta arma el freno: {frenado:?}"
+            );
+            assert_eq!(conexiones, 1, "«{e}»: sin reintento");
+        }
+        let cinco = respuesta("503 Service Unavailable", "", "");
+        let (e, frenado, conexiones) = descarga_contra(vec![cinco.clone(), cinco]).await;
+        assert!(e.starts_with("Binance API Error: status=503"), "«{e}»");
+        assert!(!OrderExecutor::descarga_frenada(&e), "«{e}»");
+        assert_eq!(frenado, None, "un 503 no arma el freno");
+        assert_eq!(conexiones, 2, "un 503 se reintenta una vez");
+    }
+
+    /// RV20-T (quinta revisión): un 429/418 que llega en el REINTENTO es el
+    /// error de la descarga, arma el freno y es descarga frenada. Antes
+    /// ninguna prueba servía un segundo envío: quedarse con el primer error
+    /// si el reintento también fallaba (`res = segundo.or(res)`) perdía el
+    /// 429/418, no armaba el freno y, sin mapa guardado, dejaba el símbolo
+    /// 60 s en la caché negativa.
+    #[tokio::test]
+    async fn rv20_el_429_y_el_418_del_reintento_arman_el_freno() {
+        for (segunda, freno) in [
+            (respuesta("429 Too Many Requests", "Retry-After: 30\r\n", ""), "RATE_LIMIT_COOLDOWN"),
+            (respuesta("418 I'm a teapot", "", ""), "RATE_BRAKE"),
+        ] {
+            let primera = respuesta("503 Service Unavailable", "", "");
+            let (e, frenado, conexiones) = descarga_contra(vec![primera, segunda]).await;
+            assert_eq!(conexiones, 2, "«{e}»: descarga y reintento");
+            assert!(OrderExecutor::descarga_frenada(&e), "«{e}»");
+            assert!(
+                frenado.as_deref().is_some_and(|f| f.starts_with(freno)),
+                "«{e}»: el reintento arma el freno: {frenado:?}"
+            );
+        }
+    }
+
+    /// RV19-T: `fetch_all_symbol_filters` sólo elige el entorno y devuelve la
+    /// descarga tal cual; el brazo de error de la descarga no envuelve el
+    /// texto que clasifica `descarga_frenada`.
+    #[test]
+    fn rv19_la_descarga_devuelve_su_error_tal_cual() {
+        let f = cuerpo("fetch_all_symbol_filters");
+        assert_eq!(f.matches("self.descargar_filtros(buf.as_str()).await\n    }").count(), 1, "{f}");
+        let d = cuerpo("descargar_filtros");
+        assert_eq!(d.matches("Err(e) => Err(self.handle_rate_limit_error(&e)),").count(), 1, "{d}");
+        assert_eq!(d.matches("self.check_backoff(self.get_synced_timestamp())?;").count(), 1);
+        for envoltura in ["map_err(", "format!("] {
+            assert!(!f.contains(envoltura) && !d.contains(envoltura), "{envoltura}");
+        }
     }
 }

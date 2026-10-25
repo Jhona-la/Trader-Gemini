@@ -13,7 +13,7 @@
 | `/fapi/v1/order` | GET | 1 | Query por origClientOrderId (idempotencia F1.2) | executor.rs query_order |
 | `/fapi/v1/order` | DELETE | 1 | Cancelar orden | executor.rs cancel_order |
 | `/fapi/v1/batchOrders` | POST | 5 | OCO simulado (2 POST), ver §4 | executor.rs (a migrar) |
-| `/fapi/v1/listenKey` | POST/PUT | 1 | User-data stream (fills en tiempo real); fuera de la cuota del ejecutor (censo C-F7b, N20) | client.rs + user_data_stream.rs |
+| `/fapi/v1/listenKey` | POST/PUT | 1 | User-data stream (fills en tiempo real); mira y arma el freno 429/418 en el cliente (CL-189), sin cuota (N38) | client.rs + user_data_stream.rs |
 | `/fapi/v2/balance` | GET | 5 | Balance wallet (paridad de capital) | api_client.rs |
 | `/fapi/v2/positionRisk` | GET | 5 | Reconciliación de posiciones | executor.rs fetch_position_risk |
 | `/fapi/v2/account` | GET | 5 | Estado completo de cuenta | fetch_account_balance |
@@ -21,11 +21,11 @@
 | `/fapi/v1/exchangeInfo` | GET | 1 | tickSize/stepSize/filtros (cacheado exchange_info.json) | fetch_exchange_info |
 | `/fapi/v1/leverage` | POST | 1 | Leverage por símbolo | set_leverage |
 | `/fapi/v1/marginType` | POST | 1 | Cross/Isolated | binance_api.rs |
-| `/fapi/v1/time` | GET | 1 | Sync de reloj (NTP offset) | fetch_server_time |
+| `/fapi/v1/time` | GET | 1 | Sync de reloj (NTP offset); el NTP mira y arma el freno (CL-189), el ejecutor lo mira (CL-187) | fetch_server_time |
 | `/fapi/v1/klines` | GET | 1-10 | Warmup swing (1h) | data-pipeline |
 | `/fapi/v1/aggTrades` | GET | 20 | Histórico real para backtest (F2/F3) | historical.rs |
 | `/fapi/v1/algoOrder` | POST | 1 (SUPUESTO) | Piernas TP/SL y trailing (servicio Algo, OCO-F5) | executor.rs place_algo_leg, execute_oco_order |
-| `/fapi/v1/algoOrder` | DELETE | 1 (SUPUESTO) | Cancelar una pierna algo; la hermana tras un fill, fuera de la cuota (N20) | cancel_algo_order_ids; user_data_stream.rs |
+| `/fapi/v1/algoOrder` | DELETE | 1 (SUPUESTO) | Cancelar una pierna algo; la hermana tras un fill mira el freno (CL-190), sin cupo (N27) | cancel_algo_order_ids; user_data_stream.rs |
 | `/fapi/v1/algoOpenOrders` | DELETE | 1 (SUPUESTO) | Purga algo de un símbolo | cancel_all_algo_open_orders |
 | `/fapi/v1/openAlgoOrders` | GET | 1 con símbolo (SUPUESTO, como openOrders) | Protección viva de una posición; sin símbolo, huérfanas | fetch_open_algo_orders_inner |
 | `/fapi/v1/allOpenOrders` | DELETE | 1 (SUPUESTO) | Purga de órdenes normales de un símbolo | cancel_all_symbol_orders, aplanado |
@@ -40,10 +40,12 @@
 > lecturas (commissionRate, account, income, openOrders sin símbolo de
 > `OmsSession::refresh` cada 60 s, openAlgoOrders sin símbolo, el positionRisk
 > de fetch_open_positions —arranque, REST-SYNC y bucle de saldo— y el GET de
-> modo del aplanado) no reservan coste: frenan con el uso por encima del 80 %
-> del límite. ensure_hedge_mode y fetch_hedge_mode (positionSide/dual),
-> exchangeInfo, time, listenKey y la cancelación de la pierna hermana del
-> user-data stream quedan fuera de la cuota (censo C-F7b, fila N20). Tres pesos del mapa se recuerdan distintos en la
+> modo del aplanado y el de ensure_hedge_mode y fetch_hedge_mode, CL-187) no
+> reservan coste: frenan con el uso por encima del 80 % del límite.
+> exchangeInfo y time del ejecutor sólo miran el freno 429/418 (CL-184,
+> CL-187); la hora del NTP, el listenKey y la cancelación de la pierna hermana
+> del user-data stream lo miran en el cliente (CL-189, CL-190), sin cuota
+> (filas N27 y N38 del censo C-F7b). Tres pesos del mapa se recuerdan distintos en la
 > documentación de Binance y están por comprobar desde el PC (fila N22):
 > commissionRate 1 frente a 20, positionSide/dual 1 frente a 30, income 20
 > frente a 30. Ninguno de los tres es un coste del ejecutor, así que
@@ -100,15 +102,18 @@
 - **Presupuesto del sistema** (F1.8, M4-C02, N5): cooldown post-429 (`Retry-After` o 60 s) y freno
   temporal (`RATE_BRAKE`) al tercer 429 consecutivo (cooldown + 60 s) o con un 418 (su ventana o
   300 s); ya no es un kill a 3×429. Mientras duran no sale ninguna petición del ejecutor que pase por
-  `check_backoff`, salidas incluidas; quedan fuera las de la fila N20 del censo C-F7b (modo hedge,
-  que `OmsSession::refresh` pide cada 60 s, filtros, hora, NTP, listenKey y la cancelación de la pierna
-  hermana del user-data stream). Fuera de los frenos, dos tramos de cuota (CL-179): entradas y lecturas
+  `check_backoff`, salidas incluidas. El freno vive en el cliente (`FrenoExchange`, CL-188) y lo
+  comparten sus clones: la hora del NTP y el listenKey lo miran y lo arman con su propio 429/418, una
+  sola vez (CL-189), y la cancelación de la pierna hermana del user-data stream sólo lo mira (CL-190).
+  Siguen fuera los sondeos con su propio cliente HTTP (OI del host, data-pipeline, velas del
+  bootloader, binarios de operador; filas N29 a N32). Fuera de los frenos, dos tramos de cuota (CL-179): entradas y lecturas
   frenan con el uso por encima del 80 % del límite; las críticas (cierres, protección, el positionRisk de
   fetch_position_risk, cancelaciones, consulta de una orden) pasan mientras
   uso + críticas en vuelo + coste ≤ límite en cada contador en que gastan (CL-181). El uso es el
   máximo de las cabeceras vigentes de cada contador, cada una con su sello (CL-177, CL-180), y una
   crítica registra su cabecera antes de salir del libro en vuelo (CL-182). De una respuesta de error el
-  cliente tira la cabecera: client.rs la lee y la pierde en el Err, o no la lee (fila N21).
+  cliente tira la cabecera: client.rs la lee y la pierde en el Err, o no la lee (filas N21 y N23; las
+  tres rutas sin ejecutor sí clasifican ya su 429/418, CL-189).
 
 ## 6. WebSocket (streams)
 
