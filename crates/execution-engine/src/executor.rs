@@ -1425,8 +1425,9 @@ impl OrderExecutor {
     /// sale mientras duran, salidas incluidas: Binance pide no enviar durante
     /// el Retry-After de un 429, y seguir enviando acumula 429 hasta el freno
     /// escalado (3 consecutivos) o el ban de IP (418). Las que aún no lo
-    /// consultan (modo hedge, filtros, hora, NTP, listenKey y la primera
-    /// lectura de `get_payload_account`) son la fila N20 del censo C-F7b.
+    /// consultan (modo hedge, filtros, hora, NTP, listenKey, la cancelación
+    /// de la pierna hermana del user-data stream y la primera lectura de
+    /// `get_payload_account`) son la fila N20 del censo C-F7b.
     fn check_backoff(&self, timestamp_ms: u64) -> Result<(), String> {
         // FIX M4-C02: freno TEMPORAL por rate-limit (3×429 escalado / HTTP 418).
         // A diferencia del kill_switch permanente (incidentes reales), este
@@ -3679,7 +3680,7 @@ impl ExecutionProvider for OrderExecutor {
         // N5 (CL-179): las dos piernas ya respondieron y salen del libro en
         // vuelo antes de los reintentos y cancelaciones, que piden su propio
         // cupo. Una con 2xx deja su uso en la cabecera; una con error contó
-        // en el exchange pero no trae cabecera (client.rs la tira) y un
+        // en el exchange y el cliente tira su cabecera (client.rs), y un
         // timeout AMBIGUOUS pudo contar sin respuesta: hasta la próxima
         // cabecera 2xx su coste no se cuenta (censo C-F7b, fila N21).
         drop(cupo);
@@ -4366,12 +4367,12 @@ struct ContadorExchange {
 }
 
 impl ContadorExchange {
-    /// CL-180: cota de muestras guardadas. Las guardadas son respuestas 2xx de
-    /// una misma ventana, y el exchange no admite más de LIMITE_PESO_1M
-    /// peticiones con peso ni más de LIMITE_ORDENES_1M órdenes (las de peso 0)
-    /// por ventana de 1 min; ×2 porque una ventana móvil de 60 s puede cubrir
-    /// dos ventanas fijas del exchange. Sólo se alcanza si el exchange superase
-    /// sus propios límites.
+    /// CL-180: red de seguridad de la cola. Los usos guardados son enteros
+    /// estrictamente decrecientes y una cabecera 2xx no pasa del límite L de
+    /// su contador (el exchange rechaza si usado + coste > L), así que caben a
+    /// lo sumo L + 1 por contador (2401, 301 y 1201). La cota es la suma de los
+    /// límites por minuto ×2, por encima de cualquiera de ellas: sólo se
+    /// alcanza si una cabecera superase su límite.
     const MAX_MUESTRAS: usize = 2
         * (crate::binance_api::LIMITE_PESO_1M + crate::binance_api::LIMITE_ORDENES_1M);
 
@@ -4386,7 +4387,9 @@ impl ContadorExchange {
             }
             m.sello_ms = ahora_ms;
         }
-        // Las caducadas (o con uso 0) no aportan nada; son un prefijo.
+        // Las caducadas no aportan nada y son un prefijo (sellos no
+        // decrecientes). Una de uso 0 sólo puede ser la última; la saca el
+        // pop_back de abajo y vigente() la salta mientras tanto.
         while self
             .muestras
             .front()
@@ -4450,9 +4453,9 @@ enum Tramo {
 /// vuelo. Al soltarla (respuesta recibida o error) su coste sale del libro;
 /// entre medias lo cuentan las demás admisiones críticas, así que N críticas
 /// concurrentes no caben juntas en el hueco de una. La cabecera de su
-/// respuesta se registra antes de soltarla (CL-182). Una respuesta de error
-/// no trae cabecera: su coste sale del libro sin entrar en el uso (censo
-/// C-F7b, fila N21). Las de `Lectura` llevan coste nulo: sólo se admiten por
+/// respuesta se registra antes de soltarla (CL-182). De una respuesta de
+/// error el cliente tira la cabecera (client.rs): su coste sale del libro sin
+/// entrar en el uso (censo C-F7b, fila N21). Las de `Lectura` llevan coste nulo: sólo se admiten por
 /// debajo de 0,8·L.
 #[must_use = "soltar el cupo antes de la respuesta saca la petición del libro de las que están en vuelo"]
 struct Cupo<'a> {
@@ -4712,7 +4715,9 @@ mod tests_n5a {
 
     /// RED antes de CL-180: con el reloj adelantado 30 s, la mayor quedaba con
     /// un sello futuro y, corregido el reloj, ninguna respuesta menor la
-    /// sustituía: frenaba hasta 30 s más allá de su ventana.
+    /// sustituía: frenaba hasta 30 s más allá de su ventana. La siguiente
+    /// cabecera de ese contador acota el sello a ahora; sin ella, la muestra
+    /// sigue vigente (lo conservador).
     #[test]
     fn n5a_un_sello_futuro_no_alarga_la_ventana() {
         let ex = OrderExecutor::new("k".into(), "s".into(), true);
@@ -5123,6 +5128,11 @@ mod tests_n5c {
             "el listado algo de un símbolo es crítico"
         );
         assert!(algo.contains("None => Tramo::Lectura"), "el listado algo sin símbolo es lectura");
+        assert_eq!(algo.matches("check_exit_rate_limits(").count(), 1, "una sola admisión");
+        assert!(
+            algo.contains("self.check_exit_rate_limits(timestamp, tramo)?"),
+            "el tramo elegido es el que se admite"
+        );
         assert!(cuerpo("fetch_open_algo_orders").contains("inner(Some(symbol))"));
         assert!(cuerpo("fetch_all_open_algo_orders").contains("inner(None)"));
 
