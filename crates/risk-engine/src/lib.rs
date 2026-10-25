@@ -368,6 +368,14 @@ impl RiskEngine {
     /// cierre siguiente lo reiniciaba en silencio. Ahora un acumulado no
     /// finito (corrupto, o una suma desbordada) se queda como está y el
     /// informe lo publica como null.
+    ///
+    /// CL-170: también el contador `sombra_kelly_n` y las marcas de ruina.
+    /// CL-169 dejó esas dos lecturas con respaldo: un n no finito volvía a 1
+    /// en el cierre siguiente (y las sumas, ya estrictas, seguían con todos
+    /// los cierres, así que la media salía falsa), y una marca +∞ era «viva»
+    /// para el libro y «arruinada» para el informe. Ahora el libro y el
+    /// informe usan el mismo predicado: una marca ausente o NaN es viva y una
+    /// > 0 (+∞ incluido) es ruina.
     pub fn registrar_sombra_kelly(arena: &GlobalArena, m: &MedidaOrden, retorno_neto: f64) {
         if !(retorno_neto.is_finite() && m.perdida_al_stop.is_finite() && m.perdida_al_stop > 0.0) {
             return;
@@ -382,7 +390,11 @@ impl RiskEngine {
             ("sombra_kelly_logw_min", "sombra_kelly_ruina_min", m.f_lh04.min(m.f_legado)),
         ];
         for (clave_logw, clave_ruina, f) in reglas {
-            if arena.registry.get_for_coin_or(m.coin_id, clave_ruina, 0.0) > 0.0 {
+            if arena
+                .registry
+                .get_for_coin_strict(m.coin_id, clave_ruina)
+                .is_some_and(|v| v > 0.0)
+            {
                 continue;
             }
             let crecimiento = 1.0 + f * r;
@@ -405,7 +417,10 @@ impl RiskEngine {
                 .unwrap_or(0.0);
             arena.registry.set_for_coin(m.coin_id, clave, previo + x);
         }
-        let n = arena.registry.get_for_coin_or(m.coin_id, "sombra_kelly_n", 0.0);
+        let n = arena
+            .registry
+            .get_for_coin_strict(m.coin_id, "sombra_kelly_n")
+            .unwrap_or(0.0);
         arena.registry.set_for_coin(m.coin_id, "sombra_kelly_n", n + 1.0);
     }
 
@@ -424,6 +439,11 @@ impl RiskEngine {
     /// `get_for_coin_or` un acumulado no finito llegaba como 0 (o como el
     /// valor global) y salía un 0.000000 creíble. Ahora un acumulado ausente
     /// o no finito sale como null, igual que la regla arruinada.
+    ///
+    /// CL-170: sin `sombra_kelly_n` (ningún cierre) no hay informe. Un n
+    /// presente pero no finito o menor que 1 (el libro sólo escribe n ≥ 1) es
+    /// un contador corrupto: la línea sale con n, r_media y r2_media en null,
+    /// en vez de desaparecer.
     pub fn informe_sombra_kelly(arena: &GlobalArena, coin_id: usize) -> Option<String> {
         let leer = |clave: &str| {
             arena
@@ -438,16 +458,21 @@ impl RiskEngine {
                 "null".to_string()
             }
         };
-        let n = leer("sombra_kelly_n");
-        if !(n.is_finite() && n >= 1.0) {
-            return None;
-        }
+        let n = arena.registry.get_for_coin_strict(coin_id, "sombra_kelly_n")?;
+        let n_valido = n.is_finite() && n >= 1.0;
+        let media = |clave: &str| {
+            if n_valido {
+                numero(leer(clave) / n)
+            } else {
+                "null".to_string()
+            }
+        };
         let mut linea = format!(
             "{{\"coin\":{},\"n\":{},\"r_media\":{},\"r2_media\":{}",
             coin_id,
-            n,
-            numero(leer("sombra_kelly_suma_r") / n),
-            numero(leer("sombra_kelly_suma_r2") / n)
+            if n_valido { n.to_string() } else { "null".to_string() },
+            media("sombra_kelly_suma_r"),
+            media("sombra_kelly_suma_r2")
         );
         for regla in ["lh04", "legado", "min"] {
             let ruina = leer(&format!("sombra_kelly_ruina_{regla}")) > 0.0;
