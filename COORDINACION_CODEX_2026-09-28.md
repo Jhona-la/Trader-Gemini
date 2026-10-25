@@ -18615,8 +18615,9 @@ corruptas; CL-166 es telemetría; sin T-1. Lo que toca a cada uno:
 - **AGY**:
   (1) CL-165, en LH-04 (risk-engine lib.rs, `lh04_entradas_validas` y
   `lh04_orden_minima`): la validez va antes de toda clase. Win rate no
-  finito o fuera de [0, 1], PF no finito o ≤ 0 y bias epigenético CRUDO no
-  finito o ≤ 0 se rechazan con REJ_INVALID_INPUT, también en la sonda. La
+  finito o fuera de [0, 1], PF no finito o negativo y bias epigenético CRUDO
+  no finito o ≤ 0 se rechazan con REJ_INVALID_INPUT, también en la sonda.
+  PF = 0 («sólo pérdidas») sigue en la orden mínima (CL-165b). La
   comprobación de CL-161 miraba `bias.clamp(0, 1)` y sólo veía el NaN; un
   bias +∞ dimensionaba con la f entera. La orden mínima es ahora la sonda,
   sin edge o n < lh04_muestras_min; sale la clase «f en cero por la

@@ -13,10 +13,15 @@
 //!
 //! CL-165: la validez se comprueba antes de toda clase y sobre el bias
 //! CRUDO. El factor `bias.clamp(0, 1)` llevaba +∞ a 1 (LH-04 dimensionaba
-//! con la f entera) y un bias ≤ 0 a 0 (la orden mínima); un PF ≤ 0 iba a la
-//! orden mínima por `lh04_sin_edge`, y la sonda salía con cualquier entrada.
-//! Un bias finito y positivo fuera de la banda del escritor ([0,5; 2]) no es
-//! corrupto: sólo encoge f o la deja igual.
+//! con la f entera) y un bias ≤ 0 a 0 (la orden mínima); un PF negativo iba a
+//! la orden mínima por `lh04_sin_edge`, y la sonda salía con cualquier
+//! entrada. Un bias finito y positivo fuera de la banda del escritor
+//! ([0,5; 2]) no es corrupto: sólo encoge f o la deja igual.
+//!
+//! CL-165b: PF = 0 tampoco es corrupto. Es «sólo pérdidas», lo admite la
+//! restauración del estado aprendido y los contratos del techo de comisión y
+//! del bias (veto_logic_contracts.rs) lo usan para apagar LH-04: sigue en la
+//! orden mínima.
 
 use quantum_arena::{
     symbol_registry::{update_registry, SymbolSpec},
@@ -180,14 +185,31 @@ fn cl165_bias_no_positivo_se_rechaza() {
 }
 
 #[test]
-fn cl165_profit_factor_no_positivo_se_rechaza() {
+fn cl165_profit_factor_negativo_se_rechaza() {
     let _serie = SERIE.lock().unwrap_or_else(|e| e.into_inner());
-    for pf in [0.0, -1.0] {
+    for pf in [-1.0, -1e-9] {
         let (arena, intent) = fixture();
         evidencia(&arena, 0.65, 20, pf);
         let (orden, rechazos) = evaluar(&arena, &intent);
         assert_eq!(orden.volume_usd, 0.0, "PF {pf}: no es una moneda sin edge, es una entrada corrupta");
         assert_eq!(rechazos, 1, "PF {pf}: el rechazo es REJ_INVALID_INPUT");
+    }
+}
+
+#[test]
+fn cl165b_profit_factor_cero_da_la_orden_minima() {
+    let _serie = SERIE.lock().unwrap_or_else(|e| e.into_inner());
+    let referencia = orden_minima_de_referencia();
+    for n in [20, 100] {
+        let (arena, intent) = fixture();
+        evidencia(&arena, 0.65, n, 0.0);
+        let (orden, rechazos) = evaluar(&arena, &intent);
+        assert_eq!(rechazos, 0, "n = {n}: PF 0 (sólo pérdidas) no es una entrada corrupta");
+        assert_eq!(
+            nocional(&orden).to_bits(),
+            nocional(&referencia).to_bits(),
+            "n = {n}: PF 0 es una moneda sin edge y sale a la orden mínima"
+        );
     }
 }
 

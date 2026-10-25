@@ -7,8 +7,11 @@ Tanda del PR #140: la revisión adversarial del #139 confirmó 17 hallazgos
 cambio de conducta con entradas válidas).
 
 - CL-165: LH-04 valida antes de toda clase: win rate no finito o fuera de
-  [0, 1], PF no finito o ≤ 0 y bias epigenético CRUDO no finito o ≤ 0 se
-  rechazan (también en la sonda). Antes la comprobación miraba
+  [0, 1], PF no finito o negativo y bias epigenético CRUDO no finito o ≤ 0
+  se rechazan (también en la sonda). PF = 0 («sólo pérdidas») no es
+  corrupto y sigue en la orden mínima (CL-165b: el primer corte lo
+  rechazaba y rompía dos contratos de veto_logic_contracts.rs que lo usan
+  para apagar LH-04). Antes la comprobación miraba
   `bias.clamp(0, 1)` y sólo veía el NaN: un bias +∞ dimensionaba con la f
   entera. La clase «f en cero por la racha» no existía (bias vivo en
   [0,5; 2]).

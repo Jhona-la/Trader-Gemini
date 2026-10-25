@@ -1786,16 +1786,21 @@ impl RiskEngine {
         // fail-open que F1-087 decía cerrar: PF no finito tras la sonda y
         // `lh04_muestras_min` sobreescrito por encima de n.
         // CL-165: la validez va ANTES de toda clase. Corrupto es un win rate
-        // no finito o fuera de [0, 1], un PF no finito o ≤ 0 (el núcleo lo
-        // publica en [0,1; 10]) y un bias crudo no finito o ≤ 0 (multiplica a
-        // f; el escritor lo deja en [0,5; 2]). Un bias finito y positivo fuera
-        // de esa banda sólo encoge f o la deja igual: no es una entrada
-        // corrupta. La racha no anula f (bias ≥ 0,5), de modo que con entradas
-        // válidas f = 0 implica `lh04_sin_edge` o n < mínimo.
+        // no finito o fuera de [0, 1], un PF no finito o negativo y un bias
+        // crudo no finito o ≤ 0 (multiplica a f; el escritor lo deja en
+        // [0,5; 2]). CL-165b: PF = 0 no es corrupto. Es el valor honesto de
+        // «sólo pérdidas», el dominio [0, ∞) que admite la restauración del
+        // estado aprendido (`estado_aprendido::validar`) y el régimen con que
+        // los contratos del techo de comisión y del bias apagan LH-04; sale a
+        // la orden mínima por `lh04_sin_edge` o n < mínimo, como antes. Un
+        // bias finito y positivo fuera de su banda sólo encoge f o la deja
+        // igual: no es una entrada corrupta. La racha no anula f (bias ≥ 0,5),
+        // de modo que con entradas válidas f = 0 implica `lh04_sin_edge` o
+        // n < mínimo.
         let lh04_entradas_validas = lh04_wr.is_finite()
             && (0.0..=1.0).contains(&lh04_wr)
             && lh04_pf.is_finite()
-            && lh04_pf > 0.0
+            && lh04_pf >= 0.0
             && lh04_bias_bruto.is_finite()
             && lh04_bias_bruto > 0.0
             && lh04_f_efectiva.is_finite()

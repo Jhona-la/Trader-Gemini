@@ -806,7 +806,7 @@ un escéptico por lote listo):
     dos fail-open del margen legado: PF no finito y lh04_muestras_min del
     registro por encima de n. Corrección de la tanda 8: la comprobación
     miraba el bias ya recortado a [0, 1] y sólo veía el NaN (un bias +∞
-    dimensionaba con la f entera), un PF ≤ 0 y la sonda no se validaban, y
+    dimensionaba con la f entera), un PF negativo y la sonda no se validaban, y
     la clase «f en cero por la racha» no se alcanza (el bias vivo está en
     [0,5; 2]). Lo cierra CL-165.
   - CL-163: f = min(½·Kelly-LCB, tope de ruina, κ) con κ = kelly_clamp_max
@@ -852,10 +852,12 @@ un escéptico por lote listo):
   Ejecutado en la tanda 8 (PR #140), por la revisión adversarial del
   #139 (17 hallazgos confirmados, 3 refutados):
   - CL-165: la validez va antes de toda clase y sobre el bias crudo:
-    win rate no finito o fuera de [0, 1], PF no finito o ≤ 0 y bias no
-    finito o ≤ 0 se rechazan con REJ_INVALID_INPUT, también en la sonda.
-    Un bias finito y positivo fuera de [0,5; 2] sólo encoge f o la deja
-    igual. La orden mínima es la sonda, sin edge o n < mínimo.
+    win rate no finito o fuera de [0, 1], PF no finito o negativo y bias
+    no finito o ≤ 0 se rechazan con REJ_INVALID_INPUT, también en la
+    sonda. Un bias finito y positivo fuera de [0,5; 2] sólo encoge f o la
+    deja igual. La orden mínima es la sonda, sin edge o n < mínimo. PF = 0
+    («sólo pérdidas», dominio [0, ∞) de `estado_aprendido::validar`) no es
+    corrupto y sigue en la orden mínima (CL-165b).
   - CL-166: la sombra congela la regla arruinada, suma R y R²
     (`sombra_kelly_suma_r`, `_suma_r2`) y `informe_sombra_kelly` da una
     línea por moneda; el forense la imprime al final (SOMBRA_KELLY).
