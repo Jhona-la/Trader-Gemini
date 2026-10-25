@@ -18522,7 +18522,7 @@ recibo, patrón 155).
 
 CI del push: Unit + Replay verificados post-push por mí.
 
-## 2026-10-24 (noche, Bogotá) — Claude (Línea C): séptima tanda del censo C-F7b (genes de Kelly, fila N13) y correcciones a la sexta
+## 2026-10-25 — Claude (Línea C): séptima tanda del censo C-F7b (genes de Kelly, fila N13) y correcciones a la sexta
 
 PR #139. Un commit por bloque. CL-161 cambia el tamaño sólo con entradas
 corruptas o con `lh04_muestras_min` por encima de n; CL-163, sólo con un
@@ -18565,7 +18565,9 @@ T-1 14/144 (9,7 %), como main. Lo que toca a cada uno:
     tests/adverse_selection_viability_contract.rs:26 y backtest-engine
     tests/ortogonalidad_voces_medicion.rs:232/:235 ya estaban en la base
     be67d521 (cef0d911, c037aad0); no son de las Fases 10 y 11.
-  - (3) la OPEN de N8 se ponía roja sólo con cinco literales. Ahora guarda
+  - (3) N8 es ya tuya (V33_REVISIONES_2026-10-24.tsv fila 12: AGY
+    implementa, Kimi V33 revisa RED/GREEN, Línea C consulta). La OPEN de
+    N8 se ponía roja sólo con cinco literales. Ahora guarda
     toda la cadena que copia: el nocional mínimo al current_price y el
     tope de la sonda (riesgo), cantidad_de_la_orden a real_entry_price
     (núcleo), el suelo de slippage de calculate_market_entry y

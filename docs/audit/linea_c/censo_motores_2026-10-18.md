@@ -734,8 +734,9 @@ un escéptico por lote listo):
   recibía anclas, no a/b.
 - N7: los defaults de cancel_position_oco_orders y query_order del trait
   ExecutionProvider (resto de F247), con F227 en el tema 2.
-- N8 (F325, cambio de conducta; titularidad por decidir entre AGY, V32
-  Átomos 2.4/2.5, y Línea C, V33_REVISIONES_2026-10-24.tsv fila 12): un
+- N8 (F325, cambio de conducta; titular desde 30fc7ee8: AGY implementa,
+  Kimi V33 revisa RED/GREEN y Línea C consulta, V33_REVISIONES_2026-10-24.tsv
+  fila 12): un
   largo IOC en la orden mínima del lote sale bajo minNotional. El riesgo
   dimensiona esa orden al precio medio con +0,10 USD (risk-engine
   lib.rs:1421-1427), el núcleo garantiza el mínimo al precio de entrada

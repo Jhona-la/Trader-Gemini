@@ -1,6 +1,6 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
 
-## 2026-10-24 (noche, Bogotá) — Claude (cloud, Línea C): séptima tanda del censo C-F7b (genes de Kelly, fila N13)
+## 2026-10-25 — Claude (cloud, Línea C): séptima tanda del censo C-F7b (genes de Kelly, fila N13)
 
 Tanda del PR #139. Un commit por bloque; T-1 por los cambios de tamaño.
 
