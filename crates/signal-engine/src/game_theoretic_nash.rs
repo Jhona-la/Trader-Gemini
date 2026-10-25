@@ -189,16 +189,12 @@ impl QuantumStrategy for GameTheoreticNashEngine {
             )
             .map(|p| p.get_value())
             .unwrap_or_else(|| (-ofi).max(0.0));
+        // N10 / CL-175 (censo C-F7b): la presión adversarial es el VPIN medido
+        // (`cvpin`), la probabilidad de operar contra informados. Sale
+        // `game_theory_adversarial_pressure`, que nunca tuvo escritor y sólo
+        // podía tapar el cvpin medido.
         let adversarial = r
-            .get_scoped_parameter(
-                sym_opt,
-                cid_opt,
-                "game_theory_adversarial_pressure",
-                "GameTheoreticNashEngine",
-            )
-            .or_else(|| {
-                r.get_scoped_parameter(sym_opt, cid_opt, "cvpin", "GameTheoreticNashEngine")
-            })
+            .get_scoped_parameter(sym_opt, cid_opt, "cvpin", "GameTheoreticNashEngine")
             .map(|p| p.get_value())
             .unwrap_or(0.1);
 
@@ -258,6 +254,23 @@ mod tests {
         let signal = engine.evaluate();
         assert!(signal > 0.0);
         assert!((-1.0..=1.0).contains(&signal));
+    }
+
+    /// N10 / CL-175: la presión es el cvpin medido aunque alguien escriba la
+    /// clave huérfana `game_theory_adversarial_pressure`. Roja antes: con la
+    /// clave a 0,9 el motor votaba tanh(0,75·0,1) en vez de tanh(0,75·0,95).
+    #[test]
+    fn n10_nash_escalar_usa_cvpin_aunque_exista_la_clave_huerfana() {
+        let mut engine = GameTheoreticNashEngine::new();
+        let registry = Arc::new(OmniscientRegistry::new());
+        registry.set("order_book_imbalance", 0.75);
+        registry.set("cvpin", 0.05);
+        registry.set("game_theory_adversarial_pressure", 0.9);
+        engine.init(registry).expect("init should succeed");
+        assert_eq!(
+            engine.evaluate().to_bits(),
+            GameTheoreticNashEngine::compute_minimax_strategy(0.75, 0.0, 0.05).to_bits()
+        );
     }
 }
 

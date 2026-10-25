@@ -3395,12 +3395,33 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                             };
                                             match close_res {
                                                 Ok(()) => {
-                                                    let _ = exec_esc
+                                                    // N15 / CL-176 (censo C-F7b), como
+                                                    // D-698: el fallo de la purga se
+                                                    // reporta, porque una pierna que
+                                                    // sobrevive dispara sobre la posición
+                                                    // siguiente, y el log ya no dice
+                                                    // «purgados» si no lo están. El
+                                                    // watchdog (purge_orphan_legs) NO la
+                                                    // recoge en esta auditoría (corre
+                                                    // antes, con la posición aún abierta),
+                                                    // y en la siguiente sólo si no hay
+                                                    // posición en el símbolo (one-way) o
+                                                    // en ese lado (hedge); en hedge, una
+                                                    // pierna sin positionSide no se purga
+                                                    // mientras viva el lado contrario
+                                                    // (fila N15b del censo).
+                                                    let purga = exec_esc
                                                         .cancel_position_oco_orders(
                                                             &close_sym,
                                                             close_long,
                                                         )
                                                         .await;
+                                                    if let Err(e) = &purga {
+                                                        telemetry_engine::telemetry_err!(
+                                                            "⚠️ [NAKED-ESCALATION] {} cerrada pero brackets sin purgar: {}",
+                                                            close_sym, e
+                                                        );
+                                                    }
                                                     naked_streak.remove(&close_sym);
                                                     // B3.19 — la emergencia también
                                                     // alimenta la contabilidad y el
@@ -3415,10 +3436,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                                         &arena_wd,
                                                         "NAKED-ESC",
                                                     );
-                                                    telemetry_server::telemetry_log!(
-                                                        "🛑 [NAKED-ESCALATION] {} cerrada por emergencia — brackets purgados",
-                                                        close_sym
-                                                    );
+                                                    if purga.is_ok() {
+                                                        telemetry_server::telemetry_log!(
+                                                            "🛑 [NAKED-ESCALATION] {} cerrada por emergencia — brackets purgados",
+                                                            close_sym
+                                                        );
+                                                    } else {
+                                                        telemetry_server::telemetry_log!(
+                                                            "🛑 [NAKED-ESCALATION] {} cerrada por emergencia",
+                                                            close_sym
+                                                        );
+                                                    }
                                                 }
                                                 Err(e) => {
                                                     telemetry_server::telemetry_log!(
@@ -3429,8 +3457,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                             }
                                         } else {
                                             // La posición ya no existe (TP disparó o
-                                            // cierre externo): purga de huérfanas la
-                                            // limpiará en esta misma auditoría.
+                                            // cierre externo): la purga de huérfanas
+                                            // de la próxima auditoría la limpiará si
+                                            // para entonces no hay otra posición en
+                                            // ese símbolo o lado (la de esta corrió
+                                            // antes del bucle; fila N15b del censo).
                                             naked_streak.remove(&close_sym);
                                         }
                                     }

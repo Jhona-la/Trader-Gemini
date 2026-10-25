@@ -385,7 +385,9 @@ con un acumulado no finito), y la tanda 10: CL-170 y CL-171 completan esa
 lectura (telemetría, sólo con un contador o una marca de ruina corruptos), y
 la tanda 11 (fila N12): CL-172 y CL-173 cambian la conducta sólo junto a la
 frontera del tope de riesgo por evento (T-1 14/144, la misma lista que
-main); como
+main), y la tanda 12 (filas N2, N4, N9, N10 y N15): RET-N2 y RET-N4 retiran
+código sin llamadores, CL-174 y CL-175 dan el mismo voto bit a bit en todo
+camino alcanzable y CL-176 es el log del host; como
 dice su lote):
 
 | PR | Lotes |
@@ -404,6 +406,7 @@ dice su lote):
 | #142 | N13, correcciones de la revisión de la tanda 8 (CL-167: el bias activo se valida también con f = 0; CL-168: el informe publica null como log-riqueza de una regla arruinada); más RV8-T y RV8-docs, y las de su propia revisión antes de fusionar (CL-169: el libro de la sombra lee sin respaldo y un acumulado no finito sale null; RV9-T, RV9-docs) |
 | #143 | N13, precisiones de la revisión de las correcciones del #142 (CL-170: el contador y las marcas de ruina de la sombra también sin respaldo; RV10-T, RV10-docs), y la de su propia revisión antes de fusionar (CL-171: el libro no repara un contador corrupto; RV11-docs) |
 | #144 | N12, la fricción en la pérdida al stop (CL-172: la viabilidad de la orden mínima; CL-173: el tope de ruina F1-092; RV12-T, RV12-docs); f_min_ejecutable de la envolvente queda para el dueño |
+| #145 | N4 (RET-N4: Position::entry_tau_ms(), sin llamadores), N2 (RET-N2: ewma_price_at, scale_gain_at y volatility_at, tras la regla 2), N9 (CL-174: sin VPIN medido la sombra TrendRunner se abstiene), N10 (CL-175: la presión adversarial de Nash es el cvpin medido), N15 (CL-176: la escalada desnuda reporta el fallo de la purga de brackets); más RV13-docs; abre N10b, N15, N16 y N17 |
 
 **Hecho por otros agentes**: lote 9 entero (Sol, d18b3735), lote 45 entero
 (Codex RB, 906a9c6a), parte del 7 (Sol retiró el bin main.rs de
@@ -725,10 +728,35 @@ un escéptico por lote listo):
   RECONECTAR como OBI del spot (candidata al «OBI L2» de FASE 3,
   docs/PLAN_MAESTRO_SOL_2026-10-18.md:132) o RETIRAR con su escritor y los
   tests de spot_feed.
+  Sin ejecutar en la tanda 12: es de Sol (spot_feed.rs, F1-091; lote 12b,
+  MEMORIA). Corrección del puntero: el «OBI L2» de FASE 3 es F195, el OBI
+  de la profundidad L2 de futuros, que el bookTicker del spot (nivel 1) no
+  da. Retirar toca también statarb_live_physics_contract.rs:121
+  (apply_spot_tick con 8 argumentos), spot_feed_contract.rs:80-89 y :133,
+  y 8 llamadas a update_spot_data en 6 archivos de pruebas del núcleo
+  (cf3_reversion_base, comun_base_spot, cf3_spot_congelado_ttl,
+  cf3_espejo_conformal_contract, cf3_vecm_base_constante,
+  statarb_live_physics_contract). Los precios del spot siguen vivos (core
+  lib.rs, StatArb; online_daemon.rs, fila N16).
 - N2: ewma_price_at, volatility_at y scale_gain_at (temporal_spectrum.rs)
   sólo con lectores de test desde RET-33. volatility_at es un estimador
   de volatilidad: antes de retirarlo, regla 2 contra el σ vivo
   (sigma_forecast_at, dev_moment_by).
+  Ejecutada en la tanda 12 (RET-N2), con la comparación de la regla 2 en
+  el commit: volatility_at mide la media de |p − EWMA_τ|/EWMA_τ, no σ(τ)
+  del retorno. Sobre caminatas gaussianas, √π·volatility_at/(σ√τ) da en
+  los nodos 0,99–1,05 de media (1,49 con τ ≈ dt), con un CV de 0,37–0,53
+  por consulta, y la interpolación lineal sesga +5 a +9 % entre nodos. El
+  σ(τ) vivo es sigma_forecast_at (geométrica, con habilidad medida) o el
+  respaldo ATR; el estimador sigue por nodo como ewma_dev_vol.
+  El plan de Línea G para revivir Coaxial (PLAN_LINEA_G_CLAUDE_2026-10-12.md
+  §17.6, :1197-1199, y el paso 2 de §17.10, :1287; buzón :14527-14528) nombraba
+  volatility_at como su σ(τ) real a 1 s, 5 s y 60 s (revisión de la tanda
+  12). La entrada por nodo sigue en `scales[k].ewma_dev_vol`
+  (E|dev| = σ√(τ/π) con dt ≪ τ: ×√π para σ√τ), y leer entre nodos pide la
+  interpolación geométrica y el factor de resolución (con τ ≈ dt el nodo
+  sesga +49 %); para el σ(τ) del retorno, sigma_forecast_at. Avisado en el
+  buzón.
 - N3: API F1-078 de persistencia y diagnóstico sin consumidor de
   producción: SnapshotParEscala, guardar/cargar_checkpoint,
   exportar/importar_snapshots, estado_gate_ville y el campo
@@ -736,18 +764,45 @@ un escéptico por lote listo):
   R114). RET-44b retiró ArenaCheckpoint con su campo espectral_snapshots;
   queda la API de espectral_multiactivo.rs (guardar/cargar_checkpoint y
   exportar/importar_snapshots), sin llamador de producción.
+  Sin ejecutar en la tanda 12: espera a AGY (autor de F1-078) y, si se
+  quiere persistencia, al dueño (¿cubre «Guardar todo», CL-108, la
+  evidencia Ville multiactivo?). Por defecto, RETIRAR como RET-44b:
+  warm_start_par fabrica aciertos = 3n/4 (espectral_multiactivo.rs:693-694),
+  y con GRAPA encendido eso daría λ = 0,35 con un acierto del 75 %
+  inventado; el doc del módulo (:76) dice «tras reinicio es 0 h», falso en
+  producción (el núcleo arranca en frío). Si se quiere persistir, por
+  EstadoAprendido, con clave por símbolo (el universo cambia de orden
+  entre arranques), no por un segundo archivo.
 - N4: Position::entry_tau_ms() (position.rs:683) sin llamadores.
+  Ejecutada en la tanda 12 (RET-N4); el campo sigue vivo.
 - N5 (F229, cambio de conducta): la cuota de peticiones por criticidad
   (salidas a 98 %, entradas a 90 %) que el censo pedía portar del
   QuantumMultiplexer (quantum_multiplexer.rs:93-97 en 18584be2, retirado
   en RET-30); hoy salidas y entradas comparten HEADROOM 0,8
   (executor.rs:1391-1412). Átomo propio con test.
+  Sin ejecutar en la tanda 12 (su revisión de diseño lo paró): el 0,98 de
+  salidas es un literal sin derivar, y en la franja 80–98 % varias
+  peticiones de salida en vuelo pueden recibir varios 429 a la vez; al
+  tercero RATE_BRAKE (executor.rs:1262-1268) bloquea también las salidas
+  hasta el enfriamiento + 60 s, y repetidos arriesgan un 418. Hace falta
+  una reserva de salidas derivada de una cota de peticiones en vuelo.
+  Además flatten_all_positions envía sus cierres sin pasar por la cuota, y
+  las lecturas (income, órdenes abiertas, saldo) comparten el tramo de
+  salidas. Faltan en la lista de documentos BINANCE_API_MAP.md:75 y
+  linea_g/vetos.tsv:690.
 - N6: darwin.rs:151-154 (Sol, F9-4) escribe tp/sl_curve_a/b sin
   begin_write/end_write; tras RET-32 el único escritor de curvas bajo
   seqlock es genome.rs (F1-073 de AGY). update_*_curve no lo arreglaría:
   recibía anclas, no a/b.
 - N7: los defaults de cancel_position_oco_orders y query_order del trait
   ExecutionProvider (resto de F247), con F227 en el tema 2.
+  Sin ejecutar en la tanda 12. El default de cancel_position_oco_orders
+  (Ok(0), «purga hecha») es fail-open latente: sólo lo hereda
+  SimulatedExecutor, sin consumidor de producción; el de query_order falla
+  cerrado. Hacerlos obligatorios toca simulator.rs (AGY, rescate Ω214 del
+  B15-01 de Codex): opción 1, con el visto bueno de AGY, métodos explícitos
+  con la conducta de hoy; opción 2, si el dueño retira F227 en el tema 2,
+  borrar el simulador. Línea C no elige.
 - N8 (F325, cambio de conducta; titular desde 30fc7ee8: AGY implementa,
   Kimi V33 revisa RED/GREEN y Línea C consulta, V33_REVISIONES_2026-10-24.tsv
   fila 12): un
@@ -774,9 +829,20 @@ un escéptico por lote listo):
 - N9: la sombra TrendRunner lee `cvpin` con 0,50 por defecto
   (core lib.rs:3713), la misma clase que K12: sólo actúa en el primer
   evento de un núcleo nuevo. Átomo propio con test.
+  Ejecutada en la tanda 12 (CL-174): sin cvpin finito la sombra se abstiene
+  (VotoEspectral::default()); el mismo voto bit a bit en todo camino
+  alcanzable, porque el primer evento tiene H = 0,5 y x ≡ 0.
 - N10: game_theory_adversarial_pressure no tiene escritor; la leen la
   sombra de Nash del núcleo (lib.rs:3497) y GameTheoreticNashEngine
   (game_theoretic_nash.rs:196), que caen a cvpin.
+  Ejecutada en la tanda 12 (CL-175): las dos lecturas piden cvpin
+  directamente, con la misma cadena de respaldo. El 0,1 del motor escalar y
+  su recorte siguen (Línea G, vetos.tsv:1236).
+- N10b (nueva, de la tanda 12): game_theory_long_payoff y
+  game_theory_short_payoff (game_theoretic_nash.rs, evaluate_for_coin)
+  tampoco tienen escritor y caen a max(±OFI, 0). Son el gancho de la
+  teoría «modelar un juego con pagos medidos» (linea_g/teoria.tsv:266): a
+  Línea G, reconstruir Nash con pagos medidos o retirar las claves.
 - N11: StanfordDiscoveryEngine (evolution-engine stanford_discovery.rs,
   Fase 6 de AGY, PR #127) sólo tiene lectores de test; nada de producción
   llama a run_discovery_cycle. A AGY: conectar y certificar o retirar.
@@ -1002,6 +1068,47 @@ un escéptico por lote listo):
   apalancamiento alto). A Fable/Línea H (genome.rs, genome_store.rs):
   normalizar esas dos lecturas como `load_active` y luego estrechar la
   banda, o congelar el gen 33 como el 10, 11, 20 y 32.
+- N15 (de la tanda 12): la escalada desnuda del host (god_engine.rs, cierre
+  de emergencia de NAKED-ESCALATION) descartaba con `let _ =` el resultado
+  de cancel_position_oco_orders y logueaba «brackets purgados» siempre;
+  D-698 hizo que el ejecutor devolviera Err al fallar una pierna, y los
+  otros dos cierres del host (PURGE OCO y EMERGENCY) ya lo reportaban.
+  Ejecutada en la tanda 12 (CL-176): el fallo va a telemetry_err! y el
+  éxito se loguea sólo con Ok. Sin cambio de órdenes. Guarda estática
+  execution-engine/tests/n15_purga_tras_escalada_contract.rs. Aviso a
+  Línea I (EDITANDO god_engine.rs en I-6, otro bloque).
+- N15b (de la revisión de la tanda 12, a Línea I): la pierna que sobrevive
+  a esa purga puede quedar armada sobre la posición siguiente.
+  `purge_orphan_legs` corre al principio de la auditoría con la foto de
+  posiciones donde la escalada aún está abierta, así que esa auditoría no
+  la purga; en la siguiente (hasta 60 s: el camino Err no llama a
+  `protection_health::mark_dirty`) sólo la purga si no hay posición en el
+  símbolo (pierna BOTH o sin lado) o en ese lado (hedge), y nada bloquea
+  una reentrada mientras tanto. `ensure_position_protected` cuenta además
+  esa pierna BOTH o sin lado como protección de la posición nueva. En
+  hedge, una pierna sin positionSide hace fallar la purga sin cancelarse
+  (executor.rs:3835-3840) y el watchdog no la toca mientras viva el lado
+  contrario. Lo mismo vale para el cierre con la posición ya inexistente
+  del mismo bloque (su comentario decía «en esta misma auditoría»; CL-176
+  lo corrige). Propuesta: en el Err, `mark_dirty` y reintento de la purga
+  para (símbolo, lado), con la reentrada en ese símbolo y lado bloqueada
+  hasta un Ok. Cambia conducta: átomo propio con test.
+- N16 (de la tanda 12, sin verificar como defecto): online_daemon.rs:306-325
+  (observed_market_env) mide el medio spread del examen walk-forward con
+  el libro del SPOT (spot_bid/spot_ask), no con el de futuros, y las
+  características del bosque en :1304-1310 y :1450-1456 usan el spread_bps
+  del spot con 1,0 por defecto. Posible cruce de mercado. A Sol.
+- N17 (de la tanda 12): los genes executor_max_orders_10s y
+  executor_max_weight_1m (genome.rs:305-306, 280 y 2200 por defecto) no
+  tienen lector desde LG-12, ni sus copias en config.rs:178-179 (los
+  límites vivos son 2400/300/1200 de
+  binance_api.rs:28-30); de ahí salen los comentarios «0,8·2200» y
+  «0,8·280» de tests_lg3 (executor.rs). Ya están congelados en la mutación
+  desde LG-18 (genome.rs:2037-2040, prueba lg18_los_genes_sin_lector_no_mutan;
+  linea_g/genes_censo.tsv:135-136), pero new_random los sigue sorteando
+  (genome.rs:1098-1099, [100; 500) y [1000; 5000)). A Fable: retirarlos
+  del vector (DIMENSION y genomas guardados) o fijarlos también en
+  new_random.
 
 **Restos de lotes ejecutados**: del 3, net_multiplexer (a AGY, para
 unificar con data_pipeline::http_cliente) y active_universe/

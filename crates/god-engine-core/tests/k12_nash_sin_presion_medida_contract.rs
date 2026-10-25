@@ -167,3 +167,34 @@ fn k12_el_unico_evento_sin_cvpin_tiene_el_espectro_recien_sembrado() {
     assert!(por_moneda.is_some_and(f64::is_finite), "cvpin por moneda: {por_moneda:?}");
     assert!(global.is_some_and(f64::is_finite), "cvpin global: {global:?}");
 }
+
+/// N10 / CL-175: la sombra Nash lee el cvpin medido aunque alguien escriba
+/// `game_theory_adversarial_pressure`, la clave sin escritor que encabezaba
+/// la cadena. Roja antes: publicaba el minimax con la presión de la clave
+/// huérfana (0,8) en vez de la medida (0,2).
+#[test]
+fn n10_la_clave_sin_escritor_no_pisa_el_cvpin_medido() {
+    let _guarda = ENTORNO.lock().unwrap_or_else(|e| e.into_inner());
+    let (arena, mut core) = nucleo();
+    sembrar_espectro(&mut core);
+    arena.registry.set_for_coin(0, "cvpin", 0.2);
+    arena
+        .registry
+        .set_for_coin(0, "game_theory_adversarial_pressure", 0.8);
+
+    profundidad(&mut core, 100.55, 20_000);
+
+    let x = desplazamientos(&core);
+    assert!(
+        (media_nash(&x, 0.2) - media_nash(&x, 0.8)).abs() > 0.05,
+        "la presión discrimina en esta malla"
+    );
+    let publicado = arena.registry.get_for_coin_strict(0, "sombra_nash_consenso");
+    assert_eq!(
+        publicado.map(f64::to_bits),
+        Some(media_nash(&x, 0.2).to_bits()),
+        "publicado {publicado:?}: con cvpin 0,2 {}, con la clave huérfana 0,8 {}",
+        media_nash(&x, 0.2),
+        media_nash(&x, 0.8)
+    );
+}
