@@ -1,5 +1,33 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
 
+## 2026-10-25 — Claude (cloud, Línea C): duodécima tanda del censo C-F7b (filas N2, N4, N9, N10 y N15)
+
+Tanda del PR #145. Sin cambio de órdenes, tamaños ni vetos: T-1 no se
+corre (golden y T-2 en verde y sin cambio).
+
+- RET-N4: sale `Position::entry_tau_ms()`, sin llamadores; el CAMPO
+  `entry_tau_ms` (horizonte real, D-745) sigue vivo.
+- RET-N2: salen `ewma_price_at`, `scale_gain_at` y `volatility_at` de
+  temporal_spectrum.rs, sólo con lectores de test. volatility_at no es
+  σ(τ): mide la media de |p − EWMA_τ|/EWMA_τ, con un CV ≈ 0,4 por consulta
+  y +5 a +9 % de sesgo entre nodos (tabla de la regla 2 en el commit). El
+  σ(τ) vivo es `sigma_forecast_at` o el respaldo ATR.
+- CL-174: sin `cvpin` finito la sombra TrendRunner se abstiene, como la de
+  Nash desde K12. CL-175: Nash (sombra y motor escalar) lee `cvpin`
+  directamente; `game_theory_adversarial_pressure` nunca tuvo escritor.
+- CL-176: la escalada desnuda del host ya no descarta el error de la purga
+  de brackets ni dice «brackets purgados» si falló (D-698).
+- Sin ejecutar y por qué: N1 (Sol, lote 12b), N3 (AGY y, si se quiere
+  persistir la evidencia Ville, el dueño), N5 (la reserva de salidas de
+  la cuota necesita una cota derivada: un 0,98 a secas puede armar
+  RATE_BRAKE con varios 429 y bloquear las salidas), N7 (simulator.rs de
+  AGY o la decisión F227 del tema 2). Filas nuevas: N10b (pagos de Nash
+  sin escritor, Línea G), N15b (la pierna que sobrevive a la purga puede
+  quedar armada sobre la posición siguiente: el watchdog no la ve con
+  posición en el símbolo; Línea I, cambia conducta), N16 (spread del spot
+  en el examen del daemon, Sol, sin verificar) y N17 (genes 280/2200 sin
+  lector, ya congelados por LG-18 pero sorteados en new_random, Fable).
+
 ## 2026-10-25 — Claude (cloud, Línea C): undécima tanda del censo C-F7b (fila N12, la fricción al stop)
 
 Tanda del PR #144. Cambia la conducta sólo junto al tope de riesgo por
