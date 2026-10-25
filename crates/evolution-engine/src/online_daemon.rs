@@ -594,10 +594,11 @@ pub fn restaurar_genes_no_observables_en_examen(
     candidate.topo_layer_2_activation = incumbent.topo_layer_2_activation;
     candidate.tensor_dropout_rate = incumbent.tensor_dropout_rate;
     candidate.quantum_entropy_seed = incumbent.quantum_entropy_seed;
-    // CL-162: el Kelly legado (genes 10 y 11) no fija la pérdida al stop de
-    // ninguna orden del examen (LH-04 o la orden mínima). El pre-examen lo lee
-    // en `kelly_at_tau` y, sin esto, ordenaría a los candidatos por una
-    // coordenada que el examen real ignora.
+    // CL-162: el Kelly legado (genes 10 y 11) no fija el tamaño ni la pérdida
+    // al stop de ninguna orden del examen (LH-04 o la orden mínima). El
+    // pre-examen lo lee en `kelly_at_tau` y, sin esto, ordenaría a los
+    // candidatos por una coordenada que en el examen real sólo elige el
+    // apalancamiento de la orden mínima (D-130) y la puerta REJ_FEE_IMPACT.
     candidate.scalp_kelly_fraction = incumbent.scalp_kelly_fraction;
     candidate.swing_kelly_fraction = incumbent.swing_kelly_fraction;
 }

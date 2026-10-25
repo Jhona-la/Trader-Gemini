@@ -4,7 +4,9 @@
 //! pérdida al stop del Kelly legado: LH-04 dimensiona con evidencia y el
 //! resto va a la orden mínima. El pre-examen, en cambio, sí lo leía
 //! (`kelly_at_tau(16 s)`), así que los candidatos se ordenaban por una
-//! coordenada que el examen real ignora. La restauración de genes no
+//! coordenada que en el examen real no fija ningún tamaño: a través del
+//! margen legado sólo elige el apalancamiento de la orden mínima (D-130) y,
+//! con él, la puerta REJ_FEE_IMPACT. La restauración de genes no
 //! observables los devuelve al incumbente: todos los candidatos de la ronda
 //! llegan al pre-examen con la misma Kelly.
 

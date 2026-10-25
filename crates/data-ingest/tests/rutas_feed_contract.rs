@@ -57,7 +57,7 @@ fn i1b_solo_los_eventos_publicos_escriben_la_salud_del_feed() {
         .collect();
     assert!(
         compacto.contains(
-            "ifevent_time>0&&(is_trade||is_depth){engine_real.arena.last_ws_latency_ms.store(latency_ms.max(0)asu64,Ordering::Relaxed);engine_real.arena.last_ws_red_reloj_ms.store(edad.red_reloj_ms,Ordering::Relaxed);engine_real.arena.last_ws_espera_local_ms.store(edad.espera_local_ms.max(0)asu64,Ordering::Relaxed);quantum_arena::feed_health::clear();}"
+            "ifevent_time>0&&(is_trade||is_depth){engine_real.arena.last_ws_latency_ms.store(latency_ms.max(0)asu64,Ordering::Relaxed);engine_real.arena.last_ws_red_reloj_ms.store(edad.red_reloj_ms,Ordering::Relaxed);engine_real.arena.last_ws_espera_local_ms.store(edad.espera_local_ms.max(0)asu64,Ordering::Relaxed);engine_real.arena.ws_eventos_publicos.fetch_add(1,Ordering::Relaxed);quantum_arena::feed_health::clear();}"
         ),
         "la salud del feed debe escribirse sólo con eventos públicos"
     );

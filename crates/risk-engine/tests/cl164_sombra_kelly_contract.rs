@@ -8,6 +8,11 @@
 //! fricción; al cerrar, el libro suma ln(1 + f·R) por regla (LH-04, legado
 //! y el mínimo de las dos) con R = retorno neto / (SL + c). Es el criterio
 //! de Kelly medido fuera de muestra. No dimensiona nada.
+//!
+//! CL-166: una regla arruinada (1 + f·R ≤ 0) tiene log-riqueza −∞; el libro
+//! la marca y deja de sumarle cierres. El libro suma además R y R² en
+//! unidades de stop, y `informe_sombra_kelly` lo publica (el forense lo
+//! imprime como `SOMBRA_KELLY`).
 
 use quantum_arena::{
     symbol_registry::{update_registry, SymbolSpec},
@@ -126,4 +131,81 @@ fn cl164_un_retorno_no_finito_no_se_registra() {
     RiskEngine::registrar_sombra_kelly(&arena, &medida, f64::INFINITY);
     assert_eq!(clave(&arena, "sombra_kelly_n"), None);
     assert_eq!(clave(&arena, "sombra_kelly_logw_lh04"), None);
+}
+
+/// R de un cierre leído del log de LH-04: ln(1 + f·R) con f = `lh04_f_riesgo`.
+fn r_de_lh04(arena: &GlobalArena, logw: f64) -> f64 {
+    let f = arena.registry.get_for_coin_or(0, "lh04_f_riesgo", f64::NAN);
+    logw.exp_m1() / f
+}
+
+#[test]
+fn cl166_la_regla_arruinada_se_congela() {
+    let _serie = SERIE.lock().unwrap_or_else(|e| e.into_inner());
+    let (arena, medida) = orden_medida();
+    RiskEngine::registrar_sombra_kelly(&arena, &medida, -1.0);
+    assert_eq!(clave(&arena, "sombra_kelly_ruina_lh04"), Some(1.0), "premisa: el hueco arruina a LH-04");
+    let tras_hueco: Vec<_> = ["lh04", "legado", "min"]
+        .iter()
+        .map(|r| {
+            (
+                *r,
+                clave(&arena, &format!("sombra_kelly_ruina_{r}")) == Some(1.0),
+                clave(&arena, &format!("sombra_kelly_logw_{r}")),
+            )
+        })
+        .collect();
+    RiskEngine::registrar_sombra_kelly(&arena, &medida, 0.01);
+    for (regla, arruinada, logw) in tras_hueco {
+        let ahora = clave(&arena, &format!("sombra_kelly_logw_{regla}"));
+        if arruinada {
+            assert_eq!(
+                ahora.map(f64::to_bits),
+                logw.map(f64::to_bits),
+                "{regla}: una regla arruinada no compone después"
+            );
+            assert_eq!(clave(&arena, &format!("sombra_kelly_ruina_{regla}")), Some(1.0));
+        } else {
+            assert_ne!(ahora.map(f64::to_bits), logw.map(f64::to_bits), "{regla}: la viva sigue sumando");
+        }
+    }
+    assert_eq!(clave(&arena, "sombra_kelly_n"), Some(2.0), "el cierre cuenta aunque las reglas se arruinen");
+}
+
+#[test]
+fn cl166_el_libro_suma_r_en_unidades_de_stop() {
+    let _serie = SERIE.lock().unwrap_or_else(|e| e.into_inner());
+    let (arena, medida) = orden_medida();
+    let sl = arena.registry.get_for_coin_or(0, "lh04_stop_real", f64::NAN);
+    assert!(sl > 0.0, "premisa: la orden publica su stop real");
+    // Tocar el stop sin fricción en la salida: R = −SL/(SL + c), algo más que −1.
+    RiskEngine::registrar_sombra_kelly(&arena, &medida, -sl);
+    let r1 = r_de_lh04(&arena, clave(&arena, "sombra_kelly_logw_lh04").unwrap_or(f64::NAN));
+    assert!((-1.0..-0.9).contains(&r1), "un stop es R ≈ −1 en unidades de SL + c: {r1}");
+    let suma_r = clave(&arena, "sombra_kelly_suma_r").unwrap_or(f64::NAN);
+    assert!((suma_r - r1).abs() < 1e-9 * r1.abs(), "suma de R {suma_r} frente a R del log {r1}");
+    RiskEngine::registrar_sombra_kelly(&arena, &medida, 2.0 * sl);
+    let suma_r = clave(&arena, "sombra_kelly_suma_r").unwrap_or(f64::NAN);
+    let suma_r2 = clave(&arena, "sombra_kelly_suma_r2").unwrap_or(f64::NAN);
+    assert!((suma_r - (r1 - 2.0 * r1)).abs() < 1e-9, "R suma: {suma_r}");
+    assert!((suma_r2 - 5.0 * r1 * r1).abs() < 1e-9, "R² suma: {suma_r2}");
+}
+
+#[test]
+fn cl166_el_informe_publica_el_libro() {
+    let _serie = SERIE.lock().unwrap_or_else(|e| e.into_inner());
+    let (arena, medida) = orden_medida();
+    assert_eq!(RiskEngine::informe_sombra_kelly(&arena, 0), None, "sin cierres no hay informe");
+    let sl = arena.registry.get_for_coin_or(0, "lh04_stop_real", f64::NAN);
+    RiskEngine::registrar_sombra_kelly(&arena, &medida, -sl);
+    RiskEngine::registrar_sombra_kelly(&arena, &medida, -1.0);
+    let linea = RiskEngine::informe_sombra_kelly(&arena, 0).unwrap_or_default();
+    println!("observado: {linea}");
+    assert!(linea.starts_with("{\"coin\":0,\"n\":2,"), "{linea}");
+    assert!(linea.contains("\"ruina_lh04\":true"), "el hueco arruina a LH-04: {linea}");
+    let logw = clave(&arena, "sombra_kelly_logw_lh04").unwrap_or(f64::NAN);
+    assert!(linea.contains(&format!("\"logw_lh04\":{logw:.6}")), "{linea}");
+    let r_media = clave(&arena, "sombra_kelly_suma_r").unwrap_or(f64::NAN) / 2.0;
+    assert!(linea.contains(&format!("\"r_media\":{r_media:.6}")), "{linea}");
+    assert!(linea.ends_with('}') && !linea.contains("NaN") && !linea.contains("inf"), "{linea}");
 }

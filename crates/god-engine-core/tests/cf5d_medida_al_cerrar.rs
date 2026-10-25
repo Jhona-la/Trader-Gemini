@@ -200,6 +200,9 @@ fn cl135_lo_medido_entra_al_cerrar_y_no_lo_hereda_otra_posicion() {
     assert!(core.medida_de_entrada[0][k].is_none(), "el cierre consume la medida");
     // CL-164: la sombra del Kelly legado frente a LH-04 aprende del mismo
     // cierre, una vez, con un log finito (un stop tocado no es una ruina).
+    // En este arena la orden es la primera (n = 0 < lh04_muestras_min): f_lh04
+    // y el mínimo valen 0 y su log es 0 para cualquier R, así que la unidad la
+    // fija la suma de R de CL-166.
     let sombra = |nombre: &str| arena.registry.get_for_coin_strict(0, nombre);
     assert_eq!(sombra("sombra_kelly_n"), Some(1.0), "el cierre entra en la sombra");
     for regla in ["lh04", "legado", "min"] {
@@ -210,6 +213,13 @@ fn cl135_lo_medido_entra_al_cerrar_y_no_lo_hereda_otra_posicion() {
             sombra(&format!("sombra_kelly_ruina_{regla}"))
         );
     }
+    // CL-166: el núcleo pasa el retorno neto sobre el nocional de entrada y el
+    // riesgo lo divide por SL + c: un cierre en el stop (un 0,1 % más allá,
+    // más la fricción de la salida) es R ≈ −1, no R·L (el retorno sobre el
+    // margen) ni R·100 (en porcentaje).
+    let r = sombra("sombra_kelly_suma_r").unwrap_or(f64::NAN);
+    println!("observado: R del cierre en el stop {r}");
+    assert!((-2.0..=-0.9).contains(&r), "un cierre en el stop es R ≈ −1 en unidades de SL + c: {r}");
 
     // La ranura revertida no deja su medida a la siguiente ocupante.
     core.medida_de_entrada[0][k] = Some(medida);

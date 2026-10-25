@@ -1,13 +1,20 @@
 //! CL-163: el gen 33 (`kelly_clamp_max`) es el techo de la apuesta de LH-04.
 //!
-//! El gen dice «apuesta Kelly máxima». En el motor legado acotaba
-//! W·(1 − 1/PF)·λ (kelly.rs), una fracción del capital que se arriesga: la
-//! misma magnitud que la f de LH-04 (pérdida al stop con la fricción, en
-//! fracción del capital asignado; CL-159). Desde F1-116 + F1-087 el Kelly
-//! legado ya no fija ningún tamaño y el gen había quedado sin efecto.
-//! Ahora f = min(½·Kelly-LCB, tope de ruina, κ): sólo aprieta, nunca crea ni
-//! agranda una ventaja. Con el κ de la línea base (0,55) el mínimo no cambia
-//! nada, porque el axioma de ruina ya acota f en 0,25.
+//! El gen dice «apuesta Kelly máxima». En el motor legado acotaba la
+//! fracción de Kelly W·(1 − 1/PF)·λ (kelly.rs), que esa cadena aplicaba
+//! como fracción de MARGEN (`raw_exposure = dir·conf·kelly·C`), no como
+//! pérdida al stop. Desde F1-116 + F1-087 el Kelly legado ya no fija ningún
+//! tamaño. Ahora el gen acota la f de LH-04 (pérdida al stop con la
+//! fricción, en fracción del capital asignado; CL-159): f = min(½·Kelly-LCB,
+//! tope de ruina, κ). Sólo aprieta, nunca crea ni agranda una ventaja. Como
+//! el axioma de ruina ya acota f en 0,25, κ sólo muerde en [0,1; 0,25): la
+//! línea base (0,55) y los genomas guardados (0,8245) no cambian nada. Y la
+//! orden sólo cambia si κ baja del riesgo que los techos de margen ya dejan
+//! (en este fixture, con L = 1, ≈ 1,9 % del capital).
+//!
+//! κ = 0 no sale de un genoma (la banda del gen empieza en 0,1). Fijado a
+//! mano por debajo de `kelly_clamp_min` (gen 32, ≥ 0,001), lo rechaza antes
+//! la validación de entrada FMT-212 con REJ_INVALID_INPUT.
 
 use quantum_arena::{
     symbol_registry::{update_registry, SymbolSpec},
@@ -53,7 +60,8 @@ fn fixture(kappa: f64) -> (std::sync::Arc<GlobalArena>, SignalIntent) {
 }
 
 /// La evidencia de `lh04_sizing_riesgo_contract`: n = 100, p̂ = 0,65,
-/// PF = 2,6 ⇒ b = 1,4 y f = ½·(0,572 − 0,428/1,4) ≈ 0,1333.
+/// PF = 2,6 ⇒ b = 1,4; la cota de Wilson (z = 1,64) da p_LCB ≈ 0,5688 y
+/// f = ½·(0,5688 − 0,4312/1,4) ≈ 0,1304.
 fn evidencia(arena: &GlobalArena, pf: f64) {
     arena.coins[0].metrics.win_rate.store(0.65, Relaxed);
     arena.coins[0].metrics.trade_count.store(100, Relaxed);
@@ -69,6 +77,12 @@ fn f_riesgo(arena: &GlobalArena) -> f64 {
     arena.registry.get_for_coin_or(0, "lh04_f_riesgo", f64::NAN)
 }
 
+/// El riesgo al stop que la orden emitida realiza (tras los techos), en
+/// fracción del capital asignado.
+fn f_realizado(arena: &GlobalArena) -> f64 {
+    arena.registry.get_for_coin_or(0, "lh04_f_realizado", f64::NAN)
+}
+
 fn huella(o: &ValidatedOrder) -> [u64; 4] {
     [o.volume_usd.to_bits(), o.leverage.to_bits(), o.tp_target.to_bits(), o.sl_target.to_bits()]
 }
@@ -78,15 +92,47 @@ fn cl163_el_tope_del_gen_acota_la_f_de_lh04() {
     let _serie = SERIE.lock().unwrap_or_else(|e| e.into_inner());
     let (libre, intent) = fixture(1.0);
     evidencia(&libre, 2.6);
-    let _ = evaluar(&libre, &intent);
+    let orden_libre = evaluar(&libre, &intent);
     let f_libre = f_riesgo(&libre);
-    assert!(f_libre > 0.13 && f_libre < 0.14, "premisa: f ≈ 0,1333, obtenido {f_libre}");
+    assert!(f_libre > 0.13 && f_libre < 0.14, "premisa: f ≈ 0,1304, obtenido {f_libre}");
 
     let (acotado, intent) = fixture(0.10);
     evidencia(&acotado, 2.6);
     let orden = evaluar(&acotado, &intent);
     assert_eq!(f_riesgo(&acotado), 0.10, "κ = 0,10 acota f");
-    assert!(orden.volume_usd > 0.0, "la orden sigue en pie, más pequeña");
+    assert!(orden.volume_usd > 0.0, "la orden sigue en pie");
+
+    // En este fixture (L = 1) el techo de margen ya acota el riesgo emitido
+    // muy por debajo de f: `lh04_f_realizado` ≈ 0,019. κ = 0,10 sólo cambia la
+    // f objetivo; κ muerde la orden cuando baja de ese riesgo realizado, y
+    // entonces el nocional baja en proporción.
+    let realizado_libre = f_realizado(&libre);
+    assert!(
+        realizado_libre > 0.0 && realizado_libre < f_libre,
+        "premisa: el margen acota el riesgo emitido, {realizado_libre} < {f_libre}"
+    );
+    let kappa = 0.5 * realizado_libre;
+    let (bajo, intent) = fixture(kappa);
+    evidencia(&bajo, 2.6);
+    let orden_baja = evaluar(&bajo, &intent);
+    let r = (orden_baja.volume_usd * orden_baja.leverage) / (orden_libre.volume_usd * orden_libre.leverage);
+    assert!((r - 0.5).abs() < 0.05 * 0.5, "con κ = ½ del riesgo realizado el nocional baja a la mitad: {r}");
+    assert!((f_realizado(&bajo) - kappa).abs() < 1e-9, "el riesgo realizado es κ: {}", f_realizado(&bajo));
+}
+
+#[test]
+fn cl163_un_tope_bajo_el_minimo_del_gen_32_lo_rechaza_fmt212() {
+    let _serie = SERIE.lock().unwrap_or_else(|e| e.into_inner());
+    let (arena, intent) = fixture(0.0);
+    evidencia(&arena, 2.6);
+    let antes = REJECT_COUNTERS[REJ_INVALID_INPUT].load(Relaxed);
+    let orden = evaluar(&arena, &intent);
+    assert_eq!(orden.volume_usd, 0.0, "κ = 0 con kelly_clamp_min = 0,001 no sale");
+    assert_eq!(
+        REJECT_COUNTERS[REJ_INVALID_INPUT].load(Relaxed) - antes,
+        1,
+        "el rechazo es la validación de entrada (REJ_INVALID_INPUT), no REJ_EXPOSURE_ZERO"
+    );
 }
 
 #[test]

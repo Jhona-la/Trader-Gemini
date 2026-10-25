@@ -7,8 +7,12 @@
 //! enteraban (hallazgo X-010, verificado).
 //!
 //! PUENTE: un átomo global. El watchdog marca `stalled`; cualquier evento
-//! vivo del loop unificado lo limpia. El core y el inmune leen
-//! `is_stalled() || last_ws_latency_ms > umbral`.
+//! vivo del loop unificado lo limpia. El núcleo bloquea ENTRADAS con
+//! `is_stalled() || last_ws_latency_ms > umbral` (edad total del dato). El
+//! inmune (aplanado total) cuenta strikes con `last_ws_red_reloj_ms` vía
+//! `data_ingest::edad_feed::ciclo_strikes` (I-3a, Línea I): con stall o con
+//! la edad por encima del umbral, red+reloj por encima de la mitad del umbral
+//! suma un strike (CERT-M4-H04); por debajo se conservan.
 
 use std::sync::atomic::{AtomicBool, Ordering};
 
