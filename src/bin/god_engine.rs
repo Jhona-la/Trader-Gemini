@@ -2149,6 +2149,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 // 0 ⇒ el primer ciclo guarda el pico aunque no haya subido.
                 let mut pico_guardado = 0.0_f64;
                 let mut latency_strikes: u32 = 0;
+                // I-3a (Línea I): frescura de la edad medida y avisos estrangulados.
+                let reloj_imm = std::time::Instant::now();
+                let mut eventos_publicos_previos: u64 = 0;
+                let mut red_negativa_seguida: u32 = 0;
+                let mut primer_strike_ms: u64 = 0;
+                let mut motivo_ultimo_strike = "";
+                let mut aviso_strike = telemetry_server::estrangulador::Estrangulador::new(60_000);
+                let mut aviso_stall = telemetry_server::estrangulador::Estrangulador::new(60_000);
+                let mut aviso_atraso_local = telemetry_server::estrangulador::Estrangulador::new(60_000);
+                let mut aviso_feed_quieto = telemetry_server::estrangulador::Estrangulador::new(60_000);
+                let mut aviso_reloj = telemetry_server::estrangulador::Estrangulador::new(600_000);
                 loop {
                     tokio::time::sleep(std::time::Duration::from_secs(5)).await;
 
@@ -2160,8 +2171,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         arena_imm.pico_en_stops.store(0.0, Ordering::Relaxed);
                         arena_imm.reset_ventana_stops();
                         latched = false;
+                        // I-3b (Línea I): tras un disparo por latencia los strikes
+                        // quedaban en 3 (el `continue` del latch no los toca); el
+                        // primer ciclo tras rearmar volvía a aplanar con una sola
+                        // muestra lenta, o con un stall puro, que CERT-M4-H04 excluye.
+                        latency_strikes = 0;
+                        let ks_armado = arena_imm.kill_switch_active.load(Ordering::Relaxed);
                         telemetry_server::telemetry_log!(
-                            "🛡️ [IMMUNE] Archivo rearme_frenos.txt consumido: frenos en stops rearmados y latch liberado."
+                            "🛡️ [IMMUNE] Archivo rearme_frenos.txt consumido: frenos en stops rearmados, latch liberado y strikes de latencia a 0.{}",
+                            if ks_armado {
+                                " El kill-switch de arena y ejecutor sigue armado hasta reiniciar."
+                            } else {
+                                ""
+                            }
                         );
                     }
 
@@ -2218,7 +2240,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     let insolvent = cap <= 0.0;
                     let dd_breach = freno.echado();
 
-                    // (3) Latencia: 3 muestras consecutivas por encima del umbral.
+                    // (3) Latencia: 3 strikes desde el último ciclo con el feed
+                    // sano (reglas en I-3a, más abajo).
                     let lat = arena_imm.last_ws_latency_ms.load(Ordering::Relaxed);
                     let lat_thresh = arena_imm
                         .config
@@ -2236,21 +2259,108 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     // está breach (evidencia de degradación real, no sólo
                     // transport). El flag puro genera WARNING, no strike.
                     let stalled = quantum_arena::feed_health::is_stalled();
-                    if lat > lat_thresh {
-                        latency_strikes += 1;
-                    } else if stalled && lat > lat_thresh / 2 {
-                        // stall + latencia media elevada: degradación parcial
-                        latency_strikes += 1;
-                    } else if stalled {
-                        // stall puro: warning sin strike (transport, no datos)
-                        if latency_strikes == 0 {
-                            telemetry_server::telemetry_log!(
-                                "⚠️ [IMMUNE] WS stalled pero latencia medida OK ({:.0}ms) — strike NO aplicado (sólo transport)"
-                            , lat);
+                    // I-3a (Línea I): los strikes se cuentan con la componente
+                    // red+reloj de la edad (I-2b), vía
+                    // `data_ingest::edad_feed::ciclo_strikes`. Frente a
+                    // CERT-M4-H04 cambian dos cosas y ninguna suma un strike que
+                    // antes no se sumara: si el exceso de edad viene de la cola
+                    // local (red+reloj ≤ umbral/2) los strikes se conservan en
+                    // vez de sumar, porque un atraso del consumidor no se arregla
+                    // aplanando a mercado (el núcleo bloquea ENTRADAS con la edad
+                    // total); y sin eventos públicos nuevos desde el ciclo
+                    // anterior se conservan en vez de reiniciarse, porque la
+                    // muestra es la del último evento, congelada.
+                    let red = arena_imm.last_ws_red_reloj_ms.load(Ordering::Relaxed);
+                    let espera_local = arena_imm.last_ws_espera_local_ms.load(Ordering::Relaxed);
+                    let deriva = arena_imm.deriva_reloj_pared_ms.load(Ordering::Relaxed);
+                    let eventos_publicos = arena_imm.ws_eventos_publicos.load(Ordering::Relaxed);
+                    let feed_avanza = eventos_publicos != eventos_publicos_previos;
+                    eventos_publicos_previos = eventos_publicos;
+                    let ahora_imm = reloj_imm.elapsed().as_millis() as u64;
+                    let ciclo = data_ingest::edad_feed::ciclo_strikes(
+                        red,
+                        espera_local,
+                        lat_thresh,
+                        stalled,
+                        !feed_avanza,
+                    );
+                    let strikes_previos = latency_strikes;
+                    latency_strikes = ciclo.aplicar(strikes_previos);
+                    let conserva = ciclo == data_ingest::edad_feed::CicloStrikes::Conserva;
+                    if latency_strikes > strikes_previos {
+                        if strikes_previos == 0 {
+                            primer_strike_ms = ahora_imm;
                         }
-                        // no reset ni increment: mantener estado
+                        motivo_ultimo_strike = ciclo.motivo();
+                        if let Some(n) = aviso_strike.admitir(ahora_imm) {
+                            telemetry_server::telemetry_log!(
+                                "⚠️ [IMMUNE] Strike de latencia {}/3: {} (red+reloj {}ms, umbral {}ms, cola local {}ms, stall {}, eventos públicos nuevos {}). (+{} avisos suprimidos)",
+                                latency_strikes,
+                                motivo_ultimo_strike,
+                                red,
+                                lat_thresh,
+                                espera_local,
+                                stalled,
+                                feed_avanza,
+                                n
+                            );
+                        }
+                    }
+                    if stalled && latency_strikes == 0 {
+                        // stall puro: warning sin strike (transport, no datos)
+                        if let Some(n) = aviso_stall.admitir(ahora_imm) {
+                            telemetry_server::telemetry_log!(
+                                "⚠️ [IMMUNE] WS stalled pero red+reloj OK ({}ms) — strike NO aplicado (sólo transport). (+{} avisos suprimidos)",
+                                red,
+                                n
+                            );
+                        }
+                    }
+                    if conserva && !feed_avanza && !stalled && eventos_publicos > 0 {
+                        if let Some(n) = aviso_feed_quieto.admitir(ahora_imm) {
+                            telemetry_server::telemetry_log!(
+                                "⚠️ [IMMUNE] Sin eventos públicos nuevos en 5 s: la edad medida es la del último evento (red+reloj {}ms, cola local {}ms); {} strikes conservados. (+{} avisos suprimidos)",
+                                red,
+                                espera_local,
+                                latency_strikes,
+                                n
+                            );
+                        }
+                    }
+                    if conserva && feed_avanza && !stalled {
+                        // Con el feed avanzando y sin stall, conservar sólo
+                        // ocurre con la edad por encima del umbral y red+reloj
+                        // por debajo de su mitad: el exceso es de la cola local.
+                        if let Some(n) = aviso_atraso_local.admitir(ahora_imm) {
+                            telemetry_server::telemetry_log!(
+                                "⚠️ [IMMUNE] Atraso local: el dato espera {} ms en la cola (edad {} ms > umbral {} ms) con red+reloj {} ms (deriva del reloj {} ms). Este atraso no suma strikes ({} conservados): el núcleo bloquea entradas con datos viejos y las piernas protectoras siguen en el exchange. (+{} avisos suprimidos)",
+                                espera_local,
+                                lat,
+                                lat_thresh,
+                                red,
+                                deriva,
+                                latency_strikes,
+                                n
+                            );
+                        }
+                    }
+                    // Una red negativa es físicamente imposible: delata error de
+                    // reloj, que hasta I-5 sube en silencio el umbral efectivo.
+                    red_negativa_seguida = if feed_avanza && red < 0 {
+                        red_negativa_seguida.saturating_add(1)
                     } else {
-                        latency_strikes = 0;
+                        0
+                    };
+                    if red_negativa_seguida >= 3 {
+                        if let Some(n) = aviso_reloj.admitir(ahora_imm) {
+                            telemetry_server::telemetry_log!(
+                                "⚠️ [IMMUNE] red+reloj negativo sostenido ({} ms, deriva del reloj de pared {} ms): error de reloj de al menos {} ms, que sube en al menos esa cifra el umbral efectivo de los strikes (I-5). (+{} avisos suprimidos)",
+                                red,
+                                deriva,
+                                red.unsigned_abs(),
+                                n
+                            );
+                        }
                     }
                     let lat_breach = latency_strikes >= 3;
 
@@ -2265,7 +2375,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         } else if dd_breach {
                             format!("drawdown: {freno}")
                         } else {
-                            format!("latencia {}ms > {}ms sostenida", lat, lat_thresh)
+                            format!(
+                                "{} strikes de latencia en {} s, el último por {} (red+reloj {}ms, umbral {}ms, edad total {}ms, cola local {}ms, deriva del reloj {}ms)",
+                                latency_strikes,
+                                ahora_imm.saturating_sub(primer_strike_ms) / 1_000,
+                                motivo_ultimo_strike,
+                                red,
+                                lat_thresh,
+                                lat,
+                                espera_local,
+                                deriva
+                            )
                         };
                         telemetry_server::telemetry_log!(
                             "🚨 [SISTEMA INMUNE] ACTIVADO: {}. Kill-switch ARMADO + aplanado total.",
@@ -3861,8 +3981,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             // offset ACTUAL (el sincronizador lo actualiza cada 15 s) en
             // vez del offset congelado al arranque. La deriva del reloj
             // local en sesiones largas sesgaba latency_ms — que alimenta
-            // el kill-switch de volatilidad sintética y los strikes del
-            // sistema inmune (aplanados falsos / stalls ocultos).
+            // el kill-switch de volatilidad sintética y el bloqueo de
+            // entradas — y sigue sesgando red+reloj, con la que el sistema
+            // inmune cuenta sus strikes desde I-3a (ver la deriva D, I-2b).
             let ntp_offset_actual = engine_real
                 .arena
                 .server_time_offset_ms
@@ -3907,6 +4028,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     .arena
                     .last_ws_espera_local_ms
                     .store(edad.espera_local_ms.max(0) as u64, Ordering::Relaxed);
+                engine_real
+                    .arena
+                    .ws_eventos_publicos
+                    .fetch_add(1, Ordering::Relaxed);
                 quantum_arena::feed_health::clear();
             }
 

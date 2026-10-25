@@ -45,11 +45,11 @@ para todo el universo (26–30 símbolos).
 |---|---|---|---|---|
 | I-1 | Auditoría del camino socket → cola → métrica → consumidores | La métrica mezcla los cuatro términos | 3 lectores; 18 hallazgos verificados (8 confirmados, 10 plausibles, 0 refutados) y diseño en `docs/audit/linea_i/i1_verificacion_y_diseno.json` | **hecho** |
 | I-1b | Rutas `/public` y `/market` (un lector WS por categoría) | En producción la URL heredada no recibe velas ni liquidaciones | Sondas (`SONDAS_WS_2026-10-24.md`) + contrato `data-ingest/tests/rutas_feed_contract.rs` que falla en main | **en main (PR #134, a6472e330)** |
-| I-2a | Sello de recepción (`MensajeWs { datos, recibido: Instant }`) transportado por la cola | Hoy la cola lleva bytes sin sello: nadie puede separar red de espera local | Test: el sello sobrevive a la cola y el descarte sigue reconociendo el centinela | **hecho en rama** (sin cambio de conducta) |
-| I-2b | Métrica descompuesta `EdadEvento { total, red_reloj, espera_local }` publicada en el arena y en cada aviso | Un evento que esperó 5 s en cola cuenta hoy como red de 5 s | Test puro: E=1000, ahora=6150, espera 5 s ⇒ red 150, local 5000; deriva D del reloj de pared | **hecho en rama** (sin cambio de conducta) |
-| I-2c | Contrapresión observable (descartes por periodo, profundidad, espera máxima) por `telemetry_log!` | El monitor sólo imprime con la cola llena y por `println!` | Tests de las ventanas por periodo + contrato de fuente | **hecho en rama** (sin cambio de conducta) |
-| I-3a | El inmune cuenta strikes con red+reloj, no con la espera local | Un atraso local aplana posiciones como si la red estuviera caída | `strikes_latencia` puro con paridad CERT-M4-H04 | pendiente (cambia conducta) |
-| I-3b | El rearme del inmune reinicia los strikes de latencia | Tras rearmar, los strikes viejos vuelven a disparar | Contrato de fuente | pendiente (cambia conducta) |
+| I-2a | Sello de recepción (`MensajeWs { datos, recibido: Instant }`) transportado por la cola | Hoy la cola lleva bytes sin sello: nadie puede separar red de espera local | Test: el sello sobrevive a la cola y el descarte sigue reconociendo el centinela | **en main (PR #136, 0d0b07e01)** |
+| I-2b | Métrica descompuesta `EdadEvento { total, red_reloj, espera_local }` publicada en el arena y en cada aviso | Un evento que esperó 5 s en cola cuenta hoy como red de 5 s | Test puro: E=1000, ahora=6150, espera 5 s ⇒ red 150, local 5000; deriva D del reloj de pared | **en main (PR #136, 0d0b07e01)** |
+| I-2c | Contrapresión observable (descartes por periodo, profundidad, espera máxima) por `telemetry_log!` | El monitor sólo imprime con la cola llena y por `println!` | Tests de las ventanas por periodo + contrato de fuente | **en main (PR #136, 0d0b07e01)** |
+| I-3a | El inmune cuenta strikes con red+reloj, no con la espera local | Un atraso local aplana posiciones como si la red estuviera caída | `ciclo_strikes` puro; rejilla: nunca suma ni reinicia donde CERT-M4-H04 no lo hacía | **hecho en rama** (cambia conducta del aplanado total) |
+| I-3b | El rearme del inmune reinicia los strikes de latencia | Tras rearmar, los strikes viejos vuelven a disparar | Contrato de fuente | **hecho en rama** (cambia conducta) |
 | I-3c | Recorte del bosque sombra con atraso local | El bosque sombra corre en el mismo hilo aunque la cola se atrase | `toca_sombra` puro | pendiente (condicional a I-2) |
 | I-4 | Umbral de edad sin deriva evolutiva | El umbral es un gen que la cosecha muta en [500, 10 000] ms sin presión selectiva | 1000 mutaciones lo dejan en 1000·π; aplicar un genoma viejo no lo mueve | pendiente (cambia conducta) |
 | I-5 | Reloj coherente: offset del feed medido contra la misma proyección monótona | Offset contra `SystemTime` aplicado sobre `Instant` fijado al arranque | Simulación de una corrección de w32time de −2 s | pendiente (cambia conducta) |
@@ -87,6 +87,16 @@ trading llevan T-1 antes de entrar a `main`.
   «reloj adelantado»), `fetch_max` sólo con máximo nuevo y en su propia línea de caché.
   GREEN: `data-ingest` 23+4+7+4, `check --bin god_engine`, `ingesta_ws_host_contract` 7/7.
   RED: con el host de `main` fallan los 4 tests de `edad_feed_contract.rs`.
+- 2026-10-24 ~16:20 — I-2 en `main` (PR #136, 10/10 checks, merge 0d0b07e01).
+- 2026-10-24 ~16:25 — I-3a/b en la rama `claude/linea-i-i3`. Revisión adversarial del diff
+  (4 lentes, 2 escépticos): 9 hallazgos sobreviven (2 MED, 7 LOW), todos incorporados. El
+  MED de capital: la primera versión sólo tomaba como datos viejos la cola por encima del
+  umbral, y red 2,5 s + cola 700 ms reiniciaba los strikes donde el inmune viejo sumaba;
+  ahora el criterio es la edad total. El MED de frescura: el feed quieto sin stall sumaba
+  por la banda media antes del watchdog; ahora sólo conserva. Los avisos de «conservados»
+  sólo salen cuando se conserva. T-1 no se corre: no ejecuta el host, y lo único que
+  comparte con I-3 es un atómico nuevo del arena que el núcleo no lee. Abierto (LOW): los
+  strikes conservados no caducan mientras el feed siga degradado.
 
 - 2026-10-24 13:25 — Línea abierta; heartbeat en `AGENT_SYNC.md` (commit `2831cf5bd`).
   Auditoría I-1 lanzada (3 lectores, escépticos, diseñador).
