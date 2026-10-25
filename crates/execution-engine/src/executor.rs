@@ -589,6 +589,8 @@ impl OrderExecutor {
             return Err("POSITION_MODE_UNAVAILABLE_IN_PAPER".to_string());
         }
         let timestamp = self.get_synced_timestamp();
+        // N20 (CL-187): una lectura; con el freno o por encima del 80 % no sale.
+        let _cupo = self.check_exit_rate_limits(timestamp, Tramo::Lectura)?;
         let api_secret = self.api_secret.load();
         let mut buf = ZeroAllocBuffer::new();
         buf.push_str(self.client.get_base_url());
@@ -600,7 +602,8 @@ impl OrderExecutor {
         sign_payload_to_buffer(&buf.as_str()[payload_start..], &api_secret, &mut sig_buf);
         buf.push_str("&signature=");
         buf.push_str(unsafe { std::str::from_utf8_unchecked(&sig_buf) });
-        let (_, body) = self.get_payload_account(buf.as_str()).await?;
+        let (limits, body) = self.get_payload_account(buf.as_str()).await?;
+        self.update_limits(&limits);
         #[derive(serde::Deserialize)]
         struct ModeResp {
             #[serde(rename = "dualSidePosition")]
@@ -620,6 +623,9 @@ impl OrderExecutor {
             return Ok(true);
         }
         let timestamp = self.get_synced_timestamp();
+        // N20 (CL-187): el refresco OMS lo consulta cada 60 s; como toda
+        // lectura, no sale con el freno ni por encima del 80 %.
+        let _cupo = self.check_exit_rate_limits(timestamp, Tramo::Lectura)?;
         let api_secret = self.api_secret.load();
 
         // 1) Modo actual (GET firmado)
@@ -634,7 +640,8 @@ impl OrderExecutor {
         buf.push_str("&signature=");
         buf.push_str(unsafe { std::str::from_utf8_unchecked(&sig_buf) });
 
-        let (_, body) = self.get_payload_account(buf.as_str()).await?;
+        let (limits, body) = self.get_payload_account(buf.as_str()).await?;
+        self.update_limits(&limits);
         #[derive(serde::Deserialize)]
         struct ModeResp {
             #[serde(rename = "dualSidePosition")]
@@ -660,7 +667,14 @@ impl OrderExecutor {
         buf.push_str("&signature=");
         buf.push_str(unsafe { std::str::from_utf8_unchecked(&sig_buf) });
 
-        match self.client.post_payload(buf.as_str()).await {
+        // N20 (CL-187): un 429/418 pudo llegar durante el GET; entonces el
+        // POST no sale. Su rechazo cae en el brazo Err, donde la cuenta queda
+        // como la vio el GET (one-way).
+        let activado = match self.check_backoff(timestamp) {
+            Ok(()) => self.client.post_payload(buf.as_str()).await,
+            Err(e) => Err(e),
+        };
+        match activado {
             Ok((limits, _)) => {
                 self.update_limits(&limits);
                 self.is_hedge_mode.store(true, Ordering::Relaxed);
@@ -1425,9 +1439,9 @@ impl OrderExecutor {
     /// sale mientras duran, salidas incluidas: Binance pide no enviar durante
     /// el Retry-After de un 429, y seguir enviando acumula 429 hasta el freno
     /// escalado (3 consecutivos) o el ban de IP (418). Las que aún no lo
-    /// consultan (modo hedge, hora, NTP, listenKey, la cancelación de la
-    /// pierna hermana del user-data stream y la primera lectura de
-    /// `get_payload_account`) son la fila N20 del censo C-F7b.
+    /// consultan (NTP, listenKey y la cancelación de la pierna hermana del
+    /// user-data stream) son la fila N20 del censo C-F7b. Todo llamador de
+    /// `get_payload_account` frena antes de llamarla (CL-187).
     fn check_backoff(&self, timestamp_ms: u64) -> Result<(), String> {
         // FIX M4-C02: freno TEMPORAL por rate-limit (3×429 escalado / HTTP 418).
         // A diferencia del kill_switch permanente (incidentes reales), este
@@ -4128,6 +4142,9 @@ impl ExecutionProvider for OrderExecutor {
     }
 
     async fn fetch_server_time(&self) -> Result<i64, String> {
+        // N20 (CL-187): sólo el freno; pesa 1 y fija el reloj del arranque,
+        // que con el freno cae a la hora local (god_engine.rs) y corrige el NTP.
+        self.check_backoff(self.get_synced_timestamp())?;
         let base_url = self.client.get_base_url();
         let url = format!("{}/fapi/v1/time", base_url);
 
@@ -5153,6 +5170,8 @@ mod tests_n5c {
             "fetch_account_balance",
             "fetch_commission_rate",
             "check_rate_limits",
+            "fetch_hedge_mode",
+            "ensure_hedge_mode",
         ] {
             let c = cuerpo(f);
             assert!(c.contains("Tramo::Lectura"), "{f} es lectura");
@@ -5841,5 +5860,103 @@ mod tests_n20 {
         let r = ex.get_symbol_filter("BTCUSDT").now_or_never();
         assert!(matches!(r, Some(Ok(f)) if f.step_size == 0.001), "{r:?}");
         assert_eq!(ex.negative_symbol_cache_len(), 0);
+    }
+
+    /// El código de producción: lo anterior al primer módulo de pruebas.
+    fn produccion() -> &'static str {
+        CODIGO.split("#[cfg(test)]").next().unwrap_or("")
+    }
+
+    /// RED antes de CL-187: el modo hedge (la consulta del refresco OMS cada
+    /// 60 s y la del arranque) y la hora del servidor salían durante el
+    /// Retry-After de un 429 o el freno; el primer sondeo esperaba a la red.
+    #[tokio::test]
+    async fn cl187_modo_hedge_y_hora_no_salen_dentro_del_freno() {
+        for (armado, prefijo) in [
+            ("HTTP_429_RATE_LIMITED retry_after=30", "RATE_LIMIT_COOLDOWN"),
+            ("HTTP_418_IP_BANNED retry_after=300", "RATE_BRAKE"),
+        ] {
+            let ex = ex();
+            ex.handle_rate_limit_error(armado);
+            assert!(rechazo(ex.ensure_hedge_mode().now_or_never(), prefijo), "{armado}");
+            assert!(rechazo(ex.fetch_hedge_mode().now_or_never(), prefijo), "{armado}");
+            let hora = <OrderExecutor as ExecutionProvider>::fetch_server_time(&ex).now_or_never();
+            assert!(rechazo(hora, prefijo), "{armado}");
+            assert!(
+                ex.is_hedge_mode.load(Ordering::Relaxed),
+                "sin respuesta no hay evidencia de one-way"
+            );
+        }
+        let ex = ex();
+        ex.handle_rate_limit_error("HTTP_429_RATE_LIMITED retry_after=30");
+        let _ = ex.ensure_hedge_mode().now_or_never();
+        ex.handle_rate_limit_error("HTTP_429_RATE_LIMITED retry_after=30");
+        let ahora = ex.get_synced_timestamp();
+        assert!(
+            matches!(ex.check_backoff(ahora), Err(ref e) if e.starts_with("RATE_LIMIT_COOLDOWN")),
+            "el rechazo local no contó como 429"
+        );
+    }
+
+    /// RED antes de CL-187: por encima del 80 % el modo hedge salía igual.
+    #[tokio::test]
+    async fn cl187_el_modo_frena_en_la_franja_de_lectura() {
+        use super::tests_lg3::limites;
+        let ex = ex();
+        ex.observar_limites(&limites(Some(2_000), None, None), ex.get_synced_timestamp());
+        let esperado = "RATE_LIMIT_HEADROOM_WEIGHT: 2000/2400";
+        assert!(rechazo(ex.ensure_hedge_mode().now_or_never(), esperado));
+        assert!(rechazo(ex.fetch_hedge_mode().now_or_never(), esperado));
+    }
+
+    /// RED antes de CL-187: las dos consultas del modo hedge no miraban el
+    /// freno ni registraban la cabecera de su respuesta (`let (_, body)`).
+    /// Cada lectura de cuenta frena antes de get_payload_account, que sólo
+    /// mira el freno en su reintento; una nueva sin listar hace fallar el conteo.
+    #[test]
+    fn cl187_toda_lectura_de_cuenta_frena_y_registra_su_cabecera() {
+        let llamada = "self.get_payload_account(";
+        let lectores = [
+            "fetch_hedge_mode",
+            "ensure_hedge_mode",
+            "flatten_all_positions",
+            "fetch_income_page",
+            "fetch_position_risk",
+            "fetch_open_algo_orders_inner",
+            "fetch_open_orders_inner",
+            "fetch_open_positions",
+            "fetch_account_balance",
+            "fetch_commission_rate",
+        ];
+        let mut total = 0;
+        for f in lectores {
+            let c = cuerpo(f);
+            let i = c.find(llamada);
+            assert!(i.is_some(), "{f} ya no llama a get_payload_account");
+            let antes = &c[..i.unwrap_or(0)];
+            assert!(
+                antes.contains("check_backoff(") || antes.contains("check_exit_rate_limits("),
+                "{f} lee sin freno"
+            );
+            total += c.matches(llamada).count();
+        }
+        assert_eq!(total, produccion().matches(llamada).count(), "lector sin listar");
+        assert!(!produccion().contains("let (_, body) = self.get_payload_account("));
+        for f in ["fetch_hedge_mode", "ensure_hedge_mode"] {
+            assert!(cuerpo(f).contains("self.update_limits(&limits)"), "{f} registra la cabecera");
+        }
+        let modo = cuerpo("ensure_hedge_mode");
+        let post = modo.find(".post_payload(");
+        assert!(post.is_some(), "ensure_hedge_mode ya no activa el modo");
+        let post = post.unwrap_or(0);
+        let ini = modo[..post].char_indices().rev().nth(399).map_or(0, |(k, _)| k);
+        assert!(modo[ini..post].contains("check_backoff("), "el POST mira el freno");
+        assert!(modo[post..].contains("self.is_hedge_mode.store(false"));
+        let hora = cuerpo("fetch_server_time");
+        let get = hora.find(".get_payload(");
+        assert!(get.is_some(), "fetch_server_time ya no consulta la hora");
+        let get = get.unwrap_or(0);
+        assert!(hora[..get].contains("check_backoff("), "la hora mira el freno");
+        assert!(!hora.contains("Tramo::"), "sólo el freno: pesa 1 y fija el reloj");
     }
 }
