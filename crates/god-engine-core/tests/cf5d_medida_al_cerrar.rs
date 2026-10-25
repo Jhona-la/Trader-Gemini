@@ -192,6 +192,8 @@ fn cl135_lo_medido_entra_al_cerrar_y_no_lo_hereda_otra_posicion() {
     let (_, cierre, _) =
         core.process_tick_dual(0, salida, salida * 1.0001, 5.0, 5.0, t, &[0.0; 54], true, false);
     assert!(cierre.is_some() && !ranura.is_open(), "el stop se toca en {salida}");
+    let (_, pnl_1, qty_1) = cierre.unwrap_or((false, f64::NAN, f64::NAN));
+    let retorno_1 = pnl_1 / (qty_1 * entrada).max(1.0);
     let tras_cierre = medido(&arena);
     println!("observado: medido tras el cierre {tras_cierre:?}");
     assert!(
@@ -218,18 +220,11 @@ fn cl135_lo_medido_entra_al_cerrar_y_no_lo_hereda_otra_posicion() {
     // riesgo lo divide por SL + c: un cierre en el stop (un 0,1 % más allá,
     // más la fricción de la salida) es R ≈ −1, no R·100 (en porcentaje).
     // RV8-T: un R sobre el margen sería R·L, y en este fixture la orden sale
-    // con L = 1 (se observa 1,0), así que margen y nocional coinciden y esta
-    // prueba no distingue ese error. Si el fixture llega a dar L ≥ 2, la
-    // última aserción lo comprueba.
+    // con L = 1 (se observa 1,0), así que margen y nocional coinciden y este
+    // cierre no distingue ese error. Lo distingue el tercero, con L = 10.
     let r = sombra("sombra_kelly_suma_r").unwrap_or(f64::NAN);
     println!("observado: R del cierre en el stop {r}, apalancamiento {apalancamiento}");
     assert!((-2.0..=-0.9).contains(&r), "un cierre en el stop es R ≈ −1 en unidades de SL + c: {r}");
-    if apalancamiento >= 2.0 {
-        assert!(
-            !(-2.0..=-0.9).contains(&(r * apalancamiento)),
-            "con L = {apalancamiento} un R sobre el margen saldría de la banda"
-        );
-    }
 
     // La ranura revertida no deja su medida a la siguiente ocupante.
     core.medida_de_entrada[0][k] = Some(medida);
@@ -255,4 +250,45 @@ fn cl135_lo_medido_entra_al_cerrar_y_no_lo_hereda_otra_posicion() {
         "una posición sin orden del riesgo no hereda la medida de la generación anterior"
     );
     assert_eq!(sombra("sombra_kelly_n"), Some(1.0), "ni la sombra");
+
+    // RV9-T: la unidad del retorno que el núcleo pasa a la sombra, con L = 10.
+    // La misma medida (su SL + c) se ata a una posición de margen nocional/10
+    // y se cierra en su stop por el camino del núcleo. Con R = retorno sobre
+    // el nocional / (SL + c), el R de este cierre es el del primero escalado
+    // por la razón de sus retornos sobre el nocional; un retorno sobre el
+    // margen lo multiplicaría por 10. close_outcome_contract fija aparte la
+    // unidad de `realized_ret` (recompensa del PPO, L = 10).
+    let px = cerca;
+    let (qty, margen) = (0.01, px * 0.01 / 10.0);
+    assert!(ranura.open_with_horizon(
+        medida.is_long,
+        px,
+        qty,
+        margen,
+        t,
+        if medida.is_long { px * 1.02 } else { px * 0.98 },
+        if medida.is_long { px * 0.99 } else { px * 1.01 },
+        PositionHorizon::Continuous,
+    ));
+    let apalancamiento_3 = qty * px / margen;
+    assert!((apalancamiento_3 - 10.0).abs() < 1e-9, "premisa: L = 10, obtenido {apalancamiento_3}");
+    let mut con_l = medida;
+    con_l.generation = ranura.generation.load(Relaxed);
+    core.medida_de_entrada[0][k] = Some(con_l);
+    let r_antes = sombra("sombra_kelly_suma_r").unwrap_or(f64::NAN);
+    let cerca = if medida.is_long { px * 0.989 } else { px * 1.011 };
+    t += 5_000;
+    let (_, cierre, _) =
+        core.process_tick_dual(0, cerca, cerca * 1.0001, 5.0, 5.0, t, &[0.0; 54], true, false);
+    assert!(cierre.is_some() && !ranura.is_open(), "la tercera también se cierra en su stop");
+    let (_, pnl_3, qty_3) = cierre.unwrap_or((false, f64::NAN, f64::NAN));
+    let retorno_3 = pnl_3 / (qty_3 * px).max(1.0);
+    assert_eq!(sombra("sombra_kelly_n"), Some(2.0), "la medida atada a su generación entra en la sombra");
+    let r_3 = sombra("sombra_kelly_suma_r").unwrap_or(f64::NAN) - r_antes;
+    let esperado = r * retorno_3 / retorno_1;
+    println!("observado: con L = 10, R {r_3}, esperado {esperado}");
+    assert!(
+        (r_3 - esperado).abs() < 1e-9 * esperado.abs(),
+        "con L = 10 la sombra recibe el retorno sobre el nocional: R {r_3}, esperado {esperado}"
+    );
 }
