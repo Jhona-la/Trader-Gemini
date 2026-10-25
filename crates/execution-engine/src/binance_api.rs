@@ -29,6 +29,14 @@ pub const LIMITE_PESO_1M: usize = 2_400;
 pub const LIMITE_ORDENES_10S: usize = 300;
 pub const LIMITE_ORDENES_1M: usize = 1_200;
 
+/// N5 (CL-177): ventanas de esos tres contadores, con la misma fuente
+/// (`exchangeInfo.rateLimits`: REQUEST_WEIGHT 1 MINUTE, ORDERS 10 SECOND y
+/// 1 MINUTE). Cada cabecera `X-MBX-USED-WEIGHT-1M` / `X-MBX-ORDER-COUNT-10S/1M`
+/// vale dentro de la suya.
+pub const VENTANA_PESO_MS: u64 = 60_000;
+pub const VENTANA_ORDENES_10S_MS: u64 = 10_000;
+pub const VENTANA_ORDENES_1M_MS: u64 = 60_000;
+
 /// A successful HTTP status alone does not confirm the requested configuration.
 /// This validates identity and leverage only, not account margin tiers/capacity.
 pub fn validate_leverage_confirmation(

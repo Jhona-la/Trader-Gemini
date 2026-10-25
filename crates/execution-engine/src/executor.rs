@@ -318,11 +318,9 @@ pub struct OrderExecutor {
     client: BinanceClient,
     rate_limit_counter: AtomicUsize,
     last_reset_timestamp: AtomicU64,
-    binance_weight_1m: AtomicUsize,
-    binance_orders_10s: AtomicUsize,
-    binance_orders_1m: AtomicUsize,
-    /// LG-3: sello (reloj sincronizado, ms) de la última cabecera de uso recibida.
-    binance_limits_ts_ms: AtomicU64,
+    /// N5 (CL-177): uso que reportan las cabeceras del exchange, por contador y
+    /// con su propio sello (LG-3: cada uno vale dentro de su ventana).
+    uso_exchange: std::sync::Mutex<UsoExchange>,
     max_weight_1m: AtomicUsize,
     max_orders_10s: AtomicUsize,
     max_orders_1m: AtomicUsize,
@@ -378,10 +376,7 @@ impl OrderExecutor {
             client: BinanceClient::new(api_key.clone(), is_testnet),
             rate_limit_counter: AtomicUsize::new(0),
             last_reset_timestamp: AtomicU64::new(0),
-            binance_weight_1m: AtomicUsize::new(0),
-            binance_orders_10s: AtomicUsize::new(0),
-            binance_orders_1m: AtomicUsize::new(0),
-            binance_limits_ts_ms: AtomicU64::new(0),
+            uso_exchange: std::sync::Mutex::new(UsoExchange::default()),
             // LG-12: los límites documentados del exchange.
             max_weight_1m: AtomicUsize::new(crate::binance_api::LIMITE_PESO_1M),
             max_orders_10s: AtomicUsize::new(crate::binance_api::LIMITE_ORDENES_10S),
@@ -418,10 +413,7 @@ impl OrderExecutor {
             client: BinanceClient::new(api_key.clone(), is_testnet),
             rate_limit_counter: AtomicUsize::new(0),
             last_reset_timestamp: AtomicU64::new(0),
-            binance_weight_1m: AtomicUsize::new(0),
-            binance_orders_10s: AtomicUsize::new(0),
-            binance_orders_1m: AtomicUsize::new(0),
-            binance_limits_ts_ms: AtomicU64::new(0),
+            uso_exchange: std::sync::Mutex::new(UsoExchange::default()),
             // LG-12: los límites documentados del exchange.
             max_weight_1m: AtomicUsize::new(crate::binance_api::LIMITE_PESO_1M),
             max_orders_10s: AtomicUsize::new(crate::binance_api::LIMITE_ORDENES_10S),
@@ -1203,25 +1195,39 @@ impl OrderExecutor {
     #[inline(always)]
     fn update_limits(&self, limits: &crate::client::BinanceRateLimits) {
         let now_ms = self.get_synced_timestamp();
-        if limits.weight_1m.is_some() || limits.orders_10s.is_some() || limits.orders_1m.is_some() {
-            self.binance_limits_ts_ms
-                .store(now_ms, Ordering::Relaxed);
-        }
-        if let Some(w) = limits.weight_1m {
-            self.binance_weight_1m.store(w, Ordering::Relaxed);
-        }
-        if let Some(o) = limits.orders_10s {
-            self.binance_orders_10s.store(o, Ordering::Relaxed);
-        }
-        if let Some(o) = limits.orders_1m {
-            self.binance_orders_1m.store(o, Ordering::Relaxed);
-        }
+        self.observar_limites(limits, now_ms);
         // F1-005 (Ola Ω150): Solo reiniciar consecutive_429 cuando el cooldown activo ya expiró.
         // Antes, cualquier 2xx concurrente durante una ráfaga reiniciaba consecutive_429 a 0
         // en medio del cooldown, impidiendo alcanzar el umbral de 3+ 429 consecutivos.
         if now_ms >= self.cooldown_until_ms.load(Ordering::Relaxed) {
             self.consecutive_429.store(0, Ordering::Relaxed);
         }
+    }
+
+    /// N5 (CL-177): registra el uso de una respuesta. Sólo los contadores cuya
+    /// cabecera llegó, cada uno con su sello: antes un único sello compartido
+    /// renovaba la edad de los tres y la última respuesta en llegar pisaba el
+    /// valor aunque fuera más vieja (peticiones concurrentes).
+    fn observar_limites(&self, limits: &crate::client::BinanceRateLimits, ahora_ms: u64) {
+        use crate::binance_api::{VENTANA_ORDENES_10S_MS, VENTANA_ORDENES_1M_MS, VENTANA_PESO_MS};
+        let mut uso = self.uso_exchange_bloqueado();
+        if let Some(w) = limits.weight_1m {
+            uso.peso_1m.observar(w, ahora_ms, VENTANA_PESO_MS);
+        }
+        if let Some(o) = limits.orders_10s {
+            uso.ordenes_10s.observar(o, ahora_ms, VENTANA_ORDENES_10S_MS);
+        }
+        if let Some(o) = limits.orders_1m {
+            uso.ordenes_1m.observar(o, ahora_ms, VENTANA_ORDENES_1M_MS);
+        }
+    }
+
+    /// Un pánico con el candado tomado no deja estado a medias (cada
+    /// `observar` escribe muestras enteras), así que se sigue con el valor.
+    fn uso_exchange_bloqueado(&self) -> std::sync::MutexGuard<'_, UsoExchange> {
+        self.uso_exchange
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
     }
 
     /// F1.8: política centralizada ante rate limits de Binance.
@@ -1378,11 +1384,17 @@ impl OrderExecutor {
         // del exchange (1 min / 10 s). Sin caducidad, una cabecera alta
         // bloqueaba toda petición nueva —también salidas y cancelaciones—
         // antes de enviarla, nunca llegaba la respuesta que la refrescara y el
-        // bloqueo era permanente.
-        let sello = self.binance_limits_ts_ms.load(Ordering::Relaxed);
-        let bw1m = uso_vigente(self.binance_weight_1m.load(Ordering::Relaxed), sello, timestamp_ms, 60_000);
-        let bo10s = uso_vigente(self.binance_orders_10s.load(Ordering::Relaxed), sello, timestamp_ms, 10_000);
-        let bo1m = uso_vigente(self.binance_orders_1m.load(Ordering::Relaxed), sello, timestamp_ms, 60_000);
+        // bloqueo era permanente. N5 (CL-177): cada contador con su sello y sin
+        // bajar dentro de su ventana por una respuesta tardía.
+        let (bw1m, bo10s, bo1m) = {
+            use crate::binance_api::{VENTANA_ORDENES_10S_MS, VENTANA_ORDENES_1M_MS, VENTANA_PESO_MS};
+            let uso = self.uso_exchange_bloqueado();
+            (
+                uso.peso_1m.vigente(timestamp_ms, VENTANA_PESO_MS),
+                uso.ordenes_10s.vigente(timestamp_ms, VENTANA_ORDENES_10S_MS),
+                uso.ordenes_1m.vigente(timestamp_ms, VENTANA_ORDENES_1M_MS),
+            )
+        };
 
         let max_bw1m = self.max_weight_1m.load(Ordering::Relaxed) as f64;
         let max_bo10s = self.max_orders_10s.load(Ordering::Relaxed) as f64;
@@ -4136,6 +4148,62 @@ fn uso_vigente(uso: usize, sello_ms: u64, ahora_ms: u64, ventana_ms: u64) -> usi
     }
 }
 
+/// N5 (CL-177): una cabecera de uso y el instante (reloj sincronizado, ms) en
+/// que llegó. Sello 0 = nunca llegó.
+#[derive(Clone, Copy, Debug, Default)]
+struct MuestraUso {
+    uso: usize,
+    sello_ms: u64,
+}
+
+impl MuestraUso {
+    fn vigente(self, ahora_ms: u64, ventana_ms: u64) -> usize {
+        uso_vigente(self.uso, self.sello_ms, ahora_ms, ventana_ms)
+    }
+}
+
+/// N5 (CL-177): uso de UN contador del exchange.
+///
+/// Dentro de una ventana el contador del exchange sólo sube, así que una
+/// respuesta que llega con menos uso que otra aún vigente es más vieja (las
+/// peticiones concurrentes responden en cualquier orden) y no lo rebaja: se
+/// guarda la mayor vigente. La última se guarda aparte porque sigue valiendo
+/// cuando la mayor caduca. Tras un reinicio del contador del exchange la mayor
+/// sobreestima hasta su caducidad (lo conservador); sin el instante exacto de
+/// reinicio, que el repo no tiene medido, no se distingue de una respuesta
+/// tardía.
+#[derive(Clone, Copy, Debug, Default)]
+struct ContadorExchange {
+    ultima: MuestraUso,
+    maxima: MuestraUso,
+}
+
+impl ContadorExchange {
+    fn observar(&mut self, uso: usize, ahora_ms: u64, ventana_ms: u64) {
+        let nueva = MuestraUso { uso, sello_ms: ahora_ms };
+        let actual = self.maxima.vigente(ahora_ms, ventana_ms);
+        // A igual uso, un reloj que retrocede no acorta la vida de la mayor.
+        if uso > actual || (uso == actual && ahora_ms >= self.maxima.sello_ms) {
+            self.maxima = nueva;
+        }
+        self.ultima = nueva;
+    }
+
+    fn vigente(&self, ahora_ms: u64, ventana_ms: u64) -> usize {
+        self.ultima
+            .vigente(ahora_ms, ventana_ms)
+            .max(self.maxima.vigente(ahora_ms, ventana_ms))
+    }
+}
+
+/// N5 (CL-177): los tres contadores de `exchangeInfo.rateLimits`.
+#[derive(Debug, Default)]
+struct UsoExchange {
+    peso_1m: ContadorExchange,
+    ordenes_10s: ContadorExchange,
+    ordenes_1m: ContadorExchange,
+}
+
 // Historical merge fixture only: retains old tests, NOT an operational identity
 // contract. New traversal validates IDs and includes asset/trade_id; see
 // income_evidence. These legacy tests do not prove pagination completeness.
@@ -4251,15 +4319,101 @@ mod tests_lg3 {
     fn lg3_una_cabecera_alta_no_bloquea_las_salidas_para_siempre() {
         let ex = OrderExecutor::new("k".into(), "s".into(), true);
         let t0 = 1_700_000_000_000u64;
-        ex.binance_weight_1m.store(2_100, Ordering::Relaxed); // > 0,8·2200
-        ex.binance_limits_ts_ms.store(t0, Ordering::Relaxed);
+        ex.observar_limites(&limites(Some(2_100), None, None), t0); // > 0,8·2400
         assert!(ex.check_exit_rate_limits(t0 + 1_000).is_err(), "dentro de la ventana frena");
         assert!(ex.check_exit_rate_limits(t0 + 60_000).is_ok(), "pasada la ventana libera");
-        ex.binance_orders_10s.store(250, Ordering::Relaxed); // > 0,8·280
-        ex.binance_limits_ts_ms.store(t0, Ordering::Relaxed);
-        ex.binance_weight_1m.store(0, Ordering::Relaxed);
+        let ex = OrderExecutor::new("k".into(), "s".into(), true);
+        ex.observar_limites(&limites(None, Some(250), None), t0); // > 0,8·300
         assert!(ex.check_exit_rate_limits(t0 + 5_000).is_err());
         assert!(ex.check_exit_rate_limits(t0 + 10_000).is_ok());
+    }
+
+    pub(super) fn limites(
+        weight_1m: Option<usize>,
+        orders_10s: Option<usize>,
+        orders_1m: Option<usize>,
+    ) -> crate::client::BinanceRateLimits {
+        crate::client::BinanceRateLimits {
+            weight_1m,
+            orders_10s,
+            orders_1m,
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests_n5a {
+    use super::tests_lg3::limites;
+    use super::*;
+
+    const T0: u64 = 1_700_000_000_000;
+
+    /// RED antes de CL-177: con el último valor en llegar, una respuesta
+    /// tardía (100) pisaba el uso de otra posterior (2000) en la misma ventana
+    /// y el freno del 80 % se abría con el exchange a 2000 de 2400.
+    #[test]
+    fn n5a_una_respuesta_tardia_no_rebaja_el_uso() {
+        let ex = OrderExecutor::new("k".into(), "s".into(), true);
+        ex.observar_limites(&limites(Some(2_000), None, None), T0);
+        ex.observar_limites(&limites(Some(100), None, None), T0 + 1_000);
+        let r = ex.check_exit_rate_limits(T0 + 2_000);
+        assert!(
+            matches!(&r, Err(e) if e.starts_with("RATE_LIMIT_HEADROOM_WEIGHT: 2000/2400")),
+            "{r:?}"
+        );
+        // La mayor caduca con su ventana; la última (100) no frena.
+        assert!(ex.check_exit_rate_limits(T0 + 60_000).is_ok());
+    }
+
+    /// RED antes de CL-177: con un sello compartido, una cabecera de peso
+    /// renovaba la edad de las órdenes de 10 s, que seguían frenando pasada su
+    /// ventana.
+    #[test]
+    fn n5a_cada_contador_caduca_en_su_ventana() {
+        let ex = OrderExecutor::new("k".into(), "s".into(), true);
+        ex.observar_limites(&limites(None, Some(250), None), T0);
+        ex.observar_limites(&limites(Some(10), None, None), T0 + 9_000);
+        let r = ex.check_exit_rate_limits(T0 + 5_000);
+        assert!(
+            matches!(&r, Err(e) if e.starts_with("RATE_LIMIT_HEADROOM_ORDERS_10S: 250/300")),
+            "{r:?}"
+        );
+        let r = ex.check_exit_rate_limits(T0 + 12_000);
+        assert!(r.is_ok(), "las órdenes de 10 s caducan con su ventana: {r:?}");
+    }
+
+    /// La última muestra sigue valiendo cuando caduca la mayor, un contador que
+    /// sube se registra, una cabecera ausente no toca su contador y, pasada la
+    /// ventana de la mayor, una cabecera menor vuelve a mandar.
+    #[test]
+    fn n5a_la_ultima_vale_tras_la_mayor_y_la_cabecera_ausente_no_toca() {
+        let ex = OrderExecutor::new("k".into(), "s".into(), true);
+        ex.observar_limites(&limites(Some(2_000), None, None), T0);
+        ex.observar_limites(&limites(Some(1_950), None, None), T0 + 1_000);
+        let r = ex.check_exit_rate_limits(T0 + 60_000);
+        assert!(
+            matches!(&r, Err(e) if e.starts_with("RATE_LIMIT_HEADROOM_WEIGHT: 1950/2400")),
+            "{r:?}"
+        );
+        assert!(ex.check_exit_rate_limits(T0 + 61_000).is_ok());
+
+        let ex = OrderExecutor::new("k".into(), "s".into(), true);
+        ex.observar_limites(&limites(Some(100), Some(5), Some(7)), T0);
+        ex.observar_limites(&limites(Some(2_100), None, None), T0 + 1_000);
+        let r = ex.check_exit_rate_limits(T0 + 1_500);
+        assert!(
+            matches!(&r, Err(e) if e.starts_with("RATE_LIMIT_HEADROOM_WEIGHT: 2100/2400")),
+            "{r:?}"
+        );
+        {
+            let uso = ex.uso_exchange_bloqueado();
+            assert_eq!(uso.ordenes_10s.vigente(T0 + 1_500, 10_000), 5);
+            assert_eq!(uso.ordenes_1m.vigente(T0 + 1_500, 60_000), 7);
+        }
+        // Pasada la ventana de la mayor, una cabecera menor vuelve a mandar.
+        ex.observar_limites(&limites(Some(50), None, None), T0 + 61_000);
+        assert!(ex.check_exit_rate_limits(T0 + 61_500).is_ok());
+        assert_eq!(ex.uso_exchange_bloqueado().peso_1m.vigente(T0 + 61_500, 60_000), 50);
     }
 }
 
