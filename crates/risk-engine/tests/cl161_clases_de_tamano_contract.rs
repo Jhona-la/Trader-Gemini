@@ -7,8 +7,16 @@
 //! encima de n. Ahora la evidencia insuficiente va a la orden mínima y las
 //! entradas corruptas se rechazan (REJ_INVALID_INPUT, como FMT-212 y
 //! F1-089). El bias epigenético NaN ya se rechazaba en la cadena legada
-//! (`raw_exposure` no finito); su prueba fija que el rechazo no dependa de
-//! ella.
+//! (`raw_exposure` no finito, risk-engine lib.rs, `let raw_exposure`): su
+//! prueba es una guarda para cuando esa cadena salga y hoy no puede fallar
+//! aunque falte la comprobación de CL-161.
+//!
+//! CL-165: la validez se comprueba antes de toda clase y sobre el bias
+//! CRUDO. El factor `bias.clamp(0, 1)` llevaba +∞ a 1 (LH-04 dimensionaba
+//! con la f entera) y un bias ≤ 0 a 0 (la orden mínima); un PF ≤ 0 iba a la
+//! orden mínima por `lh04_sin_edge`, y la sonda salía con cualquier entrada.
+//! Un bias finito y positivo fuera de la banda del escritor ([0,5; 2]) no es
+//! corrupto: sólo encoge f o la deja igual.
 
 use quantum_arena::{
     symbol_registry::{update_registry, SymbolSpec},
@@ -138,4 +146,80 @@ fn cl161_la_orden_madura_con_edge_sigue_en_lh04() {
         nocional(&orden) > 10.0 * nocional(&referencia),
         "control: la orden de LH-04 no se recorta a la mínima"
     );
+}
+
+/// Bias epigenético almacenado tal cual (sin cierre registrado el bias activo
+/// es el almacenado).
+fn bias_crudo(arena: &GlobalArena, bias: f64) {
+    arena.coins[0].epigenetic_bias.store(bias, Relaxed);
+    arena.coins[0].last_close_ts.store(0, Relaxed);
+}
+
+#[test]
+fn cl165_bias_infinito_se_rechaza() {
+    let _serie = SERIE.lock().unwrap_or_else(|e| e.into_inner());
+    let (arena, intent) = fixture();
+    evidencia(&arena, 0.65, 100, 2.6);
+    bias_crudo(&arena, f64::INFINITY);
+    let (orden, rechazos) = evaluar(&arena, &intent);
+    assert_eq!(orden.volume_usd, 0.0, "un bias +∞ no dimensiona con la f entera");
+    assert_eq!(rechazos, 1, "el rechazo es REJ_INVALID_INPUT");
+}
+
+#[test]
+fn cl165_bias_no_positivo_se_rechaza() {
+    let _serie = SERIE.lock().unwrap_or_else(|e| e.into_inner());
+    for bias in [0.0, -1.0, f64::NEG_INFINITY] {
+        let (arena, intent) = fixture();
+        evidencia(&arena, 0.65, 100, 2.6);
+        bias_crudo(&arena, bias);
+        let (orden, rechazos) = evaluar(&arena, &intent);
+        assert_eq!(orden.volume_usd, 0.0, "bias {bias}: no es la orden mínima");
+        assert_eq!(rechazos, 1, "bias {bias}: el rechazo es REJ_INVALID_INPUT");
+    }
+}
+
+#[test]
+fn cl165_profit_factor_no_positivo_se_rechaza() {
+    let _serie = SERIE.lock().unwrap_or_else(|e| e.into_inner());
+    for pf in [0.0, -1.0] {
+        let (arena, intent) = fixture();
+        evidencia(&arena, 0.65, 20, pf);
+        let (orden, rechazos) = evaluar(&arena, &intent);
+        assert_eq!(orden.volume_usd, 0.0, "PF {pf}: no es una moneda sin edge, es una entrada corrupta");
+        assert_eq!(rechazos, 1, "PF {pf}: el rechazo es REJ_INVALID_INPUT");
+    }
+}
+
+#[test]
+fn cl165_la_sonda_con_entradas_corruptas_se_rechaza() {
+    let _serie = SERIE.lock().unwrap_or_else(|e| e.into_inner());
+    let (arena, intent) = fixture();
+    evidencia(&arena, 0.65, 0, -1.0);
+    assert!(
+        risk_engine::sonda::en_fase_de_sonda(&arena, 0),
+        "premisa: sin cierres la moneda está en la sonda"
+    );
+    let (orden, rechazos) = evaluar(&arena, &intent);
+    assert_eq!(orden.volume_usd, 0.0, "la sonda tampoco sale con un PF corrupto");
+    assert_eq!(rechazos, 1, "el rechazo es REJ_INVALID_INPUT");
+}
+
+#[test]
+fn cl165_bias_finito_positivo_fuera_de_banda_sigue_en_lh04() {
+    let _serie = SERIE.lock().unwrap_or_else(|e| e.into_inner());
+    let (arena, intent) = fixture();
+    evidencia(&arena, 0.65, 100, 2.6);
+    let (libre, _) = evaluar(&arena, &intent);
+    let f_libre = arena.registry.get_for_coin_or(0, "lh04_f_riesgo", f64::NAN);
+    for (bias, factor) in [(0.3, 0.3), (5.0, 1.0)] {
+        let (arena, intent) = fixture();
+        evidencia(&arena, 0.65, 100, 2.6);
+        bias_crudo(&arena, bias);
+        let (orden, rechazos) = evaluar(&arena, &intent);
+        assert_eq!(rechazos, 0, "control: un bias {bias} finito y positivo no es corrupto");
+        let f = arena.registry.get_for_coin_or(0, "lh04_f_riesgo", f64::NAN);
+        assert!((f - factor * f_libre).abs() < 1e-12, "bias {bias}: f = {f}, esperado {}", factor * f_libre);
+        assert!(nocional(&orden) > 0.0 && nocional(&libre) > 0.0);
+    }
 }

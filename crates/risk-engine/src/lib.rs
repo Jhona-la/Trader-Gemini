@@ -1536,9 +1536,10 @@ impl RiskEngine {
         // de ida y vuelta (CL-159), ≈ f·C. TODOS los
         // floors downstream (viabilidad D-750, rescate de nocional
         // mínimo, fee_impact LH-02, invariantes) se aplican IGUAL sobre
-        // este margen. Sin evidencia (n < mínimo, p̂ degenerado, PF ≤ 0):
-        // f = 0 y el camino sizing/micro/exploración existente queda
-        // INTACTO — fail-closed al estado actual.
+        // este margen. Sin evidencia (n < mínimo) o sin edge demostrado
+        // (p̂ degenerado, PF ≤ 1, f = 0) la orden es la mínima del símbolo
+        // (F1-087, CL-161: `lh04_orden_minima`); con entradas corruptas se
+        // rechaza (REJ_INVALID_INPUT, CL-165).
         // OLA Ω127: Desacoplamiento de constantes estáticas hacia el registro omnisciente con fallbacks canónicos.
         let z_lcb_lh04 = arena.registry.get_value_or("lh04_z_lcb", 1.64);
         let half_kelly_lh04 = arena.registry.get_value_or("lh04_kelly_fraction", 0.5);
@@ -1625,16 +1626,18 @@ impl RiskEngine {
         //   tipo sonda): encogimiento, jamás veto eterno.
         // p_LCB misma NO cambia: la estadística de la cota queda limpia;
         // la adaptación es un multiplicador de régimen sobre el tamaño.
-        let lh04_bias_factor = if lh04_f > 0.0 && coin_id < arena.coins.len() {
+        // CL-165: el bias se valida CRUDO. `clamp(0, 1)` lleva +∞ a 1 y −∞ o
+        // un bias ≤ 0 a 0, así que validar el factor ya recortado sólo veía
+        // el NaN: un bias +∞ dimensionaba con la f entera.
+        let lh04_bias_bruto = if lh04_f > 0.0 && coin_id < arena.coins.len() {
             let now_ts = arena.coins[coin_id]
                 .last_tick_timestamp_ms
                 .load(Ordering::Relaxed);
-            arena.coins[coin_id]
-                .get_active_epigenetic_bias(now_ts)
-                .clamp(0.0, 1.0)
+            arena.coins[coin_id].get_active_epigenetic_bias(now_ts)
         } else {
             1.0
         };
+        let lh04_bias_factor = lh04_bias_bruto.clamp(0.0, 1.0);
         let lh04_f_efectiva = lh04_f * lh04_bias_factor;
         // F-A5 (Fable, 2026-10-17; hallazgo F1-013, confirmado por dos
         // escépticos): el nocional en espacio de riesgo se obtiene con el
@@ -1724,25 +1727,31 @@ impl RiskEngine {
             .set_for_coin(coin_id, "lh04_bias_factor", lh04_bias_factor);
         // CL-161: clases de tamaño explícitas. Una orden la dimensiona LH-04
         // (margen derivado de f arriba) o es la orden mínima del símbolo: la
-        // sonda, la moneda sin edge demostrado (F1-087), la que aún no reúne
-        // las muestras mínimas y aquella cuya f quedó en cero por la racha. Lo
-        // demás tiene entradas corruptas —win rate, profit factor o bias no
-        // finitos o fuera de dominio, o una f positiva sin nocional derivable—
-        // y se rechaza (FMT-212, F1-089). Antes dos de esos casos salían con
-        // el margen del Kelly legado (`raw_exposure`), el fail-open que F1-087
-        // decía cerrar: PF no finito tras la sonda y `lh04_muestras_min`
-        // sobreescrito por encima de n. Un bias NaN ya lo rechazaba la cadena
-        // legada al no ser finito `raw_exposure`; aquí no depende de ella.
+        // sonda, la moneda sin edge demostrado (F1-087) y la que aún no reúne
+        // las muestras mínimas. Lo demás se rechaza (FMT-212, F1-089): las
+        // entradas corruptas y una f positiva sin nocional derivable. Antes
+        // dos casos salían con el margen del Kelly legado (`raw_exposure`), el
+        // fail-open que F1-087 decía cerrar: PF no finito tras la sonda y
+        // `lh04_muestras_min` sobreescrito por encima de n.
+        // CL-165: la validez va ANTES de toda clase. Corrupto es un win rate
+        // no finito o fuera de [0, 1], un PF no finito o ≤ 0 (el núcleo lo
+        // publica en [0,1; 10]) y un bias crudo no finito o ≤ 0 (multiplica a
+        // f; el escritor lo deja en [0,5; 2]). Un bias finito y positivo fuera
+        // de esa banda sólo encoge f o la deja igual: no es una entrada
+        // corrupta. La racha no anula f (bias ≥ 0,5), de modo que con entradas
+        // válidas f = 0 implica `lh04_sin_edge` o n < mínimo.
         let lh04_entradas_validas = lh04_wr.is_finite()
             && (0.0..=1.0).contains(&lh04_wr)
             && lh04_pf.is_finite()
-            && lh04_bias_factor.is_finite()
+            && lh04_pf > 0.0
+            && lh04_bias_bruto.is_finite()
+            && lh04_bias_bruto > 0.0
             && lh04_f_efectiva.is_finite()
             && lh04_f_efectiva >= 0.0;
-        let lh04_orden_minima = es_sonda
-            || lh04_sin_edge
-            || (lh04_entradas_validas
-                && (lh04_n < muestras_min_lh04 || lh04_f_efectiva == 0.0));
+        if !lh04_entradas_validas {
+            return rej(REJ_INVALID_INPUT);
+        }
+        let lh04_orden_minima = es_sonda || lh04_sin_edge || lh04_n < muestras_min_lh04;
         if !lh04_dimensiona && !lh04_orden_minima {
             return rej(REJ_INVALID_INPUT);
         }
