@@ -344,17 +344,30 @@ impl RiskEngine {
     /// tamaño sobre la MISMA secuencia de operaciones: LH-04, el Kelly legado
     /// y el mínimo de las dos. Con R = retorno neto / (SL + c), una apuesta f
     /// multiplica el capital por 1 + f·R; el libro suma ln(1 + f·R) por
-    /// moneda y cuenta como ruina toda operación con 1 + f·R ≤ 0 (un hueco
-    /// más allá del stop), sin llevar nunca un NaN ni un infinito al
-    /// registro. Es el criterio de Kelly medido fuera de muestra: decide si
-    /// la cadena legada aporta algo antes de retirarla. No dimensiona nada.
-    /// `retorno_neto` es el PnL neto del cierre sobre su nocional.
+    /// moneda, sin llevar nunca un NaN ni un infinito al registro. No
+    /// dimensiona nada. `retorno_neto` es el PnL neto del cierre sobre su
+    /// nocional.
+    ///
+    /// La columna «legado» es el número de kelly.rs (o el arranque en frío)
+    /// tras el tope del gen y la ruina, LEÍDO COMO f al stop: no es el tamaño
+    /// que fijaba la cadena legada (la usaba como fracción de MARGEN) y no
+    /// recoge los moduladores que sólo viven en `raw_exposure` (gen 143,
+    /// convicción D-750, interpolación micro, Ω134). La sonda y las órdenes
+    /// mínimas entran con su `f_lh04` (0 sin edge o sin muestras).
+    ///
+    /// CL-166: una operación con 1 + f·R ≤ 0 (un hueco más allá de 1/f
+    /// stops) es la RUINA de esa regla: su log-riqueza es −∞ y pierde toda
+    /// comparación. El libro la marca (`sombra_kelly_ruina_<regla>` = 1) y
+    /// deja de sumarle cierres: su `logw` queda en lo que tenía antes de
+    /// arruinarse. Aparte suma R y R² de cada cierre (`sombra_kelly_suma_r`,
+    /// `sombra_kelly_suma_r2`), los momentos de la apuesta en unidades de
+    /// stop, y [`Self::informe_sombra_kelly`] los publica.
     pub fn registrar_sombra_kelly(arena: &GlobalArena, m: &MedidaOrden, retorno_neto: f64) {
         if !(retorno_neto.is_finite() && m.perdida_al_stop.is_finite() && m.perdida_al_stop > 0.0) {
             return;
         }
         let r = retorno_neto / m.perdida_al_stop;
-        if !r.is_finite() {
+        if !(r.is_finite() && (r * r).is_finite()) {
             return;
         }
         let reglas = [
@@ -363,6 +376,9 @@ impl RiskEngine {
             ("sombra_kelly_logw_min", "sombra_kelly_ruina_min", m.f_lh04.min(m.f_legado)),
         ];
         for (clave_logw, clave_ruina, f) in reglas {
+            if arena.registry.get_for_coin_or(m.coin_id, clave_ruina, 0.0) > 0.0 {
+                continue;
+            }
             let crecimiento = 1.0 + f * r;
             if crecimiento.is_finite() && crecimiento > 0.0 {
                 let previo = arena.registry.get_for_coin_or(m.coin_id, clave_logw, 0.0);
@@ -370,12 +386,44 @@ impl RiskEngine {
                     .registry
                     .set_for_coin(m.coin_id, clave_logw, previo + crecimiento.ln());
             } else {
-                let previo = arena.registry.get_for_coin_or(m.coin_id, clave_ruina, 0.0);
-                arena.registry.set_for_coin(m.coin_id, clave_ruina, previo + 1.0);
+                arena.registry.set_for_coin(m.coin_id, clave_ruina, 1.0);
             }
+        }
+        for (clave, x) in [("sombra_kelly_suma_r", r), ("sombra_kelly_suma_r2", r * r)] {
+            let previo = arena.registry.get_for_coin_or(m.coin_id, clave, 0.0);
+            arena.registry.set_for_coin(m.coin_id, clave, previo + x);
         }
         let n = arena.registry.get_for_coin_or(m.coin_id, "sombra_kelly_n", 0.0);
         arena.registry.set_for_coin(m.coin_id, "sombra_kelly_n", n + 1.0);
+    }
+
+    /// CL-166 — el lector del libro de la sombra (CL-164): una línea JSON por
+    /// moneda con n, la media de R y de R² y, por regla, su log-riqueza y si
+    /// se arruinó. `None` sin cierres. El forense la imprime al terminar
+    /// (`SOMBRA_KELLY`); cada mitad del forense es una corrida aparte
+    /// (`FORENSIC_START_TICK`, `MAX_TICKS`) y trae su propio libro.
+    pub fn informe_sombra_kelly(arena: &GlobalArena, coin_id: usize) -> Option<String> {
+        let leer = |clave: &str| arena.registry.get_for_coin_or(coin_id, clave, 0.0);
+        let n = leer("sombra_kelly_n");
+        if !(n.is_finite() && n >= 1.0) {
+            return None;
+        }
+        let mut linea = format!(
+            "{{\"coin\":{},\"n\":{},\"r_media\":{:.6},\"r2_media\":{:.6}",
+            coin_id,
+            n,
+            leer("sombra_kelly_suma_r") / n,
+            leer("sombra_kelly_suma_r2") / n
+        );
+        for regla in ["lh04", "legado", "min"] {
+            linea.push_str(&format!(
+                ",\"logw_{regla}\":{:.6},\"ruina_{regla}\":{}",
+                leer(&format!("sombra_kelly_logw_{regla}")),
+                leer(&format!("sombra_kelly_ruina_{regla}")) > 0.0
+            ));
+        }
+        linea.push('}');
+        Some(linea)
     }
 
     /// U-3 (MOTOR UNIVERSAL CONTINUO): la API dual `evaluate_order`
