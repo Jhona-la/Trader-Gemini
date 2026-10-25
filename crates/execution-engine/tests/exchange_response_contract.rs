@@ -50,7 +50,8 @@ async fn response(
     let result = client
         .execute_order_payload_typed(&url)
         .await
-        .map(|(_, ack)| ack);
+        .map(|(_, ack)| ack)
+        .map_err(|e| e.to_string());
     server.await.unwrap();
     result
 }

@@ -142,6 +142,56 @@ pub fn classify_rate_limit_or_ban(status_code: u16, headers: &HeaderMap) -> Opti
     }
 }
 
+/// N23 (CL-196): el error de una petición firmada con la cabecera de uso de su
+/// respuesta. Un 400, un -2019 o un 503 también gastan peso de la IP y traen
+/// `X-MBX-USED-WEIGHT-1M`; antes el error era un `String` y esa cabecera se
+/// perdía, así que una racha de rechazos subía el uso real sin que la franja
+/// del 80 % lo viera. Se lee como `&str` (`Deref`) y se muestra igual que
+/// antes; no hay `From<ErrorRest> for String`, para que ningún `?` tire la
+/// cabecera sin pasar por `OrderExecutor::registrar_error`.
+///
+/// Sin cabecera: sin respuesta (red, timeout, rechazo local del freno) y en un
+/// 429/418, cuya cabecera nunca se registra: manda su Retry-After.
+#[derive(Debug, Clone)]
+pub struct ErrorRest {
+    texto: String,
+    limites: BinanceRateLimits,
+}
+
+impl ErrorRest {
+    /// Sin respuesta del exchange, o un 429/418.
+    pub fn sin_cabecera(texto: impl Into<String>) -> Self {
+        Self {
+            texto: texto.into(),
+            limites: BinanceRateLimits::default(),
+        }
+    }
+
+    fn con_cabecera(texto: String, limites: BinanceRateLimits) -> Self {
+        Self { texto, limites }
+    }
+
+    /// El uso que trajo la respuesta de error.
+    #[inline]
+    pub fn limites(&self) -> &BinanceRateLimits {
+        &self.limites
+    }
+}
+
+impl std::ops::Deref for ErrorRest {
+    type Target = str;
+    #[inline]
+    fn deref(&self) -> &str {
+        &self.texto
+    }
+}
+
+impl std::fmt::Display for ErrorRest {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.texto)
+    }
+}
+
 use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 
 /// N20 (CL-188): el freno 429/418 del exchange de un ejecutor, compartido por
@@ -510,7 +560,7 @@ impl BinanceClient {
 
     /// Ejecuta una orden firmada enviando el payload HTTP de forma asíncrona O(1).
     #[inline(always)]
-    pub async fn execute_order_payload(&self, full_url: &str) -> Result<BinanceRateLimits, String> {
+    pub async fn execute_order_payload(&self, full_url: &str) -> Result<BinanceRateLimits, ErrorRest> {
         let api_key = self.api_key.load();
         let response = self
             .http
@@ -527,16 +577,18 @@ impl BinanceClient {
                 } else if let Some(rate_err) =
                     classify_rate_limit_or_ban(resp.status().as_u16(), resp.headers())
                 {
-                    Err(rate_err)
+                    Err(ErrorRest::sin_cabecera(rate_err))
                 } else {
+                    // N23 (CL-196): la cabecera antes que el cuerpo, que consume la respuesta.
+                    let limits = extract_limits(resp.headers());
                     let text = resp
                         .text()
                         .await
                         .unwrap_or_else(|_| "Unknown error".to_string());
-                    Err(format!("Binance API Error: {}", text))
+                    Err(ErrorRest::con_cabecera(format!("Binance API Error: {}", text), limits))
                 }
             }
-            Err(e) => Err(format!("AMBIGUOUS: Network Error: {}", e)),
+            Err(e) => Err(ErrorRest::sin_cabecera(format!("AMBIGUOUS: Network Error: {}", e))),
         }
     }
 
@@ -552,12 +604,14 @@ impl BinanceClient {
     pub async fn execute_order_payload_typed(
         &self,
         full_url: &str,
-    ) -> Result<(BinanceRateLimits, crate::order_types::OrderAck), String> {
+    ) -> Result<(BinanceRateLimits, crate::order_types::OrderAck), ErrorRest> {
         use crate::order_types::{parse_order_body, OrderAck};
         let (limits, body) = self.execute_order_payload_body(full_url).await?;
         // A successful submission can precede a truncated/invalid
         // response. A parse error is not proof of non-execution.
-        let ack: OrderAck = parse_order_body(&body).map_err(|e| format!("AMBIGUOUS: {}", e))?;
+        // N23 (CL-196): el 2xx sí respondió; su cabecera viaja con el error.
+        let ack: OrderAck = parse_order_body(&body)
+            .map_err(|e| ErrorRest::con_cabecera(format!("AMBIGUOUS: {}", e), limits))?;
         Ok((limits, ack))
     }
 
@@ -568,7 +622,7 @@ impl BinanceClient {
     pub async fn execute_order_payload_body(
         &self,
         full_url: &str,
-    ) -> Result<(BinanceRateLimits, String), String> {
+    ) -> Result<(BinanceRateLimits, String), ErrorRest> {
         use crate::order_types::{parse_reject_body, truncate};
 
         let api_key = self.api_key.load();
@@ -588,12 +642,15 @@ impl BinanceClient {
                 if let Some(rate_err) =
                     classify_rate_limit_or_ban(status.as_u16(), resp.headers())
                 {
-                    return Err(rate_err);
+                    return Err(ErrorRest::sin_cabecera(rate_err));
                 }
                 let body = resp.text().await.map_err(|_| {
-                    format!(
-                        "AMBIGUOUS: HTTP {} unreadable response body",
-                        status.as_u16()
+                    ErrorRest::con_cabecera(
+                        format!(
+                            "AMBIGUOUS: HTTP {} unreadable response body",
+                            status.as_u16()
+                        ),
+                        limits,
                     )
                 })?;
                 if status.is_success() {
@@ -611,35 +668,33 @@ impl BinanceClient {
                             })
                             .unwrap_or(false);
                     if unknown_execution {
-                        Err(format!(
-                            "AMBIGUOUS: HTTP {} body={}",
-                            status.as_u16(),
-                            truncate(&body, 200)
+                        Err(ErrorRest::con_cabecera(
+                            format!("AMBIGUOUS: HTTP {} body={}", status.as_u16(), truncate(&body, 200)),
+                            limits,
                         ))
                     } else {
-                        Err(parse_reject_body(&body, status.as_u16()))
+                        Err(ErrorRest::con_cabecera(parse_reject_body(&body, status.as_u16()), limits))
                     }
                 } else {
                     // 5xx: estado desconocido — tratar como ambiguo.
-                    Err(format!(
-                        "AMBIGUOUS: HTTP {} body={}",
-                        status.as_u16(),
-                        truncate(&body, 200)
+                    Err(ErrorRest::con_cabecera(
+                        format!("AMBIGUOUS: HTTP {} body={}", status.as_u16(), truncate(&body, 200)),
+                        limits,
                     ))
                 }
             }
-            Err(e) => Err(format!("AMBIGUOUS: Network Error: {}", e)),
+            Err(e) => Err(ErrorRest::sin_cabecera(format!("AMBIGUOUS: Network Error: {}", e))),
         }
     }
 
     /// Cancela una orden enviando el payload HTTP (DELETE).
     #[inline(always)]
-    pub async fn cancel_order_payload(&self, full_url: &str) -> Result<BinanceRateLimits, String> {
+    pub async fn cancel_order_payload(&self, full_url: &str) -> Result<BinanceRateLimits, ErrorRest> {
         // CL-190 (N20): la cancelación de la pierna hermana (user_data_stream.rs)
         // sale por un clon sin ejecutor. Sólo el freno: el 429 de un envío del
-        // ejecutor lo registra su handle_rate_limit_error; el stream sólo lo
+        // ejecutor lo registra su registrar_error (CL-196); el stream sólo lo
         // imprime (fila N27 del censo).
-        self.freno.comprobar_ahora()?;
+        self.freno.comprobar_ahora().map_err(ErrorRest::sin_cabecera)?;
         let api_key = self.api_key.load();
         let response = self
             .http
@@ -656,21 +711,22 @@ impl BinanceClient {
                 } else if let Some(rate_err) =
                     classify_rate_limit_or_ban(resp.status().as_u16(), resp.headers())
                 {
-                    Err(rate_err)
+                    Err(ErrorRest::sin_cabecera(rate_err))
                 } else {
+                    let limits = extract_limits(resp.headers());
                     let text = resp
                         .text()
                         .await
                         .unwrap_or_else(|_| "Unknown error".to_string());
-                    Err(format!("Binance API Error: {}", text))
+                    Err(ErrorRest::con_cabecera(format!("Binance API Error: {}", text), limits))
                 }
             }
-            Err(e) => Err(format!("Network Error: {}", e)),
+            Err(e) => Err(ErrorRest::sin_cabecera(format!("Network Error: {}", e))),
         }
     }
     /// GET payload (used for fetching balances, etc)
     #[inline(always)]
-    pub async fn get_payload(&self, full_url: &str) -> Result<(BinanceRateLimits, String), String> {
+    pub async fn get_payload(&self, full_url: &str) -> Result<(BinanceRateLimits, String), ErrorRest> {
         self.get_payload_with_timeout(full_url, None).await
     }
 
@@ -683,7 +739,7 @@ impl BinanceClient {
         &self,
         full_url: &str,
         timeout: Option<std::time::Duration>,
-    ) -> Result<(BinanceRateLimits, String), String> {
+    ) -> Result<(BinanceRateLimits, String), ErrorRest> {
         let api_key = self.api_key.load();
         let mut req = self
             .http
@@ -700,7 +756,7 @@ impl BinanceClient {
                 if let Some(rate_err) =
                     classify_rate_limit_or_ban(status.as_u16(), resp.headers())
                 {
-                    return Err(rate_err);
+                    return Err(ErrorRest::sin_cabecera(rate_err));
                 }
                 let limits = extract_limits(resp.headers());
                 let raw_text = resp
@@ -711,13 +767,13 @@ impl BinanceClient {
                     Ok((limits, raw_text))
                 } else {
                     // Nunca loguear `full_url`: contiene la firma HMAC del request.
-                    Err(format!(
-                        "Binance API Error: status={} body={}",
-                        status, raw_text
+                    Err(ErrorRest::con_cabecera(
+                        format!("Binance API Error: status={} body={}", status, raw_text),
+                        limits,
                     ))
                 }
             }
-            Err(e) => Err(format!("Network Error: {}", e)),
+            Err(e) => Err(ErrorRest::sin_cabecera(format!("Network Error: {}", e))),
         }
     }
 
@@ -726,7 +782,7 @@ impl BinanceClient {
     pub async fn post_payload(
         &self,
         full_url: &str,
-    ) -> Result<(BinanceRateLimits, String), String> {
+    ) -> Result<(BinanceRateLimits, String), ErrorRest> {
         let api_key_arc = self.api_key.load();
         let api_key = (*api_key_arc).clone();
         let response = self
@@ -745,16 +801,17 @@ impl BinanceClient {
                 } else if let Some(rate_err) =
                     classify_rate_limit_or_ban(resp.status().as_u16(), resp.headers())
                 {
-                    Err(rate_err)
+                    Err(ErrorRest::sin_cabecera(rate_err))
                 } else {
+                    let limits = extract_limits(resp.headers());
                     let text = resp
                         .text()
                         .await
                         .unwrap_or_else(|_| "Unknown error".to_string());
-                    Err(format!("Binance API Error: {}", text))
+                    Err(ErrorRest::con_cabecera(format!("Binance API Error: {}", text), limits))
                 }
             }
-            Err(e) => Err(format!("Network Error: {}", e)),
+            Err(e) => Err(ErrorRest::sin_cabecera(format!("Network Error: {}", e))),
         }
     }
 }
@@ -904,7 +961,7 @@ mod tests {
     }
 
     /// Los siete transportes de las peticiones firmadas del ejecutor: su
-    /// 429/418 lo registra el ejecutor (`handle_rate_limit_error`), no ellos.
+    /// 429/418 lo registra el ejecutor (`registrar_error`, CL-196), no ellos.
     const TRANSPORTES: [&str; 7] = [
         "execute_order_payload",
         "execute_order_payload_typed",
@@ -949,7 +1006,10 @@ mod tests {
     #[test]
     fn cl190_la_cancelacion_frena_sin_registrar() {
         let c = cuerpo("cancel_order_payload");
-        assert!(antes(c, "self.freno.comprobar_ahora()?;", ".send()"), "cancela sin freno");
+        assert!(
+            antes(c, "self.freno.comprobar_ahora().map_err(ErrorRest::sin_cabecera)?;", ".send()"),
+            "cancela sin freno"
+        );
         assert!(!c.contains("freno_de_respuesta(") && !c.contains(".registrar("), "registra");
     }
 
@@ -995,5 +1055,131 @@ mod tests {
         assert!(e.contains("HTTP_429_RATE_LIMITED retry_after=7"), "{e}");
         c.clone().freno().registrar(&e);
         assert_eq!(c.freno().consecutive_429.load(Ordering::Relaxed), 1, "{e}");
+    }
+}
+
+/// N23 (CL-196): los transportes de las peticiones firmadas contra un servidor
+/// HTTP en loopback (`tests_n20::respuestas` del ejecutor): sin exchange,
+/// claves ni cuenta.
+#[cfg(test)]
+mod tests_n23 {
+    use super::*;
+    use crate::executor::tests_n20::{respuesta, respuestas};
+
+    const TRANSPORTES: [&str; 6] = [
+        "execute_order_payload",
+        "execute_order_payload_body",
+        "execute_order_payload_typed",
+        "cancel_order_payload",
+        "get_payload_with_timeout",
+        "post_payload",
+    ];
+
+    async fn enviar(c: &BinanceClient, k: usize, url: &str) -> Result<(), ErrorRest> {
+        match k {
+            0 => c.execute_order_payload(url).await.map(|_| ()),
+            1 => c.execute_order_payload_body(url).await.map(|_| ()),
+            2 => c.execute_order_payload_typed(url).await.map(|_| ()),
+            3 => c.cancel_order_payload(url).await.map(|_| ()),
+            4 => c.get_payload_with_timeout(url, None).await.map(|_| ()),
+            _ => c.post_payload(url).await.map(|_| ()),
+        }
+    }
+
+    /// El error del transporte `k` ante esa respuesta, con un cliente nuevo.
+    async fn error_ante(k: usize, wire: String) -> Option<ErrorRest> {
+        let (url, _, servidor) = respuestas(vec![wire]).await?;
+        let c = BinanceClient::with_timeout("k".into(), true, Duration::from_secs(5));
+        let r = tokio::time::timeout(Duration::from_secs(20), enviar(&c, k, &url)).await;
+        servidor.abort();
+        r.ok()?.err()
+    }
+
+    /// Cada transporte lleva en su error la cabecera de uso de la respuesta:
+    /// un 400, un 503 y un 2xx cuyo ACK no se lee (sólo `_typed` lo lee).
+    #[tokio::test]
+    async fn cl196_cada_transporte_lleva_la_cabecera_de_su_error() {
+        let cab = "X-MBX-USED-WEIGHT-1M: 777\r\nX-MBX-ORDER-COUNT-10S: 3\r\n";
+        let cuerpo = r#"{"code":-2019,"msg":"Margin is insufficient."}"#;
+        for (k, nombre) in TRANSPORTES.iter().enumerate() {
+            for estado in ["400 Bad Request", "503 Service Unavailable"] {
+                let e = error_ante(k, respuesta(estado, cab, cuerpo)).await;
+                assert!(e.is_some(), "{nombre} {estado}: es un error");
+                let Some(e) = e else { continue };
+                assert_eq!(e.limites().weight_1m, Some(777), "{nombre} {estado}: «{e}»");
+                assert_eq!(e.limites().orders_10s, Some(3), "{nombre} {estado}: «{e}»");
+            }
+        }
+        let e = error_ante(2, respuesta("200 OK", cab, "not json")).await;
+        assert!(e.as_ref().is_some_and(|e| e.starts_with("AMBIGUOUS:")), "{e:?}");
+        assert_eq!(e.and_then(|e| e.limites().weight_1m), Some(777));
+    }
+
+    /// El 429 y el 418 nunca llevan cabecera (manda su Retry-After) y su texto
+    /// es el que reconoce `FrenoExchange::registrar`.
+    #[tokio::test]
+    async fn cl196_un_429_o_un_418_nunca_lleva_cabecera() {
+        let cab = "X-MBX-USED-WEIGHT-1M: 2500\r\nRetry-After: 7\r\n";
+        for (k, nombre) in TRANSPORTES.iter().enumerate() {
+            for (estado, texto) in [
+                ("429 Too Many Requests", "HTTP_429_RATE_LIMITED retry_after=7"),
+                ("418 I'm a teapot", "HTTP_418_IP_BANNED retry_after=7"),
+            ] {
+                let e = error_ante(k, respuesta(estado, cab, "")).await;
+                assert!(e.as_ref().is_some_and(|e| e.starts_with(texto)), "{nombre} {estado}: {e:?}");
+                assert_eq!(e.and_then(|e| e.limites().weight_1m), None, "{nombre} {estado}");
+            }
+        }
+    }
+
+    /// Sin respuesta no hay cabecera. RV21-T (revisión de CL-196): el
+    /// servidor acepta cada conexión y la cierra sin responder, en un puerto
+    /// que sigue suyo hasta el final. Antes soltaba el puerto y apuntaba allí:
+    /// otro test en paralelo podía recibirlo y responder.
+    #[tokio::test]
+    async fn cl196_sin_respuesta_no_hay_cabecera() {
+        use tokio::io::AsyncReadExt;
+        let oyente = tokio::net::TcpListener::bind("127.0.0.1:0").await.ok();
+        let direccion = oyente.as_ref().and_then(|o| o.local_addr().ok());
+        assert!(direccion.is_some(), "puerto local");
+        let (Some(oyente), Some(direccion)) = (oyente, direccion) else { return };
+        let mudo = tokio::spawn(async move {
+            while let Ok((mut s, _)) = oyente.accept().await {
+                let mut peticion = [0u8; 4096];
+                let _ = s.read(&mut peticion).await;
+            }
+        });
+        let url = format!("http://{direccion}/fapi/v1/order");
+        let c = BinanceClient::with_timeout("k".into(), true, Duration::from_secs(5));
+        for (k, nombre) in TRANSPORTES.iter().enumerate() {
+            let r = tokio::time::timeout(Duration::from_secs(20), enviar(&c, k, &url)).await;
+            let e = r.ok().and_then(|r| r.err());
+            assert!(e.as_ref().is_some_and(|e| e.contains("Network Error")), "{nombre}: {e:?}");
+            assert_eq!(e.and_then(|e| e.limites().weight_1m), None, "{nombre}");
+        }
+        mudo.abort();
+    }
+
+    /// RV21-T (revisión de CL-196): las dos ramas AMBIGUOUS de
+    /// `execute_order_payload_body` que no son 5xx también llevan la cabecera:
+    /// un 4xx de ejecución desconocida (408, -1006, -1007) y un cuerpo que no
+    /// se puede leer (se corta antes de su Content-Length). Ninguna prueba las
+    /// recorría: devolverlas sin cabecera quedaba en verde.
+    #[tokio::test]
+    async fn rv21_las_ramas_ambiguas_del_cuerpo_llevan_la_cabecera() {
+        let cab = "X-MBX-USED-WEIGHT-1M: 777\r\n";
+        let cortado = format!(
+            "HTTP/1.1 400 Bad Request\r\n{cab}Content-Length: 100\r\nConnection: close\r\n\r\n{{\"code\""
+        );
+        for (wire, texto) in [
+            (respuesta("408 Request Timeout", cab, ""), "AMBIGUOUS: HTTP 408 body="),
+            (respuesta("400 Bad Request", cab, r#"{"code":-1006,"msg":"x"}"#), "AMBIGUOUS: HTTP 400 body="),
+            (respuesta("400 Bad Request", cab, r#"{"code":-1007,"msg":"x"}"#), "AMBIGUOUS: HTTP 400 body="),
+            (cortado, "AMBIGUOUS: HTTP 400 unreadable response body"),
+        ] {
+            let e = error_ante(1, wire).await;
+            assert!(e.as_ref().is_some_and(|e| e.starts_with(texto)), "{texto}: {e:?}");
+            assert_eq!(e.and_then(|e| e.limites().weight_1m), Some(777), "{texto}");
+        }
     }
 }

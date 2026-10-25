@@ -18,7 +18,7 @@
 | `/fapi/v2/positionRisk` | GET | 5 | Reconciliación de posiciones | executor.rs fetch_position_risk |
 | `/fapi/v2/account` | GET | 5 | Estado completo de cuenta | fetch_account_balance |
 | `/fapi/v1/commissionRate` | GET | 1 | Fees reales de LA cuenta (paridad fees) | fetch_commission_rate |
-| `/fapi/v1/exchangeInfo` | GET | 1 | tickSize/stepSize/filtros (cacheado exchange_info.json) | fetch_exchange_info |
+| `/fapi/v1/exchangeInfo` | GET | 1 | tickSize/stepSize/filtros (cacheado exchange_info.json); tras una descarga fallida fuera del freno no sale otra en 60 s (CL-197) | fetch_exchange_info |
 | `/fapi/v1/leverage` | POST | 1 | Leverage por símbolo | set_leverage |
 | `/fapi/v1/marginType` | POST | 1 | Cross/Isolated | binance_api.rs |
 | `/fapi/v1/time` | GET | 1 | Sync de reloj (NTP offset); el NTP mira y arma el freno (CL-189), el ejecutor lo mira (CL-187) | fetch_server_time |
@@ -111,9 +111,11 @@
   fetch_position_risk, cancelaciones, consulta de una orden) pasan mientras
   uso + críticas en vuelo + coste ≤ límite en cada contador en que gastan (CL-181). El uso es el
   máximo de las cabeceras vigentes de cada contador, cada una con su sello (CL-177, CL-180), y una
-  crítica registra su cabecera antes de salir del libro en vuelo (CL-182). De una respuesta de error el
-  cliente tira la cabecera: client.rs la lee y la pierde en el Err, o no la lee (filas N21 y N23; las
-  tres rutas sin ejecutor sí clasifican ya su 429/418, CL-189).
+  crítica registra su cabecera antes de salir del libro en vuelo (CL-182). Desde CL-196 el error de una
+  petición firmada lleva la cabecera de su respuesta (`client::ErrorRest`) y el ejecutor la registra
+  una sola vez con `registrar_error`, dentro del brazo con el cupo vivo y nunca la de un 429/418 (manda
+  su Retry-After). Siguen fuera el coste de una petición sin respuesta (fila N24) y la cabecera del 2xx
+  de las tres rutas sin ejecutor, que sí clasifican su 429/418 (CL-189; fila N38).
 
 ## 6. WebSocket (streams)
 
