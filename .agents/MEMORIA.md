@@ -20,9 +20,9 @@ de tests/).
   vuelve EXCHANGE_INFO_EN_ESPERA sin red y el paso 4 sirve el spec del
   registro. `clear_negative_symbol_cache` la borra.
 - De la revisión antes de fusionar: CL-198 (la espera cuenta como descarga
-  frenada: un símbolo sin spec no entra en la caché negativa durante la
-  espera, que no prueba su ausencia; antes quedaba hasta unos 2·TTL sin
-  descargar), CL-196b (dos comentarios que seguían diciendo que el cliente
+  frenada: sin un exchangeInfo guardado, un símbolo sin spec no entra en
+  la caché negativa durante la espera, que no prueba su ausencia; antes
+  quedaba hasta unos 2·TTL sin descargar), CL-196b (dos comentarios que seguían diciendo que el cliente
   tira la cabecera) y RV21-T (siete pruebas: registro con el cupo vivo en
   el par OCO y `cancel_all_symbol_orders`, racha de 429 en marcha, ramas
   AMBIGUOUS de `_body`, 2xx sin filtros, orden freno → espera, sin testnet
