@@ -5710,7 +5710,7 @@ pub(crate) mod tests_n20 {
     const CODIGO: &str = include_str!("executor.rs");
 
     /// Cuerpo de la última `fn {f}(` del archivo (la del impl), como en tests_n5b.
-    fn cuerpo(f: &str) -> &'static str {
+    pub(crate) fn cuerpo(f: &str) -> &'static str {
         let Some(i) = CODIGO.rfind(&format!("fn {f}(")) else {
             return "";
         };
@@ -6374,7 +6374,7 @@ pub(crate) mod tests_n20 {
 
 #[cfg(test)]
 mod tests_n23 {
-    use super::tests_n20::{respuesta, respuestas};
+    use super::tests_n20::{cuerpo, respuesta, respuestas};
     use super::*;
 
     const CODIGO: &str = include_str!("executor.rs");
@@ -6525,6 +6525,74 @@ mod tests_n23 {
         assert!(cuerpo.contains("self.observar_limites(e.limites(),"), "{cuerpo}");
         assert!(!cuerpo.contains("update_limits("), "un rechazo no reinicia la racha");
     }
+
+    /// RV21-T (revisión de CL-196): un rechazo no reinicia la racha de 429.
+    /// La prueba de arriba parte de racha 0, donde un reinicio no se ve, y la
+    /// guarda de texto no ve un `freno().exito()` añadido en
+    /// `registrar_error`. Aquí la racha es 1 con el cooldown ya caducado
+    /// (Retry-After 0), donde un 2xx sí la reinicia (el control del final).
+    #[tokio::test]
+    async fn rv21_un_rechazo_no_reinicia_la_racha() {
+        let ex = ex();
+        let (e, _) = cuenta_contra(&ex, vec![respuesta("429 Too Many Requests", "Retry-After: 0\r\n", "")]).await;
+        assert!(e.starts_with("HTTP_429_RATE_LIMITED retry_after=0"), "«{e}»");
+        assert_eq!(racha(&ex), 1);
+        let (e, conexiones) =
+            cuenta_contra(&ex, vec![con_peso("400 Bad Request", 50, ""), con_peso("400 Bad Request", 50, "")]).await;
+        assert_eq!(conexiones, 2, "«{e}»: el cooldown caducó y salen envío y reintento");
+        assert!(e.starts_with("Binance API Error: status=400"), "«{e}»");
+        assert_eq!(racha(&ex), 1, "un rechazo no reinicia la racha");
+        ex.update_limits(&crate::client::BinanceRateLimits::default());
+        assert_eq!(racha(&ex), 0, "control: con el cooldown caducado un 2xx la reinicia");
+    }
+
+    /// RV21-T (revisión de CL-196): el error de las dos piernas del par OCO y
+    /// el del DELETE de `cancel_all_symbol_orders` se registran antes de
+    /// soltar su cupo con nombre (CL-182). Antes sólo lo fijaba el orden de
+    /// las líneas: bajar el registro tras `drop(cupo)` dejaba todo en verde.
+    /// Y cada brazo crítico `Ok(_cupo) =>` registra su 2xx y su error.
+    #[test]
+    fn rv21_el_error_se_registra_con_el_cupo_vivo() {
+        for (f, registros) in [
+            (
+                "execute_oco_order",
+                &[
+                    "let mut sl_res = sl_res.map_err(|e| self.registrar_error(&e));",
+                    "let mut tp_res = tp_res.map_err(|e| self.registrar_error(&e));",
+                    "if let Ok(limits) = &sl_res {\n            self.update_limits(limits);",
+                    "if let Ok(limits) = &tp_res {\n            self.update_limits(limits);",
+                ][..],
+            ),
+            (
+                "cancel_all_symbol_orders",
+                &["self.update_limits(&limits);", "return Err(self.registrar_error(&e));"][..],
+            ),
+        ] {
+            let c = cuerpo(f);
+            assert_eq!(c.matches("drop(cupo);").count(), 1, "{f}");
+            let suelta = c.find("drop(cupo);").unwrap_or(0);
+            for r in registros {
+                assert_eq!(c.matches(r).count(), 1, "{f}: falta o se repite {r}");
+                assert!(c.find(r).unwrap_or(usize::MAX) < suelta, "{f}: {r} tras soltar el cupo");
+            }
+        }
+        for (f, n) in [
+            ("cancel_symbol_orders_and_brackets", 1),
+            ("flatten_all_positions", 2),
+            ("execute_oco_order", 2),
+        ] {
+            let c = cuerpo(f);
+            let brazos: Vec<&str> = c
+                .match_indices("Ok(_cupo) =>")
+                .filter(|&(i, _)| c[i.saturating_sub(200)..i].contains("Tramo::Critica("))
+                .map(|(i, _)| c[i..].split("Err(e) => Err(e)").next().unwrap_or(""))
+                .collect();
+            assert_eq!(brazos.len(), n, "{f}: brazos críticos");
+            for b in brazos {
+                assert!(b.contains("self.registrar_error(&e)"), "{f}: error tras soltar el cupo: {b}");
+            }
+        }
+    }
 }
 
 #[cfg(test)]
@@ -6607,13 +6675,19 @@ mod tests_n33 {
     /// ninguna descarga probara su ausencia, y la entrada sobrevivía a la
     /// espera hasta 60 s más (hasta unos 2·TTL sin descargar). Ahora queda
     /// fuera, como con el freno (CL-195). `clear_negative_symbol_cache` borra
-    /// también la espera.
+    /// también la espera: la descarga siguiente llega al servidor local
+    /// (RV21-T: antes lo comprobaba con una petición a testnet que quedaba
+    /// pendiente).
     #[tokio::test]
     async fn cl197_get_symbol_filter_no_descarga_durante_la_espera() {
         let cinco = respuesta("503 Service Unavailable", "", "");
+        let servido = respuestas(vec![cinco.clone(), cinco, respuesta("200 OK", "", "{}")]).await;
+        assert!(servido.is_some(), "servidor local");
+        let Some((url, aceptadas, servidor)) = servido else { return };
         let ex = ex();
-        let (primera, _, _) = dos_descargas(&ex, vec![cinco.clone(), cinco]).await;
-        assert!(empieza(&primera, "Binance API Error: status=503"), "{primera:?}");
+        let plazo = std::time::Duration::from_secs(30);
+        let primera = tokio::time::timeout(plazo, ex.descargar_filtros(&url)).await;
+        assert!(matches!(primera, Ok(Err(ref e)) if e.starts_with("Binance API Error: status=503")), "{primera:?}");
         let r = ex.get_symbol_filter("CL197SINSPECUSDT").now_or_never();
         assert!(
             matches!(r, Some(Err(ref e)) if e.starts_with("filtro de precisión desconocido")),
@@ -6621,7 +6695,47 @@ mod tests_n33 {
         );
         assert_eq!(ex.negative_symbol_cache_len(), 0, "la espera no prueba la ausencia");
         ex.clear_negative_symbol_cache();
-        let r = ex.get_symbol_filter("CL197SINSPECUSDT").now_or_never();
-        assert!(r.is_none(), "sin la espera vuelve a descargar: {r:?}");
+        let tercera = tokio::time::timeout(plazo, ex.descargar_filtros(&url)).await;
+        servidor.abort();
+        assert!(
+            matches!(tercera, Ok(Err(ref e)) if e.starts_with("EXCHANGE_INFO_SIN_FILTROS")),
+            "sin la espera vuelve a descargar: {tercera:?}"
+        );
+        assert_eq!(aceptadas.load(Ordering::SeqCst), 3);
+    }
+
+    /// RV21-T (revisión de CL-197): un 2xx sin filtros utilizables (un JSON
+    /// sin símbolos, o un cuerpo que se corta y el cliente devuelve como
+    /// «TEXT_ERR…») también deja la espera, y no se reintenta. Ninguna prueba
+    /// lo fijaba: armar la espera sólo por un error del transporte quedaba
+    /// en verde.
+    #[tokio::test]
+    async fn rv21_un_2xx_sin_filtros_deja_la_espera() {
+        let cortado = "HTTP/1.1 200 OK\r\nContent-Length: 100\r\nConnection: close\r\n\r\n{\"symbols\"".to_string();
+        for primera in [respuesta("200 OK", "", "{}"), cortado] {
+            let ex = ex();
+            let (r1, r2, conexiones) = dos_descargas(&ex, vec![primera.clone(), primera.clone()]).await;
+            assert!(empieza(&r1, "EXCHANGE_INFO_SIN_FILTROS"), "{r1:?}");
+            assert!(empieza(&r2, "EXCHANGE_INFO_EN_ESPERA"), "{r2:?}");
+            assert_eq!(conexiones, 1, "{r1:?}: sin reintento ni segunda descarga");
+        }
+    }
+
+    /// RV21-T (revisión de CL-197): dentro del freno con la espera armada la
+    /// descarga vuelve con el texto del freno, que es la causa: `check_backoff`
+    /// va antes que la espera.
+    #[tokio::test]
+    async fn rv21_el_freno_va_antes_que_la_espera() {
+        let cinco = respuesta("503 Service Unavailable", "", "");
+        let ex = ex();
+        let (primera, segunda, _) = dos_descargas(&ex, vec![cinco.clone(), cinco]).await;
+        assert!(empieza(&primera, "Binance API Error: status=503"), "{primera:?}");
+        assert!(empieza(&segunda, "EXCHANGE_INFO_EN_ESPERA"), "{segunda:?}");
+        ex.handle_rate_limit_error("HTTP_429_RATE_LIMITED retry_after=30");
+        let r = ex.descargar_filtros("http://127.0.0.1:9/fapi/v1/exchangeInfo").now_or_never();
+        assert!(
+            matches!(r, Some(Err(ref e)) if e.starts_with("RATE_LIMIT_COOLDOWN")),
+            "{r:?}"
+        );
     }
 }

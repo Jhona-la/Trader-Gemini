@@ -1132,14 +1132,23 @@ mod tests_n23 {
         }
     }
 
-    /// Sin respuesta (el puerto no escucha) no hay cabecera.
+    /// Sin respuesta no hay cabecera. RV21-T (revisión de CL-196): el
+    /// servidor acepta cada conexión y la cierra sin responder, en un puerto
+    /// que sigue suyo hasta el final. Antes soltaba el puerto y apuntaba allí:
+    /// otro test en paralelo podía recibirlo y responder.
     #[tokio::test]
     async fn cl196_sin_respuesta_no_hay_cabecera() {
+        use tokio::io::AsyncReadExt;
         let oyente = tokio::net::TcpListener::bind("127.0.0.1:0").await.ok();
         let direccion = oyente.as_ref().and_then(|o| o.local_addr().ok());
-        drop(oyente);
         assert!(direccion.is_some(), "puerto local");
-        let Some(direccion) = direccion else { return };
+        let (Some(oyente), Some(direccion)) = (oyente, direccion) else { return };
+        let mudo = tokio::spawn(async move {
+            while let Ok((mut s, _)) = oyente.accept().await {
+                let mut peticion = [0u8; 4096];
+                let _ = s.read(&mut peticion).await;
+            }
+        });
         let url = format!("http://{direccion}/fapi/v1/order");
         let c = BinanceClient::with_timeout("k".into(), true, Duration::from_secs(5));
         for (k, nombre) in TRANSPORTES.iter().enumerate() {
@@ -1147,6 +1156,30 @@ mod tests_n23 {
             let e = r.ok().and_then(|r| r.err());
             assert!(e.as_ref().is_some_and(|e| e.contains("Network Error")), "{nombre}: {e:?}");
             assert_eq!(e.and_then(|e| e.limites().weight_1m), None, "{nombre}");
+        }
+        mudo.abort();
+    }
+
+    /// RV21-T (revisión de CL-196): las dos ramas AMBIGUOUS de
+    /// `execute_order_payload_body` que no son 5xx también llevan la cabecera:
+    /// un 4xx de ejecución desconocida (408, -1006, -1007) y un cuerpo que no
+    /// se puede leer (se corta antes de su Content-Length). Ninguna prueba las
+    /// recorría: devolverlas sin cabecera quedaba en verde.
+    #[tokio::test]
+    async fn rv21_las_ramas_ambiguas_del_cuerpo_llevan_la_cabecera() {
+        let cab = "X-MBX-USED-WEIGHT-1M: 777\r\n";
+        let cortado = format!(
+            "HTTP/1.1 400 Bad Request\r\n{cab}Content-Length: 100\r\nConnection: close\r\n\r\n{{\"code\""
+        );
+        for (wire, texto) in [
+            (respuesta("408 Request Timeout", cab, ""), "AMBIGUOUS: HTTP 408 body="),
+            (respuesta("400 Bad Request", cab, r#"{"code":-1006,"msg":"x"}"#), "AMBIGUOUS: HTTP 400 body="),
+            (respuesta("400 Bad Request", cab, r#"{"code":-1007,"msg":"x"}"#), "AMBIGUOUS: HTTP 400 body="),
+            (cortado, "AMBIGUOUS: HTTP 400 unreadable response body"),
+        ] {
+            let e = error_ante(1, wire).await;
+            assert!(e.as_ref().is_some_and(|e| e.starts_with(texto)), "{texto}: {e:?}");
+            assert_eq!(e.and_then(|e| e.limites().weight_1m), Some(777), "{texto}");
         }
     }
 }
