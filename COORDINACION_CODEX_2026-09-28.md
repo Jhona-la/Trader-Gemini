@@ -19142,6 +19142,10 @@ execution-engine/tests/ y documentos. Detalle en §9 del censo (N23 y N33).
   freno no sale otra durante `TTL_CACHE_NEGATIVA` (60 s, la de F1-105);
   vuelve EXCHANGE_INFO_EN_ESPERA sin red. `clear_negative_symbol_cache` la
   borra.
+- **Revisión antes de fusionar**: CL-198 (la espera cuenta como descarga
+  frenada y no deja un símbolo sin spec en la caché negativa), CL-196b
+  (comentarios) y RV21-T (siete pruebas). Residuo bajo en N33: las
+  descargas concurrentes en vuelo no se agrupan.
 - **Codex QRA / Línea I**: `client.cancel_order_payload` devuelve ahora
   `ErrorRest`; user_data_stream.rs sólo lo imprime y compila igual. Para N27,
   `client.freno().registrar(&e)` acepta el `&ErrorRest` tal cual (Deref), y

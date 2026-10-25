@@ -19,6 +19,15 @@ de tests/).
   no sale otra durante `TTL_CACHE_NEGATIVA` (60 s, la de F1-105);
   vuelve EXCHANGE_INFO_EN_ESPERA sin red y el paso 4 sirve el spec del
   registro. `clear_negative_symbol_cache` la borra.
+- De la revisión antes de fusionar: CL-198 (la espera cuenta como descarga
+  frenada: un símbolo sin spec no entra en la caché negativa durante la
+  espera, que no prueba su ausencia; antes quedaba hasta unos 2·TTL sin
+  descargar), CL-196b (dos comentarios que seguían diciendo que el cliente
+  tira la cabecera) y RV21-T (siete pruebas: registro con el cupo vivo en
+  el par OCO y `cancel_all_symbol_orders`, racha de 429 en marcha, ramas
+  AMBIGUOUS de `_body`, 2xx sin filtros, orden freno → espera, sin testnet
+  ni puerto liberado). Residuo bajo en N33: descargas concurrentes en
+  vuelo, sin agrupar.
 - Banco en loopback para las rutas `full_url`: `tests_n20::respuestas`
   (ahora `pub(crate)`), usado por el ejecutor y el cliente.
 - Siguen en Línea C: N22/N38 (literales y 2xx de las rutas crudas), N24
