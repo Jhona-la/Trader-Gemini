@@ -378,7 +378,9 @@ tanda 7 (fila N13): CL-161 y CL-163 cambian el tamaño sólo con entradas
 corruptas, con `lh04_muestras_min` por encima de n o con un gen 33 por
 debajo de f, CL-162 cambia la mutación y CL-164 es telemetría, y la
 tanda 8: CL-165 cambia la conducta sólo con entradas corruptas y CL-166 es
-telemetría; como dice su lote):
+telemetría, y la tanda 9: CL-167 cambia la conducta sólo con un bias
+activo corrupto y f = 0, y CL-168 y CL-169 son el formato del informe;
+como dice su lote):
 
 | PR | Lotes |
 |---|---|
@@ -393,6 +395,7 @@ telemetría; como dice su lote):
 | #138 | 27b (K12: RET-27b, CL-158), 48 (CL-159: LH-04 con la fricción al stop; RET-48: ExposureBudget, exposure_budget(_spectral) y project_quantity), 34 (resto de F325: RET-34b, validate_order; RET-34c, la OPEN de la fila N8), 51 (51b CL-160: telemetry! escribe en LOG_QUEUE; 51c: BINARY_QUEUE, StackBuffer, init/pop_telemetry y crossbeam-queue de telemetry-engine); más RV5-T12 y RV5-docs (revisión de la tanda 5) |
 | #139 | N13, el plan del panel para los genes de Kelly (CL-161: clases de tamaño explícitas; CL-163: el gen 33 como techo κ de la f de LH-04; CL-162: genes 10, 11, 20 y 32 congelados en la mutación; CL-164: sombra del Kelly legado frente a LH-04); más RV6-T y RV6-docs (revisión de la tanda 6) |
 | #140 | N13, correcciones de la revisión de la tanda 7 (CL-165: LH-04 valida el bias crudo y las entradas antes de toda clase; CL-166: la sombra Kelly congela la regla arruinada, suma R y R² y el forense la imprime); más RV7-T y RV7-docs; abre N14 (banda del gen 33) |
+| #142 | N13, correcciones de la revisión de la tanda 8 (CL-167: el bias activo se valida también con f = 0; CL-168: el informe publica null como log-riqueza de una regla arruinada); más RV8-T y RV8-docs, y las de su propia revisión antes de fusionar (CL-169: el libro de la sombra lee sin respaldo y un acumulado no finito sale null; RV9-T, RV9-docs) |
 
 **Hecho por otros agentes**: lote 9 entero (Sol, d18b3735), lote 45 entero
 (Codex RB, 906a9c6a), parte del 7 (Sol retiró el bin main.rs de
@@ -868,6 +871,47 @@ un escéptico por lote listo):
     el camino del núcleo (−1,29 observado).
   - RV7-docs: premisas de CL-163 (margen, banda) y de los genes 10/11/32
     (D-130) en el código, las pruebas, aquí y en el buzón.
+  Ejecutado en la tanda 9 (PR #142), por la revisión adversarial del #140
+  (11 hallazgos confirmados; 4 de ellos, el PF = 0, ya los cerró CL-165b
+  dentro del #140):
+  - CL-167: CL-165 sólo leía el bias si LH-04 podía dimensionar (f > 0);
+    con f = 0 (sonda, sin edge, n < mínimo) un bias ±∞ o ≤ 0 salía a la
+    orden mínima. Ahora se lee y se valida en toda clase. Corrección de
+    la tanda 9 a la línea de CL-165 de arriba: «también en la sonda» es
+    cierto desde CL-167. Lo que se valida es el bias ACTIVO: con un cierre
+    registrado y el reloj ya pasado, `epigenetic_bias_at` lleva un
+    almacenado ±∞ o NaN a 1,0 y uno ≤ 0 a 0,5, y no se rechaza (un
+    almacenado corrupto sólo se ve sin cierre registrado o en el mismo ms
+    del cierre).
+  - CL-168: `informe_sombra_kelly` publica `"logw_<regla>":null` para una
+    regla arruinada (antes, la suma congelada hasta la ruina, 0 si se
+    arruinaba en el primer cierre). Un acumulado no finito salía como
+    0.000000 hasta CL-169.
+  - RV8-T: la R del libro se fija exacta, −SL/(SL + c) con la fricción del
+    fixture (el rango anterior admitía −1, un divisor sin c). La orden de
+    cf5d sale con L = 1, así que ese cierre no distingue un R sobre el
+    margen de uno sobre el nocional. Corrige el mensaje de 9f9fc77e y el
+    comentario de cf5d (RV7-T), que decían que un R sobre el margen (×L)
+    ponía roja la prueba; la línea de RV7-T de arriba sólo dice R ≈ −1, y
+    eso sigue siendo cierto.
+  Antes de fusionar el #142, su revisión adversarial confirmó 7 hallazgos
+  (1 medio, 6 leves; 1 refutado):
+  - CL-169: el libro de la sombra y su informe leen el registro de la
+    moneda sin respaldo (`get_for_coin_strict`). Con `get_for_coin_or` un
+    acumulado no finito llegaba como 0, el informe publicaba un 0.000000
+    creíble y el cierre siguiente reiniciaba la suma. Ahora sale como null
+    y se queda.
+  - RV9-T: en el fixture de cl164 un hueco que arruina a LH-04 arruina a
+    las tres reglas (f_lh04 ≤ f_legado), así que la comprobación de las
+    «vivas» de CL-168 no comprobaba nada. La prueba exige null en las
+    tres y otra fija una regla viva junto a una arruinada (4,5 stops
+    arruinan al legado). cl161 fija la cobertura real de CL-167 tras un
+    cierre. cf5d cierra una tercera posición con L = 10 y exige que la
+    sombra reciba el retorno sobre el nocional (antes ninguna prueba con
+    L ≥ 2 veía ese argumento; `realized_ret` ya lo fijaba
+    close_outcome_contract a través de la recompensa del PPO).
+  - RV9-docs: las precisiones de arriba, en el código, MEMORIA, el buzón y
+    los cuerpos de los PR #140 y #142.
 - N14 (de la revisión de la tanda 7): la banda del gen 33, [0,1; 1,0], es
   inerte por encima del axioma de ruina (f ≤ 0,25): el 83 % de la banda,
   la línea base (0,55) y los tres genomas guardados (0,8245). Por lectura

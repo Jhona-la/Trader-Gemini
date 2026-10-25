@@ -362,6 +362,12 @@ impl RiskEngine {
     /// arruinarse. Aparte suma R y R² de cada cierre (`sombra_kelly_suma_r`,
     /// `sombra_kelly_suma_r2`), los momentos de la apuesta en unidades de
     /// stop, y [`Self::informe_sombra_kelly`] los publica.
+    ///
+    /// CL-169: los acumulados se leen sin respaldo (`get_for_coin_strict`).
+    /// Antes `get_for_coin_or` cambiaba un acumulado no finito por 0 y el
+    /// cierre siguiente lo reiniciaba en silencio. Ahora un acumulado no
+    /// finito (corrupto, o una suma desbordada) se queda como está y el
+    /// informe lo publica como null.
     pub fn registrar_sombra_kelly(arena: &GlobalArena, m: &MedidaOrden, retorno_neto: f64) {
         if !(retorno_neto.is_finite() && m.perdida_al_stop.is_finite() && m.perdida_al_stop > 0.0) {
             return;
@@ -381,7 +387,10 @@ impl RiskEngine {
             }
             let crecimiento = 1.0 + f * r;
             if crecimiento.is_finite() && crecimiento > 0.0 {
-                let previo = arena.registry.get_for_coin_or(m.coin_id, clave_logw, 0.0);
+                let previo = arena
+                    .registry
+                    .get_for_coin_strict(m.coin_id, clave_logw)
+                    .unwrap_or(0.0);
                 arena
                     .registry
                     .set_for_coin(m.coin_id, clave_logw, previo + crecimiento.ln());
@@ -390,7 +399,10 @@ impl RiskEngine {
             }
         }
         for (clave, x) in [("sombra_kelly_suma_r", r), ("sombra_kelly_suma_r2", r * r)] {
-            let previo = arena.registry.get_for_coin_or(m.coin_id, clave, 0.0);
+            let previo = arena
+                .registry
+                .get_for_coin_strict(m.coin_id, clave)
+                .unwrap_or(0.0);
             arena.registry.set_for_coin(m.coin_id, clave, previo + x);
         }
         let n = arena.registry.get_for_coin_or(m.coin_id, "sombra_kelly_n", 0.0);
@@ -402,24 +414,52 @@ impl RiskEngine {
     /// se arruinó. `None` sin cierres. El forense la imprime al terminar
     /// (`SOMBRA_KELLY`); cada mitad del forense es una corrida aparte
     /// (`FORENSIC_START_TICK`, `MAX_TICKS`) y trae su propio libro.
+    ///
+    /// CL-168: la log-riqueza de una regla arruinada es −∞ y sale como null
+    /// (JSON no tiene ±∞ ni NaN). La suma congelada hasta la ruina sigue en el
+    /// registro, pero el informe no la publica como si fuera comparable con
+    /// la de una regla viva.
+    ///
+    /// CL-169: el informe lee el registro de la moneda sin respaldo. Con
+    /// `get_for_coin_or` un acumulado no finito llegaba como 0 (o como el
+    /// valor global) y salía un 0.000000 creíble. Ahora un acumulado ausente
+    /// o no finito sale como null, igual que la regla arruinada.
     pub fn informe_sombra_kelly(arena: &GlobalArena, coin_id: usize) -> Option<String> {
-        let leer = |clave: &str| arena.registry.get_for_coin_or(coin_id, clave, 0.0);
+        let leer = |clave: &str| {
+            arena
+                .registry
+                .get_for_coin_strict(coin_id, clave)
+                .unwrap_or(f64::NAN)
+        };
+        let numero = |x: f64| {
+            if x.is_finite() {
+                format!("{x:.6}")
+            } else {
+                "null".to_string()
+            }
+        };
         let n = leer("sombra_kelly_n");
         if !(n.is_finite() && n >= 1.0) {
             return None;
         }
         let mut linea = format!(
-            "{{\"coin\":{},\"n\":{},\"r_media\":{:.6},\"r2_media\":{:.6}",
+            "{{\"coin\":{},\"n\":{},\"r_media\":{},\"r2_media\":{}",
             coin_id,
             n,
-            leer("sombra_kelly_suma_r") / n,
-            leer("sombra_kelly_suma_r2") / n
+            numero(leer("sombra_kelly_suma_r") / n),
+            numero(leer("sombra_kelly_suma_r2") / n)
         );
         for regla in ["lh04", "legado", "min"] {
+            let ruina = leer(&format!("sombra_kelly_ruina_{regla}")) > 0.0;
+            let logw = if ruina {
+                f64::NEG_INFINITY
+            } else {
+                leer(&format!("sombra_kelly_logw_{regla}"))
+            };
             linea.push_str(&format!(
-                ",\"logw_{regla}\":{:.6},\"ruina_{regla}\":{}",
-                leer(&format!("sombra_kelly_logw_{regla}")),
-                leer(&format!("sombra_kelly_ruina_{regla}")) > 0.0
+                ",\"logw_{regla}\":{},\"ruina_{regla}\":{}",
+                numero(logw),
+                ruina
             ));
         }
         linea.push('}');
@@ -1681,7 +1721,16 @@ impl RiskEngine {
         // CL-165: el bias se valida CRUDO. `clamp(0, 1)` lleva +∞ a 1 y −∞ o
         // un bias ≤ 0 a 0, así que validar el factor ya recortado sólo veía
         // el NaN: un bias +∞ dimensionaba con la f entera.
-        let lh04_bias_bruto = if lh04_f > 0.0 && coin_id < arena.coins.len() {
+        // CL-167: se lee en toda clase, no sólo cuando LH-04 puede dimensionar
+        // (f > 0). La sonda y la orden mínima no lo usan para el tamaño, pero
+        // un bias ACTIVO corrupto se rechaza igual: con f = 0 un bias ±∞ o
+        // ≤ 0 salía a la orden mínima. Es el activo, no el almacenado: con un
+        // cierre registrado y el reloj ya pasado el cierre,
+        // `epigenetic_bias_at` (quantum-arena state.rs) lleva un almacenado
+        // ±∞ o NaN a 1,0 y uno ≤ 0 a 0,5, y llega neutralizado. Validar el
+        // almacenado haría absorbente el rechazo: el escritor del cierre no
+        // toca un bias no finito.
+        let lh04_bias_bruto = if coin_id < arena.coins.len() {
             let now_ts = arena.coins[coin_id]
                 .last_tick_timestamp_ms
                 .load(Ordering::Relaxed);

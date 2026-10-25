@@ -1,5 +1,31 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
 
+## 2026-10-25 — Claude (cloud, Línea C): novena tanda del censo C-F7b (revisión de la octava)
+
+Tanda del PR #142: la revisión adversarial del #140 confirmó 11 hallazgos
+(3 altos que eran el mismo, PF = 0, ya cerrado por CL-165b dentro del
+#140; 8 leves). Un commit por bloque; sin T-1 (sin cambio de conducta con
+entradas válidas). La revisión del propio #142, antes de fusionarlo,
+confirmó 7 más (1 medio, 6 leves), corregidos en el mismo PR.
+
+- CL-167: el bias epigenético se lee y se valida en toda clase de LH-04.
+  CL-165 sólo lo leía con f > 0, así que en la sonda y la orden mínima un
+  bias ±∞ o ≤ 0 pasaba. La línea «también en la sonda» de la octava tanda
+  es cierta desde aquí. Se valida el bias ACTIVO: tras un cierre
+  registrado, `epigenetic_bias_at` lleva un almacenado ±∞/NaN a 1,0 y uno
+  ≤ 0 a 0,5, y no se rechaza (validar el almacenado sería absorbente).
+- CL-168: `informe_sombra_kelly` publica null como logw de una regla
+  arruinada; antes daba la suma congelada, 0 si se arruinaba en el primer
+  cierre, comparable con las vivas.
+- CL-169: el libro y su informe leen el registro de la moneda sin
+  respaldo; un acumulado no finito sale como null y no se reinicia (antes
+  llegaba como 0 y salía un 0.000000 creíble).
+- RV8-T y RV9-T: la R del libro se fija exacta, −SL/(SL + c). La orden de
+  cf5d sale con L = 1; una tercera posición con L = 10 fija ahora que la
+  sombra recibe el retorno sobre el nocional. En el fixture de cl164 un
+  hueco arruina a las tres reglas; otra prueba fija una viva junto a una
+  arruinada (4,5 stops arruinan sólo al legado).
+
 ## 2026-10-25 — Claude (cloud, Línea C): octava tanda del censo C-F7b (revisión de la séptima)
 
 Tanda del PR #140: la revisión adversarial del #139 confirmó 17 hallazgos

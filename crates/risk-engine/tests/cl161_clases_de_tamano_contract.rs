@@ -18,6 +18,18 @@
 //! entrada. Un bias finito y positivo fuera de la banda del escritor
 //! ([0,5; 2]) no es corrupto: sólo encoge f o la deja igual.
 //!
+//! CL-167: el bias se lee y se valida en toda clase. Con f = 0 (la sonda,
+//! la moneda sin edge, n < mínimo) CL-165 no lo leía y un bias ±∞ o ≤ 0
+//! salía a la orden mínima. Lo que se valida es el bias ACTIVO
+//! (`get_active_epigenetic_bias`): sin cierre registrado (o en el mismo ms
+//! del cierre) es el almacenado tal cual, y es el caso que fijan las pruebas
+//! de CL-165 y CL-167 (`bias_crudo`). Con un cierre registrado y el reloj ya
+//! pasado, `epigenetic_bias_at` lleva un almacenado ±∞ o NaN a 1,0 y uno
+//! ≤ 0 a 0,5: llega neutralizado y no se rechaza. Esa cobertura real la fija
+//! `rv9_tras_un_cierre_el_bias_corrupto_llega_neutralizado`. Validar el
+//! almacenado haría absorbente el rechazo: el escritor (`state.rs`, cierre)
+//! no toca un bias no finito.
+//!
 //! CL-165b: PF = 0 tampoco es corrupto. Es «sólo pérdidas», lo admite la
 //! restauración del estado aprendido y los contratos del techo de comisión y
 //! del bias (veto_logic_contracts.rs) lo usan para apagar LH-04: sigue en la
@@ -160,6 +172,14 @@ fn bias_crudo(arena: &GlobalArena, bias: f64) {
     arena.coins[0].last_close_ts.store(0, Relaxed);
 }
 
+/// Bias almacenado con un cierre registrado y el tick siguiente 1 s después:
+/// el activo es el relajado por OU (`epigenetic_bias_at`), no el almacenado.
+fn bias_tras_un_cierre(arena: &GlobalArena, bias: f64) {
+    arena.coins[0].epigenetic_bias.store(bias, Relaxed);
+    arena.coins[0].last_close_ts.store(5_000_000, Relaxed);
+    arena.coins[0].last_tick_timestamp_ms.store(5_001_000, Relaxed);
+}
+
 #[test]
 fn cl165_bias_infinito_se_rechaza() {
     let _serie = SERIE.lock().unwrap_or_else(|e| e.into_inner());
@@ -214,6 +234,45 @@ fn cl165b_profit_factor_cero_da_la_orden_minima() {
 }
 
 #[test]
+fn cl167_un_bias_corrupto_se_rechaza_tambien_con_f_cero() {
+    let _serie = SERIE.lock().unwrap_or_else(|e| e.into_inner());
+    // (win rate, n, PF): la sonda sin cierres, la moneda sin edge y la que no
+    // reúne las muestras mínimas. En las tres LH-04 no dimensiona (f = 0).
+    let clases = [(0.65, 0, 2.6), (0.65, 20, 0.9), (0.65, 20, 2.6)];
+    for (wr, n, pf) in clases {
+        for bias in [f64::INFINITY, f64::NEG_INFINITY, 0.0, -1.0] {
+            let (arena, intent) = fixture();
+            if n == 20 && pf > 1.0 {
+                arena.registry.set("lh04_muestras_min", 50.0);
+            }
+            evidencia(&arena, wr, n, pf);
+            bias_crudo(&arena, bias);
+            let (orden, rechazos) = evaluar(&arena, &intent);
+            assert_eq!(orden.volume_usd, 0.0, "n {n}, PF {pf}, bias {bias}: no sale a la orden mínima");
+            assert_eq!(rechazos, 1, "n {n}, PF {pf}, bias {bias}: el rechazo es REJ_INVALID_INPUT");
+        }
+    }
+}
+
+#[test]
+fn cl167_un_bias_valido_no_cambia_la_orden_minima() {
+    let _serie = SERIE.lock().unwrap_or_else(|e| e.into_inner());
+    let referencia = orden_minima_de_referencia();
+    for bias in [0.3, 0.5, 2.0, 5.0] {
+        let (arena, intent) = fixture();
+        evidencia(&arena, 0.65, 20, 0.9);
+        bias_crudo(&arena, bias);
+        let (orden, rechazos) = evaluar(&arena, &intent);
+        assert_eq!(rechazos, 0, "control: bias {bias} finito y positivo");
+        assert_eq!(
+            nocional(&orden).to_bits(),
+            nocional(&referencia).to_bits(),
+            "bias {bias}: la orden mínima no depende del bias"
+        );
+    }
+}
+
+#[test]
 fn cl165_la_sonda_con_entradas_corruptas_se_rechaza() {
     let _serie = SERIE.lock().unwrap_or_else(|e| e.into_inner());
     let (arena, intent) = fixture();
@@ -243,5 +302,48 @@ fn cl165_bias_finito_positivo_fuera_de_banda_sigue_en_lh04() {
         let f = arena.registry.get_for_coin_or(0, "lh04_f_riesgo", f64::NAN);
         assert!((f - factor * f_libre).abs() < 1e-12, "bias {bias}: f = {f}, esperado {}", factor * f_libre);
         assert!(nocional(&orden) > 0.0 && nocional(&libre) > 0.0);
+    }
+}
+
+#[test]
+fn rv9_tras_un_cierre_el_bias_corrupto_llega_neutralizado() {
+    let _serie = SERIE.lock().unwrap_or_else(|e| e.into_inner());
+    let referencia = orden_minima_de_referencia();
+    // (almacenado, activo): `epigenetic_bias_at` lleva lo no finito a 1,0 y
+    // lo que relaja por debajo de 0,5 al suelo de la banda.
+    let casos = [
+        (f64::INFINITY, 1.0),
+        (f64::NEG_INFINITY, 1.0),
+        (f64::NAN, 1.0),
+        (0.0, 0.5),
+        (-1.0, 0.5),
+    ];
+    for (almacenado, activo) in casos {
+        // LH-04 dimensiona (n = 100): la f es la del bias activo, sin rechazo.
+        let (arena, intent) = fixture();
+        evidencia(&arena, 0.65, 100, 2.6);
+        bias_crudo(&arena, activo);
+        let (esperada, _) = evaluar(&arena, &intent);
+        let f_esperada = arena.registry.get_for_coin_or(0, "lh04_f_riesgo", f64::NAN);
+        let (arena, intent) = fixture();
+        evidencia(&arena, 0.65, 100, 2.6);
+        bias_tras_un_cierre(&arena, almacenado);
+        assert_eq!(
+            arena.coins[0].get_active_epigenetic_bias(5_001_000).to_bits(),
+            activo.to_bits(),
+            "premisa: el almacenado {almacenado} llega como {activo}"
+        );
+        let (orden, rechazos) = evaluar(&arena, &intent);
+        let f = arena.registry.get_for_coin_or(0, "lh04_f_riesgo", f64::NAN);
+        assert_eq!(rechazos, 0, "almacenado {almacenado}: el activo {activo} es válido");
+        assert_eq!(f.to_bits(), f_esperada.to_bits(), "almacenado {almacenado}: f del bias {activo}");
+        assert_eq!(nocional(&orden).to_bits(), nocional(&esperada).to_bits());
+        // Sin edge (n = 20, PF 0,9): la orden mínima.
+        let (arena, intent) = fixture();
+        evidencia(&arena, 0.65, 20, 0.9);
+        bias_tras_un_cierre(&arena, almacenado);
+        let (orden, rechazos) = evaluar(&arena, &intent);
+        assert_eq!(rechazos, 0, "almacenado {almacenado}: sin rechazo");
+        assert_eq!(nocional(&orden).to_bits(), nocional(&referencia).to_bits(), "orden mínima");
     }
 }
