@@ -1,5 +1,5 @@
 //! Regression contracts from FMT-096/098/099. No exchange, files, or live engine.
-use risk_engine::kelly_envelope::{EdgePosterior, RiskEnvelope};
+use risk_engine::kelly_envelope::{nocional_por_riesgo, EdgePosterior, RiskEnvelope};
 use risk_engine::tp_sl::{compute_tp_sl, compute_tp_sl_with_target_rr, TpSlInputs};
 
 fn geometry() -> TpSlInputs {
@@ -144,177 +144,114 @@ fn contracts_invalid_posterior_or_uncertainty_cannot_create_edge() {
     }
 }
 
+/// RET-48 (antes `projection_limits_quantity_and_includes_roundtrip_cost`,
+/// sobre la API retirada `exposure_budget`/`project_quantity`): la pérdida al
+/// stop del nocional incluye el coste de ida y vuelta, N·(d + c) = B = f·C,
+/// y el coste reduce N frente a f·C/d. El paso vivo es `nocional_por_riesgo`,
+/// el que usa LH-04 en el gate (CL-159).
 #[test]
-fn projection_limits_quantity_and_includes_roundtrip_cost() {
-    let env = positive_edge();
-    let budget = env.exposure_budget(100.0, 0.10, 0.01, 1.64, 50.0).unwrap();
-    let q = budget
-        .project_quantity(10.0, 100.0, 0.01, 0.01, 5.0)
-        .unwrap();
-    assert!(q < 10.0);
-    assert!(q * 100.0 <= budget.max_notional());
-    assert!(q * 100.0 * 0.11 <= budget.risk_budget_usd());
-    assert_eq!(budget.loss_per_notional(), 0.11);
+fn nocional_por_riesgo_incluye_el_coste_de_ida_y_vuelta() {
+    let f = positive_edge().risk_fraction(1.64, 50.0);
+    assert!(f > 0.0, "el fixture tiene edge: f = {f}");
+    let n = nocional_por_riesgo(f, 100.0, 0.10, 0.01).unwrap_or(f64::NAN);
+    let presupuesto = 100.0 * f;
+    assert!((n * (0.10 + 0.01) - presupuesto).abs() <= 4.0 * f64::EPSILON * presupuesto);
+    assert!(n < presupuesto / 0.10, "el coste reduce el nocional");
 }
 
+/// RET-48 (antes `projection_cost_increase_cannot_increase_exposure`): más
+/// coste nunca da más nocional; con coste 0 es bit a bit f·C/d.
 #[test]
-fn projection_checks_lot_feasibility_after_continuous_minimum() {
-    let env = positive_edge();
-    let budget = env.exposure_budget(20.0, 0.1, 0.0, 1.64, 50.0).unwrap();
-    assert_eq!(budget.max_notional(), 50.0);
-    // Continuous N=50 exists; at price=30 and step=1 only N=30 or 60 exist.
-    assert!(budget
-        .project_quantity(10.0, 30.0, 1.0, 1.0, 50.0)
-        .is_none());
+fn nocional_por_riesgo_nunca_crece_con_el_coste() {
+    let f = positive_edge().risk_fraction(1.64, 50.0);
+    let mut previo = f64::INFINITY;
+    for coste in [0.0, 0.0001, 0.001, 0.01, 0.10, 1.0] {
+        let n = nocional_por_riesgo(f, 100.0, 0.01, coste).unwrap_or(f64::NAN);
+        assert!(n <= previo, "coste {coste}: {n} > {previo}");
+        previo = n;
+    }
     assert_eq!(
-        budget.project_quantity(10.0, 30.0, 1.0, 1.0, 30.0),
-        Some(1.0)
+        nocional_por_riesgo(f, 100.0, 0.01, 0.0).map(f64::to_bits),
+        Some((f * 100.0 / 0.01).to_bits())
     );
 }
 
+/// RET-48 (antes `projection_is_invariant_to_currency_units`): el nocional
+/// escala con la moneda de C y la fracción arriesgada no cambia.
 #[test]
-fn projection_never_raises_candidate_to_an_exchange_minimum() {
-    let budget = positive_edge()
-        .exposure_budget(100.0, 0.01, 0.001, 1.64, 50.0)
-        .unwrap();
-    assert!(budget
-        .project_quantity(0.01, 100.0, 0.001, 0.001, 5.0)
-        .is_none());
-    assert!(budget
-        .project_quantity(0.01, 100.0, 0.001, 0.1, 0.5)
-        .is_none());
-}
-
-#[test]
-fn projection_cost_increase_cannot_increase_exposure() {
-    let env = positive_edge();
-    let mut previous = f64::INFINITY;
-    for cost in [0.0, 0.0001, 0.001, 0.01, 0.10, 1.0] {
-        let budget = env.exposure_budget(100.0, 0.01, cost, 1.64, 50.0).unwrap();
-        let q = budget
-            .project_quantity(1000.0, 100.0, 0.001, 0.001, 1.0)
-            .unwrap_or(0.0);
-        assert!(q <= previous);
-        previous = q;
-    }
-}
-
-#[test]
-fn projection_is_invariant_to_currency_units() {
-    let env = positive_edge();
-    let baseline = env
-        .exposure_budget(100.0, 0.10, 0.01, 1.64, 50.0)
-        .unwrap()
-        .project_quantity(10.0, 100.0, 0.01, 0.01, 5.0)
-        .unwrap();
+fn nocional_por_riesgo_es_invariante_a_la_moneda() {
+    let f = positive_edge().risk_fraction(1.64, 50.0);
+    let base = nocional_por_riesgo(f, 100.0, 0.10, 0.01).unwrap_or(f64::NAN) / 100.0;
     for k in [0.01, 1.0, 10.0, 1000.0] {
-        let budget = env
-            .exposure_budget(100.0 * k, 0.10, 0.01, 1.64, 50.0)
-            .unwrap();
-        assert_eq!(
-            budget.project_quantity(10.0, 100.0 * k, 0.01, 0.01, 5.0 * k),
-            Some(baseline)
-        );
+        let n = nocional_por_riesgo(f, 100.0 * k, 0.10, 0.01).unwrap_or(f64::NAN);
+        assert!((n / (100.0 * k) - base).abs() <= 1e-12 * base, "k = {k}: {n}");
     }
 }
 
+/// RET-48 (antes `projection_post_rounding_invariants_on_scale_grid`, parte
+/// continua): en toda la rejilla de escalas la pérdida al stop con el coste
+/// es el presupuesto f·C. El redondeo a lotes lo hace el ejecutor
+/// (`round_to_step_size`, hacia abajo: sólo puede bajar la pérdida) y el
+/// mínimo del exchange lo juzga D-750 en el gate.
 #[test]
-fn projection_post_rounding_invariants_on_scale_grid() {
-    let env = positive_edge();
-    let mut accepted = 0;
+fn nocional_por_riesgo_respeta_el_presupuesto_en_la_rejilla_de_escalas() {
+    let f = positive_edge().risk_fraction(1.64, 50.0);
+    let mut aceptados = 0;
     for capital in [0.01, 13.0, 1000.0, 1e9] {
         for stop in [1e-6, 0.001, 0.1, 1.0] {
-            let budget = env
-                .exposure_budget(capital, stop, 0.0008, 1.64, 50.0)
-                .unwrap();
-            for price in [0.01, 0.3, 100.0, 12_345.678] {
-                for step in [1e-8, 0.001, 0.1, 1.0] {
-                    for proposed in [0.03, 1.0, 1000.0] {
-                        if let Some(q) = budget.project_quantity(proposed, price, step, 0.0, 0.001)
-                        {
-                            accepted += 1;
-                            assert!(q <= proposed);
-                            assert!(q * price >= 0.001);
-                            assert!(q * price <= budget.max_notional());
-                            assert!(
-                                q * price * budget.loss_per_notional() <= budget.risk_budget_usd()
-                            );
-                            let lots = q / step;
-                            assert!(
-                                (lots - lots.round()).abs()
-                                    <= 2.0 * f64::EPSILON * lots.abs().max(1.0)
-                            );
-                        }
-                    }
-                }
+            for coste in [0.0, 0.0008, 0.0145, 0.05] {
+                let n = nocional_por_riesgo(f, capital, stop, coste).unwrap_or(f64::NAN);
+                aceptados += 1;
+                let presupuesto = f * capital;
+                let perdida = n * (stop + coste);
+                assert!(
+                    (perdida - presupuesto).abs() <= 4.0 * f64::EPSILON * presupuesto,
+                    "C {capital}, d {stop}, c {coste}: pérdida {perdida} vs f·C {presupuesto}"
+                );
             }
         }
     }
-    assert!(accepted > 100, "non-vacuous property grid");
+    assert_eq!(aceptados, 64, "rejilla completa, no vacía");
 }
 
+/// RET-48 (antes `budget_rejects_missing_evidence_and_nonfinite_or_overflowing_inputs`
+/// y `projection_rejects_invalid_market_constraints_and_unrepresentable_lots`):
+/// sin evidencia f = 0 y no hay nocional; entradas no finitas, no positivas
+/// (coste negativo) o con cociente no representable devuelven None.
 #[test]
-fn projection_rejects_invalid_market_constraints_and_unrepresentable_lots() {
-    let budget = positive_edge()
-        .exposure_budget(100.0, 0.1, 0.01, 1.64, 50.0)
-        .unwrap();
-    for bad in [f64::NAN, f64::INFINITY, -1.0, 0.0] {
-        assert!(budget
-            .project_quantity(bad, 100.0, 0.01, 0.01, 5.0)
-            .is_none());
-        assert!(budget
-            .project_quantity(10.0, bad, 0.01, 0.01, 5.0)
-            .is_none());
-        assert!(budget
-            .project_quantity(10.0, 100.0, bad, 0.01, 5.0)
-            .is_none());
-        assert!(budget
-            .project_quantity(10.0, 100.0, 0.01, 0.01, bad)
-            .is_none());
+fn nocional_por_riesgo_rechaza_sin_evidencia_y_entradas_invalidas() {
+    let f_sin_evidencia = RiskEnvelope::new().risk_fraction(1.64, 50.0);
+    assert_eq!(f_sin_evidencia, 0.0);
+    assert_eq!(nocional_por_riesgo(f_sin_evidencia, 100.0, 0.01, 0.001), None);
+    let f = positive_edge().risk_fraction(1.64, 50.0);
+    for bad in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY, -1.0, 0.0] {
+        assert_eq!(nocional_por_riesgo(bad, 100.0, 0.01, 0.001), None);
+        assert_eq!(nocional_por_riesgo(f, bad, 0.01, 0.001), None);
+        assert_eq!(nocional_por_riesgo(f, 100.0, bad, 0.001), None);
         if bad != 0.0 {
-            assert!(budget
-                .project_quantity(10.0, 100.0, 0.01, bad, 5.0)
-                .is_none());
+            assert_eq!(nocional_por_riesgo(f, 100.0, 0.01, bad), None);
         }
     }
-    assert!(budget
-        .project_quantity(1e100, 1e-10, 1e-20, 0.0, 5.0)
-        .is_none());
+    assert_eq!(nocional_por_riesgo(f, f64::MAX, f64::MIN_POSITIVE, 0.0), None);
+    assert_eq!(nocional_por_riesgo(f, 100.0, f64::MAX, f64::MAX), None);
 }
 
+/// RET-48 (antes `exposure_ratio_and_budget_agree_when_minimum_is_feasible`):
+/// el techo N_max/C de `max_leverage` (sin coste, con el piso de 5 bps del
+/// stop) es `nocional_por_riesgo` con coste 0 dividido por C, y cuando admite
+/// la orden mínima cabe en el presupuesto.
 #[test]
-fn budget_rejects_missing_evidence_and_nonfinite_or_overflowing_inputs() {
-    assert!(RiskEnvelope::new()
-        .exposure_budget(100.0, 0.01, 0.001, 1.64, 50.0)
-        .is_none());
+fn techo_de_exposicion_y_nocional_sin_coste_coinciden_si_el_minimo_cabe() {
     let env = positive_edge();
-    for bad in [f64::NAN, f64::INFINITY, -1.0, 0.0] {
-        assert!(env.exposure_budget(bad, 0.01, 0.001, 1.64, 50.0).is_none());
-        assert!(env.exposure_budget(100.0, bad, 0.001, 1.64, 50.0).is_none());
-        if bad != 0.0 {
-            assert!(env.exposure_budget(100.0, 0.01, bad, 1.64, 50.0).is_none());
-        }
-    }
-    assert!(env
-        .exposure_budget(f64::MAX, f64::MIN_POSITIVE, 0.0, 1.64, 50.0)
-        .is_none());
-    assert!(env
-        .exposure_budget(100.0, f64::MAX, f64::MAX, 1.64, 50.0)
-        .is_none());
-}
-
-#[test]
-fn exposure_ratio_and_budget_agree_when_minimum_is_feasible() {
-    let env = positive_edge();
+    let f = env.risk_fraction(1.64, 50.0);
     for capital in [13.0, 100.0, 10_000.0] {
         for stop in [0.0001_f64, 0.005, 0.1] {
-            let budget = env
-                .exposure_budget(capital, stop.max(0.0005), 0.0, 1.64, 50.0)
-                .unwrap();
+            let d = stop.max(0.0005);
             let (ratio, allowed) = env.max_leverage(capital, stop, 5.0, 1.64, 50.0);
             if allowed {
-                assert_eq!(ratio, budget.max_notional() / capital);
-                assert!(5.0 * budget.loss_per_notional() <= budget.risk_budget_usd());
+                let n = nocional_por_riesgo(f, capital, d, 0.0).unwrap_or(f64::NAN);
+                assert_eq!(ratio, n / capital);
+                assert!(5.0 * d <= capital * f);
             } else {
                 assert_eq!(ratio, 0.0);
             }

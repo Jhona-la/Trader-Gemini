@@ -51,6 +51,19 @@ f_R   ≤ clamp_ruin(...)                           (tope de ruina vigente)
 nocional = f_R · C / SL ;  margen = nocional / L
 ```
 
+> **Corrigendum CL-159 (2026-10-24).** La línea `nocional = f_R · C / SL`
+> es un error de conversión. Con `b_net` como arriba, f_R es la fracción
+> del capital que se PIERDE al tocar el stop, y una orden de nocional N
+> pierde ahí N·(SL + f_rt). La conversión correcta es
+> `nocional = f_R · C / (SL + f_rt)`. Con la de arriba la pérdida al
+> stop era f_R·C·(1 + f_rt/SL) (1,29·f_R con SL 0,5 % y f_rt 14,5 pb), y la
+> caída d* de D3, que supone c ≤ ½, quedaba con α ≈ 12 %. CL-159 corrige el
+> divisor en el gate (LH-04, `kelly_envelope::nocional_por_riesgo`).
+> Derivación: docs/audit/linea_g/ola6_derivacion_friccion.md (Error, 1.ª
+> viñeta). La misma omisión sigue abierta en la viabilidad de la orden
+> mínima de abajo (`min_notional · SL / C`, `capital_regime::orden_viable`)
+> y en el tope de ruina F1-092 del gate. CL-159 no las toca.
+
 - El apalancamiento es consecuencia del margen disponible, no una palanca
   de convicción (ADR-0013 ya impide enviar más del validado).
 - Si `nocional < min_notional` y `min_notional · SL / C > f_R`: se rechaza

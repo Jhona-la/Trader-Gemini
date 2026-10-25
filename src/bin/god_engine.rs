@@ -991,24 +991,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .ok();
 
     // os_guardian init happens inside init_guardian or similar, we just use the module's time_critical if needed
-    // FASE 12: Zero-Latency Telemetry Engine
-    // RET-51a: si algo hubiera empujado telemetría antes, la cola ya existiría
-    // con otra capacidad; se avisa en vez de descartarlo en silencio.
-    if let Err(capacidad) = telemetry_engine::init_telemetry(100_000) {
+    // FASE 12 / RET-51b (CL-160, censo C-F7b, F155): `telemetry!` y
+    // `telemetry_err!` escriben en la cola del log, en el hilo que los emite,
+    // como `telemetry_log!`. Antes iban a una segunda cola (33 MiB) que un
+    // hilo sondeaba cada ≈1 ms cuando estaba vacía y pasaba a ésta: el
+    // apagado no la vaciaba y sus líneas podían salir después de otras
+    // posteriores. cf6_logs_acotados fija que `main` no emite `telemetry!`
+    // antes de este punto.
+    if !telemetry_engine::conectar(telemetry_server::macros::linea_de_telemetria) {
         telemetry_server::telemetry_log!(
-            "⚠️ [TELEMETRY] la cola binaria ya existía con capacidad {}; no se recrea",
-            capacidad
+            "⚠️ [TELEMETRY] telemetry_engine ya tenía un destino; no se cambia"
         );
     }
-    std::thread::spawn(|| {
-        loop {
-            if let Some(msg) = telemetry_engine::pop_telemetry() {
-                telemetry_server::telemetry_log!("{}", msg); // Asynchronous non-blocking console write
-            } else {
-                std::thread::sleep(std::time::Duration::from_millis(1));
-            }
-        }
-    });
 
     telemetry_engine::telemetry!("========================================================");
     telemetry_server::telemetry_log!(

@@ -204,6 +204,7 @@ jobs:
         # verificar. Es el primer átomo del siguiente.
         # RET-6/RET-8 (2026-10-24, Línea C, censo C-F7b): telemetry-engine pasa
         # de 7 a 3 tests (se retiraron TradeStats, TensorRecord y DnsOptimizer,
-        # sin consumidor) y graph-4d (4) salió del workspace: quedan cinco
-        # crates y 43 de aquellos 51 tests.
+        # sin consumidor) y graph-4d (4) salió del workspace. RET-51a lo dejó
+        # en 4 y RET-51b/51c en 2 (sin cola propia: sus macros escriben en la
+        # cola del log). Quedan cinco crates.
         run: cargo +nightly-2026-06-30 test -p flight-recorder -p graph-architecture -p omniscient-registry -p os-guardian -p telemetry-engine --locked -- --test-threads=1

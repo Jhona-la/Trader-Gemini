@@ -99,6 +99,34 @@ fn cl144_el_host_usa_el_log_rotativo_si_hay_ruta() {
     assert!(host.contains("init_telemetry_logger_rotativo(16_384, rot)"));
 }
 
+/// RET-51b (CL-160, censo C-F7b, F155). Esperado: el host conecta
+/// `telemetry!`/`telemetry_err!` a la cola del log antes de la primera línea
+/// de esa familia en `main` y ya no tiene la cola binaria ni el hilo que la
+/// pasaba a la del log. RED en main be67d521: el host no conecta nada y
+/// conserva la cola binaria.
+#[test]
+fn ret51b_el_host_conecta_telemetry_a_la_cola_del_log() {
+    let host = codigo(HOST);
+    let main = host.find("async fn main()");
+    assert!(main.is_some(), "main del host");
+    let main = main.unwrap_or(0);
+    let conecta =
+        host.find("telemetry_engine::conectar(telemetry_server::macros::linea_de_telemetria)");
+    assert!(conecta.is_some(), "el host conecta telemetry! a la cola del log");
+    let conecta = conecta.unwrap_or(usize::MAX);
+    let primera = ["telemetry!(", "telemetry_err!("]
+        .iter()
+        .filter_map(|m| host[main..].find(m))
+        .min()
+        .map(|i| main + i);
+    assert!(primera.is_some(), "main emite telemetry!");
+    let primera = primera.unwrap_or(0);
+    assert!(main < conecta && conecta < primera, "conecta en {conecta}, primera línea en {primera}");
+    for retirado in ["telemetry_engine::pop_telemetry", "telemetry_engine::init_telemetry("] {
+        assert!(!host.contains(retirado), "el host conserva {retirado}");
+    }
+}
+
 /// Esperado: el examen del demonio y los universos sombra construyen núcleos
 /// auxiliares. Antes cada uno de los 25 núcleos por ronda del examen repetía
 /// la carga de DarkAlpha y sus 100 primeras OPEN/CLOSE TRACE, que el monitor
