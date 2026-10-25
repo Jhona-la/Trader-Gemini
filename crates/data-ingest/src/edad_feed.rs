@@ -73,6 +73,109 @@ pub fn deriva_pared_frente_monotono(pared_ahora_ms: i64, pared_base_ms: i64, tra
     pared_ahora_ms.saturating_sub(pared_base_ms).saturating_sub(transcurrido_ms)
 }
 
+/// I-3a (Línea I): lo que un ciclo del sistema inmune hace con los strikes
+/// de latencia.
+///
+/// Reproduce las ramas de CERT-M4-H04 con la componente red+reloj (I-2b) en
+/// vez de la edad total. Sólo diverge del inmune anterior en dos casos, y en
+/// ninguno suma un strike que el anterior no sumara:
+///
+/// - el exceso de edad viene de la cola local (red+reloj ≤ umbral/2): conserva
+///   en vez de sumar. Un atraso del consumidor no es una red degradada y
+///   aplanar a mercado no lo arregla; el núcleo sigue bloqueando ENTRADAS con
+///   la edad total;
+/// - sin eventos públicos nuevos desde el ciclo anterior y sin stall del
+///   watchdog: conserva en vez de reiniciar. La muestra es la del último
+///   evento, congelada: no prueba que el feed esté sano.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CicloStrikes {
+    /// red+reloj por encima del umbral.
+    SumaRedLenta,
+    /// red+reloj por encima de la mitad del umbral con el watchdog en stall
+    /// (rama de stall de CERT-M4-H04).
+    SumaRedMediaConStall,
+    /// red+reloj por encima de la mitad del umbral con la edad por encima del
+    /// umbral (el núcleo está en LATENCY PANIC).
+    SumaRedMediaConDatosViejos,
+    /// Sin prueba de que el feed esté sano: stall, sin eventos públicos nuevos
+    /// o edad por encima del umbral por la cola local.
+    Conserva,
+    /// Feed avanzando y edad dentro del umbral.
+    Reinicia,
+}
+
+impl CicloStrikes {
+    /// Aplica el ciclo a los strikes previos.
+    #[inline]
+    pub fn aplicar(self, previos: u32) -> u32 {
+        match self {
+            Self::SumaRedLenta | Self::SumaRedMediaConStall | Self::SumaRedMediaConDatosViejos => {
+                previos.saturating_add(1)
+            }
+            Self::Conserva => previos,
+            Self::Reinicia => 0,
+        }
+    }
+
+    /// Texto de la rama para los avisos y el motivo del aplanado.
+    pub fn motivo(self) -> &'static str {
+        match self {
+            Self::SumaRedLenta => "red+reloj por encima del umbral",
+            Self::SumaRedMediaConStall => "red+reloj por encima de la mitad del umbral con el feed en stall",
+            Self::SumaRedMediaConDatosViejos => {
+                "red+reloj por encima de la mitad del umbral con la edad del dato por encima del umbral"
+            }
+            Self::Conserva => "feed sin muestra nueva o cola local atrasada",
+            Self::Reinicia => "feed sano",
+        }
+    }
+}
+
+/// Clasifica un ciclo del inmune (I-3a). Las comparaciones son estrictas,
+/// como las de CERT-M4-H04.
+///
+/// La edad es `red_reloj + espera_local` (la edad total que el núcleo compara
+/// con el mismo umbral para bloquear entradas). Un red+reloj negativo (error
+/// de reloj, ver `EdadEvento`) cuenta como 0 ms de red y nunca suma un strike.
+#[inline]
+pub fn ciclo_strikes(
+    red_reloj_ms: i64,
+    espera_local_ms: u64,
+    umbral_ms: u64,
+    stalled: bool,
+    sin_eventos_nuevos: bool,
+) -> CicloStrikes {
+    let red = u64::try_from(red_reloj_ms).unwrap_or(0);
+    let edad = i128::from(red_reloj_ms) + i128::from(espera_local_ms);
+    let datos_viejos = edad > i128::from(umbral_ms);
+    let red_media = red > umbral_ms / 2;
+    if red > umbral_ms {
+        CicloStrikes::SumaRedLenta
+    } else if stalled && red_media {
+        CicloStrikes::SumaRedMediaConStall
+    } else if datos_viejos && red_media {
+        CicloStrikes::SumaRedMediaConDatosViejos
+    } else if stalled || sin_eventos_nuevos || datos_viejos {
+        CicloStrikes::Conserva
+    } else {
+        CicloStrikes::Reinicia
+    }
+}
+
+/// I-3a (Línea I): strikes de latencia del sistema inmune tras un ciclo.
+/// Ver [`CicloStrikes`] y [`ciclo_strikes`].
+#[inline]
+pub fn strikes_latencia(
+    previos: u32,
+    red_reloj_ms: i64,
+    espera_local_ms: u64,
+    umbral_ms: u64,
+    stalled: bool,
+    sin_eventos_nuevos: bool,
+) -> u32 {
+    ciclo_strikes(red_reloj_ms, espera_local_ms, umbral_ms, stalled, sin_eventos_nuevos).aplicar(previos)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -140,5 +243,146 @@ mod tests {
         assert_eq!(d.total_ms, i64::MAX);
         assert_eq!(d.espera_local_ms, i64::MAX);
         assert_eq!(d.red_reloj_ms, 0);
+    }
+
+    /// El inmune anterior (CERT-M4-H04) sobre la edad total del dato.
+    fn strikes_anteriores(previos: u32, edad_total_ms: u64, umbral_ms: u64, stalled: bool) -> u32 {
+        if edad_total_ms > umbral_ms || (stalled && edad_total_ms > umbral_ms / 2) {
+            previos.saturating_add(1)
+        } else if stalled {
+            previos
+        } else {
+            0
+        }
+    }
+
+    #[test]
+    fn i3_atraso_local_no_aplana() {
+        // La cifra mezclada de hoy (5 150 ms) sumaría 3 strikes y aplanaría;
+        // con la cola atrasada los strikes se conservan (en 0) y no crecen.
+        let edad = EdadEvento::medir(1_000, 6_150, Duration::from_millis(5_000));
+        let espera = u64::try_from(edad.espera_local_ms).unwrap_or(0);
+        let mut s = 0;
+        for _ in 0..3 {
+            s = strikes_latencia(s, edad.red_reloj_ms, espera, 3_141, false, false);
+        }
+        assert_eq!(s, 0);
+        assert_eq!(ciclo_strikes(edad.red_reloj_ms, espera, 3_141, false, false), CicloStrikes::Conserva);
+    }
+
+    #[test]
+    fn i3_datos_viejos_no_borran_strikes_previos() {
+        // Con la cola 5 s atrasada, una red sana medida en eventos viejos no
+        // reinicia los strikes que ya había: se conservan.
+        assert_eq!(strikes_latencia(2, 150, 5_000, 3_141, false, false), 2);
+        // Y una red media con la edad por encima del umbral suma, como antes.
+        assert_eq!(strikes_latencia(2, 1_600, 5_000, 3_141, false, false), 3);
+    }
+
+    #[test]
+    fn i3_banda_mixta_red_degradada_con_cola_moderada_suma() {
+        // Red 2,5 s (6 veces el p99 medido) y 700 ms de cola: edad 3,2 s por
+        // encima del umbral y el núcleo en LATENCY PANIC. El inmune anterior
+        // sumaba; este también, aunque la cola sola no pase el umbral.
+        assert_eq!(strikes_latencia(0, 2_500, 700, 3_141, false, false), 1);
+        assert_eq!(
+            ciclo_strikes(2_500, 700, 3_141, false, false),
+            CicloStrikes::SumaRedMediaConDatosViejos
+        );
+        // Con la red bajo la mitad del umbral el exceso es de la cola: conserva.
+        assert_eq!(strikes_latencia(2, 1_000, 2_500, 3_141, false, false), 2);
+    }
+
+    #[test]
+    fn i3_feed_quieto_sin_stall_conserva_y_no_suma_por_la_banda_media() {
+        // Sin eventos públicos nuevos la muestra es la del último evento: no
+        // reinicia, pero tampoco suma por la banda media antes de que el
+        // watchdog marque stall (paridad con CERT-M4-H04).
+        let mut s = 2;
+        for _ in 0..3 {
+            s = strikes_latencia(s, 1_600, 0, 3_141, false, true);
+        }
+        assert_eq!(s, 2);
+        // Una red congelada por encima del umbral sí suma, como antes.
+        assert_eq!(strikes_latencia(2, 3_500, 0, 3_141, false, true), 3);
+    }
+
+    #[test]
+    fn i3_red_lenta_sostenida_si_dispara() {
+        let mut s = 0;
+        for _ in 0..3 {
+            s = strikes_latencia(s, 4_000, 0, 3_141, false, false);
+        }
+        assert_eq!(s, 3);
+    }
+
+    #[test]
+    fn i3_paridad_con_cert_m4_h04() {
+        // stall puro: conserva; stall con red media: suma; sano: reinicia.
+        assert_eq!(strikes_latencia(2, 100, 0, 3_141, true, false), 2);
+        assert_eq!(strikes_latencia(2, 1_600, 0, 3_141, true, false), 3);
+        assert_eq!(strikes_latencia(2, 1_600, 0, 3_141, false, false), 0);
+        assert_eq!(strikes_latencia(2, 3_142, 0, 3_141, false, false), 3);
+        assert_eq!(strikes_latencia(2, 3_141, 0, 3_141, false, false), 0, "el umbral es estricto");
+    }
+
+    #[test]
+    fn i3_limites_estrictos() {
+        // La edad igual al umbral no son datos viejos.
+        assert_eq!(strikes_latencia(2, 150, 2_991, 3_141, false, false), 0);
+        assert_eq!(strikes_latencia(2, 150, 2_992, 3_141, false, false), 2);
+        // La mitad del umbral es estricta (3_141 / 2 = 1_570).
+        assert_eq!(strikes_latencia(2, 1_570, 0, 3_141, true, false), 2);
+        assert_eq!(strikes_latencia(2, 1_571, 0, 3_141, true, false), 3);
+        assert_eq!(strikes_latencia(2, 1_570, 1_572, 3_141, false, false), 2);
+        assert_eq!(strikes_latencia(2, 1_571, 1_571, 3_141, false, false), 3);
+    }
+
+    #[test]
+    fn i3_nunca_suma_ni_reinicia_donde_el_inmune_anterior_no_lo_hacia() {
+        // Barrido: donde el nuevo suma, el anterior (sobre la edad total)
+        // también sumaba; donde el nuevo reinicia, el anterior también. Las
+        // únicas diferencias son conservar.
+        let umbrales = [500_u64, 3_141, 10_000];
+        let redes = [
+            -10_000_i64, -500, 0, 100, 249, 250, 251, 499, 500, 501, 1_570, 1_571, 2_500, 3_141, 3_142, 5_000, 10_001,
+        ];
+        let esperas = [0_u64, 1, 250, 700, 1_572, 2_991, 2_992, 5_000, 12_000];
+        for &u in &umbrales {
+            for &r in &redes {
+                for &e in &esperas {
+                    for &stalled in &[false, true] {
+                        for &quieto in &[false, true] {
+                            let total = u64::try_from(r.saturating_add(e as i64)).unwrap_or(0);
+                            let nuevo = strikes_latencia(1, r, e, u, stalled, quieto);
+                            let anterior = strikes_anteriores(1, total, u, stalled);
+                            let caso = format!("red {r}, espera {e}, umbral {u}, stall {stalled}, quieto {quieto}");
+                            if nuevo == 2 {
+                                assert_eq!(anterior, 2, "suma de más: {caso}");
+                            }
+                            if nuevo == 0 {
+                                assert_eq!(anterior, 0, "reinicia de más: {caso}");
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn i3b_sin_reinicio_un_stall_puro_tras_el_latch_volveria_a_aplanar() {
+        // Tras un latch por latencia los strikes quedan en 3; un stall puro
+        // los conserva, así que sin el reinicio del rearme el primer ciclo
+        // volvía a cumplir `>= 3` sin ninguna muestra lenta nueva.
+        assert_eq!(strikes_latencia(3, 100, 0, 3_141, true, false), 3);
+        assert_eq!(strikes_latencia(0, 100, 0, 3_141, true, false), 0);
+    }
+
+    #[test]
+    fn i3_reloj_retrasado_cuenta_como_cero_y_satura() {
+        assert_eq!(strikes_latencia(5, -10_000, 0, 3_141, false, false), 0);
+        assert_eq!(strikes_latencia(u32::MAX, i64::MAX, 0, 3_141, false, false), u32::MAX);
+        assert_eq!(strikes_latencia(1, i64::MIN, u64::MAX, 3_141, true, true), 1);
     }
 }
