@@ -1984,19 +1984,30 @@ impl OrderExecutor {
 
     /// N20 (CL-195): la descarga de exchangeInfo de esta llamada la paró el
     /// freno o la cuota: su rechazo local (CL-184) o el 429/418 de la propia
-    /// respuesta, que `handle_rate_limit_error` devuelve tal cual.
+    /// respuesta, que `handle_rate_limit_error` devuelve tal cual. N33
+    /// (CL-198): también la espera tras una descarga fallida (CL-197), que
+    /// vuelve sin red como el freno. Antes no contaba: cada llamada durante
+    /// la espera metía en la caché negativa, con su propia hora, un símbolo
+    /// cuya ausencia nada había probado, y la entrada sobrevivía a la espera
+    /// hasta 60 s más.
     fn descarga_frenada(e: &str) -> bool {
-        ["RATE_BRAKE", "RATE_LIMIT_COOLDOWN", "HTTP_429_RATE_LIMITED", "HTTP_418_IP_BANNED"]
-            .iter()
-            .any(|p| e.starts_with(p))
+        [
+            "RATE_BRAKE",
+            "RATE_LIMIT_COOLDOWN",
+            "HTTP_429_RATE_LIMITED",
+            "HTTP_418_IP_BANNED",
+            "EXCHANGE_INFO_EN_ESPERA",
+        ]
+        .iter()
+        .any(|p| e.starts_with(p))
     }
 
     /// N20 (CL-192, CL-195): si el paso 5 de `get_symbol_filter` guarda en la
     /// caché negativa un símbolo que ni exchangeInfo ni el registro aportan.
-    /// No cuando la descarga de esa llamada la paró el freno o la cuota
-    /// (`frenada`) y no hay un exchangeInfo guardado: nada prueba la ausencia,
-    /// mientras dure el freno la descarga ya vuelve sin red, y la entrada
-    /// sobreviviría al freno hasta 60 s. Un mapa guardado (nunca vacío,
+    /// No cuando la descarga de esa llamada la paró el freno, la cuota o la
+    /// espera de CL-197 (`frenada`) y no hay un exchangeInfo guardado: nada
+    /// prueba la ausencia, mientras duren la descarga ya vuelve sin red, y la
+    /// entrada sobreviviría al freno o a la espera hasta 60 s. Un mapa guardado (nunca vacío,
     /// CL-185) que no trae el símbolo sí la prueba, como en el paso 4. Otro
     /// fallo de la descarga cuenta como en F1-105, aunque otra petición haya
     /// armado el freno entretanto.
@@ -6188,6 +6199,7 @@ pub(crate) mod tests_n20 {
             ("RATE_LIMIT_COOLDOWN: activo hasta 2 (ahora 1)", true),
             ("HTTP_429_RATE_LIMITED retry_after=30", true),
             ("HTTP_418_IP_BANNED retry_after=300", true),
+            ("EXCHANGE_INFO_EN_ESPERA: la descarga anterior falló hace menos de 60 s", true),
             ("Network Error: operation timed out", false),
             ("EXCHANGE_INFO_SIN_FILTROS: {}", false),
             ("Binance API Error: status=503 body=", false),
@@ -6346,12 +6358,12 @@ pub(crate) mod tests_n20 {
         assert_eq!(d.matches("self.check_backoff(self.get_synced_timestamp())?;").count(), 1);
         // N23 (CL-196): cada respuesta pasa por `registrar_error`, que
         // devuelve su texto tal cual; N33 (CL-197): el único texto propio es
-        // el de la espera, que no es descarga frenada.
+        // el de la espera, que vuelve sin red como el freno (CL-198).
         assert_eq!(d.matches("map_err(").count(), 2, "{d}");
         assert_eq!(d.matches(".map_err(|e| self.registrar_error(&e))").count(), 2, "{d}");
         assert_eq!(d.matches("format!(").count(), 1, "{d}");
         assert_eq!(d.matches("\"EXCHANGE_INFO_EN_ESPERA: ").count(), 1, "{d}");
-        assert!(!OrderExecutor::descarga_frenada("EXCHANGE_INFO_EN_ESPERA: x"));
+        assert!(OrderExecutor::descarga_frenada("EXCHANGE_INFO_EN_ESPERA: x"));
         for envoltura in ["map_err(", "format!("] {
             assert!(!f.contains(envoltura), "{envoltura}");
         }
@@ -6565,7 +6577,7 @@ mod tests_n33 {
         assert!(empieza(&segunda, "EXCHANGE_INFO_EN_ESPERA"), "{segunda:?}");
         assert_eq!(conexiones, 2, "sólo la primera descarga y su reintento");
         let e = segunda.err().unwrap_or_default();
-        assert!(!OrderExecutor::descarga_frenada(&e), "la espera no es freno: {e}");
+        assert!(OrderExecutor::descarga_frenada(&e), "la espera vuelve sin red, como el freno (CL-198): {e}");
     }
 
     /// Un 429 que ya caducó (Retry-After 0) no deja la espera: lo cubre el
@@ -6588,9 +6600,12 @@ mod tests_n33 {
 
     /// RED antes de CL-197: con la espera armada y sin un exchangeInfo
     /// guardado, `get_symbol_filter` vuelve sin red (antes la llamada quedaba
-    /// esperando otra descarga). Un símbolo sin spec entra en la caché
-    /// negativa como en F1-105. `clear_negative_symbol_cache` borra también
-    /// la espera.
+    /// esperando otra descarga). RED antes de CL-198: un símbolo sin spec
+    /// entraba en la caché negativa con la hora de esa llamada, sin que
+    /// ninguna descarga probara su ausencia, y la entrada sobrevivía a la
+    /// espera hasta 60 s más (hasta unos 2·TTL sin descargar). Ahora queda
+    /// fuera, como con el freno (CL-195). `clear_negative_symbol_cache` borra
+    /// también la espera.
     #[tokio::test]
     async fn cl197_get_symbol_filter_no_descarga_durante_la_espera() {
         let cinco = respuesta("503 Service Unavailable", "", "");
@@ -6602,7 +6617,7 @@ mod tests_n33 {
             matches!(r, Some(Err(ref e)) if e.starts_with("filtro de precisión desconocido")),
             "vuelve sin red: {r:?}"
         );
-        assert_eq!(ex.negative_symbol_cache_len(), 1);
+        assert_eq!(ex.negative_symbol_cache_len(), 0, "la espera no prueba la ausencia");
         ex.clear_negative_symbol_cache();
         let r = ex.get_symbol_filter("CL197SINSPECUSDT").now_or_never();
         assert!(r.is_none(), "sin la espera vuelve a descargar: {r:?}");
