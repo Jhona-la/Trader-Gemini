@@ -1483,15 +1483,17 @@ impl OrderExecutor {
             Tramo::Critica(coste) => {
                 // La regla del exchange (rechaza si usado + coste > límite), con
                 // las críticas admitidas y sin respuesta contadas como usadas.
+                // CL-181: en un contador donde la petición no gasta (c = 0) sólo
+                // la rechaza un uso ya por encima del límite; lo que está en
+                // vuelo no le quita un hueco que no ocupa.
                 let c = [coste.peso, coste.ordenes, coste.ordenes];
                 for k in 0..3 {
-                    let total = uso[k]
-                        .saturating_add(uso_exchange.en_vuelo[k])
-                        .saturating_add(c[k]);
+                    let pendiente = if c[k] == 0 { 0 } else { uso_exchange.en_vuelo[k] };
+                    let total = uso[k].saturating_add(pendiente).saturating_add(c[k]);
                     if total > limite[k] {
                         return Err(format!(
                             "RATE_LIMIT_EXHAUSTED_{}: {} usado + {} en vuelo + {} > {}",
-                            CONTADOR[k], uso[k], uso_exchange.en_vuelo[k], c[k], limite[k]
+                            CONTADOR[k], uso[k], pendiente, c[k], limite[k]
                         ));
                     }
                 }
@@ -4391,8 +4393,9 @@ struct UsoExchange {
 ///   regla de siempre (F1.8). El 0,8 es la reserva para el tramo crítico.
 /// - `Critica(c)`: salidas, protección y lo que las sostiene (positionRisk,
 ///   cancelaciones, piernas, cierres reduce-only, consulta de una orden
-///   ambigua). Pasan mientras uso + en vuelo + c ≤ L en los tres contadores:
-///   la regla del exchange, sin literal. Antes frenaban al 80 % como una
+///   ambigua). Pasan mientras uso + en vuelo + c ≤ L en cada contador en el
+///   que gastan (c > 0), y uso ≤ L en los demás: la regla del exchange, sin
+///   literal. Antes frenaban al 80 % como una
 ///   lectura, y en la franja (0,8·L, L] el host no podía cerrar ni proteger
 ///   aunque el exchange lo admitía.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -4948,6 +4951,35 @@ mod tests_n5c {
         assert_eq!(ex.uso_exchange_bloqueado().en_vuelo, [2, 2, 2]);
         drop(par);
         assert_eq!(ex.uso_exchange_bloqueado().en_vuelo, [0, 0, 0]);
+    }
+
+    /// RED antes de CL-181: un cierre (peso 0) se rechazaba por el peso que
+    /// tenía en vuelo un positionRisk, y un positionRisk (0 órdenes) por el par
+    /// OCO en vuelo, aunque el exchange admite los dos: no gastan en ese
+    /// contador.
+    #[test]
+    fn n5c_un_contador_sin_coste_no_frena_por_lo_que_esta_en_vuelo() {
+        let ex = ejecutor_con(Some(2_390), None, None, T0);
+        let pr = ex.check_exit_rate_limits(T0 + 1, Tramo::Critica(COSTE_POSITION_RISK));
+        assert!(pr.is_ok());
+        ex.observar_limites(&limites(Some(2_400), None, None), T0 + 2);
+        let r = critica(&ex, T0 + 2, COSTE_ORDEN);
+        assert!(r.is_ok(), "un cierre no pesa: {r:?}");
+        let r = critica(&ex, T0 + 2, COSTE_CANCELACION);
+        assert!(
+            matches!(&r, Err(e) if e.starts_with("RATE_LIMIT_EXHAUSTED_WEIGHT: 2400 usado + 5 en vuelo + 1 > 2400")),
+            "una cancelación sí: {r:?}"
+        );
+        drop(pr);
+
+        let ex = ejecutor_con(None, Some(298), None, T0);
+        let par = ex.check_exit_rate_limits(T0 + 1, Tramo::Critica(COSTE_PIERNA_ALGO.por(2)));
+        assert!(par.is_ok());
+        ex.observar_limites(&limites(None, Some(300), None), T0 + 2);
+        let r = critica(&ex, T0 + 2, COSTE_POSITION_RISK);
+        assert!(r.is_ok(), "positionRisk no cuenta órdenes: {r:?}");
+        assert!(critica(&ex, T0 + 2, COSTE_ORDEN).is_err());
+        drop(par);
     }
 
     /// El tramo crítico respeta los frenos del exchange y no el kill-switch
