@@ -330,23 +330,14 @@ pub struct OrderExecutor {
     /// F1.5: memoria del ciclo de vida de órdenes — compartida con el
     /// user-data stream (F1.6) y la reconciliación (F1.7).
     order_registry: std::sync::Arc<crate::order_registry::OrderRegistry>,
-    /// F1.8: no enviar órdenes hasta este timestamp (cooldown post-429).
-    cooldown_until_ms: AtomicU64,
-    /// F1.8: 429s consecutivos — >=3 sugiere ban inminente → kill-switch real.
-    consecutive_429: AtomicUsize,
-    /// FIX M4-C02 (quinta ola, CRITICAL): freno TEMPORAL por rate-limit
-    /// (3×429 escalado o HTTP 418). A diferencia de `kill_switch` —permanente y
-    /// reservado para incidentes reales (immune/X-009/insolvencia)— este freno
-    /// AUTO-EXPIRA en este timestamp, porque un 429/418 es transitorio (Binance
-    /// indica retry_after). Antes: trigger_kill_switch() latcheaba la ejecución
-    /// PARA SIEMPRE por un burst de rate-limit, dejando posiciones vivas sin
-    /// poder cerrarse (riesgo de liquidación) hasta reiniciar el proceso.
-    rate_brake_until_ms: AtomicU64,
     /// Cache en RAM de filtros de símbolos (tickSize, stepSize, minNotional) O(1) < 5ns
     symbol_filters: ArcSwap<std::collections::HashMap<String, SymbolFilter>>,
     /// F1-105: Caché negativa de símbolos desconocidos/no parseables con TTL (60s)
     negative_symbol_cache: std::sync::RwLock<std::collections::HashMap<String, std::time::Instant>>,
-    pub arena: ArcSwapOption<quantum_arena::GlobalArena>,
+    /// N20 (CL-188): el MISMO Arc que el reloj del freno 429/418 de `client`
+    /// (`FrenoExchange`), para que el ejecutor y los clones de su cliente
+    /// decidan con una sola hora sincronizada.
+    pub arena: Arc<ArcSwapOption<quantum_arena::GlobalArena>>,
     pub ws: std::sync::Arc<crate::ws_executor::WsExecutor>,
     pub is_hedge_mode: AtomicBool,
 }
@@ -371,9 +362,10 @@ pub enum OrderResolution {
 
 impl OrderExecutor {
     pub fn new(api_key: String, api_secret: String, is_testnet: bool) -> Self {
+        let reloj = Arc::new(ArcSwapOption::empty());
         Self {
             api_secret: ArcSwap::from_pointee(api_secret.clone()),
-            client: BinanceClient::new(api_key.clone(), is_testnet),
+            client: BinanceClient::new(api_key.clone(), is_testnet).con_reloj(Arc::clone(&reloj)),
             rate_limit_counter: AtomicUsize::new(0),
             last_reset_timestamp: AtomicU64::new(0),
             uso_exchange: std::sync::Mutex::new(UsoExchange::default()),
@@ -385,12 +377,9 @@ impl OrderExecutor {
             active_leverage: ArcSwap::from_pointee(std::collections::HashMap::new()),
             is_paper_trading: false, // Desacoplado: false por defecto para permitir órdenes reales en Testnet/Mainnet; activar con set_paper_trading(true) si se desea simular
             order_registry: std::sync::Arc::new(crate::order_registry::OrderRegistry::new()),
-            cooldown_until_ms: AtomicU64::new(0),
-            consecutive_429: AtomicUsize::new(0),
-            rate_brake_until_ms: AtomicU64::new(0),
             symbol_filters: ArcSwap::from_pointee(std::collections::HashMap::new()),
             negative_symbol_cache: std::sync::RwLock::new(std::collections::HashMap::new()),
-            arena: ArcSwapOption::empty(),
+            arena: reloj,
             ws: std::sync::Arc::new(crate::ws_executor::WsExecutor::new(
                 api_key, api_secret, is_testnet,
             )),
@@ -408,9 +397,10 @@ impl OrderExecutor {
         order_registry: std::sync::Arc<crate::order_registry::OrderRegistry>,
         arena: Option<std::sync::Arc<quantum_arena::GlobalArena>>,
     ) -> Self {
+        let reloj = Arc::new(ArcSwapOption::new(arena));
         Self {
             api_secret: ArcSwap::from_pointee(api_secret.clone()),
-            client: BinanceClient::new(api_key.clone(), is_testnet),
+            client: BinanceClient::new(api_key.clone(), is_testnet).con_reloj(Arc::clone(&reloj)),
             rate_limit_counter: AtomicUsize::new(0),
             last_reset_timestamp: AtomicU64::new(0),
             uso_exchange: std::sync::Mutex::new(UsoExchange::default()),
@@ -422,12 +412,9 @@ impl OrderExecutor {
             active_leverage: ArcSwap::from_pointee(std::collections::HashMap::new()),
             is_paper_trading: false,
             order_registry,
-            cooldown_until_ms: AtomicU64::new(0),
-            consecutive_429: AtomicUsize::new(0),
-            rate_brake_until_ms: AtomicU64::new(0),
             symbol_filters: ArcSwap::from_pointee(std::collections::HashMap::new()),
             negative_symbol_cache: std::sync::RwLock::new(std::collections::HashMap::new()),
-            arena: ArcSwapOption::new(arena),
+            arena: reloj,
             ws: std::sync::Arc::new(crate::ws_executor::WsExecutor::new(
                 api_key, api_secret, is_testnet,
             )),
@@ -1275,12 +1262,9 @@ impl OrderExecutor {
     fn update_limits(&self, limits: &crate::client::BinanceRateLimits) {
         let now_ms = self.get_synced_timestamp();
         self.observar_limites(limits, now_ms);
-        // F1-005 (Ola Ω150): Solo reiniciar consecutive_429 cuando el cooldown activo ya expiró.
-        // Antes, cualquier 2xx concurrente durante una ráfaga reiniciaba consecutive_429 a 0
-        // en medio del cooldown, impidiendo alcanzar el umbral de 3+ 429 consecutivos.
-        if now_ms >= self.cooldown_until_ms.load(Ordering::Relaxed) {
-            self.consecutive_429.store(0, Ordering::Relaxed);
-        }
+        // F1-005 (Ola Ω150): sólo reinicia consecutive_429 con el cooldown ya
+        // expirado (FrenoExchange::exito, CL-188).
+        self.client.freno().exito(now_ms);
     }
 
     /// N5 (CL-177): registra el uso de una respuesta. Sólo los contadores cuya
@@ -1318,86 +1302,12 @@ impl OrderExecutor {
     ///
     /// Antes: un SOLO 429 disparaba el kill-switch permanente — el sistema
     /// quedaba muerto hasta reinicio por un freno transitorio del exchange.
+    ///
+    /// N20 (CL-188): el estado vive en `FrenoExchange`, compartido con los
+    /// clones del cliente; éste sigue siendo el único registro de las
+    /// respuestas del ejecutor.
     fn handle_rate_limit_error(&self, e: &str) -> String {
-        if e.starts_with("HTTP_429_RATE_LIMITED") {
-            let retry_after_s: u64 = e
-                .split("retry_after=")
-                .nth(1)
-                .and_then(|s| s.trim().parse().ok())
-                .unwrap_or(60);
-            let arena_guard = self.arena.load_full();
-            let now = current_synced_timestamp_ms(arena_guard.as_deref());
-            drop(arena_guard);
-            let until = now.saturating_add(retry_after_s.saturating_mul(1000));
-            // Máximo atómico: conservar cooldown mayor si ya existía.
-            let mut cur = self.cooldown_until_ms.load(Ordering::Relaxed);
-            while until > cur {
-                match self.cooldown_until_ms.compare_exchange(
-                    cur,
-                    until,
-                    Ordering::Relaxed,
-                    Ordering::Relaxed,
-                ) {
-                    Ok(_) => break,
-                    Err(v) => cur = v,
-                }
-            }
-            let n = self.consecutive_429.fetch_add(1, Ordering::Relaxed) + 1;
-            println!(
-                "⏳ [RATE-LIMIT] 429 consecutivo #{}: cooldown {}s (hasta ms {})",
-                n, retry_after_s, until
-            );
-            if n >= 3 {
-                // FIX M4-C02: freno TEMPORAL escalado, NO kill-switch permanente.
-                // Un burst de 429 es transitorio; latchear para siempre dejaba
-                // posiciones vivas sin cierre (liquidación) hasta reiniciar.
-                // Ventana = cooldown actual + 60s de margen de seguridad.
-                let brake_until = until.saturating_add(60_000);
-                self.extend_rate_brake(brake_until);
-                println!(
-                    "🚨 [RATE BRAKE] 3+ rate limits consecutivos — freno temporal hasta ms {} (auto-rearme).",
-                    brake_until
-                );
-            }
-        } else if e.starts_with("HTTP_418_IP_BANNED") {
-            // FIX M4-C02: el ban de IP es temporal (Binance lo levanta). Freno
-            // por la ventana indicada (o 5 min por defecto) — si sigue banneado
-            // al expirar, el próximo 418 re-latchea. Nunca permanente.
-            let ban_s: u64 = e
-                .split("retry_after=")
-                .nth(1)
-                .and_then(|s| s.trim().parse().ok())
-                .unwrap_or(300);
-            let arena_guard = self.arena.load_full();
-            let now = current_synced_timestamp_ms(arena_guard.as_deref());
-            drop(arena_guard);
-            let brake_until = now.saturating_add(ban_s.saturating_mul(1000));
-            self.extend_rate_brake(brake_until);
-            println!(
-                "🚨 [RATE BRAKE] HTTP 418: IP baneada — freno temporal {}s (auto-rearme hasta ms {}).",
-                ban_s, brake_until
-            );
-        }
-        e.to_string()
-    }
-
-    /// FIX M4-C02: extiende el freno temporal por rate-limit (máximo atómico —
-    /// nunca acorta una ventana ya activa). Auto-expira: check_rate_limits lo
-    /// libera cuando timestamp_ms >= rate_brake_until_ms.
-    #[inline(always)]
-    fn extend_rate_brake(&self, until_ms: u64) {
-        let mut cur = self.rate_brake_until_ms.load(Ordering::Relaxed);
-        while until_ms > cur {
-            match self.rate_brake_until_ms.compare_exchange(
-                cur,
-                until_ms,
-                Ordering::Relaxed,
-                Ordering::Relaxed,
-            ) {
-                Ok(_) => break,
-                Err(v) => cur = v,
-            }
-        }
+        self.client.freno().registrar(e)
     }
 
     /// B1.3: lector público del kill-switch para el watchdog de protección
@@ -1443,27 +1353,9 @@ impl OrderExecutor {
     /// user-data stream) son la fila N20 del censo C-F7b. Todo llamador de
     /// `get_payload_account` frena antes de llamarla (CL-187).
     fn check_backoff(&self, timestamp_ms: u64) -> Result<(), String> {
-        // FIX M4-C02: freno TEMPORAL por rate-limit (3×429 escalado / HTTP 418).
-        // A diferencia del kill_switch permanente (incidentes reales), este
-        // auto-expira: cuando timestamp_ms >= rate_brake_until_ms la ejecución
-        // se libera sola, sin reinicio de proceso.
-        let brake_until = self.rate_brake_until_ms.load(Ordering::Relaxed);
-        if timestamp_ms < brake_until {
-            return Err(format!(
-                "RATE_BRAKE: freno temporal activo hasta {} (ahora {})",
-                brake_until, timestamp_ms
-            ));
-        }
-
-        // F1.8: cooldown post-429 — Binance ya nos frenó; respetar la ventana.
-        if timestamp_ms < self.cooldown_until_ms.load(Ordering::Relaxed) {
-            return Err(format!(
-                "RATE_LIMIT_COOLDOWN: activo hasta {} (ahora {})",
-                self.cooldown_until_ms.load(Ordering::Relaxed),
-                timestamp_ms
-            ));
-        }
-        Ok(())
+        // N20 (CL-188): el freno de `FrenoExchange` (RATE_BRAKE de M4-C02 y el
+        // cooldown post-429 de F1.8), el mismo que ven los clones del cliente.
+        self.client.freno().comprobar(timestamp_ms)
     }
 
     /// CL-3 — EL KILL-SWITCH BLOQUEA LO QUE AUMENTA EL RIESGO, NO LAS SALIDAS.
@@ -5669,7 +5561,7 @@ mod tests_m4_c02 {
         let ex = executor();
         ex.handle_rate_limit_error("HTTP_429_RATE_LIMITED retry_after=30");
         ex.handle_rate_limit_error("HTTP_429_RATE_LIMITED retry_after=30");
-        assert_eq!(ex.consecutive_429.load(Ordering::Relaxed), 2);
+        assert_eq!(ex.client.freno().consecutive_429.load(Ordering::Relaxed), 2);
 
         // Un 2xx concurrente llega mientras el cooldown de 30s sigue activo:
         ex.update_limits(&crate::client::BinanceRateLimits {
@@ -5678,14 +5570,14 @@ mod tests_m4_c02 {
             orders_1m: Some(20),
         });
         assert_eq!(
-            ex.consecutive_429.load(Ordering::Relaxed),
+            ex.client.freno().consecutive_429.load(Ordering::Relaxed),
             2,
             "un 2xx concurrente durante cooldown activo no debe borrar consecutive_429"
         );
 
         // Un tercer 429 en la misma ráfaga activa RATE_BRAKE temporal:
         ex.handle_rate_limit_error("HTTP_429_RATE_LIMITED retry_after=30");
-        assert_eq!(ex.consecutive_429.load(Ordering::Relaxed), 3);
+        assert_eq!(ex.client.freno().consecutive_429.load(Ordering::Relaxed), 3);
         let now = current_synced_timestamp_ms(None);
         assert!(
             matches!(ex.check_rate_limits(now), Err(e) if e.starts_with("RATE_BRAKE")),
@@ -5693,13 +5585,13 @@ mod tests_m4_c02 {
         );
 
         // Una vez expirado el cooldown, un 2xx sano sí restablece consecutive_429 a 0:
-        ex.cooldown_until_ms.store(0, Ordering::Relaxed);
+        ex.client.freno().cooldown_until_ms.store(0, Ordering::Relaxed);
         ex.update_limits(&crate::client::BinanceRateLimits {
             weight_1m: Some(100),
             orders_10s: Some(1),
             orders_1m: Some(5),
         });
-        assert_eq!(ex.consecutive_429.load(Ordering::Relaxed), 0);
+        assert_eq!(ex.client.freno().consecutive_429.load(Ordering::Relaxed), 0);
     }
 }
 
@@ -5958,5 +5850,38 @@ mod tests_n20 {
         let get = get.unwrap_or(0);
         assert!(hora[..get].contains("check_backoff("), "la hora mira el freno");
         assert!(!hora.contains("Tramo::"), "sólo el freno: pesa 1 y fija el reloj");
+    }
+
+    /// CL-188 (refactor sin cambio de conducta): el freno 429/418 es uno por
+    /// ejecutor y lo comparten los clones de su cliente (stream y NTP), con
+    /// el reloj sincronizado del ejecutor. Cada ejecutor nuevo empieza sin él.
+    #[test]
+    fn cl188_los_clones_del_cliente_comparten_el_freno_y_el_reloj() {
+        let ex = ex();
+        let clon = ex.client().clone();
+        let ahora = ex.get_synced_timestamp();
+        assert!(clon.freno().comprobar(ahora).is_ok());
+        ex.handle_rate_limit_error("HTTP_418_IP_BANNED retry_after=300");
+        assert!(matches!(clon.freno().comprobar(ahora), Err(ref e) if e.starts_with("RATE_BRAKE")));
+
+        let ex = self::ex();
+        let clon = ex.client().clone();
+        clon.freno().registrar("HTTP_429_RATE_LIMITED retry_after=30");
+        clon.clone().freno().registrar("HTTP_429_RATE_LIMITED retry_after=30");
+        let ahora = ex.get_synced_timestamp();
+        assert!(matches!(ex.check_backoff(ahora), Err(ref e) if e.starts_with("RATE_LIMIT_COOLDOWN")));
+        ex.handle_rate_limit_error("HTTP_429_RATE_LIMITED retry_after=30");
+        assert!(matches!(ex.check_backoff(ahora), Err(ref e) if e.starts_with("RATE_BRAKE")));
+
+        let arena = quantum_arena::GlobalArena::build_in_own_stack(100.0);
+        arena.server_time_offset_ms.store(3_600_000, Ordering::Relaxed);
+        let ex = self::ex();
+        let clon = ex.client().clone();
+        ex.arena.store(Some(arena));
+        let esperado = current_timestamp_ms().saturating_add(3_600_000);
+        assert!(clon.freno().ahora_ms().abs_diff(esperado) < 1_000, "un solo reloj");
+
+        let solo = crate::client::BinanceClient::new("k".into(), true);
+        assert!(solo.freno().comprobar(ahora).is_ok(), "un cliente suelto empieza sin freno");
     }
 }
