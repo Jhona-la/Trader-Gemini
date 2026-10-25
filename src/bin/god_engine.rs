@@ -3395,12 +3395,25 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                             };
                                             match close_res {
                                                 Ok(()) => {
-                                                    let _ = exec_esc
+                                                    // N15 / CL-176 (censo C-F7b), como
+                                                    // D-698: el fallo de la purga se
+                                                    // reporta, porque una pierna que
+                                                    // sobrevive dispara sobre la posición
+                                                    // siguiente. El watchdog la recoge en
+                                                    // la próxima auditoría; el log ya no
+                                                    // dice «purgados» si no lo están.
+                                                    let purga = exec_esc
                                                         .cancel_position_oco_orders(
                                                             &close_sym,
                                                             close_long,
                                                         )
                                                         .await;
+                                                    if let Err(e) = &purga {
+                                                        telemetry_engine::telemetry_err!(
+                                                            "⚠️ [NAKED-ESCALATION] {} cerrada pero brackets sin purgar: {}",
+                                                            close_sym, e
+                                                        );
+                                                    }
                                                     naked_streak.remove(&close_sym);
                                                     // B3.19 — la emergencia también
                                                     // alimenta la contabilidad y el
@@ -3415,10 +3428,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                                         &arena_wd,
                                                         "NAKED-ESC",
                                                     );
-                                                    telemetry_server::telemetry_log!(
-                                                        "🛑 [NAKED-ESCALATION] {} cerrada por emergencia — brackets purgados",
-                                                        close_sym
-                                                    );
+                                                    if purga.is_ok() {
+                                                        telemetry_server::telemetry_log!(
+                                                            "🛑 [NAKED-ESCALATION] {} cerrada por emergencia — brackets purgados",
+                                                            close_sym
+                                                        );
+                                                    } else {
+                                                        telemetry_server::telemetry_log!(
+                                                            "🛑 [NAKED-ESCALATION] {} cerrada por emergencia",
+                                                            close_sym
+                                                        );
+                                                    }
                                                 }
                                                 Err(e) => {
                                                     telemetry_server::telemetry_log!(
