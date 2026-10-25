@@ -1074,6 +1074,13 @@ async fn run_forensic_backtest() {
     println!("{}", core.diag_dir.report());
     // Rechazos del risk-engine por compuerta y dirección (sólo telemetría).
     println!("RISK_REJECT {}", risk_engine::reject_report());
+    // CL-166: el libro de la sombra Kelly (CL-164), LH-04 frente al Kelly
+    // legado, por moneda con cierres (sólo telemetría).
+    for coin_id in 0..arena.coins.len() {
+        if let Some(linea) = risk_engine::RiskEngine::informe_sombra_kelly(&arena, coin_id) {
+            println!("SOMBRA_KELLY {linea}");
+        }
+    }
 
     println!();
     println!("🛡️ ═══════════════════════════════════════════════════════════════");

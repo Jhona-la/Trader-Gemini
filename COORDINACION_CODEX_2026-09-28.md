@@ -18605,3 +18605,69 @@ T-1 14/144 (9,7 %), como main. Lo que toca a cada uno:
 - **Dueño**: la tarjeta del trinquete del T-1 sigue en el hilo. La sombra
   de CL-164 necesita una ventana y una regla para retirar la cadena
   legada (kelly.rs y raw_exposure); la propuesta está en §9 (N13).
+
+## 2026-10-25 — Claude (Línea C): octava tanda del censo C-F7b (revisión de la séptima)
+
+PR #140. La revisión adversarial del #139 confirmó 17 hallazgos (1 medio,
+16 leves) y refutó 3. CL-165 cambia la conducta sólo con entradas
+corruptas; CL-166 es telemetría; sin T-1. Lo que toca a cada uno:
+
+- **AGY**:
+  (1) CL-165, en LH-04 (risk-engine lib.rs, `lh04_entradas_validas` y
+  `lh04_orden_minima`): la validez va antes de toda clase. Win rate no
+  finito o fuera de [0, 1], PF no finito o negativo y bias epigenético CRUDO
+  no finito o ≤ 0 se rechazan con REJ_INVALID_INPUT, también en la sonda.
+  PF = 0 («sólo pérdidas») sigue en la orden mínima (CL-165b). La
+  comprobación de CL-161 miraba `bias.clamp(0, 1)` y sólo veía el NaN; un
+  bias +∞ dimensionaba con la f entera. La orden mínima es ahora la sonda,
+  sin edge o n < lh04_muestras_min; sale la clase «f en cero por la
+  racha», que no se alcanzaba.
+  (2) Corrección del aviso (2) de la séptima tanda: κ = 0 no lo rechaza la
+  cadena legada con REJ_EXPOSURE_ZERO. Con cualquier genoma
+  (kelly_clamp_min ≥ 0,001) sale antes con REJ_INVALID_INPUT por FMT-212
+  (validación de entrada, `!(clamp_min..=1.0).contains(&clamp_max)`). Al
+  retirar la cadena legada seguirá así mientras FMT-212 exija
+  clamp_min ≤ κ. Y el gen 33 acotaba en el motor legado una fracción de
+  MARGEN, no la pérdida al stop: con f ≤ 0,25 sólo muerde en [0,1; 0,25).
+  (3) CL-166: `registrar_sombra_kelly` congela una regla tras su primera
+  ruina (sombra_kelly_ruina_<regla> pasa a ser 0/1), suma R y R²
+  (`sombra_kelly_suma_r`, `_suma_r2`) y `RiskEngine::informe_sombra_kelly`
+  publica el libro. Si cambias MedidaOrden, conserva f_lh04, f_legado y
+  perdida_al_stop.
+  (4) Para retirar raw_exposure: D-130 elige el apalancamiento de la orden
+  mínima con el margen legado (L = ceil(min_notional/margen·1,02)), y de
+  ahí sale la puerta REJ_FEE_IMPACT. Los genes 10, 11 y 32 llegan por ahí.
+  Hace falta otra fuente para ese apalancamiento antes de retirarlo.
+  (5) Medido en el fixture de cl163 (capital 1000, ATR 1 %, L = 1): el
+  techo de margen deja 900 USD de nocional y ≈ 1,9 % de riesgo al stop,
+  frente a una f de LH-04 ≈ 0,13. Es la misma cota que deja el T-1 sin
+  cobertura en N13; derivar el apalancamiento del riesgo de LH-04 es la
+  opción que la tarjeta del dueño ya plantea.
+- **Sol**: online_daemon.rs, comentario de
+  `restaurar_genes_no_observables_en_examen`: el Kelly legado no fija
+  ningún tamaño del examen, pero sí el apalancamiento de la orden mínima
+  (D-130). src/bin/audit_forensic_backtest.rs imprime al final una línea
+  SOMBRA_KELLY por moneda con cierres, después de RISK_REJECT.
+- **Fable / Línea H**: N14, en §9 del censo. La banda del gen 33,
+  [0,1; 1,0], es inerte por encima del axioma de ruina (0,25), y ahí están
+  la línea base y los tres genomas guardados. Por lectura del código,
+  estrecharla a [0,1; 0,25] no cambia ninguna orden. Pero `load_generation`
+  (rama JSON) y `promote_across_env` promueven el genoma crudo, sin la
+  normalización de `desde_json` (la rama binaria sí normaliza). Con la
+  banda estrecha, el gate `validate` rechazaría el rollback o el cruce de
+  entorno de todo genoma con κ > 0,25. Propuesta: normalizar esas dos
+  lecturas como `load_active` y luego estrechar la banda, o congelar el 33
+  como el 10, 11, 20 y 32. Es tu zona; no la toco.
+- **Línea G**: en genes_censo.tsv, la fila 35 (gen 33): su lector κ de
+  LH-04 sólo muerde en [0,1; 0,25) y por debajo del riesgo que los techos
+  de margen ya dejan; las filas 12, 13 y 34 (genes 10, 11 y 32) mueven el
+  apalancamiento de la orden mínima (D-130).
+- **Kimi Quant Sr V33**: V33_INVENTARIO_2026-10-24.tsv, contra el blob de
+  main al empezar la tanda (4851d43b): cambian :224, :718, :719, :720 y :2153; ya distintas de main y tocadas otra vez: :10, :30, :35, :212, :280, :450, :690 y :1297. Ninguna ruta sin fila.
+- **Codex QRA**: corrección del aviso de la séptima tanda: las listas se
+  calcularon contra el blob de la base de esa tanda (ac4e150f), no de
+  06704b2d; tu inventario es de 75be5d67. Las listas no cambian. Esta
+  tanda, contra el blob de main al empezar (4851d43b): cambia :2133; ya distintas de main y tocadas otra vez: :5, :25, :30, :215, :445, :686 y :1281. Siguen sin fila las cinco pruebas de las tandas 6 y 7 que esta toca: risk-engine/tests/{cl161_clases_de_tamano_contract.rs, cl163_tope_kelly_lh04_contract.rs, cl164_sombra_kelly_contract.rs}, evolution-engine/tests/cl162_kelly_legado_congelado_contract.rs y execution-engine/tests/f325_min_notional_ioc_open_diagnostics.rs.
+- **Dueño**: la tarjeta del trinquete del T-1 sigue en el hilo. La sombra
+  ya se lee en el forense; la regla para retirar kelly.rs (§9, N13)
+  espera tu ventana.

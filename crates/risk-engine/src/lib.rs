@@ -344,17 +344,30 @@ impl RiskEngine {
     /// tamaño sobre la MISMA secuencia de operaciones: LH-04, el Kelly legado
     /// y el mínimo de las dos. Con R = retorno neto / (SL + c), una apuesta f
     /// multiplica el capital por 1 + f·R; el libro suma ln(1 + f·R) por
-    /// moneda y cuenta como ruina toda operación con 1 + f·R ≤ 0 (un hueco
-    /// más allá del stop), sin llevar nunca un NaN ni un infinito al
-    /// registro. Es el criterio de Kelly medido fuera de muestra: decide si
-    /// la cadena legada aporta algo antes de retirarla. No dimensiona nada.
-    /// `retorno_neto` es el PnL neto del cierre sobre su nocional.
+    /// moneda, sin llevar nunca un NaN ni un infinito al registro. No
+    /// dimensiona nada. `retorno_neto` es el PnL neto del cierre sobre su
+    /// nocional.
+    ///
+    /// La columna «legado» es el número de kelly.rs (o el arranque en frío)
+    /// tras el tope del gen y la ruina, LEÍDO COMO f al stop: no es el tamaño
+    /// que fijaba la cadena legada (la usaba como fracción de MARGEN) y no
+    /// recoge los moduladores que sólo viven en `raw_exposure` (gen 143,
+    /// convicción D-750, interpolación micro, Ω134). La sonda y las órdenes
+    /// mínimas entran con su `f_lh04` (0 sin edge o sin muestras).
+    ///
+    /// CL-166: una operación con 1 + f·R ≤ 0 (un hueco más allá de 1/f
+    /// stops) es la RUINA de esa regla: su log-riqueza es −∞ y pierde toda
+    /// comparación. El libro la marca (`sombra_kelly_ruina_<regla>` = 1) y
+    /// deja de sumarle cierres: su `logw` queda en lo que tenía antes de
+    /// arruinarse. Aparte suma R y R² de cada cierre (`sombra_kelly_suma_r`,
+    /// `sombra_kelly_suma_r2`), los momentos de la apuesta en unidades de
+    /// stop, y [`Self::informe_sombra_kelly`] los publica.
     pub fn registrar_sombra_kelly(arena: &GlobalArena, m: &MedidaOrden, retorno_neto: f64) {
         if !(retorno_neto.is_finite() && m.perdida_al_stop.is_finite() && m.perdida_al_stop > 0.0) {
             return;
         }
         let r = retorno_neto / m.perdida_al_stop;
-        if !r.is_finite() {
+        if !(r.is_finite() && (r * r).is_finite()) {
             return;
         }
         let reglas = [
@@ -363,6 +376,9 @@ impl RiskEngine {
             ("sombra_kelly_logw_min", "sombra_kelly_ruina_min", m.f_lh04.min(m.f_legado)),
         ];
         for (clave_logw, clave_ruina, f) in reglas {
+            if arena.registry.get_for_coin_or(m.coin_id, clave_ruina, 0.0) > 0.0 {
+                continue;
+            }
             let crecimiento = 1.0 + f * r;
             if crecimiento.is_finite() && crecimiento > 0.0 {
                 let previo = arena.registry.get_for_coin_or(m.coin_id, clave_logw, 0.0);
@@ -370,12 +386,44 @@ impl RiskEngine {
                     .registry
                     .set_for_coin(m.coin_id, clave_logw, previo + crecimiento.ln());
             } else {
-                let previo = arena.registry.get_for_coin_or(m.coin_id, clave_ruina, 0.0);
-                arena.registry.set_for_coin(m.coin_id, clave_ruina, previo + 1.0);
+                arena.registry.set_for_coin(m.coin_id, clave_ruina, 1.0);
             }
+        }
+        for (clave, x) in [("sombra_kelly_suma_r", r), ("sombra_kelly_suma_r2", r * r)] {
+            let previo = arena.registry.get_for_coin_or(m.coin_id, clave, 0.0);
+            arena.registry.set_for_coin(m.coin_id, clave, previo + x);
         }
         let n = arena.registry.get_for_coin_or(m.coin_id, "sombra_kelly_n", 0.0);
         arena.registry.set_for_coin(m.coin_id, "sombra_kelly_n", n + 1.0);
+    }
+
+    /// CL-166 — el lector del libro de la sombra (CL-164): una línea JSON por
+    /// moneda con n, la media de R y de R² y, por regla, su log-riqueza y si
+    /// se arruinó. `None` sin cierres. El forense la imprime al terminar
+    /// (`SOMBRA_KELLY`); cada mitad del forense es una corrida aparte
+    /// (`FORENSIC_START_TICK`, `MAX_TICKS`) y trae su propio libro.
+    pub fn informe_sombra_kelly(arena: &GlobalArena, coin_id: usize) -> Option<String> {
+        let leer = |clave: &str| arena.registry.get_for_coin_or(coin_id, clave, 0.0);
+        let n = leer("sombra_kelly_n");
+        if !(n.is_finite() && n >= 1.0) {
+            return None;
+        }
+        let mut linea = format!(
+            "{{\"coin\":{},\"n\":{},\"r_media\":{:.6},\"r2_media\":{:.6}",
+            coin_id,
+            n,
+            leer("sombra_kelly_suma_r") / n,
+            leer("sombra_kelly_suma_r2") / n
+        );
+        for regla in ["lh04", "legado", "min"] {
+            linea.push_str(&format!(
+                ",\"logw_{regla}\":{:.6},\"ruina_{regla}\":{}",
+                leer(&format!("sombra_kelly_logw_{regla}")),
+                leer(&format!("sombra_kelly_ruina_{regla}")) > 0.0
+            ));
+        }
+        linea.push('}');
+        Some(linea)
     }
 
     /// U-3 (MOTOR UNIVERSAL CONTINUO): la API dual `evaluate_order`
@@ -1536,9 +1584,10 @@ impl RiskEngine {
         // de ida y vuelta (CL-159), ≈ f·C. TODOS los
         // floors downstream (viabilidad D-750, rescate de nocional
         // mínimo, fee_impact LH-02, invariantes) se aplican IGUAL sobre
-        // este margen. Sin evidencia (n < mínimo, p̂ degenerado, PF ≤ 0):
-        // f = 0 y el camino sizing/micro/exploración existente queda
-        // INTACTO — fail-closed al estado actual.
+        // este margen. Sin evidencia (n < mínimo) o sin edge demostrado
+        // (p̂ degenerado, PF ≤ 1, f = 0) la orden es la mínima del símbolo
+        // (F1-087, CL-161: `lh04_orden_minima`); con entradas corruptas se
+        // rechaza (REJ_INVALID_INPUT, CL-165).
         // OLA Ω127: Desacoplamiento de constantes estáticas hacia el registro omnisciente con fallbacks canónicos.
         let z_lcb_lh04 = arena.registry.get_value_or("lh04_z_lcb", 1.64);
         let half_kelly_lh04 = arena.registry.get_value_or("lh04_kelly_fraction", 0.5);
@@ -1579,13 +1628,17 @@ impl RiskEngine {
             let q_lh04 = crate::ruin::conservative_loss_q(lh04_wr, lh04_n);
             let tope_lh04 = crate::ruin::clamp_ruin(1.0, q_lh04);
             // CL-163: el gen 33 (`kelly_clamp_max`, «apuesta Kelly máxima») es
-            // el techo de f. En el motor legado acotaba W·(1 − 1/PF)·λ, una
-            // fracción del capital arriesgada como f; desde F1-116 + F1-087 ese
-            // motor ya no fija tamaños y el gen no tenía efecto. Sólo aprieta:
-            // con κ ≥ f (la línea base 0,55 frente al axioma 0,25) no cambia
-            // nada, y κ = 0 lleva a la orden mínima por `lh04_sin_edge`. Es un
-            // límite evolucionable al riesgo de modelo que la cota de Wilson no
-            // ve (un acierto medido del 98 % sólo lo frena el axioma).
+            // el techo de f. En el motor legado acotaba la fracción de Kelly
+            // W·(1 − 1/PF)·λ, que esa cadena aplicaba como fracción de MARGEN
+            // (`raw_exposure = dir·conf·kelly·C`), no como pérdida al stop;
+            // desde F1-116 + F1-087 ese motor ya no fija tamaños. Sólo aprieta:
+            // como f ≤ clamp_ruin ≤ 0,25, κ sólo muerde en [0,1; 0,25) y la
+            // línea base (0,55) y los genomas guardados (0,8245) no cambian
+            // nada; la orden cambia sólo si κ baja también del riesgo que los
+            // techos de margen ya dejan. Un κ por debajo de `kelly_clamp_min`
+            // (κ = 0 incluido) lo rechaza antes FMT-212 (REJ_INVALID_INPUT).
+            // Es un límite evolucionable al riesgo de modelo que la cota de
+            // Wilson no ve (un acierto medido del 98 % sólo lo frena el axioma).
             let tope_gen = arena.config.kelly_clamp_max.load(Ordering::Relaxed);
             lh04_f = if f_raw.is_finite() && tope_gen.is_finite() {
                 f_raw.min(tope_lh04).min(tope_gen.max(0.0))
@@ -1625,16 +1678,18 @@ impl RiskEngine {
         //   tipo sonda): encogimiento, jamás veto eterno.
         // p_LCB misma NO cambia: la estadística de la cota queda limpia;
         // la adaptación es un multiplicador de régimen sobre el tamaño.
-        let lh04_bias_factor = if lh04_f > 0.0 && coin_id < arena.coins.len() {
+        // CL-165: el bias se valida CRUDO. `clamp(0, 1)` lleva +∞ a 1 y −∞ o
+        // un bias ≤ 0 a 0, así que validar el factor ya recortado sólo veía
+        // el NaN: un bias +∞ dimensionaba con la f entera.
+        let lh04_bias_bruto = if lh04_f > 0.0 && coin_id < arena.coins.len() {
             let now_ts = arena.coins[coin_id]
                 .last_tick_timestamp_ms
                 .load(Ordering::Relaxed);
-            arena.coins[coin_id]
-                .get_active_epigenetic_bias(now_ts)
-                .clamp(0.0, 1.0)
+            arena.coins[coin_id].get_active_epigenetic_bias(now_ts)
         } else {
             1.0
         };
+        let lh04_bias_factor = lh04_bias_bruto.clamp(0.0, 1.0);
         let lh04_f_efectiva = lh04_f * lh04_bias_factor;
         // F-A5 (Fable, 2026-10-17; hallazgo F1-013, confirmado por dos
         // escépticos): el nocional en espacio de riesgo se obtiene con el
@@ -1724,25 +1779,36 @@ impl RiskEngine {
             .set_for_coin(coin_id, "lh04_bias_factor", lh04_bias_factor);
         // CL-161: clases de tamaño explícitas. Una orden la dimensiona LH-04
         // (margen derivado de f arriba) o es la orden mínima del símbolo: la
-        // sonda, la moneda sin edge demostrado (F1-087), la que aún no reúne
-        // las muestras mínimas y aquella cuya f quedó en cero por la racha. Lo
-        // demás tiene entradas corruptas —win rate, profit factor o bias no
-        // finitos o fuera de dominio, o una f positiva sin nocional derivable—
-        // y se rechaza (FMT-212, F1-089). Antes dos de esos casos salían con
-        // el margen del Kelly legado (`raw_exposure`), el fail-open que F1-087
-        // decía cerrar: PF no finito tras la sonda y `lh04_muestras_min`
-        // sobreescrito por encima de n. Un bias NaN ya lo rechazaba la cadena
-        // legada al no ser finito `raw_exposure`; aquí no depende de ella.
+        // sonda, la moneda sin edge demostrado (F1-087) y la que aún no reúne
+        // las muestras mínimas. Lo demás se rechaza (FMT-212, F1-089): las
+        // entradas corruptas y una f positiva sin nocional derivable. Antes
+        // dos casos salían con el margen del Kelly legado (`raw_exposure`), el
+        // fail-open que F1-087 decía cerrar: PF no finito tras la sonda y
+        // `lh04_muestras_min` sobreescrito por encima de n.
+        // CL-165: la validez va ANTES de toda clase. Corrupto es un win rate
+        // no finito o fuera de [0, 1], un PF no finito o negativo y un bias
+        // crudo no finito o ≤ 0 (multiplica a f; el escritor lo deja en
+        // [0,5; 2]). CL-165b: PF = 0 no es corrupto. Es el valor honesto de
+        // «sólo pérdidas», el dominio [0, ∞) que admite la restauración del
+        // estado aprendido (`estado_aprendido::validar`) y el régimen con que
+        // los contratos del techo de comisión y del bias apagan LH-04; sale a
+        // la orden mínima por `lh04_sin_edge` o n < mínimo, como antes. Un
+        // bias finito y positivo fuera de su banda sólo encoge f o la deja
+        // igual: no es una entrada corrupta. La racha no anula f (bias ≥ 0,5),
+        // de modo que con entradas válidas f = 0 implica `lh04_sin_edge` o
+        // n < mínimo.
         let lh04_entradas_validas = lh04_wr.is_finite()
             && (0.0..=1.0).contains(&lh04_wr)
             && lh04_pf.is_finite()
-            && lh04_bias_factor.is_finite()
+            && lh04_pf >= 0.0
+            && lh04_bias_bruto.is_finite()
+            && lh04_bias_bruto > 0.0
             && lh04_f_efectiva.is_finite()
             && lh04_f_efectiva >= 0.0;
-        let lh04_orden_minima = es_sonda
-            || lh04_sin_edge
-            || (lh04_entradas_validas
-                && (lh04_n < muestras_min_lh04 || lh04_f_efectiva == 0.0));
+        if !lh04_entradas_validas {
+            return rej(REJ_INVALID_INPUT);
+        }
+        let lh04_orden_minima = es_sonda || lh04_sin_edge || lh04_n < muestras_min_lh04;
         if !lh04_dimensiona && !lh04_orden_minima {
             return rej(REJ_INVALID_INPUT);
         }
