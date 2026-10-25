@@ -15,9 +15,12 @@
 //! imprime como `SOMBRA_KELLY`).
 //!
 //! CL-168: en el informe, el `logw` de una regla arruinada sale como null
-//! (JSON no tiene −∞) y cualquier número no finito también; antes salía la
-//! suma congelada hasta la ruina (0 si se arruinaba en el primer cierre), que
-//! la hacía comparable con las vivas.
+//! (JSON no tiene −∞); antes salía la suma congelada hasta la ruina (0 si se
+//! arruinaba en el primer cierre), que la hacía comparable con las vivas.
+//!
+//! CL-169: el libro y su informe leen el registro de la moneda sin respaldo.
+//! Un acumulado no finito sale como null y el cierre siguiente no lo
+//! reinicia; antes llegaba como 0 y se publicaba un 0.000000 creíble.
 
 use quantum_arena::{
     symbol_registry::{update_registry, SymbolSpec},
@@ -231,4 +234,32 @@ fn cl166_el_informe_publica_el_libro() {
     let r_media = clave(&arena, "sombra_kelly_suma_r").unwrap_or(f64::NAN) / 2.0;
     assert!(linea.contains(&format!("\"r_media\":{r_media:.6}")), "{linea}");
     assert!(linea.ends_with('}') && !linea.contains("NaN") && !linea.contains("inf"), "{linea}");
+}
+
+#[test]
+fn cl169_un_acumulado_no_finito_sale_null_y_no_se_reinicia() {
+    let _serie = SERIE.lock().unwrap_or_else(|e| e.into_inner());
+    let (arena, medida) = orden_medida();
+    let sl = arena.registry.get_for_coin_or(0, "lh04_stop_real", f64::NAN);
+    RiskEngine::registrar_sombra_kelly(&arena, &medida, -sl);
+    // Un acumulado corrupto o desbordado en una regla viva y en los momentos.
+    arena.registry.set_for_coin(0, "sombra_kelly_suma_r2", f64::INFINITY);
+    arena.registry.set_for_coin(0, "sombra_kelly_logw_legado", f64::NAN);
+    for cierre in 1..=2 {
+        let linea = RiskEngine::informe_sombra_kelly(&arena, 0).unwrap_or_default();
+        println!("observado tras {cierre} cierre(s): {linea}");
+        assert!(linea.contains("\"r2_media\":null"), "R² no finita sale null, no 0: {linea}");
+        assert!(
+            linea.contains("\"logw_legado\":null,\"ruina_legado\":false"),
+            "un logw no finito sale null sin contarse como ruina: {linea}"
+        );
+        let logw = clave(&arena, "sombra_kelly_logw_lh04").unwrap_or(f64::NAN);
+        assert!(linea.contains(&format!("\"logw_lh04\":{logw:.6}")), "lo finito no cambia: {linea}");
+        assert!(linea.ends_with('}') && !linea.contains("NaN") && !linea.contains("inf"), "{linea}");
+        // El cierre siguiente no borra el acumulado corrupto.
+        RiskEngine::registrar_sombra_kelly(&arena, &medida, -sl);
+    }
+    assert!(!clave(&arena, "sombra_kelly_suma_r2").is_some_and(f64::is_finite));
+    assert!(!clave(&arena, "sombra_kelly_logw_legado").is_some_and(f64::is_finite));
+    assert_eq!(clave(&arena, "sombra_kelly_n"), Some(3.0));
 }

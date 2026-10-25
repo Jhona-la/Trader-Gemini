@@ -362,6 +362,12 @@ impl RiskEngine {
     /// arruinarse. Aparte suma R y R² de cada cierre (`sombra_kelly_suma_r`,
     /// `sombra_kelly_suma_r2`), los momentos de la apuesta en unidades de
     /// stop, y [`Self::informe_sombra_kelly`] los publica.
+    ///
+    /// CL-169: los acumulados se leen sin respaldo (`get_for_coin_strict`).
+    /// Antes `get_for_coin_or` cambiaba un acumulado no finito por 0 y el
+    /// cierre siguiente lo reiniciaba en silencio. Ahora un acumulado no
+    /// finito (corrupto, o una suma desbordada) se queda como está y el
+    /// informe lo publica como null.
     pub fn registrar_sombra_kelly(arena: &GlobalArena, m: &MedidaOrden, retorno_neto: f64) {
         if !(retorno_neto.is_finite() && m.perdida_al_stop.is_finite() && m.perdida_al_stop > 0.0) {
             return;
@@ -381,7 +387,10 @@ impl RiskEngine {
             }
             let crecimiento = 1.0 + f * r;
             if crecimiento.is_finite() && crecimiento > 0.0 {
-                let previo = arena.registry.get_for_coin_or(m.coin_id, clave_logw, 0.0);
+                let previo = arena
+                    .registry
+                    .get_for_coin_strict(m.coin_id, clave_logw)
+                    .unwrap_or(0.0);
                 arena
                     .registry
                     .set_for_coin(m.coin_id, clave_logw, previo + crecimiento.ln());
@@ -390,7 +399,10 @@ impl RiskEngine {
             }
         }
         for (clave, x) in [("sombra_kelly_suma_r", r), ("sombra_kelly_suma_r2", r * r)] {
-            let previo = arena.registry.get_for_coin_or(m.coin_id, clave, 0.0);
+            let previo = arena
+                .registry
+                .get_for_coin_strict(m.coin_id, clave)
+                .unwrap_or(0.0);
             arena.registry.set_for_coin(m.coin_id, clave, previo + x);
         }
         let n = arena.registry.get_for_coin_or(m.coin_id, "sombra_kelly_n", 0.0);
@@ -404,11 +416,21 @@ impl RiskEngine {
     /// (`FORENSIC_START_TICK`, `MAX_TICKS`) y trae su propio libro.
     ///
     /// CL-168: la log-riqueza de una regla arruinada es −∞ y sale como null
-    /// (JSON no tiene ±∞ ni NaN), igual que cualquier número no finito. La
-    /// suma congelada hasta la ruina sigue en el registro, pero el informe no
-    /// la publica como si fuera comparable con la de una regla viva.
+    /// (JSON no tiene ±∞ ni NaN). La suma congelada hasta la ruina sigue en el
+    /// registro, pero el informe no la publica como si fuera comparable con
+    /// la de una regla viva.
+    ///
+    /// CL-169: el informe lee el registro de la moneda sin respaldo. Con
+    /// `get_for_coin_or` un acumulado no finito llegaba como 0 (o como el
+    /// valor global) y salía un 0.000000 creíble. Ahora un acumulado ausente
+    /// o no finito sale como null, igual que la regla arruinada.
     pub fn informe_sombra_kelly(arena: &GlobalArena, coin_id: usize) -> Option<String> {
-        let leer = |clave: &str| arena.registry.get_for_coin_or(coin_id, clave, 0.0);
+        let leer = |clave: &str| {
+            arena
+                .registry
+                .get_for_coin_strict(coin_id, clave)
+                .unwrap_or(f64::NAN)
+        };
         let numero = |x: f64| {
             if x.is_finite() {
                 format!("{x:.6}")
