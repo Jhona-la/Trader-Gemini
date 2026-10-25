@@ -4300,34 +4300,76 @@ impl MuestraUso {
 /// N5 (CL-177): uso de UN contador del exchange.
 ///
 /// Dentro de una ventana el contador del exchange sólo sube, así que una
-/// respuesta que llega con menos uso que otra aún vigente es más vieja (las
-/// peticiones concurrentes responden en cualquier orden) y no lo rebaja: se
-/// guarda la mayor vigente. La última se guarda aparte porque sigue valiendo
-/// cuando la mayor caduca. Tras un reinicio del contador del exchange la mayor
-/// sobreestima hasta su caducidad (lo conservador); sin el instante exacto de
-/// reinicio, que el repo no tiene medido, no se distingue de una respuesta
-/// tardía.
-#[derive(Clone, Copy, Debug, Default)]
+/// respuesta que llega con menos uso que otra aún vigente puede ser más vieja
+/// (las peticiones concurrentes responden en cualquier orden) y no lo rebaja:
+/// el uso es el máximo de las muestras vigentes. CL-180: se guardan todas las
+/// que aún pueden serlo, con sellos no decrecientes y usos estrictamente
+/// decrecientes de delante hacia atrás. Una muestra nueva tapa a las de atrás
+/// con uso menor o igual (llegó después y caduca después), y la primera no
+/// caducada es la mayor vigente. Antes se guardaban sólo la mayor y la última,
+/// y al caducar la mayor se perdía una intermedia más alta que la última.
+///
+/// Tras un reinicio del contador del exchange la mayor sobreestima hasta su
+/// caducidad. Es la elección conservadora, no una imposibilidad: una muestra
+/// menor que llega más tarde que la vida máxima de una petición tras la mayor
+/// es posterior y prueba el reinicio. No se usa porque esa vida depende de los
+/// timeouts del cliente (client.rs) y de un sello de reloj de pared, y la
+/// alineación de las ventanas del exchange no está comprobada (censo C-F7b,
+/// fila N22).
+#[derive(Clone, Debug, Default)]
 struct ContadorExchange {
-    ultima: MuestraUso,
-    maxima: MuestraUso,
+    muestras: std::collections::VecDeque<MuestraUso>,
 }
 
 impl ContadorExchange {
+    /// CL-180: cota de muestras guardadas. Las guardadas son respuestas 2xx de
+    /// una misma ventana, y el exchange no admite más de LIMITE_PESO_1M
+    /// peticiones con peso ni más de LIMITE_ORDENES_1M órdenes (las de peso 0)
+    /// por ventana de 1 min; ×2 porque una ventana móvil de 60 s puede cubrir
+    /// dos ventanas fijas del exchange. Sólo se alcanza si el exchange superase
+    /// sus propios límites.
+    const MAX_MUESTRAS: usize = 2
+        * (crate::binance_api::LIMITE_PESO_1M + crate::binance_api::LIMITE_ORDENES_1M);
+
     fn observar(&mut self, uso: usize, ahora_ms: u64, ventana_ms: u64) {
-        let nueva = MuestraUso { uso, sello_ms: ahora_ms };
-        let actual = self.maxima.vigente(ahora_ms, ventana_ms);
-        // A igual uso, un reloj que retrocede no acorta la vida de la mayor.
-        if uso > actual || (uso == actual && ahora_ms >= self.maxima.sello_ms) {
-            self.maxima = nueva;
+        // CL-180: una muestra llegó a lo sumo ahora. Con un reloj que
+        // retrocede, un sello futuro alargaría su vida más allá de su ventana
+        // y ninguna respuesta la corregiría; se acota a ahora (conserva el
+        // valor, lo conservador). Los sellos futuros son un sufijo.
+        for m in self.muestras.iter_mut().rev() {
+            if m.sello_ms <= ahora_ms {
+                break;
+            }
+            m.sello_ms = ahora_ms;
         }
-        self.ultima = nueva;
+        // Las caducadas (o con uso 0) no aportan nada; son un prefijo.
+        while self
+            .muestras
+            .front()
+            .is_some_and(|m| m.vigente(ahora_ms, ventana_ms) == 0)
+        {
+            self.muestras.pop_front();
+        }
+        while self.muestras.back().is_some_and(|m| m.uso <= uso) {
+            self.muestras.pop_back();
+        }
+        if self.muestras.len() >= Self::MAX_MUESTRAS {
+            // La de atrás tiene más uso: toma el sello nuevo (sobrestima, lo
+            // conservador) en lugar de crecer.
+            if let Some(m) = self.muestras.back_mut() {
+                m.sello_ms = ahora_ms;
+            }
+            return;
+        }
+        self.muestras.push_back(MuestraUso { uso, sello_ms: ahora_ms });
     }
 
     fn vigente(&self, ahora_ms: u64, ventana_ms: u64) -> usize {
-        self.ultima
-            .vigente(ahora_ms, ventana_ms)
-            .max(self.maxima.vigente(ahora_ms, ventana_ms))
+        self.muestras
+            .iter()
+            .map(|m| m.vigente(ahora_ms, ventana_ms))
+            .find(|&u| u > 0)
+            .unwrap_or(0)
     }
 }
 
@@ -4599,6 +4641,64 @@ mod tests_n5a {
         ex.observar_limites(&limites(Some(50), None, None), T0 + 61_000);
         assert!(ex.check_exit_rate_limits(T0 + 61_500, Tramo::Lectura).is_ok());
         assert_eq!(ex.uso_exchange_bloqueado().peso_1m.vigente(T0 + 61_500, 60_000), 50);
+    }
+
+    /// RED antes de CL-180: con sólo la mayor y la última, al caducar la mayor
+    /// (2000) quedaba la última (1900 ≤ 1920) y se perdía la intermedia (1950),
+    /// aún vigente: la respuesta tardía sí rebajaba el uso.
+    #[test]
+    fn n5a_la_mayor_vigente_sobrevive_a_otra_mayor_que_caduca() {
+        let ex = OrderExecutor::new("k".into(), "s".into(), true);
+        ex.observar_limites(&limites(Some(2_000), None, None), T0);
+        ex.observar_limites(&limites(Some(1_950), None, None), T0 + 59_000);
+        ex.observar_limites(&limites(Some(1_900), None, None), T0 + 59_500);
+        let r = ex.check_exit_rate_limits(T0 + 60_000, Tramo::Lectura);
+        assert!(
+            matches!(&r, Err(e) if e.starts_with("RATE_LIMIT_HEADROOM_WEIGHT: 1950/2400")),
+            "{r:?}"
+        );
+        // Caducada la intermedia, manda la última (1900 ≤ 0,8·2400).
+        assert!(ex.check_exit_rate_limits(T0 + 119_000, Tramo::Lectura).is_ok());
+        assert_eq!(ex.uso_exchange_bloqueado().peso_1m.vigente(T0 + 119_000, 60_000), 1900);
+    }
+
+    /// RED antes de CL-180: con el reloj adelantado 30 s, la mayor quedaba con
+    /// un sello futuro y, corregido el reloj, ninguna respuesta menor la
+    /// sustituía: frenaba hasta 30 s más allá de su ventana.
+    #[test]
+    fn n5a_un_sello_futuro_no_alarga_la_ventana() {
+        let ex = OrderExecutor::new("k".into(), "s".into(), true);
+        ex.observar_limites(&limites(Some(2_100), None, None), T0 + 30_000);
+        ex.observar_limites(&limites(Some(50), None, None), T0);
+        let r = ex.check_exit_rate_limits(T0 + 1_000, Tramo::Lectura);
+        assert!(
+            matches!(&r, Err(e) if e.starts_with("RATE_LIMIT_HEADROOM_WEIGHT: 2100/2400")),
+            "la mayor conserva su valor: {r:?}"
+        );
+        let r = ex.check_exit_rate_limits(T0 + 60_000, Tramo::Lectura);
+        assert!(r.is_ok(), "y caduca una ventana después del reloj corregido: {r:?}");
+    }
+
+    /// La cola guarda sólo las muestras que aún pueden mandar.
+    #[test]
+    fn n5a_la_cola_guarda_solo_las_que_pueden_mandar() {
+        let mut c = ContadorExchange::default();
+        for (i, uso) in [10, 20, 30, 25, 5, 40].into_iter().enumerate() {
+            c.observar(uso, T0 + i as u64, 60_000);
+        }
+        // 40 llegó la última y es la mayor: tapa a todas.
+        assert_eq!(c.muestras.len(), 1);
+        assert_eq!(c.vigente(T0 + 10, 60_000), 40);
+        c.observar(30, T0 + 10, 60_000);
+        c.observar(20, T0 + 20, 60_000);
+        assert_eq!(c.muestras.len(), 3);
+        assert_eq!(c.vigente(T0 + 59_999, 60_000), 40);
+        assert_eq!(c.vigente(T0 + 60_005, 60_000), 30);
+        assert_eq!(c.vigente(T0 + 60_015, 60_000), 20);
+        assert_eq!(c.vigente(T0 + 60_025, 60_000), 0);
+        // Caducadas, salen al observar.
+        c.observar(1, T0 + 200_000, 60_000);
+        assert_eq!(c.muestras.len(), 1);
     }
 }
 
