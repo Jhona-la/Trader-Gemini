@@ -983,13 +983,17 @@ impl OrderExecutor {
                             "♻️ [X-026] {} -2022: re-snapshot fresco (TP pudo llenar entre snapshot y close)…",
                             p.symbol
                         );
-                        let fresh = self.fetch_position_risk().await.ok().and_then(|entries| {
+                        // CL-183: un re-snapshot que no respondió (freno 429/418,
+                        // cuota del tramo crítico o red) no es «posición plana»:
+                        // antes el Err caía a None, se daba por cerrada y se
+                        // purgaban los brackets de una posición quizá viva.
+                        let fresh = self.fetch_position_risk().await.map(|entries| {
                             entries
                                 .into_iter()
                                 .find(|e2| e2.symbol == p.symbol && e2.is_open())
                         });
                         match fresh {
-                            Some(f) => {
+                            Ok(Some(f)) => {
                                 let fq = f.position_amt.abs();
                                 let step = match self.get_symbol_filter(&p.symbol).await {
                                     Ok(flt) => flt.step_size,
@@ -1015,13 +1019,17 @@ impl OrderExecutor {
                                     ),
                                 }
                             }
-                            None => {
+                            Ok(None) => {
                                 position_closed = true; // ya no existe con qty>0: estaba plana
                                 println!(
                                     "🧹 [X-026] {} ya plana en el exchange (snapshot fresco)",
                                     p.symbol
                                 );
                             }
+                            Err(e2) => println!(
+                                "🚨 [X-026] {} sin re-snapshot ({}): se trata como ABIERTA y sus brackets no se purgan — INTERVENCIÓN MANUAL",
+                                p.symbol, e2
+                            ),
                         }
                     }
                     Err(e) => println!(
@@ -4825,6 +4833,20 @@ mod tests_n5b {
         let lecturas = envios(cuenta, ".get_payload_with_timeout(");
         assert_eq!(lecturas.len(), 2, "lectura y reintento");
         assert!(frena(antes(cuenta, lecturas[1], 400)), "reintento sin freno");
+    }
+
+    /// RED antes de CL-183: en X-026, un re-snapshot que no respondió
+    /// (`.ok()`) se leía como «posición plana» y el aplanado purgaba los
+    /// brackets de una posición quizá viva.
+    #[test]
+    fn n5b_un_re_snapshot_sin_respuesta_no_es_posicion_plana() {
+        let aplanado = cuerpo("flatten_all_positions");
+        assert!(!aplanado.contains("fetch_position_risk().await.ok()"));
+        let x026 = aplanado.split("// X-026 (REHAB-3)").nth(1).unwrap_or("");
+        let brazo = x026.split("Err(e2) =>").nth(1).unwrap_or("");
+        let brazo = brazo.split("Err(e) =>").next().unwrap_or("");
+        assert!(brazo.contains("se trata como ABIERTA"), "sin brazo de error en X-026");
+        assert!(!brazo.contains("position_closed = true"), "el error no cierra la posición");
     }
 
     fn fila(simbolo: &str, lado: &str, cantidad: &str) -> String {
