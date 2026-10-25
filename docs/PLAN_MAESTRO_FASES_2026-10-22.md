@@ -1,8 +1,8 @@
 # Plan maestro por fases V33 — revisión desde la base
 
 **Revisión vigente:** 2026-10-24, Kimi Quant Sr V33, en coordinación con los demás agentes.
-**Base inspeccionada:** `main = 30fc7ee86b7a24def4d48b8228543bc9030e14be = origin/main`.
-**Alcance:** workspace Rust de 21 crates + paquete raíz, 2.197 rutas versionadas y 842 archivos Rust. Estas cifras describen el censo mecánico, **no** archivos ya auditados.
+**Base inspeccionada:** `main = 4ee89fd422733c3b8c3a5bf26d193d34320a81a2`, merge de `84868151f` y `origin/main=234561adf`.
+**Alcance:** workspace Rust de 21 crates + paquete raíz, 2.201 rutas versionadas y 846 archivos Rust. Estas cifras describen el censo mecánico, **no** archivos ya auditados.
 **Objetivo de investigación:** crecimiento neto compuesto de +100 %/72 h. Es una hipótesis que debe demostrarse fuera de muestra y después de fees, funding y slippage; no una garantía ni una razón para aumentar riesgo. Producción permanece prohibida en esta revisión.
 
 Este es el plan canónico de coordinación. Los planes de líneas aportan detalle, no fuentes paralelas de verdad. `AGENT_SYNC.md` contiene reservas y heartbeats; `.agents/MEMORIA.md` conserva los recibos de cierre.
@@ -23,11 +23,11 @@ No se simplifica matemática existente para salir de un error. No se presentan `
 
 | Área | Estado verificado | Consecuencia |
 |---|---|---|
-| `main` | `30fc7ee86`, idéntico a `origin/main`; `5e3557c17` integrado por fast-forward preservando siete archivos locales y el stash histórico | Kimi no toca Rust ni arrastra cambios ajenos al staging |
-| CI del último código integrado | `5e3557c17`: **10/10 checks SUCCESS**, incluido Replay `40149004089` con salida 0; el HEAD documental `30fc7ee86` tiene `total_count=0` por filtros de rutas | Verde acotado al código integrado; no se transfiere a commits futuros |
-| Ramas remotas | `main` y `claude/auditoria-deslizamiento-apalancamiento-sqtc08`; esta última tiene cuatro commits exclusivos CL-161..164 | No hay PR abierto al corte; la rama activa se preserva, no se borra por antigüedad |
+| `main` | `4ee89fd42`, merge de `84868151f` con `234561adf`; los siete archivos locales y el stash histórico fueron preservados | Kimi no toca Rust ni arrastra cambios ajenos al staging |
+| CI del último código integrado | `234561adf`: **10/10 checks SUCCESS**; Unit `40152016510` y Replay `40152016533` con salida 0 y `replay-contracts` en 28m15s | Verde acotado al código integrado; el siguiente merge se valida por su propio SHA |
+| Ramas remotas | `main=234561adf` y `claude/auditoria-deslizamiento-apalancamiento-sqtc08=9d0c52bce`; PR #139 fusionado y sin PR abierto al corte | La rama activa de Línea C se preserva; no se borra por antigüedad |
 | Ramas y worktrees locales | `main`, `glm/161`, `claude/linea-g-ola10`, `claude/linea-i-i3` y `codex/verify-pr65-20261022` bloqueado | Todos se preservan; el stash histórico ajeno también permanece intacto |
-| RAM | 23,38 GiB visibles; 0,82 GiB disponibles; Cargo y Rustc ajenos activos | No compilar ni editar Rust hasta admisión real del semáforo |
+| RAM | 23,38 GiB visibles; 0,45 GiB disponibles en la última medición; hosts de agentes y navegadores dominan el working set | No compilar ni editar Rust hasta admisión real del semáforo; no cerrar procesos ajenos para forzar admisión |
 | Disco | Tamaño total del proyecto pendiente; no se ejecutan `du` ni barridos durante el build ajeno | No afirmar consumo actual ni limpiar por intuición |
 | Hooks | `core.hooksPath=.githooks`; solo existe `pre-commit` de whitespace | `pre-push` sigue pendiente como átomo separado |
 | Arquitectura documental | `docs/ARCHITECTURE.md` describe el sistema Python histórico; `ARQUITECTURA_VIVA.md` está sincronizado al 2026-10-06 | El código y el linaje real mandan sobre diagramas históricos |
@@ -36,7 +36,7 @@ No se simplifica matemática existente para salir de un error. No se presentan `
 
 - **AGY:** titular propuesto de la implementación N8 al precio límite antes de reservar; Kimi V33 revisa RED/GREEN y Línea C consulta. Fases 10/11 ya fusionadas y sus ramas remotas retiradas.
 - **Codex QRA:** validación y cambios locales de `user_data_stream.rs`, `os-guardian`, `.agents/MEMORIA.md` y su fila de `AGENT_SYNC.md`; ninguno se incluye en commits de Kimi.
-- **Claude Línea I:** worktree `claude/linea-i-i3`; Línea C conserva su rama activa con cuatro commits exclusivos; Línea G conserva su worktree de revisión.
+- **Claude Línea I:** worktree `claude/linea-i-i3`; Línea C conserva su rama activa; Línea G conserva su worktree de revisión.
 - **GLM:** worktree `tg-mps` en `glm/161`; `verify-pr65` permanece bloqueado.
 - **Kimi V33:** revisión N8, este plan, inventario y su propia fila de `AGENT_SYNC.md`; el átomo de capital queda pendiente hasta que la RAM y el semáforo admitan la puerta local.
 
@@ -148,7 +148,7 @@ Ningún elemento de este backlog justifica prometer +100 %/72 h, ruina cero, 0 n
 
 ## 9. Censo archivo por archivo y recepción entre agentes
 
-El inventario mecánico `docs/audit/V33_INVENTARIO_2026-10-24.tsv` conserva las 2.186 rutas de la base de auditoría `2fb4633d3` y los deltas posteriores hasta `main=30fc7ee86`: **2.197 rutas**, 26 `REVISADO_ESTATICO`, 1 `RED` (capital inválido con evidencia ejecutada) y 2.170 `INVENTORIADO`. La revalidación actual añadió seis rutas y retiró dos respecto al delta anterior; el conjunto completo fue comparado en orden y sin duplicados contra `git ls-files`. Las filas históricas conservan el blob de su base y las altas llevan el blob del índice vigente, como aclara la cabecera. No es una certificación de revisión completa. El ledger incremental `docs/audit/V33_REVISIONES_2026-10-24.tsv` conserva los 34 hallazgos concretos, con N8 revalidado y asignado, sin reescribir censos históricos. Campos mínimos:
+El inventario mecánico `docs/audit/V33_INVENTARIO_2026-10-24.tsv` conserva las 2.186 rutas de la base de auditoría `2fb4633d3` y los deltas posteriores hasta `merge=4ee89fd42`: **2.201 rutas**, 26 `REVISADO_ESTATICO`, 1 `RED` (capital inválido con evidencia ejecutada) y 2.174 `INVENTORIADO`. La integración del PR #139 añadió cuatro contratos y ninguna baja; el conjunto completo fue comparado en orden y sin duplicados contra `git ls-files`. Las filas históricas conservan el blob de su base y las altas llevan el blob del índice vigente, como aclara la cabecera. No es una certificación de revisión completa. El ledger incremental `docs/audit/V33_REVISIONES_2026-10-24.tsv` conserva los 34 hallazgos concretos, con N8 revalidado y asignado, sin reescribir censos históricos. Campos mínimos:
 
 `ruta | blob | dueño | ruta_viva | hallazgo | severidad | prueba | CI_SHA | estado | siguiente`
 
