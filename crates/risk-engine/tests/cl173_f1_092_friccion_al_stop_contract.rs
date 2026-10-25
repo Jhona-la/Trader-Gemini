@@ -168,13 +168,16 @@ fn f1_092_acota_la_perdida_al_stop_con_la_friccion() {
 fn f1_092_no_recorta_lh04_con_f_igual_al_tope() {
     // LH-04 sin rescate con f = κ = tope = 0,25: el tope con la fricción no
     // la recorta ni en un ulp, porque usa la misma función y los mismos
-    // argumentos que LH-04. L ≥ 2 para que el cociente por L cuente.
-    const C: f64 = 1_000.0;
+    // argumentos que LH-04. El stop deja L = 3 (con una potencia de dos el
+    // cociente por L es exacto y no distingue nada) y es uno de los que la
+    // forma ingenua, «si margen·L·(SL + c) > tope·C, margen = tope·C/(L·(SL + c))»,
+    // recortaría en un ulp: la prueba lo comprueba como premisa.
+    const C: f64 = 300.0;
     let arena = arena(C, BTC, 500, 0.95, 10.0);
     let c = friccion(&arena, BTC);
     let tope = ruin::clamp_ruin(1.0, ruin::conservative_loss_q(0.95, 500.0));
     assert_eq!(tope, 0.25, "premisa: el tope es el axioma del 25 %");
-    let out = RiskEngine::new(C).evaluate_quantum_order(BTC, &intencion(65.0), &arena);
+    let out = RiskEngine::new(C).evaluate_quantum_order(BTC, &intencion(69.4), &arena);
     println!(
         "{:?}, {} USD ×{}, SL {}; f_realizado {}; sol_a2 {}; {}",
         out.signal,
@@ -190,7 +193,7 @@ fn f1_092_no_recorta_lh04_con_f_igual_al_tope() {
         risk_engine::reject_report()
     );
     assert_eq!(out.signal, SignalType::Long, "premisa: la orden sale");
-    assert!(out.leverage >= 2.0, "premisa: L ≥ 2, {}", out.leverage);
+    assert_eq!(out.leverage, 3.0, "premisa: L = 3");
     assert_eq!(
         arena
             .registry
@@ -201,6 +204,16 @@ fn f1_092_no_recorta_lh04_con_f_igual_al_tope() {
     let sl = (PRECIO - out.sl_target) / PRECIO;
     let esperado =
         kelly_envelope::nocional_por_riesgo(0.25, C, sl, c).unwrap_or(f64::NAN) / out.leverage;
+    let ingenuo = if esperado * out.leverage * (sl + c) > 0.25 * C {
+        0.25 * C / (out.leverage * (sl + c))
+    } else {
+        esperado
+    };
+    assert_ne!(
+        ingenuo.to_bits(),
+        esperado.to_bits(),
+        "premisa: la forma ingenua recorta aquí"
+    );
     assert_eq!(
         out.volume_usd.to_bits(),
         esperado.to_bits(),
