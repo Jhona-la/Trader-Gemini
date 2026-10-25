@@ -493,7 +493,11 @@ impl OrderExecutor {
         if resolution == OrderResolution::Timeout {
             return resolution;
         }
-        let ack = result.expect("validated query evidence");
+        // CL-191: inalcanzable (un error de consulta ya es Timeout arriba), pero
+        // sin expect: un error nunca prueba ni rechazo ni ejecución.
+        let Ok(ack) = result else {
+            return OrderResolution::Timeout;
+        };
         if let Some(prior) = self.order_registry.get(client_order_id) {
             if prior.symbol != symbol || prior.side != ack.side
                 || (prior.order_id != 0 && prior.order_id != ack.order_id)
@@ -5937,5 +5941,28 @@ mod tests_n20 {
         ex.handle_rate_limit_error("HTTP_418_IP_BANNED retry_after=300");
         let r = ex.client().clone().cancel_order_payload(URL).now_or_never();
         assert!(rechazo(r, "RATE_BRAKE"), "con un 418 no sale");
+    }
+
+    /// RED antes de CL-191: `record_query_resolution` llevaba el único
+    /// `.expect` de producción del ejecutor y del cliente (inalcanzable: la
+    /// clasificación devuelve Timeout ante un error de consulta). Regla del
+    /// proyecto: ni unwrap, ni expect, ni panic en producción.
+    #[test]
+    fn cl191_ejecutor_y_cliente_sin_unwrap_expect_ni_panic() {
+        let cliente = include_str!("client.rs").split("#[cfg(test)]").next().unwrap_or("");
+        assert!(produccion().contains("fn record_query_resolution("), "corte de producción");
+        assert!(cliente.contains("fn cancel_order_payload("), "corte de producción");
+        for (archivo, codigo) in [("executor.rs", produccion()), ("client.rs", cliente)] {
+            for prohibido in [
+                ".unwrap()",
+                ".expect(",
+                "panic!(",
+                "unreachable!(",
+                "todo!(",
+                "unimplemented!(",
+            ] {
+                assert_eq!(codigo.matches(prohibido).count(), 0, "{archivo}: {prohibido}");
+            }
+        }
     }
 }
