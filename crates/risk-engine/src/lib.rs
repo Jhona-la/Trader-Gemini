@@ -1681,7 +1681,11 @@ impl RiskEngine {
         // CL-165: el bias se valida CRUDO. `clamp(0, 1)` lleva +∞ a 1 y −∞ o
         // un bias ≤ 0 a 0, así que validar el factor ya recortado sólo veía
         // el NaN: un bias +∞ dimensionaba con la f entera.
-        let lh04_bias_bruto = if lh04_f > 0.0 && coin_id < arena.coins.len() {
+        // CL-167: se lee en toda clase, no sólo cuando LH-04 puede dimensionar
+        // (f > 0). La sonda y la orden mínima no lo usan para el tamaño, pero
+        // un bias corrupto es un estado corrupto de la moneda y se rechaza
+        // igual: con f = 0 un bias ±∞ o ≤ 0 salía a la orden mínima.
+        let lh04_bias_bruto = if coin_id < arena.coins.len() {
             let now_ts = arena.coins[coin_id]
                 .last_tick_timestamp_ms
                 .load(Ordering::Relaxed);

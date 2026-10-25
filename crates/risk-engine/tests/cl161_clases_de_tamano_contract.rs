@@ -18,6 +18,10 @@
 //! entrada. Un bias finito y positivo fuera de la banda del escritor
 //! ([0,5; 2]) no es corrupto: sólo encoge f o la deja igual.
 //!
+//! CL-167: el bias se lee y se valida en toda clase. Con f = 0 (la sonda,
+//! la moneda sin edge, n < mínimo) CL-165 no lo leía y un bias ±∞ o ≤ 0
+//! salía a la orden mínima.
+//!
 //! CL-165b: PF = 0 tampoco es corrupto. Es «sólo pérdidas», lo admite la
 //! restauración del estado aprendido y los contratos del techo de comisión y
 //! del bias (veto_logic_contracts.rs) lo usan para apagar LH-04: sigue en la
@@ -209,6 +213,45 @@ fn cl165b_profit_factor_cero_da_la_orden_minima() {
             nocional(&orden).to_bits(),
             nocional(&referencia).to_bits(),
             "n = {n}: PF 0 es una moneda sin edge y sale a la orden mínima"
+        );
+    }
+}
+
+#[test]
+fn cl167_un_bias_corrupto_se_rechaza_tambien_con_f_cero() {
+    let _serie = SERIE.lock().unwrap_or_else(|e| e.into_inner());
+    // (win rate, n, PF): la sonda sin cierres, la moneda sin edge y la que no
+    // reúne las muestras mínimas. En las tres LH-04 no dimensiona (f = 0).
+    let clases = [(0.65, 0, 2.6), (0.65, 20, 0.9), (0.65, 20, 2.6)];
+    for (wr, n, pf) in clases {
+        for bias in [f64::INFINITY, f64::NEG_INFINITY, 0.0, -1.0] {
+            let (arena, intent) = fixture();
+            if n == 20 && pf > 1.0 {
+                arena.registry.set("lh04_muestras_min", 50.0);
+            }
+            evidencia(&arena, wr, n, pf);
+            bias_crudo(&arena, bias);
+            let (orden, rechazos) = evaluar(&arena, &intent);
+            assert_eq!(orden.volume_usd, 0.0, "n {n}, PF {pf}, bias {bias}: no sale a la orden mínima");
+            assert_eq!(rechazos, 1, "n {n}, PF {pf}, bias {bias}: el rechazo es REJ_INVALID_INPUT");
+        }
+    }
+}
+
+#[test]
+fn cl167_un_bias_valido_no_cambia_la_orden_minima() {
+    let _serie = SERIE.lock().unwrap_or_else(|e| e.into_inner());
+    let referencia = orden_minima_de_referencia();
+    for bias in [0.3, 0.5, 2.0, 5.0] {
+        let (arena, intent) = fixture();
+        evidencia(&arena, 0.65, 20, 0.9);
+        bias_crudo(&arena, bias);
+        let (orden, rechazos) = evaluar(&arena, &intent);
+        assert_eq!(rechazos, 0, "control: bias {bias} finito y positivo");
+        assert_eq!(
+            nocional(&orden).to_bits(),
+            nocional(&referencia).to_bits(),
+            "bias {bias}: la orden mínima no depende del bias"
         );
     }
 }
