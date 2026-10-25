@@ -1,5 +1,35 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
 
+## 2026-10-25 — Claude (cloud, Línea C): octava tanda del censo C-F7b (revisión de la séptima)
+
+Tanda del PR #140: la revisión adversarial del #139 confirmó 17 hallazgos
+(1 medio, 16 leves) y refutó 3. Un commit por bloque; sin T-1 (ningún
+cambio de conducta con entradas válidas).
+
+- CL-165: LH-04 valida antes de toda clase: win rate no finito o fuera de
+  [0, 1], PF no finito o ≤ 0 y bias epigenético CRUDO no finito o ≤ 0 se
+  rechazan (también en la sonda). Antes la comprobación miraba
+  `bias.clamp(0, 1)` y sólo veía el NaN: un bias +∞ dimensionaba con la f
+  entera. La clase «f en cero por la racha» no existía (bias vivo en
+  [0,5; 2]).
+- CL-166: la sombra Kelly congela la regla arruinada (log-riqueza −∞), suma
+  R y R² en unidades de stop y `RiskEngine::informe_sombra_kelly` da una
+  línea por moneda; el forense la imprime (SOMBRA_KELLY). La regla de las
+  dos mitades ya se puede aplicar (una corrida por mitad).
+- RV7-T: en el fixture de cl163 (L = 1) el techo de margen deja ≈ 1,9 % de
+  riesgo al stop, muy por debajo de f ≈ 0,13: κ = 0,10 no cambia la orden.
+  La prueba fija ahora que un κ por debajo de ese riesgo baja el nocional
+  en proporción. cf5d fija R ≈ −1 en el stop por el núcleo (−1,29).
+- Correcciones a la tanda 7: el gen 33 acotaba MARGEN en el motor legado,
+  no pérdida al stop, y sólo muerde en [0,1; 0,25); κ = 0 lo rechaza
+  FMT-212 (REJ_INVALID_INPUT), no la cadena legada; 10, 11 y 32 sí eligen
+  el apalancamiento de la orden mínima (D-130) y con él REJ_FEE_IMPACT.
+  Retirar raw_exposure exige otra fuente para ese apalancamiento.
+- N14 abierta (a Fable/Línea H): estrechar la banda del gen 33 al axioma
+  0,25 no cambia ninguna orden, pero hoy rompería el rollback y la
+  promoción entre entornos (load_generation JSON y promote_across_env
+  promueven el genoma crudo y validate lo rechaza).
+
 ## 2026-10-25 — Claude (cloud, Línea C): séptima tanda del censo C-F7b (genes de Kelly, fila N13)
 
 Tanda del PR #139. Un commit por bloque; T-1 por los cambios de tamaño.

@@ -1628,13 +1628,17 @@ impl RiskEngine {
             let q_lh04 = crate::ruin::conservative_loss_q(lh04_wr, lh04_n);
             let tope_lh04 = crate::ruin::clamp_ruin(1.0, q_lh04);
             // CL-163: el gen 33 (`kelly_clamp_max`, «apuesta Kelly máxima») es
-            // el techo de f. En el motor legado acotaba W·(1 − 1/PF)·λ, una
-            // fracción del capital arriesgada como f; desde F1-116 + F1-087 ese
-            // motor ya no fija tamaños y el gen no tenía efecto. Sólo aprieta:
-            // con κ ≥ f (la línea base 0,55 frente al axioma 0,25) no cambia
-            // nada, y κ = 0 lleva a la orden mínima por `lh04_sin_edge`. Es un
-            // límite evolucionable al riesgo de modelo que la cota de Wilson no
-            // ve (un acierto medido del 98 % sólo lo frena el axioma).
+            // el techo de f. En el motor legado acotaba la fracción de Kelly
+            // W·(1 − 1/PF)·λ, que esa cadena aplicaba como fracción de MARGEN
+            // (`raw_exposure = dir·conf·kelly·C`), no como pérdida al stop;
+            // desde F1-116 + F1-087 ese motor ya no fija tamaños. Sólo aprieta:
+            // como f ≤ clamp_ruin ≤ 0,25, κ sólo muerde en [0,1; 0,25) y la
+            // línea base (0,55) y los genomas guardados (0,8245) no cambian
+            // nada; la orden cambia sólo si κ baja también del riesgo que los
+            // techos de margen ya dejan. Un κ por debajo de `kelly_clamp_min`
+            // (κ = 0 incluido) lo rechaza antes FMT-212 (REJ_INVALID_INPUT).
+            // Es un límite evolucionable al riesgo de modelo que la cota de
+            // Wilson no ve (un acierto medido del 98 % sólo lo frena el axioma).
             let tope_gen = arena.config.kelly_clamp_max.load(Ordering::Relaxed);
             lh04_f = if f_raw.is_finite() && tope_gen.is_finite() {
                 f_raw.min(tope_lh04).min(tope_gen.max(0.0))

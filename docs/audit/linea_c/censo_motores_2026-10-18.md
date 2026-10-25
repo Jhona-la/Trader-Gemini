@@ -376,8 +376,9 @@ el orden y el vaciado del log del host; CL-159, que cambia el tamaño de
 las órdenes de LH-04 (T-1 14/144, la cuenta de main, fila N13), y la
 tanda 7 (fila N13): CL-161 y CL-163 cambian el tamaño sólo con entradas
 corruptas, con `lh04_muestras_min` por encima de n o con un gen 33 por
-debajo de f, CL-162 cambia la mutación y CL-164 es telemetría; como dice
-su lote):
+debajo de f, CL-162 cambia la mutación y CL-164 es telemetría, y la
+tanda 8: CL-165 cambia la conducta sólo con entradas corruptas y CL-166 es
+telemetría; como dice su lote):
 
 | PR | Lotes |
 |---|---|
@@ -391,6 +392,7 @@ su lote):
 | #130 | 50 (residuo: 50a legacy_view, LegacyRegimeView y su re-export; 50b, el T12 de cf3_fuente_contract como guarda de F1-054), 44 (44a CL-156: G021; 44b: R114, F327), 13 (13a CL-157: FIX #1454 portado al OmniStrategyEngine vivo; 13b: src/features y los dos #[path] de FMT-140; sin F315, F385, R105 ni F184); más RV-12a, RV-plan y RV-docs (revisión de las tandas 2 a 4) |
 | #138 | 27b (K12: RET-27b, CL-158), 48 (CL-159: LH-04 con la fricción al stop; RET-48: ExposureBudget, exposure_budget(_spectral) y project_quantity), 34 (resto de F325: RET-34b, validate_order; RET-34c, la OPEN de la fila N8), 51 (51b CL-160: telemetry! escribe en LOG_QUEUE; 51c: BINARY_QUEUE, StackBuffer, init/pop_telemetry y crossbeam-queue de telemetry-engine); más RV5-T12 y RV5-docs (revisión de la tanda 5) |
 | #139 | N13, el plan del panel para los genes de Kelly (CL-161: clases de tamaño explícitas; CL-163: el gen 33 como techo κ de la f de LH-04; CL-162: genes 10, 11, 20 y 32 congelados en la mutación; CL-164: sombra del Kelly legado frente a LH-04); más RV6-T y RV6-docs (revisión de la tanda 6) |
+| #140 | N13, correcciones de la revisión de la tanda 7 (CL-165: LH-04 valida el bias crudo y las entradas antes de toda clase; CL-166: la sombra Kelly congela la regla arruinada, suma R y R² y el forense la imprime); más RV7-T y RV7-docs; abre N14 (banda del gen 33) |
 
 **Hecho por otros agentes**: lote 9 entero (Sol, d18b3735), lote 45 entero
 (Codex RB, 906a9c6a), parte del 7 (Sol retiró el bin main.rs de
@@ -776,8 +778,8 @@ un escéptico por lote listo):
   10, 33 y 141 (release bajo wine): 24dfc19c8 sensible, primer commit malo
   01ce0a57 (F1-116, Ω157: lh04_muestras_min de 10 a 1). Desde ahí LH-04
   dimensiona toda orden con n ≥ 1, y el margen Kelly legado (raw_exposure,
-  risk-engine lib.rs:714), el único camino por el que los genes 10, 11 y
-  33 (kelly.rs) y 143 (risk_normalizer, :616-621) movían el TAMAÑO en el
+  risk-engine lib.rs, `let raw_exposure`), el único camino por el que los genes 10, 11 y
+  33 (kelly.rs) y 143 (risk_normalizer, `let risk_normalizer`) movían el TAMAÑO en el
   fixture del T-1, no fija ningún tamaño; F1-087 (ab2992a6) cierra además
   el caso f = 0. El 141 (pendiente de la curva TP) no pasa por
   risk_normalizer: llega por tp_at_tau. Fuera del fixture estos genes
@@ -798,33 +800,86 @@ un escéptico por lote listo):
   es decisión del dueño, igual que derivar el apalancamiento del riesgo
   de LH-04.
   Ejecutado en la tanda 7 (PR #139):
-  - CL-161: tras la sonda, una orden la dimensiona LH-04 o va a la orden
-    mínima (sonda, sin edge, n < lh04_muestras_min o f en cero por la
-    racha); con entradas corruptas (acierto, PF o bias no finitos o fuera
-    de dominio) se rechaza con REJ_INVALID_INPUT (risk-engine
-    lib.rs:1666-1749). Cierra dos fail-open del margen legado: PF no
-    finito y lh04_muestras_min del registro por encima de n.
+  - CL-161: una orden la dimensiona LH-04 o va a la orden mínima (sonda,
+    sin edge o n < lh04_muestras_min); lo demás se rechaza con
+    REJ_INVALID_INPUT (risk-engine lib.rs, `lh04_entradas_validas`). Cierra
+    dos fail-open del margen legado: PF no finito y lh04_muestras_min del
+    registro por encima de n. Corrección de la tanda 8: la comprobación
+    miraba el bias ya recortado a [0, 1] y sólo veía el NaN (un bias +∞
+    dimensionaba con la f entera), un PF ≤ 0 y la sonda no se validaban, y
+    la clase «f en cero por la racha» no se alcanza (el bias vivo está en
+    [0,5; 2]). Lo cierra CL-165.
   - CL-163: f = min(½·Kelly-LCB, tope de ruina, κ) con κ = kelly_clamp_max
-    (:1589-1592). Sólo aprieta: con la línea base (0,55) no cambia nada.
-    Con κ = 0 la cadena legada rechaza antes por exposición nula
-    (REJ_EXPOSURE_ZERO); al retirarla, κ = 0 dará la orden mínima.
+    (`tope_gen`). Sólo aprieta. Corrección de la tanda 8: en el motor
+    legado el gen acotaba una fracción de MARGEN (raw_exposure), no la
+    pérdida al stop. Como f ≤ 0,25, κ sólo muerde en [0,1; 0,25): la línea
+    base (0,55) y los genomas guardados (0,8245) no cambian nada. Y la
+    orden sólo cambia si κ baja también del riesgo que los techos de margen
+    ya dejan (≈ 1,9 % del capital en el fixture de cl163, con L = 1; ver
+    N14). κ = 0 no sale de un genoma (lo[33] = 0,1). Fijado a mano por
+    debajo de kelly_clamp_min (gen 32, ≥ 0,001), lo rechaza antes FMT-212
+    con REJ_INVALID_INPUT, no la cadena legada con REJ_EXPOSURE_ZERO. Al
+    retirar esa cadena seguirá así mientras FMT-212 exija clamp_min ≤ κ.
   - CL-162: 10, 11, 20 y 32 se copian sin mutar en mutate_with_rng
     (genome.rs:1883-1921); el daemon ya no muta 10/11 y
     restaurar_genes_no_observables_en_examen los devuelve al incumbente
     (online_daemon.rs:585), así que el pre-examen ya no ordena por una
-    Kelly que el examen ignora. Fuera los recortes de 10/11 con literales
+    Kelly que en el examen no fija ningún tamaño ni pérdida al stop
+    (corrección de la tanda 8: a través del margen legado, 10, 11 y 32 sí
+    eligen el apalancamiento de la orden mínima en D-130 y, con él, la
+    puerta REJ_FEE_IMPACT). Fuera los recortes de 10/11 con literales
     de continuous_evolution_backtest.rs (nichos 2 y 9 y blindaje).
   - CL-164: MedidaOrden lleva f_lh04, f_legado y SL + c, y cada cierre
     suma ln(1 + f·R) por regla (LH-04, legado y el mínimo de las dos) con
     R = retorno neto/(SL + c) en sombra_kelly_logw_{lh04,legado,min};
     las ruinas (1 + f·R ≤ 0) van a sombra_kelly_ruina_* y los cierres a
-    sombra_kelly_n (risk-engine lib.rs:352, núcleo lib.rs:5849).
+    sombra_kelly_n (risk-engine lib.rs, `registrar_sombra_kelly`; núcleo
+    lib.rs, al cerrar). Tanda 8 (CL-166): una regla arruinada tiene
+    log-riqueza −∞; el libro la marca (ruina = 1) y deja de sumarle
+    cierres, suma R y R² y el forense lo imprime (SOMBRA_KELLY).
   - T-1 14/144 (9,7 %), la misma lista que main: [1, 17, 18, 24, 27, 29, 39, 62, 68, 69, 107, 129, 130, 131].
   Queda para el dueño: re-certificar el trinquete; la ventana y la regla
-  de decisión de la sombra (propuesta: retirar la cadena legada, kelly.rs
-  y raw_exposure, si ni el legado ni el mínimo ganan a LH-04 fuera de
-  muestra en las dos mitades del forense), y si se adopta el mínimo como
-  regla de tamaño.
+  de decisión de la sombra (propuesta: retirar kelly.rs si ni el legado ni
+  el mínimo ganan a LH-04 fuera de muestra en las dos mitades del
+  forense, cada una una corrida con su línea SOMBRA_KELLY; una regla con
+  ruina pierde), y si se adopta el mínimo como regla de tamaño. La
+  columna «legado» es el número de kelly.rs leído como f al stop. Los
+  moduladores de raw_exposure (gen 143, convicción D-750, interpolación
+  micro D-641, Ω134) no entran en la sombra ni se comparan. Retirar
+  raw_exposure exige además otra fuente para el apalancamiento de la orden
+  mínima, que hoy D-130 elige con el margen legado (corrección de la
+  tanda 8).
+  Ejecutado en la tanda 8 (PR #140), por la revisión adversarial del
+  #139 (17 hallazgos confirmados, 3 refutados):
+  - CL-165: la validez va antes de toda clase y sobre el bias crudo:
+    win rate no finito o fuera de [0, 1], PF no finito o ≤ 0 y bias no
+    finito o ≤ 0 se rechazan con REJ_INVALID_INPUT, también en la sonda.
+    Un bias finito y positivo fuera de [0,5; 2] sólo encoge f o la deja
+    igual. La orden mínima es la sonda, sin edge o n < mínimo.
+  - CL-166: la sombra congela la regla arruinada, suma R y R²
+    (`sombra_kelly_suma_r`, `_suma_r2`) y `informe_sombra_kelly` da una
+    línea por moneda; el forense la imprime al final (SOMBRA_KELLY).
+  - RV7-T: la prueba de κ mira la orden. En su fixture el techo de margen
+    (L = 1) acota el riesgo emitido en ≈ 1,9 % del capital, así que
+    κ = 0,10 sólo cambia la f objetivo; con κ = ½ de ese riesgo el
+    nocional baja a la mitad. cf5d fija R ≈ −1 al cerrar en el stop por
+    el camino del núcleo (−1,29 observado).
+  - RV7-docs: premisas de CL-163 (margen, banda) y de los genes 10/11/32
+    (D-130) en el código, las pruebas, aquí y en el buzón.
+- N14 (de la revisión de la tanda 7): la banda del gen 33, [0,1; 1,0], es
+  inerte por encima del axioma de ruina (f ≤ 0,25): el 83 % de la banda,
+  la línea base (0,55) y los tres genomas guardados (0,8245). Por lectura
+  del código, estrecharla a [0,1; 0,25] no cambia ninguna orden: FMT-212,
+  kelly.rs, la cadena legada y LH-04 aplican el axioma después de κ. Pero
+  hoy rompería el rollback y la promoción entre entornos de un genoma con
+  κ > 0,25. `load_generation` (rama JSON) y `promote_across_env` promueven
+  el genoma crudo, sin la normalización de `desde_json` (la rama binaria
+  de `load_generation` sí normaliza), y el gate `validate` rechaza un gen
+  fuera de banda. Además, con la banda estrecha κ muerde sólo si los
+  techos de margen dejan un riesgo mayor que κ (≥ 10 % del capital, con
+  apalancamiento alto). A Fable/Línea H (genome.rs, genome_store.rs):
+  normalizar esas dos lecturas como `load_active` y luego estrechar la
+  banda, o congelar el gen 33 como el 10, 11, 20 y 32.
 
 **Restos de lotes ejecutados**: del 3, net_multiplexer (a AGY, para
 unificar con data_pipeline::http_cliente) y active_universe/
