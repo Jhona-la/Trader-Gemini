@@ -868,36 +868,6 @@ impl TemporalSpectrum {
         self.scales[i0].momentum_z * (1.0 - frac) + self.scales[i1].momentum_z * frac
     }
 
-    /// Ganancia epigenética adaptativa interpolada log-linealmente a escala tau.
-    #[inline]
-    pub fn scale_gain_at(&self, tau_ms: f64) -> f64 {
-        if !tau_ms.is_finite() || tau_ms <= 0.0 {
-            return 1.0;
-        }
-        let ln_tau = tau_ms.max(1e-6).ln();
-        let ln_min = (1e-6_f64).ln();
-        let step = 4f64.ln();
-        let idx_f = (ln_tau - ln_min) / step;
-        let i0 = idx_f.floor().clamp(0.0, 30.0) as usize;
-        let i1 = (i0 + 1).min(31);
-        let frac = (idx_f - i0 as f64).clamp(0.0, 1.0);
-        let g0 = if self.scales[i0].epigenetic_gain.is_finite()
-            && self.scales[i0].epigenetic_gain > 0.0
-        {
-            self.scales[i0].epigenetic_gain
-        } else {
-            1.0
-        };
-        let g1 = if self.scales[i1].epigenetic_gain.is_finite()
-            && self.scales[i1].epigenetic_gain > 0.0
-        {
-            self.scales[i1].epigenetic_gain
-        } else {
-            1.0
-        };
-        g0 * (1.0 - frac) + g1 * frac
-    }
-
     /// Retroalimentación Epigenética Adaptativa Multivariante Espectral por Escala.
     ///
     /// Modula continuamente la ganancia informacional (`epigenetic_gain`) de las 32 escalas
@@ -961,38 +931,6 @@ pub struct SpectralFieldState {
 }
 
 impl TemporalSpectrum {
-    /// Consenso de precio continuo EWMA interpolado log-linealmente a τ.
-    #[inline]
-    pub fn ewma_price_at(&self, tau_ms: f64) -> f64 {
-        if !tau_ms.is_finite() || tau_ms <= 0.0 {
-            return 0.0;
-        }
-        let ln_tau = tau_ms.max(1e-6).ln();
-        let ln_min = (1e-6_f64).ln();
-        let step = 4f64.ln();
-        let idx_f = (ln_tau - ln_min) / step;
-        let i0 = idx_f.floor().clamp(0.0, 30.0) as usize;
-        let i1 = (i0 + 1).min(31);
-        let frac = (idx_f - i0 as f64).clamp(0.0, 1.0);
-        self.scales[i0].ewma_price * (1.0 - frac) + self.scales[i1].ewma_price * frac
-    }
-
-    /// Volatilidad de sorpresa continua interpolada log-linealmente a τ.
-    #[inline]
-    pub fn volatility_at(&self, tau_ms: f64) -> f64 {
-        if !tau_ms.is_finite() || tau_ms <= 0.0 {
-            return 0.0;
-        }
-        let ln_tau = tau_ms.max(1e-6).ln();
-        let ln_min = (1e-6_f64).ln();
-        let step = 4f64.ln();
-        let idx_f = (ln_tau - ln_min) / step;
-        let i0 = idx_f.floor().clamp(0.0, 30.0) as usize;
-        let i1 = (i0 + 1).min(31);
-        let frac = (idx_f - i0 as f64).clamp(0.0, 1.0);
-        self.scales[i0].ewma_dev_vol * (1.0 - frac) + self.scales[i1].ewma_dev_vol * frac
-    }
-
     /// Índice de persistencia de signo reescalado a [0,1].
     /// Nombre conservado por compatibilidad: NO es un estimador del exponente de Hurst.
     #[inline]
@@ -1370,7 +1308,8 @@ impl HorizonCurve {
 // Contrato (protocolo del repo):
 // - Variable: momentos de la desviación relativa por escala, S_p(τ) = E|dev_τ|^p,
 //   estimados como EWMA del núcleo corregidos por masa (misma convención que
-//   `ewma_dev_vol`, D-742). S_2 = dev_vol², S_3 = dev_s3³-normalizado.
+//   `ewma_dev_vol`, D-742). S_2 = raw_dev_s2/masa = E[dev²] (#664, no
+//   (E|dev|)²), S_3 = raw_dev_s3/masa = E|dev|³.
 // - Operador: exponentes ζ(p) = d ln S_p / d ln τ por regresión log-log sobre
 //   las escalas con masa suficiente Y resueltas por el reloj de eventos
 //   (τ ≥ resolución efectiva, Ola XLIV). Un proceso autosimilar de Hurst H
@@ -2135,9 +2074,6 @@ mod tests {
             assert_eq!(spec.signal_at(tau), 0.0);
             assert_eq!(spec.persistence_at(tau), 0.0);
             assert_eq!(spec.momentum_z_at(tau), 0.0);
-            assert_eq!(spec.ewma_price_at(tau), 0.0);
-            assert_eq!(spec.volatility_at(tau), 0.0);
-            assert_eq!(spec.scale_gain_at(tau), 1.0);
             assert_eq!(spec.continuous_energy_density(tau), 0.0);
         }
     }
@@ -2863,5 +2799,6 @@ fn omega12_g1_4_segundo_momento_central_sin_sesgo_jensen() {
     }
     assert!(verificados >= 4, "Debe haber al menos 4 escalas verificadas");
 }
+
 
 
