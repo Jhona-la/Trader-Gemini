@@ -146,7 +146,7 @@ Modo supervivencia-compounding:
 16. **`data-pipeline`:** Multiplexación de feeds de Binance, Fred Macro y libros L2 en tiempo real.
 17. **`data-ingest`:** Parseo ASCII y SIMD JSON de alta velocidad con limitadores de tasa token-bucket.
 18. **`strategy-core`:** Cointegración multivariante, arbitraje estadístico y modelos VECM Johansen.
-19. **`telemetry-engine`:** Logging no bloqueante basado en colas SPSC de bajo consumo.
+19. **`telemetry-engine`:** macros `telemetry!`/`telemetry_err!` para los crates por debajo de telemetry-server; sin cola propia, escriben en el destino que conecta el proceso (en el host, la cola del log; RET-51b).
 20. **`omniscient-registry`:** Registro omnisciente de parámetros y reconciliación sin colisiones de estado.
 21. **`flight-recorder`:** Grabador de eventos binarios mapeados en memoria RAM.
 22. **`graph-architecture`:** Escaneo y análisis del Grafo Vivo y dependencias de código en tiempo real.
