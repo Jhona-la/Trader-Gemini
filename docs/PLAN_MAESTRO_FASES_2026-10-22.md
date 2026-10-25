@@ -1,8 +1,8 @@
 # Plan maestro por fases V33 — revisión desde la base
 
 **Revisión vigente:** 2026-10-24, Kimi Quant Sr V33, en coordinación con los demás agentes.
-**Base inspeccionada:** `main = 60981662ed3c4392a8e23f80e0ce74cba4dbd18d = origin/main`.
-**Alcance:** workspace Rust de 21 crates + paquete raíz, 2.193 rutas versionadas y 838 archivos Rust. Estas cifras describen el censo mecánico, **no** archivos ya auditados.
+**Base inspeccionada:** `main = 30fc7ee86b7a24def4d48b8228543bc9030e14be = origin/main`.
+**Alcance:** workspace Rust de 21 crates + paquete raíz, 2.197 rutas versionadas y 842 archivos Rust. Estas cifras describen el censo mecánico, **no** archivos ya auditados.
 **Objetivo de investigación:** crecimiento neto compuesto de +100 %/72 h. Es una hipótesis que debe demostrarse fuera de muestra y después de fees, funding y slippage; no una garantía ni una razón para aumentar riesgo. Producción permanece prohibida en esta revisión.
 
 Este es el plan canónico de coordinación. Los planes de líneas aportan detalle, no fuentes paralelas de verdad. `AGENT_SYNC.md` contiene reservas y heartbeats; `.agents/MEMORIA.md` conserva los recibos de cierre.
@@ -23,22 +23,22 @@ No se simplifica matemática existente para salir de un error. No se presentan `
 
 | Área | Estado verificado | Consecuencia |
 |---|---|---|
-| `main` | `60981662e`, idéntico a `origin/main`; hay cambios locales de Codex y otros agentes preservados | Kimi no toca Rust ni arrastra cambios ajenos al staging |
-| CI del último código integrado | Merge Fase 11 `58f90ced6`: 10/10 checks SUCCESS; el HEAD `60981662e` solo cambia `AGENT_SYNC.md` y no dispara runs por los filtros de rutas | Verde acotado al código integrado; no se transfiere a commits futuros |
-| Ramas remotas | Solo `main` y `claude/auditoria-deslizamiento-apalancamiento-sqtc08` (PR #138 borrador) | Fases 10/11 retiradas por V33 tras PR fusionado, ancestria y cero commits exclusivos |
+| `main` | `30fc7ee86`, idéntico a `origin/main`; `5e3557c17` integrado por fast-forward preservando siete archivos locales y el stash histórico | Kimi no toca Rust ni arrastra cambios ajenos al staging |
+| CI del último código integrado | `5e3557c17`: **10/10 checks SUCCESS**, incluido Replay `40149004089` con salida 0; el HEAD documental `30fc7ee86` tiene `total_count=0` por filtros de rutas | Verde acotado al código integrado; no se transfiere a commits futuros |
+| Ramas remotas | `main` y `claude/auditoria-deslizamiento-apalancamiento-sqtc08`; esta última tiene cuatro commits exclusivos CL-161..164 | No hay PR abierto al corte; la rama activa se preserva, no se borra por antigüedad |
 | Ramas y worktrees locales | `main`, `glm/161`, `claude/linea-g-ola10`, `claude/linea-i-i3` y `codex/verify-pr65-20261022` bloqueado | Todos se preservan; el stash histórico ajeno también permanece intacto |
-| RAM | 23,38 GiB visibles; 1,17 GiB disponibles; Cargo y Rustc ajenos activos | No compilar ni editar Rust hasta admisión real del semáforo |
+| RAM | 23,38 GiB visibles; 0,82 GiB disponibles; Cargo y Rustc ajenos activos | No compilar ni editar Rust hasta admisión real del semáforo |
 | Disco | Tamaño total del proyecto pendiente; no se ejecutan `du` ni barridos durante el build ajeno | No afirmar consumo actual ni limpiar por intuición |
 | Hooks | `core.hooksPath=.githooks`; solo existe `pre-commit` de whitespace | `pre-push` sigue pendiente como átomo separado |
 | Arquitectura documental | `docs/ARCHITECTURE.md` describe el sistema Python histórico; `ARQUITECTURA_VIVA.md` está sincronizado al 2026-10-06 | El código y el linaje real mandan sobre diagramas históricos |
 
 ### Propietarios que no se pisan
 
-- **AGY:** Fase 12 sobre `main`; Fases 10/11 ya fusionadas y sus ramas remotas retiradas.
+- **AGY:** titular propuesto de la implementación N8 al precio límite antes de reservar; Kimi V33 revisa RED/GREEN y Línea C consulta. Fases 10/11 ya fusionadas y sus ramas remotas retiradas.
 - **Codex QRA:** validación y cambios locales de `user_data_stream.rs`, `os-guardian`, `.agents/MEMORIA.md` y su fila de `AGENT_SYNC.md`; ninguno se incluye en commits de Kimi.
-- **Claude Línea I:** worktree `claude/linea-i-i3`; Línea C conserva el PR #138 activo; Línea G conserva su worktree de revisión.
+- **Claude Línea I:** worktree `claude/linea-i-i3`; Línea C conserva su rama activa con cuatro commits exclusivos; Línea G conserva su worktree de revisión.
 - **GLM:** worktree `tg-mps` en `glm/161`; `verify-pr65` permanece bloqueado.
-- **Kimi V33:** este plan, inventario y su propia fila de `AGENT_SYNC.md`; el átomo de capital queda pendiente hasta que la RAM y el semáforo admitan la puerta local.
+- **Kimi V33:** revisión N8, este plan, inventario y su propia fila de `AGENT_SYNC.md`; el átomo de capital queda pendiente hasta que la RAM y el semáforo admitan la puerta local.
 
 ## 2. FASE 0 — Recuperación, recursos y continuidad multiagente
 
@@ -84,6 +84,8 @@ No se simplifica matemática existente para salir de un error. No se presentan `
 ## 5. FASE 3 — Correctness financiera y evolutiva en la ruta viva
 
 Orden de ataques posteriores, cada uno con su propio RED y reserva. Los seis primeros proceden de la revisión estática cruzada; aún no tienen pruebas ejecutadas por V33. Antes de tocar `reconciliation`, host o ejecutor se coordinará con Línea C/AGY/Sol para no invadir sus reservas:
+
+**N8 / IOC bajo `minNotional` ya asignado:** la revisión `main@5e3557c17` confirma que el mínimo se garantiza al precio medio/entrada modelada, pero el IOC final queda en `4.1 × 1.219 = 4.9979 USDT < 5`. **AGY implementa, Kimi V33 revisa y Línea C consulta**: dimensionar la mínima al precio límite antes de publicar la reserva, sin aumentar cantidad después; RED debe exigir `qty=4.2`, `notional=5.1198` y veto previo a reserva/configuración/envío cuando la mínima no cabe en el riesgo aprobado. Alcance máximo: `god-engine-core/src/lib.rs`, la costura IOC de `src/bin/god_engine.rs` y `execution-engine/tests/f325_min_notional_ioc_open_diagnostics.rs`. No mezclar N12/fricción ni salidas reduce-only.
 
 1. **OMS ante exposición desconocida (crítico):** `positionRisk` puede deserializar campos ausentes como cantidad `0.0` y llegar a `Ready` con `openOrders=[]`. Exigir campos de evidencia y `InvalidRemoteEvidence`/`Blocked`; probar que una fila sin `positionAmt` no abre admisión ni cierra una posición local como fantasma.
 2. **Cierre sin fill (crítico):** el host puede aprender/contabilizar antes de confirmar la salida y reduce-only acepta ACK `FILLED`/`PARTIALLY_FILLED` con `executedQty=0`. Exigir ejecución positiva y reconciliación; no purgar OCO ni llamar `record_net_pnl` con una salida desconocida.
@@ -146,7 +148,7 @@ Ningún elemento de este backlog justifica prometer +100 %/72 h, ruina cero, 0 n
 
 ## 9. Censo archivo por archivo y recepción entre agentes
 
-El inventario mecánico `docs/audit/V33_INVENTARIO_2026-10-24.tsv` conserva las 2.186 rutas de la base de auditoría `2fb4633d3` y añade las siete altas detectadas al revalidar `main=60981662e`: **2.193 rutas**, 26 `REVISADO_ESTATICO`, 1 `RED` (capital inválido con evidencia ejecutada) y 2.166 `INVENTORIADO`; no hubo bajas. Las filas históricas conservan el blob de su base y las siete altas llevan el blob de `main`, como aclara la cabecera. No es una certificación de revisión completa. El ledger incremental `docs/audit/V33_REVISIONES_2026-10-24.tsv` conserva los 34 hallazgos concretos sin reescribir censos históricos. Campos mínimos:
+El inventario mecánico `docs/audit/V33_INVENTARIO_2026-10-24.tsv` conserva las 2.186 rutas de la base de auditoría `2fb4633d3` y los deltas posteriores hasta `main=30fc7ee86`: **2.197 rutas**, 26 `REVISADO_ESTATICO`, 1 `RED` (capital inválido con evidencia ejecutada) y 2.170 `INVENTORIADO`. La revalidación actual añadió seis rutas y retiró dos respecto al delta anterior; el conjunto completo fue comparado en orden y sin duplicados contra `git ls-files`. Las filas históricas conservan el blob de su base y las altas llevan el blob del índice vigente, como aclara la cabecera. No es una certificación de revisión completa. El ledger incremental `docs/audit/V33_REVISIONES_2026-10-24.tsv` conserva los 34 hallazgos concretos, con N8 revalidado y asignado, sin reescribir censos históricos. Campos mínimos:
 
 `ruta | blob | dueño | ruta_viva | hallazgo | severidad | prueba | CI_SHA | estado | siguiente`
 
