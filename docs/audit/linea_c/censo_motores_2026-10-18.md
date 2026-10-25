@@ -407,7 +407,7 @@ dice su lote):
 | #143 | N13, precisiones de la revisión de las correcciones del #142 (CL-170: el contador y las marcas de ruina de la sombra también sin respaldo; RV10-T, RV10-docs), y la de su propia revisión antes de fusionar (CL-171: el libro no repara un contador corrupto; RV11-docs) |
 | #144 | N12, la fricción en la pérdida al stop (CL-172: la viabilidad de la orden mínima; CL-173: el tope de ruina F1-092; RV12-T, RV12-docs); f_min_ejecutable de la envolvente queda para el dueño |
 | #145 | N4 (RET-N4: Position::entry_tau_ms(), sin llamadores), N2 (RET-N2: ewma_price_at, scale_gain_at y volatility_at, tras la regla 2), N9 (CL-174: sin VPIN medido la sombra TrendRunner se abstiene), N10 (CL-175: la presión adversarial de Nash es el cvpin medido), N15 (CL-176: la escalada desnuda reporta el fallo de la purga de brackets); más RV13-docs; abre N10b, N15, N16 y N17 |
-| #146 | N5, la cuota del exchange para las salidas (CL-177: uso por contador con su sello y sin bajar por una respuesta tardía; CL-178: las salidas sin consulta respetan el freno 429/418 y el barrido no purga dos veces; CL-179: las críticas pasan hasta el límite del exchange con las críticas en vuelo contadas); más N5-docs; abre N18 a N22 |
+| #146 | N5, la cuota del exchange para las salidas (CL-177: uso por contador con su sello y sin bajar por una respuesta tardía; CL-178: las salidas sin consulta respetan el freno 429/418 y el barrido no purga dos veces; CL-179: las críticas pasan hasta el límite del exchange con las críticas en vuelo contadas); más N5-docs; abre N18 a N22; y su revisión antes de fusionar (CL-180: el máximo exacto de las cabeceras vigentes y sin sellos futuros; CL-181: un contador sin coste no frena por lo que está en vuelo; CL-182: la cabecera se registra con el cupo vivo; RV14-c, RV14-T, RV14-docs) |
 
 **Hecho por otros agentes**: lote 9 entero (Sol, d18b3735), lote 45 entero
 (Codex RB, 906a9c6a), parte del 7 (Sol retiró el bin main.rs de
@@ -814,9 +814,22 @@ un escéptico por lote listo):
     más caro (binance_api.rs). El barrido de huérfanas va por el tramo de
     lectura: es limpieza.
   - Decisión por defecto, sin tarjeta: durante un cooldown o un freno no
-    sale nada, tampoco los cierres. Es la regla del exchange (seguir
-    enviando tras un 429 acaba en 418) y lo que ya hacían las salidas
-    consultadas.
+    sale nada de lo que pasa por `check_backoff`, tampoco los cierres. Es
+    la regla del exchange (seguir enviando tras un 429 acaba en 418) y lo
+    que ya hacían las salidas consultadas. Las excepciones vivas están en
+    N20.
+  - Revisión antes de fusionar (revisor por pieza y escéptico por
+    hallazgo, 16 confirmados y 3 refutados): CL-180, el uso es el máximo
+    exacto de las cabeceras vigentes (con sólo la mayor y la última se
+    perdía una intermedia aún vigente) y un sello futuro, por un reloj que
+    retrocede, no alarga su ventana; CL-181, en el tramo crítico un
+    contador en el que la petición no gasta sólo la rechaza con el uso ya
+    por encima del límite (un cierre de peso 0 se frenaba por el peso de un
+    positionRisk en vuelo); CL-182, la cabecera de una crítica se registra
+    antes de soltar su cupo; RV14-c, el aplanado devuelve el freno al
+    empezar y comentarios corregidos (el 418 y el tercer 429 arman
+    RATE_BRAKE, no el kill-switch); RV14-T, guardas de fuente más
+    estrictas.
   - Queda sin derivar el 0,8 de entradas y lecturas: su franja (480 de
     peso/min, 60 órdenes/10 s, 240/min) es ahora la reserva crítica. El
     panel de diseño estimó, sin medir, que cubre el tráfico crítico del
@@ -1161,13 +1174,27 @@ un escéptico por lote listo):
   freno 429/418 ni libro en vuelo: ensure_hedge_mode (GET y POST de
   positionSide/dual), que OmsSession::refresh llama cada 60 s
   (host_oms.rs:484, god_engine.rs:2856-2861); fetch_hedge_mode;
-  fetch_all_symbol_filters, con su reintento; fetch_server_time; y el
-  bucle NTP (ntp.rs:106), que usa el cliente directamente. Átomo propio
-  (Línea C).
-- N21 (de la tanda 13): las respuestas de error tiran sus cabeceras de uso
-  (client.rs sólo llama a extract_limits con estado 2xx: :296, :355, :420,
-  :471, :508), así que tras un 4xx/5xx el uso no se actualiza. Átomo
-  propio, con la fila N20.
+  fetch_all_symbol_filters, con su reintento; fetch_server_time; el bucle
+  NTP (ntp.rs:106), que usa el cliente directamente; y el user-data
+  stream, que también lo usa: create_listen_key (POST listenKey,
+  client.rs:192) en el bucle de reconexión con reintento de 500 ms a 30 s
+  (user_data_stream.rs:133-170) y keep_alive_listen_key (PUT,
+  client.rs:226) cada 25 min (user_data_stream.rs:213), sin leer las
+  cabeceras de uso. get_payload_account sólo mira el freno antes de su
+  reintento: el primer GET de fetch_hedge_mode y ensure_hedge_mode sale
+  siempre. Átomo propio (Línea C).
+- N21 (de la tanda 13): las respuestas de error tiran sus cabeceras de uso,
+  así que tras un 4xx/5xx el uso no se actualiza. En client.rs:296, :420 y
+  :508 extract_limits sólo corre en la rama 2xx; en :355
+  (execute_order_payload_body) corre con cualquier estado, 429/418
+  incluidos, y en :471 (get_payload_with_timeout) con cualquiera salvo
+  429/418, que vuelven antes; en esas dos el Err sólo lleva un String y los
+  límites leídos se pierden. Un timeout AMBIGUOUS pudo contar en el
+  exchange sin traer respuesta. En los dos casos, al soltar el cupo de una
+  crítica su coste sale del libro en vuelo sin entrar en el uso (lo vio la
+  revisión en los reintentos D-02 de la OCO). Candidato: devolver los
+  límites también en el Err y, con un Err ambiguo, sumar el coste a un uso
+  local sellado que caduque con su ventana. Átomo propio, con la fila N20.
 - N22 (de la tanda 13): literales y pesos sin derivar en la cuota. El 0,8
   de entradas y lecturas (executor.rs, `HEADROOM`) y los +60 s del freno
   escalado de M4-C02 (`until.saturating_add(60_000)`). Y tres pesos del
@@ -1178,7 +1205,13 @@ un escéptico por lote listo):
   símbolo del universo cada 60 s (host_oms.rs:498): con peso 20 y 20
   símbolos serían 400 de peso por minuto, el 17 % del límite. Comprobar
   desde el PC contra la documentación y derivar el 0,8 con el número de
-  posiciones y la tasa de entradas publicados.
+  posiciones y la tasa de entradas publicados. Falta también comprobar si
+  las ventanas del exchange están alineadas al minuto o son móviles. Si
+  están alineadas, una cabecera menor que llega más tarde que la vida
+  máxima de una petición (timeouts de client.rs: 1,2 s en órdenes, 5 s en
+  cuenta, 10 s en exchangeInfo) tras la mayor prueba un reinicio, y el
+  contador podría soltar la mayor antes de su caducidad (hoy la conserva,
+  lo conservador; CL-180).
 
 **Restos de lotes ejecutados**: del 3, net_multiplexer (a AGY, para
 unificar con data_pipeline::http_cliente) y active_universe/

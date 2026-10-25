@@ -13,7 +13,7 @@
 | `/fapi/v1/order` | GET | 1 | Query por origClientOrderId (idempotencia F1.2) | executor.rs query_order |
 | `/fapi/v1/order` | DELETE | 1 | Cancelar orden | executor.rs cancel_order |
 | `/fapi/v1/batchOrders` | POST | 5 | OCO simulado (2 POST), ver §4 | executor.rs (a migrar) |
-| `/fapi/v1/listenKey` | POST/PUT | 1 | User-data stream (fills en tiempo real) | client.rs + user_data_stream.rs |
+| `/fapi/v1/listenKey` | POST/PUT | 1 | User-data stream (fills en tiempo real); fuera de la cuota del ejecutor (censo C-F7b, N20) | client.rs + user_data_stream.rs |
 | `/fapi/v2/balance` | GET | 5 | Balance wallet (paridad de capital) | api_client.rs |
 | `/fapi/v2/positionRisk` | GET | 5 | Reconciliación de posiciones | executor.rs fetch_position_risk |
 | `/fapi/v2/account` | GET | 5 | Estado completo de cuenta | fetch_account_balance |
@@ -31,12 +31,20 @@
 | `/fapi/v1/allOpenOrders` | DELETE | 1 (SUPUESTO) | Purga de órdenes normales de un símbolo | cancel_all_symbol_orders, aplanado |
 | `/fapi/v1/positionSide/dual` | GET/POST | 1 (ver nota) | Modo hedge (arranque, OmsSession::refresh cada 60 s, aplanado) | ensure_hedge_mode, fetch_hedge_mode |
 
-> N5 (CL-179): estos pesos son los costes del ejecutor (`CosteBinance` en
-> binance_api.rs); lo marcado SUPUESTO no está en este mapa y toma el valor
-> del análogo más caro, porque sobrestimar sólo frena antes. Tres pesos del
-> mapa se recuerdan distintos en la documentación de Binance y están por
-> comprobar desde el PC (censo C-F7b, fila N22): commissionRate 1 frente a
-> 20, positionSide/dual 1 frente a 30, income 20 frente a 30.
+> N5 (CL-179): sólo los pesos de las peticiones críticas son costes del
+> ejecutor (`CosteBinance` en binance_api.rs): order POST/GET/DELETE,
+> positionRisk, algoOrder POST/DELETE, algoOpenOrders y allOpenOrders DELETE,
+> y openAlgoOrders con símbolo. Lo marcado SUPUESTO no está documentado y toma
+> el valor del análogo más caro, porque sobrestimar sólo frena antes. Las
+> lecturas (commissionRate, account, income, openAlgoOrders sin símbolo, el
+> GET de modo del aplanado) no reservan coste: frenan con el uso por encima
+> del 80 % del límite. ensure_hedge_mode y fetch_hedge_mode
+> (positionSide/dual), exchangeInfo, time y listenKey quedan fuera de la cuota
+> (censo C-F7b, fila N20). Tres pesos del mapa se recuerdan distintos en la
+> documentación de Binance y están por comprobar desde el PC (fila N22):
+> commissionRate 1 frente a 20, positionSide/dual 1 frente a 30, income 20
+> frente a 30. Ninguno de los tres es un coste del ejecutor, así que
+> corregirlos aquí no cambia su cuota; sí cambia cuánto gasta el motor.
 
 ## 2. Endpoints DISPONIBLES NO explotados (oportunidades F1.10+/F4)
 
@@ -83,15 +91,20 @@
 
 - Peso IP: 2400/min (headers `X-MBX-USED-WEIGHT-1M`). Órdenes: 300/10s, 1200/min (`X-MBX-ORDER-COUNT-*`).
 - 429 = freno (respetar `Retry-After`) → política F1.8: cooldown temporal.
-- 418 = IP baneada 2min–3días → kill-switch (F1.8).
+- 418 = IP baneada 2min–3días → freno temporal `RATE_BRAKE` por su ventana (`Retry-After` o 300 s),
+  M4-C02; no es un kill-switch y se rearma si el ban persiste.
 - WS: 10 mensajes/s por conexión; conexiones: 300/5min por IP.
 - **Presupuesto del sistema** (F1.8, M4-C02, N5): cooldown post-429 (`Retry-After` o 60 s) y freno
   temporal (`RATE_BRAKE`) al tercer 429 consecutivo (cooldown + 60 s) o con un 418 (su ventana o
-  300 s); ya no es un kill a 3×429. Mientras duran no sale ninguna petición del ejecutor, salidas
-  incluidas. Fuera de ellos, dos tramos de cuota (CL-179): entradas y lecturas frenan con el uso por
-  encima del 80 % del límite; las críticas (cierres, protección, positionRisk, cancelaciones, consulta
-  de una orden) pasan mientras uso + críticas en vuelo + coste ≤ límite. El uso es el de la cabecera
-  más alta vigente de cada contador, con su propio sello (CL-177).
+  300 s); ya no es un kill a 3×429. Mientras duran no sale ninguna petición del ejecutor que pase por
+  `check_backoff`, salidas incluidas; quedan fuera las de la fila N20 del censo C-F7b (modo hedge,
+  que `OmsSession::refresh` pide cada 60 s, filtros, hora, NTP y listenKey). Fuera de los frenos, dos
+  tramos de cuota (CL-179): entradas y lecturas frenan con el uso por encima del 80 % del límite; las
+  críticas (cierres, protección, positionRisk, cancelaciones, consulta de una orden) pasan mientras
+  uso + críticas en vuelo + coste ≤ límite en cada contador en que gastan (CL-181). El uso es el
+  máximo de las cabeceras vigentes de cada contador, cada una con su sello (CL-177, CL-180), y una
+  crítica registra su cabecera antes de salir del libro en vuelo (CL-182). Una respuesta de error no
+  trae cabecera (fila N21).
 
 ## 6. WebSocket (streams)
 

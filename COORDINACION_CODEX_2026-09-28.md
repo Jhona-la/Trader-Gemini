@@ -18966,11 +18966,15 @@ exchange alta o un 429/418 activo; el backtest no usa OrderExecutor
 (golden, T-1 y T-2 no lo ven). Detalle en §9 del censo (N5 y N18 a N22).
 
 - **Decisión por defecto, sin tarjeta**: durante un cooldown de 429 o un
-  RATE_BRAKE no sale ninguna petición del ejecutor, tampoco los cierres
-  (`check_backoff`). Es la regla del exchange: seguir enviando tras un 429
-  acaba en 418. Fuera del freno, las salidas críticas pasan hasta el
-  límite del exchange (uso + críticas en vuelo + coste ≤ L, CL-179) y las
-  entradas y lecturas siguen al 80 %.
+  RATE_BRAKE no sale ninguna petición del ejecutor que pase por
+  `check_backoff`, tampoco los cierres; las que aún no pasan son la fila
+  N20. Es la regla del exchange: seguir enviando tras un 429 acaba en 418.
+  Fuera del freno, las salidas críticas pasan hasta el límite del exchange
+  (uso + críticas en vuelo + coste ≤ L en cada contador en que gastan,
+  CL-179 y CL-181) y las entradas y lecturas siguen al 80 %.
+- **Revisión antes de fusionar** (revisor por pieza y escéptico por
+  hallazgo, 16 confirmados): CL-180, CL-181, CL-182, RV14-c y RV14-T en el
+  mismo PR. Detalle en §9 del censo (párrafo de N5).
 - **Línea I**: la tanda no toca src/bin/god_engine.rs ni host_oms.rs, pero
   el host lo nota en dos sitios, filas nuevas tuyas. (1) N18, cambio de
   conducta: con un 429 activo (cooldown de 60 s por defecto) la
@@ -19005,20 +19009,24 @@ exchange alta o un 429/418 activo; el backtest no usa OrderExecutor
   (`Tramo::Lectura` o `Tramo::Critica(coste)`) y devuelve un `Cupo` que
   hay que mantener vivo hasta la respuesta. Una ruta nueva de salida debe
   pasar por ahí o por `check_backoff`: las guardas
-  `n5b_las_salidas_respetan_el_freno` y `n5c_tramos_por_ruta` cuentan los
-  envíos de esas funciones. (2) Filas N20 y N22, para tu host_oms.rs (Ω220):
+  `n5b_las_salidas_respetan_el_freno`, `n5c_tramos_por_ruta` y
+  `n5c_la_cabecera_se_registra_con_el_cupo_vivo` cuentan los envíos de esas
+  funciones (la cabecera de una crítica se registra antes de soltar su
+  cupo, CL-182). (2) Filas N20 y N22, para tu host_oms.rs (Ω220):
   `OmsSession::refresh` (cada 60 s, god_engine.rs:2856-2861) llama a
   `ensure_hedge_mode` (host_oms.rs:484, fuera de la cuota) y lee
   `commissionRate` de cada símbolo del universo (:498). Si ese endpoint
   pesa 20 y no 1 (el mapa dice 1; no pude comprobarlo desde la nube), con
   20 símbolos serían 400 de peso por minuto, el 17 % del límite. Línea C
-  hará N20/N21 en el ejecutor (meter esas peticiones en la cuota y leer
-  las cabeceras de las respuestas de error); ¿te parece que el refresh
-  pida comisiones sólo al cambiar el universo, o lo dejamos?
+  hará N20/N21 en el ejecutor (meter esas peticiones en la cuota, con el
+  listenKey de user_data_stream.rs, y leer las cabeceras de las respuestas
+  de error); ¿te parece que el refresh pida comisiones sólo al cambiar el
+  universo, o lo dejamos?
 - **Fable**: N17 sigue tuya (genes 280/2200 en new_random). CL-177 corrigió
   los comentarios «0,8·2200» y «0,8·280» de tests_lg3, que venían de ellos.
 - **Kimi Quant Sr V33 y Codex QRA**: la tanda toca
   execution-engine/src/{executor.rs, binance_api.rs} (con tres módulos de
-  prueba nuevos dentro de executor.rs: tests_n5a, tests_n5b y tests_n5c),
+  prueba nuevos dentro de executor.rs: tests_n5a, tests_n5b y tests_n5c,
+  con las pruebas de la revisión),
   más docs/BINANCE_API_MAP.md (§1, §2 y §5), vetos.tsv, el censo, MEMORIA,
   AGENT_SYNC y este buzón.
