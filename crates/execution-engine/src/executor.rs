@@ -696,7 +696,13 @@ impl OrderExecutor {
         sign_payload_to_buffer(&buf.as_str()[payload_start..], api_secret, &mut sig_buf);
         buf.push_str("&signature=");
         buf.push_str(unsafe { std::str::from_utf8_unchecked(&sig_buf) });
-        match self.client.cancel_order_payload(buf.as_str()).await {
+        // N5 (CL-178): durante un 429/418 el DELETE no sale; la purga queda
+        // incompleta y el llamador marca la protección sucia.
+        let borrado = match self.check_backoff(ts) {
+            Ok(()) => self.client.cancel_order_payload(buf.as_str()).await,
+            Err(e) => Err(e),
+        };
+        match borrado {
             Ok(limits) => {
                 self.update_limits(&limits);
                 cancelled += 1;
@@ -744,8 +750,15 @@ impl OrderExecutor {
         sign_payload_to_buffer(&buf.as_str()[payload_start..], &api_secret, &mut sig_buf);
         buf.push_str("&signature=");
         buf.push_str(unsafe { std::str::from_utf8_unchecked(&sig_buf) });
-        let dual_mode_opt = match self.get_payload_account(buf.as_str()).await {
-            Ok((_, mode_body)) => {
+        // N5 (CL-178): durante un 429/418 no se pregunta el modo; se usa el
+        // que la cuenta tenía registrado (el mismo respaldo que ante un fallo).
+        let modo = match self.check_backoff(timestamp) {
+            Ok(()) => self.get_payload_account(buf.as_str()).await,
+            Err(e) => Err(e),
+        };
+        let dual_mode_opt = match modo {
+            Ok((limits, mode_body)) => {
+                self.update_limits(&limits);
                 #[derive(serde::Deserialize)]
                 struct ModeResp {
                     #[serde(rename = "dualSidePosition")]
@@ -764,9 +777,7 @@ impl OrderExecutor {
 
         let entries = self.fetch_position_risk().await?;
         let open_positions: Vec<_> = entries.iter().filter(|p| p.is_open()).cloned().collect();
-        let open_symbols: std::collections::HashSet<String> =
-            open_positions.iter().map(|p| p.symbol.clone()).collect();
-        let all_symbols: Vec<String> = entries.iter().map(|p| p.symbol.clone()).collect();
+        let sin_posicion = simbolos_sin_posicion(&entries);
 
         let mut closed = 0usize;
         let mut cancelled = 0usize;
@@ -865,7 +876,18 @@ impl OrderExecutor {
                 buf.push_str("&signature=");
                 buf.push_str(unsafe { std::str::from_utf8_unchecked(&sig_buf) });
 
-                let mut close_res = self.client.execute_order_payload_typed(buf.as_str()).await;
+                // N5 (CL-178): el cierre no sale durante un 429/418, y cada
+                // respuesta pasa UNA vez por la política de rate-limit (antes
+                // sus 429 no armaban el cooldown y el barrido seguía enviando).
+                // Un rechazo local no lleva -4061 ni -2022: no reintenta.
+                let mut close_res = match self.check_backoff(self.get_synced_timestamp()) {
+                    Ok(()) => self
+                        .client
+                        .execute_order_payload_typed(buf.as_str())
+                        .await
+                        .map_err(|e| self.handle_rate_limit_error(&e)),
+                    Err(e) => Err(e),
+                };
                 // R3.3 / K-16: Fail-safe retry si el exchange rechaza por discrepancia de modo (-4061)
                 if let Err(ref e) = close_res {
                     if e.contains("-4061") || e.contains("position side") || e.contains("reduceOnly") {
@@ -906,10 +928,14 @@ impl OrderExecutor {
                         retry_buf.push_str("&signature=");
                         retry_buf.push_str(unsafe { std::str::from_utf8_unchecked(&retry_sig_buf) });
 
-                        close_res = self
-                            .client
-                            .execute_order_payload_typed(retry_buf.as_str())
-                            .await;
+                        close_res = match self.check_backoff(self.get_synced_timestamp()) {
+                            Ok(()) => self
+                                .client
+                                .execute_order_payload_typed(retry_buf.as_str())
+                                .await
+                                .map_err(|e| self.handle_rate_limit_error(&e)),
+                            Err(e) => Err(e),
+                        };
                     }
                 }
 
@@ -998,14 +1024,12 @@ impl OrderExecutor {
         }
 
         // Purgar brackets de símbolos sin posiciones abiertas (órdenes huérfanas)
-        for sym in &all_symbols {
-            if !open_symbols.contains(sym) {
-                let (sym_canc, purged) = self.cancel_symbol_orders_and_brackets(sym, &api_secret).await;
-                cancelled += sym_canc;
-                if !purged {
-                    unpurged_symbols.push(sym.clone());
-                    quantum_arena::protection_health::mark_dirty();
-                }
+        for sym in &sin_posicion {
+            let (sym_canc, purged) = self.cancel_symbol_orders_and_brackets(sym, &api_secret).await;
+            cancelled += sym_canc;
+            if !purged {
+                unpurged_symbols.push(sym.clone());
+                quantum_arena::protection_health::mark_dirty();
             }
         }
 
@@ -1352,13 +1376,11 @@ impl OrderExecutor {
         Ok(())
     }
 
-    /// CL-3 — EL KILL-SWITCH BLOQUEA LO QUE AUMENTA EL RIESGO, NO LAS SALIDAS.
-    ///
-    /// F1-030: Presupuestos separados. Las cancelaciones, lecturas y cierres reduce-only
-    /// NUNCA se bloquean por un literal local de ops/s. Se rigen exclusivamente por
-    /// los frenos reales del exchange (RATE_BRAKE, 429 cooldown) y el headroom del 80%
-    /// en peso de requests (2400/min) y cuotas de órdenes vigentes reportadas por Binance.
-    fn check_exit_rate_limits(&self, timestamp_ms: u64) -> Result<(), String> {
+    /// N5 (CL-178): los dos frenos que ya puso el exchange, sin cuota. Ninguna
+    /// petición sale mientras duran, salidas incluidas: Binance pide no enviar
+    /// durante el Retry-After de un 429, y seguir enviando acumula 429 hasta el
+    /// freno escalado (3 consecutivos) o el ban de IP (418).
+    fn check_backoff(&self, timestamp_ms: u64) -> Result<(), String> {
         // FIX M4-C02: freno TEMPORAL por rate-limit (3×429 escalado / HTTP 418).
         // A diferencia del kill_switch permanente (incidentes reales), este
         // auto-expira: cuando timestamp_ms >= rate_brake_until_ms la ejecución
@@ -1379,6 +1401,17 @@ impl OrderExecutor {
                 timestamp_ms
             ));
         }
+        Ok(())
+    }
+
+    /// CL-3 — EL KILL-SWITCH BLOQUEA LO QUE AUMENTA EL RIESGO, NO LAS SALIDAS.
+    ///
+    /// F1-030: Presupuestos separados. Las cancelaciones, lecturas y cierres reduce-only
+    /// NUNCA se bloquean por un literal local de ops/s. Se rigen exclusivamente por
+    /// los frenos reales del exchange (RATE_BRAKE, 429 cooldown) y el headroom del 80%
+    /// en peso de requests (2400/min) y cuotas de órdenes vigentes reportadas por Binance.
+    fn check_exit_rate_limits(&self, timestamp_ms: u64) -> Result<(), String> {
+        self.check_backoff(timestamp_ms)?;
 
         // LG-3: el uso que reporta una cabecera vale sólo dentro de su ventana
         // del exchange (1 min / 10 s). Sin caducidad, una cabecera alta
@@ -1656,10 +1689,15 @@ impl OrderExecutor {
         if let Err(ref e) = res {
             if !e.starts_with("HTTP_429_RATE_LIMITED") && !e.starts_with("HTTP_418_IP_BANNED") {
                 tokio::time::sleep(std::time::Duration::from_millis(200)).await;
-                res = self
-                    .client
-                    .get_payload_with_timeout(url, Some(std::time::Duration::from_secs(5)))
-                    .await;
+                // N5 (CL-178): otra petición pudo recibir un 429/418 durante
+                // la espera; entonces el reintento no sale y vuelve el error
+                // de la primera.
+                if self.check_backoff(self.get_synced_timestamp()).is_ok() {
+                    res = self
+                        .client
+                        .get_payload_with_timeout(url, Some(std::time::Duration::from_secs(5)))
+                        .await;
+                }
             }
         }
         res.map_err(|e| self.handle_rate_limit_error(&e))
@@ -3617,7 +3655,12 @@ impl ExecutionProvider for OrderExecutor {
                 sign_payload_to_buffer(&rb.as_str()[rp..], &retry_secret, &mut rsb);
                 rb.push_str("&signature=");
                 rb.push_str(unsafe { std::str::from_utf8_unchecked(&rsb) });
-                sl_res = self.client.execute_order_payload(rb.as_str()).await;
+                // N5 (CL-178): si la primera pierna recibió un 429/418, el
+                // reintento no sale (seguía enviando dentro del cooldown).
+                sl_res = match self.check_backoff(self.get_synced_timestamp()) {
+                    Ok(()) => self.client.execute_order_payload(rb.as_str()).await,
+                    Err(e) => Err(e),
+                };
                 if let Err(e) = &sl_res {
                     if pierna_ya_existe(e) {
                         sl_res = Ok(crate::client::BinanceRateLimits::default());
@@ -3656,7 +3699,12 @@ impl ExecutionProvider for OrderExecutor {
                 sign_payload_to_buffer(&rb.as_str()[rp..], &retry_secret, &mut rsb);
                 rb.push_str("&signature=");
                 rb.push_str(unsafe { std::str::from_utf8_unchecked(&rsb) });
-                tp_res = self.client.execute_order_payload(rb.as_str()).await;
+                // N5 (CL-178): si la primera pierna recibió un 429/418, el
+                // reintento no sale (seguía enviando dentro del cooldown).
+                tp_res = match self.check_backoff(self.get_synced_timestamp()) {
+                    Ok(()) => self.client.execute_order_payload(rb.as_str()).await,
+                    Err(e) => Err(e),
+                };
                 if let Err(e) = &tp_res {
                     if pierna_ya_existe(e) {
                         tp_res = Ok(crate::client::BinanceRateLimits::default());
@@ -4129,6 +4177,27 @@ fn pierna_ya_existe(err: &str) -> bool {
     termina_codigo(&compacto) || termina_codigo(&espaciado) || termina_codigo(&rechazo)
 }
 
+/// N5 (CL-178): símbolos de positionRisk sin ninguna fila abierta, cada uno
+/// UNA vez y en el orden en que aparecen. En hedge la respuesta trae una fila
+/// LONG y otra SHORT por símbolo: antes el barrido de huérfanas purgaba dos
+/// veces cada símbolo plano (dos DELETE y dos cancelaciones algo de más).
+fn simbolos_sin_posicion(
+    entries: &[crate::reconciliation::PositionRiskEntry],
+) -> Vec<String> {
+    let abiertos: std::collections::HashSet<&str> = entries
+        .iter()
+        .filter(|p| p.is_open())
+        .map(|p| p.symbol.as_str())
+        .collect();
+    let mut vistos = std::collections::HashSet::new();
+    entries
+        .iter()
+        .map(|p| p.symbol.as_str())
+        .filter(|s| !abiertos.contains(s) && vistos.insert(*s))
+        .map(str::to_owned)
+        .collect()
+}
+
 /// LG-3 (Línea G) — USO DE RATE-LIMIT VIGENTE.
 ///
 /// Las cabeceras `X-MBX-USED-WEIGHT-1M` y `X-MBX-ORDER-COUNT-10S/1M` miden el
@@ -4414,6 +4483,124 @@ mod tests_n5a {
         ex.observar_limites(&limites(Some(50), None, None), T0 + 61_000);
         assert!(ex.check_exit_rate_limits(T0 + 61_500).is_ok());
         assert_eq!(ex.uso_exchange_bloqueado().peso_1m.vigente(T0 + 61_500, 60_000), 50);
+    }
+}
+
+#[cfg(test)]
+mod tests_n5b {
+    use super::*;
+
+    const CODIGO: &str = include_str!("executor.rs");
+
+    /// Cuerpo de la última `fn {f}(` del archivo (la del impl), sin `expect`.
+    fn cuerpo(f: &str) -> &'static str {
+        let Some(i) = CODIGO.rfind(&format!("fn {f}(")) else {
+            return "";
+        };
+        let fin = ["\n    pub ", "\n    fn ", "\n    async fn "]
+            .iter()
+            .filter_map(|m| CODIGO[i + 3..].find(m).map(|k| i + 3 + k))
+            .min()
+            .unwrap_or(CODIGO.len());
+        &CODIGO[i..fin]
+    }
+
+    /// Los `n` caracteres anteriores al byte `i` de `c`.
+    fn antes(c: &str, i: usize, n: usize) -> &str {
+        let ini = c[..i].char_indices().rev().nth(n - 1).map_or(0, |(k, _)| k);
+        &c[ini..i]
+    }
+
+    /// Los `n` caracteres desde el byte `i` de `c`.
+    fn despues(c: &str, i: usize, n: usize) -> &str {
+        let fin = c[i..].char_indices().nth(n).map_or(c.len(), |(k, _)| i + k);
+        &c[i..fin]
+    }
+
+    fn envios<'a>(c: &'a str, llamada: &str) -> Vec<usize> {
+        c.match_indices(llamada).map(|(i, _)| i).collect()
+    }
+
+    /// RED antes de CL-178: ningún envío de estas salidas consultaba el
+    /// freno 429/418, y los cierres del aplanado no pasaban sus 429 a la
+    /// política de rate-limit (el barrido seguía enviando dentro del cooldown).
+    #[test]
+    fn n5b_las_salidas_respetan_el_freno() {
+        let aplanado = cuerpo("flatten_all_positions");
+        let cierres = envios(aplanado, "execute_order_payload_typed(");
+        assert_eq!(cierres.len(), 2, "cierre y reintento -4061");
+        for i in cierres {
+            assert!(antes(aplanado, i, 200).contains("check_backoff("), "cierre sin freno");
+            assert!(
+                despues(aplanado, i, 200).contains(".map_err(|e| self.handle_rate_limit_error(&e))"),
+                "el 429 del cierre no arma el cooldown"
+            );
+        }
+        for i in envios(aplanado, "self.get_payload_account(") {
+            assert!(antes(aplanado, i, 200).contains("check_backoff("), "modo sin freno");
+        }
+
+        let purga = cuerpo("cancel_symbol_orders_and_brackets");
+        let borrados = envios(purga, ".cancel_order_payload(");
+        assert_eq!(borrados.len(), 1);
+        assert!(antes(purga, borrados[0], 200).contains("check_backoff("), "DELETE sin freno");
+
+        let oco = cuerpo("execute_oco_order");
+        let piernas = envios(oco, ".execute_order_payload(");
+        assert_eq!(piernas.len(), 4, "dos piernas y dos reintentos D-02");
+        for &i in &piernas[2..] {
+            assert!(antes(oco, i, 200).contains("check_backoff("), "reintento D-02 sin freno");
+        }
+
+        let cuenta = cuerpo("get_payload_account");
+        let lecturas = envios(cuenta, ".get_payload_with_timeout(");
+        assert_eq!(lecturas.len(), 2, "lectura y reintento");
+        assert!(antes(cuenta, lecturas[1], 200).contains("check_backoff("), "reintento sin freno");
+    }
+
+    fn fila(simbolo: &str, lado: &str, cantidad: &str) -> String {
+        format!(r#"{{"symbol":"{simbolo}","positionSide":"{lado}","positionAmt":"{cantidad}"}}"#)
+    }
+
+    /// RED antes de CL-178: en hedge positionRisk trae una fila por lado y el
+    /// barrido de huérfanas purgaba dos veces cada símbolo plano.
+    #[test]
+    fn n5b_barrido_sin_duplicados() {
+        let json = format!(
+            "[{},{},{},{},{},{}]",
+            fila("BTCUSDT", "LONG", "0"),
+            fila("BTCUSDT", "SHORT", "0"),
+            fila("ETHUSDT", "LONG", "0.5"),
+            fila("ETHUSDT", "SHORT", "0"),
+            fila("SOLUSDT", "BOTH", "0"),
+            fila("ADAUSDT", "BOTH", "-3"),
+        );
+        let entries: Vec<crate::reconciliation::PositionRiskEntry> =
+            serde_json::from_str(&json).unwrap_or_default();
+        assert_eq!(entries.len(), 6);
+        assert_eq!(
+            simbolos_sin_posicion(&entries),
+            vec!["BTCUSDT".to_string(), "SOLUSDT".to_string()]
+        );
+    }
+
+    /// El freno de CL-178 es el mismo que ya aplicaban las salidas: el
+    /// cooldown de un 429 y el freno escalado, sin cuota ni kill-switch.
+    #[test]
+    fn n5b_backoff_es_el_cooldown_y_el_freno() {
+        let ex = OrderExecutor::new("k".into(), "s".into(), true);
+        let ahora = current_synced_timestamp_ms(None);
+        assert!(ex.check_backoff(ahora).is_ok());
+        ex.trigger_kill_switch();
+        assert!(ex.check_backoff(ahora).is_ok(), "el kill-switch no frena las salidas");
+        ex.handle_rate_limit_error("HTTP_429_RATE_LIMITED retry_after=30");
+        let r = ex.check_backoff(ahora);
+        assert!(matches!(&r, Err(e) if e.starts_with("RATE_LIMIT_COOLDOWN")), "{r:?}");
+        assert!(ex.check_backoff(ahora + 31_000).is_ok());
+        ex.handle_rate_limit_error("HTTP_418_IP_BANNED retry_after=120");
+        let r = ex.check_backoff(ahora + 31_000);
+        assert!(matches!(&r, Err(e) if e.starts_with("RATE_BRAKE")), "{r:?}");
+        assert!(ex.check_backoff(ahora + 121_000).is_ok());
     }
 }
 
