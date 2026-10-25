@@ -1,5 +1,51 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
 
+## 2026-10-24 — Claude (cloud, Línea C): sexta tanda del censo C-F7b (K12, lote 48, resto de F325 y lote 51)
+
+Tanda del PR #138. Un commit por bloque; T-1 sólo por CL-159.
+
+- RET-27b (CL-158, K12): la sombra de Nash se abstiene sin presión
+  medida; salen nash_equilibrium_drift y su 0,50. Sin cambio de conducta
+  alcanzable: sólo se leía con x ≡ 0, en el primer evento de un núcleo
+  nuevo. El peso de la abstención en Σw sigue siendo F3.1-01 (Qoder).
+- CL-159 (lote 48, F261): LH-04 dimensionaba con N = f·C/SL y perdía al
+  stop f·(SL + c)/SL, un 29 % más de lo que pedía Kelly con SL 0,5 % y
+  14,5 pb. Ahora N = f·C/(SL + c) (`nocional_por_riesgo`), con
+  corrigendum en ADR-0016 D1. T-1 14/144, la cuenta de main. RET-48 retira
+  ExposureBudget, exposure_budget(_spectral) y project_quantity. Siguen
+  sin la fricción el tope de ruina F1-092, orden_viable y
+  f_min_ejecutable (fila N12).
+- RET-34b/34c (resto de F325): validate_order fuera y sus pruebas contra
+  BinanceFixedFilter; OPEN del -4164 de un largo IOC en la orden mínima
+  (fila N8). El arreglo espera a que AGY (V32) y Kimi V33 acuerden
+  titular: contar en unidades enteras del paso al precio límite, no
+  validate_and_quantize tal cual (pierde un lote en ≈ 11 % del retículo).
+- RET-51b (CL-160) y RET-51c, lote 51 cerrado: telemetry!/telemetry_err!
+  escriben en LOG_QUEUE por el destino que conecta el host; salen en
+  orden y el apagado las vacía. Fuera BINARY_QUEUE (33 MiB en el host) y
+  crossbeam-queue de telemetry-engine. LG-11, LG-19 y CL-144 no cambian.
+- T-1 en main 14/144 (9,7 %), bajo el trinquete de 11,0 %, desde
+  01ce0a57 (F1-116, Ω157; bisección por commit): LH-04 dimensiona toda
+  orden con n ≥ 1 y el margen Kelly legado, único camino de los genes 10,
+  11, 33, 141 y 143, ya no fija tamaños; el 20 perdió su lectura en F1-092.
+  Siguiente tanda: congelar 10, 11, 20 y 32, techo κ (gen 33) en LH-04,
+  clases de tamaño explícitas y sombra legado frente a LH-04 (fila N13).
+  Re-certificar el trinquete en 14/144 espera al dueño.
+- Verificación (nube, windows-gnu bajo wine): check --workspace --all-targets
+  --locked sin errores; 3 454 pruebas pasan y fallan sólo los tres rojos
+  conocidos (fase3, cl88, test_c6); golden y T-2 sin cambio; T-1 14/144,
+  la misma lista que main 58f90ced; camino caliente 433,9 → 430,7 µs por
+  evento (pasa, 1,515 asignaciones en ambos); CI de GitHub 10/10.
+- Detalle y restos en §9 del censo; avisos en el buzón.
+
+## 2026-10-24T18:01:57-05:00 — Kimi V33: revalidación publicada; capital bloqueado por recursos
+
+- Base revalidada: `main=60981662e`; el merge de Fase 11 `58f90ced6` tiene 10/10 checks SUCCESS. El cierre documental `19d6ec254706cea311d10817e245a2507d20b9bc` coincide con `origin/main` y no tiene checks por `paths-ignore`; no se certificó Rust nuevo.
+- Ramas remotas Fase 10 (PR #135) y Fase 11 (PR #137) eliminadas tras comprobar merges, ancestria, cero commits exclusivos y ausencia de worktree. Remoto: `main` + PR #138 activo. Los cinco worktrees locales, el PR y el stash ajeno se preservan.
+- Inventario validado mecánicamente contra `git ls-files`: **2.193 rutas = 26 REVISADO_ESTATICO + 1 RED + 2.166 INVENTORIADO**, 838 archivos Rust; no hubo bajas. Esto no equivale a revisión semántica completa.
+- Capital/ROI sigue RED y sin cambio de código. Revisión independiente: validar como primera sentencia de `main` (`continuous_evolution_backtest.rs:78`), antes de `set_var` (`:82`), eliminar el shadowing de 13 (`:228`) y conectar informe (`:983/:992`). El contrato debe aislar cwd, `TGM_CONFIG_DIR` y `TG_CONFIG_ROOT`, cubrir CSV presente/ausente y `config_dir`; `20→30=50 %` será prueba aritmética pura, no ROI ni E2E financiero.
+- Dos decisiones del semáforo devolvieron 75; última lectura **0,97 GiB disponibles** con Cargo/Rustc ajenos. No hubo edición Rust, censo SSD, Demo ni operación financiera. ROI/PnL/WR/Sharpe/EV: `N/D`. Reanudar solo cuando RAM y semáforo admitan toda la puerta local.
+
 ## 2026-10-24T15:51:51-05:00 — Kimi V33: CI 10/10, Fase 9 retirada y Línea I integrada
 
 - Higiene Git `e5b4b53dc` certificada con **10/10 checks SUCCESS**: Unit `40127951016` (17m26s) y Replay `40127951030` (40m15s). No heredar ese verde a otros commits.
@@ -95,7 +141,7 @@ nueva de rentabilidad, operación de cuenta ni integración funcional completa.
 Tanda del PR #130 del censo C-F7b. Un commit por bloque y sin T-1:
 
 - Revisión adversarial de los PR #123, #124 y #126 (un verificador por
-  tanda): 15 hallazgos confirmados y 3 refutados, todos de documentación.
+  tanda): 15 hallazgos confirmados (uno salió dos veces) y 2 refutados, todos de documentación.
   RV-12a: el comentario de macro_ml_features decía que el poller vivo
   publica FRED; publica Yahoo. RV-plan: las REGLAS de plan_linea_c.py
   nombraban 41 archivos retirados; `asignacion` vuelve a código 0 y desde
@@ -110,7 +156,8 @@ Tanda del PR #130 del censo C-F7b. Un commit por bloque y sin T-1:
 - RET-44a (CL-156, G021 de Línea G): con USE_TESTNET=true el
   calentamiento REST sembraba los estimadores con velas de mainnet; ahora
   pide las K-lines al venue del ejecutor (is_testnet). RET-44b:
-  SystemBootloader y state_continuity fuera; FMT-150 cerrado por retiro.
+  SystemBootloader y state_continuity fuera; FMT-150 cerrado por retiro
+  (queda EspectralMultiactivo::cargar_checkpoint, sin versión ni llamador).
 - RET-13a (CL-157): FIX #1454 portado al OmniStrategyEngine vivo (una
   entrada no finita no toca el estado y ningún rasgo sale no finito);
   inerte en vivo porque los llamadores validan antes. RET-13b: src/features

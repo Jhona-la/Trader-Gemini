@@ -367,10 +367,14 @@ Cada tema se presenta como una sola tarjeta de decisión. En todos los temas, la
 El censo es una foto del 2026-10-18. Esta sección registra lo ejecutado y
 lo que cambió desde entonces; las filas del TSV no se reescriben.
 
-**Fusionado** (un commit por lote, sin T-1; sin cambio de conducta salvo
-RET-10b, RET-41, RET-51a, CL-154, RET-44a (CL-156, sólo con
-USE_TESTNET=true) y RET-13a (CL-157, inerte con entradas validadas), que
-cambian diagnóstico o conducta inalcanzable, como dice su lote):
+**Fusionado** (un commit por lote, sin T-1 salvo CL-159; sin cambio de
+conducta salvo RET-10b, RET-41, RET-51a, CL-154, RET-13a (CL-157, inerte
+con entradas validadas) y RET-27b (CL-158, inalcanzable), que cambian
+diagnóstico o conducta inalcanzable; RET-44a (CL-156), que cambia la
+conducta viva con USE_TESTNET=true, la demo; RET-51b (CL-160), que cambia
+el orden y el vaciado del log del host, y CL-159, que cambia el tamaño de
+las órdenes de LH-04 (T-1 14/144, la cuenta de main, fila N13); como
+dice su lote):
 
 | PR | Lotes |
 |---|---|
@@ -382,6 +386,7 @@ cambian diagnóstico o conducta inalcanzable, como dice su lote):
 | #124 | 21a (F64–F70, R172), 22a (F19–F23, R145; sin R73), 23a (F76, F78), 30 (F226, R15, F228–F230, R107, parte de F247), 32, 33 (sin capital, umbral_familia ni n), 34 (F325 parcial: sale roundtrip_fee_cost, queda validate_order; sin open_positions_count), 35 (sin F44; más RET-35c, tres avisos de clippy en pruebas) |
 | #126 | 47 (parcial: 47a F47 y 47b F58, con CL-154), 38 (commit 2: F282, F436), 39 (39a: F277, F403, F278, F402, F280, F405, R86, R88, F415 y parte de F274/F414; 39b: F411), 41 (F251 sin margen_insuf), 42a (F254/R165, F260), 51a (F386 y la parte neutra de F155), 19 (19a: R115; 19b: F302, F303, F306, F307, F313, F387, F389–F391, F399, R166, R76, R77), 27a (F62, F187 y cuatro claves de F338), 31 (sin F244, F233, get_status ni cleanup_stale_orders), 18a (la dependencia quote de graph-architecture: F15, R67 y su parte de F368) |
 | #130 | 50 (residuo: 50a legacy_view, LegacyRegimeView y su re-export; 50b, el T12 de cf3_fuente_contract como guarda de F1-054), 44 (44a CL-156: G021; 44b: R114, F327), 13 (13a CL-157: FIX #1454 portado al OmniStrategyEngine vivo; 13b: src/features y los dos #[path] de FMT-140; sin F315, F385, R105 ni F184); más RV-12a, RV-plan y RV-docs (revisión de las tandas 2 a 4) |
+| #138 | 27b (K12: RET-27b, CL-158), 48 (CL-159: LH-04 con la fricción al stop; RET-48: ExposureBudget, exposure_budget(_spectral) y project_quantity), 34 (resto de F325: RET-34b, validate_order; RET-34c, la OPEN de la fila N8), 51 (51b CL-160: telemetry! escribe en LOG_QUEUE; 51c: BINARY_QUEUE, StackBuffer, init/pop_telemetry y crossbeam-queue de telemetry-engine); más RV5-T12 y RV5-docs (revisión de la tanda 5) |
 
 **Hecho por otros agentes**: lote 9 entero (Sol, d18b3735), lote 45 entero
 (Codex RB, 906a9c6a), parte del 7 (Sol retiró el bin main.rs de
@@ -485,6 +490,16 @@ un escéptico por lote listo):
   duplicados vivos de maker+taker son core lib.rs:7359,
   booktick_replay.rs:401 (AGY), active_universe.rs:138/:160 y
   symbol_ranker_engine.rs:119; ninguno se tocó.
+  Resto de F325 (tanda 6): RET-34b retira validate_order y lleva sus 12
+  pruebas a execution-engine/tests/order_quantity_contract.rs (13, contra
+  BinanceFixedFilter::validate_and_quantize, fixed_filter.rs:340). La
+  premisa del censo, «el ejecutor recalcula qty = volume_usd·L/precio y
+  no revisa min_notional», describe a build_payload (executor.rs:1466),
+  sin llamador de producción (F233): las rutas vivas reciben la cantidad
+  del núcleo y sólo la bajan al paso, y el tick al alza ya lo cerró
+  CL-98b (capital_regime.rs:468). Eran cuatro cuantizadores, no tres:
+  faltaba el canónico; project_quantity salió con el lote 48. Queda un
+  defecto más estrecho, la fila N8, con su OPEN (RET-34c).
 - Lote 35: el único recorte de contrato es F44
   (hidden_liquidity_conformal_contract.rs:47), que pasa a RET-35b cuando
   Codex ROOT libere Hidden04. neural_evidence_contract.rs:144-157 sigue
@@ -517,9 +532,20 @@ un escéptico por lote listo):
   conformidad de AGY, que los declaró conservados en F1-119 y F1-085. La
   teoría de la caída flotante (G055) no se descarta: su vehículo es la
   equidad caja + Σ pnl_unrealized en evaluate_quantum_order.
-- Lote 51: 51a es preparatorio y neutro. El lote sigue abierto como 51b
-  (una sola cola con LOG_QUEUE), que cambia la conducta del log y exige
-  coordinar con Línea G (LG-11, LG-19) y CL-144.
+- Lote 51: cerrado. 51a fue preparatorio y neutro. 51b (CL-160) no baja
+  LOG_QUEUE a telemetry-engine, como pedía el TSV para evitar el ciclo:
+  telemetry-engine guarda sólo un destino (un `fn(fmt::Arguments)`) y el
+  host conecta `telemetry_server::macros::linea_de_telemetria`, que
+  escribe en LOG_QUEUE como `telemetry_log!`. El código de LG-11, LG-19 y
+  CL-144 no se mueve ni cambia. En el host, las líneas de telemetry!
+  salen en el orden del hilo que las emite, el apagado las vacía y no se
+  reservan los 33 MiB de BINARY_QUEUE, que un hilo sondeaba cada ≈1 ms
+  cuando estaba vacía. Sin destino (herramientas, backtests, evolver) se
+  descartan como antes, pero sin la cola de 8,25 MiB que nadie leía. 51c
+  retira la cola, StackBuffer, init/pop_telemetry y crossbeam-queue.
+  Cierra también G7-src06 de Línea G y f1_aristas_muertas.tsv:155 de
+  Fable. Quedan para el dueño o Línea G si las herramientas deben imprimir
+  esas líneas (cambia su salida) y un contador de descartes del log.
 - Lote 19: partido. ledger.rs (F304/F388), su re-export y
   ownership_read_contract esperan a F384 (tema 1). Sale bytemuck, que el
   censo no nombraba (sólo lo usaba lakehouse.rs). Para la tarjeta del
@@ -531,6 +557,27 @@ un escéptico por lote listo):
   sin clave» es equivalente bit a bit. Los re-exports de Wasserstein se
   quedan: la evidencia del censo era falsa (el núcleo usa
   WassersteinKantorovichEngine por esa ruta).
+- K12 (lote 27b, RET-27b/CL-158): no cambia la conducta en ningún camino
+  alcanzable, contra lo que decían la fila y el triaje del 2026-10-24. El
+  0,50 sólo se leía en el primer evento de un núcleo nuevo: process_event
+  llama siempre al dual al final (lib.rs:4160) y el dual escribe cvpin por
+  moneda y global sin condición (:6183). En ese evento el espectro acaba
+  de sembrarse (temporal_spectrum.rs:512-533 vuelve sin calcular
+  momentum_z): x ≡ 0 y el voto Nash es nulo con cualquier presión. La
+  caída al cvpin global de otra moneda (LC-F1-06) sólo actúa en el primer
+  evento de cada moneda, que tampoco tiene desplazamientos. 0,1, 0,50 y la
+  abstención dan el mismo voto bit a bit en vivo, en el replay y en el T-1.
+  Se elige la abstención (espectro nulo): ninguna p ∈ [0; 0,9] expresa
+  «adversario desconocido» (la escala 0 vota tanh(x₀) con cualquier p) y
+  no queda constante. Dar peso 0 al motor que se abstiene es F3.1-01
+  (Qoder: las abstenciones cuentan en Σw) y no entra.
+  game_theory_adversarial_pressure sigue sin escritor (fila N10). Su 0,1
+  del motor escalar (game_theoretic_nash.rs:203) es inalcanzable por lo
+  mismo: el orquestador evalúa en lib.rs:7255, después de :6183; queda con
+  Línea G (vetos.tsv:1236). Lo que sí actúa en el arranque es el VPIN sin
+  volumen = 0 (math_kernels.rs:236-243; linea_g/lazos.tsv:55). Cierra
+  R7-R3-E-2 y la parte de Nash de F3-A4 (BARRIDO_EXHAUSTIVO_FASES.md:3060,
+  :396). La sombra TrendRunner tiene la misma clase de defecto (fila N9).
 - Lote 31: F244 (dispatch) se queda como costura pública del contrato
   E2E del diseño F2 de Codex QRA; la fila pasa a CONSERVAR salvo que QRA y
   AGY acuerden otra entrada. F233 sigue con AGY (Ω203, Ω220) y el tema 2.
@@ -556,7 +603,10 @@ un escéptico por lote listo):
     LH-04 en risk-engine lib.rs:1508-1519. No es polizón; los únicos
     polizones del lote son los campos portfolio_* de config.rs.
   - Las REGLAS de scripts/plan_linea_c.py nombraban 41 rutas inexistentes
-    tras la tanda 4: 8 de antes del censo, 9 de la tanda 1, 13 de los
+    tras la tanda 4: 8 de antes de la tanda 1 (5 de lotes del censo: 15 y
+    28a del #81 y el 9 de Sol, d18b3735; 3 de otros agentes: macro_data.rs
+    y market_context.rs por RB-R1, 566a9c8c, y vectorized.rs por Ω160,
+    fcab8e1c), 9 de la tanda 1, 13 de los
     lotes 8 y 12a, 4 del 30 y 7 de los lotes 19, 38 y 39 (con
     history_store.rs). Salen todas en RV-plan y `asignacion` vuelve a
     código 0. Desde ahora, el lote que retira un archivo lo quita de
@@ -574,19 +624,34 @@ un escéptico por lote listo):
   effective_quantum_margin_multiplier sobre free_cap en el núcleo, T12
   falla a propósito y se sustituye por una prueba de propiedad sobre la
   función; si la conecta en risk-engine (available_margin_headroom), T12
-  no se entera. F2.3-05 sigue abierto: crash_flux ≈ 0,41 en ruido lo resta
-  ahora risk-engine del margen admisible (0,25·flux en
-  continuous_exposure_limit), no el núcleo.
-- Lote 44: retiro_plan 43 decía borrar bootloader.rs y su mod; el archivo
-  se queda (ROSTER y SystemDiagnostics son el arranque vivo) y sólo sale
+  no se entera. La revisión de la tanda 5 vio que el T12 de RET-50b sólo
+  cazaba las dos grafías literales (`free_cap *=` y `0.95 *
+  directional_flux`): un sombreado `let free_cap = free_cap * …`, un
+  recorte en la puerta o la misma copia con otra variable pasaban. RV5-T12
+  lo endurece: entre el cálculo de free_cap y su puerta, free_cap se asigna
+  una sola vez y no aparece margin_multiplier. F2.3-05 sigue abierto: el
+  núcleo publica crash_flux ≈ 0,41 en ruido y risk-engine resta
+  0,25·max(flux, presión sistémica) del colchón en
+  continuous_exposure_limit (Hermite entre 0,80 y 0,90 de presión y 0
+  desde 0,90). El flux sólo cuenta cuando supera la presión sistémica.
+  risk-engine ya lo leía antes de F1-054, que sólo quitó el recorte
+  duplicado del núcleo.
+- Lote 44: como ya corregía la redacción (§4, fila 44), bootloader.rs se
+  queda (ROSTER y SystemDiagnostics son el arranque vivo) y sólo sale
   SystemBootloader. El paso 1 es CL-156: el host pasa a
   execute_phase_3_warmup el venue del ejecutor (is_testnet), no
   is_demo_mode, y la URL sale de warmup_klines_url; ninguna lectura nueva
   de USE_TESTNET. LC-F1-40 sigue abierto: la sonda de OI elige venue con
   is_demo_env (god_engine.rs:2939), igual que symbol_manager.rs:36/:49.
-  Golden y T-1 no recorren el calentamiento del host. FMT-150 (Codex,
-  auditoría XIII) queda cerrado por retiro: no queda ningún cargador de
-  checkpoints.
+  Golden y T-1 no recorren el calentamiento del host. Con USE_TESTNET=true
+  y un BEST_WS_ENDPOINT de mainnet, el WS va a mainnet y el calentamiento a
+  testnet (antes, los dos a mainnet). Ese caso es parte de LC-F1-40 (un
+  venue único). FMT-150 (Codex, auditoría XIII) queda cerrado por retiro
+  en lo que auditaba: sale el cargador de posiciones de state_continuity
+  (load_checkpoint y su checksum XOR). Queda
+  EspectralMultiactivo::cargar_checkpoint (F1-078, fila N3), sin llamador
+  de producción y sin versión ni comprobación de integridad: quien lo
+  cablee hereda el contrato de formato que pedía FMT-150.
 - Lote 13: R182 y R197 decían que portar FIX #1454 «sobra»; se portó
   porque lo pedía el crítico (§4, tabla del lote 13), con dos pruebas
   RED→GREEN, y es inerte en vivo: los dos llamadores validan antes
@@ -595,7 +660,28 @@ un escéptico por lote listo):
   usuario» ya no aplica (RET-8); graph-architecture se queda por
   src/bin/graph_server.rs:1 (lote 18). Se cierra FMT-140. feature-engine
   pierde 10 pruebas en los dos binarios #[path] (3 propias y 7 de los
-  módulos incluidos) y gana 2; la lib de la raíz pierde 9.
+  módulos incluidos) y gana 2; la lib de la raíz pierde 9. La copia de
+  correlation duplicaba feature_engine::MarketCorrelationHeatmap, que
+  tampoco tiene consumidor de producción (F188, R179: SOLO_TESTS,
+  RETIRAR); el mensaje de RET-13b la cuenta por error entre las vivas.
+- Lote 48 (F261): regla 2 antes de retirar. ExposureBudget ya dividía el
+  riesgo por SL + fricción y LH-04 no: N = f·C/SL convertía la fracción
+  de Kelly en una pérdida al stop de f·(SL + c)/SL, un 29 % más con SL
+  0,5 % y 14,5 pb. CL-159 porta el término (`nocional_por_riesgo`,
+  kelly_envelope.rs:379, N = f·C/(SL + c)) a LH-04 (risk-engine lib.rs:1608)
+  y a sus dos medidas del riesgo realizado; ADR-0016 lleva el corrigendum
+  de D1 (la derivación es la de linea_g/ola6_derivacion_friccion.md:61).
+  En el fixture de LH-04, medido bajo wine, el stop real vale ≈ 5,9·ATR%
+  y el tamaño baja un 1,4 % (ATR 1 %) o un 2,7 % (ATR 0,5 %). T-1 14/144, la de main (N13). RET-48 retira
+  la API (ExposureBudget, exposure_budget(_spectral) y project_quantity):
+  sus pruebas de lotes no se migran, las cubren round_to_step_size
+  (executor.rs, snap_floor) y D-750/ADR-0016 D4. Siguen sin la fricción
+  el tope de ruina F1-092 (lib.rs:1820-1837, con expected_loss),
+  `capital_regime::orden_viable` (:387, ya en linea_g/vetos.tsv:1129) y
+  f_min_ejecutable de max_leverage_spectral (kelly_envelope.rs:322): fila
+  N12. `lh04_f_realizado` cambia de semántica (ahora con la fricción): es
+  F252, decisión del dueño, sin lectores fuera de pruebas. El fix sketch
+  de G045 (Línea G) nombraba la API retirada.
 
 **Filas nuevas** (salieron al ejecutar; no están en el TSV):
 
@@ -627,6 +713,59 @@ un escéptico por lote listo):
   recibía anclas, no a/b.
 - N7: los defaults de cancel_position_oco_orders y query_order del trait
   ExecutionProvider (resto de F247), con F227 en el tema 2.
+- N8 (F325, cambio de conducta; titularidad por decidir entre AGY, V32
+  Átomos 2.4/2.5, y Línea C, V33_REVISIONES_2026-10-24.tsv fila 12): un
+  largo IOC en la orden mínima del lote sale bajo minNotional. El riesgo
+  dimensiona esa orden al precio medio con +0,10 USD (risk-engine
+  lib.rs:1421-1427), el núcleo garantiza el mínimo al precio de entrada
+  modelado ask·(1+s) (core lib.rs:10121-10132), el host pone el límite IOC
+  de compra en ask·(1+dyn_slip) redondeado hacia abajo al tick
+  (god_engine.rs:5111-5128), por debajo de esa entrada, y Binance juzga el
+  nocional al precio de la orden. Con paso 0,1, tick 0,001 y ask 1,219
+  salen 41 lotes a 1,219 = 4,9979 USD (-4164). Es raro: ≈ 0,02 % en los
+  lotes gruesos de la sonda. OPEN:
+  execution-engine/tests/f325_min_notional_ioc_open_diagnostics.rs, con
+  guardas de texto sobre esa cadena. El arreglo no es cuantizar con
+  validate_and_quantize tal cual: deja la orden mínima un lote por debajo
+  en ≈ 11 % de los puntos del retículo (4 342 de 39 992); hay que contar
+  en unidades enteras del paso al precio límite, antes de la reserva. Las
+  specs de arranque con minNotional 5 para todo símbolo (F482, tema 4) son
+  otra fuente del mismo rechazo. Golden y T-1 no lo ven (el backtest no
+  cuantiza al paso).
+- N9: la sombra TrendRunner lee `cvpin` con 0,50 por defecto
+  (core lib.rs:3713), la misma clase que K12: sólo actúa en el primer
+  evento de un núcleo nuevo. Átomo propio con test.
+- N10: game_theory_adversarial_pressure no tiene escritor; la leen la
+  sombra de Nash del núcleo (lib.rs:3497) y GameTheoreticNashEngine
+  (game_theoretic_nash.rs:196), que caen a cvpin.
+- N11: StanfordDiscoveryEngine (evolution-engine stanford_discovery.rs,
+  Fase 6 de AGY, PR #127) sólo tiene lectores de test; nada de producción
+  llama a run_discovery_cycle. A AGY: conectar y certificar o retirar.
+- N12: la pérdida al stop sin la fricción en el tope de ruina F1-092,
+  `orden_viable` y f_min_ejecutable (lote 48). Con CL-159, LH-04 dimensiona
+  con SL + c y esos tres siguen con SL: admiten más pérdida real de la que
+  declaran (un 29 % más con SL 0,5 % y 14,5 pb). Átomo propio con test (AGY es el último
+  autor de F1-092).
+- N13 (no es de esta tanda): main mide en el T-1 14/144 (9,7 %), bajo el
+  trinquete de 11,0 %. Bisección por commit con el oráculo de los genes
+  10, 33 y 141 (release bajo wine): 24dfc19c8 sensible, primer commit malo
+  01ce0a57 (F1-116, Ω157: lh04_muestras_min de 10 a 1). Desde ahí LH-04
+  dimensiona toda orden con n ≥ 1, y el margen Kelly legado (raw_exposure,
+  risk-engine lib.rs:714), el único camino de los genes 10, 11 y 33
+  (kelly.rs) y de 141 y 143 (risk_normalizer, :616-621), no fija ningún
+  tamaño; F1-087 (ab2992a6) cierra además el caso f = 0. El gen 20 perdió
+  su única lectura en F1-092 (dd783b74, leverage_matrix.rs:135-142). Se
+  ganan 29, 62 y 107: 17 − 6 + 3 = 14 (el 142 depende de la plataforma).
+  El T-1 completo de main 58f90ced y el de esta tanda dan la misma lista:
+  [1, 17, 18, 24, 27, 29, 39, 62, 68, 69, 107, 129, 130, 131]. Panel de diseño (tres diseñadores y tres jueces): congelar
+  10, 11, 20 y 32 en la mutación; reconectar 33 como techo κ de f en LH-04
+  (sólo aprieta, inerte con 0,55); cerrar con clases explícitas el resto de
+  fail-open del margen legado, y comparar en sombra el Kelly legado con
+  LH-04 antes de retirar la cadena. Ninguna de esas piezas devuelve
+  cobertura en el fixture, donde el riesgo realizado lo acota el margen
+  (≈ 2-4 % frente a f ≤ 25 %). Volver a certificar el trinquete en 14/144
+  es decisión del dueño, igual que derivar el apalancamiento del riesgo
+  de LH-04.
 
 **Restos de lotes ejecutados**: del 3, net_multiplexer (a AGY, para
 unificar con data_pipeline::http_cliente) y active_universe/
@@ -655,7 +794,11 @@ el comentario de TensorConfig «We always use mainnet data»
 (los extremos del trailing; el diario vivo, position_journal.jsonl, ya
 lleva ts y age_hours, y PositionSnapshot nunca tuvo productor, así que no
 hay datos que portar: es el abierto de MEMORIA «adopción con
-entry_time_ms = now»); del 13, el guard de finitud del resultado de la
+entry_time_ms = now») y el reintento de la fase 3 retirada (hasta 3
+intentos con 500 ms tras un error de transporte, y el aviso «Falló la
+carga de klines»), que no se portó: el calentamiento vivo
+(bootloader.rs:261) hace un solo intento y el fallo sólo se ve como
+«Inyectadas 0 K-lines» en el host (átomo propio, con test); del 13, el guard de finitud del resultado de la
 copia ewma (R180), que el Ewma vivo no tiene y sólo actúa cerca de
 1e308; del 21, el comentario de god_engine.rs:5458-5460 (zona AGY), que
 cita read_recent_events de un módulo que ya no existe; del 42,
@@ -664,7 +807,7 @@ genome.rs:2013-2014 (Fable) y f1_084_genome_portfolio_perf_freeze_contract.rs:7
 docs/DISENO_META_ANALITICA_INTEGRAL.md:19 (GLM), que da behavioral_auditor.rs
 como fuente de las sombras (es auditor_interno.rs), y
 docs/TRIAJE_ROJOS_PERPETUOS.md:12, que cita auditor_open_diagnostics.rs:40
-(ahora :39); del 19 y el 51, los recuentos de replay-contracts.yml
-(storage-engine pasa de 39 a 17 tests de lib y telemetry-engine de 3 a
-4); del 27, los bloques de MEMORIA de las olas Ω137, Ω142 y Ω143 y de
+(ahora :39); del 19, el recuento de replay-contracts.yml
+(storage-engine pasa de 39 a 17 tests de lib; el de telemetry-engine lo
+puso al día RET-51c); del 27, los bloques de MEMORIA de las olas Ω137, Ω142 y Ω143 y de
 la liquidez oculta documentan claves que ya no se publican.

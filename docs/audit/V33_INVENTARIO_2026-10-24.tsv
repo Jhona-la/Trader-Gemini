@@ -1,5 +1,6 @@
 # V33 — Inventario mecánico completo de rutas versionadas
 # Base: 2fb4633d3ea3f447483cddcf49665a513f11d45c; generado con git ls-files --stage en una sola lectura del índice.
+# Revalidación 2026-10-24: main=60981662ed3c4392a8e23f80e0ce74cba4dbd18d añade 7 rutas (2.193 total; 26 REVISADO_ESTATICO+1 RED+2.166 INVENTORIADO), sin bajas. Las filas previas conservan el blob de la base de auditoría; las siete altas llevan blob de main.
 # INVENTORIADO asigna cola; REVISADO_ESTATICO/RED remiten al ledger y evidencia. Ninguna fila certifica build/tests/Demo por sí sola.
 # ROI/PnL/WR/Sharpe/EV y periodos de mercado: N/D. No hubo ejecución financiera en esta revisión.
 ruta	blob	estado	siguiente
@@ -165,9 +166,13 @@ crates/dark-alpha-engine/tests/neural_evidence_contract.rs	14afb7748c3c0ab0b9e08
 crates/dark-alpha-engine/tests/neuro_plasticity_ppo_adaptation_contract.rs	ace6b4125bbe67be420058650fd75186799b22a3	INVENTORIADO	Asignar dueño y revisar ruta viva
 crates/data-ingest/Cargo.toml	fd10e1ac2a45c7878caaa619e794d06826be950d	INVENTORIADO	Asignar dueño y revisar ruta viva
 crates/data-ingest/src/cola_ws.rs	11ff954bdb5c60dcf36794c224d5467424c53d1b	INVENTORIADO	Asignar dueño y revisar ruta viva
+crates/data-ingest/src/edad_feed.rs	fc0595fcb25a4e47486a677885d1ed2c960f85b2	INVENTORIADO	Asignar dueño y revisar ruta viva
 crates/data-ingest/src/lib.rs	38ab6fe7c1bdc0b2f7b6771b3f93af467da0437e	INVENTORIADO	Asignar dueño y revisar ruta viva
 crates/data-ingest/src/liquidation.rs	a7700fac5175b244d74c4f829e04f5d4f51d1d3b	INVENTORIADO	Asignar dueño y revisar ruta viva
 crates/data-ingest/src/rutas_feed.rs	50c61dc06b29ed8b94c9ba8c7289eb78217a9c35	INVENTORIADO	Asignar dueño y revisar ruta viva
+crates/data-ingest/src/sbe_decoder.rs	f7a392ee500ad59c24cc1248c49c6f064919c2d9	INVENTORIADO	Asignar dueño y revisar ruta viva
+crates/data-ingest/tests/edad_feed_contract.rs	d19b4ab6ab6f998ae9b4592f061ea1a0003da8ab	INVENTORIADO	Asignar dueño y revisar ruta viva
+crates/data-ingest/tests/f10_001_sbe_contracts.rs	be23eccb6dba3cf81243a16f012b45096b190d1b	INVENTORIADO	Asignar dueño y revisar ruta viva
 crates/data-ingest/tests/liquidation_contract.rs	dbde422f909719f4fc8b5f32305c810a6b8ef39e	INVENTORIADO	Asignar dueño y revisar ruta viva
 crates/data-ingest/tests/rutas_feed_contract.rs	5ae80da0898703b88b926c6f7c465768ebc1e1c8	INVENTORIADO	Asignar dueño y revisar ruta viva
 crates/data-pipeline/Cargo.toml	1d6115627c55eef414aa18f244e141f40cc301c8	INVENTORIADO	Asignar dueño y revisar ruta viva
@@ -294,6 +299,7 @@ crates/feature-engine/src/copulas.rs	8b02d68215439ad0405c665e29357852f9fd03b0	IN
 crates/feature-engine/src/correlation.rs	2cb7ee7ea657e3196f49fa6f3c00409f46078b64	INVENTORIADO	Asignar dueño y revisar ruta viva
 crates/feature-engine/src/entrelazamiento.rs	c67b276d3f2ea84ae037a88e42c821f81c721e1e	INVENTORIADO	Asignar dueño y revisar ruta viva
 crates/feature-engine/src/ewma.rs	6651e3ad6199baf04686e187820d9ea1317d183b	INVENTORIADO	Asignar dueño y revisar ruta viva
+crates/feature-engine/src/feynman_path_instanton.rs	af5c7b1134d6db854b84530501f4c4d80cb689b4	INVENTORIADO	Asignar dueño y revisar ruta viva
 crates/feature-engine/src/hawkes.rs	19e4b1b3ef4efa21b9de879793d159a85fad3492	INVENTORIADO	Asignar dueño y revisar ruta viva
 crates/feature-engine/src/hawkes_cross.rs	024bb3d5d9d16ae16ca3ce324bb38227112fbfe4	INVENTORIADO	Asignar dueño y revisar ruta viva
 crates/feature-engine/src/hodge_flow.rs	39b5dfb69fc2f4c857822ed820affd3c1f5db349	INVENTORIADO	Asignar dueño y revisar ruta viva
@@ -333,6 +339,8 @@ crates/feature-engine/tests/entrelazamiento_solucion_conocida.rs	6e8fc5863015c8a
 crates/feature-engine/tests/event_spectrum_v2_contract.rs	1e5906e02258d0eae08857794abd9876ea2a94e5	INVENTORIADO	Asignar dueño y revisar ruta viva
 crates/feature-engine/tests/ewma_configuration_contract.rs	e935a476298e66cf89f44270bfe6c1f9e57567e4	INVENTORIADO	Asignar dueño y revisar ruta viva
 crates/feature-engine/tests/ewma_physical_time_contract.rs	d01bb6d409a7a949a01b04f0f164ceb808b2ee41	INVENTORIADO	Asignar dueño y revisar ruta viva
+crates/feature-engine/tests/f10_002_hodge_cross_market_contract.rs	6449a5e06a4998142ddb54ebfbbb98b82d57714e	INVENTORIADO	Asignar dueño y revisar ruta viva
+crates/feature-engine/tests/f11_001_feynman_instanton_contract.rs	f2f3251c728e5c16bbd5784451fadae6bc102912	INVENTORIADO	Asignar dueño y revisar ruta viva
 crates/feature-engine/tests/f7_001_rough_ergodic_contract.rs	0fb3686eb6ccc5200aaf1e49c2dee4b2718fe558	INVENTORIADO	Asignar dueño y revisar ruta viva
 crates/feature-engine/tests/f9_001_wilson_rg_contract.rs	6041c3e6617ba2992b71abdd7e6ca5777ca203be	INVENTORIADO	Asignar dueño y revisar ruta viva
 crates/feature-engine/tests/hawkes_chain_integration.rs	a1a006c463f75f0b5d672ab707c63fd1ca8fbeb8	INVENTORIADO	Asignar dueño y revisar ruta viva
