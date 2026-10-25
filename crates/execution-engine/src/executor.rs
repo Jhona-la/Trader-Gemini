@@ -1964,6 +1964,17 @@ impl OrderExecutor {
                     && spec.tick_size.is_finite()
                     && spec.tick_size > 0.0
                 {
+                    // N20 (CL-186): con un exchangeInfo guardado (nunca vacío desde
+                    // CL-185) que no trae el símbolo, otra descarga tampoco lo
+                    // traería, y antes cada entrada, cierre y auditoría la repetía.
+                    // Entra en la caché negativa, cuyo paso 2 sirve este mismo spec
+                    // 60 s. Sin mapa guardado no: el fallo de la descarga no prueba
+                    // la ausencia.
+                    if !self.symbol_filters.load().is_empty() {
+                        if let Ok(mut neg_cache) = self.negative_symbol_cache.write() {
+                            neg_cache.insert(symbol.to_string(), now);
+                        }
+                    }
                     return Ok(SymbolFilter {
                         step_size: spec.step_size,
                         tick_size: spec.tick_size,
@@ -5774,5 +5785,61 @@ mod tests_n20 {
         let c = cuerpo("fetch_all_symbol_filters");
         assert!(c.contains("Self::filtros_de_exchange_info(&text)"));
         assert!(!c.contains("Ok(map)"));
+    }
+
+    /// BTCUSDT y ETHUSDT con los specs exactos de reconciliation.rs
+    /// (test_reconcile_arena_phantom_and_adoption): el registro es global y
+    /// los tests corren en paralelo; con los mismos valores no se pisan.
+    fn registro_btc_eth() {
+        use quantum_arena::symbol_registry::SymbolSpec;
+        let spec = |symbol: &str, paso: f64, tick: f64| SymbolSpec {
+            symbol: symbol.into(),
+            step_size: paso,
+            tick_size: tick,
+            min_qty: paso,
+            min_notional: 5.0,
+            max_leverage: 50,
+            maker_fee: 0.0002,
+            taker_fee: 0.0004,
+            is_shadow: false,
+        };
+        quantum_arena::symbol_registry::update_registry(vec![
+            spec("BTCUSDT", 0.001, 0.1),
+            spec("ETHUSDT", 0.01, 0.01),
+        ]);
+    }
+
+    /// RED antes de CL-186: un símbolo del registro que el exchangeInfo
+    /// guardado no trae salía por el paso 4 sin entrar en ninguna caché, así
+    /// que cada entrada, cierre y auditoría volvía a descargar exchangeInfo.
+    #[tokio::test]
+    async fn cl186_un_simbolo_ausente_de_exchange_info_no_redescarga() {
+        registro_btc_eth();
+        assert!(
+            quantum_arena::symbol_registry::try_index("BTCUSDT").is_some(),
+            "el registro de la prueba no tiene BTCUSDT"
+        );
+        let ex = ex();
+        ex.symbol_filters.store(Arc::new(std::collections::HashMap::from([(
+            "CL186OTROUSDT".to_string(),
+            SymbolFilter { step_size: 1.0, tick_size: 0.01, min_notional: 5.0 },
+        )])));
+        // El 418 rechaza la descarga sin red (CL-184).
+        ex.handle_rate_limit_error("HTTP_418_IP_BANNED retry_after=300");
+        for _ in 0..2 {
+            let r = ex.get_symbol_filter("BTCUSDT").now_or_never();
+            assert!(
+                matches!(r, Some(Ok(f)) if f.step_size == 0.001 && f.tick_size == 0.1),
+                "{r:?}"
+            );
+            assert_eq!(ex.negative_symbol_cache_len(), 1, "sirve la caché negativa");
+        }
+
+        // Sin exchangeInfo guardado el fallo no prueba la ausencia: no se cachea.
+        let ex = self::ex();
+        ex.handle_rate_limit_error("HTTP_418_IP_BANNED retry_after=300");
+        let r = ex.get_symbol_filter("BTCUSDT").now_or_never();
+        assert!(matches!(r, Some(Ok(f)) if f.step_size == 0.001), "{r:?}");
+        assert_eq!(ex.negative_symbol_cache_len(), 0);
     }
 }
