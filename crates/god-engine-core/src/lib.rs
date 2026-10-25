@@ -3477,10 +3477,11 @@ impl GodEngineCore {
                     }
 
                     // #618 / R5-A4: SOMBRA ESPECTRAL de GAME-THEORETIC NASH
-                    // Presión adversarial escopada por moneda, con la cadena del
-                    // motor escalar (evaluate_for_coin de game_theoretic_nash.rs):
-                    // `game_theory_adversarial_pressure` (hoy sin escritor) y después
-                    // el `cvpin` medido.
+                    // Presión adversarial escopada por moneda: el `cvpin` medido,
+                    // como el motor escalar (evaluate_for_coin de
+                    // game_theoretic_nash.rs). N10 / CL-175 (censo C-F7b): sale el
+                    // primer eslabón, `game_theory_adversarial_pressure`, una clave
+                    // que nunca tuvo escritor; con ella ausente la cadena ya era cvpin.
                     // K12 / CL-158 (censo C-F7b): sin presión medida la sombra se
                     // ABSTIENE (espectro nulo, como un motor sin dato). Antes caía a
                     // `nash_equilibrium_drift`, clave sin escritor, con un 0,50 sin
@@ -3492,13 +3493,7 @@ impl GodEngineCore {
                     let nash_presion_adv = self
                         .arena
                         .registry
-                        .get_for_coin_or(
-                            coin_id,
-                            "game_theory_adversarial_pressure",
-                            self.arena
-                                .registry
-                                .get_for_coin_or(coin_id, "cvpin", f64::NAN),
-                        );
+                        .get_for_coin_or(coin_id, "cvpin", f64::NAN);
                     let voto_nash = if nash_presion_adv.is_finite() {
                         signal_engine::game_theoretic_nash::GameTheoreticNashEngine::voto_espectral(
                             &desplazamientos,
