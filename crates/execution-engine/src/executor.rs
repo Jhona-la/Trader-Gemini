@@ -746,6 +746,10 @@ impl OrderExecutor {
             return Ok((0, 0));
         }
         let timestamp = self.get_synced_timestamp();
+        // N5 (RV14): durante un 429/418 no sale nada del aplanado (tampoco
+        // positionRisk, que lo mira); se devuelve el freno aquí, antes de
+        // firmar nada y sin anunciar un respaldo de modo que no se usaría.
+        self.check_backoff(timestamp)?;
         let api_secret = self.api_secret.load();
 
         // Modo de la cuenta (dual=hedge) — determina si se envía positionSide.
@@ -759,9 +763,9 @@ impl OrderExecutor {
         sign_payload_to_buffer(&buf.as_str()[payload_start..], &api_secret, &mut sig_buf);
         buf.push_str("&signature=");
         buf.push_str(unsafe { std::str::from_utf8_unchecked(&sig_buf) });
-        // N5 (CL-178): durante un 429/418 no se pregunta el modo; se usa el
-        // que la cuenta tenía registrado (el mismo respaldo que ante un fallo).
-        // CL-179: es una lectura (frena al 80 %) con el mismo respaldo.
+        // N5 (CL-179): es una lectura. Por encima del 80 % no se pregunta el
+        // modo y se usa el registrado (el mismo respaldo que ante un fallo);
+        // positionRisk es crítica y sigue.
         let modo = match self.check_exit_rate_limits(timestamp, Tramo::Lectura) {
             Ok(_cupo) => self.get_payload_account(buf.as_str()).await,
             Err(e) => Err(e),
@@ -1284,9 +1288,11 @@ impl OrderExecutor {
     }
 
     /// F1.8: política centralizada ante rate limits de Binance.
-    /// - 429: cooldown temporal (Retry-After o 60s default); kill-switch SOLO
-    ///   si se acumulan 3+ consecutivos (patrón de ban inminente).
-    /// - 418: IP baneada → kill-switch inmediato y legítimo.
+    /// - 429: cooldown temporal (Retry-After o 60 s por defecto); al tercer 429
+    ///   consecutivo, freno temporal RATE_BRAKE (cooldown + 60 s, M4-C02),
+    ///   nunca el kill-switch.
+    /// - 418: IP baneada → freno temporal RATE_BRAKE por la ventana del ban
+    ///   (300 s por defecto), que caduca solo (M4-C02).
     /// Antes: un SOLO 429 disparaba el kill-switch permanente — el sistema
     /// quedaba muerto hasta reinicio por un freno transitorio del exchange.
     fn handle_rate_limit_error(&self, e: &str) -> String {
@@ -1406,9 +1412,12 @@ impl OrderExecutor {
     }
 
     /// N5 (CL-178): los dos frenos que ya puso el exchange, sin cuota. Ninguna
-    /// petición sale mientras duran, salidas incluidas: Binance pide no enviar
-    /// durante el Retry-After de un 429, y seguir enviando acumula 429 hasta el
-    /// freno escalado (3 consecutivos) o el ban de IP (418).
+    /// petición que lo consulte (directamente o por `check_exit_rate_limits`)
+    /// sale mientras duran, salidas incluidas: Binance pide no enviar durante
+    /// el Retry-After de un 429, y seguir enviando acumula 429 hasta el freno
+    /// escalado (3 consecutivos) o el ban de IP (418). Las que aún no lo
+    /// consultan (modo hedge, filtros, hora, NTP, listenKey y la primera
+    /// lectura de `get_payload_account`) son la fila N20 del censo C-F7b.
     fn check_backoff(&self, timestamp_ms: u64) -> Result<(), String> {
         // FIX M4-C02: freno TEMPORAL por rate-limit (3×429 escalado / HTTP 418).
         // A diferencia del kill_switch permanente (incidentes reales), este
@@ -3658,9 +3667,12 @@ impl ExecutionProvider for OrderExecutor {
             }
         }
 
-        // N5 (CL-179): las dos piernas ya respondieron; su uso está en la
-        // cabecera (o no llegaron a contar) y salen del libro en vuelo antes de
-        // los reintentos y cancelaciones, que piden su propio cupo.
+        // N5 (CL-179): las dos piernas ya respondieron y salen del libro en
+        // vuelo antes de los reintentos y cancelaciones, que piden su propio
+        // cupo. Una con 2xx deja su uso en la cabecera; una con error contó
+        // en el exchange pero no trae cabecera (client.rs la tira) y un
+        // timeout AMBIGUOUS pudo contar sin respuesta: hasta la próxima
+        // cabecera 2xx su coste no se cuenta (censo C-F7b, fila N21).
         drop(cupo);
 
         // F1.9 — FIX OCO PARCIAL: antes, una pierna fallida devolvía Ok(())
@@ -4428,8 +4440,11 @@ enum Tramo {
 /// N5 (CL-179): plaza de una petición crítica en el libro de las que están en
 /// vuelo. Al soltarla (respuesta recibida o error) su coste sale del libro;
 /// entre medias lo cuentan las demás admisiones críticas, así que N críticas
-/// concurrentes no caben juntas en el hueco de una. Las de `Lectura` llevan
-/// coste nulo: sólo se admiten por debajo de 0,8·L.
+/// concurrentes no caben juntas en el hueco de una. La cabecera de su
+/// respuesta se registra antes de soltarla (CL-182). Una respuesta de error
+/// no trae cabecera: su coste sale del libro sin entrar en el uso (censo
+/// C-F7b, fila N21). Las de `Lectura` llevan coste nulo: sólo se admiten por
+/// debajo de 0,8·L.
 #[must_use = "soltar el cupo antes de la respuesta saca la petición del libro de las que están en vuelo"]
 struct Cupo<'a> {
     ex: &'a OrderExecutor,
@@ -4784,6 +4799,12 @@ mod tests_n5b {
         for i in envios(aplanado, "self.get_payload_account(") {
             assert!(frena(antes(aplanado, i, 400)), "modo sin freno");
         }
+        // RV14: el freno se devuelve antes de firmar el GET de modo.
+        assert!(
+            aplanado.find("self.check_backoff(timestamp)?;").unwrap_or(usize::MAX)
+                < aplanado.find("/fapi/v1/positionSide/dual").unwrap_or(0),
+            "el aplanado frenado sale antes de preguntar el modo"
+        );
 
         let purga = cuerpo("cancel_symbol_orders_and_brackets");
         let borrados = envios(purga, ".cancel_order_payload(");
