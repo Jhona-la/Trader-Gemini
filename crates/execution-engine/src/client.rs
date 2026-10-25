@@ -961,10 +961,15 @@ mod tests {
     fn cl193_las_rutas_crudas_reinician_la_racha() {
         for f in ["create_listen_key", "keep_alive_listen_key", "fetch_server_time"] {
             let c = cuerpo(f);
+            // RV17-T: una sola vez y fuera de la rama de error (tras su último
+            // `parse_reject_body(`): un 4xx/5xx no reinicia la racha.
+            let exito = c.find("self.freno.exito_ahora();");
+            let error = c.rfind("parse_reject_body(");
             assert!(
-                antes(c, "self.freno_de_respuesta(", "self.freno.exito_ahora();"),
+                matches!((error, exito), (Some(e), Some(x)) if e < x),
                 "{f}: su 2xx no reinicia la racha"
             );
+            assert_eq!(c.matches("exito_ahora").count(), 1, "{f}");
         }
         // Con el cooldown vencido reinicia; dentro de él no (F1-005).
         let c = BinanceClient::new("k".into(), true);
