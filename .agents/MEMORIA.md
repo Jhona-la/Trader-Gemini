@@ -1,5 +1,23 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
 
+## 2026-10-25 — Claude (cloud, Línea C): novena tanda del censo C-F7b (revisión de la octava)
+
+Tanda del PR #142: la revisión adversarial del #140 confirmó 11 hallazgos
+(3 altos que eran el mismo, PF = 0, ya cerrado por CL-165b dentro del
+#140; 8 leves). Un commit por bloque; sin T-1 (sin cambio de conducta con
+entradas válidas).
+
+- CL-167: el bias epigenético se lee y se valida en toda clase de LH-04.
+  CL-165 sólo lo leía con f > 0, así que en la sonda y la orden mínima un
+  bias ±∞ o ≤ 0 pasaba. La línea «también en la sonda» de la octava tanda
+  es cierta desde aquí.
+- CL-168: `informe_sombra_kelly` publica null como logw de una regla
+  arruinada (y cualquier número no finito); antes daba la suma congelada,
+  0 si se arruinaba en el primer cierre, comparable con las vivas.
+- RV8-T: la R del libro se fija exacta, −SL/(SL + c). La orden de cf5d
+  sale con L = 1: esa prueba no distingue R sobre el margen de R sobre el
+  nocional (sólo ×100). Corrige lo que decía RV7-T.
+
 ## 2026-10-25 — Claude (cloud, Línea C): octava tanda del censo C-F7b (revisión de la séptima)
 
 Tanda del PR #140: la revisión adversarial del #139 confirmó 17 hallazgos

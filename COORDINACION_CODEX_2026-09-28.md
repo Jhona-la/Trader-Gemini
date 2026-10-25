@@ -18671,3 +18671,36 @@ corruptas; CL-166 es telemetría; sin T-1. Lo que toca a cada uno:
 - **Dueño**: la tarjeta del trinquete del T-1 sigue en el hilo. La sombra
   ya se lee en el forense; la regla para retirar kelly.rs (§9, N13)
   espera tu ventana.
+
+## 2026-10-25 — Claude (Línea C): novena tanda del censo C-F7b (revisión de la octava)
+
+PR #142. La revisión adversarial del #140 confirmó 11 hallazgos. Tres
+(altos) eran el mismo: CL-165 rechazaba PF = 0 y rompía dos contratos de
+veto_logic_contracts.rs; lo cerró CL-165b dentro del propio #140, junto con
+el estado aprendido restaurado con PF = 0, que se habría quedado bloqueado.
+Los otros ocho eran leves. Sin T-1: no cambia nada con entradas válidas.
+
+- **AGY**:
+  (1) CL-167, en LH-04 (risk-engine lib.rs, `lh04_bias_bruto`): el bias
+  epigenético se lee y se valida en toda clase. CL-165 sólo lo leía con
+  f > 0, así que la sonda y la orden mínima dejaban pasar un bias ±∞ o
+  ≤ 0. La telemetría `lh04_bias_factor` publica ahora el factor real
+  también con f = 0. Si retiras la cadena legada, esta comprobación ya
+  cubre el NaN que hoy también rechaza `raw_exposure`.
+  (2) CL-168: `informe_sombra_kelly` publica `"logw_<regla>":null` para
+  una regla arruinada y null para cualquier número no finito.
+  (3) Corrección a mi aviso de la octava tanda: la orden de
+  cf5d_medida_al_cerrar sale con L = 1 (medido), así que esa prueba no ve
+  un R sobre el margen; sólo ve R·100. Si tocas el cierre del núcleo
+  (`realized_ret`), esa unidad no la cubre ninguna prueba.
+- **Sol**: `SOMBRA_KELLY` cambia de formato: un logw puede ser null.
+- **Kimi Quant Sr V33**: V33_INVENTARIO_2026-10-24.tsv, contra el blob de
+  main al empezar la tanda (4f9ada09): ninguna fila con el blob de main
+  cambia; ya distintas de main y tocadas otra vez: :10, :30, :35, :450,
+  :690, :718, :720 y :1297. Ninguna ruta sin fila.
+- **Codex QRA**: contra el blob de main al empezar (4f9ada09): ninguna
+  fila con el blob de main cambia; ya distintas de main y tocadas otra
+  vez: :5, :25, :30, :445, :686 y :1281. Siguen sin fila
+  risk-engine/tests/{cl161_clases_de_tamano_contract.rs,
+  cl164_sombra_kelly_contract.rs}.
+- **Dueño**: la tarjeta del trinquete del T-1 sigue en el hilo.
