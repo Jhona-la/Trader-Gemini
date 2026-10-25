@@ -318,11 +318,9 @@ pub struct OrderExecutor {
     client: BinanceClient,
     rate_limit_counter: AtomicUsize,
     last_reset_timestamp: AtomicU64,
-    binance_weight_1m: AtomicUsize,
-    binance_orders_10s: AtomicUsize,
-    binance_orders_1m: AtomicUsize,
-    /// LG-3: sello (reloj sincronizado, ms) de la última cabecera de uso recibida.
-    binance_limits_ts_ms: AtomicU64,
+    /// N5 (CL-177): uso que reportan las cabeceras del exchange, por contador y
+    /// con su propio sello (LG-3: cada uno vale dentro de su ventana).
+    uso_exchange: std::sync::Mutex<UsoExchange>,
     max_weight_1m: AtomicUsize,
     max_orders_10s: AtomicUsize,
     max_orders_1m: AtomicUsize,
@@ -378,10 +376,7 @@ impl OrderExecutor {
             client: BinanceClient::new(api_key.clone(), is_testnet),
             rate_limit_counter: AtomicUsize::new(0),
             last_reset_timestamp: AtomicU64::new(0),
-            binance_weight_1m: AtomicUsize::new(0),
-            binance_orders_10s: AtomicUsize::new(0),
-            binance_orders_1m: AtomicUsize::new(0),
-            binance_limits_ts_ms: AtomicU64::new(0),
+            uso_exchange: std::sync::Mutex::new(UsoExchange::default()),
             // LG-12: los límites documentados del exchange.
             max_weight_1m: AtomicUsize::new(crate::binance_api::LIMITE_PESO_1M),
             max_orders_10s: AtomicUsize::new(crate::binance_api::LIMITE_ORDENES_10S),
@@ -418,10 +413,7 @@ impl OrderExecutor {
             client: BinanceClient::new(api_key.clone(), is_testnet),
             rate_limit_counter: AtomicUsize::new(0),
             last_reset_timestamp: AtomicU64::new(0),
-            binance_weight_1m: AtomicUsize::new(0),
-            binance_orders_10s: AtomicUsize::new(0),
-            binance_orders_1m: AtomicUsize::new(0),
-            binance_limits_ts_ms: AtomicU64::new(0),
+            uso_exchange: std::sync::Mutex::new(UsoExchange::default()),
             // LG-12: los límites documentados del exchange.
             max_weight_1m: AtomicUsize::new(crate::binance_api::LIMITE_PESO_1M),
             max_orders_10s: AtomicUsize::new(crate::binance_api::LIMITE_ORDENES_10S),
@@ -704,9 +696,24 @@ impl OrderExecutor {
         sign_payload_to_buffer(&buf.as_str()[payload_start..], api_secret, &mut sig_buf);
         buf.push_str("&signature=");
         buf.push_str(unsafe { std::str::from_utf8_unchecked(&sig_buf) });
-        match self.client.cancel_order_payload(buf.as_str()).await {
-            Ok(limits) => {
-                self.update_limits(&limits);
+        // N5 (CL-178): durante un 429/418 el DELETE no sale; la purga queda
+        // incompleta y el llamador marca la protección sucia. CL-179: cupo
+        // crítico, soltado tras la respuesta. CL-182: su cabecera se registra
+        // con el cupo vivo, para que el coste no salga del libro antes de
+        // entrar en el uso.
+        let borrado = match self.check_exit_rate_limits(
+            ts,
+            Tramo::Critica(crate::binance_api::COSTE_CANCELACION),
+        ) {
+            Ok(_cupo) => self
+                .client
+                .cancel_order_payload(buf.as_str())
+                .await
+                .inspect(|limits| self.update_limits(limits)),
+            Err(e) => Err(e),
+        };
+        match borrado {
+            Ok(_) => {
                 cancelled += 1;
             }
             Err(e) => {
@@ -739,6 +746,10 @@ impl OrderExecutor {
             return Ok((0, 0));
         }
         let timestamp = self.get_synced_timestamp();
+        // N5 (RV14): durante un 429/418 no sale nada del aplanado (tampoco
+        // positionRisk, que lo mira); se devuelve el freno aquí, antes de
+        // firmar nada y sin anunciar un respaldo de modo que no se usaría.
+        self.check_backoff(timestamp)?;
         let api_secret = self.api_secret.load();
 
         // Modo de la cuenta (dual=hedge) — determina si se envía positionSide.
@@ -752,8 +763,16 @@ impl OrderExecutor {
         sign_payload_to_buffer(&buf.as_str()[payload_start..], &api_secret, &mut sig_buf);
         buf.push_str("&signature=");
         buf.push_str(unsafe { std::str::from_utf8_unchecked(&sig_buf) });
-        let dual_mode_opt = match self.get_payload_account(buf.as_str()).await {
-            Ok((_, mode_body)) => {
+        // N5 (CL-179): es una lectura. Por encima del 80 % no se pregunta el
+        // modo y se usa el registrado (el mismo respaldo que ante un fallo);
+        // positionRisk es crítica y sigue.
+        let modo = match self.check_exit_rate_limits(timestamp, Tramo::Lectura) {
+            Ok(_cupo) => self.get_payload_account(buf.as_str()).await,
+            Err(e) => Err(e),
+        };
+        let dual_mode_opt = match modo {
+            Ok((limits, mode_body)) => {
+                self.update_limits(&limits);
                 #[derive(serde::Deserialize)]
                 struct ModeResp {
                     #[serde(rename = "dualSidePosition")]
@@ -772,9 +791,7 @@ impl OrderExecutor {
 
         let entries = self.fetch_position_risk().await?;
         let open_positions: Vec<_> = entries.iter().filter(|p| p.is_open()).cloned().collect();
-        let open_symbols: std::collections::HashSet<String> =
-            open_positions.iter().map(|p| p.symbol.clone()).collect();
-        let all_symbols: Vec<String> = entries.iter().map(|p| p.symbol.clone()).collect();
+        let sin_posicion = simbolos_sin_posicion(&entries);
 
         let mut closed = 0usize;
         let mut cancelled = 0usize;
@@ -873,7 +890,24 @@ impl OrderExecutor {
                 buf.push_str("&signature=");
                 buf.push_str(unsafe { std::str::from_utf8_unchecked(&sig_buf) });
 
-                let mut close_res = self.client.execute_order_payload_typed(buf.as_str()).await;
+                // N5 (CL-178): el cierre no sale durante un 429/418, y cada
+                // respuesta pasa UNA vez por la política de rate-limit (antes
+                // sus 429 no armaban el cooldown y el barrido seguía enviando).
+                // Un rechazo local no lleva -4061 ni -2022: no reintenta.
+                // CL-179: cupo crítico (sale mientras quepa en el límite).
+                // CL-182: la cabecera se registra con el cupo vivo.
+                let mut close_res = match self.check_exit_rate_limits(
+                    self.get_synced_timestamp(),
+                    Tramo::Critica(crate::binance_api::COSTE_ORDEN),
+                ) {
+                    Ok(_cupo) => self
+                        .client
+                        .execute_order_payload_typed(buf.as_str())
+                        .await
+                        .map_err(|e| self.handle_rate_limit_error(&e))
+                        .inspect(|(limits, _)| self.update_limits(limits)),
+                    Err(e) => Err(e),
+                };
                 // R3.3 / K-16: Fail-safe retry si el exchange rechaza por discrepancia de modo (-4061)
                 if let Err(ref e) = close_res {
                     if e.contains("-4061") || e.contains("position side") || e.contains("reduceOnly") {
@@ -914,16 +948,23 @@ impl OrderExecutor {
                         retry_buf.push_str("&signature=");
                         retry_buf.push_str(unsafe { std::str::from_utf8_unchecked(&retry_sig_buf) });
 
-                        close_res = self
-                            .client
-                            .execute_order_payload_typed(retry_buf.as_str())
-                            .await;
+                        close_res = match self.check_exit_rate_limits(
+                            self.get_synced_timestamp(),
+                            Tramo::Critica(crate::binance_api::COSTE_ORDEN),
+                        ) {
+                            Ok(_cupo) => self
+                                .client
+                                .execute_order_payload_typed(retry_buf.as_str())
+                                .await
+                                .map_err(|e| self.handle_rate_limit_error(&e))
+                                .inspect(|(limits, _)| self.update_limits(limits)),
+                            Err(e) => Err(e),
+                        };
                     }
                 }
 
                 match close_res {
-                    Ok((limits, ack)) => {
-                        self.update_limits(&limits);
+                    Ok((_, ack)) => {
                         let now = self.get_synced_timestamp();
                         self.order_registry.apply_ack(&ack, now);
                         position_closed = true;
@@ -942,13 +983,17 @@ impl OrderExecutor {
                             "♻️ [X-026] {} -2022: re-snapshot fresco (TP pudo llenar entre snapshot y close)…",
                             p.symbol
                         );
-                        let fresh = self.fetch_position_risk().await.ok().and_then(|entries| {
+                        // CL-183: un re-snapshot que no respondió (freno 429/418,
+                        // cuota del tramo crítico o red) no es «posición plana»:
+                        // antes el Err caía a None, se daba por cerrada y se
+                        // purgaban los brackets de una posición quizá viva.
+                        let fresh = self.fetch_position_risk().await.map(|entries| {
                             entries
                                 .into_iter()
                                 .find(|e2| e2.symbol == p.symbol && e2.is_open())
                         });
                         match fresh {
-                            Some(f) => {
+                            Ok(Some(f)) => {
                                 let fq = f.position_amt.abs();
                                 let step = match self.get_symbol_filter(&p.symbol).await {
                                     Ok(flt) => flt.step_size,
@@ -974,13 +1019,17 @@ impl OrderExecutor {
                                     ),
                                 }
                             }
-                            None => {
+                            Ok(None) => {
                                 position_closed = true; // ya no existe con qty>0: estaba plana
                                 println!(
                                     "🧹 [X-026] {} ya plana en el exchange (snapshot fresco)",
                                     p.symbol
                                 );
                             }
+                            Err(e2) => println!(
+                                "🚨 [X-026] {} sin re-snapshot ({}): se trata como ABIERTA y sus brackets no se purgan — INTERVENCIÓN MANUAL",
+                                p.symbol, e2
+                            ),
                         }
                     }
                     Err(e) => println!(
@@ -1006,14 +1055,22 @@ impl OrderExecutor {
         }
 
         // Purgar brackets de símbolos sin posiciones abiertas (órdenes huérfanas)
-        for sym in &all_symbols {
-            if !open_symbols.contains(sym) {
-                let (sym_canc, purged) = self.cancel_symbol_orders_and_brackets(sym, &api_secret).await;
-                cancelled += sym_canc;
-                if !purged {
-                    unpurged_symbols.push(sym.clone());
-                    quantum_arena::protection_health::mark_dirty();
-                }
+        // N5 (CL-179): el barrido es limpieza, no protección: cada símbolo pasa
+        // por el tramo de lectura antes de sus dos cancelaciones críticas, para
+        // que no gaste la franja reservada a cierres y protección. Lo que no
+        // entra queda sin purgar y marca la protección sucia.
+        for sym in &sin_posicion {
+            if let Err(e) = self.check_exit_rate_limits(self.get_synced_timestamp(), Tramo::Lectura) {
+                println!("⚠️ [FLATTEN] barrido de huérfanas sin cuota en {}: {}", sym, e);
+                unpurged_symbols.push(sym.clone());
+                quantum_arena::protection_health::mark_dirty();
+                continue;
+            }
+            let (sym_canc, purged) = self.cancel_symbol_orders_and_brackets(sym, &api_secret).await;
+            cancelled += sym_canc;
+            if !purged {
+                unpurged_symbols.push(sym.clone());
+                quantum_arena::protection_health::mark_dirty();
             }
         }
 
@@ -1066,7 +1123,7 @@ impl OrderExecutor {
         if self.is_paper_trading {
             return Ok(Vec::new());
         }
-        self.check_exit_rate_limits(timestamp)?;
+        let _cupo = self.check_exit_rate_limits(timestamp, Tramo::Lectura)?;
 
         let mut buf = ZeroAllocBuffer::new();
         buf.push_str(self.client.get_base_url());
@@ -1154,7 +1211,7 @@ impl OrderExecutor {
         }
         let timestamp = self.get_synced_timestamp();
 
-        self.check_exit_rate_limits(timestamp)?;
+        let _cupo = self.check_exit_rate_limits(timestamp, Tramo::Critica(crate::binance_api::COSTE_POSITION_RISK))?;
 
         let mut buf = ZeroAllocBuffer::new();
         buf.push_str(self.client.get_base_url());
@@ -1203,19 +1260,7 @@ impl OrderExecutor {
     #[inline(always)]
     fn update_limits(&self, limits: &crate::client::BinanceRateLimits) {
         let now_ms = self.get_synced_timestamp();
-        if limits.weight_1m.is_some() || limits.orders_10s.is_some() || limits.orders_1m.is_some() {
-            self.binance_limits_ts_ms
-                .store(now_ms, Ordering::Relaxed);
-        }
-        if let Some(w) = limits.weight_1m {
-            self.binance_weight_1m.store(w, Ordering::Relaxed);
-        }
-        if let Some(o) = limits.orders_10s {
-            self.binance_orders_10s.store(o, Ordering::Relaxed);
-        }
-        if let Some(o) = limits.orders_1m {
-            self.binance_orders_1m.store(o, Ordering::Relaxed);
-        }
+        self.observar_limites(limits, now_ms);
         // F1-005 (Ola Ω150): Solo reiniciar consecutive_429 cuando el cooldown activo ya expiró.
         // Antes, cualquier 2xx concurrente durante una ráfaga reiniciaba consecutive_429 a 0
         // en medio del cooldown, impidiendo alcanzar el umbral de 3+ 429 consecutivos.
@@ -1224,10 +1269,39 @@ impl OrderExecutor {
         }
     }
 
+    /// N5 (CL-177): registra el uso de una respuesta. Sólo los contadores cuya
+    /// cabecera llegó, cada uno con su sello: antes un único sello compartido
+    /// renovaba la edad de los tres y la última respuesta en llegar pisaba el
+    /// valor aunque fuera más vieja (peticiones concurrentes).
+    fn observar_limites(&self, limits: &crate::client::BinanceRateLimits, ahora_ms: u64) {
+        use crate::binance_api::{VENTANA_ORDENES_10S_MS, VENTANA_ORDENES_1M_MS, VENTANA_PESO_MS};
+        let mut uso = self.uso_exchange_bloqueado();
+        if let Some(w) = limits.weight_1m {
+            uso.peso_1m.observar(w, ahora_ms, VENTANA_PESO_MS);
+        }
+        if let Some(o) = limits.orders_10s {
+            uso.ordenes_10s.observar(o, ahora_ms, VENTANA_ORDENES_10S_MS);
+        }
+        if let Some(o) = limits.orders_1m {
+            uso.ordenes_1m.observar(o, ahora_ms, VENTANA_ORDENES_1M_MS);
+        }
+    }
+
+    /// Un pánico con el candado tomado no deja estado a medias (cada
+    /// `observar` escribe muestras enteras), así que se sigue con el valor.
+    fn uso_exchange_bloqueado(&self) -> std::sync::MutexGuard<'_, UsoExchange> {
+        self.uso_exchange
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+    }
+
     /// F1.8: política centralizada ante rate limits de Binance.
-    /// - 429: cooldown temporal (Retry-After o 60s default); kill-switch SOLO
-    ///   si se acumulan 3+ consecutivos (patrón de ban inminente).
-    /// - 418: IP baneada → kill-switch inmediato y legítimo.
+    /// - 429: cooldown temporal (Retry-After o 60 s por defecto); al tercer 429
+    ///   consecutivo, freno temporal RATE_BRAKE (cooldown + 60 s, M4-C02),
+    ///   nunca el kill-switch.
+    /// - 418: IP baneada → freno temporal RATE_BRAKE por la ventana del ban
+    ///   (300 s por defecto), que caduca solo (M4-C02).
+    ///
     /// Antes: un SOLO 429 disparaba el kill-switch permanente — el sistema
     /// quedaba muerto hasta reinicio por un freno transitorio del exchange.
     fn handle_rate_limit_error(&self, e: &str) -> String {
@@ -1324,7 +1398,7 @@ impl OrderExecutor {
         if self.kill_switch.load(Ordering::Relaxed) {
             return Err("KILL SWITCH ACTIVE. Execution blocked.".to_string());
         }
-        self.check_exit_rate_limits(timestamp_ms)?;
+        let _cupo = self.check_exit_rate_limits(timestamp_ms, Tramo::Lectura)?;
 
         // F1-030: Límite local de aceleración aplicado ÚNICAMENTE a la entrada
         // de órdenes nuevas (riesgo creciente), derivado de la capacidad de órdenes
@@ -1346,13 +1420,15 @@ impl OrderExecutor {
         Ok(())
     }
 
-    /// CL-3 — EL KILL-SWITCH BLOQUEA LO QUE AUMENTA EL RIESGO, NO LAS SALIDAS.
-    ///
-    /// F1-030: Presupuestos separados. Las cancelaciones, lecturas y cierres reduce-only
-    /// NUNCA se bloquean por un literal local de ops/s. Se rigen exclusivamente por
-    /// los frenos reales del exchange (RATE_BRAKE, 429 cooldown) y el headroom del 80%
-    /// en peso de requests (2400/min) y cuotas de órdenes vigentes reportadas por Binance.
-    fn check_exit_rate_limits(&self, timestamp_ms: u64) -> Result<(), String> {
+    /// N5 (CL-178): los dos frenos que ya puso el exchange, sin cuota. Ninguna
+    /// petición que lo consulte (directamente o por `check_exit_rate_limits`)
+    /// sale mientras duran, salidas incluidas: Binance pide no enviar durante
+    /// el Retry-After de un 429, y seguir enviando acumula 429 hasta el freno
+    /// escalado (3 consecutivos) o el ban de IP (418). Las que aún no lo
+    /// consultan (modo hedge, filtros, hora, NTP, listenKey, la cancelación
+    /// de la pierna hermana del user-data stream y la primera lectura de
+    /// `get_payload_account`) son la fila N20 del censo C-F7b.
+    fn check_backoff(&self, timestamp_ms: u64) -> Result<(), String> {
         // FIX M4-C02: freno TEMPORAL por rate-limit (3×429 escalado / HTTP 418).
         // A diferencia del kill_switch permanente (incidentes reales), este
         // auto-expira: cuando timestamp_ms >= rate_brake_until_ms la ejecución
@@ -1373,45 +1449,87 @@ impl OrderExecutor {
                 timestamp_ms
             ));
         }
+        Ok(())
+    }
+
+    /// CL-3 — EL KILL-SWITCH BLOQUEA LO QUE AUMENTA EL RIESGO, NO LAS SALIDAS.
+    ///
+    /// F1-030: Presupuestos separados. Las cancelaciones, lecturas y cierres reduce-only
+    /// NUNCA se bloquean por un literal local de ops/s. Se rigen por los frenos reales
+    /// del exchange (RATE_BRAKE, 429 cooldown) y por la cuota vigente que reporta Binance
+    /// (2400 de peso/min, 300 órdenes/10 s y 1200/min), según el tramo (N5, CL-179):
+    /// las lecturas frenan al 80 % y las críticas al límite, contando las críticas en vuelo.
+    /// Devuelve el cupo de la petición, que el llamador suelta tras la respuesta.
+    fn check_exit_rate_limits(&self, timestamp_ms: u64, tramo: Tramo) -> Result<Cupo<'_>, String> {
+        use crate::binance_api::{VENTANA_ORDENES_10S_MS, VENTANA_ORDENES_1M_MS, VENTANA_PESO_MS};
+        self.check_backoff(timestamp_ms)?;
+
+        let limite = [
+            self.max_weight_1m.load(Ordering::Relaxed),
+            self.max_orders_10s.load(Ordering::Relaxed),
+            self.max_orders_1m.load(Ordering::Relaxed),
+        ];
+        const CONTADOR: [&str; 3] = ["WEIGHT", "ORDERS_10S", "ORDERS_1M"];
 
         // LG-3: el uso que reporta una cabecera vale sólo dentro de su ventana
         // del exchange (1 min / 10 s). Sin caducidad, una cabecera alta
         // bloqueaba toda petición nueva —también salidas y cancelaciones—
         // antes de enviarla, nunca llegaba la respuesta que la refrescara y el
-        // bloqueo era permanente.
-        let sello = self.binance_limits_ts_ms.load(Ordering::Relaxed);
-        let bw1m = uso_vigente(self.binance_weight_1m.load(Ordering::Relaxed), sello, timestamp_ms, 60_000);
-        let bo10s = uso_vigente(self.binance_orders_10s.load(Ordering::Relaxed), sello, timestamp_ms, 10_000);
-        let bo1m = uso_vigente(self.binance_orders_1m.load(Ordering::Relaxed), sello, timestamp_ms, 60_000);
+        // bloqueo era permanente. N5 (CL-177): cada contador con su sello y sin
+        // bajar dentro de su ventana por una respuesta tardía.
+        let mut uso_exchange = self.uso_exchange_bloqueado();
+        let uso = [
+            uso_exchange.peso_1m.vigente(timestamp_ms, VENTANA_PESO_MS),
+            uso_exchange.ordenes_10s.vigente(timestamp_ms, VENTANA_ORDENES_10S_MS),
+            uso_exchange.ordenes_1m.vigente(timestamp_ms, VENTANA_ORDENES_1M_MS),
+        ];
 
-        let max_bw1m = self.max_weight_1m.load(Ordering::Relaxed) as f64;
-        let max_bo10s = self.max_orders_10s.load(Ordering::Relaxed) as f64;
-        let max_bo1m = self.max_orders_1m.load(Ordering::Relaxed) as f64;
-
-        // F1.8: HEADROOM 80% — los contadores de Binance llegan POR RESPUESTA;
-        // frenar al 100% ya es tarde (requests en vuelo cruzan el límite).
-        // Constante de infraestructura justificada, no parámetro de estrategia.
-        const HEADROOM: f64 = 0.8;
-        if bw1m as f64 > max_bw1m * HEADROOM {
-            return Err(format!(
-                "RATE_LIMIT_HEADROOM_WEIGHT: {}/{}",
-                bw1m, max_bw1m as usize
-            ));
+        match tramo {
+            Tramo::Lectura => {
+                drop(uso_exchange);
+                // F1.8: HEADROOM 80% — los contadores de Binance llegan POR RESPUESTA;
+                // frenar al 100% ya es tarde (requests en vuelo cruzan el límite).
+                // N5 (CL-179): es el techo de entradas y lecturas, y la franja que deja
+                // es la reserva del tramo crítico. El 0,8 es el valor heredado, no
+                // derivado: la cota del tráfico crítico por ventana está en el censo (N5).
+                const HEADROOM: f64 = 0.8;
+                for k in 0..3 {
+                    if uso[k] as f64 > limite[k] as f64 * HEADROOM {
+                        return Err(format!(
+                            "RATE_LIMIT_HEADROOM_{}: {}/{}",
+                            CONTADOR[k], uso[k], limite[k]
+                        ));
+                    }
+                }
+                Ok(Cupo {
+                    ex: self,
+                    coste: crate::binance_api::CosteBinance::NULO,
+                })
+            }
+            Tramo::Critica(coste) => {
+                // La regla del exchange (rechaza si usado + coste > límite), con
+                // las críticas admitidas y sin respuesta contadas como usadas.
+                // CL-181: en un contador donde la petición no gasta (c = 0) sólo
+                // la rechaza un uso ya por encima del límite; lo que está en
+                // vuelo no le quita un hueco que no ocupa.
+                let c = [coste.peso, coste.ordenes, coste.ordenes];
+                for k in 0..3 {
+                    let pendiente = if c[k] == 0 { 0 } else { uso_exchange.en_vuelo[k] };
+                    let total = uso[k].saturating_add(pendiente).saturating_add(c[k]);
+                    if total > limite[k] {
+                        return Err(format!(
+                            "RATE_LIMIT_EXHAUSTED_{}: {} usado + {} en vuelo + {} > {}",
+                            CONTADOR[k], uso[k], pendiente, c[k], limite[k]
+                        ));
+                    }
+                }
+                for (pendiente, coste) in uso_exchange.en_vuelo.iter_mut().zip(c) {
+                    *pendiente = pendiente.saturating_add(coste);
+                }
+                drop(uso_exchange);
+                Ok(Cupo { ex: self, coste })
+            }
         }
-        if bo10s as f64 > max_bo10s * HEADROOM {
-            return Err(format!(
-                "RATE_LIMIT_HEADROOM_ORDERS_10S: {}/{}",
-                bo10s, max_bo10s as usize
-            ));
-        }
-        if bo1m as f64 > max_bo1m * HEADROOM {
-            return Err(format!(
-                "RATE_LIMIT_HEADROOM_ORDERS_1M: {}/{}",
-                bo1m, max_bo1m as usize
-            ));
-        }
-
-        Ok(())
     }
 
     /// Redondea la cantidad a los decimales permitidos (step_size).
@@ -1644,10 +1762,15 @@ impl OrderExecutor {
         if let Err(ref e) = res {
             if !e.starts_with("HTTP_429_RATE_LIMITED") && !e.starts_with("HTTP_418_IP_BANNED") {
                 tokio::time::sleep(std::time::Duration::from_millis(200)).await;
-                res = self
-                    .client
-                    .get_payload_with_timeout(url, Some(std::time::Duration::from_secs(5)))
-                    .await;
+                // N5 (CL-178): otra petición pudo recibir un 429/418 durante
+                // la espera; entonces el reintento no sale y vuelve el error
+                // de la primera.
+                if self.check_backoff(self.get_synced_timestamp()).is_ok() {
+                    res = self
+                        .client
+                        .get_payload_with_timeout(url, Some(std::time::Duration::from_secs(5)))
+                        .await;
+                }
             }
         }
         res.map_err(|e| self.handle_rate_limit_error(&e))
@@ -1903,7 +2026,7 @@ impl OrderExecutor {
         }
 
         let timestamp = self.get_synced_timestamp();
-        self.check_exit_rate_limits(timestamp)?;
+        let _cupo = self.check_exit_rate_limits(timestamp, Tramo::Critica(crate::binance_api::COSTE_CANCELACION))?;
 
         let mut buf = ZeroAllocBuffer::new();
         buf.push_str(if self.client.is_testnet.load(Ordering::Relaxed) {
@@ -1951,7 +2074,7 @@ impl OrderExecutor {
             return Ok(());
         }
         let timestamp = self.get_synced_timestamp();
-        self.check_exit_rate_limits(timestamp)?;
+        let _cupo = self.check_exit_rate_limits(timestamp, Tramo::Critica(crate::binance_api::COSTE_CANCELACION))?;
 
         let mut buf = ZeroAllocBuffer::new();
         buf.push_str(if self.client.is_testnet.load(Ordering::Relaxed) {
@@ -2010,7 +2133,13 @@ impl OrderExecutor {
             return Ok(Vec::new());
         }
         let timestamp = self.get_synced_timestamp();
-        self.check_exit_rate_limits(timestamp)?;
+        // N5 (CL-179): con símbolo sostiene la protección de una posición
+        // (crítica); sin él es el listado de huérfanas (lectura).
+        let tramo = match symbol {
+            Some(_) => Tramo::Critica(crate::binance_api::COSTE_ALGO_ABIERTAS_SIMBOLO),
+            None => Tramo::Lectura,
+        };
+        let _cupo = self.check_exit_rate_limits(timestamp, tramo)?;
 
         let mut buf = ZeroAllocBuffer::new();
         buf.push_str(if self.client.is_testnet.load(Ordering::Relaxed) {
@@ -2074,7 +2203,7 @@ impl OrderExecutor {
             return Ok(Vec::new());
         }
         let timestamp = self.get_synced_timestamp();
-        self.check_exit_rate_limits(timestamp)?;
+        let _cupo = self.check_exit_rate_limits(timestamp, Tramo::Lectura)?;
 
         let mut buf = ZeroAllocBuffer::new();
         buf.push_str(if self.client.is_testnet.load(Ordering::Relaxed) {
@@ -2156,7 +2285,7 @@ impl OrderExecutor {
         // hedge, reduceOnly en one-way): el kill-switch no la bloquea (mismo
         // principio que CL-3). Si el aplanado falla, la posición conserva
         // su protección en vez de quedar desnuda. La cuota sigue aplicando.
-        self.check_exit_rate_limits(timestamp)?;
+        let _cupo = self.check_exit_rate_limits(timestamp, Tramo::Critica(crate::binance_api::COSTE_PIERNA_ALGO))?;
 
         let mut buf = ZeroAllocBuffer::new();
         buf.push_str(if self.client.is_testnet.load(Ordering::Relaxed) {
@@ -2399,7 +2528,7 @@ impl OrderExecutor {
         step_size: f64,
     ) -> Result<FillReport, String> {
         let timestamp = self.get_synced_timestamp();
-        self.check_exit_rate_limits(timestamp)?;
+        let _cupo = self.check_exit_rate_limits(timestamp, Tramo::Critica(crate::binance_api::COSTE_ORDEN))?;
         self.execute_reduce_only_market_internal(
             symbol,
             is_long_close,
@@ -3281,7 +3410,7 @@ impl ExecutionProvider for OrderExecutor {
         step_size: f64,
     ) -> Result<(), String> {
         let timestamp = self.get_synced_timestamp();
-        self.check_exit_rate_limits(timestamp)?;
+        let _cupo = self.check_exit_rate_limits(timestamp, Tramo::Critica(crate::binance_api::COSTE_ORDEN))?;
         self.execute_reduce_only_market_internal(
             symbol,
             is_long_close,
@@ -3328,7 +3457,7 @@ impl ExecutionProvider for OrderExecutor {
         // hedge, reduceOnly en one-way): el kill-switch no la bloquea (mismo
         // principio que CL-3). Si el aplanado falla, la posición conserva
         // su protección en vez de quedar desnuda. La cuota sigue aplicando.
-        self.check_exit_rate_limits(timestamp)?;
+        let _cupo = self.check_exit_rate_limits(timestamp, Tramo::Critica(crate::binance_api::COSTE_PIERNA_ALGO))?;
 
         let mut buf = ZeroAllocBuffer::new();
         // OCO-F5: TRAILING_STOP_MARKET es tipo condicional — bloqueado en
@@ -3426,7 +3555,7 @@ impl ExecutionProvider for OrderExecutor {
         // hedge, reduceOnly en one-way): el kill-switch no la bloquea (mismo
         // principio que CL-3). Si el aplanado falla, la posición conserva
         // su protección en vez de quedar desnuda. La cuota sigue aplicando.
-        self.check_exit_rate_limits(timestamp)?;
+        let cupo = self.check_exit_rate_limits(timestamp, Tramo::Critica(crate::binance_api::COSTE_PIERNA_ALGO.por(2)))?;
 
         let base_url = if self.client.is_testnet.load(Ordering::Relaxed) {
             "https://testnet.binancefuture.com/fapi/v1/algoOrder?"
@@ -3548,6 +3677,14 @@ impl ExecutionProvider for OrderExecutor {
             }
         }
 
+        // N5 (CL-179): las dos piernas ya respondieron y salen del libro en
+        // vuelo antes de los reintentos y cancelaciones, que piden su propio
+        // cupo. Una con 2xx deja su uso en la cabecera; una con error contó
+        // en el exchange y el cliente tira su cabecera (client.rs), y un
+        // timeout AMBIGUOUS pudo contar sin respuesta: hasta la próxima
+        // cabecera 2xx su coste no se cuenta (censo C-F7b, fila N21).
+        drop(cupo);
+
         // F1.9 — FIX OCO PARCIAL: antes, una pierna fallida devolvía Ok(())
         // dejando la posición protegida por UN solo lado (naked al otro).
         // Política correcta: reintentar la pierna caída UNA vez; si sigue
@@ -3605,16 +3742,32 @@ impl ExecutionProvider for OrderExecutor {
                 sign_payload_to_buffer(&rb.as_str()[rp..], &retry_secret, &mut rsb);
                 rb.push_str("&signature=");
                 rb.push_str(unsafe { std::str::from_utf8_unchecked(&rsb) });
-                sl_res = self.client.execute_order_payload(rb.as_str()).await;
+                // N5 (CL-178): si la primera pierna recibió un 429/418, el
+                // reintento no sale (seguía enviando dentro del cooldown).
+                // CL-179: pide su cupo crítico, soltado tras la respuesta.
+                // CL-182: la cabecera se registra con el cupo vivo.
+                sl_res = match self.check_exit_rate_limits(
+                    self.get_synced_timestamp(),
+                    Tramo::Critica(crate::binance_api::COSTE_PIERNA_ALGO),
+                ) {
+                    Ok(_cupo) => self
+                        .client
+                        .execute_order_payload(rb.as_str())
+                        .await
+                        .inspect(|limits| self.update_limits(limits)),
+                    Err(e) => Err(e),
+                };
                 if let Err(e) = &sl_res {
                     if pierna_ya_existe(e) {
-                        sl_res = Ok(crate::client::BinanceRateLimits::default());
+                        // Sin cabecera; sólo el reinicio F1-005 de los 429, como antes.
+                        let limits = crate::client::BinanceRateLimits::default();
+                        self.update_limits(&limits);
+                        sl_res = Ok(limits);
                     } else {
                         let _ = self.handle_rate_limit_error(e);
                     }
                 }
-                if let Ok(limits) = &sl_res {
-                    self.update_limits(limits);
+                if sl_res.is_ok() {
                     confirmed_sl_id = Some(format!("{}_SL", base_client_id));
                 }
             }
@@ -3644,16 +3797,32 @@ impl ExecutionProvider for OrderExecutor {
                 sign_payload_to_buffer(&rb.as_str()[rp..], &retry_secret, &mut rsb);
                 rb.push_str("&signature=");
                 rb.push_str(unsafe { std::str::from_utf8_unchecked(&rsb) });
-                tp_res = self.client.execute_order_payload(rb.as_str()).await;
+                // N5 (CL-178): si la primera pierna recibió un 429/418, el
+                // reintento no sale (seguía enviando dentro del cooldown).
+                // CL-179: pide su cupo crítico, soltado tras la respuesta.
+                // CL-182: la cabecera se registra con el cupo vivo.
+                tp_res = match self.check_exit_rate_limits(
+                    self.get_synced_timestamp(),
+                    Tramo::Critica(crate::binance_api::COSTE_PIERNA_ALGO),
+                ) {
+                    Ok(_cupo) => self
+                        .client
+                        .execute_order_payload(rb.as_str())
+                        .await
+                        .inspect(|limits| self.update_limits(limits)),
+                    Err(e) => Err(e),
+                };
                 if let Err(e) = &tp_res {
                     if pierna_ya_existe(e) {
-                        tp_res = Ok(crate::client::BinanceRateLimits::default());
+                        // Sin cabecera; sólo el reinicio F1-005 de los 429, como antes.
+                        let limits = crate::client::BinanceRateLimits::default();
+                        self.update_limits(&limits);
+                        tp_res = Ok(limits);
                     } else {
                         let _ = self.handle_rate_limit_error(e);
                     }
                 }
-                if let Ok(limits) = &tp_res {
-                    self.update_limits(limits);
+                if tp_res.is_ok() {
                     confirmed_tp_id = Some(format!("{}_TP", base_client_id));
                 }
             }
@@ -3720,7 +3889,7 @@ impl ExecutionProvider for OrderExecutor {
 
         let timestamp = self.get_synced_timestamp();
 
-        self.check_exit_rate_limits(timestamp)?;
+        let _cupo = self.check_exit_rate_limits(timestamp, Tramo::Critica(crate::binance_api::COSTE_CANCELACION))?;
 
         let mut buf = ZeroAllocBuffer::new();
         buf.push_str(if self.client.is_testnet.load(Ordering::Relaxed) {
@@ -3767,7 +3936,7 @@ impl ExecutionProvider for OrderExecutor {
         }
 
         let timestamp = self.get_synced_timestamp();
-        self.check_exit_rate_limits(timestamp)?;
+        let cupo = self.check_exit_rate_limits(timestamp, Tramo::Critica(crate::binance_api::COSTE_CANCELACION))?;
 
         let mut buf = ZeroAllocBuffer::new();
         buf.push_str(if self.client.is_testnet.load(Ordering::Relaxed) {
@@ -3799,6 +3968,8 @@ impl ExecutionProvider for OrderExecutor {
                 return Err(self.handle_rate_limit_error(&e));
             }
         }
+        // N5 (CL-179): el DELETE ya respondió; la purga algo pide su cupo.
+        drop(cupo);
         // OCO-F5: las órdenes TP/SL condicionales viven en el servicio de
         // Algo y SOBREVIVEN a /fapi/v1/allOpenOrders. Sin esta segunda purga,
         // todo cierre de posición dejaba triggers vivos que disparaban
@@ -3885,7 +4056,7 @@ impl ExecutionProvider for OrderExecutor {
 
         let timestamp = self.get_synced_timestamp();
 
-        self.check_exit_rate_limits(timestamp)?;
+        let _cupo = self.check_exit_rate_limits(timestamp, Tramo::Critica(crate::binance_api::COSTE_CONSULTA_ORDEN))?;
 
         let mut buf = ZeroAllocBuffer::new();
         buf.push_str(if self.client.is_testnet.load(Ordering::Relaxed) {
@@ -3941,7 +4112,7 @@ impl ExecutionProvider for OrderExecutor {
     async fn fetch_open_positions(&self) -> Result<Vec<ActivePosition>, String> {
         let timestamp = self.get_synced_timestamp();
 
-        self.check_exit_rate_limits(timestamp)?;
+        let _cupo = self.check_exit_rate_limits(timestamp, Tramo::Lectura)?;
 
         let mut buf = ZeroAllocBuffer::new();
         if self.client.is_testnet.load(Ordering::Relaxed) {
@@ -3975,7 +4146,7 @@ impl ExecutionProvider for OrderExecutor {
     async fn fetch_account_balance(&self) -> Result<f64, String> {
         let timestamp = self.get_synced_timestamp();
 
-        self.check_exit_rate_limits(timestamp)?;
+        let _cupo = self.check_exit_rate_limits(timestamp, Tramo::Lectura)?;
 
         let mut buf = ZeroAllocBuffer::new();
         if self.client.is_testnet.load(Ordering::Relaxed) {
@@ -4057,7 +4228,7 @@ impl ExecutionProvider for OrderExecutor {
     async fn fetch_commission_rate(&self, symbol: &str) -> Result<(f64, f64), String> {
         let timestamp = self.get_synced_timestamp();
 
-        self.check_exit_rate_limits(timestamp)?;
+        let _cupo = self.check_exit_rate_limits(timestamp, Tramo::Lectura)?;
 
         let mut buf = ZeroAllocBuffer::new();
         if self.client.is_testnet.load(Ordering::Relaxed) {
@@ -4117,6 +4288,27 @@ fn pierna_ya_existe(err: &str) -> bool {
     termina_codigo(&compacto) || termina_codigo(&espaciado) || termina_codigo(&rechazo)
 }
 
+/// N5 (CL-178): símbolos de positionRisk sin ninguna fila abierta, cada uno
+/// UNA vez y en el orden en que aparecen. En hedge la respuesta trae una fila
+/// LONG y otra SHORT por símbolo: antes el barrido de huérfanas purgaba dos
+/// veces cada símbolo plano (dos DELETE y dos cancelaciones algo de más).
+fn simbolos_sin_posicion(
+    entries: &[crate::reconciliation::PositionRiskEntry],
+) -> Vec<String> {
+    let abiertos: std::collections::HashSet<&str> = entries
+        .iter()
+        .filter(|p| p.is_open())
+        .map(|p| p.symbol.as_str())
+        .collect();
+    let mut vistos = std::collections::HashSet::new();
+    entries
+        .iter()
+        .map(|p| p.symbol.as_str())
+        .filter(|s| !abiertos.contains(s) && vistos.insert(*s))
+        .map(str::to_owned)
+        .collect()
+}
+
 /// LG-3 (Línea G) — USO DE RATE-LIMIT VIGENTE.
 ///
 /// Las cabeceras `X-MBX-USED-WEIGHT-1M` y `X-MBX-ORDER-COUNT-10S/1M` miden el
@@ -4133,6 +4325,160 @@ fn uso_vigente(uso: usize, sello_ms: u64, ahora_ms: u64, ventana_ms: u64) -> usi
         0
     } else {
         uso
+    }
+}
+
+/// N5 (CL-177): una cabecera de uso y el instante (reloj sincronizado, ms) en
+/// que llegó. Sello 0 = nunca llegó.
+#[derive(Clone, Copy, Debug, Default)]
+struct MuestraUso {
+    uso: usize,
+    sello_ms: u64,
+}
+
+impl MuestraUso {
+    fn vigente(self, ahora_ms: u64, ventana_ms: u64) -> usize {
+        uso_vigente(self.uso, self.sello_ms, ahora_ms, ventana_ms)
+    }
+}
+
+/// N5 (CL-177): uso de UN contador del exchange.
+///
+/// Dentro de una ventana el contador del exchange sólo sube, así que una
+/// respuesta que llega con menos uso que otra aún vigente puede ser más vieja
+/// (las peticiones concurrentes responden en cualquier orden) y no lo rebaja:
+/// el uso es el máximo de las muestras vigentes. CL-180: se guardan todas las
+/// que aún pueden serlo, con sellos no decrecientes y usos estrictamente
+/// decrecientes de delante hacia atrás. Una muestra nueva tapa a las de atrás
+/// con uso menor o igual (llegó después y caduca después), y la primera no
+/// caducada es la mayor vigente. Antes se guardaban sólo la mayor y la última,
+/// y al caducar la mayor se perdía una intermedia más alta que la última.
+///
+/// Tras un reinicio del contador del exchange la mayor sobreestima hasta su
+/// caducidad. Es la elección conservadora, no una imposibilidad: una muestra
+/// menor que llega más tarde que la vida máxima de una petición tras la mayor
+/// es posterior y prueba el reinicio. No se usa porque esa vida depende de los
+/// timeouts del cliente (client.rs) y de un sello de reloj de pared, y la
+/// alineación de las ventanas del exchange no está comprobada (censo C-F7b,
+/// fila N22).
+#[derive(Clone, Debug, Default)]
+struct ContadorExchange {
+    muestras: std::collections::VecDeque<MuestraUso>,
+}
+
+impl ContadorExchange {
+    /// CL-180: red de seguridad de la cola. Los usos guardados son enteros
+    /// estrictamente decrecientes y una cabecera 2xx no pasa del límite L de
+    /// su contador (el exchange rechaza si usado + coste > L), así que caben a
+    /// lo sumo L + 1 por contador (2401, 301 y 1201). La cota es la suma de los
+    /// límites por minuto ×2, por encima de cualquiera de ellas: sólo se
+    /// alcanza si una cabecera superase su límite.
+    const MAX_MUESTRAS: usize = 2
+        * (crate::binance_api::LIMITE_PESO_1M + crate::binance_api::LIMITE_ORDENES_1M);
+
+    fn observar(&mut self, uso: usize, ahora_ms: u64, ventana_ms: u64) {
+        // CL-180: una muestra llegó a lo sumo ahora. Con un reloj que
+        // retrocede, un sello futuro alargaría su vida más allá de su ventana
+        // y ninguna respuesta la corregiría; se acota a ahora (conserva el
+        // valor, lo conservador). Los sellos futuros son un sufijo.
+        for m in self.muestras.iter_mut().rev() {
+            if m.sello_ms <= ahora_ms {
+                break;
+            }
+            m.sello_ms = ahora_ms;
+        }
+        // Las caducadas no aportan nada y son un prefijo (sellos no
+        // decrecientes). Una de uso 0 sólo puede ser la última; la saca el
+        // pop_back de abajo y vigente() la salta mientras tanto.
+        while self
+            .muestras
+            .front()
+            .is_some_and(|m| m.vigente(ahora_ms, ventana_ms) == 0)
+        {
+            self.muestras.pop_front();
+        }
+        while self.muestras.back().is_some_and(|m| m.uso <= uso) {
+            self.muestras.pop_back();
+        }
+        if self.muestras.len() >= Self::MAX_MUESTRAS {
+            // La de atrás tiene más uso: toma el sello nuevo (sobrestima, lo
+            // conservador) en lugar de crecer.
+            if let Some(m) = self.muestras.back_mut() {
+                m.sello_ms = ahora_ms;
+            }
+            return;
+        }
+        self.muestras.push_back(MuestraUso { uso, sello_ms: ahora_ms });
+    }
+
+    fn vigente(&self, ahora_ms: u64, ventana_ms: u64) -> usize {
+        self.muestras
+            .iter()
+            .map(|m| m.vigente(ahora_ms, ventana_ms))
+            .find(|&u| u > 0)
+            .unwrap_or(0)
+    }
+}
+
+/// N5 (CL-177): los tres contadores de `exchangeInfo.rateLimits`.
+#[derive(Debug, Default)]
+struct UsoExchange {
+    peso_1m: ContadorExchange,
+    ordenes_10s: ContadorExchange,
+    ordenes_1m: ContadorExchange,
+    /// N5 (CL-179): coste de las peticiones críticas admitidas cuya respuesta
+    /// aún no llegó (peso, órdenes 10 s, órdenes 1 min). Su uso no está en
+    /// ninguna cabecera todavía.
+    en_vuelo: [usize; 3],
+}
+
+/// N5 (CL-179): tramo de cuota de una petición.
+///
+/// - `Lectura`: entradas y lecturas. Frenan cuando el uso supera 0,8·L, la
+///   regla de siempre (F1.8). El 0,8 es la reserva para el tramo crítico.
+/// - `Critica(c)`: salidas, protección y lo que las sostiene (positionRisk,
+///   cancelaciones, piernas, cierres reduce-only, consulta de una orden
+///   ambigua). Pasan mientras uso + en vuelo + c ≤ L en cada contador en el
+///   que gastan (c > 0), y uso ≤ L en los demás: la regla del exchange, sin
+///   literal. Antes frenaban al 80 % como una
+///   lectura, y en la franja (0,8·L, L] el host no podía cerrar ni proteger
+///   aunque el exchange lo admitía.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Tramo {
+    Lectura,
+    Critica(crate::binance_api::CosteBinance),
+}
+
+/// N5 (CL-179): plaza de una petición crítica en el libro de las que están en
+/// vuelo. Al soltarla (respuesta recibida o error) su coste sale del libro;
+/// entre medias lo cuentan las demás admisiones críticas, así que N críticas
+/// concurrentes no caben juntas en el hueco de una. La cabecera de su
+/// respuesta se registra antes de soltarla (CL-182). De una respuesta de
+/// error el cliente tira la cabecera (client.rs): su coste sale del libro sin
+/// entrar en el uso (censo C-F7b, fila N21). Las de `Lectura` llevan coste nulo: sólo se admiten por
+/// debajo de 0,8·L.
+#[must_use = "soltar el cupo antes de la respuesta saca la petición del libro de las que están en vuelo"]
+struct Cupo<'a> {
+    ex: &'a OrderExecutor,
+    coste: crate::binance_api::CosteBinance,
+}
+
+impl std::fmt::Debug for Cupo<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Cupo").field("coste", &self.coste).finish()
+    }
+}
+
+impl Drop for Cupo<'_> {
+    fn drop(&mut self) {
+        if self.coste == crate::binance_api::CosteBinance::NULO {
+            return;
+        }
+        let c = [self.coste.peso, self.coste.ordenes, self.coste.ordenes];
+        let mut uso = self.ex.uso_exchange_bloqueado();
+        for (pendiente, coste) in uso.en_vuelo.iter_mut().zip(c) {
+            *pendiente = pendiente.saturating_sub(coste);
+        }
     }
 }
 
@@ -4251,15 +4597,601 @@ mod tests_lg3 {
     fn lg3_una_cabecera_alta_no_bloquea_las_salidas_para_siempre() {
         let ex = OrderExecutor::new("k".into(), "s".into(), true);
         let t0 = 1_700_000_000_000u64;
-        ex.binance_weight_1m.store(2_100, Ordering::Relaxed); // > 0,8·2200
-        ex.binance_limits_ts_ms.store(t0, Ordering::Relaxed);
-        assert!(ex.check_exit_rate_limits(t0 + 1_000).is_err(), "dentro de la ventana frena");
-        assert!(ex.check_exit_rate_limits(t0 + 60_000).is_ok(), "pasada la ventana libera");
-        ex.binance_orders_10s.store(250, Ordering::Relaxed); // > 0,8·280
-        ex.binance_limits_ts_ms.store(t0, Ordering::Relaxed);
-        ex.binance_weight_1m.store(0, Ordering::Relaxed);
-        assert!(ex.check_exit_rate_limits(t0 + 5_000).is_err());
-        assert!(ex.check_exit_rate_limits(t0 + 10_000).is_ok());
+        ex.observar_limites(&limites(Some(2_100), None, None), t0); // > 0,8·2400
+        assert!(ex.check_exit_rate_limits(t0 + 1_000, Tramo::Lectura).is_err(), "dentro de la ventana frena");
+        assert!(ex.check_exit_rate_limits(t0 + 60_000, Tramo::Lectura).is_ok(), "pasada la ventana libera");
+        let ex = OrderExecutor::new("k".into(), "s".into(), true);
+        ex.observar_limites(&limites(None, Some(250), None), t0); // > 0,8·300
+        assert!(ex.check_exit_rate_limits(t0 + 5_000, Tramo::Lectura).is_err());
+        assert!(ex.check_exit_rate_limits(t0 + 10_000, Tramo::Lectura).is_ok());
+    }
+
+    pub(super) fn limites(
+        weight_1m: Option<usize>,
+        orders_10s: Option<usize>,
+        orders_1m: Option<usize>,
+    ) -> crate::client::BinanceRateLimits {
+        crate::client::BinanceRateLimits {
+            weight_1m,
+            orders_10s,
+            orders_1m,
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests_n5a {
+    use super::tests_lg3::limites;
+    use super::*;
+
+    const T0: u64 = 1_700_000_000_000;
+
+    /// RED antes de CL-177: con el último valor en llegar, una respuesta
+    /// tardía (100) pisaba el uso de otra posterior (2000) en la misma ventana
+    /// y el freno del 80 % se abría con el exchange a 2000 de 2400.
+    #[test]
+    fn n5a_una_respuesta_tardia_no_rebaja_el_uso() {
+        let ex = OrderExecutor::new("k".into(), "s".into(), true);
+        ex.observar_limites(&limites(Some(2_000), None, None), T0);
+        ex.observar_limites(&limites(Some(100), None, None), T0 + 1_000);
+        let r = ex.check_exit_rate_limits(T0 + 2_000, Tramo::Lectura);
+        assert!(
+            matches!(&r, Err(e) if e.starts_with("RATE_LIMIT_HEADROOM_WEIGHT: 2000/2400")),
+            "{r:?}"
+        );
+        // La mayor caduca con su ventana; la última (100) no frena.
+        assert!(ex.check_exit_rate_limits(T0 + 60_000, Tramo::Lectura).is_ok());
+    }
+
+    /// RED antes de CL-177: con un sello compartido, una cabecera de peso
+    /// renovaba la edad de las órdenes de 10 s, que seguían frenando pasada su
+    /// ventana.
+    #[test]
+    fn n5a_cada_contador_caduca_en_su_ventana() {
+        let ex = OrderExecutor::new("k".into(), "s".into(), true);
+        ex.observar_limites(&limites(None, Some(250), None), T0);
+        ex.observar_limites(&limites(Some(10), None, None), T0 + 9_000);
+        let r = ex.check_exit_rate_limits(T0 + 5_000, Tramo::Lectura);
+        assert!(
+            matches!(&r, Err(e) if e.starts_with("RATE_LIMIT_HEADROOM_ORDERS_10S: 250/300")),
+            "{r:?}"
+        );
+        let r = ex.check_exit_rate_limits(T0 + 12_000, Tramo::Lectura);
+        assert!(r.is_ok(), "las órdenes de 10 s caducan con su ventana: {r:?}");
+    }
+
+    /// La última muestra sigue valiendo cuando caduca la mayor, un contador que
+    /// sube se registra, una cabecera ausente no toca su contador y, pasada la
+    /// ventana de la mayor, una cabecera menor vuelve a mandar.
+    #[test]
+    fn n5a_la_ultima_vale_tras_la_mayor_y_la_cabecera_ausente_no_toca() {
+        let ex = OrderExecutor::new("k".into(), "s".into(), true);
+        ex.observar_limites(&limites(Some(2_000), None, None), T0);
+        ex.observar_limites(&limites(Some(1_950), None, None), T0 + 1_000);
+        let r = ex.check_exit_rate_limits(T0 + 60_000, Tramo::Lectura);
+        assert!(
+            matches!(&r, Err(e) if e.starts_with("RATE_LIMIT_HEADROOM_WEIGHT: 1950/2400")),
+            "{r:?}"
+        );
+        assert!(ex.check_exit_rate_limits(T0 + 61_000, Tramo::Lectura).is_ok());
+
+        let ex = OrderExecutor::new("k".into(), "s".into(), true);
+        ex.observar_limites(&limites(Some(100), Some(5), Some(7)), T0);
+        ex.observar_limites(&limites(Some(2_100), None, None), T0 + 1_000);
+        let r = ex.check_exit_rate_limits(T0 + 1_500, Tramo::Lectura);
+        assert!(
+            matches!(&r, Err(e) if e.starts_with("RATE_LIMIT_HEADROOM_WEIGHT: 2100/2400")),
+            "{r:?}"
+        );
+        {
+            let uso = ex.uso_exchange_bloqueado();
+            assert_eq!(uso.ordenes_10s.vigente(T0 + 1_500, 10_000), 5);
+            assert_eq!(uso.ordenes_1m.vigente(T0 + 1_500, 60_000), 7);
+        }
+        // Pasada la ventana de la mayor, una cabecera menor vuelve a mandar.
+        ex.observar_limites(&limites(Some(50), None, None), T0 + 61_000);
+        assert!(ex.check_exit_rate_limits(T0 + 61_500, Tramo::Lectura).is_ok());
+        assert_eq!(ex.uso_exchange_bloqueado().peso_1m.vigente(T0 + 61_500, 60_000), 50);
+    }
+
+    /// RED antes de CL-180: con sólo la mayor y la última, al caducar la mayor
+    /// (2000) quedaba la última (1900 ≤ 1920) y se perdía la intermedia (1950),
+    /// aún vigente: la respuesta tardía sí rebajaba el uso.
+    #[test]
+    fn n5a_la_mayor_vigente_sobrevive_a_otra_mayor_que_caduca() {
+        let ex = OrderExecutor::new("k".into(), "s".into(), true);
+        ex.observar_limites(&limites(Some(2_000), None, None), T0);
+        ex.observar_limites(&limites(Some(1_950), None, None), T0 + 59_000);
+        ex.observar_limites(&limites(Some(1_900), None, None), T0 + 59_500);
+        let r = ex.check_exit_rate_limits(T0 + 60_000, Tramo::Lectura);
+        assert!(
+            matches!(&r, Err(e) if e.starts_with("RATE_LIMIT_HEADROOM_WEIGHT: 1950/2400")),
+            "{r:?}"
+        );
+        // Caducada la intermedia, manda la última (1900 ≤ 0,8·2400).
+        assert!(ex.check_exit_rate_limits(T0 + 119_000, Tramo::Lectura).is_ok());
+        assert_eq!(ex.uso_exchange_bloqueado().peso_1m.vigente(T0 + 119_000, 60_000), 1900);
+    }
+
+    /// RED antes de CL-180: con el reloj adelantado 30 s, la mayor quedaba con
+    /// un sello futuro y, corregido el reloj, ninguna respuesta menor la
+    /// sustituía: frenaba hasta 30 s más allá de su ventana. La siguiente
+    /// cabecera de ese contador acota el sello a ahora; sin ella, la muestra
+    /// sigue vigente (lo conservador).
+    #[test]
+    fn n5a_un_sello_futuro_no_alarga_la_ventana() {
+        let ex = OrderExecutor::new("k".into(), "s".into(), true);
+        ex.observar_limites(&limites(Some(2_100), None, None), T0 + 30_000);
+        ex.observar_limites(&limites(Some(50), None, None), T0);
+        let r = ex.check_exit_rate_limits(T0 + 1_000, Tramo::Lectura);
+        assert!(
+            matches!(&r, Err(e) if e.starts_with("RATE_LIMIT_HEADROOM_WEIGHT: 2100/2400")),
+            "la mayor conserva su valor: {r:?}"
+        );
+        let r = ex.check_exit_rate_limits(T0 + 60_000, Tramo::Lectura);
+        assert!(r.is_ok(), "y caduca una ventana después del reloj corregido: {r:?}");
+    }
+
+    /// La cola guarda sólo las muestras que aún pueden mandar.
+    #[test]
+    fn n5a_la_cola_guarda_solo_las_que_pueden_mandar() {
+        let mut c = ContadorExchange::default();
+        for (i, uso) in [10, 20, 30, 25, 5, 40].into_iter().enumerate() {
+            c.observar(uso, T0 + i as u64, 60_000);
+        }
+        // 40 llegó la última y es la mayor: tapa a todas.
+        assert_eq!(c.muestras.len(), 1);
+        assert_eq!(c.vigente(T0 + 10, 60_000), 40);
+        c.observar(30, T0 + 10, 60_000);
+        c.observar(20, T0 + 20, 60_000);
+        assert_eq!(c.muestras.len(), 3);
+        assert_eq!(c.vigente(T0 + 59_999, 60_000), 40);
+        assert_eq!(c.vigente(T0 + 60_005, 60_000), 30);
+        assert_eq!(c.vigente(T0 + 60_015, 60_000), 20);
+        assert_eq!(c.vigente(T0 + 60_025, 60_000), 0);
+        // Caducadas, salen al observar.
+        c.observar(1, T0 + 200_000, 60_000);
+        assert_eq!(c.muestras.len(), 1);
+    }
+}
+
+#[cfg(test)]
+mod tests_n5b {
+    use super::*;
+
+    const CODIGO: &str = include_str!("executor.rs");
+
+    /// Cuerpo de la última `fn {f}(` del archivo (la del impl), sin `expect`.
+    fn cuerpo(f: &str) -> &'static str {
+        let Some(i) = CODIGO.rfind(&format!("fn {f}(")) else {
+            return "";
+        };
+        let fin = ["\n    pub ", "\n    fn ", "\n    async fn "]
+            .iter()
+            .filter_map(|m| CODIGO[i + 3..].find(m).map(|k| i + 3 + k))
+            .min()
+            .unwrap_or(CODIGO.len());
+        &CODIGO[i..fin]
+    }
+
+    /// Los `n` caracteres anteriores al byte `i` de `c`.
+    fn antes(c: &str, i: usize, n: usize) -> &str {
+        let ini = c[..i].char_indices().rev().nth(n - 1).map_or(0, |(k, _)| k);
+        &c[ini..i]
+    }
+
+    /// Los `n` caracteres desde el byte `i` de `c`.
+    fn despues(c: &str, i: usize, n: usize) -> &str {
+        let fin = c[i..].char_indices().nth(n).map_or(c.len(), |(k, _)| i + k);
+        &c[i..fin]
+    }
+
+    fn envios(c: &str, llamada: &str) -> Vec<usize> {
+        c.match_indices(llamada).map(|(i, _)| i).collect()
+    }
+
+    /// `check_backoff` o la admisión por tramo, que lo llama primero (CL-179).
+    fn frena(texto: &str) -> bool {
+        texto.contains("check_backoff(") || texto.contains("check_exit_rate_limits(")
+    }
+
+    /// RED antes de CL-178: ningún envío de estas salidas consultaba el
+    /// freno 429/418, y los cierres del aplanado no pasaban sus 429 a la
+    /// política de rate-limit (el barrido seguía enviando dentro del cooldown).
+    #[test]
+    fn n5b_las_salidas_respetan_el_freno() {
+        let aplanado = cuerpo("flatten_all_positions");
+        let cierres = envios(aplanado, "execute_order_payload_typed(");
+        assert_eq!(cierres.len(), 2, "cierre y reintento -4061");
+        for i in cierres {
+            assert!(frena(antes(aplanado, i, 400)), "cierre sin freno");
+            assert!(
+                despues(aplanado, i, 200).contains(".map_err(|e| self.handle_rate_limit_error(&e))"),
+                "el 429 del cierre no arma el cooldown"
+            );
+        }
+        let modos = envios(aplanado, "self.get_payload_account(");
+        assert_eq!(modos.len(), 1, "GET de modo");
+        for i in modos {
+            assert!(frena(antes(aplanado, i, 400)), "modo sin freno");
+        }
+        // RV14: el freno se devuelve antes de firmar el GET de modo.
+        assert!(
+            aplanado.find("self.check_backoff(timestamp)?;").unwrap_or(usize::MAX)
+                < aplanado.find("/fapi/v1/positionSide/dual").unwrap_or(0),
+            "el aplanado frenado sale antes de preguntar el modo"
+        );
+
+        let purga = cuerpo("cancel_symbol_orders_and_brackets");
+        let borrados = envios(purga, ".cancel_order_payload(");
+        assert_eq!(borrados.len(), 1);
+        assert!(frena(antes(purga, borrados[0], 400)), "DELETE sin freno");
+
+        let oco = cuerpo("execute_oco_order");
+        let piernas = envios(oco, ".execute_order_payload(");
+        assert_eq!(piernas.len(), 4, "dos piernas y dos reintentos D-02");
+        for &i in &piernas[2..] {
+            assert!(frena(antes(oco, i, 400)), "reintento D-02 sin freno");
+        }
+
+        let cuenta = cuerpo("get_payload_account");
+        let lecturas = envios(cuenta, ".get_payload_with_timeout(");
+        assert_eq!(lecturas.len(), 2, "lectura y reintento");
+        assert!(frena(antes(cuenta, lecturas[1], 400)), "reintento sin freno");
+    }
+
+    /// RED antes de CL-183: en X-026, un re-snapshot que no respondió
+    /// (`.ok()`) se leía como «posición plana» y el aplanado purgaba los
+    /// brackets de una posición quizá viva.
+    #[test]
+    fn n5b_un_re_snapshot_sin_respuesta_no_es_posicion_plana() {
+        let aplanado = cuerpo("flatten_all_positions");
+        assert!(!aplanado.contains("fetch_position_risk().await.ok()"));
+        let x026 = aplanado.split("// X-026 (REHAB-3)").nth(1).unwrap_or("");
+        let brazo = x026.split("Err(e2) =>").nth(1).unwrap_or("");
+        let brazo = brazo.split("Err(e) =>").next().unwrap_or("");
+        assert!(brazo.contains("se trata como ABIERTA"), "sin brazo de error en X-026");
+        assert!(!brazo.contains("position_closed = true"), "el error no cierra la posición");
+    }
+
+    fn fila(simbolo: &str, lado: &str, cantidad: &str) -> String {
+        format!(r#"{{"symbol":"{simbolo}","positionSide":"{lado}","positionAmt":"{cantidad}"}}"#)
+    }
+
+    /// RED antes de CL-178: en hedge positionRisk trae una fila por lado y el
+    /// barrido de huérfanas purgaba dos veces cada símbolo plano.
+    #[test]
+    fn n5b_barrido_sin_duplicados() {
+        let json = format!(
+            "[{},{},{},{},{},{}]",
+            fila("BTCUSDT", "LONG", "0"),
+            fila("BTCUSDT", "SHORT", "0"),
+            fila("ETHUSDT", "LONG", "0.5"),
+            fila("ETHUSDT", "SHORT", "0"),
+            fila("SOLUSDT", "BOTH", "0"),
+            fila("ADAUSDT", "BOTH", "-3"),
+        );
+        let entries: Vec<crate::reconciliation::PositionRiskEntry> =
+            serde_json::from_str(&json).unwrap_or_default();
+        assert_eq!(entries.len(), 6);
+        assert_eq!(
+            simbolos_sin_posicion(&entries),
+            vec!["BTCUSDT".to_string(), "SOLUSDT".to_string()]
+        );
+    }
+
+    /// El freno de CL-178 es el mismo que ya aplicaban las salidas: el
+    /// cooldown de un 429 y el freno escalado, sin cuota ni kill-switch.
+    #[test]
+    fn n5b_backoff_es_el_cooldown_y_el_freno() {
+        let ex = OrderExecutor::new("k".into(), "s".into(), true);
+        let ahora = current_synced_timestamp_ms(None);
+        assert!(ex.check_backoff(ahora).is_ok());
+        ex.trigger_kill_switch();
+        assert!(ex.check_backoff(ahora).is_ok(), "el kill-switch no frena las salidas");
+        ex.handle_rate_limit_error("HTTP_429_RATE_LIMITED retry_after=30");
+        let r = ex.check_backoff(ahora);
+        assert!(matches!(&r, Err(e) if e.starts_with("RATE_LIMIT_COOLDOWN")), "{r:?}");
+        assert!(ex.check_backoff(ahora + 31_000).is_ok());
+        ex.handle_rate_limit_error("HTTP_418_IP_BANNED retry_after=120");
+        let r = ex.check_backoff(ahora + 31_000);
+        assert!(matches!(&r, Err(e) if e.starts_with("RATE_BRAKE")), "{r:?}");
+        assert!(ex.check_backoff(ahora + 121_000).is_ok());
+    }
+}
+
+#[cfg(test)]
+mod tests_n5c {
+    use super::tests_lg3::limites;
+    use super::*;
+    use crate::binance_api::{
+        COSTE_CANCELACION, COSTE_ORDEN, COSTE_PIERNA_ALGO, COSTE_POSITION_RISK,
+    };
+
+    const T0: u64 = 1_700_000_000_000;
+
+    fn ejecutor_con(
+        peso: Option<usize>,
+        o10: Option<usize>,
+        o1m: Option<usize>,
+        t: u64,
+    ) -> OrderExecutor {
+        let ex = OrderExecutor::new("k".into(), "s".into(), true);
+        ex.observar_limites(&limites(peso, o10, o1m), t);
+        ex
+    }
+
+    fn critica(ex: &OrderExecutor, t: u64, c: crate::binance_api::CosteBinance) -> Result<(), String> {
+        ex.check_exit_rate_limits(t, Tramo::Critica(c)).map(|_cupo| ())
+    }
+
+    /// RED antes de CL-179: en la franja (0,8·L, L] los cierres reduce-only
+    /// frenaban como una lectura (RATE_LIMIT_HEADROOM_*) aunque el exchange
+    /// los admitía. Modo papel: la cuota se consulta antes de la rama de papel
+    /// y no se toca la red.
+    #[tokio::test]
+    async fn n5c_cierre_reduce_only_no_se_frena_en_la_franja() {
+        let cabeceras = [
+            (Some(2_100), None, None),
+            (None, Some(250), None),
+            (None, None, Some(1_000)),
+        ];
+        for (peso, o10, o1m) in cabeceras {
+            let mut ex = OrderExecutor::new("k".into(), "s".into(), true);
+            ex.set_paper_trading(true);
+            ex.observar_limites(&limites(peso, o10, o1m), ex.get_synced_timestamp());
+            let r = ExecutionProvider::execute_reduce_only_market(&ex, "BTCUSDT", true, 0.001, 0.001).await;
+            assert!(r.is_ok(), "{peso:?}/{o10:?}/{o1m:?}: {r:?}");
+            let r = ex
+                .execute_reduce_only_market_with_report("BTCUSDT", true, 0.001, 0.001)
+                .await;
+            assert!(r.is_ok(), "{peso:?}/{o10:?}/{o1m:?}: {r:?}");
+        }
+    }
+
+    /// El tope crítico es el del exchange: pasa mientras usado + coste ≤ L, en
+    /// cada contador con su coste; las lecturas siguen en 0,8·L.
+    #[test]
+    fn n5c_el_tope_critico_es_el_limite_del_exchange() {
+        let ex = ejecutor_con(Some(2_395), None, None, T0);
+        assert!(critica(&ex, T0 + 1, COSTE_POSITION_RISK).is_ok(), "2395 + 5 = 2400");
+        let ex = ejecutor_con(Some(2_396), None, None, T0);
+        let r = critica(&ex, T0 + 1, COSTE_POSITION_RISK);
+        assert!(
+            matches!(&r, Err(e) if e.starts_with("RATE_LIMIT_EXHAUSTED_WEIGHT: 2396 usado + 0 en vuelo + 5 > 2400")),
+            "{r:?}"
+        );
+        // Una orden no pesa: con el peso en el límite pasa; una cancelación no.
+        let ex = ejecutor_con(Some(2_400), None, None, T0);
+        assert!(critica(&ex, T0 + 1, COSTE_ORDEN).is_ok());
+        assert!(critica(&ex, T0 + 1, COSTE_CANCELACION).is_err());
+
+        let ex = ejecutor_con(None, Some(299), None, T0);
+        assert!(critica(&ex, T0 + 1, COSTE_ORDEN).is_ok(), "299 + 1 = 300");
+        let ex = ejecutor_con(None, Some(300), None, T0);
+        let r = critica(&ex, T0 + 1, COSTE_ORDEN);
+        assert!(matches!(&r, Err(e) if e.starts_with("RATE_LIMIT_EXHAUSTED_ORDERS_10S")), "{r:?}");
+        assert!(critica(&ex, T0 + 1, COSTE_POSITION_RISK).is_ok(), "una lectura no cuenta órdenes");
+        assert!(critica(&ex, T0 + 10_000, COSTE_ORDEN).is_ok(), "caduca con su ventana");
+        let ex = ejecutor_con(None, None, Some(1_200), T0);
+        let r = critica(&ex, T0 + 1, COSTE_PIERNA_ALGO);
+        assert!(matches!(&r, Err(e) if e.starts_with("RATE_LIMIT_EXHAUSTED_ORDERS_1M")), "{r:?}");
+        assert!(critica(&ex, T0 + 60_000, COSTE_PIERNA_ALGO).is_ok());
+
+        // La franja: la lectura frena, la crítica pasa.
+        let ex = ejecutor_con(Some(2_100), None, None, T0);
+        let r = ex.check_exit_rate_limits(T0 + 1, Tramo::Lectura);
+        assert!(matches!(&r, Err(e) if e.starts_with("RATE_LIMIT_HEADROOM_WEIGHT: 2100/2400")), "{r:?}");
+        assert!(ex.check_rate_limits(T0 + 1).is_err(), "las entradas tampoco");
+        assert!(critica(&ex, T0 + 1, COSTE_ORDEN).is_ok());
+    }
+
+    /// Las críticas admitidas y sin respuesta cuentan como usadas: N
+    /// concurrentes no caben juntas en el hueco de una. Soltar el cupo las
+    /// saca del libro; las lecturas no entran en él.
+    #[test]
+    fn n5c_las_criticas_en_vuelo_cuentan() {
+        let ex = ejecutor_con(Some(2_390), None, None, T0);
+        let primera = ex.check_exit_rate_limits(T0 + 1, Tramo::Critica(COSTE_POSITION_RISK));
+        assert!(primera.is_ok());
+        let segunda = ex.check_exit_rate_limits(T0 + 1, Tramo::Critica(COSTE_POSITION_RISK));
+        assert!(segunda.is_ok(), "2390 + 5 + 5 = 2400");
+        let r = critica(&ex, T0 + 1, COSTE_POSITION_RISK);
+        assert!(
+            matches!(&r, Err(e) if e.starts_with("RATE_LIMIT_EXHAUSTED_WEIGHT: 2390 usado + 10 en vuelo + 5 > 2400")),
+            "{r:?}"
+        );
+        drop(primera);
+        assert!(critica(&ex, T0 + 1, COSTE_POSITION_RISK).is_ok(), "la primera respondió");
+        drop(segunda);
+        assert_eq!(ex.uso_exchange_bloqueado().en_vuelo, [0, 0, 0]);
+
+        let ex = ejecutor_con(None, Some(298), None, T0);
+        let par = ex.check_exit_rate_limits(T0 + 1, Tramo::Critica(COSTE_PIERNA_ALGO.por(2)));
+        assert!(par.is_ok(), "298 + 2 = 300");
+        assert_eq!(ex.uso_exchange_bloqueado().en_vuelo, [2, 2, 2]);
+        assert!(critica(&ex, T0 + 1, COSTE_ORDEN).is_err(), "el par OCO llena la ventana de 10 s");
+        drop(par);
+        assert_eq!(ex.uso_exchange_bloqueado().en_vuelo, [0, 0, 0]);
+
+        let ex = OrderExecutor::new("k".into(), "s".into(), true);
+        let par = ex.check_exit_rate_limits(T0 + 1, Tramo::Critica(COSTE_PIERNA_ALGO.por(2)));
+        let lectura = ex.check_exit_rate_limits(T0 + 1, Tramo::Lectura);
+        assert!(par.is_ok() && lectura.is_ok());
+        assert_eq!(ex.uso_exchange_bloqueado().en_vuelo, [2, 2, 2], "la lectura no entra en el libro");
+        drop(lectura);
+        assert_eq!(ex.uso_exchange_bloqueado().en_vuelo, [2, 2, 2]);
+        drop(par);
+        assert_eq!(ex.uso_exchange_bloqueado().en_vuelo, [0, 0, 0]);
+    }
+
+    /// RED antes de CL-181: un cierre (peso 0) se rechazaba por el peso que
+    /// tenía en vuelo un positionRisk, y un positionRisk (0 órdenes) por el par
+    /// OCO en vuelo, aunque el exchange admite los dos: no gastan en ese
+    /// contador.
+    #[test]
+    fn n5c_un_contador_sin_coste_no_frena_por_lo_que_esta_en_vuelo() {
+        let ex = ejecutor_con(Some(2_390), None, None, T0);
+        let pr = ex.check_exit_rate_limits(T0 + 1, Tramo::Critica(COSTE_POSITION_RISK));
+        assert!(pr.is_ok());
+        ex.observar_limites(&limites(Some(2_400), None, None), T0 + 2);
+        let r = critica(&ex, T0 + 2, COSTE_ORDEN);
+        assert!(r.is_ok(), "un cierre no pesa: {r:?}");
+        let r = critica(&ex, T0 + 2, COSTE_CANCELACION);
+        assert!(
+            matches!(&r, Err(e) if e.starts_with("RATE_LIMIT_EXHAUSTED_WEIGHT: 2400 usado + 5 en vuelo + 1 > 2400")),
+            "una cancelación sí: {r:?}"
+        );
+        drop(pr);
+
+        let ex = ejecutor_con(None, Some(298), None, T0);
+        let par = ex.check_exit_rate_limits(T0 + 1, Tramo::Critica(COSTE_PIERNA_ALGO.por(2)));
+        assert!(par.is_ok());
+        ex.observar_limites(&limites(None, Some(300), None), T0 + 2);
+        let r = critica(&ex, T0 + 2, COSTE_POSITION_RISK);
+        assert!(r.is_ok(), "positionRisk no cuenta órdenes: {r:?}");
+        assert!(critica(&ex, T0 + 2, COSTE_ORDEN).is_err());
+        drop(par);
+    }
+
+    /// El tramo crítico respeta los frenos del exchange y no el kill-switch
+    /// (CL-3); las entradas siguen bloqueadas por él.
+    #[test]
+    fn n5c_frenos_y_kill_switch_en_el_tramo_critico() {
+        let ex = OrderExecutor::new("k".into(), "s".into(), true);
+        let ahora = current_synced_timestamp_ms(None);
+        ex.trigger_kill_switch();
+        assert!(critica(&ex, ahora, COSTE_ORDEN).is_ok());
+        assert!(ex.check_exit_rate_limits(ahora, Tramo::Lectura).is_ok());
+        assert!(matches!(ex.check_rate_limits(ahora), Err(e) if e.contains("KILL SWITCH")));
+        ex.handle_rate_limit_error("HTTP_429_RATE_LIMITED retry_after=30");
+        let r = critica(&ex, ahora, COSTE_ORDEN);
+        assert!(matches!(&r, Err(e) if e.starts_with("RATE_LIMIT_COOLDOWN")), "{r:?}");
+        ex.handle_rate_limit_error("HTTP_429_RATE_LIMITED retry_after=30");
+        ex.handle_rate_limit_error("HTTP_429_RATE_LIMITED retry_after=30");
+        let r = critica(&ex, ahora + 31_000, COSTE_ORDEN);
+        assert!(matches!(&r, Err(e) if e.starts_with("RATE_BRAKE")), "{r:?}");
+    }
+
+    /// Guarda de fuente: cada ruta lleva su tramo. Críticas: lo que cierra,
+    /// protege o sostiene una posición. Lecturas: el resto. El listado algo
+    /// es crítico con símbolo y lectura sin él; el barrido de huérfanas pasa
+    /// por el de lectura; y los cupos que preceden a otra admisión se sueltan
+    /// antes de ella.
+    #[test]
+    fn n5c_tramos_por_ruta() {
+        let codigo = include_str!("executor.rs");
+        let cuerpo = |f: &str| -> &str {
+            let Some(i) = codigo.rfind(&format!("fn {f}(")) else {
+                return "";
+            };
+            let fin = ["\n    pub ", "\n    fn ", "\n    async fn "]
+                .iter()
+                .filter_map(|m| codigo[i + 3..].find(m).map(|k| i + 3 + k))
+                .min()
+                .unwrap_or(codigo.len());
+            &codigo[i..fin]
+        };
+        for f in [
+            "fetch_position_risk",
+            "cancel_algo_order_ids",
+            "cancel_all_algo_open_orders",
+            "place_algo_leg",
+            "execute_reduce_only_market_with_report",
+            "execute_reduce_only_market",
+            "execute_exchange_trailing_stop",
+            "execute_oco_order",
+            "cancel_order",
+            "cancel_all_symbol_orders",
+            "query_order",
+            "cancel_symbol_orders_and_brackets",
+        ] {
+            let c = cuerpo(f);
+            assert!(c.contains("Tramo::Critica("), "{f} es crítica");
+            assert!(!c.contains("Tramo::Lectura"), "{f} no lee en el tramo de lectura");
+        }
+        for f in [
+            "fetch_income_page",
+            "fetch_open_orders_inner",
+            "fetch_open_positions",
+            "fetch_account_balance",
+            "fetch_commission_rate",
+            "check_rate_limits",
+        ] {
+            let c = cuerpo(f);
+            assert!(c.contains("Tramo::Lectura"), "{f} es lectura");
+            assert!(!c.contains("Tramo::Critica("), "{f} no es crítica");
+        }
+        let algo = cuerpo("fetch_open_algo_orders_inner");
+        assert!(
+            algo.contains("Some(_) => Tramo::Critica(crate::binance_api::COSTE_ALGO_ABIERTAS_SIMBOLO)"),
+            "el listado algo de un símbolo es crítico"
+        );
+        assert!(algo.contains("None => Tramo::Lectura"), "el listado algo sin símbolo es lectura");
+        assert_eq!(algo.matches("check_exit_rate_limits(").count(), 1, "una sola admisión");
+        assert!(
+            algo.contains("self.check_exit_rate_limits(timestamp, tramo)?"),
+            "el tramo elegido es el que se admite"
+        );
+        assert!(cuerpo("fetch_open_algo_orders").contains("inner(Some(symbol))"));
+        assert!(cuerpo("fetch_all_open_algo_orders").contains("inner(None)"));
+
+        let aplanado = cuerpo("flatten_all_positions");
+        assert_eq!(aplanado.matches("Tramo::Critica(crate::binance_api::COSTE_ORDEN)").count(), 2);
+        let barrido = aplanado.split("for sym in &sin_posicion {").nth(1).unwrap_or("");
+        assert!(
+            barrido
+                .split("self.cancel_symbol_orders_and_brackets(")
+                .next()
+                .is_some_and(|antes| antes.contains("Tramo::Lectura")),
+            "el barrido pasa por el tramo de lectura"
+        );
+
+        let oco = cuerpo("execute_oco_order");
+        let suelta = oco.find("drop(cupo);").unwrap_or(usize::MAX);
+        assert!(suelta < oco.find("if sl_down {").unwrap_or(0), "el par OCO sale del libro antes de reintentar");
+        let todas = cuerpo("cancel_all_symbol_orders");
+        assert!(
+            todas.find("drop(cupo);").unwrap_or(usize::MAX)
+                < todas.find("self.cancel_all_algo_open_orders(").unwrap_or(0),
+            "el DELETE sale del libro antes de la purga algo"
+        );
+    }
+
+    /// RED antes de CL-182: en los brazos `Ok(_cupo) => envío.await` el cupo
+    /// caía al acabar el brazo y la cabecera se registraba después; entre
+    /// medias el coste no estaba ni en vuelo ni en el uso y otra admisión
+    /// crítica podía ocupar su hueco.
+    #[test]
+    fn n5c_la_cabecera_se_registra_con_el_cupo_vivo() {
+        let codigo = include_str!("executor.rs");
+        let cuerpo = |f: &str| -> &str {
+            let Some(i) = codigo.rfind(&format!("fn {f}(")) else {
+                return "";
+            };
+            let fin = ["\n    pub ", "\n    fn ", "\n    async fn "]
+                .iter()
+                .filter_map(|m| codigo[i + 3..].find(m).map(|k| i + 3 + k))
+                .min()
+                .unwrap_or(codigo.len());
+            &codigo[i..fin]
+        };
+        for (f, n) in [
+            ("cancel_symbol_orders_and_brackets", 1),
+            ("flatten_all_positions", 2),
+            ("execute_oco_order", 2),
+        ] {
+            let c = cuerpo(f);
+            let brazos: Vec<&str> = c
+                .match_indices("Ok(_cupo) =>")
+                .filter(|&(i, _)| c[i.saturating_sub(200)..i].contains("Tramo::Critica("))
+                .map(|(i, _)| c[i..].split("Err(e) => Err(e)").next().unwrap_or(""))
+                .collect();
+            assert_eq!(brazos.len(), n, "{f}: brazos críticos");
+            for b in brazos {
+                assert!(b.contains("self.update_limits("), "{f}: cabecera tras soltar el cupo: {b}");
+            }
+        }
     }
 }
 
@@ -4632,7 +5564,7 @@ mod tests_m4_c02 {
             matches!(ex.check_rate_limits(now), Err(e) if e.contains("KILL SWITCH")),
             "las entradas deben seguir bloqueadas"
         );
-        assert!(ex.check_exit_rate_limits(now).is_ok());
+        assert!(ex.check_exit_rate_limits(now, Tramo::Lectura).is_ok());
     }
 
     /// CL-3: guardia de fuente. Cada ruta de lectura, cancelación o cierre
