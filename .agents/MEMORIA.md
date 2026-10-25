@@ -3,12 +3,18 @@
 ## 2026-10-25 — Claude (cloud, Línea C): décima tanda del censo C-F7b (revisión de las correcciones del #142)
 
 Tanda del PR #143: la revisión de CL-169, RV9-T y RV9-docs confirmó 6
-hallazgos leves en 4 temas. Sin T-1 (telemetría y pruebas).
+hallazgos leves en 4 temas, y la de la propia tanda, antes de fusionarla,
+1 más (leve, CL-171). Sin T-1 (telemetría y pruebas).
 
 - CL-170: el libro de la sombra lee también el contador n y las marcas de
-  ruina sin respaldo, con el mismo predicado que el informe. Un n corrupto
-  ya no vuelve a 1 (sale null en la línea) y una marca +∞ es ruina para
-  los dos. Desde aquí es cierto «el libro y su informe leen sin respaldo».
+  ruina sin respaldo, con el mismo predicado que el informe. Un n no
+  finito ya no vuelve a 1 (sale null en la línea) y una marca +∞ es ruina
+  para los dos. Desde aquí es cierto «el libro y su informe leen sin
+  respaldo».
+- CL-171: un n finito pero corrupto (0, 0,5, −2) o fraccionario sí volvía
+  a ser válido uno o pocos cierres después. Ahora el libro y el informe
+  aceptan sólo un entero finito ≥ 1 (`contador_sombra_valido`); cualquier
+  otro n se queda como está y sale null.
 - RV10: un bias almacenado s ≤ 0 llega como 0,5 sólo durante
   30·ln(2·(1 − s)) min tras el cierre; la prueba de CL-167 añade el
   régimen relajado. CL-169 cambiaba también el escritor del libro.

@@ -381,8 +381,8 @@ tanda 8: CL-165 cambia la conducta sólo con entradas corruptas y CL-166 es
 telemetría, y la tanda 9: CL-167 cambia la conducta sólo con un bias
 activo corrupto y f = 0, CL-168 es el formato del informe y CL-169 la
 lectura del libro de la sombra y de su informe (telemetría; sólo cambia
-con un acumulado no finito), y la tanda 10: CL-170 completa esa lectura
-(telemetría, sólo con un contador o una marca de ruina corruptos); como
+con un acumulado no finito), y la tanda 10: CL-170 y CL-171 completan esa
+lectura (telemetría, sólo con un contador o una marca de ruina corruptos); como
 dice su lote):
 
 | PR | Lotes |
@@ -399,7 +399,7 @@ dice su lote):
 | #139 | N13, el plan del panel para los genes de Kelly (CL-161: clases de tamaño explícitas; CL-163: el gen 33 como techo κ de la f de LH-04; CL-162: genes 10, 11, 20 y 32 congelados en la mutación; CL-164: sombra del Kelly legado frente a LH-04); más RV6-T y RV6-docs (revisión de la tanda 6) |
 | #140 | N13, correcciones de la revisión de la tanda 7 (CL-165: LH-04 valida el bias crudo y las entradas antes de toda clase; CL-166: la sombra Kelly congela la regla arruinada, suma R y R² y el forense la imprime); más RV7-T y RV7-docs; abre N14 (banda del gen 33) |
 | #142 | N13, correcciones de la revisión de la tanda 8 (CL-167: el bias activo se valida también con f = 0; CL-168: el informe publica null como log-riqueza de una regla arruinada); más RV8-T y RV8-docs, y las de su propia revisión antes de fusionar (CL-169: el libro de la sombra lee sin respaldo y un acumulado no finito sale null; RV9-T, RV9-docs) |
-| #143 | N13, precisiones de la revisión de las correcciones del #142 (CL-170: el contador y las marcas de ruina de la sombra también sin respaldo; RV10-T, RV10-docs) |
+| #143 | N13, precisiones de la revisión de las correcciones del #142 (CL-170: el contador y las marcas de ruina de la sombra también sin respaldo; RV10-T, RV10-docs), y la de su propia revisión antes de fusionar (CL-171: el libro no repara un contador corrupto; RV11-docs) |
 
 **Hecho por otros agentes**: lote 9 entero (Sol, d18b3735), lote 45 entero
 (Codex RB, 906a9c6a), parte del 7 (Sol retiró el bin main.rs de
@@ -936,6 +936,18 @@ un escéptico por lote listo):
     y los cuerpos de los PR. CL-169 cambia también el escritor del libro,
     no sólo el formato del informe (cabecera de este bloque, fila de
     AGENT_SYNC).
+  La revisión de la tanda 10 antes de fusionarla confirmó 1 hallazgo más,
+  leve (0 refutados), corregido en el mismo PR:
+  - CL-171: CL-170 sólo dejaba quieto un n no finito. El libro guardaba
+    n + 1 para cualquier n finito, y el informe llamaba corrupto a uno
+    menor que 1: un n de 0, 0,5 o −2 salía null una vez y volvía a ser
+    válido uno o pocos cierres después, sobre las sumas de todos los
+    cierres (con 5 cierres y n = 0, una r_media seis veces la verdadera).
+    Un n fraccionario ≥ 1 pasaba por válido. Ahora el libro y el informe
+    usan `contador_sombra_valido` (entero finito ≥ 1): sin n el libro
+    escribe 1, con uno válido n + 1 y con otro no escribe nada.
+  - RV11-docs: estas precisiones aquí, en MEMORIA, AGENT_SYNC, el buzón y
+    el cuerpo del PR #143.
 - N14 (de la revisión de la tanda 7): la banda del gen 33, [0,1; 1,0], es
   inerte por encima del axioma de ruina (f ≤ 0,25): el 83 % de la banda,
   la línea base (0,55) y los tres genomas guardados (0,8245). Por lectura

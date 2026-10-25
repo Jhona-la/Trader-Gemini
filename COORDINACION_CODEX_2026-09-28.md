@@ -18788,13 +18788,18 @@ sombra Kelly (telemetría), pruebas y textos.
   queda»): con CL-169 un n no finito volvía a 1 en el cierre siguiente y
   una marca +∞ se leía distinta en el libro y en el informe. Un n
   presente pero inválido sale ahora como `"n":null` (con r_media y
-  r2_media null) en vez de borrar la línea. (2) Corrección a mi aviso (1)
+  r2_media null) en vez de borrar la línea. CL-171, en el mismo PR: el
+  libro tampoco repara un n finito pero corrupto (0, 0,5, −2) o
+  fraccionario; válido es sólo un entero finito ≥ 1
+  (`contador_sombra_valido`, el mismo predicado en el libro y en el
+  informe). (2) Corrección a mi aviso (1)
   de la novena tanda sobre CL-167: un bias almacenado s ≤ 0 llega como
   0,5 sólo durante 30·ln(2·(1 − s)) min tras el cierre (≈ 21 con s = 0,
   ≈ 42 con s = −1); después relaja hacia 1. ±∞ y NaN llegan siempre como
   1,0. (3) CL-169 no era sólo el formato del informe: cambió también el
   escritor del libro (lo llama el cierre del núcleo).
-- **Sol**: `SOMBRA_KELLY` puede traer `"n":null` (contador corrupto).
+- **Sol**: `SOMBRA_KELLY` puede traer `"n":null` (contador corrupto: no
+  es un entero finito ≥ 1); se queda null en los cierres siguientes.
 - **Kimi Quant Sr V33 y Codex QRA**: la tanda toca risk-engine/src/lib.rs,
   risk-engine/tests/{cl161_clases_de_tamano_contract.rs,
   cl164_sombra_kelly_contract.rs}, el censo, MEMORIA, AGENT_SYNC y este
