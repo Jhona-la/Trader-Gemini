@@ -3726,10 +3726,11 @@ impl ExecutionProvider for OrderExecutor {
 
         // N5 (CL-179): las dos piernas ya respondieron y salen del libro en
         // vuelo antes de los reintentos y cancelaciones, que piden su propio
-        // cupo. Una con 2xx deja su uso en la cabecera; una con error contó
-        // en el exchange y el cliente tira su cabecera (client.rs), y un
-        // timeout AMBIGUOUS pudo contar sin respuesta: hasta la próxima
-        // cabecera 2xx su coste no se cuenta (censo C-F7b, fila N21).
+        // cupo. Las dos dejaron ya su uso: la de 2xx por `update_limits` y la
+        // de error por `registrar_error` (N23, CL-196), salvo un 429/418, al
+        // que gobierna su Retry-After. Sólo un timeout AMBIGUOUS, que pudo
+        // contar sin respuesta, queda sin cabecera hasta la siguiente (censo
+        // C-F7b, fila N21).
         drop(cupo);
 
         // F1.9 — FIX OCO PARCIAL: antes, una pierna fallida devolvía Ok(())
@@ -4503,10 +4504,11 @@ enum Tramo {
 /// vuelo. Al soltarla (respuesta recibida o error) su coste sale del libro;
 /// entre medias lo cuentan las demás admisiones críticas, así que N críticas
 /// concurrentes no caben juntas en el hueco de una. La cabecera de su
-/// respuesta se registra antes de soltarla (CL-182). De una respuesta de
-/// error el cliente tira la cabecera (client.rs): su coste sale del libro sin
-/// entrar en el uso (censo C-F7b, fila N21). Las de `Lectura` llevan coste nulo: sólo se admiten por
-/// debajo de 0,8·L.
+/// respuesta se registra antes de soltarla (CL-182), también la de una
+/// respuesta de error (`registrar_error`, N23). Salen del libro sin entrar
+/// en el uso un 429/418, al que gobierna su Retry-After, y una petición sin
+/// respuesta (un timeout AMBIGUOUS, censo C-F7b, fila N21). Las de `Lectura`
+/// llevan coste nulo: sólo se admiten por debajo de 0,8·L.
 #[must_use = "soltar el cupo antes de la respuesta saca la petición del libro de las que están en vuelo"]
 struct Cupo<'a> {
     ex: &'a OrderExecutor,
