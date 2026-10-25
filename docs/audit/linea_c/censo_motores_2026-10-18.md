@@ -407,6 +407,7 @@ dice su lote):
 | #143 | N13, precisiones de la revisión de las correcciones del #142 (CL-170: el contador y las marcas de ruina de la sombra también sin respaldo; RV10-T, RV10-docs), y la de su propia revisión antes de fusionar (CL-171: el libro no repara un contador corrupto; RV11-docs) |
 | #144 | N12, la fricción en la pérdida al stop (CL-172: la viabilidad de la orden mínima; CL-173: el tope de ruina F1-092; RV12-T, RV12-docs); f_min_ejecutable de la envolvente queda para el dueño |
 | #145 | N4 (RET-N4: Position::entry_tau_ms(), sin llamadores), N2 (RET-N2: ewma_price_at, scale_gain_at y volatility_at, tras la regla 2), N9 (CL-174: sin VPIN medido la sombra TrendRunner se abstiene), N10 (CL-175: la presión adversarial de Nash es el cvpin medido), N15 (CL-176: la escalada desnuda reporta el fallo de la purga de brackets); más RV13-docs; abre N10b, N15, N16 y N17 |
+| #146 | N5, la cuota del exchange para las salidas (CL-177: uso por contador con su sello y sin bajar por una respuesta tardía; CL-178: las salidas sin consulta respetan el freno 429/418 y el barrido no purga dos veces; CL-179: las críticas pasan hasta el límite del exchange con las críticas en vuelo contadas); más N5-docs; abre N18 a N22 |
 
 **Hecho por otros agentes**: lote 9 entero (Sol, d18b3735), lote 45 entero
 (Codex RB, 906a9c6a), parte del 7 (Sol retiró el bin main.rs de
@@ -790,6 +791,38 @@ un escéptico por lote listo):
   las lecturas (income, órdenes abiertas, saldo) comparten el tramo de
   salidas. Faltan en la lista de documentos BINANCE_API_MAP.md:75 y
   linea_g/vetos.tsv:690.
+  Ejecutada en la tanda 13, en tres átomos, con una reserva sin literal
+  nuevo: la regla del exchange más un libro de las críticas en vuelo.
+  - CL-177: cada contador (peso 1 min, órdenes 10 s y 1 min) lleva su
+    sello, y una respuesta tardía no rebaja el uso dentro de su ventana
+    (se guarda la mayor vigente y la última). Antes un sello compartido
+    renovaba la edad de los tres y la última en llegar pisaba el valor.
+  - CL-178: los envíos que no miraban el freno 429/418 lo miran
+    (`check_backoff`): los dos cierres y el GET de modo del aplanado, el
+    DELETE de la purga por símbolo, los reintentos D-02 de la OCO y el
+    reintento silencioso de `get_payload_account`. Los 429 de los cierres
+    del aplanado arman el cooldown (antes sólo se imprimían), y el barrido
+    de huérfanas ya no purga dos veces cada símbolo plano en hedge.
+  - CL-179: dos tramos. Entradas y lecturas siguen frenando al 80 %; las
+    críticas (positionRisk, cancelaciones, piernas, cierres reduce-only,
+    OCO, consulta de una orden, listado algo de un símbolo, cierres del
+    aplanado) pasan mientras uso + en vuelo + coste ≤ L, con el coste
+    reservado bajo el candado y soltado tras la respuesta. Así N críticas
+    concurrentes no caben en el hueco de una y no reciben varios 429 a la
+    vez, la objeción que paró la tanda 12. Los costes salen del mapa de la
+    API; lo no documentado se marca SUPUESTO y toma el valor del análogo
+    más caro (binance_api.rs). El barrido de huérfanas va por el tramo de
+    lectura: es limpieza.
+  - Decisión por defecto, sin tarjeta: durante un cooldown o un freno no
+    sale nada, tampoco los cierres. Es la regla del exchange (seguir
+    enviando tras un 429 acaba en 418) y lo que ya hacían las salidas
+    consultadas.
+  - Queda sin derivar el 0,8 de entradas y lecturas: su franja (480 de
+    peso/min, 60 órdenes/10 s, 240/min) es ahora la reserva crítica. El
+    panel de diseño estimó, sin medir, que cubre el tráfico crítico del
+    motor hasta unas 13 posiciones en peso y 5 en órdenes de 10 s con dos
+    entradas por ventana; derivarla pide publicar el número de posiciones y
+    la tasa de entradas (fila N22).
 - N6: darwin.rs:151-154 (Sol, F9-4) escribe tp/sl_curve_a/b sin
   begin_write/end_write; tras RET-32 el único escritor de curvas bajo
   seqlock es genome.rs (F1-073 de AGY). update_*_curve no lo arreglaría:
@@ -1102,13 +1135,50 @@ un escéptico por lote listo):
   executor_max_weight_1m (genome.rs:305-306, 280 y 2200 por defecto) no
   tienen lector desde LG-12, ni sus copias en config.rs:178-179 (los
   límites vivos son 2400/300/1200 de
-  binance_api.rs:28-30); de ahí salen los comentarios «0,8·2200» y
-  «0,8·280» de tests_lg3 (executor.rs). Ya están congelados en la mutación
+  binance_api.rs:28-30); de ahí salían los comentarios «0,8·2200» y
+  «0,8·280» de tests_lg3 (executor.rs; CL-177 los pasó a 2400/300). Ya están congelados en la mutación
   desde LG-18 (genome.rs:2037-2040, prueba lg18_los_genes_sin_lector_no_mutan;
   linea_g/genes_censo.tsv:135-136), pero new_random los sigue sorteando
   (genome.rs:1098-1099, [100; 500) y [1000; 5000)). A Fable: retirarlos
   del vector (DIMENSION y genomas guardados) o fijarlos también en
   new_random.
+- N18 (de la tanda 13, a Línea I, cambio de conducta): con un 429 activo
+  (cooldown de 60 s por defecto) la colocación de brackets tras una
+  entrada llenada falla en sus tres intentos (god_engine.rs:5424), el
+  cierre de emergencia y su reintento a 150 ms también (:5536-5547), y la
+  escalada X-009 arma el kill-switch permanente (:5582) por un freno que
+  el exchange levanta solo. CL-179 saca ese camino de la franja del 80 %,
+  no del cooldown. Candidato: distinguir el rechazo local por freno
+  temporal (RATE_LIMIT_COOLDOWN, RATE_BRAKE) y reintentar al acabar antes
+  de escalar; el vigilante (CL-44) ya audita la posición mientras tanto.
+- N19 (de la tanda 13, a Línea I, sin verificar como defecto): el aplanado
+  inmune se marca hecho (latched, god_engine.rs:2420) aunque devuelva
+  FLATTEN_INCOMPLETE, y desde CL-178 un 429 a mitad del aplanado deja los
+  cierres restantes sin enviar. Lo cubre el vigilante (CL-44: re-bracket
+  o cierre de escalada); falta decidir si se reintenta el aplanado al
+  acabar el freno.
+- N20 (de la tanda 13): peticiones fuera de la cuota del ejecutor, sin
+  freno 429/418 ni libro en vuelo: ensure_hedge_mode (GET y POST de
+  positionSide/dual), que OmsSession::refresh llama cada 60 s
+  (host_oms.rs:484, god_engine.rs:2856-2861); fetch_hedge_mode;
+  fetch_all_symbol_filters, con su reintento; fetch_server_time; y el
+  bucle NTP (ntp.rs:106), que usa el cliente directamente. Átomo propio
+  (Línea C).
+- N21 (de la tanda 13): las respuestas de error tiran sus cabeceras de uso
+  (client.rs sólo llama a extract_limits con estado 2xx: :296, :355, :420,
+  :471, :508), así que tras un 4xx/5xx el uso no se actualiza. Átomo
+  propio, con la fila N20.
+- N22 (de la tanda 13): literales y pesos sin derivar en la cuota. El 0,8
+  de entradas y lecturas (executor.rs, `HEADROOM`) y los +60 s del freno
+  escalado de M4-C02 (`until.saturating_add(60_000)`). Y tres pesos del
+  mapa que el panel de diseño recuerda distintos en la documentación de
+  Binance, sin poder comprobarlo desde la nube (sus hosts están
+  bloqueados): commissionRate 1 frente a 20, positionSide/dual 1 frente a
+  30, income 20 frente a 30. OmsSession::refresh lee commissionRate de cada
+  símbolo del universo cada 60 s (host_oms.rs:498): con peso 20 y 20
+  símbolos serían 400 de peso por minuto, el 17 % del límite. Comprobar
+  desde el PC contra la documentación y derivar el 0,8 con el número de
+  posiciones y la tasa de entradas publicados.
 
 **Restos de lotes ejecutados**: del 3, net_multiplexer (a AGY, para
 unificar con data_pipeline::http_cliente) y active_universe/

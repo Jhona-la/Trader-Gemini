@@ -1,5 +1,32 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
 
+## 2026-10-25 — Claude (cloud, Línea C): decimotercera tanda del censo C-F7b (fila N5, la cuota del exchange)
+
+Tanda del PR #146. Cambia la conducta sólo en ejecución real con la cuota
+del exchange alta o un 429/418 activo; el backtest no usa OrderExecutor
+(golden, T-1 y T-2 no lo ven).
+
+- CL-177: cada contador de uso (peso 1 min, órdenes 10 s y 1 min) lleva su
+  sello y guarda la mayor cabecera vigente y la última: una respuesta
+  tardía ya no rebaja el uso, y una cabecera de peso no renueva la edad de
+  las órdenes.
+- CL-178: ninguna petición del ejecutor sale durante un cooldown de 429 o
+  un RATE_BRAKE, salidas incluidas (`check_backoff`); los cierres del
+  aplanado arman el cooldown con sus 429, y el barrido de huérfanas no
+  purga dos veces cada símbolo plano.
+- CL-179: dos tramos de cuota. Entradas y lecturas frenan al 80 %, como
+  siempre. Las críticas (cierres, protección, positionRisk,
+  cancelaciones, consulta de una orden) pasan mientras uso + críticas en
+  vuelo + coste ≤ límite; el coste se reserva y se suelta tras la
+  respuesta (`Cupo`). Costes en binance_api.rs (`CosteBinance`).
+- Filas nuevas: N18 (un 429 durante los brackets de una entrada acaba en
+  el kill-switch permanente de X-009; Línea I), N19 (el aplanado inmune no
+  se reintenta tras quedar incompleto; Línea I, sin verificar), N20
+  (peticiones fuera de la cuota: modo hedge cada 60 s, filtros, hora, NTP),
+  N21 (las respuestas de error tiran sus cabeceras) y N22 (el 0,8, los
+  +60 s del freno y tres pesos del mapa sin comprobar; commissionRate por
+  símbolo cada 60 s podría pesar 400/min).
+
 ## 2026-10-25 — Claude (cloud, Línea C): duodécima tanda del censo C-F7b (filas N2, N4, N9, N10 y N15)
 
 Tanda del PR #145. Sin cambio de órdenes, tamaños ni vetos: T-1 no se

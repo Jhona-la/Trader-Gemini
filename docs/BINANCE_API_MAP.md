@@ -24,6 +24,19 @@
 | `/fapi/v1/time` | GET | 1 | Sync de reloj (NTP offset) | fetch_server_time |
 | `/fapi/v1/klines` | GET | 1-10 | Warmup swing (1h) | data-pipeline |
 | `/fapi/v1/aggTrades` | GET | 20 | Histórico real para backtest (F2/F3) | historical.rs |
+| `/fapi/v1/algoOrder` | POST | 1 (SUPUESTO) | Piernas TP/SL y trailing (servicio Algo, OCO-F5) | executor.rs place_algo_leg, execute_oco_order |
+| `/fapi/v1/algoOrder` | DELETE | 1 (SUPUESTO) | Cancelar una pierna algo | cancel_algo_order_ids |
+| `/fapi/v1/algoOpenOrders` | DELETE | 1 (SUPUESTO) | Purga algo de un símbolo | cancel_all_algo_open_orders |
+| `/fapi/v1/openAlgoOrders` | GET | 1 con símbolo (SUPUESTO, como openOrders) | Protección viva de una posición; sin símbolo, huérfanas | fetch_open_algo_orders_inner |
+| `/fapi/v1/allOpenOrders` | DELETE | 1 (SUPUESTO) | Purga de órdenes normales de un símbolo | cancel_all_symbol_orders, aplanado |
+| `/fapi/v1/positionSide/dual` | GET/POST | 1 (ver nota) | Modo hedge (arranque, OmsSession::refresh cada 60 s, aplanado) | ensure_hedge_mode, fetch_hedge_mode |
+
+> N5 (CL-179): estos pesos son los costes del ejecutor (`CosteBinance` en
+> binance_api.rs); lo marcado SUPUESTO no está en este mapa y toma el valor
+> del análogo más caro, porque sobrestimar sólo frena antes. Tres pesos del
+> mapa se recuerdan distintos en la documentación de Binance y están por
+> comprobar desde el PC (censo C-F7b, fila N22): commissionRate 1 frente a
+> 20, positionSide/dual 1 frente a 30, income 20 frente a 30.
 
 ## 2. Endpoints DISPONIBLES NO explotados (oportunidades F1.10+/F4)
 
@@ -40,7 +53,7 @@
 | `/fapi/v1/depth` | 2-20 | Libro completo (ya consumido por WS) |
 | `/fapi/v1/forceOrders` | 1 | Cancel-ALL con un solo request — kill-switch real (F5.2) |
 | `/fapi/v1/multiAssetsMargin` | 1 | Multi-asset margin (optimización capital) |
-| `/fapi/v1/positionSide/dual` | 1 | Modo hedge — el sistema YA envía positionSide |
+| `/fapi/v1/positionSide/dual` | 1 | Modo hedge — en uso desde F1.11, ver §1 |
 
 ## 3. Parámetros avanzados de orden (los que hoy IGNORAMOS)
 
@@ -72,7 +85,13 @@
 - 429 = freno (respetar `Retry-After`) → política F1.8: cooldown temporal.
 - 418 = IP baneada 2min–3días → kill-switch (F1.8).
 - WS: 10 mensajes/s por conexión; conexiones: 300/5min por IP.
-- **Presupuesto del sistema** (F1.8): headroom 80%, cooldown post-429, kill a 3×429.
+- **Presupuesto del sistema** (F1.8, M4-C02, N5): cooldown post-429 (`Retry-After` o 60 s) y freno
+  temporal (`RATE_BRAKE`) al tercer 429 consecutivo (cooldown + 60 s) o con un 418 (su ventana o
+  300 s); ya no es un kill a 3×429. Mientras duran no sale ninguna petición del ejecutor, salidas
+  incluidas. Fuera de ellos, dos tramos de cuota (CL-179): entradas y lecturas frenan con el uso por
+  encima del 80 % del límite; las críticas (cierres, protección, positionRisk, cancelaciones, consulta
+  de una orden) pasan mientras uso + críticas en vuelo + coste ≤ límite. El uso es el de la cabecera
+  más alta vigente de cada contador, con su propio sello (CL-177).
 
 ## 6. WebSocket (streams)
 
