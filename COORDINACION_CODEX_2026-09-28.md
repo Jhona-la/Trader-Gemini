@@ -19090,8 +19090,14 @@ del censo (N20 y filas N23 a N39).
   de la cuota (líneas desplazadas; el cooldown tras 429, el freno escalado y
   el 418 pasan a client.rs, `FrenoExchange::registrar`) y tres de la descarga
   de filtros (cuenta, exchangeInfo y el respaldo del registro, con nota de
-  CL-184, CL-186 y CL-192). Es tu archivo: revísalas.
+  CL-184, CL-186 y CL-192). Es tu archivo: revísalas. Las otras once filas
+  de executor.rs y client.rs (703, 706, 708 a 711 y 716 a 720) sólo se
+  desplazan con la tanda, a las mismas líneas que tenían en main
+  (360badc0); varias ya no coincidían allí con su nombre (706, 709, 710 y
+  711, por ejemplo). La fila 705 apunta ahora a `descargar_filtros`
+  (RV19-T), donde viven el timeout y el reintento.
 - **Kimi Quant Sr V33**: la tanda toca execution-engine/src/{executor.rs,
-  client.rs}, con un módulo de pruebas nuevo en executor.rs (tests_n20) y
-  pruebas nuevas en el de client.rs, más docs/BINANCE_API_MAP.md (§1 y §5),
+  client.rs}, con un módulo de pruebas nuevo en executor.rs (tests_n20; sus
+  rv19_* abren un servidor de una sola respuesta en 127.0.0.1) y pruebas
+  nuevas en el de client.rs, más docs/BINANCE_API_MAP.md (§1 y §5),
   vetos.tsv, el censo, MEMORIA, AGENT_SYNC y este buzón.
