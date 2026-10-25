@@ -160,8 +160,14 @@ fn shuffle_identity_exposes_redundant_level_two_coordinates() {
 #[test]
 fn nulo_unieje_y_rectificacion_identidad_pares() {
     let incs: Vec<(f64, f64)> = vec![
-        (0.30, 0.05), (-0.20, 0.10), (0.15, 0.05), (0.05, 0.30),
-        (-0.10, 0.20), (0.25, 0.15), (-0.05, 0.10), (0.10, 0.05),
+        (0.30, 0.05),
+        (-0.20, 0.10),
+        (0.15, 0.05),
+        (0.05, 0.30),
+        (-0.10, 0.20),
+        (0.25, 0.15),
+        (-0.05, 0.10),
+        (0.10, 0.05),
     ];
     let original = firma_nivel2_incrementos(&incs);
 
@@ -179,15 +185,17 @@ fn nulo_unieje_y_rectificacion_identidad_pares() {
         nulo_pares.level2[0][1] + nulo_pares.level2[1][0],
     );
     // Y la identidad estructural que la explica: S¹²+S²¹ = S¹·S² SIEMPRE.
-    close(original.level2[0][1] + original.level2[1][0], original.level1[0] * original.level1[1]);
+    close(
+        original.level2[0][1] + original.level2[1][0],
+        original.level1[0] * original.level1[1],
+    );
     // (ii) Los cross individuales se mueven bajo permutación de pares.
     assert!((original.level2[0][1] - nulo_pares.level2[0][1]).abs() > 1e-6);
 
     // Nulo UNIEJE: retornos rotados, dt en orden original.
     let mut rets: Vec<f64> = incs.iter().map(|(r, _)| *r).collect();
     rets.rotate_left(3);
-    let unieje: Vec<(f64, f64)> =
-        rets.iter().map(|r| (*r, 0.0)).collect();
+    let unieje: Vec<(f64, f64)> = rets.iter().map(|r| (*r, 0.0)).collect();
     let mut mezclados = unieje;
     for (par, (_, dt)) in mezclados.iter_mut().zip(incs.iter()) {
         par.1 = *dt;
@@ -225,4 +233,141 @@ fn nulo_unieje_y_rectificacion_identidad_pares() {
         firma_nivel2_incrementos(&planos),
         firma_nivel2_incrementos(&planos_unieje),
     );
+}
+
+/// GLM 163 — NULO DE MÁXIMA ENTROPÍA: momentos EXACTOS del nulo unieje.
+/// Bajo permutación uniforme de los log-retornos x contra dt fijos y, el
+/// intercambio del orden de sumatoria del término prefijo reduce cada
+/// cross del nivel-2 a un ESTADÍSTICO LINEAL DE ASIGNACIÓN:
+///   S¹²_nulo = Σ_a v_a·x_σ(a) con v_a = (Σ_{b>a} y_b) + ½·y_a
+///   S²¹_nulo = Σ_a u_a·x_σ(a) con u_a = (Σ_{b<a} y_b) + ½·y_a
+/// (pref^y es determinista: no se permuta). Los momentos de la permutación
+/// sin reemplazo son elementales: E = x̄·Σw y Var = Sxx·Sww/(n−1).
+/// Esto separa EXACTAMENTE la señal del ruido del nulo que en 162 era
+/// inseparable con una sola permutación muestral.
+fn pesos_nulo_unieje(y: &[f64]) -> (Vec<f64>, Vec<f64>) {
+    let n = y.len();
+    let mut v = Vec::with_capacity(n); // pesos de S¹² (sufijo de dt + ½·y)
+    let mut u = Vec::with_capacity(n); // pesos de S²¹ (prefijo de dt + ½·y)
+    let mut prefijo = 0.0;
+    let mut sufijo: f64 = y.iter().sum();
+    for &dy in y {
+        sufijo -= dy;
+        v.push(sufijo + 0.5 * dy);
+        u.push(prefijo + 0.5 * dy);
+        prefijo += dy;
+    }
+    (v, u)
+}
+
+/// (media, varianza) de Σ_a w_a·x_σ(a) bajo σ uniforme sobre las n!.
+fn momentos_asignacion(x: &[f64], w: &[f64]) -> (f64, f64) {
+    let n = x.len() as f64;
+    let (sx, sw) = (x.iter().sum::<f64>(), w.iter().sum::<f64>());
+    let sxx = x.iter().map(|&a| (a - sx / n) * (a - sx / n)).sum::<f64>();
+    let sww = w.iter().map(|&a| (a - sw / n) * (a - sw / n)).sum::<f64>();
+    (sx / n * sw, sxx * sww / (n - 1.0))
+}
+
+fn todas_las_permutaciones(x: &[f64]) -> Vec<Vec<f64>> {
+    fn rec(x: &[f64], usados: &mut Vec<bool>, actual: &mut Vec<f64>, out: &mut Vec<Vec<f64>>) {
+        if actual.len() == x.len() {
+            out.push(actual.clone());
+            return;
+        }
+        for i in 0..x.len() {
+            if !usados[i] {
+                usados[i] = true;
+                actual.push(x[i]);
+                rec(x, usados, actual, out);
+                actual.pop();
+                usados[i] = false;
+            }
+        }
+    }
+    let (mut usados, mut actual, mut out) = (vec![false; x.len()], Vec::new(), Vec::new());
+    rec(x, &mut usados, &mut actual, &mut out);
+    out
+}
+
+#[test]
+fn momentos_exactos_del_nulo_unieje_vs_enumeracion() {
+    // n=6 genérico (dt NO simétricos ⇒ v ≠ u ⇒ E[S¹²] ≠ E[S²¹]).
+    let incs: Vec<(f64, f64)> = vec![
+        (0.30, 0.05),
+        (-0.20, 0.25),
+        (0.15, 0.05),
+        (0.05, 0.30),
+        (-0.10, 0.20),
+        (0.25, 0.15),
+    ];
+    let (x, y): (Vec<f64>, Vec<f64>) = incs.iter().copied().unzip();
+    let (v, u) = pesos_nulo_unieje(&y);
+    let (e12, var12) = momentos_asignacion(&x, &v);
+    let (e21, var21) = momentos_asignacion(&x, &u);
+
+    // Asimetría anclada: pesos distintos ⇒ esperanzas distintas en general.
+    assert!(
+        (e12 - e21).abs() > 1e-6,
+        "v ≠ u debe separar E[S¹²] de E[S²¹]"
+    );
+    // Reflexión estructural: v_a + u_a = (sufijo+prefijo+y_a) = Σy ⇒
+    // Sww idéntica ⇒ las DOS varianzas del nulo coinciden SIEMPRE; sólo
+    // las medias separan S¹² de S²¹ bajo el nulo unieje.
+    close(var12, var21);
+    // Simetría anti-exacta de los z (medida 163: z(S²¹) ≡ −z(S¹²) en TODO
+    // símbolo): con Σy=1, S²=1 y S¹=Σx=n·x̄, la identidad del kernel
+    // S¹²+S²¹=S¹·S² fuerza E₁₂+E₂₁ = x̄·n = S¹ ⇒ el error de ambos cross
+    // es opuesto y comparten varianza ⇒ z(S²¹) = −z(S¹²) IDENTICO. La
+    // pareja no duplica información: es UN número con signo.
+    close(e12 + e21, x.iter().sum::<f64>());
+
+    // Enumeración bruta de las 720 permutaciones: momento exacto vs forma cerrada.
+    let (mut s12, mut s12sq, mut s21, mut s21sq, mut m) = (0.0f64, 0.0f64, 0.0f64, 0.0f64, 0.0f64);
+    for perm in todas_las_permutaciones(&x) {
+        let ventana: Vec<(f64, f64)> = perm.iter().zip(y.iter()).map(|(r, dy)| (*r, *dy)).collect();
+        let s = firma_nivel2_incrementos(&ventana);
+        s12 += s.level2[0][1];
+        s12sq += s.level2[0][1] * s.level2[0][1];
+        s21 += s.level2[1][0];
+        s21sq += s.level2[1][0] * s.level2[1][0];
+        m += 1.0;
+    }
+    let (m12, v12m) = (s12 / m, s12sq / m - (s12 / m) * (s12 / m));
+    let (m21, v21m) = (s21 / m, s21sq / m - (s21 / m) * (s21 / m));
+    close(e12, m12);
+    close(e21, m21);
+    assert!(
+        (var12 - v12m).abs() <= 1e-12,
+        "Var[S¹²] cerrada {var12:.17e} vs enumerada {v12m:.17e}"
+    );
+    assert!(
+        (var21 - v21m).abs() <= 1e-12,
+        "Var[S²¹] cerrada {var21:.17e} vs enumerada {v21m:.17e}"
+    );
+
+    // n=2 ancla manual: Var = (v₀−v₁)²(x₀−x₁)²/4.
+    let (x2, y2) = (vec![0.2, -0.1], vec![0.7, 0.3]);
+    let (v2, _) = pesos_nulo_unieje(&y2);
+    let (_, var2) = momentos_asignacion(&x2, &v2);
+    close(
+        var2,
+        (v2[0] - v2[1]) * (v2[0] - v2[1]) * (x2[0] - x2[1]) * (x2[0] - x2[1]) / 4.0,
+    );
+
+    // Degenerado VERDADERO: retornos constantes ⇒ Sxx=0 ⇒ Var=0 ⇒ z no medible.
+    let xc = vec![0.10_f64; 6];
+    let (ec, varc) = momentos_asignacion(&xc, &v);
+    let var_enum: f64 = {
+        let mut acc = 0.0;
+        for perm in todas_las_permutaciones(&xc) {
+            let ventana: Vec<(f64, f64)> =
+                perm.iter().zip(y.iter()).map(|(r, dy)| (*r, *dy)).collect();
+            let s = firma_nivel2_incrementos(&ventana).level2[0][1];
+            acc += (s - ec) * (s - ec);
+        }
+        acc / 720.0
+    };
+    close(varc, 0.0);
+    close(var_enum, 0.0);
 }

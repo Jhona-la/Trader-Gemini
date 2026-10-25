@@ -2,7 +2,10 @@
 //! a GLM por el consejo en Ω209). Descompone la dinámica NO LINEAL del
 //! retorno normalizado proyectándola en observables por retardo (Hankel de
 //! orden `KOOPMAN_M`) y estimando el operador de Koopman lineal efectivo
-//! A = G⁻¹Q con actualización rank-1 por tick (streaming DMD). Sus
+//! A = Q·G⁻¹ resuelto FILA a fila (G·a_i = q_i con G simétrica — identidad
+//! corregida por AGY Ω212; las primeras M−1 filas reproducen la matriz
+//! compañera de desplazamiento) con actualización rank-1 por tick
+//! (streaming DMD). Sus
 //! autovalores revelan el MODO DE CRECIMIENTO (|λ| dominante por tick), la
 //! FRECUENCIA OCULTA (ángulo de λ) y la PROXIMIDAD DE BIFURCACIÓN (máx|λ|
 //! contra el círculo unidad) ANTES de que se reflejen en el precio.
@@ -15,9 +18,9 @@
 //! autovalores ni imputación: warmup insuficiente o G singular ⇒ Err (CL-15).
 //!
 //! # Coste
-//! push: O(M²) rank-1 sobre stack (zero-alloc). analyze: LU O(M³) +
-//! Hessenberg O(M³) + QR desplazado — llamado por CADENCIA (no por tick),
-//! M=8 ⇒ sub-microsegundo.
+//! push: O(M²) rank-1 sobre stack (zero-alloc). analyze: LU O(M³) para
+//! A = Q·G⁻¹ + Faddeev-LeVerrier/Durand-Kerner para el espectro — llamado
+//! por CADENCIA (no por tick), M=8 ⇒ sub-microsegundo.
 
 /// Orden del embedding por retardo (observables Koopman). 8 retardos ⇒ el
 /// operador efectivo es 8×8: capta hasta 4 modos oscilatorios independientes
@@ -151,7 +154,11 @@ impl StreamingDmd {
         // φ⁺[i] = ventana[i+1] para i<M-1; φ⁺[M-1] = x.
         // Q += φ⁺φᵀ.
         for i in 0..KOOPMAN_M {
-            let fmas = if i + 1 < KOOPMAN_M { self.ventana[i + 1] } else { x };
+            let fmas = if i + 1 < KOOPMAN_M {
+                self.ventana[i + 1]
+            } else {
+                x
+            };
             if fmas == 0.0 {
                 continue;
             }
@@ -223,7 +230,11 @@ impl StreamingDmd {
             }
         }
         let autovalores = autovalores_faddeev_durand(&a);
-        if autovalores.is_empty() || autovalores.iter().any(|(re, im)| !re.is_finite() || !im.is_finite()) {
+        if autovalores.is_empty()
+            || autovalores
+                .iter()
+                .any(|(re, im)| !re.is_finite() || !im.is_finite())
+        {
             return Err(DmdError::GSingular);
         }
         // Ordenar por módulo descendente.
@@ -254,7 +265,10 @@ impl StreamingDmd {
 }
 
 /// Factorización LU con pivoteo parcial. Devuelve (éxito, determinante).
-fn factorizar_lu(a: &mut [[f64; KOOPMAN_M]; KOOPMAN_M], perm: &mut [usize; KOOPMAN_M]) -> (bool, f64) {
+fn factorizar_lu(
+    a: &mut [[f64; KOOPMAN_M]; KOOPMAN_M],
+    perm: &mut [usize; KOOPMAN_M],
+) -> (bool, f64) {
     let n = KOOPMAN_M;
     for i in 0..n {
         perm[i] = i;
@@ -295,7 +309,11 @@ fn factorizar_lu(a: &mut [[f64; KOOPMAN_M]; KOOPMAN_M], perm: &mut [usize; KOOPM
 }
 
 /// Resuelve A x = b con el LU ya factorizado (perm del pivoteo).
-fn resolver_lu(lu: &[[f64; KOOPMAN_M]; KOOPMAN_M], perm: &[usize; KOOPMAN_M], b: &[f64; KOOPMAN_M]) -> [f64; KOOPMAN_M] {
+fn resolver_lu(
+    lu: &[[f64; KOOPMAN_M]; KOOPMAN_M],
+    perm: &[usize; KOOPMAN_M],
+    b: &[f64; KOOPMAN_M],
+) -> [f64; KOOPMAN_M] {
     let n = KOOPMAN_M;
     let mut x = [0.0f64; KOOPMAN_M];
     // Pb.
@@ -366,18 +384,20 @@ fn autovalores_faddeev_durand(a: &[[f64; KOOPMAN_M]; KOOPMAN_M]) -> Vec<(f64, f6
     // ── Durand–Kerner sobre p(λ) = λ^n + coef[1]λ^{n-1} + ... + coef[n].
     // Monomios en orden descendente (p[0]=1).
     let p = coef; // p[0]=1, p[k]=c_k
-    // Normalizar por el coeficiente líder (ya 1.0 por construcción).
-    // Semillas: círculo de radio R en el plano complejo (raíces de la unidad
-    // escaladas por un cota de Cauchy aproximada).
+                  // Normalizar por el coeficiente líder (ya 1.0 por construcción).
+                  // Semillas: círculo de radio R en el plano complejo (raíces de la unidad
+                  // escaladas por un cota de Cauchy aproximada).
     let radio = 1.0 + p[1..].iter().fold(0.0f64, |m, &c| m.max(c.abs()));
     #[derive(Clone, Copy)]
     struct C(f64, f64);
     let cmul = |x: C, y: C| C(x.0 * y.0 - x.1 * y.1, x.0 * y.1 + x.1 * y.0);
     let cadd = |x: C, y: C| C(x.0 + y.0, x.1 + y.1);
-    let cdiv = |x: C, y: C| C(
-        (x.0 * y.0 + x.1 * y.1) / (y.0 * y.0 + y.1 * y.1),
-        (x.1 * y.0 - x.0 * y.1) / (y.0 * y.0 + y.1 * y.1),
-    );
+    let cdiv = |x: C, y: C| {
+        C(
+            (x.0 * y.0 + x.1 * y.1) / (y.0 * y.0 + y.1 * y.1),
+            (x.1 * y.0 - x.0 * y.1) / (y.0 * y.0 + y.1 * y.1),
+        )
+    };
     let cabs = |x: C| (x.0 * x.0 + x.1 * x.1).sqrt();
     let peval = |z: C| -> C {
         // Horner con p[0]=1.
