@@ -628,7 +628,7 @@ impl BinanceClient {
                     }
                 }
             }
-            Err(e) => Err(ErrorRest::de_red(format!("AMBIGUOUS: Network Error: {}", e), salio(&e))),
+            Err(e) => Err(error_de_red("AMBIGUOUS: ", e)),
         }
     }
 
@@ -694,7 +694,7 @@ impl BinanceClient {
                     }))
                 }
             }
-            Err(e) => Err(ErrorRest::de_red(format!("AMBIGUOUS: Network Error: {}", e), salio(&e))),
+            Err(e) => Err(error_de_red("AMBIGUOUS: ", e)),
         }
     }
 
@@ -732,7 +732,7 @@ impl BinanceClient {
                     Err(ErrorRest::con_cabecera(format!("Binance API Error: {}", text), limits))
                 }
             }
-            Err(e) => Err(ErrorRest::de_red(format!("Network Error: {}", e), salio(&e))),
+            Err(e) => Err(error_de_red("", e)),
         }
     }
     /// GET payload (used for fetching balances, etc)
@@ -784,7 +784,7 @@ impl BinanceClient {
                     ))
                 }
             }
-            Err(e) => Err(ErrorRest::de_red(format!("Network Error: {}", e), salio(&e))),
+            Err(e) => Err(error_de_red("", e)),
         }
     }
 
@@ -822,7 +822,7 @@ impl BinanceClient {
                     Err(ErrorRest::con_cabecera(format!("Binance API Error: {}", text), limits))
                 }
             }
-            Err(e) => Err(ErrorRest::de_red(format!("Network Error: {}", e), salio(&e))),
+            Err(e) => Err(error_de_red("", e)),
         }
     }
 }
@@ -875,6 +875,16 @@ fn error_de_orden(
 /// escribir nada); un timeout o una conexión cortada después sí pudo.
 fn salio(e: &reqwest::Error) -> bool {
     !(e.is_connect() || e.is_builder())
+}
+
+/// N24 (CL-202): el error de transporte de una petición firmada, sin su URL.
+/// reqwest la escribe entera en el texto («for url (…)»), con la consulta y la
+/// firma: el reintento de modo del aplanado, que busca «reduceOnly» en el
+/// texto, la encontraba en la propia petición de un cierre sin respuesta, y
+/// la firma acababa en los registros. Si salió se decide antes de quitarla.
+fn error_de_red(prefijo: &str, e: reqwest::Error) -> ErrorRest {
+    let salio = salio(&e);
+    ErrorRest::de_red(format!("{}Network Error: {}", prefijo, e.without_url()), salio)
 }
 
 /// N25 (CL-199): un envío de orden que respondió pero cuyo cuerpo no se pudo
@@ -1294,6 +1304,76 @@ mod tests_n23 {
         let _ = c.freno().registrar("HTTP_429_RATE_LIMITED retry_after=30");
         let e = c.cancel_order_payload("http://127.0.0.1:9/fapi/v1/order").await.err();
         assert!(e.as_ref().is_some_and(|e| e.starts_with("RATE_LIMIT_COOLDOWN") && !e.sin_respuesta()), "{e:?}");
+    }
+
+    /// CL-202 (N24): el texto de un error de transporte no lleva la petición.
+    /// reqwest escribe la URL entera («for url (…)», con la consulta y la
+    /// firma), y el reintento de modo del aplanado busca «reduceOnly» en el
+    /// texto. En los seis transportes, cerrada sin respuesta, sin respuesta a
+    /// tiempo y sin conexión: ni la consulta, ni la firma, ni el destino; el
+    /// prefijo de cada uno y `sin_respuesta` no cambian.
+    #[tokio::test]
+    async fn cl202_el_error_de_red_no_lleva_la_peticion() {
+        use tokio::io::AsyncReadExt;
+        const CONSULTA: &str = "?symbol=BTCUSDT&side=SELL&type=MARKET&reduceOnly=true\
+                                &quantity=0.002&timestamp=1&signature=deadbeef";
+        // Los tres envíos de orden marcan su red AMBIGUOUS; los demás no.
+        let limpio = |k: usize, e: &ErrorRest| {
+            let prefijo = if k < 3 { "AMBIGUOUS: Network Error: " } else { "Network Error: " };
+            e.starts_with(prefijo)
+                && !["reduceOnly", "signature", "deadbeef", "symbol=", "127.0.0.1", "/fapi/"]
+                    .iter()
+                    .any(|t| e.contains(t))
+        };
+        let c = BinanceClient::with_timeout("k".into(), true, Duration::from_millis(500));
+
+        for (k, nombre) in TRANSPORTES.iter().enumerate() {
+            let servido = respuestas(vec![String::new()]).await;
+            assert!(servido.is_some(), "servidor local");
+            let Some((url, _, servidor)) = servido else { return };
+            let url = format!("{url}{CONSULTA}");
+            let r = tokio::time::timeout(Duration::from_secs(20), enviar(&c, k, &url)).await;
+            servidor.abort();
+            let e = r.ok().and_then(|r| r.err());
+            assert!(e.as_ref().is_some_and(|e| limpio(k, e) && e.sin_respuesta()), "{nombre} cerrada: {e:?}");
+        }
+
+        let oyente = tokio::net::TcpListener::bind("127.0.0.1:0").await.ok();
+        let direccion = oyente.as_ref().and_then(|o| o.local_addr().ok());
+        assert!(direccion.is_some(), "puerto local");
+        if let (Some(oyente), Some(direccion)) = (oyente, direccion) {
+            let mudo = tokio::spawn(async move {
+                let mut abiertas = Vec::new();
+                while let Ok((mut s, _)) = oyente.accept().await {
+                    let mut peticion = [0u8; 4096];
+                    let _ = s.read(&mut peticion).await;
+                    abiertas.push(s);
+                }
+            });
+            let url = format!("http://{direccion}/fapi/v1/order{CONSULTA}");
+            for (k, nombre) in TRANSPORTES.iter().enumerate() {
+                let r = tokio::time::timeout(Duration::from_secs(20), enviar(&c, k, &url)).await;
+                let e = r.ok().and_then(|r| r.err());
+                assert!(e.as_ref().is_some_and(|e| limpio(k, e) && e.sin_respuesta()), "{nombre} muda: {e:?}");
+            }
+            mudo.abort();
+        }
+
+        let enchufe = tokio::net::TcpSocket::new_v4().ok();
+        let direccion = enchufe.as_ref().and_then(|e| {
+            e.bind(std::net::SocketAddr::from(([127, 0, 0, 1], 0))).ok()?;
+            e.local_addr().ok()
+        });
+        assert!(direccion.is_some(), "puerto ligado sin escuchar");
+        if let Some(direccion) = direccion {
+            let url = format!("http://{direccion}/fapi/v1/order{CONSULTA}");
+            for (k, nombre) in TRANSPORTES.iter().enumerate() {
+                let r = tokio::time::timeout(Duration::from_secs(20), enviar(&c, k, &url)).await;
+                let e = r.ok().and_then(|r| r.err());
+                assert!(e.as_ref().is_some_and(|e| limpio(k, e) && !e.sin_respuesta()), "{nombre} sin conexión: {e:?}");
+            }
+        }
+        drop(enchufe);
     }
 
     /// Las clases de ejecución desconocida de un envío de orden (5xx, 1xx/3xx,

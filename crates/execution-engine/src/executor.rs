@@ -927,7 +927,7 @@ impl OrderExecutor {
                 };
                 // R3.3 / K-16: Fail-safe retry si el exchange rechaza por discrepancia de modo (-4061)
                 if let Err(ref e) = close_res {
-                    if e.contains("-4061") || e.contains("position side") || e.contains("reduceOnly") {
+                    if modo_rechazado(e) {
                         println!(
                             "⚠️ [FLATTEN] Modo rechazado (-4061) para {}. Conmutando modo (dual={}) y reintentando cierre...",
                             p.symbol, !dual
@@ -4415,6 +4415,19 @@ fn simbolos_sin_posicion(
         .collect()
 }
 
+/// R3.3 / K-16: el cierre del aplanado se rechazó por el modo de posición
+/// (-4061, o el positionSide/reduceOnly que la cuenta no admite) y se reintenta
+/// en el otro. N24 (CL-202): una ejecución desconocida (AMBIGUOUS: red, 5xx,
+/// ACK ilegible) no lo es aunque su texto lo nombre (un ACK ilegible cita su
+/// cuerpo, y el de un cierre reduce-only trae «reduceOnly»): el cierre pudo
+/// ejecutarse, y conmutar por ella el modo de la cuenta lo dejaba mal para
+/// las órdenes siguientes y enviaba otro cierre.
+#[inline]
+fn modo_rechazado(e: &str) -> bool {
+    !e.starts_with("AMBIGUOUS")
+        && (e.contains("-4061") || e.contains("position side") || e.contains("reduceOnly"))
+}
+
 /// LG-3 (Línea G) — USO DE RATE-LIMIT VIGENTE.
 ///
 /// Las cabeceras `X-MBX-USED-WEIGHT-1M` y `X-MBX-ORDER-COUNT-10S/1M` miden el
@@ -7037,6 +7050,62 @@ mod tests_n23 {
             }
         }
         assert!(criticas >= 15, "{criticas}");
+    }
+
+    /// CL-202 (N24): el reintento de modo del aplanado (R3.3 / K-16) sólo
+    /// sale ante un rechazo firme por el modo. Antes buscaba «reduceOnly» en
+    /// cualquier texto, y el error de red de un cierre one-way sin respuesta
+    /// lo traía en la URL: conmutaba `is_hedge_mode` y enviaba otro cierre.
+    /// Con los textos reales del transporte: la red y un ACK ilegible que
+    /// cita «reduceOnly» no conmutan; el -4061 y el -1106 firmes sí.
+    #[tokio::test]
+    async fn cl202_una_ejecucion_desconocida_no_conmuta_el_modo() {
+        let consulta = "?symbol=BTCUSDT&side=SELL&type=MARKET&reduceOnly=true\
+                        &newOrderRespType=RESULT&quantity=0.002&timestamp=1&signature=ab";
+        let ack = r#"{"orderId":"x","symbol":"BTCUSDT","reduceOnly":true}"#;
+        for (wire, clase) in [
+            (String::new(), "AMBIGUOUS: Network Error"),
+            (respuesta("200 OK", "", ack), "AMBIGUOUS: ACK_PARSE_ERROR"),
+        ] {
+            let servido = respuestas(vec![wire]).await;
+            assert!(servido.is_some(), "servidor local");
+            let Some((url, _, servidor)) = servido else { return };
+            let ex = ex();
+            let r = tokio::time::timeout(
+                std::time::Duration::from_secs(20),
+                ex.client().execute_order_payload_typed(&format!("{url}{consulta}")),
+            )
+            .await;
+            servidor.abort();
+            let e = r.ok().and_then(|r| r.err());
+            assert!(e.as_ref().is_some_and(|e| e.starts_with(clase)), "{clase}: {e:?}");
+            assert!(e.as_ref().is_some_and(|e| !modo_rechazado(e)), "{clase} no conmuta: {e:?}");
+        }
+        assert!(!modo_rechazado("AMBIGUOUS: Network Error: x reduceOnly position side -4061"));
+        for firme in [
+            "REJECTED code=-4061 msg=Order's position side does not match user's setting.",
+            "REJECTED code=-4061 msg=?",
+            r#"Binance API Error: {"code":-4061,"msg":"Order's position side does not match user's setting."}"#,
+            "REJECTED code=-1106 msg=Parameter 'reduceOnly' sent when not required.",
+        ] {
+            assert!(modo_rechazado(firme), "{firme}");
+        }
+        for otro in [
+            "REJECTED code=-2022 msg=ReduceOnly Order is rejected.",
+            "RATE_LIMIT_COOLDOWN: 429 activo",
+        ] {
+            assert!(!modo_rechazado(otro), "{otro}");
+        }
+    }
+
+    /// CL-202: el aplanado decide el reintento de modo por `modo_rechazado`,
+    /// una sola vez, sin otra búsqueda de «reduceOnly» en el error.
+    #[test]
+    fn cl202_el_aplanado_conmuta_el_modo_solo_por_un_rechazo() {
+        let c = cuerpo("flatten_all_positions");
+        assert_eq!(c.matches("if modo_rechazado(e) {").count(), 1);
+        assert!(!c.contains(r#"e.contains("reduceOnly")"#));
+        assert_eq!(c.matches("dual = !dual;").count(), 1);
     }
 
     /// RED antes de CL-201 (N24-a): lo perdido también lo ven las lecturas y
