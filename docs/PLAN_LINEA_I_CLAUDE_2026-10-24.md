@@ -97,6 +97,15 @@ trading llevan T-1 antes de entrar a `main`.
   sólo salen cuando se conserva. T-1 no se corre: no ejecuta el host, y lo único que
   comparte con I-3 es un atómico nuevo del arena que el núcleo no lee. Abierto (LOW): los
   strikes conservados no caducan mientras el feed siga degradado.
+- 2026-10-25 ~02:00 UTC — Sonda de RTT a `GET /fapi/v1/time` desde la máquina del operador
+  (HttpClient con conexión reutilizada, 40 muestras por host, la primera descartada por el
+  handshake; `docs/audit/linea_i/rtt_probe.ps1`; el CSV de las muestras queda local porque
+  `*.csv` está en `.gitignore`, y el script lo regenera).
+  Producción: mín 218,5, p50 231,3, p90 267,6, máx 349,8 ms; el 100 % bajo el corte de 350 ms
+  del Kalman de `ntp.rs`. Testnet: p50 228,3, p90 299,7, máx 477,1 ms; el 95 % bajo el corte.
+  El reloj local va ≈ 38,5 ms adelantado. Responde la pregunta abierta de I-5: el sincronizador
+  no queda congelado por el rechazo de outliers. El suelo de ≈ 220 ms es la distancia física
+  (Bogotá–Tokio); ningún DNS lo baja, sólo un host más cercano al exchange.
 
 - 2026-10-24 13:25 — Línea abierta; heartbeat en `AGENT_SYNC.md` (commit `2831cf5bd`).
   Auditoría I-1 lanzada (3 lectores, escépticos, diseñador).
