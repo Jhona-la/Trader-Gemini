@@ -1723,8 +1723,13 @@ impl RiskEngine {
         // el NaN: un bias +∞ dimensionaba con la f entera.
         // CL-167: se lee en toda clase, no sólo cuando LH-04 puede dimensionar
         // (f > 0). La sonda y la orden mínima no lo usan para el tamaño, pero
-        // un bias corrupto es un estado corrupto de la moneda y se rechaza
-        // igual: con f = 0 un bias ±∞ o ≤ 0 salía a la orden mínima.
+        // un bias ACTIVO corrupto se rechaza igual: con f = 0 un bias ±∞ o
+        // ≤ 0 salía a la orden mínima. Es el activo, no el almacenado: con un
+        // cierre registrado y el reloj ya pasado el cierre,
+        // `epigenetic_bias_at` (quantum-arena state.rs) lleva un almacenado
+        // ±∞ o NaN a 1,0 y uno ≤ 0 a 0,5, y llega neutralizado. Validar el
+        // almacenado haría absorbente el rechazo: el escritor del cierre no
+        // toca un bias no finito.
         let lh04_bias_bruto = if coin_id < arena.coins.len() {
             let now_ts = arena.coins[coin_id]
                 .last_tick_timestamp_ms

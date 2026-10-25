@@ -18686,13 +18686,23 @@ Los otros ocho eran leves. Sin T-1: no cambia nada con entradas válidas.
   f > 0, así que la sonda y la orden mínima dejaban pasar un bias ±∞ o
   ≤ 0. La telemetría `lh04_bias_factor` publica ahora el factor real
   también con f = 0. Si retiras la cadena legada, esta comprobación ya
-  cubre el NaN que hoy también rechaza `raw_exposure`.
+  cubre el NaN que hoy también rechaza `raw_exposure`. Ojo: se valida el
+  bias ACTIVO (`get_active_epigenetic_bias`). Con un cierre registrado y
+  el reloj ya pasado el cierre, `epigenetic_bias_at` lleva un almacenado
+  ±∞ o NaN a 1,0 y uno ≤ 0 a 0,5, y no se rechaza; un almacenado corrupto
+  sólo se ve sin cierre registrado o en el mismo ms del cierre. Lo fija
+  `rv9_tras_un_cierre_el_bias_corrupto_llega_neutralizado`.
   (2) CL-168: `informe_sombra_kelly` publica `"logw_<regla>":null` para
-  una regla arruinada y null para cualquier número no finito.
-  (3) Corrección a mi aviso de la octava tanda: la orden de
-  cf5d_medida_al_cerrar sale con L = 1 (medido), así que esa prueba no ve
-  un R sobre el margen; sólo ve R·100. Si tocas el cierre del núcleo
-  (`realized_ret`), esa unidad no la cubre ninguna prueba.
+  una regla arruinada. Desde CL-169 (abajo), también para un acumulado no
+  finito.
+  (3) Corrección al mensaje de RV7-T (9f9fc77e) y al comentario de cf5d,
+  ya corregido en 98ad5d25: la orden de cf5d_medida_al_cerrar sale con
+  L = 1 (medido), así que ese cierre no ve un R sobre el margen; sólo ve
+  R·100. `realized_ret` (retorno neto sobre qty·entry) sí lo fija
+  close_outcome_contract::one_close_updates_the_policy_reward_once con
+  L = 10, a través de la recompensa del PPO. Lo que no veía ninguna prueba
+  con L ≥ 2 era el argumento que el núcleo pasa a `registrar_sombra_kelly`;
+  desde RV9-T lo fija cf5d con una tercera posición de L = 10.
 - **Sol**: `SOMBRA_KELLY` cambia de formato: un logw puede ser null.
 - **Kimi Quant Sr V33**: V33_INVENTARIO_2026-10-24.tsv, contra el blob de
   main al empezar la tanda (4f9ada09): ninguna fila con el blob de main
@@ -18704,3 +18714,20 @@ Los otros ocho eran leves. Sin T-1: no cambia nada con entradas válidas.
   risk-engine/tests/{cl161_clases_de_tamano_contract.rs,
   cl164_sombra_kelly_contract.rs}.
 - **Dueño**: la tarjeta del trinquete del T-1 sigue en el hilo.
+
+### Antes de fusionar el #142: su propia revisión adversarial
+
+Confirmó 7 hallazgos (1 medio, 6 leves) y refutó 1; se corrigen en el
+mismo PR, sin T-1 (sólo el informe de la sombra y pruebas).
+
+- **AGY**: (1) CL-169: `registrar_sombra_kelly` e `informe_sombra_kelly`
+  leen sus claves con `get_for_coin_strict`. Antes `get_for_coin_or`
+  cambiaba un acumulado no finito por 0: el informe publicaba un 0.000000
+  creíble y el cierre siguiente reiniciaba la suma. Ahora sale null y se
+  queda. (2) RV9-T: cl164 exige null en las tres reglas tras el hueco (en
+  su fixture f_lh04 ≤ f_legado, así que el hueco las arruina a todas) y
+  una prueba nueva fija una regla viva junto a una arruinada; cf5d fija
+  con L = 10 la unidad del argumento de la sombra al cerrar.
+- **Sol**: `SOMBRA_KELLY`: null también marca un acumulado no finito,
+  no sólo una regla arruinada (`ruina_<regla>` dice cuál de las dos).
+- **Dueño**: nada nuevo que decidir; la tarjeta del T-1 sigue en el hilo.
