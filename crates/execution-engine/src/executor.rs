@@ -1896,9 +1896,16 @@ impl OrderExecutor {
             }
         }
 
-        // 5. Símbolo definitivamente ausente: almacenar en caché negativa con TTL 60s
-        if let Ok(mut neg_cache) = self.negative_symbol_cache.write() {
-            neg_cache.insert(symbol.to_string(), now);
+        // 5. Ni exchangeInfo ni el registro lo aportan. F1-105: caché negativa
+        // 60 s, para no repetir en cada llamada una descarga que falla (hasta
+        // ~20 s cada una). N20 (CL-192): no con el freno 429/418 armado: la
+        // descarga se rechazó en local o el exchange la frenó, nada prueba la
+        // ausencia, mientras dure el freno el paso 3 ya vuelve sin red, y la
+        // entrada sobreviviría al freno hasta 60 s.
+        if self.check_backoff(self.get_synced_timestamp()).is_ok() {
+            if let Ok(mut neg_cache) = self.negative_symbol_cache.write() {
+                neg_cache.insert(symbol.to_string(), now);
+            }
         }
 
         Err(format!(
@@ -5963,6 +5970,24 @@ mod tests_n20 {
             ] {
                 assert_eq!(codigo.matches(prohibido).count(), 0, "{archivo}: {prohibido}");
             }
+        }
+    }
+
+    /// RED antes de CL-192: con el freno 429/418 armado, un símbolo sin spec en
+    /// el registro entraba en la caché negativa por el rechazo local de la
+    /// descarga, y la entrada (60 s) sobrevivía al freno: hasta caducar nadie
+    /// volvía a descargar exchangeInfo, aunque el exchange ya lo serviría.
+    #[tokio::test]
+    async fn cl192_el_freno_no_deja_un_simbolo_en_la_cache_negativa() {
+        for error in [
+            "HTTP_418_IP_BANNED retry_after=300",
+            "HTTP_429_RATE_LIMITED retry_after=30",
+        ] {
+            let ex = ex();
+            ex.handle_rate_limit_error(error);
+            let r = ex.get_symbol_filter("CL192SINSPECUSDT").now_or_never();
+            assert!(matches!(r, Some(Err(_))), "{error}: {r:?}");
+            assert_eq!(ex.negative_symbol_cache_len(), 0, "{error}: el freno no prueba la ausencia");
         }
     }
 }
