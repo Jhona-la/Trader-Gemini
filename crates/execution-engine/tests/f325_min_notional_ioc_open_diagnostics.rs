@@ -155,7 +155,9 @@ async fn open_f325_ioc_largo_en_el_minimo_sale_bajo_min_notional() {
     assert_eq!(enviadas[0], (qty, EntryRoute::Ioc { price: limite }));
 }
 
-/// Los literales que la OPEN reproduce siguen en el host y en el riesgo.
+/// Las líneas que la OPEN reproduce siguen en el host, el riesgo, el núcleo
+/// (`cantidad_de_la_orden` a `real_entry_price`) y la entrada modelada
+/// (`calculate_market_entry`).
 #[test]
 fn open_f325_la_cadena_reproducida_sigue_en_el_codigo() {
     let host = sin_espacios(include_str!("../../../src/bin/god_engine.rs"));
