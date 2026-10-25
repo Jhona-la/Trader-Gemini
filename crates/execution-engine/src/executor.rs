@@ -698,17 +698,22 @@ impl OrderExecutor {
         buf.push_str(unsafe { std::str::from_utf8_unchecked(&sig_buf) });
         // N5 (CL-178): durante un 429/418 el DELETE no sale; la purga queda
         // incompleta y el llamador marca la protección sucia. CL-179: cupo
-        // crítico, soltado tras la respuesta.
+        // crítico, soltado tras la respuesta. CL-182: su cabecera se registra
+        // con el cupo vivo, para que el coste no salga del libro antes de
+        // entrar en el uso.
         let borrado = match self.check_exit_rate_limits(
             ts,
             Tramo::Critica(crate::binance_api::COSTE_CANCELACION),
         ) {
-            Ok(_cupo) => self.client.cancel_order_payload(buf.as_str()).await,
+            Ok(_cupo) => self
+                .client
+                .cancel_order_payload(buf.as_str())
+                .await
+                .inspect(|limits| self.update_limits(limits)),
             Err(e) => Err(e),
         };
         match borrado {
-            Ok(limits) => {
-                self.update_limits(&limits);
+            Ok(_) => {
                 cancelled += 1;
             }
             Err(e) => {
@@ -886,6 +891,7 @@ impl OrderExecutor {
                 // sus 429 no armaban el cooldown y el barrido seguía enviando).
                 // Un rechazo local no lleva -4061 ni -2022: no reintenta.
                 // CL-179: cupo crítico (sale mientras quepa en el límite).
+                // CL-182: la cabecera se registra con el cupo vivo.
                 let mut close_res = match self.check_exit_rate_limits(
                     self.get_synced_timestamp(),
                     Tramo::Critica(crate::binance_api::COSTE_ORDEN),
@@ -894,7 +900,8 @@ impl OrderExecutor {
                         .client
                         .execute_order_payload_typed(buf.as_str())
                         .await
-                        .map_err(|e| self.handle_rate_limit_error(&e)),
+                        .map_err(|e| self.handle_rate_limit_error(&e))
+                        .inspect(|(limits, _)| self.update_limits(limits)),
                     Err(e) => Err(e),
                 };
                 // R3.3 / K-16: Fail-safe retry si el exchange rechaza por discrepancia de modo (-4061)
@@ -945,15 +952,15 @@ impl OrderExecutor {
                                 .client
                                 .execute_order_payload_typed(retry_buf.as_str())
                                 .await
-                                .map_err(|e| self.handle_rate_limit_error(&e)),
+                                .map_err(|e| self.handle_rate_limit_error(&e))
+                                .inspect(|(limits, _)| self.update_limits(limits)),
                             Err(e) => Err(e),
                         };
                     }
                 }
 
                 match close_res {
-                    Ok((limits, ack)) => {
-                        self.update_limits(&limits);
+                    Ok((_, ack)) => {
                         let now = self.get_synced_timestamp();
                         self.order_registry.apply_ack(&ack, now);
                         position_closed = true;
@@ -3716,22 +3723,29 @@ impl ExecutionProvider for OrderExecutor {
                 // N5 (CL-178): si la primera pierna recibió un 429/418, el
                 // reintento no sale (seguía enviando dentro del cooldown).
                 // CL-179: pide su cupo crítico, soltado tras la respuesta.
+                // CL-182: la cabecera se registra con el cupo vivo.
                 sl_res = match self.check_exit_rate_limits(
                     self.get_synced_timestamp(),
                     Tramo::Critica(crate::binance_api::COSTE_PIERNA_ALGO),
                 ) {
-                    Ok(_cupo) => self.client.execute_order_payload(rb.as_str()).await,
+                    Ok(_cupo) => self
+                        .client
+                        .execute_order_payload(rb.as_str())
+                        .await
+                        .inspect(|limits| self.update_limits(limits)),
                     Err(e) => Err(e),
                 };
                 if let Err(e) = &sl_res {
                     if pierna_ya_existe(e) {
-                        sl_res = Ok(crate::client::BinanceRateLimits::default());
+                        // Sin cabecera; sólo el reinicio F1-005 de los 429, como antes.
+                        let limits = crate::client::BinanceRateLimits::default();
+                        self.update_limits(&limits);
+                        sl_res = Ok(limits);
                     } else {
                         let _ = self.handle_rate_limit_error(e);
                     }
                 }
-                if let Ok(limits) = &sl_res {
-                    self.update_limits(limits);
+                if sl_res.is_ok() {
                     confirmed_sl_id = Some(format!("{}_SL", base_client_id));
                 }
             }
@@ -3764,22 +3778,29 @@ impl ExecutionProvider for OrderExecutor {
                 // N5 (CL-178): si la primera pierna recibió un 429/418, el
                 // reintento no sale (seguía enviando dentro del cooldown).
                 // CL-179: pide su cupo crítico, soltado tras la respuesta.
+                // CL-182: la cabecera se registra con el cupo vivo.
                 tp_res = match self.check_exit_rate_limits(
                     self.get_synced_timestamp(),
                     Tramo::Critica(crate::binance_api::COSTE_PIERNA_ALGO),
                 ) {
-                    Ok(_cupo) => self.client.execute_order_payload(rb.as_str()).await,
+                    Ok(_cupo) => self
+                        .client
+                        .execute_order_payload(rb.as_str())
+                        .await
+                        .inspect(|limits| self.update_limits(limits)),
                     Err(e) => Err(e),
                 };
                 if let Err(e) = &tp_res {
                     if pierna_ya_existe(e) {
-                        tp_res = Ok(crate::client::BinanceRateLimits::default());
+                        // Sin cabecera; sólo el reinicio F1-005 de los 429, como antes.
+                        let limits = crate::client::BinanceRateLimits::default();
+                        self.update_limits(&limits);
+                        tp_res = Ok(limits);
                     } else {
                         let _ = self.handle_rate_limit_error(e);
                     }
                 }
-                if let Ok(limits) = &tp_res {
-                    self.update_limits(limits);
+                if tp_res.is_ok() {
                     confirmed_tp_id = Some(format!("{}_TP", base_client_id));
                 }
             }
@@ -5073,6 +5094,42 @@ mod tests_n5c {
                 < todas.find("self.cancel_all_algo_open_orders(").unwrap_or(0),
             "el DELETE sale del libro antes de la purga algo"
         );
+    }
+
+    /// RED antes de CL-182: en los brazos `Ok(_cupo) => envío.await` el cupo
+    /// caía al acabar el brazo y la cabecera se registraba después; entre
+    /// medias el coste no estaba ni en vuelo ni en el uso y otra admisión
+    /// crítica podía ocupar su hueco.
+    #[test]
+    fn n5c_la_cabecera_se_registra_con_el_cupo_vivo() {
+        let codigo = include_str!("executor.rs");
+        let cuerpo = |f: &str| -> &str {
+            let Some(i) = codigo.rfind(&format!("fn {f}(")) else {
+                return "";
+            };
+            let fin = ["\n    pub ", "\n    fn ", "\n    async fn "]
+                .iter()
+                .filter_map(|m| codigo[i + 3..].find(m).map(|k| i + 3 + k))
+                .min()
+                .unwrap_or(codigo.len());
+            &codigo[i..fin]
+        };
+        for (f, n) in [
+            ("cancel_symbol_orders_and_brackets", 1),
+            ("flatten_all_positions", 2),
+            ("execute_oco_order", 2),
+        ] {
+            let c = cuerpo(f);
+            let brazos: Vec<&str> = c
+                .match_indices("Ok(_cupo) =>")
+                .filter(|&(i, _)| c[i.saturating_sub(200)..i].contains("Tramo::Critica("))
+                .map(|(i, _)| c[i..].split("Err(e) => Err(e)").next().unwrap_or(""))
+                .collect();
+            assert_eq!(brazos.len(), n, "{f}: brazos críticos");
+            for b in brazos {
+                assert!(b.contains("self.update_limits("), "{f}: cabecera tras soltar el cupo: {b}");
+            }
+        }
     }
 }
 
