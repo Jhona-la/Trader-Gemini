@@ -1991,6 +1991,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         );
     }
 
+    // I-6 (Línea I): los lectores WS esperan a que el consumidor termine de
+    // inicializarse (VirtualLock, OMS, calentamiento, bosque sombra). Antes
+    // conectaban al arrancar y la cola acumulaba hasta 5000 eventos viejos
+    // que el bucle procesaba como vivos: cada arranque daba un LATENCY_PANIC,
+    // un KILL_SWITCH y unos segundos de entradas bloqueadas. Nadie envía por
+    // este canal: el consumidor suelta el emisor al quedar listo (y, si su
+    // hilo termina antes, el emisor se suelta igual) y eso despierta a todos
+    // los lectores.
+    let (consumidor_listo, consumidor_listo_rx) = crossbeam_channel::bounded::<()>(0);
     let unified_handle = std::thread::Builder::new().stack_size(32 * 1024 * 1024).spawn({
         let historical_klines = historical_klines.clone();
         let omni_state_hot = Arc::clone(&omni_state_live);
@@ -3760,6 +3769,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         // FASE 6 (EVENT LOOP)
         god_engine_core::bootloader::SystemDiagnostics::execute_phase_6_hft();
+
+        // I-6 (Línea I): consumidor listo; los lectores WS conectan ahora.
+        drop(consumidor_listo);
+        telemetry_server::telemetry_log!("🔗 [WS] consumidor listo: los lectores conectan");
 
         while let Ok(mensaje_ws) = rx_events.recv() {
             // I-2a (Línea I): el instante de recepción en el lector viaja con
@@ -5832,7 +5845,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     }).unwrap();
 
     telemetry_server::telemetry_log!(
-        "🔗 Connecting to Binance WebSocket: {} streams",
+        "🔗 [WS] lectores lanzados para {} símbolos: conectan cuando el consumidor esté listo",
         symbols.len()
     );
 
@@ -5857,6 +5870,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         let tx_events = tx_events.clone();
         let rx_events_dropper = rx_events_dropper.clone();
         let estado_cola = Arc::clone(&estado_cola);
+        let consumidor_listo_rx = consumidor_listo_rx.clone();
         let lanzado = std::thread::Builder::new().name("ws-reader".to_string()).spawn(move || {
             if let Some(core_ids) = core_affinity::get_core_ids() {
                 if core_ids.len() > 2 {
@@ -5865,6 +5879,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 }
             }
             os_guardian::set_current_thread_time_critical();
+            esperar_consumidor(&consumidor_listo_rx);
             match tokio::runtime::Builder::new_current_thread().enable_all().build() {
                 Ok(rt) => rt.block_on(bucle_lector_ws(
                     lector_publico,
@@ -5887,6 +5902,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
     {
         let lanzado = std::thread::Builder::new().name("ws-reader-mercado".to_string()).spawn(move || {
+            esperar_consumidor(&consumidor_listo_rx);
             match tokio::runtime::Builder::new_current_thread().enable_all().build() {
                 Ok(rt) => rt.block_on(bucle_lector_ws(
                     lector_mercado,
@@ -5912,6 +5928,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let _ = unified_handle.join();
 
     Ok(())
+}
+
+/// I-6 (Línea I): bloquea hasta que el consumidor suelte su emisor, es
+/// decir, hasta que esté listo para drenar la cola o su hilo haya terminado.
+/// Nadie envía por ese canal, así que `recv` sólo vuelve con `Err` al
+/// soltarse el emisor.
+fn esperar_consumidor(listo: &crossbeam_channel::Receiver<()>) {
+    while listo.recv().is_ok() {}
 }
 
 /// I-1b (Línea I): un lector WS del feed (una categoría de streams).
