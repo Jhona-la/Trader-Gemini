@@ -105,6 +105,10 @@ pub struct SymbolFilter {
     pub min_notional: f64,
 }
 
+/// F1-105: lo que dura la caché negativa de un símbolo. N33 (CL-197): también
+/// la espera tras una descarga de exchangeInfo fallida fuera del freno.
+const TTL_CACHE_NEGATIVA: std::time::Duration = std::time::Duration::from_secs(60);
+
 #[inline(always)]
 pub fn current_timestamp_ms() -> u64 {
     SystemTime::now()
@@ -334,6 +338,9 @@ pub struct OrderExecutor {
     symbol_filters: ArcSwap<std::collections::HashMap<String, SymbolFilter>>,
     /// F1-105: Caché negativa de símbolos desconocidos/no parseables con TTL (60s)
     negative_symbol_cache: std::sync::RwLock<std::collections::HashMap<String, std::time::Instant>>,
+    /// N33 (CL-197): hasta cuándo no sale otra descarga de exchangeInfo tras
+    /// una fallida fuera del freno (`descargar_filtros`).
+    espera_exchange_info: std::sync::Mutex<Option<std::time::Instant>>,
     /// N20 (CL-188): el MISMO Arc que el reloj del freno 429/418 de `client`
     /// (`FrenoExchange`), para que el ejecutor y los clones de su cliente
     /// decidan con una sola hora sincronizada.
@@ -379,6 +386,7 @@ impl OrderExecutor {
             order_registry: std::sync::Arc::new(crate::order_registry::OrderRegistry::new()),
             symbol_filters: ArcSwap::from_pointee(std::collections::HashMap::new()),
             negative_symbol_cache: std::sync::RwLock::new(std::collections::HashMap::new()),
+            espera_exchange_info: std::sync::Mutex::new(None),
             arena: reloj,
             ws: std::sync::Arc::new(crate::ws_executor::WsExecutor::new(
                 api_key, api_secret, is_testnet,
@@ -414,6 +422,7 @@ impl OrderExecutor {
             order_registry,
             symbol_filters: ArcSwap::from_pointee(std::collections::HashMap::new()),
             negative_symbol_cache: std::sync::RwLock::new(std::collections::HashMap::new()),
+            espera_exchange_info: std::sync::Mutex::new(None),
             arena: reloj,
             ws: std::sync::Arc::new(crate::ws_executor::WsExecutor::new(
                 api_key, api_secret, is_testnet,
@@ -1732,6 +1741,18 @@ impl OrderExecutor {
         // Retry-After de un 429 ni del freno (3×429 o 418). Sólo el freno,
         // sin el 80 %: los cierres necesitan los filtros.
         self.check_backoff(self.get_synced_timestamp())?;
+        // N33 (CL-197): tras una descarga fallida fuera del freno no sale otra
+        // durante el TTL de la caché negativa. Sin un exchangeInfo guardado,
+        // cada símbolo que no estaba en caché la repetía (hasta unos 20 s con
+        // una red lenta), también los del registro, que el paso 4 de
+        // `get_symbol_filter` sirve igual sin descarga.
+        let espera = *self.espera_exchange_info_bloqueada();
+        if espera.is_some_and(|hasta| std::time::Instant::now() < hasta) {
+            return Err(format!(
+                "EXCHANGE_INFO_EN_ESPERA: la descarga anterior falló hace menos de {} s",
+                TTL_CACHE_NEGATIVA.as_secs()
+            ));
+        }
         // N23 (CL-196): como en get_payload_account, cada respuesta pasa una
         // vez por `registrar_error`.
         let mut res = self
@@ -1752,13 +1773,29 @@ impl OrderExecutor {
                 }
             }
         }
-        match res {
+        let resultado = match res {
             Ok((limits, text)) => {
                 self.update_limits(&limits);
                 Self::filtros_de_exchange_info(&text)
             }
             Err(e) => Err(e),
+        };
+        if let Err(e) = &resultado {
+            if !Self::descarga_frenada(e) {
+                *self.espera_exchange_info_bloqueada() =
+                    Some(std::time::Instant::now() + TTL_CACHE_NEGATIVA);
+            }
         }
+        resultado
+    }
+
+    /// Como `uso_exchange_bloqueado`: un `Option<Instant>` no queda a medias.
+    fn espera_exchange_info_bloqueada(
+        &self,
+    ) -> std::sync::MutexGuard<'_, Option<std::time::Instant>> {
+        self.espera_exchange_info
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
     }
 
     /// N20 (CL-185): los filtros de una respuesta de exchangeInfo. Una que no
@@ -1867,7 +1904,7 @@ impl OrderExecutor {
         let now = std::time::Instant::now();
         if let Ok(neg_cache) = self.negative_symbol_cache.read() {
             if let Some(ts) = neg_cache.get(symbol) {
-                if now.duration_since(*ts).as_secs() < 60 {
+                if now.duration_since(*ts) < TTL_CACHE_NEGATIVA {
                     // Fallback rápido al registro de símbolos local si fue añadido dinámicamente
                     if let Some(coin_id) = quantum_arena::symbol_registry::try_index(symbol) {
                         if let Some(spec) = quantum_arena::symbol_registry::try_spec(coin_id) {
@@ -1968,11 +2005,13 @@ impl OrderExecutor {
         !frenada || hay_mapa
     }
 
-    /// F1-105: Limpia la caché negativa de filtros de símbolos.
+    /// F1-105: Limpia la caché negativa de filtros de símbolos, y la espera
+    /// tras una descarga fallida (N33, CL-197).
     pub fn clear_negative_symbol_cache(&self) {
         if let Ok(mut neg_cache) = self.negative_symbol_cache.write() {
             neg_cache.clear();
         }
+        *self.espera_exchange_info_bloqueada() = None;
     }
 
     /// F1-105: Retorna el tamaño actual de la caché negativa de símbolos.
@@ -6306,10 +6345,13 @@ pub(crate) mod tests_n20 {
         assert_eq!(d.matches("Err(e) => Err(e),").count(), 1, "{d}");
         assert_eq!(d.matches("self.check_backoff(self.get_synced_timestamp())?;").count(), 1);
         // N23 (CL-196): cada respuesta pasa por `registrar_error`, que
-        // devuelve su texto tal cual.
+        // devuelve su texto tal cual; N33 (CL-197): el único texto propio es
+        // el de la espera, que no es descarga frenada.
         assert_eq!(d.matches("map_err(").count(), 2, "{d}");
         assert_eq!(d.matches(".map_err(|e| self.registrar_error(&e))").count(), 2, "{d}");
-        assert!(!d.contains("format!("), "{d}");
+        assert_eq!(d.matches("format!(").count(), 1, "{d}");
+        assert_eq!(d.matches("\"EXCHANGE_INFO_EN_ESPERA: ").count(), 1, "{d}");
+        assert!(!OrderExecutor::descarga_frenada("EXCHANGE_INFO_EN_ESPERA: x"));
         for envoltura in ["map_err(", "format!("] {
             assert!(!f.contains(envoltura), "{envoltura}");
         }
@@ -6471,3 +6513,98 @@ mod tests_n23 {
     }
 }
 
+#[cfg(test)]
+mod tests_n33 {
+    use super::tests_n20::{respuesta, respuestas};
+    use super::*;
+    use futures_util::FutureExt;
+
+    fn ex() -> OrderExecutor {
+        OrderExecutor::new("k".into(), "s".into(), true)
+    }
+
+    /// Dos llamadas a `descargar_filtros` contra esas respuestas: sus dos
+    /// resultados y las conexiones que llegaron. Nunca se cuelga.
+    async fn dos_descargas(
+        ex: &OrderExecutor,
+        wires: Vec<String>,
+    ) -> (Result<(), String>, Result<(), String>, usize) {
+        let servido = respuestas(wires).await;
+        assert!(servido.is_some(), "servidor local");
+        let Some((url, aceptadas, servidor)) = servido else {
+            return (Ok(()), Ok(()), 0);
+        };
+        let plazo = std::time::Duration::from_secs(30);
+        let mut r = Vec::new();
+        for _ in 0..2 {
+            r.push(match tokio::time::timeout(plazo, ex.descargar_filtros(&url)).await {
+                Ok(Ok(_)) => Ok(()),
+                Ok(Err(e)) => Err(e),
+                Err(_) => Err("PLAZO".to_string()),
+            });
+        }
+        servidor.abort();
+        let segunda = r.pop().unwrap_or(Ok(()));
+        let primera = r.pop().unwrap_or(Ok(()));
+        (primera, segunda, aceptadas.load(Ordering::SeqCst))
+    }
+
+    fn empieza(r: &Result<(), String>, prefijo: &str) -> bool {
+        matches!(r, Err(e) if e.starts_with(prefijo))
+    }
+
+    /// RED antes de CL-197: tras una descarga de exchangeInfo fallida fuera
+    /// del freno (503 y su reintento), la siguiente llamada volvía a salir.
+    /// Ahora espera el TTL de la caché negativa sin red.
+    #[tokio::test]
+    async fn cl197_tras_una_descarga_fallida_no_sale_otra_durante_el_ttl() {
+        let cinco = respuesta("503 Service Unavailable", "", "");
+        let ex = ex();
+        let (primera, segunda, conexiones) = dos_descargas(&ex, vec![cinco.clone(); 4]).await;
+        assert!(empieza(&primera, "Binance API Error: status=503"), "{primera:?}");
+        assert!(empieza(&segunda, "EXCHANGE_INFO_EN_ESPERA"), "{segunda:?}");
+        assert_eq!(conexiones, 2, "sólo la primera descarga y su reintento");
+        let e = segunda.err().unwrap_or_default();
+        assert!(!OrderExecutor::descarga_frenada(&e), "la espera no es freno: {e}");
+    }
+
+    /// Un 429 que ya caducó (Retry-After 0) no deja la espera: lo cubre el
+    /// freno, y la siguiente descarga sale.
+    #[tokio::test]
+    async fn cl197_la_descarga_frenada_no_deja_espera() {
+        let ex = ex();
+        let (primera, segunda, conexiones) = dos_descargas(
+            &ex,
+            vec![
+                respuesta("429 Too Many Requests", "Retry-After: 0\r\n", ""),
+                respuesta("200 OK", "", "{}"),
+            ],
+        )
+        .await;
+        assert!(empieza(&primera, "HTTP_429_RATE_LIMITED"), "{primera:?}");
+        assert!(empieza(&segunda, "EXCHANGE_INFO_SIN_FILTROS"), "sale y responde: {segunda:?}");
+        assert_eq!(conexiones, 2);
+    }
+
+    /// RED antes de CL-197: con la espera armada y sin un exchangeInfo
+    /// guardado, `get_symbol_filter` vuelve sin red (antes la llamada quedaba
+    /// esperando otra descarga). Un símbolo sin spec entra en la caché
+    /// negativa como en F1-105. `clear_negative_symbol_cache` borra también
+    /// la espera.
+    #[tokio::test]
+    async fn cl197_get_symbol_filter_no_descarga_durante_la_espera() {
+        let cinco = respuesta("503 Service Unavailable", "", "");
+        let ex = ex();
+        let (primera, _, _) = dos_descargas(&ex, vec![cinco.clone(), cinco]).await;
+        assert!(empieza(&primera, "Binance API Error: status=503"), "{primera:?}");
+        let r = ex.get_symbol_filter("CL197SINSPECUSDT").now_or_never();
+        assert!(
+            matches!(r, Some(Err(ref e)) if e.starts_with("filtro de precisión desconocido")),
+            "vuelve sin red: {r:?}"
+        );
+        assert_eq!(ex.negative_symbol_cache_len(), 1);
+        ex.clear_negative_symbol_cache();
+        let r = ex.get_symbol_filter("CL197SINSPECUSDT").now_or_never();
+        assert!(r.is_none(), "sin la espera vuelve a descargar: {r:?}");
+    }
+}
