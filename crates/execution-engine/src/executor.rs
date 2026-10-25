@@ -5750,14 +5750,20 @@ mod tests_n20 {
         )])));
         // El 418 rechaza la descarga sin red (CL-184).
         ex.handle_rate_limit_error("HTTP_418_IP_BANNED retry_after=300");
-        for _ in 0..2 {
-            let r = ex.get_symbol_filter("BTCUSDT").now_or_never();
-            assert!(
-                matches!(r, Some(Ok(f)) if f.step_size == 0.001 && f.tick_size == 0.1),
-                "{r:?}"
-            );
-            assert_eq!(ex.negative_symbol_cache_len(), 1, "sirve la caché negativa");
-        }
+        let r = ex.get_symbol_filter("BTCUSDT").now_or_never();
+        assert!(
+            matches!(r, Some(Ok(f)) if f.step_size == 0.001 && f.tick_size == 0.1),
+            "{r:?}"
+        );
+        assert_eq!(ex.negative_symbol_cache_len(), 1, "entra en la caché negativa");
+        // RV16-T: sin freno, otra descarga quedaría esperando a la red (None);
+        // un Some en el primer sondeo prueba que la sirve la caché negativa.
+        ex.client.freno().rate_brake_until_ms.store(0, Ordering::Relaxed);
+        let r = ex.get_symbol_filter("BTCUSDT").now_or_never();
+        assert!(
+            matches!(r, Some(Ok(f)) if f.step_size == 0.001 && f.tick_size == 0.1),
+            "no redescarga: {r:?}"
+        );
 
         // Sin exchangeInfo guardado el fallo no prueba la ausencia: no se cachea.
         let ex = self::ex();
@@ -5833,23 +5839,27 @@ mod tests_n20 {
             "fetch_account_balance",
             "fetch_commission_rate",
         ];
+        // RV16-T: cada envío lleva su propio freno (entre el envío anterior, o
+        // el inicio, y él) y registra su cabecera justo después.
         let mut total = 0;
         for f in lectores {
             let c = cuerpo(f);
-            let i = c.find(llamada);
-            assert!(i.is_some(), "{f} ya no llama a get_payload_account");
-            let antes = &c[..i.unwrap_or(0)];
-            assert!(
-                antes.contains("check_backoff(") || antes.contains("check_exit_rate_limits("),
-                "{f} lee sin freno"
-            );
-            total += c.matches(llamada).count();
+            let envios: Vec<usize> = c.match_indices(llamada).map(|(i, _)| i).collect();
+            assert!(!envios.is_empty(), "{f} ya no llama a get_payload_account");
+            let mut desde = 0;
+            for &i in &envios {
+                let tramo = &c[desde..i];
+                assert!(
+                    tramo.contains("check_backoff(") || tramo.contains("check_exit_rate_limits("),
+                    "{f}: un envío sin freno propio"
+                );
+                let fin = (i + 300..=c.len()).find(|&k| c.is_char_boundary(k)).unwrap_or(c.len());
+                assert!(c[i..fin].contains("self.update_limits(&limits)"), "{f}: la cabecera no se registra");
+                desde = i + llamada.len();
+            }
+            total += envios.len();
         }
         assert_eq!(total, produccion().matches(llamada).count(), "lector sin listar");
-        assert!(!produccion().contains("let (_, body) = self.get_payload_account("));
-        for f in ["fetch_hedge_mode", "ensure_hedge_mode"] {
-            assert!(cuerpo(f).contains("self.update_limits(&limits)"), "{f} registra la cabecera");
-        }
         let modo = cuerpo("ensure_hedge_mode");
         let post = modo.find(".post_payload(");
         assert!(post.is_some(), "ensure_hedge_mode ya no activa el modo");
@@ -5896,6 +5906,25 @@ mod tests_n20 {
 
         let solo = crate::client::BinanceClient::new("k".into(), true);
         assert!(solo.freno().comprobar(ahora).is_ok(), "un cliente suelto empieza sin freno");
+
+        // RV16-T: el ejecutor de la transición (new_with_shared) comparte
+        // también su reloj con el freno, y lo sigue si el host cambia la arena.
+        let arena = quantum_arena::GlobalArena::build_in_own_stack(100.0);
+        arena.server_time_offset_ms.store(-2_000_000, Ordering::Relaxed);
+        let ex = OrderExecutor::new_with_shared(
+            "k".into(),
+            "s".into(),
+            true,
+            Arc::new(crate::order_registry::OrderRegistry::new()),
+            Some(arena),
+        );
+        let clon = ex.client().clone();
+        assert!(clon.freno().ahora_ms().abs_diff(ex.get_synced_timestamp()) < 1_000);
+        let otra = quantum_arena::GlobalArena::build_in_own_stack(100.0);
+        otra.server_time_offset_ms.store(5_000_000, Ordering::Relaxed);
+        ex.arena.store(Some(otra));
+        let esperado = current_timestamp_ms().saturating_add(5_000_000);
+        assert!(clon.freno().ahora_ms().abs_diff(esperado) < 1_000, "sigue a la arena nueva");
     }
 
     /// RED antes de CL-189: la hora del NTP y las dos rutas del listenKey
