@@ -1860,7 +1860,9 @@ impl OrderExecutor {
         }
 
         // 3. Descarga de exchangeInfo y actualización de caché positiva
-        if let Ok(filters) = self.fetch_all_symbol_filters().await {
+        let descarga = self.fetch_all_symbol_filters().await;
+        let frenada = matches!(&descarga, Err(e) if Self::descarga_frenada(e));
+        if let Ok(filters) = descarga {
             let res = filters.get(symbol).copied();
             self.symbol_filters.store(Arc::new(filters));
             if let Some(f) = res {
@@ -1898,11 +1900,13 @@ impl OrderExecutor {
 
         // 5. Ni exchangeInfo ni el registro lo aportan. F1-105: caché negativa
         // 60 s, para no repetir en cada llamada una descarga que falla (hasta
-        // ~20 s cada una). N20 (CL-192): no con el freno 429/418 armado: la
-        // descarga se rechazó en local o el exchange la frenó, nada prueba la
-        // ausencia, mientras dure el freno el paso 3 ya vuelve sin red, y la
-        // entrada sobreviviría al freno hasta 60 s.
-        if self.check_backoff(self.get_synced_timestamp()).is_ok() {
+        // ~20 s cada una). N20 (CL-192, CL-195): no si la descarga de ESTA
+        // llamada la paró el freno o la cuota (su rechazo local o su 429/418)
+        // sin un exchangeInfo guardado: nada prueba la ausencia, mientras dure
+        // el freno el paso 3 ya vuelve sin red, y la entrada sobreviviría al
+        // freno hasta 60 s. Un mapa guardado (nunca vacío, CL-185) que no trae
+        // el símbolo sí la prueba, como en el paso 4.
+        if !frenada || !self.symbol_filters.load().is_empty() {
             if let Ok(mut neg_cache) = self.negative_symbol_cache.write() {
                 neg_cache.insert(symbol.to_string(), now);
             }
@@ -1912,6 +1916,15 @@ impl OrderExecutor {
             "filtro de precisión desconocido para {symbol}: ni exchangeInfo ni el \
              registro de símbolos lo aportan; no se opera con los pasos de otro símbolo"
         ))
+    }
+
+    /// N20 (CL-195): la descarga de exchangeInfo de esta llamada la paró el
+    /// freno o la cuota: su rechazo local (CL-184) o el 429/418 de la propia
+    /// respuesta, que `handle_rate_limit_error` devuelve tal cual.
+    fn descarga_frenada(e: &str) -> bool {
+        ["RATE_BRAKE", "RATE_LIMIT_COOLDOWN", "HTTP_429_RATE_LIMITED", "HTTP_418_IP_BANNED"]
+            .iter()
+            .any(|p| e.starts_with(p))
     }
 
     /// F1-105: Limpia la caché negativa de filtros de símbolos.
@@ -6017,6 +6030,46 @@ mod tests_n20 {
             let r = ex.get_symbol_filter("CL192SINSPECUSDT").now_or_never();
             assert!(matches!(r, Some(Err(_))), "{error}: {r:?}");
             assert_eq!(ex.negative_symbol_cache_len(), 0, "{error}: el freno no prueba la ausencia");
+        }
+    }
+
+    /// RED antes de CL-195: CL-192 decidía con el freno armado al llegar al
+    /// paso 5, no con lo que pasó en la descarga. Con un exchangeInfo completo
+    /// guardado que no trae el símbolo la ausencia está probada aunque haya
+    /// freno (el criterio de CL-186), y un freno armado por OTRA petición
+    /// mientras la descarga caía por red no dice nada de ella.
+    #[tokio::test]
+    async fn cl195_un_mapa_guardado_prueba_la_ausencia_con_freno() {
+        let ex = ex();
+        ex.symbol_filters.store(Arc::new(std::collections::HashMap::from([(
+            "CL195OTROUSDT".to_string(),
+            SymbolFilter { step_size: 1.0, tick_size: 0.01, min_notional: 5.0 },
+        )])));
+        ex.handle_rate_limit_error("HTTP_418_IP_BANNED retry_after=300");
+        let r = ex.get_symbol_filter("CL195SINSPECUSDT").now_or_never();
+        assert!(matches!(r, Some(Err(_))), "{r:?}");
+        assert_eq!(ex.negative_symbol_cache_len(), 1, "el mapa guardado prueba la ausencia");
+    }
+
+    /// CL-195: sólo el fallo de la PROPIA descarga por el freno o la cuota (el
+    /// rechazo local o su 429/418) no prueba la ausencia; otro error cuenta
+    /// como en F1-105 aunque otra petición haya armado el freno entretanto.
+    #[test]
+    fn cl195_solo_el_freno_de_la_descarga_no_prueba_nada() {
+        for e in [
+            "RATE_BRAKE: freno temporal activo hasta 2 (ahora 1)",
+            "RATE_LIMIT_COOLDOWN: activo hasta 2 (ahora 1)",
+            "HTTP_429_RATE_LIMITED retry_after=30",
+            "HTTP_418_IP_BANNED retry_after=300",
+        ] {
+            assert!(OrderExecutor::descarga_frenada(e), "{e}");
+        }
+        for e in [
+            "Network Error: operation timed out",
+            "EXCHANGE_INFO_SIN_FILTROS: {}",
+            "Binance API Error: status=503 body=",
+        ] {
+            assert!(!OrderExecutor::descarga_frenada(e), "{e}: cuenta como F1-105");
         }
     }
 }
