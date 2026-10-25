@@ -1015,7 +1015,7 @@ risk-a	crates/risk-engine/src/lib.rs	1191	REJ_EV	reject	p·TP − (1−p)·SL �
 risk-a	crates/risk-engine/src/lib.rs	1204	REJ_INVALID_INPUT: max_fee_pct	reject	no finito o < 0	literal	none	sound	
 risk-a	crates/risk-engine/src/lib.rs	1211	max_fee_limit	cap	lerp(max_fee_pct 0,0079, 0,035, w)	gene	none	questionable	0,035 literal micro.
 risk-a	crates/risk-engine/src/lib.rs	1216	_max_safe_leverage	cap	100	literal	none	dead	
-risk-a	crates/risk-engine/src/lib.rs	1252	REJ_VIABILIDAD	reject	N_min·SL/C > clamp_ruin(1, q)	derived	none	questionable	Riesgo duro sin ficha propia; no vincula a 13 USD.
+risk-a	crates/risk-engine/src/lib.rs	1652	REJ_VIABILIDAD	reject	N_min·(SL + c)/C > clamp_ruin(1, q)	derived	none	questionable	Riesgo duro sin ficha propia; no vincula a 13 USD. Con la fricción c desde CL-172 (Línea C, N12).
 risk-a	crates/risk-engine/src/lib.rs	1255	bounded_exposure	clamp	±capital	literal	none	sound	
 risk-a	crates/risk-engine/src/lib.rs	1265	safe_cushion	clamp	margin_cushion(gen 0,98, w) ∈ [0,50; 0,98]	gene	none	sound	
 risk-a	crates/risk-engine/src/lib.rs	1275	micro_lev_cap y max_lev_cap	cap	5 + 1,5·smoothstep((conf − 0,65)/0,10); log_lerp(50, ·, w)	literal	none	questionable	LC-F0-07.
@@ -1126,7 +1126,7 @@ risk-b	crates/risk-engine/src/capital_regime.rs	64	Fronteras del régimen micro 
 risk-b	crates/risk-engine/src/capital_regime.rs	72	Nocional mínimo universal	floor	5.0 USD	policy-adr	none	sound	Regla de Binance USDⓈ-M; eleva los mínimos menores.
 risk-b	crates/risk-engine/src/capital_regime.rs	86	Capital o w desconocidos ⇒ micro pleno	gate	N = 0 ⇒ w = 1; w NaN ⇒ 1	literal	none	questionable	Desconocido elige el régimen más laxo (colchón 0,98, umbral DD d*). Latente: los llamadores validan antes.
 risk-b	crates/risk-engine/src/capital_regime.rs	134	Utilización de margen	cap	máx 0.98 / mín 0.50 / respaldo 0.80	literal	none	questionable	En micro se puede comprometer el 98 % del capital.
-risk-b	crates/risk-engine/src/capital_regime.rs	245	Viabilidad de la orden mínima (REJ_VIABILIDAD)	reject	min_notional·SL/C > tope de ruina	derived	none	sound	Sigue ADR-0016; omite la fricción en la pérdida al stop (exposure_budget sí la incluye).
+risk-b	crates/risk-engine/src/capital_regime.rs	393	Viabilidad de la orden mínima (REJ_VIABILIDAD)	reject	min_notional·(SL + c)/C > tope de ruina	derived	none	sound	Sigue ADR-0016; incluye la fricción en la pérdida al stop desde CL-172 (Línea C, N12), la misma de LH-04 (kelly_envelope::nocional_por_riesgo).
 risk-b	crates/risk-engine/src/capital_compounder.rs	40	Heurísticas del compounder	clamp	posiciones [1, 10]; dd/0,10; 0,95; 0,85; Kelly·0,5; conf ≥ 0,5; racha 0,5/0,1/0,5; exp(−15·dd)	literal	none	dead	Sin llamadores.
 risk-b	crates/risk-engine/src/epigenetic_capital_alloc.rs	132	Escalones de capital del asignador	cap	<30 ⇒ 2, <100 ⇒ 5, <300 ⇒ 10	literal	none	dead	Acantilados de capital contra D-641; sin llamadores.
 risk-b	crates/risk-engine/src/selection_stats.rs	38	DSR: muestra mínima	threshold	20 retornos	literal	none	questionable	Poca potencia (F2.2-10).

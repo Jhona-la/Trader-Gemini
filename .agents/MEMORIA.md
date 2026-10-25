@@ -1,5 +1,23 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
 
+## 2026-10-25 — Claude (cloud, Línea C): undécima tanda del censo C-F7b (fila N12, la fricción al stop)
+
+Tanda del PR #144. Cambia la conducta sólo junto al tope de riesgo por
+evento; el T-1 sigue en 14/144, con la misma lista de genes que main.
+
+- CL-172: la viabilidad D-750 de la orden mínima mide su pérdida al stop
+  como N_min·(SL + c), con c = `roundtrip_fee`, la de LH-04 (CL-159). La
+  orden mínima que sólo cabía sin c sale ahora con REJ_VIABILIDAD.
+- CL-173: el tope de ruina F1-092 usa
+  `nocional_por_riesgo(tope, C, SL, c) / L`, la función de LH-04: no
+  recorta ninguna orden de LH-04 sin rescate y, tras un rescate, deja la
+  pérdida al stop con la fricción dentro del tope.
+- Pendiente del dueño: `f_min_ejecutable` de la envolvente
+  (`max_leverage_spectral`), política de riesgo suya (ADR-0013, Decisión
+  5). No se toca hasta que decida.
+- ADR-0016 y las dos filas de REJ_VIABILIDAD en linea_g/vetos.tsv ya
+  dicen SL + c.
+
 ## 2026-10-25 — Claude (cloud, Línea C): décima tanda del censo C-F7b (revisión de las correcciones del #142)
 
 Tanda del PR #143: la revisión de CL-169, RV9-T y RV9-docs confirmó 6
@@ -123,7 +141,7 @@ Tanda del PR #138. Un commit por bloque; T-1 sólo por CL-159.
   corrigendum en ADR-0016 D1. T-1 14/144, la cuenta de main. RET-48 retira
   ExposureBudget, exposure_budget(_spectral) y project_quantity. Siguen
   sin la fricción el tope de ruina F1-092, orden_viable y
-  f_min_ejecutable (fila N12).
+  f_min_ejecutable (fila N12; los dos primeros los cierra la tanda 11).
 - RET-34b/34c (resto de F325): validate_order fuera y sus pruebas contra
   BinanceFixedFilter; OPEN del -4164 de un largo IOC en la orden mínima
   (fila N8). El arreglo espera a que AGY (V32) y Kimi V33 acuerden
