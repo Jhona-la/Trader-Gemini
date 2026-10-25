@@ -1616,8 +1616,9 @@ impl RiskEngine {
         //
         // La orden más pequeña que el símbolo acepta tiene nocional
         // `min_notional` y, con el stop de esta geometría, arriesga
-        // `min_notional · SL` dólares, es decir una fracción
-        // `min_notional · SL / capital` de la cuenta. Nótese que el
+        // `min_notional · (SL + c)` dólares, es decir una fracción
+        // `min_notional · (SL + c) / capital` de la cuenta, con c la fricción
+        // de ida y vuelta (CL-172). Nótese que el
         // apalancamiento NO aparece: reparte el mismo nocional entre margen y
         // préstamo, pero no cambia lo que se pierde si el stop se toca — por eso
         // «subir el apalancamiento para que quepa» no hace viable nada.
@@ -1639,9 +1640,18 @@ impl RiskEngine {
             .load(Ordering::Relaxed) as f64;
         let q_para_ruina = crate::ruin::conservative_loss_q(wr, trades_coin);
         let tope_riesgo_evento = crate::ruin::clamp_ruin(1.0, q_para_ruina);
+        // CL-172 (N12): la orden mínima que toca su stop pierde
+        // N_min·(SL + c), con c = `roundtrip_fee`, la misma fricción con la
+        // que dimensiona LH-04 (CL-159, `nocional_por_riesgo`) y que mide
+        // D-744 (`perdida_al_stop`). Sin c, la viabilidad admitía una pérdida
+        // real (SL + c)/SL veces la declarada: 1,29 con SL 0,5 % y c 14,5 pb.
+        // Ni el carry (no se pierde al tocar el stop) ni el MMR (es la
+        // liquidación, F1-088). `expected_loss` > 0 y `roundtrip_fee` ≥ 0 ya
+        // son finitos (REJ_TARGET_GEOMETRY y REJ_INVALID_INPUT, arriba).
+        let perdida_unitaria_al_stop = expected_loss + roundtrip_fee;
         if !crate::capital_regime::orden_viable(
             nocional_minimo,
-            expected_loss,
+            perdida_unitaria_al_stop,
             allocated_capital,
             tope_riesgo_evento,
         ) {

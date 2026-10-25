@@ -348,7 +348,8 @@ pub fn resolve_margin_cap_limits(
 /// * **Margen mínimo**: `min_notional / L`. Es el capital que hay que
 ///   inmovilizar para que la orden alcance el nocional mínimo del símbolo al
 ///   apalancamiento que se va a usar. Es una restricción de EJECUCIÓN.
-/// * **Riesgo mínimo**: `min_notional · SL / capital`. Es la fracción del
+/// * **Riesgo mínimo**: `min_notional · (SL + c) / capital`, con c la
+///   fricción de ida y vuelta (CL-172). Es la fracción del
 ///   capital que se pierde si el stop de la orden MÁS PEQUEÑA que el símbolo
 ///   acepta se toca. Es una restricción de SUPERVIVENCIA — y nótese que el
 ///   apalancamiento NO aparece: reparte el mismo nocional entre margen y
@@ -371,24 +372,34 @@ pub fn margen_minimo_viable(min_notional: f64, apalancamiento: f64) -> f64 {
 /// Fracción del capital que arriesga la orden más pequeña que el símbolo
 /// acepta. `f64::INFINITY` si el capital no es utilizable: sin capital no hay
 /// orden viable.
+///
+/// `perdida_unitaria` es la pérdida por unidad de nocional al tocar el stop,
+/// SL + c, con c = `tp_sl::roundtrip_friction` (CL-172): la misma de
+/// `kelly_envelope::nocional_por_riesgo`, sin carry ni MMR.
 #[inline]
-pub fn riesgo_minimo_viable(min_notional: f64, sl_pct: f64, capital: f64) -> f64 {
+pub fn riesgo_minimo_viable(min_notional: f64, perdida_unitaria: f64, capital: f64) -> f64 {
     if !capital.is_finite() || capital <= 0.0 {
         return f64::INFINITY;
     }
-    if !sl_pct.is_finite() || sl_pct <= 0.0 {
+    if !perdida_unitaria.is_finite() || perdida_unitaria <= 0.0 {
         return f64::INFINITY;
     }
-    effective_min_notional(min_notional) * sl_pct / capital
+    effective_min_notional(min_notional) * perdida_unitaria / capital
 }
 
 /// ¿Cabe la orden mínima del símbolo dentro del tope de riesgo por evento?
+/// `perdida_unitaria` es SL + c, como en [`riesgo_minimo_viable`].
 #[inline]
-pub fn orden_viable(min_notional: f64, sl_pct: f64, capital: f64, tope_riesgo: f64) -> bool {
+pub fn orden_viable(
+    min_notional: f64,
+    perdida_unitaria: f64,
+    capital: f64,
+    tope_riesgo: f64,
+) -> bool {
     if !tope_riesgo.is_finite() || tope_riesgo <= 0.0 {
         return false;
     }
-    riesgo_minimo_viable(min_notional, sl_pct, capital) <= tope_riesgo
+    riesgo_minimo_viable(min_notional, perdida_unitaria, capital) <= tope_riesgo
 }
 
 /// Revisión del PR #61 (F1) — CANTIDAD DE LA ORDEN MÍNIMA DEL SÍMBOLO.
