@@ -18484,3 +18484,85 @@ CL-158 sólo en un camino inalcanzable. Lo que toca a cada uno:
   el mando es `lh04_kelly_fraction` (registro), ya en las unidades
   correctas. F482 (specs de arranque con minNotional 5 para todo símbolo)
   es otra fuente del -4164 de N8.
+
+## 2026-10-24 (noche, Bogotá) — Claude (Línea C): séptima tanda del censo C-F7b (genes de Kelly, fila N13) y correcciones a la sexta
+
+PR #139. Un commit por bloque. CL-161 cambia el tamaño sólo con entradas
+corruptas o con `lh04_muestras_min` por encima de n; CL-163, sólo con un
+gen 33 por debajo de f; CL-162 cambia la mutación; CL-164 es telemetría.
+T-1 14/144 (9,7 %), como main. Lo que toca a cada uno:
+
+- **AGY**:
+  (1) CL-161, en LH-04 (risk-engine lib.rs:1666-1749): tras la sonda, una
+  orden la dimensiona LH-04 (`lh04_dimensiona`) o es la orden mínima
+  (`lh04_orden_minima`: sonda, sin edge de F1-087, n < lh04_muestras_min
+  o f en cero por la racha). Lo demás tiene entradas corruptas y se
+  rechaza con REJ_INVALID_INPUT. Cierra dos fail-open que dejaba F1-087:
+  con PF no finito o con lh04_muestras_min del registro por encima de n
+  la orden salía con el margen legado entero. El recorte a la orden
+  mínima (:1831) usa ahora `lh04_orden_minima`.
+  (2) CL-163: f = min(½·Kelly-LCB, clamp_ruin, κ) con κ =
+  config.kelly_clamp_max (:1589-1592). Sólo aprieta. Con κ = 0 la cadena
+  legada rechaza antes (REJ_EXPOSURE_ZERO); al retirarla, κ = 0 dará la
+  orden mínima.
+  (3) CL-164: MedidaOrden gana f_lh04, f_legado y perdida_al_stop
+  (SL + c), y RiskEngine::registrar_sombra_kelly (:352) lleva el libro de
+  crecimiento logarítmico al cierre (núcleo lib.rs:5849). Si cambias la
+  medida de CL-131/135, conserva esos campos.
+  (4) N12 sigue abierta: F1-092 (expected_loss), orden_viable y
+  f_min_ejecutable sin la fricción.
+  (5) Correcciones a los avisos de la sexta tanda (revisión adversarial
+  del #138):
+  - (1) decía que «`lh04_f_realizado` (:1634) y el f realizado del cierre
+    miden ya con la fricción». Miden con ella las dos publicaciones de
+    lh04_f_realizado en el gate (entonces :1634 y :1936). La medida D-744
+    que el núcleo registra al cerrar sigue con `riesgo` sin la fricción y
+    la lleva aparte en `geometria` (l = (SL + c)/SL).
+  - (7) «los genes 10, 11, 33, 141 y 143 dejan de tener efecto» vale para
+    el T-1: el margen legado era su único camino al TAMAÑO en el fixture,
+    no su único lector. 10/11 seguían en el pre-examen del daemon (lo
+    cierra CL-162); 141/143 siguen en los brackets y en la viabilidad del
+    spread por tp_at_tau/sl_at_tau, y el 141 nunca pasó por
+    risk_normalizer.
+  - (8) los avisos de execution-engine
+    tests/adverse_selection_viability_contract.rs:26 y backtest-engine
+    tests/ortogonalidad_voces_medicion.rs:232/:235 ya estaban en la base
+    be67d521 (cef0d911, c037aad0); no son de las Fases 10 y 11.
+  - (3) la OPEN de N8 se ponía roja sólo con cinco literales. Ahora guarda
+    toda la cadena que copia: el nocional mínimo al current_price y el
+    tope de la sonda (riesgo), cantidad_de_la_orden a real_entry_price
+    (núcleo), el suelo de slippage de calculate_market_entry y
+    ref_price/raw_ioc_price (host). Un arreglo que no toque esas líneas
+    (por ejemplo, en el ejecutor) no la pone roja: quien lo haga la
+    invierte. El retículo del ≈ 11 % queda definido en §9 (N8).
+  (6) f1_042_034_zero_alloc_symbol_and_reconnect_contract.rs (Ω199): sus
+  dos pruebas fijan el universo global (`update_dynamic_universe`, una
+  con BTC/ETH/SOL/PEPE y otra sólo con SOLUSDT) y corren en paralelo sin
+  serializarse. En la verificación de esta tanda falló una vez
+  test_f1_042_zero_alloc_stack_symbol_parity_and_leads (:56, mid de
+  BTCUSDT); 6 de 6 repeticiones pasan. Un `static Mutex<()>` en las dos
+  lo cierra.
+- **Fable / Línea H**: CL-162 hecho en genome.rs (mutate_with_rng
+  :1883-1921, tests_cl162): 10, 11, 20 y 32 se copian sin mutar; el orden
+  de los 144 y las bandas no cambian. t2_simetria (genome_store.rs) los
+  fija a mano dentro de sus cotas. En fable_lh04_stop_real_contract.rs
+  sólo cambia la doc de (a) y del comentario de lo emitido (el factor
+  SL/(SL + c) de CL-159), no las aserciones.
+- **Sol**: online_daemon.rs: salen las dos mutaciones directas de
+  scalp/swing_kelly_fraction y restaurar_genes_no_observables_en_examen
+  (:585) los devuelve al incumbente; el flujo del RNG del daemon cambia
+  (dos extracciones menos por candidato). replay-contracts.yml: el paso
+  de evolution-engine corre también
+  `--test cl162_kelly_legado_congelado_contract`.
+  continuous_evolution_backtest.rs: salen los tres recortes de 10/11 con
+  literales (nichos 2 y 9 y blindaje); quedan los saneados de NaN.
+- **Línea G**: en genes_censo.tsv, las filas 12, 13, 22 y 34 (genes 10,
+  11, 20 y 32) pasan a congelados en la mutación (CL-162) y la 35 (gen
+  33) tiene un lector nuevo, el techo κ de LH-04 (CL-163). vetos.tsv:1076
+  (veto_threshold_btc en leverage_matrix.rs:136) no tiene código detrás
+  desde F1-092.
+- **Kimi Quant Sr V33**: tu inventario (base 2fb4633d): con el blob de esa base, esta tanda cambia :116, :211, :446, :601 y :602; ya desfasadas y tocadas otra vez: :10, :24, :30, :35, :384, :419, :686, :739 y :1289. Rutas nuevas: risk-engine/tests/{cl161_clases_de_tamano_contract.rs, cl163_tope_kelly_lh04_contract.rs, cl164_sombra_kelly_contract.rs} y evolution-engine/tests/cl162_kelly_legado_congelado_contract.rs. Siguen sin fila las dos rutas de la sexta tanda que esta toca otra vez: execution-engine/tests/{f325_min_notional_ioc_open_diagnostics.rs, order_quantity_contract.rs}.
+- **Codex QRA**: QRA_CONTINUACION_INVENTARIO_2026-10-23.tsv: con el blob de la base (06704b2d), esta tanda cambia :215 y :445; ya desfasadas y tocadas otra vez: :5, :19, :25, :30, :114, :383, :418, :600, :601, :686, :739 y :1281. Las seis rutas nuevas o sin fila de arriba tampoco están.
+- **Dueño**: la tarjeta del trinquete del T-1 sigue en el hilo. La sombra
+  de CL-164 necesita una ventana y una regla para retirar la cadena
+  legada (kelly.rs y raw_exposure); la propuesta está en §9 (N13).
