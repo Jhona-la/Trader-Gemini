@@ -1,5 +1,35 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
 
+## 2026-10-25 — Claude (cloud, Línea C): decimosexta tanda del censo C-F7b (filas N25 y N24)
+
+Tanda del PR #149. Cambia la conducta sólo en ejecución real; el backtest
+no usa OrderExecutor (golden, T-1 y T-2 no lo ven). Sólo toca
+execution-engine/src/{executor.rs, client.rs} y documentos.
+
+- CL-199 (N25): los tres envíos de orden clasifican igual sus no-2xx
+  (`ejecucion_desconocida`, `error_de_orden`, `cuerpo_ilegible`): un 5xx,
+  un 408, un -1006/-1007 o un cuerpo ilegible son AMBIGUOUS con su
+  cabecera. Antes `execute_order_payload` (piernas, GTX, trailing) los daba
+  como «Binance API Error» y un 503 de una pierna alimentaba B3.5b.
+  AMBIGUOUS dice ejecución desconocida, no «sin respuesta».
+- CL-200 (N24-b): el reintento de `get_payload_account` se readmite en el
+  tramo de su cupo (`Cupo::readmitir`; la regla es `regla_de_cuota`).
+- CL-201 (N24-a): `ErrorRest::sin_respuesta()` (por `is_connect`/
+  `is_builder`, no por el texto). Una crítica que salió sin respuesta deja
+  su coste como usado (`UsoExchange::sin_respuesta`) hasta que caduca la
+  ventana de cada contador; las críticas registran su error por su cupo
+  (`Cupo::registrar_fallo`, `registrar_fallo_de` por pierna OCO).
+- CL-202: los errores de red no llevan la URL firmada (`error_de_red`,
+  `without_url`); el reintento de modo del aplanado decide por
+  `modo_rechazado`, que excluye AMBIGUOUS. Antes un cierre one-way sin
+  respuesta traía «reduceOnly» en su URL y conmutaba `is_hedge_mode`.
+- Filas nuevas del censo: N40 (2xx ilegibles como Ok), N41 (residuos de
+  N24: 502/504 sin cabecera, la hora del reintento, el -1106 en
+  minúsculas), N42 y N44 (Línea I: foto de rechazos de B3.5b, lectura de
+  piernas con `unwrap_or_default`), N43 (-1000 en un 4xx) y N45 (Sol, URL
+  firmada en los errores de data-pipeline).
+- Siguen en Línea C: N22/N38, N26 (método), N32, N40, N41 y N43.
+
 ## 2026-10-25 — Claude (cloud, Línea C): decimoquinta tanda del censo C-F7b (filas N23 y N33)
 
 Tanda del PR #148. Cambia la conducta sólo en ejecución real: con

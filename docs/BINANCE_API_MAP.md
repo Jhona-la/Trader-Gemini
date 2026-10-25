@@ -114,8 +114,12 @@
   crítica registra su cabecera antes de salir del libro en vuelo (CL-182). Desde CL-196 el error de una
   petición firmada lleva la cabecera de su respuesta (`client::ErrorRest`) y el ejecutor la registra
   una sola vez con `registrar_error`, dentro del brazo con el cupo vivo y nunca la de un 429/418 (manda
-  su Retry-After). Siguen fuera el coste de una petición sin respuesta (fila N24) y la cabecera del 2xx
-  de las tres rutas sin ejecutor, que sí clasifican su 429/418 (CL-189; fila N38).
+  su Retry-After). Una crítica que salió y no tuvo respuesta deja su coste como usado hasta que caduca
+  la ventana de cada contador (`ErrorRest::sin_respuesta`, `UsoExchange::sin_respuesta`; CL-201), y el
+  reintento de una lectura de cuenta se readmite en su tramo con el uso de ahora (`Cupo::readmitir`,
+  CL-200). Los errores de red no llevan la URL firmada (CL-202). Siguen fuera la cabecera del 2xx de
+  las tres rutas sin ejecutor, que sí clasifican su 429/418 (CL-189; fila N38), y los residuos de la
+  fila N41.
 
 ## 6. WebSocket (streams)
 
