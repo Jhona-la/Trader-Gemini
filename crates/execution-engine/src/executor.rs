@@ -4796,7 +4796,9 @@ mod tests_n5b {
                 "el 429 del cierre no arma el cooldown"
             );
         }
-        for i in envios(aplanado, "self.get_payload_account(") {
+        let modos = envios(aplanado, "self.get_payload_account(");
+        assert_eq!(modos.len(), 1, "GET de modo");
+        for i in modos {
             assert!(frena(antes(aplanado, i, 400)), "modo sin freno");
         }
         // RV14: el freno se devuelve antes de firmar el GET de modo.
@@ -5093,7 +5095,13 @@ mod tests_n5c {
             assert!(!c.contains("Tramo::Critica("), "{f} no es crítica");
         }
         let algo = cuerpo("fetch_open_algo_orders_inner");
-        assert!(algo.contains("Tramo::Critica(") && algo.contains("Tramo::Lectura"));
+        assert!(
+            algo.contains("Some(_) => Tramo::Critica(crate::binance_api::COSTE_ALGO_ABIERTAS_SIMBOLO)"),
+            "el listado algo de un símbolo es crítico"
+        );
+        assert!(algo.contains("None => Tramo::Lectura"), "el listado algo sin símbolo es lectura");
+        assert!(cuerpo("fetch_open_algo_orders").contains("inner(Some(symbol))"));
+        assert!(cuerpo("fetch_all_open_algo_orders").contains("inner(None)"));
 
         let aplanado = cuerpo("flatten_all_positions");
         assert_eq!(aplanado.matches("Tramo::Critica(crate::binance_api::COSTE_ORDEN)").count(), 2);
