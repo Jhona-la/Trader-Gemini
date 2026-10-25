@@ -590,7 +590,7 @@ impl OrderExecutor {
         }
         let timestamp = self.get_synced_timestamp();
         // N20 (CL-187): una lectura; con el freno o por encima del 80 % no sale.
-        let _cupo = self.check_exit_rate_limits(timestamp, Tramo::Lectura)?;
+        let cupo = self.check_exit_rate_limits(timestamp, Tramo::Lectura)?;
         let api_secret = self.api_secret.load();
         let mut buf = ZeroAllocBuffer::new();
         buf.push_str(self.client.get_base_url());
@@ -602,7 +602,7 @@ impl OrderExecutor {
         sign_payload_to_buffer(&buf.as_str()[payload_start..], &api_secret, &mut sig_buf);
         buf.push_str("&signature=");
         buf.push_str(unsafe { std::str::from_utf8_unchecked(&sig_buf) });
-        let (limits, body) = self.get_payload_account(buf.as_str()).await?;
+        let (limits, body) = self.get_payload_account(buf.as_str(), &cupo).await?;
         self.update_limits(&limits);
         #[derive(serde::Deserialize)]
         struct ModeResp {
@@ -625,7 +625,7 @@ impl OrderExecutor {
         let timestamp = self.get_synced_timestamp();
         // N20 (CL-187): el refresco OMS lo consulta cada 60 s; como toda
         // lectura, no sale con el freno ni por encima del 80 %.
-        let _cupo = self.check_exit_rate_limits(timestamp, Tramo::Lectura)?;
+        let cupo = self.check_exit_rate_limits(timestamp, Tramo::Lectura)?;
         let api_secret = self.api_secret.load();
 
         // 1) Modo actual (GET firmado)
@@ -640,7 +640,7 @@ impl OrderExecutor {
         buf.push_str("&signature=");
         buf.push_str(unsafe { std::str::from_utf8_unchecked(&sig_buf) });
 
-        let (limits, body) = self.get_payload_account(buf.as_str()).await?;
+        let (limits, body) = self.get_payload_account(buf.as_str(), &cupo).await?;
         self.update_limits(&limits);
         #[derive(serde::Deserialize)]
         struct ModeResp {
@@ -784,7 +784,7 @@ impl OrderExecutor {
         // modo y se usa el registrado (el mismo respaldo que ante un fallo);
         // positionRisk es crítica y sigue.
         let modo = match self.check_exit_rate_limits(timestamp, Tramo::Lectura) {
-            Ok(_cupo) => self.get_payload_account(buf.as_str()).await,
+            Ok(cupo) => self.get_payload_account(buf.as_str(), &cupo).await,
             Err(e) => Err(e),
         };
         let dual_mode_opt = match modo {
@@ -1140,7 +1140,7 @@ impl OrderExecutor {
         if self.is_paper_trading {
             return Ok(Vec::new());
         }
-        let _cupo = self.check_exit_rate_limits(timestamp, Tramo::Lectura)?;
+        let cupo = self.check_exit_rate_limits(timestamp, Tramo::Lectura)?;
 
         let mut buf = ZeroAllocBuffer::new();
         buf.push_str(self.client.get_base_url());
@@ -1157,7 +1157,7 @@ impl OrderExecutor {
         buf.push_str("&signature=");
         buf.push_str(unsafe { std::str::from_utf8_unchecked(&sig_buf) });
 
-        match self.get_payload_account(buf.as_str()).await {
+        match self.get_payload_account(buf.as_str(), &cupo).await {
             Ok((limits, body)) => {
                 self.update_limits(&limits);
                 serde_json::from_str(&body).map_err(|e| {
@@ -1228,7 +1228,7 @@ impl OrderExecutor {
         }
         let timestamp = self.get_synced_timestamp();
 
-        let _cupo = self.check_exit_rate_limits(timestamp, Tramo::Critica(crate::binance_api::COSTE_POSITION_RISK))?;
+        let cupo = self.check_exit_rate_limits(timestamp, Tramo::Critica(crate::binance_api::COSTE_POSITION_RISK))?;
 
         let mut buf = ZeroAllocBuffer::new();
         buf.push_str(self.client.get_base_url());
@@ -1245,7 +1245,7 @@ impl OrderExecutor {
         buf.push_str("&signature=");
         buf.push_str(signature);
 
-        let res = self.get_payload_account(buf.as_str()).await;
+        let res = self.get_payload_account(buf.as_str(), &cupo).await;
         match res {
             Ok((limits, body)) => {
                 self.update_limits(&limits);
@@ -1397,9 +1397,33 @@ impl OrderExecutor {
     /// las lecturas frenan al 80 % y las críticas al límite, contando las críticas en vuelo.
     /// Devuelve el cupo de la petición, que el llamador suelta tras la respuesta.
     fn check_exit_rate_limits(&self, timestamp_ms: u64, tramo: Tramo) -> Result<Cupo<'_>, String> {
-        use crate::binance_api::{VENTANA_ORDENES_10S_MS, VENTANA_ORDENES_1M_MS, VENTANA_PESO_MS};
         self.check_backoff(timestamp_ms)?;
+        let mut uso_exchange = self.uso_exchange_bloqueado();
+        self.regla_de_cuota(&uso_exchange, timestamp_ms, tramo, crate::binance_api::CosteBinance::NULO)?;
+        // Una crítica admitida entra en el libro de las que están en vuelo
+        // hasta que suelte su cupo; una lectura lleva coste nulo.
+        if let Tramo::Critica(coste) = tramo {
+            for (pendiente, coste) in uso_exchange.en_vuelo.iter_mut().zip(contadores(coste)) {
+                *pendiente = pendiente.saturating_add(coste);
+            }
+        }
+        drop(uso_exchange);
+        Ok(Cupo { ex: self, tramo })
+    }
 
+    /// La regla de admisión de `tramo` con el uso vigente, sin reservar
+    /// (N5, CL-179). N24 (CL-200): `propio` es lo que la petición ya tiene en
+    /// vuelo, su propia plaza cuando se readmite para un reintento
+    /// (`Cupo::readmitir`), que no cuenta contra ella misma; una admisión
+    /// nueva pasa `CosteBinance::NULO`.
+    fn regla_de_cuota(
+        &self,
+        uso_exchange: &UsoExchange,
+        timestamp_ms: u64,
+        tramo: Tramo,
+        propio: crate::binance_api::CosteBinance,
+    ) -> Result<(), String> {
+        use crate::binance_api::{VENTANA_ORDENES_10S_MS, VENTANA_ORDENES_1M_MS, VENTANA_PESO_MS};
         let limite = [
             self.max_weight_1m.load(Ordering::Relaxed),
             self.max_orders_10s.load(Ordering::Relaxed),
@@ -1413,7 +1437,6 @@ impl OrderExecutor {
         // antes de enviarla, nunca llegaba la respuesta que la refrescara y el
         // bloqueo era permanente. N5 (CL-177): cada contador con su sello y sin
         // bajar dentro de su ventana por una respuesta tardía.
-        let mut uso_exchange = self.uso_exchange_bloqueado();
         let uso = [
             uso_exchange.peso_1m.vigente(timestamp_ms, VENTANA_PESO_MS),
             uso_exchange.ordenes_10s.vigente(timestamp_ms, VENTANA_ORDENES_10S_MS),
@@ -1422,7 +1445,6 @@ impl OrderExecutor {
 
         match tramo {
             Tramo::Lectura => {
-                drop(uso_exchange);
                 // F1.8: HEADROOM 80% — los contadores de Binance llegan POR RESPUESTA;
                 // frenar al 100% ya es tarde (requests en vuelo cruzan el límite).
                 // N5 (CL-179): es el techo de entradas y lecturas, y la franja que deja
@@ -1437,10 +1459,7 @@ impl OrderExecutor {
                         ));
                     }
                 }
-                Ok(Cupo {
-                    ex: self,
-                    coste: crate::binance_api::CosteBinance::NULO,
-                })
+                Ok(())
             }
             Tramo::Critica(coste) => {
                 // La regla del exchange (rechaza si usado + coste > límite), con
@@ -1448,9 +1467,14 @@ impl OrderExecutor {
                 // CL-181: en un contador donde la petición no gasta (c = 0) sólo
                 // la rechaza un uso ya por encima del límite; lo que está en
                 // vuelo no le quita un hueco que no ocupa.
-                let c = [coste.peso, coste.ordenes, coste.ordenes];
+                let c = contadores(coste);
+                let p = contadores(propio);
                 for k in 0..3 {
-                    let pendiente = if c[k] == 0 { 0 } else { uso_exchange.en_vuelo[k] };
+                    let pendiente = if c[k] == 0 {
+                        0
+                    } else {
+                        uso_exchange.en_vuelo[k].saturating_sub(p[k])
+                    };
                     let total = uso[k].saturating_add(pendiente).saturating_add(c[k]);
                     if total > limite[k] {
                         return Err(format!(
@@ -1459,11 +1483,7 @@ impl OrderExecutor {
                         ));
                     }
                 }
-                for (pendiente, coste) in uso_exchange.en_vuelo.iter_mut().zip(c) {
-                    *pendiente = pendiente.saturating_add(coste);
-                }
-                drop(uso_exchange);
-                Ok(Cupo { ex: self, coste })
+                Ok(())
             }
         }
     }
@@ -1687,9 +1707,13 @@ impl OrderExecutor {
     /// intermitencia (TEXT_ERR: operation timed out → body vacío → parse
     /// error). Presupuesto de 5s + 1 reintento. La ruta de órdenes sigue
     /// con el presupuesto global: ahí la latencia es parte del contrato.
+    ///
+    /// `cupo` es el de la lectura, que su llamador pidió antes de firmar
+    /// (CL-187): el reintento sale con él (N24, CL-200).
     async fn get_payload_account(
         &self,
         url: &str,
+        cupo: &Cupo<'_>,
     ) -> Result<(crate::client::BinanceRateLimits, String), String> {
         // N23 (CL-196): cada respuesta pasa una vez por `registrar_error`,
         // también la primera cuando hay reintento (antes su cabecera se perdía).
@@ -1703,8 +1727,12 @@ impl OrderExecutor {
                 tokio::time::sleep(std::time::Duration::from_millis(200)).await;
                 // N5 (CL-178): otra petición pudo recibir un 429/418 durante
                 // la espera; entonces el reintento no sale y vuelve el error
-                // de la primera.
-                if self.check_backoff(self.get_synced_timestamp()).is_ok() {
+                // de la primera. N24 (CL-200): el reintento es otra petición
+                // al exchange y se readmite en su tramo con el uso de ahora,
+                // que ya lleva la cabecera de la primera respuesta (CL-196);
+                // antes sólo miraba el freno y salía en la franja del 80 % o
+                // sin hueco crítico. Su plaza sigue siendo la de la primera.
+                if cupo.readmitir(self.get_synced_timestamp()).is_ok() {
                     res = self
                         .client
                         .get_payload_with_timeout(url, Some(std::time::Duration::from_secs(5)))
@@ -2198,7 +2226,7 @@ impl OrderExecutor {
             Some(_) => Tramo::Critica(crate::binance_api::COSTE_ALGO_ABIERTAS_SIMBOLO),
             None => Tramo::Lectura,
         };
-        let _cupo = self.check_exit_rate_limits(timestamp, tramo)?;
+        let cupo = self.check_exit_rate_limits(timestamp, tramo)?;
 
         let mut buf = ZeroAllocBuffer::new();
         buf.push_str(if self.client.is_testnet.load(Ordering::Relaxed) {
@@ -2223,7 +2251,7 @@ impl OrderExecutor {
         buf.push_str("&signature=");
         buf.push_str(signature);
 
-        let res = self.get_payload_account(buf.as_str()).await;
+        let res = self.get_payload_account(buf.as_str(), &cupo).await;
         match res {
             Ok((limits, body)) => {
                 self.update_limits(&limits);
@@ -2262,7 +2290,7 @@ impl OrderExecutor {
             return Ok(Vec::new());
         }
         let timestamp = self.get_synced_timestamp();
-        let _cupo = self.check_exit_rate_limits(timestamp, Tramo::Lectura)?;
+        let cupo = self.check_exit_rate_limits(timestamp, Tramo::Lectura)?;
 
         let mut buf = ZeroAllocBuffer::new();
         buf.push_str(if self.client.is_testnet.load(Ordering::Relaxed) {
@@ -2287,7 +2315,7 @@ impl OrderExecutor {
         buf.push_str("&signature=");
         buf.push_str(signature);
 
-        let res = self.get_payload_account(buf.as_str()).await;
+        let res = self.get_payload_account(buf.as_str(), &cupo).await;
         match res {
             Ok((limits, body)) => {
                 self.update_limits(&limits);
@@ -4163,7 +4191,7 @@ impl ExecutionProvider for OrderExecutor {
     async fn fetch_open_positions(&self) -> Result<Vec<ActivePosition>, String> {
         let timestamp = self.get_synced_timestamp();
 
-        let _cupo = self.check_exit_rate_limits(timestamp, Tramo::Lectura)?;
+        let cupo = self.check_exit_rate_limits(timestamp, Tramo::Lectura)?;
 
         let mut buf = ZeroAllocBuffer::new();
         if self.client.is_testnet.load(Ordering::Relaxed) {
@@ -4184,7 +4212,7 @@ impl ExecutionProvider for OrderExecutor {
         buf.push_str("&signature=");
         buf.push_str(signature);
 
-        let res = self.get_payload_account(buf.as_str()).await;
+        let res = self.get_payload_account(buf.as_str(), &cupo).await;
         match res {
             Ok((limits, text)) => {
                 self.update_limits(&limits);
@@ -4197,7 +4225,7 @@ impl ExecutionProvider for OrderExecutor {
     async fn fetch_account_balance(&self) -> Result<f64, String> {
         let timestamp = self.get_synced_timestamp();
 
-        let _cupo = self.check_exit_rate_limits(timestamp, Tramo::Lectura)?;
+        let cupo = self.check_exit_rate_limits(timestamp, Tramo::Lectura)?;
 
         let mut buf = ZeroAllocBuffer::new();
         if self.client.is_testnet.load(Ordering::Relaxed) {
@@ -4218,7 +4246,7 @@ impl ExecutionProvider for OrderExecutor {
         buf.push_str("&signature=");
         buf.push_str(signature);
 
-        match self.get_payload_account(buf.as_str()).await {
+        match self.get_payload_account(buf.as_str(), &cupo).await {
             Ok((limits, text)) => {
                 self.update_limits(&limits);
 
@@ -4279,7 +4307,7 @@ impl ExecutionProvider for OrderExecutor {
     async fn fetch_commission_rate(&self, symbol: &str) -> Result<(f64, f64), String> {
         let timestamp = self.get_synced_timestamp();
 
-        let _cupo = self.check_exit_rate_limits(timestamp, Tramo::Lectura)?;
+        let cupo = self.check_exit_rate_limits(timestamp, Tramo::Lectura)?;
 
         let mut buf = ZeroAllocBuffer::new();
         if self.client.is_testnet.load(Ordering::Relaxed) {
@@ -4301,7 +4329,7 @@ impl ExecutionProvider for OrderExecutor {
         buf.push_str("&signature=");
         buf.push_str(signature);
 
-        match self.get_payload_account(buf.as_str()).await {
+        match self.get_payload_account(buf.as_str(), &cupo).await {
             Ok((limits, text)) => {
                 self.update_limits(&limits);
                 // A parseable float can still be NaN/Inf. Only a complete,
@@ -4512,23 +4540,49 @@ enum Tramo {
 #[must_use = "soltar el cupo antes de la respuesta saca la petición del libro de las que están en vuelo"]
 struct Cupo<'a> {
     ex: &'a OrderExecutor,
-    coste: crate::binance_api::CosteBinance,
+    tramo: Tramo,
+}
+
+impl Cupo<'_> {
+    /// Lo que la petición tiene en vuelo: el coste de su tramo crítico, o
+    /// nada si es una lectura.
+    fn coste(&self) -> crate::binance_api::CosteBinance {
+        match self.tramo {
+            Tramo::Lectura => crate::binance_api::CosteBinance::NULO,
+            Tramo::Critica(coste) => coste,
+        }
+    }
+
+    /// N24 (CL-200): readmite un reintento de la misma petición. Mira el
+    /// freno y la regla de su tramo con el uso de ahora, contando su propia
+    /// plaza una sola vez y sin reservar otra: el reintento sale mientras la
+    /// primera sigue en el libro, y suelta las dos al soltar el cupo.
+    fn readmitir(&self, ahora_ms: u64) -> Result<(), String> {
+        self.ex.check_backoff(ahora_ms)?;
+        let uso = self.ex.uso_exchange_bloqueado();
+        self.ex.regla_de_cuota(&uso, ahora_ms, self.tramo, self.coste())
+    }
+}
+
+/// Lo que un coste suma a cada contador (peso, órdenes 10 s, órdenes 1 min).
+fn contadores(coste: crate::binance_api::CosteBinance) -> [usize; 3] {
+    [coste.peso, coste.ordenes, coste.ordenes]
 }
 
 impl std::fmt::Debug for Cupo<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("Cupo").field("coste", &self.coste).finish()
+        f.debug_struct("Cupo").field("coste", &self.coste()).finish()
     }
 }
 
 impl Drop for Cupo<'_> {
     fn drop(&mut self) {
-        if self.coste == crate::binance_api::CosteBinance::NULO {
+        let coste = self.coste();
+        if coste == crate::binance_api::CosteBinance::NULO {
             return;
         }
-        let c = [self.coste.peso, self.coste.ordenes, self.coste.ordenes];
         let mut uso = self.ex.uso_exchange_bloqueado();
-        for (pendiente, coste) in uso.en_vuelo.iter_mut().zip(c) {
+        for (pendiente, coste) in uso.en_vuelo.iter_mut().zip(contadores(coste)) {
             *pendiente = pendiente.saturating_sub(coste);
         }
     }
@@ -4842,9 +4896,12 @@ mod tests_n5b {
         c.match_indices(llamada).map(|(i, _)| i).collect()
     }
 
-    /// `check_backoff` o la admisión por tramo, que lo llama primero (CL-179).
+    /// `check_backoff` o la admisión por tramo, que lo llama primero (CL-179),
+    /// o la readmisión de un reintento con su cupo, que también (CL-200).
     fn frena(texto: &str) -> bool {
-        texto.contains("check_backoff(") || texto.contains("check_exit_rate_limits(")
+        texto.contains("check_backoff(")
+            || texto.contains("check_exit_rate_limits(")
+            || texto.contains("cupo.readmitir(")
     }
 
     /// RED antes de CL-178: ningún envío de estas salidas consultaba el
@@ -5916,8 +5973,9 @@ pub(crate) mod tests_n20 {
 
     /// RED antes de CL-187: las dos consultas del modo hedge no miraban el
     /// freno ni registraban la cabecera de su respuesta (`let (_, body)`).
-    /// Cada lectura de cuenta frena antes de get_payload_account, que sólo
-    /// mira el freno en su reintento; una nueva sin listar hace fallar el conteo.
+    /// Cada lectura de cuenta frena antes de get_payload_account, que
+    /// readmite su reintento con el cupo de la lectura (CL-200); una nueva
+    /// sin listar hace fallar el conteo.
     #[test]
     fn cl187_toda_lectura_de_cuenta_frena_y_registra_su_cabecera() {
         let llamada = "self.get_payload_account(";
@@ -6382,6 +6440,10 @@ mod tests_n23 {
 
     const CODIGO: &str = include_str!("executor.rs");
     const CUERPO_400: &str = r#"{"code":-1102,"msg":"Mandatory parameter was not sent"}"#;
+    /// El tramo de positionRisk: con 2 300 de peso su reintento cabe (CL-200,
+    /// 2 300 + 5 ≤ 2 400), así que las pruebas de CL-196 siguen fijando la
+    /// regla del máximo de la ventana con dos respuestas.
+    const PR: Tramo = Tramo::Critica(crate::binance_api::COSTE_POSITION_RISK);
 
     fn ex() -> OrderExecutor {
         OrderExecutor::new("k".into(), "s".into(), true)
@@ -6402,18 +6464,24 @@ mod tests_n23 {
         respuesta(estado, &format!("X-MBX-USED-WEIGHT-1M: {peso}\r\n{extra}"), CUERPO_400)
     }
 
-    /// `get_payload_account` contra esas respuestas: su error y las
-    /// conexiones que llegaron. Nunca se cuelga (cada envío, 5 s; el total,
-    /// 30 s) y el servidor se aborta al volver.
-    async fn cuenta_contra(ex: &OrderExecutor, wires: Vec<String>) -> (String, usize) {
+    /// `get_payload_account` contra esas respuestas, con el cupo de `tramo`
+    /// vivo como en sus llamadores: su error y las conexiones que llegaron.
+    /// Nunca se cuelga (cada envío, 5 s; el total, 30 s) y el servidor se
+    /// aborta al volver.
+    async fn cuenta_contra(ex: &OrderExecutor, tramo: Tramo, wires: Vec<String>) -> (String, usize) {
         let servido = respuestas(wires).await;
         assert!(servido.is_some(), "servidor local");
         let Some((url, aceptadas, servidor)) = servido else {
             return (String::new(), 0);
         };
+        let cupo = ex.check_exit_rate_limits(ex.get_synced_timestamp(), tramo);
+        assert!(cupo.is_ok(), "{cupo:?}");
+        let Ok(cupo) = cupo else {
+            return (String::new(), 0);
+        };
         let r = tokio::time::timeout(
             std::time::Duration::from_secs(30),
-            ex.get_payload_account(&url),
+            ex.get_payload_account(&url, &cupo),
         )
         .await;
         servidor.abort();
@@ -6434,7 +6502,7 @@ mod tests_n23 {
     async fn cl196_la_cabecera_de_un_rechazo_entra_en_la_cuota() {
         let ex = ex();
         let (e, conexiones) =
-            cuenta_contra(&ex, vec![con_peso("400 Bad Request", 2_300, ""), con_peso("400 Bad Request", 50, "")])
+            cuenta_contra(&ex, PR, vec![con_peso("400 Bad Request", 2_300, ""), con_peso("400 Bad Request", 50, "")])
                 .await;
         assert_eq!(conexiones, 2, "«{e}»: envío y reintento");
         assert!(e.starts_with("Binance API Error: status=400"), "«{e}»");
@@ -6472,7 +6540,7 @@ mod tests_n23 {
     async fn cl196_un_429_cuenta_una_vez_y_sin_su_cabecera() {
         let ex = ex();
         let (e, conexiones) =
-            cuenta_contra(&ex, vec![con_peso("429 Too Many Requests", 2_500, "Retry-After: 30\r\n")]).await;
+            cuenta_contra(&ex, Tramo::Lectura, vec![con_peso("429 Too Many Requests", 2_500, "Retry-After: 30\r\n")]).await;
         assert_eq!(conexiones, 1, "«{e}»");
         assert!(e.starts_with("HTTP_429_RATE_LIMITED retry_after=30"), "«{e}»");
         assert_eq!(racha(&ex), 1, "un solo registro del 429");
@@ -6488,6 +6556,7 @@ mod tests_n23 {
         let ex = ex();
         let (e, conexiones) = cuenta_contra(
             &ex,
+            PR,
             vec![
                 con_peso("400 Bad Request", 2_300, ""),
                 con_peso("429 Too Many Requests", 2_500, "Retry-After: 30\r\n"),
@@ -6537,16 +6606,140 @@ mod tests_n23 {
     #[tokio::test]
     async fn rv21_un_rechazo_no_reinicia_la_racha() {
         let ex = ex();
-        let (e, _) = cuenta_contra(&ex, vec![respuesta("429 Too Many Requests", "Retry-After: 0\r\n", "")]).await;
+        let (e, _) = cuenta_contra(&ex, Tramo::Lectura, vec![respuesta("429 Too Many Requests", "Retry-After: 0\r\n", "")]).await;
         assert!(e.starts_with("HTTP_429_RATE_LIMITED retry_after=0"), "«{e}»");
         assert_eq!(racha(&ex), 1);
         let (e, conexiones) =
-            cuenta_contra(&ex, vec![con_peso("400 Bad Request", 50, ""), con_peso("400 Bad Request", 50, "")]).await;
+            cuenta_contra(&ex, Tramo::Lectura, vec![con_peso("400 Bad Request", 50, ""), con_peso("400 Bad Request", 50, "")]).await;
         assert_eq!(conexiones, 2, "«{e}»: el cooldown caducó y salen envío y reintento");
         assert!(e.starts_with("Binance API Error: status=400"), "«{e}»");
         assert_eq!(racha(&ex), 1, "un rechazo no reinicia la racha");
         ex.update_limits(&crate::client::BinanceRateLimits::default());
         assert_eq!(racha(&ex), 0, "control: con el cooldown caducado un 2xx la reinicia");
+    }
+
+    /// RED antes de CL-200 (N24-b): el reintento de `get_payload_account`
+    /// sólo miraba el freno (CL-178), no la cuota de su tramo. Con la cabecera
+    /// de la primera respuesta ya registrada (CL-196) en 2 398 de peso, el
+    /// reintento de un positionRisk (peso 5) no cabe, 2 398 + 5 > 2 400, y
+    /// salía igual: el exchange lo rechaza y cuenta otro error de la IP. Con
+    /// 2 300 cabe y sale (control). Vuelve el error de la primera.
+    #[tokio::test]
+    async fn cl200_el_reintento_critico_se_readmite_con_la_cabecera_de_la_primera() {
+        for (usado, esperadas) in [(2_398, 1), (2_300, 2)] {
+            let ex = ex();
+            let (e, conexiones) = cuenta_contra(
+                &ex,
+                PR,
+                vec![con_peso("503 Service Unavailable", usado, ""), con_peso("503 Service Unavailable", 50, "")],
+            )
+            .await;
+            assert_eq!(conexiones, esperadas, "{usado}: «{e}»");
+            assert!(e.starts_with("Binance API Error: status=503"), "{usado}: «{e}»");
+            assert_eq!(peso(&ex), usado, "la primera cabecera cuenta");
+        }
+    }
+
+    /// RED antes de CL-200 (N24-b): lo mismo en el tramo de lectura (ocho
+    /// de las diez llamadas): con 2 000 > 0,8·2 400 su reintento no sale,
+    /// como no saldría una lectura nueva; con 1 900 sí.
+    #[tokio::test]
+    async fn cl200_el_reintento_de_una_lectura_respeta_el_80() {
+        for (usado, esperadas) in [(2_000, 1), (1_900, 2)] {
+            let ex = ex();
+            let (e, conexiones) = cuenta_contra(
+                &ex,
+                Tramo::Lectura,
+                vec![con_peso("503 Service Unavailable", usado, ""), con_peso("503 Service Unavailable", 50, "")],
+            )
+            .await;
+            assert_eq!(conexiones, esperadas, "{usado}: «{e}»");
+            assert!(e.starts_with("Binance API Error: status=503"), "{usado}: «{e}»");
+        }
+    }
+
+    fn en_vuelo(ex: &OrderExecutor) -> [usize; 3] {
+        ex.uso_exchange_bloqueado().en_vuelo
+    }
+
+    /// CL-200: al readmitirse, una crítica cuenta su propia plaza una sola
+    /// vez (sigue en vuelo) y no reserva otra; las demás críticas en vuelo sí
+    /// cuentan. Con dos positionRisk admitidos en 2 390 (2 390 + 5 + 5 =
+    /// 2 400) el reintento de uno cabe justo; contar dos veces su plaza lo
+    /// rechazaría (2 405). Con un uso de 2 391 ya no cabe, y vuelve a caber
+    /// al soltar la otra.
+    #[test]
+    fn cl200_readmitir_cuenta_su_plaza_una_vez() {
+        use super::tests_lg3::limites;
+        let ex = ex();
+        let t = ex.get_synced_timestamp();
+        ex.observar_limites(&limites(Some(2_390), None, None), t);
+        let a = ex.check_exit_rate_limits(t, PR);
+        let b = ex.check_exit_rate_limits(t, PR);
+        assert!(a.is_ok() && b.is_ok(), "{a:?} {b:?}");
+        let (Ok(a), Ok(b)) = (a, b) else { return };
+        assert_eq!(a.readmitir(t), Ok(()), "2 390 + 5 ajenos + 5 propios = 2 400");
+        assert_eq!(en_vuelo(&ex), [10, 0, 0], "readmitir no reserva");
+        ex.observar_limites(&limites(Some(2_391), None, None), t);
+        assert!(
+            matches!(a.readmitir(t), Err(ref e) if e == "RATE_LIMIT_EXHAUSTED_WEIGHT: 2391 usado + 5 en vuelo + 5 > 2400"),
+            "{:?}",
+            a.readmitir(t)
+        );
+        drop(b);
+        assert_eq!(a.readmitir(t), Ok(()), "sin la otra: 2 391 + 0 + 5");
+        drop(a);
+        assert_eq!(en_vuelo(&ex), [0, 0, 0]);
+    }
+
+    /// CL-200: la readmisión aplica la misma regla que la admisión. Una
+    /// lectura, al 80 %; en un contador donde la crítica no gasta (las órdenes
+    /// de positionRisk) sólo la para un uso ya por encima del límite
+    /// (CL-181); y el freno.
+    #[test]
+    fn cl200_readmitir_aplica_la_regla_de_su_tramo_y_el_freno() {
+        use super::tests_lg3::limites;
+        let readmite = |tramo: Tramo, limites: crate::client::BinanceRateLimits| {
+            let ex = ex();
+            let t = ex.get_synced_timestamp();
+            let cupo = ex.check_exit_rate_limits(t, tramo);
+            assert!(cupo.is_ok(), "{cupo:?}");
+            ex.observar_limites(&limites, t);
+            cupo.and_then(|cupo| cupo.readmitir(t))
+        };
+        assert_eq!(readmite(Tramo::Lectura, limites(Some(1_920), None, None)), Ok(()), "1 920 = 0,8·2 400");
+        let r = readmite(Tramo::Lectura, limites(Some(1_921), None, None));
+        assert!(matches!(r, Err(ref e) if e.starts_with("RATE_LIMIT_HEADROOM_WEIGHT")), "{r:?}");
+        assert_eq!(readmite(PR, limites(None, None, Some(1_200))), Ok(()), "las órdenes no paran a quien no las gasta");
+        let r = readmite(PR, limites(None, None, Some(1_201)));
+        assert!(matches!(r, Err(ref e) if e.starts_with("RATE_LIMIT_EXHAUSTED_ORDERS_1M")), "{r:?}");
+
+        let ex = ex();
+        let t = ex.get_synced_timestamp();
+        let cupo = ex.check_exit_rate_limits(t, PR);
+        assert!(cupo.is_ok());
+        let Ok(cupo) = cupo else { return };
+        let _ = ex.handle_rate_limit_error("HTTP_429_RATE_LIMITED retry_after=30");
+        let r = cupo.readmitir(t);
+        assert!(matches!(r, Err(ref e) if e.starts_with("RATE_LIMIT_COOLDOWN")), "{r:?}");
+    }
+
+    /// CL-200: el reintento de `get_payload_account` sale sólo si el cupo de
+    /// la lectura se readmite, y cada llamador le pasa el suyo.
+    #[test]
+    fn cl200_el_reintento_de_cuenta_pasa_por_readmitir() {
+        let c = cuerpo("get_payload_account");
+        assert!(c.contains("cupo: &Cupo<'_>"), "{c}");
+        let envios: Vec<usize> = c.match_indices(".get_payload_with_timeout(").map(|(i, _)| i).collect();
+        assert_eq!(envios.len(), 2, "lectura y reintento");
+        assert_eq!(c.matches("cupo.readmitir(").count(), 1);
+        let r = c.find("cupo.readmitir(").unwrap_or(usize::MAX);
+        assert!(envios[0] < r && r < envios[1], "el reintento se readmite antes de salir");
+        assert!(!c.contains("check_backoff("), "readmitir ya mira el freno");
+        let produccion = CODIGO.split("#[cfg(test)]").next().unwrap_or("");
+        let llamadas = produccion.matches("self.get_payload_account(").count();
+        assert_eq!(llamadas, 10);
+        assert_eq!(produccion.matches("self.get_payload_account(buf.as_str(), &cupo)").count(), llamadas);
     }
 
     /// RV21-T (revisión de CL-196): el error de las dos piernas del par OCO y
