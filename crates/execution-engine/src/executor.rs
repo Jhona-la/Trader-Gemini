@@ -6168,61 +6168,118 @@ mod tests_n20 {
         assert_eq!(c.matches("neg_cache.insert(").count(), 2, "pasos 4 y 5");
     }
 
-    /// Un servidor HTTP de una sola respuesta en loopback, como
-    /// tests/exchange_response_contract.rs: sin exchange, claves ni cuenta.
-    /// Acepta UNA conexión; un reintento encontraría el puerto cerrado.
-    async fn una_respuesta(wire: String) -> Option<(String, tokio::task::JoinHandle<()>)> {
+    /// Un servidor HTTP en loopback que da una respuesta por conexión, en
+    /// orden, como tests/exchange_response_contract.rs: sin exchange, claves
+    /// ni cuenta. Cuenta las conexiones aceptadas; tras la última respuesta el
+    /// puerto se cierra.
+    async fn respuestas(
+        wires: Vec<String>,
+    ) -> Option<(String, Arc<std::sync::atomic::AtomicUsize>, tokio::task::JoinHandle<()>)> {
         use tokio::io::{AsyncReadExt, AsyncWriteExt};
         let oyente = tokio::net::TcpListener::bind("127.0.0.1:0").await.ok()?;
         let url = format!("http://{}/fapi/v1/exchangeInfo", oyente.local_addr().ok()?);
+        let aceptadas = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let cuenta = Arc::clone(&aceptadas);
         let servidor = tokio::spawn(async move {
-            if let Ok((mut s, _)) = oyente.accept().await {
+            for wire in wires {
+                let Ok((mut s, _)) = oyente.accept().await else { return };
+                cuenta.fetch_add(1, Ordering::SeqCst);
                 let mut peticion = [0u8; 4096];
                 let _ = s.read(&mut peticion).await;
                 let _ = s.write_all(wire.as_bytes()).await;
                 let _ = s.shutdown().await;
             }
         });
-        Some((url, servidor))
+        Some((url, aceptadas, servidor))
     }
 
-    /// RV19-T (cuarta revisión): el 429/418 de la PROPIA descarga, por el
-    /// camino entero (transporte, brazo de error de `descargar_filtros` y
-    /// `handle_rate_limit_error`), llega a `get_symbol_filter` como descarga
-    /// frenada, arma el freno y no se reintenta. Antes ninguna prueba
-    /// recorría ese brazo: añadirle contexto al error («exchangeInfo: …»)
-    /// dejaba el freno armado pero el símbolo en la caché negativa 60 s. Un
-    /// 5xx no es una descarga frenada (cuenta como en F1-105).
+    fn respuesta(estado: &str, cabecera: &str, cuerpo: &str) -> String {
+        format!(
+            "HTTP/1.1 {estado}\r\n{cabecera}Content-Length: {}\r\nConnection: close\r\n\r\n{cuerpo}",
+            cuerpo.len()
+        )
+    }
+
+    /// `descargar_filtros` contra esas respuestas: su error, el rechazo de
+    /// `check_backoff` al volver y las conexiones que llegaron al servidor.
+    /// Nunca se cuelga: cada envío tiene su plazo de 10 s, la llamada entera
+    /// 30 s, y el servidor se aborta al volver aunque espere otra conexión
+    /// (con un proxy del sistema que no deje pasar el loopback, la prueba
+    /// queda en rojo con 0 conexiones).
+    async fn descarga_contra(wires: Vec<String>) -> (String, Option<String>, usize) {
+        let servido = respuestas(wires).await;
+        assert!(servido.is_some(), "servidor local");
+        let Some((url, aceptadas, servidor)) = servido else {
+            return (String::new(), None, 0);
+        };
+        let ex = ex();
+        let r = tokio::time::timeout(
+            std::time::Duration::from_secs(30),
+            ex.descargar_filtros(&url),
+        )
+        .await;
+        servidor.abort();
+        let e = match r {
+            Ok(Err(e)) => e,
+            Ok(Ok(_)) => "Ok".to_string(),
+            Err(_) => "PLAZO".to_string(),
+        };
+        let frenado = ex.check_backoff(ex.get_synced_timestamp()).err();
+        (e, frenado, aceptadas.load(Ordering::SeqCst))
+    }
+
+    /// RV19-T (cuarta revisión): el 429/418 de la PROPIA descarga recorre el
+    /// transporte, el brazo de error de `descargar_filtros` y
+    /// `handle_rate_limit_error`, y vuelve como descarga frenada (lo que
+    /// clasifica el paso 3 de `get_symbol_filter`), arma el freno y no se
+    /// reintenta: la segunda respuesta, un 200, no llega a pedirse. Antes
+    /// ninguna prueba recorría ese brazo: añadirle contexto al error
+    /// («exchangeInfo: …») dejaba el freno armado pero el símbolo en la caché
+    /// negativa 60 s. Un 503 en los dos envíos vuelve con su propio texto,
+    /// que no es descarga frenada, y no arma nada (cuenta como en F1-105).
     #[tokio::test]
     async fn rv19_el_429_y_el_418_de_la_descarga_llegan_como_descarga_frenada() {
-        for (estado, cabecera, freno) in [
-            ("429 Too Many Requests", "Retry-After: 30\r\n", Some("RATE_LIMIT_COOLDOWN")),
-            ("418 I'm a teapot", "", Some("RATE_BRAKE")),
-            ("503 Service Unavailable", "", None),
+        let ok = respuesta("200 OK", "", "{}");
+        for (primera, freno) in [
+            (respuesta("429 Too Many Requests", "Retry-After: 30\r\n", ""), "RATE_LIMIT_COOLDOWN"),
+            (respuesta("418 I'm a teapot", "", ""), "RATE_BRAKE"),
         ] {
-            let wire = format!(
-                "HTTP/1.1 {estado}\r\n{cabecera}Content-Length: 0\r\nConnection: close\r\n\r\n"
+            let (e, frenado, conexiones) = descarga_contra(vec![primera, ok.clone()]).await;
+            assert!(OrderExecutor::descarga_frenada(&e), "«{e}»");
+            assert!(
+                frenado.as_deref().is_some_and(|f| f.starts_with(freno)),
+                "«{e}»: la propia respuesta arma el freno: {frenado:?}"
             );
-            let servido = una_respuesta(wire).await;
-            assert!(servido.is_some(), "{estado}: servidor local");
-            let Some((url, servidor)) = servido else { return };
-            let ex = ex();
-            let e = ex.descargar_filtros(&url).await.err().unwrap_or_default();
-            let _ = servidor.await;
-            let frenado = ex.check_backoff(ex.get_synced_timestamp()).err();
-            match freno {
-                Some(prefijo) => {
-                    assert!(OrderExecutor::descarga_frenada(&e), "{estado}: «{e}»");
-                    assert!(
-                        frenado.as_deref().is_some_and(|f| f.starts_with(prefijo)),
-                        "{estado}: la propia respuesta arma el freno: {frenado:?}"
-                    );
-                }
-                None => {
-                    assert!(!e.is_empty() && !OrderExecutor::descarga_frenada(&e), "{estado}: «{e}»");
-                    assert_eq!(frenado, None, "{estado}: no arma el freno");
-                }
-            }
+            assert_eq!(conexiones, 1, "«{e}»: sin reintento");
+        }
+        let cinco = respuesta("503 Service Unavailable", "", "");
+        let (e, frenado, conexiones) = descarga_contra(vec![cinco.clone(), cinco]).await;
+        assert!(e.starts_with("Binance API Error: status=503"), "«{e}»");
+        assert!(!OrderExecutor::descarga_frenada(&e), "«{e}»");
+        assert_eq!(frenado, None, "un 503 no arma el freno");
+        assert_eq!(conexiones, 2, "un 503 se reintenta una vez");
+    }
+
+    /// RV20-T (quinta revisión): un 429/418 que llega en el REINTENTO es el
+    /// error de la descarga, arma el freno y es descarga frenada. Antes
+    /// ninguna prueba servía un segundo envío: quedarse con el primer error
+    /// si el reintento también fallaba (`res = segundo.or(res)`) perdía el
+    /// 429/418, no armaba el freno y, sin mapa guardado, dejaba el símbolo
+    /// 60 s en la caché negativa.
+    #[tokio::test]
+    async fn rv20_el_429_y_el_418_del_reintento_arman_el_freno() {
+        for (segunda, freno) in [
+            (respuesta("429 Too Many Requests", "Retry-After: 30\r\n", ""), "RATE_LIMIT_COOLDOWN"),
+            (respuesta("418 I'm a teapot", "", ""), "RATE_BRAKE"),
+        ] {
+            let primera = respuesta("503 Service Unavailable", "", "");
+            let (e, frenado, conexiones) = descarga_contra(vec![primera, segunda]).await;
+            assert_eq!(conexiones, 2, "«{e}»: descarga y reintento");
+            assert!(OrderExecutor::descarga_frenada(&e), "«{e}»");
+            assert!(
+                frenado.as_deref().is_some_and(|f| f.starts_with(freno)),
+                "«{e}»: el reintento arma el freno: {frenado:?}"
+            );
         }
     }
 
