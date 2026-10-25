@@ -198,6 +198,18 @@ fn cl135_lo_medido_entra_al_cerrar_y_no_lo_hereda_otra_posicion() {
         "la operación cerrada entra en el riesgo medido: {tras_cierre:?}"
     );
     assert!(core.medida_de_entrada[0][k].is_none(), "el cierre consume la medida");
+    // CL-164: la sombra del Kelly legado frente a LH-04 aprende del mismo
+    // cierre, una vez, con un log finito (un stop tocado no es una ruina).
+    let sombra = |nombre: &str| arena.registry.get_for_coin_strict(0, nombre);
+    assert_eq!(sombra("sombra_kelly_n"), Some(1.0), "el cierre entra en la sombra");
+    for regla in ["lh04", "legado", "min"] {
+        let logw = sombra(&format!("sombra_kelly_logw_{regla}"));
+        assert!(
+            logw.is_some_and(f64::is_finite),
+            "sombra {regla}: {logw:?} (ruina {:?})",
+            sombra(&format!("sombra_kelly_ruina_{regla}"))
+        );
+    }
 
     // La ranura revertida no deja su medida a la siguiente ocupante.
     core.medida_de_entrada[0][k] = Some(medida);
@@ -222,4 +234,5 @@ fn cl135_lo_medido_entra_al_cerrar_y_no_lo_hereda_otra_posicion() {
         tras_cierre,
         "una posición sin orden del riesgo no hereda la medida de la generación anterior"
     );
+    assert_eq!(sombra("sombra_kelly_n"), Some(1.0), "ni la sombra");
 }

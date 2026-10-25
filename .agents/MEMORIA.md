@@ -1,5 +1,35 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
 
+## 2026-10-25 — Claude (cloud, Línea C): séptima tanda del censo C-F7b (genes de Kelly, fila N13)
+
+Tanda del PR #139. Un commit por bloque; T-1 por los cambios de tamaño.
+
+- CL-161: tras la sonda, toda orden la dimensiona LH-04 o es la orden
+  mínima del símbolo (sonda, sin edge, muestras insuficientes o f en cero
+  por la racha); con entradas corruptas se rechaza. Cierra los dos
+  fail-open que dejaba F1-087: PF no finito y `lh04_muestras_min` del
+  registro por encima de n daban el margen legado entero.
+- CL-163: el gen 33 (kelly_clamp_max) es el techo κ de la f de LH-04,
+  f = min(½·Kelly-LCB, tope de ruina, κ). Sólo aprieta; con la línea
+  base (0,55) no cambia nada.
+- CL-162: los genes 10, 11 y 32 (Kelly legado) y 20 (sin lector desde
+  F1-092) se copian sin mutar; el daemon ya no muta 10/11 y los devuelve
+  al incumbente en el examen. El vector sigue con 144 genes.
+- CL-164: sombra del Kelly legado frente a LH-04. Cada cierre suma
+  ln(1 + f·R) por regla (LH-04, legado y el mínimo) con R = retorno
+  neto/(SL + c) en `sombra_kelly_logw_*` (ruinas en `sombra_kelly_ruina_*`,
+  cierres en `sombra_kelly_n`). Sólo telemetría: la ventana, la regla
+  para retirar la cadena legada y si se adopta el mínimo son del dueño.
+- T-1 14/144 (9,7 %), la misma lista que main: [1, 17, 18, 24, 27, 29, 39, 62, 68, 69, 107, 129, 130, 131]. Re-certificar el trinquete sigue esperando al dueño
+  (tarjeta en el hilo de la auditoría).
+- RV6 (revisión de la tanda 6: 14 hallazgos leves confirmados, 5
+  refutados): la OPEN de N8 guarda toda la cadena que copia (riesgo,
+  núcleo, entrada modelada y host); T12 cuenta free_cap entero; docs de
+  fable_lh04 y order_quantity_contract; correcciones en §9, MEMORIA y el
+  buzón. N13 queda precisada: el margen legado era el único camino de
+  esos genes al TAMAÑO en el fixture del T-1, no su único lector.
+- Detalle en §9 del censo (N13); avisos en el buzón.
+
 ## 2026-10-24 — Claude (cloud, Línea C): sexta tanda del censo C-F7b (K12, lote 48, resto de F325 y lote 51)
 
 Tanda del PR #138. Un commit por bloque; T-1 sólo por CL-159.
@@ -24,10 +54,13 @@ Tanda del PR #138. Un commit por bloque; T-1 sólo por CL-159.
   escriben en LOG_QUEUE por el destino que conecta el host; salen en
   orden y el apagado las vacía. Fuera BINARY_QUEUE (33 MiB en el host) y
   crossbeam-queue de telemetry-engine. LG-11, LG-19 y CL-144 no cambian.
-- T-1 en main 14/144 (9,7 %), bajo el trinquete de 11,0 %, desde
-  01ce0a57 (F1-116, Ω157; bisección por commit): LH-04 dimensiona toda
-  orden con n ≥ 1 y el margen Kelly legado, único camino de los genes 10,
-  11, 33, 141 y 143, ya no fija tamaños; el 20 perdió su lectura en F1-092.
+- T-1 en main 14/144 (9,7 %; medido en 58f90ced y en la tanda), bajo el
+  trinquete de 11,0 %. La bisección por commit (oráculo de los genes 10,
+  33 y 141) da 01ce0a57 (F1-116, Ω157) como primer commit en que dejan
+  de influir: LH-04 dimensiona toda orden con n ≥ 1 y el margen Kelly
+  legado, único camino al TAMAÑO de los genes 10, 11, 33, 141 y 143 en el
+  fixture del T-1, ya no fija tamaños; el 20 cae después, con F1-092
+  (dd783b74).
   Siguiente tanda: congelar 10, 11, 20 y 32, techo κ (gen 33) en LH-04,
   clases de tamaño explícitas y sombra legado frente a LH-04 (fila N13).
   Re-certificar el trinquete en 14/144 espera al dueño.
