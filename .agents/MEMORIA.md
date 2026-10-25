@@ -1,5 +1,29 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
 
+## 2026-10-25 — Claude (cloud, Línea C): decimoquinta tanda del censo C-F7b (filas N23 y N33)
+
+Tanda del PR #148. Cambia la conducta sólo en ejecución real: con
+respuestas de error que traen cabecera de uso, y con exchangeInfo fallando
+fuera de un freno. El backtest no usa OrderExecutor (golden, T-1 y T-2 no
+lo ven). Sólo toca execution-engine (executor.rs, client.rs y dos guardas
+de tests/).
+
+- CL-196 (N23): el error de los siete transportes firmados es
+  `client::ErrorRest { texto, limites }` (`Deref<Target = str>`, sin
+  `From` a String). Lleva la cabecera en los 400/5xx y en un 2xx cuyo ACK
+  no se lee; sin respuesta y en un 429/418 va sin ella.
+  `OrderExecutor::registrar_error` es el único registro: `observar_limites`
+  (nunca `update_limits`) y el freno del 429/418; las 27 llamadas pasan
+  una vez, con el cupo vivo. Los textos de error no cambian.
+- CL-197 (N33): tras una descarga de exchangeInfo fallida fuera del freno
+  no sale otra durante `TTL_CACHE_NEGATIVA` (60 s, la de F1-105);
+  vuelve EXCHANGE_INFO_EN_ESPERA sin red y el paso 4 sirve el spec del
+  registro. `clear_negative_symbol_cache` la borra.
+- Banco en loopback para las rutas `full_url`: `tests_n20::respuestas`
+  (ahora `pub(crate)`), usado por el ejecutor y el cliente.
+- Siguen en Línea C: N22/N38 (literales y 2xx de las rutas crudas), N24
+  (coste sin respuesta), N25 (marca AMBIGUOUS), N26 (método) y N32.
+
 ## 2026-10-25 — Claude (cloud, Línea C): decimocuarta tanda del censo C-F7b (fila N20, peticiones fuera de la cuota)
 
 Tanda del PR #147. Cambia la conducta sólo en ejecución real con un 429/418

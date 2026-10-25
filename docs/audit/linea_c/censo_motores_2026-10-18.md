@@ -409,6 +409,7 @@ dice su lote):
 | #145 | N4 (RET-N4: Position::entry_tau_ms(), sin llamadores), N2 (RET-N2: ewma_price_at, scale_gain_at y volatility_at, tras la regla 2), N9 (CL-174: sin VPIN medido la sombra TrendRunner se abstiene), N10 (CL-175: la presión adversarial de Nash es el cvpin medido), N15 (CL-176: la escalada desnuda reporta el fallo de la purga de brackets); más RV13-docs; abre N10b, N15, N16 y N17 |
 | #146 | N5, la cuota del exchange para las salidas (CL-177: uso por contador con su sello y sin bajar por una respuesta tardía; CL-178: las salidas sin consulta respetan el freno 429/418 y el barrido no purga dos veces; CL-179: las críticas pasan hasta el límite del exchange con las críticas en vuelo contadas); más N5-docs; abre N18 a N22; y sus dos revisiones antes de fusionar (CL-180: el máximo exacto de las cabeceras vigentes, con el sello futuro acotado por la siguiente cabecera; CL-181: un contador sin coste no frena por lo que está en vuelo; CL-182: la cabecera se registra con el cupo vivo; CL-183: en X-026 un re-snapshot sin respuesta no da la posición por plana; RV14-c, RV14-T, RV14-docs, RV15-c, RV15-docs) |
 | #147 | N20, peticiones fuera de la cuota (CL-184: exchangeInfo dentro del freno; CL-185: un exchangeInfo sin filtros no borra la caché; CL-186: un símbolo ausente de un exchangeInfo completo no se vuelve a descargar; CL-187: modo hedge y hora dentro del freno, con la cabecera del modo registrada; CL-188: un freno por ejecutor compartido por los clones de su cliente; CL-189: la hora del NTP y el listenKey miran y arman el freno; CL-190: la cancelación de la pierna hermana mira el freno; CL-191: sin el último expect de producción del ejecutor); más N20-docs; abre N23 a N39; y sus cinco revisiones antes de fusionar (CL-192: el freno no deja un símbolo en la caché negativa; CL-193: el 2xx del NTP y del listenKey reinicia la racha de 429; CL-194: su 429 ya registrado no cuenta dos veces; CL-195: la caché negativa decide por la descarga de esa llamada; RV16-T a RV20-T, RV16-docs) |
+| #148 | N23, la cabecera de uso de los errores (CL-196: el error de los siete transportes firmados es `client::ErrorRest` con la cabecera de su respuesta, y `registrar_error` la registra una vez con el cupo vivo, nunca la de un 429/418) y N33, exchangeInfo sin descargas repetidas (CL-197: tras una descarga fallida fuera del freno no sale otra durante el TTL de la caché negativa); más N23-docs |
 
 **Hecho por otros agentes**: lote 9 entero (Sol, d18b3735), lote 45 entero
 (Codex RB, 906a9c6a), parte del 7 (Sol retiró el bin main.rs de
@@ -1294,7 +1295,8 @@ un escéptico por lote listo):
   En la tanda 14, CL-189 sólo arregla las tres rutas sin ejecutor (hora del
   NTP y listenKey): su 429/418 ya no es «REJECTED http=429», arma el freno
   con su Retry-After. El resto pasa a N23 (cabeceras de los siete
-  transportes), N24 (coste sin respuesta) y N25 (marca AMBIGUOUS).
+  transportes), N24 (coste sin respuesta) y N25 (marca AMBIGUOUS). La
+  tanda 15 cierra N23 (CL-196).
 - N22 (de la tanda 13): literales y pesos sin derivar en la cuota. El 0,8
   de entradas y lecturas (executor.rs, `HEADROOM`) y los +60 s del freno
   escalado de M4-C02 (`until.saturating_add(60_000)`). Y tres pesos del
@@ -1330,6 +1332,18 @@ un escéptico por lote listo):
   envío registre dos veces su 429 (en `execute_order` el 429 ya vuelve por
   `handle_rate_limit_error`). Hace falta un banco de pruebas en loopback para
   las rutas `full_url`.
+  Ejecutada en la tanda 15 (CL-196), con ese diseño: `ErrorRest { texto,
+  limites }` lleva la cabecera de la respuesta en los 400/5xx y en un 2xx
+  cuyo ACK no se lee, y va sin ella sin respuesta y en un 429/418;
+  `OrderExecutor::registrar_error` es el único que llama a
+  `handle_rate_limit_error` y las 27 llamadas de producción a los
+  transportes pasan una vez por él, dentro del brazo con el cupo vivo
+  (CL-182). Los cinco `let _ =` se van, y get_payload_account y la descarga
+  de exchangeInfo registran también la primera respuesta cuando hay
+  reintento. Los textos de error no cambian. El banco en loopback es
+  `tests_n20::respuestas`, que usan las pruebas del ejecutor (tests_n23) y
+  las del cliente, que recorren los seis transportes con un 400, un 503, un
+  2xx ilegible, un 429, un 418 y sin respuesta.
 - N24 (de la tanda 14, Línea C, con N22): el coste de una petición sin
   respuesta (timeout AMBIGUOUS o error de transporte) sale del libro en
   vuelo sin entrar en el uso, y el reintento de `get_payload_account` envía
@@ -1399,6 +1413,15 @@ un escéptico por lote listo):
   negativa con el mapa vacío (CL-186), aunque el paso 2 serviría 60 s ese
   mismo spec; candidato, el predicado del paso 5
   (`guarda_ausencia(frenada, hay_mapa)`) también en el paso 4.
+  Ejecutada en la tanda 15 (CL-197) con el primer candidato, que cubre
+  también el segundo: tras una descarga fallida fuera del freno (red, 5xx,
+  sin filtros) `descargar_filtros` no vuelve a salir durante
+  `TTL_CACHE_NEGATIVA` (los 60 s de F1-105, ahora una constante que usa
+  también el paso 2) y devuelve EXCHANGE_INFO_EN_ESPERA sin red, que no es
+  descarga frenada; mientras dura, el paso 4 sirve el spec del registro sin
+  esperar. Un 429/418 no arma la espera (lo cubre el freno) y
+  `clear_negative_symbol_cache` la borra. La precarga al arrancar sería del
+  host (Línea I) y ya no hace falta para la latencia.
 - N34 (de la tanda 14, Línea I): entre 0,8·L y L, `purge_orphan_legs` se
   traga el rechazo del tramo de lectura de `fetch_all_open_algo_orders`
   (`if let Ok`, god_engine.rs:286) y la auditoría limpia la marca de sucio
