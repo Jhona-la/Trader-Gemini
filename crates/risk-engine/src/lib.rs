@@ -2083,22 +2083,38 @@ impl RiskEngine {
         }
 
         // F1-092 (Ola Ω195): Axioma de Ruina sobre el Riesgo Realizado al Stop.
-        // En cualquier camino (LH-04, camino legado o tras rescates de nocional mínimo),
-        // el riesgo total realizado en dólares al tocar el stop:
-        //   riesgo_usd = final_margin * dynamic_leverage * expected_loss
+        // En cualquier clase de orden (LH-04 o la orden mínima, CL-161) y tras
+        // los rescates de nocional mínimo, el riesgo total realizado en dólares
+        // al tocar el stop:
+        //   riesgo_usd = final_margin * dynamic_leverage * (expected_loss + roundtrip_fee)
         // NUNCA debe exceder el tope actuarial de ruina `tope_riesgo_evento` (<= 0.25 * capital).
         // Si el riesgo excede este límite, se recorta `final_margin` a la cota máxima segura:
-        //   margin_cap_ruin = (tope_riesgo_evento * allocated_capital) / (dynamic_leverage * expected_loss)
+        //   margin_cap_ruin = nocional_por_riesgo(tope_riesgo_evento, capital, SL, c) / dynamic_leverage
         // Y si el margen recortado no satisface el nocional mínimo de Binance, la comprobación
         // terminal de REJ_MIN_NOTIONAL rechaza la orden de forma fail-closed.
-        if dynamic_leverage > 0.0 && expected_loss > 0.0 && allocated_capital > 0.0 {
-            let max_riesgo_usd = tope_riesgo_evento * allocated_capital;
-            let riesgo_propuesto_usd = final_margin * dynamic_leverage * expected_loss;
-            if riesgo_propuesto_usd > max_riesgo_usd {
-                let margin_cap = max_riesgo_usd / (dynamic_leverage * expected_loss);
-                if margin_cap < final_margin {
-                    final_margin = margin_cap;
-                }
+        //
+        // CL-173 (N12): la pérdida al stop es SL + c, con c = `roundtrip_fee`,
+        // como en LH-04 (CL-159) y en la viabilidad (CL-172); sin c el tope
+        // admitía una pérdida real (SL + c)/SL veces la declarada. Se calcula
+        // con la MISMA función y los mismos argumentos que LH-04: como su f
+        // nunca pasa del tope (los dos leen los mismos atómicos de la moneda),
+        // una orden de LH-04 sin rescate no se recorta ni en un ulp. El tope
+        // sólo muerde tras los rescates (el piso ×1,0005, D-130 y la subida
+        // del apalancamiento de Sol-A2). `None` es inalcanzable (la
+        // viabilidad ya exige tope y capital finitos y > 0, y la geometría
+        // SL > 0 y c ≥ 0 finitos); si llegara, la orden se rechaza.
+        if dynamic_leverage > 0.0 {
+            let Some(nocional_tope) = crate::kelly_envelope::nocional_por_riesgo(
+                tope_riesgo_evento,
+                allocated_capital,
+                stop_real,
+                roundtrip_fee,
+            ) else {
+                return rej(REJ_INVALID_INPUT);
+            };
+            let margin_cap = nocional_tope / dynamic_leverage;
+            if margin_cap < final_margin {
+                final_margin = margin_cap;
             }
         }
         // Terminal invariants after every size/leverage adjustment. No
