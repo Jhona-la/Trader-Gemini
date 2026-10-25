@@ -1752,8 +1752,10 @@ impl RiskEngine {
         // ≤ 0 salía a la orden mínima. Es el activo, no el almacenado: con un
         // cierre registrado y el reloj ya pasado el cierre,
         // `epigenetic_bias_at` (quantum-arena state.rs) lleva un almacenado
-        // ±∞ o NaN a 1,0 y uno ≤ 0 a 0,5, y llega neutralizado. Validar el
-        // almacenado haría absorbente el rechazo: el escritor del cierre no
+        // ±∞ o NaN a 1,0 y uno s ≤ 0 a max(0,5; 1 − (1 − s)·e^{−Δ/30 min}):
+        // 0,5 durante 30·ln(2·(1 − s)) min tras el cierre (≈ 21 con s = 0,
+        // ≈ 42 con s = −1) y después sube hacia 1. Llega neutralizado. Validar
+        // el almacenado haría absorbente el rechazo: el escritor del cierre no
         // toca un bias no finito.
         let lh04_bias_bruto = if coin_id < arena.coins.len() {
             let now_ts = arena.coins[coin_id]
