@@ -383,10 +383,12 @@ impl BinanceClient {
 
     /// N20 (CL-189): el 429/418 de una ruta sin ejecutor arma el freno con su
     /// Retry-After. Es su ÚNICO registro: el ejecutor no llama a estas rutas, y
-    /// el NTP y el stream sólo imprimen el error.
+    /// el error vuelve marcado «FRENO_ARMADO: …» (CL-194), que `registrar` no
+    /// reconoce, así que quien lo registre otra vez no cuenta dos veces.
     #[inline]
     fn freno_de_respuesta(&self, estado: u16, cabeceras: &HeaderMap) -> Option<String> {
-        classify_rate_limit_or_ban(estado, cabeceras).map(|e| self.freno.registrar(&e))
+        classify_rate_limit_or_ban(estado, cabeceras)
+            .map(|e| format!("FRENO_ARMADO: {}", self.freno.registrar(&e)))
     }
 
     pub fn get_base_url(&self) -> &str {
@@ -847,7 +849,7 @@ mod tests {
         let antes = c.freno().ahora_ms();
         assert_eq!(
             c.freno_de_respuesta(429, &cab).as_deref(),
-            Some("HTTP_429_RATE_LIMITED retry_after=7")
+            Some("FRENO_ARMADO: HTTP_429_RATE_LIMITED retry_after=7")
         );
         let despues = c.freno().ahora_ms();
         let hasta = c.freno().cooldown_until_ms.load(Ordering::Relaxed);
@@ -869,7 +871,7 @@ mod tests {
         let antes = c.freno().ahora_ms();
         assert_eq!(
             c.freno_de_respuesta(418, &cab).as_deref(),
-            Some("HTTP_418_IP_BANNED retry_after=120")
+            Some("FRENO_ARMADO: HTTP_418_IP_BANNED retry_after=120")
         );
         assert!(matches!(c.freno().comprobar_ahora(), Err(ref e) if e.starts_with("RATE_BRAKE")));
         assert!(c.freno().rate_brake_until_ms.load(Ordering::Relaxed) >= antes + 120_000);
@@ -973,5 +975,20 @@ mod tests {
         c.freno().registrar("HTTP_429_RATE_LIMITED retry_after=30");
         c.freno().exito_ahora();
         assert_eq!(c.freno().consecutive_429.load(Ordering::Relaxed), 1, "dentro del cooldown");
+    }
+
+    /// RED antes de CL-194: la ruta cruda devolvía su 429 ya registrado con el
+    /// mismo texto que reconoce `registrar`; quien lo registrase otra vez (el
+    /// stream o el NTP, que hoy sólo lo imprimen) lo contaba dos veces y el
+    /// segundo 429 real ya armaba RATE_BRAKE.
+    #[test]
+    fn cl194_el_error_ya_registrado_no_cuenta_dos_veces() {
+        let c = BinanceClient::new("k".into(), true);
+        let mut cab = HeaderMap::new();
+        cab.insert("Retry-After", HeaderValue::from_static("7"));
+        let e = c.freno_de_respuesta(429, &cab).unwrap_or_default();
+        assert!(e.contains("HTTP_429_RATE_LIMITED retry_after=7"), "{e}");
+        c.clone().freno().registrar(&e);
+        assert_eq!(c.freno().consecutive_429.load(Ordering::Relaxed), 1, "{e}");
     }
 }
