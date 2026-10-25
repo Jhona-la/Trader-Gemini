@@ -1425,8 +1425,8 @@ impl OrderExecutor {
     /// sale mientras duran, salidas incluidas: Binance pide no enviar durante
     /// el Retry-After de un 429, y seguir enviando acumula 429 hasta el freno
     /// escalado (3 consecutivos) o el ban de IP (418). Las que aún no lo
-    /// consultan (modo hedge, filtros, hora, NTP, listenKey, la cancelación
-    /// de la pierna hermana del user-data stream y la primera lectura de
+    /// consultan (modo hedge, hora, NTP, listenKey, la cancelación de la
+    /// pierna hermana del user-data stream y la primera lectura de
     /// `get_payload_account`) son la fila N20 del censo C-F7b.
     fn check_backoff(&self, timestamp_ms: u64) -> Result<(), String> {
         // FIX M4-C02: freno TEMPORAL por rate-limit (3×429 escalado / HTTP 418).
@@ -1788,6 +1788,10 @@ impl OrderExecutor {
 
         // exchangeInfo pesa MBs: el timeout HFT global (1.2s) lo mata
         // intermitentemente. Presupuesto dedicado + 1 reintento.
+        // N20 (CL-184): ni la descarga ni su reintento salen dentro del
+        // Retry-After de un 429 ni del freno (3×429 o 418). Sólo el freno,
+        // sin el 80 %: los cierres necesitan los filtros.
+        self.check_backoff(self.get_synced_timestamp())?;
         let mut res = self
             .client
             .get_payload_with_timeout(buf.as_str(), Some(std::time::Duration::from_secs(10)))
@@ -1795,10 +1799,13 @@ impl OrderExecutor {
         if let Err(ref e) = res {
             if !e.starts_with("HTTP_429_RATE_LIMITED") && !e.starts_with("HTTP_418_IP_BANNED") {
                 tokio::time::sleep(std::time::Duration::from_millis(250)).await;
-                res = self
-                    .client
-                    .get_payload_with_timeout(buf.as_str(), Some(std::time::Duration::from_secs(10)))
-                    .await;
+                // Como el reintento de get_payload_account (CL-178).
+                if self.check_backoff(self.get_synced_timestamp()).is_ok() {
+                    res = self
+                        .client
+                        .get_payload_with_timeout(buf.as_str(), Some(std::time::Duration::from_secs(10)))
+                        .await;
+                }
             }
         }
         match res {
@@ -5645,5 +5652,71 @@ mod tests_m4_c02 {
             orders_1m: Some(5),
         });
         assert_eq!(ex.consecutive_429.load(Ordering::Relaxed), 0);
+    }
+}
+
+#[cfg(test)]
+mod tests_n20 {
+    use super::*;
+    use futures_util::FutureExt;
+
+    const CODIGO: &str = include_str!("executor.rs");
+
+    /// Cuerpo de la última `fn {f}(` del archivo (la del impl), como en tests_n5b.
+    fn cuerpo(f: &str) -> &'static str {
+        let Some(i) = CODIGO.rfind(&format!("fn {f}(")) else {
+            return "";
+        };
+        let fin = ["\n    pub ", "\n    fn ", "\n    async fn "]
+            .iter()
+            .filter_map(|m| CODIGO[i + 3..].find(m).map(|k| i + 3 + k))
+            .min()
+            .unwrap_or(CODIGO.len());
+        &CODIGO[i..fin]
+    }
+
+    fn ex() -> OrderExecutor {
+        OrderExecutor::new("k".into(), "s".into(), true)
+    }
+
+    fn rechazo<T: std::fmt::Debug>(r: Option<Result<T, String>>, prefijo: &str) -> bool {
+        matches!(r, Some(Err(ref e)) if e.starts_with(prefijo))
+    }
+
+    /// RED antes de CL-184: la descarga de exchangeInfo y su reintento no
+    /// miraban el freno; con un 418 o dentro del Retry-After de un 429
+    /// salían igual (el primer sondeo quedaba esperando a la red). El
+    /// rechazo local no cuenta como 429: hacen falta tres reales.
+    #[tokio::test]
+    async fn cl184_exchange_info_no_sale_dentro_del_freno() {
+        let ex = ex();
+        ex.handle_rate_limit_error("HTTP_418_IP_BANNED retry_after=300");
+        let r = ex.fetch_all_symbol_filters().now_or_never();
+        assert!(rechazo(r, "RATE_BRAKE"), "con un 418 exchangeInfo no sale");
+
+        let ex = self::ex();
+        ex.handle_rate_limit_error("HTTP_429_RATE_LIMITED retry_after=30");
+        let r = ex.fetch_all_symbol_filters().now_or_never();
+        assert!(rechazo(r, "RATE_LIMIT_COOLDOWN"), "dentro del Retry-After no sale");
+        ex.handle_rate_limit_error("HTTP_429_RATE_LIMITED retry_after=30");
+        let ahora = ex.get_synced_timestamp();
+        assert!(
+            matches!(ex.check_backoff(ahora), Err(ref e) if e.starts_with("RATE_LIMIT_COOLDOWN")),
+            "el rechazo local no contó como 429"
+        );
+        ex.handle_rate_limit_error("HTTP_429_RATE_LIMITED retry_after=30");
+        assert!(matches!(ex.check_backoff(ahora), Err(ref e) if e.starts_with("RATE_BRAKE")));
+    }
+
+    /// RED antes de CL-184: ninguno de los dos envíos de exchangeInfo tenía
+    /// freno. Sólo el freno, sin el 80 %: los cierres necesitan los filtros.
+    #[test]
+    fn cl184_los_dos_envios_de_exchange_info_frenan() {
+        let c = cuerpo("fetch_all_symbol_filters");
+        let envios: Vec<usize> = c.match_indices(".get_payload_with_timeout(").map(|(i, _)| i).collect();
+        assert_eq!(envios.len(), 2, "descarga y reintento");
+        assert!(c[..envios[0]].contains("check_backoff("), "freno antes de la descarga");
+        assert!(c[envios[0]..envios[1]].contains("check_backoff("), "freno antes del reintento");
+        assert!(!c.contains("check_exit_rate_limits("), "sin el tramo del 80 %");
     }
 }
