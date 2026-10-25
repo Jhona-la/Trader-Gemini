@@ -1811,75 +1811,93 @@ impl OrderExecutor {
         match res {
             Ok((limits, text)) => {
                 self.update_limits(&limits);
-                let mut map = std::collections::HashMap::new();
-                if let Ok(json) = serde_json::from_str::<serde_json::Value>(&text) {
-                    if let Some(symbols) = json["symbols"].as_array() {
-                        for sym_info in symbols {
-                            if let Some(sym) = sym_info["symbol"].as_str() {
-                                let mut filter = SymbolFilter::default();
-                                // D-631 (DÉCIMA OLA): un paso o tick que no parsea ya
-                                // no se sustituye por los de BTCUSDT; el símbolo sólo
-                                // entra en el mapa si ambos se leyeron de verdad.
-                                let mut step_ok = false;
-                                let mut tick_ok = false;
-                                if let Some(filters) = sym_info["filters"].as_array() {
-                                    for f in filters {
-                                        match f["filterType"].as_str() {
-                                            Some("LOT_SIZE") => {
-                                                if let Some(v) = f["stepSize"]
-                                                    .as_str()
-                                                    .and_then(|s| s.parse::<f64>().ok())
-                                                    .filter(|v| v.is_finite() && *v > 0.0)
-                                                {
-                                                    filter.step_size = v;
-                                                    step_ok = true;
-                                                }
-                                            }
-                                            Some("PRICE_FILTER") => {
-                                                if let Some(v) = f["tickSize"]
-                                                    .as_str()
-                                                    .and_then(|t| t.parse::<f64>().ok())
-                                                    .filter(|v| v.is_finite() && *v > 0.0)
-                                                {
-                                                    filter.tick_size = v;
-                                                    tick_ok = true;
-                                                }
-                                            }
-                                            Some("MIN_NOTIONAL") => {
-                                                if let Some(n) = f["notional"].as_str() {
-                                                    if let Ok(v) = n.parse::<f64>() {
-                                                        if v.is_finite() && v > 0.0 {
-                                                            filter.min_notional = v;
-                                                        }
-                                                    }
-                                                }
-                                            }
-                                            _ => {}
-                                        }
-                                    }
-                                }
-                                if step_ok && tick_ok {
-                                    // F1-105: Si min_notional no vino o no parseó de exchangeInfo,
-                                    // consultar el registro de símbolos local si tiene spec válido
-                                    if filter.min_notional == 5.0 {
-                                        if let Some(cid) = quantum_arena::symbol_registry::try_index(sym) {
-                                            if let Some(spec) = quantum_arena::symbol_registry::try_spec(cid) {
-                                                if spec.min_notional.is_finite() && spec.min_notional > 0.0 {
-                                                    filter.min_notional = spec.min_notional;
-                                                }
-                                            }
-                                        }
-                                    }
-                                    map.insert(sym.to_string(), filter);
-                                }
-                            }
-                        }
-                    }
-                }
-                Ok(map)
+                Self::filtros_de_exchange_info(&text)
             }
             Err(e) => Err(self.handle_rate_limit_error(&e)),
         }
+    }
+
+    /// N20 (CL-185): los filtros de una respuesta de exchangeInfo. Una que no
+    /// trae ninguno utilizable (cuerpo ilegible —el cliente devuelve Ok con
+    /// «TEXT_ERR…» si un 2xx no se pudo leer—, JSON roto, sin `symbols` o sin
+    /// un solo símbolo con paso y tick) es un error: antes era un mapa vacío
+    /// que get_symbol_filter guardaba encima de la caché buena, y cada símbolo
+    /// volvía a descargar exchangeInfo.
+    fn filtros_de_exchange_info(
+        texto: &str,
+    ) -> Result<std::collections::HashMap<String, SymbolFilter>, String> {
+        let mut map = std::collections::HashMap::new();
+        if let Ok(json) = serde_json::from_str::<serde_json::Value>(texto) {
+            if let Some(symbols) = json["symbols"].as_array() {
+                for sym_info in symbols {
+                    if let Some(sym) = sym_info["symbol"].as_str() {
+                        let mut filter = SymbolFilter::default();
+                        // D-631 (DÉCIMA OLA): un paso o tick que no parsea ya
+                        // no se sustituye por los de BTCUSDT; el símbolo sólo
+                        // entra en el mapa si ambos se leyeron de verdad.
+                        let mut step_ok = false;
+                        let mut tick_ok = false;
+                        if let Some(filters) = sym_info["filters"].as_array() {
+                            for f in filters {
+                                match f["filterType"].as_str() {
+                                    Some("LOT_SIZE") => {
+                                        if let Some(v) = f["stepSize"]
+                                            .as_str()
+                                            .and_then(|s| s.parse::<f64>().ok())
+                                            .filter(|v| v.is_finite() && *v > 0.0)
+                                        {
+                                            filter.step_size = v;
+                                            step_ok = true;
+                                        }
+                                    }
+                                    Some("PRICE_FILTER") => {
+                                        if let Some(v) = f["tickSize"]
+                                            .as_str()
+                                            .and_then(|t| t.parse::<f64>().ok())
+                                            .filter(|v| v.is_finite() && *v > 0.0)
+                                        {
+                                            filter.tick_size = v;
+                                            tick_ok = true;
+                                        }
+                                    }
+                                    Some("MIN_NOTIONAL") => {
+                                        if let Some(n) = f["notional"].as_str() {
+                                            if let Ok(v) = n.parse::<f64>() {
+                                                if v.is_finite() && v > 0.0 {
+                                                    filter.min_notional = v;
+                                                }
+                                            }
+                                        }
+                                    }
+                                    _ => {}
+                                }
+                            }
+                        }
+                        if step_ok && tick_ok {
+                            // F1-105: Si min_notional no vino o no parseó de exchangeInfo,
+                            // consultar el registro de símbolos local si tiene spec válido
+                            if filter.min_notional == 5.0 {
+                                if let Some(cid) = quantum_arena::symbol_registry::try_index(sym) {
+                                    if let Some(spec) = quantum_arena::symbol_registry::try_spec(cid) {
+                                        if spec.min_notional.is_finite() && spec.min_notional > 0.0 {
+                                            filter.min_notional = spec.min_notional;
+                                        }
+                                    }
+                                }
+                            }
+                            map.insert(sym.to_string(), filter);
+                        }
+                    }
+                }
+            }
+        }
+        if map.is_empty() {
+            return Err(format!(
+                "EXCHANGE_INFO_SIN_FILTROS: {}",
+                crate::order_types::truncate(texto, 200)
+            ));
+        }
+        Ok(map)
     }
 
     /// Filtros reales de precisión de un símbolo.
@@ -5718,5 +5736,43 @@ mod tests_n20 {
         assert!(c[..envios[0]].contains("check_backoff("), "freno antes de la descarga");
         assert!(c[envios[0]..envios[1]].contains("check_backoff("), "freno antes del reintento");
         assert!(!c.contains("check_exit_rate_limits("), "sin el tramo del 80 %");
+    }
+
+    /// RED antes de CL-185: una respuesta 2xx sin filtros utilizables (el
+    /// cliente devuelve Ok con «TEXT_ERR…» si no pudo leer el cuerpo) era un
+    /// mapa vacío, y get_symbol_filter lo guardaba encima de la caché buena.
+    #[test]
+    fn cl185_un_exchange_info_sin_filtros_no_es_un_mapa_vacio() {
+        for texto in [
+            "TEXT_ERR: operation timed out",
+            "{}",
+            r#"{"symbols":[]}"#,
+            r#"{"symbols":[{"symbol":"CL185USDT","filters":[
+                {"filterType":"LOT_SIZE","stepSize":"0"},
+                {"filterType":"PRICE_FILTER","tickSize":"0.001"}]}]}"#,
+        ] {
+            let r = OrderExecutor::filtros_de_exchange_info(texto);
+            assert!(
+                matches!(r, Err(ref e) if e.starts_with("EXCHANGE_INFO_SIN_FILTROS")),
+                "{texto} → {r:?}"
+            );
+        }
+        let bueno = r#"{"symbols":[{"symbol":"CL185USDT","filters":[
+            {"filterType":"LOT_SIZE","stepSize":"0.01"},
+            {"filterType":"PRICE_FILTER","tickSize":"0.001"},
+            {"filterType":"MIN_NOTIONAL","notional":"10"}]}]}"#;
+        let mapa = OrderExecutor::filtros_de_exchange_info(bueno).unwrap_or_default();
+        assert_eq!(mapa.len(), 1);
+        let f = mapa.get("CL185USDT").copied().unwrap_or_default();
+        assert_eq!((f.step_size, f.tick_size, f.min_notional), (0.01, 0.001, 10.0));
+    }
+
+    /// RED antes de CL-185: la descarga devolvía `Ok(map)` aunque el mapa
+    /// estuviera vacío.
+    #[test]
+    fn cl185_la_descarga_no_devuelve_un_mapa_vacio() {
+        let c = cuerpo("fetch_all_symbol_filters");
+        assert!(c.contains("Self::filtros_de_exchange_info(&text)"));
+        assert!(!c.contains("Ok(map)"));
     }
 }
