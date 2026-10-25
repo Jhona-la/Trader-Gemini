@@ -25,7 +25,9 @@
 //! del cierre) es el almacenado tal cual, y es el caso que fijan las pruebas
 //! de CL-165 y CL-167 (`bias_crudo`). Con un cierre registrado y el reloj ya
 //! pasado, `epigenetic_bias_at` lleva un almacenado ±∞ o NaN a 1,0 y uno
-//! ≤ 0 a 0,5: llega neutralizado y no se rechaza. Esa cobertura real la fija
+//! s ≤ 0 a max(0,5; 1 − (1 − s)·e^{−Δ/30 min}): 0,5 durante 30·ln(2·(1 − s))
+//! min (≈ 21 con s = 0, ≈ 42 con s = −1) y después sube hacia 1 (RV10-T).
+//! Llega neutralizado y no se rechaza. Esa cobertura real la fija
 //! `rv9_tras_un_cierre_el_bias_corrupto_llega_neutralizado`. Validar el
 //! almacenado haría absorbente el rechazo: el escritor (`state.rs`, cierre)
 //! no toca un bias no finito.
@@ -172,12 +174,13 @@ fn bias_crudo(arena: &GlobalArena, bias: f64) {
     arena.coins[0].last_close_ts.store(0, Relaxed);
 }
 
-/// Bias almacenado con un cierre registrado y el tick siguiente 1 s después:
-/// el activo es el relajado por OU (`epigenetic_bias_at`), no el almacenado.
-fn bias_tras_un_cierre(arena: &GlobalArena, bias: f64) {
+/// Bias almacenado con un cierre registrado y el tick siguiente `tras_ms`
+/// después: el activo es el relajado por OU (`epigenetic_bias_at`), no el
+/// almacenado.
+fn bias_tras_un_cierre(arena: &GlobalArena, bias: f64, tras_ms: u64) {
     arena.coins[0].epigenetic_bias.store(bias, Relaxed);
     arena.coins[0].last_close_ts.store(5_000_000, Relaxed);
-    arena.coins[0].last_tick_timestamp_ms.store(5_001_000, Relaxed);
+    arena.coins[0].last_tick_timestamp_ms.store(5_000_000 + tras_ms, Relaxed);
 }
 
 #[test]
@@ -309,16 +312,22 @@ fn cl165_bias_finito_positivo_fuera_de_banda_sigue_en_lh04() {
 fn rv9_tras_un_cierre_el_bias_corrupto_llega_neutralizado() {
     let _serie = SERIE.lock().unwrap_or_else(|e| e.into_inner());
     let referencia = orden_minima_de_referencia();
-    // (almacenado, activo): `epigenetic_bias_at` lleva lo no finito a 1,0 y
-    // lo que relaja por debajo de 0,5 al suelo de la banda.
+    // (almacenado, ms tras el cierre, activo): `epigenetic_bias_at` lleva lo
+    // no finito a 1,0 y lo que relaja por debajo de 0,5 al suelo de la banda.
+    // RV10-T: un almacenado s ≤ 0 sólo llega como 0,5 mientras
+    // 1 − (1 − s)·e^{−Δ/30 min} ≤ 0,5, es decir durante 30·ln(2·(1 − s)) min
+    // (≈ 21 con s = 0, ≈ 42 con s = −1). Una hora después del cierre, s = 0
+    // llega como 1 − e^{−2} ≈ 0,86.
+    let relajado = 1.0 + (0.0f64 - 1.0) * (-(3_600_000.0f64) / 1_800_000.0).exp();
     let casos = [
-        (f64::INFINITY, 1.0),
-        (f64::NEG_INFINITY, 1.0),
-        (f64::NAN, 1.0),
-        (0.0, 0.5),
-        (-1.0, 0.5),
+        (f64::INFINITY, 1_000, 1.0),
+        (f64::NEG_INFINITY, 1_000, 1.0),
+        (f64::NAN, 1_000, 1.0),
+        (0.0, 1_000, 0.5),
+        (-1.0, 1_000, 0.5),
+        (0.0, 3_600_000, relajado),
     ];
-    for (almacenado, activo) in casos {
+    for (almacenado, tras_ms, activo) in casos {
         // LH-04 dimensiona (n = 100): la f es la del bias activo, sin rechazo.
         let (arena, intent) = fixture();
         evidencia(&arena, 0.65, 100, 2.6);
@@ -327,9 +336,9 @@ fn rv9_tras_un_cierre_el_bias_corrupto_llega_neutralizado() {
         let f_esperada = arena.registry.get_for_coin_or(0, "lh04_f_riesgo", f64::NAN);
         let (arena, intent) = fixture();
         evidencia(&arena, 0.65, 100, 2.6);
-        bias_tras_un_cierre(&arena, almacenado);
+        bias_tras_un_cierre(&arena, almacenado, tras_ms);
         assert_eq!(
-            arena.coins[0].get_active_epigenetic_bias(5_001_000).to_bits(),
+            arena.coins[0].get_active_epigenetic_bias(5_000_000 + tras_ms).to_bits(),
             activo.to_bits(),
             "premisa: el almacenado {almacenado} llega como {activo}"
         );
@@ -341,7 +350,7 @@ fn rv9_tras_un_cierre_el_bias_corrupto_llega_neutralizado() {
         // Sin edge (n = 20, PF 0,9): la orden mínima.
         let (arena, intent) = fixture();
         evidencia(&arena, 0.65, 20, 0.9);
-        bias_tras_un_cierre(&arena, almacenado);
+        bias_tras_un_cierre(&arena, almacenado, tras_ms);
         let (orden, rechazos) = evaluar(&arena, &intent);
         assert_eq!(rechazos, 0, "almacenado {almacenado}: sin rechazo");
         assert_eq!(nocional(&orden).to_bits(), nocional(&referencia).to_bits(), "orden mínima");
