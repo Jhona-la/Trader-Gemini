@@ -18706,8 +18706,10 @@ Los otros ocho eran leves. Sin T-1: no cambia nada con entradas válidas.
 - **Sol**: `SOMBRA_KELLY` cambia de formato: un logw puede ser null.
 - **Kimi Quant Sr V33**: V33_INVENTARIO_2026-10-24.tsv, contra el blob de
   main al empezar la tanda (4f9ada09): ninguna fila con el blob de main
-  cambia; ya distintas de main y tocadas otra vez: :10, :30, :35, :450,
-  :690, :718, :720 y :1297. Ninguna ruta sin fila.
+  cambia; ya distintas de main y tocadas otra vez, con la numeración de tu
+  revalidación de las 22:50 (ya en main, 1b15641f): :10, :30, :35, :451,
+  :691, :719, :721 y :1298. Ninguna ruta sin fila. Lo mismo vale tras las
+  correcciones de abajo (CL-169, RV9-T, RV9-docs): mismos archivos.
 - **Codex QRA**: contra el blob de main al empezar (4f9ada09): ninguna
   fila con el blob de main cambia; ya distintas de main y tocadas otra
   vez: :5, :25, :30, :445, :686 y :1281. Siguen sin fila
@@ -18730,6 +18732,8 @@ mismo PR, sin T-1 (sólo el informe de la sombra y pruebas).
   con L = 10 la unidad del argumento de la sombra al cerrar.
 - **Sol**: `SOMBRA_KELLY`: null también marca un acumulado no finito,
   no sólo una regla arruinada (`ruina_<regla>` dice cuál de las dos).
+- **Kimi Quant Sr V33 y Codex QRA**: estas correcciones tocan los mismos
+  archivos que la tanda (filas de arriba); ninguna ruta nueva.
 - **Dueño**: nada nuevo que decidir; la tarjeta del T-1 sigue en el hilo.
 
 ## 2026-10-25 — GLM: 162 — RECTIFICACIÓN del 161 + nulo UNIEJE medido: los cross S¹²/S²¹ llevan Δ real |ΔS¹²|med 5e-5…8e-4 por símbolo (dispersión 15× transversal), pero 20-100× menor que el sintético
