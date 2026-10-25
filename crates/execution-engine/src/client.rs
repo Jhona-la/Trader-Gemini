@@ -618,6 +618,11 @@ impl BinanceClient {
     /// Cancela una orden enviando el payload HTTP (DELETE).
     #[inline(always)]
     pub async fn cancel_order_payload(&self, full_url: &str) -> Result<BinanceRateLimits, String> {
+        // CL-190 (N20): la cancelación de la pierna hermana (user_data_stream.rs)
+        // sale por un clon sin ejecutor. Sólo el freno: el 429 de un envío del
+        // ejecutor lo registra su handle_rate_limit_error; el stream sólo lo
+        // imprime (fila N27 del censo).
+        self.freno.comprobar_ahora()?;
         let api_key = self.api_key.load();
         let response = self
             .http
@@ -918,5 +923,16 @@ mod tests {
         for llamada in [".create_listen_key(", ".keep_alive_listen_key(", "client.fetch_server_time("] {
             assert!(!produccion(EJECUTOR).contains(llamada), "el ejecutor llama a {llamada}");
         }
+    }
+
+    /// RED antes de CL-190: la cancelación (la de la pierna hermana sale del
+    /// stream por un clon, sin ejecutor) no miraba el freno. Sólo lo mira: su
+    /// 429 lo registra el ejecutor cuando el envío es suyo; el stream sólo lo
+    /// imprime (fila N27 del censo).
+    #[test]
+    fn cl190_la_cancelacion_frena_sin_registrar() {
+        let c = cuerpo("cancel_order_payload");
+        assert!(antes(c, "self.freno.comprobar_ahora()?;", ".send()"), "cancela sin freno");
+        assert!(!c.contains("freno_de_respuesta(") && !c.contains(".registrar("), "registra");
     }
 }

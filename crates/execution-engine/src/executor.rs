@@ -1349,10 +1349,11 @@ impl OrderExecutor {
     /// sale mientras duran, salidas incluidas: Binance pide no enviar durante
     /// el Retry-After de un 429, y seguir enviando acumula 429 hasta el freno
     /// escalado (3 consecutivos) o el ban de IP (418). Las rutas sin ejecutor
-    /// (la hora del NTP y el listenKey) lo miran y lo arman en el cliente
-    /// (CL-189); la cancelación de la pierna hermana del user-data stream aún
-    /// no (fila N20 del censo C-F7b). Todo llamador de `get_payload_account`
-    /// frena antes de llamarla (CL-187).
+    /// lo miran en el cliente: la hora del NTP y el listenKey, que además lo
+    /// arman con su 429/418 (CL-189), y la cancelación de la pierna hermana del
+    /// user-data stream, que sólo lo mira (CL-190; el resto es la fila N27 del
+    /// censo C-F7b). Todo llamador de `get_payload_account` frena antes de
+    /// llamarla (CL-187).
     fn check_backoff(&self, timestamp_ms: u64) -> Result<(), String> {
         // N20 (CL-188): el freno de `FrenoExchange` (RATE_BRAKE de M4-C02 y el
         // cooldown post-429 de F1.8), el mismo que ven los clones del cliente.
@@ -5906,5 +5907,35 @@ mod tests_n20 {
         let c = ex().client().clone();
         assert!(!rechazo(c.fetch_server_time().now_or_never(), "RATE_"), "sin freno sale");
         assert!(!rechazo(c.keep_alive_listen_key().now_or_never(), "RATE_"), "sin freno sale");
+    }
+
+    /// RED antes de CL-190: la cancelación de la pierna hermana sale del
+    /// user-data stream por un clon del cliente y no miraba el freno: dentro
+    /// del Retry-After de un 429 o con un 418 salía igual. Su rechazo local,
+    /// si vuelve al ejecutor, no cuenta como 429.
+    #[tokio::test]
+    async fn cl190_la_cancelacion_de_un_clon_no_sale_dentro_del_freno() {
+        const URL: &str = "https://testnet.binancefuture.com/fapi/v1/algoOrder\
+            ?symbol=BTCUSDT&clientAlgoId=cl190_SL&timestamp=1&signature=0";
+        let ex = ex();
+        let c = ex.client().clone();
+        ex.handle_rate_limit_error("HTTP_429_RATE_LIMITED retry_after=30");
+        let e = match c.cancel_order_payload(URL).now_or_never() {
+            Some(Err(e)) => e,
+            _ => String::new(),
+        };
+        assert!(e.starts_with("RATE_LIMIT_COOLDOWN"), "dentro del Retry-After no sale: {e}");
+        ex.handle_rate_limit_error(&e);
+        ex.handle_rate_limit_error("HTTP_429_RATE_LIMITED retry_after=30");
+        let ahora = ex.get_synced_timestamp();
+        assert!(
+            matches!(ex.check_backoff(ahora), Err(ref e) if e.starts_with("RATE_LIMIT_COOLDOWN")),
+            "el rechazo local no contó como 429"
+        );
+
+        let ex = self::ex();
+        ex.handle_rate_limit_error("HTTP_418_IP_BANNED retry_after=300");
+        let r = ex.client().clone().cancel_order_payload(URL).now_or_never();
+        assert!(rechazo(r, "RATE_BRAKE"), "con un 418 no sale");
     }
 }
