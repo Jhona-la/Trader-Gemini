@@ -281,6 +281,16 @@ impl FrenoExchange {
         e.to_string()
     }
 
+    /// N20 (CL-193): `exito` para una respuesta sana de una ruta sin ejecutor
+    /// (NTP, listenKey), que también cuenta para la racha desde CL-189. Sin
+    /// racha no lee el reloj.
+    #[inline(always)]
+    pub(crate) fn exito_ahora(&self) {
+        if self.consecutive_429.load(Ordering::Relaxed) != 0 {
+            self.exito(self.ahora_ms());
+        }
+    }
+
     /// F1-005 (Ola Ω150): una respuesta sana sólo reinicia consecutive_429
     /// cuando el cooldown activo ya expiró. Antes, cualquier 2xx concurrente
     /// durante una ráfaga lo reiniciaba a 0 en medio del cooldown, impidiendo
@@ -412,6 +422,8 @@ impl BinanceClient {
                 status.as_u16(),
             ));
         }
+        // CL-193: el exchange la sirvió; reinicia la racha como las del ejecutor.
+        self.freno.exito_ahora();
         let body = response
             .text()
             .await
@@ -439,19 +451,20 @@ impl BinanceClient {
             .await
             .map_err(|e| format!("Network Error: {}", e))?;
 
-        if response.status().is_success() {
-            Ok(())
-        } else {
+        if !response.status().is_success() {
             let status = response.status();
             if let Some(e) = self.freno_de_respuesta(status.as_u16(), response.headers()) {
                 return Err(e);
             }
             let body = response.text().await.unwrap_or_default();
-            Err(crate::order_types::parse_reject_body(
+            return Err(crate::order_types::parse_reject_body(
                 &body,
                 status.as_u16(),
-            ))
+            ));
         }
+        // CL-193: el exchange la sirvió; reinicia la racha como las del ejecutor.
+        self.freno.exito_ahora();
+        Ok(())
     }
 
     /// Fetches server time directly from Binance endpoint GET /fapi/v1/time
@@ -476,6 +489,8 @@ impl BinanceClient {
                 status.as_u16(),
             ));
         }
+        // CL-193: el exchange la sirvió; reinicia la racha como las del ejecutor.
+        self.freno.exito_ahora();
 
         #[derive(serde::Deserialize)]
         struct ServerTimeResp {
@@ -934,5 +949,29 @@ mod tests {
         let c = cuerpo("cancel_order_payload");
         assert!(antes(c, "self.freno.comprobar_ahora()?;", ".send()"), "cancela sin freno");
         assert!(!c.contains("freno_de_respuesta(") && !c.contains(".registrar("), "registra");
+    }
+
+    /// RED antes de CL-193: el 429 de una ruta sin ejecutor cuenta para la
+    /// racha (CL-189), pero su respuesta sana no la reiniciaba: en papel, con
+    /// el ejecutor casi sin tráfico propio, tres 429 aislados del NTP a lo
+    /// largo de un día armaban RATE_BRAKE, y desde ahí cada 429 lo rearmaba.
+    #[test]
+    fn cl193_las_rutas_crudas_reinician_la_racha() {
+        for f in ["create_listen_key", "keep_alive_listen_key", "fetch_server_time"] {
+            let c = cuerpo(f);
+            assert!(
+                antes(c, "self.freno_de_respuesta(", "self.freno.exito_ahora();"),
+                "{f}: su 2xx no reinicia la racha"
+            );
+        }
+        // Con el cooldown vencido reinicia; dentro de él no (F1-005).
+        let c = BinanceClient::new("k".into(), true);
+        c.freno().registrar("HTTP_429_RATE_LIMITED retry_after=0");
+        assert_eq!(c.freno().consecutive_429.load(Ordering::Relaxed), 1);
+        c.clone().freno().exito_ahora();
+        assert_eq!(c.freno().consecutive_429.load(Ordering::Relaxed), 0);
+        c.freno().registrar("HTTP_429_RATE_LIMITED retry_after=30");
+        c.freno().exito_ahora();
+        assert_eq!(c.freno().consecutive_429.load(Ordering::Relaxed), 1, "dentro del cooldown");
     }
 }
