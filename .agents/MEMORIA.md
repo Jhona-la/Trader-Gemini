@@ -22,15 +22,17 @@ del exchange alta o un 429/418 activo; el backtest no usa OrderExecutor
   respuesta (`Cupo`). Costes en binance_api.rs (`CosteBinance`).
 - Revisión antes de fusionar (16 hallazgos confirmados): CL-180 (el uso es
   el máximo exacto de las cabeceras vigentes, con una cola; un sello
-  futuro no alarga la ventana), CL-181 (un contador en que la petición no
+  futuro se acota a ahora con la siguiente cabecera de su contador), CL-181 (un contador en que la petición no
   gasta no la frena por lo que está en vuelo), CL-182 (la cabecera se
   registra con el cupo vivo), RV14-c (el aplanado frenado sale al empezar;
   el 418 y el tercer 429 arman RATE_BRAKE, no el kill-switch) y RV14-T.
+  Segunda revisión: CL-183 (en X-026 un re-snapshot sin respuesta ya no da
+  la posición por plana ni purga sus brackets), RV15-c y RV15-docs.
 - Filas nuevas: N18 (un 429 durante los brackets de una entrada acaba en
   el kill-switch permanente de X-009; Línea I), N19 (el aplanado inmune no
   se reintenta tras quedar incompleto; Línea I, sin verificar), N20
   (peticiones fuera de la cuota: modo hedge cada 60 s, filtros, hora, NTP,
-  listenKey),
+  listenKey, la cancelación de la pierna hermana del user-data stream),
   N21 (las respuestas de error tiran sus cabeceras) y N22 (el 0,8, los
   +60 s del freno y tres pesos del mapa sin comprobar; commissionRate por
   símbolo cada 60 s podría pesar 400/min).

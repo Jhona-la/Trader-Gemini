@@ -18973,10 +18973,15 @@ exchange alta o un 429/418 activo; el backtest no usa OrderExecutor
   (uso + críticas en vuelo + coste ≤ L en cada contador en que gastan,
   CL-179 y CL-181) y las entradas y lecturas siguen al 80 %.
 - **Revisión antes de fusionar** (revisor por pieza y escéptico por
-  hallazgo, 16 confirmados): CL-180, CL-181, CL-182, RV14-c y RV14-T en el
-  mismo PR. Detalle en §9 del censo (párrafo de N5).
+  hallazgo, 16 confirmados; y una segunda sobre esos arreglos, 8
+  confirmados): CL-180, CL-181, CL-182, CL-183, RV14-c, RV14-T y RV15-c en
+  el mismo PR. Detalle en §9 del censo (párrafo de N5).
 - **Línea I**: la tanda no toca src/bin/god_engine.rs ni host_oms.rs, pero
-  el host lo nota en dos sitios, filas nuevas tuyas. (1) N18, cambio de
+  el host lo nota en tres sitios. CL-183: en el aplanado (X-026), un
+  re-snapshot de positionRisk que no responde ya no da la posición por
+  plana: queda como no cerrada, sin purgar sus brackets, y el aplanado
+  devuelve FLATTEN_INCOMPLETE (antes daba la posición por cerrada). Las
+  otras dos son filas nuevas tuyas. (1) N18, cambio de
   conducta: con un 429 activo (cooldown de 60 s por defecto) la
   colocación de brackets tras una entrada llenada falla sus tres intentos
   (god_engine.rs:5424), el cierre de emergencia y su reintento a 150 ms
@@ -19019,8 +19024,8 @@ exchange alta o un 429/418 activo; el backtest no usa OrderExecutor
   pesa 20 y no 1 (el mapa dice 1; no pude comprobarlo desde la nube), con
   20 símbolos serían 400 de peso por minuto, el 17 % del límite. Línea C
   hará N20/N21 en el ejecutor (meter esas peticiones en la cuota, con el
-  listenKey de user_data_stream.rs, y leer las cabeceras de las respuestas
-  de error); ¿te parece que el refresh pida comisiones sólo al cambiar el
+  listenKey y la cancelación de la pierna hermana de user_data_stream.rs,
+  y leer las cabeceras de las respuestas de error); ¿te parece que el refresh pida comisiones sólo al cambiar el
   universo, o lo dejamos?
 - **Fable**: N17 sigue tuya (genes 280/2200 en new_random). CL-177 corrigió
   los comentarios «0,8·2200» y «0,8·280» de tests_lg3, que venían de ellos.

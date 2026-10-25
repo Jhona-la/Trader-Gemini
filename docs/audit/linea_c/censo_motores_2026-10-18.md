@@ -407,7 +407,7 @@ dice su lote):
 | #143 | N13, precisiones de la revisión de las correcciones del #142 (CL-170: el contador y las marcas de ruina de la sombra también sin respaldo; RV10-T, RV10-docs), y la de su propia revisión antes de fusionar (CL-171: el libro no repara un contador corrupto; RV11-docs) |
 | #144 | N12, la fricción en la pérdida al stop (CL-172: la viabilidad de la orden mínima; CL-173: el tope de ruina F1-092; RV12-T, RV12-docs); f_min_ejecutable de la envolvente queda para el dueño |
 | #145 | N4 (RET-N4: Position::entry_tau_ms(), sin llamadores), N2 (RET-N2: ewma_price_at, scale_gain_at y volatility_at, tras la regla 2), N9 (CL-174: sin VPIN medido la sombra TrendRunner se abstiene), N10 (CL-175: la presión adversarial de Nash es el cvpin medido), N15 (CL-176: la escalada desnuda reporta el fallo de la purga de brackets); más RV13-docs; abre N10b, N15, N16 y N17 |
-| #146 | N5, la cuota del exchange para las salidas (CL-177: uso por contador con su sello y sin bajar por una respuesta tardía; CL-178: las salidas sin consulta respetan el freno 429/418 y el barrido no purga dos veces; CL-179: las críticas pasan hasta el límite del exchange con las críticas en vuelo contadas); más N5-docs; abre N18 a N22; y su revisión antes de fusionar (CL-180: el máximo exacto de las cabeceras vigentes y sin sellos futuros; CL-181: un contador sin coste no frena por lo que está en vuelo; CL-182: la cabecera se registra con el cupo vivo; RV14-c, RV14-T, RV14-docs) |
+| #146 | N5, la cuota del exchange para las salidas (CL-177: uso por contador con su sello y sin bajar por una respuesta tardía; CL-178: las salidas sin consulta respetan el freno 429/418 y el barrido no purga dos veces; CL-179: las críticas pasan hasta el límite del exchange con las críticas en vuelo contadas); más N5-docs; abre N18 a N22; y sus dos revisiones antes de fusionar (CL-180: el máximo exacto de las cabeceras vigentes, con el sello futuro acotado por la siguiente cabecera; CL-181: un contador sin coste no frena por lo que está en vuelo; CL-182: la cabecera se registra con el cupo vivo; CL-183: en X-026 un re-snapshot sin respuesta no da la posición por plana; RV14-c, RV14-T, RV14-docs, RV15-c, RV15-docs) |
 
 **Hecho por otros agentes**: lote 9 entero (Sol, d18b3735), lote 45 entero
 (Codex RB, 906a9c6a), parte del 7 (Sol retiró el bin main.rs de
@@ -822,14 +822,21 @@ un escéptico por lote listo):
     hallazgo, 16 confirmados y 3 refutados): CL-180, el uso es el máximo
     exacto de las cabeceras vigentes (con sólo la mayor y la última se
     perdía una intermedia aún vigente) y un sello futuro, por un reloj que
-    retrocede, no alarga su ventana; CL-181, en el tramo crítico un
+    retrocede, se acota a ahora con la siguiente cabecera de ese contador
+    (sin ella sigue vigente, lo conservador); CL-181, en el tramo crítico un
     contador en el que la petición no gasta sólo la rechaza con el uso ya
     por encima del límite (un cierre de peso 0 se frenaba por el peso de un
     positionRisk en vuelo); CL-182, la cabecera de una crítica se registra
     antes de soltar su cupo; RV14-c, el aplanado devuelve el freno al
     empezar y comentarios corregidos (el 418 y el tercer 429 arman
     RATE_BRAKE, no el kill-switch); RV14-T, guardas de fuente más
-    estrictas.
+    estrictas. Segunda revisión, sobre esos arreglos (8 confirmados, 1
+    refutado): CL-183, en X-026 un positionRisk fresco que no respondió
+    (freno, cuota o red) se leía como «ya plana» y se purgaban los brackets
+    de una posición quizá viva; ahora queda como no cerrada (defecto previo
+    a la tanda, que CL-179 hace más probable: positionRisk cuesta 5 de peso
+    y la purga 1); RV15-c y RV15-docs, comentarios, la guarda del listado
+    algo y los documentos.
   - Queda sin derivar el 0,8 de entradas y lecturas: su franja (480 de
     peso/min, 60 órdenes/10 s, 240/min) es ahora la reserva crítica. El
     panel de diseño estimó, sin medir, que cubre el tráfico crítico del
@@ -1180,7 +1187,13 @@ un escéptico por lote listo):
   client.rs:192) en el bucle de reconexión con reintento de 500 ms a 30 s
   (user_data_stream.rs:133-170) y keep_alive_listen_key (PUT,
   client.rs:226) cada 25 min (user_data_stream.rs:213), sin leer las
-  cabeceras de uso. get_payload_account sólo mira el freno antes de su
+  cabeceras de uso; y la cancelación de la pierna hermana tras un fill
+  (DELETE /fapi/v1/algoOrder por clientAlgoId, user_data_stream.rs:667-715,
+  un tokio::spawn por fill de _TP/_TPR/_SL/_SLR/wdTP_/wdSL_), que no mira el
+  freno, no pide cupo, tira la cabecera del Ok y cuyo 429/418 no llega a
+  handle_rate_limit_error (el streamer no tiene el OrderExecutor). Al
+  meterla en la cuota hay que decidir qué hace una crítica rechazada por el
+  freno; hoy su Err ya marca la protección sucia y la purga el vigilante. get_payload_account sólo mira el freno antes de su
   reintento: el primer GET de fetch_hedge_mode y ensure_hedge_mode sale
   siempre. Átomo propio (Línea C).
 - N21 (de la tanda 13): las respuestas de error tiran sus cabeceras de uso,

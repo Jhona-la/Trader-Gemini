@@ -25,22 +25,25 @@
 | `/fapi/v1/klines` | GET | 1-10 | Warmup swing (1h) | data-pipeline |
 | `/fapi/v1/aggTrades` | GET | 20 | Histórico real para backtest (F2/F3) | historical.rs |
 | `/fapi/v1/algoOrder` | POST | 1 (SUPUESTO) | Piernas TP/SL y trailing (servicio Algo, OCO-F5) | executor.rs place_algo_leg, execute_oco_order |
-| `/fapi/v1/algoOrder` | DELETE | 1 (SUPUESTO) | Cancelar una pierna algo | cancel_algo_order_ids |
+| `/fapi/v1/algoOrder` | DELETE | 1 (SUPUESTO) | Cancelar una pierna algo; la hermana tras un fill, fuera de la cuota (N20) | cancel_algo_order_ids; user_data_stream.rs |
 | `/fapi/v1/algoOpenOrders` | DELETE | 1 (SUPUESTO) | Purga algo de un símbolo | cancel_all_algo_open_orders |
 | `/fapi/v1/openAlgoOrders` | GET | 1 con símbolo (SUPUESTO, como openOrders) | Protección viva de una posición; sin símbolo, huérfanas | fetch_open_algo_orders_inner |
 | `/fapi/v1/allOpenOrders` | DELETE | 1 (SUPUESTO) | Purga de órdenes normales de un símbolo | cancel_all_symbol_orders, aplanado |
+| `/fapi/v1/openOrders` | GET | 1 con símbolo / 40 sin él | Reconciliación OMS cada 60 s (`OmsSession::refresh`, sin símbolo) | fetch_all_open_orders, fetch_open_orders_inner |
 | `/fapi/v1/positionSide/dual` | GET/POST | 1 (ver nota) | Modo hedge (arranque, OmsSession::refresh cada 60 s, aplanado) | ensure_hedge_mode, fetch_hedge_mode |
 
 > N5 (CL-179): sólo los pesos de las peticiones críticas son costes del
 > ejecutor (`CosteBinance` en binance_api.rs): order POST/GET/DELETE,
-> positionRisk, algoOrder POST/DELETE, algoOpenOrders y allOpenOrders DELETE,
-> y openAlgoOrders con símbolo. Lo marcado SUPUESTO no está documentado y toma
+> positionRisk de fetch_position_risk, algoOrder POST/DELETE, algoOpenOrders y
+> allOpenOrders DELETE, y openAlgoOrders con símbolo. Lo marcado SUPUESTO no está documentado y toma
 > el valor del análogo más caro, porque sobrestimar sólo frena antes. Las
-> lecturas (commissionRate, account, income, openAlgoOrders sin símbolo, el
-> GET de modo del aplanado) no reservan coste: frenan con el uso por encima
-> del 80 % del límite. ensure_hedge_mode y fetch_hedge_mode
-> (positionSide/dual), exchangeInfo, time y listenKey quedan fuera de la cuota
-> (censo C-F7b, fila N20). Tres pesos del mapa se recuerdan distintos en la
+> lecturas (commissionRate, account, income, openOrders sin símbolo de
+> `OmsSession::refresh` cada 60 s, openAlgoOrders sin símbolo, el positionRisk
+> de fetch_open_positions —arranque, REST-SYNC y bucle de saldo— y el GET de
+> modo del aplanado) no reservan coste: frenan con el uso por encima del 80 %
+> del límite. ensure_hedge_mode y fetch_hedge_mode (positionSide/dual),
+> exchangeInfo, time, listenKey y la cancelación de la pierna hermana del
+> user-data stream quedan fuera de la cuota (censo C-F7b, fila N20). Tres pesos del mapa se recuerdan distintos en la
 > documentación de Binance y están por comprobar desde el PC (fila N22):
 > commissionRate 1 frente a 20, positionSide/dual 1 frente a 30, income 20
 > frente a 30. Ninguno de los tres es un coste del ejecutor, así que
@@ -50,7 +53,7 @@
 
 | Endpoint | Peso | Valor estratégico |
 |---|---|---|
-| `/fapi/v1/openOrders` | 1×símbolo / 40 todos | Cancel-masivo de seguridad; arranque limpio |
+| `/fapi/v1/openOrders` | 1×símbolo / 40 todos | Cancel-masivo de seguridad; arranque limpio (la lectura ya está en uso, §1) |
 | `/fapi/v1/allOrders` | 5 | Historial completo de órdenes (auditoría fills) |
 | `/fapi/v1/userTrades` | 5 | Historial de fills CON comisión exacta → Fee Slayer métricas reales |
 | `/fapi/v1/income` | 20 | PnL, comisiones, funding pagado/cobrado — la VERDAD de "cuánto pagamos" (directiva de informes pre/post fees) |
@@ -98,13 +101,14 @@
   temporal (`RATE_BRAKE`) al tercer 429 consecutivo (cooldown + 60 s) o con un 418 (su ventana o
   300 s); ya no es un kill a 3×429. Mientras duran no sale ninguna petición del ejecutor que pase por
   `check_backoff`, salidas incluidas; quedan fuera las de la fila N20 del censo C-F7b (modo hedge,
-  que `OmsSession::refresh` pide cada 60 s, filtros, hora, NTP y listenKey). Fuera de los frenos, dos
-  tramos de cuota (CL-179): entradas y lecturas frenan con el uso por encima del 80 % del límite; las
-  críticas (cierres, protección, positionRisk, cancelaciones, consulta de una orden) pasan mientras
+  que `OmsSession::refresh` pide cada 60 s, filtros, hora, NTP, listenKey y la cancelación de la pierna
+  hermana del user-data stream). Fuera de los frenos, dos tramos de cuota (CL-179): entradas y lecturas
+  frenan con el uso por encima del 80 % del límite; las críticas (cierres, protección, el positionRisk de
+  fetch_position_risk, cancelaciones, consulta de una orden) pasan mientras
   uso + críticas en vuelo + coste ≤ límite en cada contador en que gastan (CL-181). El uso es el
   máximo de las cabeceras vigentes de cada contador, cada una con su sello (CL-177, CL-180), y una
-  crítica registra su cabecera antes de salir del libro en vuelo (CL-182). Una respuesta de error no
-  trae cabecera (fila N21).
+  crítica registra su cabecera antes de salir del libro en vuelo (CL-182). De una respuesta de error el
+  cliente tira la cabecera: client.rs la lee y la pierde en el Err, o no la lee (fila N21).
 
 ## 6. WebSocket (streams)
 
