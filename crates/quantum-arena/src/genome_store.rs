@@ -1027,6 +1027,10 @@ mod tests {
         for i in [36, 42, 43, 64, 65, 70, 71, 72, 73, 74, 77, 78, 79, 84, 85, 90, 91, 92, 93, 94, 97, 100, 101, 102, 103, 104, 105, 111, 122, 123, 124, 125, 126, 127, 128] {
             v[i] = lo[i] + 0.37 * (hi[i] - lo[i]);
         }
+        // CL-162: los congelados del Kelly legado (10, 11, 32) y el umbral 20, igual.
+        for i in [10, 11, 20, 32] {
+            v[i] = lo[i] + 0.41 * (hi[i] - lo[i]);
+        }
         let g = SuperGenotype::from_vector(&v);
 
         // Camino A: arranque en frío.

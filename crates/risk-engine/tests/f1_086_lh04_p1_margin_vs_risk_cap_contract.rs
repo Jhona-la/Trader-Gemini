@@ -83,9 +83,16 @@ fn test_f1_086_riesgo_no_es_asfixiado_por_tope_arbitrario_de_margen() {
     assert!(capital.is_finite() && capital > 0.0);
     assert!(stop_real.is_finite() && stop_real > 0.0);
 
-    // El riesgo emitido al stop de la orden
+    // El riesgo emitido al stop de la orden, con la fricción de ida y vuelta
+    // del gate (CL-159). Este fixture no fija la latencia: se lee del arena.
     let stop_fraccion = (100.0 - out.sl_target) / 100.0;
-    let riesgo_emitido = out.volume_usd * out.leverage * stop_fraccion;
+    let friccion = risk_engine::tp_sl::roundtrip_friction(
+        0.0004,
+        0.00001,
+        0.01,
+        arena.config.latency_penalty_ms.load(Relaxed).max(0.0),
+    );
+    let riesgo_emitido = out.volume_usd * out.leverage * (stop_fraccion + friccion);
     let riesgo_publicado = f_realizado * capital;
 
     // Verdad causal: la telemetría coincide con la orden emitida dentro de la tolerancia de redondeo

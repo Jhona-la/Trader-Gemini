@@ -15,62 +15,6 @@ pub struct SymbolSpec {
     pub is_shadow: bool,
 }
 
-impl SymbolSpec {
-    /// Conservative projection onto min_qty + integer lots in the supplied f64 model.
-    /// Never increases requested exposure or fabricates missing metadata.
-    /// This is NOT an exchange decimal serializer or full order validator:
-    /// binary boundary values may lose a lot; maxQty, market-specific filters,
-    /// reduce-only exceptions and price-tick validation are not represented here.
-    #[inline]
-    pub fn validate_order(&self, raw_qty: f64, price: f64) -> Result<f64, &'static str> {
-        if !price.is_finite() || !raw_qty.is_finite() || price <= 0.0 || raw_qty <= 0.0 {
-            return Err("Invalid price or quantity");
-        }
-        let step = self.step_size;
-        if !step.is_finite()
-            || step <= 0.0
-            || !self.min_qty.is_finite()
-            || self.min_qty < 0.0
-            || !self.min_notional.is_finite()
-            || self.min_notional < 0.0
-        {
-            return Err("Invalid quantity filter metadata");
-        }
-        if raw_qty < self.min_qty {
-            return Err("Qty below minQty");
-        }
-        // USD-M's documented lattice is (quantity - minQty) % stepSize == 0.
-        // Do not assume minQty is itself an integer multiple of stepSize.
-        let mut qty_steps = ((raw_qty - self.min_qty) / step).floor();
-        // 2^53 is the f64 unit-resolution boundary, not a trading threshold.
-        if !qty_steps.is_finite() || raw_qty / step >= 2_f64.powi(f64::MANTISSA_DIGITS as i32) {
-            return Err("Lot count exceeds f64 unit resolution");
-        }
-        let mut adjusted_qty = self.min_qty + qty_steps * step;
-        // Division/multiplication can straddle a binary rounding boundary.
-        // Correct downwards only; no arbitrary epsilon authorizes extra exposure.
-        if adjusted_qty > raw_qty {
-            qty_steps -= 1.0;
-            adjusted_qty = self.min_qty + qty_steps * step;
-        }
-        if !adjusted_qty.is_finite() || adjusted_qty <= 0.0 || adjusted_qty > raw_qty {
-            return Err("No positive conservative lot quantity");
-        }
-
-        if adjusted_qty < self.min_qty {
-            return Err("Qty below minQty");
-        }
-        let final_notional = adjusted_qty * price;
-        if !final_notional.is_finite() {
-            return Err("Notional overflow");
-        }
-        if final_notional < self.min_notional {
-            return Err("Notional below minNotional");
-        }
-        Ok(adjusted_qty)
-    }
-}
-
 lazy_static! {
     static ref DYNAMIC_REGISTRY: ArcSwap<Vec<SymbolSpec>> =
         ArcSwap::from_pointee(get_default_specs());

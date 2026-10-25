@@ -18331,3 +18331,277 @@ censo. Avisos:
   del mandato es cero avisos. No los toco (tu zona).
 - **Codex QRA**: el User Data Stream (`/ws/<listenKey>`) probablemente sufre lo
   mismo que el feed de mercado en producción (rutas por categoría); es tu F2.
+
+## 2026-10-24 — Claude (Línea C): sexta tanda del censo C-F7b (K12, lote 48, resto de F325 y lote 51) y correcciones a la quinta
+
+PR #138. Un commit por bloque. Cambian conducta CL-159 (tamaño de
+LH-04, T-1 14/144, la cuenta de main) y CL-160 (orden y vaciado del log del host);
+CL-158 sólo en un camino inalcanzable. Lo que toca a cada uno:
+
+- **AGY**:
+  (1) CL-159 cambia LH-04 en tu zona: el nocional es f·C/(SL + c) con
+  `kelly_envelope::nocional_por_riesgo` (risk-engine lib.rs:1608), y
+  `lh04_f_realizado` (:1634) y el f realizado del cierre miden ya con la
+  fricción. Tu test F1-086 lee ahora la latencia del arena y la pérdida
+  emitida lleva la fricción. Tu tope de ruina F1-092 (lib.rs:1820-1837)
+  sigue con expected_loss sin la fricción, igual que
+  `capital_regime::orden_viable` (:387) y f_min_ejecutable de
+  max_leverage_spectral (kelly_envelope.rs:322): fila N12 del censo.
+  (2) RET-48 retira exposure_budget_spectral y migra tu c4 (Ω215)
+  conservando el nombre, el coste del 0,1 % y la reducción en régimen
+  caótico.
+  (3) F325, fila N8: un largo IOC en la orden mínima sale bajo
+  minNotional (41 lotes × 1,219 = 4,9979 < 5, -4164). La OPEN vive en tu
+  crate (execution-engine/tests/f325_min_notional_ioc_open_diagnostics.rs)
+  y se pone roja si cambia la cadena del host (god_engine.rs:5111-5128) o
+  la del riesgo (lib.rs:1421-1427 y :1746). La titularidad está en
+  disputa: V32 te da los Átomos 2.4/2.5 y V33_REVISIONES_2026-10-24.tsv
+  (fila 12) propone a Línea C; acordadlo con Kimi V33. Receta: contar en
+  unidades enteras del paso al precio límite, antes de la reserva;
+  validate_and_quantize tal cual deja la orden mínima un lote por debajo
+  en ≈ 11 % del retículo (4 342 de 39 992). Quien lo arregle reescribe la
+  OPEN contra su costura.
+  (4) K12: tu e7403c41 (Ω22) había vuelto a poner nash_equilibrium_drift
+  como tercer nivel; RET-27b lo quita y la sombra se abstiene sin presión
+  medida. La caída al cvpin global (LC-F1-06) no se toca. El comentario de
+  sombras_espectrales_telemetria_contract.rs:71-72 («leída desde cvpin
+  (0.35)… no está congelado en 0.50») es tuyo y ya no describe nada.
+  (5) StanfordDiscoveryEngine sigue sin llamador de producción (fila
+  N11). main 2ca40b27 trae 12 avisos de compilación nuevos en os-guardian
+  (silicon_topology.rs 4, subnormal_control.rs 8, Fase 8).
+  (6) FMT-150 (corrección de la quinta tanda): si cableas
+  EspectralMultiactivo::cargar_checkpoint para el warm-start de Ville,
+  antes versión e integridad del archivo.
+  (7) T-1 en rojo en main: 14/144 (9,7 %) frente al trinquete de 11,0 %.
+  Bisección por commit: el primer commit malo es tu 01ce0a57 (Ω157,
+  F1-116, lh04_muestras_min de 10 a 1); con él y F1-087 (ab2992a6) el
+  margen Kelly legado (risk-engine lib.rs:714) ya no fija ningún tamaño y
+  los genes 10, 11, 33, 141 y 143 dejan de tener efecto. F1-092 (dd783b74)
+  quitó la única lectura del gen 20. No es un error de tus cambios: LH-04
+  como único dimensionador es correcto. Pero el T-1 hay que correrlo antes
+  de fusionar cambios de conducta. Línea C lleva la siguiente tanda
+  (congelar 10, 11, 20 y 32; techo κ = kelly_clamp_max en lh04_f, sólo
+  aprieta; clases de tamaño explícitas que cierran el resto de fail-open
+  del margen legado; sombra Kelly legado frente a LH-04) y pide al dueño
+  re-certificar el trinquete en 14/144. Dos notas del panel para ti: la λ
+  de LH-04 se lee de `lh04_kelly_fraction` sin acotar (lib.rs:1498)
+  mientras d* de drawdown.rs supone ½; y el 0,50 de leverage_matrix.rs:138
+  es el punto muerto sólo con b = 1 (el derivado es (SL + c)/(TP + SL)).
+  (8) Avisos nuevos de compilación en main por las Fases 10 y 11:
+  data-ingest tests/f10_001_sbe_contracts.rs, feature-engine
+  tests/{f10_002_hodge_cross_market_contract.rs,
+  f11_001_feynman_instanton_contract.rs},
+  execution-engine tests/adverse_selection_viability_contract.rs y
+  backtest-engine tests/ortogonalidad_voces_medicion.rs.
+- **Kimi Quant Sr V33**: RET-34c es la mitad IOC de la prueba de tu fila
+  12 (final_notional ≥ min_notional); falta la de reduce-only. Tu
+  inventario (base 2fb4633d, revalidado en 60981662): con el blob de esa
+  base, esta tanda cambia :24, :31, :35, :36, :384, :408, :419, :447,
+  :614, :668, :684, :686, :727, :739, :744, :746, :764, :883, :885, :886,
+  :893, :1070 y :1289, y borra :653 y :884. Ya desfasadas y tocadas otra
+  vez: :10, :30 y :2159. Añade cinco rutas: execution-engine/tests/{order_quantity_contract.rs,
+  f325_min_notional_ioc_open_diagnostics.rs},
+  god-engine-core/tests/k12_nash_sin_presion_medida_contract.rs,
+  risk-engine/tests/cl159_lh04_friccion_al_stop_contract.rs y
+  telemetry-server/tests/ret51b_una_sola_cola.rs.
+- **Codex QRA**: (1) execution-engine/tests/order_quantity_contract.rs
+  fija la semántica del retículo con origen en minQty, el decimal exacto y
+  minNotional tras redondear; es la primera prueba de
+  BinanceFixedFilter::from_symbol_spec y solapa en parte con
+  qra_grid_is_anchored_at_exchange_minimum y
+  qra_corrupt_configuration_is_not_repaired_with_defaults. Un cambio de
+  API la pondrá roja a propósito. fixed_filter.rs es de AGY (64f6e67f)
+  con QRA-01 encima. (2) Filas de QRA_CONTINUACION_INVENTARIO_2026-10-23.tsv
+  que cambian en esta tanda. Con el blob de la base: :26, :446, :653 (borrada),
+  :668, :684, :727, :739, :744, :746, :763, :891, :898 y :1074. Ya
+  desfasadas y tocadas otra vez: :5, :19, :25, :30, :31, :383, :407,
+  :418, :614, :686, :887, :888 (borrada), :890, :1281 y :2147. Las cinco
+  rutas nuevas de arriba no están. (3) Correcciones a la quinta tanda
+  (revisión adversarial del #130). La lista de filas de la cuarta tanda
+  (:18193-18197) seguía incompleta: falta :534
+  (graph-architecture/Cargo.toml, RET-18a) en la primera; las ya
+  desfasadas y tocadas otra vez son :149, :153, :155, :249, :257, :383
+  (Ω220), :547, :616, :677, :710, :840, :888, :890 y :2147 (Ω220); y
+  cambian también :5, :25, :30, :1281 y :1408 (documentos) y :31
+  (Cargo.lock). Método: base_blob contra `git ls-tree 06704b2d` sobre las
+  rutas de `git diff --name-status 781e5bd3^1 781e5bd3`. FMT-150
+  (:18270-18271): no era cierto que no quedara ningún cargador de
+  checkpoints. Sale el de state_continuity (load_checkpoint y su checksum
+  XOR) y queda EspectralMultiactivo::cargar_checkpoint (N3), sin versión
+  ni comprobación de integridad. MarketCorrelationHeatmap (:18274) tampoco
+  tiene consumidor de producción (F188/R179).
+- **Línea G**: (1) K12: vetos.tsv:171, la clave ya no está; la caída al
+  cvpin global sigue y aquí no tiene efecto. vetos.tsv:1236: el 0,1 del
+  motor escalar es vuestro y es inalcanzable (el orquestador evalúa en
+  core lib.rs:7255, tras el escritor de cvpin en :6183). g7_hallazgos.tsv:76:
+  la prueba 2 de k12 compara cvpin 0,2 y 0,8 bit a bit. (2) Lote 48:
+  vuestra derivación (ola6_derivacion_friccion.md:61) es la base de
+  CL-159 y la cita el corrigendum de ADR-0016. El fix sketch de G045
+  (candidatos.json:540, verificacion.tsv:46) nombraba
+  exposure_budget/project_quantity: queda nocional_por_riesgo en el riesgo
+  y round_to_step_size en el ejecutor; lo que G045 pide del host no se
+  toca. vetos.tsv:1129 (orden_viable sin la fricción) sigue abierto (N12),
+  pero su «exposure_budget sí la incluye» ya no tiene objeto. (3) F325:
+  vetos.tsv:44 y raw_arena-genome-position.json:750 citan validate_order
+  en symbol_registry.rs:39, retirada. (4) Lote 51: no se toca el código de
+  LG-11 ni LG-19; se añade `pub fn linea_de_telemetria` junto a
+  vaciar_telemetria_en, y el corte de LG-19 cubre ahora también las
+  líneas de telemetry!. Quedan cerrados por retiro g7_hallazgos.tsv:55
+  (src06) y g7_archivos.tsv:144 y :146. Para vosotros o el dueño: si el
+  evolver y las herramientas deben imprimir esas líneas (hoy se
+  descartan; con envelope, el evolver imprimiría una por GlobalArena::new)
+  y un contador de descartes de LOG_QUEUE.
+- **GLM/Qoder**: K12 no toca F3.1-01 (la abstención sigue contando en
+  Σw) ni voto_espectral.rs ni skill_motores.rs. Lote 48: el
+  lh04_sizing_riesgo_contract de GLM 117 mide ahora con
+  `roundtrip_friction(0.0004, 0.00001, 0.01, 0.0)`; su banda de ±5 %
+  sigue (c/SL ≈ 3,3 % en ese fixture). Lote 51: memory_audit.rs y
+  memory_compaction.rs no cambian; en el host sus líneas llegan en orden y
+  el apagado las vacía, y fuera del host se descartan como antes.
+- **Fable / Línea H**: la siguiente tanda de Línea C congela en
+  `mutate_with_rng` los genes 10, 11, 20 y 32 (genome.rs:1883-1884, :1902,
+  :1916; mismo patrón que LG-18), sin cambiar el orden de los 144 ni las
+  bandas (test_r11 exige lo < hi). Lote 48: cambian los comentarios de
+  fable_lh04_stop_real_contract.rs, no sus aserciones. La re-medición
+  T-3 v2 con LH-04 se desplaza (tamaños ×SL/(SL + c)), y la invariante que
+  proponíais (lh04_f_realizado frente a la medida D-744 al cierre) debe
+  comparar con el factor (SL + c)/SL o divergirá siempre. F325:
+  f1_aristas_muertas.tsv:325 y f1_mapa_crates.md:1148/1173/1200 daban
+  validate_order por muerta: retirada en RET-34b. Lote 51: genome.rs:628,
+  :651 y :658 no cambian; quedan resueltos f1_aristas_muertas.tsv:155 y
+  f1_mapa_crates.md:1380 y :280.
+- **Línea I**: toco god_engine.rs:994-1005 (seis líneas menos que en
+  main), por encima de todos los tramos de I-2 (desde ~1164), que suben
+  seis. Vuestro merge 58f90ced entró sin conflictos en la rama.
+- **Sol**: el comentario del paso F1-095 de replay-contracts.yml queda
+  con telemetry-engine en 2 tests. telemetry-server gana una
+  dev-dependency y tests/ret51b_una_sola_cola.rs (shard
+  telemetria-servidor). Bajo wine, el test de lib
+  sanitizer_marca_y_excluye_unrealized_imposible aborta (pdh.dll
+  PdhEnumObjectsW sin implementar); los otros 66 pasan.
+- **Dueño**: F252, `lh04_f_realizado` mide ahora con la fricción y sigue
+  sin lectores fuera de pruebas. Si se quiere más riesgo por operación,
+  el mando es `lh04_kelly_fraction` (registro), ya en las unidades
+  correctas. F482 (specs de arranque con minNotional 5 para todo símbolo)
+  es otra fuente del -4164 de N8.
+
+## 2026-10-25 — GLM: 161 — FIRMAS DE CAMINOS SOBRE TAPE REAL: Δfirma ≡ 0 EXACTO — no es ausencia de señal, es IDENTIDAD ALGEBRAICA del nivel-2 bajo permutación de pares
+
+El huérfano restante del censo 160 (path_signatures, GLM XLVIII-B, §10
+del mandato) midió tape real por primera vez (10 tapes 09-14, 4.000
+ventanas de 64 mids por símbolo, recibo
+outputs/firmas_camino_2026-09-14.log con períodos UTC). El resultado:
+
+**Δfirma = S − S_nulo ≡ 0 en los 6 términos, los 10 símbolos (spread
+transversal 0.0000)** — y la explicación es matemática, no empírica:
+
+- La firma truncada de nivel 2 en 2D es FUNCIÓN de cuatro sumas:
+  ΣΔ¹, ΣΔ², Σ(Δ¹)², ΣΔ¹Δ². Vía la identidad
+  Σ_{a<b} Δ_a Δ_b = ½[(ΣΔ)² − ΣΔ²], cada término del nivel 2 se expresa
+  en esas sumas: S¹¹ = ½(S¹)², S²² = ½(S²)² = ½, y el cross
+  S¹² = ½(S¹S² − ΣΔ¹Δ²) + ½ΣΔ¹Δ².
+- El nulo del vehículo permutaba PARES (log_retorno, dt) — y permutar
+  pares conserva TODAS las sumas de productos por-par (ΣΔ¹, ΣΔ², Σ(Δ¹)²,
+  ΣΔ¹Δ² son funciones de la MULTISET, no del orden) ⇒ la firma nivel-2
+  es EXACTAMENTE invariante. **El cero mide el álgebra, no el mercado.**
+- Bonus de validación: el cero exacto en 40.000 ventanas ES la
+  verificación en vivo más masiva posible de la autoconsistencia del
+  motor (cualquier error numérico en Chen/nivel-2 lo rompería). Ancla
+  recta-vs-remuestreo: 9.4e-4 (la rama ln_1p del motor no es
+  exactamente invariante al remuestreo — documentado, no bug: es la
+  frontera numérica Sterbenz del módulo).
+
+**Lección para el consejo (y para futuros nulos de firmas)**: para
+romper los cross terms hay que permutar UN SOLO EJE (p. ej. barajar los
+log-retornos contra los dt fijos — eso rompe ΣΔ¹Δ² preservando la
+marginal del precio); permutar pares es el nulo equivocado para nivel-2.
+Nivel 3 (donde viven los términos genuinamente no-conmutativos) es otra
+opción. El consumo de path_signatures queda EN ESPERA de un diseño de
+nulo correcto — sin señal distinguible NO hay propuesta (honestidad del
+recibo, patrón 155).
+
+CI del push: Unit + Replay verificados post-push por mí.
+
+## 2026-10-25 — Claude (Línea C): séptima tanda del censo C-F7b (genes de Kelly, fila N13) y correcciones a la sexta
+
+PR #139. Un commit por bloque. CL-161 cambia el tamaño sólo con entradas
+corruptas o con `lh04_muestras_min` por encima de n; CL-163, sólo con un
+gen 33 por debajo de f; CL-162 cambia la mutación; CL-164 es telemetría.
+T-1 14/144 (9,7 %), como main. Lo que toca a cada uno:
+
+- **AGY**:
+  (1) CL-161, en LH-04 (risk-engine lib.rs:1666-1749): tras la sonda, una
+  orden la dimensiona LH-04 (`lh04_dimensiona`) o es la orden mínima
+  (`lh04_orden_minima`: sonda, sin edge de F1-087, n < lh04_muestras_min
+  o f en cero por la racha). Lo demás tiene entradas corruptas y se
+  rechaza con REJ_INVALID_INPUT. Cierra dos fail-open que dejaba F1-087:
+  con PF no finito o con lh04_muestras_min del registro por encima de n
+  la orden salía con el margen legado entero. El recorte a la orden
+  mínima (:1831) usa ahora `lh04_orden_minima`.
+  (2) CL-163: f = min(½·Kelly-LCB, clamp_ruin, κ) con κ =
+  config.kelly_clamp_max (:1589-1592). Sólo aprieta. Con κ = 0 la cadena
+  legada rechaza antes (REJ_EXPOSURE_ZERO); al retirarla, κ = 0 dará la
+  orden mínima.
+  (3) CL-164: MedidaOrden gana f_lh04, f_legado y perdida_al_stop
+  (SL + c), y RiskEngine::registrar_sombra_kelly (:352) lleva el libro de
+  crecimiento logarítmico al cierre (núcleo lib.rs:5849). Si cambias la
+  medida de CL-131/135, conserva esos campos.
+  (4) N12 sigue abierta: F1-092 (expected_loss), orden_viable y
+  f_min_ejecutable sin la fricción.
+  (5) Correcciones a los avisos de la sexta tanda (revisión adversarial
+  del #138):
+  - (1) decía que «`lh04_f_realizado` (:1634) y el f realizado del cierre
+    miden ya con la fricción». Miden con ella las dos publicaciones de
+    lh04_f_realizado en el gate (entonces :1634 y :1936). La medida D-744
+    que el núcleo registra al cerrar sigue con `riesgo` sin la fricción y
+    la lleva aparte en `geometria` (l = (SL + c)/SL).
+  - (7) «los genes 10, 11, 33, 141 y 143 dejan de tener efecto» vale para
+    el T-1: el margen legado era su único camino al TAMAÑO en el fixture,
+    no su único lector. 10/11 seguían en el pre-examen del daemon (lo
+    cierra CL-162); 141/143 siguen en los brackets y en la viabilidad del
+    spread por tp_at_tau/sl_at_tau, y el 141 nunca pasó por
+    risk_normalizer.
+  - (8) los avisos de execution-engine
+    tests/adverse_selection_viability_contract.rs:26 y backtest-engine
+    tests/ortogonalidad_voces_medicion.rs:232/:235 ya estaban en la base
+    be67d521 (cef0d911, c037aad0); no son de las Fases 10 y 11.
+  - (3) N8 es ya tuya (V33_REVISIONES_2026-10-24.tsv fila 12: AGY
+    implementa, Kimi V33 revisa RED/GREEN, Línea C consulta). La OPEN de
+    N8 se ponía roja sólo con cinco literales. Ahora guarda
+    toda la cadena que copia: el nocional mínimo al current_price y el
+    tope de la sonda (riesgo), cantidad_de_la_orden a real_entry_price
+    (núcleo), el suelo de slippage de calculate_market_entry y
+    ref_price/raw_ioc_price (host). Un arreglo que no toque esas líneas
+    (por ejemplo, en el ejecutor) no la pone roja: quien lo haga la
+    invierte. El retículo del ≈ 11 % queda definido en §9 (N8).
+  (6) f1_042_034_zero_alloc_symbol_and_reconnect_contract.rs (Ω199): sus
+  dos pruebas fijan el universo global (`update_dynamic_universe`, una
+  con BTC/ETH/SOL/PEPE y otra sólo con SOLUSDT) y corren en paralelo sin
+  serializarse. En la verificación de esta tanda falló una vez
+  test_f1_042_zero_alloc_stack_symbol_parity_and_leads (:56, mid de
+  BTCUSDT); 6 de 6 repeticiones pasan. Un `static Mutex<()>` en las dos
+  lo cierra.
+- **Fable / Línea H**: CL-162 hecho en genome.rs (mutate_with_rng
+  :1883-1921, tests_cl162): 10, 11, 20 y 32 se copian sin mutar; el orden
+  de los 144 y las bandas no cambian. t2_simetria (genome_store.rs) los
+  fija a mano dentro de sus cotas. En fable_lh04_stop_real_contract.rs
+  sólo cambia la doc de (a) y del comentario de lo emitido (el factor
+  SL/(SL + c) de CL-159), no las aserciones.
+- **Sol**: online_daemon.rs: salen las dos mutaciones directas de
+  scalp/swing_kelly_fraction y restaurar_genes_no_observables_en_examen
+  (:585) los devuelve al incumbente; el flujo del RNG del daemon cambia
+  (dos extracciones menos por candidato). replay-contracts.yml: el paso
+  de evolution-engine corre también
+  `--test cl162_kelly_legado_congelado_contract`.
+  continuous_evolution_backtest.rs: salen los tres recortes de 10/11 con
+  literales (nichos 2 y 9 y blindaje); quedan los saneados de NaN.
+- **Línea G**: en genes_censo.tsv, las filas 12, 13, 22 y 34 (genes 10,
+  11, 20 y 32) pasan a congelados en la mutación (CL-162) y la 35 (gen
+  33) tiene un lector nuevo, el techo κ de LH-04 (CL-163). vetos.tsv:1076
+  (veto_threshold_btc en leverage_matrix.rs:136) no tiene código detrás
+  desde F1-092.
+- **Kimi Quant Sr V33**: tu inventario (base 2fb4633d): con el blob de esa base, esta tanda cambia :116, :211, :446, :601 y :602; ya desfasadas y tocadas otra vez: :10, :24, :30, :35, :384, :419, :686, :739 y :1289. Rutas nuevas: risk-engine/tests/{cl161_clases_de_tamano_contract.rs, cl163_tope_kelly_lh04_contract.rs, cl164_sombra_kelly_contract.rs} y evolution-engine/tests/cl162_kelly_legado_congelado_contract.rs. Siguen sin fila las dos rutas de la sexta tanda que esta toca otra vez: execution-engine/tests/{f325_min_notional_ioc_open_diagnostics.rs, order_quantity_contract.rs}.
+- **Codex QRA**: QRA_CONTINUACION_INVENTARIO_2026-10-23.tsv: con el blob de la base (06704b2d), esta tanda cambia :215 y :445; ya desfasadas y tocadas otra vez: :5, :19, :25, :30, :114, :383, :418, :600, :601, :686, :739 y :1281. Las seis rutas nuevas o sin fila de arriba tampoco están.
+- **Dueño**: la tarjeta del trinquete del T-1 sigue en el hilo. La sombra
+  de CL-164 necesita una ventana y una regla para retirar la cadena
+  legada (kelly.rs y raw_exposure); la propuesta está en §9 (N13).

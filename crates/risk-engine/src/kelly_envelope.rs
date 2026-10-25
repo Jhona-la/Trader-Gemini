@@ -15,8 +15,12 @@
 //!
 //! `max_leverage` conserva la API antigua, pero expresa N_max/C, NO el
 //! multiplicador de margen del exchange. Cambiar margen N/L sin cambiar Q
-//! no cambia la pérdida al stop. `exposure_budget` expone el presupuesto y
-//! su proyección a lotes; el caller debe usar y revalidar la Q resultante.
+//! no cambia la pérdida al stop. El paso 5 con coste es
+//! `nocional_por_riesgo` (CL-159), el que usa LH-04 en el gate. La
+//! proyección a lotes la hace el ejecutor (`round_to_step_size`, hacia
+//! abajo) y el mínimo del exchange lo juzga D-750. RET-48 retiró
+//! `ExposureBudget`, `exposure_budget(_spectral)` y `project_quantity`, que
+//! no tenían consumidor operativo.
 //! No hay aquí modelo de gaps/liquidación ni garantía sobre fills futuros.
 //!
 //! El host/replay aún poseen un bootstrap explícito n<30 y un adaptador de
@@ -102,85 +106,6 @@ pub struct RiskEnvelope {
     pub avg_loss: f64,
     /// Ratio pago medio win/loss (b de Kelly). Debe venir de trades REALES.
     pub payoff_ratio: f64,
-}
-
-/// Presupuesto nominal en moneda de cuenta, sin garantía frente a gaps.
-/// Sólo se construye desde una envolvente válida; sus campos son inmutables
-/// para que la proyección no pueda recibir un presupuesto corrupto.
-#[derive(Debug, Clone, Copy)]
-pub struct ExposureBudget {
-    risk_budget_usd: f64,
-    loss_per_notional: f64,
-    max_notional: f64,
-}
-
-impl ExposureBudget {
-    pub fn risk_budget_usd(&self) -> f64 {
-        self.risk_budget_usd
-    }
-
-    /// Distancia al stop + reserva de fees/slippage, ambas fracciones.
-    pub fn loss_per_notional(&self) -> f64 {
-        self.loss_per_notional
-    }
-
-    pub fn max_notional(&self) -> f64 {
-        self.max_notional
-    }
-
-    /// Proyecta cantidad (unidades del activo) hacia abajo a lotes factibles.
-    /// `price` es moneda/unidad, `step_size` y `min_qty` son unidades;
-    /// `min_notional` está en la moneda del presupuesto. No aumenta la propuesta.
-    /// None significa dato inválido, precisión insuficiente o conjunto vacío.
-    /// Los mínimos deben ser los del símbolo vigente; esta API no consulta red.
-    /// Margen, inventario agregado y precio efectivo de fill se validan aparte.
-    pub fn project_quantity(
-        &self,
-        proposed_qty: f64,
-        price: f64,
-        step_size: f64,
-        min_qty: f64,
-        min_notional: f64,
-    ) -> Option<f64> {
-        if [proposed_qty, price, step_size, min_notional]
-            .iter()
-            .any(|v| !v.is_finite() || *v <= 0.0)
-            || !min_qty.is_finite()
-            || min_qty < 0.0
-        {
-            return None;
-        }
-        let limit_qty = proposed_qty.min(self.max_notional / price);
-        let lots = (limit_qty / step_size).floor();
-        // Beyond 2^53-1, decrementing a binary64 lot count cannot reliably
-        // move exactly one integer lot. Reject rather than claim precision.
-        if !lots.is_finite() || !(1.0..=9_007_199_254_740_991.0).contains(&lots) {
-            return None;
-        }
-        let within_budget = |qty: f64| {
-            let notional = qty * price;
-            let loss = notional * self.loss_per_notional;
-            qty.is_finite()
-                && qty > 0.0
-                && qty <= limit_qty
-                && notional.is_finite()
-                && notional > 0.0
-                && notional <= self.max_notional
-                && loss.is_finite()
-                && loss > 0.0
-                && loss <= self.risk_budget_usd
-        };
-        let mut qty = lots * step_size;
-        if !within_budget(qty) {
-            // A division/multiplication round trip can overshoot by an ULP.
-            // Drop a lot and recheck; never relax a risk inequality by epsilon.
-            qty = (lots - 1.0) * step_size;
-        }
-        if !within_budget(qty) || qty < min_qty || qty * price < min_notional {
-            return None;
-        }
-        Some(qty)
-    }
 }
 
 impl Default for RiskEnvelope {
@@ -357,80 +282,6 @@ impl RiskEnvelope {
         base_f * dampener
     }
 
-    /// Presupuesto de exposición con modulación espectral Koopman (§57 / Ola Ω215).
-    pub fn exposure_budget_spectral(
-        &self,
-        capital: f64,
-        stop_distance_pct: f64,
-        roundtrip_cost_pct: f64,
-        z: f64,
-        shrinkage_k: f64,
-        koopman_modulo: f64,
-        koopman_bifurcacion: f64,
-    ) -> Option<ExposureBudget> {
-        if !capital.is_finite()
-            || capital <= 0.0
-            || !stop_distance_pct.is_finite()
-            || stop_distance_pct <= 0.0
-            || !roundtrip_cost_pct.is_finite()
-            || roundtrip_cost_pct < 0.0
-        {
-            return None;
-        }
-        let f = self.risk_fraction_spectral(z, shrinkage_k, koopman_modulo, koopman_bifurcacion);
-        let risk_budget_usd = capital * f;
-        let loss_per_notional = stop_distance_pct + roundtrip_cost_pct;
-        let max_notional = risk_budget_usd / loss_per_notional;
-        if [risk_budget_usd, loss_per_notional, max_notional]
-            .iter()
-            .any(|v| !v.is_finite() || *v <= 0.0)
-        {
-            return None;
-        }
-        Some(ExposureBudget {
-            risk_budget_usd,
-            loss_per_notional,
-            max_notional,
-        })
-    }
-
-    /// B=C*f y N_max=B/(distancia+coste). No usa pisos de posición ni bootstrap.
-    /// El coste debe incluir la reserva de ida/vuelta elegida por el caller.
-    /// Valida representabilidad; no reemplaza inputs corruptos por un trade.
-    pub fn exposure_budget(
-        &self,
-        capital: f64,
-        stop_distance_pct: f64,
-        roundtrip_cost_pct: f64,
-        z: f64,
-        shrinkage_k: f64,
-    ) -> Option<ExposureBudget> {
-        if !capital.is_finite()
-            || capital <= 0.0
-            || !stop_distance_pct.is_finite()
-            || stop_distance_pct <= 0.0
-            || !roundtrip_cost_pct.is_finite()
-            || roundtrip_cost_pct < 0.0
-        {
-            return None;
-        }
-        let f = self.risk_fraction(z, shrinkage_k);
-        let risk_budget_usd = capital * f;
-        let loss_per_notional = stop_distance_pct + roundtrip_cost_pct;
-        let max_notional = risk_budget_usd / loss_per_notional;
-        if [risk_budget_usd, loss_per_notional, max_notional]
-            .iter()
-            .any(|v| !v.is_finite() || *v <= 0.0)
-        {
-            return None;
-        }
-        Some(ExposureBudget {
-            risk_budget_usd,
-            loss_per_notional,
-            max_notional,
-        })
-    }
-
     /// Compatibilidad: techo de exposición nominal N/C, NO leverage de margen.
     /// Cota superior de apalancamiento y filtro de admisibilidad con modulación espectral Koopman/DMD.
     ///
@@ -489,7 +340,7 @@ impl RiskEnvelope {
     }
 
     /// Conserva el piso prudencial histórico de 5 bps, sin inventar edge.
-    /// Excluye costes: para sizing final usar exposure_budget y project_quantity.
+    /// Excluye costes: el nocional con coste es `nocional_por_riesgo` (CL-159).
     /// Si el mínimo excede B, devuelve (0,false); no concede excepciones micro.
     pub fn max_leverage(
         &self,
@@ -509,6 +360,36 @@ impl RiskEnvelope {
             f64::NAN,
         )
     }
+}
+
+/// CL-159 — PASO 5 DE LA CADENA COMO FUNCIÓN ÚNICA: el nocional cuya pérdida
+/// al stop es exactamente la fracción `fraccion` del capital `capital`.
+///
+/// Una orden de nocional N que toca su stop pierde N·(d + c): la distancia
+/// relativa d y la fricción de ida y vuelta c (`tp_sl::roundtrip_friction`:
+/// dos comisiones taker y dos deslizamientos; la misma l = (d + c)/d del
+/// freno duro y de la medida D-744). Igualar esa pérdida a f·C da
+/// N = f·C/(d + c). Con c = 0 es exactamente f·C/d. El carry de funding NO
+/// entra: es un coste esperado sobre τ, no se realiza al tocar el stop.
+///
+/// None si f, C o d no son finitos y positivos, si c no es finito o es
+/// negativo, o si el cociente no es representable. Sin pisos ni rescates:
+/// el mínimo del exchange lo juzga quien emite la orden (D-750).
+#[inline]
+pub fn nocional_por_riesgo(fraccion: f64, capital: f64, stop: f64, friccion: f64) -> Option<f64> {
+    if !(fraccion.is_finite()
+        && fraccion > 0.0
+        && capital.is_finite()
+        && capital > 0.0
+        && stop.is_finite()
+        && stop > 0.0
+        && friccion.is_finite()
+        && friccion >= 0.0)
+    {
+        return None;
+    }
+    let nocional = fraccion * capital / (stop + friccion);
+    (nocional.is_finite() && nocional > 0.0).then_some(nocional)
 }
 
 #[cfg(test)]
@@ -803,5 +684,64 @@ mod tests {
         let fresh_env = RiskEnvelope::new();
         let (_cold_lev, cold_operable) = fresh_env.max_leverage_spectral(13.0, 0.01, 5.0, 1.64, 10.0, 1.25, 0.30);
         assert!(!cold_operable, "Cuenta en frío bajo régimen caótico debe vetar exploración");
+    }
+
+    /// CL-159: la pérdida al stop del nocional es f·C con la fricción dentro;
+    /// sin fricción es bit a bit el f·C/d de antes (LH-04 hasta CL-159).
+    #[test]
+    fn cl159_nocional_por_riesgo_iguala_la_perdida_al_stop_a_f_por_c() {
+        for &(f, capital, stop, friccion) in &[
+            (0.0099, 1_000.0, 0.07746, 0.00082),
+            (0.1304, 1_000.0, 0.01, 0.00082),
+            (0.0913, 13.0, 0.005, 0.00145),
+            (0.25, 1e9, 0.0005, 0.05),
+        ] {
+            let n = nocional_por_riesgo(f, capital, stop, friccion);
+            assert!(n.is_some(), "entradas válidas: {f} {capital} {stop} {friccion}");
+            let n = n.unwrap_or(f64::NAN);
+            let presupuesto = f * capital;
+            assert!(
+                (n * (stop + friccion) - presupuesto).abs() <= 4.0 * f64::EPSILON * presupuesto,
+                "N·(d + c) = f·C: {} vs {presupuesto}",
+                n * (stop + friccion)
+            );
+            assert!(n < presupuesto / stop, "la fricción reduce el nocional");
+            assert_eq!(
+                nocional_por_riesgo(f, capital, stop, 0.0).map(f64::to_bits),
+                Some((f * capital / stop).to_bits()),
+                "con c = 0 es exactamente f·C/d"
+            );
+        }
+    }
+
+    #[test]
+    fn cl159_nocional_por_riesgo_decrece_con_la_friccion_y_escala_con_la_moneda() {
+        let mut previo = f64::INFINITY;
+        for friccion in [0.0, 0.0001, 0.001, 0.01, 0.10, 1.0] {
+            let n = nocional_por_riesgo(0.05, 100.0, 0.01, friccion).unwrap_or(f64::NAN);
+            assert!(n < previo, "c = {friccion}: {n} ≥ {previo}");
+            previo = n;
+        }
+        let base = nocional_por_riesgo(0.05, 100.0, 0.01, 0.001).unwrap_or(f64::NAN) / 100.0;
+        assert!(base.is_finite() && base > 0.0, "base: {base}");
+        for k in [0.01, 1.0, 10.0, 1000.0] {
+            let n = nocional_por_riesgo(0.05, 100.0 * k, 0.01, 0.001).unwrap_or(f64::NAN);
+            assert!((n / (100.0 * k) - base).abs() <= 1e-12 * base, "k = {k}");
+        }
+    }
+
+    #[test]
+    fn cl159_nocional_por_riesgo_rechaza_entradas_invalidas() {
+        for bad in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY, -1.0, 0.0] {
+            assert_eq!(nocional_por_riesgo(bad, 100.0, 0.01, 0.001), None);
+            assert_eq!(nocional_por_riesgo(0.05, bad, 0.01, 0.001), None);
+            assert_eq!(nocional_por_riesgo(0.05, 100.0, bad, 0.001), None);
+            if bad != 0.0 {
+                assert_eq!(nocional_por_riesgo(0.05, 100.0, 0.01, bad), None);
+            }
+        }
+        assert!(nocional_por_riesgo(0.05, 100.0, 0.01, 0.0).is_some(), "c = 0 es válido");
+        assert_eq!(nocional_por_riesgo(0.25, f64::MAX, f64::MIN_POSITIVE, 0.0), None);
+        assert_eq!(nocional_por_riesgo(0.05, 100.0, f64::MAX, f64::MAX), None);
     }
 }

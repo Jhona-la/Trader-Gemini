@@ -3477,28 +3477,36 @@ impl GodEngineCore {
                     }
 
                     // #618 / R5-A4: SOMBRA ESPECTRAL de GAME-THEORETIC NASH
-                    // Presión adversarial escopada por moneda — busca la clave viva
-                    // `game_theory_adversarial_pressure`, con fallback a `cvpin`
-                    // medido de la moneda, y finalmente a `nash_equilibrium_drift` (0.50).
+                    // Presión adversarial escopada por moneda, con la cadena del
+                    // motor escalar (evaluate_for_coin de game_theoretic_nash.rs):
+                    // `game_theory_adversarial_pressure` (hoy sin escritor) y después
+                    // el `cvpin` medido.
+                    // K12 / CL-158 (censo C-F7b): sin presión medida la sombra se
+                    // ABSTIENE (espectro nulo, como un motor sin dato). Antes caía a
+                    // `nash_equilibrium_drift`, clave sin escritor, con un 0,50 sin
+                    // cálculo. Ninguna p ∈ [0; 0,9] dice «adversario desconocido»: la
+                    // escala 0 vota tanh(x₀) con cualquier p y las demás sólo se
+                    // contraen. Sólo faltaba cvpin en el primer evento de un núcleo
+                    // nuevo, con el espectro recién sembrado (x ≡ 0 ⇒ voto nulo con
+                    // cualquier p): en vivo, replay y T-1 el voto no cambia.
                     let nash_presion_adv = self
                         .arena
                         .registry
                         .get_for_coin_or(
                             coin_id,
                             "game_theory_adversarial_pressure",
-                            self.arena.registry.get_for_coin_or(
-                                coin_id,
-                                "cvpin",
-                                self.arena
-                                    .registry
-                                    .get_value_or("nash_equilibrium_drift", 0.50),
-                            ),
+                            self.arena
+                                .registry
+                                .get_for_coin_or(coin_id, "cvpin", f64::NAN),
                         );
-                    let voto_nash =
+                    let voto_nash = if nash_presion_adv.is_finite() {
                         signal_engine::game_theoretic_nash::GameTheoreticNashEngine::voto_espectral(
                             &desplazamientos,
                             nash_presion_adv,
-                        );
+                        )
+                    } else {
+                        signal_engine::voto_espectral::VotoEspectral::default()
+                    };
                     if muestreo_sombras {
                         if let Some(media_nash) = voto_nash.media_banda(0, 31) {
                             self.arena
@@ -5836,6 +5844,13 @@ impl GodEngineCore {
                     // la estrategia usa la de cada posición, CL-114).
                     if let Some(m) = medida_de_entrada {
                         risk_engine::RiskEngine::registrar_medida(&self.arena, &m.medida);
+                        // CL-164: la sombra del Kelly legado frente a LH-04
+                        // aprende de la misma operación, con su retorno neto.
+                        risk_engine::RiskEngine::registrar_sombra_kelly(
+                            &self.arena,
+                            &m.medida,
+                            realized_ret,
+                        );
                     }
                     // CL-107: la R de cada cierre alimenta el freno de la
                     // estrategia (proceso e de Ville, H0 = +0,30 R).

@@ -1880,8 +1880,13 @@ impl SuperGenotype {
             global_correlation_threshold: mutate_val(self.global_correlation_threshold, 0.2, 0.9),
             trend_threshold: mutate_val(self.trend_threshold, 0.52, 0.85),
             range_threshold: mutate_val(self.range_threshold, 0.1, 0.9),
-            scalp_kelly_fraction: mutate_val(self.scalp_kelly_fraction, 0.1, 2.0),
-            swing_kelly_fraction: mutate_val(self.swing_kelly_fraction, 0.01, 1.0),
+            // CL-162: Kelly legado en espacio de margen (10, 11 y su suelo 32).
+            // Desde F1-116 + F1-087 LH-04 dimensiona toda orden con evidencia y
+            // el resto va a la orden mínima: su único efecto es el apalancamiento
+            // que D-130 elige para la orden mínima, no su pérdida al stop.
+            // Congelados como LG-18; la cadena legada sale entera aparte.
+            scalp_kelly_fraction: self.scalp_kelly_fraction, // CL-162
+            swing_kelly_fraction: self.swing_kelly_fraction, // CL-162
             scalp_obi_threshold: mutate_val(self.scalp_obi_threshold, 0.10, 0.95),
             scalp_tp_base: self.scalp_tp_base, // X-005: vista — re-derivada de curvas post-literal
             scalp_sl_base: self.scalp_sl_base, // X-005: vista
@@ -1899,7 +1904,7 @@ impl SuperGenotype {
             sl_atr_mult_btc: mutate_val(self.sl_atr_mult_btc, 0.5, 5.0),
             tp_rr_ratio_btc: mutate_val(self.tp_rr_ratio_btc, 1.0, 10.0),
             min_confidence_btc: mutate_val(self.min_confidence_btc, 0.5, 0.95),
-            veto_threshold_btc: mutate_val(self.veto_threshold_btc, 0.5, 0.99),
+            veto_threshold_btc: self.veto_threshold_btc, // CL-162: sin lector desde F1-092
             // D-625: banda de mutación = bounds [0,24; 0,30]. Antes (0,05; 0,35): el
             // piso lo imponía el motor al LEER y el techo excedía los bounds.
             tech_threshold: mutate_val(self.tech_threshold, 0.24, 0.30),
@@ -1913,7 +1918,7 @@ impl SuperGenotype {
             dynamic_ema_trend: mutate_val(self.dynamic_ema_trend, 0.0000001, 0.01),
             dynamic_ofi_threshold: mutate_val(self.dynamic_ofi_threshold, 0.05, 0.95),
             capital_split_scalp: self.capital_split_scalp, // G0-4: congelado sin mutacion (sizing gobernado por kelly_at_tau)
-            kelly_clamp_min: mutate_val(self.kelly_clamp_min, 0.001, 0.1),
+            kelly_clamp_min: self.kelly_clamp_min, // CL-162
             kelly_clamp_max: mutate_val(self.kelly_clamp_max, 0.1, 1.0),
             explosive_leverage_multiplier: mutate_val(
                 self.explosive_leverage_multiplier,
@@ -3766,5 +3771,35 @@ mod tests_lg21 {
             algun_vivo_muta |= m.min_confidence_btc.to_bits() != base.min_confidence_btc.to_bits();
         }
         assert!(algun_vivo_muta, "control: los genes vivos sí mutan");
+    }
+}
+
+#[cfg(test)]
+mod tests_cl162 {
+    use super::*;
+
+    /// CL-162: los genes del Kelly legado (10, 11 y su suelo 32) y el umbral
+    /// 20 (sin lector desde F1-092) no mutan. Se miden por índice del vector,
+    /// el mismo que perturba el T-1, y en los dos caminos de mutación
+    /// (`mutate_cmaes_seeded` y `mutate_cmaes`). El tope 33 sigue vivo.
+    #[test]
+    fn cl162_los_genes_del_kelly_legado_y_el_20_no_mutan() {
+        let base = SuperGenotype::new_baseline(0.0002, 0.0005);
+        let v0 = base.to_vector();
+        let mut tope_muta = false;
+        for semilla in 0..64u64 {
+            for m in [base.mutate_cmaes_seeded(1.0, semilla), base.mutate_cmaes(1.0)] {
+                let v = m.to_vector();
+                for g in [10usize, 11, 20, 32] {
+                    assert_eq!(
+                        v0[g].to_bits(),
+                        v[g].to_bits(),
+                        "gen congelado {g} mutó (semilla {semilla})"
+                    );
+                }
+                tope_muta |= v[33].to_bits() != v0[33].to_bits();
+            }
+        }
+        assert!(tope_muta, "control: el gen 33 (kelly_clamp_max) sigue mutando");
     }
 }

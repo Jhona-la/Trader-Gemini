@@ -371,12 +371,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 // Nicho 1: Afinamiento Fino CMA-ES (0.05) - Explotación pura
                 current_genome.mutate_cmaes_seeded(0.05, deterministic_seed)
             } else if i < (num_mutants * 20 / 100).max(2) {
-                // Nicho 2: Especialista en Scalping L2 y OFI (TP corto, SL ceñido, Kelly controlado)
+                // Nicho 2: Especialista en Scalping L2 y OFI (TP corto, SL ceñido).
+                // CL-162: sin recorte del Kelly legado (gen 10 congelado).
                 let mut g = current_genome.mutate_cmaes_seeded(0.15, deterministic_seed);
                 // #667 (H0-1): geometría por CURVA (fuente única).
                 nicho_curva_tp(&mut g, 0.0120, 0.0240);
                 nicho_curva_sl(&mut g, 0.0030, 0.0075);
-                g.scalp_kelly_fraction = g.scalp_kelly_fraction.clamp(0.15, 0.35);
                 g.base_duration_ms = 10_000.0;
                 g
             } else if i < (num_mutants * 30 / 100).max(3) {
@@ -429,7 +429,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 g.trend_threshold = g.trend_threshold.clamp(0.55, 0.85);
                 // #667: TP lento amplio por curva (ancla lenta = swing view).
                 nicho_curva_tp(&mut g, 0.0120, 0.060);
-                g.swing_kelly_fraction = g.swing_kelly_fraction.clamp(0.15, 0.35);
                 g
             } else {
                 // Nicho 10: Saltos de Lévy / Mutaciones Cuánticas Globales (0.55 caótico)
@@ -440,8 +439,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             // el clamp viejo [0.080, 0.220] colapsaba TODOS los mutantes a
             // 0.24 en el arena y promote/validate los rechazaba.
             mutant_genome.tech_threshold = mutant_genome.tech_threshold.clamp(0.24, 0.30);
-            mutant_genome.scalp_kelly_fraction =
-                mutant_genome.scalp_kelly_fraction.clamp(0.12, 0.38);
             mutant_genome.dynamic_obi_threshold =
                 mutant_genome.dynamic_obi_threshold.clamp(0.15, 0.35);
             mutant_genome.dynamic_ofi_threshold =

@@ -1,0 +1,141 @@
+//! CL-161: toda orden la dimensiona LH-04 o es la orden mínima del símbolo.
+//!
+//! F1-087 cerró el fail-open del Kelly legado para la moneda sin edge, pero
+//! quedaban dos caminos en que el margen legado (`raw_exposure`, Kelly en
+//! espacio de margen) seguía fijando el tamaño de la orden tras la sonda:
+//! un profit factor no finito y un `lh04_muestras_min` del registro por
+//! encima de n. Ahora la evidencia insuficiente va a la orden mínima y las
+//! entradas corruptas se rechazan (REJ_INVALID_INPUT, como FMT-212 y
+//! F1-089). El bias epigenético NaN ya se rechazaba en la cadena legada
+//! (`raw_exposure` no finito); su prueba fija que el rechazo no dependa de
+//! ella.
+
+use quantum_arena::{
+    symbol_registry::{update_registry, SymbolSpec},
+    GlobalArena,
+};
+use risk_engine::{RiskEngine, ValidatedOrder, REJECT_COUNTERS, REJ_INVALID_INPUT};
+use signal_engine::{SignalIntent, SignalType};
+use std::sync::atomic::Ordering::Relaxed;
+use std::sync::Mutex;
+
+/// Los contadores de rechazo son globales del proceso: las pruebas de este
+/// archivo se serializan para leer su propio incremento.
+static SERIE: Mutex<()> = Mutex::new(());
+
+fn fixture() -> (std::sync::Arc<GlobalArena>, SignalIntent) {
+    std::env::set_var("TG_GENOME_ENV", "backtest");
+    update_registry(vec![SymbolSpec {
+        symbol: "BTCUSDT".into(),
+        step_size: 0.001,
+        tick_size: 0.01,
+        min_qty: 0.001,
+        min_notional: 5.0,
+        max_leverage: 20,
+        maker_fee: 0.0002,
+        taker_fee: 0.0004,
+        is_shadow: false,
+    }]);
+    let arena = GlobalArena::build_in_own_stack(1000.0);
+    arena.coins[0].current_price.store(100.0, Relaxed);
+    arena.coins[0].current_atr.store(1.0, Relaxed);
+    arena.coins[0].hurst_exponent.store(0.5, Relaxed);
+    arena.config.kelly_clamp_min.store(0.01, Relaxed);
+    arena.config.kelly_clamp_max.store(0.25, Relaxed);
+    arena.config.latency_penalty_ms.store(0.0, Relaxed);
+    arena.config.live_taker_fee.store(0.0004, Relaxed);
+    arena.config.base_slippage_floor.store(0.00001, Relaxed);
+    let intent = SignalIntent {
+        signal: SignalType::Long,
+        confidence: 0.9,
+        expected_duration_ms: 60_000,
+        ..SignalIntent::default()
+    };
+    (arena, intent)
+}
+
+/// Moneda tras la sonda (n = 20 > `CIERRES_DE_SONDA`) con acierto y pago dados.
+fn evidencia(arena: &GlobalArena, wr: f64, n: usize, pf: f64) {
+    arena.coins[0].metrics.win_rate.store(wr, Relaxed);
+    arena.coins[0].metrics.trade_count.store(n, Relaxed);
+    arena.coins[0].metrics.profit_factor.store(pf, Relaxed);
+}
+
+fn evaluar(arena: &GlobalArena, intent: &SignalIntent) -> (ValidatedOrder, u64) {
+    let antes = REJECT_COUNTERS[REJ_INVALID_INPUT].load(Relaxed);
+    let mut engine = RiskEngine::new(1000.0);
+    let orden = engine.evaluate_quantum_order(0, intent, arena);
+    (orden, REJECT_COUNTERS[REJ_INVALID_INPUT].load(Relaxed) - antes)
+}
+
+fn nocional(o: &ValidatedOrder) -> f64 {
+    o.volume_usd * o.leverage
+}
+
+/// La orden mínima de referencia: moneda madura sin edge (PF ≤ 1, F1-087).
+fn orden_minima_de_referencia() -> ValidatedOrder {
+    let (arena, intent) = fixture();
+    evidencia(&arena, 0.65, 20, 0.9);
+    let (orden, _) = evaluar(&arena, &intent);
+    assert!(orden.volume_usd > 0.0, "premisa: la moneda sin edge sale a la orden mínima");
+    orden
+}
+
+#[test]
+fn cl161_profit_factor_no_finito_tras_la_sonda_se_rechaza() {
+    let _serie = SERIE.lock().unwrap_or_else(|e| e.into_inner());
+    let (arena, intent) = fixture();
+    evidencia(&arena, 0.65, 20, f64::NAN);
+    let (orden, rechazos) = evaluar(&arena, &intent);
+    assert_eq!(orden.volume_usd, 0.0, "sin PF medible no se dimensiona con el Kelly legado");
+    assert_eq!(rechazos, 1, "el rechazo es REJ_INVALID_INPUT");
+}
+
+#[test]
+fn cl161_bias_epigenetico_nan_se_rechaza() {
+    let _serie = SERIE.lock().unwrap_or_else(|e| e.into_inner());
+    let (arena, intent) = fixture();
+    evidencia(&arena, 0.65, 100, 2.6);
+    // Sin cierre registrado el bias activo es el almacenado tal cual. Guarda:
+    // ya pasaba antes de CL-161 (lo rechazaba `raw_exposure`).
+    arena.coins[0].epigenetic_bias.store(f64::NAN, Relaxed);
+    arena.coins[0].last_close_ts.store(0, Relaxed);
+    let (orden, rechazos) = evaluar(&arena, &intent);
+    assert_eq!(orden.volume_usd, 0.0);
+    assert_eq!(rechazos, 1, "el rechazo es REJ_INVALID_INPUT");
+}
+
+#[test]
+fn cl161_muestras_minimas_sobre_n_dan_la_orden_minima() {
+    let _serie = SERIE.lock().unwrap_or_else(|e| e.into_inner());
+    let referencia = orden_minima_de_referencia();
+    let (arena, intent) = fixture();
+    arena.registry.set("lh04_muestras_min", 50.0);
+    evidencia(&arena, 0.65, 20, 2.6);
+    let (orden, rechazos) = evaluar(&arena, &intent);
+    assert_eq!(rechazos, 0);
+    assert!(orden.volume_usd > 0.0, "la evidencia insuficiente no se veta: es la orden mínima");
+    let f = arena.registry.get_for_coin_or(0, "lh04_f_riesgo", f64::NAN);
+    assert_eq!(f, 0.0, "premisa: LH-04 no dimensiona con n < muestras mínimas");
+    assert_eq!(
+        nocional(&orden).to_bits(),
+        nocional(&referencia).to_bits(),
+        "el nocional es el de la orden mínima, no el del margen legado"
+    );
+}
+
+#[test]
+fn cl161_la_orden_madura_con_edge_sigue_en_lh04() {
+    let _serie = SERIE.lock().unwrap_or_else(|e| e.into_inner());
+    let referencia = orden_minima_de_referencia();
+    let (arena, intent) = fixture();
+    evidencia(&arena, 0.65, 100, 2.6);
+    let (orden, rechazos) = evaluar(&arena, &intent);
+    assert_eq!(rechazos, 0);
+    let f = arena.registry.get_for_coin_or(0, "lh04_f_riesgo", f64::NAN);
+    assert!(f > 0.1, "control: LH-04 dimensiona (f ≈ 0,133), obtenido {f}");
+    assert!(
+        nocional(&orden) > 10.0 * nocional(&referencia),
+        "control: la orden de LH-04 no se recorta a la mínima"
+    );
+}

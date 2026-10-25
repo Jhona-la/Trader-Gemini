@@ -274,6 +274,14 @@ pub struct MedidaOrden {
     riesgo: f64,
     riesgo_usd: f64,
     geometria: Option<(f64, f64)>,
+    /// CL-164 — las dos apuestas de la sombra, en fracción del capital que se
+    /// pierde al stop: la f de LH-04 (tras la racha) y la del Kelly legado
+    /// (`kelly_fraction` de esta evaluación, tras el tope del gen y la ruina).
+    f_lh04: f64,
+    f_legado: f64,
+    /// CL-164 — la pérdida al stop por unidad de nocional, con la fricción
+    /// conocida al entrar (SL + c): la unidad de R del libro de la sombra.
+    perdida_al_stop: f64,
 }
 
 impl RiskEngine {
@@ -330,6 +338,44 @@ impl RiskEngine {
             actualizar(&arena.ganancia_en_stops, ganancia);
             actualizar(&arena.perdida_en_stops, perdida);
         }
+    }
+
+    /// CL-164 — libro prequencial de crecimiento logarítmico de las reglas de
+    /// tamaño sobre la MISMA secuencia de operaciones: LH-04, el Kelly legado
+    /// y el mínimo de las dos. Con R = retorno neto / (SL + c), una apuesta f
+    /// multiplica el capital por 1 + f·R; el libro suma ln(1 + f·R) por
+    /// moneda y cuenta como ruina toda operación con 1 + f·R ≤ 0 (un hueco
+    /// más allá del stop), sin llevar nunca un NaN ni un infinito al
+    /// registro. Es el criterio de Kelly medido fuera de muestra: decide si
+    /// la cadena legada aporta algo antes de retirarla. No dimensiona nada.
+    /// `retorno_neto` es el PnL neto del cierre sobre su nocional.
+    pub fn registrar_sombra_kelly(arena: &GlobalArena, m: &MedidaOrden, retorno_neto: f64) {
+        if !(retorno_neto.is_finite() && m.perdida_al_stop.is_finite() && m.perdida_al_stop > 0.0) {
+            return;
+        }
+        let r = retorno_neto / m.perdida_al_stop;
+        if !r.is_finite() {
+            return;
+        }
+        let reglas = [
+            ("sombra_kelly_logw_lh04", "sombra_kelly_ruina_lh04", m.f_lh04),
+            ("sombra_kelly_logw_legado", "sombra_kelly_ruina_legado", m.f_legado),
+            ("sombra_kelly_logw_min", "sombra_kelly_ruina_min", m.f_lh04.min(m.f_legado)),
+        ];
+        for (clave_logw, clave_ruina, f) in reglas {
+            let crecimiento = 1.0 + f * r;
+            if crecimiento.is_finite() && crecimiento > 0.0 {
+                let previo = arena.registry.get_for_coin_or(m.coin_id, clave_logw, 0.0);
+                arena
+                    .registry
+                    .set_for_coin(m.coin_id, clave_logw, previo + crecimiento.ln());
+            } else {
+                let previo = arena.registry.get_for_coin_or(m.coin_id, clave_ruina, 0.0);
+                arena.registry.set_for_coin(m.coin_id, clave_ruina, previo + 1.0);
+            }
+        }
+        let n = arena.registry.get_for_coin_or(m.coin_id, "sombra_kelly_n", 0.0);
+        arena.registry.set_for_coin(m.coin_id, "sombra_kelly_n", n + 1.0);
     }
 
     /// U-3 (MOTOR UNIVERSAL CONTINUO): la API dual `evaluate_order`
@@ -1486,7 +1532,8 @@ impl RiskEngine {
         //
         // El margen se deriva del nocional objetivo al apalancamiento YA
         // decidido por la matriz (L no depende del margen — :981), de
-        // modo que el riesgo al stop de la orden final ≈ f·C. TODOS los
+        // modo que la pérdida al stop de la orden final, CON la fricción
+        // de ida y vuelta (CL-159), ≈ f·C. TODOS los
         // floors downstream (viabilidad D-750, rescate de nocional
         // mínimo, fee_impact LH-02, invariantes) se aplican IGUAL sobre
         // este margen. Sin evidencia (n < mínimo, p̂ degenerado, PF ≤ 0):
@@ -1531,7 +1578,20 @@ impl RiskEngine {
             let f_raw = half_kelly_lh04 * (p_lcb - (1.0 - p_lcb) / b).max(0.0);
             let q_lh04 = crate::ruin::conservative_loss_q(lh04_wr, lh04_n);
             let tope_lh04 = crate::ruin::clamp_ruin(1.0, q_lh04);
-            lh04_f = if f_raw.is_finite() { f_raw.min(tope_lh04) } else { 0.0 };
+            // CL-163: el gen 33 (`kelly_clamp_max`, «apuesta Kelly máxima») es
+            // el techo de f. En el motor legado acotaba W·(1 − 1/PF)·λ, una
+            // fracción del capital arriesgada como f; desde F1-116 + F1-087 ese
+            // motor ya no fija tamaños y el gen no tenía efecto. Sólo aprieta:
+            // con κ ≥ f (la línea base 0,55 frente al axioma 0,25) no cambia
+            // nada, y κ = 0 lleva a la orden mínima por `lh04_sin_edge`. Es un
+            // límite evolucionable al riesgo de modelo que la cota de Wilson no
+            // ve (un acierto medido del 98 % sólo lo frena el axioma).
+            let tope_gen = arena.config.kelly_clamp_max.load(Ordering::Relaxed);
+            lh04_f = if f_raw.is_finite() && tope_gen.is_finite() {
+                f_raw.min(tope_lh04).min(tope_gen.max(0.0))
+            } else {
+                0.0
+            };
             lh04_p_lcb = p_lcb;
             lh04_b = b;
         }
@@ -1591,9 +1651,27 @@ impl RiskEngine {
         } else {
             continuous_sl
         };
+        // CL-159: la pérdida al tocar el stop es N·(stop_real + roundtrip_fee),
+        // no N·stop_real. f es una fracción de Kelly de pérdida NETA: b sale
+        // del PF, y el PF suma PnL neto de comisiones (god-engine-core
+        // acumula `net_trade_pnl` en gross_wins/gross_losses). Con el divisor
+        // sin fricción la pérdida al stop era f·C·(1 + c/SL): 1,29·f con
+        // SL 0,5 % y c 14,5 pb, un 0,645 de Kelly en vez del ½ declarado; la
+        // caída de falsación d* (drawdown.rs, válida con c ≤ ½) se rebasaba
+        // con probabilidad ≈ 12 % en vez del 5 % (24 % en el suelo de
+        // fricción de la geometría, c = 0,65·SL). Es la misma l = (SL + c)/SL
+        // del freno duro y de la medida D-744 (abajo). El carry de funding no
+        // entra: es un coste esperado sobre τ, no se pierde al tocar el stop.
         let mut lh04_f_realizado = 0.0_f64;
+        let mut lh04_dimensiona = false;
         if lh04_f_efectiva > 0.0 && dynamic_leverage >= 1.0 {
-            let nocional_obj = lh04_f_efectiva * allocated_capital / stop_real;
+            let nocional_obj = crate::kelly_envelope::nocional_por_riesgo(
+                lh04_f_efectiva,
+                allocated_capital,
+                stop_real,
+                roundtrip_fee,
+            )
+            .unwrap_or(0.0);
             let margen_obj = nocional_obj / dynamic_leverage;
             if margen_obj.is_finite() && margen_obj > 0.0 {
                 // F1-086 (Ola Ω190): Desacoplamiento del recorte erróneo de margen P1.
@@ -1610,11 +1688,13 @@ impl RiskEngine {
                 // acotado por capacidad y liquidez real downstream vía `resolve_margin_cap_limits`
                 // y `available_margin_headroom` (Sol A2).
                 final_margin = margen_obj;
-                // F-A5 / F1-086: riesgo al stop que este dimensionado realiza, en
-                // fracción del capital asignado, antes de rescates de nocional mínimo y
-                // de techos de liquidez downstream.
+                lh04_dimensiona = true;
+                // F-A5 / F1-086 / CL-159: pérdida al stop (con la fricción) que este
+                // dimensionado realiza, en fracción del capital asignado, antes de
+                // rescates de nocional mínimo y de techos de liquidez downstream.
                 lh04_f_realizado = if allocated_capital > 0.0 {
-                    final_margin * dynamic_leverage * stop_real / allocated_capital
+                    final_margin * dynamic_leverage * (stop_real + roundtrip_fee)
+                        / allocated_capital
                 } else {
                     0.0
                 };
@@ -1642,6 +1722,30 @@ impl RiskEngine {
         arena
             .registry
             .set_for_coin(coin_id, "lh04_bias_factor", lh04_bias_factor);
+        // CL-161: clases de tamaño explícitas. Una orden la dimensiona LH-04
+        // (margen derivado de f arriba) o es la orden mínima del símbolo: la
+        // sonda, la moneda sin edge demostrado (F1-087), la que aún no reúne
+        // las muestras mínimas y aquella cuya f quedó en cero por la racha. Lo
+        // demás tiene entradas corruptas —win rate, profit factor o bias no
+        // finitos o fuera de dominio, o una f positiva sin nocional derivable—
+        // y se rechaza (FMT-212, F1-089). Antes dos de esos casos salían con
+        // el margen del Kelly legado (`raw_exposure`), el fail-open que F1-087
+        // decía cerrar: PF no finito tras la sonda y `lh04_muestras_min`
+        // sobreescrito por encima de n. Un bias NaN ya lo rechazaba la cadena
+        // legada al no ser finito `raw_exposure`; aquí no depende de ella.
+        let lh04_entradas_validas = lh04_wr.is_finite()
+            && (0.0..=1.0).contains(&lh04_wr)
+            && lh04_pf.is_finite()
+            && lh04_bias_factor.is_finite()
+            && lh04_f_efectiva.is_finite()
+            && lh04_f_efectiva >= 0.0;
+        let lh04_orden_minima = es_sonda
+            || lh04_sin_edge
+            || (lh04_entradas_validas
+                && (lh04_n < muestras_min_lh04 || lh04_f_efectiva == 0.0));
+        if !lh04_dimensiona && !lh04_orden_minima {
+            return rej(REJ_INVALID_INPUT);
+        }
 
         let margin_cushion_pct = arena.config.margin_cushion_pct.load(Ordering::Relaxed);
         // D-641: el colchón de margen sale SIEMPRE del gen; la escasez sólo lo
@@ -1720,10 +1824,11 @@ impl RiskEngine {
             // relativo de 5 bps de margen cierra la frontera.
             final_margin = required_margin_for_min_notional * 1.0005;
         }
-        // D4 (ADR-0016, CL-98, F1-087): la sonda o la orden en moneda sin edge demostrado
-        // es la orden mínima del símbolo, con el apalancamiento ya decidido.
+        // D4 (ADR-0016, CL-98, F1-087, CL-161): la sonda, la orden en moneda sin edge
+        // demostrado o sin las muestras mínimas es la orden mínima del símbolo, con el
+        // apalancamiento ya decidido.
         // Es información para adquirir muestras, no alfa: su tamaño se acota al nocional mínimo viable.
-        if es_sonda || lh04_sin_edge {
+        if lh04_orden_minima {
             final_margin = final_margin.min(required_margin_for_min_notional * 1.0005);
         }
 
@@ -1907,13 +2012,15 @@ impl RiskEngine {
         }
 
         // F1-086 (Ola Ω190): Publicar el riesgo realmente realizado por la orden
-        // emitida (`safe_vol · safe_lev · stop_real / allocated_capital`) en el
+        // emitida (`safe_vol · safe_lev · (stop_real + roundtrip_fee) /
+        // allocated_capital`, CL-159: la pérdida al stop con la fricción) en el
         // registro omnisciente `lh04_f_realizado`. Si la orden fue recortada
         // downstream por límite de margen o colchón del portfolio (Sol A2),
         // `lh04_f_realizado` refleja la fracción real de capital que se arriesga al
         // stop, sin mentir publicando f_objetivo cuando el colateral ejecutado fue menor.
         if lh04_f_efectiva > 0.0 && allocated_capital > 0.0 {
-            let f_realizado_final = (safe_vol * safe_lev * stop_real / allocated_capital)
+            let f_realizado_final = (safe_vol * safe_lev * (stop_real + roundtrip_fee)
+                / allocated_capital)
                 .min(lh04_f_efectiva);
             arena
                 .registry
@@ -1941,12 +2048,16 @@ impl RiskEngine {
             let riesgo_usd = safe_vol * safe_lev * sl_pct;
             let ganancia = (expected_win - roundtrip_fee) / sl_pct;
             let perdida = (sl_pct + roundtrip_fee) / sl_pct;
+            let no_negativa = |f: f64| if f.is_finite() { f.max(0.0) } else { 0.0 };
             self.medida_pendiente = Some(MedidaOrden {
                 coin_id,
                 riesgo: (riesgo_usd / current_cap).clamp(0.0, 1.0),
                 riesgo_usd,
                 geometria: (ganancia.is_finite() && perdida.is_finite() && perdida > 0.0)
                     .then_some((ganancia, perdida)),
+                f_lh04: no_negativa(lh04_f_efectiva),
+                f_legado: no_negativa(kelly_fraction),
+                perdida_al_stop: sl_pct + roundtrip_fee,
             });
         }
 
