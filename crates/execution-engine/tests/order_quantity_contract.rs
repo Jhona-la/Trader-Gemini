@@ -15,6 +15,14 @@
 //!   aceptaba y caía en «sin lote positivo»).
 //! - Más exacto: la cantidad es el decimal del retículo (0,075), no la suma
 //!   f64 minQty + k·paso (0,07500000000000001), y viaja como cadena exacta.
+//! - Distinto (RV6): el canónico redondea el precio al tick (abajo en compras,
+//!   arriba en ventas) ANTES de juzgar minNotional; validate_order juzgaba
+//!   al precio crudo (qty 4,15, precio 1,2199, paso 0,1: el viejo daba 4,1 y
+//!   5,0016 USD, el canónico juzga 1,219·4,1 = 4,9979 y rechaza).
+//!   `from_symbol_spec` fija min_price = tick y techos max_price = max_qty
+//!   = 1e7, que el viejo no tenía, y `is_valid_config` rechaza pasos o
+//!   mínimos sin decimal exacto de ≤ 10 cifras (validate_order aceptaba
+//!   cualquier paso finito positivo).
 use execution_engine::fixed_filter::{BinanceFixedFilter, FilterRejectReason, QuantizedOrder};
 use quantum_arena::symbol_registry::SymbolSpec;
 

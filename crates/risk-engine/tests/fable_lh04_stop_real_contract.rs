@@ -10,8 +10,9 @@
 //! lleva (`expected_loss` = k·ATR·(τ/τ_ref)^H), así que el riesgo realizado
 //! era f·C·(stop real / stop genómico): con ATR alto se arriesgaba varias
 //! veces f y con ATR bajo una fracción. El contrato: (a) el riesgo realizado
-//! al stop (nocional · stop real / capital asignado) es f cuando el tope de
-//! ruina no muerde, y nunca mayor que f; (b) es invariante al ATR (el
+//! al stop que publica LH-04 (nocional · (stop real + c) / capital asignado,
+//! CL-159) es f cuando el tope de ruina no muerde, y nunca mayor que f; sin
+//! la fricción, nocional · stop real / C = f·SL/(SL + c); (b) es invariante al ATR (el
 //! nocional se adapta al stop) mientras el stop sí crece con el ATR; (c) la
 //! telemetría publica objetivo, realizado, capital y stop, y coinciden con la
 //! orden emitida.
@@ -145,8 +146,9 @@ fn con_evidencia_moderada_el_riesgo_realizado_es_f_y_la_orden_lo_lleva() {
         m.f_objetivo
     );
     assert!(!m.recortada, "con ≈14 % del capital en margen no hay recorte de exposición");
-    // Lo emitido coincide con lo publicado salvo la cuantización entera del
-    // apalancamiento y el redondeo al lote (±5 %).
+    // Lo emitido (nocional·stop/C, sin la fricción) coincide con lo publicado
+    // salvo el factor SL/(SL + c) (≈ 1,4 % con ATR 1, CL-159), la cuantización
+    // entera del apalancamiento y el redondeo al lote (±5 %).
     assert!(
         (m.f_emitido - m.f_objetivo).abs() <= 0.05 * m.f_objetivo,
         "nocional·stop/C = f ± 5 %: emitido {}, f {}",

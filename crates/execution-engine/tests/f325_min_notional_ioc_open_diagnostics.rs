@@ -3,23 +3,32 @@
 //! del símbolo y Binance la rechaza (-4164). Una OPEN que pasa NO es remedio:
 //! cuando se arregle, esta prueba falla y se invierte.
 //!
-//! Cadena viva (main be67d521):
-//! 1. risk-engine lib.rs:1421-1427 dimensiona la orden mínima del lote al
-//!    precio MEDIO con +0,10 USD; lib.rs:1746 acota la sonda a ×1,0005.
-//! 2. god-engine-core lib.rs:10114-10124 (`cantidad_de_la_orden`) divide por
-//!    la entrada MODELADA ask·(1+s) y sólo garantiza el mínimo a ESE precio.
-//! 3. god_engine.rs:5059-5077 pone el límite IOC de compra en
+//! Cadena viva (por ancla; líneas tras la tanda 7 del censo):
+//! 1. risk-engine lib.rs (`nocional_minimo_ejecutable` al `current_price`,
+//!    :1467-1473) dimensiona la orden mínima del lote al precio MEDIO con
+//!    +0,10 USD; `required_margin_for_min_notional * 1.0005` (:1832) acota
+//!    la sonda.
+//! 2. god-engine-core lib.rs (`cantidad_de_la_orden(nominal_size,
+//!    real_entry_price, …)`, :10110-10139) divide por la entrada MODELADA
+//!    de `RealityPhysics::calculate_market_entry`, ask·(1+s) con s ≥ el
+//!    suelo de slippage, y sólo garantiza el mínimo a ESE precio.
+//! 3. god_engine.rs (`ref_price`, `dyn_slip`, `raw_ioc_price` y
+//!    `round_price_to_tick`, :5111-5127) pone el límite IOC de compra en
 //!    ask·(1+dyn_slip) redondeado HACIA ABAJO al tick: queda bajo la entrada.
 //! 4. executor.rs baja la cantidad al paso; nadie revisa el nocional.
 //! 5. Binance juzga el nocional de una LIMIT/IOC al precio de la orden.
 //! Los cortos no fallan: al dividir por un precio menor ganan lotes y
 //! conservan el margen de 0,10 USD (2 % > dyn_slip ≤ 0,35 %).
 //!
-//! La prueba reproduce los literales del host y del riesgo; las guardas de
-//! texto del final la ponen roja si esa cadena cambia, para que no siga verde
-//! sobre una cadena que ya no existe. Tampoco detecta un arreglo hecho sólo
-//! en el núcleo o en el host sin tocar `cantidad_de_la_orden` ni
-//! `dispatch_entry`: quien lo arregle debe reescribirla contra su costura.
+//! La prueba copia la aritmética del host, del núcleo y del riesgo. Las
+//! guardas de texto del final fijan esas líneas (riesgo: el nocional mínimo
+//! al precio actual y el tope de la sonda; núcleo: la cantidad a la entrada
+//! modelada y su suelo de slippage; host: precio de referencia, deslizamiento,
+//! límite y redondeo) y la ponen roja si cambian, para que no siga verde
+//! sobre una cadena que ya no existe. Un arreglo que no toque ninguna de esas
+//! líneas (por ejemplo, volver a comprobar el nocional en el ejecutor tras
+//! bajar al paso) no la pone roja: quien lo haga debe invertirla. Si
+//! `dispatch_entry` empieza a rechazar la orden, la prueba también falla.
 use execution_engine::entry_dispatch::{
     dispatch_entry, EntryRequest, EntryRoute, EntryTransport,
 };
@@ -153,15 +162,32 @@ fn open_f325_la_cadena_reproducida_sigue_en_el_codigo() {
     for ancla in [
         "letbase_slip=arena_clone.config.base_slippage_floor.load(Ordering::Relaxed).max(0.0001);",
         "letdyn_slip=(base_slip+entry_atr_pct*0.20).clamp(0.0005,0.0035);",
+        "letref_price=iffinal_is_long{ifdap>0.0{dap}else{current_price}}else{ifdbp>0.0{dbp}else{current_price}};",
+        "letraw_ioc_price=iffinal_is_long{ref_price*(1.0+dyn_slip)}else{ref_price*(1.0-dyn_slip)};",
         "round_price_to_tick(raw_ioc_price,dyn_tick_size,!final_is_long,);",
     ] {
         assert_eq!(host.matches(ancla).count(), 1, "host: cambió «{ancla}»; revisar la OPEN");
     }
     let riesgo = sin_espacios(include_str!("../../risk-engine/src/lib.rs"));
     for ancla in [
-        "nocional_minimo_ejecutable(dynamic_min_notional+0.1,",
+        "nocional_minimo_ejecutable(dynamic_min_notional+0.1,spec.step_size,spec.min_qty,current_price,)",
         "final_margin=final_margin.min(required_margin_for_min_notional*1.0005);",
     ] {
         assert_eq!(riesgo.matches(ancla).count(), 1, "riesgo: cambió «{ancla}»; revisar la OPEN");
+    }
+    let nucleo = sin_espacios(include_str!("../../god-engine-core/src/lib.rs"));
+    let ancla = "risk_engine::capital_regime::cantidad_de_la_orden(nominal_size,real_entry_price,";
+    assert_eq!(nucleo.matches(ancla).count(), 1, "núcleo: cambió «{ancla}»; revisar la OPEN");
+    let fisica = sin_espacios(include_str!("../../god-engine-core/src/reality_physics.rs"));
+    let entrada = fisica
+        .split("pubfncalculate_market_entry(")
+        .nth(1)
+        .and_then(|resto| resto.split("pubfncalculate_maker_entry(").next())
+        .unwrap_or("");
+    for ancla in [
+        "lettotal_slippage_pct=(slippage_impact_pct+latency_slippage).max(base_slippage_floor).clamp(0.0,0.05);",
+        "base_price*(1.0+total_slippage_pct)",
+    ] {
+        assert_eq!(entrada.matches(ancla).count(), 1, "entrada modelada: cambió «{ancla}»; revisar la OPEN");
     }
 }

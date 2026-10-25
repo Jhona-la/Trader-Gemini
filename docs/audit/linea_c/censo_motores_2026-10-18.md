@@ -367,14 +367,17 @@ Cada tema se presenta como una sola tarjeta de decisión. En todos los temas, la
 El censo es una foto del 2026-10-18. Esta sección registra lo ejecutado y
 lo que cambió desde entonces; las filas del TSV no se reescriben.
 
-**Fusionado** (un commit por lote, sin T-1 salvo CL-159; sin cambio de
-conducta salvo RET-10b, RET-41, RET-51a, CL-154, RET-13a (CL-157, inerte
-con entradas validadas) y RET-27b (CL-158, inalcanzable), que cambian
+**Fusionado** (un commit por lote, sin T-1 salvo CL-159 y la tanda 7; sin
+cambio de conducta salvo RET-10b, RET-41, RET-51a, CL-154, RET-13a (CL-157,
+inerte con entradas validadas) y RET-27b (CL-158, inalcanzable), que cambian
 diagnóstico o conducta inalcanzable; RET-44a (CL-156), que cambia la
 conducta viva con USE_TESTNET=true, la demo; RET-51b (CL-160), que cambia
-el orden y el vaciado del log del host, y CL-159, que cambia el tamaño de
-las órdenes de LH-04 (T-1 14/144, la cuenta de main, fila N13); como
-dice su lote):
+el orden y el vaciado del log del host; CL-159, que cambia el tamaño de
+las órdenes de LH-04 (T-1 14/144, la cuenta de main, fila N13), y la
+tanda 7 (fila N13): CL-161 y CL-163 cambian el tamaño sólo con entradas
+corruptas, con `lh04_muestras_min` por encima de n o con un gen 33 por
+debajo de f, CL-162 cambia la mutación y CL-164 es telemetría; como dice
+su lote):
 
 | PR | Lotes |
 |---|---|
@@ -387,6 +390,7 @@ dice su lote):
 | #126 | 47 (parcial: 47a F47 y 47b F58, con CL-154), 38 (commit 2: F282, F436), 39 (39a: F277, F403, F278, F402, F280, F405, R86, R88, F415 y parte de F274/F414; 39b: F411), 41 (F251 sin margen_insuf), 42a (F254/R165, F260), 51a (F386 y la parte neutra de F155), 19 (19a: R115; 19b: F302, F303, F306, F307, F313, F387, F389–F391, F399, R166, R76, R77), 27a (F62, F187 y cuatro claves de F338), 31 (sin F244, F233, get_status ni cleanup_stale_orders), 18a (la dependencia quote de graph-architecture: F15, R67 y su parte de F368) |
 | #130 | 50 (residuo: 50a legacy_view, LegacyRegimeView y su re-export; 50b, el T12 de cf3_fuente_contract como guarda de F1-054), 44 (44a CL-156: G021; 44b: R114, F327), 13 (13a CL-157: FIX #1454 portado al OmniStrategyEngine vivo; 13b: src/features y los dos #[path] de FMT-140; sin F315, F385, R105 ni F184); más RV-12a, RV-plan y RV-docs (revisión de las tandas 2 a 4) |
 | #138 | 27b (K12: RET-27b, CL-158), 48 (CL-159: LH-04 con la fricción al stop; RET-48: ExposureBudget, exposure_budget(_spectral) y project_quantity), 34 (resto de F325: RET-34b, validate_order; RET-34c, la OPEN de la fila N8), 51 (51b CL-160: telemetry! escribe en LOG_QUEUE; 51c: BINARY_QUEUE, StackBuffer, init/pop_telemetry y crossbeam-queue de telemetry-engine); más RV5-T12 y RV5-docs (revisión de la tanda 5) |
+| #139 | N13, el plan del panel para los genes de Kelly (CL-161: clases de tamaño explícitas; CL-163: el gen 33 como techo κ de la f de LH-04; CL-162: genes 10, 11, 20 y 32 congelados en la mutación; CL-164: sombra del Kelly legado frente a LH-04); más RV6-T y RV6-docs (revisión de la tanda 6) |
 
 **Hecho por otros agentes**: lote 9 entero (Sol, d18b3735), lote 45 entero
 (Codex RB, 906a9c6a), parte del 7 (Sol retiró el bin main.rs de
@@ -499,7 +503,14 @@ un escéptico por lote listo):
   del núcleo y sólo la bajan al paso, y el tick al alza ya lo cerró
   CL-98b (capital_regime.rs:468). Eran cuatro cuantizadores, no tres:
   faltaba el canónico; project_quantity salió con el lote 48. Queda un
-  defecto más estrecho, la fila N8, con su OPEN (RET-34c).
+  defecto más estrecho, la fila N8, con su OPEN (RET-34c). Lo que el
+  «viejo frente a nuevo» de RET-34b no decía (revisión de la tanda 6, ya en
+  la cabecera de order_quantity_contract.rs): el canónico redondea el
+  precio al tick antes de juzgar minNotional (validate_order juzgaba al
+  precio crudo), from_symbol_spec fija min_price = tick y techos de 1e7 a
+  precio y cantidad, e is_valid_config rechaza pasos o mínimos sin decimal
+  exacto de ≤ 10 cifras. Hoy no cambia conducta: from_symbol_spec no tiene
+  llamador de producción.
 - Lote 35: el único recorte de contrato es F44
   (hidden_liquidity_conformal_contract.rs:47), que pasa a RET-35b cuando
   Codex ROOT libere Hidden04. neural_evidence_contract.rs:144-157 sigue
@@ -604,7 +615,7 @@ un escéptico por lote listo):
     polizones del lote son los campos portfolio_* de config.rs.
   - Las REGLAS de scripts/plan_linea_c.py nombraban 41 rutas inexistentes
     tras la tanda 4: 8 de antes de la tanda 1 (5 de lotes del censo: 15 y
-    28a del #81 y el 9 de Sol, d18b3735; 3 de otros agentes: macro_data.rs
+    28a del #81, y el 9 y parte del 7 de Sol, d18b3735; 3 de otros agentes: macro_data.rs
     y market_context.rs por RB-R1, 566a9c8c, y vectorized.rs por Ω160,
     fcab8e1c), 9 de la tanda 1, 13 de los
     lotes 8 y 12a, 4 del 30 y 7 de los lotes 19, 38 y 39 (con
@@ -629,11 +640,16 @@ un escéptico por lote listo):
   directional_flux`): un sombreado `let free_cap = free_cap * …`, un
   recorte en la puerta o la misma copia con otra variable pasaban. RV5-T12
   lo endurece: entre el cálculo de free_cap y su puerta, free_cap se asigna
-  una sola vez y no aparece margin_multiplier. F2.3-05 sigue abierto: el
+  una sola vez y no aparece margin_multiplier. La revisión de la tanda 6
+  vio que un sombreado con tipo (`let free_cap: f64 = free_cap * …`), uno
+  por tupla o una copia en otra variable seguían pasando; RV6-T cuenta
+  free_cap entero, que sólo puede aparecer en su cálculo y en la puerta. F2.3-05 sigue abierto: el
   núcleo publica crash_flux ≈ 0,41 en ruido y risk-engine resta
   0,25·max(flux, presión sistémica) del colchón en
   continuous_exposure_limit (Hermite entre 0,80 y 0,90 de presión y 0
-  desde 0,90). El flux sólo cuenta cuando supera la presión sistémica.
+  desde 0,90). El flux cuenta cuando supera la presión sistémica (hasta
+  0,80 de presión) o 0,80 (en la banda Hermite, aunque quede por debajo
+  de la presión); desde 0,90 el límite es 0 y no cuenta.
   risk-engine ya lo leía antes de F1-054, que sólo quitó el recorte
   duplicado del núcleo.
 - Lote 44: como ya corregía la redacción (§4, fila 44), bootloader.rs se
@@ -672,9 +688,14 @@ un escéptico por lote listo):
   y a sus dos medidas del riesgo realizado; ADR-0016 lleva el corrigendum
   de D1 (la derivación es la de linea_g/ola6_derivacion_friccion.md:61).
   En el fixture de LH-04, medido bajo wine, el stop real vale ≈ 5,9·ATR%
-  y el tamaño baja un 1,4 % (ATR 1 %) o un 2,7 % (ATR 0,5 %). T-1 14/144, la de main (N13). RET-48 retira
+  y el tamaño baja un 1,4 % (ATR 1 %) o un 2,7 % (ATR 0,5 %). T-1 14/144, la de main (N13). De
+  las 6 pruebas nuevas de CL-159 sólo las 3 de contrato
+  (cl159_lh04_friccion_al_stop_contract) fallan contra el lib.rs de main;
+  las 3 unitarias prueban la función nueva, sin estado previo (el cuerpo
+  del PR #138 las daba a las 6 por RED→GREEN). RET-48 retira
   la API (ExposureBudget, exposure_budget(_spectral) y project_quantity):
-  sus pruebas de lotes no se migran, las cubren round_to_step_size
+  6 de sus 9 contratos y el c4 de AGY (Ω215) migran a la función nueva;
+  las 3 de lotes no se migran, las cubren round_to_step_size
   (executor.rs, snap_floor) y D-750/ADR-0016 D4. Siguen sin la fricción
   el tope de ruina F1-092 (lib.rs:1820-1837, con expected_loss),
   `capital_regime::orden_viable` (:387, ya en linea_g/vetos.tsv:1129) y
@@ -713,8 +734,9 @@ un escéptico por lote listo):
   recibía anclas, no a/b.
 - N7: los defaults de cancel_position_oco_orders y query_order del trait
   ExecutionProvider (resto de F247), con F227 en el tema 2.
-- N8 (F325, cambio de conducta; titularidad por decidir entre AGY, V32
-  Átomos 2.4/2.5, y Línea C, V33_REVISIONES_2026-10-24.tsv fila 12): un
+- N8 (F325, cambio de conducta; titular desde 30fc7ee8: AGY implementa,
+  Kimi V33 revisa RED/GREEN y Línea C consulta, V33_REVISIONES_2026-10-24.tsv
+  fila 12): un
   largo IOC en la orden mínima del lote sale bajo minNotional. El riesgo
   dimensiona esa orden al precio medio con +0,10 USD (risk-engine
   lib.rs:1421-1427), el núcleo garantiza el mínimo al precio de entrada
@@ -727,7 +749,10 @@ un escéptico por lote listo):
   execution-engine/tests/f325_min_notional_ioc_open_diagnostics.rs, con
   guardas de texto sobre esa cadena. El arreglo no es cuantizar con
   validate_and_quantize tal cual: deja la orden mínima un lote por debajo
-  en ≈ 11 % de los puntos del retículo (4 342 de 39 992); hay que contar
+  en ≈ 11 % de los puntos del retículo (4 342 de 39 992: los pasos 0,001,
+  0,01, 0,1, 1, 0,025, 0,05, 0,5 y 0,2 por n = 1…4 999 lotes, con
+  q = n·paso en f64, y el piso binario de validate_and_quantize da n − 1);
+  hay que contar
   en unidades enteras del paso al precio límite, antes de la reserva. Las
   specs de arranque con minNotional 5 para todo símbolo (F482, tema 4) son
   otra fuente del mismo rechazo. Golden y T-1 no lo ven (el backtest no
@@ -751,9 +776,15 @@ un escéptico por lote listo):
   10, 33 y 141 (release bajo wine): 24dfc19c8 sensible, primer commit malo
   01ce0a57 (F1-116, Ω157: lh04_muestras_min de 10 a 1). Desde ahí LH-04
   dimensiona toda orden con n ≥ 1, y el margen Kelly legado (raw_exposure,
-  risk-engine lib.rs:714), el único camino de los genes 10, 11 y 33
-  (kelly.rs) y de 141 y 143 (risk_normalizer, :616-621), no fija ningún
-  tamaño; F1-087 (ab2992a6) cierra además el caso f = 0. El gen 20 perdió
+  risk-engine lib.rs:714), el único camino por el que los genes 10, 11 y
+  33 (kelly.rs) y 143 (risk_normalizer, :616-621) movían el TAMAÑO en el
+  fixture del T-1, no fija ningún tamaño; F1-087 (ab2992a6) cierra además
+  el caso f = 0. El 141 (pendiente de la curva TP) no pasa por
+  risk_normalizer: llega por tp_at_tau. Fuera del fixture estos genes
+  tienen más lectores (corrección de RV6): 10 y 11 en el pre-examen del
+  daemon vivo (mutación directa y kelly_at_tau, online_daemon.rs), y 141 y
+  143 por tp_at_tau/sl_at_tau en los brackets del host, el fallback del
+  núcleo, la viabilidad del spread y leverage_matrix.rs. El gen 20 perdió
   su única lectura en F1-092 (dd783b74, leverage_matrix.rs:135-142). Se
   ganan 29, 62 y 107: 17 − 6 + 3 = 14 (el 142 depende de la plataforma).
   El T-1 completo de main 58f90ced y el de esta tanda dan la misma lista:
@@ -766,6 +797,34 @@ un escéptico por lote listo):
   (≈ 2-4 % frente a f ≤ 25 %). Volver a certificar el trinquete en 14/144
   es decisión del dueño, igual que derivar el apalancamiento del riesgo
   de LH-04.
+  Ejecutado en la tanda 7 (PR #139):
+  - CL-161: tras la sonda, una orden la dimensiona LH-04 o va a la orden
+    mínima (sonda, sin edge, n < lh04_muestras_min o f en cero por la
+    racha); con entradas corruptas (acierto, PF o bias no finitos o fuera
+    de dominio) se rechaza con REJ_INVALID_INPUT (risk-engine
+    lib.rs:1666-1749). Cierra dos fail-open del margen legado: PF no
+    finito y lh04_muestras_min del registro por encima de n.
+  - CL-163: f = min(½·Kelly-LCB, tope de ruina, κ) con κ = kelly_clamp_max
+    (:1589-1592). Sólo aprieta: con la línea base (0,55) no cambia nada.
+    Con κ = 0 la cadena legada rechaza antes por exposición nula
+    (REJ_EXPOSURE_ZERO); al retirarla, κ = 0 dará la orden mínima.
+  - CL-162: 10, 11, 20 y 32 se copian sin mutar en mutate_with_rng
+    (genome.rs:1883-1921); el daemon ya no muta 10/11 y
+    restaurar_genes_no_observables_en_examen los devuelve al incumbente
+    (online_daemon.rs:585), así que el pre-examen ya no ordena por una
+    Kelly que el examen ignora. Fuera los recortes de 10/11 con literales
+    de continuous_evolution_backtest.rs (nichos 2 y 9 y blindaje).
+  - CL-164: MedidaOrden lleva f_lh04, f_legado y SL + c, y cada cierre
+    suma ln(1 + f·R) por regla (LH-04, legado y el mínimo de las dos) con
+    R = retorno neto/(SL + c) en sombra_kelly_logw_{lh04,legado,min};
+    las ruinas (1 + f·R ≤ 0) van a sombra_kelly_ruina_* y los cierres a
+    sombra_kelly_n (risk-engine lib.rs:352, núcleo lib.rs:5849).
+  - T-1 14/144 (9,7 %), la misma lista que main: [1, 17, 18, 24, 27, 29, 39, 62, 68, 69, 107, 129, 130, 131].
+  Queda para el dueño: re-certificar el trinquete; la ventana y la regla
+  de decisión de la sombra (propuesta: retirar la cadena legada, kelly.rs
+  y raw_exposure, si ni el legado ni el mínimo ganan a LH-04 fuera de
+  muestra en las dos mitades del forense), y si se adopta el mínimo como
+  regla de tamaño.
 
 **Restos de lotes ejecutados**: del 3, net_multiplexer (a AGY, para
 unificar con data_pipeline::http_cliente) y active_universe/

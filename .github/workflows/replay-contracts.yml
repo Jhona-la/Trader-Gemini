@@ -102,7 +102,8 @@ jobs:
         # ejecutaba (`--lib` no corre tests de integración), así que la
         # invariancia del numerario del pre-screen estaba certificada sólo en
         # la máquina de quien la escribió. Aquí se ejecuta de verdad.
-        run: cargo +nightly-2026-06-30 test -p evolution-engine --locked --test wf_numerario_invariancia_contract --test lock_sin_veneno_contract -- --test-threads=1
+        # CL-162: el pre-examen recibe la Kelly legada del incumbente.
+        run: cargo +nightly-2026-06-30 test -p evolution-engine --locked --test wf_numerario_invariancia_contract --test lock_sin_veneno_contract --test cl162_kelly_legado_congelado_contract -- --test-threads=1
 
       - name: Shared HTTP client contract (F1-090)
         # F1-090: un solo `reqwest::Client` por proceso con tcp_nodelay, pool

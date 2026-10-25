@@ -5844,6 +5844,13 @@ impl GodEngineCore {
                     // la estrategia usa la de cada posición, CL-114).
                     if let Some(m) = medida_de_entrada {
                         risk_engine::RiskEngine::registrar_medida(&self.arena, &m.medida);
+                        // CL-164: la sombra del Kelly legado frente a LH-04
+                        // aprende de la misma operación, con su retorno neto.
+                        risk_engine::RiskEngine::registrar_sombra_kelly(
+                            &self.arena,
+                            &m.medida,
+                            realized_ret,
+                        );
                     }
                     // CL-107: la R de cada cierre alimenta el freno de la
                     // estrategia (proceso e de Ville, H0 = +0,30 R).

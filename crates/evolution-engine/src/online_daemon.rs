@@ -594,6 +594,12 @@ pub fn restaurar_genes_no_observables_en_examen(
     candidate.topo_layer_2_activation = incumbent.topo_layer_2_activation;
     candidate.tensor_dropout_rate = incumbent.tensor_dropout_rate;
     candidate.quantum_entropy_seed = incumbent.quantum_entropy_seed;
+    // CL-162: el Kelly legado (genes 10 y 11) no fija la pérdida al stop de
+    // ninguna orden del examen (LH-04 o la orden mínima). El pre-examen lo lee
+    // en `kelly_at_tau` y, sin esto, ordenaría a los candidatos por una
+    // coordenada que el examen real ignora.
+    candidate.scalp_kelly_fraction = incumbent.scalp_kelly_fraction;
+    candidate.swing_kelly_fraction = incumbent.swing_kelly_fraction;
 }
 
 /// F1-104 (Ø159, AGY): Asigna directamente los slots locales `0..n` para el examen
@@ -1861,10 +1867,8 @@ impl LiveEvolutionDaemon {
                     // FASE 9: Ajuste Adaptativo por Régimen de Mercado (Drift Recovery)
                     // FASE 13: Topological Evolution
 
-                    candidate.scalp_kelly_fraction +=
-                        (rng.random::<f64>() - 0.5) * dynamic_mutation_rate;
-                    candidate.swing_kelly_fraction +=
-                        (rng.random::<f64>() - 0.5) * dynamic_mutation_rate;
+                    // CL-162: scalp/swing_kelly_fraction no se mutan (congelados
+                    // como en `mutate_with_rng`): el examen dimensiona con LH-04.
 
                     // C-10 (INFORME 14) — MUTAR LAS CURVAS, NO LAS ANCLAS
                     candidate.tp_horizon_curve.a +=
