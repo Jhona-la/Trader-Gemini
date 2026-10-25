@@ -662,7 +662,11 @@ impl OrderExecutor {
         // POST no sale. Su rechazo cae en el brazo Err, donde la cuenta queda
         // como la vio el GET (one-way).
         let activado = match self.check_backoff(timestamp) {
-            Ok(()) => self.client.post_payload(buf.as_str()).await,
+            Ok(()) => self
+                .client
+                .post_payload(buf.as_str())
+                .await
+                .map_err(|e| self.registrar_error(&e)),
             Err(e) => Err(e),
         };
         match activado {
@@ -673,7 +677,6 @@ impl OrderExecutor {
                 Ok(true)
             }
             Err(e) => {
-                let e = self.handle_rate_limit_error(&e);
                 // N-05: Si falla activar hedge (ej. posiciones abiertas en one-way), reflejar la verdad local
                 self.is_hedge_mode.store(false, Ordering::Relaxed);
                 Err(format!(
@@ -714,6 +717,7 @@ impl OrderExecutor {
                 .client
                 .cancel_order_payload(buf.as_str())
                 .await
+                .map_err(|e| self.registrar_error(&e))
                 .inspect(|limits| self.update_limits(limits)),
             Err(e) => Err(e),
         };
@@ -722,7 +726,6 @@ impl OrderExecutor {
                 cancelled += 1;
             }
             Err(e) => {
-                let _ = self.handle_rate_limit_error(&e);
                 // Si el error no es "no open orders" (-2011), la purga de órdenes falló
                 if !e.contains("-2011") && !e.contains("Unknown order") {
                     all_purged = false;
@@ -909,7 +912,7 @@ impl OrderExecutor {
                         .client
                         .execute_order_payload_typed(buf.as_str())
                         .await
-                        .map_err(|e| self.handle_rate_limit_error(&e))
+                        .map_err(|e| self.registrar_error(&e))
                         .inspect(|(limits, _)| self.update_limits(limits)),
                     Err(e) => Err(e),
                 };
@@ -961,7 +964,7 @@ impl OrderExecutor {
                                 .client
                                 .execute_order_payload_typed(retry_buf.as_str())
                                 .await
-                                .map_err(|e| self.handle_rate_limit_error(&e))
+                                .map_err(|e| self.registrar_error(&e))
                                 .inspect(|(limits, _)| self.update_limits(limits)),
                             Err(e) => Err(e),
                         };
@@ -1312,6 +1315,18 @@ impl OrderExecutor {
     /// respuestas del ejecutor.
     fn handle_rate_limit_error(&self, e: &str) -> String {
         self.client.freno().registrar(e)
+    }
+
+    /// N23 (CL-196): el ÚNICO registro de la respuesta fallida de un envío
+    /// firmado. Su cabecera de uso entra en los contadores por
+    /// `observar_limites` (no por `update_limits`: un rechazo no reinicia la
+    /// racha de 429) y su 429/418, que nunca trae cabecera (`ErrorRest`), arma
+    /// el freno. Cada respuesta pasa una sola vez, dentro del brazo que tiene
+    /// vivo su cupo (CL-182); antes la cabecera se perdía y cinco sitios
+    /// registraban el error después de soltarlo.
+    fn registrar_error(&self, e: &crate::client::ErrorRest) -> String {
+        self.observar_limites(e.limites(), self.get_synced_timestamp());
+        self.handle_rate_limit_error(e)
     }
 
     /// B1.3: lector público del kill-switch para el watchdog de protección
@@ -1667,10 +1682,13 @@ impl OrderExecutor {
         &self,
         url: &str,
     ) -> Result<(crate::client::BinanceRateLimits, String), String> {
+        // N23 (CL-196): cada respuesta pasa una vez por `registrar_error`,
+        // también la primera cuando hay reintento (antes su cabecera se perdía).
         let mut res = self
             .client
             .get_payload_with_timeout(url, Some(std::time::Duration::from_secs(5)))
-            .await;
+            .await
+            .map_err(|e| self.registrar_error(&e));
         if let Err(ref e) = res {
             if !e.starts_with("HTTP_429_RATE_LIMITED") && !e.starts_with("HTTP_418_IP_BANNED") {
                 tokio::time::sleep(std::time::Duration::from_millis(200)).await;
@@ -1681,11 +1699,12 @@ impl OrderExecutor {
                     res = self
                         .client
                         .get_payload_with_timeout(url, Some(std::time::Duration::from_secs(5)))
-                        .await;
+                        .await
+                        .map_err(|e| self.registrar_error(&e));
                 }
             }
         }
-        res.map_err(|e| self.handle_rate_limit_error(&e))
+        res
     }
 
     pub async fn fetch_all_symbol_filters(
@@ -1713,10 +1732,13 @@ impl OrderExecutor {
         // Retry-After de un 429 ni del freno (3×429 o 418). Sólo el freno,
         // sin el 80 %: los cierres necesitan los filtros.
         self.check_backoff(self.get_synced_timestamp())?;
+        // N23 (CL-196): como en get_payload_account, cada respuesta pasa una
+        // vez por `registrar_error`.
         let mut res = self
             .client
             .get_payload_with_timeout(url, Some(std::time::Duration::from_secs(10)))
-            .await;
+            .await
+            .map_err(|e| self.registrar_error(&e));
         if let Err(ref e) = res {
             if !e.starts_with("HTTP_429_RATE_LIMITED") && !e.starts_with("HTTP_418_IP_BANNED") {
                 tokio::time::sleep(std::time::Duration::from_millis(250)).await;
@@ -1725,7 +1747,8 @@ impl OrderExecutor {
                     res = self
                         .client
                         .get_payload_with_timeout(url, Some(std::time::Duration::from_secs(10)))
-                        .await;
+                        .await
+                        .map_err(|e| self.registrar_error(&e));
                 }
             }
         }
@@ -1734,7 +1757,7 @@ impl OrderExecutor {
                 self.update_limits(&limits);
                 Self::filtros_de_exchange_info(&text)
             }
-            Err(e) => Err(self.handle_rate_limit_error(&e)),
+            Err(e) => Err(e),
         }
     }
 
@@ -2047,7 +2070,7 @@ impl OrderExecutor {
                 self.update_limits(&limits);
                 Ok(())
             }
-            Err(e) => Err(self.handle_rate_limit_error(&e)),
+            Err(e) => Err(self.registrar_error(&e)),
         }
     }
 
@@ -2088,7 +2111,7 @@ impl OrderExecutor {
                 self.update_limits(&limits);
                 Ok(())
             }
-            Err(e) => Err(self.handle_rate_limit_error(&e)),
+            Err(e) => Err(self.registrar_error(&e)),
         }
     }
 
@@ -2319,7 +2342,7 @@ impl OrderExecutor {
                 self.update_limits(&limits);
                 Ok(())
             }
-            Err(e) => Err(self.handle_rate_limit_error(&e)),
+            Err(e) => Err(self.registrar_error(&e)),
         }
     }
 
@@ -2497,10 +2520,8 @@ impl OrderExecutor {
                 if crate::ioc_evidence::error_cierra_la_intencion(e) {
                     self.order_registry.mark_local_reject(&client_order_id, timestamp);
                 }
-                if e.starts_with("HTTP_429") || e.starts_with("HTTP_418") {
-                    return Err(self.handle_rate_limit_error(e));
-                }
-                Err(e.clone())
+                // N23 (CL-196): un solo registro, con la cabecera de la respuesta.
+                Err(self.registrar_error(e))
             }
         }
     }
@@ -2642,7 +2663,7 @@ impl OrderExecutor {
                 if crate::ioc_evidence::error_cierra_la_intencion(&e) {
                     self.order_registry.mark_local_reject(&client_order_id, timestamp);
                 }
-                Err(self.handle_rate_limit_error(&e))
+                Err(self.registrar_error(&e))
             }
         }
     }
@@ -2830,9 +2851,9 @@ impl ExecutionProvider for OrderExecutor {
                     if crate::ioc_evidence::error_cierra_la_intencion(e) {
                         self.order_registry.mark_local_reject(&payload.client_order_id, payload.timestamp);
                     }
-                    if e.starts_with("HTTP_429") || e.starts_with("HTTP_418") {
-                        return Err(self.handle_rate_limit_error(e));
-                    }
+                    // N23 (CL-196): un solo registro, con la cabecera de la
+                    // respuesta; un 429/418 no es AMBIGUOUS y vuelve tal cual.
+                    let e = self.registrar_error(e);
                     // F1.2: error ambiguo (timeout/5xx) — la orden PUEDE existir.
                     // Consultar por clientOrderId ANTES de reportar error: jamás duplicar.
                     if e.starts_with("AMBIGUOUS") {
@@ -2852,7 +2873,7 @@ impl ExecutionProvider for OrderExecutor {
                             }
                         }
                     }
-                    Err(e.clone())
+                    Err(e)
                 }
             }
         } else {
@@ -3016,10 +3037,8 @@ impl ExecutionProvider for OrderExecutor {
                 if crate::ioc_evidence::error_cierra_la_intencion(e) {
                     self.order_registry.mark_local_reject(client_order_id, timestamp);
                 }
-                if e.starts_with("HTTP_429") || e.starts_with("HTTP_418") {
-                    return Err(self.handle_rate_limit_error(e));
-                }
-                Err(e.clone())
+                // N23 (CL-196): un solo registro, con la cabecera de la respuesta.
+                Err(self.registrar_error(e))
             }
         }
     }
@@ -3286,10 +3305,8 @@ impl ExecutionProvider for OrderExecutor {
                 if crate::ioc_evidence::error_cierra_la_intencion(&e) {
                     self.order_registry.mark_local_reject(client_order_id, timestamp);
                 }
-                if e.starts_with("HTTP_429") || e.starts_with("HTTP_418") {
-                    return Err(self.handle_rate_limit_error(&e));
-                }
-                Err(e)
+                // N23 (CL-196): un solo registro, con la cabecera de la respuesta.
+                Err(self.registrar_error(&e))
             }
         }
     }
@@ -3380,7 +3397,7 @@ impl ExecutionProvider for OrderExecutor {
                 self.update_limits(&limits);
                 Ok(())
             }
-            Err(e) => Err(self.handle_rate_limit_error(&e)),
+            Err(e) => Err(self.registrar_error(&e)),
         }
     }
 
@@ -3500,7 +3517,7 @@ impl ExecutionProvider for OrderExecutor {
                 self.update_limits(&limits);
                 Ok(())
             }
-            Err(e) => Err(self.handle_rate_limit_error(&e)),
+            Err(e) => Err(self.registrar_error(&e)),
         }
     }
 
@@ -3639,28 +3656,22 @@ impl ExecutionProvider for OrderExecutor {
         tp_buf.push_str(unsafe { std::str::from_utf8_unchecked(&sig_buf_tp) });
 
         // Fire both simultaneously to minimize latency
-        let (mut sl_res, mut tp_res) = tokio::join!(
+        let (sl_res, tp_res) = tokio::join!(
             self.client.execute_order_payload(sl_buf.as_str()),
             self.client.execute_order_payload(tp_buf.as_str())
         );
+        // N23 (CL-196): el error de cada pierna pasa una vez por
+        // `registrar_error`, con su cabecera y el cupo de las dos aún vivo.
+        let mut sl_res = sl_res.map_err(|e| self.registrar_error(&e));
+        let mut tp_res = tp_res.map_err(|e| self.registrar_error(&e));
 
-        match &sl_res {
-            Ok(limits) => {
-                self.update_limits(limits);
-                confirmed_sl_id = Some(format!("{}_SL", base_client_id));
-            }
-            Err(e) => {
-                let _ = self.handle_rate_limit_error(e);
-            }
+        if let Ok(limits) = &sl_res {
+            self.update_limits(limits);
+            confirmed_sl_id = Some(format!("{}_SL", base_client_id));
         }
-        match &tp_res {
-            Ok(limits) => {
-                self.update_limits(limits);
-                confirmed_tp_id = Some(format!("{}_TP", base_client_id));
-            }
-            Err(e) => {
-                let _ = self.handle_rate_limit_error(e);
-            }
+        if let Ok(limits) = &tp_res {
+            self.update_limits(limits);
+            confirmed_tp_id = Some(format!("{}_TP", base_client_id));
         }
 
         // N5 (CL-179): las dos piernas ya respondieron y salen del libro en
@@ -3740,17 +3751,17 @@ impl ExecutionProvider for OrderExecutor {
                         .client
                         .execute_order_payload(rb.as_str())
                         .await
+                        .map_err(|e| self.registrar_error(&e))
                         .inspect(|limits| self.update_limits(limits)),
                     Err(e) => Err(e),
                 };
                 if let Err(e) = &sl_res {
                     if pierna_ya_existe(e) {
-                        // Sin cabecera; sólo el reinicio F1-005 de los 429, como antes.
+                        // Su cabecera ya entró por `registrar_error` (N23); aquí
+                        // sólo el reinicio F1-005 de los 429, como antes.
                         let limits = crate::client::BinanceRateLimits::default();
                         self.update_limits(&limits);
                         sl_res = Ok(limits);
-                    } else {
-                        let _ = self.handle_rate_limit_error(e);
                     }
                 }
                 if sl_res.is_ok() {
@@ -3795,17 +3806,17 @@ impl ExecutionProvider for OrderExecutor {
                         .client
                         .execute_order_payload(rb.as_str())
                         .await
+                        .map_err(|e| self.registrar_error(&e))
                         .inspect(|limits| self.update_limits(limits)),
                     Err(e) => Err(e),
                 };
                 if let Err(e) = &tp_res {
                     if pierna_ya_existe(e) {
-                        // Sin cabecera; sólo el reinicio F1-005 de los 429, como antes.
+                        // Su cabecera ya entró por `registrar_error` (N23); aquí
+                        // sólo el reinicio F1-005 de los 429, como antes.
                         let limits = crate::client::BinanceRateLimits::default();
                         self.update_limits(&limits);
                         tp_res = Ok(limits);
-                    } else {
-                        let _ = self.handle_rate_limit_error(e);
                     }
                 }
                 if tp_res.is_ok() {
@@ -3906,7 +3917,7 @@ impl ExecutionProvider for OrderExecutor {
                 self.update_limits(&limits);
                 Ok(())
             }
-            Err(e) => Err(self.handle_rate_limit_error(&e)),
+            Err(e) => Err(self.registrar_error(&e)),
         }
     }
 
@@ -3951,7 +3962,7 @@ impl ExecutionProvider for OrderExecutor {
                 self.update_limits(&limits);
             }
             Err(e) => {
-                return Err(self.handle_rate_limit_error(&e));
+                return Err(self.registrar_error(&e));
             }
         }
         // N5 (CL-179): el DELETE ya respondió; la purga algo pide su cupo.
@@ -4073,7 +4084,7 @@ impl ExecutionProvider for OrderExecutor {
                 self.update_limits(&limits);
                 crate::execution_evidence::parse_query_order_response(&body, symbol, client_order_id)
             }
-            Err(e) => Err(self.handle_rate_limit_error(&e)),
+            Err(e) => Err(self.registrar_error(&e)),
         }
     }
 
@@ -4094,7 +4105,7 @@ impl ExecutionProvider for OrderExecutor {
                 }
                 Err(format!("serverTime not found in response. Text: {}", text))
             }
-            Err(e) => Err(self.handle_rate_limit_error(&e)),
+            Err(e) => Err(self.registrar_error(&e)),
         }
     }
 
@@ -4210,7 +4221,7 @@ impl ExecutionProvider for OrderExecutor {
                 self.update_limits(&limits);
                 crate::binance_api::validate_leverage_confirmation(&text, symbol, leverage)
             }
-            Err(e) => Err(self.handle_rate_limit_error(&e)),
+            Err(e) => Err(self.registrar_error(&e)),
         }
     }
 
@@ -4795,7 +4806,7 @@ mod tests_n5b {
         for i in cierres {
             assert!(frena(antes(aplanado, i, 400)), "cierre sin freno");
             assert!(
-                despues(aplanado, i, 200).contains(".map_err(|e| self.handle_rate_limit_error(&e))"),
+                despues(aplanado, i, 200).contains(".map_err(|e| self.registrar_error(&e))"),
                 "el 429 del cierre no arma el cooldown"
             );
         }
@@ -5640,7 +5651,7 @@ mod tests_m4_c02 {
 }
 
 #[cfg(test)]
-mod tests_n20 {
+pub(crate) mod tests_n20 {
     use super::*;
     use futures_util::FutureExt;
 
@@ -5992,7 +6003,7 @@ mod tests_n20 {
         let c = ex.client().clone();
         ex.handle_rate_limit_error("HTTP_429_RATE_LIMITED retry_after=30");
         let e = match c.cancel_order_payload(URL).now_or_never() {
-            Some(Err(e)) => e,
+            Some(Err(e)) => e.to_string(),
             _ => String::new(),
         };
         assert!(e.starts_with("RATE_LIMIT_COOLDOWN"), "dentro del Retry-After no sale: {e}");
@@ -6007,6 +6018,7 @@ mod tests_n20 {
         let ex = self::ex();
         ex.handle_rate_limit_error("HTTP_418_IP_BANNED retry_after=300");
         let r = ex.client().clone().cancel_order_payload(URL).now_or_never();
+        let r = r.map(|r| r.map_err(|e| e.to_string()));
         assert!(rechazo(r, "RATE_BRAKE"), "con un 418 no sale");
     }
 
@@ -6172,7 +6184,7 @@ mod tests_n20 {
     /// orden, como tests/exchange_response_contract.rs: sin exchange, claves
     /// ni cuenta. Cuenta las conexiones aceptadas; tras la última respuesta el
     /// puerto se cierra.
-    async fn respuestas(
+    pub(crate) async fn respuestas(
         wires: Vec<String>,
     ) -> Option<(String, Arc<std::sync::atomic::AtomicUsize>, tokio::task::JoinHandle<()>)> {
         use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -6193,7 +6205,7 @@ mod tests_n20 {
         Some((url, aceptadas, servidor))
     }
 
-    fn respuesta(estado: &str, cabecera: &str, cuerpo: &str) -> String {
+    pub(crate) fn respuesta(estado: &str, cabecera: &str, cuerpo: &str) -> String {
         format!(
             "HTTP/1.1 {estado}\r\n{cabecera}Content-Length: {}\r\nConnection: close\r\n\r\n{cuerpo}",
             cuerpo.len()
@@ -6291,10 +6303,171 @@ mod tests_n20 {
         let f = cuerpo("fetch_all_symbol_filters");
         assert_eq!(f.matches("self.descargar_filtros(buf.as_str()).await\n    }").count(), 1, "{f}");
         let d = cuerpo("descargar_filtros");
-        assert_eq!(d.matches("Err(e) => Err(self.handle_rate_limit_error(&e)),").count(), 1, "{d}");
+        assert_eq!(d.matches("Err(e) => Err(e),").count(), 1, "{d}");
         assert_eq!(d.matches("self.check_backoff(self.get_synced_timestamp())?;").count(), 1);
+        // N23 (CL-196): cada respuesta pasa por `registrar_error`, que
+        // devuelve su texto tal cual.
+        assert_eq!(d.matches("map_err(").count(), 2, "{d}");
+        assert_eq!(d.matches(".map_err(|e| self.registrar_error(&e))").count(), 2, "{d}");
+        assert!(!d.contains("format!("), "{d}");
         for envoltura in ["map_err(", "format!("] {
-            assert!(!f.contains(envoltura) && !d.contains(envoltura), "{envoltura}");
+            assert!(!f.contains(envoltura), "{envoltura}");
         }
     }
 }
+
+#[cfg(test)]
+mod tests_n23 {
+    use super::tests_n20::{respuesta, respuestas};
+    use super::*;
+
+    const CODIGO: &str = include_str!("executor.rs");
+    const CUERPO_400: &str = r#"{"code":-1102,"msg":"Mandatory parameter was not sent"}"#;
+
+    fn ex() -> OrderExecutor {
+        OrderExecutor::new("k".into(), "s".into(), true)
+    }
+
+    fn peso(ex: &OrderExecutor) -> usize {
+        let ahora = ex.get_synced_timestamp();
+        ex.uso_exchange_bloqueado()
+            .peso_1m
+            .vigente(ahora, crate::binance_api::VENTANA_PESO_MS)
+    }
+
+    fn racha(ex: &OrderExecutor) -> usize {
+        ex.client().freno().consecutive_429.load(Ordering::SeqCst)
+    }
+
+    fn con_peso(estado: &str, peso: usize, extra: &str) -> String {
+        respuesta(estado, &format!("X-MBX-USED-WEIGHT-1M: {peso}\r\n{extra}"), CUERPO_400)
+    }
+
+    /// `get_payload_account` contra esas respuestas: su error y las
+    /// conexiones que llegaron. Nunca se cuelga (cada envío, 5 s; el total,
+    /// 30 s) y el servidor se aborta al volver.
+    async fn cuenta_contra(ex: &OrderExecutor, wires: Vec<String>) -> (String, usize) {
+        let servido = respuestas(wires).await;
+        assert!(servido.is_some(), "servidor local");
+        let Some((url, aceptadas, servidor)) = servido else {
+            return (String::new(), 0);
+        };
+        let r = tokio::time::timeout(
+            std::time::Duration::from_secs(30),
+            ex.get_payload_account(&url),
+        )
+        .await;
+        servidor.abort();
+        let e = match r {
+            Ok(Err(e)) => e,
+            otro => format!("no es un error: {otro:?}"),
+        };
+        (e, aceptadas.load(Ordering::SeqCst))
+    }
+
+    /// RED antes de CL-196: el error de un envío firmado era un `String` y
+    /// la cabecera de uso de su respuesta se perdía. Con dos 400 que dicen
+    /// 2 300 de peso (≥ 0,8·2 400) la franja de lecturas seguía abierta. El
+    /// reintento llega después con 50: manda el máximo de la ventana
+    /// (CL-180), así que también cuenta la cabecera de la PRIMERA respuesta.
+    /// Un rechazo no es un 429: la racha no se mueve.
+    #[tokio::test]
+    async fn cl196_la_cabecera_de_un_rechazo_entra_en_la_cuota() {
+        let ex = ex();
+        let (e, conexiones) =
+            cuenta_contra(&ex, vec![con_peso("400 Bad Request", 2_300, ""), con_peso("400 Bad Request", 50, "")])
+                .await;
+        assert_eq!(conexiones, 2, "«{e}»: envío y reintento");
+        assert!(e.starts_with("Binance API Error: status=400"), "«{e}»");
+        assert_eq!(peso(&ex), 2_300, "la cabecera del primer 400 cuenta");
+        let ahora = ex.get_synced_timestamp();
+        assert!(
+            matches!(ex.check_exit_rate_limits(ahora, Tramo::Lectura), Err(ref e) if e.starts_with("RATE_LIMIT_HEADROOM_WEIGHT")),
+            "la franja del 80 % lo ve"
+        );
+        assert_eq!(racha(&ex), 0, "un 400 no cuenta como 429");
+    }
+
+    /// RED antes de CL-196: lo mismo en la descarga de exchangeInfo, con un
+    /// 503 que trae la cabecera y un reintento que no la trae.
+    #[tokio::test]
+    async fn cl196_la_cabecera_del_error_de_exchange_info_cuenta() {
+        let servido = respuestas(vec![
+            con_peso("503 Service Unavailable", 2_300, ""),
+            respuesta("503 Service Unavailable", "", ""),
+        ])
+        .await;
+        assert!(servido.is_some(), "servidor local");
+        let Some((url, aceptadas, servidor)) = servido else { return };
+        let ex = ex();
+        let r = tokio::time::timeout(std::time::Duration::from_secs(30), ex.descargar_filtros(&url)).await;
+        servidor.abort();
+        assert!(matches!(r, Ok(Err(ref e)) if e.starts_with("Binance API Error: status=503")), "{r:?}");
+        assert_eq!(aceptadas.load(Ordering::SeqCst), 2);
+        assert_eq!(peso(&ex), 2_300);
+    }
+
+    /// Un 429 arma el freno una sola vez y su cabecera, aunque la traiga,
+    /// nunca entra en la cuota: manda su Retry-After. Sin reintento.
+    #[tokio::test]
+    async fn cl196_un_429_cuenta_una_vez_y_sin_su_cabecera() {
+        let ex = ex();
+        let (e, conexiones) =
+            cuenta_contra(&ex, vec![con_peso("429 Too Many Requests", 2_500, "Retry-After: 30\r\n")]).await;
+        assert_eq!(conexiones, 1, "«{e}»");
+        assert!(e.starts_with("HTTP_429_RATE_LIMITED retry_after=30"), "«{e}»");
+        assert_eq!(racha(&ex), 1, "un solo registro del 429");
+        assert_eq!(peso(&ex), 0, "la cabecera de un 429 no se registra");
+        let ahora = ex.get_synced_timestamp();
+        assert!(matches!(ex.check_backoff(ahora), Err(ref e) if e.starts_with("RATE_LIMIT_COOLDOWN")));
+    }
+
+    /// RED antes de CL-196 (la cabecera del 400): un rechazo y un 429 en el
+    /// reintento pasan una vez cada uno por su registro.
+    #[tokio::test]
+    async fn cl196_rechazo_y_429_del_reintento_cuentan_una_vez_cada_uno() {
+        let ex = ex();
+        let (e, conexiones) = cuenta_contra(
+            &ex,
+            vec![
+                con_peso("400 Bad Request", 2_300, ""),
+                con_peso("429 Too Many Requests", 2_500, "Retry-After: 30\r\n"),
+            ],
+        )
+        .await;
+        assert_eq!(conexiones, 2, "«{e}»");
+        assert!(e.starts_with("HTTP_429_RATE_LIMITED"), "«{e}»");
+        assert_eq!(racha(&ex), 1);
+        assert_eq!(peso(&ex), 2_300);
+    }
+
+    /// RED antes de CL-196: en la producción del ejecutor cada envío firmado
+    /// pasa por `registrar_error`, el único que llama a
+    /// `handle_rate_limit_error`. Antes había 26 llamadas sueltas, cinco de
+    /// ellas fuera del brazo que tenía vivo el cupo.
+    #[test]
+    fn cl196_cada_envio_firmado_pasa_por_registrar_error() {
+        let produccion = CODIGO.split("#[cfg(test)]").next().unwrap_or("");
+        assert_eq!(produccion.matches("handle_rate_limit_error(").count(), 2, "definición y registrar_error");
+        let envios: usize = [
+            ".execute_order_payload(",
+            ".execute_order_payload_typed(",
+            ".execute_order_payload_body(",
+            ".cancel_order_payload(",
+            ".get_payload_with_timeout(",
+            ".get_payload(",
+            ".post_payload(",
+        ]
+        .iter()
+        .map(|t| produccion.matches(t).count())
+        .sum();
+        assert!(envios >= 27, "{envios}");
+        assert_eq!(produccion.matches("self.registrar_error(").count(), envios, "un registro por envío");
+        let r = produccion.find("fn registrar_error(").unwrap_or(0);
+        let fin = produccion[r..].find("\n    }\n").map(|k| r + k).unwrap_or(r);
+        let cuerpo = &produccion[r..fin];
+        assert!(cuerpo.contains("self.observar_limites(e.limites(),"), "{cuerpo}");
+        assert!(!cuerpo.contains("update_limits("), "un rechazo no reinicia la racha");
+    }
+}
+

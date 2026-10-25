@@ -92,7 +92,7 @@ fn cl39_el_envio_de_la_ioc_lee_su_estado_terminal() {
         "execute_order_payload_body(",
         "clasificar_respuesta_ioc(",
         "apply_ack(",
-        "handle_rate_limit_error(",
+        "registrar_error(",
         "mark_local_reject(",
     ] {
         assert!(ioc.contains(requerido), "la IOC debe usar {requerido}");
