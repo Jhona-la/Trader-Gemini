@@ -106,7 +106,7 @@
   comparten sus clones: la hora del NTP y el listenKey lo miran y lo arman con su propio 429/418, una
   sola vez (CL-189), y la cancelación de la pierna hermana del user-data stream sólo lo mira (CL-190).
   Siguen fuera los sondeos con su propio cliente HTTP (OI del host, data-pipeline, velas del
-  bootloader, binarios de operador; filas N29 a N32). Fuera de los frenos, dos tramos de cuota (CL-179): entradas y lecturas
+  bootloader; filas N29 a N31) y los binarios de operador (fila N32, abajo). Fuera de los frenos, dos tramos de cuota (CL-179): entradas y lecturas
   frenan con el uso por encima del 80 % del límite; las críticas (cierres, protección, el positionRisk de
   fetch_position_risk, cancelaciones, consulta de una orden) pasan mientras
   uso + críticas en vuelo + coste ≤ límite en cada contador en que gastan (CL-181). El uso es el
@@ -117,9 +117,29 @@
   su Retry-After). Una crítica que salió y no tuvo respuesta deja su coste como usado hasta que caduca
   la ventana de cada contador (`ErrorRest::sin_respuesta`, `UsoExchange::sin_respuesta`; CL-201), y el
   reintento de una lectura de cuenta se readmite en su tramo con el uso de ahora (`Cupo::readmitir`,
-  CL-200). Los errores de red no llevan la URL firmada (CL-202). Siguen fuera la cabecera del 2xx de
+  CL-200). Los errores de red no llevan la URL firmada (CL-202). Un 2xx de una lectura cuyo cuerpo no
+  se pudo leer es un error con su cabecera y su causa (CL-203), y el reintento de cuenta sale firmado
+  con la hora de ahora, no con la de la primera petición (CL-204). Siguen fuera la cabecera del 2xx de
   las tres rutas sin ejecutor, que sí clasifican su 429/418 (CL-189; fila N38), y los residuos de la
   fila N41.
+- **Binarios de operador (fila N32).** `system_health`, `income_report`, `oco_probe`,
+  `algo_fetch_probe` y `audit_forensic_backtest` (éste sólo con `FORENSIC_LIVE_FEES=1`, también
+  cuando lo lanza `walkforward_evolver`, hasta `WF_PARALLEL` = 8 a la vez) crean su propio
+  `OrderExecutor` en otro proceso: su freno 429/418 y su uso empiezan vacíos y no ven los del motor.
+  El peso cuenta para la misma IP y, con las mismas claves, las órdenes para la misma cuenta. Su
+  primera petición sale siempre; tras un 429/418 arman su propio freno y no envían más, pero esa
+  petición ya contó para el baneo. **Regla: no lanzarlos con un freno vivo del motor.** Los avisos
+  `[RATE-LIMIT]` y `[RATE BRAKE]` son `println!`: con `TG_LOG_FILE` están en la salida estándar
+  (`logs/demo_vNN.stdout.log`), no en `logs/demo_vNN.log`. Esperar a que pase el `hasta ms` que
+  imprimen (época en ms, p. ej. `[DateTimeOffset]::FromUnixTimeMilliseconds(<ms>).LocalDateTime`);
+  tras un 418, a que acabe el baneo. Esos avisos sólo cubren el entorno del ejecutor (testnet en la
+  demo) y no ven los 429/418 de las filas N29 a N31. `oco_probe` abre una posición real, cancela
+  las órdenes de su símbolo y aplana TODAS las posiciones de la cuenta, también las del motor: sólo
+  en una cuenta sin posiciones del motor; si su limpieza falla lo dice (CL-205) y hay que revisar la
+  cuenta a mano. Con `FORENSIC_LIVE_FEES=1` durante un freno, el forense cae a las comisiones VIP0 y su
+  FORENSIC_JSON no lo dice, así que `walkforward_evolver` no lo sabe (fila N51). `oi_history_sync` (siempre mainnet), `download_history`
+  (fundingRate de 40 símbolos) y `docs/audit/linea_i/rtt_probe.ps1` (40 GET de la hora por entorno)
+  no miran el estado HTTP y siguen enviando tras un 429/418 (fila N47).
 
 ## 6. WebSocket (streams)
 
