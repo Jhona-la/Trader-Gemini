@@ -1728,8 +1728,8 @@ impl OrderExecutor {
     /// GET de clase CUENTA (positionRisk, account, income, commission):
     /// respuestas que escalan con el tamaño de la cuenta y NO pertenecen a
     /// la ruta de órdenes. El timeout HFT global (1.2s) las mataba a
-    /// intermitencia (TEXT_ERR: operation timed out → body vacío → parse
-    /// error). Presupuesto de 5s + 1 reintento. La ruta de órdenes sigue
+    /// intermitencia. Presupuesto de 5s + 1 reintento, también ante un 2xx
+    /// cuyo cuerpo no se pudo leer (N40, CL-203). La ruta de órdenes sigue
     /// con el presupuesto global: ahí la latencia es parte del contrato.
     ///
     /// `cupo` es el de la lectura, que su llamador pidió antes de firmar
@@ -1851,9 +1851,9 @@ impl OrderExecutor {
     }
 
     /// N20 (CL-185): los filtros de una respuesta de exchangeInfo. Una que no
-    /// trae ninguno utilizable (cuerpo ilegible —el cliente devuelve Ok con
-    /// «TEXT_ERR…» si un 2xx no se pudo leer—, JSON roto, sin `symbols` o sin
-    /// un solo símbolo con paso y tick) es un error: antes era un mapa vacío
+    /// trae ninguno utilizable (JSON roto, sin `symbols` o sin un solo
+    /// símbolo con paso y tick; un 2xx ilegible ya es un error del cliente
+    /// desde CL-203) es un error: antes era un mapa vacío
     /// que get_symbol_filter guardaba encima de la caché buena, y cada símbolo
     /// volvía a descargar exchangeInfo.
     fn filtros_de_exchange_info(
@@ -5999,9 +5999,10 @@ pub(crate) mod tests_n20 {
         assert!(!c.contains("check_exit_rate_limits("), "sin el tramo del 80 %");
     }
 
-    /// RED antes de CL-185: una respuesta 2xx sin filtros utilizables (el
-    /// cliente devuelve Ok con «TEXT_ERR…» si no pudo leer el cuerpo) era un
-    /// mapa vacío, y get_symbol_filter lo guardaba encima de la caché buena.
+    /// RED antes de CL-185: una respuesta 2xx sin filtros utilizables (hasta
+    /// CL-203 el cliente devolvía Ok con «TEXT_ERR…» si no pudo leer el
+    /// cuerpo) era un mapa vacío, y get_symbol_filter lo guardaba encima de
+    /// la caché buena.
     #[test]
     fn cl185_un_exchange_info_sin_filtros_no_es_un_mapa_vacio() {
         for texto in [
@@ -7251,6 +7252,46 @@ mod tests_n23 {
             }
         }
     }
+
+    /// Un 200 que se corta antes de su Content-Length, con esa cabecera.
+    fn cortado(cabecera: &str) -> String {
+        format!("HTTP/1.1 200 OK\r\n{cabecera}Content-Length: 100\r\nConnection: close\r\n\r\n[{{\"x\"")
+    }
+
+    /// RED antes de CL-203 (N40): un 2xx de una lectura de cuenta cuyo cuerpo
+    /// no se pudo leer salía como Ok con «TEXT_ERR: …», sin el reintento que
+    /// get_payload_account tiene justo para eso y sin contar su cabecera. Ahora
+    /// es un error con la cabecera, el reintento sale y su respuesta vale.
+    #[tokio::test]
+    async fn cl203_la_cuenta_reintenta_un_2xx_ilegible() {
+        let servido = respuestas(vec![cortado("X-MBX-USED-WEIGHT-1M: 2300\r\n"), respuesta("200 OK", "X-MBX-USED-WEIGHT-1M: 50\r\n", "[]")]).await;
+        assert!(servido.is_some(), "servidor local");
+        let Some((url, aceptadas, servidor)) = servido else { return };
+        let ex = ex();
+        let cupo = ex.check_exit_rate_limits(ex.get_synced_timestamp(), PR);
+        assert!(cupo.is_ok(), "{cupo:?}");
+        let Ok(cupo) = cupo else { return };
+        let r = tokio::time::timeout(std::time::Duration::from_secs(30), ex.get_payload_account(&url, &cupo)).await;
+        servidor.abort();
+        assert!(matches!(r, Ok(Ok((_, ref cuerpo))) if cuerpo == "[]"), "{r:?}");
+        assert_eq!(aceptadas.load(Ordering::SeqCst), 2, "lectura y reintento");
+        drop(cupo);
+        assert_eq!(peso(&ex), 2_300, "la cabecera del 2xx ilegible cuenta");
+    }
+
+    /// RED antes de CL-203: en el tramo de lecturas, la cabecera de ese 2xx
+    /// (2 300 > 0,8·2 400) cierra el reintento, y vuelve su propio error.
+    #[tokio::test]
+    async fn cl203_el_2xx_ilegible_cuenta_para_readmitir() {
+        let ex = ex();
+        let (e, conexiones) =
+            cuenta_contra(&ex, Tramo::Lectura, vec![cortado("X-MBX-USED-WEIGHT-1M: 2300\r\n"), respuesta("200 OK", "X-MBX-USED-WEIGHT-1M: 50\r\n", "[]")])
+                .await;
+        assert!(e.starts_with("HTTP 200 unreadable response body: "), "«{e}»");
+        assert_eq!(conexiones, 1, "«{e}»: la franja del 80 % no deja reintentar");
+        assert_eq!(peso(&ex), 2_300);
+    }
+
 }
 
 #[cfg(test)]
@@ -7363,20 +7404,44 @@ mod tests_n33 {
     }
 
     /// RV21-T (revisión de CL-197): un 2xx sin filtros utilizables (un JSON
-    /// sin símbolos, o un cuerpo que se corta y el cliente devuelve como
-    /// «TEXT_ERR…») también deja la espera, y no se reintenta. Ninguna prueba
+    /// sin símbolos) también deja la espera, y no se reintenta. Ninguna prueba
     /// lo fijaba: armar la espera sólo por un error del transporte quedaba
-    /// en verde.
+    /// en verde. Un cuerpo que se corta es, desde CL-203 (N40), un error del
+    /// transporte: se reintenta una vez y luego deja la espera (antes llegaba
+    /// como «TEXT_ERR…» y no se reintentaba).
     #[tokio::test]
     async fn rv21_un_2xx_sin_filtros_deja_la_espera() {
         let cortado = "HTTP/1.1 200 OK\r\nContent-Length: 100\r\nConnection: close\r\n\r\n{\"symbols\"".to_string();
-        for primera in [respuesta("200 OK", "", "{}"), cortado] {
+        for (primera, texto, envios) in [
+            (respuesta("200 OK", "", "{}"), "EXCHANGE_INFO_SIN_FILTROS", 1),
+            (cortado, "HTTP 200 unreadable response body: ", 2),
+        ] {
             let ex = ex();
-            let (r1, r2, conexiones) = dos_descargas(&ex, vec![primera.clone(), primera.clone()]).await;
-            assert!(empieza(&r1, "EXCHANGE_INFO_SIN_FILTROS"), "{r1:?}");
+            let (r1, r2, conexiones) = dos_descargas(&ex, vec![primera.clone(), primera.clone(), primera]).await;
+            assert!(empieza(&r1, texto), "{r1:?}");
             assert!(empieza(&r2, "EXCHANGE_INFO_EN_ESPERA"), "{r2:?}");
-            assert_eq!(conexiones, 1, "{r1:?}: sin reintento ni segunda descarga");
+            assert_eq!(conexiones, envios, "{r1:?}: sin segunda descarga");
         }
+    }
+
+    /// RED antes de CL-203 (N40): un exchangeInfo cuyo cuerpo se corta (pesa
+    /// MBs: es su fallo probable) no se reintentaba y armaba la espera de
+    /// 60 s; ahora el reintento sale y, si lo sirve, no queda espera.
+    #[tokio::test]
+    async fn cl203_un_exchange_info_cortado_se_reintenta() {
+        let cortado = "HTTP/1.1 200 OK\r\nContent-Length: 100\r\nConnection: close\r\n\r\n{\"symbols\"".to_string();
+        let bueno = r#"{"symbols":[{"symbol":"CL203USDT","filters":[
+            {"filterType":"LOT_SIZE","stepSize":"0.01"},
+            {"filterType":"PRICE_FILTER","tickSize":"0.001"}]}]}"#;
+        let servido = respuestas(vec![cortado, respuesta("200 OK", "", bueno)]).await;
+        assert!(servido.is_some(), "servidor local");
+        let Some((url, aceptadas, servidor)) = servido else { return };
+        let ex = ex();
+        let r = tokio::time::timeout(std::time::Duration::from_secs(30), ex.descargar_filtros(&url)).await;
+        servidor.abort();
+        assert!(matches!(r, Ok(Ok(ref mapa)) if mapa.contains_key("CL203USDT")), "{r:?}");
+        assert_eq!(aceptadas.load(Ordering::SeqCst), 2, "descarga y reintento");
+        assert!(ex.espera_exchange_info_bloqueada().is_none(), "sin espera");
     }
 
     /// RV21-T (revisión de CL-197): dentro del freno con la espera armada la

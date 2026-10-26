@@ -772,10 +772,27 @@ impl BinanceClient {
                     return Err(ErrorRest::sin_cabecera(rate_err));
                 }
                 let limits = extract_limits(resp.headers());
-                let raw_text = resp
-                    .text()
-                    .await
-                    .unwrap_or_else(|e| format!("TEXT_ERR: {}", e));
+                let raw_text = match resp.text().await {
+                    Ok(texto) => texto,
+                    // N40 (CL-203): un 2xx cuyo cuerpo no se pudo leer (cortado,
+                    // o el plazo venció leyéndolo) no es una respuesta buena.
+                    // Antes salía como Ok con «TEXT_ERR: …»: su lector fallaba
+                    // después con un error de JSON que no decía que hubo
+                    // respuesta, y ni get_payload_account ni exchangeInfo lo
+                    // reintentaban. Es un error con su cabecera y su causa, sin
+                    // la URL; no AMBIGUOUS, porque una lectura no ejecuta nada.
+                    Err(e) if status.is_success() => {
+                        return Err(ErrorRest::con_cabecera(
+                            format!(
+                                "HTTP {} unreadable response body: {}",
+                                status.as_u16(),
+                                e.without_url()
+                            ),
+                            limits,
+                        ));
+                    }
+                    Err(e) => format!("TEXT_ERR: {}", e),
+                };
                 if status.is_success() {
                     Ok((limits, raw_text))
                 } else {
@@ -809,6 +826,12 @@ impl BinanceClient {
             Ok(resp) => {
                 if resp.status().is_success() {
                     let limits = extract_limits(resp.headers());
+                    // N40: este «[]» no lo lee nadie como lista. El hedge
+                    // (positionSide/dual) decide por el estado, y un 2xx es
+                    // que el cambio entró; el apalancamiento lo rechaza como
+                    // confirmación mal formada. Un error aquí haría que
+                    // ensure_hedge_mode diera la cuenta por ONE-WAY tras un
+                    // cambio aplicado.
                     let text = resp.text().await.unwrap_or_else(|_| "[]".to_string());
                     Ok((limits, text))
                 } else if let Some(rate_err) =
@@ -1499,5 +1522,59 @@ mod tests_n23 {
             assert!(e.as_ref().is_some_and(|e| e.starts_with(texto)), "{texto}: {e:?}");
             assert_eq!(e.and_then(|e| e.limites().weight_1m), Some(777), "{texto}");
         }
+    }
+
+    /// RED antes de CL-203 (N40): un 2xx cuyo cuerpo se corta antes de su
+    /// Content-Length, o se queda a medias hasta que vence el plazo, salía de
+    /// `get_payload_with_timeout` como Ok con «TEXT_ERR: …». Es un error con la
+    /// cabecera de uso y la causa, sin la URL, que no es AMBIGUOUS (una
+    /// lectura no ejecuta nada) ni cuenta como sin respuesta (la hubo). Un 2xx
+    /// completo sigue siendo Ok con su cuerpo.
+    #[tokio::test]
+    async fn cl203_un_2xx_ilegible_de_lectura_es_un_error() {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        let cab = "X-MBX-USED-WEIGHT-1M: 777\r\n";
+        let limpio = |e: &ErrorRest| {
+            e.starts_with("HTTP 200 unreadable response body: ")
+                && !e.sin_respuesta()
+                && e.limites().weight_1m == Some(777)
+                && !["127.0.0.1", "/fapi/", "signature", "deadbeef"].iter().any(|t| e.contains(t))
+        };
+        let cortado = format!("HTTP/1.1 200 OK\r\n{cab}Content-Length: 100\r\nConnection: close\r\n\r\n[{{\"x\"");
+        let e = error_ante(4, cortado).await;
+        assert!(e.as_ref().is_some_and(limpio), "cortado: {e:?}");
+
+        let oyente = tokio::net::TcpListener::bind("127.0.0.1:0").await.ok();
+        let direccion = oyente.as_ref().and_then(|o| o.local_addr().ok());
+        assert!(direccion.is_some(), "puerto local");
+        if let (Some(oyente), Some(direccion)) = (oyente, direccion) {
+            let a_medias = tokio::spawn(async move {
+                let mut abiertas = Vec::new();
+                while let Ok((mut s, _)) = oyente.accept().await {
+                    let mut peticion = [0u8; 4096];
+                    let _ = s.read(&mut peticion).await;
+                    let _ = s.write_all(format!("HTTP/1.1 200 OK\r\n{cab}Content-Length: 100\r\n\r\n[").as_bytes()).await;
+                    abiertas.push(s);
+                }
+            });
+            let c = BinanceClient::with_timeout("k".into(), true, Duration::from_secs(5));
+            let url = format!("http://{direccion}/fapi/v2/positionRisk?timestamp=1&signature=deadbeef");
+            let r = tokio::time::timeout(
+                Duration::from_secs(20),
+                c.get_payload_with_timeout(&url, Some(Duration::from_millis(500))),
+            )
+            .await;
+            a_medias.abort();
+            let e = r.ok().and_then(|r| r.err());
+            assert!(e.as_ref().is_some_and(|e| limpio(e) && e.contains("timed out")), "a medias: {e:?}");
+        }
+
+        let servido = respuestas(vec![respuesta("200 OK", cab, "[]")]).await;
+        assert!(servido.is_some(), "servidor local");
+        let Some((url, _, servidor)) = servido else { return };
+        let c = BinanceClient::with_timeout("k".into(), true, Duration::from_secs(5));
+        let r = tokio::time::timeout(Duration::from_secs(20), c.get_payload_with_timeout(&url, None)).await;
+        servidor.abort();
+        assert!(matches!(r, Ok(Ok((ref l, ref cuerpo))) if cuerpo == "[]" && l.weight_1m == Some(777)), "{r:?}");
     }
 }
