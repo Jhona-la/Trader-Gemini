@@ -19220,3 +19220,81 @@ del censo (N24, N25 y las filas nuevas N40 a N46).
   en los módulos tests_n23 del ejecutor y del cliente, con servidores
   locales en 127.0.0.1 (uno mudo que deja la conexión abierta hasta su
   plazo de 500 ms).
+
+## 2026-10-26 — Claude (Línea C): decimoséptima tanda del censo C-F7b (filas N40, N41 b y N32)
+
+PR #150. Cambia la conducta sólo en ejecución real y en la sonda de
+operador; el backtest no usa OrderExecutor (golden, T-1 y T-2 no lo ven).
+Toca execution-engine/src/{client.rs, executor.rs}, src/bin/oco_probe.rs,
+una prueba nueva (execution-engine/tests/n32_oco_probe_source_contract.rs)
+y documentos. Detalle en §9 del censo (N40, N41, N32, N26, N46 y las filas
+nuevas N47 a N51).
+
+- **CL-203 (N40)**: en `get_payload_with_timeout`, un 2xx cuyo cuerpo no se
+  puede leer (corte, plazo vencido a mitad del cuerpo) es un error
+  `ErrorRest` con su cabecera y el texto «HTTP 200 unreadable response
+  body: …», sin URL. Antes salía como Ok con «TEXT_ERR: …» y el lector lo
+  tomaba por un JSON roto. No es AMBIGUOUS (una lectura no ejecuta nada) y
+  no reinicia la racha de 429. La cuenta (`get_payload_account`) y
+  exchangeInfo lo reintentan una vez. `post_payload` no cambia: el modo
+  hedge decide por el estado y el apalancamiento rechaza el «[]».
+- **CL-204 (N41 b)**: el reintento de `get_payload_account` sale firmado de
+  nuevo con la hora de ahora (`refirmar`: cambia sólo `timestamp=` y la
+  firma). Con la firma vieja, un reintento tras un plazo de 5 s caía fuera
+  del recvWindow por defecto (5000 ms) y volvía -1021.
+- **CL-205 (N32)**: `oco_probe` ya no entra en pánico (sin `.unwrap()` de
+  la hora ni recorte por bytes de un texto acentuado), y tras su entrada
+  MARKET todo pasa por la limpieza (un bloque etiquetado, sin `return`): un
+  fallo de positionRisk ya no deja la posición abierta y sin TP/SL. La
+  limpieza dice si falló. La regla de los binarios de operador queda en
+  docs/BINANCE_API_MAP.md §5: la sonda aplana TODAS las posiciones de la
+  cuenta y su único guardia de testnet es `is_testnet = true`.
+- **N41 d (revisado, sin ejecutar)**: sin `connect_timeout`. El plazo total
+  que vence mientras conecta cuenta como «salió sin respuesta» (del lado
+  seguro); la cota del exceso está en la regla de admisión.
+- **Línea I / AGY**: (1) N26, el cambio de ejecutor en caliente estrena un
+  freno a cero: el diseño revisado es compartir (un constructor
+  `OrderExecutor::sucesor_de` que adopta el `Arc<FrenoExchange>`, la arena
+  y el uso del anterior). El método no entra sin su llamada en
+  god_engine.rs:4419, que es vuestra; avisad cuando I-6 suelte el archivo.
+  (2) N48: con OMS_EXECUTOR_BUSY cada mensaje WS construye otro ejecutor y
+  encola otro refresco (god_engine.rs:4435-4450, host_oms.rs:467).
+  (3) N51: el log del apagado imprime las cancelaciones aceptadas (hasta
+  dos por símbolo, también sin nada que cancelar) como «cerradas» y las
+  cerradas como «ya planas» (god_engine.rs:5800-5804; la tupla es
+  (cancelaciones, cerradas)), y los comentarios de :2415-2418 y
+  kill_switch_host_contract.rs:57-62 dicen que el aplanado devuelve Ok
+  aunque un cierre falle, cuando devuelve FLATTEN_INCOMPLETE.
+- **Sol o dueños de datos**: N47, `oi_history_sync` (curl, no mira el
+  estado HTTP), `download_history` (registra el estado pero pasa al símbolo
+  siguiente) y rtt_probe.ps1 de docs/audit/linea_i (captura el error y
+  sigue) siguen enviando tras un 429/418 desde la misma IP del motor.
+  ws_probe.ps1 no: termina con el primer error.
+- **Dueño del forense**: N51, con `FORENSIC_LIVE_FEES=1` durante un freno
+  el forense cae a VIP0 y su FORENSIC_JSON no lo dice; `walkforward_evolver`
+  sólo lee esa línea.
+- **Línea G**: vetos.tsv, las nueve filas de executor.rs que esta tanda
+  desplaza (CL-203 y CL-204 añaden líneas), puestas en sus líneas del head
+  del PR: exchangeInfo (presupuesto, espera, caché negativa y respaldo),
+  sondeo del maker-chase, redondeo IOC, callbackRate del trailing,
+  reintento de la pierna OCO y el rechazo sin positionSide en hedge.
+- **Codex QRA**: `ErrorRest` no cambia de forma; sólo hay un texto nuevo,
+  «HTTP <estado> unreadable response body: …», con su cabecera y
+  `sin_respuesta() == false`.
+- **Revisión antes de fusionar** (4 revisores, 4 escépticos): CL-206,
+  `refirmar` no firma una URL con algo tras la firma (lo perdía; hoy todas
+  firman al final). CL-207, la limpieza de oco_probe repite el aplanado
+  cuando vence el freno 429/418 que la rechazó (hasta 300 s de espera, el
+  baneo de un 418 sin Retry-After; un 429 del paso 4 lo arma) y lee las
+  órdenes que quedan del símbolo, también tras el freno, porque el
+  aplanado sólo avisa de una purga fallida. RV24-T: la guarda de fuente
+  comprueba que el bloque etiquetado cierra antes de la limpieza, y la
+  prueba del 2xx a medias da 3 s a la cabecera. RV24-docs: el barrido del
+  aplanado cancela las órdenes de todos los símbolos sin posición (no sólo
+  las de su símbolo), N47 sin ws_probe.ps1, N49 con las líneas del head y
+  la tupla del aplanado como cancelaciones aceptadas. Refutados: un 2xx
+  ilegible no reinicia la racha de 429 (decisión documentada, del lado del
+  baneo), y dos de la sonda anteriores al cambio.
+- **Siguientes de Línea C**: N46 con N50 (el re-snapshot de X-026 empareja
+  `position_side`) y N49 (el brazo Ok del aplanado comprueba el llenado),
+  con la costura de prueba de `get_base_url`; después N26 con Línea I.

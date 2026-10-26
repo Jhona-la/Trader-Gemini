@@ -1,5 +1,46 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
 
+## 2026-10-26 — Claude (cloud, Línea C): decimoséptima tanda del censo C-F7b (filas N40, N41 b y N32)
+
+Tanda del PR #150. Cambia la conducta sólo en ejecución real y en la sonda
+OCO; el backtest no usa OrderExecutor (golden, T-1 y T-2 no lo ven). Toca
+execution-engine/src/{client.rs, executor.rs}, src/bin/oco_probe.rs, una
+guarda de fuente nueva y documentos.
+
+- CL-203 (N40): un 2xx de una lectura cuyo cuerpo no se pudo leer es un
+  error con su cabecera y su causa («HTTP 200 unreadable response body:
+  …»), no un Ok con «TEXT_ERR». get_payload_account y exchangeInfo lo
+  reintentan una vez. `post_payload` queda igual (el hedge decide por el
+  estado).
+- CL-204 (N41 b): el reintento de get_payload_account sale con la hora de
+  ahora y su firma (`refirmar`); con la misma firma volvía -1021 tras un
+  plazo de 5 s agotado (ninguna petición manda recvWindow).
+- CL-205 (N32): oco_probe pasa siempre por la limpieza tras su entrada,
+  dice si la limpieza falla, sin `.unwrap()` y con el recorte por
+  caracteres. La regla de no lanzar binarios de operador durante un freno
+  está en docs/BINANCE_API_MAP.md §5 (los avisos del freno son `println!`:
+  con TG_LOG_FILE van a `logs/demo_vNN.stdout.log`).
+- De su revisión (4 revisores, 4 escépticos): CL-206, `refirmar` no firma
+  una URL con algo tras la firma; CL-207, la limpieza de oco_probe repite
+  el aplanado cuando vence el freno 429/418 (hasta 300 s de espera, el
+  baneo de un 418 sin Retry-After) y lee las órdenes que quedan del
+  símbolo, también tras el freno; RV24-T, RV24-docs y, de una segunda
+  revisión de esas correcciones, RV25. Siguiente CL libre:
+  CL-208.
+- Revisadas sin ejecutar: N41 d se queda como sobrecuenta documentada (sin
+  `connect_timeout`, que en reqwest 0.11 es de todo el cliente); N26 pasa a
+  compartir el freno, el reloj y el uso del ejecutor anterior en vez de
+  copiarlos (necesita la línea del host, de Línea I o AGY); N46 necesita
+  antes N50 (X-026 busca la fila sólo por símbolo y en hedge puede cerrar
+  la otra pierna) y consultar el clientOrderId del cierre.
+- Filas nuevas: N47 (binarios y sondas que siguen tras un 429/418), N48 (el
+  reintento OMS_EXECUTOR_BUSY por cada mensaje WS; AGY o Línea I), N49 (el
+  Ok del cierre del aplanado sin comprobar el llenado), N50 y N51 (el
+  forense con comisiones VIP0 sin decirlo en su JSON; el log del apagado
+  con la tupla cambiada, Línea I).
+- Siguen en Línea C: N46 con N50 y N49, N26 (con el dueño del host),
+  N22/N38 y N43 (con la documentación de Binance), N41 a/c.
+
 ## 2026-10-25 — Claude (cloud, Línea C): decimosexta tanda del censo C-F7b (filas N25 y N24)
 
 Tanda del PR #149. Cambia la conducta sólo en ejecución real; el backtest

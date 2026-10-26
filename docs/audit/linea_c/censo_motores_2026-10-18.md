@@ -410,6 +410,8 @@ dice su lote):
 | #146 | N5, la cuota del exchange para las salidas (CL-177: uso por contador con su sello y sin bajar por una respuesta tardía; CL-178: las salidas sin consulta respetan el freno 429/418 y el barrido no purga dos veces; CL-179: las críticas pasan hasta el límite del exchange con las críticas en vuelo contadas); más N5-docs; abre N18 a N22; y sus dos revisiones antes de fusionar (CL-180: el máximo exacto de las cabeceras vigentes, con el sello futuro acotado por la siguiente cabecera; CL-181: un contador sin coste no frena por lo que está en vuelo; CL-182: la cabecera se registra con el cupo vivo; CL-183: en X-026 un re-snapshot sin respuesta no da la posición por plana; RV14-c, RV14-T, RV14-docs, RV15-c, RV15-docs) |
 | #147 | N20, peticiones fuera de la cuota (CL-184: exchangeInfo dentro del freno; CL-185: un exchangeInfo sin filtros no borra la caché; CL-186: un símbolo ausente de un exchangeInfo completo no se vuelve a descargar; CL-187: modo hedge y hora dentro del freno, con la cabecera del modo registrada; CL-188: un freno por ejecutor compartido por los clones de su cliente; CL-189: la hora del NTP y el listenKey miran y arman el freno; CL-190: la cancelación de la pierna hermana mira el freno; CL-191: sin el último expect de producción del ejecutor); más N20-docs; abre N23 a N39; y sus cinco revisiones antes de fusionar (CL-192: el freno no deja un símbolo en la caché negativa; CL-193: el 2xx del NTP y del listenKey reinicia la racha de 429; CL-194: su 429 ya registrado no cuenta dos veces; CL-195: la caché negativa decide por la descarga de esa llamada; RV16-T a RV20-T, RV16-docs) |
 | #148 | N23, la cabecera de uso de los errores (CL-196: el error de los siete transportes firmados es `client::ErrorRest` con la cabecera de su respuesta, y `registrar_error` la registra una vez con el cupo vivo, nunca la de un 429/418) y N33, exchangeInfo sin descargas repetidas (CL-197: tras una descarga fallida fuera del freno no sale otra durante el TTL de la caché negativa); más N23-docs; y su revisión antes de fusionar (CL-198: sin un exchangeInfo guardado, la espera no deja un símbolo en la caché negativa; CL-196b: comentarios; RV21-T: siete pruebas) |
+| #149 | N25, la clasificación de los envíos de orden (CL-199: un 5xx, un 408, un -1006/-1007 o un cuerpo ilegible son AMBIGUOUS, con su cabecera) y N24, el reintento de cuenta y las críticas sin respuesta (CL-200: el reintento se readmite en su tramo; CL-201: una crítica que salió sin respuesta deja su coste como usado hasta que caduca la ventana de cada contador; CL-202: los errores de red sin la URL firmada y el aplanado sólo conmuta el modo ante un rechazo firme); más N24-docs; abre N40 a N46; y su revisión antes de fusionar (CL-202b: el connect rechazado de Windows en las pruebas; RV23-T, RV23-docs) |
+| #150 | N40, un 2xx ilegible de una lectura (CL-203: es un error con su cabecera, y la cuenta y exchangeInfo lo reintentan), N41 b, el reintento de cuenta (CL-204: sale firmado con la hora de ahora, no con la firma que caduca a los 5 s del recvWindow) y N32, los binarios de operador (CL-205: oco_probe limpia siempre tras su entrada y dice si la limpieza falló; la regla de §5 de BINANCE_API_MAP); revisa N41 d, N26 y N46 sin ejecutarlos; abre N47 a N51; y su revisión antes de fusionar (CL-206: `refirmar` no firma una URL con algo tras la firma; CL-207: la limpieza de oco_probe espera al freno 429/418 y lee las órdenes que quedan; RV24-T: guarda del bloque etiquetado y plazo de 3 s; RV24-docs; y de la revisión de esas correcciones, RV25: las lecturas de lo que queda también esperan al freno, el baneo de un 418 sin Retry-After cabe en la espera y la guarda prohíbe `process::exit` entre el bloque y la limpieza) |
 
 **Hecho por otros agentes**: lote 9 entero (Sol, d18b3735), lote 45 entero
 (Codex RB, 906a9c6a), parte del 7 (Sol retiró el bin main.rs de
@@ -1418,6 +1420,27 @@ un escéptico por lote listo):
   kill-switch), llamado por el host antes de publicar el nuevo
   (god_engine.rs:4431) o en `OmsSession::replace_executor`. El método entra
   con su llamada.
+  Revisado en la tanda 17 (sin ejecutar, con un escéptico): el defecto
+  sigue en main cab14e4c (god_engine.rs:4419 `new_with_shared`, :4431
+  `Arc::new`, :4435 `replace_executor`, host_oms.rs:178; `new_with_shared`
+  estrena reloj, `FrenoExchange` y `UsoExchange`). El diseño cambia de
+  copiar a compartir: el sucesor adopta el `Arc<FrenoExchange>` del
+  anterior, su `arena` y un `Arc<Mutex<UsoExchange>>` (el campo deja de ser
+  un `Mutex` suelto), sólo con la misma URL base, la misma clave y la
+  misma arena (`Arc::ptr_eq`), y nunca el kill-switch ni el limitador local
+  de entradas ni las cachés. `en_vuelo` se comparte a propósito: los
+  `Cupo` del anterior se sueltan en el mismo candado (Drop), mientras que
+  una copia dejaría plazas fantasma para siempre; así los 429/418 de los
+  rezagados del anterior frenan también al sucesor. Sin candados anidados
+  (cada camino toma el candado una vez). Forma preferida: un constructor
+  `OrderExecutor::sucesor_de(previo, …)` que cae a `new_with_shared` y lo
+  dice si la URL, la clave o la arena difieren. La línea del host
+  (god_engine.rs:4419) es de Línea I o AGY, y Línea I está editando
+  god_engine.rs (I-6); el método no entra sin su llamada (la guarda de
+  fuente quedaría roja). Pruebas: el RED con un sucesor que devuelve true
+  sin compartir nada (falla `check_backoff` y la franja del 80 %), un 418
+  de un clon del anterior tomado antes del cambio que frena al sucesor, y
+  una plaza crítica del anterior que el sucesor cuenta hasta que se suelta.
 - N27 (de la tanda 14; Codex QRA, Línea I desde el 2026-10-26, con Línea C):
   lo que queda de la cancelación de la pierna hermana
   (user_data_stream.rs:631-731). (a) Su 429/418 sólo se imprime: registrarlo
@@ -1456,6 +1479,27 @@ un escéptico por lote listo):
   (system_health, income_report, oco_probe, algo_fetch_probe,
   audit_forensic_backtest) usan la misma IP y cuenta con su propia cuota.
   Regla operativa: no correrlos durante un freno. Falta documentarla.
+  Ejecutada en la tanda 17: la regla está en docs/BINANCE_API_MAP.md §5 (con
+  dónde leer el freno: los avisos son `println!` y con `TG_LOG_FILE` van a
+  `logs/demo_vNN.stdout.log`), y CL-205 corrige oco_probe (Línea C, fase
+  C-F9): tras su entrada MARKET, un fallo volvía de main sin limpiar y
+  dejaba la posición sin TP/SL; la limpieza daba un aplanado fallido por
+  «0 posiciones cerradas»; tenía dos `.unwrap()` y un recorte por bytes que
+  entraba en pánico con un error acentuado. Un guarda persistente del freno
+  (el motor lo escribe, cada binario lo lee) queda sin hacer: necesita al
+  dueño del host y, en el forense, saltarse las comisiones vivas en vez de
+  salir. La revisión halló además las filas N47, N48 y N51. Su revisión
+  antes de fusionar añadió CL-207: un 429 en el paso 4 arma el freno, y el
+  aplanado de la limpieza, rechazado en local, dejaba la posición abierta
+  aunque el freno venciera en segundos; ahora lo repite cuando vence (hasta
+  300 s de espera en total, lo que dura el baneo de un 418 sin
+  Retry-After), y lee las órdenes que quedan del símbolo, también tras el
+  freno, porque el aplanado sólo avisa de una purga fallida y se leía como
+  «órdenes purgadas». La guarda de fuente comprueba también que el bloque
+  cierra antes de la limpieza y que entre el bloque y la limpieza no hay
+  `process::exit`. La
+  cabecera y §5 dicen ya que el barrido cancela las órdenes de todos los
+  símbolos sin posición, no sólo las de su símbolo.
 - N33 (de la tanda 14, Línea C): sin un exchangeInfo guardado y con la
   descarga fallando fuera de un freno, get_symbol_filter vuelve a descargar
   en cada llamada (hasta unos 20 s cada una con una red lenta). Candidato:
@@ -1534,11 +1578,28 @@ un escéptico por lote listo):
   respuesta; quien no lo parsea da por buena una respuesta que no leyó.
   Candidato: un Err con su cabecera, como `cuerpo_ilegible` en los envíos de
   orden, tras mirar a cada lector.
+  Ejecutada en la tanda 17 (CL-203), sólo en GET: `get_payload_with_timeout`
+  da un error con su cabecera y su causa sin la URL («HTTP 200 unreadable
+  response body: …»), que no es AMBIGUOUS ni sin respuesta. Mirados todos
+  los lectores: ninguno leía el «[]» ni el «TEXT_ERR» como lista vacía (los
+  de JSON ya acababan en error, así que la clase de decisión no cambia), pero
+  get_payload_account y exchangeInfo no los reintentaban, aunque su
+  reintento existe para eso, y exchangeInfo armaba la espera de 60 s. Ahora
+  se reintentan una vez. `post_payload` queda igual: el hedge decide por el
+  estado (un 2xx es que el cambio entró; un error le haría dar la cuenta por
+  one-way) y el apalancamiento rechaza el «[]». Un 2xx ilegible no reinicia
+  la racha de 429 (no pasa por `update_limits`), del lado seguro.
 - N41 (de la tanda 16, Línea C, residuos de N24): (a) un 502/504 de una
   pasarela sin cabecera X-MBX es una respuesta, no entra como coste perdido
   aunque la petición pudo llegar al backend; (b) el reintento de
   `get_payload_account` firma con la misma hora que el primero (un -1021 si
-  el primero agotó el recvWindow; fila propia si aparece en el forense);
+  el primero agotó el recvWindow; fila propia si aparece en el forense;
+  ejecutada en la tanda 17, CL-204: ninguna petición manda recvWindow, así
+  que tras un plazo de 5 s agotado el reintento con la misma firma volvía
+  siempre -1021, y desde CL-203 también se reintenta un 2xx que vence
+  leyendo; ahora sale con la hora de ahora y su firma; CL-206, de su
+  revisión: con algo tras la firma `refirmar` no firma y sale la URL de
+  antes, porque lo perdía; hoy las diez llamadas firman al final);
   (c) el -1106 real de Binance podría escribir el parámetro en minúsculas
   («'reduceonly' sent when not required»): `modo_rechazado` busca
   «reduceOnly» y entonces no reintentaría en el otro modo. Sin la
@@ -1550,6 +1611,25 @@ un escéptico por lote listo):
   perdido hasta que caduca su ventana. Cuenta de más, del lado seguro;
   candidato si molesta: un `connect_timeout` menor que el plazo total, para
   que esa fase falle como conexión.
+  (d) revisada en la tanda 17 (con un escéptico): se queda como sobrecuenta
+  documentada, sin `connect_timeout`. En reqwest 0.11 es de todo el cliente
+  (no hay uno por petición): por debajo de 1,2 s cortaría la conexión de
+  las lecturas de 5 s y de exchangeInfo (10 s), y hyper lo reparte entre las
+  direcciones resueltas. Ningún valor sale de los plazos que hay sin un
+  literal nuevo; si se quiere, en un cliente propio de la ruta de órdenes y
+  con tiempos de conexión medidos en el PC. La cota no es por posiciones:
+  la regla de admisión (`regla_de_cuota`) sólo deja salir una crítica que
+  gasta órdenes mientras uso + perdido + en vuelo + coste ≤ L, así que lo
+  perdido no pasa de L en cada contador; en el peor caso, al volver la red,
+  las críticas que gastan órdenes esperan hasta 10 s (ORDERS_10S) o 60 s
+  (ORDERS_1M), y entradas y lecturas, con lo perdido por encima de 0,8·L.
+  Llegar ahí pide unas 300 fallidas en 10 s o 1 200 en 60 s; las fuentes
+  durante un corte son el bracket de una entrada llena (hasta 3 intentos de
+  2 piernas más 2 reintentos, y 2 cierres de emergencia; god_engine.rs
+  :5403-5554, que no se para si positionRisk falla), el cierre local (2), el
+  respaldo de un cierre en papel (1) y, en peso, positionRisk,
+  cancelaciones y consultas. Las peticiones escritas en un socket del pool
+  (`pool_idle_timeout(None)`) se cuentan bien con o sin `connect_timeout`.
 - N42 (de la tanda 16, Línea I): el recuento de rechazos de la escalada
   B3.5b compara un acumulado de vida (`protection_health::rejections_of`,
   BRACKET_REJECTIONS nunca se pone a cero) con una foto que se borra cuando
@@ -1587,6 +1667,72 @@ un escéptico por lote listo):
   plana, cerrada y purgada; abierta, reduce-only con la cantidad fresca),
   con una prueba de extremo a extremo, que hoy no se puede montar porque
   `get_base_url` no admite un servidor local.
+  Revisado en la tanda 17 (sin ejecutar, con un escéptico): el candidato
+  solo no es seguro en hedge, el modo de producción (god_engine.rs:1747).
+  El re-snapshot de X-026 busca la fila por símbolo (executor.rs:1010) y
+  reenvía con su lado: con LONG y SHORT abiertos, un cierre AMBIGUOUS del
+  SHORT podía cerrar el LONG, dar el SHORT por cerrado y purgar los brackets
+  de todo el símbolo con el SHORT vivo (fila N50, precondición). Orden de
+  átomos: (1) costura de prueba, una URL base opcional en `BinanceClient`
+  (None en producción, con su setter dentro de un módulo de pruebas) y los
+  dos hosts literales del aplanado (`cancel_all_algo_open_orders` y
+  `execute_reduce_only_market_internal`) por `get_base_url`; (2) N50; (3)
+  el AMBIGUOUS a X-026 tras consultar su clientOrderId (`resolve_via_rest`),
+  como pide el contrato F1.2 de client.rs: aceptada, se confirma con el
+  re-snapshot; rechazada o sin respuesta, X-026. Sin esa consulta la
+  carrera con un cierre aún en cola descansa en que Binance rechace un
+  cierre de más en hedge, que no se puede comprobar desde la nube. Pruebas
+  con respuestas de sobra tras la última esperada (si no, una guarda
+  ensanchada pasa igual), un servidor que anote cantidad, positionSide y
+  reduceOnly del reenvío, el caso de dos piernas en hedge, la carrera (el
+  reenvío recibe -2022) y una variante one-way.
+- N47 (de la revisión de la tanda 17, dueños por confirmar): salen por la
+  misma IP y siguen enviando tras un 429/418, que ningún log del motor ve:
+  `oi_history_sync` (siempre mainnet; curl sin `-f`, no mira el estado
+  HTTP), docs/audit/linea_i/rtt_probe.ps1 (Línea I; captura el error y
+  sigue cada 700 ms) y `download_history` (fundingRate de 40 símbolos;
+  mainnet salvo USE_TESTNET en su propio entorno, que no carga .env;
+  market_context.rs registra el estado pero pasa al símbolo siguiente).
+  ws_probe.ps1 no: con `$ErrorActionPreference = 'Stop'` termina con el
+  primer error de sus 5 GET de la hora. Candidato: que paren con el primer
+  429/418 y esperen su Retry-After.
+- N48 (de la revisión de la tanda 17, AGY o Línea I): con
+  OMS_EXECUTOR_BUSY la transición pone `has_transitioned = false` y hace
+  `continue` dentro del bucle de mensajes WS (god_engine.rs:4435-4450): en
+  cada mensaje siguiente mientras dure construye otro ejecutor (cliente
+  reqwest y WsExecutor nuevos) y lanza otro `OmsSession::refresh`. Los
+  refrescos se encolan en `refresh_serial` (host_oms.rs:467) y, tras el
+  cambio, corren sobre el sucesor, cuyo uso está vacío (N26). Candidato:
+  reintentar por plazo o al quedar libre, con a lo sumo un refresco
+  pendiente. Inferido de la lectura, sin medir.
+- N49 (de la revisión de la tanda 17, Línea C): el brazo Ok del cierre del
+  aplanado (executor.rs:984-987) da por cerrado cualquier ACK 2xx que se
+  pueda leer, también un EXPIRED o con executedQty 0, y purga los brackets
+  de una posición abierta. F1-028 lo prohíbe en
+  `execute_reduce_only_market_internal` (:2795-2806 en el head del PR #150). Candidato: la misma
+  comprobación de llenado.
+- N50 (de la revisión de la tanda 17, Línea C, precondición de N46): el
+  re-snapshot de X-026 busca la fila fresca sólo por símbolo
+  (executor.rs:1007-1011). En hedge con las dos piernas abiertas puede
+  cerrar la otra pierna y purgar los brackets del símbolo con la suya viva
+  (la clase que CL-12 arregló en reconciliation.rs:72-86). Candidato:
+  emparejar también `position_side`, no `is_long()`: en one-way una fila
+  BOTH cuyo signo cambió entre las dos lecturas daría «ya plana» y se
+  purgaría abierta. Prueba: dos piernas en hedge, la fresca con la otra
+  primero.
+- N51 (de la revisión de la tanda 17, dueño del forense por confirmar): con
+  `FORENSIC_LIVE_FEES=1` durante un freno, `audit_forensic_backtest` cae a
+  las comisiones VIP0 (:309-326): lo imprime, pero su FORENSIC_JSON (:1054)
+  no lo dice, y `walkforward_evolver` sólo lee esa línea (:135-142), así
+  que una corrida mezcla candidatos con comisiones vivas y con VIP0 sin
+  saberlo. Candidato: que el FORENSIC_JSON diga de dónde salieron las
+  comisiones. Además, del host (Línea I): el log del apagado imprime las
+  cancelaciones aceptadas (hasta dos por símbolo, también sin nada que
+  cancelar) como «cerradas» y las cerradas como «ya planas»
+  (god_engine.rs:5800-5804; la tupla es (cancelaciones, cerradas)), y el
+  comentario de :2415-2418 y kill_switch_host_contract.rs:57-62 dicen que
+  el aplanado devuelve Ok aunque un cierre falle, cuando devuelve
+  FLATTEN_INCOMPLETE.
 
 **Restos de lotes ejecutados**: del 3, net_multiplexer (a AGY, para
 unificar con data_pipeline::http_cliente) y active_universe/

@@ -1728,8 +1728,8 @@ impl OrderExecutor {
     /// GET de clase CUENTA (positionRisk, account, income, commission):
     /// respuestas que escalan con el tamaño de la cuenta y NO pertenecen a
     /// la ruta de órdenes. El timeout HFT global (1.2s) las mataba a
-    /// intermitencia (TEXT_ERR: operation timed out → body vacío → parse
-    /// error). Presupuesto de 5s + 1 reintento. La ruta de órdenes sigue
+    /// intermitencia. Presupuesto de 5s + 1 reintento, también ante un 2xx
+    /// cuyo cuerpo no se pudo leer (N40, CL-203). La ruta de órdenes sigue
     /// con el presupuesto global: ahí la latencia es parte del contrato.
     ///
     /// `cupo` es el de la lectura, que su llamador pidió antes de firmar
@@ -1756,16 +1756,58 @@ impl OrderExecutor {
                 // que ya lleva la cabecera de la primera respuesta (CL-196);
                 // antes sólo miraba el freno y salía en la franja del 80 % o
                 // sin hueco crítico. Su plaza sigue siendo la de la primera.
-                if cupo.readmitir(self.get_synced_timestamp()).is_ok() {
+                let ahora = self.get_synced_timestamp();
+                if cupo.readmitir(ahora).is_ok() {
+                    // N41 b (CL-204): firmado de nuevo con la hora de ahora.
+                    let refirmada = self.refirmar(url, ahora);
                     res = self
                         .client
-                        .get_payload_with_timeout(url, Some(std::time::Duration::from_secs(5)))
+                        .get_payload_with_timeout(
+                            refirmada.as_deref().unwrap_or(url),
+                            Some(std::time::Duration::from_secs(5)),
+                        )
                         .await
                         .map_err(|e| cupo.registrar_fallo(&e));
                 }
             }
         }
         res
+    }
+
+    /// N41 b (CL-204): la URL firmada `url` con `timestamp` = `ahora` y su
+    /// firma nueva. El reintento de get_payload_account salía con la misma
+    /// URL: tras un plazo de 5 s agotado, su hora ya había pasado el
+    /// recvWindow (5 s por defecto; ninguna petición manda otro), y el
+    /// exchange la rechazaba con -1021, que tapaba la causa (como la D-02 de
+    /// los reintentos de pierna). None si la URL no trae un `timestamp=` de
+    /// cifras y una firma al final; entonces sale la misma, como antes.
+    fn refirmar(&self, url: &str, ahora: u64) -> Option<String> {
+        let inicio = url.find('?')? + 1;
+        let fin = url.rfind("&signature=")?;
+        if url.get(fin + "&signature=".len()..)?.contains(['&', '#']) {
+            return None;
+        }
+        let consulta = url.get(inicio..fin)?;
+        let mut hallada = false;
+        let partes: Vec<String> = consulta
+            .split('&')
+            .map(|p| match p.strip_prefix("timestamp=") {
+                Some(cifras) if !hallada && !cifras.is_empty() && cifras.bytes().all(|b| b.is_ascii_digit()) => {
+                    hallada = true;
+                    format!("timestamp={ahora}")
+                }
+                _ => p.to_string(),
+            })
+            .collect();
+        if !hallada {
+            return None;
+        }
+        let consulta = partes.join("&");
+        let mut firma = [0u8; 64];
+        let api_secret = self.api_secret.load();
+        sign_payload_to_buffer(&consulta, &api_secret, &mut firma);
+        let firma = std::str::from_utf8(&firma).ok()?;
+        Some(format!("{}{}&signature={}", url.get(..inicio)?, consulta, firma))
     }
 
     pub async fn fetch_all_symbol_filters(
@@ -1851,9 +1893,9 @@ impl OrderExecutor {
     }
 
     /// N20 (CL-185): los filtros de una respuesta de exchangeInfo. Una que no
-    /// trae ninguno utilizable (cuerpo ilegible —el cliente devuelve Ok con
-    /// «TEXT_ERR…» si un 2xx no se pudo leer—, JSON roto, sin `symbols` o sin
-    /// un solo símbolo con paso y tick) es un error: antes era un mapa vacío
+    /// trae ninguno utilizable (JSON roto, sin `symbols` o sin un solo
+    /// símbolo con paso y tick; un 2xx ilegible ya es un error del cliente
+    /// desde CL-203) es un error: antes era un mapa vacío
     /// que get_symbol_filter guardaba encima de la caché buena, y cada símbolo
     /// volvía a descargar exchangeInfo.
     fn filtros_de_exchange_info(
@@ -5999,9 +6041,10 @@ pub(crate) mod tests_n20 {
         assert!(!c.contains("check_exit_rate_limits("), "sin el tramo del 80 %");
     }
 
-    /// RED antes de CL-185: una respuesta 2xx sin filtros utilizables (el
-    /// cliente devuelve Ok con «TEXT_ERR…» si no pudo leer el cuerpo) era un
-    /// mapa vacío, y get_symbol_filter lo guardaba encima de la caché buena.
+    /// RED antes de CL-185: una respuesta 2xx sin filtros utilizables (hasta
+    /// CL-203 el cliente devolvía Ok con «TEXT_ERR…» si no pudo leer el
+    /// cuerpo) era un mapa vacío, y get_symbol_filter lo guardaba encima de
+    /// la caché buena.
     #[test]
     fn cl185_un_exchange_info_sin_filtros_no_es_un_mapa_vacio() {
         for texto in [
@@ -7251,6 +7294,142 @@ mod tests_n23 {
             }
         }
     }
+
+    /// Un 200 que se corta antes de su Content-Length, con esa cabecera.
+    fn cortado(cabecera: &str) -> String {
+        format!("HTTP/1.1 200 OK\r\n{cabecera}Content-Length: 100\r\nConnection: close\r\n\r\n[{{\"x\"")
+    }
+
+    /// RED antes de CL-203 (N40): un 2xx de una lectura de cuenta cuyo cuerpo
+    /// no se pudo leer salía como Ok con «TEXT_ERR: …», sin el reintento que
+    /// get_payload_account tiene justo para eso; su cabecera la registraba el
+    /// llamador con update_limits, que además reiniciaba la racha de 429 (el
+    /// peso sólo es rojo antes porque esta prueba no tiene llamador). Ahora es
+    /// un error, get_payload_account registra su cabecera (registrar_fallo,
+    /// sin reiniciar la racha), el reintento sale y su respuesta vale.
+    #[tokio::test]
+    async fn cl203_la_cuenta_reintenta_un_2xx_ilegible() {
+        let servido = respuestas(vec![cortado("X-MBX-USED-WEIGHT-1M: 2300\r\n"), respuesta("200 OK", "X-MBX-USED-WEIGHT-1M: 50\r\n", "[]")]).await;
+        assert!(servido.is_some(), "servidor local");
+        let Some((url, aceptadas, servidor)) = servido else { return };
+        let ex = ex();
+        let cupo = ex.check_exit_rate_limits(ex.get_synced_timestamp(), PR);
+        assert!(cupo.is_ok(), "{cupo:?}");
+        let Ok(cupo) = cupo else { return };
+        let r = tokio::time::timeout(std::time::Duration::from_secs(30), ex.get_payload_account(&url, &cupo)).await;
+        servidor.abort();
+        assert!(matches!(r, Ok(Ok((_, ref cuerpo))) if cuerpo == "[]"), "{r:?}");
+        assert_eq!(aceptadas.load(Ordering::SeqCst), 2, "lectura y reintento");
+        drop(cupo);
+        assert_eq!(peso(&ex), 2_300, "get_payload_account registra la cabecera del 2xx ilegible");
+    }
+
+    /// RED antes de CL-203: en el tramo de lecturas, la cabecera de ese 2xx
+    /// (2 300 > 0,8·2 400) cierra el reintento, y vuelve su propio error.
+    #[tokio::test]
+    async fn cl203_el_2xx_ilegible_cuenta_para_readmitir() {
+        let ex = ex();
+        let (e, conexiones) =
+            cuenta_contra(&ex, Tramo::Lectura, vec![cortado("X-MBX-USED-WEIGHT-1M: 2300\r\n"), respuesta("200 OK", "X-MBX-USED-WEIGHT-1M: 50\r\n", "[]")])
+                .await;
+        assert!(e.starts_with("HTTP 200 unreadable response body: "), "«{e}»");
+        assert_eq!(conexiones, 1, "«{e}»: la franja del 80 % no deja reintentar");
+        assert_eq!(peso(&ex), 2_300);
+    }
+
+    /// Como `respuestas`, y guarda la línea de cada petición.
+    async fn respuestas_anotadas(
+        wires: Vec<String>,
+    ) -> Option<(String, Arc<std::sync::Mutex<Vec<String>>>, tokio::task::JoinHandle<()>)> {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        let oyente = tokio::net::TcpListener::bind("127.0.0.1:0").await.ok()?;
+        let base = format!("http://{}", oyente.local_addr().ok()?);
+        let lineas = Arc::new(std::sync::Mutex::new(Vec::new()));
+        let anotadas = Arc::clone(&lineas);
+        let servidor = tokio::spawn(async move {
+            for wire in wires {
+                let Ok((mut s, _)) = oyente.accept().await else { return };
+                let mut peticion = [0u8; 4096];
+                let n = s.read(&mut peticion).await.unwrap_or(0);
+                let texto = String::from_utf8_lossy(&peticion[..n]);
+                let linea = texto.lines().next().unwrap_or("").to_string();
+                anotadas.lock().unwrap_or_else(std::sync::PoisonError::into_inner).push(linea);
+                let _ = s.write_all(wire.as_bytes()).await;
+                let _ = s.shutdown().await;
+            }
+        });
+        Some((base, lineas, servidor))
+    }
+
+    /// La consulta firmada con la clave de `ex()`, como la firman los lectores.
+    fn firmada(consulta: &str) -> String {
+        let mut firma = [0u8; 64];
+        sign_payload_to_buffer(consulta, "s", &mut firma);
+        format!("{consulta}&signature={}", String::from_utf8_lossy(&firma))
+    }
+
+    /// RED antes de CL-204 (N41 b): el reintento de get_payload_account salía
+    /// con la misma URL firmada. Tras un plazo de 5 s agotado su hora ya pasó
+    /// el recvWindow (5 s por defecto) y el exchange la rechaza con -1021. El
+    /// reintento lleva la hora de ahora y la firma de esa consulta; lo demás,
+    /// igual y en el mismo orden.
+    #[tokio::test]
+    async fn cl204_el_reintento_de_cuenta_sale_firmado_de_nuevo() {
+        let servido = respuestas_anotadas(vec![
+            respuesta("500 Internal Server Error", "", "{}"),
+            respuesta("200 OK", "", "[]"),
+        ])
+        .await;
+        assert!(servido.is_some(), "servidor local");
+        let Some((base, lineas, servidor)) = servido else { return };
+        let ex = ex();
+        let vieja = ex.get_synced_timestamp().saturating_sub(6_000);
+        let url = format!("{base}/fapi/v2/positionRisk?{}", firmada(&format!("symbol=BTCUSDT&timestamp={vieja}")));
+        let cupo = ex.check_exit_rate_limits(ex.get_synced_timestamp(), PR);
+        assert!(cupo.is_ok(), "{cupo:?}");
+        let Ok(cupo) = cupo else { return };
+        let r = tokio::time::timeout(std::time::Duration::from_secs(30), ex.get_payload_account(&url, &cupo)).await;
+        servidor.abort();
+        assert!(matches!(r, Ok(Ok((_, ref cuerpo))) if cuerpo == "[]"), "{r:?}");
+        let lineas = lineas.lock().unwrap_or_else(std::sync::PoisonError::into_inner).clone();
+        assert_eq!(lineas.len(), 2, "{lineas:?}");
+        let ruta = |l: &str| l.split(' ').nth(1).unwrap_or("").to_string();
+        assert_eq!(ruta(&lineas[0]), url.trim_start_matches(&base), "la primera sale tal cual");
+        let segunda = ruta(&lineas[1]);
+        let consulta = segunda.trim_start_matches("/fapi/v2/positionRisk?");
+        let sin_firma = consulta.split("&signature=").next().unwrap_or("");
+        let hora: u64 = sin_firma
+            .strip_prefix("symbol=BTCUSDT&timestamp=")
+            .and_then(|t| t.parse().ok())
+            .unwrap_or(0);
+        assert!(hora >= vieja + 6_000, "«{segunda}»: la hora de ahora");
+        assert_eq!(consulta, firmada(sin_firma), "«{segunda}»: firma de la consulta nueva");
+    }
+
+    /// CL-204: `refirmar` sólo cambia la hora y la firma, y no toca una URL
+    /// que no sabe firmar (entonces el reintento sale con la misma).
+    #[test]
+    fn cl204_refirmar_solo_cambia_la_hora_y_la_firma() {
+        let ex = ex();
+        let url = format!("http://h/fapi/v1/income?{}", firmada("incomeType=FUNDING_FEE&timestamp=1&limit=1000"));
+        assert_eq!(
+            ex.refirmar(&url, 42).as_deref(),
+            Some(format!("http://h/fapi/v1/income?{}", firmada("incomeType=FUNDING_FEE&timestamp=42&limit=1000")).as_str())
+        );
+        for sin in [
+            "http://h/fapi/v2/positionRisk",
+            "http://h/fapi/v2/positionRisk?timestamp=1",
+            "http://h/fapi/v2/positionRisk?symbol=X&signature=ab",
+            "http://h/fapi/v2/positionRisk?timestamp=&signature=ab",
+            "http://h/fapi/v2/positionRisk?timestamp=1a&signature=ab",
+            "http://h/fapi/v2/positionRisk?xtimestamp=1&signature=ab",
+            // RV24: con algo tras la firma, refirmar lo perdía.
+            "http://h/fapi/v1/income?timestamp=1&signature=ab&limit=5",
+            "http://h/fapi/v1/income?timestamp=1&signature=ab#x",
+        ] {
+            assert_eq!(ex.refirmar(sin, 42), None, "{sin}");
+        }
+    }
 }
 
 #[cfg(test)]
@@ -7363,20 +7542,44 @@ mod tests_n33 {
     }
 
     /// RV21-T (revisión de CL-197): un 2xx sin filtros utilizables (un JSON
-    /// sin símbolos, o un cuerpo que se corta y el cliente devuelve como
-    /// «TEXT_ERR…») también deja la espera, y no se reintenta. Ninguna prueba
+    /// sin símbolos) también deja la espera, y no se reintenta. Ninguna prueba
     /// lo fijaba: armar la espera sólo por un error del transporte quedaba
-    /// en verde.
+    /// en verde. Un cuerpo que se corta es, desde CL-203 (N40), un error del
+    /// transporte: se reintenta una vez y luego deja la espera (antes llegaba
+    /// como «TEXT_ERR…» y no se reintentaba).
     #[tokio::test]
     async fn rv21_un_2xx_sin_filtros_deja_la_espera() {
         let cortado = "HTTP/1.1 200 OK\r\nContent-Length: 100\r\nConnection: close\r\n\r\n{\"symbols\"".to_string();
-        for primera in [respuesta("200 OK", "", "{}"), cortado] {
+        for (primera, texto, envios) in [
+            (respuesta("200 OK", "", "{}"), "EXCHANGE_INFO_SIN_FILTROS", 1),
+            (cortado, "HTTP 200 unreadable response body: ", 2),
+        ] {
             let ex = ex();
-            let (r1, r2, conexiones) = dos_descargas(&ex, vec![primera.clone(), primera.clone()]).await;
-            assert!(empieza(&r1, "EXCHANGE_INFO_SIN_FILTROS"), "{r1:?}");
+            let (r1, r2, conexiones) = dos_descargas(&ex, vec![primera.clone(), primera.clone(), primera]).await;
+            assert!(empieza(&r1, texto), "{r1:?}");
             assert!(empieza(&r2, "EXCHANGE_INFO_EN_ESPERA"), "{r2:?}");
-            assert_eq!(conexiones, 1, "{r1:?}: sin reintento ni segunda descarga");
+            assert_eq!(conexiones, envios, "{r1:?}: sin segunda descarga");
         }
+    }
+
+    /// RED antes de CL-203 (N40): un exchangeInfo cuyo cuerpo se corta (pesa
+    /// MBs: es su fallo probable) no se reintentaba y armaba la espera de
+    /// 60 s; ahora el reintento sale y, si lo sirve, no queda espera.
+    #[tokio::test]
+    async fn cl203_un_exchange_info_cortado_se_reintenta() {
+        let cortado = "HTTP/1.1 200 OK\r\nContent-Length: 100\r\nConnection: close\r\n\r\n{\"symbols\"".to_string();
+        let bueno = r#"{"symbols":[{"symbol":"CL203USDT","filters":[
+            {"filterType":"LOT_SIZE","stepSize":"0.01"},
+            {"filterType":"PRICE_FILTER","tickSize":"0.001"}]}]}"#;
+        let servido = respuestas(vec![cortado, respuesta("200 OK", "", bueno)]).await;
+        assert!(servido.is_some(), "servidor local");
+        let Some((url, aceptadas, servidor)) = servido else { return };
+        let ex = ex();
+        let r = tokio::time::timeout(std::time::Duration::from_secs(30), ex.descargar_filtros(&url)).await;
+        servidor.abort();
+        assert!(matches!(r, Ok(Ok(ref mapa)) if mapa.contains_key("CL203USDT")), "{r:?}");
+        assert_eq!(aceptadas.load(Ordering::SeqCst), 2, "descarga y reintento");
+        assert!(ex.espera_exchange_info_bloqueada().is_none(), "sin espera");
     }
 
     /// RV21-T (revisión de CL-197): dentro del freno con la espera armada la
