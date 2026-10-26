@@ -7302,8 +7302,11 @@ mod tests_n23 {
 
     /// RED antes de CL-203 (N40): un 2xx de una lectura de cuenta cuyo cuerpo
     /// no se pudo leer salía como Ok con «TEXT_ERR: …», sin el reintento que
-    /// get_payload_account tiene justo para eso y sin contar su cabecera. Ahora
-    /// es un error con la cabecera, el reintento sale y su respuesta vale.
+    /// get_payload_account tiene justo para eso; su cabecera la registraba el
+    /// llamador con update_limits, que además reiniciaba la racha de 429 (el
+    /// peso sólo es rojo antes porque esta prueba no tiene llamador). Ahora es
+    /// un error, get_payload_account registra su cabecera (registrar_fallo,
+    /// sin reiniciar la racha), el reintento sale y su respuesta vale.
     #[tokio::test]
     async fn cl203_la_cuenta_reintenta_un_2xx_ilegible() {
         let servido = respuestas(vec![cortado("X-MBX-USED-WEIGHT-1M: 2300\r\n"), respuesta("200 OK", "X-MBX-USED-WEIGHT-1M: 50\r\n", "[]")]).await;
@@ -7318,7 +7321,7 @@ mod tests_n23 {
         assert!(matches!(r, Ok(Ok((_, ref cuerpo))) if cuerpo == "[]"), "{r:?}");
         assert_eq!(aceptadas.load(Ordering::SeqCst), 2, "lectura y reintento");
         drop(cupo);
-        assert_eq!(peso(&ex), 2_300, "la cabecera del 2xx ilegible cuenta");
+        assert_eq!(peso(&ex), 2_300, "get_payload_account registra la cabecera del 2xx ilegible");
     }
 
     /// RED antes de CL-203: en el tramo de lecturas, la cabecera de ese 2xx

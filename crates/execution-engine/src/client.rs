@@ -1561,7 +1561,9 @@ mod tests_n23 {
             let url = format!("http://{direccion}/fapi/v2/positionRisk?timestamp=1&signature=deadbeef");
             let r = tokio::time::timeout(
                 Duration::from_secs(20),
-                c.get_payload_with_timeout(&url, Some(Duration::from_millis(500))),
+                // RV24-T: 3 s para que la cabecera llegue dentro del plazo
+                // aunque wine se pare; el cuerpo no termina nunca.
+                c.get_payload_with_timeout(&url, Some(Duration::from_secs(3))),
             )
             .await;
             a_medias.abort();
