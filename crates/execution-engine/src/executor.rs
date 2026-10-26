@@ -1784,6 +1784,9 @@ impl OrderExecutor {
     fn refirmar(&self, url: &str, ahora: u64) -> Option<String> {
         let inicio = url.find('?')? + 1;
         let fin = url.rfind("&signature=")?;
+        if url.get(fin + "&signature=".len()..)?.contains(['&', '#']) {
+            return None;
+        }
         let consulta = url.get(inicio..fin)?;
         let mut hallada = false;
         let partes: Vec<String> = consulta
@@ -7417,6 +7420,9 @@ mod tests_n23 {
             "http://h/fapi/v2/positionRisk?timestamp=&signature=ab",
             "http://h/fapi/v2/positionRisk?timestamp=1a&signature=ab",
             "http://h/fapi/v2/positionRisk?xtimestamp=1&signature=ab",
+            // RV24: con algo tras la firma, refirmar lo perdía.
+            "http://h/fapi/v1/income?timestamp=1&signature=ab&limit=5",
+            "http://h/fapi/v1/income?timestamp=1&signature=ab#x",
         ] {
             assert_eq!(ex.refirmar(sin, 42), None, "{sin}");
         }
