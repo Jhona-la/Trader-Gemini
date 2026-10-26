@@ -20,13 +20,18 @@ guarda de fuente nueva y documentos.
   caracteres. La regla de no lanzar binarios de operador durante un freno
   está en docs/BINANCE_API_MAP.md §5 (los avisos del freno son `println!`:
   con TG_LOG_FILE van a `logs/demo_vNN.stdout.log`).
+- De su revisión (4 revisores, 4 escépticos): CL-206, `refirmar` no firma
+  una URL con algo tras la firma; CL-207, la limpieza de oco_probe repite
+  el aplanado cuando vence el freno 429/418 (hasta 5 min) y lee las
+  órdenes que quedan del símbolo; RV24-T y RV24-docs. Siguiente CL libre:
+  CL-208.
 - Revisadas sin ejecutar: N41 d se queda como sobrecuenta documentada (sin
   `connect_timeout`, que en reqwest 0.11 es de todo el cliente); N26 pasa a
   compartir el freno, el reloj y el uso del ejecutor anterior en vez de
   copiarlos (necesita la línea del host, de Línea I o AGY); N46 necesita
   antes N50 (X-026 busca la fila sólo por símbolo y en hedge puede cerrar
   la otra pierna) y consultar el clientOrderId del cierre.
-- Filas nuevas: N47 (binarios y sondas que ignoran el 429/418), N48 (el
+- Filas nuevas: N47 (binarios y sondas que siguen tras un 429/418), N48 (el
   reintento OMS_EXECUTOR_BUSY por cada mensaje WS; AGY o Línea I), N49 (el
   Ok del cierre del aplanado sin comprobar el llenado), N50 y N51 (el
   forense con comisiones VIP0 sin decirlo en su JSON; el log del apagado

@@ -411,7 +411,7 @@ dice su lote):
 | #147 | N20, peticiones fuera de la cuota (CL-184: exchangeInfo dentro del freno; CL-185: un exchangeInfo sin filtros no borra la caché; CL-186: un símbolo ausente de un exchangeInfo completo no se vuelve a descargar; CL-187: modo hedge y hora dentro del freno, con la cabecera del modo registrada; CL-188: un freno por ejecutor compartido por los clones de su cliente; CL-189: la hora del NTP y el listenKey miran y arman el freno; CL-190: la cancelación de la pierna hermana mira el freno; CL-191: sin el último expect de producción del ejecutor); más N20-docs; abre N23 a N39; y sus cinco revisiones antes de fusionar (CL-192: el freno no deja un símbolo en la caché negativa; CL-193: el 2xx del NTP y del listenKey reinicia la racha de 429; CL-194: su 429 ya registrado no cuenta dos veces; CL-195: la caché negativa decide por la descarga de esa llamada; RV16-T a RV20-T, RV16-docs) |
 | #148 | N23, la cabecera de uso de los errores (CL-196: el error de los siete transportes firmados es `client::ErrorRest` con la cabecera de su respuesta, y `registrar_error` la registra una vez con el cupo vivo, nunca la de un 429/418) y N33, exchangeInfo sin descargas repetidas (CL-197: tras una descarga fallida fuera del freno no sale otra durante el TTL de la caché negativa); más N23-docs; y su revisión antes de fusionar (CL-198: sin un exchangeInfo guardado, la espera no deja un símbolo en la caché negativa; CL-196b: comentarios; RV21-T: siete pruebas) |
 | #149 | N25, la clasificación de los envíos de orden (CL-199: un 5xx, un 408, un -1006/-1007 o un cuerpo ilegible son AMBIGUOUS, con su cabecera) y N24, el reintento de cuenta y las críticas sin respuesta (CL-200: el reintento se readmite en su tramo; CL-201: una crítica que salió sin respuesta deja su coste como usado hasta que caduca la ventana de cada contador; CL-202: los errores de red sin la URL firmada y el aplanado sólo conmuta el modo ante un rechazo firme); más N24-docs; abre N40 a N46; y su revisión antes de fusionar (CL-202b: el connect rechazado de Windows en las pruebas; RV23-T, RV23-docs) |
-| #150 | N40, un 2xx ilegible de una lectura (CL-203: es un error con su cabecera, y la cuenta y exchangeInfo lo reintentan), N41 b, el reintento de cuenta (CL-204: sale firmado con la hora de ahora, no con la firma que caduca a los 5 s del recvWindow) y N32, los binarios de operador (CL-205: oco_probe limpia siempre tras su entrada y dice si la limpieza falló; la regla de §5 de BINANCE_API_MAP); revisa N41 d, N26 y N46 sin ejecutarlos; abre N47 a N51 |
+| #150 | N40, un 2xx ilegible de una lectura (CL-203: es un error con su cabecera, y la cuenta y exchangeInfo lo reintentan), N41 b, el reintento de cuenta (CL-204: sale firmado con la hora de ahora, no con la firma que caduca a los 5 s del recvWindow) y N32, los binarios de operador (CL-205: oco_probe limpia siempre tras su entrada y dice si la limpieza falló; la regla de §5 de BINANCE_API_MAP); revisa N41 d, N26 y N46 sin ejecutarlos; abre N47 a N51; y su revisión antes de fusionar (CL-206: `refirmar` no firma una URL con algo tras la firma; CL-207: la limpieza de oco_probe espera al freno 429/418 y lee las órdenes que quedan; RV24-T: guarda del bloque etiquetado y plazo de 3 s; RV24-docs) |
 
 **Hecho por otros agentes**: lote 9 entero (Sol, d18b3735), lote 45 entero
 (Codex RB, 906a9c6a), parte del 7 (Sol retiró el bin main.rs de
@@ -1488,7 +1488,15 @@ un escéptico por lote listo):
   entraba en pánico con un error acentuado. Un guarda persistente del freno
   (el motor lo escribe, cada binario lo lee) queda sin hacer: necesita al
   dueño del host y, en el forense, saltarse las comisiones vivas en vez de
-  salir. La revisión halló además las filas N47, N48 y N51.
+  salir. La revisión halló además las filas N47, N48 y N51. Su revisión
+  antes de fusionar añadió CL-207: un 429 en el paso 4 arma el freno, y el
+  aplanado de la limpieza, rechazado en local, dejaba la posición abierta
+  aunque el freno venciera en segundos; ahora lo repite cuando vence (hasta
+  5 min), y lee las órdenes que quedan del símbolo, porque el aplanado sólo
+  avisa de una purga fallida y se leía como «órdenes purgadas». La guarda de
+  fuente comprueba también que el bloque cierra antes de la limpieza. La
+  cabecera y §5 dicen ya que el barrido cancela las órdenes de todos los
+  símbolos sin posición, no sólo las de su símbolo.
 - N33 (de la tanda 14, Línea C): sin un exchangeInfo guardado y con la
   descarga fallando fuera de un freno, get_symbol_filter vuelve a descargar
   en cada llamada (hasta unos 20 s cada una con una red lenta). Candidato:
@@ -1586,7 +1594,9 @@ un escéptico por lote listo):
   ejecutada en la tanda 17, CL-204: ninguna petición manda recvWindow, así
   que tras un plazo de 5 s agotado el reintento con la misma firma volvía
   siempre -1021, y desde CL-203 también se reintenta un 2xx que vence
-  leyendo; ahora sale con la hora de ahora y su firma);
+  leyendo; ahora sale con la hora de ahora y su firma; CL-206, de su
+  revisión: con algo tras la firma `refirmar` no firma y sale la URL de
+  antes, porque lo perdía; hoy las diez llamadas firman al final);
   (c) el -1106 real de Binance podría escribir el parámetro en minúsculas
   («'reduceonly' sent when not required»): `modo_rechazado` busca
   «reduceOnly» y entonces no reintentaría en el otro modo. Sin la
@@ -1673,13 +1683,16 @@ un escéptico por lote listo):
   ensanchada pasa igual), un servidor que anote cantidad, positionSide y
   reduceOnly del reenvío, el caso de dos piernas en hedge, la carrera (el
   reenvío recibe -2022) y una variante one-way.
-- N47 (de la revisión de la tanda 17, dueños por confirmar): `oi_history_sync`
-  (siempre mainnet), `download_history` (fundingRate de 40 símbolos;
-  mainnet salvo USE_TESTNET en su propio entorno, que no carga .env) y
-  docs/audit/linea_i/rtt_probe.ps1 y ws_probe.ps1 (Línea I) salen por la
-  misma IP sin mirar el estado HTTP: siguen enviando tras un 429/418, que
-  ningún log del motor ve. Candidato: que paren con el primer 429/418 y
-  esperen su Retry-After.
+- N47 (de la revisión de la tanda 17, dueños por confirmar): salen por la
+  misma IP y siguen enviando tras un 429/418, que ningún log del motor ve:
+  `oi_history_sync` (siempre mainnet; curl sin `-f`, no mira el estado
+  HTTP), docs/audit/linea_i/rtt_probe.ps1 (Línea I; captura el error y
+  sigue cada 700 ms) y `download_history` (fundingRate de 40 símbolos;
+  mainnet salvo USE_TESTNET en su propio entorno, que no carga .env;
+  market_context.rs registra el estado pero pasa al símbolo siguiente).
+  ws_probe.ps1 no: con `$ErrorActionPreference = 'Stop'` termina con el
+  primer error de sus 5 GET de la hora. Candidato: que paren con el primer
+  429/418 y esperen su Retry-After.
 - N48 (de la revisión de la tanda 17, AGY o Línea I): con
   OMS_EXECUTOR_BUSY la transición pone `has_transitioned = false` y hace
   `continue` dentro del bucle de mensajes WS (god_engine.rs:4435-4450): en
@@ -1693,7 +1706,7 @@ un escéptico por lote listo):
   aplanado (executor.rs:984-987) da por cerrado cualquier ACK 2xx que se
   pueda leer, también un EXPIRED o con executedQty 0, y purga los brackets
   de una posición abierta. F1-028 lo prohíbe en
-  `execute_reduce_only_market_internal` (:2753-2764). Candidato: la misma
+  `execute_reduce_only_market_internal` (:2795-2806 en el head del PR #150). Candidato: la misma
   comprobación de llenado.
 - N50 (de la revisión de la tanda 17, Línea C, precondición de N46): el
   re-snapshot de X-026 busca la fila fresca sólo por símbolo
@@ -1710,9 +1723,10 @@ un escéptico por lote listo):
   no lo dice, y `walkforward_evolver` sólo lee esa línea (:135-142), así
   que una corrida mezcla candidatos con comisiones vivas y con VIP0 sin
   saberlo. Candidato: que el FORENSIC_JSON diga de dónde salieron las
-  comisiones. Además, del host (Línea I): el log del apagado imprime los
-  símbolos cancelados como «cerradas» y las cerradas como «ya planas»
-  (god_engine.rs:5800-5804; la tupla es (canceladas, cerradas)), y el
+  comisiones. Además, del host (Línea I): el log del apagado imprime las
+  cancelaciones aceptadas (hasta dos por símbolo, también sin nada que
+  cancelar) como «cerradas» y las cerradas como «ya planas»
+  (god_engine.rs:5800-5804; la tupla es (cancelaciones, cerradas)), y el
   comentario de :2415-2418 y kill_switch_host_contract.rs:57-62 dicen que
   el aplanado devuelve Ok aunque un cierre falle, cuando devuelve
   FLATTEN_INCOMPLETE.

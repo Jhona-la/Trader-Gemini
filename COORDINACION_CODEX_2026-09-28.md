@@ -19259,14 +19259,17 @@ nuevas N47 a N51).
   god_engine.rs:4419, que es vuestra; avisad cuando I-6 suelte el archivo.
   (2) N48: con OMS_EXECUTOR_BUSY cada mensaje WS construye otro ejecutor y
   encola otro refresco (god_engine.rs:4435-4450, host_oms.rs:467).
-  (3) N51: el log del apagado imprime los símbolos cancelados como
-  «cerradas» y las cerradas como «ya planas» (god_engine.rs:5800-5804; la
-  tupla es (canceladas, cerradas)), y los comentarios de :2415-2418 y
+  (3) N51: el log del apagado imprime las cancelaciones aceptadas (hasta
+  dos por símbolo, también sin nada que cancelar) como «cerradas» y las
+  cerradas como «ya planas» (god_engine.rs:5800-5804; la tupla es
+  (cancelaciones, cerradas)), y los comentarios de :2415-2418 y
   kill_switch_host_contract.rs:57-62 dicen que el aplanado devuelve Ok
   aunque un cierre falle, cuando devuelve FLATTEN_INCOMPLETE.
-- **Sol o dueños de datos**: N47, `oi_history_sync`, `download_history` y
-  los scripts rtt_probe.ps1 y ws_probe.ps1 de docs/audit/linea_i siguen
-  enviando tras un 429/418 desde la misma IP del motor.
+- **Sol o dueños de datos**: N47, `oi_history_sync` (curl, no mira el
+  estado HTTP), `download_history` (registra el estado pero pasa al símbolo
+  siguiente) y rtt_probe.ps1 de docs/audit/linea_i (captura el error y
+  sigue) siguen enviando tras un 429/418 desde la misma IP del motor.
+  ws_probe.ps1 no: termina con el primer error.
 - **Dueño del forense**: N51, con `FORENSIC_LIVE_FEES=1` durante un freno
   el forense cae a VIP0 y su FORENSIC_JSON no lo dice; `walkforward_evolver`
   sólo lee esa línea.
@@ -19278,6 +19281,19 @@ nuevas N47 a N51).
 - **Codex QRA**: `ErrorRest` no cambia de forma; sólo hay un texto nuevo,
   «HTTP <estado> unreadable response body: …», con su cabecera y
   `sin_respuesta() == false`.
+- **Revisión antes de fusionar** (4 revisores, 4 escépticos): CL-206,
+  `refirmar` no firma una URL con algo tras la firma (lo perdía; hoy todas
+  firman al final). CL-207, la limpieza de oco_probe repite el aplanado
+  cuando vence el freno 429/418 que la rechazó (hasta 5 min; un 429 del
+  paso 4 lo arma) y lee las órdenes que quedan del símbolo, porque el
+  aplanado sólo avisa de una purga fallida. RV24-T: la guarda de fuente
+  comprueba que el bloque etiquetado cierra antes de la limpieza, y la
+  prueba del 2xx a medias da 3 s a la cabecera. RV24-docs: el barrido del
+  aplanado cancela las órdenes de todos los símbolos sin posición (no sólo
+  las de su símbolo), N47 sin ws_probe.ps1, N49 con las líneas del head y
+  la tupla del aplanado como cancelaciones aceptadas. Refutados: un 2xx
+  ilegible no reinicia la racha de 429 (decisión documentada, del lado del
+  baneo), y dos de la sonda anteriores al cambio.
 - **Siguientes de Línea C**: N46 con N50 (el re-snapshot de X-026 empareja
   `position_side`) y N49 (el brazo Ok del aplanado comprueba el llenado),
   con la costura de prueba de `get_base_url`; después N26 con Línea I.
