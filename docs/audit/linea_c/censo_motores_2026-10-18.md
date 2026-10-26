@@ -1369,7 +1369,8 @@ un escéptico por lote listo):
   misma para admitir y readmitir. CL-201 (N24-a): `ErrorRest::sin_respuesta()`
   es el origen tipado de un error de transporte de una petición que salió
   (no al construirla ni al conectar: `reqwest::Error::is_connect`/
-  `is_builder`); el cupo de una crítica registra su error por
+  `is_builder`; un plazo total que vence mientras conecta sí cuenta como
+  salida, N41 d); el cupo de una crítica registra su error por
   `registrar_fallo` (o `registrar_fallo_de`, por pierna del par OCO) y con
   ese origen anota su coste en `UsoExchange::sin_respuesta`, una cola sellada
   que caduca con la ventana de cada contador (10 s y 60 s, contados desde
@@ -1574,6 +1575,18 @@ un escéptico por lote listo):
   firmada al texto de sus errores de red («HTTP Error: …», :119 y :212),
   como hacía el ejecutor antes de CL-202. Ningún lector busca en ese texto:
   sólo higiene de registros (`without_url`).
+- N46 (de la revisión de la tanda 16, Línea C): un cierre AMBIGUOUS del
+  aplanado (red, 5xx, ACK ilegible) no se reconcilia: cae al brazo final
+  de `flatten_all_positions` («NO cerrada tras reintento», sin que haya
+  reintento), el símbolo queda sin cerrar y sus brackets sin purgar, aunque
+  la posición puede estar ya plana. Es del lado seguro (F1-027) y en modo
+  hedge ya pasaba antes de CL-202; en one-way, antes, el reintento de modo
+  erróneo acababa en un -4061 que llevaba al re-snapshot de X-026 y lo
+  resolvía por accidente (dejando además `is_hedge_mode` mal). Candidato:
+  llevar el AMBIGUOUS al mismo re-snapshot de X-026 (positionRisk fresco;
+  plana, cerrada y purgada; abierta, reduce-only con la cantidad fresca),
+  con una prueba de extremo a extremo, que hoy no se puede montar porque
+  `get_base_url` no admite un servidor local.
 
 **Restos de lotes ejecutados**: del 3, net_multiplexer (a AGY, para
 unificar con data_pipeline::http_cliente) y active_universe/

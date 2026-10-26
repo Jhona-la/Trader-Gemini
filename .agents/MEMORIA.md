@@ -25,10 +25,15 @@ execution-engine/src/{executor.rs, client.rs} y documentos.
   respuesta traía «reduceOnly» en su URL y conmutaba `is_hedge_mode`.
 - Filas nuevas del censo: N40 (2xx ilegibles como Ok), N41 (residuos de
   N24: 502/504 sin cabecera, la hora del reintento, el -1106 en
-  minúsculas), N42 y N44 (Línea I: foto de rechazos de B3.5b, lectura de
+  minúsculas, el plazo que vence al conectar), N42 y N44 (Línea I: foto de rechazos de B3.5b, lectura de
   piernas con `unwrap_or_default`), N43 (-1000 en un 4xx) y N45 (Sol, URL
-  firmada en los errores de data-pipeline).
-- Siguen en Línea C: N22/N38, N26 (método), N32, N40, N41 y N43.
+  firmada en los errores de data-pipeline) y N46 (de la revisión: un
+  cierre AMBIGUOUS del aplanado no se reconcilia).
+- RV23-T (revisión adversaria, 12 agentes): un 302 en el fixture de
+  ejecuciones desconocidas, la prueba del cupo pide su hora de ahora y el
+  doc de `sin_respuesta` dice que un plazo que vence al conectar cuenta
+  como salida.
+- Siguen en Línea C: N22/N38, N26 (método), N32, N40, N41, N43 y N46.
 
 ## 2026-10-25 — Claude (cloud, Línea C): decimoquinta tanda del censo C-F7b (filas N23 y N33)
 

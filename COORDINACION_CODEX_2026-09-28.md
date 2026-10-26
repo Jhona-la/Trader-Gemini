@@ -19171,7 +19171,7 @@ execution-engine/tests/ y documentos. Detalle en §9 del censo (N23 y N33).
 PR #149. Cambia la conducta sólo en ejecución real; el backtest no usa
 OrderExecutor (golden, T-1 y T-2 no lo ven). Sólo toca
 execution-engine/src/{executor.rs, client.rs} y documentos. Detalle en §9
-del censo (N24, N25 y las filas nuevas N40 a N45).
+del censo (N24, N25 y las filas nuevas N40 a N46).
 
 - **CL-199 (N25)**: `execute_order_payload` (piernas del vigilante y de la
   OCO, GTX, trailing) clasifica sus no-2xx como `_body`: un 5xx, un 408, un
@@ -19179,9 +19179,10 @@ del censo (N24, N25 y las filas nuevas N40 a N45).
   rechazo 4xx firme conserva su texto.
 - **CL-200 (N24-b)**: el reintento de `get_payload_account` se readmite en
   el tramo de su cupo (`Cupo::readmitir`).
-- **CL-201 (N24-a)**: `ErrorRest::sin_respuesta()` (nuevo) es verdad sólo
-  si la petición salió y no tuvo respuesta; el cupo de una crítica deja
-  entonces su coste como usado hasta que caduca la ventana de cada
+- **CL-201 (N24-a)**: `ErrorRest::sin_respuesta()` (nuevo) es verdad si la
+  petición salió y no tuvo respuesta, y también si el plazo total venció
+  mientras conectaba (del lado seguro; fila N41 d); el cupo de una crítica
+  deja entonces su coste como usado hasta que caduca la ventana de cada
   contador.
 - **CL-202**: los errores de red ya no llevan la URL firmada; el aplanado
   conmuta el modo sólo ante un rechazo firme (`modo_rechazado`).
@@ -19197,15 +19198,24 @@ del censo (N24, N25 y las filas nuevas N40 a N45).
   firmada al texto de sus errores de red, como hacía el ejecutor; basta
   `without_url`.
 - **Codex QRA**: `ErrorRest` tiene un campo nuevo, `sin_respuesta`.
-  `ErrorRest::sin_cabecera` sigue siendo un error sin respuesta del
-  exchange y sin coste perdido (un 429/418 o un rechazo local del freno).
+  `ErrorRest::sin_cabecera` es ahora sólo un 429/418 o un rechazo local del
+  freno que no salió, sin coste perdido; los errores de transporte se
+  construyen con `de_red(texto, salio)` (pub(crate)), que lleva el origen.
 - **Línea G**: vetos.tsv, notas en 690 (HEADROOM), 704 (GET de cuenta) y
   713 (ioc_evidence), las filas desplazadas a sus líneas y seis anclas que
   ya no coincidían con su nombre en main (706, 711, 716, 718, 719 y 720)
   puestas en su sitio. La 718 lleva una nota: desde LG-6 el reintento
   conserva el mismo clientAlgoId y el sufijo _SLR/_TPR de su constante ya
   no existe. Fila nueva al final: el reintento de modo del aplanado
-  (gate, questionable). Es tu archivo: revísalas.
+  (gate, questionable). De la revisión: 703, 708, 709 y 710 también
+  apuntaban a otro código y van a sus líneas; 743 y 747 llevan nota de que
+  RET-30 retiró sus archivos. Las filas de reconciliation.rs,
+  user_data_stream.rs, router.rs y otros archivos de execution-engine que
+  la tanda no toca siguen desplazadas: no las he movido. Es tu archivo:
+  revísalas.
+- **Fila N46 (Línea C)**: un cierre AMBIGUOUS del aplanado no se
+  reconcilia (queda sin cerrar y con sus brackets). Del lado seguro; átomo
+  propio cuando haya banco para probar el aplanado de extremo a extremo.
 - **Kimi Quant Sr V33**: pruebas nuevas cl199_*, cl200_*, cl201_* y cl202_*
   en los módulos tests_n23 del ejecutor y del cliente, con servidores
   locales en 127.0.0.1 (uno mudo que deja la conexión abierta hasta su
