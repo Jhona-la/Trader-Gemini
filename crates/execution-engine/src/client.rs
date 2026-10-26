@@ -198,7 +198,9 @@ impl ErrorRest {
     /// N24 (CL-201): la petición salió y no llegó respuesta (timeout,
     /// conexión cortada a mitad): el exchange pudo contarla. Es falso con
     /// cualquier respuesta, traiga o no cabecera, en un 429/418, en un
-    /// rechazo local y si no llegó a conectar. No se deduce del texto.
+    /// rechazo local y si falló al conectar. Un plazo total que vence
+    /// mientras conecta cuenta como salida, del lado seguro (`salio`). No se
+    /// deduce del texto.
     #[inline]
     pub fn sin_respuesta(&self) -> bool {
         self.sin_respuesta
@@ -1384,9 +1386,10 @@ mod tests_n23 {
         drop(enchufe);
     }
 
-    /// Las clases de ejecución desconocida de un envío de orden (5xx, 1xx/3xx,
-    /// 408, -1006/-1007 y cuerpo ilegible), con la cabecera de uso de
-    /// `con_peso`, y los rechazos firmes que no lo son.
+    /// Las clases de ejecución desconocida de un envío de orden (5xx, un 3xx
+    /// que reqwest no sigue, 408, -1006/-1007 y cuerpo ilegible), con la
+    /// cabecera de uso de `con_peso`, y los rechazos firmes que no lo son. Los
+    /// 1xx no llegan: hyper los descarta (salvo el 101).
     fn ambiguos() -> Vec<(&'static str, String)> {
         let cab = "X-MBX-USED-WEIGHT-1M: 777\r\n";
         let cortado = |estado: &str| {
@@ -1396,6 +1399,7 @@ mod tests_n23 {
             ("503 -1001", respuesta("503 Service Unavailable", cab, r#"{"code":-1001,"msg":"Internal error; unable to process your request. Please try again."}"#)),
             ("502 html", respuesta("502 Bad Gateway", cab, "<html>bad gateway</html>")),
             ("500 vacío", respuesta("500 Internal Server Error", cab, "{}")),
+            ("302 sin Location", respuesta("302 Found", cab, "")),
             ("408", respuesta("408 Request Timeout", cab, "")),
             ("400 -1006", respuesta("400 Bad Request", cab, r#"{"code":-1006,"msg":"x"}"#)),
             ("400 -1007", respuesta("400 Bad Request", cab, r#"{"code":-1007,"msg":"x"}"#)),

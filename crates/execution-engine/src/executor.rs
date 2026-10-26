@@ -6949,8 +6949,10 @@ mod tests_n23 {
         assert_eq!(en_vuelo(&ex), [0, 0, 0]);
         assert_eq!(perdido(&ex), [1, 1, 1], "lo perdido sobrevive al cupo");
 
-        let pr = ex.check_exit_rate_limits(t, PR);
-        assert!(pr.is_ok());
+        // RV23-T: con la hora de ahora; el 429 de arriba armó un cooldown
+        // hasta su propio milisegundo, que `t` puede no alcanzar.
+        let pr = ex.check_exit_rate_limits(ex.get_synced_timestamp(), PR);
+        assert!(pr.is_ok(), "{pr:?}");
         let Ok(pr) = pr else { return };
         let _ = pr.registrar_fallo_de(&red(true), COSTE_PIERNA_ALGO.por(9));
         drop(pr);
