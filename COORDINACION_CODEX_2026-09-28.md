@@ -19284,8 +19284,9 @@ nuevas N47 a N51).
 - **Revisión antes de fusionar** (4 revisores, 4 escépticos): CL-206,
   `refirmar` no firma una URL con algo tras la firma (lo perdía; hoy todas
   firman al final). CL-207, la limpieza de oco_probe repite el aplanado
-  cuando vence el freno 429/418 que la rechazó (hasta 5 min; un 429 del
-  paso 4 lo arma) y lee las órdenes que quedan del símbolo, porque el
+  cuando vence el freno 429/418 que la rechazó (hasta 300 s de espera, el
+  baneo de un 418 sin Retry-After; un 429 del paso 4 lo arma) y lee las
+  órdenes que quedan del símbolo, también tras el freno, porque el
   aplanado sólo avisa de una purga fallida. RV24-T: la guarda de fuente
   comprueba que el bloque etiquetado cierra antes de la limpieza, y la
   prueba del 2xx a medias da 3 s a la cabecera. RV24-docs: el barrido del

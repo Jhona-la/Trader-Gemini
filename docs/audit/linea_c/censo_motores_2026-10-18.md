@@ -411,7 +411,7 @@ dice su lote):
 | #147 | N20, peticiones fuera de la cuota (CL-184: exchangeInfo dentro del freno; CL-185: un exchangeInfo sin filtros no borra la caché; CL-186: un símbolo ausente de un exchangeInfo completo no se vuelve a descargar; CL-187: modo hedge y hora dentro del freno, con la cabecera del modo registrada; CL-188: un freno por ejecutor compartido por los clones de su cliente; CL-189: la hora del NTP y el listenKey miran y arman el freno; CL-190: la cancelación de la pierna hermana mira el freno; CL-191: sin el último expect de producción del ejecutor); más N20-docs; abre N23 a N39; y sus cinco revisiones antes de fusionar (CL-192: el freno no deja un símbolo en la caché negativa; CL-193: el 2xx del NTP y del listenKey reinicia la racha de 429; CL-194: su 429 ya registrado no cuenta dos veces; CL-195: la caché negativa decide por la descarga de esa llamada; RV16-T a RV20-T, RV16-docs) |
 | #148 | N23, la cabecera de uso de los errores (CL-196: el error de los siete transportes firmados es `client::ErrorRest` con la cabecera de su respuesta, y `registrar_error` la registra una vez con el cupo vivo, nunca la de un 429/418) y N33, exchangeInfo sin descargas repetidas (CL-197: tras una descarga fallida fuera del freno no sale otra durante el TTL de la caché negativa); más N23-docs; y su revisión antes de fusionar (CL-198: sin un exchangeInfo guardado, la espera no deja un símbolo en la caché negativa; CL-196b: comentarios; RV21-T: siete pruebas) |
 | #149 | N25, la clasificación de los envíos de orden (CL-199: un 5xx, un 408, un -1006/-1007 o un cuerpo ilegible son AMBIGUOUS, con su cabecera) y N24, el reintento de cuenta y las críticas sin respuesta (CL-200: el reintento se readmite en su tramo; CL-201: una crítica que salió sin respuesta deja su coste como usado hasta que caduca la ventana de cada contador; CL-202: los errores de red sin la URL firmada y el aplanado sólo conmuta el modo ante un rechazo firme); más N24-docs; abre N40 a N46; y su revisión antes de fusionar (CL-202b: el connect rechazado de Windows en las pruebas; RV23-T, RV23-docs) |
-| #150 | N40, un 2xx ilegible de una lectura (CL-203: es un error con su cabecera, y la cuenta y exchangeInfo lo reintentan), N41 b, el reintento de cuenta (CL-204: sale firmado con la hora de ahora, no con la firma que caduca a los 5 s del recvWindow) y N32, los binarios de operador (CL-205: oco_probe limpia siempre tras su entrada y dice si la limpieza falló; la regla de §5 de BINANCE_API_MAP); revisa N41 d, N26 y N46 sin ejecutarlos; abre N47 a N51; y su revisión antes de fusionar (CL-206: `refirmar` no firma una URL con algo tras la firma; CL-207: la limpieza de oco_probe espera al freno 429/418 y lee las órdenes que quedan; RV24-T: guarda del bloque etiquetado y plazo de 3 s; RV24-docs) |
+| #150 | N40, un 2xx ilegible de una lectura (CL-203: es un error con su cabecera, y la cuenta y exchangeInfo lo reintentan), N41 b, el reintento de cuenta (CL-204: sale firmado con la hora de ahora, no con la firma que caduca a los 5 s del recvWindow) y N32, los binarios de operador (CL-205: oco_probe limpia siempre tras su entrada y dice si la limpieza falló; la regla de §5 de BINANCE_API_MAP); revisa N41 d, N26 y N46 sin ejecutarlos; abre N47 a N51; y su revisión antes de fusionar (CL-206: `refirmar` no firma una URL con algo tras la firma; CL-207: la limpieza de oco_probe espera al freno 429/418 y lee las órdenes que quedan; RV24-T: guarda del bloque etiquetado y plazo de 3 s; RV24-docs; y de la revisión de esas correcciones, RV25: las lecturas de lo que queda también esperan al freno, el baneo de un 418 sin Retry-After cabe en la espera y la guarda prohíbe `process::exit` entre el bloque y la limpieza) |
 
 **Hecho por otros agentes**: lote 9 entero (Sol, d18b3735), lote 45 entero
 (Codex RB, 906a9c6a), parte del 7 (Sol retiró el bin main.rs de
@@ -1492,9 +1492,12 @@ un escéptico por lote listo):
   antes de fusionar añadió CL-207: un 429 en el paso 4 arma el freno, y el
   aplanado de la limpieza, rechazado en local, dejaba la posición abierta
   aunque el freno venciera en segundos; ahora lo repite cuando vence (hasta
-  5 min), y lee las órdenes que quedan del símbolo, porque el aplanado sólo
-  avisa de una purga fallida y se leía como «órdenes purgadas». La guarda de
-  fuente comprueba también que el bloque cierra antes de la limpieza. La
+  300 s de espera en total, lo que dura el baneo de un 418 sin
+  Retry-After), y lee las órdenes que quedan del símbolo, también tras el
+  freno, porque el aplanado sólo avisa de una purga fallida y se leía como
+  «órdenes purgadas». La guarda de fuente comprueba también que el bloque
+  cierra antes de la limpieza y que entre el bloque y la limpieza no hay
+  `process::exit`. La
   cabecera y §5 dicen ya que el barrido cancela las órdenes de todos los
   símbolos sin posición, no sólo las de su símbolo.
 - N33 (de la tanda 14, Línea C): sin un exchangeInfo guardado y con la

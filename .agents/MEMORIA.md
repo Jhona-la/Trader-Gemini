@@ -22,8 +22,10 @@ guarda de fuente nueva y documentos.
   con TG_LOG_FILE van a `logs/demo_vNN.stdout.log`).
 - De su revisión (4 revisores, 4 escépticos): CL-206, `refirmar` no firma
   una URL con algo tras la firma; CL-207, la limpieza de oco_probe repite
-  el aplanado cuando vence el freno 429/418 (hasta 5 min) y lee las
-  órdenes que quedan del símbolo; RV24-T y RV24-docs. Siguiente CL libre:
+  el aplanado cuando vence el freno 429/418 (hasta 300 s de espera, el
+  baneo de un 418 sin Retry-After) y lee las órdenes que quedan del
+  símbolo, también tras el freno; RV24-T, RV24-docs y, de una segunda
+  revisión de esas correcciones, RV25. Siguiente CL libre:
   CL-208.
 - Revisadas sin ejecutar: N41 d se queda como sobrecuenta documentada (sin
   `connect_timeout`, que en reqwest 0.11 es de todo el cliente); N26 pasa a

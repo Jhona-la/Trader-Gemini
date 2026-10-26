@@ -127,8 +127,9 @@
   cuando lo lanza `walkforward_evolver`, `WF_PARALLEL` a la vez, 8 por defecto) crean su propio
   `OrderExecutor` en otro proceso: su freno 429/418 y su uso empiezan vacíos y no ven los del motor.
   El peso cuenta para la misma IP y, con las mismas claves, las órdenes para la misma cuenta. Su
-  primera petición sale siempre; tras un 429/418 arman su propio freno y no envían más, pero esa
-  petición ya contó para el baneo. **Regla: no lanzarlos con un freno vivo del motor.** Los avisos
+  primera petición sale siempre; tras un 429/418 arman su propio freno y no envían más mientras dura
+  (oco_probe repite su aplanado, con el barrido, cuando vence; abajo), pero esa petición ya contó
+  para el baneo. **Regla: no lanzarlos con un freno vivo del motor.** Los avisos
   `[RATE-LIMIT]` y `[RATE BRAKE]` son `println!`: con `TG_LOG_FILE` están en la salida estándar
   (`logs/demo_vNN.stdout.log`), no en `logs/demo_vNN.log`. Esperar a que pase el `hasta ms` que
   imprimen (época en ms, p. ej. `[DateTimeOffset]::FromUnixTimeMilliseconds(<ms>).LocalDateTime`);
@@ -137,7 +138,8 @@
   TODAS las posiciones de la cuenta, también las del motor; el barrido del aplanado cancela además las
   órdenes y las órdenes algo de todos los símbolos sin posición, dos veces por corrida (unas dos
   peticiones por símbolo listado). Sólo en una cuenta sin posiciones ni órdenes del motor. Si el freno
-  429/418 rechaza su limpieza, la repite cuando vence (hasta 5 min); si falla por otra causa o quedan
+  429/418 rechaza su limpieza o la lectura de lo que queda, la repite cuando vence (hasta 300 s de
+  espera en total, lo que dura el baneo de un 418 sin Retry-After); si falla por otra causa o quedan
   órdenes del símbolo, lo dice (CL-205, CL-207) y hay que revisar la cuenta a mano. Con `FORENSIC_LIVE_FEES=1` durante un freno, el forense cae a las comisiones VIP0 y su
   FORENSIC_JSON no lo dice, así que `walkforward_evolver` no lo sabe (fila N51). `oi_history_sync` (siempre mainnet; curl sin
   mirar el estado HTTP) y `docs/audit/linea_i/rtt_probe.ps1` (40 GET de la hora por entorno; captura
