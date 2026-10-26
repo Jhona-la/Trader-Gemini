@@ -12,11 +12,16 @@
 //! Sólo testnet: el ejecutor se crea con `is_testnet = true` (no hay otra
 //! guarda).
 //!
-//! ⚠️ Cancela las órdenes de su símbolo y aplana TODAS las posiciones de la
-//! cuenta (`flatten_all_positions`), también las del motor: nunca con el motor
-//! vivo en la misma cuenta. Sale por la misma IP con su propio freno 429/418,
-//! que no ve el del motor: no lanzarla durante un freno del motor
-//! (docs/BINANCE_API_MAP.md §5, fila N32 del censo).
+//! ⚠️ Aplana TODAS las posiciones de la cuenta (`flatten_all_positions`),
+//! también las del motor, y su barrido cancela las órdenes y las órdenes algo
+//! de todos los símbolos sin posición; lo hace dos veces (pasos 2 y 7), a unas
+//! dos peticiones por símbolo listado. Sólo en una cuenta sin posiciones ni
+//! órdenes del motor, nunca con el motor vivo en la misma cuenta. Sale por la
+//! misma IP con su propio freno 429/418, que no ve el del motor: no lanzarla
+//! durante un freno del motor (docs/BINANCE_API_MAP.md §5, fila N32 del
+//! censo). Imprime cada paso en stdout: no la conectes a un lector que cierre
+//! antes que ella (`| head`), porque println! entraría en pánico antes de la
+//! limpieza.
 
 use execution_engine::executor::{ExecutionProvider, OrderExecutor};
 
@@ -29,6 +34,25 @@ fn truncate_str(s: &str, max: usize) -> String {
     } else {
         format!("{}…", execution_engine::order_types::truncate(s, max))
     }
+}
+
+/// N32 (CL-207): la espera máxima del paso 7 a que venza el freno 429/418.
+const ESPERA_MAXIMA_MS: u64 = 300_000;
+
+/// N32 (CL-207): lo que falta para que venza el freno 429/418 del ejecutor
+/// (más 250 ms) cuando `e` es su rechazo local, que no envía nada:
+/// «RATE_BRAKE: freno temporal activo hasta H (ahora A)» o
+/// «RATE_LIMIT_COOLDOWN: activo hasta H (ahora A)» (client.rs). None con
+/// cualquier otro error, que no se repite: cada aplanado barre todos los
+/// símbolos de la cuenta.
+fn espera_del_freno_ms(e: &str) -> Option<u64> {
+    if !(e.starts_with("RATE_BRAKE:") || e.starts_with("RATE_LIMIT_COOLDOWN:")) {
+        return None;
+    }
+    let cifra = |tras: &str| -> Option<u64> {
+        e.split(tras).nth(1)?.split(|c: char| !c.is_ascii_digit()).next()?.parse().ok()
+    };
+    Some(cifra("hasta ")?.saturating_sub(cifra("(ahora ")?).saturating_add(250))
 }
 
 /// Microsegundos desde la época para los ids de la sonda; 0 con un reloj
@@ -173,13 +197,44 @@ async fn main() {
     };
 
     // 7. Limpieza total. N32 (CL-205): un aplanado que falla se dice, con su
-    // error; antes se leía como cero cerradas y «órdenes purgadas», y se
-    // contaban los símbolos cancelados como posiciones cerradas.
-    let _ = exec.cancel_all_symbol_orders(&symbol).await;
-    match exec.flatten_all_positions().await {
-        Ok((_, cerradas)) => println!("[7] limpieza: {} posiciones cerradas, órdenes purgadas", cerradas),
+    // error; antes se leía como cero cerradas y «órdenes purgadas», y las
+    // cancelaciones aceptadas (hasta dos por símbolo) se contaban como
+    // posiciones cerradas. CL-207: el aplanado que rechaza el freno 429/418
+    // (un 429 en el paso 4 lo arma) se repite cuando vence, y una purga
+    // fallida, que el aplanado sólo avisa, se comprueba leyendo las órdenes.
+    if let Err(e) = exec.cancel_all_symbol_orders(&symbol).await {
+        println!("[7] ⚠️ cancelación previa de {}: {}", symbol, truncate_str(&e, 200));
+    }
+    let mut esperado_ms: u64 = 0;
+    let limpieza = loop {
+        let intento = exec.flatten_all_positions().await;
+        match intento.as_ref().err().and_then(|e| espera_del_freno_ms(e)) {
+            Some(ms) if esperado_ms.saturating_add(ms) <= ESPERA_MAXIMA_MS => {
+                esperado_ms = esperado_ms.saturating_add(ms);
+                println!("[7] freno 429/418 activo: repito la limpieza en {} ms", ms);
+                tokio::time::sleep(std::time::Duration::from_millis(ms)).await;
+            }
+            _ => break intento,
+        }
+    };
+    match limpieza {
+        Ok((_, cerradas)) => {
+            println!("[7] limpieza: {} posiciones cerradas", cerradas);
+            match (exec.fetch_open_orders(&symbol).await, exec.fetch_open_algo_orders(&symbol).await) {
+                (Ok(o), Ok(a)) if o.is_empty() && a.is_empty() => println!("[7] {} sin órdenes abiertas", symbol),
+                (Ok(o), Ok(a)) => println!(
+                    "[7] ❌ quedan {} órdenes y {} órdenes algo abiertas en {} — revisar la cuenta a mano",
+                    o.len(),
+                    a.len(),
+                    symbol
+                ),
+                (Err(e), _) | (_, Err(e)) => {
+                    println!("[7] ⚠️ no se pudieron leer las órdenes de {}: {}", symbol, truncate_str(&e, 200))
+                }
+            }
+        }
         Err(e) => println!(
-            "[7] ❌ limpieza incompleta: {} — revisar la cuenta a mano (posición sin TP/SL)",
+            "[7] ❌ limpieza incompleta: {} — revisar la cuenta a mano (puede quedar una posición abierta, con o sin su TP/SL)",
             truncate_str(&e, 300)
         ),
     }
@@ -192,5 +247,28 @@ async fn main() {
             println!("\n═══ VEREDICTO: OCO aún roto — el error crudo arriba es el diagnóstico ═══")
         }
         None => println!("\n═══ VEREDICTO: sin bracket — la sonda no llegó a colocarlo ═══"),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::espera_del_freno_ms;
+
+    /// CL-207: la espera sale de los dos rechazos locales del freno, con los
+    /// textos de `FrenoExchange::comprobar` (client.rs), y de nada más: un
+    /// 429 que sí salió o un aplanado incompleto no se repiten.
+    #[test]
+    fn cl207_la_espera_sale_del_freno() {
+        assert_eq!(espera_del_freno_ms("RATE_BRAKE: freno temporal activo hasta 5000 (ahora 1000)"), Some(4_250));
+        assert_eq!(espera_del_freno_ms("RATE_LIMIT_COOLDOWN: activo hasta 2000 (ahora 1500)"), Some(750));
+        assert_eq!(espera_del_freno_ms("RATE_LIMIT_COOLDOWN: activo hasta 1000 (ahora 1500)"), Some(250));
+        for otro in [
+            "HTTP_429_RATE_LIMITED retry_after=2",
+            "FLATTEN_INCOMPLETE: SOLUSDT",
+            "RATE_BRAKE: sin cifras",
+            "Network Error: timed out (hasta 5 (ahora 1)",
+        ] {
+            assert_eq!(espera_del_freno_ms(otro), None, "{otro}");
+        }
     }
 }
