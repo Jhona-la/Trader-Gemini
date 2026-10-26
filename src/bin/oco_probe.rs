@@ -9,16 +9,34 @@
 //! Esta sonda imprime cada respuesta/error crudo de Binance.
 //!
 //! Uso: export BINANCE_DEMO_API_KEY/SECRET (o BINANCE_TESTNET_*) y ejecutar.
-//! Testnet solamente — asserts explícitos para no tocar mainnet.
+//! Sólo testnet: el ejecutor se crea con `is_testnet = true` (no hay otra
+//! guarda).
+//!
+//! ⚠️ Cancela las órdenes de su símbolo y aplana TODAS las posiciones de la
+//! cuenta (`flatten_all_positions`), también las del motor: nunca con el motor
+//! vivo en la misma cuenta. Sale por la misma IP con su propio freno 429/418,
+//! que no ve el del motor: no lanzarla durante un freno del motor
+//! (docs/BINANCE_API_MAP.md §5, fila N32 del censo).
 
 use execution_engine::executor::{ExecutionProvider, OrderExecutor};
 
+/// N32 (CL-205): por caracteres. Cortar por bytes entraba en
+/// pánico con un error que llevaba una letra acentuada o un emoji en ese
+/// punto.
 fn truncate_str(s: &str, max: usize) -> String {
-    if s.len() <= max {
+    if s.chars().count() <= max {
         s.to_string()
     } else {
-        format!("{}…", &s[..max])
+        format!("{}…", execution_engine::order_types::truncate(s, max))
     }
+}
+
+/// Microsegundos desde la época para los ids de la sonda; 0 con un reloj
+/// anterior a 1970, sin pánico (CL-205).
+fn micros_ahora() -> u128 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |d| d.as_micros())
 }
 
 #[tokio::main]
@@ -79,88 +97,100 @@ async fn main() {
     let _ = exec.flatten_all_positions().await;
     println!("[2] estado previo purgado");
 
-    // 3. Entrada MARKET SHORT — mismo camino que el motor
-    //    (execute_raw_qty_with_client_id).
-    let coid = format!("probe_e_{}", std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_micros());
-    println!("[3] entrada MARKET SHORT {} {}…", symbol, qty);
-    if let Err(e) = exec
-        .execute_raw_qty_with_client_id(&symbol, false, qty, step, &coid)
-        .await
-    {
-        println!("[3] ❌ entrada rechazada: {}", truncate_str(&e, 300));
-        return;
-    }
-
-    // 4. Settle de fills (OCO-F2) + posición REAL.
-    tokio::time::sleep(std::time::Duration::from_millis(600)).await;
-    let (entry_price, real_qty) = match exec.fetch_position_risk().await {
-        Ok(ps) => {
-            // HEDGE: positionRisk devuelve DOS registros por símbolo (LONG y
-            // SHORT); el lado vacío trae positionAmt=0 y ordena primero.
-            // Seleccionar el registro CON magnitud, no el primero por nombre.
-            let Some(p) = ps
-                .iter()
-                .find(|p| p.symbol == symbol && p.position_amt.abs() > 0.0)
-            else {
-                println!("[4] ❌ sin posición con magnitud en positionRisk tras entrada");
-                return;
-            };
-            println!(
-                "[4] posición REAL: amt={:.6} entry={:.4} (hedge side: {})",
-                p.position_amt,
-                p.entry_price,
-                if p.position_amt < 0.0 { "SHORT" } else { "LONG" }
-            );
-            (p.entry_price, p.position_amt.abs())
+    // N32 (CL-205): desde la entrada la cuenta puede tener una posición (un
+    // error AMBIGUOUS de la entrada también pudo llenar). Un fallo de los
+    // pasos 3 a 6 sale del bloque y pasa por la limpieza del paso 7; antes
+    // volvía de main y dejaba la posición abierta y sin TP/SL.
+    let bracket: Option<Result<(), String>> = 'sonda: {
+        // 3. Entrada MARKET SHORT — mismo camino que el motor
+        //    (execute_raw_qty_with_client_id).
+        let coid = format!("probe_e_{}", micros_ahora());
+        println!("[3] entrada MARKET SHORT {} {}…", symbol, qty);
+        if let Err(e) = exec
+            .execute_raw_qty_with_client_id(&symbol, false, qty, step, &coid)
+            .await
+        {
+            println!("[3] ❌ entrada rechazada: {}", truncate_str(&e, 300));
+            break 'sonda None;
         }
-        Err(e) => {
-            println!("[4] ❌ positionRisk: {}", truncate_str(&e, 200));
-            return;
+
+        // 4. Settle de fills (OCO-F2) + posición REAL.
+        tokio::time::sleep(std::time::Duration::from_millis(600)).await;
+        let (entry_price, real_qty) = match exec.fetch_position_risk().await {
+            Ok(ps) => {
+                // HEDGE: positionRisk devuelve DOS registros por símbolo (LONG y
+                // SHORT); el lado vacío trae positionAmt=0 y ordena primero.
+                // Seleccionar el registro CON magnitud, no el primero por nombre.
+                let Some(p) = ps
+                    .iter()
+                    .find(|p| p.symbol == symbol && p.position_amt.abs() > 0.0)
+                else {
+                    println!("[4] ❌ sin posición con magnitud en positionRisk tras entrada");
+                    break 'sonda None;
+                };
+                println!(
+                    "[4] posición REAL: amt={:.6} entry={:.4} (hedge side: {})",
+                    p.position_amt,
+                    p.entry_price,
+                    if p.position_amt < 0.0 { "SHORT" } else { "LONG" }
+                );
+                (p.entry_price, p.position_amt.abs())
+            }
+            Err(e) => {
+                println!("[4] ❌ positionRisk: {}", truncate_str(&e, 200));
+                break 'sonda None;
+            }
+        };
+        if real_qty <= 0.0 {
+            println!("[4] ❌ posición 0 — la entrada no llenó");
+            break 'sonda None;
         }
-    };
-    if real_qty <= 0.0 {
-        println!("[4] ❌ posición 0 — la entrada no llenó");
-        return;
-    }
-    if entry_price * real_qty < min_notional {
-        println!("[4] ⚠️ notional {:.2} < minNotional {} — el bracket puede caer por -4164", entry_price * real_qty, min_notional);
-    }
+        if entry_price * real_qty < min_notional {
+            println!("[4] ⚠️ notional {:.2} < minNotional {} — el bracket puede caer por -4164", entry_price * real_qty, min_notional);
+        }
 
-    // 5. Bracket OCO — precios con artefactos float deliberados (el redondeo
-    //    interno al tick debe absorberlos; así también probamos esas funcs).
-    let tp = entry_price * 0.9800000001; // short: TP abajo
-    let sl = entry_price * 1.0200000001; // short: SL arriba
-    let base_id = format!("probe_oco_{}", std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_micros());
-    println!("[5] bracket: qty={:.6} TP={:.6} SL={:.6} base_id={} (len={})", real_qty, tp, sl, base_id, base_id.len());
-    let bracket = exec
-        .execute_oco_order(&symbol, false, real_qty, tp, sl, step, tick, &base_id)
-        .await;
-    match &bracket {
-        Ok(()) => println!("[5] ✅ BRACKET COLOCADO — ambas piernas aceptadas"),
-        Err(e) => println!("[5] ❌ bracket rechazado:\n{}", e),
-    }
+        // 5. Bracket OCO — precios con artefactos float deliberados (el redondeo
+        //    interno al tick debe absorberlos; así también probamos esas funcs).
+        let tp = entry_price * 0.9800000001; // short: TP abajo
+        let sl = entry_price * 1.0200000001; // short: SL arriba
+        let base_id = format!("probe_oco_{}", micros_ahora());
+        println!("[5] bracket: qty={:.6} TP={:.6} SL={:.6} base_id={} (len={})", real_qty, tp, sl, base_id, base_id.len());
+        let bracket = exec
+            .execute_oco_order(&symbol, false, real_qty, tp, sl, step, tick, &base_id)
+            .await;
+        match &bracket {
+            Ok(()) => println!("[5] ✅ BRACKET COLOCADO — ambas piernas aceptadas"),
+            Err(e) => println!("[5] ❌ bracket rechazado:\n{}", e),
+        }
 
-    // 6. Verificación final: órdenes abiertas + posición.
-    match exec.fetch_position_risk().await {
-        Ok(ps) => {
+        // 6. Verificación final: órdenes abiertas + posición.
+        if let Ok(ps) = exec.fetch_position_risk().await {
             if let Some(p) = ps.iter().find(|p| p.symbol == symbol) {
                 println!("[6] posición final: {:.6} @ {:.4}", p.position_amt, p.entry_price);
             }
         }
-        Err(_) => {}
+        Some(bracket)
+    };
+
+    // 7. Limpieza total. N32 (CL-205): un aplanado que falla se dice, con su
+    // error; antes se leía como cero cerradas y «órdenes purgadas», y se
+    // contaban los símbolos cancelados como posiciones cerradas.
+    let _ = exec.cancel_all_symbol_orders(&symbol).await;
+    match exec.flatten_all_positions().await {
+        Ok((_, cerradas)) => println!("[7] limpieza: {} posiciones cerradas, órdenes purgadas", cerradas),
+        Err(e) => println!(
+            "[7] ❌ limpieza incompleta: {} — revisar la cuenta a mano (posición sin TP/SL)",
+            truncate_str(&e, 300)
+        ),
     }
 
-    // 7. Limpieza total: la sonda NUNCA deja estado en la cuenta.
-    let _ = exec.cancel_all_symbol_orders(&symbol).await;
-    let (closed, _) = exec.flatten_all_positions().await.unwrap_or((0, 0));
-    println!("[7] limpieza: {} posiciones cerradas, órdenes purgadas", closed);
-
     match bracket {
-        Ok(()) => {
+        Some(Ok(())) => {
             println!("\n═══ VEREDICTO: OCO funcional — el incidente fue la carrera de llenado (OCO-F2) ═══")
         }
-        Err(_) => {
+        Some(Err(_)) => {
             println!("\n═══ VEREDICTO: OCO aún roto — el error crudo arriba es el diagnóstico ═══")
         }
+        None => println!("\n═══ VEREDICTO: sin bracket — la sonda no llegó a colocarlo ═══"),
     }
 }
