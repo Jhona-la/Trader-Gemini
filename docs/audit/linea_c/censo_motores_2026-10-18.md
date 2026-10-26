@@ -1358,6 +1358,36 @@ un escéptico por lote listo):
   vuelo sin entrar en el uso, y el reintento de `get_payload_account` envía
   dos veces con una sola reserva. Candidato: `Cupo::sin_respuesta(ahora)`,
   una muestra local sellada que caduca con su ventana.
+  Ejecutada en la tanda 16 en tres átomos. CL-200 (N24-b):
+  get_payload_account recibe el cupo de la lectura, que sus diez llamadores
+  ya tenían vivo, y el reintento sale sólo si `Cupo::readmitir` pasa (freno y
+  regla de su tramo con el uso de ahora, que ya lleva la cabecera de la
+  primera respuesta; su propia plaza cuenta una vez y no se reserva otra).
+  Antes el reintento sólo miraba el freno y salía por encima de 0,8·L en las
+  ocho lecturas y sin hueco en las dos críticas (positionRisk y
+  openAlgoOrders con símbolo). La regla de admisión es `regla_de_cuota`, la
+  misma para admitir y readmitir. CL-201 (N24-a): `ErrorRest::sin_respuesta()`
+  es el origen tipado de un error de transporte de una petición que salió
+  (no al construirla ni al conectar: `reqwest::Error::is_connect`/
+  `is_builder`; un plazo total que vence mientras conecta sí cuenta como
+  salida, N41 d); el cupo de una crítica registra su error por
+  `registrar_fallo` (o `registrar_fallo_de`, por pierna del par OCO) y con
+  ese origen anota su coste en `UsoExchange::sin_respuesta`, una cola sellada
+  que caduca con la ventana de cada contador (10 s y 60 s, contados desde
+  que se supo), acota los sellos futuros y tiene tope. La regla lo suma al
+  uso de la cabecera en las lecturas y en los contadores en los que la
+  crítica gasta; donde no gasta sólo frena un uso de cabecera por encima del
+  límite (CL-181 extendido: la cabecera puede contar ya lo perdido y un
+  cierre de peso 0 no debe pararse por esa doble cuenta). Los textos de
+  rechazo lo nombran sólo cuando lo hay. No se decide nunca por el prefijo
+  AMBIGUOUS, que desde CL-199 también lleva un 503 con cabecera. CL-202: los
+  cinco brazos de red escribían la URL firmada en el error (reqwest pone
+  «for url (…)» con la consulta y la firma) y el reintento de modo del
+  aplanado (R3.3 / K-16) busca «reduceOnly» en el texto: un cierre one-way
+  sin respuesta conmutaba `is_hedge_mode` y enviaba otro cierre. Ahora el
+  error sale sin URL (`error_de_red`, `without_url`) y el reintento decide
+  por `modo_rechazado`, que excluye toda ejecución desconocida. Residuos en
+  la fila N41.
 - N25 (de la tanda 14, Línea C, cambio de conducta): la marca AMBIGUOUS es
   desigual. En `execute_order_payload` un 5xx, un 408 o -1006/-1007 salen
   como «Binance API Error»; en `cancel_order_payload`,
@@ -1365,6 +1395,19 @@ un escéptico por lote listo):
   AMBIGUOUS; `get_payload_with_timeout` devuelve Ok con «TEXT_ERR…» si no
   pudo leer el cuerpo, y `_typed` tira los límites de un 2xx cuyo ACK no
   se puede leer. Cambia cómo se resuelven las órdenes: átomo propio.
+  Ejecutada en la tanda 16 (CL-199), rectificada por el mapa: el único
+  defecto vivo era `execute_order_payload`, que daba «Binance API Error: …»
+  ante un 5xx, un 408, un -1006/-1007 o un cuerpo ilegible, donde
+  `execute_order_payload_body` (y `_typed`) marcan AMBIGUOUS. Con el error
+  real de place_algo_leg, un 503 {-1001} de una pierna contaba como rechazo
+  del exchange en `protection_health::note_rejection` y alimentaba la
+  escalada B3.5b a cierre de emergencia, contra su contrato. Ahora los dos
+  envíos que leen la respuesta clasifican igual (`error_de_orden`,
+  `cuerpo_ilegible`) y el rechazo 4xx firme conserva su texto. Se refuta
+  como defecto la falta de AMBIGUOUS en la red de `cancel_order_payload`,
+  `get_payload_with_timeout` y `post_payload`: ningún lector del prefijo
+  recibe esos errores. Lo de `_typed` ya lo cerró CL-196. El Ok(«TEXT_ERR…»)
+  de un 2xx ilegible y el Ok(«[]») de `post_payload` pasan a la fila N40.
 - N26 (de la tanda 14; método de Línea C, línea del host de Línea I o AGY):
   el cambio de ejecutor en caliente (god_engine.rs:4410-4431, mismo
   USE_TESTNET y la misma arena que el anterior; `new_with_shared`) estrena
@@ -1484,6 +1527,66 @@ un escéptico por lote listo):
   RATE_BRAKE) sin haber consultado el modo, con `is_hedge_mode` aún en true
   y las órdenes funcionando. Candidato: con un error que empieza por RATE_,
   registrar «modo no consultado por cuota; lo confirma el refresco OMS».
+- N40 (de la tanda 16, Línea C): un 2xx cuyo cuerpo no se puede leer sale
+  como Ok. `get_payload_with_timeout` devuelve Ok((límites, «TEXT_ERR: …»))
+  y `post_payload` Ok((límites, «[]»)) (client.rs, brazos 2xx). Quien parsea
+  el cuerpo falla después con un error de JSON que ya no dice que hubo
+  respuesta; quien no lo parsea da por buena una respuesta que no leyó.
+  Candidato: un Err con su cabecera, como `cuerpo_ilegible` en los envíos de
+  orden, tras mirar a cada lector.
+- N41 (de la tanda 16, Línea C, residuos de N24): (a) un 502/504 de una
+  pasarela sin cabecera X-MBX es una respuesta, no entra como coste perdido
+  aunque la petición pudo llegar al backend; (b) el reintento de
+  `get_payload_account` firma con la misma hora que el primero (un -1021 si
+  el primero agotó el recvWindow; fila propia si aparece en el forense);
+  (c) el -1106 real de Binance podría escribir el parámetro en minúsculas
+  («'reduceonly' sent when not required»): `modo_rechazado` busca
+  «reduceOnly» y entonces no reintentaría en el otro modo. Sin la
+  documentación (PC del dueño) no se cambia; decidir con ella. (d) El plazo
+  total que vence mientras conecta cuenta como salida (reqwest 0.11 no dice
+  en qué fase venció). En Windows una conexión rechazada tarda unos 2 s en
+  fallar, más que los 1,2 s de las órdenes (lo vio la CI de la tanda 16):
+  con el exchange inalcanzable cada crítica fallida deja su coste como
+  perdido hasta que caduca su ventana. Cuenta de más, del lado seguro;
+  candidato si molesta: un `connect_timeout` menor que el plazo total, para
+  que esa fase falle como conexión.
+- N42 (de la tanda 16, Línea I): el recuento de rechazos de la escalada
+  B3.5b compara un acumulado de vida (`protection_health::rejections_of`,
+  BRACKET_REJECTIONS nunca se pone a cero) con una foto que se borra cuando
+  el símbolo queda protegido o sin posición (god_engine.rs:3472, :3479). En
+  el primer hueco de stop siguiente la foto es 0 (:3326-3327) y todo
+  rechazo antiguo cuenta como nuevo: un paso de racha sin evidencia en cada
+  episodio. Candidato: guardar `rejections_of` en vez de borrar la foto.
+- N43 (de la tanda 16, Línea C con la documentación): un -1000 en un 4xx.
+  `protection_health` lo trata como ejecución desconocida (no cuenta como
+  rechazo) y la clasificación de los envíos de orden
+  (`ejecucion_desconocida`, la de `_body` desde antes de CL-199) lo da por
+  firme. Decidir con la documentación cuál vale y alinear los dos.
+- N44 (de la tanda 16, Línea I): la auditoría de protección lee las piernas
+  con `fetch_open_algo_orders(symbol).await.unwrap_or_default()`
+  (god_engine.rs:359): un error (freno, cuota, red) se lee como «ninguna
+  pierna» y la auditoría intenta re-armar TP/SL que quizá existen (inferido
+  de la lectura, sin medir). Desde CL-199 un
+  5xx de una pierna no cuenta como rechazo, así que B3.5b ya no escala por
+  esa vía; si se quiere acotar la desnudez ante fallos sin rechazo, la
+  regla es del host y por la duración del hueco. Los comentarios de
+  god_engine.rs:481 y :542 deben decir que un 5xx no es rechazo.
+- N45 (de la tanda 16, Sol): data-pipeline `api_client.rs` copia la URL
+  firmada al texto de sus errores de red («HTTP Error: …», :119 y :212),
+  como hacía el ejecutor antes de CL-202. Ningún lector busca en ese texto:
+  sólo higiene de registros (`without_url`).
+- N46 (de la revisión de la tanda 16, Línea C): un cierre AMBIGUOUS del
+  aplanado (red, 5xx, ACK ilegible) no se reconcilia: cae al brazo final
+  de `flatten_all_positions` («NO cerrada tras reintento», sin que haya
+  reintento), el símbolo queda sin cerrar y sus brackets sin purgar, aunque
+  la posición puede estar ya plana. Es del lado seguro (F1-027) y en modo
+  hedge ya pasaba antes de CL-202; en one-way, antes, el reintento de modo
+  erróneo acababa en un -4061 que llevaba al re-snapshot de X-026 y lo
+  resolvía por accidente (dejando además `is_hedge_mode` mal). Candidato:
+  llevar el AMBIGUOUS al mismo re-snapshot de X-026 (positionRisk fresco;
+  plana, cerrada y purgada; abierta, reduce-only con la cantidad fresca),
+  con una prueba de extremo a extremo, que hoy no se puede montar porque
+  `get_base_url` no admite un servidor local.
 
 **Restos de lotes ejecutados**: del 3, net_multiplexer (a AGY, para
 unificar con data_pipeline::http_cliente) y active_universe/

@@ -151,24 +151,59 @@ pub fn classify_rate_limit_or_ban(status_code: u16, headers: &HeaderMap) -> Opti
 /// cabecera sin pasar por `OrderExecutor::registrar_error`.
 ///
 /// Sin cabecera: sin respuesta (red, timeout, rechazo local del freno) y en un
-/// 429/418, cuya cabecera nunca se registra: manda su Retry-After.
+/// 429/418, cuya cabecera nunca se registra: manda su Retry-After. N24
+/// (CL-201): una petición que salió y no tuvo respuesta (`sin_respuesta`) pudo
+/// contar en el exchange sin que ninguna cabecera lo diga; el cupo de una
+/// crítica anota entonces su coste como usado.
+///
+/// El prefijo AMBIGUOUS dice que la ejecución de una orden es desconocida, no
+/// que faltara la respuesta: el 503 o el -1007 de un envío de orden es
+/// AMBIGUOUS y trae su cabecera (N25, CL-199). Que hubo respuesta no se deduce
+/// del prefijo.
 #[derive(Debug, Clone)]
 pub struct ErrorRest {
     texto: String,
     limites: BinanceRateLimits,
+    sin_respuesta: bool,
 }
 
 impl ErrorRest {
-    /// Sin respuesta del exchange, o un 429/418.
+    /// Un 429/418, o un rechazo local que no llegó a salir (el freno).
     pub fn sin_cabecera(texto: impl Into<String>) -> Self {
         Self {
             texto: texto.into(),
             limites: BinanceRateLimits::default(),
+            sin_respuesta: false,
         }
     }
 
     fn con_cabecera(texto: String, limites: BinanceRateLimits) -> Self {
-        Self { texto, limites }
+        Self {
+            texto,
+            limites,
+            sin_respuesta: false,
+        }
+    }
+
+    /// N24 (CL-201): un error de transporte, sin cabecera. `salio` dice si
+    /// la petición pudo llegar al exchange (la función `salio` de abajo).
+    pub(crate) fn de_red(texto: String, salio: bool) -> Self {
+        Self {
+            texto,
+            limites: BinanceRateLimits::default(),
+            sin_respuesta: salio,
+        }
+    }
+
+    /// N24 (CL-201): la petición salió y no llegó respuesta (timeout,
+    /// conexión cortada a mitad): el exchange pudo contarla. Es falso con
+    /// cualquier respuesta, traiga o no cabecera, en un 429/418, en un
+    /// rechazo local y si falló al conectar. Un plazo total que vence
+    /// mientras conecta cuenta como salida, del lado seguro (`salio`). No se
+    /// deduce del texto.
+    #[inline]
+    pub fn sin_respuesta(&self) -> bool {
+        self.sin_respuesta
     }
 
     /// El uso que trajo la respuesta de error.
@@ -559,6 +594,11 @@ impl BinanceClient {
     }
 
     /// Ejecuta una orden firmada enviando el payload HTTP de forma asíncrona O(1).
+    /// Un 2xx es la aceptación (su cuerpo no se lee). Un no-2xx se clasifica
+    /// como en `execute_order_payload_body` (N25, CL-199): la red, el 5xx, el
+    /// 408, -1006/-1007 y un cuerpo ilegible son AMBIGUOUS (la orden o la
+    /// pierna pudo quedar en el exchange); un rechazo 4xx firme conserva su
+    /// texto, «Binance API Error: {cuerpo}».
     #[inline(always)]
     pub async fn execute_order_payload(&self, full_url: &str) -> Result<BinanceRateLimits, ErrorRest> {
         let api_key = self.api_key.load();
@@ -581,14 +621,16 @@ impl BinanceClient {
                 } else {
                     // N23 (CL-196): la cabecera antes que el cuerpo, que consume la respuesta.
                     let limits = extract_limits(resp.headers());
-                    let text = resp
-                        .text()
-                        .await
-                        .unwrap_or_else(|_| "Unknown error".to_string());
-                    Err(ErrorRest::con_cabecera(format!("Binance API Error: {}", text), limits))
+                    let estado = resp.status();
+                    match resp.text().await {
+                        Ok(cuerpo) => Err(error_de_orden(estado, &cuerpo, limits, |c| {
+                            format!("Binance API Error: {}", c)
+                        })),
+                        Err(_) => Err(cuerpo_ilegible(estado, limits)),
+                    }
                 }
             }
-            Err(e) => Err(ErrorRest::sin_cabecera(format!("AMBIGUOUS: Network Error: {}", e))),
+            Err(e) => Err(error_de_red("AMBIGUOUS: ", e)),
         }
     }
 
@@ -597,7 +639,8 @@ impl BinanceClient {
     /// Distingue tres clases de fallo para idempotencia (F1.2):
     ///   - Err empezando con "AMBIGUOUS:" → timeout/red: la orden PUEDE existir
     ///     en Binance; el caller DEBE consultar por clientOrderId antes de reintentar.
-    ///   - ACK ilegible, HTTP408 y códigos -1006/-1007 → también ambiguos.
+    ///   - ACK ilegible, cuerpo ilegible, HTTP 408, 5xx y códigos -1006/-1007
+    ///     → también ambiguos (`error_de_orden`, `cuerpo_ilegible`).
     ///   - Rechazos conocidos no prueban que sea seguro repetir otra intención.
     ///   - Ok(ack) → respuesta conocida.
     #[inline(always)]
@@ -623,7 +666,7 @@ impl BinanceClient {
         &self,
         full_url: &str,
     ) -> Result<(BinanceRateLimits, String), ErrorRest> {
-        use crate::order_types::{parse_reject_body, truncate};
+        use crate::order_types::parse_reject_body;
 
         let api_key = self.api_key.load();
         let response = self
@@ -644,46 +687,16 @@ impl BinanceClient {
                 {
                     return Err(ErrorRest::sin_cabecera(rate_err));
                 }
-                let body = resp.text().await.map_err(|_| {
-                    ErrorRest::con_cabecera(
-                        format!(
-                            "AMBIGUOUS: HTTP {} unreadable response body",
-                            status.as_u16()
-                        ),
-                        limits,
-                    )
-                })?;
+                let body = resp.text().await.map_err(|_| cuerpo_ilegible(status, limits))?;
                 if status.is_success() {
                     Ok((limits, body))
-                } else if status.is_client_error() {
-                    use crate::order_types::{error_codes, BinanceApiError};
-                    let unknown_execution = status.as_u16() == 408
-                        || serde_json::from_str::<BinanceApiError>(&body)
-                            .map(|e| {
-                                matches!(
-                                    e.code,
-                                    error_codes::EXECUTION_STATUS_UNKNOWN
-                                        | error_codes::BACKEND_TIMEOUT
-                                )
-                            })
-                            .unwrap_or(false);
-                    if unknown_execution {
-                        Err(ErrorRest::con_cabecera(
-                            format!("AMBIGUOUS: HTTP {} body={}", status.as_u16(), truncate(&body, 200)),
-                            limits,
-                        ))
-                    } else {
-                        Err(ErrorRest::con_cabecera(parse_reject_body(&body, status.as_u16()), limits))
-                    }
                 } else {
-                    // 5xx: estado desconocido — tratar como ambiguo.
-                    Err(ErrorRest::con_cabecera(
-                        format!("AMBIGUOUS: HTTP {} body={}", status.as_u16(), truncate(&body, 200)),
-                        limits,
-                    ))
+                    Err(error_de_orden(status, &body, limits, |c| {
+                        parse_reject_body(c, status.as_u16())
+                    }))
                 }
             }
-            Err(e) => Err(ErrorRest::sin_cabecera(format!("AMBIGUOUS: Network Error: {}", e))),
+            Err(e) => Err(error_de_red("AMBIGUOUS: ", e)),
         }
     }
 
@@ -721,7 +734,7 @@ impl BinanceClient {
                     Err(ErrorRest::con_cabecera(format!("Binance API Error: {}", text), limits))
                 }
             }
-            Err(e) => Err(ErrorRest::sin_cabecera(format!("Network Error: {}", e))),
+            Err(e) => Err(error_de_red("", e)),
         }
     }
     /// GET payload (used for fetching balances, etc)
@@ -773,7 +786,7 @@ impl BinanceClient {
                     ))
                 }
             }
-            Err(e) => Err(ErrorRest::sin_cabecera(format!("Network Error: {}", e))),
+            Err(e) => Err(error_de_red("", e)),
         }
     }
 
@@ -811,9 +824,83 @@ impl BinanceClient {
                     Err(ErrorRest::con_cabecera(format!("Binance API Error: {}", text), limits))
                 }
             }
-            Err(e) => Err(ErrorRest::sin_cabecera(format!("Network Error: {}", e))),
+            Err(e) => Err(error_de_red("", e)),
         }
     }
+}
+
+/// N25 (CL-199): si un no-2xx de un envío de orden deja su ejecución
+/// desconocida. Lo es todo lo que no es un 4xx (5xx, y 1xx/3xx, que un envío
+/// de orden no espera), el 408 y un 4xx con -1006/-1007: el exchange no dice
+/// si la orden quedó, y quien lo lee debe consultarla antes de darla por
+/// rechazada (contrato F1.2 de `execute_order_payload_typed`). Un 2xx no lo es.
+fn ejecucion_desconocida(estado: reqwest::StatusCode, cuerpo: &str) -> bool {
+    use crate::order_types::{error_codes, BinanceApiError};
+    if estado.is_success() {
+        return false;
+    }
+    !estado.is_client_error()
+        || estado.as_u16() == 408
+        || serde_json::from_str::<BinanceApiError>(cuerpo)
+            .map(|e| {
+                matches!(
+                    e.code,
+                    error_codes::EXECUTION_STATUS_UNKNOWN | error_codes::BACKEND_TIMEOUT
+                )
+            })
+            .unwrap_or(false)
+}
+
+/// N25 (CL-199): el error de un no-2xx de un envío de orden (que no sea un
+/// 429/418), con su cabecera. Si su ejecución es desconocida, AMBIGUOUS con
+/// el estado y el cuerpo truncado; si no, el rechazo firme de cada
+/// transporte (`firme`), con el texto que leen sus llamadores.
+fn error_de_orden(
+    estado: reqwest::StatusCode,
+    cuerpo: &str,
+    limites: BinanceRateLimits,
+    firme: impl FnOnce(&str) -> String,
+) -> ErrorRest {
+    use crate::order_types::truncate;
+    if ejecucion_desconocida(estado, cuerpo) {
+        ErrorRest::con_cabecera(
+            format!("AMBIGUOUS: HTTP {} body={}", estado.as_u16(), truncate(cuerpo, 200)),
+            limites,
+        )
+    } else {
+        ErrorRest::con_cabecera(firme(cuerpo), limites)
+    }
+}
+
+/// N24 (CL-201): si una petición fallida pudo llegar al exchange. No llega si
+/// no se pudo construir ni si falló al conectar (TCP, TLS o proxy, antes de
+/// escribir nada); un timeout o una conexión cortada después sí pudo. El plazo
+/// total que vence mientras conecta también cuenta como salida (reqwest 0.11
+/// no dice en qué fase venció): en Windows una conexión rechazada tarda unos
+/// 2 s en fallar, más que los 1,2 s de las órdenes, y cuenta así de más, del
+/// lado seguro (fila N41 del censo).
+fn salio(e: &reqwest::Error) -> bool {
+    !(e.is_connect() || e.is_builder())
+}
+
+/// N24 (CL-202): el error de transporte de una petición firmada, sin su URL.
+/// reqwest la escribe entera en el texto («for url (…)»), con la consulta y la
+/// firma: el reintento de modo del aplanado, que busca «reduceOnly» en el
+/// texto, la encontraba en la propia petición de un cierre sin respuesta, y
+/// la firma acababa en los registros. Si salió se decide antes de quitarla.
+fn error_de_red(prefijo: &str, e: reqwest::Error) -> ErrorRest {
+    let salio = salio(&e);
+    ErrorRest::de_red(format!("{}Network Error: {}", prefijo, e.without_url()), salio)
+}
+
+/// N25 (CL-199): un envío de orden que respondió pero cuyo cuerpo no se pudo
+/// leer, con cualquier estado: la orden pudo quedar (AMBIGUOUS), con su
+/// cabecera.
+fn cuerpo_ilegible(estado: reqwest::StatusCode, limites: BinanceRateLimits) -> ErrorRest {
+    ErrorRest::con_cabecera(
+        format!("AMBIGUOUS: HTTP {} unreadable response body", estado.as_u16()),
+        limites,
+    )
 }
 
 #[cfg(test)]
@@ -1013,6 +1100,18 @@ mod tests {
         assert!(!c.contains("freno_de_respuesta(") && !c.contains(".registrar("), "registra");
     }
 
+    /// RED antes de CL-199 (N25): los dos envíos de orden que leen la
+    /// respuesta clasifican sus no-2xx con la misma regla (`error_de_orden` y
+    /// `cuerpo_ilegible`), sin textos AMBIGUOUS propios.
+    #[test]
+    fn cl199_una_sola_clasificacion_de_los_envios_de_orden() {
+        for f in ["execute_order_payload", "execute_order_payload_body"] {
+            let c = cuerpo(f);
+            assert!(c.contains("error_de_orden(") && c.contains("cuerpo_ilegible("), "{f}");
+            assert!(!c.contains("\"AMBIGUOUS: HTTP "), "{f}: clasificación propia");
+        }
+    }
+
     /// RED antes de CL-193: el 429 de una ruta sin ejecutor cuenta para la
     /// racha (CL-189), pero su respuesta sana no la reiniciaba: en papel, con
     /// el ejecutor casi sin tráfico propio, tres 429 aislados del NTP a lo
@@ -1158,6 +1257,225 @@ mod tests_n23 {
             assert_eq!(e.and_then(|e| e.limites().weight_1m), None, "{nombre}");
         }
         mudo.abort();
+    }
+
+    /// CL-201 (N24-a): `sin_respuesta` es el origen tipado de un error, no su
+    /// texto. Cada transporte lo marca si la petición salió y la conexión se
+    /// cerró sin respuesta, con el mismo texto de antes («Network Error»), y
+    /// no lo marca si no llegó a conectar (un puerto ligado que no escucha),
+    /// ante una respuesta (400, 503, 429, 418, un ACK ilegible) ni ante el
+    /// rechazo local del freno.
+    #[tokio::test]
+    async fn cl201_sin_respuesta_es_el_origen_del_error() {
+        for (k, nombre) in TRANSPORTES.iter().enumerate() {
+            let e = error_ante(k, String::new()).await;
+            assert!(e.as_ref().is_some_and(|e| e.contains("Network Error")), "{nombre}: {e:?}");
+            assert!(e.as_ref().is_some_and(ErrorRest::sin_respuesta), "{nombre}: salió sin respuesta");
+        }
+
+        let enchufe = tokio::net::TcpSocket::new_v4().ok();
+        let direccion = enchufe.as_ref().and_then(|e| {
+            e.bind(std::net::SocketAddr::from(([127, 0, 0, 1], 0))).ok()?;
+            e.local_addr().ok()
+        });
+        assert!(direccion.is_some(), "puerto ligado sin escuchar");
+        if let Some(direccion) = direccion {
+            let url = format!("http://{direccion}/fapi/v1/order");
+            let c = BinanceClient::with_timeout("k".into(), true, Duration::from_secs(5));
+            for (k, nombre) in TRANSPORTES.iter().enumerate() {
+                let r = tokio::time::timeout(Duration::from_secs(20), enviar(&c, k, &url)).await;
+                let e = r.ok().and_then(|r| r.err());
+                assert!(e.as_ref().is_some_and(|e| e.contains("Network Error")), "{nombre}: {e:?}");
+                assert!(e.as_ref().is_some_and(|e| !e.sin_respuesta()), "{nombre}: no llegó a conectar: {e:?}");
+            }
+        }
+        drop(enchufe);
+
+        let cab = "X-MBX-USED-WEIGHT-1M: 777\r\n";
+        for (k, nombre) in TRANSPORTES.iter().enumerate() {
+            for wire in [
+                respuesta("400 Bad Request", cab, r#"{"code":-2019,"msg":"x"}"#),
+                respuesta("503 Service Unavailable", "", ""),
+                respuesta("429 Too Many Requests", "Retry-After: 7\r\n", ""),
+                respuesta("418 I'm a teapot", "", ""),
+            ] {
+                let e = error_ante(k, wire).await;
+                assert!(e.as_ref().is_some_and(|e| !e.sin_respuesta()), "{nombre}: hubo respuesta: {e:?}");
+            }
+        }
+        let e = error_ante(2, respuesta("200 OK", cab, "not json")).await;
+        assert!(e.as_ref().is_some_and(|e| e.starts_with("AMBIGUOUS:") && !e.sin_respuesta()), "{e:?}");
+
+        let c = BinanceClient::with_timeout("k".into(), true, Duration::from_secs(5));
+        let _ = c.freno().registrar("HTTP_429_RATE_LIMITED retry_after=30");
+        let e = c.cancel_order_payload("http://127.0.0.1:9/fapi/v1/order").await.err();
+        assert!(e.as_ref().is_some_and(|e| e.starts_with("RATE_LIMIT_COOLDOWN") && !e.sin_respuesta()), "{e:?}");
+    }
+
+    /// CL-202 (N24): el texto de un error de transporte no lleva la petición.
+    /// reqwest escribe la URL entera («for url (…)», con la consulta y la
+    /// firma), y el reintento de modo del aplanado busca «reduceOnly» en el
+    /// texto. En los seis transportes, cerrada sin respuesta, sin respuesta a
+    /// tiempo y sin conexión: ni la consulta, ni la firma, ni el destino; el
+    /// prefijo de cada uno y `sin_respuesta` no cambian.
+    #[tokio::test]
+    async fn cl202_el_error_de_red_no_lleva_la_peticion() {
+        use tokio::io::AsyncReadExt;
+        const CONSULTA: &str = "?symbol=BTCUSDT&side=SELL&type=MARKET&reduceOnly=true\
+                                &quantity=0.002&timestamp=1&signature=deadbeef";
+        // Los tres envíos de orden marcan su red AMBIGUOUS; los demás no.
+        let limpio = |k: usize, e: &ErrorRest| {
+            let prefijo = if k < 3 { "AMBIGUOUS: Network Error: " } else { "Network Error: " };
+            e.starts_with(prefijo)
+                && !["reduceOnly", "signature", "deadbeef", "symbol=", "127.0.0.1", "/fapi/"]
+                    .iter()
+                    .any(|t| e.contains(t))
+        };
+        let c = BinanceClient::with_timeout("k".into(), true, Duration::from_millis(500));
+
+        for (k, nombre) in TRANSPORTES.iter().enumerate() {
+            let servido = respuestas(vec![String::new()]).await;
+            assert!(servido.is_some(), "servidor local");
+            let Some((url, _, servidor)) = servido else { return };
+            let url = format!("{url}{CONSULTA}");
+            let r = tokio::time::timeout(Duration::from_secs(20), enviar(&c, k, &url)).await;
+            servidor.abort();
+            let e = r.ok().and_then(|r| r.err());
+            assert!(e.as_ref().is_some_and(|e| limpio(k, e) && e.sin_respuesta()), "{nombre} cerrada: {e:?}");
+        }
+
+        let oyente = tokio::net::TcpListener::bind("127.0.0.1:0").await.ok();
+        let direccion = oyente.as_ref().and_then(|o| o.local_addr().ok());
+        assert!(direccion.is_some(), "puerto local");
+        if let (Some(oyente), Some(direccion)) = (oyente, direccion) {
+            let mudo = tokio::spawn(async move {
+                let mut abiertas = Vec::new();
+                while let Ok((mut s, _)) = oyente.accept().await {
+                    let mut peticion = [0u8; 4096];
+                    let _ = s.read(&mut peticion).await;
+                    abiertas.push(s);
+                }
+            });
+            let url = format!("http://{direccion}/fapi/v1/order{CONSULTA}");
+            for (k, nombre) in TRANSPORTES.iter().enumerate() {
+                let r = tokio::time::timeout(Duration::from_secs(20), enviar(&c, k, &url)).await;
+                let e = r.ok().and_then(|r| r.err());
+                assert!(e.as_ref().is_some_and(|e| limpio(k, e) && e.sin_respuesta()), "{nombre} muda: {e:?}");
+            }
+            mudo.abort();
+        }
+
+        let enchufe = tokio::net::TcpSocket::new_v4().ok();
+        let direccion = enchufe.as_ref().and_then(|e| {
+            e.bind(std::net::SocketAddr::from(([127, 0, 0, 1], 0))).ok()?;
+            e.local_addr().ok()
+        });
+        assert!(direccion.is_some(), "puerto ligado sin escuchar");
+        if let Some(direccion) = direccion {
+            // Windows tarda unos 2 s en dar por rechazada la conexión: con el
+            // plazo de 500 ms vencería el plazo total, que cuenta como salida
+            // (`salio`). Con 5 s llega el rechazo, como en cl201.
+            let c = BinanceClient::with_timeout("k".into(), true, Duration::from_secs(5));
+            let url = format!("http://{direccion}/fapi/v1/order{CONSULTA}");
+            for (k, nombre) in TRANSPORTES.iter().enumerate() {
+                let r = tokio::time::timeout(Duration::from_secs(20), enviar(&c, k, &url)).await;
+                let e = r.ok().and_then(|r| r.err());
+                assert!(e.as_ref().is_some_and(|e| limpio(k, e) && !e.sin_respuesta()), "{nombre} sin conexión: {e:?}");
+            }
+        }
+        drop(enchufe);
+    }
+
+    /// Las clases de ejecución desconocida de un envío de orden (5xx, un 3xx
+    /// que reqwest no sigue, 408, -1006/-1007 y cuerpo ilegible), con la
+    /// cabecera de uso de `con_peso`, y los rechazos firmes que no lo son. Los
+    /// 1xx no llegan: hyper los descarta (salvo el 101).
+    fn ambiguos() -> Vec<(&'static str, String)> {
+        let cab = "X-MBX-USED-WEIGHT-1M: 777\r\n";
+        let cortado = |estado: &str| {
+            format!("HTTP/1.1 {estado}\r\n{cab}Content-Length: 100\r\nConnection: close\r\n\r\n{{\"code\"")
+        };
+        vec![
+            ("503 -1001", respuesta("503 Service Unavailable", cab, r#"{"code":-1001,"msg":"Internal error; unable to process your request. Please try again."}"#)),
+            ("502 html", respuesta("502 Bad Gateway", cab, "<html>bad gateway</html>")),
+            ("500 vacío", respuesta("500 Internal Server Error", cab, "{}")),
+            ("302 sin Location", respuesta("302 Found", cab, "")),
+            ("408", respuesta("408 Request Timeout", cab, "")),
+            ("400 -1006", respuesta("400 Bad Request", cab, r#"{"code":-1006,"msg":"x"}"#)),
+            ("400 -1007", respuesta("400 Bad Request", cab, r#"{"code":-1007,"msg":"x"}"#)),
+            ("400 cortado", cortado("400 Bad Request")),
+            ("503 cortado", cortado("503 Service Unavailable")),
+        ]
+    }
+
+    /// RED antes de CL-199 (N25): `execute_order_payload` (piernas del
+    /// vigilante y de la OCO, GTX, trailing) daba «Binance API Error: …» ante
+    /// un 5xx, un 408, un -1006/-1007 o un cuerpo ilegible, donde
+    /// `execute_order_payload_body` (y `_typed`, que delega en él) marcan
+    /// AMBIGUOUS: el mismo envío tenía dos clasificaciones. Ahora el texto de
+    /// las dos es el mismo, con su cabecera.
+    #[tokio::test]
+    async fn cl199_los_envios_de_orden_marcan_igual() {
+        for (caso, wire) in ambiguos() {
+            let simple = error_ante(0, wire.clone()).await;
+            let cuerpo = error_ante(1, wire.clone()).await;
+            let tipado = error_ante(2, wire).await;
+            for (nombre, e) in [("_payload", &simple), ("_body", &cuerpo), ("_typed", &tipado)] {
+                assert!(e.as_ref().is_some_and(|e| e.starts_with("AMBIGUOUS: HTTP ")), "{caso} {nombre}: {e:?}");
+                assert_eq!(e.as_ref().and_then(|e| e.limites().weight_1m), Some(777), "{caso} {nombre}");
+            }
+            assert_eq!(
+                simple.as_ref().map(|e| e.to_string()),
+                cuerpo.as_ref().map(|e| e.to_string()),
+                "{caso}: una sola clasificación"
+            );
+        }
+    }
+
+    /// El rechazo firme de un envío de orden no cambia (verde antes y después
+    /// de CL-199): lo leen `pierna_ya_existe` (-4116), el reintento -2021 del
+    /// vigilante y `protection_health`.
+    #[tokio::test]
+    async fn cl199_el_rechazo_firme_del_envio_de_orden_no_cambia() {
+        let cab = "X-MBX-USED-WEIGHT-1M: 777\r\n";
+        for cuerpo in [
+            r#"{"code":-2021,"msg":"Order would immediately trigger."}"#,
+            r#"{"code":-4116,"msg":"ClientOrderId is duplicated."}"#,
+            r#"{"code":-4164,"msg":"Order's notional must be no smaller than 5."}"#,
+            "<html>forbidden</html>",
+        ] {
+            let estado = if cuerpo.starts_with('<') { "403 Forbidden" } else { "400 Bad Request" };
+            let e = error_ante(0, respuesta(estado, cab, cuerpo)).await;
+            assert_eq!(e.as_ref().map(|e| e.to_string()), Some(format!("Binance API Error: {cuerpo}")));
+            assert_eq!(e.and_then(|e| e.limites().weight_1m), Some(777), "{cuerpo}");
+        }
+    }
+
+    /// RED antes de CL-199 (N25): con el error REAL de `execute_order_payload`
+    /// (el de `place_algo_leg`), un 5xx con código JSON (-1001, -1008) de una
+    /// pierna del vigilante contaba como rechazo del exchange
+    /// (`protection_health::note_rejection`) y alimentaba la escalada B3.5b a
+    /// cierre de emergencia, contra su contrato («un fallo de red o estado
+    /// transitorio no escala»); y `error_cierra_la_intencion` cerraba una
+    /// intención que pudo ejecutarse. El rechazo firme sigue contando.
+    #[tokio::test]
+    async fn cl199_un_5xx_de_una_pierna_no_cuenta_como_rechazo() {
+        for estado in ["500 Internal Server Error", "502 Bad Gateway", "503 Service Unavailable", "504 Gateway Timeout"] {
+            for codigo in [-1001, -1008] {
+                let cuerpo = format!(r#"{{"code":{codigo},"msg":"x"}}"#);
+                let e = error_ante(0, respuesta(estado, "", &cuerpo)).await;
+                assert!(e.is_some(), "{estado} {codigo}");
+                let Some(e) = e else { continue };
+                let simbolo = format!("CL199_{}_{}_USDT", &estado[..3], -codigo);
+                let antes = quantum_arena::protection_health::rejections_of(&simbolo);
+                assert!(!quantum_arena::protection_health::note_rejection(&simbolo, &e), "{estado} {codigo}: «{e}»");
+                assert_eq!(quantum_arena::protection_health::rejections_of(&simbolo), antes);
+                assert!(!crate::ioc_evidence::error_cierra_la_intencion(&e), "{estado} {codigo}: «{e}»");
+            }
+        }
+        let e = error_ante(0, respuesta("400 Bad Request", "", r#"{"code":-4164,"msg":"x"}"#)).await;
+        assert!(e.as_ref().is_some_and(|e| quantum_arena::protection_health::note_rejection("CL199_FIRME_USDT", e)), "{e:?}");
+        assert!(e.is_some_and(|e| crate::ioc_evidence::error_cierra_la_intencion(&e)));
     }
 
     /// RV21-T (revisión de CL-196): las dos ramas AMBIGUOUS de
