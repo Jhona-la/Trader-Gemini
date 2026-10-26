@@ -1756,16 +1756,55 @@ impl OrderExecutor {
                 // que ya lleva la cabecera de la primera respuesta (CL-196);
                 // antes sólo miraba el freno y salía en la franja del 80 % o
                 // sin hueco crítico. Su plaza sigue siendo la de la primera.
-                if cupo.readmitir(self.get_synced_timestamp()).is_ok() {
+                let ahora = self.get_synced_timestamp();
+                if cupo.readmitir(ahora).is_ok() {
+                    // N41 b (CL-204): firmado de nuevo con la hora de ahora.
+                    let refirmada = self.refirmar(url, ahora);
                     res = self
                         .client
-                        .get_payload_with_timeout(url, Some(std::time::Duration::from_secs(5)))
+                        .get_payload_with_timeout(
+                            refirmada.as_deref().unwrap_or(url),
+                            Some(std::time::Duration::from_secs(5)),
+                        )
                         .await
                         .map_err(|e| cupo.registrar_fallo(&e));
                 }
             }
         }
         res
+    }
+
+    /// N41 b (CL-204): la URL firmada `url` con `timestamp` = `ahora` y su
+    /// firma nueva. El reintento de get_payload_account salía con la misma
+    /// URL: tras un plazo de 5 s agotado, su hora ya había pasado el
+    /// recvWindow (5 s por defecto; ninguna petición manda otro), y el
+    /// exchange la rechazaba con -1021, que tapaba la causa (como la D-02 de
+    /// los reintentos de pierna). None si la URL no trae un `timestamp=` de
+    /// cifras y una firma al final; entonces sale la misma, como antes.
+    fn refirmar(&self, url: &str, ahora: u64) -> Option<String> {
+        let inicio = url.find('?')? + 1;
+        let fin = url.rfind("&signature=")?;
+        let consulta = url.get(inicio..fin)?;
+        let mut hallada = false;
+        let partes: Vec<String> = consulta
+            .split('&')
+            .map(|p| match p.strip_prefix("timestamp=") {
+                Some(cifras) if !hallada && !cifras.is_empty() && cifras.bytes().all(|b| b.is_ascii_digit()) => {
+                    hallada = true;
+                    format!("timestamp={ahora}")
+                }
+                _ => p.to_string(),
+            })
+            .collect();
+        if !hallada {
+            return None;
+        }
+        let consulta = partes.join("&");
+        let mut firma = [0u8; 64];
+        let api_secret = self.api_secret.load();
+        sign_payload_to_buffer(&consulta, &api_secret, &mut firma);
+        let firma = std::str::from_utf8(&firma).ok()?;
+        Some(format!("{}{}&signature={}", url.get(..inicio)?, consulta, firma))
     }
 
     pub async fn fetch_all_symbol_filters(
@@ -7292,6 +7331,96 @@ mod tests_n23 {
         assert_eq!(peso(&ex), 2_300);
     }
 
+    /// Como `respuestas`, y guarda la línea de cada petición.
+    async fn respuestas_anotadas(
+        wires: Vec<String>,
+    ) -> Option<(String, Arc<std::sync::Mutex<Vec<String>>>, tokio::task::JoinHandle<()>)> {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        let oyente = tokio::net::TcpListener::bind("127.0.0.1:0").await.ok()?;
+        let base = format!("http://{}", oyente.local_addr().ok()?);
+        let lineas = Arc::new(std::sync::Mutex::new(Vec::new()));
+        let anotadas = Arc::clone(&lineas);
+        let servidor = tokio::spawn(async move {
+            for wire in wires {
+                let Ok((mut s, _)) = oyente.accept().await else { return };
+                let mut peticion = [0u8; 4096];
+                let n = s.read(&mut peticion).await.unwrap_or(0);
+                let texto = String::from_utf8_lossy(&peticion[..n]);
+                let linea = texto.lines().next().unwrap_or("").to_string();
+                anotadas.lock().unwrap_or_else(std::sync::PoisonError::into_inner).push(linea);
+                let _ = s.write_all(wire.as_bytes()).await;
+                let _ = s.shutdown().await;
+            }
+        });
+        Some((base, lineas, servidor))
+    }
+
+    /// La consulta firmada con la clave de `ex()`, como la firman los lectores.
+    fn firmada(consulta: &str) -> String {
+        let mut firma = [0u8; 64];
+        sign_payload_to_buffer(consulta, "s", &mut firma);
+        format!("{consulta}&signature={}", String::from_utf8_lossy(&firma))
+    }
+
+    /// RED antes de CL-204 (N41 b): el reintento de get_payload_account salía
+    /// con la misma URL firmada. Tras un plazo de 5 s agotado su hora ya pasó
+    /// el recvWindow (5 s por defecto) y el exchange la rechaza con -1021. El
+    /// reintento lleva la hora de ahora y la firma de esa consulta; lo demás,
+    /// igual y en el mismo orden.
+    #[tokio::test]
+    async fn cl204_el_reintento_de_cuenta_sale_firmado_de_nuevo() {
+        let servido = respuestas_anotadas(vec![
+            respuesta("500 Internal Server Error", "", "{}"),
+            respuesta("200 OK", "", "[]"),
+        ])
+        .await;
+        assert!(servido.is_some(), "servidor local");
+        let Some((base, lineas, servidor)) = servido else { return };
+        let ex = ex();
+        let vieja = ex.get_synced_timestamp().saturating_sub(6_000);
+        let url = format!("{base}/fapi/v2/positionRisk?{}", firmada(&format!("symbol=BTCUSDT&timestamp={vieja}")));
+        let cupo = ex.check_exit_rate_limits(ex.get_synced_timestamp(), PR);
+        assert!(cupo.is_ok(), "{cupo:?}");
+        let Ok(cupo) = cupo else { return };
+        let r = tokio::time::timeout(std::time::Duration::from_secs(30), ex.get_payload_account(&url, &cupo)).await;
+        servidor.abort();
+        assert!(matches!(r, Ok(Ok((_, ref cuerpo))) if cuerpo == "[]"), "{r:?}");
+        let lineas = lineas.lock().unwrap_or_else(std::sync::PoisonError::into_inner).clone();
+        assert_eq!(lineas.len(), 2, "{lineas:?}");
+        let ruta = |l: &str| l.split(' ').nth(1).unwrap_or("").to_string();
+        assert_eq!(ruta(&lineas[0]), url.trim_start_matches(&base), "la primera sale tal cual");
+        let segunda = ruta(&lineas[1]);
+        let consulta = segunda.trim_start_matches("/fapi/v2/positionRisk?");
+        let sin_firma = consulta.split("&signature=").next().unwrap_or("");
+        let hora: u64 = sin_firma
+            .strip_prefix("symbol=BTCUSDT&timestamp=")
+            .and_then(|t| t.parse().ok())
+            .unwrap_or(0);
+        assert!(hora >= vieja + 6_000, "«{segunda}»: la hora de ahora");
+        assert_eq!(consulta, firmada(sin_firma), "«{segunda}»: firma de la consulta nueva");
+    }
+
+    /// CL-204: `refirmar` sólo cambia la hora y la firma, y no toca una URL
+    /// que no sabe firmar (entonces el reintento sale con la misma).
+    #[test]
+    fn cl204_refirmar_solo_cambia_la_hora_y_la_firma() {
+        let ex = ex();
+        let url = format!("http://h/fapi/v1/income?{}", firmada("incomeType=FUNDING_FEE&timestamp=1&limit=1000"));
+        assert_eq!(
+            ex.refirmar(&url, 42).as_deref(),
+            Some(format!("http://h/fapi/v1/income?{}", firmada("incomeType=FUNDING_FEE&timestamp=42&limit=1000")).as_str())
+        );
+        for sin in [
+            "http://h/fapi/v2/positionRisk",
+            "http://h/fapi/v2/positionRisk?timestamp=1",
+            "http://h/fapi/v2/positionRisk?symbol=X&signature=ab",
+            "http://h/fapi/v2/positionRisk?timestamp=&signature=ab",
+            "http://h/fapi/v2/positionRisk?timestamp=1a&signature=ab",
+            "http://h/fapi/v2/positionRisk?xtimestamp=1&signature=ab",
+        ] {
+            assert_eq!(ex.refirmar(sin, 42), None, "{sin}");
+        }
+    }
 }
 
 #[cfg(test)]
