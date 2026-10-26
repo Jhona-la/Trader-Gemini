@@ -66,7 +66,9 @@ fn n32_tras_la_entrada_todo_pasa_por_la_limpieza() {
     let limpieza = SONDA.find("// 7. Limpieza total").unwrap_or(0);
     assert!(bloque < entrada && entrada < limpieza, "bloque, entrada y limpieza en ese orden");
     let tramo = SONDA.get(bloque..limpieza).unwrap_or("return");
-    assert!(!tramo.contains("return"), "{tramo}");
+    for salida in ["return", "process::exit", "process::abort"] {
+        assert!(!tramo.contains(salida), "{salida}: {tramo}");
+    }
     assert_eq!(SONDA.matches(".flatten_all_positions()").count(), 2, "estado previo y limpieza");
     // RV24-T: el bloque cierra antes de la limpieza y todas sus salidas están
     // dentro; si no, una limpieza movida dentro del bloque pasaba la guarda.
@@ -93,17 +95,23 @@ fn n32_la_limpieza_dice_su_error() {
 /// abierta aunque el freno venciera a los dos segundos; y el aplanado sólo
 /// avisa de una purga fallida, que se leía como «órdenes purgadas». La
 /// limpieza repite el aplanado mientras el freno lo rechace (con los textos
-/// de `FrenoExchange::comprobar`) y lee las órdenes que queden del símbolo.
+/// de `FrenoExchange::comprobar`) y lee las órdenes que queden del símbolo,
+/// también tras el freno (RV25: un 429 de la purga lo arma y las lecturas
+/// salían rechazadas).
 #[test]
 fn cl207_la_limpieza_espera_al_freno_y_lee_lo_que_queda() {
-    let limpieza = produccion().split("// 7. Limpieza total").nth(1).unwrap_or("");
-    let repite = limpieza.find("loop {").unwrap_or(usize::MAX);
-    let aplana = limpieza.find(".flatten_all_positions()").unwrap_or(0);
-    assert!(repite < aplana, "el aplanado va dentro del bucle");
-    assert!(limpieza.contains("espera_del_freno_ms(e)"), "{limpieza}");
+    let codigo = produccion();
+    let ayuda = codigo.split("async fn tras_el_freno").nth(1).unwrap_or("");
+    let ayuda = ayuda.split("\n}\n").next().unwrap_or("");
+    assert!(ayuda.contains("loop {") && ayuda.contains("espera_del_freno_ms(e)"), "{ayuda}");
+    let limpieza = codigo.split("// 7. Limpieza total").nth(1).unwrap_or("");
     assert!(!limpieza.contains("órdenes purgadas\""), "{limpieza}");
-    for lectura in [".fetch_open_orders(&symbol)", ".fetch_open_algo_orders(&symbol)"] {
-        assert!(limpieza.contains(lectura), "{lectura}");
+    for llamada in [
+        "tras_el_freno(&mut esperado_ms, || exec.flatten_all_positions())",
+        "tras_el_freno(&mut esperado_ms, || exec.fetch_open_orders(&symbol))",
+        "tras_el_freno(&mut esperado_ms, || exec.fetch_open_algo_orders(&symbol))",
+    ] {
+        assert!(limpieza.contains(llamada), "{llamada}");
     }
     for texto in [
         "\"RATE_BRAKE: freno temporal activo hasta {} (ahora {})\"",

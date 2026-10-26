@@ -36,15 +36,20 @@ fn truncate_str(s: &str, max: usize) -> String {
     }
 }
 
-/// N32 (CL-207): la espera máxima del paso 7 a que venza el freno 429/418.
+/// N32 (CL-207): la suma máxima de lo que el paso 7 espera al freno
+/// 429/418: lo que dura el baneo de un 418 sin Retry-After (300 s,
+/// `classify_rate_limit_or_ban` en client.rs), sin contar los márgenes.
 const ESPERA_MAXIMA_MS: u64 = 300_000;
 
+/// Lo que se duerme de más tras el `hasta` del freno, para no pedir justo
+/// en el borde.
+const MARGEN_MS: u64 = 250;
+
 /// N32 (CL-207): lo que falta para que venza el freno 429/418 del ejecutor
-/// (más 250 ms) cuando `e` es su rechazo local, que no envía nada:
-/// «RATE_BRAKE: freno temporal activo hasta H (ahora A)» o
-/// «RATE_LIMIT_COOLDOWN: activo hasta H (ahora A)» (client.rs). None con
-/// cualquier otro error, que no se repite: cada aplanado barre todos los
-/// símbolos de la cuenta.
+/// cuando `e` es su rechazo local, que no envía nada: «RATE_BRAKE: freno
+/// temporal activo hasta H (ahora A)» o «RATE_LIMIT_COOLDOWN: activo hasta
+/// H (ahora A)» (client.rs). None con cualquier otro error, que no se
+/// repite: cada aplanado barre todos los símbolos de la cuenta.
 fn espera_del_freno_ms(e: &str) -> Option<u64> {
     if !(e.starts_with("RATE_BRAKE:") || e.starts_with("RATE_LIMIT_COOLDOWN:")) {
         return None;
@@ -52,7 +57,36 @@ fn espera_del_freno_ms(e: &str) -> Option<u64> {
     let cifra = |tras: &str| -> Option<u64> {
         e.split(tras).nth(1)?.split(|c: char| !c.is_ascii_digit()).next()?.parse().ok()
     };
-    Some(cifra("hasta ")?.saturating_sub(cifra("(ahora ")?).saturating_add(250))
+    Some(cifra("hasta ")?.saturating_sub(cifra("(ahora ")?))
+}
+
+/// N32 (CL-207): `intento` repetido mientras el freno 429/418 lo rechace en
+/// local, cuando vence, sin pasar de ESPERA_MAXIMA_MS en toda la limpieza
+/// (`esperado_ms` la acumula).
+async fn tras_el_freno<T, F, Fut>(esperado_ms: &mut u64, mut intento: F) -> Result<T, String>
+where
+    F: FnMut() -> Fut,
+    Fut: std::future::Future<Output = Result<T, String>>,
+{
+    loop {
+        let r = intento().await;
+        match r.as_ref().err().and_then(|e| espera_del_freno_ms(e)) {
+            Some(ms) if esperado_ms.saturating_add(ms) <= ESPERA_MAXIMA_MS => {
+                *esperado_ms = esperado_ms.saturating_add(ms);
+                println!("[7] freno 429/418 activo: repito en {} ms", ms.saturating_add(MARGEN_MS));
+                tokio::time::sleep(std::time::Duration::from_millis(ms.saturating_add(MARGEN_MS))).await;
+            }
+            _ => break r,
+        }
+    }
+}
+
+/// Lo leído de una lista de órdenes, para el paso 7.
+fn leida(r: &Result<usize, String>) -> String {
+    match r {
+        Ok(n) => n.to_string(),
+        Err(e) => format!("sin leer ({})", truncate_str(e, 120)),
+    }
 }
 
 /// Microsegundos desde la época para los ids de la sonda; 0 con un reloj
@@ -201,36 +235,25 @@ async fn main() {
     // cancelaciones aceptadas (hasta dos por símbolo) se contaban como
     // posiciones cerradas. CL-207: el aplanado que rechaza el freno 429/418
     // (un 429 en el paso 4 lo arma) se repite cuando vence, y una purga
-    // fallida, que el aplanado sólo avisa, se comprueba leyendo las órdenes.
+    // fallida, que el aplanado sólo avisa, se comprueba leyendo las órdenes
+    // (también tras el freno: un 429 de la purga lo arma).
     if let Err(e) = exec.cancel_all_symbol_orders(&symbol).await {
         println!("[7] ⚠️ cancelación previa de {}: {}", symbol, truncate_str(&e, 200));
     }
     let mut esperado_ms: u64 = 0;
-    let limpieza = loop {
-        let intento = exec.flatten_all_positions().await;
-        match intento.as_ref().err().and_then(|e| espera_del_freno_ms(e)) {
-            Some(ms) if esperado_ms.saturating_add(ms) <= ESPERA_MAXIMA_MS => {
-                esperado_ms = esperado_ms.saturating_add(ms);
-                println!("[7] freno 429/418 activo: repito la limpieza en {} ms", ms);
-                tokio::time::sleep(std::time::Duration::from_millis(ms)).await;
-            }
-            _ => break intento,
-        }
-    };
-    match limpieza {
+    match tras_el_freno(&mut esperado_ms, || exec.flatten_all_positions()).await {
         Ok((_, cerradas)) => {
             println!("[7] limpieza: {} posiciones cerradas", cerradas);
-            match (exec.fetch_open_orders(&symbol).await, exec.fetch_open_algo_orders(&symbol).await) {
-                (Ok(o), Ok(a)) if o.is_empty() && a.is_empty() => println!("[7] {} sin órdenes abiertas", symbol),
-                (Ok(o), Ok(a)) => println!(
-                    "[7] ❌ quedan {} órdenes y {} órdenes algo abiertas en {} — revisar la cuenta a mano",
-                    o.len(),
-                    a.len(),
-                    symbol
+            let ordenes = tras_el_freno(&mut esperado_ms, || exec.fetch_open_orders(&symbol)).await.map(|o| o.len());
+            let algo = tras_el_freno(&mut esperado_ms, || exec.fetch_open_algo_orders(&symbol)).await.map(|a| a.len());
+            match (&ordenes, &algo) {
+                (Ok(0), Ok(0)) => println!("[7] {} sin órdenes abiertas", symbol),
+                _ => println!(
+                    "[7] ❌ órdenes de {} sin confirmar a cero: normales {}, algo {} — revisar la cuenta a mano",
+                    symbol,
+                    leida(&ordenes),
+                    leida(&algo)
                 ),
-                (Err(e), _) | (_, Err(e)) => {
-                    println!("[7] ⚠️ no se pudieron leer las órdenes de {}: {}", symbol, truncate_str(&e, 200))
-                }
             }
         }
         Err(e) => println!(
@@ -259,9 +282,13 @@ mod tests {
     /// 429 que sí salió o un aplanado incompleto no se repiten.
     #[test]
     fn cl207_la_espera_sale_del_freno() {
-        assert_eq!(espera_del_freno_ms("RATE_BRAKE: freno temporal activo hasta 5000 (ahora 1000)"), Some(4_250));
-        assert_eq!(espera_del_freno_ms("RATE_LIMIT_COOLDOWN: activo hasta 2000 (ahora 1500)"), Some(750));
-        assert_eq!(espera_del_freno_ms("RATE_LIMIT_COOLDOWN: activo hasta 1000 (ahora 1500)"), Some(250));
+        assert_eq!(espera_del_freno_ms("RATE_BRAKE: freno temporal activo hasta 5000 (ahora 1000)"), Some(4_000));
+        assert_eq!(espera_del_freno_ms("RATE_LIMIT_COOLDOWN: activo hasta 2000 (ahora 1500)"), Some(500));
+        assert_eq!(espera_del_freno_ms("RATE_LIMIT_COOLDOWN: activo hasta 1000 (ahora 1500)"), Some(0));
+        // RV25: el baneo por defecto de un 418 (300 s) cabe en la espera
+        // máxima aunque se mida unos milisegundos tarde.
+        let ban = espera_del_freno_ms("RATE_BRAKE: freno temporal activo hasta 300002 (ahora 2)");
+        assert!(ban.is_some_and(|ms| ms <= super::ESPERA_MAXIMA_MS), "{ban:?}");
         for otro in [
             "HTTP_429_RATE_LIMITED retry_after=2",
             "FLATTEN_INCOMPLETE: SOLUSDT",
