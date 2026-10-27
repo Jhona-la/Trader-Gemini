@@ -235,7 +235,7 @@ pub struct IncomeEntry {
     pub symbol: String,
     #[serde(rename = "incomeType", default)]
     pub income_type: String,
-    #[serde(deserialize_with = "string_or_f64", default)]
+    #[serde(deserialize_with = "string_or_f64")]
     pub income: f64,
     #[serde(default)]
     pub asset: String,
