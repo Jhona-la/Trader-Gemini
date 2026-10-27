@@ -7,6 +7,16 @@
 
 Este es el plan canónico de coordinación. Los planes de líneas aportan detalle, no fuentes paralelas de verdad. `AGENT_SYNC.md` contiene reservas y heartbeats; `.agents/MEMORIA.md` conserva los recibos de cierre.
 
+## Corte 2026-10-27 — Kimi Quant Sr V34, nueva revisión desde la base
+
+**Base comprobada:** `main = origin/main = d2759073937585474a14d2f688687c9ba5746e7e`; el remoto solo contiene `main`. Las ramas locales `claude/linea-g-ola10` y `claude/linea-i-i6` conservan trabajo no fusionado y no se borran. El checkout mezcla WIP de varias sesiones: se integran átomos selectivos, nunca el lote completo.
+
+**Bloqueos heredados que no se relajan:** T1 continúa bajo `0.110/144`; el canario Risk incumple `10000 ns`; P1 snapshot/época/capital/readiness y CL88 permanecen abiertos. El último CI de código observado es `0fc932957dd40766416e93f6e83fe4c74e5750c2` con Unit `40265314105` y Replay `40265314104` en SUCCESS; ese verde no se transfiere a otro sujeto.
+
+**Hallazgos estáticos nuevos, todavía no certificados por runtime:** `IncomeEntry` fabrica fee cero si falta `income`; la cuarentena de income puede perderse al consumir una ventana agotada; UDS mezcla comisión ausente/moneda distinta; la EWMA de riesgo excluye fricción; el MMR usa respaldo ficticio sin productor; el pre-screen evolutivo normaliza con volatilidad OOS futura; un `Option` de cierre por moneda pierde ráfagas; gross/MTM y funding requieren reconciliación contable. Cada hallazgo se atacará con un contrato RED→GREEN y un propietario separado.
+
+**Primer átomo local verificado; publicación bloqueada (Kimi V34):** commit local `13fca0978fa1521f918b2013d486b15b3ff84b58`, limitado a `crates/execution-engine/src/order_types.rs` + nuevo `crates/execution-engine/tests/income_required_field_contract.rs`. Ausencia de `income` se rechaza; cero explícito y rebates se conservan. Evidencia: RED inicial esperado, GREEN 1/1, toda execution-engine 441 PASS/0 FAIL (5 Testnet ignorados por credenciales), Clippy del átomo PASS, formato protegido 589 targets/4 lotes PASS y revisor independiente sin Critical/Important. `origin/main` permanece en `d27590739`; no hubo push ni CI nuevo. La aduana exige attestation de seis fases y el HEAD base no supera Clippy/formato obligatorios; el WIP correctivo pertenece a QRA y no se incluirá artificialmente en el átomo. Esperar baseline QRA, no `--no-verify`. Después siguen, en orden: cobertura/cuarentena de income, moneda/ausencia en UDS, fricción en EWMA, MMR real, recibos brutos/funding, ráfagas de cierres y anti-leakage OOS. No se añaden teorías sin insumo, consumidor y ablación OOS.
+
 ## 0. Contrato de admisión y de no degradación
 
 Todo átomo debe responder antes de editar:
