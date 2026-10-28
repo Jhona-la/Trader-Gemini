@@ -15,14 +15,14 @@ set -uo pipefail
 # válidos del llamador y recurre a GNU únicamente si falta una herramienta.
 for herramienta in df du sort find; do
   version=$("$herramienta" --version 2>/dev/null)
-  if [[ "$version" != *GNU* ]] && [ -d /usr/bin ]; then
+  if [[ "$version" != *GNU* ]] && [[ "$version" != *uutils* ]] && [ -d /usr/bin ]; then
     PATH="/usr/bin:/bin:$PATH"
     break
   fi
 done
 for herramienta in df du sort find; do
   version=$("$herramienta" --version 2>/dev/null)
-  if [[ "$version" != *GNU* ]]; then
+  if [[ "$version" != *GNU* ]] && [[ "$version" != *uutils* ]]; then
     echo "[disk_audit] falta $herramienta de GNU: medición desconocida" >&2
     exit 2
   fi

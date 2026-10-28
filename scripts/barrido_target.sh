@@ -99,7 +99,7 @@ fi
 # viven en /usr/bin y deben ganar.
 for herramienta in find awk sort; do
   version=$("$herramienta" --version 2> /dev/null)
-  if [[ "$version" != *GNU* ]] && [ -d /usr/bin ]; then
+  if [[ "$version" != *GNU* ]] && [[ "$version" != *uutils* ]] && [ -d /usr/bin ]; then
     PATH="/usr/bin:/bin:$PATH"
     break
   fi
@@ -108,7 +108,7 @@ for herramienta in find awk sort; do
   # Capturar antes de comparar: con pipefail, `| grep -q` puede dar un falso
   # negativo por SIGPIPE cuando grep sale antes que el productor.
   version=$("$herramienta" --version 2> /dev/null)
-  if [[ "$version" != *GNU* ]]; then
+  if [[ "$version" != *GNU* ]] && [[ "$version" != *uutils* ]]; then
     echo "[barrido] falta $herramienta de GNU en el PATH: no barro" >&2
     exit 2
   fi

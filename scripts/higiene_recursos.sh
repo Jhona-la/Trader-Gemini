@@ -31,14 +31,14 @@ set -uo pipefail
 
 for herramienta in find du sort df; do
   version=$("$herramienta" --version 2>/dev/null)
-  if [[ "$version" != *GNU* ]] && [ -d /usr/bin ]; then
+  if [[ "$version" != *GNU* ]] && [[ "$version" != *uutils* ]] && [ -d /usr/bin ]; then
     PATH="/usr/bin:/bin:$PATH"
     break
   fi
 done
 for herramienta in find du sort df; do
   version=$("$herramienta" --version 2>/dev/null)
-  if [[ "$version" != *GNU* ]]; then
+  if [[ "$version" != *GNU* ]] && [[ "$version" != *uutils* ]]; then
     echo "[higiene] falta $herramienta de GNU: no limpio" >&2
     exit 2
   fi
