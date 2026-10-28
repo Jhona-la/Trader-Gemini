@@ -131,11 +131,11 @@ fn c4_koopman_spectral_exposure_budget_continuity() {
     assert!(budget_chaotic <= capital * 0.25);
 
     // El techo vivo del host (max_leverage_spectral, N_max/C sin coste) se
-    // atenúa con la misma fracción.
+    // atenúa con la misma fracción (mismos bif ≡ |λ| del productor, LG-31).
     let (lev_stable, ok_stable) =
-        env.max_leverage_spectral(capital, stop_pct, 5.0, 1.64, 10.0, 0.95, 0.05);
+        env.max_leverage_spectral(capital, stop_pct, 5.0, 1.64, 10.0, 0.95, 0.95);
     let (lev_chaotic, ok_chaotic) =
-        env.max_leverage_spectral(capital, stop_pct, 5.0, 1.64, 10.0, 1.30, 0.35);
+        env.max_leverage_spectral(capital, stop_pct, 5.0, 1.64, 10.0, 1.30, 1.30);
     assert!(ok_stable && ok_chaotic);
     assert_eq!(lev_stable, f_stable / stop_pct);
     assert_eq!(lev_chaotic, f_chaotic / stop_pct);
