@@ -18,6 +18,7 @@
 | `/fapi/v2/positionRisk` | GET | 5 | Reconciliación de posiciones | executor.rs fetch_position_risk |
 | `/fapi/v2/account` | GET | 5 | Estado completo de cuenta | fetch_account_balance |
 | `/fapi/v1/commissionRate` | GET | 1 | Fees reales de LA cuenta (paridad fees) | fetch_commission_rate |
+| `/fapi/v1/leverageBracket` | GET | 1 | Evidencia completa por símbolo y cuenta (A4): `bracket`, `initialLeverage`, `notionalFloor`, `notionalCap`, `maintMarginRatio` y `notionalCoef`; OMS selecciona el tier por nocional vivo post-orden y exige `leverage <= tier.initial_leverage`. `notionalCoef` escala floor+cap; MMR no es margen inicial. `fetch_leverage_evidence` usa parser estricto; `fetch_max_leverage` conserva parser A3. Permisos/firma/JSON reales: `unverified`. Candidato A4 re-revisado en staging: la cota taker viva no es reducible por request, toda posición abierta cuenta y `reserved_slot`/`reserved_generation` se retiran del contrato; batches parciales conservan evidencia. Instalación pendiente de gates de memoria. | executor.rs fetch_leverage_bracket_payload → fetch_leverage_evidence → host_oms.rs publish_leverage |
 | `/fapi/v1/exchangeInfo` | GET | 1 | tickSize/stepSize/filtros (cacheado exchange_info.json); tras una descarga fallida fuera del freno no sale otra en 60 s (CL-197) | fetch_exchange_info |
 | `/fapi/v1/leverage` | POST | 1 | Leverage por símbolo | set_leverage |
 | `/fapi/v1/marginType` | POST | 1 | Cross/Isolated | binance_api.rs |
@@ -31,6 +32,12 @@
 | `/fapi/v1/allOpenOrders` | DELETE | 1 (SUPUESTO) | Purga de órdenes normales de un símbolo | cancel_all_symbol_orders, aplanado |
 | `/fapi/v1/openOrders` | GET | 1 con símbolo / 40 sin él | Reconciliación OMS cada 60 s (`OmsSession::refresh`, sin símbolo) | fetch_all_open_orders, fetch_open_orders_inner |
 | `/fapi/v1/positionSide/dual` | GET/POST | 1 (ver nota) | Modo hedge (arranque, OmsSession::refresh cada 60 s, aplanado) | ensure_hedge_mode, fetch_hedge_mode |
+
+### Corte F0 de A4: comportamiento instalado frente a candidato
+
+- **Comportamiento instalado:** A4 original en diez rutas, con HEAD local `4d8db9a345bd1a78f3e479b5beba01bd0124fa3e` y `origin/main=9b2cde7c15eba058c67046317c22c1cfbc3f36c2`. `execution_evidence.rs`, `executor.rs` y `symbols.rs` no tienen delta revisado. La llamada autenticada, permisos, firma y JSON reales de `leverageBracket` continúan `unverified`.
+- **Candidato revisado no instalado:** siete rutas en `.agent_tx/staging/AGENT-01-live-red/` (`entry_dispatch.rs`, `entry_route_contract.rs`, `f325_min_notional_ioc_open_diagnostics.rs`, `symbol_registry.rs`, `god_engine.rs`, `host_oms.rs` y `host_oms_contract.rs`). La cota taker no reducible, el cómputo de toda posición abierta y la conservación de batches parciales pertenecen a este candidato; `reserved_slot`/`reserved_generation` no forman parte del contrato instalado nuevo ni se promocionan desde este corte.
+- **Propiedad y evidencia:** las rutas, hashes y acciones permitidas están en `AGENT_SYNC.md` §0A. Las 498 pruebas y los estados `FUSIONADO`/`CERRADO` son históricos no operativos para este árbol; no certifican el candidato, una llamada real, Demo ni Producción. No se ejecutó purga ni se tocó el lease QRA.
 
 > N5 (CL-179): sólo los pesos de las peticiones críticas son costes del
 > ejecutor (`CosteBinance` en binance_api.rs): order POST/GET/DELETE,
@@ -60,7 +67,6 @@
 | `/fapi/v1/userTrades` | 5 | Historial de fills CON comisión exacta → Fee Slayer métricas reales |
 | `/fapi/v1/income` | 20 | PnL, comisiones, funding pagado/cobrado — la VERDAD de "cuánto pagamos" (directiva de informes pre/post fees) |
 | `/fapi/v1/fundingRate` + `/fapi/v1/premiumIndex` | 1 | Funding actual y previsto → feature de decisión + costo de carry |
-| `/fapi/v1/leverageBracket` | 1 | Caps de leverage/notional por símbolo (input de Kelly bayesiano F4.4) |
 | `/fapi/v1/openInterest` + `/futures/data/openInterestHist` | 1/1 | Sentimiento de posicionamiento (feature) |
 | `/futures/data/topLongShortAccountRatio` etc. | 1 | Flujos retail vs whales (dark alpha) |
 | `/fapi/v1/depth` | 2-20 | Libro completo (ya consumido por WS) |
