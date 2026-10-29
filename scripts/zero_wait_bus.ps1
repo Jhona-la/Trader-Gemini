@@ -553,7 +553,7 @@ function Test-BranchPurgeAdmission([string]$Branch, [string]$Tip, [string]$Fresh
     if (Test-LeaseOrReservation $Branch) { return $false }
     git merge-base --is-ancestor $Tip $FreshOriginMain 2>$null
     if ($LASTEXITCODE -ne 0) { return $false }
-    $exclusiveText = (git rev-list --count "${Tip}..${FreshOriginMain}").Trim()
+    $exclusiveText = (git rev-list --count "${FreshOriginMain}..${Tip}").Trim()
     Assert-ProcessSuccess "commits exclusivos de $Branch"
     [int64]$exclusive = 0
     if (-not [int64]::TryParse($exclusiveText, [ref]$exclusive)) { throw "Conteo exclusivo inválido para ${Branch}: $exclusiveText" }
@@ -635,7 +635,7 @@ switch ($Action) {
                 $currentRemote = @(git ls-remote --heads origin "refs/heads/$rbr")
                 Assert-ProcessSuccess "revalidar punta remota $rbr"
                 if ($currentRemote.Count -ne 1 -or ($currentRemote[0] -split '\s+')[0] -cne $tip) { throw "La rama origin/$rbr cambió antes del borrado." }
-                git push origin --delete $rbr
+                git push --force-with-lease="refs/heads/${rbr}:${tip}" origin --delete "$rbr"
                 Assert-ProcessSuccess "eliminación remota $rbr"
                 $deleted += "origin/$rbr"
             } else {

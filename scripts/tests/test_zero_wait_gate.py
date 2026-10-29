@@ -428,7 +428,7 @@ class ZeroWaitGateTests(unittest.TestCase):
         self.assertIn('$freshOriginMain = Get-FreshOriginMain', purge)
         self.assertEqual(purge.count('Test-BranchPurgeAdmission -Branch'), 2)
         self.assertIn('git merge-base --is-ancestor $Tip $FreshOriginMain', source)
-        self.assertIn('git rev-list --count "${Tip}..${FreshOriginMain}"', source)
+        self.assertIn('git rev-list --count "${FreshOriginMain}..${Tip}"', source)
         self.assertNotIn('git merge-base --is-ancestor $br main', source)
         self.assertNotIn('git merge-base --is-ancestor "origin/$rbr" main', source)
 
@@ -448,6 +448,7 @@ class ZeroWaitGateTests(unittest.TestCase):
         self.assertIn('mergeCommit', source)
         self.assertIn('MERGED', source)
         self.assertIn('git show -s --format=%P $mergeSha', source)
+        self.assertIn('git push --force-with-lease="refs/heads/${rbr}:${tip}" origin --delete "$rbr"', source)
 
     def test_a4_manifest_separates_original_ten_from_revised_seven(self):
         original = {
@@ -505,6 +506,211 @@ class ZeroWaitGateTests(unittest.TestCase):
             document = (SCRIPTS.parent / relative).read_text(encoding='utf-8-sig').lower()
             self.assertIn('comportamiento instalado', document)
             self.assertIn('candidato revisado no instalado', document)
+
+
+@unittest.skipUnless(os.name == 'nt' and shutil.which('pwsh'), 'Disposable PowerShell/Git E2E requires Windows')
+class PurgeBehaviorTests(unittest.TestCase):
+    EXTRACT_FUNCTIONS = r'''
+$tokens = $null
+$errors = $null
+$ast = [System.Management.Automation.Language.Parser]::ParseFile($args[0], [ref]$tokens, [ref]$errors)
+if ($errors.Count -gt 0) { throw ($errors | Out-String) }
+$names = @('Assert-ProcessSuccess', 'Get-FreshOriginMain', 'Test-WorktreeReservation', 'Test-LeaseOrReservation', 'Test-MergedBranchEvidence', 'Test-BranchPurgeAdmission')
+$functions = @($ast.FindAll({ param($node) $node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $names -contains $node.Name }, $false))
+if ($functions.Count -ne $names.Count) { throw "No se extrajeron todas las guardas de purga." }
+Write-Output (($functions | ForEach-Object { $_.Extent.Text }) -join "`n`n")
+'''
+
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory(prefix='zero-wait-purge-e2e-')
+        self.addCleanup(self.temp.cleanup)
+        self.base = Path(self.temp.name).resolve()
+        home = self.base / 'home'
+        home.mkdir()
+        config = home / 'gitconfig'
+        config.write_bytes(b'')
+        self.env = {k: v for k, v in os.environ.items() if not k.upper().startswith('GIT_')}
+        self.env.update(GIT_CONFIG_GLOBAL=str(config), GIT_CONFIG_NOSYSTEM='1', GIT_OPTIONAL_LOCKS='0',
+                        HOME=str(home), USERPROFILE=str(home), GIT_TERMINAL_PROMPT='0')
+        self.git_path = str(Path(shutil.which('git')).resolve())
+        self.pwsh_path = str(Path(shutil.which('pwsh')).resolve())
+        self.remote = self.base / 'remote.git'
+        self.seed = self.base / 'seed'
+        self.live = self.base / 'live'
+
+    def run_process(self, args, env=None):
+        return subprocess.run(args, env=env or self.env, capture_output=True, text=True,
+                              encoding='utf-8', errors='replace')
+
+    def git(self, repo, *args, check=True, env=None):
+        result = self.run_process([self.git_path, '--no-optional-locks', '-C', str(repo), *args], env=env)
+        if check and result.returncode != 0:
+            self.fail(f"git {' '.join(args)} failed\n{result.stdout}\n{result.stderr}")
+        return result
+
+    def put(self, path, content):
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(content, encoding='utf-8')
+
+    def config_repo(self, repo):
+        self.git(repo, 'config', 'user.email', 'fixture@example.invalid')
+        self.git(repo, 'config', 'user.name', 'DISPOSABLE PURGE E2E')
+        self.git(repo, 'config', 'core.autocrlf', 'false')
+        self.git(repo, 'config', 'core.fsmonitor', 'false')
+
+    def commit_file(self, repo, name, content, message):
+        self.put(repo / (name + '.txt'), content + '\n')
+        self.git(repo, 'add', name + '.txt')
+        self.git(repo, 'commit', '-qm', message)
+        return self.rev(repo, 'HEAD')
+
+    def rev(self, repo, ref):
+        return self.git(repo, 'rev-parse', ref).stdout.strip()
+
+    def init_pair(self):
+        self.git(self.base, 'init', '--bare', '-b', 'main', str(self.remote))
+        self.git(self.base, 'init', '-b', 'main', str(self.seed))
+        self.config_repo(self.seed)
+        self.commit_file(self.seed, 'baseline', 'baseline', 'baseline')
+        self.git(self.seed, 'remote', 'add', 'origin', str(self.remote))
+        self.git(self.seed, 'push', '-u', 'origin', 'main')
+
+    def clone_live(self):
+        self.git(self.base, 'clone', '--branch', 'main', str(self.remote), str(self.live))
+        self.config_repo(self.live)
+
+    def make_branch(self, name, mode='direct', push_branch=True):
+        self.git(self.seed, 'switch', '-c', name)
+        tip = self.commit_file(self.seed, name, name, 'commit ' + name)
+        self.git(self.seed, 'switch', 'main')
+        if mode == 'direct':
+            self.git(self.seed, 'merge', '--no-ff', name, '-m', 'merge ' + name)
+        elif mode == 'ff':
+            self.git(self.seed, 'merge', '--ff-only', name)
+            self.commit_file(self.seed, name + '-after', name + '-after', 'main after ' + name)
+        self.git(self.seed, 'push', 'origin', f'refs/heads/{name}:refs/heads/{name}') if push_branch else None
+        return tip
+
+    def ref_exists(self, repo, name):
+        return self.git(repo, 'show-ref', '--verify', '--quiet', 'refs/heads/' + name, check=False).returncode == 0
+
+    def run_purge(self, pr_tip, pr_merge, env_extra=None):
+        source_path = SCRIPTS / 'zero_wait_bus.ps1'
+        quoted_path = "'" + str(source_path).replace("'", "''") + "'"
+        extract_command = self.EXTRACT_FUNCTIONS.replace('$args[0]', quoted_path)
+        extracted = self.run_process([self.pwsh_path, '-NoProfile', '-Command', extract_command])
+        self.assertEqual(extracted.returncode, 0, extracted.stdout + extracted.stderr)
+        source = source_path.read_text(encoding='utf-8-sig')
+        body = source.split('"PurgeLegacyBranches" {', 1)[1].split('\n    }\n\n    "StageFiles" {', 1)[0]
+        harness = self.base / 'purge_harness.ps1'
+        harness.write_text(extracted.stdout + '\nfunction Invoke-BranchPurge {\n' + body + '\n}\n', encoding='utf-8')
+        runner = self.base / 'run_purge.ps1'
+        runner.write_text('''param([string]$HarnessPath, [string]$Root)
+$ErrorActionPreference = "Stop"
+. $HarnessPath
+$RepoRoot = $Root
+$TxRoot = Join-Path $Root ".agent_tx"
+Set-Location $RepoRoot
+function gh {
+    @{ state = "MERGED"; headRefOid = $env:E2E_PR_TIP; mergeCommit = @{ oid = $env:E2E_PR_MERGE } } | ConvertTo-Json -Depth 4 -Compress
+}
+Invoke-BranchPurge
+''', encoding='utf-8')
+        env = dict(self.env)
+        env.update(E2E_PR_TIP=pr_tip, E2E_PR_MERGE=pr_merge)
+        if env_extra:
+            env.update(env_extra)
+        return self.run_process([self.pwsh_path, '-NoProfile', '-File', str(runner),
+                                 '-HarnessPath', str(harness), '-Root', str(self.live)], env=env)
+
+    def test_purge_e2e_admission_and_preservation_disposable_repo(self):
+        self.init_pair()
+        tips = {}
+        tips['merged-direct'] = self.make_branch('merged-direct')
+        tips['merged-pr'] = self.make_branch('merged-pr', mode='ff')
+        tips['merged-local'] = self.make_branch('merged-local', push_branch=False)
+        for name in ('attached', 'detached', 'leased', 'reserved'):
+            tips[name] = self.make_branch(name)
+        tips['unmerged'] = self.make_branch('unmerged', mode=None)
+        self.git(self.seed, 'push', 'origin', 'main')
+        origin_main = self.rev(self.seed, 'HEAD')
+        self.clone_live()
+        for name in ('merged-direct', 'merged-pr', 'attached', 'detached', 'leased', 'reserved', 'unmerged'):
+            self.git(self.live, 'branch', name, 'origin/' + name)
+        self.git(self.live, 'branch', 'merged-local', tips['merged-local'])
+        self.git(self.live, 'switch', '-c', 'stale-remote')
+        tips['stale-remote'] = self.commit_file(self.live, 'stale-remote', 'stale-remote', 'local stale branch')
+        self.git(self.live, 'switch', 'main')
+        self.git(self.live, 'merge', '--no-ff', 'stale-remote', '-m', 'local-only merge absent from origin main')
+        self.git(self.live, 'push', 'origin', 'refs/heads/stale-remote:refs/heads/stale-remote')
+        stale_head = self.rev(self.live, 'HEAD')
+        self.git(self.live, 'worktree', 'add', str(self.base / 'attached-wt'), 'attached')
+        self.git(self.live, 'worktree', 'add', '--detach', str(self.base / 'detached-wt'), tips['detached'])
+        self.put(self.live / 'AGENT_SYNC.md', '''## 1. Registro de agentes
+| AGENTE | ESTADO | RAMA |
+| Lease Owner | ACTIVO | leased |
+
+## 2. Reglas
+''')
+        self.put(self.live / '.agent_tx/leases/reservation.json', '{"branch":"reserved"}\n')
+        result = self.run_purge(tips['merged-pr'], origin_main)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        for name in ('merged-direct', 'merged-pr', 'merged-local'):
+            self.assertFalse(self.ref_exists(self.live, name), name + ' local debía eliminarse')
+        for name in ('attached', 'detached', 'leased', 'reserved', 'unmerged', 'stale-remote'):
+            self.assertTrue(self.ref_exists(self.live, name), name + ' local debía preservarse')
+        for name in ('merged-direct', 'merged-pr'):
+            self.assertFalse(self.ref_exists(self.remote, name), name + ' remoto debía eliminarse')
+        for name in ('attached', 'detached', 'leased', 'reserved', 'unmerged', 'stale-remote'):
+            self.assertTrue(self.ref_exists(self.remote, name), name + ' remoto debía preservarse')
+        self.assertEqual(self.rev(self.live, 'HEAD'), stale_head)
+        self.assertEqual(self.rev(self.remote, 'refs/heads/main'), origin_main)
+        worktrees = self.git(self.live, 'worktree', 'list', '--porcelain').stdout
+        self.assertIn('attached-wt', worktrees)
+        self.assertIn('detached-wt', worktrees)
+
+    def test_purge_e2e_remote_delete_uses_expected_tip_lease(self):
+        self.init_pair()
+        old_tip = self.rev(self.seed, 'HEAD')
+        self.git(self.seed, 'branch', 'racer')
+        self.git(self.seed, 'push', 'origin', 'refs/heads/racer:refs/heads/racer')
+        self.clone_live()
+        self.commit_file(self.live, 'local-head', 'local-head', 'local head does not pin racer')
+        self.git(self.live, 'branch', 'racer', 'origin/racer')
+        self.put(self.live / 'AGENT_SYNC.md', '## 1. Registro\n\n## 2. Reglas\n')
+        self.put(self.live / '.agent_tx/leases/.keep', '')
+        wrapper_dir = self.base / 'wrapper'
+        wrapper_dir.mkdir()
+        wrapper_script = wrapper_dir / 'git_wrapper.py'
+        wrapper_script.write_text('''import json, os, subprocess, sys
+args = [arg.replace('{commit}', '^{commit}') for arg in sys.argv[1:]]
+with open(os.environ['E2E_GIT_LOG'], 'a', encoding='utf-8') as stream:
+    stream.write(json.dumps(args) + '\\n')
+real = os.environ['E2E_REAL_GIT']
+if args and args[0] == 'push' and '--delete' in args:
+    seed = os.environ['E2E_RACE_SEED']
+    branch = os.environ['E2E_RACE_BRANCH']
+    subprocess.run([real, '--no-optional-locks', '-C', seed, 'commit', '--allow-empty', '-m', 'remote advanced before delete'], check=True)
+    subprocess.run([real, '--no-optional-locks', '-C', seed, 'push', 'origin', 'HEAD:' + branch], check=True)
+completed = subprocess.run([real, '--no-optional-locks', *args])
+raise SystemExit(completed.returncode)
+''', encoding='utf-8')
+        command = wrapper_dir / 'git.cmd'
+        command.write_text(f'@echo off\r\n"{sys.executable}" "{wrapper_script}" %*\r\nexit /b %ERRORLEVEL%\r\n', encoding='utf-8')
+        log = self.base / 'git-argv.jsonl'
+        log.write_text('', encoding='utf-8')
+        env = {'PATH': str(wrapper_dir) + os.pathsep + self.env['PATH'],
+               'E2E_REAL_GIT': self.git_path, 'E2E_RACE_SEED': str(self.seed),
+               'E2E_RACE_BRANCH': 'racer', 'E2E_GIT_LOG': str(log)}
+        result = self.run_purge(old_tip, old_tip, env_extra=env)
+        pushes = [json.loads(line) for line in log.read_text(encoding='utf-8').splitlines() if line]
+        expected = ['push', f'--force-with-lease=refs/heads/racer:{old_tip}', 'origin', '--delete', 'racer']
+        self.assertIn(expected, pushes, result.stdout + result.stderr + '\n' + repr(pushes))
+        self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+        new_tip = self.rev(self.seed, 'HEAD')
+        self.assertNotEqual(new_tip, old_tip)
+        self.assertEqual(self.rev(self.remote, 'refs/heads/racer'), new_tip)
+        self.assertEqual(self.rev(self.remote, 'refs/heads/main'), old_tip)
 
 
 if __name__ == '__main__':
