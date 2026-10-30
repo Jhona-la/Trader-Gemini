@@ -3698,12 +3698,90 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         // Fecha del `active.json` que el bosque ya leyó: sólo se relee cuando
         // cambia (mismo filtro que `refresh_models` del núcleo). Se toma ANTES
         // de leer: una escritura entre medias se vuelve a leer, no se pierde.
-        let mut mtime_bosque = std::fs::metadata(quantum_arena::genome_store::active_json_path())
+        let mtime_bosque = std::fs::metadata(quantum_arena::genome_store::active_json_path())
             .and_then(|m| m.modified())
             .ok();
         if let Some(env) = quantum_arena::genome_store::GenomeEnvelope::load_active() {
             shadow_forest.seguir_generacion(env.generation, &env.genome);
         }
+
+        // I-7 (Línea I, rescate GLM-170): CERO E/S del almacén de genomas en
+        // el hilo caliente. Antes el borde de cada 5000 mensajes ejecutaba
+        // `metadata` + `load_active` (lectura+parse) y, en cosecha,
+        // `promote` (escritura tmp + fsync + rename) + relectura DENTRO del
+        // bucle: un fsync es un stall de 10-100+ ms con riesgo de watchdog.
+        // Ahora un worker propietario ejecuta toda esa E/S fuera; el borde
+        // pide SIN bloquear y aplica la respuesta en el borde SIGUIENTE
+        // (aplicación diferida ≤5000 mensajes). El espejo de mtime (CL-40)
+        // vive en el worker como única fuente.
+        enum PedidoAlmacen {
+            Sincronizar,
+            Promover {
+                genoma: Box<quantum_arena::genome::SuperGenotype>,
+                razon: String,
+            },
+        }
+        enum RespuestaAlmacen {
+            Sincronizada {
+                cambio: Option<(quantum_arena::genome_store::GenomeEnvelope, std::time::SystemTime)>,
+            },
+            Promocion(Result<(quantum_arena::genome_store::GenomeEnvelope, std::time::SystemTime), String>),
+        }
+        fn mtime_almacen() -> Option<std::time::SystemTime> {
+            std::fs::metadata(quantum_arena::genome_store::active_json_path())
+                .and_then(|m| m.modified())
+                .ok()
+        }
+        let (tx_almacen, rx_almacen) = std::sync::mpsc::channel::<PedidoAlmacen>();
+        let (tx_desde_almacen, rx_desde_almacen) = std::sync::mpsc::channel::<RespuestaAlmacen>();
+        let _hilo_almacen = {
+            let espejo_inicial = mtime_bosque;
+            std::thread::Builder::new()
+                .name("almacen-genomas".to_string())
+                .spawn(move || {
+                    let mut espejo = espejo_inicial;
+                    while let Ok(pedido) = rx_almacen.recv() {
+                        match pedido {
+                            PedidoAlmacen::Sincronizar => {
+                                // CL-40: sólo se relee cuando cambió la fecha
+                                // del `active.json` (mismo filtro que
+                                // `refresh_models` del núcleo).
+                                let mtime = mtime_almacen();
+                                let cambio = if mtime.is_some() && mtime != espejo {
+                                    espejo = mtime;
+                                    quantum_arena::genome_store::GenomeEnvelope::load_active()
+                                        .map(|env| (env, mtime.unwrap_or(std::time::UNIX_EPOCH)))
+                                } else {
+                                    None
+                                };
+                                let _ = tx_desde_almacen.send(RespuestaAlmacen::Sincronizada { cambio });
+                            }
+                            PedidoAlmacen::Promover { genoma, razon } => {
+                                // T-03 — EMBUDO ÚNICO con el gate de
+                                // bounds/RR del almacén; CL-40c: se relee lo
+                                // que quedará en disco (serde sin
+                                // `float_roundtrip` puede mover 1 ulp).
+                                let r = quantum_arena::genome_store::GenomeEnvelope::promote(
+                                    *genoma,
+                                    "shadow_forest_harvest",
+                                    &razon,
+                                )
+                                .map_err(|e| e.to_string())
+                                .and_then(|env| {
+                                    let mtime = mtime_almacen();
+                                    let leido =
+                                        quantum_arena::genome_store::GenomeEnvelope::load_active()
+                                            .filter(|l| l.generation == env.generation)
+                                            .unwrap_or(env);
+                                    espejo = mtime;
+                                    Ok((leido, mtime.unwrap_or(std::time::UNIX_EPOCH)))
+                                });
+                                let _ = tx_desde_almacen.send(RespuestaAlmacen::Promocion(r));
+                            }
+                        }
+                    }
+                })
+        };
 
         // XXXVI: per-observation accounting proxy, NOT independent backtest/live evidence.
         // Recovery owns only a core entry veto; global/executor latches are independent.
@@ -5721,28 +5799,44 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             if msg_count.is_multiple_of(5000) {
                 telemetry_server::telemetry_log!("⏱️ [TELEMETRY] Processed 5000 ticks/klines. Cumulative Fees: ${:.4}. Last tick: {} ns", total_fees, start.elapsed().as_nanos());
 
-                // CL-40: si el almacén sancionó una generación más nueva
-                // (el demonio la aplica directo al arena; el contador del
-                // núcleo sólo se mueve en `refresh_models`), el bosque se
-                // replanta alrededor de ella ANTES de cosechar: un mutante
-                // del genoma anterior no debe poder sustituir a la
-                // generación sancionada.
-                let mtime_almacen = std::fs::metadata(quantum_arena::genome_store::active_json_path())
-                    .and_then(|m| m.modified())
-                    .ok();
-                if mtime_almacen.is_some() && mtime_almacen != mtime_bosque {
-                    mtime_bosque = mtime_almacen;
-                    if let Some(env) = quantum_arena::genome_store::GenomeEnvelope::load_active() {
-                        if shadow_forest.seguir_generacion(env.generation, &env.genome) {
+                // I-7: primero CONSUMIR las respuestas del borde anterior
+                // (aplicación diferida, sin bloquear: try_recv y nada más).
+                while let Ok(respuesta) = rx_desde_almacen.try_recv() {
+                    match respuesta {
+                        RespuestaAlmacen::Sincronizada { cambio: Some((env, _mtime)) } => {
+                            // CL-40: el almacén sancionó una generación más
+                            // nueva; el bosque se replanta a su alrededor.
+                            if shadow_forest.seguir_generacion(env.generation, &env.genome) {
+                                telemetry!(
+                                    "🌲 [SHADOW FOREST] Replantado alrededor de la generación {}",
+                                    env.generation
+                                );
+                            }
+                        }
+                        RespuestaAlmacen::Sincronizada { cambio: None } => {}
+                        RespuestaAlmacen::Promocion(Ok((env, _mtime))) => {
+                            // CL-40c: el arena y el bosque usan el genoma tal
+                            // como quedó en el almacén (lo que leerán el
+                            // demonio y el próximo arranque).
+                            env.genome.apply_to_arena(&engine_real.arena);
+                            shadow_forest.seguir_generacion(env.generation, &env.genome);
                             telemetry!(
-                                "🌲 [SHADOW FOREST] Replantado alrededor de la generación {}",
+                                "🧬 [I-7] Hot-Swap diferido aplicado: generación {} (aplicada un borde después de la cosecha)",
                                 env.generation
                             );
                         }
+                        RespuestaAlmacen::Promocion(Err(e)) => telemetry!(
+                            "🚫 [T-03] Cosecha rechazada por el gate del almacén — arena intacto: {}",
+                            e
+                        ),
                     }
                 }
 
-                // FASE 12: Cosecha Cuántica en vivo (ShadowForest)
+                // CL-40 (I-7): vigilar la sanción del almacén — la metadata
+                // y la relectura viven en el worker, no aquí.
+                let _ = tx_almacen.send(PedidoAlmacen::Sincronizar);
+
+                // FASE 12: Cosecha Cuántica en vivo (ShadowForest) — CPU pura.
                 let (winner, leaderboard) = shadow_forest.harvest_best_genome();
                 let _ = loop_telemetry_tx.send(telemetry_server::TelemetryEvent::ShadowLeaderboard(leaderboard));
                 // D-689: la cosecha sólo cambia el genoma de producción con la
@@ -5750,40 +5844,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 let winner = winner.filter(|_| evolution_engine::online_daemon::live_evolution_armed_for_env());
 
                 if let Some((new_alpha, pnl_gained)) = winner {
-                    telemetry!("🧬 [SHADOW FOREST] ¡Cosecha Exitosa! Universo Mutante generó +${:.2} extra. Aplicando Hot-Swap...", pnl_gained);
+                    telemetry!("🧬 [SHADOW FOREST] ¡Cosecha Exitosa! Universo Mutante generó +${:.2} extra. Promoción diferida vía worker...", pnl_gained);
                     // T-03 — EMBUDO ÚNICO: la cosecha pasa ANTES por
-                    // GenomeEnvelope::promote (gate de bounds/RR). El viejo
-                    // apply directo sin promote sobrevivía al cache de
-                    // refresh_models y hacía que el arena de producción
-                    // divergiera del disco indefinidamente — sin linaje, sin
-                    // rollback, perdido al reiniciar.
-                    match quantum_arena::genome_store::GenomeEnvelope::promote(
-                        new_alpha.clone(),
-                        "shadow_forest_harvest",
-                        &format!("cosecha shadow forest: +${:.2} vs control", pnl_gained),
-                    ) {
-                        Ok(env) => {
-                            // CL-40c: el arena y el bosque usan el genoma tal
-                            // como quedó en el almacén (lo que leerán el
-                            // demonio y el próximo arranque): serde_json sin
-                            // `float_roundtrip` puede mover 1 ulp algún gen, y
-                            // el bosque compararía su control en memoria con
-                            // la copia releída y replantaría sin motivo.
-                            let mtime_promocion = std::fs::metadata(quantum_arena::genome_store::active_json_path())
-                                .and_then(|m| m.modified())
-                                .ok();
-                            let env = quantum_arena::genome_store::GenomeEnvelope::load_active()
-                                .filter(|leido| leido.generation == env.generation)
-                                .unwrap_or(env);
-                            env.genome.apply_to_arena(&engine_real.arena);
-                            shadow_forest.seguir_generacion(env.generation, &env.genome);
-                            mtime_bosque = mtime_promocion;
-                        }
-                        Err(e) => telemetry!(
-                            "🚫 [T-03] Cosecha rechazada por el gate del almacén — arena intacto: {}",
-                            e
-                        ),
-                    }
+                    // GenomeEnvelope::promote (gate de bounds/RR). I-7: el
+                    // promote (fsync) lo ejecuta el worker; el hot-swap se
+                    // aplica en el borde SIGUIENTE con la respuesta.
+                    let _ = tx_almacen.send(PedidoAlmacen::Promover {
+                        genoma: Box::new(new_alpha.clone()),
+                        razon: format!("cosecha shadow forest: +${:.2} vs control", pnl_gained),
+                    });
 
                     let _ = loop_telemetry_tx.send(telemetry_server::TelemetryEvent::GenomeUpdate(Box::new(new_alpha)));
                 } else {
