@@ -5974,6 +5974,18 @@ async fn bucle_lector_ws(
     mut rx_ws_control: Option<tokio::sync::mpsc::Receiver<()>>,
 ) {
     let mut retry_count = 0;
+    // I-6b (Línea I, rescate GLM-168): la política de espera (watchdog)
+    // también gobierna la FASE DE CONEXIÓN — DNS, carrera TCP y handshake
+    // TLS —, no sólo la lectura. Antes `TcpStream::connect` y
+    // `client_async_tls` no tenían timeout: un handshake TLS colgado (TCP
+    // aceptado, servidor mudo) dejaba el feed mudo para siempre SIN
+    // disparar el stall, porque el watchdog sólo vigilaba tras conectar.
+    let is_testnet_cfg = std::env::var("USE_TESTNET").unwrap_or_default().trim().to_lowercase() == "true";
+    let watchdog_secs: u64 = std::env::var("BINANCE_WS_TIMEOUT_SECS")
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(if is_testnet_cfg { 30 } else { 15 });
+    let to_conexion = std::time::Duration::from_secs(watchdog_secs);
     // CL-50: sólo una reconexión se anuncia; la primera conexión no
     // debe reiniciar los motores recién calentados. I-1b: el lector de
     // mercado no anuncia nunca.
@@ -6000,10 +6012,17 @@ async fn bucle_lector_ws(
         // FASE 8: Happy Eyeballs TCP Parallel Connection
         // Resolve IPs dynamically instead of hardcoding AWS endpoints
         let host_port = format!("{}:{}", host, port);
-        let mut resolved_addrs = match tokio::net::lookup_host(&host_port).await {
-            Ok(addrs) => addrs.collect::<Vec<std::net::SocketAddr>>(),
-            Err(e) => {
+        // I-6b: DNS acotado por la misma política de espera (timeout =
+        // vec vacío → sigue la ruta de IPs por ENV/fallback, como un fallo
+        // de resolución).
+        let mut resolved_addrs = match tokio::time::timeout(to_conexion, tokio::net::lookup_host(&host_port)).await {
+            Ok(Ok(addrs)) => addrs.collect::<Vec<std::net::SocketAddr>>(),
+            Ok(Err(e)) => {
                 telemetry_server::telemetry_log!("⚠️ [WS] DNS Resolution failed for {}: {}", host_port, e);
+                vec![]
+            }
+            Err(_) => {
+                telemetry_server::telemetry_log!("⚠️ [WS:{}] DNS sin responder en {}s (I-6b): reintento", cfg.nombre, watchdog_secs);
                 vec![]
             }
         };
@@ -6039,10 +6058,18 @@ async fn bucle_lector_ws(
 
         // For TLS SNI, we still pass the original URL with the hostname (e.g. stream.binancefuture.com)
         // but the underlying TCP stream is connected directly to the fastest raw IP.
-        let tcp_stream = match futures_util::future::select_ok(tasks).await {
-            Ok((stream, _)) => stream,
-            Err(e) => {
+        // I-6b: timeout de CONEXIÓN — la carrera Happy Eyeballs deja de ser
+        // indefinida; un intento que no complete en watchdog_secs se
+        // abandona (stall de conexión) y se reintenta.
+        let tcp_stream = match tokio::time::timeout(to_conexion, futures_util::future::select_ok(tasks)).await {
+            Ok(Ok((stream, _))) => stream,
+            Ok(Err(e)) => {
                 telemetry_server::telemetry_log!("❌ [WS] Happy Eyeballs Parallel Connect failed on all IPs: {}", e);
+                tokio::time::sleep(std::time::Duration::from_millis(1000)).await;
+                continue;
+            }
+            Err(_) => {
+                telemetry_server::telemetry_log!("⚠️ [WS:{}] conexión TCP sin completar en {}s (I-6b): reintento", cfg.nombre, watchdog_secs);
                 tokio::time::sleep(std::time::Duration::from_millis(1000)).await;
                 continue;
             }
@@ -6066,8 +6093,21 @@ async fn bucle_lector_ws(
             telemetry_server::telemetry_log!("⚠️ [WS:{}] TCP_NODELAY no aplicado: {}", cfg.nombre, e);
         }
 
-        match tokio_tungstenite::client_async_tls(url, tcp_stream).await {
-            Ok((ws_stream, _)) => {
+        // I-6b: timeout de HANDSHAKE — un TLS colgado (TCP aceptado pero
+        // servidor mudo) ya no deja el feed mudo sin stall: se abandona el
+        // intento tras watchdog_secs y se reintenta.
+        match tokio::time::timeout(to_conexion, tokio_tungstenite::client_async_tls(url, tcp_stream)).await {
+            Err(_) => {
+                telemetry_server::telemetry_log!("⚠️ [WS:{}] handshake TLS sin completar en {}s (I-6b): reintento", cfg.nombre, watchdog_secs);
+                tokio::time::sleep(std::time::Duration::from_millis(1000)).await;
+                continue;
+            }
+            Ok(Err(e)) => {
+                telemetry_server::telemetry_log!("❌ [WS] handshake TLS falló: {}; reintento", e);
+                tokio::time::sleep(std::time::Duration::from_millis(1000)).await;
+                continue;
+            }
+            Ok(Ok((ws_stream, _))) => {
                 telemetry_server::telemetry_log!("✅ [WS] WebSocket TLS Connected with TCP_NODELAY. ({})", cfg.nombre);
                 retry_count = 0; // Reset retries on success
                 if conexiones.establecida() {
@@ -6082,11 +6122,8 @@ async fn bucle_lector_ws(
                 }
                 let (_, mut read) = ws_stream.split();
 
-                let is_testnet = std::env::var("USE_TESTNET").unwrap_or_default().trim().to_lowercase() == "true";
-                let watchdog_secs: u64 = std::env::var("BINANCE_WS_TIMEOUT_SECS")
-                    .ok()
-                    .and_then(|s| s.parse().ok())
-                    .unwrap_or(if is_testnet { 30 } else { 15 });
+                // I-6b: watchdog_secs está hoisted al inicio de la función
+                // (la misma política gobierna conexión y lectura).
 
                 loop {
                     tokio::select! {
