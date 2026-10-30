@@ -159,20 +159,38 @@ fn cl40c_el_host_usa_el_genoma_releido_y_mira_la_fecha_antes_de_leer() {
     // pierde. (2) Tras su propia promoción, la cosecha aplica y planta el
     // genoma RELEÍDO del almacén (el que verán el demonio y el próximo
     // arranque) y anota la fecha, para no replantar por 1 ulp de serde.
+    //
+    // I-7 (GLM-170): la promoción (fsync), su relectura y la anotación de
+    // fecha viven ahora en el WORKER `almacen-genomas`; el borde de 5000
+    // aplica el resultado diferido al borde siguiente. Los invariantes son
+    // los mismos, verificados en su nueva casa.
     let host: String = include_str!("../../../src/bin/god_engine.rs").split_whitespace().collect();
     let plantado = host.find("ShadowForest::new(").expect("bosque sombra");
-    let fecha = host[plantado..].find("letmutmtime_bosque=").expect("fecha del almacén") + plantado;
+    // (1) La fecha de arranque precede a la primera lectura del almacén.
+    let fecha = host[plantado..].find("mtime_bosque=").expect("fecha del almacén") + plantado;
     let lectura = host[plantado..].find("GenomeEnvelope::load_active()").expect("lectura") + plantado;
     assert!(fecha < lectura, "al arrancar, la fecha va antes de la lectura");
 
+    // (2) En el worker: tras promote, RELEE el almacén con el filtro de
+    // generación (1 ulp de serde) y anota la fecha en su espejo.
     let promocion = host.find("\"shadow_forest_harvest\"").expect("promoción de la cosecha");
     let resto = &host[promocion..];
-    let siguiente = resto.find(".seguir_generacion(").expect("la cosecha planta el bosque");
-    let tramo = &resto[..siguiente];
-    assert!(tramo.contains("GenomeEnvelope::load_active()"), "la cosecha relee el almacén");
-    assert!(tramo.contains(".apply_to_arena("), "aplica el genoma releído");
+    let releido = resto.find("GenomeEnvelope::load_active()").expect("la cosecha relee el almacén");
+    let tramo_worker = &resto[..releido + 200];
     assert!(
-        resto[siguiente..].find("mtime_bosque=").is_some_and(|i| i < 400),
-        "la cosecha anota la fecha de su propia escritura"
+        tramo_worker.contains(".filter(|l|l.generation==env.generation)"),
+        "la relectura del worker conserva el filtro de generación (1 ulp)"
     );
+    assert!(
+        resto[releido..].find("espejo=mtime;").is_some_and(|i| i < 400),
+        "el worker anota la fecha de la escritura en su espejo (CL-40c)"
+    );
+
+    // (3) En el borde del núcleo: la respuesta Promocion diferida aplica el
+    // genoma releído y planta el bosque con la misma generación.
+    let aplicacion = host.find("RespuestaAlmacen::Promocion(Ok((env,_mtime)))")
+        .expect("el borde consume la promoción diferida");
+    let tramo_borde = &host[aplicacion..][..900.min(host.len() - aplicacion)];
+    assert!(tramo_borde.contains(".apply_to_arena("), "aplica el genoma releído");
+    assert!(tramo_borde.contains(".seguir_generacion("), "la cosecha planta el bosque");
 }
