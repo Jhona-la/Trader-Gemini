@@ -1018,7 +1018,11 @@ impl SuperGenotype {
             cvd_veto_threshold: rand::rng().random_range(0.1..1.5),
             wall_veto_threshold: rand::rng().random_range(0.5..5.0),
             flash_crash_jump_pct: rand::rng().random_range(0.05..0.5),
-            latency_ms_panic_threshold: rand::rng().random_range(500.0..10000.0),
+            // I-4 (Linea I, GLM-171): congelado en el valor base 1000*pi. La cosecha
+            // lo mutaba en [500, 10000] SIN presion selectiva: 1000 mutaciones lo
+            // dejan en 1000*pi (paseo multiplicativo sin freno) y un umbral de
+            // panico que deriva al azar es un LATENCY_PANIC impredecible.
+            latency_ms_panic_threshold: 1000.0 * std::f64::consts::PI,
             ema_fast_period: rand::rng().random_range(5.0..30.0),
             ema_slow_period: rand::rng().random_range(15.0..60.0),
             hurst_scalp_threshold: rand::rng().random_range(0.30..0.50),
@@ -1960,7 +1964,8 @@ impl SuperGenotype {
             cvd_veto_threshold: mutate_val(self.cvd_veto_threshold, 0.1, 2.0),
             wall_veto_threshold: mutate_val(self.wall_veto_threshold, 5.0, 50.0),
             flash_crash_jump_pct: mutate_val(self.flash_crash_jump_pct, 0.05, 0.50),
-            latency_ms_panic_threshold: mutate_val(self.latency_ms_panic_threshold, 500.0, 10000.0),
+            // I-4: congelado (lector vivo: umbral del LATENCY_PANIC en god_engine).
+            latency_ms_panic_threshold: self.latency_ms_panic_threshold, // I-4
             ema_fast_period: mutate_val(self.ema_fast_period, 5.0, 30.0),
             ema_slow_period: mutate_val(self.ema_slow_period, 15.0, 60.0),
             hurst_scalp_threshold: mutate_val(self.hurst_scalp_threshold, 0.30, 0.50),
@@ -3871,5 +3876,46 @@ mod tests_lg30 {
             }
         }
         assert_eq!(base.funding_rate_sensitivity, 0.55);
+    }
+}
+
+#[cfg(test)]
+mod tests_i4 {
+    use super::*;
+
+    /// I-4 (Línea I, GLM-171): el umbral del LATENCY_PANIC no deriva. La
+    /// cosecha lo mutaba en [500, 10000] sin presión selectiva; ahora ni la
+    /// mutación ni el nacimiento lo mueven del valor base 1000·π.
+    #[test]
+    fn i4_el_umbral_de_panica_no_muta_ni_deriva() {
+        let base = SuperGenotype::new_baseline(0.0002, 0.0005);
+        assert!(
+            (base.latency_ms_panic_threshold - 1000.0 * std::f64::consts::PI).abs() < 1e-9,
+            "el genoma base nace con el umbral canónico 1000*pi"
+        );
+        let v0 = base.to_vector();
+        for semilla in 0..256u64 {
+            for m in [base.mutate_cmaes_seeded(1.0, semilla), base.mutate_cmaes(1.0)] {
+                assert_eq!(
+                    v0[v0.iter().len().min(0) + 0..].len(),
+                    v0.len(),
+                    "sanidad de longitud"
+                );
+                assert_eq!(
+                    m.latency_ms_panic_threshold.to_bits(),
+                    base.latency_ms_panic_threshold.to_bits(),
+                    "el umbral congelado mutó (semilla {semilla})"
+                );
+            }
+        }
+        // Nacimiento: siempre el valor base, nunca random.
+        for _ in 0..16 {
+            let r = SuperGenotype::new_random();
+            assert_eq!(
+                r.latency_ms_panic_threshold.to_bits(),
+                base.latency_ms_panic_threshold.to_bits(),
+                "new_random movió el umbral congelado"
+            );
+        }
     }
 }
