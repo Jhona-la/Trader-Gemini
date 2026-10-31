@@ -1117,26 +1117,62 @@ impl OrderExecutor {
                     }
                 }
 
-                match close_res {
+                // CL-212 (N49): qué prueba la respuesta del cierre. Antes el
+                // brazo Ok daba por cerrado cualquier ACK 2xx legible (también
+                // un EXPIRED o con executedQty 0) y purgaba los brackets de una
+                // posición quizá abierta; F1-028 ya lo prohibía en el
+                // reduce-only (`OrderAck::prueba_llenado`, la misma regla).
+                let tras_cierre = match close_res {
                     Ok((_, ack)) => {
                         let now = self.get_synced_timestamp();
                         self.order_registry.apply_ack(&ack, now);
-                        position_closed = true;
-                        println!(
-                            "🧹 [FLATTEN] {} cerrada {} @ ~{} (status {})",
-                            p.symbol,
-                            p.position_amt.abs(),
-                            ack.avg_price,
-                            ack.status
-                        );
+                        if ack.prueba_llenado() {
+                            println!(
+                                "🧹 [FLATTEN] {} cerrada {} @ ~{} (status {})",
+                                p.symbol,
+                                p.position_amt.abs(),
+                                ack.avg_price,
+                                ack.status
+                            );
+                            TrasCierre::Cerrada
+                        } else {
+                            // Terminal sin llenado (EXPIRED, CANCELED): nada queda
+                            // en vuelo y X-026 puede reenviar. Viva (NEW): puede
+                            // llenar todavía; el re-snapshot sólo confirma.
+                            let reenviar = !ack.is_active();
+                            println!(
+                                "♻️ [X-026] {} ACK sin llenado (status {}, executedQty {}): re-snapshot fresco{}",
+                                p.symbol,
+                                ack.status,
+                                ack.executed_qty,
+                                if reenviar { "" } else { " sin reenvío (la orden sigue viva)" }
+                            );
+                            TrasCierre::Resnapshot { reenviar }
+                        }
                     }
                     Err(e) if e.contains("-2022") || e.contains("-4061") => {
-                        // X-026 (REHAB-3): ReduceOnly rechazado — un TP llenó (o el
-                        // modo cambió) ENTRE el snapshot y el close.
                         println!(
                             "♻️ [X-026] {} -2022: re-snapshot fresco (TP pudo llenar entre snapshot y close)…",
                             p.symbol
                         );
+                        TrasCierre::Resnapshot { reenviar: true }
+                    }
+                    Err(e) => {
+                        println!(
+                            "🚨 [FLATTEN] {} NO cerrada tras reintento: {} — INTERVENCIÓN MANUAL",
+                            p.symbol, e
+                        );
+                        TrasCierre::Abierta
+                    }
+                };
+
+                match tras_cierre {
+                    TrasCierre::Cerrada => position_closed = true,
+                    TrasCierre::Abierta => {}
+                    TrasCierre::Resnapshot { reenviar } => {
+                        // X-026 (REHAB-3): ReduceOnly rechazado — un TP llenó (o el
+                        // modo cambió) ENTRE el snapshot y el close; o el cierre
+                        // no llenó (CL-212).
                         // CL-183: un re-snapshot que no respondió (freno 429/418,
                         // cuota del tramo crítico o red) no es «posición plana»:
                         // antes el Err caía a None, se daba por cerrada y se
@@ -1155,7 +1191,7 @@ impl OrderExecutor {
                                 .find(|e2| e2.misma_pierna(p) && e2.is_open())
                         });
                         match fresh {
-                            Ok(Some(f)) => {
+                            Ok(Some(f)) if reenviar => {
                                 let fq = f.position_amt.abs();
                                 let step = match self.get_symbol_filter(&p.symbol).await {
                                     Ok(flt) => flt.step_size,
@@ -1181,6 +1217,11 @@ impl OrderExecutor {
                                     ),
                                 }
                             }
+                            Ok(Some(f)) => println!(
+                                "🚨 [X-026] {} sigue ABIERTA (qty {}) con su cierre vivo: ni reenvío (sería un cierre de más) ni purga — INTERVENCIÓN MANUAL",
+                                p.symbol,
+                                f.position_amt.abs()
+                            ),
                             Ok(None) => {
                                 position_closed = true; // ya no existe con qty>0: estaba plana
                                 println!(
@@ -1194,10 +1235,6 @@ impl OrderExecutor {
                             ),
                         }
                     }
-                    Err(e) => println!(
-                        "🚨 [FLATTEN] {} NO cerrada tras reintento: {} — INTERVENCIÓN MANUAL",
-                        p.symbol, e
-                    ),
                 }
             }
 
@@ -2935,11 +2972,7 @@ impl OrderExecutor {
                 let now = self.get_synced_timestamp();
                 self.order_registry.apply_ack(&ack, now);
                 let report = FillReport::from_ack(&ack);
-                if ack.executed_qty.is_finite() && ack.executed_qty > 0.0 {
-                    Ok(report)
-                } else if ack.is_filled()
-                    || ack.status.trim().eq_ignore_ascii_case("PARTIALLY_FILLED")
-                {
+                if ack.prueba_llenado() {
                     Ok(report)
                 } else {
                     Err(format!(
@@ -4577,6 +4610,19 @@ fn pierna_ya_existe(err: &str) -> bool {
         })
     };
     termina_codigo(&compacto) || termina_codigo(&espaciado) || termina_codigo(&rechazo)
+}
+
+/// CL-212 (N49): lo que prueba la respuesta del cierre de una pierna en
+/// `flatten_all_positions`.
+enum TrasCierre {
+    /// El ACK prueba llenado (`OrderAck::prueba_llenado`).
+    Cerrada,
+    /// No se sabe si sigue abierta: X-026 relee positionRisk. Con `reenviar`,
+    /// si la pierna sigue abierta se cierra con la cantidad fresca; sin él (el
+    /// cierre sigue vivo en el exchange) sólo se confirma si quedó plana.
+    Resnapshot { reenviar: bool },
+    /// Rechazo o fallo sin re-snapshot: ni cerrada ni purgada.
+    Abierta,
 }
 
 /// N5 (CL-178): símbolos de positionRisk sin ninguna fila abierta, cada uno
@@ -7802,6 +7848,12 @@ mod tests_lote18 {
         ))
     }
 
+    fn ack_cierre(lado: &str, estado: &str, ejecutada: &str) -> String {
+        ok(&format!(
+            r#"{{"orderId":8,"symbol":"BTCUSDT","status":"{estado}","clientOrderId":"c","origQty":"0.010","executedQty":"{ejecutada}","avgPrice":"0","side":"{lado}","type":"MARKET"}}"#
+        ))
+    }
+
     fn rechazo_2022() -> String {
         respuesta(
             "400 Bad Request",
@@ -7964,5 +8016,72 @@ mod tests_lote18 {
         assert!(!short.misma_pierna(&fila("ETHUSDT", "SHORT", -0.02)), "otro símbolo");
         let both = fila("BTCUSDT", "BOTH", 0.01);
         assert!(both.misma_pierna(&fila("BTCUSDT", "BOTH", -0.005)), "el signo no cuenta");
+    }
+
+    /// RED antes de CL-212 (N49): el brazo Ok del cierre daba por cerrado un
+    /// ACK EXPIRED con executedQty 0 y purgaba los brackets (5 peticiones, la
+    /// última una cancelación). Ahora un ACK terminal sin llenado va a X-026:
+    /// la pierna sigue abierta en la lectura fresca y se cierra con su
+    /// cantidad, y sólo después se purga.
+    #[tokio::test]
+    async fn cl212_un_expired_sin_llenado_va_a_x026_y_se_cierra_con_la_cantidad_fresca() {
+        let mut wires = vec![
+            modo(false),
+            filas(&[("BOTH", "0.010")]),
+            ack_cierre("SELL", "EXPIRED", "0"),
+            filas(&[("BOTH", "0.010")]),
+            llenada("SELL", "0.010"),
+            purgada(),
+            purgada(),
+        ];
+        wires.extend((0..3).map(|_| llenada("SELL", "0.010")));
+        let (r, lineas) = aplanar(wires, false).await;
+        assert!(matches!(r, Some(Ok((2, 1)))), "{r:?} {lineas:#?}");
+        assert_eq!(lineas.len(), 7, "{lineas:#?}");
+        assert!(lineas[3].contains("positionRisk"), "re-snapshot: {lineas:#?}");
+        assert!(
+            lineas[4].contains("side=SELL&type=MARKET&reduceOnly=true&quantity=0.010"),
+            "{lineas:#?}"
+        );
+        assert!(lineas[5].contains("allOpenOrders") && lineas[6].contains("algoOpenOrders"), "{lineas:#?}");
+    }
+
+    /// CL-212: el mismo EXPIRED con la pierna ya plana en la lectura fresca se
+    /// da por cerrado y se purga, sin reenvío.
+    #[tokio::test]
+    async fn cl212_un_expired_con_la_pierna_ya_plana_se_cierra_sin_reenvio() {
+        let mut wires = vec![
+            modo(false),
+            filas(&[("BOTH", "0.010")]),
+            ack_cierre("SELL", "EXPIRED", "0"),
+            filas(&[("BOTH", "0")]),
+            purgada(),
+            purgada(),
+        ];
+        wires.extend((0..3).map(|_| llenada("SELL", "0.010")));
+        let (r, lineas) = aplanar(wires, false).await;
+        assert!(matches!(r, Some(Ok((2, 1)))), "{r:?} {lineas:#?}");
+        assert_eq!(lineas.len(), 6, "{lineas:#?}");
+        assert!(lineas[4].contains("allOpenOrders") && lineas[5].contains("algoOpenOrders"), "{lineas:#?}");
+    }
+
+    /// CL-212: un ACK NEW sin llenar es un cierre vivo que todavía puede
+    /// llenar. Con la pierna abierta en la lectura fresca no se reenvía (sería
+    /// un cierre de más) ni se purga: el aplanado queda incompleto.
+    #[tokio::test]
+    async fn cl212_un_cierre_vivo_sin_llenar_no_se_reenvia_ni_se_purga() {
+        let mut wires = vec![
+            modo(true),
+            filas(&[("LONG", "0.010")]),
+            ack_cierre("SELL", "NEW", "0"),
+            filas(&[("LONG", "0.010")]),
+        ];
+        wires.extend((0..3).map(|_| llenada("SELL", "0.010")));
+        let (r, lineas) = aplanar(wires, true).await;
+        assert!(
+            matches!(&r, Some(Err(e)) if e.starts_with("FLATTEN_INCOMPLETE")),
+            "{r:?} {lineas:#?}"
+        );
+        assert_eq!(lineas.len(), 4, "ni reenvío ni purga: {lineas:#?}");
     }
 }
