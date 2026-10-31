@@ -148,6 +148,16 @@ pub struct StatefulEngine {
     pub quantum_delta_s: f32,
     /// Entropía cuántica de von Neumann del estado empírico streaming.
     pub quantum_entropy: f32,
+    /// GLM 175 (§10 firmas): z del cross S¹² de la firma nivel-2 contra el
+    /// NULO DE MÁXIMA ENTROPÍA (momentos cerrados, permutación uniforme) —
+    /// el observable de régimen de la medición 163 (media-z nula 10/10,
+    /// σz 0,47→1,79 con separación transversal 4×). Ring O(1)/tick, medir
+    /// O(64) por cadencia.
+    pub firma_maxent: feature_engine::firma_maxent::FirmasMaxEnt,
+    /// z(S¹²) medido por cadencia — NAN hasta la primera ventana llena.
+    pub quantum_firma_z: f32,
+    /// σ muestral de los retornos de la ventana del z (contexto de régimen).
+    pub quantum_firma_sigma_x: f32,
     pub hurst_micro: f32,
     pub hurst_meso: f32,
     pub hurst_macro: f32,
@@ -274,6 +284,14 @@ impl StatefulEngine {
             entrelazamiento: feature_engine::entrelazamiento::EntrelazamientoStreaming::default(),
             quantum_delta_s: f32::NAN,
             quantum_entropy: f32::NAN,
+            // GLM 175: L=64 — la misma ventana de la medición 163. El Err
+            // del constructor (L<2) es inalcanzable con la constante fija;
+            // caer en expect sería abortar el hilo crítico.
+            firma_maxent: feature_engine::firma_maxent::FirmasMaxEnt::new(64)
+                .unwrap_or_else(|_| feature_engine::firma_maxent::FirmasMaxEnt::new(2)
+                    .unwrap_or_else(|e| panic!("FirmasMaxEnt: {e}"))),
+            quantum_firma_z: f32::NAN,
+            quantum_firma_sigma_x: f32::NAN,
             multifractal: feature_engine::MultiScaleHurstConfluence::new(),
             regime: MarketRegime::Neutral,
             kline_start_ms: 0,
@@ -809,6 +827,20 @@ impl StatefulEngine {
                     self.quantum_delta_s = m.delta as f32;
                     self.quantum_entropy = m.s as f32;
                 }
+            }
+            // GLM 175 (§10): z de la firma vs nulo de máxima entropía —
+            // misma cadencia %64 que el resto de la telemetría cuántica.
+            // dt: fracción del tick sobre la ventana (Σdt=1 por construcción
+            // tras 64 ticks — el anillo se llena en una ventana exacta).
+            let dt_fraccion = 1.0 / 64.0;
+            self.firma_maxent.push(norm_return, dt_fraccion);
+            if self.tick_count % 64 == 0 {
+                if let Some(m) = self.firma_maxent.medir() {
+                    self.quantum_firma_z = m.z12 as f32;
+                    self.quantum_firma_sigma_x = m.sigma_x as f32;
+                }
+                // None (ventana incompleta / nulo degenerado) ⇒ se conserva
+                // el último valor válido o NaN inicial: ausencia honesta.
             }
             // D-434: Invocar análisis espectral FFT Radix-2 periódicamente cada 64 ticks
             if self.tick_count % 64 == 0 {

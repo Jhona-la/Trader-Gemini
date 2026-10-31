@@ -17,6 +17,7 @@ pub mod navier_stokes;
 pub mod normalizer;
 pub mod omni_strategies;
 pub mod path_signatures;
+pub mod firma_maxent;
 pub mod random_matrix_wilson;
 pub mod rough_ergodic;
 pub mod transfer_entropy;
