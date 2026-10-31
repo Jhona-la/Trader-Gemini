@@ -38,7 +38,10 @@ fn cl49_cada_trade_publica_su_ente_ballena() {
 #[test]
 fn cl49_cada_evaluacion_de_profundidad_publica_su_ente_spoofing() {
     let h = host();
-    let t = tramo(&h, "spoof_detectors[sym_id].evaluate_wall_decay(", "letntp_offset_actual");
+    // I-5 (GLM-173): el límite del tramo era el offset NTP leído en el bucle
+    // (ntp_offset_actual); ahora la proyección usa la corrección monótona
+    // (correccion_proyeccion) — mismo papel de frontera, mismo invariante.
+    let t = tramo(&h, "spoof_detectors[sym_id].evaluate_wall_decay(", "letcorreccion_proyeccion");
     assert!(
         t.contains("entes_consejo::publicar(") && t.contains("valor_spoof(score)"),
         "la evaluación publica el score decaído"
