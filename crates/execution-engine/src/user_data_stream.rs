@@ -686,13 +686,8 @@ impl UserDataStreamer {
                             // Es la vía rápida; la purga por `algoId` (D-698)
                             // sigue siendo la red de seguridad.
                             let mut buf = crate::client::ZeroAllocBuffer::new();
-                            buf.push_str(
-                                if client.is_testnet.load(std::sync::atomic::Ordering::Relaxed) {
-                                    "https://testnet.binancefuture.com/fapi/v1/algoOrder?"
-                                } else {
-                                    "https://fapi.binance.com/fapi/v1/algoOrder?"
-                                },
-                            );
+                            buf.push_str(client.get_base_url());
+                            buf.push_str("/fapi/v1/algoOrder?");
                             let payload_start = buf.as_str().len();
                             buf.push_str("symbol=");
                             buf.push_str(&symbol);
