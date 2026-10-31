@@ -932,6 +932,15 @@ impl OrderExecutor {
                 None
             }
         };
+        // CL-211 (N52): el modo que el exchange acaba de dar es la verdad
+        // local, como en `ensure_hedge_mode` y en el reintento de -4061. Antes
+        // sólo lo usaba el cierre del aplanado: el reenvío de X-026
+        // (`execute_reduce_only_market_internal`) leía el modo registrado, y
+        // si estaba viejo salía en el modo contrario (en hedge, reduceOnly
+        // sin positionSide: un -4061 y la posición abierta).
+        if let Some(d) = dual_mode_opt {
+            self.is_hedge_mode.store(d, Ordering::Relaxed);
+        }
         let mut dual = dual_mode_opt.unwrap_or(self.is_hedge_mode.load(Ordering::Relaxed));
 
         let entries = self.fetch_position_risk().await?;
@@ -7875,6 +7884,23 @@ mod tests_lote18 {
     /// cantidad fresca del SHORT, y el LONG se cierra después con la suya.
     #[tokio::test]
     async fn cl210_x026_en_hedge_reenvia_la_misma_pierna() {
+        hedge_dos_piernas(true).await;
+    }
+
+    /// RED antes de CL-211 (N52): con el modo registrado viejo (one-way) y el
+    /// exchange diciendo hedge, el cierre del aplanado salía en hedge pero el
+    /// reenvío de X-026 en one-way (reduceOnly sin positionSide: en la cuenta
+    /// real, un -4061 y la pierna abierta). El aplanado registra el modo que
+    /// acaba de leer y el reenvío sale con la pierna.
+    #[tokio::test]
+    async fn cl211_x026_sale_en_el_modo_que_el_aplanado_acaba_de_leer() {
+        hedge_dos_piernas(false).await;
+    }
+
+    /// Hedge con las dos piernas abiertas (SHORT primero) y el -2022 del
+    /// SHORT; la lectura fresca de X-026 trae primero el LONG. `registrado`
+    /// es el modo que el ejecutor creía antes de aplanar.
+    async fn hedge_dos_piernas(registrado: bool) {
         let mut wires = vec![
             modo(true),
             filas(&[("SHORT", "-0.020"), ("LONG", "0.010")]),
@@ -7888,7 +7914,7 @@ mod tests_lote18 {
             purgada(),
         ];
         wires.extend((0..3).map(|_| llenada("SELL", "0.010")));
-        let (r, lineas) = aplanar(wires, true).await;
+        let (r, lineas) = aplanar(wires, registrado).await;
         assert!(matches!(r, Some(Ok((4, 2)))), "{r:?} {lineas:#?}");
         assert_eq!(lineas.len(), 10, "ni un envío de más: {lineas:#?}");
         let reenvio = &lineas[4];
