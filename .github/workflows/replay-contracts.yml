@@ -55,7 +55,7 @@ jobs:
         shell: pwsh
     steps:
       - name: Checkout candidate merge
-        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # verified v4
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0 (node24)
         with:
           persist-credentials: false
           fetch-depth: 2 # first parent is required for the candidate diff check
@@ -168,7 +168,7 @@ jobs:
         shell: pwsh
     steps:
       - name: Checkout candidate merge
-        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # verified v4
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0 (node24)
         with:
           persist-credentials: false
           fetch-depth: 2

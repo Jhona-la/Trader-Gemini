@@ -29,7 +29,7 @@ jobs:
         shell: pwsh
     steps:
       - name: Checkout isolated CI workflow commit and fetch pinned source objects
-        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0 (node24)
         with:
           ref: ${{ github.sha }}
           fetch-depth: 0
@@ -82,7 +82,7 @@ jobs:
 
       - name: Preserve receipts, byte-exact producers/corpus and command logs
         if: ${{ always() }}
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0 (node24)
         with:
           name: si-lg22-causal-${{ github.run_id }}-${{ github.run_attempt }}
           path: ${{ runner.temp }}/si-lg22-causal/
