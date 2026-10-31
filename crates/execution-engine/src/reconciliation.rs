@@ -67,6 +67,19 @@ impl PositionRiskEntry {
             self.position_amt > 0.0
         }
     }
+
+    /// CL-210 (N50): `otra` es una lectura de la MISMA pierna: mismo símbolo y
+    /// mismo `positionSide` (LONG, SHORT o BOTH; sin distinguir mayúsculas ni
+    /// espacios). No mira el signo: en one-way la fila BOTH sigue siendo la
+    /// de la posición aunque su cantidad haya cambiado de signo entre dos
+    /// lecturas, y en hedge el modo no puede cambiar con piernas abiertas.
+    pub fn misma_pierna(&self, otra: &PositionRiskEntry) -> bool {
+        self.symbol == otra.symbol
+            && self
+                .position_side
+                .trim()
+                .eq_ignore_ascii_case(otra.position_side.trim())
+    }
 }
 
 /// CL-12 — cantidad abierta del LADO pedido de un símbolo. En modo hedge

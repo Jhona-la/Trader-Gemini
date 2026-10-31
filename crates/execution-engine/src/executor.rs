@@ -1132,10 +1132,18 @@ impl OrderExecutor {
                         // cuota del tramo crítico o red) no es «posición plana»:
                         // antes el Err caía a None, se daba por cerrada y se
                         // purgaban los brackets de una posición quizá viva.
+                        // CL-210 (N50): la fila fresca es la de ESTA pierna
+                        // (símbolo y positionSide). En hedge positionRisk trae
+                        // LONG y SHORT del símbolo: buscando sólo por símbolo, el
+                        // re-snapshot podía cerrar la otra pierna, dar ésta por
+                        // cerrada y purgar los brackets del símbolo con ella viva
+                        // (la clase de CL-12). Se empareja el positionSide y no
+                        // `is_long()`: en one-way la fila BOTH cuyo signo cambió
+                        // entre las dos lecturas sigue siendo la de esta posición.
                         let fresh = self.fetch_position_risk().await.map(|entries| {
                             entries
                                 .into_iter()
-                                .find(|e2| e2.symbol == p.symbol && e2.is_open())
+                                .find(|e2| e2.misma_pierna(p) && e2.is_open())
                         });
                         match fresh {
                             Ok(Some(f)) => {
@@ -7765,10 +7773,32 @@ mod tests_lote18 {
         respuesta("200 OK", "Content-Type: application/json\r\n", cuerpo)
     }
 
+    fn modo(dual: bool) -> String {
+        ok(&format!(r#"{{"dualSidePosition":{dual}}}"#))
+    }
+
+    fn filas(filas: &[(&str, &str)]) -> String {
+        let cuerpo: Vec<String> = filas
+            .iter()
+            .map(|(lado, cantidad)| {
+                format!(r#"{{"symbol":"BTCUSDT","positionSide":"{lado}","positionAmt":"{cantidad}"}}"#)
+            })
+            .collect();
+        ok(&format!("[{}]", cuerpo.join(",")))
+    }
+
     fn llenada(lado: &str, cantidad: &str) -> String {
         ok(&format!(
             r#"{{"orderId":7,"symbol":"BTCUSDT","status":"FILLED","clientOrderId":"c","origQty":"{cantidad}","executedQty":"{cantidad}","avgPrice":"60000","side":"{lado}","type":"MARKET"}}"#
         ))
+    }
+
+    fn rechazo_2022() -> String {
+        respuesta(
+            "400 Bad Request",
+            "Content-Type: application/json\r\n",
+            r#"{"code":-2022,"msg":"ReduceOnly Order is rejected."}"#,
+        )
     }
 
     fn purgada() -> String {
@@ -7788,6 +7818,23 @@ mod tests_lote18 {
         );
         ex.symbol_filters.store(Arc::new(filtros));
         ex
+    }
+
+    /// El aplanado contra `wires`: su resultado y las líneas de petición que
+    /// llegaron. Nunca se cuelga (plazo de 60 s y el servidor se aborta).
+    async fn aplanar(wires: Vec<String>, hedge: bool) -> (Option<Result<(usize, usize), String>>, Vec<String>) {
+        let servido = servidor(wires).await;
+        assert!(servido.is_some(), "servidor local");
+        let Some((base, bitacora, h)) = servido else {
+            return (None, Vec::new());
+        };
+        let ex = ejecutor(&base, hedge);
+        let r = tokio::time::timeout(std::time::Duration::from_secs(60), ex.flatten_all_positions())
+            .await
+            .ok();
+        h.abort();
+        let lineas = bitacora.lock().map(|v| v.clone()).unwrap_or_default();
+        (r, lineas)
     }
 
     /// CL-209: la costura lleva al servidor local las dos rutas del aplanado
@@ -7818,5 +7865,78 @@ mod tests_lote18 {
         assert_eq!(lineas.len(), 2, "{lineas:?}");
         assert!(lineas[0].contains("/fapi/v1/algoOpenOrders?symbol=BTCUSDT"), "{lineas:?}");
         assert!(lineas[1].contains("/fapi/v1/order?symbol=BTCUSDT&side=SELL&positionSide=LONG"), "{lineas:?}");
+    }
+
+    /// RED antes de CL-210 (N50): en hedge con las dos piernas abiertas, el
+    /// -2022 del cierre del SHORT lleva al re-snapshot de X-026, cuya lectura
+    /// fresca trae primero el LONG. Buscando sólo por símbolo se reenviaba un
+    /// SELL LONG con la cantidad del LONG y el SHORT se daba por cerrado. Con
+    /// el emparejamiento por positionSide el reenvío es BUY SHORT con la
+    /// cantidad fresca del SHORT, y el LONG se cierra después con la suya.
+    #[tokio::test]
+    async fn cl210_x026_en_hedge_reenvia_la_misma_pierna() {
+        let mut wires = vec![
+            modo(true),
+            filas(&[("SHORT", "-0.020"), ("LONG", "0.010")]),
+            rechazo_2022(),
+            filas(&[("LONG", "0.010"), ("SHORT", "-0.015")]),
+            llenada("BUY", "0.015"),
+            purgada(),
+            purgada(),
+            llenada("SELL", "0.010"),
+            purgada(),
+            purgada(),
+        ];
+        wires.extend((0..3).map(|_| llenada("SELL", "0.010")));
+        let (r, lineas) = aplanar(wires, true).await;
+        assert!(matches!(r, Some(Ok((4, 2)))), "{r:?} {lineas:#?}");
+        assert_eq!(lineas.len(), 10, "ni un envío de más: {lineas:#?}");
+        let reenvio = &lineas[4];
+        assert!(reenvio.contains("/fapi/v1/order?"), "{reenvio}");
+        assert!(reenvio.contains("side=BUY&positionSide=SHORT"), "la pierna del -2022: {reenvio}");
+        assert!(reenvio.contains("quantity=0.015"), "la cantidad fresca del SHORT: {reenvio}");
+        assert!(!reenvio.contains("reduceOnly"), "hedge no lleva reduceOnly: {reenvio}");
+        assert!(lineas[7].contains("side=SELL&positionSide=LONG"), "{lineas:#?}");
+    }
+
+    /// CL-210, variante one-way: la fila BOTH cuyo signo cambió entre las dos
+    /// lecturas sigue siendo la de la posición. Un emparejamiento por
+    /// `is_long()` la daría por «ya plana» y purgaría sus brackets con ella
+    /// abierta; el de positionSide la cierra con su lado y cantidad frescos.
+    #[tokio::test]
+    async fn cl210_x026_en_one_way_no_da_por_plana_la_fila_both_que_cambio_de_signo() {
+        let mut wires = vec![
+            modo(false),
+            filas(&[("BOTH", "0.010")]),
+            rechazo_2022(),
+            filas(&[("BOTH", "-0.005")]),
+            llenada("BUY", "0.005"),
+            purgada(),
+            purgada(),
+        ];
+        wires.extend((0..3).map(|_| llenada("BUY", "0.005")));
+        let (r, lineas) = aplanar(wires, false).await;
+        assert!(matches!(r, Some(Ok((2, 1)))), "{r:?} {lineas:#?}");
+        assert_eq!(lineas.len(), 7, "{lineas:#?}");
+        let reenvio = &lineas[4];
+        assert!(reenvio.contains("side=BUY&type=MARKET&reduceOnly=true&quantity=0.005"), "{reenvio}");
+        assert!(!reenvio.contains("positionSide"), "{reenvio}");
+    }
+
+    #[test]
+    fn cl210_misma_pierna_empareja_simbolo_y_lado_sin_mirar_el_signo() {
+        let fila = |s: &str, l: &str, q: f64| crate::reconciliation::PositionRiskEntry {
+            symbol: s.into(),
+            position_side: l.into(),
+            position_amt: q,
+            ..Default::default()
+        };
+        let short = fila("BTCUSDT", "SHORT", -0.02);
+        assert!(short.misma_pierna(&fila("BTCUSDT", "SHORT", -0.01)));
+        assert!(short.misma_pierna(&fila("BTCUSDT", " short ", 0.0)));
+        assert!(!short.misma_pierna(&fila("BTCUSDT", "LONG", 0.01)), "la otra pierna");
+        assert!(!short.misma_pierna(&fila("ETHUSDT", "SHORT", -0.02)), "otro símbolo");
+        let both = fila("BTCUSDT", "BOTH", 0.01);
+        assert!(both.misma_pierna(&fila("BTCUSDT", "BOTH", -0.005)), "el signo no cuenta");
     }
 }
