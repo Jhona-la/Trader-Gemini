@@ -2358,11 +2358,10 @@ impl OrderExecutor {
         let cupo = self.check_exit_rate_limits(timestamp, Tramo::Critica(crate::binance_api::COSTE_CANCELACION))?;
 
         let mut buf = ZeroAllocBuffer::new();
-        buf.push_str(if self.client.is_testnet.load(Ordering::Relaxed) {
-            "https://testnet.binancefuture.com/fapi/v1/algoOpenOrders?"
-        } else {
-            "https://fapi.binance.com/fapi/v1/algoOpenOrders?"
-        });
+        // CL-209: la base del entorno sale de `get_base_url` (antes, dos hosts
+        // literales: el aplanado no se podía probar contra un servidor local).
+        buf.push_str(self.client.get_base_url());
+        buf.push_str("/fapi/v1/algoOpenOrders?");
         let payload_start = buf.as_str().len();
         buf.push_str("symbol=");
         buf.push_str(symbol);
@@ -2849,11 +2848,10 @@ impl OrderExecutor {
         let side = if is_long_close { SIDE_SELL } else { SIDE_BUY };
 
         let mut buf = ZeroAllocBuffer::new();
-        buf.push_str(if self.client.is_testnet.load(Ordering::Relaxed) {
-            "https://testnet.binancefuture.com/fapi/v1/order?"
-        } else {
-            "https://fapi.binance.com/fapi/v1/order?"
-        });
+        // CL-209: la base del entorno sale de `get_base_url` (antes, dos hosts
+        // literales), como el resto del aplanado.
+        buf.push_str(self.client.get_base_url());
+        buf.push_str("/fapi/v1/order?");
         let payload_start = buf.as_str().len();
 
         let is_hedge = self.is_hedge_mode.load(Ordering::Relaxed);
@@ -7726,5 +7724,99 @@ mod tests_n33 {
             matches!(r, Some(Err(ref e)) if e.starts_with("RATE_LIMIT_COOLDOWN")),
             "{r:?}"
         );
+    }
+}
+
+#[cfg(test)]
+mod tests_lote18 {
+    //! Lote 18 (N46, N49, N50): el aplanado de emergencia de extremo a extremo
+    //! contra un servidor local (costura CL-209). Cada prueba sirve una
+    //! respuesta por conexión, en orden, anota la línea de petición de cada
+    //! una y deja respuestas de sobra tras la última esperada: un envío de más
+    //! (una guarda ensanchada) se ve en la bitácora en vez de fallar en silencio.
+    use super::tests_n20::respuesta;
+    use super::*;
+
+    type Bitacora = Arc<std::sync::Mutex<Vec<String>>>;
+
+    async fn servidor(wires: Vec<String>) -> Option<(String, Bitacora, tokio::task::JoinHandle<()>)> {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        let oyente = tokio::net::TcpListener::bind("127.0.0.1:0").await.ok()?;
+        let base = format!("http://{}", oyente.local_addr().ok()?);
+        let bitacora: Bitacora = Arc::new(std::sync::Mutex::new(Vec::new()));
+        let notas = Arc::clone(&bitacora);
+        let h = tokio::spawn(async move {
+            for wire in wires {
+                let Ok((mut s, _)) = oyente.accept().await else { return };
+                let mut peticion = [0u8; 8192];
+                let n = s.read(&mut peticion).await.unwrap_or(0);
+                let linea = String::from_utf8_lossy(&peticion[..n]).lines().next().unwrap_or("").to_string();
+                if let Ok(mut v) = notas.lock() {
+                    v.push(linea);
+                }
+                let _ = s.write_all(wire.as_bytes()).await;
+                let _ = s.shutdown().await;
+            }
+        });
+        Some((base, bitacora, h))
+    }
+
+    fn ok(cuerpo: &str) -> String {
+        respuesta("200 OK", "Content-Type: application/json\r\n", cuerpo)
+    }
+
+    fn llenada(lado: &str, cantidad: &str) -> String {
+        ok(&format!(
+            r#"{{"orderId":7,"symbol":"BTCUSDT","status":"FILLED","clientOrderId":"c","origQty":"{cantidad}","executedQty":"{cantidad}","avgPrice":"60000","side":"{lado}","type":"MARKET"}}"#
+        ))
+    }
+
+    fn purgada() -> String {
+        ok(r#"{"code":200,"msg":"The operation of cancel all open order is done."}"#)
+    }
+
+    /// El ejecutor de las pruebas, con sus rutas sobre `base`, el modo
+    /// registrado `hedge` y el filtro de BTCUSDT en caché (paso 0.001).
+    fn ejecutor(base: &str, hedge: bool) -> OrderExecutor {
+        let mut ex = OrderExecutor::new("k".into(), "s".into(), true);
+        ex.client = ex.client.clone().con_base_de_prueba(base);
+        ex.is_hedge_mode.store(hedge, Ordering::SeqCst);
+        let mut filtros = std::collections::HashMap::new();
+        filtros.insert(
+            "BTCUSDT".to_string(),
+            SymbolFilter { step_size: 0.001, tick_size: 0.1, min_notional: 5.0 },
+        );
+        ex.symbol_filters.store(Arc::new(filtros));
+        ex
+    }
+
+    /// CL-209: la costura lleva al servidor local las dos rutas del aplanado
+    /// que tenían el host literal, y sin ella la base es la del entorno.
+    #[tokio::test]
+    async fn cl209_la_costura_lleva_el_aplanado_al_servidor_local() {
+        let sin = OrderExecutor::new("k".into(), "s".into(), true);
+        assert_eq!(sin.client.get_base_url(), crate::client::BINANCE_TESTNET_URL);
+        let servido = servidor(vec![purgada(), llenada("SELL", "0.010")]).await;
+        assert!(servido.is_some(), "servidor local");
+        let Some((base, bitacora, h)) = servido else { return };
+        let ex = ejecutor(&base, true);
+        assert_eq!(ex.client.get_base_url(), base);
+        let algo = tokio::time::timeout(
+            std::time::Duration::from_secs(20),
+            ex.cancel_all_algo_open_orders("BTCUSDT"),
+        )
+        .await;
+        let cierre = tokio::time::timeout(
+            std::time::Duration::from_secs(20),
+            ex.execute_reduce_only_market("BTCUSDT", true, 0.01, 0.001),
+        )
+        .await;
+        h.abort();
+        assert!(matches!(algo, Ok(Ok(()))), "{algo:?}");
+        assert!(matches!(cierre, Ok(Ok(()))), "{cierre:?}");
+        let lineas = bitacora.lock().map(|v| v.clone()).unwrap_or_default();
+        assert_eq!(lineas.len(), 2, "{lineas:?}");
+        assert!(lineas[0].contains("/fapi/v1/algoOpenOrders?symbol=BTCUSDT"), "{lineas:?}");
+        assert!(lineas[1].contains("/fapi/v1/order?symbol=BTCUSDT&side=SELL&positionSide=LONG"), "{lineas:?}");
     }
 }
