@@ -8,10 +8,7 @@
 //! C5: Clasificación de regímenes físicos y veto de operaciones tendenciales.
 //! C6: Resiliencia numérica extrema, rechazo de NaNs/Infs y cero pánicos.
 
-use feature_engine::hodge_flow::{
-    CrossMarketHodgeReport, HelmholtzHodgeFlowEngine, HelmholtzHodgeParams,
-    HodgeDecompositionResult, HodgeRegime, MAX_HODGE_ASSETS,
-};
+use feature_engine::hodge_flow::{HelmholtzHodgeFlowEngine, HelmholtzHodgeParams, HodgeRegime};
 
 #[test]
 fn test_c1_pure_gradient_flow_analytical_zero_curl() {
@@ -203,6 +200,13 @@ fn test_c5_regime_classification_and_directional_trade_veto() {
     assert!(
         decomp_vortex.curl_share > 0.65,
         "Curl share de vórtice debe exceder el umbral de veto de 0.65"
+    );
+    // CL-215: el ciclo 0→1→2→0 conserva el flujo en cada nodo (divergencia
+    // nula), así que no tiene componente de gradiente: su potencial es cero
+    // en todos los nodos, activos o de relleno.
+    assert!(
+        potentials_vortex.iter().all(|p| p.abs() < 1e-12),
+        "Un vórtice puro no tiene potencial de gradiente: {potentials_vortex:?}"
     );
 }
 

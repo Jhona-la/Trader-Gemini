@@ -226,7 +226,6 @@ impl MmapVizStreamReader {
 /// Permite al motor de ejecución escribir snapshots de telemetría directamente
 /// en el archivo mapeado sin locks y con visibilidad instantánea para lectores.
 pub struct MmapVizStreamWriter {
-    mmap_path: PathBuf,
     mmap_handle: Option<MmapMut>,
 }
 
@@ -248,7 +247,6 @@ impl MmapVizStreamWriter {
         }
         let mmap = unsafe { MmapOptions::new().map_mut(&file)? };
         Ok(Self {
-            mmap_path: p,
             mmap_handle: Some(mmap),
         })
     }

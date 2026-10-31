@@ -10,7 +10,7 @@
 
 use data_ingest::sbe_decoder::{
     SbeBookTicker, SbeDecodeError, SbeDepth5Snapshot, SbeHeader, SbePriceLevel, SbeTrade,
-    SBE_HEADER_LEN, SBE_TEMPLATE_BOOK_TICKER, SBE_TEMPLATE_DEPTH5, SBE_TEMPLATE_TRADE,
+    SBE_HEADER_LEN, SBE_TEMPLATE_BOOK_TICKER, SBE_TEMPLATE_TRADE,
 };
 
 #[test]
@@ -182,7 +182,7 @@ fn test_c6_corrupted_payload_and_nan_rejection_zero_panic() {
     assert_eq!(SbeBookTicker::decode(&buf), Err(SbeDecodeError::CorruptedPayload));
 
     // Búfer completamente aleatorio de cualquier tamaño nunca debe causar pánico
-    let mut garbage = [0xFFu8; 128];
+    let garbage = [0xFFu8; 128];
     assert!(SbeBookTicker::decode(&garbage).is_err());
     assert!(SbeTrade::decode(&garbage).is_err());
     assert!(SbeDepth5Snapshot::decode(&garbage).is_err());

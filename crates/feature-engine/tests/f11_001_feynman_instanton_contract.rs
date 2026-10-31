@@ -9,8 +9,7 @@
 //! C6: Resiliencia numérica extrema, rechazo de NaNs/Infs y cero pánicos.
 
 use feature_engine::feynman_path_instanton::{
-    FeynmanInstantonEngine, InstantonParams, InstantonRegime, InstantonTunnelingReport,
-    MAX_PATH_POINTS,
+    FeynmanInstantonEngine, InstantonParams, InstantonRegime,
 };
 
 #[test]
