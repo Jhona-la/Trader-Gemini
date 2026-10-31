@@ -166,6 +166,17 @@ impl OrderAck {
         s.eq_ignore_ascii_case("NEW") || s.eq_ignore_ascii_case("PARTIALLY_FILLED")
     }
 
+    /// F1-028 / CL-212 (N49): el ACK de un cierre prueba llenado: executedQty
+    /// finito y positivo, o un estado FILLED o PARTIALLY_FILLED. Un EXPIRED,
+    /// un NEW o cualquier estado con executedQty 0 no lo prueba: la posición
+    /// puede seguir abierta. Única regla del reduce-only y del aplanado.
+    #[inline(always)]
+    pub fn prueba_llenado(&self) -> bool {
+        (self.executed_qty.is_finite() && self.executed_qty > 0.0)
+            || self.is_filled()
+            || self.status.trim().eq_ignore_ascii_case("PARTIALLY_FILLED")
+    }
+
     /// Cantidad restante por ejecutar (>= 0).
     #[inline(always)]
     pub fn remaining_qty(&self) -> f64 {

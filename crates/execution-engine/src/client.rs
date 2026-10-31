@@ -418,6 +418,13 @@ pub struct BinanceClient {
     pub is_testnet: std::sync::Arc<AtomicBool>,
     /// N20 (CL-188): el freno 429/418, compartido por los clones.
     freno: std::sync::Arc<FrenoExchange>,
+    /// CL-209 (costura del lote 18, N46/N49/N50): la base de las rutas en las
+    /// pruebas del crate, para montar el aplanado contra un servidor local.
+    /// Sólo la escribe `con_base_de_prueba`, que existe únicamente bajo
+    /// `cfg(test)` (tras el corte de producción del archivo): fuera de las
+    /// pruebas es siempre `None` y la base es la del entorno. Coste: una rama
+    /// predecible por petición, frente a la red de milisegundos.
+    base_prueba: Option<std::sync::Arc<str>>,
 }
 
 impl BinanceClient {
@@ -447,6 +454,7 @@ impl BinanceClient {
             freno: std::sync::Arc::new(FrenoExchange::new(std::sync::Arc::new(
                 arc_swap::ArcSwapOption::empty(),
             ))),
+            base_prueba: None,
         }
     }
 
@@ -477,6 +485,9 @@ impl BinanceClient {
     }
 
     pub fn get_base_url(&self) -> &str {
+        if let Some(base) = self.base_prueba.as_deref() {
+            return base;
+        }
         if self.is_testnet.load(Ordering::Relaxed) {
             BINANCE_TESTNET_URL
         } else {
@@ -924,6 +935,16 @@ fn cuerpo_ilegible(estado: reqwest::StatusCode, limites: BinanceRateLimits) -> E
         format!("AMBIGUOUS: HTTP {} unreadable response body", estado.as_u16()),
         limites,
     )
+}
+
+#[cfg(test)]
+impl BinanceClient {
+    /// CL-209: este cliente con sus rutas sobre `base` (un servidor local de
+    /// las pruebas del crate). Sólo existe bajo `cfg(test)`.
+    pub(crate) fn con_base_de_prueba(mut self, base: &str) -> Self {
+        self.base_prueba = Some(std::sync::Arc::from(base));
+        self
+    }
 }
 
 #[cfg(test)]

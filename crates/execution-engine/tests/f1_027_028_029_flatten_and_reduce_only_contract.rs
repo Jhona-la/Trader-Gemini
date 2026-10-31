@@ -162,10 +162,12 @@ fn test_f1_028_typed_reduce_only_contract() {
         "register_intent must occur strictly before execute_order_payload_typed dispatch"
     );
 
-    // F1-028: Must strictly validate executed_qty > 0.0 or terminal filled
+    // F1-028: Must strictly validate executed_qty > 0.0 or terminal filled.
+    // CL-212 (N49): la regla vive en `OrderAck::prueba_llenado`, que también
+    // usa el aplanado; su semántica la fija `test_order_ack_fill_semantics`.
     assert!(
-        fn_body.contains("ack.executed_qty.is_finite() && ack.executed_qty > 0.0"),
-        "Must check ack.executed_qty > 0.0"
+        fn_body.contains("ack.prueba_llenado()"),
+        "Must check the fill with OrderAck::prueba_llenado"
     );
     assert!(
         fn_body.contains("CLOSE_UNFILLED:"),
@@ -209,4 +211,28 @@ fn test_order_ack_fill_semantics() {
     };
     assert!(filled_ack.is_filled());
     assert!(filled_ack.executed_qty > 0.0);
+
+    // CL-212 (N49): la regla de llenado del reduce-only y del aplanado.
+    let ack = |status: &str, executed_qty: f64| OrderAck {
+        executed_qty,
+        status: status.to_string(),
+        ..Default::default()
+    };
+    assert!(!empty_ack.prueba_llenado(), "EXPIRED sin ejecución");
+    assert!(filled_ack.prueba_llenado());
+    assert!(!ack("NEW", 0.0).prueba_llenado(), "aceptada y sin llenar");
+    assert!(!ack("CANCELED", 0.0).prueba_llenado());
+    assert!(
+        !ack("NEW", f64::NAN).prueba_llenado(),
+        "una cantidad no finita no prueba nada"
+    );
+    assert!(
+        ack("EXPIRED", 0.004).prueba_llenado(),
+        "ejecución parcial antes de expirar"
+    );
+    assert!(ack(" partially_filled ", 0.0).prueba_llenado());
+    assert!(
+        ack("FILLED", 0.0).prueba_llenado(),
+        "como F1-028: FILLED basta"
+    );
 }
