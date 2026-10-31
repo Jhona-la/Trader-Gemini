@@ -412,6 +412,7 @@ dice su lote):
 | #148 | N23, la cabecera de uso de los errores (CL-196: el error de los siete transportes firmados es `client::ErrorRest` con la cabecera de su respuesta, y `registrar_error` la registra una vez con el cupo vivo, nunca la de un 429/418) y N33, exchangeInfo sin descargas repetidas (CL-197: tras una descarga fallida fuera del freno no sale otra durante el TTL de la caché negativa); más N23-docs; y su revisión antes de fusionar (CL-198: sin un exchangeInfo guardado, la espera no deja un símbolo en la caché negativa; CL-196b: comentarios; RV21-T: siete pruebas) |
 | #149 | N25, la clasificación de los envíos de orden (CL-199: un 5xx, un 408, un -1006/-1007 o un cuerpo ilegible son AMBIGUOUS, con su cabecera) y N24, el reintento de cuenta y las críticas sin respuesta (CL-200: el reintento se readmite en su tramo; CL-201: una crítica que salió sin respuesta deja su coste como usado hasta que caduca la ventana de cada contador; CL-202: los errores de red sin la URL firmada y el aplanado sólo conmuta el modo ante un rechazo firme); más N24-docs; abre N40 a N46; y su revisión antes de fusionar (CL-202b: el connect rechazado de Windows en las pruebas; RV23-T, RV23-docs) |
 | #150 | N40, un 2xx ilegible de una lectura (CL-203: es un error con su cabecera, y la cuenta y exchangeInfo lo reintentan), N41 b, el reintento de cuenta (CL-204: sale firmado con la hora de ahora, no con la firma que caduca a los 5 s del recvWindow) y N32, los binarios de operador (CL-205: oco_probe limpia siempre tras su entrada y dice si la limpieza falló; la regla de §5 de BINANCE_API_MAP); revisa N41 d, N26 y N46 sin ejecutarlos; abre N47 a N51; y su revisión antes de fusionar (CL-206: `refirmar` no firma una URL con algo tras la firma; CL-207: la limpieza de oco_probe espera al freno 429/418 y lee las órdenes que quedan; RV24-T: guarda del bloque etiquetado y plazo de 3 s; RV24-docs; y de la revisión de esas correcciones, RV25: las lecturas de lo que queda también esperan al freno, el baneo de un 418 sin Retry-After cabe en la espera y la guarda prohíbe `process::exit` entre el bloque y la limpieza) |
+| #153 | N46, N49 y N50, el aplanado de emergencia (CL-209: costura de prueba `base_prueba` de BinanceClient y los hosts literales del aplanado y de `query_order` por `get_base_url`; CL-210: X-026 empareja la pierna por positionSide; CL-212: el Ok del cierre exige `OrderAck::prueba_llenado`; CL-213: un cierre AMBIGUOUS consulta su clientOrderId y va a X-026) y N52, nueva (CL-211: el aplanado registra el modo que acaba de leer); con CL-208 (PR #152, las acciones de la CI en Node 24) |
 
 **Hecho por otros agentes**: lote 9 entero (Sol, d18b3735), lote 45 entero
 (Codex RB, 906a9c6a), parte del 7 (Sol retiró el bin main.rs de
@@ -1655,7 +1656,7 @@ un escéptico por lote listo):
   firmada al texto de sus errores de red («HTTP Error: …», :119 y :212),
   como hacía el ejecutor antes de CL-202. Ningún lector busca en ese texto:
   sólo higiene de registros (`without_url`).
-- N46 (de la revisión de la tanda 16, Línea C): un cierre AMBIGUOUS del
+- N46 (de la revisión de la tanda 16, Línea C): **Hecha en la tanda 18 (CL-213, #153).** un cierre AMBIGUOUS del
   aplanado (red, 5xx, ACK ilegible) no se reconcilia: cae al brazo final
   de `flatten_all_positions` («NO cerrada tras reintento», sin que haya
   reintento), el símbolo queda sin cerrar y sus brackets sin purgar, aunque
@@ -1705,13 +1706,13 @@ un escéptico por lote listo):
   cambio, corren sobre el sucesor, cuyo uso está vacío (N26). Candidato:
   reintentar por plazo o al quedar libre, con a lo sumo un refresco
   pendiente. Inferido de la lectura, sin medir.
-- N49 (de la revisión de la tanda 17, Línea C): el brazo Ok del cierre del
+- N49 (de la revisión de la tanda 17, Línea C): **Hecha en la tanda 18 (CL-212, #153).** el brazo Ok del cierre del
   aplanado (executor.rs:984-987) da por cerrado cualquier ACK 2xx que se
   pueda leer, también un EXPIRED o con executedQty 0, y purga los brackets
   de una posición abierta. F1-028 lo prohíbe en
   `execute_reduce_only_market_internal` (:2795-2806 en el head del PR #150). Candidato: la misma
   comprobación de llenado.
-- N50 (de la revisión de la tanda 17, Línea C, precondición de N46): el
+- N50 (de la revisión de la tanda 17, Línea C, precondición de N46): **Hecha en la tanda 18 (CL-210, #153).** el
   re-snapshot de X-026 busca la fila fresca sólo por símbolo
   (executor.rs:1007-1011). En hedge con las dos piernas abiertas puede
   cerrar la otra pierna y purgar los brackets del símbolo con la suya viva
@@ -1733,6 +1734,28 @@ un escéptico por lote listo):
   comentario de :2415-2418 y kill_switch_host_contract.rs:57-62 dicen que
   el aplanado devuelve Ok aunque un cierre falle, cuando devuelve
   FLATTEN_INCOMPLETE.
+- N52 (de la tanda 18, Línea C): el aplanado leía el modo de la cuenta
+  (positionSide/dual) y lo usaba sólo en su propio cierre; el reenvío de
+  X-026 sale por `execute_reduce_only_market_internal`, que lee el modo
+  REGISTRADO. Con el registro viejo (one-way) y la cuenta en hedge, el
+  reenvío salía con reduceOnly y sin positionSide (en la cuenta real, un
+  -4061 y la pierna abierta). **Hecha en la tanda 18 (CL-211, #153).**
+- N53 (de la tanda 18, Línea C, sin dueño): quedan hosts literales de
+  Binance en executor.rs (las rutas algo, openOrders, las órdenes de
+  entrada y protección y exchangeInfo, unas trece) en vez de
+  `get_base_url`: dos fuentes del entorno para lo mismo. Candidato: todas
+  por `get_base_url`, con la costura de CL-209 para probarlas.
+- N54 (de la tanda 18, Línea C, sin medir): en el aplanado, un cierre por
+  WS sin confirmar en 200 ms se reenvía por REST con un clientOrderId
+  nuevo (F1-029). En one-way el reduceOnly lo acota; en hedge (sin
+  reduceOnly) dos cierres de la misma pierna dependen de que Binance
+  rechace el de más. Candidato: consultar el id del WS antes del REST,
+  como CL-213 hace con el AMBIGUOUS.
+- N55 (de la tanda 18, Línea C): el `query_order` por defecto del trait
+  ExecutionProvider devuelve «query_order no implementado en este
+  provider», un stub que la regla del proyecto prohíbe; sólo lo heredan
+  los proveedores que no lo sobrescriben. Candidato: auditar quién lo
+  hereda y quitar el defecto.
 
 **Restos de lotes ejecutados**: del 3, net_multiplexer (a AGY, para
 unificar con data_pipeline::http_cliente) y active_universe/
