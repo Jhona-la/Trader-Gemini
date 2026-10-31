@@ -1774,6 +1774,14 @@ un escéptico por lote listo):
   un proveedor que no sobrescriba ninguno de los dos recursa sin fin. Hoy
   ninguno lo hace. Candidato: los cuatro sin defecto y el simulador con
   su registro de órdenes por clientOrderId.
+  Más a fondo: `SimulatedExecutor` entero es huérfano (ningún motor lo
+  construye; el modo papel vive en `OrderExecutor::is_paper_trading`) y
+  está lleno de respuestas fijas: la OCO, `cancel_order` y
+  `cancel_all_symbol_orders` imprimen y devuelven Ok sin estado, una
+  posición nueva entra a precio 1.0 y un candado envenenado da Ok(vec![]).
+  Quitar sólo los defectos del trait no lo arregla: es un lote C-F7b
+  (retirar el simulador con su contrato, o reconectarlo y certificarlo con
+  estado real), a decidir con el dueño.
 - N56 (de la tanda 19, Línea C, para Línea I/AGY: god_engine.rs): en el
   bucle del WS (`src/bin/god_engine.rs`, el `match` del handshake TLS con
   el plazo de I-6b) el brazo `Err(e)` final es inalcanzable (rustc:
