@@ -1036,6 +1036,9 @@ impl OrderExecutor {
                 buf.push_f64(p.position_amt.abs());
                 buf.push_str("&newClientOrderId=");
                 buf.push_str(&coid_rest);
+                // CL-213 (N46): el clientOrderId del último cierre enviado, para
+                // consultarlo si su respuesta es AMBIGUOUS.
+                let mut coid_enviado = coid_rest;
                 buf.push_str("&timestamp=");
                 buf.push_u64(ts);
                 let mut sig_buf = [0u8; 64];
@@ -1091,6 +1094,7 @@ impl OrderExecutor {
                         retry_buf.push_f64(p.position_amt.abs());
                         retry_buf.push_str("&newClientOrderId=");
                         retry_buf.push_str(&coid_retry);
+                        coid_enviado = coid_retry;
                         retry_buf.push_str("&timestamp=");
                         retry_buf.push_u64(ts_retry);
                         let mut retry_sig_buf = [0u8; 64];
@@ -1149,6 +1153,28 @@ impl OrderExecutor {
                             );
                             TrasCierre::Resnapshot { reenviar }
                         }
+                    }
+                    // CL-213 (N46): un cierre AMBIGUOUS (red, 5xx, 408,
+                    // -1006/-1007, ACK ilegible) no prueba nada: antes caía al
+                    // brazo final («NO cerrada tras reintento», sin reintento)
+                    // con la posición quizá ya plana y sus brackets sin purgar.
+                    // Primero se consulta su clientOrderId (contrato F1.2 de
+                    // client.rs: consulta, nunca reenvío a ciegas). Aceptada:
+                    // el re-snapshot sólo confirma (reenviar sería un cierre de
+                    // más con el primero aún en cola). Rechazada o sin
+                    // respuesta: X-026 con reenvío. Va antes del brazo de
+                    // -2022/-4061: un AMBIGUOUS nunca es un rechazo firme.
+                    Err(e) if e.starts_with("AMBIGUOUS") => {
+                        let resolucion = self.resolve_via_rest(&p.symbol, &coid_enviado).await;
+                        let reenviar = resolucion != OrderResolution::Accepted;
+                        println!(
+                            "♻️ [X-026] {} cierre AMBIGUOUS ({}): consulta {:?}; re-snapshot fresco{}",
+                            p.symbol,
+                            e,
+                            resolucion,
+                            if reenviar { "" } else { " sin reenvío (el cierre fue aceptado)" }
+                        );
+                        TrasCierre::Resnapshot { reenviar }
                     }
                     Err(e) if e.contains("-2022") || e.contains("-4061") => {
                         println!(
@@ -4380,11 +4406,10 @@ impl ExecutionProvider for OrderExecutor {
         let cupo = self.check_exit_rate_limits(timestamp, Tramo::Critica(crate::binance_api::COSTE_CONSULTA_ORDEN))?;
 
         let mut buf = ZeroAllocBuffer::new();
-        buf.push_str(if self.client.is_testnet.load(Ordering::Relaxed) {
-            "https://testnet.binancefuture.com/fapi/v1/order?"
-        } else {
-            "https://fapi.binance.com/fapi/v1/order?"
-        });
+        // CL-213: la base del entorno sale de `get_base_url` (antes, dos hosts
+        // literales), como el resto del aplanado, que ahora consulta su cierre.
+        buf.push_str(self.client.get_base_url());
+        buf.push_str("/fapi/v1/order?");
         let payload_start = buf.as_str().len();
 
         buf.push_str("symbol=");
@@ -7814,6 +7839,7 @@ mod tests_lote18 {
                 let mut peticion = [0u8; 8192];
                 let n = s.read(&mut peticion).await.unwrap_or(0);
                 let linea = String::from_utf8_lossy(&peticion[..n]).lines().next().unwrap_or("").to_string();
+                let wire = con_coid(wire, &linea);
                 if let Ok(mut v) = notas.lock() {
                     v.push(linea);
                 }
@@ -7822,6 +7848,29 @@ mod tests_lote18 {
             }
         });
         Some((base, bitacora, h))
+    }
+
+    /// Una respuesta con `{COID}` en el cuerpo lo recibe del
+    /// `origClientOrderId` de la petición (la consulta de una orden cuyo id
+    /// genera el aplanado), con su Content-Length recalculado.
+    fn con_coid(wire: String, linea: &str) -> String {
+        if !wire.contains("{COID}") {
+            return wire;
+        }
+        let coid = linea
+            .split("origClientOrderId=")
+            .nth(1)
+            .and_then(|r| r.split(['&', ' ']).next())
+            .unwrap_or("");
+        let Some((cabecera, cuerpo)) = wire.split_once("\r\n\r\n") else {
+            return wire;
+        };
+        let cuerpo = cuerpo.replace("{COID}", coid);
+        let cabecera: Vec<&str> = cabecera
+            .split("\r\n")
+            .filter(|l| !l.starts_with("Content-Length:"))
+            .collect();
+        format!("{}\r\nContent-Length: {}\r\n\r\n{cuerpo}", cabecera.join("\r\n"), cuerpo.len())
     }
 
     fn ok(cuerpo: &str) -> String {
@@ -7852,6 +7901,26 @@ mod tests_lote18 {
         ok(&format!(
             r#"{{"orderId":8,"symbol":"BTCUSDT","status":"{estado}","clientOrderId":"c","origQty":"0.010","executedQty":"{ejecutada}","avgPrice":"0","side":"{lado}","type":"MARKET"}}"#
         ))
+    }
+
+    /// La consulta GET /fapi/v1/order de la orden del aplanado: su estado y su
+    /// ejecución sobre origQty 0.020, con el clientOrderId que se consultó.
+    fn consulta(lado: &str, estado: &str, ejecutada: &str) -> String {
+        ok(&format!(
+            r#"{{"orderId":9,"symbol":"BTCUSDT","status":"{estado}","clientOrderId":"{{COID}}","origQty":"0.020","executedQty":"{ejecutada}","avgPrice":"60000","side":"{lado}","type":"MARKET"}}"#
+        ))
+    }
+
+    fn ambigua() -> String {
+        respuesta("502 Bad Gateway", "", "")
+    }
+
+    fn inexistente() -> String {
+        respuesta(
+            "400 Bad Request",
+            "Content-Type: application/json\r\n",
+            r#"{"code":-2013,"msg":"Order does not exist."}"#,
+        )
     }
 
     fn rechazo_2022() -> String {
@@ -8083,5 +8152,97 @@ mod tests_lote18 {
             "{r:?} {lineas:#?}"
         );
         assert_eq!(lineas.len(), 4, "ni reenvío ni purga: {lineas:#?}");
+    }
+
+    /// RED antes de CL-213 (N46): un cierre AMBIGUOUS (aquí un 502) caía al
+    /// brazo final, «NO cerrada tras reintento», con la posición ya plana y
+    /// sus brackets sin purgar (FLATTEN_INCOMPLETE en 3 peticiones). Ahora se
+    /// consulta su clientOrderId: FILLED es aceptada, el re-snapshot confirma
+    /// que quedó plana, se purga y no se reenvía nada.
+    #[tokio::test]
+    async fn cl213_un_cierre_ambiguo_aceptado_se_confirma_sin_reenvio() {
+        let mut wires = vec![
+            modo(false),
+            filas(&[("BOTH", "0.020")]),
+            ambigua(),
+            consulta("SELL", "FILLED", "0.020"),
+            filas(&[("BOTH", "0")]),
+            purgada(),
+            purgada(),
+        ];
+        wires.extend((0..3).map(|_| llenada("SELL", "0.020")));
+        let (r, lineas) = aplanar(wires, false).await;
+        assert!(matches!(r, Some(Ok((2, 1)))), "{r:?} {lineas:#?}");
+        assert_eq!(lineas.len(), 7, "{lineas:#?}");
+        assert!(lineas[3].contains("/fapi/v1/order?symbol=BTCUSDT&origClientOrderId="), "{lineas:#?}");
+        let enviado = lineas[2].split("newClientOrderId=").nth(1).and_then(|r| r.split('&').next());
+        let consultado = lineas[3].split("origClientOrderId=").nth(1).and_then(|r| r.split('&').next());
+        assert!(enviado.is_some() && enviado == consultado, "se consulta el cierre enviado: {lineas:#?}");
+        assert!(lineas[4].contains("positionRisk"), "{lineas:#?}");
+    }
+
+    /// CL-213: aceptada y todavía NEW (el cierre sigue en cola) con la pierna
+    /// abierta: ni reenvío (sería un cierre de más) ni purga.
+    #[tokio::test]
+    async fn cl213_un_cierre_ambiguo_aceptado_y_en_cola_no_se_reenvia() {
+        let mut wires = vec![
+            modo(false),
+            filas(&[("BOTH", "0.020")]),
+            ambigua(),
+            consulta("SELL", "NEW", "0"),
+            filas(&[("BOTH", "0.020")]),
+        ];
+        wires.extend((0..3).map(|_| llenada("SELL", "0.020")));
+        let (r, lineas) = aplanar(wires, false).await;
+        assert!(matches!(&r, Some(Err(e)) if e.starts_with("FLATTEN_INCOMPLETE")), "{r:?} {lineas:#?}");
+        assert_eq!(lineas.len(), 5, "ni reenvío ni purga: {lineas:#?}");
+    }
+
+    /// CL-213 en hedge con dos piernas: el cierre del SHORT sale AMBIGUOUS y
+    /// su consulta da -2013 (sin prueba de rechazo ni de ejecución: Timeout).
+    /// X-026 reenvía la MISMA pierna con su cantidad fresca (CL-210) aunque la
+    /// lectura fresca traiga primero el LONG, y el LONG se cierra después.
+    #[tokio::test]
+    async fn cl213_un_cierre_ambiguo_sin_respuesta_va_a_x026_con_su_pierna() {
+        let mut wires = vec![
+            modo(true),
+            filas(&[("SHORT", "-0.020"), ("LONG", "0.010")]),
+            ambigua(),
+            inexistente(),
+            filas(&[("LONG", "0.010"), ("SHORT", "-0.020")]),
+            llenada("BUY", "0.020"),
+            purgada(),
+            purgada(),
+            llenada("SELL", "0.010"),
+            purgada(),
+            purgada(),
+        ];
+        wires.extend((0..3).map(|_| llenada("SELL", "0.010")));
+        let (r, lineas) = aplanar(wires, true).await;
+        assert!(matches!(r, Some(Ok((4, 2)))), "{r:?} {lineas:#?}");
+        assert_eq!(lineas.len(), 11, "{lineas:#?}");
+        let reenvio = &lineas[5];
+        assert!(reenvio.contains("side=BUY&positionSide=SHORT"), "{reenvio}");
+        assert!(reenvio.contains("quantity=0.020") && !reenvio.contains("reduceOnly"), "{reenvio}");
+        assert!(lineas[8].contains("side=SELL&positionSide=LONG"), "{lineas:#?}");
+    }
+
+    /// CL-213, la carrera: sin respuesta de la consulta, el reenvío de X-026
+    /// recibe -2022 (el primer cierre llenó entretanto). La pierna no se da
+    /// por cerrada ni se purga: queda para la reconciliación.
+    #[tokio::test]
+    async fn cl213_la_carrera_con_el_cierre_en_cola_no_purga() {
+        let mut wires = vec![
+            modo(true),
+            filas(&[("SHORT", "-0.020")]),
+            ambigua(),
+            inexistente(),
+            filas(&[("SHORT", "-0.020")]),
+            rechazo_2022(),
+        ];
+        wires.extend((0..3).map(|_| purgada()));
+        let (r, lineas) = aplanar(wires, true).await;
+        assert!(matches!(&r, Some(Err(e)) if e.starts_with("FLATTEN_INCOMPLETE")), "{r:?} {lineas:#?}");
+        assert_eq!(lineas.len(), 6, "sin purga tras el -2022: {lineas:#?}");
     }
 }
