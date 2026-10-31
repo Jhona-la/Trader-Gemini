@@ -176,6 +176,20 @@ pub fn strikes_latencia(
     ciclo_strikes(red_reloj_ms, espera_local_ms, umbral_ms, stalled, sin_eventos_nuevos).aplicar(previos)
 }
 
+/// I-3c (Línea I, GLM-174): ¿le toca evaluar al bosque sombra en ESTE
+/// mensaje? El bosque corre en el mismo hilo que el núcleo: si la cola
+/// local está atrasada (este evento esperó más que el umbral), evaluar
+/// sus 10 universos suma retraso al retraso. Predicado puro sobre la
+/// espera local ya medida por mensaje (I-2b) — el bosque es aprendizaje
+/// estadístico: con cola sana toma todas sus muestras; con cola atrasada
+/// cede el hilo para que el núcleo alcance al feed. El umbral lo fija el
+/// llamador (en el host, la mitad del umbral de pánico del genoma —
+/// adaptativo, no un número mágico).
+#[inline]
+pub fn toca_sombra(espera_local_ms: u64, umbral_atraso_ms: u64) -> bool {
+    espera_local_ms <= umbral_atraso_ms
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

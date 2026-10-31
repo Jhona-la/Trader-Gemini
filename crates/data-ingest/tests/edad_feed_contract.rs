@@ -63,3 +63,34 @@ fn i2c_el_monitor_informa_la_contrapresion_por_periodo() {
     assert!(t.contains("telemetry_server::telemetry_log!("), "por la cola de telemetría, no por stdout");
     assert!(!t.contains("println!("));
 }
+
+#[test]
+fn i3c_el_bosque_cede_el_hilo_cuando_la_cola_se_atrasa() {
+    use data_ingest::edad_feed::toca_sombra;
+    // Cola sana: el bosque toma su muestra (muestreo 1-in-10 intacto).
+    assert!(toca_sombra(0, 1_570), "sin espera: le toca");
+    assert!(toca_sombra(1_570, 1_570), "en el umbral exacto: le toca (<=)");
+    // Cola atrasada: el bosque cede el hilo al núcleo.
+    assert!(!toca_sombra(1_571, 1_570), "un ms por encima del umbral: cede");
+    assert!(!toca_sombra(u64::MAX, 1_570), "cola desbordada: cede");
+    // Umbral degenerado (1 ms): sólo con cola esencialmente sana.
+    assert!(toca_sombra(1, 1));
+    assert!(!toca_sombra(2, 1));
+}
+
+#[test]
+fn i3c_el_broadcast_del_bosque_esta_guardado_por_el_predicado() {
+    // Guardia de fuente: el bosque sombra ya no corre incondicional en el
+    // hilo del núcleo — su broadcast está detrás de toca_sombra con el
+    // umbral adaptativo (mitad del umbral de pánico del genoma).
+    let h = compacto();
+    let t = tramo(&h, "ifmsg_count%10==0", "shadow_forest.broadcast_tick(");
+    assert!(
+        t.contains("edad_feed::toca_sombra("),
+        "I-3c: el broadcast del bosque debe estar guardado por toca_sombra"
+    );
+    assert!(
+        t.contains("(panic_threshold/2).max(1)"),
+        "I-3c: el umbral de atraso es la mitad del umbral de pánico (gen), no un número mágico"
+    );
+}

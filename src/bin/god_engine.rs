@@ -4321,7 +4321,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 // costaba 10× el motor). El shadow-forest aprende umbrales
                 // estadísticos: muestreo uniforme preserva la señal, divide
                 // el costo por 10.
-                if msg_count % 10 == 0 {
+                // I-3c (Línea I, GLM-174): además, el bosque CEDE el hilo
+                // cuando la cola local está atrasada — este evento esperó
+                // más de la mitad del umbral de pánico (gen, adaptativo):
+                // con el núcleo ido, evaluar 10 universos suma retraso al
+                // retraso, y el aprendizaje estadístico tolera perder
+                // muestras mejor de lo que el trading tolera la cola.
+                if msg_count % 10 == 0
+                    && data_ingest::edad_feed::toca_sombra(
+                        edad.espera_local_ms.max(0) as u64,
+                        (panic_threshold / 2).max(1) as u64,
+                    )
+                {
                     shadow_forest.broadcast_tick(
                         // D-707: los universos sombra ven el mismo libro que el
                         // motor real, o compararían dos mundos distintos.

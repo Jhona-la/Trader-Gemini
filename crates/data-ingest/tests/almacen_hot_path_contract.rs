@@ -130,11 +130,28 @@ fn i7_4_el_borde_nunca_espera_al_worker_aplicacion_un_borde_despues() {
         espera_borde_n
     );
 
-    // Borde N+1 (≈5000 mensajes después): la respuesta ya está lista.
-    std::thread::sleep(std::time::Duration::from_millis(120));
-    match rx_resp.try_recv() {
-        Ok(aplicada) => assert_eq!(aplicada, 70, "la respuesta del worker se aplica"),
-        Err(_) => panic!("borde N+1: la respuesta diferida debía estar lista"),
+    // Borde N+1 (≈5000 mensajes después): la respuesta llega SIN QUE EL
+    // BORDE BLOQUEE — try_recv en un bucle acotado (bajo carga del SO el
+    // sleep del worker puede estirarse; el invariante es que el borde
+    // jamás usa recv() bloqueante, no que llegue en un tiempo fijo).
+    let limite = std::time::Instant::now() + std::time::Duration::from_secs(10);
+    loop {
+        match rx_resp.try_recv() {
+            Ok(aplicada) => {
+                assert_eq!(aplicada, 70, "la respuesta del worker se aplica");
+                break;
+            }
+            Err(std::sync::mpsc::TryRecvError::Disconnected) => {
+                panic!("borde N+1: el worker murió sin responder")
+            }
+            Err(std::sync::mpsc::TryRecvError::Empty) => {
+                assert!(
+                    std::time::Instant::now() < limite,
+                    "borde N+1: la respuesta diferida no llegó en 10 s (¿worker muerto?)"
+                );
+                std::thread::sleep(std::time::Duration::from_millis(10));
+            }
+        }
     }
     drop(tx_pedidos);
     let _ = hilo.join();
