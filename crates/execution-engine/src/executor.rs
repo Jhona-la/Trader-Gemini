@@ -7827,7 +7827,9 @@ mod tests_lote18 {
 
     type Bitacora = Arc<std::sync::Mutex<Vec<String>>>;
 
-    async fn servidor(wires: Vec<String>) -> Option<(String, Bitacora, tokio::task::JoinHandle<()>)> {
+    async fn servidor(
+        wires: Vec<String>,
+    ) -> Option<(String, Bitacora, tokio::task::JoinHandle<()>)> {
         use tokio::io::{AsyncReadExt, AsyncWriteExt};
         let oyente = tokio::net::TcpListener::bind("127.0.0.1:0").await.ok()?;
         let base = format!("http://{}", oyente.local_addr().ok()?);
@@ -7835,10 +7837,16 @@ mod tests_lote18 {
         let notas = Arc::clone(&bitacora);
         let h = tokio::spawn(async move {
             for wire in wires {
-                let Ok((mut s, _)) = oyente.accept().await else { return };
+                let Ok((mut s, _)) = oyente.accept().await else {
+                    return;
+                };
                 let mut peticion = [0u8; 8192];
                 let n = s.read(&mut peticion).await.unwrap_or(0);
-                let linea = String::from_utf8_lossy(&peticion[..n]).lines().next().unwrap_or("").to_string();
+                let linea = String::from_utf8_lossy(&peticion[..n])
+                    .lines()
+                    .next()
+                    .unwrap_or("")
+                    .to_string();
                 let wire = con_coid(wire, &linea);
                 if let Ok(mut v) = notas.lock() {
                     v.push(linea);
@@ -7870,7 +7878,11 @@ mod tests_lote18 {
             .split("\r\n")
             .filter(|l| !l.starts_with("Content-Length:"))
             .collect();
-        format!("{}\r\nContent-Length: {}\r\n\r\n{cuerpo}", cabecera.join("\r\n"), cuerpo.len())
+        format!(
+            "{}\r\nContent-Length: {}\r\n\r\n{cuerpo}",
+            cabecera.join("\r\n"),
+            cuerpo.len()
+        )
     }
 
     fn ok(cuerpo: &str) -> String {
@@ -7885,7 +7897,9 @@ mod tests_lote18 {
         let cuerpo: Vec<String> = filas
             .iter()
             .map(|(lado, cantidad)| {
-                format!(r#"{{"symbol":"BTCUSDT","positionSide":"{lado}","positionAmt":"{cantidad}"}}"#)
+                format!(
+                    r#"{{"symbol":"BTCUSDT","positionSide":"{lado}","positionAmt":"{cantidad}"}}"#
+                )
             })
             .collect();
         ok(&format!("[{}]", cuerpo.join(",")))
@@ -7944,7 +7958,11 @@ mod tests_lote18 {
         let mut filtros = std::collections::HashMap::new();
         filtros.insert(
             "BTCUSDT".to_string(),
-            SymbolFilter { step_size: 0.001, tick_size: 0.1, min_notional: 5.0 },
+            SymbolFilter {
+                step_size: 0.001,
+                tick_size: 0.1,
+                min_notional: 5.0,
+            },
         );
         ex.symbol_filters.store(Arc::new(filtros));
         ex
@@ -7952,16 +7970,22 @@ mod tests_lote18 {
 
     /// El aplanado contra `wires`: su resultado y las líneas de petición que
     /// llegaron. Nunca se cuelga (plazo de 60 s y el servidor se aborta).
-    async fn aplanar(wires: Vec<String>, hedge: bool) -> (Option<Result<(usize, usize), String>>, Vec<String>) {
+    async fn aplanar(
+        wires: Vec<String>,
+        hedge: bool,
+    ) -> (Option<Result<(usize, usize), String>>, Vec<String>) {
         let servido = servidor(wires).await;
         assert!(servido.is_some(), "servidor local");
         let Some((base, bitacora, h)) = servido else {
             return (None, Vec::new());
         };
         let ex = ejecutor(&base, hedge);
-        let r = tokio::time::timeout(std::time::Duration::from_secs(60), ex.flatten_all_positions())
-            .await
-            .ok();
+        let r = tokio::time::timeout(
+            std::time::Duration::from_secs(60),
+            ex.flatten_all_positions(),
+        )
+        .await
+        .ok();
         h.abort();
         let lineas = bitacora.lock().map(|v| v.clone()).unwrap_or_default();
         (r, lineas)
@@ -7972,10 +7996,15 @@ mod tests_lote18 {
     #[tokio::test]
     async fn cl209_la_costura_lleva_el_aplanado_al_servidor_local() {
         let sin = OrderExecutor::new("k".into(), "s".into(), true);
-        assert_eq!(sin.client.get_base_url(), crate::client::BINANCE_TESTNET_URL);
+        assert_eq!(
+            sin.client.get_base_url(),
+            crate::client::BINANCE_TESTNET_URL
+        );
         let servido = servidor(vec![purgada(), llenada("SELL", "0.010")]).await;
         assert!(servido.is_some(), "servidor local");
-        let Some((base, bitacora, h)) = servido else { return };
+        let Some((base, bitacora, h)) = servido else {
+            return;
+        };
         let ex = ejecutor(&base, true);
         assert_eq!(ex.client.get_base_url(), base);
         let algo = tokio::time::timeout(
@@ -7993,8 +8022,14 @@ mod tests_lote18 {
         assert!(matches!(cierre, Ok(Ok(()))), "{cierre:?}");
         let lineas = bitacora.lock().map(|v| v.clone()).unwrap_or_default();
         assert_eq!(lineas.len(), 2, "{lineas:?}");
-        assert!(lineas[0].contains("/fapi/v1/algoOpenOrders?symbol=BTCUSDT"), "{lineas:?}");
-        assert!(lineas[1].contains("/fapi/v1/order?symbol=BTCUSDT&side=SELL&positionSide=LONG"), "{lineas:?}");
+        assert!(
+            lineas[0].contains("/fapi/v1/algoOpenOrders?symbol=BTCUSDT"),
+            "{lineas:?}"
+        );
+        assert!(
+            lineas[1].contains("/fapi/v1/order?symbol=BTCUSDT&side=SELL&positionSide=LONG"),
+            "{lineas:?}"
+        );
     }
 
     /// RED antes de CL-210 (N50): en hedge con las dos piernas abiertas, el
@@ -8040,10 +8075,22 @@ mod tests_lote18 {
         assert_eq!(lineas.len(), 10, "ni un envío de más: {lineas:#?}");
         let reenvio = &lineas[4];
         assert!(reenvio.contains("/fapi/v1/order?"), "{reenvio}");
-        assert!(reenvio.contains("side=BUY&positionSide=SHORT"), "la pierna del -2022: {reenvio}");
-        assert!(reenvio.contains("quantity=0.015"), "la cantidad fresca del SHORT: {reenvio}");
-        assert!(!reenvio.contains("reduceOnly"), "hedge no lleva reduceOnly: {reenvio}");
-        assert!(lineas[7].contains("side=SELL&positionSide=LONG"), "{lineas:#?}");
+        assert!(
+            reenvio.contains("side=BUY&positionSide=SHORT"),
+            "la pierna del -2022: {reenvio}"
+        );
+        assert!(
+            reenvio.contains("quantity=0.015"),
+            "la cantidad fresca del SHORT: {reenvio}"
+        );
+        assert!(
+            !reenvio.contains("reduceOnly"),
+            "hedge no lleva reduceOnly: {reenvio}"
+        );
+        assert!(
+            lineas[7].contains("side=SELL&positionSide=LONG"),
+            "{lineas:#?}"
+        );
     }
 
     /// CL-210, variante one-way: la fila BOTH cuyo signo cambió entre las dos
@@ -8066,7 +8113,10 @@ mod tests_lote18 {
         assert!(matches!(r, Some(Ok((2, 1)))), "{r:?} {lineas:#?}");
         assert_eq!(lineas.len(), 7, "{lineas:#?}");
         let reenvio = &lineas[4];
-        assert!(reenvio.contains("side=BUY&type=MARKET&reduceOnly=true&quantity=0.005"), "{reenvio}");
+        assert!(
+            reenvio.contains("side=BUY&type=MARKET&reduceOnly=true&quantity=0.005"),
+            "{reenvio}"
+        );
         assert!(!reenvio.contains("positionSide"), "{reenvio}");
     }
 
@@ -8081,10 +8131,19 @@ mod tests_lote18 {
         let short = fila("BTCUSDT", "SHORT", -0.02);
         assert!(short.misma_pierna(&fila("BTCUSDT", "SHORT", -0.01)));
         assert!(short.misma_pierna(&fila("BTCUSDT", " short ", 0.0)));
-        assert!(!short.misma_pierna(&fila("BTCUSDT", "LONG", 0.01)), "la otra pierna");
-        assert!(!short.misma_pierna(&fila("ETHUSDT", "SHORT", -0.02)), "otro símbolo");
+        assert!(
+            !short.misma_pierna(&fila("BTCUSDT", "LONG", 0.01)),
+            "la otra pierna"
+        );
+        assert!(
+            !short.misma_pierna(&fila("ETHUSDT", "SHORT", -0.02)),
+            "otro símbolo"
+        );
         let both = fila("BTCUSDT", "BOTH", 0.01);
-        assert!(both.misma_pierna(&fila("BTCUSDT", "BOTH", -0.005)), "el signo no cuenta");
+        assert!(
+            both.misma_pierna(&fila("BTCUSDT", "BOTH", -0.005)),
+            "el signo no cuenta"
+        );
     }
 
     /// RED antes de CL-212 (N49): el brazo Ok del cierre daba por cerrado un
@@ -8107,12 +8166,18 @@ mod tests_lote18 {
         let (r, lineas) = aplanar(wires, false).await;
         assert!(matches!(r, Some(Ok((2, 1)))), "{r:?} {lineas:#?}");
         assert_eq!(lineas.len(), 7, "{lineas:#?}");
-        assert!(lineas[3].contains("positionRisk"), "re-snapshot: {lineas:#?}");
+        assert!(
+            lineas[3].contains("positionRisk"),
+            "re-snapshot: {lineas:#?}"
+        );
         assert!(
             lineas[4].contains("side=SELL&type=MARKET&reduceOnly=true&quantity=0.010"),
             "{lineas:#?}"
         );
-        assert!(lineas[5].contains("allOpenOrders") && lineas[6].contains("algoOpenOrders"), "{lineas:#?}");
+        assert!(
+            lineas[5].contains("allOpenOrders") && lineas[6].contains("algoOpenOrders"),
+            "{lineas:#?}"
+        );
     }
 
     /// CL-212: el mismo EXPIRED con la pierna ya plana en la lectura fresca se
@@ -8131,7 +8196,10 @@ mod tests_lote18 {
         let (r, lineas) = aplanar(wires, false).await;
         assert!(matches!(r, Some(Ok((2, 1)))), "{r:?} {lineas:#?}");
         assert_eq!(lineas.len(), 6, "{lineas:#?}");
-        assert!(lineas[4].contains("allOpenOrders") && lineas[5].contains("algoOpenOrders"), "{lineas:#?}");
+        assert!(
+            lineas[4].contains("allOpenOrders") && lineas[5].contains("algoOpenOrders"),
+            "{lineas:#?}"
+        );
     }
 
     /// CL-212: un ACK NEW sin llenar es un cierre vivo que todavía puede
@@ -8174,10 +8242,22 @@ mod tests_lote18 {
         let (r, lineas) = aplanar(wires, false).await;
         assert!(matches!(r, Some(Ok((2, 1)))), "{r:?} {lineas:#?}");
         assert_eq!(lineas.len(), 7, "{lineas:#?}");
-        assert!(lineas[3].contains("/fapi/v1/order?symbol=BTCUSDT&origClientOrderId="), "{lineas:#?}");
-        let enviado = lineas[2].split("newClientOrderId=").nth(1).and_then(|r| r.split('&').next());
-        let consultado = lineas[3].split("origClientOrderId=").nth(1).and_then(|r| r.split('&').next());
-        assert!(enviado.is_some() && enviado == consultado, "se consulta el cierre enviado: {lineas:#?}");
+        assert!(
+            lineas[3].contains("/fapi/v1/order?symbol=BTCUSDT&origClientOrderId="),
+            "{lineas:#?}"
+        );
+        let enviado = lineas[2]
+            .split("newClientOrderId=")
+            .nth(1)
+            .and_then(|r| r.split('&').next());
+        let consultado = lineas[3]
+            .split("origClientOrderId=")
+            .nth(1)
+            .and_then(|r| r.split('&').next());
+        assert!(
+            enviado.is_some() && enviado == consultado,
+            "se consulta el cierre enviado: {lineas:#?}"
+        );
         assert!(lineas[4].contains("positionRisk"), "{lineas:#?}");
     }
 
@@ -8194,7 +8274,10 @@ mod tests_lote18 {
         ];
         wires.extend((0..3).map(|_| llenada("SELL", "0.020")));
         let (r, lineas) = aplanar(wires, false).await;
-        assert!(matches!(&r, Some(Err(e)) if e.starts_with("FLATTEN_INCOMPLETE")), "{r:?} {lineas:#?}");
+        assert!(
+            matches!(&r, Some(Err(e)) if e.starts_with("FLATTEN_INCOMPLETE")),
+            "{r:?} {lineas:#?}"
+        );
         assert_eq!(lineas.len(), 5, "ni reenvío ni purga: {lineas:#?}");
     }
 
@@ -8223,8 +8306,14 @@ mod tests_lote18 {
         assert_eq!(lineas.len(), 11, "{lineas:#?}");
         let reenvio = &lineas[5];
         assert!(reenvio.contains("side=BUY&positionSide=SHORT"), "{reenvio}");
-        assert!(reenvio.contains("quantity=0.020") && !reenvio.contains("reduceOnly"), "{reenvio}");
-        assert!(lineas[8].contains("side=SELL&positionSide=LONG"), "{lineas:#?}");
+        assert!(
+            reenvio.contains("quantity=0.020") && !reenvio.contains("reduceOnly"),
+            "{reenvio}"
+        );
+        assert!(
+            lineas[8].contains("side=SELL&positionSide=LONG"),
+            "{lineas:#?}"
+        );
     }
 
     /// CL-213, la carrera: sin respuesta de la consulta, el reenvío de X-026
@@ -8242,7 +8331,10 @@ mod tests_lote18 {
         ];
         wires.extend((0..3).map(|_| purgada()));
         let (r, lineas) = aplanar(wires, true).await;
-        assert!(matches!(&r, Some(Err(e)) if e.starts_with("FLATTEN_INCOMPLETE")), "{r:?} {lineas:#?}");
+        assert!(
+            matches!(&r, Some(Err(e)) if e.starts_with("FLATTEN_INCOMPLETE")),
+            "{r:?} {lineas:#?}"
+        );
         assert_eq!(lineas.len(), 6, "sin purga tras el -2022: {lineas:#?}");
     }
 }

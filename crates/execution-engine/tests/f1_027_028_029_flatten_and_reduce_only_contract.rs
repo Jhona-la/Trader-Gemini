@@ -222,8 +222,17 @@ fn test_order_ack_fill_semantics() {
     assert!(filled_ack.prueba_llenado());
     assert!(!ack("NEW", 0.0).prueba_llenado(), "aceptada y sin llenar");
     assert!(!ack("CANCELED", 0.0).prueba_llenado());
-    assert!(!ack("NEW", f64::NAN).prueba_llenado(), "una cantidad no finita no prueba nada");
-    assert!(ack("EXPIRED", 0.004).prueba_llenado(), "ejecución parcial antes de expirar");
+    assert!(
+        !ack("NEW", f64::NAN).prueba_llenado(),
+        "una cantidad no finita no prueba nada"
+    );
+    assert!(
+        ack("EXPIRED", 0.004).prueba_llenado(),
+        "ejecución parcial antes de expirar"
+    );
     assert!(ack(" partially_filled ", 0.0).prueba_llenado());
-    assert!(ack("FILLED", 0.0).prueba_llenado(), "como F1-028: FILLED basta");
+    assert!(
+        ack("FILLED", 0.0).prueba_llenado(),
+        "como F1-028: FILLED basta"
+    );
 }
