@@ -413,6 +413,7 @@ dice su lote):
 | #149 | N25, la clasificación de los envíos de orden (CL-199: un 5xx, un 408, un -1006/-1007 o un cuerpo ilegible son AMBIGUOUS, con su cabecera) y N24, el reintento de cuenta y las críticas sin respuesta (CL-200: el reintento se readmite en su tramo; CL-201: una crítica que salió sin respuesta deja su coste como usado hasta que caduca la ventana de cada contador; CL-202: los errores de red sin la URL firmada y el aplanado sólo conmuta el modo ante un rechazo firme); más N24-docs; abre N40 a N46; y su revisión antes de fusionar (CL-202b: el connect rechazado de Windows en las pruebas; RV23-T, RV23-docs) |
 | #150 | N40, un 2xx ilegible de una lectura (CL-203: es un error con su cabecera, y la cuenta y exchangeInfo lo reintentan), N41 b, el reintento de cuenta (CL-204: sale firmado con la hora de ahora, no con la firma que caduca a los 5 s del recvWindow) y N32, los binarios de operador (CL-205: oco_probe limpia siempre tras su entrada y dice si la limpieza falló; la regla de §5 de BINANCE_API_MAP); revisa N41 d, N26 y N46 sin ejecutarlos; abre N47 a N51; y su revisión antes de fusionar (CL-206: `refirmar` no firma una URL con algo tras la firma; CL-207: la limpieza de oco_probe espera al freno 429/418 y lee las órdenes que quedan; RV24-T: guarda del bloque etiquetado y plazo de 3 s; RV24-docs; y de la revisión de esas correcciones, RV25: las lecturas de lo que queda también esperan al freno, el baneo de un 418 sin Retry-After cabe en la espera y la guarda prohíbe `process::exit` entre el bloque y la limpieza) |
 | #153 | N46, N49 y N50, el aplanado de emergencia (CL-209: costura de prueba `base_prueba` de BinanceClient y los hosts literales del aplanado y de `query_order` por `get_base_url`; CL-210: X-026 empareja la pierna por positionSide; CL-212: el Ok del cierre exige `OrderAck::prueba_llenado`; CL-213: un cierre AMBIGUOUS consulta su clientOrderId y va a X-026) y N52, nueva (CL-211: el aplanado registra el modo que acaba de leer); con CL-208 (PR #152, las acciones de la CI en Node 24) |
+| #154 | La CI no corría `cargo fmt` ni `cargo clippy` (CL-214: puerta sobre las líneas .rs que cambia cada PR, `scripts/puerta_lineas_cambiadas.py` y `puerta-lineas.yml`; la deuda vieja, 577 archivos sin fmt y ~800 avisos de clippy, no pone rojo y baja al tocarla). 13 de los 22 warnings de rustc del build Windows (CL-215: imports y `mut` sin uso en tres contratos de feature-engine y data-ingest, el potencial del vórtice puro ahora se comprueba nulo, cuatro `unsafe` sobrantes de `__cpuid` en os-guardian, el `d` implícito de la retícula binomial y el campo `mmap_path` muerto del escritor mmap de telemetry-server). Quedan N56 y N57. |
 
 **Hecho por otros agentes**: lote 9 entero (Sol, d18b3735), lote 45 entero
 (Codex RB, 906a9c6a), parte del 7 (Sol retiró el bin main.rs de
@@ -1756,6 +1757,29 @@ un escéptico por lote listo):
   provider», un stub que la regla del proyecto prohíbe; sólo lo heredan
   los proveedores que no lo sobrescriben. Candidato: auditar quién lo
   hereda y quitar el defecto.
+  Auditado en la tanda 19: lo hereda sólo `SimulatedExecutor`, que sólo
+  usan sus pruebas (no hay `dyn ExecutionProvider`); también hereda
+  `cancel_position_oco_orders` (Ok(0) sin cancelar nada). Y los defectos de
+  `execute_raw_qty` y `execute_raw_qty_with_client_id` se llaman entre sí:
+  un proveedor que no sobrescriba ninguno de los dos recursa sin fin. Hoy
+  ninguno lo hace. Candidato: los cuatro sin defecto y el simulador con
+  su registro de órdenes por clientOrderId.
+- N56 (de la tanda 19, Línea C, para Línea I/AGY: god_engine.rs): en el
+  bucle del WS (`src/bin/god_engine.rs`, el `match` del handshake TLS con
+  el plazo de I-6b) el brazo `Err(e)` final es inalcanzable (rustc:
+  «unreachable pattern», 6258): el `Err(_)` del plazo y el `Ok(Err(e))` ya
+  cubren todo y hacen `continue` con 1 s fijo. Su `retry_count += 1` era el
+  único incremento, así que el backoff exponencial de después (100 ms·2^n,
+  tope 5 s) quedó muerto: un handshake que falla se reintenta cada segundo
+  sin crecer, y tras una caída se reconecta a los 100 ms. Medir contra el
+  límite de conexiones WS de Binance antes de decidir.
+- N57 (de la tanda 19, Línea C, sin dueño: os-guardian): `subnormal_control.rs`
+  usa `_mm_getcsr`/`_mm_setcsr`, obsoletos (8 warnings en Windows). Según
+  su documentación, cambiar FTZ/DAZ del MXCSR desde Rust es comportamiento
+  indefinido (el compilador supone el entorno de coma flotante por defecto),
+  y el ensamblador en línea que sugiere el aviso no lo vuelve sano si deja
+  el registro cambiado. Decidir si el motor necesita FTZ/DAZ (rendimiento
+  con subnormales medido) o se retira; no es un cambio de sintaxis.
 
 **Restos de lotes ejecutados**: del 3, net_multiplexer (a AGY, para
 unificar con data_pipeline::http_cliente) y active_universe/
