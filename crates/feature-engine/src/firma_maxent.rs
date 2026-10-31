@@ -77,6 +77,18 @@ impl FirmasMaxEnt {
         })
     }
 
+    /// Ventana canónica de 64 (la de la medición 163) — constructor
+    /// directo SIN Result para el hilo crítico: 64 ≥ 2 por definición y
+    /// el trinquete RB-P1 prohíbe sitios de pánico en producción.
+    pub fn ventana64() -> Self {
+        Self {
+            dx: vec![0.0; 64],
+            dy: vec![0.0; 64],
+            cabeza: 0,
+            llenos: 0,
+        }
+    }
+
     /// Un incremento: (log-retorno, fracción de ventana). O(1).
     #[inline]
     pub fn push(&mut self, dx: f64, dy: f64) {

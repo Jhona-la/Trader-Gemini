@@ -284,12 +284,9 @@ impl StatefulEngine {
             entrelazamiento: feature_engine::entrelazamiento::EntrelazamientoStreaming::default(),
             quantum_delta_s: f32::NAN,
             quantum_entropy: f32::NAN,
-            // GLM 175: L=64 — la misma ventana de la medición 163. El Err
-            // del constructor (L<2) es inalcanzable con la constante fija;
-            // caer en expect sería abortar el hilo crítico.
-            firma_maxent: feature_engine::firma_maxent::FirmasMaxEnt::new(64)
-                .unwrap_or_else(|_| feature_engine::firma_maxent::FirmasMaxEnt::new(2)
-                    .unwrap_or_else(|e| panic!("FirmasMaxEnt: {e}"))),
+            // GLM 175: L=64 — la misma ventana de la medición 163; el
+            // constructor directo evita sitios de pánico (RB-P1).
+            firma_maxent: feature_engine::firma_maxent::FirmasMaxEnt::ventana64(),
             quantum_firma_z: f32::NAN,
             quantum_firma_sigma_x: f32::NAN,
             multifractal: feature_engine::MultiScaleHurstConfluence::new(),
