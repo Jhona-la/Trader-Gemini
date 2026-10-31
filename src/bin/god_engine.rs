@@ -4093,16 +4093,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
 
             // FASE 23: QUANTUM LATENCY KILL-SWITCH (Optimized via TSC)
-            // #657 (F3-C1) — el reloj SIGUE al NTP: el hot-loop relee el
-            // offset ACTUAL (el sincronizador lo actualiza cada 15 s) en
-            // vez del offset congelado al arranque. La deriva del reloj
-            // local en sesiones largas sesgaba latency_ms — que alimenta
-            // el kill-switch de volatilidad sintética y el bloqueo de
-            // entradas — y sigue sesgando red+reloj, con la que el sistema
-            // inmune cuenta sus strikes desde I-3a (ver la deriva D, I-2b).
-            let ntp_offset_actual = engine_real
+            // I-5 (Línea I, GLM-173) — el reloj de la edad es la PROYECCIÓN
+            // MONÓTONA: epoch_baseline (época del arranque, ya alineada al
+            // servidor con el offset inicial) + tiempo monótono transcurrido
+            // + la corrección del sincronizador medida contra ESA MISMA
+            // proyección (deriva del oscilador, sin saltos de w32time). El
+            // viejo camino (#657) releía el offset NTP referido al reloj de
+            // pared ACTUAL: una corrección de w32time de −2 s a mitad de
+            // sesión entraba en red+reloj como +2000 ms fantasma (mezcla de
+            // épocas). El offset de pared (server_time_offset_ms) sigue
+            // usándolo la firma de órdenes, que SÍ quiere la pared corregida.
+            let correccion_proyeccion = engine_real
                 .arena
-                .server_time_offset_ms
+                .server_time_correction_ms
                 .load(Ordering::Relaxed);
             // I-2b (Línea I): un solo instante para la edad total y para la
             // espera local; la edad se descompone en red+reloj y cola local.
@@ -4110,7 +4113,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             // viejo no debe abrir posiciones aunque la red esté sana. Sólo
             // el sistema inmune (aplanado total) pasa a red+reloj (I-3a).
             let ahora_mono = Instant::now();
-            let now_ms = epoch_baseline_ms + (ntp_offset_actual - ntp_offset_ms)
+            let now_ms = epoch_baseline_ms + correccion_proyeccion
                 + ahora_mono.saturating_duration_since(instant_baseline).as_millis() as i64;
             let edad = data_ingest::edad_feed::EdadEvento::medir(
                 event_time,

@@ -7,7 +7,7 @@ use crate::client::BinanceClient;
 use quantum_arena::GlobalArena;
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 /// Filtro de Kalman 1D para estimar de forma continua y suave el offset de reloj
 /// entre el host local y los servidores de Binance Futures.
@@ -47,6 +47,34 @@ impl NtpKalmanFilter {
             process_noise_q: Self::DEFAULT_Q,
             sample_count: 0,
         }
+    }
+
+    /// I-5: como `update` pero con el offset crudo medido contra la
+    /// PROYECCIÓN MONÓTONA (no contra la pared): el `raw_offset` lo calcula
+    /// el llamador con `correccion_vs_proyeccion`. La puerta de outliers por
+    /// RTT (>350 ms) se conserva.
+    pub fn update_contra_proyeccion(&mut self, rtt_ms: u64, raw_offset: f64) -> Option<i64> {
+        if !raw_offset.is_finite() {
+            return None;
+        }
+        if self.initialized && rtt_ms > Self::OUTLIER_RTT_THRESHOLD_MS {
+            return Some(self.offset_estimate.round() as i64);
+        }
+        let rtt_half = (rtt_ms as f64) / 2.0;
+        if !self.initialized {
+            self.offset_estimate = raw_offset;
+            self.error_covariance = rtt_half.max(2.0).powi(2);
+            self.initialized = true;
+            self.sample_count = 1;
+            return Some(raw_offset.round() as i64);
+        }
+        let p_prior = (self.error_covariance + self.process_noise_q).clamp(1e-4, 1e6);
+        let r_meas = rtt_half.powi(2).max(Self::MIN_MEASUREMENT_VARIANCE);
+        let k_gain = p_prior / (p_prior + r_meas);
+        self.offset_estimate += k_gain * (raw_offset - self.offset_estimate);
+        self.error_covariance = ((1.0 - k_gain) * p_prior).clamp(1e-4, 1e6);
+        self.sample_count += 1;
+        Some(self.offset_estimate.round() as i64)
     }
 
     /// Actualiza el filtro con una medición de sincronización NTP.
@@ -103,10 +131,33 @@ impl NtpKalmanFilter {
     }
 }
 
+/// I-5 (Línea I): proyección monótona de la hora del servidor. El ancla es
+/// una estimación de servidor (`srv_ms`) tomada en un instante monótono
+/// (`Instant`); a partir de ahí la proyección avanza con el reloj monótono
+/// del proceso y NUNCA vuelve a leer el reloj de pared: una corrección de
+/// w32time a mitad de sesión es estructuralmente invisible.
+pub fn proyeccion_srv(ancla_srv_ms: i64, transcurrido: Duration) -> i64 {
+    ancla_srv_ms.saturating_add(i64::try_from(transcurrido.as_millis()).unwrap_or(i64::MAX))
+}
+
+/// I-5: corrección medida contra la proyección monótona (no contra la pared).
+/// Es lo único que puede entrar en la edad del dato como error de reloj:
+/// deriva del oscilador y jitter, jamás un salto de w32time.
+pub fn correccion_vs_proyeccion(server_ms: i64, proyeccion_ms: i64) -> i64 {
+    server_ms.saturating_sub(proyeccion_ms)
+}
+
 pub async fn start_ntp_synchronizer(client: Arc<BinanceClient>, arena: Arc<GlobalArena>) {
     let mut interval = tokio::time::interval(Duration::from_secs(15));
     interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
     let mut kalman = NtpKalmanFilter::new();
+    // I-5: segundo filtro para la corrección contra la proyección monótona.
+    // Estado: corrección (ms) = servidor − proyección; deriva del oscilador.
+    let mut kalman_corr = NtpKalmanFilter::new();
+    // I-5: ancla de la proyección. Se fija UNA vez, con la primera muestra
+    // aceptada (época del arranque); después el reloj de pared no vuelve a
+    // leerse para la edad del dato.
+    let mut ancla: Option<(i64, Instant)> = None;
 
     loop {
         interval.tick().await;
@@ -127,6 +178,33 @@ pub async fn start_ntp_synchronizer(client: Arc<BinanceClient>, arena: Arc<Globa
                     arena
                         .server_time_offset_ms
                         .store(filtered_offset, Ordering::Relaxed);
+
+                    // I-5: corrección contra la proyección monótona.
+                    let rtt = t1.saturating_sub(t0);
+                    match ancla {
+                        None => {
+                            // Primera muestra aceptada: fijar el ancla con la
+                            // estimación de servidor de ESTE instante (pared
+                            // local + offset filtrado — misma época del
+                            // arranque, antes de cualquier corrección).
+                            let local_mid = t0 as i64 + (rtt as i64) / 2;
+                            ancla = Some((local_mid + filtered_offset, Instant::now()));
+                        }
+                        Some((ancla_srv, ancla_mono)) => {
+                            let proyeccion = proyeccion_srv(ancla_srv, ancla_mono.elapsed());
+                            let raw =
+                                correccion_vs_proyeccion(server_time as i64, proyeccion) as f64;
+                            if raw.is_finite() {
+                                if let Some(corr) =
+                                    kalman_corr.update_contra_proyeccion(rtt, raw)
+                                {
+                                    arena
+                                        .server_time_correction_ms
+                                        .store(corr, Ordering::Relaxed);
+                                }
+                            }
+                        }
+                    }
                 }
             }
             Err(e) => {

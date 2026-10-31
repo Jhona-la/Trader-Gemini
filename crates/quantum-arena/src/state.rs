@@ -743,6 +743,12 @@ pub struct GlobalArena {
     /// comprueba que avance entre ciclos antes de fiarse de la edad medida.
     pub ws_eventos_publicos: AtomicU64,
     pub server_time_offset_ms: std::sync::atomic::AtomicI64,
+    /// I-5 (Línea I, GLM-173): corrección del reloj del servidor contra la
+    /// PROYECCIÓN MONÓTONA anclada por el sincronizador NTP (0 = sin
+    /// corrección). A diferencia de `server_time_offset_ms` (referido al
+    /// reloj de pared, que la firma de órdenes sigue usando), este valor NO
+    /// contiene saltos de w32time: alimenta la edad del dato (red+reloj).
+    pub server_time_correction_ms: std::sync::atomic::AtomicI64,
     pub market_regime: std::sync::atomic::AtomicU8, // 0: Range, 1: BullRun, 2: Crash, 3: Chaotic (MAP discreto)
     /// Distribución espectral continua del régimen de mercado [p_range, p_bull, p_crash, p_chaos]
     pub regime_p_range: AtomicF64,
@@ -849,6 +855,7 @@ impl GlobalArena {
             deriva_reloj_pared_ms: std::sync::atomic::AtomicI64::new(0),
             ws_eventos_publicos: AtomicU64::new(0),
             server_time_offset_ms: std::sync::atomic::AtomicI64::new(0),
+            server_time_correction_ms: std::sync::atomic::AtomicI64::new(0),
             market_regime: std::sync::atomic::AtomicU8::new(0),
             regime_p_range: AtomicF64::new(1.0),
             regime_p_bull: AtomicF64::new(0.0),
