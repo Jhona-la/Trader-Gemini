@@ -105,40 +105,61 @@ fn rsk01_sonda_de_20x_no_se_liquida_antes_del_stop() {
     }
 }
 
-/// (2) La clave GLOBAL no afloja la guarda de una moneda: la tasa es del
-/// símbolo. Antes la lectura caía a la clave global y 0,1 % dejaba L = 20.
+/// (2) La clave GLOBAL no cuenta: la tasa es de cada símbolo. En un símbolo
+/// de 50× con stop del 3 % la guarda deja L = 24 con el 1 %; antes, una clave
+/// global de 0,1 % (de otra moneda o de nadie) subía el techo de liquidación a
+/// 31 y la orden salía al techo del genoma, 25.
 #[test]
 fn rsk01_la_clave_global_no_afloja_la_guarda() {
     let _turno = CERROJO.lock().unwrap_or_else(PoisonError::into_inner);
-    let (arena, intent) = fixture(100.0, 20, 0.03);
-    arena.registry.set("maintenance_margin_rate", 0.001);
-    let out = RiskEngine::new(100.0).evaluate_quantum_order(0, &intent, &arena);
-    assert_eq!(out.signal, SignalType::Long);
-    let sl_real = stop_real(out.sl_target);
-    assert!(
-        out.leverage * (sl_real + MMR_20X) < 1.0,
-        "una tasa global de 0,1 % no es la del símbolo: L = {}",
-        out.leverage
-    );
+    for &max_leverage in &[50u32, 20] {
+        let (arena_sin, intent) = fixture(100.0, max_leverage, 0.03);
+        let sin_clave = RiskEngine::new(100.0).evaluate_quantum_order(0, &intent, &arena_sin);
+        let (arena_con, intent) = fixture(100.0, max_leverage, 0.03);
+        arena_con.registry.set("maintenance_margin_rate", 0.001);
+        let con_clave = RiskEngine::new(100.0).evaluate_quantum_order(0, &intent, &arena_con);
+        assert_eq!(sin_clave.signal, SignalType::Long, "{max_leverage}×");
+        assert_eq!(sin_clave.signal, con_clave.signal, "{max_leverage}×");
+        assert_eq!(
+            sin_clave.leverage.to_bits(),
+            con_clave.leverage.to_bits(),
+            "{max_leverage}×: la clave global movió el apalancamiento ({} → {})",
+            sin_clave.leverage,
+            con_clave.leverage
+        );
+        assert_eq!(
+            sin_clave.volume_usd.to_bits(),
+            con_clave.volume_usd.to_bits(),
+            "{max_leverage}×"
+        );
+    }
 }
 
 /// (3) Una tasa medida para la moneda manda: con 0,4 % (la de BTC) el stop
-/// del 3 % admite el techo del símbolo, 20×.
+/// del 3 % admite el techo del símbolo, 20×; sin dato, la tasa de 20× (2,5 %)
+/// lo baja a 17.
 #[test]
 fn rsk01_la_tasa_medida_por_moneda_manda() {
     let _turno = CERROJO.lock().unwrap_or_else(PoisonError::into_inner);
-    let (arena, intent) = fixture(100.0, 20, 0.03);
-    arena
+    let (arena_sin, intent) = fixture(100.0, 20, 0.03);
+    let sin_dato = RiskEngine::new(100.0).evaluate_quantum_order(0, &intent, &arena_sin);
+    let (arena_con, intent) = fixture(100.0, 20, 0.03);
+    arena_con
         .registry
         .set_for_coin(0, "maintenance_margin_rate", 0.004);
-    let out = RiskEngine::new(100.0).evaluate_quantum_order(0, &intent, &arena);
-    assert_eq!(out.signal, SignalType::Long);
+    let con_dato = RiskEngine::new(100.0).evaluate_quantum_order(0, &intent, &arena_con);
+    assert_eq!(sin_dato.signal, SignalType::Long);
+    assert_eq!(con_dato.signal, SignalType::Long);
     assert_eq!(
-        out.leverage, 20.0,
+        con_dato.leverage, 20.0,
         "con la tasa medida de 0,4 % cabe el techo del símbolo"
     );
-    let sl_real = stop_real(out.sl_target);
-    assert!(out.leverage * (sl_real + 0.004) < 1.0);
+    assert!(
+        sin_dato.leverage < con_dato.leverage,
+        "sin dato la guarda debe usar la tasa de 20× y bajar el apalancamiento          (sin dato {}, medida {})",
+        sin_dato.leverage,
+        con_dato.leverage
+    );
 }
 
 /// (4) Para un símbolo de 50× sin dato, la tasa es el 1 % de antes: la orden
