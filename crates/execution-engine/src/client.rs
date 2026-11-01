@@ -87,6 +87,14 @@ pub struct BinanceRateLimits {
     pub orders_1m: Option<usize>,
 }
 
+impl BinanceRateLimits {
+    /// La respuesta no trajo ninguna cabecera de uso X-MBX.
+    #[inline]
+    pub fn sin_uso(&self) -> bool {
+        self.weight_1m.is_none() && self.orders_10s.is_none() && self.orders_1m.is_none()
+    }
+}
+
 #[inline(always)]
 fn extract_limits(headers: &HeaderMap) -> BinanceRateLimits {
     let mut limits = BinanceRateLimits::default();
@@ -185,6 +193,25 @@ impl ErrorRest {
         }
     }
 
+    /// N41-a (CL-219): el error de una respuesta con estado `estado`, con su
+    /// cabecera. La documentación de USDⓈ-M (General Info, consultada el
+    /// 2026-11-01) dice que toda respuesta de la API trae
+    /// `X-MBX-USED-WEIGHT-1M`, y del 503 «Unknown error» que la petición
+    /// «may or may not count, check header to verify rate limit info». Un 5xx
+    /// sin ninguna cabecera de uso no lo escribió la API sino la pasarela que
+    /// tiene delante (un 502 o un 504 de un balanceador): la petición llegó a
+    /// la red del exchange, pudo contar y ninguna cabecera lo dirá, lo mismo
+    /// que tras un timeout. Cuenta como sin respuesta. Antes contaba como
+    /// respuesta y su coste salía del libro sin entrar en el uso. Un 5xx con
+    /// cabecera trae el uso medido, y el resto de estados quedan como antes.
+    fn de_estado(estado: reqwest::StatusCode, texto: String, limites: BinanceRateLimits) -> Self {
+        Self {
+            texto,
+            limites,
+            sin_respuesta: estado.is_server_error() && limites.sin_uso(),
+        }
+    }
+
     /// N24 (CL-201): un error de transporte, sin cabecera. `salio` dice si
     /// la petición pudo llegar al exchange (la función `salio` de abajo).
     pub(crate) fn de_red(texto: String, salio: bool) -> Self {
@@ -196,9 +223,10 @@ impl ErrorRest {
     }
 
     /// N24 (CL-201): la petición salió y no llegó respuesta (timeout,
-    /// conexión cortada a mitad): el exchange pudo contarla. Es falso con
-    /// cualquier respuesta, traiga o no cabecera, en un 429/418, en un
-    /// rechazo local y si falló al conectar. Un plazo total que vence
+    /// conexión cortada a mitad): el exchange pudo contarla. También un 5xx
+    /// sin cabecera de uso, que no viene de la API (N41-a, CL-219,
+    /// `de_estado`). Es falso con cualquier otra respuesta, en un 429/418, en
+    /// un rechazo local y si falló al conectar. Un plazo total que vence
     /// mientras conecta cuenta como salida, del lado seguro (`salio`). No se
     /// deduce del texto.
     #[inline]
@@ -738,11 +766,16 @@ impl BinanceClient {
                     Err(ErrorRest::sin_cabecera(rate_err))
                 } else {
                     let limits = extract_limits(resp.headers());
+                    let estado = resp.status();
                     let text = resp
                         .text()
                         .await
                         .unwrap_or_else(|_| "Unknown error".to_string());
-                    Err(ErrorRest::con_cabecera(format!("Binance API Error: {}", text), limits))
+                    Err(ErrorRest::de_estado(
+                        estado,
+                        format!("Binance API Error: {}", text),
+                        limits,
+                    ))
                 }
             }
             Err(e) => Err(error_de_red("", e)),
@@ -808,7 +841,8 @@ impl BinanceClient {
                     Ok((limits, raw_text))
                 } else {
                     // Nunca loguear `full_url`: contiene la firma HMAC del request.
-                    Err(ErrorRest::con_cabecera(
+                    Err(ErrorRest::de_estado(
+                        status,
                         format!("Binance API Error: status={} body={}", status, raw_text),
                         limits,
                     ))
@@ -851,11 +885,16 @@ impl BinanceClient {
                     Err(ErrorRest::sin_cabecera(rate_err))
                 } else {
                     let limits = extract_limits(resp.headers());
+                    let estado = resp.status();
                     let text = resp
                         .text()
                         .await
                         .unwrap_or_else(|_| "Unknown error".to_string());
-                    Err(ErrorRest::con_cabecera(format!("Binance API Error: {}", text), limits))
+                    Err(ErrorRest::de_estado(
+                        estado,
+                        format!("Binance API Error: {}", text),
+                        limits,
+                    ))
                 }
             }
             Err(e) => Err(error_de_red("", e)),
@@ -897,12 +936,13 @@ fn error_de_orden(
 ) -> ErrorRest {
     use crate::order_types::truncate;
     if ejecucion_desconocida(estado, cuerpo) {
-        ErrorRest::con_cabecera(
+        ErrorRest::de_estado(
+            estado,
             format!("AMBIGUOUS: HTTP {} body={}", estado.as_u16(), truncate(cuerpo, 200)),
             limites,
         )
     } else {
-        ErrorRest::con_cabecera(firme(cuerpo), limites)
+        ErrorRest::de_estado(estado, firme(cuerpo), limites)
     }
 }
 
@@ -931,7 +971,8 @@ fn error_de_red(prefijo: &str, e: reqwest::Error) -> ErrorRest {
 /// leer, con cualquier estado: la orden pudo quedar (AMBIGUOUS), con su
 /// cabecera.
 fn cuerpo_ilegible(estado: reqwest::StatusCode, limites: BinanceRateLimits) -> ErrorRest {
-    ErrorRest::con_cabecera(
+    ErrorRest::de_estado(
+        estado,
         format!("AMBIGUOUS: HTTP {} unreadable response body", estado.as_u16()),
         limites,
     )
@@ -1307,8 +1348,9 @@ mod tests_n23 {
     /// texto. Cada transporte lo marca si la petición salió y la conexión se
     /// cerró sin respuesta, con el mismo texto de antes («Network Error»), y
     /// no lo marca si no llegó a conectar (un puerto ligado que no escucha),
-    /// ante una respuesta (400, 503, 429, 418, un ACK ilegible) ni ante el
-    /// rechazo local del freno.
+    /// ante una respuesta (400, 503 con su cabecera de uso, 429, 418, un ACK
+    /// ilegible) ni ante el rechazo local del freno. CL-219 (N41-a): un 5xx
+    /// sin ninguna cabecera de uso sí lo marca (`ErrorRest::de_estado`).
     #[tokio::test]
     async fn cl201_sin_respuesta_es_el_origen_del_error() {
         for (k, nombre) in TRANSPORTES.iter().enumerate() {
@@ -1339,12 +1381,24 @@ mod tests_n23 {
         for (k, nombre) in TRANSPORTES.iter().enumerate() {
             for wire in [
                 respuesta("400 Bad Request", cab, r#"{"code":-2019,"msg":"x"}"#),
-                respuesta("503 Service Unavailable", "", ""),
+                respuesta("503 Service Unavailable", cab, ""),
                 respuesta("429 Too Many Requests", "Retry-After: 7\r\n", ""),
                 respuesta("418 I'm a teapot", "", ""),
             ] {
                 let e = error_ante(k, wire).await;
                 assert!(e.as_ref().is_some_and(|e| !e.sin_respuesta()), "{nombre}: hubo respuesta: {e:?}");
+            }
+            // RED antes de CL-219: el 5xx de una pasarela, sin cabecera de uso.
+            for wire in [
+                respuesta("502 Bad Gateway", "", ""),
+                respuesta("503 Service Unavailable", "", ""),
+                respuesta("504 Gateway Timeout", "", ""),
+            ] {
+                let e = error_ante(k, wire).await;
+                assert!(
+                    e.as_ref().is_some_and(ErrorRest::sin_respuesta),
+                    "{nombre}: 5xx sin cabecera: {e:?}"
+                );
             }
         }
         let e = error_ante(2, respuesta("200 OK", cab, "not json")).await;
