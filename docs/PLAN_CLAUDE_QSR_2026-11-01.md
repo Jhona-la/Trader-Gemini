@@ -138,33 +138,70 @@ Con capital de 50 y 100 USD y sin historial, la sonda mínima sale a L = 20 con
 (tasa real 2,5 %) se cumple `L · (SL + mmr) ≥ 1`: la liquidación aislada queda
 antes del stop. Con 13 USD (L = 6) y con 1 000 o 10 000 USD (L ≤ 4) no pasa.
 
-**RED → GREEN** (`crates/risk-engine/tests/rsk01_mmr_sin_escritor_contract.rs`):
+**RED → GREEN** (`crates/risk-engine/tests/rsk01_mmr_sin_escritor_contract.rs`).
+El RED se corre con la función nueva presente y la lectura antigua de la guarda
+(`get_for_coin_or(…, 0.01).clamp(…)`). Es la conducta de la base, y así las dos
+pruebas de la API nueva compilan:
 
-| Test | Antes | Después |
+| Test | RED (lectura antigua) | GREEN |
 |---|---|---|
-| sonda de 20× no se liquida antes del stop (capital 50/100, stops 2,5–3,5 %) | FALLA: L = 20, L·(SL+mmr) = 1,000 | pasa |
-| la clave global no afloja la guarda | FALLA: tasa global 0,1 % ⇒ L = 20 | pasa |
-| la tasa medida por moneda manda (0,4 % ⇒ L = 20) | pasa | pasa |
-| símbolo de 50× sin dato: orden idéntica bit a bit a la del 1 % medido | pasa | pasa |
-| tasa sin dato frente a L_max (y monótona en 2..200) | — (API nueva) | pasa |
-| tasa medida válida manda; NaN, ±∞, 0 y negativos no cuentan | — (API nueva) | pasa |
+| (1) sonda de 20× no se liquida antes del stop (capital 50/100, stops 2,5–3,5 %) | FALLA: L = 20, L·(SL+mmr) = 1,000 | pasa |
+| (2) la clave global no cuenta (50× y 20×, stop 3 %, con y sin clave global de 0,1 %) | FALLA: 50× pasa de L = 24 a 25 con la clave global | pasa |
+| (3) la tasa medida manda: 0,4 % ⇒ L = 20; sin dato ⇒ menor | FALLA: sin dato también L = 20 | pasa (sin dato, 17) |
+| (4) símbolo de 50× sin dato: orden idéntica bit a bit a la del 1 % medido | pasa | pasa |
+| (5) tasa sin dato frente a L_max (y monótona en 2..200) | pasa | pasa |
+| (6) tasa medida válida manda; NaN, ±∞, 0 y negativos no cuentan | pasa | pasa |
 
-El contrato F1-088 existente (4 tests) sigue en verde.
+(1) y (3) fallan por la misma causa (el 1 % fijo en un símbolo de 20×) y (2) por
+otra (la caída a la clave global). Siguen en verde F1-088 (4 tests), `cl173`
+(2), la suite `risk-engine` completa (577 pasan; la única falla es el test de
+latencia en debug, que también falla en la base con la máquina cargada) y
+`cargo check --workspace --all-targets` sobre el árbol rebasado.
+
+**Revisión adversarial antes de publicar** (3 lentes: matemática y semántica de
+Binance, alcance sobre todos los llamadores, calidad del test; 2 escépticos por
+hallazgo). Lo que cambió por ella y lo que queda dicho:
+
+- El test (2) original fallaba en la base por la misma causa que (1). Se rehízo
+  sobre un símbolo de 50×, donde la clave global sí mueve la orden en la base.
+  La última aserción de (3) no podía fallar; se cambió por la comparación con la
+  corrida sin dato.
+- **La tasa sin dato sigue al `max_leverage` del spec, no al del exchange.** En
+  vivo el spec es un literal: al arrancar, `get_official_binance_spec` da 20×
+  para todo símbolo (2,5 % para todos, también para BTC, que en realidad está en
+  0,4 %). Si el daemon horario rota el universo, la tabla del ranker
+  (`dynamic_ranker.rs:182-186`: BTC y ETH 125, seis a 75, el resto 50) pisa los
+  specs por nombre y la mayoría de las altcoins vuelve al 1 %. La protección
+  depende del camino. Nunca es más laxa que el literal anterior, pero tampoco es
+  la del símbolo real hasta que se publique la tasa de `leverageBracket`
+  (pedido a Kimi).
+- **Paridad backtest↔vivo de la guarda.** El oráculo y el golden registran 50×
+  (1 %), y el host arranca con 20× (2,5 %). Antes los dos usaban el mismo 1 %
+  equivocado. La diferencia sólo pesa cuando la guarda limita, es decir con
+  stops amplios y apalancamiento alto.
+- **Binarios offline que cambian de conducta** (registran specs de 20×):
+  `src/bin/evolution.rs` (registra 120 y luego 20 para el mismo símbolo),
+  `src/bin/backtest_windows.rs` y `src/bin/multi_coin_simulator.rs`.
+- **Micro (13 USD).** El techo es ≈ 5–6,5×. La guarda nueva no cambia nada con
+  SL + f ≲ 14 %. Con stops más amplios puede bajar un escalón (de 6 a 5 en
+  (14,2 %; 15,7 %], de 5 a 4 en (17,5 %; 19 %], …). El examen del daemon corre en
+  micro (capital 1,0) con los specs vivos y tiene las mismas bandas.
+- **RSK-01b (no tocado, a AGY, F1-088):** la guarda `L·(SL + f + mmr) < 1` es de
+  primer orden. Para largos es conservadora; para cortos la distancia aislada
+  exacta es (1/L − mmr)/(1 + mmr), algo menor, y con mmr alto queda una franja
+  estrecha de cortos admitidos con el stop más allá de la liquidación (con
+  mmr = 2,5 % y L = 10, unos 0,06 pp). La forma exacta,
+  `dist = (SL + f)·(1 + mmr) + mmr`, también cambiaría los fixtures de 50× del
+  oráculo, así que exige su T-1: no entra en este átomo.
 
 **Lo que este átomo no hace.**
 
 - No publica la tasa real. Eso exige leer `GET /fapi/v1/leverageBracket` en el
   ejecutor o el host, que están en el lease de Kimi (pedido en el buzón).
-- No cambia `max_leverage` del spec, que en vivo sigue siendo el literal 20 de
-  `get_official_binance_spec` (LC-F1-02). En vivo, por tanto, la tasa sin dato
-  queda en 2,5 % para todo símbolo, que es conservador para BTC (real 0,4 %).
+- No cambia `max_leverage` del spec, que sigue siendo literal (LC-F1-02).
 - El código nunca fija `marginType`: con margen cruzado (el modo por defecto)
   la liquidación de una posición pequeña depende de todo el equity y no de
   `1/L − mmr`. La guarda supone margen aislado, el caso peor.
-
-En micro (13 USD) el techo de apalancamiento es ≈ 5–6,5×. La guarda sólo muerde
-con stops por encima del ~12 %, así que la conducta viva con el capital actual no
-cambia.
 
 ## 6. Recursos: lo medido y lo que se pide a los agentes
 
@@ -181,6 +218,8 @@ Medido el 2026-11-01 entre las 14:10 y las 15:40 (Bogotá), con `du
 | `.git` | 3,5 GB | — |
 | `logs/` | 1,9 GB (de ellos `logs/agent-fabric` 1,1 GB) | — |
 | `graphify-out/`, `.claude/`, `models/` | 777 MB, 288 MB, 4,1 MB | — |
+
+Después de esta medición, GLM-177 retiró los 9 worktrees de agent-fabric y `logs/agent-fabric/`, con respaldo íntegro en `.agent_tx/agent-fabric-huerfano-20261101/`. La fila de `logs/` y la de worktrees del §1 describen el estado anterior.
 
 Peticiones (ninguna borra nada ajeno; cada dueño decide):
 
