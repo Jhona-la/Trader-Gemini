@@ -3,40 +3,43 @@
 > Fuente de verdad para "entendimiento total de la API" (directriz del proyecto).
 > Base: `https://fapi.binance.com` · Testnet: `https://testnet.binancefuture.com`
 > WS market: `wss://fstream.binance.com` · WS user: `wss://fstream.binance.com/ws/<listenKey>`
-> Documentación oficial: binance-docs.github.io/apidocs/futures (siempre verificar contra exchangeInfo en runtime — los límites cambian por cuenta/VIP).
+> Documentación oficial: developers.binance.com, USDⓈ-M Futures, REST API (antes binance-docs.github.io/apidocs/futures). Siempre verificar contra exchangeInfo en runtime: los límites cambian por cuenta/VIP.
+> Pesos de §1 marcados ✔: comprobados el 2026-11-01 en las páginas Trade y Account de esa documentación (fila N22 del censo C-F7b, CL-218).
 
 ## 1. Endpoints EN USO (mapeados al código)
 
 | Endpoint | Método | Peso | Uso en el sistema | Código |
 |---|---|---|---|---|
-| `/fapi/v1/order` | POST | 0 | Crear orden (MARKET/LIMIT/GTX/STOP_MARKET/TP_MARKET/TRAILING) | executor.rs |
-| `/fapi/v1/order` | GET | 1 | Query por origClientOrderId (idempotencia F1.2) | executor.rs query_order |
-| `/fapi/v1/order` | DELETE | 1 | Cancelar orden | executor.rs cancel_order |
+| `/fapi/v1/order` | POST | 0 ✔ (y 1 en cada contador de órdenes, 10 s y 1 min) | Crear orden (MARKET/LIMIT/GTX/STOP_MARKET/TP_MARKET/TRAILING) | executor.rs |
+| `/fapi/v1/order` | GET | 1 ✔ | Query por origClientOrderId (idempotencia F1.2) | executor.rs query_order |
+| `/fapi/v1/order` | DELETE | 1 ✔ | Cancelar orden | executor.rs cancel_order |
 | `/fapi/v1/batchOrders` | POST | 5 | OCO simulado (2 POST), ver §4 | executor.rs (a migrar) |
 | `/fapi/v1/listenKey` | POST/PUT | 1 | User-data stream (fills en tiempo real); mira y arma el freno 429/418 en el cliente (CL-189), sin cuota (N38) | client.rs + user_data_stream.rs |
-| `/fapi/v2/balance` | GET | 5 | Balance wallet (paridad de capital) | api_client.rs |
-| `/fapi/v2/positionRisk` | GET | 5 | Reconciliación de posiciones | executor.rs fetch_position_risk |
-| `/fapi/v2/account` | GET | 5 | Estado completo de cuenta | fetch_account_balance |
-| `/fapi/v1/commissionRate` | GET | 1 | Fees reales de LA cuenta (paridad fees) | fetch_commission_rate |
+| `/fapi/v2/balance` | GET | 5 ✔ | Balance wallet (paridad de capital) | api_client.rs |
+| `/fapi/v2/positionRisk` | GET | 5 ✔ | Reconciliación de posiciones | executor.rs fetch_position_risk |
+| `/fapi/v2/account` | GET | 5 ✔ | Estado completo de cuenta | fetch_account_balance |
+| `/fapi/v1/commissionRate` | GET | 20 ✔ (antes figuraba 1) | Fees reales de LA cuenta (paridad fees); `OmsSession::refresh` lo pide por cada símbolo del universo, ver nota | fetch_commission_rate |
 | `/fapi/v1/exchangeInfo` | GET | 1 | tickSize/stepSize/filtros (cacheado exchange_info.json); tras una descarga fallida fuera del freno no sale otra en 60 s (CL-197) | fetch_exchange_info |
-| `/fapi/v1/leverage` | POST | 1 | Leverage por símbolo | set_leverage |
+| `/fapi/v1/leverage` | POST | 1 ✔ | Leverage por símbolo | set_leverage |
 | `/fapi/v1/marginType` | POST | 1 | Cross/Isolated | binance_api.rs |
 | `/fapi/v1/time` | GET | 1 | Sync de reloj (NTP offset); el NTP mira y arma el freno (CL-189), el ejecutor lo mira (CL-187) | fetch_server_time |
 | `/fapi/v1/klines` | GET | 1-10 | Warmup swing (1h) | data-pipeline |
 | `/fapi/v1/aggTrades` | GET | 20 | Histórico real para backtest (F2/F3) | historical.rs |
-| `/fapi/v1/algoOrder` | POST | 1 (SUPUESTO) | Piernas TP/SL y trailing (servicio Algo, OCO-F5) | executor.rs place_algo_leg, execute_oco_order |
-| `/fapi/v1/algoOrder` | DELETE | 1 (SUPUESTO) | Cancelar una pierna algo; la hermana tras un fill mira el freno (CL-190), sin cupo (N27) | cancel_algo_order_ids; user_data_stream.rs |
-| `/fapi/v1/algoOpenOrders` | DELETE | 1 (SUPUESTO) | Purga algo de un símbolo | cancel_all_algo_open_orders |
-| `/fapi/v1/openAlgoOrders` | GET | 1 con símbolo (SUPUESTO, como openOrders) | Protección viva de una posición; sin símbolo, huérfanas | fetch_open_algo_orders_inner |
-| `/fapi/v1/allOpenOrders` | DELETE | 1 (SUPUESTO) | Purga de órdenes normales de un símbolo | cancel_all_symbol_orders, aplanado |
-| `/fapi/v1/openOrders` | GET | 1 con símbolo / 40 sin él | Reconciliación OMS cada 60 s (`OmsSession::refresh`, sin símbolo) | fetch_all_open_orders, fetch_open_orders_inner |
-| `/fapi/v1/positionSide/dual` | GET/POST | 1 (ver nota) | Modo hedge (arranque, OmsSession::refresh cada 60 s, aplanado) | ensure_hedge_mode, fetch_hedge_mode |
+| `/fapi/v1/algoOrder` | POST | 0 ✔ (y 1 en cada contador de órdenes; el código suponía 1, CL-218) | Piernas TP/SL y trailing (servicio Algo, OCO-F5) | executor.rs place_algo_leg, execute_oco_order |
+| `/fapi/v1/algoOrder` | DELETE | 1 ✔ | Cancelar una pierna algo; la hermana tras un fill mira el freno (CL-190), sin cupo (N27) | cancel_algo_order_ids; user_data_stream.rs |
+| `/fapi/v1/algoOpenOrders` | DELETE | 1 ✔ | Purga algo de un símbolo | cancel_all_algo_open_orders |
+| `/fapi/v1/openAlgoOrders` | GET | 1 con símbolo / 40 sin él ✔ | Protección viva de una posición; sin símbolo, huérfanas | fetch_open_algo_orders_inner |
+| `/fapi/v1/allOpenOrders` | DELETE | 1 ✔ | Purga de órdenes normales de un símbolo | cancel_all_symbol_orders, aplanado |
+| `/fapi/v1/openOrders` | GET | 1 con símbolo / 40 sin él ✔ | Reconciliación OMS cada 60 s (`OmsSession::refresh`, sin símbolo) | fetch_all_open_orders, fetch_open_orders_inner |
+| `/fapi/v1/positionSide/dual` | GET 30 ✔ / POST 1 ✔ (antes figuraba 1 para los dos) | Modo hedge (arranque, OmsSession::refresh cada 60 s, aplanado) | ensure_hedge_mode, fetch_hedge_mode |
 
 > N5 (CL-179): sólo los pesos de las peticiones críticas son costes del
 > ejecutor (`CosteBinance` en binance_api.rs): order POST/GET/DELETE,
 > positionRisk de fetch_position_risk, algoOrder POST/DELETE, algoOpenOrders y
-> allOpenOrders DELETE, y openAlgoOrders con símbolo. Lo marcado SUPUESTO no está documentado y toma
-> el valor del análogo más caro, porque sobrestimar sólo frena antes. Las
+> allOpenOrders DELETE, y openAlgoOrders con símbolo. Todos son ya los
+> documentados (CL-218): el POST de algoOrder figuraba con peso 1 supuesto, y
+> sobrestimar no es gratis en el tramo crítico, porque con el peso en el
+> límite frenaba un SL o un TP que el exchange admitía. Las
 > lecturas (commissionRate, account, income, openOrders sin símbolo de
 > `OmsSession::refresh` cada 60 s, openAlgoOrders sin símbolo, el positionRisk
 > de fetch_open_positions —arranque, REST-SYNC y bucle de saldo— y el GET de
@@ -45,11 +48,20 @@
 > exchangeInfo y time del ejecutor sólo miran el freno 429/418 (CL-184,
 > CL-187); la hora del NTP, el listenKey y la cancelación de la pierna hermana
 > del user-data stream lo miran en el cliente (CL-189, CL-190), sin cuota
-> (filas N27 y N38 del censo C-F7b). Tres pesos del mapa se recuerdan distintos en la
-> documentación de Binance y están por comprobar desde el PC (fila N22):
-> commissionRate 1 frente a 20, positionSide/dual 1 frente a 30, income 20
-> frente a 30. Ninguno de los tres es un coste del ejecutor, así que
-> corregirlos aquí no cambia su cuota; sí cambia cuánto gasta el motor.
+> (filas N27 y N38 del censo C-F7b).
+>
+> N22 (CL-218): tres pesos del mapa estaban mal y la documentación los fija en
+> commissionRate 20 (figuraba 1), positionSide/dual GET 30 (figuraba 1) e
+> income 30 (figuraba 20). Ninguno es un coste del ejecutor, así que
+> corregirlos no cambia su cuota; sí cambia cuánto gasta el motor. Cada
+> `OmsSession::refresh` (arranque, transiciones y cada 60 s) pide el modo
+> (30), una comisión por símbolo del universo (20·N), positionRisk (5) y
+> openOrders sin símbolo (40): 75 + 20·N de peso por minuto, más 1 por cada
+> intención ausente que consulta (LG-32). Con N = 30 (las ranuras del arena,
+> `MAX_COINS`) son 675 de 2 400, el 28 %; el mapa viejo daba 76. Las
+> comisiones de una cuenta cambian con su nivel VIP, no cada minuto: guardarlas
+> entre refrescos liberaría casi todo ese peso. Queda anotado para el dueño de
+> `src/host_oms.rs`.
 
 ## 2. Endpoints DISPONIBLES NO explotados (oportunidades F1.10+/F4)
 
@@ -58,7 +70,7 @@
 | `/fapi/v1/openOrders` | 1×símbolo / 40 todos | Cancel-masivo de seguridad; arranque limpio (la lectura ya está en uso, §1) |
 | `/fapi/v1/allOrders` | 5 | Historial completo de órdenes (auditoría fills) |
 | `/fapi/v1/userTrades` | 5 | Historial de fills CON comisión exacta → Fee Slayer métricas reales |
-| `/fapi/v1/income` | 20 | PnL, comisiones, funding pagado/cobrado — la VERDAD de "cuánto pagamos" (directiva de informes pre/post fees) |
+| `/fapi/v1/income` | 30 ✔ (antes figuraba 20) | PnL, comisiones, funding pagado/cobrado — la VERDAD de "cuánto pagamos" (directiva de informes pre/post fees) |
 | `/fapi/v1/fundingRate` + `/fapi/v1/premiumIndex` | 1 | Funding actual y previsto → feature de decisión + costo de carry |
 | `/fapi/v1/leverageBracket` | 1 | Caps de leverage/notional por símbolo (input de Kelly bayesiano F4.4) |
 | `/fapi/v1/openInterest` + `/futures/data/openInterestHist` | 1/1 | Sentimiento de posicionamiento (feature) |
@@ -66,7 +78,7 @@
 | `/fapi/v1/depth` | 2-20 | Libro completo (ya consumido por WS) |
 | `/fapi/v1/forceOrders` | 1 | Cancel-ALL con un solo request — kill-switch real (F5.2) |
 | `/fapi/v1/multiAssetsMargin` | 1 | Multi-asset margin (optimización capital) |
-| `/fapi/v1/positionSide/dual` | 1 | Modo hedge — en uso desde F1.11, ver §1 |
+| `/fapi/v1/positionSide/dual` | GET 30 / POST 1 | Modo hedge — en uso desde F1.11, ver §1 |
 
 ## 3. Parámetros avanzados de orden (los que hoy IGNORAMOS)
 

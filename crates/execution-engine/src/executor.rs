@@ -4574,7 +4574,14 @@ impl ExecutionProvider for OrderExecutor {
 /// confirma.
 #[inline]
 fn pierna_ya_existe(err: &str) -> bool {
-    let codigo = crate::order_types::error_codes::DUPLICATED_ORDER;
+    trae_codigo(err, crate::order_types::error_codes::DUPLICATED_ORDER)
+}
+
+/// ¿El error trae el código de Binance `codigo`? En las tres formas en que
+/// el cliente lo deja: `"code":N` y `"code": N` (cuerpo JSON citado) o
+/// `code=N` (`parse_reject_body`). El código debe terminar ahí: -41160 no es
+/// -4116.
+fn trae_codigo(err: &str, codigo: i64) -> bool {
     let compacto = format!("\"code\":{codigo}");
     let espaciado = format!("\"code\": {codigo}");
     let rechazo = format!("code={codigo}");
@@ -4627,10 +4634,29 @@ fn simbolos_sin_posicion(
 /// cuerpo, y el de un cierre reduce-only trae «reduceOnly»): el cierre pudo
 /// ejecutarse, y conmutar por ella el modo de la cuenta lo dejaba mal para
 /// las órdenes siguientes y enviaba otro cierre.
+/// N41-c (CL-217): el reduceOnly que una cuenta hedge no admite vuelve como
+/// -1106 con el parámetro en minúsculas («Parameter 'reduceonly' sent when
+/// not required.», texto real en adshao/go-binance#521; Binance documenta
+/// «Parameter '%s' sent when not required.» sin fijar la caja). Se buscaba
+/// «reduceOnly» literal: el rechazo real no conmutaba y el aplanado, sin
+/// leer el modo y con el registrado en one-way, dejaba la pierna abierta.
+/// Ahora: el código -1106 y el nombre del parámetro sin mirar la caja. El
+/// -2022 («ReduceOnly Order is rejected.») sigue sin conmutar: no es -1106.
 #[inline]
 fn modo_rechazado(e: &str) -> bool {
     !e.starts_with("AMBIGUOUS")
-        && (e.contains("-4061") || e.contains("position side") || e.contains("reduceOnly"))
+        && (e.contains("-4061")
+            || e.contains("position side")
+            || (trae_codigo(e, crate::order_types::error_codes::PARAM_NOT_REQUIRED)
+                && nombra_reduce_only(e)))
+}
+
+/// ¿El texto nombra el parámetro reduceOnly, en cualquier caja?
+#[inline]
+fn nombra_reduce_only(e: &str) -> bool {
+    e.as_bytes()
+        .windows(b"reduceonly".len())
+        .any(|w| w.eq_ignore_ascii_case(b"reduceonly"))
 }
 
 /// LG-3 (Línea G) — USO DE RATE-LIMIT VIGENTE.
@@ -5454,6 +5480,14 @@ mod tests_n5c {
         let ex = ejecutor_con(Some(2_400), None, None, T0);
         assert!(critica(&ex, T0 + 1, COSTE_ORDEN).is_ok());
         assert!(critica(&ex, T0 + 1, COSTE_CANCELACION).is_err());
+        // RED antes de CL-218 (N22): la pierna algo tampoco pesa (peso IP 0
+        // documentado). Con peso 1 supuesto, el par SL/TP de una posición
+        // recién abierta se frenaba aquí aunque el exchange lo admitía.
+        assert!(critica(&ex, T0 + 1, COSTE_PIERNA_ALGO).is_ok());
+        assert!(
+            critica(&ex, T0 + 1, COSTE_PIERNA_ALGO.por(2)).is_ok(),
+            "el par OCO"
+        );
 
         let ex = ejecutor_con(None, Some(299), None, T0);
         assert!(critica(&ex, T0 + 1, COSTE_ORDEN).is_ok(), "299 + 1 = 300");
@@ -5498,8 +5532,15 @@ mod tests_n5c {
         let ex = ejecutor_con(None, Some(298), None, T0);
         let par = ex.check_exit_rate_limits(T0 + 1, Tramo::Critica(COSTE_PIERNA_ALGO.por(2)));
         assert!(par.is_ok(), "298 + 2 = 300");
-        assert_eq!(ex.uso_exchange_bloqueado().en_vuelo, [2, 2, 2]);
-        assert!(critica(&ex, T0 + 1, COSTE_ORDEN).is_err(), "el par OCO llena la ventana de 10 s");
+        assert_eq!(
+            ex.uso_exchange_bloqueado().en_vuelo,
+            [0, 2, 2],
+            "una pierna algo no pesa"
+        );
+        assert!(
+            critica(&ex, T0 + 1, COSTE_ORDEN).is_err(),
+            "el par OCO llena la ventana de 10 s"
+        );
         drop(par);
         assert_eq!(ex.uso_exchange_bloqueado().en_vuelo, [0, 0, 0]);
 
@@ -5507,9 +5548,13 @@ mod tests_n5c {
         let par = ex.check_exit_rate_limits(T0 + 1, Tramo::Critica(COSTE_PIERNA_ALGO.por(2)));
         let lectura = ex.check_exit_rate_limits(T0 + 1, Tramo::Lectura);
         assert!(par.is_ok() && lectura.is_ok());
-        assert_eq!(ex.uso_exchange_bloqueado().en_vuelo, [2, 2, 2], "la lectura no entra en el libro");
+        assert_eq!(
+            ex.uso_exchange_bloqueado().en_vuelo,
+            [0, 2, 2],
+            "la lectura no entra en el libro"
+        );
         drop(lectura);
-        assert_eq!(ex.uso_exchange_bloqueado().en_vuelo, [2, 2, 2]);
+        assert_eq!(ex.uso_exchange_bloqueado().en_vuelo, [0, 2, 2]);
         drop(par);
         assert_eq!(ex.uso_exchange_bloqueado().en_vuelo, [0, 0, 0]);
     }
@@ -7149,20 +7194,30 @@ mod tests_n23 {
         let _ = par.registrar_fallo_de(&ErrorRest::sin_cabecera("HTTP_429_RATE_LIMITED retry_after=0"), COSTE_PIERNA_ALGO);
         assert_eq!(perdido(&ex), [0, 0, 0], "un 429 lo gobierna su Retry-After");
         let _ = par.registrar_fallo_de(&red(true), COSTE_PIERNA_ALGO);
-        assert_eq!(perdido(&ex), [1, 1, 1], "una pierna perdida");
-        assert_eq!(en_vuelo(&ex), [2, 2, 2]);
+        assert_eq!(perdido(&ex), [0, 1, 1], "una pierna perdida");
+        assert_eq!(en_vuelo(&ex), [0, 2, 2]);
         drop(par);
         assert_eq!(en_vuelo(&ex), [0, 0, 0]);
-        assert_eq!(perdido(&ex), [1, 1, 1], "lo perdido sobrevive al cupo");
+        assert_eq!(perdido(&ex), [0, 1, 1], "lo perdido sobrevive al cupo");
 
         // RV23-T: con la hora de ahora; el 429 de arriba armó un cooldown
         // hasta su propio milisegundo, que `t` puede no alcanzar.
         let pr = ex.check_exit_rate_limits(ex.get_synced_timestamp(), PR);
         assert!(pr.is_ok(), "{pr:?}");
         let Ok(pr) = pr else { return };
-        let _ = pr.registrar_fallo_de(&red(true), COSTE_PIERNA_ALGO.por(9));
+        let _ = pr.registrar_fallo_de(
+            &red(true),
+            crate::binance_api::CosteBinance {
+                peso: 9,
+                ordenes: 9,
+            },
+        );
         drop(pr);
-        assert_eq!(perdido(&ex), [6, 1, 1], "acotado al coste del cupo (peso 5, órdenes 0)");
+        assert_eq!(
+            perdido(&ex),
+            [5, 1, 1],
+            "acotado al coste del cupo (peso 5, órdenes 0)"
+        );
     }
 
     /// CL-201: lo perdido, como lo que está en vuelo, no frena un contador
@@ -7201,12 +7256,18 @@ mod tests_n23 {
     /// el tope de la cola.
     #[test]
     fn cl201_lo_perdido_caduca_con_su_ventana() {
-        use crate::binance_api::{CosteBinance, COSTE_PIERNA_ALGO};
+        use crate::binance_api::CosteBinance;
         const T: u64 = 1_700_000_000_000;
+        // Un coste en los tres contadores (CL-218: ya no es el de la pierna
+        // algo, que no pesa).
+        let tres = CosteBinance {
+            peso: 1,
+            ordenes: 1,
+        };
         let mut l = SinRespuesta::default();
         l.anotar(CosteBinance::NULO, T);
         assert_eq!(l.muestras.len(), 0, "el coste nulo no se anota");
-        l.anotar(COSTE_PIERNA_ALGO, T);
+        l.anotar(tres, T);
         assert_eq!(l.vigente(T), [1, 1, 1]);
         assert_eq!(l.vigente(T + 9_999), [1, 1, 1]);
         assert_eq!(l.vigente(T + 10_000), [1, 0, 1]);
@@ -7215,7 +7276,7 @@ mod tests_n23 {
         assert_eq!(l.muestras.len(), 0, "la caducada sale");
 
         let mut l = SinRespuesta::default();
-        l.anotar(COSTE_PIERNA_ALGO, T + 3_600_000);
+        l.anotar(tres, T + 3_600_000);
         assert_eq!(l.vigente(T), [1, 1, 1], "el reloj retrocedió una hora");
         assert_eq!(l.vigente(T + 60_000), [0, 0, 0], "vive una ventana desde ahora, no una hora más");
 
@@ -7295,12 +7356,19 @@ mod tests_n23 {
             "REJECTED code=-4061 msg=?",
             r#"Binance API Error: {"code":-4061,"msg":"Order's position side does not match user's setting."}"#,
             "REJECTED code=-1106 msg=Parameter 'reduceOnly' sent when not required.",
+            // CL-217 (N41-c): el texto real lleva el parámetro en minúsculas.
+            "REJECTED code=-1106 msg=Parameter 'reduceonly' sent when not required.",
+            r#"Binance API Error: {"code":-1106,"msg":"Parameter 'reduceonly' sent when not required."}"#,
         ] {
             assert!(modo_rechazado(firme), "{firme}");
         }
         for otro in [
             "REJECTED code=-2022 msg=ReduceOnly Order is rejected.",
             "RATE_LIMIT_COOLDOWN: 429 activo",
+            // CL-217: un -1106 de otro parámetro no habla del modo, ni otro
+            // código que empiece por -1106.
+            "REJECTED code=-1106 msg=Parameter 'newOrderRespType' sent when not required.",
+            "REJECTED code=-11060 msg=Parameter 'reduceonly' sent when not required.",
         ] {
             assert!(!modo_rechazado(otro), "{otro}");
         }
@@ -7842,7 +7910,7 @@ mod tests_lote18 {
         ok(&format!(r#"{{"dualSidePosition":{dual}}}"#))
     }
 
-    fn filas(filas: &[(&str, &str)]) -> String {
+    pub(super) fn filas(filas: &[(&str, &str)]) -> String {
         let cuerpo: Vec<String> = filas
             .iter()
             .map(|(lado, cantidad)| {
@@ -7854,7 +7922,7 @@ mod tests_lote18 {
         ok(&format!("[{}]", cuerpo.join(",")))
     }
 
-    fn llenada(lado: &str, cantidad: &str) -> String {
+    pub(super) fn llenada(lado: &str, cantidad: &str) -> String {
         ok(&format!(
             r#"{{"orderId":7,"symbol":"BTCUSDT","status":"FILLED","clientOrderId":"c","origQty":"{cantidad}","executedQty":"{cantidad}","avgPrice":"60000","side":"{lado}","type":"MARKET"}}"#
         ))
@@ -7894,7 +7962,7 @@ mod tests_lote18 {
         )
     }
 
-    fn purgada() -> String {
+    pub(super) fn purgada() -> String {
         ok(r#"{"code":200,"msg":"The operation of cancel all open order is done."}"#)
     }
 
@@ -7919,7 +7987,7 @@ mod tests_lote18 {
 
     /// El aplanado contra `wires`: su resultado y las líneas de petición que
     /// llegaron. Nunca se cuelga (plazo de 60 s y el servidor se aborta).
-    async fn aplanar(
+    pub(super) async fn aplanar(
         wires: Vec<String>,
         hedge: bool,
     ) -> (Option<Result<(usize, usize), String>>, Vec<String>) {
@@ -8285,6 +8353,58 @@ mod tests_lote18 {
             "{r:?} {lineas:#?}"
         );
         assert_eq!(lineas.len(), 6, "sin purga tras el -2022: {lineas:#?}");
+    }
+}
+
+#[cfg(test)]
+mod tests_lote20 {
+    //! Lote 20 (N41-c): el reintento de modo del aplanado ante el -1106 real.
+    use super::tests_lote18::{aplanar, filas, llenada, ok, purgada};
+    use super::tests_n20::respuesta;
+
+    /// El rechazo de Binance al reduceOnly en una cuenta hedge, con el texto
+    /// real (adshao/go-binance#521): el parámetro en minúsculas.
+    fn rechazo_1106() -> String {
+        respuesta(
+            "400 Bad Request",
+            "Content-Type: application/json\r\n",
+            r#"{"code":-1106,"msg":"Parameter 'reduceonly' sent when not required."}"#,
+        )
+    }
+
+    /// RED antes de CL-217: con el modo ilegible el aplanado usa el
+    /// registrado (one-way) y la cuenta es hedge. El cierre sale con
+    /// reduceOnly y Binance lo rechaza con -1106 en minúsculas; el reintento
+    /// de modo (R3.3 / K-16) buscaba «reduceOnly» literal, no salía, y la
+    /// pierna quedaba abierta (FLATTEN_INCOMPLETE). Ahora conmuta, cierra la
+    /// pierna con su positionSide y sólo después purga.
+    #[tokio::test]
+    async fn cl217_el_1106_real_de_la_cuenta_hedge_conmuta_y_cierra() {
+        let mut wires = vec![
+            ok("{}"),
+            filas(&[("LONG", "0.010")]),
+            rechazo_1106(),
+            llenada("SELL", "0.010"),
+            purgada(),
+            purgada(),
+        ];
+        wires.extend((0..3).map(|_| llenada("SELL", "0.010")));
+        let (r, lineas) = aplanar(wires, false).await;
+        assert!(matches!(r, Some(Ok((2, 1)))), "{r:?} {lineas:#?}");
+        assert_eq!(lineas.len(), 6, "ni un envío de más: {lineas:#?}");
+        assert!(
+            lineas[2].contains("side=SELL&type=MARKET&reduceOnly=true"),
+            "el cierre en el modo registrado: {lineas:#?}"
+        );
+        assert!(
+            lineas[3].contains("side=SELL&positionSide=LONG&type=MARKET")
+                && !lineas[3].contains("reduceOnly"),
+            "el reintento en hedge: {lineas:#?}"
+        );
+        assert!(
+            lineas[4].contains("allOpenOrders") && lineas[5].contains("algoOpenOrders"),
+            "{lineas:#?}"
+        );
     }
 }
 
