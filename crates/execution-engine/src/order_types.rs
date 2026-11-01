@@ -283,6 +283,9 @@ pub mod error_codes {
     /// -1106 PARAM_NOT_REQUIRED: «Parameter '%s' sent when not required.»
     /// En el cierre del aplanado lo da el reduceOnly enviado a una cuenta hedge.
     pub const PARAM_NOT_REQUIRED: i64 = -1106;
+    /// -1000 UNKNOWN: «An unknown error occured while processing the request.»
+    /// La documentación no dice si la orden quedó (N43, CL-220).
+    pub const UNKNOWN: i64 = -1000;
     pub const EXECUTION_STATUS_UNKNOWN: i64 = -1006;
     pub const BACKEND_TIMEOUT: i64 = -1007;
 }

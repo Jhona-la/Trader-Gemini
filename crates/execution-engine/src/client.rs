@@ -904,9 +904,16 @@ impl BinanceClient {
 
 /// N25 (CL-199): si un no-2xx de un envío de orden deja su ejecución
 /// desconocida. Lo es todo lo que no es un 4xx (5xx, y 1xx/3xx, que un envío
-/// de orden no espera), el 408 y un 4xx con -1006/-1007: el exchange no dice
-/// si la orden quedó, y quien lo lee debe consultarla antes de darla por
+/// de orden no espera), el 408 y un 4xx con -1000/-1006/-1007: el exchange no
+/// dice si la orden quedó, y quien lo lee debe consultarla antes de darla por
 /// rechazada (contrato F1.2 de `execute_order_payload_typed`). Un 2xx no lo es.
+/// N43 (CL-220): el -1000 («An unknown error occured while processing the
+/// request.») se daba por rechazo firme, y `protection_health` ya lo trataba
+/// como ejecución desconocida. La documentación de USDⓈ-M no dice que la
+/// orden no quedara (sólo marca la ejecución desconocida en -1006/-1007, y
+/// tampoco la descarta en -1000): darlo por firme permitía reenviar otra
+/// intención con la primera quizá viva. Consultar cuesta una lectura de peso
+/// 1; las dos lecturas quedan alineadas.
 fn ejecucion_desconocida(estado: reqwest::StatusCode, cuerpo: &str) -> bool {
     use crate::order_types::{error_codes, BinanceApiError};
     if estado.is_success() {
@@ -918,7 +925,9 @@ fn ejecucion_desconocida(estado: reqwest::StatusCode, cuerpo: &str) -> bool {
             .map(|e| {
                 matches!(
                     e.code,
-                    error_codes::EXECUTION_STATUS_UNKNOWN | error_codes::BACKEND_TIMEOUT
+                    error_codes::UNKNOWN
+                        | error_codes::EXECUTION_STATUS_UNKNOWN
+                        | error_codes::BACKEND_TIMEOUT
                 )
             })
             .unwrap_or(false)
@@ -1578,7 +1587,7 @@ mod tests_n23 {
 
     /// RV21-T (revisión de CL-196): las dos ramas AMBIGUOUS de
     /// `execute_order_payload_body` que no son 5xx también llevan la cabecera:
-    /// un 4xx de ejecución desconocida (408, -1006, -1007) y un cuerpo que no
+    /// un 4xx de ejecución desconocida (408, -1000, -1006, -1007) y un cuerpo que no
     /// se puede leer (se corta antes de su Content-Length). Ninguna prueba las
     /// recorría: devolverlas sin cabecera quedaba en verde.
     #[tokio::test]
@@ -1591,6 +1600,15 @@ mod tests_n23 {
             (respuesta("408 Request Timeout", cab, ""), "AMBIGUOUS: HTTP 408 body="),
             (respuesta("400 Bad Request", cab, r#"{"code":-1006,"msg":"x"}"#), "AMBIGUOUS: HTTP 400 body="),
             (respuesta("400 Bad Request", cab, r#"{"code":-1007,"msg":"x"}"#), "AMBIGUOUS: HTTP 400 body="),
+            // RED antes de CL-220 (N43): el -1000 se daba por rechazo firme.
+            (
+                respuesta(
+                    "400 Bad Request",
+                    cab,
+                    r#"{"code":-1000,"msg":"An unknown error occured while processing the request."}"#,
+                ),
+                "AMBIGUOUS: HTTP 400 body=",
+            ),
             (cortado, "AMBIGUOUS: HTTP 400 unreadable response body"),
         ] {
             let e = error_ante(1, wire).await;
