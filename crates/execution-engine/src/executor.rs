@@ -5480,6 +5480,14 @@ mod tests_n5c {
         let ex = ejecutor_con(Some(2_400), None, None, T0);
         assert!(critica(&ex, T0 + 1, COSTE_ORDEN).is_ok());
         assert!(critica(&ex, T0 + 1, COSTE_CANCELACION).is_err());
+        // RED antes de CL-218 (N22): la pierna algo tampoco pesa (peso IP 0
+        // documentado). Con peso 1 supuesto, el par SL/TP de una posición
+        // recién abierta se frenaba aquí aunque el exchange lo admitía.
+        assert!(critica(&ex, T0 + 1, COSTE_PIERNA_ALGO).is_ok());
+        assert!(
+            critica(&ex, T0 + 1, COSTE_PIERNA_ALGO.por(2)).is_ok(),
+            "el par OCO"
+        );
 
         let ex = ejecutor_con(None, Some(299), None, T0);
         assert!(critica(&ex, T0 + 1, COSTE_ORDEN).is_ok(), "299 + 1 = 300");
@@ -5524,8 +5532,15 @@ mod tests_n5c {
         let ex = ejecutor_con(None, Some(298), None, T0);
         let par = ex.check_exit_rate_limits(T0 + 1, Tramo::Critica(COSTE_PIERNA_ALGO.por(2)));
         assert!(par.is_ok(), "298 + 2 = 300");
-        assert_eq!(ex.uso_exchange_bloqueado().en_vuelo, [2, 2, 2]);
-        assert!(critica(&ex, T0 + 1, COSTE_ORDEN).is_err(), "el par OCO llena la ventana de 10 s");
+        assert_eq!(
+            ex.uso_exchange_bloqueado().en_vuelo,
+            [0, 2, 2],
+            "una pierna algo no pesa"
+        );
+        assert!(
+            critica(&ex, T0 + 1, COSTE_ORDEN).is_err(),
+            "el par OCO llena la ventana de 10 s"
+        );
         drop(par);
         assert_eq!(ex.uso_exchange_bloqueado().en_vuelo, [0, 0, 0]);
 
@@ -5533,9 +5548,13 @@ mod tests_n5c {
         let par = ex.check_exit_rate_limits(T0 + 1, Tramo::Critica(COSTE_PIERNA_ALGO.por(2)));
         let lectura = ex.check_exit_rate_limits(T0 + 1, Tramo::Lectura);
         assert!(par.is_ok() && lectura.is_ok());
-        assert_eq!(ex.uso_exchange_bloqueado().en_vuelo, [2, 2, 2], "la lectura no entra en el libro");
+        assert_eq!(
+            ex.uso_exchange_bloqueado().en_vuelo,
+            [0, 2, 2],
+            "la lectura no entra en el libro"
+        );
         drop(lectura);
-        assert_eq!(ex.uso_exchange_bloqueado().en_vuelo, [2, 2, 2]);
+        assert_eq!(ex.uso_exchange_bloqueado().en_vuelo, [0, 2, 2]);
         drop(par);
         assert_eq!(ex.uso_exchange_bloqueado().en_vuelo, [0, 0, 0]);
     }
@@ -7175,20 +7194,30 @@ mod tests_n23 {
         let _ = par.registrar_fallo_de(&ErrorRest::sin_cabecera("HTTP_429_RATE_LIMITED retry_after=0"), COSTE_PIERNA_ALGO);
         assert_eq!(perdido(&ex), [0, 0, 0], "un 429 lo gobierna su Retry-After");
         let _ = par.registrar_fallo_de(&red(true), COSTE_PIERNA_ALGO);
-        assert_eq!(perdido(&ex), [1, 1, 1], "una pierna perdida");
-        assert_eq!(en_vuelo(&ex), [2, 2, 2]);
+        assert_eq!(perdido(&ex), [0, 1, 1], "una pierna perdida");
+        assert_eq!(en_vuelo(&ex), [0, 2, 2]);
         drop(par);
         assert_eq!(en_vuelo(&ex), [0, 0, 0]);
-        assert_eq!(perdido(&ex), [1, 1, 1], "lo perdido sobrevive al cupo");
+        assert_eq!(perdido(&ex), [0, 1, 1], "lo perdido sobrevive al cupo");
 
         // RV23-T: con la hora de ahora; el 429 de arriba armó un cooldown
         // hasta su propio milisegundo, que `t` puede no alcanzar.
         let pr = ex.check_exit_rate_limits(ex.get_synced_timestamp(), PR);
         assert!(pr.is_ok(), "{pr:?}");
         let Ok(pr) = pr else { return };
-        let _ = pr.registrar_fallo_de(&red(true), COSTE_PIERNA_ALGO.por(9));
+        let _ = pr.registrar_fallo_de(
+            &red(true),
+            crate::binance_api::CosteBinance {
+                peso: 9,
+                ordenes: 9,
+            },
+        );
         drop(pr);
-        assert_eq!(perdido(&ex), [6, 1, 1], "acotado al coste del cupo (peso 5, órdenes 0)");
+        assert_eq!(
+            perdido(&ex),
+            [5, 1, 1],
+            "acotado al coste del cupo (peso 5, órdenes 0)"
+        );
     }
 
     /// CL-201: lo perdido, como lo que está en vuelo, no frena un contador
@@ -7227,12 +7256,18 @@ mod tests_n23 {
     /// el tope de la cola.
     #[test]
     fn cl201_lo_perdido_caduca_con_su_ventana() {
-        use crate::binance_api::{CosteBinance, COSTE_PIERNA_ALGO};
+        use crate::binance_api::CosteBinance;
         const T: u64 = 1_700_000_000_000;
+        // Un coste en los tres contadores (CL-218: ya no es el de la pierna
+        // algo, que no pesa).
+        let tres = CosteBinance {
+            peso: 1,
+            ordenes: 1,
+        };
         let mut l = SinRespuesta::default();
         l.anotar(CosteBinance::NULO, T);
         assert_eq!(l.muestras.len(), 0, "el coste nulo no se anota");
-        l.anotar(COSTE_PIERNA_ALGO, T);
+        l.anotar(tres, T);
         assert_eq!(l.vigente(T), [1, 1, 1]);
         assert_eq!(l.vigente(T + 9_999), [1, 1, 1]);
         assert_eq!(l.vigente(T + 10_000), [1, 0, 1]);
@@ -7241,7 +7276,7 @@ mod tests_n23 {
         assert_eq!(l.muestras.len(), 0, "la caducada sale");
 
         let mut l = SinRespuesta::default();
-        l.anotar(COSTE_PIERNA_ALGO, T + 3_600_000);
+        l.anotar(tres, T + 3_600_000);
         assert_eq!(l.vigente(T), [1, 1, 1], "el reloj retrocedió una hora");
         assert_eq!(l.vigente(T + 60_000), [0, 0, 0], "vive una ventana desde ahora, no una hora más");
 
