@@ -7122,6 +7122,55 @@ mod tests_n23 {
         assert_eq!(r, Ok(()), "un cierre de peso 0 no lo frena lo perdido");
     }
 
+    /// RED antes de CL-219 (N41-a): lo mismo con dos 504 de una pasarela,
+    /// sin cabecera de uso: el exchange pudo contar el positionRisk y su
+    /// reintento y ninguna cabecera lo dice. Antes eran «respuestas» y la
+    /// cancelación cabía. Con la cabecera (control) manda la cabecera.
+    #[tokio::test]
+    async fn cl219_un_5xx_sin_cabecera_entra_en_el_uso() {
+        use super::tests_lg3::limites;
+        use crate::binance_api::COSTE_CANCELACION;
+        let sin_cabecera = ex();
+        sin_cabecera.observar_limites(
+            &limites(Some(2_390), None, None),
+            sin_cabecera.get_synced_timestamp(),
+        );
+        let pasarela = respuesta("504 Gateway Timeout", "", "");
+        let (e, conexiones) =
+            cuenta_contra(&sin_cabecera, PR, vec![pasarela.clone(), pasarela]).await;
+        assert_eq!(conexiones, 2, "«{e}»");
+        assert!(e.starts_with("Binance API Error: status=504"), "«{e}»");
+        let ahora = sin_cabecera.get_synced_timestamp();
+        let r = sin_cabecera
+            .check_exit_rate_limits(ahora, Tramo::Critica(COSTE_CANCELACION))
+            .map(|_cupo| ());
+        assert!(
+            matches!(r, Err(ref e) if e.starts_with("RATE_LIMIT_EXHAUSTED_WEIGHT: 2400 usado")),
+            "{r:?}"
+        );
+
+        let con_cabecera = ex();
+        let medida = con_peso("503 Service Unavailable", 2_390, "");
+        let (e, conexiones) = cuenta_contra(&con_cabecera, PR, vec![medida.clone(), medida]).await;
+        assert_eq!(conexiones, 2, "«{e}»");
+        assert_eq!(
+            con_cabecera
+                .uso_exchange_bloqueado()
+                .sin_respuesta
+                .muestras
+                .len(),
+            0,
+            "con cabecera no hay perdido"
+        );
+        let r = con_cabecera
+            .check_exit_rate_limits(
+                con_cabecera.get_synced_timestamp(),
+                Tramo::Critica(COSTE_CANCELACION),
+            )
+            .map(|_cupo| ());
+        assert_eq!(r, Ok(()), "2 390 medidos + 1 ≤ 2 400");
+    }
+
     /// RED antes de CL-201 (N24-a): con 2 395 de peso el positionRisk cabe
     /// justo (2 400); perdido, su reintento ya no (2 395 + 5 + 5 > 2 400) y
     /// no sale. Antes salía: el primero no contaba.
