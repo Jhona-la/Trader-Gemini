@@ -1324,6 +1324,25 @@ un escéptico por lote listo):
   los brackets) eso sube la prioridad de N18. El riesgo añadido es pequeño:
   un 429 del NTP o del listenKey significa que la IP ya pasó el límite, y la
   siguiente petición del ejecutor recibiría el suyo.
+  **Pesos comprobados en la tanda 20 (CL-218).** La documentación oficial
+  (developers.binance.com, USDⓈ-M Futures, páginas Trade y Account,
+  consultada el 2026-11-01 desde la nube, que ya la alcanza) confirma
+  commissionRate 20, positionSide/dual GET 30 (POST 1) e income 30: el mapa
+  estaba mal en los tres y queda corregido. También confirma los costes
+  supuestos del ejecutor salvo uno: el POST de algoOrder pesa 0 de IP (y 1
+  en cada contador de órdenes), no 1. `COSTE_PIERNA_ALGO` pasa a
+  `{ peso: 0, ordenes: 1 }`: con el peso en 2 400 el par SL/TP de una
+  posición se frenaba localmente aunque el exchange lo admitía (falla sin
+  el cambio en `n5c_el_tope_critico_es_el_limite_del_exchange`).
+  Cancelaciones (order, allOpenOrders, algoOrder, algoOpenOrders) 1,
+  consulta de orden 1, positionRisk 5 y openAlgoOrders con símbolo 1
+  quedan como estaban, ya documentados. El gasto de `OmsSession::refresh`
+  con los pesos reales es 75 + 20·N por minuto (modo 30, comisiones 20·N,
+  positionRisk 5, openOrders 40, más 1 por intención ausente): con N = 30
+  (`MAX_COINS`), 675 de 2 400, el 28 %. Candidato para el dueño de
+  host_oms.rs (Línea G): guardar las comisiones entre refrescos, porque
+  cambian con el nivel VIP y no cada minuto. Siguen abiertos el 0,8, los
+  +60 s y si las ventanas del exchange están alineadas al minuto.
 - N23 (de la tanda 14, resto de N21, Línea C): las respuestas de error de
   los siete transportes de las peticiones firmadas (client.rs
   `execute_order_payload`, `_body`, `cancel_order_payload`,
@@ -1605,7 +1624,18 @@ un escéptico por lote listo):
   (c) el -1106 real de Binance podría escribir el parámetro en minúsculas
   («'reduceonly' sent when not required»): `modo_rechazado` busca
   «reduceOnly» y entonces no reintentaría en el otro modo. Sin la
-  documentación (PC del dueño) no se cambia; decidir con ella. (d) El plazo
+  documentación (PC del dueño) no se cambia; decidir con ella.
+  **Hecha en la tanda 20 (CL-217).** Binance documenta el mensaje como
+  «Parameter '%s' sent when not required.» sin fijar la caja, y el rechazo
+  real que publica adshao/go-binance#521 trae «'reduceonly'» en
+  minúsculas. Con el modo ilegible el aplanado cierra en el registrado: en
+  one-way, contra una cuenta hedge, el cierre con reduceOnly volvía -1106,
+  no conmutaba y la pierna quedaba abierta (FLATTEN_INCOMPLETE).
+  `modo_rechazado` reconoce ahora el código -1106 (`trae_codigo`, el
+  emparejador de -4116 de `pierna_ya_existe` generalizado) cuando el
+  mensaje nombra reduceOnly en cualquier caja. Un -1106 de otro parámetro y
+  el -2022 («ReduceOnly Order is rejected.») siguen sin conmutar. Prueba de
+  extremo a extremo con el servidor local (tests_lote20). (d) El plazo
   total que vence mientras conecta cuenta como salida (reqwest 0.11 no dice
   en qué fase venció). En Windows una conexión rechazada tarda unos 2 s en
   fallar, más que los 1,2 s de las órdenes (lo vio la CI de la tanda 16):
