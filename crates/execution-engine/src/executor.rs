@@ -2022,11 +2022,8 @@ impl OrderExecutor {
         &self,
     ) -> Result<std::collections::HashMap<String, SymbolFilter>, String> {
         let mut buf = ZeroAllocBuffer::new();
-        if self.client.is_testnet.load(Ordering::Relaxed) {
-            buf.push_str("https://testnet.binancefuture.com/fapi/v1/exchangeInfo");
-        } else {
-            buf.push_str("https://fapi.binance.com/fapi/v1/exchangeInfo");
-        }
+        buf.push_str(self.client.get_base_url());
+        buf.push_str("/fapi/v1/exchangeInfo");
         self.descargar_filtros(buf.as_str()).await
     }
 
@@ -2390,11 +2387,8 @@ impl OrderExecutor {
         let cupo = self.check_exit_rate_limits(timestamp, Tramo::Critica(crate::binance_api::COSTE_CANCELACION))?;
 
         let mut buf = ZeroAllocBuffer::new();
-        buf.push_str(if self.client.is_testnet.load(Ordering::Relaxed) {
-            "https://testnet.binancefuture.com/fapi/v1/algoOrder?"
-        } else {
-            "https://fapi.binance.com/fapi/v1/algoOrder?"
-        });
+        buf.push_str(self.client.get_base_url());
+        buf.push_str("/fapi/v1/algoOrder?");
         let payload_start = buf.as_str().len();
         buf.push_str("symbol=");
         buf.push_str(symbol);
@@ -2502,11 +2496,8 @@ impl OrderExecutor {
         let cupo = self.check_exit_rate_limits(timestamp, tramo)?;
 
         let mut buf = ZeroAllocBuffer::new();
-        buf.push_str(if self.client.is_testnet.load(Ordering::Relaxed) {
-            "https://testnet.binancefuture.com/fapi/v1/openAlgoOrders?"
-        } else {
-            "https://fapi.binance.com/fapi/v1/openAlgoOrders?"
-        });
+        buf.push_str(self.client.get_base_url());
+        buf.push_str("/fapi/v1/openAlgoOrders?");
         let payload_start = buf.as_str().len();
         if let Some(s) = symbol {
             buf.push_str("symbol=");
@@ -2566,11 +2557,8 @@ impl OrderExecutor {
         let cupo = self.check_exit_rate_limits(timestamp, Tramo::Lectura)?;
 
         let mut buf = ZeroAllocBuffer::new();
-        buf.push_str(if self.client.is_testnet.load(Ordering::Relaxed) {
-            "https://testnet.binancefuture.com/fapi/v1/openOrders?"
-        } else {
-            "https://fapi.binance.com/fapi/v1/openOrders?"
-        });
+        buf.push_str(self.client.get_base_url());
+        buf.push_str("/fapi/v1/openOrders?");
         let payload_start = buf.as_str().len();
         if let Some(s) = symbol {
             buf.push_str("symbol=");
@@ -2648,11 +2636,8 @@ impl OrderExecutor {
         let cupo = self.check_exit_rate_limits(timestamp, Tramo::Critica(crate::binance_api::COSTE_PIERNA_ALGO))?;
 
         let mut buf = ZeroAllocBuffer::new();
-        buf.push_str(if self.client.is_testnet.load(Ordering::Relaxed) {
-            "https://testnet.binancefuture.com/fapi/v1/algoOrder?"
-        } else {
-            "https://fapi.binance.com/fapi/v1/algoOrder?"
-        });
+        buf.push_str(self.client.get_base_url());
+        buf.push_str("/fapi/v1/algoOrder?");
         let payload_start = buf.as_str().len();
         buf.push_str("symbol=");
         buf.push_str(symbol);
@@ -2764,11 +2749,8 @@ impl OrderExecutor {
             client_order_id_param.to_string()
         };
         let mut buf = ZeroAllocBuffer::new();
-        buf.push_str(if self.client.is_testnet.load(Ordering::Relaxed) {
-            "https://testnet.binancefuture.com/fapi/v1/order?"
-        } else {
-            "https://fapi.binance.com/fapi/v1/order?"
-        });
+        buf.push_str(self.client.get_base_url());
+        buf.push_str("/fapi/v1/order?");
         let payload_start = buf.as_str().len();
 
         buf.push_str("symbol=");
@@ -3153,11 +3135,8 @@ impl ExecutionProvider for OrderExecutor {
 
             // F1.4: se envía EXACTAMENTE la query firmada. Sin reconstrucción (REST Fallback).
             let mut buf = ZeroAllocBuffer::new();
-            buf.push_str(if self.client.is_testnet.load(Ordering::Relaxed) {
-                "https://testnet.binancefuture.com/fapi/v1/order?"
-            } else {
-                "https://fapi.binance.com/fapi/v1/order?"
-            });
+            buf.push_str(self.client.get_base_url());
+            buf.push_str("/fapi/v1/order?");
             buf.push_str(&payload.signed_query);
             buf.push_str("&signature=");
             buf.push_str(&payload.signature);
@@ -3295,11 +3274,8 @@ impl ExecutionProvider for OrderExecutor {
         self.check_rate_limits(timestamp)?;
 
         let mut buf = ZeroAllocBuffer::new();
-        buf.push_str(if self.client.is_testnet.load(Ordering::Relaxed) {
-            "https://testnet.binancefuture.com/fapi/v1/order?"
-        } else {
-            "https://fapi.binance.com/fapi/v1/order?"
-        });
+        buf.push_str(self.client.get_base_url());
+        buf.push_str("/fapi/v1/order?");
         let payload_start = buf.as_str().len();
 
         buf.push_str("symbol=");
@@ -3565,11 +3541,8 @@ impl ExecutionProvider for OrderExecutor {
         self.check_rate_limits(timestamp)?;
 
         let mut buf = ZeroAllocBuffer::new();
-        buf.push_str(if self.client.is_testnet.load(Ordering::Relaxed) {
-            "https://testnet.binancefuture.com/fapi/v1/order?"
-        } else {
-            "https://fapi.binance.com/fapi/v1/order?"
-        });
+        buf.push_str(self.client.get_base_url());
+        buf.push_str("/fapi/v1/order?");
         let payload_start = buf.as_str().len();
 
         buf.push_str("symbol=");
@@ -3699,11 +3672,8 @@ impl ExecutionProvider for OrderExecutor {
         self.check_rate_limits(timestamp)?;
 
         let mut buf = ZeroAllocBuffer::new();
-        buf.push_str(if self.client.is_testnet.load(Ordering::Relaxed) {
-            "https://testnet.binancefuture.com/fapi/v1/order?"
-        } else {
-            "https://fapi.binance.com/fapi/v1/order?"
-        });
+        buf.push_str(self.client.get_base_url());
+        buf.push_str("/fapi/v1/order?");
         let payload_start = buf.as_str().len();
 
         buf.push_str("symbol=");
@@ -3815,11 +3785,8 @@ impl ExecutionProvider for OrderExecutor {
         // OCO-F5: TRAILING_STOP_MARKET es tipo condicional — bloqueado en
         // /fapi/v1/order (-4120) desde la migración al servicio de Algo
         // (2025-12-09). activationPrice/callbackRate mantienen sus nombres.
-        buf.push_str(if self.client.is_testnet.load(Ordering::Relaxed) {
-            "https://testnet.binancefuture.com/fapi/v1/algoOrder?"
-        } else {
-            "https://fapi.binance.com/fapi/v1/algoOrder?"
-        });
+        buf.push_str(self.client.get_base_url());
+        buf.push_str("/fapi/v1/algoOrder?");
         let payload_start = buf.as_str().len();
 
         buf.push_str("symbol=");
@@ -3909,11 +3876,7 @@ impl ExecutionProvider for OrderExecutor {
         // su protección en vez de quedar desnuda. La cuota sigue aplicando.
         let cupo = self.check_exit_rate_limits(timestamp, Tramo::Critica(crate::binance_api::COSTE_PIERNA_ALGO.por(2)))?;
 
-        let base_url = if self.client.is_testnet.load(Ordering::Relaxed) {
-            "https://testnet.binancefuture.com/fapi/v1/algoOrder?"
-        } else {
-            "https://fapi.binance.com/fapi/v1/algoOrder?"
-        };
+        let base_url = self.client.get_base_url();
 
         // R3.1 — modo de posición condicional: en HEDGE, positionSide LONG/SHORT
         // hace la orden inherentemente reductora (Binance RECHAZA reduceOnly
@@ -3946,6 +3909,7 @@ impl ExecutionProvider for OrderExecutor {
         // empíricamente contra testnet — ver src/bin/oco_probe.rs.
         let mut sl_buf = ZeroAllocBuffer::new();
         sl_buf.push_str(base_url);
+        sl_buf.push_str("/fapi/v1/algoOrder?");
         let sl_payload_start = sl_buf.as_str().len();
         sl_buf.push_str("symbol=");
         sl_buf.push_str(symbol);
@@ -3969,6 +3933,7 @@ impl ExecutionProvider for OrderExecutor {
         // 2. Build Take Profit Order (TAKE_PROFIT_MARKET)
         let mut tp_buf = ZeroAllocBuffer::new();
         tp_buf.push_str(base_url);
+        tp_buf.push_str("/fapi/v1/algoOrder?");
         let tp_payload_start = tp_buf.as_str().len();
         tp_buf.push_str("symbol=");
         tp_buf.push_str(symbol);
@@ -4066,6 +4031,7 @@ impl ExecutionProvider for OrderExecutor {
             if sl_down {
                 let mut rb = ZeroAllocBuffer::new();
                 rb.push_str(base_url);
+                rb.push_str("/fapi/v1/algoOrder?");
                 let rp = rb.as_str().len();
                 rb.push_str("symbol=");
                 rb.push_str(symbol);
@@ -4121,6 +4087,7 @@ impl ExecutionProvider for OrderExecutor {
             if tp_down {
                 let mut rb = ZeroAllocBuffer::new();
                 rb.push_str(base_url);
+                rb.push_str("/fapi/v1/algoOrder?");
                 let rp = rb.as_str().len();
                 rb.push_str("symbol=");
                 rb.push_str(symbol);
@@ -4239,11 +4206,8 @@ impl ExecutionProvider for OrderExecutor {
         let cupo = self.check_exit_rate_limits(timestamp, Tramo::Critica(crate::binance_api::COSTE_CANCELACION))?;
 
         let mut buf = ZeroAllocBuffer::new();
-        buf.push_str(if self.client.is_testnet.load(Ordering::Relaxed) {
-            "https://testnet.binancefuture.com/fapi/v1/order?"
-        } else {
-            "https://fapi.binance.com/fapi/v1/order?"
-        });
+        buf.push_str(self.client.get_base_url());
+        buf.push_str("/fapi/v1/order?");
         let payload_start = buf.as_str().len();
 
         buf.push_str("symbol=");
@@ -4286,11 +4250,8 @@ impl ExecutionProvider for OrderExecutor {
         let cupo = self.check_exit_rate_limits(timestamp, Tramo::Critica(crate::binance_api::COSTE_CANCELACION))?;
 
         let mut buf = ZeroAllocBuffer::new();
-        buf.push_str(if self.client.is_testnet.load(Ordering::Relaxed) {
-            "https://testnet.binancefuture.com/fapi/v1/allOpenOrders?"
-        } else {
-            "https://fapi.binance.com/fapi/v1/allOpenOrders?"
-        });
+        buf.push_str(self.client.get_base_url());
+        buf.push_str("/fapi/v1/allOpenOrders?");
         let payload_start = buf.as_str().len();
 
         buf.push_str("symbol=");
@@ -4464,11 +4425,8 @@ impl ExecutionProvider for OrderExecutor {
         let cupo = self.check_exit_rate_limits(timestamp, Tramo::Lectura)?;
 
         let mut buf = ZeroAllocBuffer::new();
-        if self.client.is_testnet.load(Ordering::Relaxed) {
-            buf.push_str("https://testnet.binancefuture.com/fapi/v2/positionRisk?");
-        } else {
-            buf.push_str("https://fapi.binance.com/fapi/v2/positionRisk?");
-        }
+        buf.push_str(self.client.get_base_url());
+        buf.push_str("/fapi/v2/positionRisk?");
         let payload_start = buf.as_str().len();
 
         buf.push_str("timestamp=");
@@ -4498,11 +4456,8 @@ impl ExecutionProvider for OrderExecutor {
         let cupo = self.check_exit_rate_limits(timestamp, Tramo::Lectura)?;
 
         let mut buf = ZeroAllocBuffer::new();
-        if self.client.is_testnet.load(Ordering::Relaxed) {
-            buf.push_str("https://testnet.binancefuture.com/fapi/v2/account?");
-        } else {
-            buf.push_str("https://fapi.binance.com/fapi/v2/account?");
-        }
+        buf.push_str(self.client.get_base_url());
+        buf.push_str("/fapi/v2/account?");
         let payload_start = buf.as_str().len();
 
         buf.push_str("timestamp=");
@@ -4542,11 +4497,8 @@ impl ExecutionProvider for OrderExecutor {
         self.check_rate_limits(timestamp)?;
 
         let mut buf = ZeroAllocBuffer::new();
-        if self.client.is_testnet.load(Ordering::Relaxed) {
-            buf.push_str("https://testnet.binancefuture.com/fapi/v1/leverage?");
-        } else {
-            buf.push_str("https://fapi.binance.com/fapi/v1/leverage?");
-        }
+        buf.push_str(self.client.get_base_url());
+        buf.push_str("/fapi/v1/leverage?");
 
         let payload_start = buf.as_str().len();
         buf.push_str("symbol=");
@@ -4580,11 +4532,8 @@ impl ExecutionProvider for OrderExecutor {
         let cupo = self.check_exit_rate_limits(timestamp, Tramo::Lectura)?;
 
         let mut buf = ZeroAllocBuffer::new();
-        if self.client.is_testnet.load(Ordering::Relaxed) {
-            buf.push_str("https://testnet.binancefuture.com/fapi/v1/commissionRate?");
-        } else {
-            buf.push_str("https://fapi.binance.com/fapi/v1/commissionRate?");
-        }
+        buf.push_str(self.client.get_base_url());
+        buf.push_str("/fapi/v1/commissionRate?");
         let payload_start = buf.as_str().len();
 
         buf.push_str("symbol=");
@@ -7827,7 +7776,7 @@ mod tests_lote18 {
 
     type Bitacora = Arc<std::sync::Mutex<Vec<String>>>;
 
-    async fn servidor(
+    pub(super) async fn servidor(
         wires: Vec<String>,
     ) -> Option<(String, Bitacora, tokio::task::JoinHandle<()>)> {
         use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -7885,7 +7834,7 @@ mod tests_lote18 {
         )
     }
 
-    fn ok(cuerpo: &str) -> String {
+    pub(super) fn ok(cuerpo: &str) -> String {
         respuesta("200 OK", "Content-Type: application/json\r\n", cuerpo)
     }
 
@@ -7951,7 +7900,7 @@ mod tests_lote18 {
 
     /// El ejecutor de las pruebas, con sus rutas sobre `base`, el modo
     /// registrado `hedge` y el filtro de BTCUSDT en caché (paso 0.001).
-    fn ejecutor(base: &str, hedge: bool) -> OrderExecutor {
+    pub(super) fn ejecutor(base: &str, hedge: bool) -> OrderExecutor {
         let mut ex = OrderExecutor::new("k".into(), "s".into(), true);
         ex.client = ex.client.clone().con_base_de_prueba(base);
         ex.is_hedge_mode.store(hedge, Ordering::SeqCst);
@@ -8336,5 +8285,93 @@ mod tests_lote18 {
             "{r:?} {lineas:#?}"
         );
         assert_eq!(lineas.len(), 6, "sin purga tras el -2022: {lineas:#?}");
+    }
+}
+
+#[cfg(test)]
+mod tests_lote19 {
+    //! Lote 19 (N53, CL-216): las rutas REST del ejecutor y del stream de
+    //! usuario sacan su host de `BinanceClient::get_base_url`, la única fuente
+    //! del entorno (producción o testnet); antes unas veinte lo escribían a
+    //! mano en un `if is_testnet`, así que la costura de CL-209 no las
+    //! alcanzaba y un cambio de host había que repetirlo en cada una.
+    use super::tests_lote18::{ejecutor, ok, servidor};
+    use super::*;
+
+    /// La parte de producción de un archivo: hasta su primer `#[cfg(test)]`.
+    fn produccion(fuente: &str) -> &str {
+        fuente.split("#[cfg(test)]").next().unwrap_or(fuente)
+    }
+
+    #[test]
+    fn cl216_ningun_host_rest_escrito_a_mano_en_produccion() {
+        for (nombre, fuente) in [
+            ("executor.rs", include_str!("executor.rs")),
+            ("user_data_stream.rs", include_str!("user_data_stream.rs")),
+        ] {
+            let prod = produccion(fuente);
+            assert!(prod.len() < fuente.len(), "{nombre}: sin corte de pruebas");
+            for host in ["fapi.binance.com", "testnet.binancefuture.com"] {
+                let lineas: Vec<&str> = prod.lines().filter(|l| l.contains(host)).collect();
+                assert!(
+                    lineas.is_empty(),
+                    "{nombre}: host {host} escrito a mano en vez de get_base_url: {lineas:?}"
+                );
+            }
+        }
+    }
+
+    /// La primera línea de petición que recibe el servidor local al llamar
+    /// `llamada` sobre un ejecutor apuntado a él, y su resultado.
+    async fn primera_peticion<R, F, Fut>(cuerpo: &str, llamada: F) -> (Option<R>, String)
+    where
+        F: FnOnce(OrderExecutor) -> Fut,
+        Fut: std::future::Future<Output = R>,
+    {
+        let servido = servidor(vec![ok(cuerpo)]).await;
+        assert!(servido.is_some(), "servidor local");
+        let Some((base, bitacora, h)) = servido else {
+            return (None, String::new());
+        };
+        let r = tokio::time::timeout(
+            std::time::Duration::from_secs(30),
+            llamada(ejecutor(&base, false)),
+        )
+        .await
+        .ok();
+        h.abort();
+        let linea = bitacora
+            .lock()
+            .map(|v| v.first().cloned().unwrap_or_default())
+            .unwrap_or_default();
+        (r, linea)
+    }
+
+    #[tokio::test]
+    async fn cl216_el_apalancamiento_sale_por_la_base_del_cliente() {
+        let (r, linea) = primera_peticion(
+            r#"{"leverage":5,"maxNotionalValue":"1000000","symbol":"BTCUSDT"}"#,
+            |ex| async move { ex.set_leverage("BTCUSDT", 5).await },
+        )
+        .await;
+        assert!(
+            linea.starts_with("POST /fapi/v1/leverage?symbol=BTCUSDT&leverage=5&timestamp="),
+            "{linea}"
+        );
+        assert_eq!(r, Some(Ok(())));
+    }
+
+    #[tokio::test]
+    async fn cl216_la_comision_sale_por_la_base_del_cliente() {
+        let (r, linea) = primera_peticion(
+            r#"{"symbol":"BTCUSDT","makerCommissionRate":"0.0002","takerCommissionRate":"0.0004"}"#,
+            |ex| async move { ex.fetch_commission_rate("BTCUSDT").await },
+        )
+        .await;
+        assert!(
+            linea.starts_with("GET /fapi/v1/commissionRate?symbol=BTCUSDT&timestamp="),
+            "{linea}"
+        );
+        assert!(r.as_ref().is_some_and(|x| x.is_ok()), "{r:?}");
     }
 }

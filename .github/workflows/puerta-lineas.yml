@@ -1,0 +1,86 @@
+name: Puerta fmt y clippy (líneas cambiadas)
+
+# CL-214 (Claude, Línea C, 2026-10-31). Ningún workflow corría `cargo fmt`
+# ni `cargo clippy`. Medido sobre main a012146e: `cargo fmt --check` falla en
+# 577 de 860 archivos .rs y clippy da 797 avisos únicos en 253 archivos.
+# Reformatear todo de golpe choca con cada sesión que edita el repo en
+# paralelo (AGENTS.md, sesiones_concurrentes), así que esta puerta exige
+# formato y cero diagnósticos SÓLO en las líneas .rs que el PR añade o
+# modifica. La deuda vieja no pone el PR en rojo; baja cada vez que alguien
+# toca una de sus líneas. Lógica y contratos: scripts/puerta_lineas_cambiadas.py
+# y scripts/tests/test_puerta_lineas_cambiadas.py.
+#
+# Base del diff: en un pull_request el checkout es el commit de merge del PR
+# sobre main, así que HEAD^1 es exactamente la punta de main con la que se
+# fusiona. Sólo en PRs: los pushes directos a main no pasan por aquí.
+#
+# Para arreglar en local sólo el formato de tus líneas:
+#   python3 scripts/puerta_lineas_cambiadas.py --base origin/main --solo fmt --arreglar
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '**/*.rs'
+      - 'scripts/puerta_lineas_cambiadas.py'
+      - 'scripts/tests/test_puerta_lineas_cambiadas.py'
+      - '.github/workflows/puerta-lineas.yml'
+
+permissions:
+  contents: read
+
+env:
+  # La salida lleva tildes y los mensajes de rustc pueden traer Unicode: sin
+  # esto, el Python de Windows imprime en cp1252 y revienta con un traceback.
+  PYTHONUTF8: '1'
+
+concurrency:
+  group: puerta-lineas-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  fmt:
+    name: fmt (líneas cambiadas)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout candidate merge
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0 (node24)
+        with:
+          persist-credentials: false
+          fetch-depth: 2
+      - name: Contratos de la puerta
+        run: python3 scripts/tests/test_puerta_lineas_cambiadas.py -v
+      - name: Install the pinned compiler with rustfmt
+        run: |
+          rustup toolchain install nightly-2026-06-30 --profile minimal --component rustfmt,clippy
+          cargo fmt --version
+      - name: rustfmt sobre las líneas cambiadas
+        run: python3 scripts/puerta_lineas_cambiadas.py --base HEAD^1 --solo fmt
+
+  clippy:
+    # Windows: es el target de producción y os-guardian sólo compila ahí.
+    name: clippy (líneas cambiadas)
+    runs-on: windows-2022
+    timeout-minutes: 90
+    env:
+      CARGO_BUILD_JOBS: '4'
+      CARGO_INCREMENTAL: '0'
+      CARGO_PROFILE_DEV_DEBUG: '0'
+      CARGO_PROFILE_TEST_DEBUG: '0'
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - name: Checkout candidate merge
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0 (node24)
+        with:
+          persist-credentials: false
+          fetch-depth: 2
+      - name: Install the pinned compiler with clippy
+        run: |
+          rustup toolchain install nightly-2026-06-30 --profile minimal --component rustfmt,clippy
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cargo clippy --version
+      - name: clippy sobre las líneas cambiadas
+        run: python scripts/puerta_lineas_cambiadas.py --base HEAD^1 --solo clippy

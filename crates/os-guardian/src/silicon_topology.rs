@@ -132,7 +132,7 @@ impl CpuTopologyInfo {
         info.logical_cores = logical_cores;
 
         // 1. CPUID Leaf 0x0: Vendor String y Max Basic Leaf
-        let leaf0 = unsafe { __cpuid(0x0) };
+        let leaf0 = __cpuid(0x0);
         let max_leaf = leaf0.eax;
 
         let mut vendor = [0u8; 12];
@@ -143,7 +143,7 @@ impl CpuTopologyInfo {
 
         // 2. CPUID Leaf 0x1: Características básicas de procesador
         if max_leaf >= 1 {
-            let leaf1 = unsafe { __cpuid(0x1) };
+            let leaf1 = __cpuid(0x1);
             // ECX flags
             info.has_sse4_2 = (leaf1.ecx & (1 << 20)) != 0;
             info.has_popcnt = (leaf1.ecx & (1 << 23)) != 0;
@@ -160,7 +160,7 @@ impl CpuTopologyInfo {
 
         // 3. CPUID Leaf 0x7: Características extendidas estructuradas
         if max_leaf >= 7 {
-            let leaf7 = unsafe { __cpuid(0x7) };
+            let leaf7 = __cpuid(0x7);
             // EBX flags
             info.has_bmi1 = (leaf7.ebx & (1 << 3)) != 0;
             info.has_avx2 = (leaf7.ebx & (1 << 5)) != 0;
@@ -178,7 +178,7 @@ impl CpuTopologyInfo {
 
         // 4. CPUID Leaf 0x1A: Información de Núcleos Híbridos (Intel)
         if max_leaf >= 0x1A {
-            let leaf1a = unsafe { __cpuid(0x1A) };
+            let leaf1a = __cpuid(0x1A);
             let core_type_raw = ((leaf1a.eax >> 24) & 0xFF) as u8;
             info.current_core_type = match core_type_raw {
                 0x20 => CoreType::EfficiencyCore,

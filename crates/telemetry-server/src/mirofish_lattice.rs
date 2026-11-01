@@ -168,8 +168,9 @@ impl MirofishLattice {
         let safe_ising = if ising_delta_s.is_finite() { ising_delta_s } else { 0.0 };
         
         let sigma_step = safe_vol * (safe_dt / (365.25 * 86400.0)).sqrt();
+        // El factor de bajada d = 1/u queda implícito: el precio de cada nodo
+        // es spot·u^(subidas − bajadas).
         let u = (sigma_step).exp();
-        let d = 1.0 / u;
 
         // Probabilidad de subida local asimétrica con acoplamiento continuo
         let drift_term = (safe_ofi * 0.5 + safe_ising * 0.25).clamp(-2.0, 2.0);
