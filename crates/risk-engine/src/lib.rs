@@ -48,6 +48,37 @@ use quantum_arena::GlobalArena;
 use signal_engine::{SignalIntent, SignalType};
 use std::sync::atomic::Ordering;
 
+/// RSK-01 (2026-11-01) — tasa de margen de mantenimiento de la guarda de
+/// liquidación F1-088 (`L · (SL + f + mmr) < 1`).
+///
+/// Nadie escribe todavía la tasa medida (no se consulta
+/// `/fapi/v1/leverageBracket`), y la guarda leía un 1 % fijo para todo
+/// símbolo. En el primer tramo de Binance USDⓈ-M la tasa es ≈ 1/(2·L_max):
+/// 0,4 % a 125×, 1 % a 50×, 2,5 % a 20×. Con el 1 % fijo, una sonda a 20×
+/// con stop del 3 % en un símbolo de 20× quedaba liquidada antes del stop.
+///
+/// - Con una tasa medida para la moneda (finita y > 0), esa, en [0,1 %; 5 %].
+/// - Sin dato, `max(1 %, 0,5 / L_max)` en el mismo intervalo: el 1 % de antes
+///   para L_max ≥ 50 y más estricta por debajo.
+/// - Con L_max no finito o ≤ 1, el techo del intervalo.
+///
+/// Sólo puede endurecer la guarda frente al literal anterior. El arreglo
+/// completo es publicar por moneda la tasa del tramo vigente.
+pub fn tasa_mantenimiento_efectiva(medida: Option<f64>, max_leverage: f64) -> f64 {
+    const TASA_MIN: f64 = 0.001;
+    const TASA_MAX: f64 = 0.05;
+    const PISO_SIN_DATO: f64 = 0.01;
+    if let Some(tasa) = medida.filter(|t| t.is_finite() && *t > 0.0) {
+        return tasa.clamp(TASA_MIN, TASA_MAX);
+    }
+    if !max_leverage.is_finite() || max_leverage <= 1.0 {
+        return TASA_MAX;
+    }
+    (0.5 / max_leverage)
+        .max(PISO_SIN_DATO)
+        .clamp(TASA_MIN, TASA_MAX)
+}
+
 #[derive(Debug, Clone, Copy)]
 pub struct ValidatedOrder {
     pub signal: SignalType,
@@ -1373,10 +1404,14 @@ impl RiskEngine {
         // endpoint.
         // F1-088 (Ola Ω192): Tasa de margen de mantenimiento del símbolo (MMR)
         // y distancia física total al stop con fricción y colchón de liquidación.
-        let mmr_spec = arena
-            .registry
-            .get_for_coin_or(coin_id, "maintenance_margin_rate", 0.01)
-            .clamp(0.001, 0.05);
+        // RSK-01: la tasa es de la moneda (sin caer a la clave global) y, sin
+        // dato medido, sigue al apalancamiento máximo del símbolo.
+        let mmr_spec = tasa_mantenimiento_efectiva(
+            arena
+                .registry
+                .get_for_coin_strict(coin_id, "maintenance_margin_rate"),
+            max_exchange_leverage,
+        );
         let dist_stop_full = expected_loss + friccion_total + mmr_spec;
         if dist_stop_full >= 1.0 {
             return rej(REJ_TARGET_GEOMETRY);
