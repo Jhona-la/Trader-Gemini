@@ -414,6 +414,7 @@ dice su lote):
 | #150 | N40, un 2xx ilegible de una lectura (CL-203: es un error con su cabecera, y la cuenta y exchangeInfo lo reintentan), N41 b, el reintento de cuenta (CL-204: sale firmado con la hora de ahora, no con la firma que caduca a los 5 s del recvWindow) y N32, los binarios de operador (CL-205: oco_probe limpia siempre tras su entrada y dice si la limpieza falló; la regla de §5 de BINANCE_API_MAP); revisa N41 d, N26 y N46 sin ejecutarlos; abre N47 a N51; y su revisión antes de fusionar (CL-206: `refirmar` no firma una URL con algo tras la firma; CL-207: la limpieza de oco_probe espera al freno 429/418 y lee las órdenes que quedan; RV24-T: guarda del bloque etiquetado y plazo de 3 s; RV24-docs; y de la revisión de esas correcciones, RV25: las lecturas de lo que queda también esperan al freno, el baneo de un 418 sin Retry-After cabe en la espera y la guarda prohíbe `process::exit` entre el bloque y la limpieza) |
 | #153 | N46, N49 y N50, el aplanado de emergencia (CL-209: costura de prueba `base_prueba` de BinanceClient y los hosts literales del aplanado y de `query_order` por `get_base_url`; CL-210: X-026 empareja la pierna por positionSide; CL-212: el Ok del cierre exige `OrderAck::prueba_llenado`; CL-213: un cierre AMBIGUOUS consulta su clientOrderId y va a X-026) y N52, nueva (CL-211: el aplanado registra el modo que acaba de leer); con CL-208 (PR #152, las acciones de la CI en Node 24) |
 | #154 | La CI no corría `cargo fmt` ni `cargo clippy` (CL-214: puerta sobre las líneas .rs que cambia cada PR, `scripts/puerta_lineas_cambiadas.py` y `puerta-lineas.yml`; la deuda vieja, 577 archivos sin fmt y ~800 avisos de clippy, no pone rojo y baja al tocarla). 13 de los 22 warnings de rustc del build Windows (CL-215: imports y `mut` sin uso en tres contratos de feature-engine y data-ingest, el potencial del vórtice puro ahora se comprueba nulo, cuatro `unsafe` sobrantes de `__cpuid` en os-guardian, el `d` implícito de la retícula binomial y el campo `mmap_path` muerto del escritor mmap de telemetry-server). Quedan N56 y N57. N53, los ~19 hosts REST escritos a mano en executor.rs y user_data_stream.rs (CL-216: todos por `get_base_url`; tres contratos en `tests_lote19`). |
+| #155 | N41 c, el reintento de modo del aplanado ante el -1106 real («reduceonly» en minúsculas; CL-217: `modo_rechazado` por código -1106 y nombre del parámetro en cualquier caja, prueba de extremo a extremo `tests_lote20`) y N22, pesos de Binance comprobados en la documentación oficial (CL-218: la pierna algo pesa 0 de IP, `COSTE_PIERNA_ALGO` `{0, 1}`; mapa corregido: commissionRate 20, positionSide/dual GET 30, income 30; gasto de `OmsSession::refresh` 75 + 20·N por minuto) |
 
 **Hecho por otros agentes**: lote 9 entero (Sol, d18b3735), lote 45 entero
 (Codex RB, 906a9c6a), parte del 7 (Sol retiró el bin main.rs de
@@ -1612,7 +1613,16 @@ un escéptico por lote listo):
   la racha de 429 (no pasa por `update_limits`), del lado seguro.
 - N41 (de la tanda 16, Línea C, residuos de N24): (a) un 502/504 de una
   pasarela sin cabecera X-MBX es una respuesta, no entra como coste perdido
-  aunque la petición pudo llegar al backend; (b) el reintento de
+  aunque la petición pudo llegar al backend (**hecha en la tanda 21,
+  CL-219**: la documentación de USDⓈ-M, General Info, dice que toda
+  respuesta de la API trae `X-MBX-USED-WEIGHT-1M` y que del 503 «Unknown
+  error» la petición «may or may not count, check header to verify rate
+  limit info»; un 5xx sin ninguna cabecera de uso viene de la pasarela, y
+  su coste pudo contar sin que nada lo diga, como tras un timeout.
+  `ErrorRest::de_estado` lo marca sin respuesta en los siete transportes
+  firmados (CL-196); un 5xx con cabecera trae el uso medido y queda como antes. La
+  sobrecuenta posible, del lado seguro: un 502 que no llegó a la API, a lo
+  sumo el coste de esa petición durante su ventana); (b) el reintento de
   `get_payload_account` firma con la misma hora que el primero (un -1021 si
   el primero agotó el recvWindow; fila propia si aparece en el forense;
   ejecutada en la tanda 17, CL-204: ninguna petición manda recvWindow, así
@@ -1674,6 +1684,15 @@ un escéptico por lote listo):
   rechazo) y la clasificación de los envíos de orden
   (`ejecucion_desconocida`, la de `_body` desde antes de CL-199) lo da por
   firme. Decidir con la documentación cuál vale y alinear los dos.
+  **Hecha en la tanda 21 (CL-220).** La página de códigos de error de
+  USDⓈ-M (consultada el 2026-11-01) marca la ejecución desconocida en
+  -1006 («Execution status unknown») y -1007 («Send status unknown;
+  execution status unknown») y del -1000 sólo dice «An unknown error
+  occured while processing the request.», sin darlo por no ejecutado. Se
+  alinea con `protection_health`: un 4xx con -1000 es AMBIGUOUS en los
+  envíos de orden y su clientOrderId se consulta antes de darlo por
+  rechazado (una lectura de peso 1), en vez de dejar reenviar otra
+  intención con la primera quizá viva.
 - N44 (de la tanda 16, Línea I): la auditoría de protección lee las piernas
   con `fetch_open_algo_orders(symbol).await.unwrap_or_default()`
   (god_engine.rs:359): un error (freno, cuota, red) se lee como «ninguna
