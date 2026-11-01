@@ -4574,7 +4574,14 @@ impl ExecutionProvider for OrderExecutor {
 /// confirma.
 #[inline]
 fn pierna_ya_existe(err: &str) -> bool {
-    let codigo = crate::order_types::error_codes::DUPLICATED_ORDER;
+    trae_codigo(err, crate::order_types::error_codes::DUPLICATED_ORDER)
+}
+
+/// ¿El error trae el código de Binance `codigo`? En las tres formas en que
+/// el cliente lo deja: `"code":N` y `"code": N` (cuerpo JSON citado) o
+/// `code=N` (`parse_reject_body`). El código debe terminar ahí: -41160 no es
+/// -4116.
+fn trae_codigo(err: &str, codigo: i64) -> bool {
     let compacto = format!("\"code\":{codigo}");
     let espaciado = format!("\"code\": {codigo}");
     let rechazo = format!("code={codigo}");
@@ -4627,10 +4634,29 @@ fn simbolos_sin_posicion(
 /// cuerpo, y el de un cierre reduce-only trae «reduceOnly»): el cierre pudo
 /// ejecutarse, y conmutar por ella el modo de la cuenta lo dejaba mal para
 /// las órdenes siguientes y enviaba otro cierre.
+/// N41-c (CL-217): el reduceOnly que una cuenta hedge no admite vuelve como
+/// -1106 con el parámetro en minúsculas («Parameter 'reduceonly' sent when
+/// not required.», texto real en adshao/go-binance#521; Binance documenta
+/// «Parameter '%s' sent when not required.» sin fijar la caja). Se buscaba
+/// «reduceOnly» literal: el rechazo real no conmutaba y el aplanado, sin
+/// leer el modo y con el registrado en one-way, dejaba la pierna abierta.
+/// Ahora: el código -1106 y el nombre del parámetro sin mirar la caja. El
+/// -2022 («ReduceOnly Order is rejected.») sigue sin conmutar: no es -1106.
 #[inline]
 fn modo_rechazado(e: &str) -> bool {
     !e.starts_with("AMBIGUOUS")
-        && (e.contains("-4061") || e.contains("position side") || e.contains("reduceOnly"))
+        && (e.contains("-4061")
+            || e.contains("position side")
+            || (trae_codigo(e, crate::order_types::error_codes::PARAM_NOT_REQUIRED)
+                && nombra_reduce_only(e)))
+}
+
+/// ¿El texto nombra el parámetro reduceOnly, en cualquier caja?
+#[inline]
+fn nombra_reduce_only(e: &str) -> bool {
+    e.as_bytes()
+        .windows(b"reduceonly".len())
+        .any(|w| w.eq_ignore_ascii_case(b"reduceonly"))
 }
 
 /// LG-3 (Línea G) — USO DE RATE-LIMIT VIGENTE.
@@ -7295,12 +7321,19 @@ mod tests_n23 {
             "REJECTED code=-4061 msg=?",
             r#"Binance API Error: {"code":-4061,"msg":"Order's position side does not match user's setting."}"#,
             "REJECTED code=-1106 msg=Parameter 'reduceOnly' sent when not required.",
+            // CL-217 (N41-c): el texto real lleva el parámetro en minúsculas.
+            "REJECTED code=-1106 msg=Parameter 'reduceonly' sent when not required.",
+            r#"Binance API Error: {"code":-1106,"msg":"Parameter 'reduceonly' sent when not required."}"#,
         ] {
             assert!(modo_rechazado(firme), "{firme}");
         }
         for otro in [
             "REJECTED code=-2022 msg=ReduceOnly Order is rejected.",
             "RATE_LIMIT_COOLDOWN: 429 activo",
+            // CL-217: un -1106 de otro parámetro no habla del modo, ni otro
+            // código que empiece por -1106.
+            "REJECTED code=-1106 msg=Parameter 'newOrderRespType' sent when not required.",
+            "REJECTED code=-11060 msg=Parameter 'reduceonly' sent when not required.",
         ] {
             assert!(!modo_rechazado(otro), "{otro}");
         }
@@ -7842,7 +7875,7 @@ mod tests_lote18 {
         ok(&format!(r#"{{"dualSidePosition":{dual}}}"#))
     }
 
-    fn filas(filas: &[(&str, &str)]) -> String {
+    pub(super) fn filas(filas: &[(&str, &str)]) -> String {
         let cuerpo: Vec<String> = filas
             .iter()
             .map(|(lado, cantidad)| {
@@ -7854,7 +7887,7 @@ mod tests_lote18 {
         ok(&format!("[{}]", cuerpo.join(",")))
     }
 
-    fn llenada(lado: &str, cantidad: &str) -> String {
+    pub(super) fn llenada(lado: &str, cantidad: &str) -> String {
         ok(&format!(
             r#"{{"orderId":7,"symbol":"BTCUSDT","status":"FILLED","clientOrderId":"c","origQty":"{cantidad}","executedQty":"{cantidad}","avgPrice":"60000","side":"{lado}","type":"MARKET"}}"#
         ))
@@ -7894,7 +7927,7 @@ mod tests_lote18 {
         )
     }
 
-    fn purgada() -> String {
+    pub(super) fn purgada() -> String {
         ok(r#"{"code":200,"msg":"The operation of cancel all open order is done."}"#)
     }
 
@@ -7919,7 +7952,7 @@ mod tests_lote18 {
 
     /// El aplanado contra `wires`: su resultado y las líneas de petición que
     /// llegaron. Nunca se cuelga (plazo de 60 s y el servidor se aborta).
-    async fn aplanar(
+    pub(super) async fn aplanar(
         wires: Vec<String>,
         hedge: bool,
     ) -> (Option<Result<(usize, usize), String>>, Vec<String>) {
@@ -8285,6 +8318,58 @@ mod tests_lote18 {
             "{r:?} {lineas:#?}"
         );
         assert_eq!(lineas.len(), 6, "sin purga tras el -2022: {lineas:#?}");
+    }
+}
+
+#[cfg(test)]
+mod tests_lote20 {
+    //! Lote 20 (N41-c): el reintento de modo del aplanado ante el -1106 real.
+    use super::tests_lote18::{aplanar, filas, llenada, ok, purgada};
+    use super::tests_n20::respuesta;
+
+    /// El rechazo de Binance al reduceOnly en una cuenta hedge, con el texto
+    /// real (adshao/go-binance#521): el parámetro en minúsculas.
+    fn rechazo_1106() -> String {
+        respuesta(
+            "400 Bad Request",
+            "Content-Type: application/json\r\n",
+            r#"{"code":-1106,"msg":"Parameter 'reduceonly' sent when not required."}"#,
+        )
+    }
+
+    /// RED antes de CL-217: con el modo ilegible el aplanado usa el
+    /// registrado (one-way) y la cuenta es hedge. El cierre sale con
+    /// reduceOnly y Binance lo rechaza con -1106 en minúsculas; el reintento
+    /// de modo (R3.3 / K-16) buscaba «reduceOnly» literal, no salía, y la
+    /// pierna quedaba abierta (FLATTEN_INCOMPLETE). Ahora conmuta, cierra la
+    /// pierna con su positionSide y sólo después purga.
+    #[tokio::test]
+    async fn cl217_el_1106_real_de_la_cuenta_hedge_conmuta_y_cierra() {
+        let mut wires = vec![
+            ok("{}"),
+            filas(&[("LONG", "0.010")]),
+            rechazo_1106(),
+            llenada("SELL", "0.010"),
+            purgada(),
+            purgada(),
+        ];
+        wires.extend((0..3).map(|_| llenada("SELL", "0.010")));
+        let (r, lineas) = aplanar(wires, false).await;
+        assert!(matches!(r, Some(Ok((2, 1)))), "{r:?} {lineas:#?}");
+        assert_eq!(lineas.len(), 6, "ni un envío de más: {lineas:#?}");
+        assert!(
+            lineas[2].contains("side=SELL&type=MARKET&reduceOnly=true"),
+            "el cierre en el modo registrado: {lineas:#?}"
+        );
+        assert!(
+            lineas[3].contains("side=SELL&positionSide=LONG&type=MARKET")
+                && !lineas[3].contains("reduceOnly"),
+            "el reintento en hedge: {lineas:#?}"
+        );
+        assert!(
+            lineas[4].contains("allOpenOrders") && lineas[5].contains("algoOpenOrders"),
+            "{lineas:#?}"
+        );
     }
 }
 

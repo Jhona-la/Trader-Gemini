@@ -280,6 +280,9 @@ pub fn parse_reject_body(body: &str, http_status: u16) -> String {
 /// Códigos que exigen reacción específica del executor (mapa mínimo F1; crece en F1.8).
 pub mod error_codes {
     pub const DUPLICATED_ORDER: i64 = -4116; // newClientOrderId repetido activo
+    /// -1106 PARAM_NOT_REQUIRED: «Parameter '%s' sent when not required.»
+    /// En el cierre del aplanado lo da el reduceOnly enviado a una cuenta hedge.
+    pub const PARAM_NOT_REQUIRED: i64 = -1106;
     pub const EXECUTION_STATUS_UNKNOWN: i64 = -1006;
     pub const BACKEND_TIMEOUT: i64 = -1007;
 }
