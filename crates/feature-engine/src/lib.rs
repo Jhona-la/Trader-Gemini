@@ -1,3 +1,4 @@
+pub mod connes_clifford_kan;
 pub mod copulas;
 pub mod correlation;
 pub mod entrelazamiento;
@@ -28,6 +29,11 @@ pub mod transfer_entropy;
 pub mod welford;
 
 // Re-exportar primitivas matemáticas O(1)
+pub use connes_clifford_kan::{
+    CliffordMultivector3D, ConnesCliffordKanEngine, ConnesCliffordKanReport, ConnesSpectralReport,
+    ConnesSpectralTripleEngine, CubicBSplineKanEdge, HudsonParthasarathyEvolutor,
+    HudsonParthasarathyState, NonCommutativeRegime, CONNES_HILBERT_DIM, KAN_SPLINE_BASIS_COUNT,
+};
 pub use correlation::MarketCorrelationHeatmap;
 pub use ewma::Ewma;
 pub use feynman_path_instanton::{
