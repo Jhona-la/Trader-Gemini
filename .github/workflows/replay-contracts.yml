@@ -141,6 +141,12 @@ jobs:
         # El bin vive en el paquete RAÍZ (trader-gemini-v5) aunque su fuente
         # esté bajo crates/backtest-engine — el test usa CARGO_BIN_EXE_.
         run: cargo +nightly-2026-06-30 test -p trader-gemini-v5 --bin continuous_evolution_backtest --test continuous_capital_contract --locked -- --test-threads=1
+      - name: Capital gate contract for evolution and multi_coin bins (GLM-179)
+        # La MISMA puerta (capital_entrada::exigir_inicial) para evolution y
+        # multi_coin_simulator: rechazo con diagnóstico y cero artefactos.
+        # Extirpa el «fallback inteligente» 13.0 (FIX #1528) y el default
+        # «sin pánico» — ambos prohibidos por §25.
+        run: cargo +nightly-2026-06-30 test -p trader-gemini-v5 --bin evolution --bin multi_coin_simulator --test capital_entry_contract --locked -- --test-threads=1
       - name: Golden accounting witness (one synthetic probe)
         # Keep the full regression suite above. Print the independently checked
         # quantity, physical prices and IEEE cash debits for both golden runs.

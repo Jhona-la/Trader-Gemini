@@ -65,6 +65,22 @@ pub fn start_polars_evolver_daemon(
 
                 println!("[EVOLVER] 🧬 Iniciando mutación cuántica (Polars Vectorized)...");
 
+                // GLM-179 (§25, CL-15): el capital no tiene default — el
+                // .unwrap_or(13.0) por iteración fabricaba PnL con el
+                // saldo prohibido del operador. Sin INITIAL_CAPITAL válido
+                // la ronda se SALTA (daemon vivo: diagnóstico, no exit).
+                let Some(initial_capital_ronda) = std::env::var("INITIAL_CAPITAL")
+                    .ok()
+                    .and_then(|v| v.trim().parse::<f64>().ok())
+                    .filter(|c| c.is_finite() && *c > 0.0)
+                else {
+                    eprintln!(
+                        "[EVOLVER] INITIAL_CAPITAL ausente/inválido: ronda saltada \
+                         (sin PnL con capital ficticio, CL-15 §25)."
+                    );
+                    continue;
+                };
+
                 let mut best_sharpe = 0.0;
                 let mut best_cfg = base_config.clone();
 
@@ -80,10 +96,7 @@ pub fn start_polars_evolver_daemon(
                     if n < 10 || highs.len() < n || lows.len() < n || volumes.len() < n {
                         continue;
                     }
-                    let initial_cap = std::env::var("INITIAL_CAPITAL")
-                        .ok()
-                        .and_then(|v| v.parse::<f64>().ok())
-                        .unwrap_or(13.0);
+                    let initial_cap = initial_capital_ronda;
                     let mut pnl = vec![0.0; n];
                     let mut stats = vec![0.0; backtest_engine::STATS_LEN];
                     let _final_cap = run_backtest_native(

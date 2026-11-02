@@ -163,15 +163,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
     quantum_arena::symbol_registry::update_registry(specs);
 
-    // 2. Default de capital $13.0 USD sin pánico y prevención de contaminación de balance
-    let initial_capital_str =
-        std::env::var("INITIAL_CAPITAL").unwrap_or_else(|_| "13.0".to_string());
-    let mut initial_capital: f64 = initial_capital_str.parse().unwrap_or(13.0);
-    if initial_capital <= 0.0 || !initial_capital.is_finite() {
-        println!("⚠️ INITIAL_CAPITAL no válido detectado. Asignando $13.00 USD nominales.");
-        initial_capital = 13.0;
-    }
-    println!("💰 Initial Capital: ${:.2} USD", initial_capital);
+    // 2. GLM-179 (§25, CL-15): capital exigido fail-closed — el default
+    // $13.0 «sin pánico» era el hardcode prohibido por el operador.
+    let initial_capital: f64 = quantum_engine::capital_entrada::exigir_inicial();
+    println!("💰 Initial Capital: ${initial_capital:.2} USD");
 
     // 3. Spawn de hilo con 64MB stack resiliente para GlobalArena
     let arena = std::thread::Builder::new()

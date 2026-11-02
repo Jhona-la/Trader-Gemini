@@ -69,21 +69,11 @@ fn evolve_main() {
         }
     }
 
-    // FIX #1528: Fallback inteligente a $13.00 USD sin pánico
+    // GLM-179 (§25, CL-15): sin capital no hay simulación — el «fallback
+    // inteligente» de $13.00 del FIX #1528 ERA el hardcode prohibido por el
+    // operador. CLI (número posicional válido) → INITIAL_CAPITAL → exit(2).
     if initial_capital <= 0.0 || !initial_capital.is_finite() {
-        let env_cap = std::env::var("INITIAL_CAPITAL")
-            .ok()
-            .and_then(|v| v.parse::<f64>().ok())
-            .unwrap_or(13.0);
-        initial_capital = if env_cap > 0.0 && env_cap.is_finite() {
-            env_cap
-        } else {
-            13.0
-        };
-        println!(
-            "ℹ️ Capital inicial no especificado o inválido. Usando base autónoma de ${:.2} USD.",
-            initial_capital
-        );
+        initial_capital = quantum_engine::capital_entrada::exigir_inicial();
     }
 
     println!("============================================================");
