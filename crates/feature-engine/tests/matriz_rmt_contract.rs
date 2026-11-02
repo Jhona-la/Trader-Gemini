@@ -160,7 +160,7 @@ fn streaming_captura_el_factor_comun() {
     // 3 activos: a = f + e1, b = f + e2 (factor común fuerte), c = ruido.
     // Con period 200 (T efectivo 200) la banda es [0.88, 1.13]; la pareja
     // correlacionada produce un dominante ≈ 1+ρ ≈ 1.8 ⇒ señal.
-    let mut matriz = MatrizCorrelacionEwma::new(3, 200.0);
+    let mut matriz = MatrizCorrelacionEwma::try_new(3, 200.0).expect("config válida");
     let mut rng = Lcg(7);
     let mut precio = [100.0, 100.0, 100.0];
     let mut informe = None;

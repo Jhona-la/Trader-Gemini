@@ -177,14 +177,9 @@ pub struct MatrizCorrelacionEwma {
 }
 
 impl MatrizCorrelacionEwma {
-    /// # Panics
-    /// Si n < 2 o period no es finito ≥ 1 (para configuración externa usar
-    /// [`Self::try_new`]). No es un constructor de hilo crítico: el
-    /// llamador del engine construye en arranque.
-    pub fn new(n: usize, period: f64) -> Self {
-        Self::try_new(n, period).expect("n >= 2 y period finito >= 1")
-    }
-
+    /// Sin constructor `new()` con expect: RB-P1 prohíbe sitios de pánico
+    /// nuevos en producción (release = panic=abort) — el llamador maneja el
+    /// Err de la configuración antes de arrancar el consumidor.
     pub fn try_new(n: usize, period: f64) -> Result<Self, &'static str> {
         if n < 2 {
             return Err("la matriz requiere N >= 2");
