@@ -34,10 +34,8 @@ impl Isolated {
             .duration_since(UNIX_EPOCH)
             .map(|duration| duration.as_nanos())
             .unwrap_or(0);
-        let root = std::env::temp_dir().join(format!(
-            "continuous-capital-{}-{nonce}",
-            std::process::id()
-        ));
+        let root =
+            std::env::temp_dir().join(format!("continuous-capital-{}-{nonce}", std::process::id()));
         fs::create_dir_all(&root).expect("create isolated directory");
         fs::write(root.join("equity_curve.csv"), SENTINEL).expect("write sentinel");
         Self { root }
@@ -49,10 +47,8 @@ impl Isolated {
             .duration_since(UNIX_EPOCH)
             .map(|duration| duration.as_nanos())
             .unwrap_or(0);
-        let root = std::env::temp_dir().join(format!(
-            "continuous-capital-{}-{nonce}",
-            std::process::id()
-        ));
+        let root =
+            std::env::temp_dir().join(format!("continuous-capital-{}-{nonce}", std::process::id()));
         fs::create_dir_all(&root).expect("create isolated directory");
         Self { root }
     }
@@ -77,6 +73,10 @@ fn run(isolated: &Isolated, capital: Option<&str>) -> Output {
         .env("SIM_DAYS", "1")
         .env("MULTI_COIN", "0")
         .env("TG_GENOME_ENV", "backtest")
+        // GLM-180: la fuente «recibo vivo» queda DESHABILITADA aquí — el
+        // cwd aislado no la tiene, pero el knob en 0 vuelve el rechazo
+        // determinista aun en máquinas con el engine publicando.
+        .env("TG_RECIBO_MAX_EDAD_SECS", "0")
         // Plan §F13: la configuración que el proceso pudiera tocar queda
         // contenida dentro del fixture — nada escapa al sandbox.
         .env("TGM_CONFIG_DIR", isolated.root().join("tgm_config"))
@@ -121,7 +121,16 @@ fn assert_invalid(capital: Option<&str>) {
 
 #[test]
 fn invalid_initial_capital_is_rejected_before_side_effects() {
-    for capital in [None, Some(""), Some("abc"), Some("NaN"), Some("inf"), Some("-inf"), Some("0"), Some("-1")] {
+    for capital in [
+        None,
+        Some(""),
+        Some("abc"),
+        Some("NaN"),
+        Some("inf"),
+        Some("-inf"),
+        Some("0"),
+        Some("-1"),
+    ] {
         assert_invalid(capital);
     }
 }

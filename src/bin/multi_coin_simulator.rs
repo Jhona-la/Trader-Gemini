@@ -165,7 +165,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // 2. GLM-179 (§25, CL-15): capital exigido fail-closed — el default
     // $13.0 «sin pánico» era el hardcode prohibido por el operador.
-    let initial_capital: f64 = quantum_engine::capital_entrada::exigir_inicial();
+    let initial_capital: f64 = quantum_arena::capital_entrada::exigir_inicial();
     println!("💰 Initial Capital: ${initial_capital:.2} USD");
 
     // 3. Spawn de hilo con 64MB stack resiliente para GlobalArena

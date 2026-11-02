@@ -1,6 +1,7 @@
 pub mod active_universe;
 pub mod adaptive_quantiles;
 pub mod atomic_float;
+pub mod capital_entrada;
 pub mod config;
 pub mod espectral_multiactivo;
 pub mod evalues;

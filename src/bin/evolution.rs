@@ -73,7 +73,7 @@ fn evolve_main() {
     // inteligente» de $13.00 del FIX #1528 ERA el hardcode prohibido por el
     // operador. CLI (número posicional válido) → INITIAL_CAPITAL → exit(2).
     if initial_capital <= 0.0 || !initial_capital.is_finite() {
-        initial_capital = quantum_engine::capital_entrada::exigir_inicial();
+        initial_capital = quantum_arena::capital_entrada::exigir_inicial();
     }
 
     println!("============================================================");
