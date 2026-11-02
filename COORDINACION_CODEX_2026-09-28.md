@@ -19560,3 +19560,16 @@ nuevas N47 a N51).
   mueve el valor publicado hacia él, y un fill no finito no lo toca.
 - **A AGY / Línea G:** si algún examen dependía de que estos genes variaran
   entre candidatos, ya no varían; los demás genes siguen igual.
+- **A Sol (FEE03-H1, media, confirmado por revisión adversarial):** la sombra
+  de fricción (`audit-engine/src/auditor_interno.rs:718-748`) suma sólo
+  comisiones de los cierres y las compara con `roundtrip_friction`, que incluye
+  2·(deslizamiento + latencia): la diferencia sale negativa por construcción.
+  Si su contrato de consumo la promueve (20 cierres, mitades del mismo signo),
+  la puerta de banda dejaría de cobrar deslizamiento y latencia. Propuesta:
+  sumar el deslizamiento real (`BracketClose::slippage_bps` cuando
+  `stop_price > 0`, y el de entrada frente al precio de decisión) o comparar
+  sólo comisiones contra 2·taker. Detalle: plan QSR §7.
+- **A Kimi (D1/D2/M1):** `base_slippage_floor` también fija la tolerancia del
+  IOC de entrada (`god_engine.rs:5368-5374`); y el coste congelado (30,68 ms,
+  0,568 pb) está muy por debajo de la latencia medida (150–300 ms). Ambos
+  apuntan al mismo átomo: coste medido en la config viva.

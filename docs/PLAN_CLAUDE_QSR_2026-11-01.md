@@ -269,9 +269,43 @@ no cambia: perturba los genes directamente, no a través de la mutación.
 la mutación copia los dos genes del padre con 4 tasas × 256 semillas (padre
 lejos de la línea base, para detectar una copia desde la base); control de que
 los genes que deciden sí mutan; `new_random` nace con el coste de la base; y
-slots 68/69 con ida y vuelta por el vector. RED con el código anterior:
-2 de 4 fallan (la mutación y `new_random`; los dos controles pasan). GREEN: ver
-el PR.
+slots 68/69 con ida y vuelta por el vector; tras la revisión, un caso de dos
+fundadores. RED con el código anterior: 2 de 4 fallan (la mutación y
+`new_random`; los dos controles pasan). GREEN: `quantum-arena` entero 387/0
+(8 ignorados) antes de la revisión; el resultado final, en el PR.
+
+**Revisión adversarial (2026-11-02).** Tres lentes de sólo lectura (rutas,
+semántica de los genes, regresiones por el sorteo) y un escéptico que intentó
+refutar cada hallazgo. Arreglado en el mismo PR:
+
+- *walkforward_evolver* sembraba con la semilla del almacén (30,68 ms; 0,568 pb)
+  y con `new_baseline` (13,59 ms; 1 pb). Como la mutación copia el coste del
+  padre, cada linaje conservaba el de su fundador. La base entra ahora con el
+  coste de la semilla (`SuperGenotype::con_coste_de`).
+- `t2_simetria` (`genome_store.rs`) fija a mano los slots 68 y 69; congelados,
+  ya no se distinguían del otro genoma y la prueba no habría visto un hot-swap
+  que dejara de refrescarlos.
+- El control del contrato mira también genes posteriores al slot 69 (el tramo
+  cuyo sorteo se desplaza) y hay un caso de dos fundadores.
+
+Sobre el sorteo: quitar dos llamadas a `mutate_val` desplaza, con la misma
+semilla, los genes que se mutan después del slot 69 (no las curvas TP/SL, que
+se sortean antes). Ningún golden ni testigo depende de esos valores; el testigo
+FMT-216 (semilla 199) sigue probando lo mismo y `cf6_logs_acotados` (8/8) y
+`cf6_arena_del_candidato` pasan. Las corridas de `continuous_evolution_backtest`
+de antes y después del commit no son comparables mutante a mutante.
+
+Confirmados y fuera de este PR, con su dueño:
+
+| Id | Severidad | Qué | Dueño |
+|---|---|---|---|
+| FEE03-H1 | media | La sombra de fricción de Sol (`auditor_interno.rs:718-748`) suma sólo comisiones y las compara con `roundtrip_friction`, que incluye 2·(deslizamiento + latencia). Su diferencia es negativa por construcción; si el contrato de consumo la promueve (20 cierres), la puerta de banda deja de cobrar deslizamiento y latencia mientras la de riesgo los sigue cobrando. | Sol |
+| FEE03-D2 / M1 | baja | El congelado hereda para siempre el valor guardado en todos los `active.json`: 30,68 ms y 0,568 pb (a un 13,7 % del suelo del gen). La latencia medida desde el PC del operador es de 150–300 ms (Línea I) y el techo del gen es 100 ms: el coste de latencia que se cobra está muy por debajo del real. Reiniciar el valor es decisión del dueño; la salida de raíz es el átomo de medida. | operador / Kimi |
+| FEE03-D1 | baja | `base_slippage_floor` también fija la tolerancia del IOC de entrada (`god_engine.rs:5368-5374`), un parámetro de decisión. Hoy no se pierde nada aprendible (el lector aplica `.max(1 pb)` y el simulador no modela el IOC no llenado), pero coste y decisión deben separarse. | Kimi |
+| FEE03-F1 | baja | Cada lector aplica un suelo distinto al mismo valor (sin suelo, 0,1 pb o 1 pb): «el» deslizamiento vale 0,568 pb en la puerta y 1 pb en el IOC y el colchón de breakeven. Un único accesor saneado. | átomo de medida |
+| FEE03-T1 | baja | El T-1 sigue contando 68 y 69 como genes sensibles aunque ya no evolucionan (como 10, 11 y 20 tras CL-162). Con la última lista, los sensibles que la evolución puede mover son 12/144. Informar por separado al re-certificar el trinquete. | dueño del T-1 |
+| FEE03-R3 | info | Darwin (opt-in) lee el coste del disco en cada evaluación dentro del `par_iter`: un promotor que reescriba `active.json` a mitad de ronda mezcla costes. | Codex QRA |
+| FEE03-R4/R5 | info | BLX-alpha y la mutación de Cauchy (sin llamadores) perturbarían 68/69; `run_backtest_native` toma del genoma el ruido y el semi-spread del mercado sintético (`maker_spread_pct` sigue mutando). | quien los cablee / Sol |
 
 **Lo que queda (siguiente átomo propuesto).** Congelar quita el incentivo,
 pero el coste sigue siendo un número fijo heredado. La fuente correcta es la
