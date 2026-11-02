@@ -319,8 +319,11 @@ impl AndersonLocalizationEngine {
             };
             let trace_term = eps_k - e_val;
 
-            // M_k = [[trace_term, -1], [1, 0]] => det(M_k) = trace_term * 0 - (-1)*1 == 1.0
-            let m_det = trace_term * 0.0 - (-1.0) * 1.0;
+            // M_k = [[trace_term, -1], [1, 0]] => det(M_k) = m00 * m11 - m01 * m10 == 1.0
+            let m01 = -1.0_f64;
+            let m10 = 1.0_f64;
+            let m11 = 0.0_f64;
+            let m_det = trace_term.mul_add(m11, -(m01 * m10));
             det_prod *= m_det;
 
             let psi_next = trace_term.mul_add(psi_curr, -psi_prev);

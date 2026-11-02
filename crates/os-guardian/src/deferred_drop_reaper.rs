@@ -78,8 +78,8 @@ impl<T, const N: usize> DeferredDropReaperRing<T, N> {
     /// Cantidad de objetos pendientes de destrucción en este instante.
     #[inline]
     pub fn pending_count(&self) -> usize {
-        let w = self.write_idx.0.load(Ordering::Acquire);
-        let r = self.read_idx.0.load(Ordering::Acquire);
+        let w = self.write_idx.load(Ordering::Acquire);
+        let r = self.read_idx.load(Ordering::Acquire);
         w.wrapping_sub(r)
     }
 
@@ -91,8 +91,8 @@ impl<T, const N: usize> DeferredDropReaperRing<T, N> {
         if N == 0 {
             return Err(item);
         }
-        let w = self.write_idx.0.load(Ordering::Relaxed);
-        let r = self.read_idx.0.load(Ordering::Acquire);
+        let w = self.write_idx.load(Ordering::Relaxed);
+        let r = self.read_idx.load(Ordering::Acquire);
         if w.wrapping_sub(r) >= N {
             return Err(item);
         }
@@ -101,8 +101,8 @@ impl<T, const N: usize> DeferredDropReaperRing<T, N> {
         unsafe {
             (*self.slots[slot_idx].get()).write(item);
         }
-        self.write_idx.0.store(w.wrapping_add(1), Ordering::Release);
-        let seq = self.total_retired.0.fetch_add(1, Ordering::Relaxed) + 1;
+        self.write_idx.store(w.wrapping_add(1), Ordering::Release);
+        let seq = self.total_retired.fetch_add(1, Ordering::Relaxed) + 1;
         Ok(seq)
     }
 
@@ -118,8 +118,8 @@ impl<T, const N: usize> DeferredDropReaperRing<T, N> {
             };
         }
         let limit = max_batch.min(N);
-        let mut r = self.read_idx.0.load(Ordering::Relaxed);
-        let w = self.write_idx.0.load(Ordering::Acquire);
+        let mut r = self.read_idx.load(Ordering::Relaxed);
+        let w = self.write_idx.load(Ordering::Acquire);
         let available = w.wrapping_sub(r);
         let to_reap = available.min(limit);
 
@@ -137,14 +137,12 @@ impl<T, const N: usize> DeferredDropReaperRing<T, N> {
         }
 
         if count > 0 {
-            self.read_idx.0.store(r, Ordering::Release);
-            self.total_reaped
-                .0
-                .fetch_add(count as u64, Ordering::Relaxed);
+            self.read_idx.store(r, Ordering::Release);
+            self.total_reaped.fetch_add(count as u64, Ordering::Relaxed);
         }
 
-        let total_ret = self.total_retired.0.load(Ordering::Relaxed);
-        let total_rep = self.total_reaped.0.load(Ordering::Relaxed);
+        let total_ret = self.total_retired.load(Ordering::Relaxed);
+        let total_rep = self.total_reaped.load(Ordering::Relaxed);
         ReapBatchReport {
             reaped_count: count,
             total_retired: total_ret,
