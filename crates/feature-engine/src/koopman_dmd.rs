@@ -56,6 +56,18 @@ pub struct EspectroKoopman {
     /// max_i |λ_i| — distancia al círculo unidad: ≥1.0 es régimen de
     /// bifurcación (el sistema amplifica perturbaciones).
     pub bifurcacion_max: f64,
+    /// GLM-181 (mandato §12.3, dual ergódico de Koopman): exponente de
+    /// Lyapunov dominante = max_i ln|λ_i| POR MUESTRA del flujo
+    /// linealizado. ≤ 0 si todo el espectro es contractivo.
+    pub lambda_max: f64,
+    /// Entropía de Kolmogorov-Sinai = Σ_{ln|λ_i| > 0} ln|λ_i| por muestra:
+    /// tasa total de creación de información del flujo. Los modos
+    /// INTERIORES con |λ|>1 también suman — h_KS ≥ λ_max, no es su eco.
+    pub entropia_ks: f64,
+    /// Horizonte de predictibilidad determinista = 1/λ_max en MUESTRAS
+    /// (escala e-folding del error); INFINITY si λ_max ≤ 0 (no hay
+    /// expansión que destruya la trayectoria).
+    pub horizonte_muestras: f64,
     /// Cantidad de autovalores estimados (M, con pares complejos = 2).
     pub n_autovalores: usize,
     /// Muestras válidas acumuladas.
@@ -252,12 +264,35 @@ impl StreamingDmd {
         } else {
             0.0
         };
+        // GLM-181: espectro de Lyapunov del flujo linealizado — los
+        // exponentes del Koopman son ln|λ_i| por muestra. λ_max domina la
+        // destrucción de trayectoria; h_KS suma TODA la expansión (modos
+        // interiores incluidos); el horizonte es su escala e-folding.
+        let mut lambda_max = f64::NEG_INFINITY;
+        let mut entropia_ks = 0.0;
+        for (re, im) in &lams {
+            let ln_mod = (re * re + im * im).sqrt().ln();
+            if ln_mod > lambda_max {
+                lambda_max = ln_mod;
+            }
+            if ln_mod > 0.0 {
+                entropia_ks += ln_mod;
+            }
+        }
+        let horizonte_muestras = if lambda_max > 0.0 {
+            1.0 / lambda_max
+        } else {
+            f64::INFINITY
+        };
         Ok(EspectroKoopman {
             lambda_dominante: (re0, im0),
             modulo_dominante: modulo0,
             angulo_rad: im0.abs().atan2(re0),
             segundo_modulo: segundo,
             bifurcacion_max: modulo0,
+            lambda_max,
+            entropia_ks,
+            horizonte_muestras,
             n_autovalores: lams.len(),
             muestras: self.validas,
         })
@@ -384,9 +419,9 @@ fn autovalores_faddeev_durand(a: &[[f64; KOOPMAN_M]; KOOPMAN_M]) -> Vec<(f64, f6
     // ── Durand–Kerner sobre p(λ) = λ^n + coef[1]λ^{n-1} + ... + coef[n].
     // Monomios en orden descendente (p[0]=1).
     let p = coef; // p[0]=1, p[k]=c_k
-                  // Normalizar por el coeficiente líder (ya 1.0 por construcción).
-                  // Semillas: círculo de radio R en el plano complejo (raíces de la unidad
-                  // escaladas por un cota de Cauchy aproximada).
+    // Normalizar por el coeficiente líder (ya 1.0 por construcción).
+    // Semillas: círculo de radio R en el plano complejo (raíces de la unidad
+    // escaladas por un cota de Cauchy aproximada).
     let radio = 1.0 + p[1..].iter().fold(0.0f64, |m, &c| m.max(c.abs()));
     #[derive(Clone, Copy)]
     struct C(f64, f64);
