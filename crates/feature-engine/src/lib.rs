@@ -14,6 +14,7 @@ pub mod hurst_dfa;
 pub mod kalman;
 pub mod koopman_dmd;
 pub mod lead_lag;
+pub mod matriz_rmt;
 pub mod microstructure;
 pub mod mps;
 pub mod multifractal;
