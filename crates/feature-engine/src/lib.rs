@@ -6,6 +6,7 @@ pub mod ewma;
 pub mod feynman_path_instanton;
 pub mod firma_maxent;
 pub mod grothendieck_sheaves;
+pub mod hairer_landauer_anderson;
 pub mod hawkes;
 pub mod hawkes_cross;
 pub mod hodge_flow;
@@ -48,6 +49,11 @@ pub use grothendieck_sheaves::{
     AtiyahSingerIndexReport, CellularSheafEngine, CellularSheafReport, GrothendieckSheafParams,
     SheafLaplacianWorkspace, SheafRestrictionEdge, SheafTopologicalRegime, MAX_SHEAF_EDGES,
     MAX_SHEAF_VERTICES,
+};
+pub use hairer_landauer_anderson::{
+    AndersonLocalizationEngine, AndersonLocalizationReport, HairerLandauerAndersonMasterEngine,
+    HairerLandauerAndersonReport, HairerRegularityEngine, HairerRegularityReport,
+    LandauerButtikerEngine, LandauerButtikerReport, MesoscopicTransportRegime, MESOSCOPIC_CHANNELS,
 };
 pub use hawkes::HawkesProcessEngine;
 pub use hodge_flow::{
