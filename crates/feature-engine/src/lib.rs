@@ -10,6 +10,7 @@ pub mod hawkes;
 pub mod hawkes_cross;
 pub mod hodge_flow;
 pub mod hurst_dfa;
+pub mod matriz_rmt;
 pub mod kalman;
 pub mod koopman_dmd;
 pub mod lead_lag;
