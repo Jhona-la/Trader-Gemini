@@ -237,3 +237,46 @@ Peticiones (ninguna borra nada ajeno; cada dueño decide):
    lector) y MUE-03 (5 `Vec` cada 64 ticks sin lector) son CPU y asignaciones
    gastadas en el hilo de decisión. Desconectarlos o pasarlos a sombra
    muestreada es de sus dueños (Codex QRA y GLM).
+
+## 7. Átomo FEE-03 (2026-11-02): los genes del modelo de coste no evolucionan
+
+**Qué.** `latency_penalty_ms` (vec[68]) y `base_slippage_floor` (vec[69])
+fijan lo que se cobra cada candidato en tres sitios: la fricción de la puerta
+de riesgo (`tp_sl::roundtrip_friction`), la física de llenado del simulador
+(`god-engine-core/src/reality_physics.rs`) y la valoración a mercado del
+bosque sombra (`evolution-engine/src/random_forest.rs:72-94`). Cada candidato
+se aplica a su propia arena, así que se juzgaba con su propio coste. Quién
+mutaba: todo lo que pasa por `mutate_cmaes`/`mutate_with_rng`, es decir el
+bosque sombra del host (`ShadowForest::new`/`replant`, `mutate_cmaes(0.15)`)
+y los binarios `evolver`, `walkforward_evolver` y
+`continuous_evolution_backtest`. El examen walk-forward del demonio online no los perturbaba (muta
+genes a mano, `online_daemon.rs:1860-1912`), así que allí no cambia nada.
+
+**Por qué es un defecto.** La aptitud de un candidato sube si baja su
+deslizamiento o su latencia, sin predecir mejor: paga menos en el examen y su
+puerta admite más operaciones. La selección premiaba cobrarse menos, y el
+genoma promovido llevaba ese coste rebajado a la puerta viva, que admitía
+órdenes que no cubren el coste real. Es el sesgo «el examinado fija el precio
+de su propio examen».
+
+**Arreglo.** En `SuperGenotype::mutate_with_rng` los dos genes se copian del
+padre; en `new_random` nacen con el coste de `SuperGenotype::default()`.
+Precedentes: LG-18, LG-21, F1-084 y F1-085. El vector sigue en 144 genes y los
+slots 68 y 69 no se mueven, así que los genomas guardados cargan igual. El T-1
+no cambia: perturba los genes directamente, no a través de la mutación.
+
+**Pruebas.** `crates/quantum-arena/tests/qsr_fee03_genes_de_coste_contract.rs`:
+la mutación copia los dos genes del padre con 4 tasas × 256 semillas (padre
+lejos de la línea base, para detectar una copia desde la base); control de que
+los genes que deciden sí mutan; `new_random` nace con el coste de la base; y
+slots 68/69 con ida y vuelta por el vector. RED con el código anterior:
+2 de 4 fallan (la mutación y `new_random`; los dos controles pasan). GREEN: ver
+el PR.
+
+**Lo que queda (siguiente átomo propuesto).** Congelar quita el incentivo,
+pero el coste sigue siendo un número fijo heredado. La fuente correcta es la
+medida: el deslizamiento de cada fill frente al precio de decisión y la
+latencia de ida y vuelta de cada orden, publicados con su ventana y su
+incertidumbre en la config viva, y usados por la puerta y por el examen. El
+cálculo de los fills vive en el ejecutor y el host (lease de Kimi): se propone
+en el buzón, con el contrato que lo comprueba.
