@@ -395,7 +395,9 @@ impl CellularSheafEngine {
         }
 
         // 4. Espectro del Laplaciano de Haz \Delta_0 y Teorema del Índice de Atiyah-Singer / McKean-Singer
-        let (eigenvalues, eigenvectors) = jacobi_eigensolver_symmetric(&laplacian, n, 40);
+        let mut eigenvalues = [0.0_f64; MAX_SHEAF_VERTICES];
+        let mut eigenvectors = [[0.0_f64; MAX_SHEAF_VERTICES]; MAX_SHEAF_VERTICES];
+        let _ = jacobi_eigensolver_symmetric(&laplacian, n, &mut eigenvalues, &mut eigenvectors);
         let tol = self.params.kernel_eigen_tolerance.max(1e-12);
 
         let mut dim_h0 = 0usize;
