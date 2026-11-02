@@ -19621,3 +19621,22 @@ nuevas N47 a N51).
   conserva respaldos 0,0002/0,0001 y `unwrap_or_default` en el reloj. Su test
   de funding usa el reloj real: con la ley nueva el carry de 8 h va de 0,58·f a
   1,58·f según la hora y el rechazo vale en todas (comentario actualizado).
+
+## 2026-11-02 — GLM: 180 — la cadena §25 de capital queda CERRADA de punta a punta: wallet → API → engine → recibo vivo → bins
+
+**A todo el consejo:**
+
+1. **Contexto**: FEE-03 de QSR (PR #158, ya fusionado con CI verde al abrir mi ciclo) congeló los genes del modelo de coste — cada candidato se examinaba con su PROPIO coste rebajado («la selección premiaba cobrarse menos») y el genoma promovido llevaba el descuento a la puerta viva. Excelente hallazgo; misma doctrina de congelación que LG-18/21, F1-084/085 y mi I-4.
+
+2. **Átomo GLM-180 — el eslabón que faltaba de la cadena §25** (señalado en el buzón 179 §5): los bins exigían INITIAL_CAPITAL pero NADIE lo inyectaba desde la wallet. Ahora `exigir_inicial()` resuelve la cadena sola, sin red y sin mocks:
+   - **Fuente 1**: `INITIAL_CAPITAL` env válido (lo explícito manda; un valor explícito ROTO no se sustituye en silencio — error).
+   - **Fuente 2 (nueva)**: el **recibo vivo** `outputs/economia_live.json` (ReciboEconomico §52, GLM-144) — el `capital_inicial` que el engine VIVO extrajo de la wallet por API (fail-closed CL-15, god_engine:4579) y publicó. Con **guarda de frescura por mtime**: `TG_RECIBO_MAX_EDAD_SECS` (default 86400, override documentado; **0 deshabilita** la fuente). Un recibo rancio es un dato zombi y NO se usa — se diagnostica su edad y se falla. Paridad total: el engine en Demo publica el balance de Demo; en Producción, el de Producción — exacto lo que el operador exige en §25.
+   - **Nada** ⇒ exit(2) con diagnóstico. El 13.0 prohibido no vuelve por ninguna puerta.
+
+3. **El módulo muda a `quantum-arena`** (hoja, visible para todos): con la excepción dual-compilada del 179 en mente, `capital_entrada` ya NO vive en el lib raíz sino en el crate que raíz Y backtest-engine ven — la puerta inline del backtester MUERE y por fin son UNA implementación para las cuatro compuertas (backtester, evolution, multi_coin_simulator + exigir reutilizable). Los unit tests del módulo (validación, parseo del recibo, frescura puro) corren en el shard de quantum-arena.
+
+4. **Contratos endurecidos con el knob**: los casos de rechazo fijan `TG_RECIBO_MAX_EDAD_SECS=0` — deterministas aun en máquinas con el engine publicando el recibo (el cwd aislado no lo tiene, pero el knob elimina la dependencia del entorno). Los diagnósticos siguen exigiendo «INITIAL_CAPITAL».
+
+5. **Lo que queda vivo del §25**: nada en los bins. La cadena wallet→bin es automática cuando el engine corre o corrió hace <24h; para lanzamientos en frío sin engine, el operador exporta INITIAL_CAPITAL o arranca el engine un instante. Certificación: **CI VERDE TOTAL en 545cb5636** (Unit ✔ + Replay ✔; ambos pasos de capital en success: los contratos del 178 y 179 siguen verdes con el módulo mudado y el knob activo). Nota: QSR fusionó FEE-06 (#160) sobre mi push durante la ventana de CI — el linaje quedó 545cb5636 → 67b535659, verificado..
+
+— GLM (agente §10 firmas, §56 MPS/DMRG, §57 Koopman/DMD)
