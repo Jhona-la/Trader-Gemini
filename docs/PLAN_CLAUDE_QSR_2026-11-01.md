@@ -314,3 +314,72 @@ latencia de ida y vuelta de cada orden, publicados con su ventana y su
 incertidumbre en la config viva, y usados por la puerta y por el examen. El
 cálculo de los fills vive en el ejecutor y el host (lease de Kimi): se propone
 en el buzón, con el contrato que lo comprueba.
+
+## 8. Átomo LC-F0-20 (2026-11-02): el panel de comisiones lee el recibo del núcleo
+
+**Qué.** El replay de libro (`booktick_replay.rs`) estimaba las comisiones de
+cada cierre como `qty·mid_salida·(max(maker, 2 pb) + max(taker, 4 pb))` = 7 pb
+y el turnover como `2·qty·mid`; el camino nativo (`run_backtest_native`), como
+`qty·close·2·taker` = 10 pb. El neto y la caja sí son los del núcleo, que cobra
+la entrada como taker y la salida como maker sólo en un TP con trade-through
+(taker en SL, trailing, zombie y tiempo). Resultado: el bruto, las comisiones,
+el WR antes de comisiones y el turnover del panel no eran lo que pagó la
+cuenta (un cierre por SL pagaba 10 pb y el panel decía 7). El turnover entra
+como penalización en el SA de `evolution`.
+
+**Arreglo** (rama `claude/qsr-lcf020`, base `545cb5636`). Una sola fuente: el
+recibo que el núcleo deja con cada cierre
+(`GodEngineCore::take_local_close_accounting`). Comisiones = entrada + salida
+cobradas; bruto = neto + esas comisiones; WR bruto sobre ese bruto; turnover =
+qty·(entrada + salida). El recibo se toma justo después de cada
+`process_event` que puede cerrar (hasta tres por fila en el replay, uno por
+barra en el nativo) y se empareja con ese cierre sólo si coinciden el reloj y
+los bits de la cantidad; se cuentan c1 y c2. Un cierre sin recibo válido se
+cuenta aparte (`ReplayStats::closes_without_receipt`; ranura opcional
+`STAT_CIERRES_SIN_RECIBO` en el nativo) y no entra en el panel: nunca se le
+supone una tarifa. No cambia lo que cobra el núcleo (el TP como maker es otro
+hallazgo, de Codex QRA), ni el neto, ni el capital final, ni el MTM.
+
+**Pruebas.** `qsr_lc_f0_20_replay_fee_receipt_contract` (trade-only y libro;
+5 cierres, dos SL taker y tres TP maker, uno con bruto > 0 y neto < 0, y dos
+cierres en la misma fila en modo libro; la caja del arena se cuadra en cada
+intervalo). RED sobre `545cb5636`: 0/2, comisiones 0,350070 informadas frente a
+0,410221 cobradas; el golden nativo también cae (bruto = neto + 10 pb frente a
+neto + lo cobrado). GREEN tras la revisión: el contrato 2/2,
+`backtest-engine --lib` 60/0 y las integraciones del replay y del golden 45/0
+(2 ignoradas, mediciones manuales); `cargo check --workspace --all-targets
+--locked` sin errores y la puerta de clippy en líneas cambiadas, limpia.
+
+**Cambio de línea base de las huellas (sin cambio de conducta).** Las huellas
+FNV del T-1 (por gen) y del T-2 (base) cubren las 8 estadísticas nativas, y
+`out_stats[5]` y `[7]` ahora salen del recibo: cambian en todo genoma que
+opere. Medido con `t2_diag_actividad_del_fixture_lateral_micro`: base
+`545cb5636` huella `ac3db6ada3ce80a5`, esta rama `4c2f51cff2dc0ca9`; en las dos,
+36 cierres, neto −0,30258178974323224, WR 0,3333… y capital
+12,697418210256767, bit a bit. Las comparaciones de huellas entre árboles
+deben empezar en este átomo. El número de genes sensibles del T-1 no debería
+moverse (el bruto sólo cambia si cambia el neto), pero no se ha medido: el
+oráculo largo no se corrió.
+
+**Revisión adversarial.** Tres lentes (contabilidad, regresiones, consumidores);
+cuatro hallazgos confirmados, los cuatro bajos:
+
+- *LC20-A1*: `test_f1_101_multi_close_accounting_contract` no llama al replay y
+  guardaba una copia de la fórmula vieja (fees, bruto, turnover) como
+  «comportamiento corregido»: seguía en verde si alguien devolvía la estimación.
+  Se queda sólo el conteo c1/c2.
+- *LC20-R1*: el cambio de huellas de arriba, sin registrar. Registrado aquí, en
+  el commit y en AGENT_SYNC.
+- *LC20-R3*: `evolution` imprimía el bruto y el WR bruto sin decir si faltó un
+  recibo; ahora avisa como `backtest_windows`. En el nativo ningún llamador
+  reserva la ranura del contador (FFI, `polars_evolver`, T-1/T-2/T-3): queda
+  documentado. Hoy es latente: el núcleo escribe el recibo en el mismo bloque
+  que devuelve el cierre.
+- *LC20-R2* (comentario corregido, defecto abierto): ver la tabla.
+
+Confirmados y fuera de este átomo:
+
+| Id | Severidad | Qué | Dueño |
+|---|---|---|---|
+| LC20-R2 | baja | El MTM nativo de lo que sigue abierto (drawdown por barra y capital final) descuenta `qty·precio·2·taker`, una tasa de ida y vuelta, sobre UNA sola pierna (la salida pendiente): ×2 frente a taker. El replay de libro cobra taker + deslizamiento. Infla el drawdown y rebaja el capital final de todo genoma que acabe con posición abierta. No se toca aquí para no mover el capital final. | a registrar en la lista LC-F0 (Línea C) o quien tome el camino nativo |
+| LC20-C1 | info | `origin/main` sigue avanzando desde la base de la rama (14 commits, `30a82b722`, en la última lectura de la ref local): falta componer, comparar contra cada padre y compilar con `--all-targets` antes de integrar. | integrador |
