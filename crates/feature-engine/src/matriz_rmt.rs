@@ -132,7 +132,10 @@ fn autovalores_jacobi_simetrico(matriz: &[f64], n: usize) -> Vec<f64> {
                 }
                 let app = a[p * n + p];
                 let aqq = a[q * n + q];
-                // Ángulo de rotación que anula a[p][q]: tan(2θ) = 2apq/(aqq−app).
+                // Ángulo que anula a[p][q]: tan(2θ) = 2apq/(aqq−app). OJO
+                // con el orden de atan2: y.atan2(x) — y=2apq, x=aqq−app
+                // (invertirlo da atan2(0,·)=θ=0 y el Jacobi no rota; bug
+                // cazado por el contrato de la equicorrelación).
                 let theta = 0.5 * (2.0 * apq).atan2(aqq - app);
                 let (c, s) = (theta.cos(), theta.sin());
                 for k in 0..n {
