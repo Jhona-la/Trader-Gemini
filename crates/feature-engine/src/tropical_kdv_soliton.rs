@@ -12,7 +12,7 @@
 //! - **DÓNDE:** `crates/feature-engine/src/tropical_kdv_soliton.rs`.
 //! - **QUIÉN:** `TropicalMaxPlusMatrix`, `TropicalSpectralReport`, `KdvSolitonIstAnalyzer`, `KdvSolitonReport`, `TropicalKdvEngine`.
 
-use crate::random_matrix_wilson::jacobi_eigensolver_symmetric;
+use crate::random_matrix_wilson::{jacobi_eigensolver_symmetric, MAX_ASSETS};
 
 /// Dimensión espacial canónica para la malla del operador de Lax-Schrödinger KdV en pila.
 pub const KDV_GRID_DIM: usize = 8;
@@ -343,22 +343,22 @@ impl KdvSolitonIstAnalyzer {
             i += 1;
         }
 
-        // 1. Construir matriz simétrica plana 8x8 del operador de Schrödinger L = -d^2/dx^2 - u(x)
-        let mut lax_flat = [0.0; KDV_GRID_DIM * KDV_GRID_DIM];
+        // 1. Construir matriz simétrica 8x8 del operador de Schrödinger L = -d^2/dx^2 - u(x)
+        let mut lax_mat = [[0.0; MAX_ASSETS]; MAX_ASSETS];
         let mut r = 0;
         while r < KDV_GRID_DIM {
             // Término diagonal: 2 / dx^2 - u(x_r)
-            lax_flat[r * KDV_GRID_DIM + r] = 2.0 * inv_dx2 - u[r];
+            lax_mat[r][r] = 2.0 * inv_dx2 - u[r];
             if r + 1 < KDV_GRID_DIM {
-                lax_flat[r * KDV_GRID_DIM + (r + 1)] = -inv_dx2;
-                lax_flat[(r + 1) * KDV_GRID_DIM + r] = -inv_dx2;
+                lax_mat[r][r + 1] = -inv_dx2;
+                lax_mat[r + 1][r] = -inv_dx2;
             }
             r += 1;
         }
 
-        let mut eigvals = [0.0; KDV_GRID_DIM];
-        let mut eigvecs = [0.0; KDV_GRID_DIM * KDV_GRID_DIM];
-        jacobi_eigensolver_symmetric(&lax_flat, KDV_GRID_DIM, &mut eigvals, &mut eigvecs);
+        let mut eigvals = [0.0; MAX_ASSETS];
+        let mut eigvecs = [[0.0; MAX_ASSETS]; MAX_ASSETS];
+        jacobi_eigensolver_symmetric(&lax_mat, KDV_GRID_DIM, &mut eigvals, &mut eigvecs);
 
         // Ordenar autovalores de menor a mayor (los más negativos son los solitones dominantes)
         let mut a = 0;
