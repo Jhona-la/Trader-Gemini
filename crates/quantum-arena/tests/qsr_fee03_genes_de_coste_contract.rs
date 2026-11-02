@@ -33,10 +33,11 @@ fn genes_de_coste(g: &SuperGenotype) -> [u64; 2] {
 /// Un incumbente con valores lejos de la línea base, para que un congelado
 /// que se copiara de la base (y no del padre) también se detecte.
 fn incumbente() -> SuperGenotype {
-    let mut g = SuperGenotype::default();
-    g.latency_penalty_ms = 61.25;
-    g.base_slippage_floor = 0.000_337;
-    g
+    SuperGenotype {
+        latency_penalty_ms: 61.25,
+        base_slippage_floor: 0.000_337,
+        ..SuperGenotype::default()
+    }
 }
 
 #[test]
