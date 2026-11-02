@@ -412,13 +412,8 @@ impl KdvSolitonIstAnalyzer {
             let um = u[m];
             i1 += um * dx;
             i2 += (um * um) * dx;
-            let du_dx = if m + 1 < KDV_GRID_DIM {
-                (u[m + 1] - um) / dx
-            } else if m > 0 {
-                (um - u[m - 1]) / dx
-            } else {
-                0.0
-            };
+            let next_m = (m + 1) % KDV_GRID_DIM;
+            let du_dx = (u[next_m] - um) / dx;
             i3 += (2.0 * um * um * um - du_dx * du_dx) * dx;
             m += 1;
         }

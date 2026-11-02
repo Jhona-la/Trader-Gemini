@@ -77,7 +77,7 @@ fn c3_fast_ascii_lut_encoder_u64_and_fixed_f64_exactness() {
         assert_eq!(s, val.to_string());
     }
 
-    let len_price = FastAsciiLutEncoder::encode_fixed_f64(67_890.0425, 4, &mut buf);
+    let len_price = FastAsciiLutEncoder::encode_fixed_f64(67890.0425, 4, &mut buf);
     let price_str = std::str::from_utf8(&buf[..len_price]).unwrap_or("");
     assert_eq!(price_str, "67890.0425");
 

@@ -136,7 +136,7 @@ fn c4_replicator_simplex_conservation_and_dominant_strategy_selection() {
             "Simplex sum must be 1.0, got {sum_w}"
         );
         for &w in &rep.weights.lanes {
-            assert!(w >= 0.0 && w <= 1.0);
+            assert!((0.0..=1.0).contains(&w));
         }
         assert!(
             rep.weights.lanes[0] >= prev_w0 - 1e-12,
