@@ -24,6 +24,7 @@ pub mod random_matrix_wilson;
 pub mod rough_ergodic;
 pub mod simd_neural_network;
 pub mod simd_yoshida_replicator;
+pub mod soa_shadow_otoc;
 pub mod spectral;
 pub mod tensor_ring;
 pub mod transfer_entropy;
@@ -80,6 +81,10 @@ pub use simd_yoshida_replicator::{
     SimdYoshidaReplicatorEngine, SimdYoshidaReplicatorReport, SymplecticEvolutionRegime,
     SymplecticOrbitReport, Yoshida4SymplecticIntegrator, SIMD_F64_LANES, YOSHIDA_C, YOSHIDA_D,
     YOSHIDA_W0, YOSHIDA_W1,
+};
+pub use soa_shadow_otoc::{
+    InFlightMarginEntry, InFlightShadowLedger, OtocShadowRegime, QuantumOtocEngine,
+    QuantumOtocReport, SoaOrderBookL2, SoaShadowOtocMasterEngine, SoaShadowOtocReport, OTOC_OP_DIM,
 };
 pub use spectral::SpectralCycleEngine;
 pub use tensor_ring::TensorRing;
