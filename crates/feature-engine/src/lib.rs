@@ -23,6 +23,7 @@ pub mod path_signatures;
 pub mod random_matrix_wilson;
 pub mod rough_ergodic;
 pub mod simd_neural_network;
+pub mod simd_yoshida_replicator;
 pub mod spectral;
 pub mod tensor_ring;
 pub mod transfer_entropy;
@@ -73,6 +74,12 @@ pub use rough_ergodic::{
     RoughBergomiPredictor, ROUGH_FACTORS_COUNT,
 };
 pub use simd_neural_network::SimdNeuralNet;
+pub use simd_yoshida_replicator::{
+    Avx512Lane8F64, EvolutionaryReplicatorSimplex, HamiltonianPhaseState, ReplicatorSimplexReport,
+    SimdYoshidaReplicatorEngine, SimdYoshidaReplicatorReport, SymplecticEvolutionRegime,
+    SymplecticOrbitReport, Yoshida4SymplecticIntegrator, SIMD_F64_LANES, YOSHIDA_C, YOSHIDA_D,
+    YOSHIDA_W0, YOSHIDA_W1,
+};
 pub use spectral::SpectralCycleEngine;
 pub use tensor_ring::TensorRing;
 pub use welford::WelfordOnline;
