@@ -1,29 +1,30 @@
-pub mod hurst_dfa;
 pub mod copulas;
 pub mod correlation;
-pub mod ewma;
 pub mod entrelazamiento;
+pub mod ewma;
 pub mod feynman_path_instanton;
+pub mod firma_maxent;
+pub mod grothendieck_sheaves;
 pub mod hawkes;
 pub mod hawkes_cross;
 pub mod hodge_flow;
+pub mod hurst_dfa;
 pub mod kalman;
 pub mod koopman_dmd;
-pub mod mps;
 pub mod lead_lag;
 pub mod microstructure;
+pub mod mps;
 pub mod multifractal;
 pub mod navier_stokes;
 pub mod normalizer;
 pub mod omni_strategies;
 pub mod path_signatures;
-pub mod firma_maxent;
 pub mod random_matrix_wilson;
 pub mod rough_ergodic;
-pub mod transfer_entropy;
 pub mod simd_neural_network;
 pub mod spectral;
 pub mod tensor_ring;
+pub mod transfer_entropy;
 pub mod welford;
 
 // Re-exportar primitivas matemáticas O(1)
@@ -32,6 +33,11 @@ pub use ewma::Ewma;
 pub use feynman_path_instanton::{
     FeynmanInstantonEngine, InstantonParams, InstantonRegime, InstantonTunnelingReport,
     MAX_PATH_POINTS,
+};
+pub use grothendieck_sheaves::{
+    AtiyahSingerIndexReport, CellularSheafEngine, CellularSheafReport, GrothendieckSheafParams,
+    SheafLaplacianWorkspace, SheafRestrictionEdge, SheafTopologicalRegime, MAX_SHEAF_EDGES,
+    MAX_SHEAF_VERTICES,
 };
 pub use hawkes::HawkesProcessEngine;
 pub use hodge_flow::{
