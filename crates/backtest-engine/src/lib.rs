@@ -377,6 +377,20 @@ mod golden_ledger_oracle {
                 "terminal reported equity is closed cash",
             )?;
             self.exact(out_stats[6], self.net, "reported net PnL")?;
+            // LC-F0-20: el bruto y el WR antes de comisiones del panel son el
+            // neto más lo que el núcleo cobró (entrada + salida, recalculadas
+            // arriba con el papel de la salida), no una tarifa supuesta.
+            let charged_gross = self.net + (self.entry_fee + self.exit_fee);
+            self.exact(
+                out_stats[5],
+                charged_gross,
+                "reported gross PnL = net + charged fees",
+            )?;
+            self.exact(
+                out_stats[7],
+                if charged_gross > 0.0 { 1.0 } else { 0.0 },
+                "reported gross WR uses the charged gross",
+            )?;
             // Rust's test capture prints this exact input/accounting witness
             // if the caller's still-frozen numeric golden later fails.
             println!("[GOLDEN-LEDGER VERIFIED] {}", self.context());
