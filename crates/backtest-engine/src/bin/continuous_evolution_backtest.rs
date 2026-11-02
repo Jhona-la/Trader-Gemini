@@ -76,6 +76,29 @@ fn daily_report(
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    // GLM-178 (adopta el WIP de Kimi V33, respaldado en
+    // .agent_tx/agent-fabric-huerfano-20261101): paridad de capital del
+    // operador (mandato §25) — este bin EXIGE INITIAL_CAPITAL válido y no
+    // admite defaults silenciosos (CL-15). La validación va ANTES de
+    // cualquier efecto secundario — ni set_var ni truncar equity_curve.csv
+    // ajena ni crear config_dir con un capital que no existe.
+    let capital_inicial: f64 = match std::env::var("INITIAL_CAPITAL") {
+        Ok(crudo) => match crudo.trim().parse::<f64>() {
+            Ok(c) if c.is_finite() && c > 0.0 => c,
+            _ => {
+                eprintln!(
+                    "ERROR: INITIAL_CAPITAL ilegible ({crudo:?}): se exige un número finito > 0. Sin capital válido no hay backtest (CL-15, paridad §25)."
+                );
+                std::process::exit(2);
+            }
+        },
+        Err(_) => {
+            eprintln!(
+                "ERROR: INITIAL_CAPITAL ausente: exporta el balance real de la wallet (paridad §25, CL-15). Sin defaults silenciosos."
+            );
+            std::process::exit(2);
+        }
+    };
     // E3 — ENTORNO DE GENOMA AISLADO: las promociones de este backtest van a
     // config_dir/genomes/backtest/ y NUNCA contaminan el active.json de demo
     // o producción. La promoción cross-entorno es explícita.
@@ -85,6 +108,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("============================================================");
     println!("🌌 TRADER GEMINI V5 - CONTINUOUS EVOLUTION BACKTESTER");
     println!("🛡️ Meta-Engine: Walk-Forward (Train 3 Days -> Trade 1 Day)");
+    println!("💰 INITIAL_CAPITAL = ${capital_inicial:.2} (capital real, sin defaults)");
     println!("============================================================");
 
     // 🔮 ORACLE PREDICTIVE METRICS: Arrancar el Reconciliador del Tiempo
@@ -214,8 +238,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             std::env::set_var("SINGLE_COIN_MODE", "1");
         }
         if !btc_path.exists() {
-            println!("❌ Archivo binario no encontrado: {:?}.", btc_path);
-            return Ok(());
+            // GLM-178: un backtest sin tape real no certifica nada (R2.2) —
+            // antes terminaba en Ok(()) silencioso tras truncar el CSV.
+            eprintln!(
+                "❌ Archivo binario no encontrado: {btc_path:?}. Un backtest sin tape real no certifica nada (R2.2); abortando con error."
+            );
+            std::process::exit(2);
         }
         backtest_engine::tick_replayer::load_binary_ticks(btc_path, 0)?
     };
@@ -225,7 +253,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         ticks.len()
     );
 
-    let initial_capital = 13.0; // El capital microscópico desafiante
+    // GLM-178: el 13.0 literal «microscópico desafiante» queda extirpado —
+    // el capital fue validado en la entrada (fail-closed) y es el real.
+    let initial_capital = capital_inicial;
     let mut current_capital = initial_capital;
 
     let ms_per_day = 86_400_000;
@@ -977,7 +1007,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             requested_days, available_days, executed_days, causa
         );
     }
-    println!("💰 Capital Inicial: $13.00");
+    println!("💰 Capital Inicial: ${initial_capital:.2}");
     println!("💰 Capital Final  : ${:.4}", current_capital);
     println!("💵 PnL Global     : ${:+.4}", global_pnl);
     println!(
@@ -986,7 +1016,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     );
     println!(
         "📈 Crecimiento    : {:.2}%",
-        ((current_capital - 13.0) / 13.0) * 100.0
+        ((current_capital - initial_capital) / initial_capital) * 100.0
     );
     println!("============================================================");
 

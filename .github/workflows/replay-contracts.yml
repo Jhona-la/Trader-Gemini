@@ -134,6 +134,13 @@ jobs:
         run: cargo +nightly-2026-06-30 test -p backtest-engine --locked --lib --test ex_post_metrics_contract --test label_evidence_contract --test spectral_risk_contract --test bt_vivo_parity_audit --test qra_tick_prefix_contract --test ffi_backtest_safety_contract -- --test-threads=1
       - name: Fast genome and synthetic reference contracts (no manual measurements)
         run: cargo +nightly-2026-06-30 test -p backtest-engine --locked --test t1_measurement_contract --test t3_ventaja_conocida -- --test-threads=1
+      - name: Capital parity entry contract (GLM-178, adopts Kimi V33 plan)
+        # INITIAL_CAPITAL ausente/inválido se rechaza ANTES de efectos
+        # secundarios (sentinela equity_curve.csv intacta, sin config_dir);
+        # el válido llega a la validación del tape. Extirpa el literal 13.0.
+        # El bin vive en el paquete RAÍZ (trader-gemini-v5) aunque su fuente
+        # esté bajo crates/backtest-engine — el test usa CARGO_BIN_EXE_.
+        run: cargo +nightly-2026-06-30 test -p trader-gemini-v5 --bin continuous_evolution_backtest --test continuous_capital_contract --locked -- --test-threads=1
       - name: Golden accounting witness (one synthetic probe)
         # Keep the full regression suite above. Print the independently checked
         # quantity, physical prices and IEEE cash debits for both golden runs.
