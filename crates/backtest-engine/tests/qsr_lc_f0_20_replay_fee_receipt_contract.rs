@@ -26,9 +26,7 @@
 //! cuadrar con Σ(bruto − comisión de salida): eso valida, contra el arena, que
 //! esas son las tarifas que aplicó el núcleo.
 
-use backtest_engine::booktick_replay::{
-    run_booktick_replay_with_observer, ReplayConfig, ReplayStats, ReplayTick,
-};
+use backtest_engine::booktick_replay as replay;
 use quantum_arena::genome::SuperGenotype;
 use quantum_arena::position::PositionHorizon;
 use std::sync::atomic::Ordering;
@@ -42,6 +40,8 @@ const ENTRY: f64 = 100.0;
 const QTY: f64 = 1.0;
 const MARGIN: f64 = 10.0;
 const FLAT: f64 = 100.0;
+// El replay sólo corre con más de 10 filas tras W.
+const _: () = assert!(ROWS - WARMUP > 10);
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 enum Salida {
@@ -121,11 +121,11 @@ fn mid_de_fila(i: usize) -> f64 {
     }
 }
 
-fn cinta() -> Vec<ReplayTick> {
+fn cinta() -> Vec<replay::ReplayTick> {
     (0..ROWS)
         .map(|i| {
             let mid = mid_de_fila(i);
-            ReplayTick {
+            replay::ReplayTick {
                 ts_ms: BASE_TS + i as u64 * STEP_MS,
                 bid: mid - 0.01,
                 ask: mid + 0.01,
@@ -181,182 +181,183 @@ fn cerca(actual: f64, esperado: f64, escala: f64, que: &str) {
     );
 }
 
-fn replay(trade_only: bool) -> (ReplayStats, Vec<CierreEsperado>) {
-    let cfg = ReplayConfig {
+fn ejecutar_fixture(trade_only: bool) -> (replay::ReplayStats, Vec<CierreEsperado>) {
+    let cfg = replay::ReplayConfig {
         initial_capital: CAPITAL,
         warmup_ticks: WARMUP,
         trade_only,
         shift_atr_frac: 0.0,
     };
     let filas = cinta();
-    assert!(ROWS - WARMUP > 10, "el replay exige más de 10 filas tras W");
     let genome = SuperGenotype::new_baseline(0.0002, 0.0005);
     let mut abiertas: Vec<Abierta> = Vec::new();
     let mut cierres: Vec<CierreEsperado> = Vec::new();
     let mut caja_previa = CAPITAL;
     let mut visitadas = 0usize;
 
-    let stats = run_booktick_replay_with_observer(&filas, &genome, None, &cfg, |i, core| {
-        visitadas += 1;
-        let arena = &core.arena;
-        let coin = &arena.coins[0];
-        let Some((maker, taker)) = arena.config.fee_rates_for(0) else {
-            panic!("el escenario explícito exige tarifas del arena");
-        };
-
-        // 1. Cierres del intervalo [observación anterior, ahora).
-        let caja = arena.unified_capital.load(Ordering::Relaxed);
-        let (cerradas, siguen): (Vec<Abierta>, Vec<Abierta>) = abiertas.drain(..).partition(|a| {
-            let p = coin.positions.get_slot(a.inyeccion.slot);
-            !p.is_open() || p.generation.load(Ordering::Acquire) != a.generation
-        });
-        abiertas = siguen;
-        let sl_cerrados = cerradas
-            .iter()
-            .filter(|a| a.inyeccion.salida == Salida::Sl)
-            .count();
-        assert!(
-            sl_cerrados <= 1,
-            "fila {i}: el fixture sólo admite un SL por intervalo"
-        );
-        if sl_cerrados == 1 {
-            // La gestión recorre las ranuras en orden y cierra una por evento:
-            // el SL (ranura mayor) es el último cierre del intervalo.
-            let ultima = cerradas.iter().map(|a| a.inyeccion.slot).max();
-            let sl = cerradas.iter().find(|a| a.inyeccion.salida == Salida::Sl);
-            assert_eq!(
-                sl.map(|a| a.inyeccion.slot),
-                ultima,
-                "fila {i}: el SL debe cerrar el último"
-            );
-            assert_eq!(
-                coin.last_close_reason.load(Ordering::Relaxed),
-                2,
-                "fila {i}: motivo SL"
-            );
-        } else if cerradas.len() == 1 {
-            assert_eq!(
-                coin.last_close_reason.load(Ordering::Relaxed),
-                1,
-                "fila {i}: motivo TP"
-            );
-        }
-        let mut variacion_esperada = 0.0;
-        for a in &cerradas {
-            let iny = a.inyeccion;
-            let exit_price = match iny.salida {
-                Salida::Tp => precio_tp(&iny),
-                Salida::Sl => coin.last_close_exit_price.load(Ordering::Relaxed),
+    let stats =
+        replay::run_booktick_replay_with_observer(&filas, &genome, None, &cfg, |i, core| {
+            visitadas += 1;
+            let arena = &core.arena;
+            let coin = &arena.coins[0];
+            let Some((maker, taker)) = arena.config.fee_rates_for(0) else {
+                panic!("el escenario explícito exige tarifas del arena");
             };
-            if cerradas.len() == 1 {
-                assert_eq!(
-                    coin.last_close_exit_price.load(Ordering::Relaxed).to_bits(),
-                    exit_price.to_bits(),
-                    "fila {i}: precio de salida reconstruido"
-                );
-            }
-            match iny.salida {
-                Salida::Tp => assert!(
-                    if iny.is_long {
-                        exit_price > ENTRY
-                    } else {
-                        exit_price < ENTRY
-                    },
-                    "fila {i}: un TP sale con beneficio bruto"
-                ),
-                Salida::Sl => assert!(
-                    if iny.is_long {
-                        exit_price < iny.sl_price
-                    } else {
-                        exit_price > iny.sl_price
-                    },
-                    "fila {i}: el SL del fixture cruza su nivel con deslizamiento taker"
-                ),
-            }
-            let tarifa = match iny.salida {
-                Salida::Tp => maker,
-                Salida::Sl => taker,
-            };
-            let gross = bruto(&iny, exit_price);
-            let exit_fee = (QTY * exit_price) * tarifa;
-            let net = (gross - exit_fee) - a.entry_fee;
-            variacion_esperada += gross - exit_fee;
-            cierres.push(CierreEsperado {
-                salida: iny.salida,
-                entry_fee: a.entry_fee,
-                exit_fee,
-                gross,
-                net,
-                turnover: QTY * ENTRY + QTY * exit_price,
-            });
-        }
-        let variacion = caja - caja_previa;
-        assert!(
-            (variacion - variacion_esperada).abs() <= 1e-9,
-            "fila {i}: la caja del núcleo ({variacion:.17e}) no cuadra con Σ(bruto − comisión \
-             de salida) = {variacion_esperada:.17e}: las tarifas del fixture no son las del núcleo"
-        );
 
-        // 2. Ninguna posición que el fixture no haya inyectado.
-        for (slot, p) in coin.positions.slots().into_iter().enumerate() {
-            if p.is_open() {
-                assert!(
-                    abiertas.iter().any(|a| a.inyeccion.slot == slot
-                        && p.generation.load(Ordering::Acquire) == a.generation),
-                    "fila {i}: el núcleo abrió una posición propia en la ranura {slot}"
-                );
-            }
-        }
-        assert!(
-            arena
-                .coins
+            // 1. Cierres del intervalo [observación anterior, ahora).
+            let caja = arena.unified_capital.load(Ordering::Relaxed);
+            let (cerradas, siguen): (Vec<Abierta>, Vec<Abierta>) =
+                abiertas.drain(..).partition(|a| {
+                    let p = coin.positions.get_slot(a.inyeccion.slot);
+                    !p.is_open() || p.generation.load(Ordering::Acquire) != a.generation
+                });
+            abiertas = siguen;
+            let sl_cerrados = cerradas
                 .iter()
-                .skip(1)
-                .all(|c| !c.positions.is_any_open()),
-            "fila {i}: posición en otra moneda"
-        );
-
-        // 3. Inyecciones de esta fila.
-        let mut caja_tras = caja;
-        for iny in INYECCIONES.iter().filter(|iny| iny.fila == i) {
-            let slot = coin.positions.get_slot(iny.slot);
-            assert!(!slot.is_open(), "fila {i}: ranura {} ocupada", iny.slot);
-            let entry_fee = (QTY * ENTRY) * taker;
-            let abierta = slot.open_with_fee(
-                iny.is_long,
-                ENTRY,
-                QTY,
-                MARGIN,
-                BASE_TS + (i as u64 - 1) * STEP_MS,
-                iny.tp_price,
-                iny.sl_price,
-                PositionHorizon::Continuous,
-                0.5,
-                0.5,
-                entry_fee,
-            );
+                .filter(|a| a.inyeccion.salida == Salida::Sl)
+                .count();
             assert!(
-                abierta,
-                "fila {i}: la inyección debe abrir la ranura {}",
-                iny.slot
+                sl_cerrados <= 1,
+                "fila {i}: el fixture sólo admite un SL por intervalo"
             );
-            let generation = slot.generation.load(Ordering::Acquire);
-            let snap = slot.snapshot().expect("ranura recién abierta");
-            assert_eq!(snap.entry_fee.to_bits(), entry_fee.to_bits());
-            assert_eq!(snap.quantity.to_bits(), QTY.to_bits());
-            // La apertura real descuenta la comisión de entrada de la caja y
-            // reserva el margen; el cierre libera el margen y suma bruto − salida.
-            caja_tras -= entry_fee;
-            arena.unified_capital.store(caja_tras, Ordering::Relaxed);
-            arena.used_margin.fetch_add(MARGIN, Ordering::Relaxed);
-            abiertas.push(Abierta {
-                inyeccion: *iny,
-                generation,
-                entry_fee,
-            });
-        }
-        caja_previa = caja_tras;
-    });
+            if sl_cerrados == 1 {
+                // La gestión recorre las ranuras en orden y cierra una por evento:
+                // el SL (ranura mayor) es el último cierre del intervalo.
+                let ultima = cerradas.iter().map(|a| a.inyeccion.slot).max();
+                let sl = cerradas.iter().find(|a| a.inyeccion.salida == Salida::Sl);
+                assert_eq!(
+                    sl.map(|a| a.inyeccion.slot),
+                    ultima,
+                    "fila {i}: el SL debe cerrar el último"
+                );
+                assert_eq!(
+                    coin.last_close_reason.load(Ordering::Relaxed),
+                    2,
+                    "fila {i}: motivo SL"
+                );
+            } else if cerradas.len() == 1 {
+                assert_eq!(
+                    coin.last_close_reason.load(Ordering::Relaxed),
+                    1,
+                    "fila {i}: motivo TP"
+                );
+            }
+            let mut variacion_esperada = 0.0;
+            for a in &cerradas {
+                let iny = a.inyeccion;
+                let exit_price = match iny.salida {
+                    Salida::Tp => precio_tp(&iny),
+                    Salida::Sl => coin.last_close_exit_price.load(Ordering::Relaxed),
+                };
+                if cerradas.len() == 1 {
+                    assert_eq!(
+                        coin.last_close_exit_price.load(Ordering::Relaxed).to_bits(),
+                        exit_price.to_bits(),
+                        "fila {i}: precio de salida reconstruido"
+                    );
+                }
+                match iny.salida {
+                    Salida::Tp => assert!(
+                        if iny.is_long {
+                            exit_price > ENTRY
+                        } else {
+                            exit_price < ENTRY
+                        },
+                        "fila {i}: un TP sale con beneficio bruto"
+                    ),
+                    Salida::Sl => assert!(
+                        if iny.is_long {
+                            exit_price < iny.sl_price
+                        } else {
+                            exit_price > iny.sl_price
+                        },
+                        "fila {i}: el SL del fixture cruza su nivel con deslizamiento taker"
+                    ),
+                }
+                let tarifa = match iny.salida {
+                    Salida::Tp => maker,
+                    Salida::Sl => taker,
+                };
+                let gross = bruto(&iny, exit_price);
+                let exit_fee = (QTY * exit_price) * tarifa;
+                let net = (gross - exit_fee) - a.entry_fee;
+                variacion_esperada += gross - exit_fee;
+                cierres.push(CierreEsperado {
+                    salida: iny.salida,
+                    entry_fee: a.entry_fee,
+                    exit_fee,
+                    gross,
+                    net,
+                    turnover: QTY * ENTRY + QTY * exit_price,
+                });
+            }
+            let variacion = caja - caja_previa;
+            assert!(
+                (variacion - variacion_esperada).abs() <= 1e-9,
+                "fila {i}: la caja del núcleo ({variacion:.17e}) no cuadra con Σ(bruto − comisión \
+             de salida) = {variacion_esperada:.17e}: las tarifas del fixture no son las del núcleo"
+            );
+
+            // 2. Ninguna posición que el fixture no haya inyectado.
+            for (slot, p) in coin.positions.slots().into_iter().enumerate() {
+                if p.is_open() {
+                    assert!(
+                        abiertas.iter().any(|a| a.inyeccion.slot == slot
+                            && p.generation.load(Ordering::Acquire) == a.generation),
+                        "fila {i}: el núcleo abrió una posición propia en la ranura {slot}"
+                    );
+                }
+            }
+            assert!(
+                arena
+                    .coins
+                    .iter()
+                    .skip(1)
+                    .all(|c| !c.positions.is_any_open()),
+                "fila {i}: posición en otra moneda"
+            );
+
+            // 3. Inyecciones de esta fila.
+            let mut caja_tras = caja;
+            for iny in INYECCIONES.iter().filter(|iny| iny.fila == i) {
+                let slot = coin.positions.get_slot(iny.slot);
+                assert!(!slot.is_open(), "fila {i}: ranura {} ocupada", iny.slot);
+                let entry_fee = (QTY * ENTRY) * taker;
+                let abierta = slot.open_with_fee(
+                    iny.is_long,
+                    ENTRY,
+                    QTY,
+                    MARGIN,
+                    BASE_TS + (i as u64 - 1) * STEP_MS,
+                    iny.tp_price,
+                    iny.sl_price,
+                    PositionHorizon::Continuous,
+                    0.5,
+                    0.5,
+                    entry_fee,
+                );
+                assert!(
+                    abierta,
+                    "fila {i}: la inyección debe abrir la ranura {}",
+                    iny.slot
+                );
+                let generation = slot.generation.load(Ordering::Acquire);
+                let snap = slot.snapshot().expect("ranura recién abierta");
+                assert_eq!(snap.entry_fee.to_bits(), entry_fee.to_bits());
+                assert_eq!(snap.quantity.to_bits(), QTY.to_bits());
+                // La apertura real descuenta la comisión de entrada de la caja y
+                // reserva el margen; el cierre libera el margen y suma bruto − salida.
+                caja_tras -= entry_fee;
+                arena.unified_capital.store(caja_tras, Ordering::Relaxed);
+                arena.used_margin.fetch_add(MARGIN, Ordering::Relaxed);
+                abiertas.push(Abierta {
+                    inyeccion: *iny,
+                    generation,
+                    entry_fee,
+                });
+            }
+            caja_previa = caja_tras;
+        });
 
     assert_eq!(visitadas, ROWS, "el fixture debe recorrer toda la cinta");
     assert!(
@@ -384,7 +385,7 @@ fn replay(trade_only: bool) -> (ReplayStats, Vec<CierreEsperado>) {
 }
 
 fn comprobar_panel(trade_only: bool) {
-    let (stats, cierres) = replay(trade_only);
+    let (stats, cierres) = ejecutar_fixture(trade_only);
     let modo = if trade_only { "trade-only" } else { "libro" };
     let fees: f64 = cierres.iter().map(|c| c.entry_fee + c.exit_fee).sum();
     let gross: f64 = cierres.iter().map(|c| c.gross).sum();
@@ -455,6 +456,16 @@ fn comprobar_panel(trade_only: bool) {
     assert_eq!(
         stats.wins_gross, wins_gross,
         "{modo}: WR antes de comisiones usa el bruto"
+    );
+    // Cada cierre del fixture trae su recibo: ninguno queda fuera del panel.
+    assert_eq!(
+        stats.closes_without_receipt, 0,
+        "{modo}: cierres sin recibo"
+    );
+    assert_eq!(
+        stats.wr_gross().to_bits(),
+        (wins_gross as f64 / cierres.len() as f64).to_bits(),
+        "{modo}: WR bruto sobre los cierres con recibo"
     );
     let dias = stats.metrics.span_days;
     assert!(dias > 0.0, "{modo}: span ejecutado");

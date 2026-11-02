@@ -16,6 +16,13 @@ pub use tick_replayer::*;
 /// DEBE usar STATS_LEN.
 pub const STATS_LEN: usize = 8;
 
+/// LC-F0-20: ranura OPCIONAL de `out_stats` con los cierres que el núcleo
+/// devolvió sin recibo de comisiones. Esos cierres no entran en el bruto
+/// (`out_stats[5]`) ni en su WR (`out_stats[7]`); jamás se les supone una
+/// tarifa. El contrato mínimo sigue siendo `STATS_LEN` (FFI incluida): sólo la
+/// escribe el llamador que reserva `STATS_LEN + 1`.
+pub const STAT_CIERRES_SIN_RECIBO: usize = STATS_LEN;
+
 #[cfg(test)]
 mod golden_ledger_oracle {
     use god_engine_core::{GodEngineCore, close_accounting::LocalCloseAccounting};
@@ -34,6 +41,9 @@ mod golden_ledger_oracle {
         cash_after_entry: f64,
         entry: Option<PositionSnapshot>,
         receipt: Option<LocalCloseAccounting>,
+        /// LC-F0-20: recibo que el runner tomó del núcleo tras el evento
+        /// (lo consume también su panel); se entrega antes de `observe`.
+        pending_receipt: Option<LocalCloseAccounting>,
         slot: Option<usize>,
         entries: usize,
         closes: usize,
@@ -58,6 +68,7 @@ mod golden_ledger_oracle {
                 cash_after_entry: f64::NAN,
                 entry: None,
                 receipt: None,
+                pending_receipt: None,
                 slot: None,
                 entries: 0,
                 closes: 0,
@@ -117,6 +128,12 @@ mod golden_ledger_oracle {
                 context.push_str(&format!(" {name}={value:.17e}/0x{:016x}", value.to_bits()));
             }
             context
+        }
+
+        /// LC-F0-20: el runner toma el recibo una sola vez y lo comparte con
+        /// el oráculo; `observe` sigue exigiendo que no quede otro en el núcleo.
+        pub(super) fn hand_over_receipt(&mut self, receipt: Option<LocalCloseAccounting>) {
+            self.pending_receipt = receipt;
         }
 
         fn require(&self, valid: bool, label: &str) -> Result<(), String> {
@@ -225,7 +242,7 @@ mod golden_ledger_oracle {
                 self.cash_after_entry = self.cash;
             }
 
-            let receipt = core.take_local_close_accounting(coin_id);
+            let receipt = self.pending_receipt.take();
             if let Some((is_long, returned_net, quantity)) = closed_order {
                 self.require(
                     self.entries == 1 && self.closes == 0,
@@ -459,6 +476,9 @@ pub fn run_backtest_native(
         out_stats[5] = 0.0;
         out_stats[6] = 0.0;
         out_stats[7] = 0.0;
+        if let Some(sin_recibo) = out_stats.get_mut(STAT_CIERRES_SIN_RECIBO) {
+            *sin_recibo = 0.0; // sin barras no hay cierres
+        }
         return 0;
     }
 
@@ -480,13 +500,15 @@ pub fn run_backtest_native(
     #[cfg(test)]
     let mut golden_oracle = (symbol == "GOLDEN").then(|| golden_ledger_oracle::Oracle::new(initial_capital));
 
-    let mut gross_wins = 0;
     let mut net_wins = 0;
     let mut trades = 0;
-    let mut gross_pnl_sum = 0.0;
     let mut net_pnl_sum = 0.0;
-    let mut fees_est_sum = 0.0;
-    // Fee estimado por trade: qty × precio_barra × fee medio.
+    // LC-F0-20: bruto y WR antes de comisiones con lo que cobró el núcleo en
+    // cada cierre (su recibo), no con `qty × close × avg_fee_est`, que suponía
+    // salida taker al cierre de la barra y entrada al mismo precio.
+    let mut panel = booktick_replay::PanelDeRecibos::default();
+    // Estimación de la comisión de salida AÚN NO PAGADA de lo que sigue
+    // abierto (equity del drawdown y MTM terminal); ya no entra en el panel.
     // R7-8 (des-rigidización por DERIVACIÓN): el literal D-394 (0.0010,
     // VIP0 taker roundtrip) se deriva ahora del SPEC REGISTRADO del
     // símbolo — roundtrip taker = taker_fee × 2. Con el spec sintético
@@ -776,6 +798,8 @@ pub fn run_backtest_native(
                 &omni_sim,
                 sim_is_buyer_maker,
             );
+            // LC-F0-20: el recibo del cierre vive hasta la próxima llamada al núcleo.
+            let recibo = core.take_local_close_accounting(target_coin_id);
 
             // F1-020 (Ola Ω153): Envolvente del host disparada POR ORDEN sobre la ranura
             // resonante específica recién abierta (sustituye pos_was_open que silenciaba slots 1/2).
@@ -806,6 +830,7 @@ pub fn run_backtest_native(
 
             #[cfg(test)]
             if let Some(oracle) = golden_oracle.as_mut() {
+                oracle.hand_over_receipt(recibo);
                 let validation = oracle.observe(
                     &mut core, target_coin_id, event_ts_ms, sim_bid, sim_ask, new_order, closed_order,
                 );
@@ -823,20 +848,17 @@ pub fn run_backtest_native(
                 if trades < out_pnl.len() {
                     out_pnl[trades] = net_pnl;
                 }
-                let fees_est = qty * current_close * avg_fee_est;
-                fees_est_sum += fees_est;
-                gross_pnl_sum += net_pnl + fees_est;
                 net_pnl_sum += net_pnl;
-                if net_pnl + fees_est > 0.0 {
-                    gross_wins += 1;
-                }
+                panel.registrar(
+                    net_pnl,
+                    booktick_replay::recibo_del_cierre(recibo, event_ts_ms, qty),
+                );
                 if net_pnl > 0.0 {
                     net_wins += 1;
                 }
                 trades += 1;
             }
         }
-        let _ = fees_est_sum; // expuesto vía stats[7]/stats[5] abajo
 
         // F3.2: el delta de ESTA vela queda disponible para la SIGUIENTE.
         prev_delta = delta;
@@ -897,8 +919,11 @@ pub fn run_backtest_native(
         }
     }
 
-    let gross_win_rate = if trades > 0 {
-        gross_wins as f64 / trades as f64
+    // LC-F0-20: el WR antes de comisiones sólo existe para los cierres con
+    // recibo (los únicos con bruto conocido).
+    let cierres_con_recibo = (trades as u64).saturating_sub(panel.sin_recibo);
+    let gross_win_rate = if cierres_con_recibo > 0 {
+        panel.wins_gross as f64 / cierres_con_recibo as f64
     } else {
         0.0
     };
@@ -947,8 +972,8 @@ pub fn run_backtest_native(
     };
     out_stats[3] = if max_dd.is_finite() { max_dd } else { 0.0 };
     out_stats[4] = if sharpe.is_finite() { sharpe } else { 0.0 };
-    out_stats[5] = if gross_pnl_sum.is_finite() {
-        gross_pnl_sum
+    out_stats[5] = if panel.gross.is_finite() {
+        panel.gross
     } else {
         0.0
     };
@@ -962,6 +987,9 @@ pub fn run_backtest_native(
     } else {
         0.0
     };
+    if let Some(sin_recibo) = out_stats.get_mut(STAT_CIERRES_SIN_RECIBO) {
+        *sin_recibo = panel.sin_recibo as f64;
+    }
 
     #[cfg(test)]
     if let Some(oracle) = golden_oracle.as_ref() {
@@ -1291,6 +1319,54 @@ mod tests {
         assert!(out_stats[2] > 0.0, "El capital final debe ser positivo");
         assert!(out_stats[3] >= 0.0, "El Max Drawdown no puede ser negativo");
         let _ = trades;
+    }
+
+    /// LC-F0-20: la ranura opcional de cierres sin recibo sólo se escribe si
+    /// el buffer la tiene, y no altera las `STATS_LEN` estadísticas.
+    #[test]
+    fn lc_f0_20_ranura_opcional_de_cierres_sin_recibo() {
+        let n = 100;
+        let closes: Vec<f64> = (0..n)
+            .map(|i| 60000.0 + (i as f64 * 0.1).sin() * 10.0)
+            .collect();
+        let highs: Vec<f64> = closes.iter().map(|p| p + 5.0).collect();
+        let lows: Vec<f64> = closes.iter().map(|p| p - 5.0).collect();
+        let volumes = vec![100.0; n];
+        let cfg = SuperGenotype::default();
+        let mut pnl_corto = vec![0.0; n];
+        let mut corto = vec![0.0; STATS_LEN];
+        let trades_corto = run_backtest_native(
+            &closes,
+            &highs,
+            &lows,
+            &volumes,
+            &cfg,
+            &mut pnl_corto,
+            &mut corto,
+            "BTCUSDT",
+            13.0,
+        );
+        let mut pnl_largo = vec![0.0; n];
+        let mut largo = vec![f64::NAN; STATS_LEN + 1];
+        let trades_largo = run_backtest_native(
+            &closes,
+            &highs,
+            &lows,
+            &volumes,
+            &cfg,
+            &mut pnl_largo,
+            &mut largo,
+            "BTCUSDT",
+            13.0,
+        );
+        assert_eq!(trades_corto, trades_largo);
+        for i in 0..STATS_LEN {
+            assert_eq!(corto[i].to_bits(), largo[i].to_bits(), "stat[{i}]");
+        }
+        assert_eq!(
+            largo[STAT_CIERRES_SIN_RECIBO], 0.0,
+            "cada cierre del núcleo trae su recibo"
+        );
     }
 
     #[test]

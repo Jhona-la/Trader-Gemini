@@ -531,10 +531,17 @@ fn print_window(
         capital_text(s.final_capital),
         EquityPct(equity.equity_return)
     );
+    // LC-F0-20: bruto y comisiones del recibo de cada cierre del núcleo.
     println!(
-        "   PnL cerrado bruto: ${:+.4} · fees est: ${:.4} · neto: ${:+.4}",
+        "   PnL cerrado bruto: ${:+.4} · fees cobradas: ${:.4} · neto: ${:+.4}",
         s.gross_pnl, s.fees_est, s.net_pnl
     );
+    if s.closes_without_receipt > 0 {
+        println!(
+            "   AVISO cierres sin recibo del núcleo: {} (fuera del bruto, las fees y el WR bruto)",
+            s.closes_without_receipt
+        );
+    }
     // roi_net conserva el significado de cierres; no incluye el MTM abierto.
     let closed_roi = if cap.is_finite() && cap > 0.0 {
         finite_equity_value(s.roi_net(cap))
@@ -545,11 +552,7 @@ fn print_window(
     println!(
         "   WR neto: {:.1}% · WR bruto: {:.1}% · trades: {}",
         s.wr_net() * 100.0,
-        if s.trades > 0 {
-            s.wins_gross as f64 / s.trades as f64 * 100.0
-        } else {
-            0.0
-        },
+        s.wr_gross() * 100.0,
         s.trades
     );
     println!(
