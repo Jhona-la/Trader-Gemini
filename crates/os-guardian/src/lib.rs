@@ -1,5 +1,6 @@
 pub mod anomaly_detector;
 pub mod ebpf_core;
+pub mod icache_sheaf_silicon;
 pub mod large_pages;
 pub mod memory_audit;
 pub mod memory_compaction;
@@ -10,6 +11,10 @@ pub mod simd_crypto;
 pub mod subnormal_control;
 pub mod telemetry;
 
+pub use icache_sheaf_silicon::{
+    CacheAligned128, LamportRing128, PhantomBranchWarmer, PhantomOrderCandidate,
+    PhantomWarmupReport, SPATIAL_PREFETCH_LINE_BYTES,
+};
 pub use large_pages::{LargePageArena, CANONICAL_LARGE_PAGE_SIZE, STANDARD_PAGE_SIZE};
 pub use silicon_topology::{CoreType, CpuTopologyInfo};
 pub use simd_crypto::{constant_time_eq_32, sha256_hmac_stack, sha256_stack, verify_payload_integrity};

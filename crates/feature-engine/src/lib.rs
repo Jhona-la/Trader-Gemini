@@ -4,6 +4,7 @@ pub mod correlation;
 pub mod ewma;
 pub mod entrelazamiento;
 pub mod feynman_path_instanton;
+pub mod grothendieck_sheaves;
 pub mod hawkes;
 pub mod hawkes_cross;
 pub mod hodge_flow;
@@ -32,6 +33,11 @@ pub use ewma::Ewma;
 pub use feynman_path_instanton::{
     FeynmanInstantonEngine, InstantonParams, InstantonRegime, InstantonTunnelingReport,
     MAX_PATH_POINTS,
+};
+pub use grothendieck_sheaves::{
+    AtiyahSingerIndexReport, CellularSheafEngine, CellularSheafReport, GrothendieckSheafParams,
+    SheafLaplacianWorkspace, SheafRestrictionEdge, SheafTopologicalRegime, MAX_SHEAF_EDGES,
+    MAX_SHEAF_VERTICES,
 };
 pub use hawkes::HawkesProcessEngine;
 pub use hodge_flow::{
