@@ -545,6 +545,13 @@ fn evolve_main() {
         best_is_gross_pnl,
         (best_is_gross_pnl / initial_capital) * 100.0
     );
+    // LC-F0-20: el bruto y el WR bruto sólo cuentan cierres con recibo del núcleo.
+    if best_rep.closes_without_receipt > 0 {
+        println!(
+            "   IS AVISO cierres sin recibo del núcleo: {} (fuera del bruto y del WR bruto)",
+            best_rep.closes_without_receipt
+        );
+    }
     println!(
         "   IS Net PnL: ${:.4} (ROI: {:.2}%)",
         best_is_net_pnl,
@@ -620,6 +627,13 @@ fn evolve_main() {
         oos_gross_pnl,
         (oos_gross_pnl / initial_capital) * 100.0
     );
+    // LC-F0-20: el bruto y el WR bruto sólo cuentan cierres con recibo del núcleo.
+    if oos_rep.closes_without_receipt > 0 {
+        println!(
+            "   AVISO cierres sin recibo del núcleo: {} (fuera del bruto y del WR bruto)",
+            oos_rep.closes_without_receipt
+        );
+    }
     println!(
         "   Net PnL       : ${:.4} (ROI: {:.2}%)",
         oos_net_pnl,

@@ -21,6 +21,17 @@ pub const STATS_LEN: usize = 8;
 /// (`out_stats[5]`) ni en su WR (`out_stats[7]`); jamás se les supone una
 /// tarifa. El contrato mínimo sigue siendo `STATS_LEN` (FFI incluida): sólo la
 /// escribe el llamador que reserva `STATS_LEN + 1`.
+///
+/// Hoy ningún llamador del camino nativo la reserva: las tres entradas FFI
+/// fijan el slice en `STATS_LEN`, `polars_evolver` también (y sólo lee
+/// `[0..=3]`), y el T-1/T-2/T-3 usan `[f64; STATS_LEN]`. Quien lea
+/// `out_stats[5]`/`[7]` con ese buffer recibe el bruto de los cierres CON
+/// recibo sin saber si faltó alguno. Es latente: el núcleo escribe el recibo
+/// en el mismo bloque que devuelve el cierre (`take_local_close_accounting`),
+/// así que el contador sólo se movería si un cambio del núcleo rompiera esa
+/// pareja (p. ej. reescalar la cantidad después del recibo). El replay de
+/// libro sí lo expone (`ReplayStats::closes_without_receipt`) y sus binarios
+/// lo avisan.
 pub const STAT_CIERRES_SIN_RECIBO: usize = STATS_LEN;
 
 #[cfg(test)]
@@ -507,8 +518,12 @@ pub fn run_backtest_native(
     // cada cierre (su recibo), no con `qty × close × avg_fee_est`, que suponía
     // salida taker al cierre de la barra y entrada al mismo precio.
     let mut panel = booktick_replay::PanelDeRecibos::default();
-    // Estimación de la comisión de salida AÚN NO PAGADA de lo que sigue
-    // abierto (equity del drawdown y MTM terminal); ya no entra en el panel.
+    // Tasa que se descuenta a lo que sigue abierto (equity del drawdown y MTM
+    // terminal) por la salida AÚN NO PAGADA; ya no entra en el panel. OJO: es
+    // una tasa de IDA Y VUELTA (2 × taker) aplicada a UNA sola pierna, la de
+    // salida: sobrestima esa pierna ×2 frente a taker (el MTM del replay de
+    // libro cobra taker + deslizamiento). Sobrestimación conocida y hallazgo
+    // aparte; no se toca aquí para no mover el capital final ni el drawdown.
     // R7-8 (des-rigidización por DERIVACIÓN): el literal D-394 (0.0010,
     // VIP0 taker roundtrip) se deriva ahora del SPEC REGISTRADO del
     // símbolo — roundtrip taker = taker_fee × 2. Con el spec sintético
