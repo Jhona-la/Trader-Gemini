@@ -405,9 +405,6 @@ mod tests {
     #[test]
     fn posterior_converge_y_lcb_es_conservador() {
         let mut post = EdgePosterior::jeffreys();
-        for _ in 0..0 {
-            post.update(true);
-        }
         // Sin evidencia la LCB no permite operar.
         let env0 = RiskEnvelope {
             posterior: post.clone(),

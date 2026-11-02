@@ -314,3 +314,67 @@ latencia de ida y vuelta de cada orden, publicados con su ventana y su
 incertidumbre en la config viva, y usados por la puerta y por el examen. El
 cálculo de los fills vive en el ejecutor y el host (lease de Kimi): se propone
 en el buzón, con el contrato que lo comprueba.
+
+## 8. Átomo FEE-06a (2026-11-02): el carry de funding mira el calendario
+
+**Qué.** `CoinArena::expected_funding_cost` (quantum-arena, sin lease) es la
+fuente única del coste de funding que la barrera de EV del riesgo (F-A1) suma
+a la fricción. Cobraba E[carry] = d·f·τ/T_F a toda orden, con d = +1 largo,
+−1 corto, f la tasa prevista del próximo asentamiento y T_F = 8 h.
+
+**Por qué es un defecto.** d·f·τ/T_F es el promedio sobre la fase del ciclo,
+correcto si el instante de apertura fuera desconocido. Se conoce: Binance
+asienta a horas fijas UTC (00:00, 08:00 y 16:00 con 8 h). Una orden de un
+minuto abierta 4 h antes del asentamiento no lo cruza y abierta un segundo
+antes paga casi f entero; la ley vieja cobraba a las dos τ/T_F = 1/480 de f.
+La barrera dejaba pasar largos con f > 0 justo antes del asentamiento y
+cobraba de más a los que abren justo después.
+
+**Ley.** Con Δ = lo que falta hasta el próximo asentamiento (estricto: en el
+instante mismo de un asentamiento la orden aún no estaba abierta) y una
+duración de la que sólo se conoce la media τ (la exponencial es la de máxima
+entropía en [0, ∞) con media fijada), la posición sigue abierta en el
+asentamiento k-ésimo con probabilidad e^(−(Δ + k·T)/τ), y
+
+  E[N | Δ] = e^(−Δ/τ) / (1 − e^(−T/τ)),   E[carry] = d·f·E[N | Δ].
+
+Promediada en Δ uniforme sobre (0, T] vale exactamente τ/T: la ley de F-A1
+es la media de ésta. El denominador usa `exp_m1` (estable con τ ≫ T).
+Valores de E[N | Δ] con T = 8 h:
+
+| τ \ Δ | 1 s | 10 min | 1 h | 4 h | 7,9 h | τ/T (F-A1) |
+|---|---|---|---|---|---|---|
+| 1 min | 0,98 | 4,5e-5 | ≈ 0 | ≈ 0 | ≈ 0 | 0,0021 |
+| 1 h | 1,00 | 0,85 | 0,37 | 0,018 | 0,0004 | 0,125 |
+| 4 h | 1,16 | 1,11 | 0,90 | 0,43 | 0,16 | 0,5 |
+| 24 h | 3,53 | 3,50 | 3,38 | 2,99 | 2,54 | 3 |
+
+**Arreglo.** Dos funciones puras en `CoinArena`:
+`proximo_asentamiento_ms(now_ms, intervalo_ms)` (calendario alineado a la
+medianoche UTC; `None` con intervalo 0 o desbordamiento) y
+`asentamientos_esperados(falta_ms, intervalo_ms, tau_ms)` (`None` si una
+entrada no es finita y positiva o el resultado no es finito). La firma de
+`expected_funding_cost`, sus llamadores, el TTL, «sólo se cobra el coste» y
+«sin dato ⇒ 0» no cambian. En replay no hay poller de funding: el carry
+sigue en 0, así que golden y T-1 no se mueven.
+
+**Pruebas.** `crates/quantum-arena/tests/qsr_fee06_funding_fase_contract.rs`
+(7): lejos del asentamiento un horizonte corto no paga; justo antes paga casi
+todo; el promedio en la fase reproduce τ/T (regla del punto medio, error
+relativo ≤ 7,3e-7 para τ ≥ 4 h); monotonía en Δ y en τ; el calendario es el de
+Binance (00:00/08:00/16:00 UTC, estricto en el borde); bordes de la ley; y
+sólo se cobra el coste. RED con la ley vieja: 3 de 5 fallaban (las tres que
+dependen de la fase). GREEN: el contrato 7/7 y quantum-arena lib 155/155;
+`fable_funding_carry_contract` 10/10 (su test exacto pasa a probar la media
+en la fase), riesgo `fable_funding_carry_ev_gate_contract` 7/7 y ejecución
+`adverse_selection_viability_contract` 4/4 (sólo cambian comentarios).
+
+**Límites y lo que queda.**
+
+| Id | Qué | Dueño |
+|---|---|---|
+| FEE-06b | Todo símbolo se cobra con 8 h y hay perpetuos de 4 h y 1 h. El poller del host debe publicar por símbolo `nextFundingTime` (llega en premiumIndex y hoy no se guarda) y `fundingIntervalHours` (`/fapi/v1/fundingInfo`), y el carry usar el asentamiento real. | Kimi (poller, lease A4-T2) |
+| FEE-06c | La duración se modela exponencial de media τ; con salida por tiempo la cola está acotada y E[N] se sobrestima algo para τ ≳ T. Usar la distribución de duraciones medida por banda cuando exista. | átomo de medida |
+| FEE-06d | Más allá del próximo asentamiento se supone la misma tasa f; para τ ≫ T habría que pronosticar la serie de funding. | quien pronostique el funding |
+| FEE-06e | Comentarios con la ley vieja en `src/bin/god_engine.rs:3115` y `crates/god-engine-core/src/lib.rs:3244` (leases ajenos). | Kimi / Codex QRA |
+| FEE-06f | `QuantumOrderRouter` no tiene llamadores de producción y conserva respaldos fijos (0,0002/0,0001) y `unwrap_or_default` en el reloj. | quien lo reclame |

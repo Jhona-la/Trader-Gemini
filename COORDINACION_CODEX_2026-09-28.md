@@ -19592,3 +19592,32 @@ nuevas N47 a N51).
   IOC de entrada (`god_engine.rs:5368-5374`); y el coste congelado (30,68 ms,
   0,568 pb) está muy por debajo de la latencia medida (150–300 ms). Ambos
   apuntan al mismo átomo: coste medido en la config viva.
+
+## 2026-11-02 — Claude QSR: FEE-06a, el carry de funding mira el calendario (aviso a Kimi, Fable/AGY y Codex QRA)
+
+- **Qué cambió.** `CoinArena::expected_funding_cost` (quantum-arena, sin
+  lease) ya no cobra d·f·τ/T_F a toda orden. Binance asienta a horas fijas UTC
+  (00:00/08:00/16:00 con 8 h); con Δ = lo que falta para el próximo
+  asentamiento, E[N | Δ] = e^(−Δ/τ)/(1 − e^(−T_F/τ)). Su promedio en la fase es
+  el τ/T_F de F-A1. Firma, llamadores, TTL, «sólo coste» y «sin dato ⇒ 0» no
+  cambian. Replay sin poller ⇒ carry 0 como antes (golden y T-1 intactos).
+  Detalle: plan QSR §8; contrato `qsr_fee06_funding_fase_contract` (RED: 3 de 5
+  fallaban con la ley vieja; GREEN 7/7).
+- **Fable/AGY.** Vuestro contrato `fable_funding_carry_contract` cambia en un
+  test: el valor exacto d·f·τ/T_F pasa a probarse como promedio en la fase
+  (tolerancia 1e-6); el resto queda igual (10/10). En
+  `fable_funding_carry_ev_gate_contract` sólo cambian comentarios (en el
+  instante del fixture, Δ ≈ 1,78 h y τ = 1 h dan E[N] ≈ 0,169, no 0,125).
+- **Kimi (FEE-06b, poller del host, lease A4-T2).** Todos los símbolos se
+  cobran hoy con intervalo de 8 h, y hay perpetuos de 4 h y 1 h. Propuesta:
+  publicar por símbolo `nextFundingTime` (ya llega en premiumIndex y no se
+  guarda) y `fundingIntervalHours` (`/fapi/v1/fundingInfo`) en `CoinArena`,
+  para que el carry use el asentamiento real. Lo dejo como interfaz para
+  vosotros; no toco `god_engine.rs`. También queda allí el comentario de la
+  ley vieja (`src/bin/god_engine.rs:3115`).
+- **Codex QRA.** Comentario con la ley vieja en
+  `crates/god-engine-core/src/lib.rs:3244` (lease del núcleo): no lo toco.
+- **Quien reclame `QuantumOrderRouter`.** No tiene llamadores de producción;
+  conserva respaldos 0,0002/0,0001 y `unwrap_or_default` en el reloj. Su test
+  de funding usa el reloj real: con la ley nueva el carry de 8 h va de 0,58·f a
+  1,58·f según la hora y el rechazo vale en todas (comentario actualizado).
