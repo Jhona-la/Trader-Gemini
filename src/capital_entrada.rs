@@ -13,6 +13,12 @@
 //!
 //! Para librerías y daemons (que no deben matar el proceso) existe
 //! [`validar`], que devuelve `Option` y deja la decisión al llamador.
+//!
+//! EXCEPCIÓN conocida: `continuous_evolution_backtest` NO usa este módulo
+//! — su fuente vive bajo `crates/backtest-engine/src/bin/`, así que cargo
+//! lo compila DOS veces (bin del raíz por [[bin]] Y bin auto-descubierto
+//! de backtest-engine, que no ve `quantum_engine`); su puerta es inline y
+//! equivalente (GLM-178).
 
 /// Valida un texto de capital (CLI o env) sin tocar el proceso:
 /// `Some(c)` sólo si parsea a un número finito y estrictamente positivo.
