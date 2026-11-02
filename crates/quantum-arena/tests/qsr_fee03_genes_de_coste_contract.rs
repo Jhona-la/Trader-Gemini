@@ -58,14 +58,59 @@ fn fee03_la_mutacion_copia_los_genes_de_coste_del_padre() {
 #[test]
 fn fee03_control_los_genes_que_deciden_si_mutan() {
     // Sin este control, un mutate que no mutara nada pasaría el test de arriba.
+    // Se mira un gen anterior al slot 68 y otro posterior al 69: quitar dos
+    // llamadas al generador desplaza los sorteos de los genes que vienen
+    // después, y deben seguir mutando.
     let padre = incumbente();
-    let mut alguno_muta = false;
+    let (mut antes_muta, mut despues_muta) = (false, false);
     for semilla in 0..64u64 {
         let hijo = padre.mutate_cmaes_seeded(1.0, semilla);
-        alguno_muta |= hijo.global_leverage.to_bits() != padre.global_leverage.to_bits()
+        antes_muta |= hijo.global_leverage.to_bits() != padre.global_leverage.to_bits()
             || hijo.max_fee_pct.to_bits() != padre.max_fee_pct.to_bits();
+        despues_muta |= hijo.margin_cushion_pct.to_bits() != padre.margin_cushion_pct.to_bits()
+            || hijo.temporal_scale.to_bits() != padre.temporal_scale.to_bits();
     }
-    assert!(alguno_muta, "los genes vivos sí deben mutar");
+    assert!(
+        antes_muta,
+        "los genes vivos anteriores al slot 68 sí deben mutar"
+    );
+    assert!(
+        despues_muta,
+        "los genes vivos posteriores al slot 69 sí deben mutar"
+    );
+}
+
+#[test]
+fn fee03_dos_fundadores_se_miden_con_un_solo_coste() {
+    // walkforward_evolver siembra con la semilla del almacén y con
+    // `new_baseline`. Como la mutación copia el coste del padre, sin igualarlo
+    // cada linaje conservaría el de su fundador.
+    let semilla = incumbente();
+    let base = SuperGenotype::new_baseline(0.0002, 0.0005);
+    assert_ne!(
+        genes_de_coste(&base),
+        genes_de_coste(&semilla),
+        "precondición: los fundadores tienen costes distintos"
+    );
+    let base_igualada = base.clone().con_coste_de(&semilla);
+    assert_eq!(genes_de_coste(&base_igualada), genes_de_coste(&semilla));
+    // El resto del genoma de la base no cambia.
+    let (mut vb, mut vi) = (base.to_vector(), base_igualada.to_vector());
+    vb[SLOT_LATENCIA] = 0.0;
+    vb[SLOT_DESLIZAMIENTO] = 0.0;
+    vi[SLOT_LATENCIA] = 0.0;
+    vi[SLOT_DESLIZAMIENTO] = 0.0;
+    assert_eq!(
+        vb.iter().map(|x| x.to_bits()).collect::<Vec<_>>(),
+        vi.iter().map(|x| x.to_bits()).collect::<Vec<_>>(),
+        "con_coste_de sólo toca los slots 68 y 69"
+    );
+    // Los descendientes de ambos linajes comparten el coste del examinador.
+    for semilla_rng in 0..32u64 {
+        let a = semilla.mutate_cmaes_seeded(0.20, semilla_rng);
+        let b = base_igualada.mutate_cmaes_seeded(0.20, semilla_rng);
+        assert_eq!(genes_de_coste(&a), genes_de_coste(&b));
+    }
 }
 
 #[test]

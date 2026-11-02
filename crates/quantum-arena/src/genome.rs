@@ -910,6 +910,21 @@ impl SuperGenotype {
         g
     }
 
+    /// QSR FEE-03 — copia de `otro` los genes del MODELO DE COSTE
+    /// (`latency_penalty_ms`, vec[68]; `base_slippage_floor`, vec[69]) y deja
+    /// el resto igual. Una población que mezcla fundadores (p. ej. la semilla
+    /// del almacén y `new_baseline`) debe medirse con un solo coste, el del
+    /// examinador: como la mutación copia el coste del padre, cada linaje
+    /// conservaría para siempre el de su fundador.
+    pub fn con_coste_de(mut self, otro: &Self) -> Self {
+        self.latency_penalty_ms = otro.latency_penalty_ms;
+        self.base_slippage_floor = otro.base_slippage_floor;
+        self
+    }
+
+    /// Genoma aleatorio. QSR FEE-03: nace con el coste de la línea base
+    /// (`SuperGenotype::default()`), no sorteado. Si se mezcla con mutantes
+    /// de un incumbente, iguálese su coste con [`Self::con_coste_de`].
     pub fn new_random() -> Self {
         let coste_base = Self::default();
         let mut g = Self {

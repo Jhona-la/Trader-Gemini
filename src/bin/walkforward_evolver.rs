@@ -259,8 +259,13 @@ fn main() {
     );
     println!("════════════════════════════════════════════════════════════════════");
 
-    let mut candidates: Vec<SuperGenotype> =
-        vec![seed.clone(), sanitize(SuperGenotype::new_baseline(0.0002, 0.0005))];
+    // QSR FEE-03: la línea base entra con el coste de la semilla. La mutación
+    // copia el coste del padre, así que sin esto los dos linajes competirían
+    // con costes distintos (la semilla del almacén frente a e·5 ms y 1 pb).
+    let mut candidates: Vec<SuperGenotype> = vec![
+        seed.clone(),
+        sanitize(SuperGenotype::new_baseline(0.0002, 0.0005).con_coste_de(&seed)),
+    ];
     while candidates.len() < population {
         candidates.push(sanitize(seed.mutate_cmaes(0.20)));
     }
