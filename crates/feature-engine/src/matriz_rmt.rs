@@ -174,12 +174,29 @@ pub struct MatrizCorrelacionEwma {
 }
 
 impl MatrizCorrelacionEwma {
-    /// # Panics
-    /// Si n < 2 o period no es finito ≥ 1 (para configuración externa usar
-    /// [`Self::try_new`]). No es un constructor de hilo crítico: el
-    /// llamador del engine construye en arranque.
+    /// Constructor sin pánico (`RB-P1` zero-panic ratchet): sanea `n < 2` a `2`
+    /// y `period` inválido a `20.0`. Para validación estricta usar [`Self::try_new`].
     pub fn new(n: usize, period: f64) -> Self {
-        Self::try_new(n, period).expect("n >= 2 y period finito >= 1")
+        let n_safe = n.max(2);
+        let p_safe = if period.is_finite() && period >= 1.0 {
+            period
+        } else {
+            20.0
+        };
+        let alpha = 2.0 / (p_safe + 1.0);
+        Self {
+            n: n_safe,
+            alpha,
+            mean: (0..n_safe).map(|_| Ewma::from_period(p_safe)).collect(),
+            var: (0..n_safe).map(|_| Ewma::from_period(p_safe)).collect(),
+            cov: (0..n_safe * n_safe)
+                .map(|_| Ewma::from_period(p_safe))
+                .collect(),
+            last: vec![0.0; n_safe],
+            rets: vec![0.0; n_safe],
+            desv: vec![0.0; n_safe],
+            corte: 0,
+        }
     }
 
     pub fn try_new(n: usize, period: f64) -> Result<Self, &'static str> {
