@@ -27,6 +27,7 @@ pub mod simd_neural_network;
 pub mod simd_yoshida_replicator;
 pub mod soa_shadow_otoc;
 pub mod spectral;
+pub mod spot_futures_abl_iceberg;
 pub mod tensor_ring;
 pub mod transfer_entropy;
 pub mod tropical_kdv_soliton;
@@ -94,6 +95,11 @@ pub use soa_shadow_otoc::{
     QuantumOtocReport, SoaOrderBookL2, SoaShadowOtocMasterEngine, SoaShadowOtocReport, OTOC_OP_DIM,
 };
 pub use spectral::SpectralCycleEngine;
+pub use spot_futures_abl_iceberg::{
+    AblWeakValueReport, AharonovBergmannLebowitzEngine, IcebergHunterL3Engine, IcebergL3Report,
+    SpotFuturesAblIcebergMasterEngine, SpotFuturesAblIcebergReport, SpotFuturesAblRegime,
+    SpotFuturesLeadLagEngine, SpotFuturesLeadLagReport, ABL_STATE_DIM, LEAD_LAG_WINDOW,
+};
 pub use tensor_ring::TensorRing;
 pub use tropical_kdv_soliton::{
     tropical_add, tropical_mul, KdvSolitonIstAnalyzer, KdvSolitonReport, TropicalKdvCycleReport,
