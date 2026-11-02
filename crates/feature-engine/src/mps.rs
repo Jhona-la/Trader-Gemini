@@ -553,8 +553,9 @@ pub fn dmrg_ising(
     // H = −h·σˣ con las primitivas del módulo (API total, sin atajo físico).
     if l == 1 {
         let mut h1 = vec![0.0f64; 4];
-        h1[0 * 2 + 1] = -h;
-        h1[1 * 2 + 0] = -h;
+        // Matriz 2×2 en orden de filas: (0, 1) es el índice 1 y (1, 0) el 2.
+        h1[1] = -h;
+        h1[2] = -h;
         let espectro = jacobi_simetrico(&h1, 2, 1e-18)
             .ok_or(MpsError::NormaDegenerada { valor: f64::NAN })?;
         let energia = espectro.iter().cloned().fold(f64::INFINITY, f64::min);
