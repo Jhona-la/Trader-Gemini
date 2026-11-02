@@ -1,4 +1,3 @@
-pub mod capital_entrada;
 pub mod config;
 pub mod dark_alpha_router;
 pub mod dark_alpha_sniffer;

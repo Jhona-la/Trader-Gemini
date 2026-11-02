@@ -76,29 +76,13 @@ fn daily_report(
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    // GLM-178 (contrato de Kimi V33): paridad de capital del operador
-    // (§25) — puerta fail-closed ANTES de cualquier efecto secundario.
-    // NOTA GLM-179: este archivo es compilado DOS veces (bin del paquete
-    // raíz por [[bin]] Y bin auto-descubierto de backtest-engine), así que
-    // NO puede usar quantum_engine::capital_entrada — la puerta vive inline
-    // aquí y el módulo compartido sirve a los bins exclusivos del raíz.
-    let capital_inicial: f64 = match std::env::var("INITIAL_CAPITAL") {
-        Ok(crudo) => match crudo.trim().parse::<f64>() {
-            Ok(c) if c.is_finite() && c > 0.0 => c,
-            _ => {
-                eprintln!(
-                    "ERROR: INITIAL_CAPITAL ilegible ({crudo:?}): se exige un número finito > 0. Sin capital válido no hay backtest (CL-15, paridad §25)."
-                );
-                std::process::exit(2);
-            }
-        },
-        Err(_) => {
-            eprintln!(
-                "ERROR: INITIAL_CAPITAL ausente: exporta el balance real de la wallet (paridad §25, CL-15). Sin defaults silenciosos."
-            );
-            std::process::exit(2);
-        }
-    };
+    // GLM-178 (contrato de Kimi V33) / GLM-180: paridad de capital del
+    // operador (§25) — puerta fail-closed compartida en
+    // quantum_arena::capital_entrada, visible desde las DOS compilaciones
+    // de este bin (raíz por [[bin]] y auto-descubrimiento de
+    // backtest-engine). Fuentes: INITIAL_CAPITAL válido, o el recibo vivo
+    // del engine (economia_live.json, §52) si está fresco; nada más.
+    let capital_inicial: f64 = quantum_arena::capital_entrada::exigir_inicial();
     // E3 — ENTORNO DE GENOMA AISLADO: las promociones de este backtest van a
     // config_dir/genomes/backtest/ y NUNCA contaminan el active.json de demo
     // o producción. La promoción cross-entorno es explícita.

@@ -4,7 +4,8 @@
 //! Continuación del `continuous_capital_contract` (GLM-178, contrato de
 //! Kimi V33): ambos bins caían al 13.0 prohibido («fallback inteligente»
 //! del FIX #1528 y «default sin pánico» respectivamente). Ahora comparten
-//! `quantum_engine::capital_entrada::exigir_inicial()` — UNA puerta.
+//! `quantum_arena::capital_entrada::exigir_inicial()` — UNA puerta (mudada
+//! a quantum-arena en GLM-180: visible también desde backtest-engine).
 //!
 //! Invariante: capital ausente o inválido ⇒ salida no exitosa con
 //! diagnóstico explícito de INITIAL_CAPITAL y CERO artefactos en el
@@ -48,6 +49,8 @@ fn assert_rejected(bin: &str, capital: Option<&str>) {
     let mut command = Command::new(bin);
     command
         .current_dir(&isolated.root)
+        // GLM-180: recibo vivo deshabilitado para rechazo determinista.
+        .env("TG_RECIBO_MAX_EDAD_SECS", "0")
         .env_remove("INITIAL_CAPITAL");
     if let Some(value) = capital {
         command.env("INITIAL_CAPITAL", value);
