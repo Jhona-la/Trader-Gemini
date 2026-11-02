@@ -27,6 +27,7 @@ pub mod simd_yoshida_replicator;
 pub mod spectral;
 pub mod tensor_ring;
 pub mod transfer_entropy;
+pub mod tropical_kdv_soliton;
 pub mod welford;
 
 // Re-exportar primitivas matemáticas O(1)
@@ -82,4 +83,9 @@ pub use simd_yoshida_replicator::{
 };
 pub use spectral::SpectralCycleEngine;
 pub use tensor_ring::TensorRing;
+pub use tropical_kdv_soliton::{
+    tropical_add, tropical_mul, KdvSolitonIstAnalyzer, KdvSolitonReport, TropicalKdvCycleReport,
+    TropicalKdvEngine, TropicalMaxPlusMatrix, TropicalSolitonRegime, TropicalSpectralReport,
+    KDV_GRID_DIM, TROPICAL_ONE, TROPICAL_ZERO,
+};
 pub use welford::WelfordOnline;

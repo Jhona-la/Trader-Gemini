@@ -1,4 +1,5 @@
 pub mod anomaly_detector;
+pub mod deferred_drop_reaper;
 pub mod ebpf_core;
 pub mod icache_sheaf_silicon;
 pub mod large_pages;
@@ -11,13 +12,18 @@ pub mod simd_crypto;
 pub mod subnormal_control;
 pub mod telemetry;
 
+pub use deferred_drop_reaper::{
+    DeferredDropReaperRing, ReapBatchReport, StaticSignalDispatch, StaticSignalKernel,
+};
 pub use icache_sheaf_silicon::{
     CacheAligned128, LamportRing128, PhantomBranchWarmer, PhantomOrderCandidate,
     PhantomWarmupReport, SPATIAL_PREFETCH_LINE_BYTES,
 };
 pub use large_pages::{LargePageArena, CANONICAL_LARGE_PAGE_SIZE, STANDARD_PAGE_SIZE};
 pub use silicon_topology::{CoreType, CpuTopologyInfo};
-pub use simd_crypto::{constant_time_eq_32, sha256_hmac_stack, sha256_stack, verify_payload_integrity};
+pub use simd_crypto::{
+    constant_time_eq_32, sha256_hmac_stack, sha256_stack, verify_payload_integrity,
+};
 pub use subnormal_control::{SubnormalHardwareController, SubnormalStatus};
 
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -139,7 +145,9 @@ pub fn init_guardian(affinity_mask: usize, max_memory_mb: usize, arena: Arc<Glob
 
     // 5. Supresión activa de subnormales de hardware (FTZ + DAZ)
     if SubnormalHardwareController::enable_suppression() {
-        println!("⚡ [OS-GUARDIAN] Supresión de subnormales de silicio (FTZ/DAZ) activada exitosamente.");
+        println!(
+            "⚡ [OS-GUARDIAN] Supresión de subnormales de silicio (FTZ/DAZ) activada exitosamente."
+        );
     }
 
     #[cfg(not(windows))]
