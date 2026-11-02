@@ -910,7 +910,23 @@ impl SuperGenotype {
         g
     }
 
+    /// QSR FEE-03 — copia de `otro` los genes del MODELO DE COSTE
+    /// (`latency_penalty_ms`, vec[68]; `base_slippage_floor`, vec[69]) y deja
+    /// el resto igual. Una población que mezcla fundadores (p. ej. la semilla
+    /// del almacén y `new_baseline`) debe medirse con un solo coste, el del
+    /// examinador: como la mutación copia el coste del padre, cada linaje
+    /// conservaría para siempre el de su fundador.
+    pub fn con_coste_de(mut self, otro: &Self) -> Self {
+        self.latency_penalty_ms = otro.latency_penalty_ms;
+        self.base_slippage_floor = otro.base_slippage_floor;
+        self
+    }
+
+    /// Genoma aleatorio. QSR FEE-03: nace con el coste de la línea base
+    /// (`SuperGenotype::default()`), no sorteado. Si se mezcla con mutantes
+    /// de un incumbente, iguálese su coste con [`Self::con_coste_de`].
     pub fn new_random() -> Self {
+        let coste_base = Self::default();
         let mut g = Self {
             // F1-085: gen congelado a default canónico neutral (1 - taker*100) en [0.50, 0.99];
             // el cortacircuitos de producción corre a través de freno_duro y d*=0.632 (ADR-0016).
@@ -1031,8 +1047,10 @@ impl SuperGenotype {
             synergy_leverage_boost: rand::rng().random_range(1.0..2.0),
             max_fee_pct: rand::rng().random_range(0.005..0.05),
             kelly_bootstrap_cold: rand::rng().random_range(0.1..1.0),
-            latency_penalty_ms: rand::rng().random_range(5.0..100.0),
-            base_slippage_floor: rand::rng().random_range(0.00005..0.0005),
+            // QSR FEE-03: un genoma aleatorio nace con el coste de la línea base;
+            // sortear el modelo de coste es sortear lo que el candidato se cobra.
+            latency_penalty_ms: coste_base.latency_penalty_ms, // FEE-03
+            base_slippage_floor: coste_base.base_slippage_floor, // FEE-03
             spot_spread_threshold: rand::rng().random_range(0.5..3.0),
             spot_bias_value: rand::rng().random_range(0.01..0.5),
             obi_confidence_fallback: rand::rng().random_range(0.5..0.99),
@@ -1974,8 +1992,12 @@ impl SuperGenotype {
             synergy_leverage_boost: self.synergy_leverage_boost, // LG-21
             max_fee_pct: mutate_val(self.max_fee_pct, 0.005, 0.05),
             kelly_bootstrap_cold: mutate_val(self.kelly_bootstrap_cold, 0.1, 1.0),
-            latency_penalty_ms: mutate_val(self.latency_penalty_ms, 5.0, 100.0),
-            base_slippage_floor: mutate_val(self.base_slippage_floor, 0.00005, 0.0005),
+            // QSR FEE-03: genes del MODELO DE COSTE (latencia y deslizamiento que
+            // cobran la puerta, la física y el MTM del bosque). Cada candidato se
+            // aplica a su propia arena: si mutaran, se juzgaría con su propio coste
+            // y la selección premiaría cobrarse menos. Se copian del padre.
+            latency_penalty_ms: self.latency_penalty_ms, // FEE-03
+            base_slippage_floor: self.base_slippage_floor, // FEE-03
             spot_spread_threshold: self.spot_spread_threshold, // LG-21
             spot_bias_value: self.spot_bias_value, // LG-21
             obi_confidence_fallback: self.obi_confidence_fallback, // LG-21

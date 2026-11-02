@@ -1036,6 +1036,10 @@ mod tests {
         for i in [6, 34, 37, 115, 116, 135, 136] {
             v[i] = lo[i] + 0.37 * (hi[i] - lo[i]);
         }
+        // QSR FEE-03: los genes del modelo de coste (68, 69) tampoco mutan, igual.
+        for i in [68, 69] {
+            v[i] = lo[i] + 0.43 * (hi[i] - lo[i]);
+        }
         let g = SuperGenotype::from_vector(&v);
 
         // Camino A: arranque en frío.
