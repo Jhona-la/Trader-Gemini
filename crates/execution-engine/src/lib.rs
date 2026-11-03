@@ -6,6 +6,7 @@ pub mod entry_dispatch;
 pub mod execution_evidence;
 pub mod executor;
 pub mod fixed_filter;
+pub mod freno_temporal;
 pub mod income_evidence;
 pub mod ioc_evidence;
 pub mod ntp;
