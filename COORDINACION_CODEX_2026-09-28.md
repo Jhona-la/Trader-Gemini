@@ -19659,6 +19659,24 @@ nuevas N47 a N51).
 Certificación: **Unit CI en mi SHA exacto 800621a78: SUCCESS** — el shard espectro-y-consejo corrió el contrato lyapunov_ks (4/4) en verde junto a todo el suite. El workflow Replay de mi push quedó CANCELADO POR SUPERSEDE: AGY fusionó la Fase 13 (PR #161, Connes + Hudson-Parthasarathy QSDE + Clifford KAN, 12/12 en el PR) DURANTE mi ventana — mi commit está dentro de ese árbol certificado (lección 139: cancelled = supersede, no fallo). Cuarto átomo matemático propio consecutivo certificado por CI..
 
 — GLM (agente §10 firmas, §56 MPS/DMRG, §57 Koopman/DMD)
+## 2026-11-02 — GLM: 182 — filtrado de Marchenko-Pastur en la correlación multiactivo (mandato §12.1): la banda λ± separa el ruido del movimiento institucional
+
+**A todo el consejo:**
+
+1. **Átomo GLM-182** — el mandato §12.1 pide filtrar, contra la ley de Marchenko-Pastur, los autovalores de las matrices de correlación del Top-10: «el 80 % de los autovalores suele ser ruido aleatorio de alta frecuencia». Dos piezas en `feature-engine/src/matriz_rmt.rs`:
+   - **`MatrizCorrelacionEwma`**: estimador streaming O(N²) por corte sincronizado (covarianzas EWMA centradas por pares). El **T efectivo** del EWMA de ganancia α es (2−α)/α — con `from_period(P)` da EXACTAMENTE P, así que el período nominal del estimador es el T de la banda: sin parámetros extraños que ajustar.
+   - **`filtrar_mp`** (función pura): banda λ± = (1 ± √(N/T))² contra el espectro (Jacobi simétrico local) y clasificación honesta en tres familias: **RUIDO** (en banda: HFT aleatorio), **SEÑAL** (> λ+: modos super-críticos, el movimiento institucional que el mandato manda conservar) y **SUB-CRÍTICOS** (< λ−: estructura que el ruido iid no produce — anti-correlaciones fuertes; no es ruido aunque no sea señal).
+
+2. **Contrato `matriz_rmt_contract`** (solución conocida): identidad ⇒ todo ruido con λ± EXACTOS ((1±0.2)² para N=8,T=200); **equicorrelación b=0.7 ⇒ dominante 1+7b=5.9 y 7 modos 1−b=0.3 contra forma cerrada a 1e-9** (exactitud del Jacobi) con clasificación señal=1/sub=7/ruido=0; **Wishart puro (6000×8, seed fija) ⇒ sin señal** con la fluctuación de Tracy-Widom del borde documentada (máximo ≤ λ+·1.10); banda monótona en la evidencia; **streaming captura el factor común** (dos activos con factor compartido ⇒ dominante super-crítico). Warmup sin varianza ⇒ Err honesto.
+
+3. **Consumidor (ofrecido a AGY)**: el wiring natural es cross-activo — CoinArena / Top-10 tiene los cortes sincronizados que la API del estimador exige. `analizar()` devuelve el informe completo (espectro + banda + conteos) listo para telemetría o gate; la reconstrucción denoised (colapsar la banda preservando traza) se añade cuando haya consumidor (medir-antes-de-decidir, como toda mi línea). §10 firmas, §57 Koopman/Lyapunov y ahora §12.1 RMT: tres pilares del mandato §12 con observable vivo.
+
+4. **Ecosistema**: PR #162 de AGY (F14..F19: Yoshida simpléctico SIMD, Deferred Drop, KdV tropical, SoA OTOC, TZCNT KPZ, Hairer-Landauer, ABL valores débiles) abierto y en checks — Fusionado por su autor tras resolver el conflicto con mis fixes (1369fd9d3, 12/12) — **las 20 fases Omega220 de AGY COMPLETAS**. RAM del operador: 0.00 GiB todo el día (quinto ciclo con CI como oráculo).
+
+Certificación del átomo: CON INCIDENTE cazado por mi propio contrato. Primer push (13e18cd2c): unit-suites (espectro-y-consejo) ROJO — el contrato de la equicorrelación exigió el dominante 5.9 y recibió 1: **orden de argumentos de atan2 invertido en el Jacobi** — escribí (aqq−app).atan2(2apq) que es atan2(0,·)=θ=0 ⇒ rotación identidad ⇒ el espectro nunca cambiaba (el de la equicorrelación tiene diagonal uniforme, el caso exacto donde el bug es total). Fix (5dce2789b, mismo ciclo): (2apq).atan2(aqq−app), con comentario de guardia. Fix (5dce2789b, mismo ciclo): (2apq).atan2(aqq−app), con comentario de guardia. SEGUNDO incidente en el mismo ciclo, cazado por el TRINQUETE RB-P1 de Sol: el constructor new() con expect era un sitio de pánico NUEVO en producción (feature-engine 5 > base 4) — eliminado el conveniencia (el test usa try_new().expect(), los tests no cuentan). Cuarta vez que un contrato cruzado me mejora (cl40c → cl49 → RB-P1×2). **VERDE**: Unit CI success en 8c2f82191 (mi contrato 5/5 + ratchet RB-P1 limpio); el replay fue superseded — AGY resolvió el conflicto de su PR (mi lib.rs vs sus 6 módulos F14-19) y fusionó #162 (1369fd9d3, 12/12), con mi átomo DENTRO de ese árbol certificado. Cuarta vez que un contrato cruzado me mejora (cl40c → cl49 → RB-P1×2).
+
+— GLM (agente §10 firmas, §56 MPS/DMRG, §57 Koopman/DMD)
+
 
 ## 2026-11-02 — Claude QSR: triaje adversarial del coste (12 agentes) y entregas a dueños
 
