@@ -63,6 +63,189 @@ pub fn compute_ensemble_boost(active_voters: usize, total_registered: usize) -> 
     compute_ensemble_boost_effective(effective_count)
 }
 
+/// F20-001 / MUE-02: Dimensión máxima de fuentes únicas en stack para calibración RMT
+/// (mismo tope de 32 fuentes que el agrupador del consenso).
+pub const RMT_MAX_SOURCES: usize = 32;
+/// F20-001 / MUE-02: Ventana circular de vectores de voto por fuente (T de la banda MP).
+pub const RMT_WINDOW_SAMPLES: usize = 64;
+/// F20-001 / MUE-02: Mínimo de vectores muestreados para estimar el espectro.
+pub const RMT_MIN_SAMPLES: usize = 16;
+/// F20-001 / MUE-02: Diezmado del muestreo: 1 vector cada `RMT_SAMPLE_STRIDE` evaluaciones
+/// de consenso (cualquier moneda). Votos de ticks contiguos están fuertemente
+/// autocorrelacionados; muestrear cada tick inflaría T nominal sobre el T efectivo y
+/// estrecharía artificialmente la banda de Marchenko-Pastur.
+pub const RMT_SAMPLE_STRIDE: u64 = 16;
+/// Columna sin seguimiento (fuente número 33 en adelante).
+const RMT_SIN_COLUMNA: usize = usize::MAX;
+
+/// F20-001 / MUE-02: ventana circular de vectores de voto CON SIGNO por fuente única.
+///
+/// Columna = fuente (nombre internado), no instancia ni slot efímero del agrupador:
+/// el slot del agrupador depende de qué fuentes fueron operables en esa evaluación y
+/// mezclaría fuentes distintas en la misma columna. Una fuente muda u operable-sin-voto
+/// aporta 0.0: con signos independientes E[A·B] = 0 aunque co-silencien, de modo que el
+/// cero no fabrica correlación; dos clones que hablan y callan juntos con el mismo signo
+/// sí quedan correlacionados, que es justo lo que el boost no debe pagar dos veces.
+struct RmtVoterWindow {
+    samples: [[f64; RMT_MAX_SOURCES]; RMT_WINDOW_SAMPLES],
+    head: usize,
+    count: usize,
+}
+
+impl RmtVoterWindow {
+    const fn new() -> Self {
+        Self {
+            samples: [[0.0; RMT_MAX_SOURCES]; RMT_WINDOW_SAMPLES],
+            head: 0,
+            count: 0,
+        }
+    }
+
+    #[inline]
+    fn push_row(&mut self, row: [f64; RMT_MAX_SOURCES]) {
+        self.samples[self.head] = row;
+        self.head = (self.head + 1) % RMT_WINDOW_SAMPLES;
+        if self.count < RMT_WINDOW_SAMPLES {
+            self.count += 1;
+        }
+    }
+}
+
+/// F20-001 / MUE-02: Eigensolver cíclico de Jacobi 100% en stack (`M <= 32`) + filtrado
+/// de Marchenko-Pastur con razón de participación inversa (IPR) preservadora de traza.
+///
+/// Devuelve `Some((rmt_ratio, n_eff_rmt, mp_upper_edge))` donde:
+/// - `mp_upper_edge = (1 + sqrt(m / t_obs))^2`
+/// - Si `lambda_max <= mp_upper_edge`, no existe colinealidad estadísticamente distinguible
+///   del ruido muestral de Wishart alrededor de la identidad (`ratio = 1.0`, `n_eff = m`).
+/// - Si existen modos colineales `lambda_i > mp_upper_edge`, los modos del bulk `<= mp_upper_edge`
+///   se contraen a su media isotrópica preservando `Tr(C) = m`, y los grados de libertad efectivos
+///   independientes son `n_eff_rmt = m^2 / sum_i(lambda_tilde_i^2) in [1, m]`.
+pub fn compute_rmt_voter_effective_bets_ratio(
+    corr_flat: &[f64],
+    m: usize,
+    t_obs: usize,
+) -> Option<(f64, f64, f64)> {
+    if !(2..=RMT_MAX_SOURCES).contains(&m) || t_obs <= m || corr_flat.len() != m * m {
+        return None;
+    }
+    let tol = 1e-9 * (m as f64);
+    let mut a = [0.0f64; RMT_MAX_SOURCES * RMT_MAX_SOURCES];
+    for i in 0..m {
+        let c_ii = corr_flat[i * m + i];
+        if !c_ii.is_finite() || (c_ii - 1.0).abs() > 1e-5 {
+            return None;
+        }
+        a[i * m + i] = 1.0;
+        for j in (i + 1)..m {
+            let c_ij = corr_flat[i * m + j];
+            let c_ji = corr_flat[j * m + i];
+            if !c_ij.is_finite()
+                || !c_ji.is_finite()
+                || c_ij.abs() > 1.0 + 1e-5
+                || (c_ij - c_ji).abs() > 1e-5
+            {
+                return None;
+            }
+            let sym = 0.5 * (c_ij + c_ji);
+            a[i * m + j] = sym;
+            a[j * m + i] = sym;
+        }
+    }
+
+    const MAX_SWEEPS: usize = 48;
+    for _sweep in 0..MAX_SWEEPS {
+        let mut off_norm = 0.0f64;
+        for i in 0..m {
+            for j in (i + 1)..m {
+                let v = a[i * m + j];
+                off_norm += v * v;
+            }
+        }
+        if !off_norm.is_finite() {
+            return None;
+        }
+        if off_norm.sqrt() <= tol {
+            break;
+        }
+        for p in 0..m {
+            for q in (p + 1)..m {
+                let apq = a[p * m + q];
+                if apq.abs() <= 1e-15 {
+                    continue;
+                }
+                let app = a[p * m + p];
+                let aqq = a[q * m + q];
+                let tau = (aqq - app) / (2.0 * apq);
+                let t = if tau >= 0.0 {
+                    1.0 / (tau + (1.0 + tau * tau).sqrt())
+                } else {
+                    -1.0 / (-tau + (1.0 + tau * tau).sqrt())
+                };
+                let c = 1.0 / (1.0 + t * t).sqrt();
+                let s = t * c;
+                a[p * m + p] = app - t * apq;
+                a[q * m + q] = aqq + t * apq;
+                a[p * m + q] = 0.0;
+                a[q * m + p] = 0.0;
+                for k in 0..m {
+                    if k != p && k != q {
+                        let akp = a[k * m + p];
+                        let akq = a[k * m + q];
+                        let new_kp = c * akp - s * akq;
+                        let new_kq = s * akp + c * akq;
+                        a[k * m + p] = new_kp;
+                        a[p * m + k] = new_kp;
+                        a[k * m + q] = new_kq;
+                        a[q * m + k] = new_kq;
+                    }
+                }
+            }
+        }
+    }
+
+    let mut eigs = [0.0f64; RMT_MAX_SOURCES];
+    for (i, eig) in eigs.iter_mut().enumerate().take(m) {
+        let lam = a[i * m + i];
+        if !lam.is_finite() || lam < -1e-4 {
+            return None;
+        }
+        *eig = lam.max(0.0);
+    }
+    eigs[..m].sort_by(|x, y| y.total_cmp(x));
+
+    let gamma = (m as f64) / (t_obs as f64);
+    let mp_upper_edge = (1.0 + gamma.sqrt()).powi(2);
+    let mf = m as f64;
+
+    if eigs[0] <= mp_upper_edge {
+        return Some((1.0, mf, mp_upper_edge));
+    }
+
+    let mut signal_sum = 0.0f64;
+    let mut signal_sq_sum = 0.0f64;
+    let mut signal_count = 0usize;
+    for &lam in &eigs[..m] {
+        if lam > mp_upper_edge {
+            signal_sum += lam;
+            signal_sq_sum += lam * lam;
+            signal_count += 1;
+        }
+    }
+    let bulk_count = m.saturating_sub(signal_count);
+    let residual_trace = (mf - signal_sum).max(0.0);
+    let bulk_sq_sum = if bulk_count > 0 {
+        let bulk_mean = residual_trace / (bulk_count as f64);
+        (bulk_count as f64) * bulk_mean * bulk_mean
+    } else {
+        0.0
+    };
+    let total_sq = (signal_sq_sum + bulk_sq_sum).max(1e-12);
+    let n_eff_rmt = ((mf * mf) / total_sq).clamp(1.0, mf);
+    let ratio = (n_eff_rmt / mf).clamp(0.10, 1.0);
+    Some((ratio, n_eff_rmt, mp_upper_edge))
+}
+
 pub struct TensorVoteOrchestrator {
     strategies: Vec<Box<dyn QuantumStrategy>>,
     arena: std::sync::Arc<quantum_arena::GlobalArena>,
@@ -103,6 +286,15 @@ pub struct TensorVoteOrchestrator {
     /// Mid del símbolo censista (coin 0) en la última actualización del
     /// hedge — para medir la dirección realizada entre cadencias.
     hedge_ultimo_mid: AtomicF64,
+    /// F20-001 / MUE-02: Ventana circular en memoria pre-alocada para calibrar online
+    /// `rmt_effective_bets_ratio` sobre las voces dinámicas del ensamble.
+    rmt_voter_window: std::sync::Mutex<RmtVoterWindow>,
+    /// F20-001: columna RMT de cada estrategia registrada (misma fuente ⇒ misma columna).
+    rmt_columna: Vec<usize>,
+    /// F20-001: número de columnas (fuentes únicas) asignadas, ≤ `RMT_MAX_SOURCES`.
+    rmt_n_columnas: usize,
+    /// F20-001: contador global de evaluaciones para el diezmado del muestreo.
+    rmt_evaluaciones: AtomicU64,
 }
 
 /// CL-145 (C-F6) — UN `&'static str` POR NOMBRE DE ESTRATEGIA.
@@ -141,9 +333,94 @@ impl TensorVoteOrchestrator {
             voto_ancla_hedge: Vec::new(),
             pesos_hedge: Vec::new(),
             hedge_ultimo_mid: AtomicF64::new(0.0),
+            rmt_voter_window: std::sync::Mutex::new(RmtVoterWindow::new()),
+            rmt_columna: Vec::new(),
+            rmt_n_columnas: 0,
+            rmt_evaluaciones: AtomicU64::new(0),
             strategies: Vec::new(),
             arena,
         }
+    }
+
+    /// F20-001 / MUE-02: Calibra en vivo el ratio de apuestas efectivas del ensamble sobre la
+    /// ventana de votos por fuente (`RmtVoterWindow`) con filtrado espectral de
+    /// Marchenko-Pastur y razón de participación (stack, zero-alloc, cero pánicos).
+    ///
+    /// La colinealidad entre voces es una propiedad del ENSAMBLE (las mismas estrategias
+    /// votan en todas las monedas), así que la ventana agrupa vectores de todas las monedas
+    /// y publica la clave GLOBAL `rmt_effective_bets_ratio`. `get_for_coin_or` consulta
+    /// primero la clave por moneda: un productor externo o un contrato que la fije por
+    /// moneda conserva precedencia.
+    ///
+    /// No publica nada (devuelve `None`) con menos de `RMT_MIN_SAMPLES` vectores, con menos
+    /// de 2 fuentes con varianza (`Var > 1e-12`) o con `T ≤ m`: arranque frío y fuentes
+    /// constantes conservan el comportamiento previo bit a bit (ratio por defecto 1.0).
+    pub fn calibrar_rmt_apuestas_efectivas(&self) -> Option<f64> {
+        let n_sources = self.rmt_n_columnas.min(RMT_MAX_SOURCES);
+        if n_sources < 2 {
+            return None;
+        }
+        let (samples, t_count) = {
+            let guard = self.rmt_voter_window.lock().ok()?;
+            if guard.count < RMT_MIN_SAMPLES {
+                return None;
+            }
+            (guard.samples, guard.count)
+        };
+        let tf = t_count as f64;
+        let mut active_cols = [0usize; RMT_MAX_SOURCES];
+        let mut means = [0.0f64; RMT_MAX_SOURCES];
+        let mut stds = [0.0f64; RMT_MAX_SOURCES];
+        let mut m = 0usize;
+
+        for col in 0..n_sources {
+            let mut sum = 0.0f64;
+            for row in samples.iter().take(t_count) {
+                sum += row[col];
+            }
+            let mean = sum / tf;
+            let mut ss = 0.0f64;
+            for row in samples.iter().take(t_count) {
+                let d = row[col] - mean;
+                ss += d * d;
+            }
+            let var = ss / (tf - 1.0);
+            if var.is_finite() && var > 1e-12 {
+                active_cols[m] = col;
+                means[m] = mean;
+                stds[m] = var.sqrt();
+                m += 1;
+            }
+        }
+
+        if m < 2 || t_count <= m {
+            return None;
+        }
+
+        let mut corr_flat = [0.0f64; RMT_MAX_SOURCES * RMT_MAX_SOURCES];
+        for a in 0..m {
+            corr_flat[a * m + a] = 1.0;
+            for b in (a + 1)..m {
+                let (col_a, col_b) = (active_cols[a], active_cols[b]);
+                let mut cov_sum = 0.0f64;
+                for row in samples.iter().take(t_count) {
+                    cov_sum += (row[col_a] - means[a]) * (row[col_b] - means[b]);
+                }
+                let r = (cov_sum / (tf - 1.0) / (stds[a] * stds[b])).clamp(-1.0, 1.0);
+                corr_flat[a * m + b] = r;
+                corr_flat[b * m + a] = r;
+            }
+        }
+
+        let (ratio, n_eff_rmt, mp_edge) =
+            compute_rmt_voter_effective_bets_ratio(&corr_flat[..m * m], m, t_count)?;
+        let registry = &self.arena.registry;
+        registry.set("rmt_effective_bets_ratio", ratio);
+        registry.set("rmt_effective_bets_measured", n_eff_rmt);
+        registry.set("rmt_mp_upper_edge", mp_edge);
+        registry.set("rmt_active_sources_measured", m as f64);
+        registry.set("rmt_window_samples", tf);
+        Some(ratio)
     }
 
     /// Compatibility wrapper; a failed initialization never admits a voter.
@@ -163,6 +440,20 @@ impl TensorVoteOrchestrator {
         // #611: el nombre debe vivir tanto como el censo (&'static).
         // CL-145: internado, uno por nombre distinto y no por registro.
         let nombre = nombre_internado(strategy.name());
+        // F20-001: misma fuente ⇒ misma columna RMT (los clones no son voces nuevas).
+        let columna = match self.nombres.iter().position(|n| std::ptr::eq(*n, nombre)) {
+            Some(previa) => self
+                .rmt_columna
+                .get(previa)
+                .copied()
+                .unwrap_or(RMT_SIN_COLUMNA),
+            None if self.rmt_n_columnas < RMT_MAX_SOURCES => {
+                self.rmt_n_columnas += 1;
+                self.rmt_n_columnas - 1
+            }
+            None => RMT_SIN_COLUMNA,
+        };
+        self.rmt_columna.push(columna);
         self.nombres.push(nombre);
         self.censo_total.push(AtomicU64::new(0));
         self.censo_no_cero.push(AtomicU64::new(0));
@@ -182,7 +473,11 @@ impl TensorVoteOrchestrator {
             .zip(self.censo_total.iter())
             .zip(self.censo_no_cero.iter())
             .map(|((nombre, total), nc)| {
-                (*nombre, total.load(Ordering::Relaxed), nc.load(Ordering::Relaxed))
+                (
+                    *nombre,
+                    total.load(Ordering::Relaxed),
+                    nc.load(Ordering::Relaxed),
+                )
             })
             .collect()
     }
@@ -208,7 +503,10 @@ impl TensorVoteOrchestrator {
         let mut acum: Vec<(f64, u32)> = Vec::with_capacity(self.nombres.len());
         for (nombre, voto) in self.nombres.iter().zip(self.ultimo_voto.iter()) {
             let v = voto.load(Ordering::Relaxed);
-            match orden.iter().position(|n| std::ptr::eq(*n, *nombre) || *n == *nombre) {
+            match orden
+                .iter()
+                .position(|n| std::ptr::eq(*n, *nombre) || *n == *nombre)
+            {
                 Some(ix) => {
                     acum[ix].0 += v;
                     acum[ix].1 += 1;
@@ -261,12 +559,12 @@ impl TensorVoteOrchestrator {
         }
         let dir = direccion_realizada.clamp(-1.0, 1.0);
         let mut suma = 0.0f64;
-        for idx in 0..n {
+        for (idx, voto_referencia) in votos_referencia[..n].iter().enumerate() {
             let w = self.pesos_hedge[idx].load(Ordering::Relaxed);
             if w <= 0.0 {
                 continue;
             }
-            let voto = votos_referencia[idx].load(Ordering::Relaxed);
+            let voto = voto_referencia.load(Ordering::Relaxed);
             if voto.abs() > 1e-9 && voto.is_finite() {
                 // Sólo aprende quien opinó: loss = −sign(voto)·dirección.
                 let loss = -voto.signum() * dir;
@@ -354,10 +652,10 @@ impl TensorVoteOrchestrator {
         // que se abstiene (voto 0 unánime) no puede callar al espectro.
         // Sin dominante (arranque frío, espectro plano) el consenso
         // escalar queda bit a bit (disciplina D-754 de fallback).
-        let v_dom = self
-            .arena
-            .registry
-            .get_for_coin_or(coin_id, "consenso_espectral_dominante", 0.0);
+        let v_dom =
+            self.arena
+                .registry
+                .get_for_coin_or(coin_id, "consenso_espectral_dominante", 0.0);
         let tau_dom = self
             .arena
             .registry
@@ -371,8 +669,8 @@ impl TensorVoteOrchestrator {
         // inoperable el veredicto espectral NO se consume: fallback
         // escalar bit a bit (la dirección espectral no puede comprar
         // geometría a una escala que el sistema no opera).
-        let tau_operable = tau_dom.is_finite()
-            && tau_dom >= quantum_arena::temporal_spectrum::TAU_ANCHOR_FAST_MS;
+        let tau_operable =
+            tau_dom.is_finite() && tau_dom >= quantum_arena::temporal_spectrum::TAU_ANCHOR_FAST_MS;
         let espectral_activo = v_dom.is_finite() && v_dom.abs() > 1e-9 && tau_operable;
         if espectral_activo {
             self.decisiones_espectrales.fetch_add(1, Ordering::Relaxed);
@@ -395,6 +693,15 @@ impl TensorVoteOrchestrator {
         // (exponential-weights): masa_del_grupo = w_fuente · |voto medio|.
         let mut fuentes: [(&str, f64, u32, f64); 32] = [("", 0.0, 0, 0.0); 32];
         let mut n_fuentes: usize = 0;
+        // F20-001 / MUE-02 — muestreo diezmado del vector de votos por fuente para la
+        // calibración RMT (1 fetch_add Relaxed por evaluación; el resto sólo cuando toca).
+        let muestrear_rmt = self.rmt_n_columnas >= 2
+            && self
+                .rmt_evaluaciones
+                .fetch_add(1, Ordering::Relaxed)
+                .is_multiple_of(RMT_SAMPLE_STRIDE);
+        let mut fila_rmt = [0.0f64; RMT_MAX_SOURCES];
+        let mut instancias_rmt = [0u32; RMT_MAX_SOURCES];
         // #611 — censo empírico: por estrategia, total de evaluaciones y
         // las que produjeron voto no-cero. Telemetría pura: no toca la
         // decisión (los acumuladores de abajo son los de siempre).
@@ -421,6 +728,14 @@ impl TensorVoteOrchestrator {
             }
             if !output.is_finite() {
                 continue;
+            }
+            if muestrear_rmt {
+                if let Some(&col) = self.rmt_columna.get(idx) {
+                    if col < RMT_MAX_SOURCES {
+                        fila_rmt[col] += output;
+                        instancias_rmt[col] += 1;
+                    }
+                }
             }
             // OLA Ω145: Calibración dinámica del denominador de fuentes elegibles.
             // Si la estrategia emite un voto activo (|output| > 1e-9), es inequívocamente operable.
@@ -460,6 +775,18 @@ impl TensorVoteOrchestrator {
                 n_fuentes += 1;
             }
         }
+        // F20-001: el vector muestreado entra a la ventana con `try_lock` — el camino
+        // caliente nunca espera; si otro hilo la tiene tomada, se pierde UNA muestra.
+        if muestrear_rmt {
+            for (v, &k) in fila_rmt.iter_mut().zip(instancias_rmt.iter()) {
+                if k > 1 {
+                    *v /= k as f64;
+                }
+            }
+            if let Ok(mut ventana) = self.rmt_voter_window.try_lock() {
+                ventana.push_row(fila_rmt);
+            }
+        }
         // Acumulación por FUENTE: masa = w_hedge · |voto medio del grupo|.
         for f in fuentes.iter().take(n_fuentes) {
             let v = f.1 / f.2.max(1) as f64;
@@ -484,7 +811,10 @@ impl TensorVoteOrchestrator {
             let n = self
                 .consensos_desde_publicacion
                 .fetch_add(1, Ordering::Relaxed);
-            if n % 1024 == 0 {
+            if n.is_multiple_of(1024) {
+                // F20-001 / MUE-02 — productor vivo de `rmt_effective_bets_ratio`
+                // (antes sólo lo escribían los tests: el consumidor leía 1.0 siempre).
+                let _ = self.calibrar_rmt_apuestas_efectivas();
                 for (idx, &nombre) in self.nombres.iter().enumerate() {
                     let total = self
                         .censo_total
@@ -542,11 +872,12 @@ impl TensorVoteOrchestrator {
                     .unwrap_or(0.0);
                 let prev = self.hedge_ultimo_mid.swap(mid, Ordering::Relaxed);
                 if mid.is_finite() && mid > 0.0 && prev.is_finite() && prev > 0.0 {
-                    let atr = self
-                        .arena
-                        .registry
-                        .get_for_coin_or(0, "atr_pct", f64::NAN);
-                    let escala = if atr.is_finite() && atr > 1e-9 { atr } else { 0.001 };
+                    let atr = self.arena.registry.get_for_coin_or(0, "atr_pct", f64::NAN);
+                    let escala = if atr.is_finite() && atr > 1e-9 {
+                        atr
+                    } else {
+                        0.001
+                    };
                     let ret_rel = (mid - prev) / prev;
                     let direccion = (ret_rel / escala).clamp(-1.0, 1.0);
                     self.actualizar_hedge_desde_votos(&self.voto_ancla_hedge, direccion);
@@ -592,6 +923,8 @@ impl TensorVoteOrchestrator {
         // clúster central colineal (e.g. Renyi x StochRes rho=0.975), Kish sobreestima las apuestas
         // efectivas hasta en un 3.2x (6 nominales -> 1.886 efectivas medidas en tape real).
         // Se modula n_eff con la tasa de apuestas efectivas del registro rmt_effective_bets_ratio (default 1.0).
+        // F20-001 / MUE-02: el productor vivo es `calibrar_rmt_apuestas_efectivas` (clave global,
+        // cadencia del censista); una clave por moneda fijada externamente tiene precedencia.
         let rmt_ratio = self
             .arena
             .registry
@@ -627,11 +960,10 @@ impl TensorVoteOrchestrator {
         // convicción ESCALAR del ensamble — los mismos motores que
         // componen v_dom — la misma información contaba dos veces
         // (hallazgo H4 de la auditoría de arquitectura).
-        let media_espectral = self.arena.registry.get_for_coin_or(
-            coin_id,
-            "consenso_espectral_media",
-            0.0,
-        );
+        let media_espectral =
+            self.arena
+                .registry
+                .get_for_coin_or(coin_id, "consenso_espectral_media", 0.0);
         // F1-099 (Ola Ω161): Interferencia cuántica/espectral monótona derivable:
         // factor = max(0.0, (1.0 + c) / 2.0) ∈ [0.0, 1.0] con c = media_espectral / v_dom ∈ [-1, 1].
         // 1. Respaldo unánime (c = +1.0) ⇒ factor = 1.00 (convicción plena de v_dom).
@@ -667,7 +999,7 @@ impl TensorVoteOrchestrator {
         let expected_volatility = if atr_pct.is_finite() && atr_pct > 0.0 {
             atr_pct
         } else if max_volatility.is_finite() {
-            max_volatility.max(0.0).min(0.10)
+            max_volatility.clamp(0.0, 0.10)
         } else {
             0.0
         };
@@ -676,10 +1008,10 @@ impl TensorVoteOrchestrator {
             .config
             .min_confidence_btc
             .load(std::sync::atomic::Ordering::Relaxed);
-        let min_conf_gene = self
-            .arena
-            .registry
-            .get_scoped_value_or(symbol, "min_confidence", base_min_conf);
+        let min_conf_gene =
+            self.arena
+                .registry
+                .get_scoped_value_or(symbol, "min_confidence", base_min_conf);
         // MOD2/7-012: ×1.0 (no ×2) y techo 0.45: mayoría simple, no
         // supermayoría. Con min_conf 0.70 ⇒ cutoff 0.20 en vez de 0.40.
         let cutoff_floor = ((min_conf_gene - 0.50) * 1.0).clamp(0.0, 0.45);
@@ -704,9 +1036,7 @@ impl TensorVoteOrchestrator {
         {
             // #624 — la posición vive a la escala que habló: τ del consenso
             // espectral, clampeada a la banda operativa [30 s, 12 h].
-            tau_dom
-                .min(quantum_arena::temporal_spectrum::TAU_ANCHOR_SLOW_MS)
-                as u64
+            tau_dom.min(quantum_arena::temporal_spectrum::TAU_ANCHOR_SLOW_MS) as u64
         } else {
             ((base_duration as f64) * scale).max(30_000.0) as u64
         };
@@ -814,8 +1144,14 @@ mod tests {
         let mut nombres = Vec::new();
         for _ in 0..50 {
             let mut orch = TensorVoteOrchestrator::new(arena.clone());
-            orch.add_strategy(Box::new(MockStrategy { name: "cl145_internado", value: 0.1 }));
-            orch.add_strategy(Box::new(MockStrategy { name: "cl145_otro", value: 0.2 }));
+            orch.add_strategy(Box::new(MockStrategy {
+                name: "cl145_internado",
+                value: 0.1,
+            }));
+            orch.add_strategy(Box::new(MockStrategy {
+                name: "cl145_otro",
+                value: 0.2,
+            }));
             let censo = orch.censo_snapshot();
             assert_eq!(censo[0].0, "cl145_internado");
             assert_eq!(censo[1].0, "cl145_otro");
@@ -1059,7 +1395,9 @@ mod tests {
         // #652/H2 — τ INOPERABLE (< 30 s): el espectral NO dirige —
         // fallback escalar (la dirección espectral no compra geometría a
         // una escala que el sistema no opera). La vida interpola.
-        arena.registry.set_for_coin(0, "consenso_espectral_tau", 1_000.0);
+        arena
+            .registry
+            .set_for_coin(0, "consenso_espectral_tau", 1_000.0);
         let baja = orch.evaluate_continuous_consensus_for_coin(0, "BTCUSDT");
         assert!(baja.expected_lifetime_ms >= 30_000);
         // Escalar el que decide: conf = 0.90 (ya modulada por el
@@ -1105,7 +1443,11 @@ mod tests {
         let d = orch.evaluate_continuous_consensus_for_coin(0, "BTCUSDT");
         // Con c = -1.0, factor de interferencia = max(0, (1 + (-1)) / 2) = 0.0.
         // net_confidence = 0.8 * 0.0 = 0.0 <= cutoff_floor ⇒ SignalType::Flat.
-        assert_eq!(d.signal, SignalType::Flat, "oposición espectral total debe vetar");
+        assert_eq!(
+            d.signal,
+            SignalType::Flat,
+            "oposición espectral total debe vetar"
+        );
         assert!(d.net_confidence.abs() < 1e-9);
     }
 }

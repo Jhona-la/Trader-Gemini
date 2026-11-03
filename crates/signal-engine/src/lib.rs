@@ -18,21 +18,25 @@ pub mod hawkes_bessel;
 pub mod navier_stokes_manifold;
 pub mod orchestrator;
 pub mod perceptron_gate;
-pub mod skill_motores;
-pub mod voto_espectral;
 pub mod proyeccion_espectral;
 pub mod quantum_oscillator;
 pub mod renyi_tsallis_entropy;
+pub mod skill_motores;
 pub mod soliton_wave;
 pub mod stochastic_resonance;
 pub mod supersonic_shockwave;
 pub mod trend_runner;
+pub mod voto_espectral;
 
 pub use feynman_propagator::{FeynmanPropagatorEngine, FeynmanPropagatorParams};
 pub use hawkes_bessel::{HawkesBesselEngine, HawkesBesselParams};
 pub use maker::{MakerEngine, MakerQuote};
 pub use navier_stokes_manifold::{NavierStokesManifoldEngine, NavierStokesManifoldParams};
-pub use orchestrator::{compute_ensemble_boost, compute_ensemble_boost_effective};
+pub use orchestrator::{
+    compute_ensemble_boost, compute_ensemble_boost_effective,
+    compute_rmt_voter_effective_bets_ratio, RMT_MAX_SOURCES, RMT_MIN_SAMPLES, RMT_SAMPLE_STRIDE,
+    RMT_WINDOW_SAMPLES,
+};
 pub use perceptron_gate::{PerceptronGateEngine, PerceptronGateParams};
 pub use proyeccion_espectral::{ProyeccionEspectralEngine, ProyeccionEspectralParams};
 pub use quantum_oscillator::{QuantumOscillatorEngine, QuantumOscillatorParams};
