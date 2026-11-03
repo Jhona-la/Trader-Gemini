@@ -38,12 +38,15 @@ fn filtro_de_precio_tiene_dos_ganancias_del_peor_caso() {
     assert!((g.proceso - 0.5 / denominador).abs() < 1e-12);
     assert!((g.medicion - 0.5 / denominador).abs() < 1e-12);
     assert_eq!(g.a, 0.5);
-    // K pequeño (filtro lento): casi todo el error viene del proceso.
+    // K pequeño (filtro lento, a→1): el numerador del canal de PROCESO es
+    // a≈1 y el de medición es K≈0 ⇒ domina el proceso (CI cazó las
+    // aserciones invertidas de la primera versión — la matemática manda).
     let lento = ganancias_hinf_filtro(0.1).expect("K válido");
-    assert!(lento.proceso < lento.medicion);
-    // K grande (filtro agresivo): casi todo el error viene de la medición.
+    assert!(lento.proceso > lento.medicion);
+    // K grande (filtro agresivo, a→0): numerador de proceso a≈0 y el de
+    // medición K≈1 ⇒ domina la medición.
     let agresivo = ganancias_hinf_filtro(0.9).expect("K válido");
-    assert!(agresivo.medicion < agresivo.proceso);
+    assert!(agresivo.medicion > agresivo.proceso);
     // Fuera de (0,1): estimador muerto o divergente — Err.
     assert!(ganancias_hinf_filtro(0.0).is_err());
     assert!(ganancias_hinf_filtro(1.0).is_err());
