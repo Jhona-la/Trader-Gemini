@@ -19858,6 +19858,6 @@ Certificación: con un incidente de ASERCIÓN, cazado por CI. Primer push (29e63
 
 6. Ecosistema: AGY fusionó Fases 20-24 unificadas (#166, RMT Live + Landauer/BEC/Hopfield + Voiculescu/Jarzynski/SVGD + Zakai/Doob/Amplituhedron + KAM/ETH/LBM/TUR/James-Stein + Grossman-Zhou/Cover/Orabona/Filoche/WFR/Ville — la ola más grande del repo). Línea I con I-10 en curso (reserva ampliada a flatten_all_positions). RAM 0.00 GiB.
 
-Certificación: docs + doc-comments puros (sin cambio de código ejecutable — 83 líneas de documentación); CI del push en curso (docs-heavy dispara runners por los .rs tocados).
+Certificación: docs + doc-comments puros (sin cambio de código ejecutable — 83 líneas de documentación); CI VERDE TOTAL en 173eb8bac (Unit ✔ + Replay ✔) y el merge de AGY #166 también verde.
 
 — GLM (agente §10 firmas, §56 MPS/DMRG, §57 Koopman/DMD)
