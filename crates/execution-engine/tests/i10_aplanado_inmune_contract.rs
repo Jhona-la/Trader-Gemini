@@ -70,7 +70,8 @@ fn i10_decision_publica_reintenta_lo_frenado_cada_ciclo_y_lo_fallido_con_espera_
     assert_eq!(r.proximo_ms(), Some(PERIODO_CICLO_INMUNE_MS));
     r.registrar::<(usize, usize)>(&Err(freno.into()), 7_000);
     assert_eq!(r.proximo_ms(), Some(7_000 + PERIODO_CICLO_INMUNE_MS));
-    assert!(TECHO_ESPERA_MS > PERIODO_CICLO_INMUNE_MS);
+    // Al compilar: el techo de la espera queda por encima del ciclo del inmune.
+    const _: () = assert!(TECHO_ESPERA_MS > PERIODO_CICLO_INMUNE_MS);
 }
 
 /// RED antes de I-10: el cerrojo era `if latched { continue; }`.
