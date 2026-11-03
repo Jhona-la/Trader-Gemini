@@ -1178,6 +1178,11 @@ un escéptico por lote listo):
   no del cooldown. Candidato: distinguir el rechazo local por freno
   temporal (RATE_LIMIT_COOLDOWN, RATE_BRAKE) y reintentar al acabar antes
   de escalar; el vigilante (CL-44) ya audita la posición mientras tanto.
+  Ejecutada en Línea I (I-8): `execution_engine::freno_temporal` decide con
+  los rechazos de los tres intentos; si todos son freno temporal, el host
+  no cierra ni arma el kill-switch, anota el diario y deja la protección
+  sucia para el vigilante. Residual N18b: un rechazo genuino del bracket
+  con el cierre bloqueado por el freno sigue armando el kill-switch.
 - N19 (de la tanda 13, a Línea I, sin verificar como defecto): el aplanado
   inmune se marca hecho (latched, god_engine.rs:2420) aunque devuelva
   FLATTEN_INCOMPLETE, y desde CL-178 un 429 a mitad del aplanado deja los
