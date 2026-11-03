@@ -26,7 +26,10 @@ fn el_limite_del_consejo_es_el_d_estrella_de_medio_kelly() {
 fn no_es_el_d_estrella_de_un_cuarto_de_kelly() {
     let d_cuarto = drawdown_de_falsacion(0.25, ALFA_FALSACION);
     let esperado = 1.0 - ALFA_FALSACION.powf(1.0 / 7.0);
-    assert!((d_cuarto - esperado).abs() <= 4.0 * f64::EPSILON, "d*(¼ Kelly) = {d_cuarto}");
+    assert!(
+        (d_cuarto - esperado).abs() <= 4.0 * f64::EPSILON,
+        "d*(¼ Kelly) = {d_cuarto}"
+    );
     assert!(
         CANONICAL_COUNCIL_MAX_DRAWDOWN - d_cuarto > 0.25,
         "el límite del consejo ({CANONICAL_COUNCIL_MAX_DRAWDOWN}) no es d*(¼ Kelly) = {d_cuarto}"
