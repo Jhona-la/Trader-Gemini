@@ -186,14 +186,15 @@ mod tests {
         let corto = posicion("BTCUSDT", -0.01, "SHORT");
         let plana = posicion("BTCUSDT", 0.0, "LONG");
         let otra = posicion("ETHUSDT", 0.5, "LONG");
+        let una = std::slice::from_ref;
         // Hedge: sólo cuenta la posición del mismo lado.
-        assert!(lado_ocupado("BTCUSDT", true, true, &[largo.clone()]));
-        assert!(!lado_ocupado("BTCUSDT", true, true, &[corto.clone()]));
-        assert!(!lado_ocupado("BTCUSDT", true, true, &[plana.clone()]));
-        assert!(!lado_ocupado("BTCUSDT", true, true, &[otra.clone()]));
+        assert!(lado_ocupado("BTCUSDT", true, true, una(&largo)));
+        assert!(!lado_ocupado("BTCUSDT", true, true, una(&corto)));
+        assert!(!lado_ocupado("BTCUSDT", true, true, una(&plana)));
+        assert!(!lado_ocupado("BTCUSDT", true, true, una(&otra)));
         // One-way: cualquier posición del símbolo (piernas BOTH).
         let ambos = posicion("BTCUSDT", -0.01, "BOTH");
-        assert!(lado_ocupado("BTCUSDT", true, false, &[ambos.clone()]));
+        assert!(lado_ocupado("BTCUSDT", true, false, una(&ambos)));
         assert!(lado_ocupado("BTCUSDT", false, false, &[ambos]));
         assert!(!lado_ocupado("BTCUSDT", true, false, &[plana, otra]));
         assert!(!lado_ocupado("BTCUSDT", true, false, &[]));
