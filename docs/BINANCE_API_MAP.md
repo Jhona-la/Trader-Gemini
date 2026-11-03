@@ -19,6 +19,7 @@
 | `/fapi/v2/positionRisk` | GET | 5 ✔ | Reconciliación de posiciones | executor.rs fetch_position_risk |
 | `/fapi/v2/account` | GET | 5 ✔ | Estado completo de cuenta | fetch_account_balance |
 | `/fapi/v1/commissionRate` | GET | 20 ✔ (antes figuraba 1) | Fees reales de LA cuenta (paridad fees); `OmsSession::refresh` lo pide por cada símbolo del universo, ver nota | fetch_commission_rate |
+| `/fapi/v1/leverageBracket` | GET | 1 | Evidencia completa por símbolo y cuenta (A4): `bracket`, `initialLeverage`, `notionalFloor`, `notionalCap`, `maintMarginRatio` y `notionalCoef`; OMS selecciona el tier por nocional vivo post-orden y exige `leverage <= tier.initial_leverage`. `notionalCoef` escala floor+cap; MMR no es margen inicial. `fetch_leverage_evidence` usa parser estricto; `fetch_max_leverage` conserva parser A3. Permisos/firma/JSON reales: `unverified`. Candidato A4 re-revisado en staging: la cota taker viva no es reducible por request, toda posición abierta cuenta y `reserved_slot`/`reserved_generation` se retiran del contrato; batches parciales conservan evidencia. Instalación pendiente de gates de memoria. | executor.rs fetch_leverage_bracket_payload → fetch_leverage_evidence → host_oms.rs publish_leverage |
 | `/fapi/v1/exchangeInfo` | GET | 1 | tickSize/stepSize/filtros (cacheado exchange_info.json); tras una descarga fallida fuera del freno no sale otra en 60 s (CL-197) | fetch_exchange_info |
 | `/fapi/v1/leverage` | POST | 1 ✔ | Leverage por símbolo | set_leverage |
 | `/fapi/v1/marginType` | POST | 1 | Cross/Isolated | binance_api.rs |
