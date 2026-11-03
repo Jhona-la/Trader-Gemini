@@ -336,9 +336,13 @@ impl Default for ClosedTradeRecord {
 
 impl CoinArena {
     /// F-A1 — intervalo canónico de asentamiento del funding en Binance
-    /// USDⓈ-M perpetuos: 8 h. Una posición abierta en fase uniforme respecto
-    /// al ciclo cruza en media τ/T_F asentamientos: E[N] = τ/T_F exactamente.
-    pub const FUNDING_INTERVAL_MS: f64 = 8.0 * 3_600_000.0;
+    /// USDⓈ-M perpetuos: 8 h, a las 00:00, 08:00 y 16:00 UTC. Una posición
+    /// abierta en fase uniforme respecto al ciclo cruza en media τ/T_F
+    /// asentamientos. Hay símbolos con 4 h o 1 h (`fundingIntervalHours` de
+    /// `/fapi/v1/fundingInfo`); publicarlo por símbolo es del poller (FEE-06b).
+    pub const FUNDING_INTERVAL_MS: f64 = Self::FUNDING_INTERVAL_MS_U64 as f64;
+    /// El mismo intervalo en ms enteros, para el calendario de asentamientos.
+    pub const FUNDING_INTERVAL_MS_U64: u64 = 8 * 3_600_000;
     /// F-A1 — TTL del dato de funding: tres ciclos del poller (120 s).
     pub const FUNDING_TTL_MS: u64 = 360_000;
 
@@ -370,9 +374,18 @@ impl CoinArena {
         }
     }
 
-    /// F-A1 — coste de carry ESPERADO (fracción del nocional, ≥ 0) de una
-    /// posición con dirección `is_long` mantenida `tau_ms`:
-    /// E[carry] = d·f·τ/T_F, d = +1 largo, −1 corto.
+    /// F-A1 + QSR FEE-06a — coste de carry ESPERADO (fracción del nocional,
+    /// ≥ 0) de una posición con dirección `is_long` y duración media `tau_ms`
+    /// abierta en `now_ms`: E[carry] = d·f·E[N | Δ], d = +1 largo, −1 corto,
+    /// con Δ el tiempo que falta hasta el próximo asentamiento del calendario
+    /// y E[N | Δ] el de [`Self::asentamientos_esperados`].
+    ///
+    /// F-A1 cobraba d·f·τ/T_F, que es el promedio de esta ley sobre la fase:
+    /// correcto para un instante cualquiera del ciclo, pero el instante se
+    /// conoce. Una orden de un minuto abierta 4 h antes del asentamiento no
+    /// paga nada y abierta un segundo antes paga casi f entero; τ/T_F les
+    /// cobraba 1/480 de f a las dos.
+    ///
     /// Sólo se cobra el COSTE (d·f > 0). El ingreso esperado se acota
     /// inferiormente en 0: `f` es un pronóstico del próximo asentamiento, y
     /// un pronóstico de cobro no es evidencia para abrir una posición
@@ -383,16 +396,73 @@ impl CoinArena {
         let Some(f) = self.funding_next_at(now_ms) else {
             return 0.0;
         };
-        if !tau_ms.is_finite() || tau_ms <= 0.0 {
+        let Some(proximo) = Self::proximo_asentamiento_ms(now_ms, Self::FUNDING_INTERVAL_MS_U64)
+        else {
             return 0.0;
-        }
+        };
+        let falta_ms = (proximo - now_ms) as f64;
+        let Some(n) = Self::asentamientos_esperados(falta_ms, Self::FUNDING_INTERVAL_MS, tau_ms)
+        else {
+            return 0.0;
+        };
         let d = if is_long { 1.0 } else { -1.0 };
-        let carry = d * f * (tau_ms / Self::FUNDING_INTERVAL_MS);
+        let carry = d * f * n;
         if carry.is_finite() {
             carry.max(0.0)
         } else {
             0.0
         }
+    }
+
+    /// QSR FEE-06a — instante (ms época) del primer asentamiento
+    /// ESTRICTAMENTE posterior a `now_ms` en un calendario de periodo
+    /// `intervalo_ms` alineado a la medianoche UTC, que es como asienta
+    /// Binance (24 h es múltiplo de 8, 4 y 1 h y el tiempo Unix no cuenta
+    /// segundos intercalares). Estricto: en el instante mismo de un
+    /// asentamiento la orden aún no estaba abierta, así que el próximo que
+    /// paga es el siguiente. `None` con intervalo 0 o desbordamiento.
+    #[inline]
+    pub fn proximo_asentamiento_ms(now_ms: u64, intervalo_ms: u64) -> Option<u64> {
+        if intervalo_ms == 0 {
+            return None;
+        }
+        (now_ms / intervalo_ms)
+            .checked_add(1)?
+            .checked_mul(intervalo_ms)
+    }
+
+    /// QSR FEE-06a — número esperado de asentamientos que cruza una
+    /// posición cuya duración sólo se conoce por su media τ, cuando el
+    /// próximo asentamiento llega dentro de Δ y los siguientes cada T.
+    ///
+    /// Con sólo la media conocida, la distribución de máxima entropía de la
+    /// duración en [0, ∞) es la exponencial de media τ: la posición sigue
+    /// abierta en el asentamiento k-ésimo (Δ + k·T) con probabilidad
+    /// exp(−(Δ + k·T)/τ), y la serie geométrica da
+    ///
+    ///   E[N | Δ] = exp(−Δ/τ) / (1 − exp(−T/τ)).
+    ///
+    /// Promediada en Δ uniforme sobre (0, T] vale exactamente τ/T, la ley
+    /// de F-A1. El denominador se evalúa con `exp_m1`, estable cuando τ ≫ T.
+    /// `None` si alguna entrada no es finita y positiva o el resultado no es
+    /// finito.
+    #[inline]
+    pub fn asentamientos_esperados(falta_ms: f64, intervalo_ms: f64, tau_ms: f64) -> Option<f64> {
+        let validas = falta_ms.is_finite()
+            && falta_ms >= 0.0
+            && intervalo_ms.is_finite()
+            && intervalo_ms > 0.0
+            && tau_ms.is_finite()
+            && tau_ms > 0.0;
+        if !validas {
+            return None;
+        }
+        let denominador = -(-intervalo_ms / tau_ms).exp_m1();
+        if denominador <= 0.0 || !denominador.is_finite() {
+            return None;
+        }
+        let n = (-falta_ms / tau_ms).exp() / denominador;
+        n.is_finite().then_some(n)
     }
 
     /// D-754 — σ PRONOSTICADA AL HORIZONTE τ, interpolada en log τ entre las

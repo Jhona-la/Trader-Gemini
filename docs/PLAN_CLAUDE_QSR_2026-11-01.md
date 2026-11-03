@@ -94,7 +94,7 @@ BOOT-03/05/06, BT-01, SEL-01) y dos auditores encontraron el mismo defecto
 | BOOT-01 | CONFIRMADO, MEDIO | `src/bin/god_engine.rs:1445-1486, 1704-1764` | Todas las peticiones firmadas del arranque (balance, comisiones, posiciones, modo hedge) usan el reloj local crudo: la hora del servidor se mide después. Ninguna envía `recvWindow`. | Kimi (lease). |
 | FEE-03 | CONFIRMADO, MEDIO | genes `vec[68]`, `vec[69]`; `evolution-engine/src/random_forest.rs:72-107` | El deslizamiento que cobran la puerta, la física y la tolerancia IOC son genes: cada candidato se juzga con su propio modelo de coste, y la evolución puede «ganar» bajando lo que se cobra a sí misma. | Congelar o medir: Línea G / Fable. Examen: AGY. |
 | BOOT-04 | CONFIRMADO, BAJO | `god_engine.rs:1445-1486` | Los bucles de balance y comisiones reintentan para siempre errores permanentes (401, -2014, -2015, -1022). Los lanzadores de simulación ponen `BINANCE_API_KEY=shadow` y el arranque gira sin fin. | Kimi (lease). |
-| QSR-CL-07 | CONFIRMADO, BAJO | `quantum-arena/src/config.rs:8-12` | El doc deriva d* con c = 0,25 (daría 0,348), pero el valor 0,6316 es el de c = 0,5. El valor es correcto; el doc engaña a quien lo reutilice. | Fable / AGY (F1-009). |
+| QSR-CL-07 | CORREGIDO (§9), BAJO | `quantum-arena/src/config.rs:8-12` | El doc deriva d* con c = 0,25 (daría 0,348), pero el valor 0,6316 es el de c = 0,5. El valor es correcto; el doc engaña a quien lo reutilice. | Fable / AGY (F1-009). |
 | MUE-03 | CONFIRMADO, BAJO | `god-engine-core/src/stateful_engine.rs:828-840` | `FirmasMaxEnt::medir` crea 5 `Vec` cada 64 ticks por moneda y su salida no se publica ni se lee (AGENT_SYNC dice lo contrario). | GLM (GLM-175). |
 | MUE-04 | CONFIRMADO, BAJO | varios crates | 3 752 líneas de módulos sin uso fuera de sus tests (Feynman instantón, Wilson RG, Marchenko-Pastur, Lyapunov, Bergomi, Malliavin, fase cuántica…). Compilan en cada build. | Autores (AGY, GLM): conectar en sombra o retirar. |
 | QSR-CL-05 | PLAUSIBLE, BAJO | `config.rs:1109-1111`; `lib.rs:2163-2176` | `sync_from_registry` descarta `lg22_arl < 10`, contra F1-089e, y la sincronización siguiente pisa el valor de la gobernanza con el de la config. | Sol (F1-089e) + Codex QRA. |
@@ -315,7 +315,71 @@ incertidumbre en la config viva, y usados por la puerta y por el examen. El
 cálculo de los fills vive en el ejecutor y el host (lease de Kimi): se propone
 en el buzón, con el contrato que lo comprueba.
 
-## 8. Átomo LC-F0-20 (2026-11-02): el panel de comisiones lee el recibo del núcleo
+## 8. Átomo FEE-06a (2026-11-02): el carry de funding mira el calendario
+
+**Qué.** `CoinArena::expected_funding_cost` (quantum-arena, sin lease) es la
+fuente única del coste de funding que la barrera de EV del riesgo (F-A1) suma
+a la fricción. Cobraba E[carry] = d·f·τ/T_F a toda orden, con d = +1 largo,
+−1 corto, f la tasa prevista del próximo asentamiento y T_F = 8 h.
+
+**Por qué es un defecto.** d·f·τ/T_F es el promedio sobre la fase del ciclo,
+correcto si el instante de apertura fuera desconocido. Se conoce: Binance
+asienta a horas fijas UTC (00:00, 08:00 y 16:00 con 8 h). Una orden de un
+minuto abierta 4 h antes del asentamiento no lo cruza y abierta un segundo
+antes paga casi f entero; la ley vieja cobraba a las dos τ/T_F = 1/480 de f.
+La barrera dejaba pasar largos con f > 0 justo antes del asentamiento y
+cobraba de más a los que abren justo después.
+
+**Ley.** Con Δ = lo que falta hasta el próximo asentamiento (estricto: en el
+instante mismo de un asentamiento la orden aún no estaba abierta) y una
+duración de la que sólo se conoce la media τ (la exponencial es la de máxima
+entropía en [0, ∞) con media fijada), la posición sigue abierta en el
+asentamiento k-ésimo con probabilidad e^(−(Δ + k·T)/τ), y
+
+  E[N | Δ] = e^(−Δ/τ) / (1 − e^(−T/τ)),   E[carry] = d·f·E[N | Δ].
+
+Promediada en Δ uniforme sobre (0, T] vale exactamente τ/T: la ley de F-A1
+es la media de ésta. El denominador usa `exp_m1` (estable con τ ≫ T).
+Valores de E[N | Δ] con T = 8 h:
+
+| τ \ Δ | 1 s | 10 min | 1 h | 4 h | 7,9 h | τ/T (F-A1) |
+|---|---|---|---|---|---|---|
+| 1 min | 0,98 | 4,5e-5 | ≈ 0 | ≈ 0 | ≈ 0 | 0,0021 |
+| 1 h | 1,00 | 0,85 | 0,37 | 0,018 | 0,0004 | 0,125 |
+| 4 h | 1,16 | 1,11 | 0,90 | 0,43 | 0,16 | 0,5 |
+| 24 h | 3,53 | 3,50 | 3,38 | 2,99 | 2,54 | 3 |
+
+**Arreglo.** Dos funciones puras en `CoinArena`:
+`proximo_asentamiento_ms(now_ms, intervalo_ms)` (calendario alineado a la
+medianoche UTC; `None` con intervalo 0 o desbordamiento) y
+`asentamientos_esperados(falta_ms, intervalo_ms, tau_ms)` (`None` si una
+entrada no es finita y positiva o el resultado no es finito). La firma de
+`expected_funding_cost`, sus llamadores, el TTL, «sólo se cobra el coste» y
+«sin dato ⇒ 0» no cambian. En replay no hay poller de funding: el carry
+sigue en 0, así que golden y T-1 no se mueven.
+
+**Pruebas.** `crates/quantum-arena/tests/qsr_fee06_funding_fase_contract.rs`
+(7): lejos del asentamiento un horizonte corto no paga; justo antes paga casi
+todo; el promedio en la fase reproduce τ/T (regla del punto medio, error
+relativo ≤ 7,3e-7 para τ ≥ 4 h); monotonía en Δ y en τ; el calendario es el de
+Binance (00:00/08:00/16:00 UTC, estricto en el borde); bordes de la ley; y
+sólo se cobra el coste. RED con la ley vieja: 3 de 5 fallaban (las tres que
+dependen de la fase). GREEN: el contrato 7/7 y quantum-arena lib 155/155;
+`fable_funding_carry_contract` 10/10 (su test exacto pasa a probar la media
+en la fase), riesgo `fable_funding_carry_ev_gate_contract` 7/7 y ejecución
+`adverse_selection_viability_contract` 4/4 (sólo cambian comentarios).
+
+**Límites y lo que queda.**
+
+| Id | Qué | Dueño |
+|---|---|---|
+| FEE-06b | Todo símbolo se cobra con 8 h y hay perpetuos de 4 h y 1 h. El poller del host debe publicar por símbolo `nextFundingTime` (llega en premiumIndex y hoy no se guarda) y `fundingIntervalHours` (`/fapi/v1/fundingInfo`), y el carry usar el asentamiento real. | Kimi (poller, lease A4-T2) |
+| FEE-06c | La duración se modela exponencial de media τ; con salida por tiempo la cola está acotada y E[N] se sobrestima algo para τ ≳ T. Usar la distribución de duraciones medida por banda cuando exista. | átomo de medida |
+| FEE-06d | Más allá del próximo asentamiento se supone la misma tasa f; para τ ≫ T habría que pronosticar la serie de funding. | quien pronostique el funding |
+| FEE-06e | Comentarios con la ley vieja en `src/bin/god_engine.rs:3115` y `crates/god-engine-core/src/lib.rs:3244` (leases ajenos). | Kimi / Codex QRA |
+| FEE-06f | `QuantumOrderRouter` no tiene llamadores de producción y conserva respaldos fijos (0,0002/0,0001) y `unwrap_or_default` en el reloj. | quien lo reclame |
+
+## 9. Átomo LC-F0-20 (2026-11-02): el panel de comisiones lee el recibo del núcleo
 
 **Qué.** El replay de libro (`booktick_replay.rs`) estimaba las comisiones de
 cada cierre como `qty·mid_salida·(max(maker, 2 pb) + max(taker, 4 pb))` = 7 pb
@@ -382,4 +446,21 @@ Confirmados y fuera de este átomo:
 | Id | Severidad | Qué | Dueño |
 |---|---|---|---|
 | LC20-R2 | baja | El MTM nativo de lo que sigue abierto (drawdown por barra y capital final) descuenta `qty·precio·2·taker`, una tasa de ida y vuelta, sobre UNA sola pierna (la salida pendiente): ×2 frente a taker. El replay de libro cobra taker + deslizamiento. Infla el drawdown y rebaja el capital final de todo genoma que acabe con posición abierta. No se toca aquí para no mover el capital final. | a registrar en la lista LC-F0 (Línea C) o quien tome el camino nativo |
-| LC20-C1 | info | `origin/main` sigue avanzando desde la base de la rama (14 commits, `30a82b722`, en la última lectura de la ref local): falta componer, comparar contra cada padre y compilar con `--all-targets` antes de integrar. | integrador |
+| LC20-C1 | info | Compuesto con `origin/main` (`90894bdd9`, 15 commits sobre la base `545cb5636`, entre ellos FEE-06a y la Fase 13 de AGY): sólo chocaron AGENT_SYNC y este plan (FEE-06a queda como §8 y este átomo como §9). Diff contra cada padre revisado; check y suites en el árbol compuesto (abajo). | integrador |
+
+**Integración y CI.** El contrato nuevo y el de F1-101 no los corría ningún
+workflow; se añaden como paso propio de `replay-contracts.yml`.
+
+### QSR-CL-07 en el mismo PR (sólo documentación y un contrato)
+
+La doc de `CANONICAL_COUNCIL_MAX_DRAWDOWN` (`quantum-arena/src/config.rs`)
+derivaba d* con c = 0,25 de Kelly, que da 1 − 0,05^(1/7) ≈ 0,348. El valor del
+literal, 0,6316, es el de ½ Kelly (`FRACCION_KELLY_MAXIMA` = 0,5, ADR-0016/QS-D3):
+1 − 0,05^(1/3) ≈ 0,63159685013596134. Se corrige la doc y no se toca el valor.
+Un `const` no puede llamar a `powf`, así que el contrato
+`risk-engine/tests/qsr_cl07_drawdown_consejo_contract.rs` ata el literal a
+`drawdown_de_falsacion(FRACCION_KELLY_MAXIMA, ALFA_FALSACION)` con 4 ulps de
+margen (el literal queda 1 ulp por encima del redondeo correcto y `powf`, 1 por
+debajo) y comprueba que no es el d* de ¼ Kelly. La entrada del buzón que cita
+`test_canonical_constants_mathematical_derivation` con 1 − 0,05^(1/7) se corrige
+con una errata (ese test no existe en el árbol).

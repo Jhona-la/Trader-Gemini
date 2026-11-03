@@ -154,8 +154,11 @@ async fn test_contract_router_resolves_dynamic_funding_cost() {
         .unwrap_or_default()
         .as_millis() as u64;
 
-    // Publicamos un funding rate adverso muy alto para largos (15 bps por ciclo de 8h)
-    // que empuja las fricciones totales por encima de un tercio del edge esperado (28 bps vs 3x(15+2+1) bps = 54 bps)
+    // Publicamos un funding rate adverso muy alto para largos (15 bps por asentamiento).
+    // Desde QSR FEE-06a el carry depende de cuánto falta para el próximo asentamiento:
+    // con τ = 8 h, E[N | Δ] = e^(−Δ/τ)/(1 − e^(−1)) ∈ [0,58; 1,58], así que el carry va
+    // de 8,7 a 23,7 bps según la hora. Aun en el mínimo las fricciones superan un tercio
+    // del edge esperado (28 bps vs 3x(8,7+2+1) bps ≈ 35 bps): el rechazo no depende de la hora.
     arena.coins[coin_id].publish_funding_next(0.0015, now_ms);
 
     let mut executor = OrderExecutor::new(

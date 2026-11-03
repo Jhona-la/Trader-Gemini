@@ -4,7 +4,9 @@
 //! (T_F = 8 h). Una posición abierta en fase uniforme respecto al ciclo cruza
 //! en media τ/T_F asentamientos (E[N] = τ/T_F, exacto) y en cada uno paga
 //! d·f·nocional, con d = +1 largo, −1 corto y f la tasa del asentamiento.
-//! Luego E[carry] = d·f·τ/T_F. El arena guarda la tasa PREVISTA del próximo
+//! Luego E[carry] = d·f·τ/T_F en promedio sobre la fase; desde QSR FEE-06a el
+//! arena cobra la ley condicionada a la fase conocida, cuyo promedio es éste
+//! (contrato `qsr_fee06_funding_fase_contract`). El arena guarda la tasa PREVISTA del próximo
 //! asentamiento (`lastFundingRate` de premiumIndex) con su marca de tiempo;
 //! sin dato, caducado (TTL) o no finito ⇒ «sin dato» (carry 0), nunca un NaN
 //! ni un valor viejo. Sólo se cobra el COSTE (d·f > 0): un pronóstico de
@@ -99,21 +101,37 @@ fn la_tasa_se_acota_como_en_el_multiplexer() {
 }
 
 #[test]
-fn el_carry_esperado_es_d_f_tau_sobre_t_f_y_solo_cobra_coste() {
+fn el_carry_promediado_en_la_fase_es_d_f_tau_sobre_t_f_y_solo_cobra_coste() {
+    // QSR FEE-06a: el carry ya usa la fase del calendario (E[N | Δ]); la ley
+    // de F-A1, d·f·τ/T_F, es su promedio sobre un ciclo. Se integra con la
+    // regla del punto medio (paso 60 s: error relativo ≈ (h/τ)²/24, ≤ 7,3e-7
+    // para τ ≥ 4 h).
     let a = arena();
     let c = &a.coins[0];
     let f = 0.0004; // 0,04 % por asentamiento: los largos pagan
+    let paso_ms = 60_000u64;
+    let pasos = T_F_MS as u64 / paso_ms;
+    let inicio = (AHORA / T_F_MS as u64) * T_F_MS as u64;
+    for tau_ms in [T_F_MS, T_F_MS / 2.0, 3.0 * T_F_MS] {
+        let mut suma = 0.0;
+        for k in 0..pasos {
+            let ahora = inicio + k * paso_ms + paso_ms / 2;
+            c.publish_funding_next(f, ahora);
+            suma += c.expected_funding_cost(true, tau_ms, ahora);
+        }
+        let media = suma / pasos as f64;
+        assert!(
+            (media / (f * tau_ms / T_F_MS) - 1.0).abs() < 1e-6,
+            "τ = {tau_ms}: media {media:e}"
+        );
+    }
     c.publish_funding_next(f, AHORA);
-    let tol = 1e-15;
-    // Largo: paga f por cada T_F, proporcional a τ.
-    assert!((c.expected_funding_cost(true, T_F_MS, AHORA) - f).abs() < tol);
-    assert!((c.expected_funding_cost(true, T_F_MS / 2.0, AHORA) - f / 2.0).abs() < tol);
-    assert!((c.expected_funding_cost(true, 3.0 * T_F_MS, AHORA) - 3.0 * f).abs() < tol);
+    assert!(c.expected_funding_cost(true, T_F_MS, AHORA) > 0.0);
     // Corto con funding positivo: cobraría, pero el ingreso previsto se acota en 0.
     assert_eq!(c.expected_funding_cost(false, T_F_MS, AHORA), 0.0);
     // Funding negativo: pagan los cortos.
     c.publish_funding_next(-f, AHORA + 1);
-    assert!((c.expected_funding_cost(false, T_F_MS, AHORA + 1) - f).abs() < tol);
+    assert!(c.expected_funding_cost(false, T_F_MS, AHORA + 1) > 0.0);
     assert_eq!(c.expected_funding_cost(true, T_F_MS, AHORA + 1), 0.0);
 }
 

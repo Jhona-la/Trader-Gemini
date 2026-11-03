@@ -441,7 +441,7 @@ impl WilsonRGEngine {
         current_buf[..init_len].copy_from_slice(&series[(len - init_len)..len]);
         let mut current_len = init_len;
 
-        const LN_2: f64 = 0.6931471805599453;
+        const LN_2: f64 = std::f64::consts::LN_2;
 
         for scale in 0..MAX_DYADIC_SCALES {
             if current_len < 4 {

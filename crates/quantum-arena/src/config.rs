@@ -6,9 +6,15 @@ use arc_swap::ArcSwapOption;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 /// F1-009: Límite actuarial canónico de drawdown del Consejo Deliberativo.
-/// Derivado de la cota de falsación de Cramér-Lundberg: d* = 1 - alpha^(c / (2 - c))
-/// para fracción de Kelly máxima c = 0.25 y nivel alpha = 0.05:
-/// 1 - 0.05^(0.25 / 1.75) = 1 - 0.05^(1/7) ≈ 0.6315968501359614.
+/// Es la caída que falsifica el modelo de crecimiento (QS-D3, ADR-0016;
+/// `risk_engine::drawdown::drawdown_de_falsacion`): d* = 1 - alpha^(c / (2 - c)),
+/// con la fracción de Kelly máxima del sistema c = 0.5
+/// (`FRACCION_KELLY_MAXIMA`) y alpha = 0.05 (`ALFA_FALSACION`):
+/// 1 - 0.05^(0.5 / 1.5) = 1 - 0.05^(1/3) ≈ 0.63159685013596134.
+/// QSR-CL-07: esta nota decía c = 0.25, que da 1 - 0.05^(1/7) ≈ 0.348, no el
+/// valor del literal. El valor no cambia. Un `const` no puede llamar a `powf`:
+/// el contrato `risk-engine/tests/qsr_cl07_drawdown_consejo_contract.rs` ata
+/// el literal a la función (difieren en 2 ulps de redondeo).
 pub const CANONICAL_COUNCIL_MAX_DRAWDOWN: f64 = 0.6315968501359614;
 
 /// F1-009: Constantes físicas y cuánticas canónicas (adimensionales en unidades de Planck de la red discreta).

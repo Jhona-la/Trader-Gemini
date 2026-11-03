@@ -141,6 +141,13 @@ pub struct StatefulEngine {
     pub koopman_modulo: f32,
     pub koopman_angulo: f32,
     pub koopman_bifurcacion: f32,
+    /// GLM 181 (mandato §12.3) — dual ergódico del Koopman EN VIVO:
+    /// exponente de Lyapunov dominante (ln máx|λ| por muestra), entropía
+    /// de Kolmogorov-Sinai (Σ ln|λ|>0) y horizonte de predictibilidad
+    /// 1/λ_max en muestras (INF sin expansión). NaN hasta el warmup.
+    pub koopman_lambda_max: f32,
+    pub koopman_entropia_ks: f32,
+    pub koopman_horizonte: f32,
     /// GLM 157 & Átomo 4.1 (Ola Omega220): Medidor continuo streaming de entrelazamiento cuántico
     /// temporal neto ΔS = S(ψ) - S_nulo en MPS (L=8, binarización por signo, ring 256).
     pub entrelazamiento: feature_engine::entrelazamiento::EntrelazamientoStreaming,
@@ -281,6 +288,9 @@ impl StatefulEngine {
             koopman_modulo: f32::NAN,
             koopman_angulo: f32::NAN,
             koopman_bifurcacion: f32::NAN,
+            koopman_lambda_max: f32::NAN,
+            koopman_entropia_ks: f32::NAN,
+            koopman_horizonte: f32::NAN,
             entrelazamiento: feature_engine::entrelazamiento::EntrelazamientoStreaming::default(),
             quantum_delta_s: f32::NAN,
             quantum_entropy: f32::NAN,
@@ -813,6 +823,11 @@ impl StatefulEngine {
                     self.koopman_modulo = e.modulo_dominante as f32;
                     self.koopman_angulo = e.angulo_rad as f32;
                     self.koopman_bifurcacion = e.bifurcacion_max as f32;
+                    // GLM 181 (§12.3): dual ergódico — misma análisis, coste
+                    // O(M) adicional: Lyapunov dominante, h_KS y horizonte.
+                    self.koopman_lambda_max = e.lambda_max as f32;
+                    self.koopman_entropia_ks = e.entropia_ks as f32;
+                    self.koopman_horizonte = e.horizonte_muestras as f32;
                 }
                 // Err (warmup/ridge degenerado) ⇒ los campos quedan con su
                 // último valor válido o NaN inicial — ausencia honesta.

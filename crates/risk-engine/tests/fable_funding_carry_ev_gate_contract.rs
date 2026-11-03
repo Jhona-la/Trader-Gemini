@@ -4,8 +4,10 @@
 //! Teoría que se prueba. La barrera D-751 exige EV > fricción·k. Hasta F-A1
 //! la fricción era sólo la de ejecución (2·taker + 2·deslizamiento) y el
 //! funding per-símbolo no llegaba a ninguna decisión. Ahora la fricción es
-//! `fricción_ejecución + E[carry]`, con E[carry] = d·f·τ/T_F (d = +1 largo,
-//! −1 corto; f tasa prevista; T_F = 8 h), cobrando sólo el coste: un largo
+//! `fricción_ejecución + E[carry]`, con E[carry] = d·f·E[N | Δ] (d = +1 largo,
+//! −1 corto; f tasa prevista; T_F = 8 h; QSR FEE-06a: Δ es lo que falta para
+//! el próximo asentamiento y E[N | Δ] = e^(−Δ/τ)/(1 − e^(−T_F/τ)), cuyo
+//! promedio en la fase es el τ/T_F de F-A1), cobrando sólo el coste: un largo
 //! con funding positivo paga, un corto con el mismo funding no cobra el
 //! ingreso previsto, un dato caducado no cuenta y sin poller (replay) nada
 //! cambia respecto al comportamiento anterior.
@@ -105,8 +107,9 @@ fn sin_funding_la_orden_sale_como_antes() {
 fn un_largo_con_funding_positivo_extremo_se_veta_por_ev() {
     let _g = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
     let a = arena();
-    // f = 1,0 por asentamiento (tope del multiplexer) sobre τ = 1 h:
-    // E[carry] = 1,0 · 1/8 = 12,5 % del nocional. Ninguna geometría de 1 h
+    // f = 1,0 por asentamiento (tope del multiplexer) sobre τ = 1 h, a
+    // Δ ≈ 1,78 h del asentamiento de 08:00 UTC: E[N | Δ] ≈ 0,169 ⇒
+    // E[carry] ≈ 16,9 % del nocional (12,5 % con la ley de F-A1). Ninguna geometría de 1 h
     // con ATR 0,2 % paga eso.
     a.coins[0].publish_funding_next(1.0, AHORA_MS);
     let o = evaluar(&a, SignalType::Long, 0.9);
@@ -182,9 +185,9 @@ fn en_replay_sin_poller_nada_cambia() {
 fn con_un_funding_realista_la_barrera_de_ev_sube_de_forma_monotona() {
     let _g = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
     // f = 0,20 % por asentamiento (zona de squeeze, observada en Binance),
-    // τ = 1 h ⇒ E[carry] = 0,025 % del nocional, frente a una fricción de
-    // ejecución de 0,082 %: la barrera D-751 sube un 30 % y p* se desplaza
-    // ≈ 0,025 %·k/(TP + SL) ≈ 6 pasos de la malla. La probabilidad mínima
+    // τ = 1 h, Δ ≈ 1,78 h ⇒ E[carry] ≈ 0,034 % del nocional, frente a una fricción de
+    // ejecución de 0,082 %: la barrera D-751 sube un 41 % y p* se desplaza
+    // ≈ 0,034 %·k/(TP + SL) ≈ 8 pasos de la malla. La probabilidad mínima
     // admitida de un largo debe subir; la de un corto no.
     let sin = arena();
     let p0_largo = p_minima_admitida(&sin, SignalType::Long).expect("algún largo sale sin funding");

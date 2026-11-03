@@ -1222,12 +1222,14 @@ impl RiskEngine {
         // entradas: la identidad es estructural, no disciplinaria.
         let tau_for_sizing = horizon_tau_ms_coin(intent, arena, coin_id);
         // F-A1 (Fable, 2026-10-17) — COSTE DE CARRY ESPERADO del funding.
-        // Un perpetuo paga funding en cada asentamiento (T_F = 8 h): una
-        // posición mantenida τ cruza en media τ/T_F asentamientos y en cada
-        // uno paga d·f·nocional (d = +1 largo, −1 corto; f = tasa prevista
-        // del PRÓXIMO asentamiento, que el poller del host publica por
-        // símbolo en `CoinArena::funding_rate_next`). E[carry] = d·f·τ/T_F
-        // es exacto bajo fase uniforme, causal (f se conoce en t) y por
+        // Un perpetuo paga funding en cada asentamiento (T_F = 8 h, a horas
+        // fijas UTC) y en cada uno paga d·f·nocional (d = +1 largo, −1 corto;
+        // f = tasa prevista del PRÓXIMO asentamiento, que el poller del host
+        // publica por símbolo en `CoinArena::funding_rate_next`). QSR FEE-06a:
+        // el número de asentamientos que se cruzan depende de cuánto falta
+        // para el próximo (Δ, conocido en t): E[N | Δ] = e^(−Δ/τ)/(1 − e^(−T_F/τ))
+        // con la duración de máxima entropía de media τ; su promedio en la
+        // fase es el τ/T_F de F-A1. Causal (f y Δ se conocen en t) y por
         // símbolo. Sólo se cobra el COSTE; el ingreso esperado se acota en 0
         // (un pronóstico de cobro no es evidencia para abrir). Sin dato o
         // caducado (TTL) ⇒ 0: idéntico al comportamiento anterior. Entra en

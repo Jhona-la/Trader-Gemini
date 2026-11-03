@@ -216,7 +216,8 @@ impl QuantumLeverageMatrix {
         };
 
         let capital_ratio = (safe_curr_cap / safe_base_cap.max(1.0)).max(0.0);
-        let log_cap = safe_curr_cap.max(2.0).log10().max(0.3010); // log10(2.0) ≈ 0.3010
+        // max(2.0) acota log10 por abajo en log10(2) ≈ 0,30103.
+        let log_cap = safe_curr_cap.max(2.0).log10();
         let raw_dampener = (log_divisor / log_cap.max(1.0)).min(3.0);
         let logarithmic_dampener = if raw_dampener.is_finite() {
             raw_dampener.clamp(0.50, 3.0)
