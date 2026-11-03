@@ -135,6 +135,15 @@ pub struct StatefulEngine {
     pub spectral_bin: f32,
     pub spectral_power: f32,
     pub spectral_centroid: f32,
+    /// GLM 184 (§12.2) — flujo de renormalización de Wilson sobre el
+    /// MISMO espectro del bloque espectral: β de la escala más gruesa
+    /// (vista macroscópica del coarse-graining), desviación del punto
+    /// fijo (pérdida de invariancia de escala) y escala de ruptura
+    /// (octava donde el régimen quiebra). NaN hasta el primer análisis
+    /// con espectro estrictamente positivo (ausencia honesta).
+    pub spectral_rg_beta: f32,
+    pub spectral_rg_desvio: f32,
+    pub spectral_rg_escala: f32,
     /// GLM 149 — bloque Koopman publicado: tasa de crecimiento del modo
     /// dominante, su frecuencia (rad/muestra) y máx|λ| (≥1 = bifurcación).
     /// NaN hasta el primer análisis con warmup suficiente (ausencia honesta).
@@ -313,6 +322,10 @@ impl StatefulEngine {
             spectral_bin: 0.0,
             spectral_power: 0.0,
             spectral_centroid: 0.0,
+            // GLM 184: NaN hasta el primer flujo RG con espectro positivo.
+            spectral_rg_beta: f32::NAN,
+            spectral_rg_desvio: f32::NAN,
+            spectral_rg_escala: f32::NAN,
             hurst_micro: 0.5,
             hurst_meso: 0.5,
             hurst_macro: 0.5,
@@ -871,7 +884,19 @@ impl StatefulEngine {
                 self.spectral_bin = dominant_bin as f32;
                 self.spectral_power = max_power as f32;
                 self.spectral_centroid = centroid as f32;
-            }
+                // GLM 184 (§12.2): el MISMO espectro alimenta el flujo de
+                // renormalización de Wilson — observable vivo del régimen
+                // multi-escala, sin costo extra (el FFT ya se pagó). Sin
+                // cambio de conducta; consumo = decisión del consejo.
+                if let Ok(flujo) = feature_engine::flujo_rg::flujo_wilson(
+                    &self.spectral.power_by_bin,
+                ) {
+                    self.spectral_rg_beta = *flujo.betas.last().unwrap_or(&f64::NAN) as f32;
+                    self.spectral_rg_desvio = flujo.desvio_punto_fijo as f32;
+                    self.spectral_rg_escala = flujo.escala_rompimiento.map(|k| k as f32).unwrap_or(f32::NAN);
+                }
+                // Err (bins a cero: log indefinido) ⇒ último valor o NaN —
+                // ausencia honesta, jamás β inventado.
             let (h_mic, h_mes, h_mac, _score, _micro_p, _macro_p) = self.multifractal.update(price);
             self.hurst_micro = h_mic as f32;
             self.hurst_meso = h_mes as f32;

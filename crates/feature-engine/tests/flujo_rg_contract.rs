@@ -92,10 +92,33 @@ fn entradas_invalidas_son_error_honesto() {
     assert!(flujo_wilson(&[]).is_err());
     assert!(flujo_wilson(&[1.0, 1.0]).is_err());
     assert!(flujo_wilson(&[1.0, 1.0, 1.0]).is_err());
-    // Potencia cero o negativa: log indefinido, sin rellenos ficticios.
+    // GLM 184: un bin sin energía se EXCLUYE de su octava — pero si la
+    // octava queda ENTERA muda no hay media de log: Err honesto. Los tres
+    // casos de abajo tienen su bin inválido en la primera octava (1 bin
+    // por octava al inicio del eje) ⇒ octava muda ⇒ Err.
     assert!(flujo_wilson(&[1.0, 0.0, 1.0, 1.0, 1.0]).is_err());
     assert!(flujo_wilson(&[1.0, -0.5, 1.0, 1.0, 1.0]).is_err());
     assert!(flujo_wilson(&[1.0, f64::NAN, 1.0, 1.0, 1.0]).is_err());
     // 4 bins (3 tras DC) = mínimo con dos octavas: válido.
     assert!(flujo_wilson(&[1.0, 1.0, 1.0, 1.0]).is_ok());
+}
+
+#[test]
+fn bins_sin_energia_en_octavas_pobladas_se_excluyen_sin_inventar() {
+    // GLM 184: el FFT de 64 retornos deja bins a CERO exacto (frecuencias
+    // ausentes). Un espectro 1/f^β con ceros intercalados en octavas
+    // POBLADAS conserva el punto fijo EXACTO: los ceros salen de la media
+    // — la afinidad log P ↔ log f de los bins vivos es la misma ley.
+    let beta = 1.3_f64;
+    let mut espectro = espectro_potencia(257, beta);
+    for i in [5, 9, 10, 33, 100] {
+        espectro[i] = 0.0; // bins mudos en octavas con otros vivos.
+    }
+    let flujo = flujo_wilson(&espectro).expect("flujo vivo pese a ceros");
+    for (k, &b) in flujo.betas.iter().enumerate() {
+        assert!(
+            (b - beta).abs() < 1e-9,
+            "β_{k} = {b} punto fijo {beta} pese a bins excluidos"
+        );
+    }
 }

@@ -23,9 +23,12 @@
 //!   crítica donde el régimen cambia (donde las temporalidades se alinean
 //!   o quiebran) — el análogo espectral de un punto fijo que se pierde.
 //!
-//! Entrada: potencias por bin (positivas, finitas; el bin DC se ignora).
-//! Medir-antes-de-decidir: núcleo puro + contrato; el wiring al espectro
-//! del engine (Radix-2 cada 64 ticks) cuando el consejo lo consuma.
+//! Entrada: potencias por bin (el bin DC se ignora). Los bins sin energía
+//! (≤ 0 o no finitos) se EXCLUYEN de la media de su octava — el FFT de
+//! ventanas cortas deja bins a cero y el flujo sigue vivo con los bins
+//! que portan escala; Err sólo si una octava entera queda muda.
+//! Medir-antes-de-decidir: núcleo puro + contrato + wiring GLM 184 al
+//! espectro Radix-2 del engine (telemetría %64, sin cambio de conducta).
 
 /// Flujo de renormalización de Wilson sobre un espectro de potencias.
 #[derive(Debug, Clone, PartialEq)]
@@ -57,9 +60,11 @@ pub fn flujo_wilson(potencias: &[f64]) -> Result<FlujoRg, &'static str> {
     if bins.len() < 3 {
         return Err("se requieren >= 4 bins (dos octavas diádicas)");
     }
-    if bins.iter().any(|p| !p.is_finite() || *p <= 0.0) {
-        return Err("potencias deben ser finitas y > 0 (log indefinido)");
-    }
+    // GLM 184: un bin sin energía (≤ 0 o no finito) se EXCLUYE de la media
+    // de su octava — jamás se rellena con un valor ficticio. El FFT de
+    // ventanas cortas deja bins a cero exacto (frecuencias ausentes); el
+    // flujo sigue vivo con los bins que sí portan escala. Err sólo si una
+    // octava ENTERA queda muda (sin bins no hay media de log).
     // Media de log-potencia y de log-frecuencia por octava [2^k, 2^{k+1}).
     let mut media_log_p = Vec::new();
     let mut media_log_f = Vec::new();
@@ -72,14 +77,21 @@ pub fn flujo_wilson(potencias: &[f64]) -> Result<FlujoRg, &'static str> {
         }
         let mut suma_lp = 0.0f64;
         let mut suma_lf = 0.0f64;
+        let mut n = 0u64;
         for (rel, &p) in bins[inicio..fin].iter().enumerate() {
+            if !p.is_finite() || p <= 0.0 {
+                continue; // bin sin energía: fuera de la media, no rellenado.
+            }
             let freq = (inicio + rel + 1) as f64;
             suma_lp += p.ln();
             suma_lf += freq.ln();
+            n += 1;
         }
-        let n = (fin - inicio) as f64;
-        media_log_p.push(suma_lp / n);
-        media_log_f.push(suma_lf / n);
+        if n == 0 {
+            return Err("octava sin bins con energía: log indefinido");
+        }
+        media_log_p.push(suma_lp / n as f64);
+        media_log_f.push(suma_lf / n as f64);
         inicio = fin;
         if inicio >= bins.len() {
             break;
