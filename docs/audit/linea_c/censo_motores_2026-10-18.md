@@ -1197,11 +1197,18 @@ un escéptico por lote listo):
   acabar el freno.
   Ejecutada en Línea I (I-10): el aplanado que no se completó se reintenta
   mientras el inmune siga disparado (`execution_engine::aplanado_inmune`):
-  frenado, en cada ciclo de 5 s (no envía nada hasta que caduca el freno);
-  tras otro error, con espera doble de 5 s a 60 s (la cadencia del
-  vigilante). El rearme por archivo abandona el pendiente. Residual N19b
-  (sin verificar): una entrada en vuelo al disparo que se llena tras la
-  foto de posiciones del aplanado queda abierta con el aplanado cumplido.
+  frenado, en cada ciclo de 5 s (no envía cierres hasta que caduca el
+  freno); tras otro error, con espera doble de 5 s a 60 s (la cadencia del
+  vigilante) contada desde el final del intento. Los reintentos no repiten
+  el barrido de órdenes huérfanas (`flatten_open_positions`); un cierre
+  llenado en parte va a X-026 en vez de darse por cerrado (se purgaban los
+  brackets con el resto abierto); el apagado no se solapa con un reintento.
+  El rearme por archivo abandona el pendiente. Residuales: N19b (sin
+  verificar), una entrada en vuelo al disparo que se llena tras la foto de
+  posiciones del aplanado queda abierta con el aplanado cumplido; N19c
+  (visto leyendo el código, sin prueba), el cierre por WS del aplanado y el
+  reenvío de X-026 (`execute_reduce_only_market`, regla de F1-028) siguen
+  dando por cerrado un llenado parcial.
 - N20 (de la tanda 13): peticiones fuera de la cuota del ejecutor, sin
   freno 429/418 ni libro en vuelo: ensure_hedge_mode (GET y POST de
   positionSide/dual), que OmsSession::refresh llama cada 60 s

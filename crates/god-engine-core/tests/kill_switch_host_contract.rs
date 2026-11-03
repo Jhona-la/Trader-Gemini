@@ -29,7 +29,7 @@ fn tramo<'a>(h: &'a str, desde: &str, hasta: &str) -> &'a str {
 fn aplanado_inmune(h: &str) -> &str {
     let disparo = tramo(h, "[SISTEMAINMUNE]ACTIVADO", "latched=true;");
     assert!(
-        disparo.contains("aplanado_inmune(&executor,&arena_imm,&mutreintento_aplanado,ahora_imm"),
+        disparo.contains("aplanado_inmune(&executor,&arena_imm,&mutreintento_aplanado,reloj_imm"),
         "el disparo del inmune aplana con `aplanado_inmune`"
     );
     tramo(

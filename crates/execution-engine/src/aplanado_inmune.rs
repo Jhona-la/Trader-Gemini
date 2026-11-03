@@ -16,12 +16,19 @@
 //!   `FLATTEN_INCOMPLETE`.
 //!
 //! Aquí queda el aplanado pendiente mientras el inmune siga en su cerrojo, y
-//! cuándo se reintenta. Un reintento frenado no envía nada, así que se repite
-//! cada ciclo del inmune y sale en cuanto acaba el freno. Tras cualquier otro
-//! error (un rechazo del exchange, la lectura de posiciones caída) la espera
-//! se dobla desde un ciclo hasta la cadencia nominal del vigilante: cada
-//! intento lee el modo y las posiciones y vuelve a enviar los cierres, y un
-//! rechazo que se repite no debe comerse la cuota de las salidas.
+//! cuándo se reintenta. Un intento frenado no envía ningún cierre, así que se
+//! repite cada ciclo del inmune y sale en cuanto acaba el freno. Tras
+//! cualquier otro error (un rechazo del exchange, la lectura de posiciones
+//! caída) la espera se dobla desde un ciclo hasta la cadencia nominal del
+//! vigilante: cada intento lee el modo y las posiciones y vuelve a enviar los
+//! cierres, y un rechazo que se repite no debe comerse la cuota de las
+//! salidas. La espera cuenta desde el FINAL del intento, y los reintentos
+//! usan `OrderExecutor::flatten_open_positions`, sin el barrido de órdenes
+//! huérfanas que el primer intento ya hizo: un intento largo no encadena el
+//! siguiente ni deja al vigilante sin auditar.
+//!
+//! Un cierre con llenado parcial tampoco cierra la posición: el aplanado lo
+//! lleva a X-026 en vez de darlo por cerrado y purgar sus brackets.
 
 use crate::freno_temporal::es_freno_temporal;
 
@@ -37,17 +44,18 @@ pub const TECHO_ESPERA_MS: u64 = 12 * PERIODO_CICLO_INMUNE_MS;
 /// Qué se sabe del aplanado del inmune tras su último intento.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TrasAplanado {
-    /// Devolvió Ok: no quedó posición abierta que el aplanado viera.
+    /// Devolvió Ok: el aplanado cerró entera cada posición que vio.
     Cumplido,
-    /// Lo rechazó el freno temporal: no salió nada. Se reintenta en el
-    /// siguiente ciclo del inmune.
+    /// Lo rechazó el freno temporal: no salió ningún cierre. Se reintenta en
+    /// el siguiente ciclo del inmune.
     Frenado,
     /// Otro error: algún cierre no aterrizó o no se pudieron leer las
     /// posiciones. Se reintenta tras la espera, que se dobla.
     Fallido,
 }
 
-/// Clasifica el resultado de `flatten_all_positions`.
+/// Clasifica el resultado de `flatten_all_positions` o
+/// `flatten_open_positions`.
 pub fn tras_aplanado<T>(resultado: &Result<T, String>) -> TrasAplanado {
     match resultado {
         Ok(_) => TrasAplanado::Cumplido,
@@ -88,7 +96,8 @@ impl ReintentoAplanado {
     }
 
     /// Anota el resultado de un intento del aplanado (el del disparo o un
-    /// reintento) hecho en `ahora_ms`, y devuelve su clasificación.
+    /// reintento) que terminó en `ahora_ms`, y devuelve su clasificación. La
+    /// espera hasta el siguiente cuenta desde ese final.
     pub fn registrar<T>(&mut self, resultado: &Result<T, String>, ahora_ms: u64) -> TrasAplanado {
         self.intentos = self.intentos.saturating_add(1);
         let tras = tras_aplanado(resultado);
@@ -132,7 +141,7 @@ impl ReintentoAplanado {
 
     /// El operador rearma el inmune (`rearme_frenos.txt`): deja de haber
     /// aplanado pendiente. Si el disparador sigue, el inmune vuelve a
-    /// dispararse y a aplanar en su siguiente ciclo.
+    /// dispararse y a aplanar en ese mismo ciclo.
     pub fn olvidar(&mut self) {
         *self = Self::nuevo();
     }
@@ -262,6 +271,11 @@ mod tests {
             assert!(
                 matches!(&r, Err(e) if es_freno_temporal(e)),
                 "{armado}: aplanado {r:?}"
+            );
+            let reintento_sin_barrido = ex.flatten_open_positions().await;
+            assert!(
+                matches!(&reintento_sin_barrido, Err(e) if es_freno_temporal(e)),
+                "{armado}: aplanado sin barrido {reintento_sin_barrido:?}"
             );
             let mut reintento = ReintentoAplanado::nuevo();
             assert_eq!(reintento.registrar(&r, 0), TrasAplanado::Frenado);

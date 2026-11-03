@@ -34,6 +34,11 @@ fn tramo<'a>(h: &'a str, desde: &str, hasta: &str) -> &'a str {
     &h[i..i + f]
 }
 
+/// La llamada al aplanado del inmune, entera hasta su `.await`: en el
+/// disparo y en el reintento.
+const LLAMADA: &str =
+    "aplanado_inmune(&executor,&arena_imm,&mutreintento_aplanado,reloj_imm,&mutaviso_aplanado_frenado,).await;";
+
 /// El ciclo del inmune: desde el rearme por archivo hasta el disparo.
 fn ciclo_inmune(h: &str) -> &str {
     tramo(
@@ -77,9 +82,7 @@ fn i10_con_el_cerrojo_puesto_el_inmune_reintenta_el_aplanado_pendiente() {
     let toca = cerrojo
         .find("reintento_aplanado.toca(")
         .unwrap_or(usize::MAX);
-    let aplana = cerrojo
-        .find("aplanado_inmune(&executor,&arena_imm,&mutreintento_aplanado,")
-        .unwrap_or(usize::MAX);
+    let aplana = cerrojo.find(LLAMADA).unwrap_or(usize::MAX);
     assert!(
         toca < aplana && aplana != usize::MAX,
         "con el cerrojo puesto, el aplanado pendiente se reintenta cuando toca"
@@ -87,6 +90,8 @@ fn i10_con_el_cerrojo_puesto_el_inmune_reintenta_el_aplanado_pendiente() {
 }
 
 /// RED antes de I-10: el resultado del aplanado sólo se registraba en el log.
+/// El primer intento barre las huérfanas y los reintentos no; el intento se
+/// anota con el instante en que termina.
 #[test]
 fn i10_cada_intento_del_aplanado_anota_su_resultado() {
     let h = compacto();
@@ -96,20 +101,67 @@ fn i10_cada_intento_del_aplanado_anota_su_resultado() {
         "asyncfnensure_position_protected(",
     );
     assert!(!f.is_empty(), "función del aplanado inmune en el host");
-    let aplana = f
-        .find("executor.flatten_all_positions().await")
+    let primero = f
+        .find("ifreintento.intentos()==0{executor.flatten_all_positions().await}else{executor.flatten_open_positions().await}")
+        .unwrap_or(usize::MAX);
+    let reloj = f
+        .find("letahora_ms=reloj.elapsed().as_millis()asu64;")
         .unwrap_or(usize::MAX);
     let anota = f
         .find("reintento.registrar(&resultado,ahora_ms)")
         .unwrap_or(usize::MAX);
     assert!(
-        aplana < anota && anota != usize::MAX,
-        "el resultado del aplanado se anota para decidir el reintento"
+        primero < reloj && reloj < anota && anota != usize::MAX,
+        "se aplana, se lee el reloj y se anota el resultado, en ese orden"
     );
     let disparo = tramo(&h, "[SISTEMAINMUNE]ACTIVADO", "latched=true;");
     assert!(
-        disparo.contains("aplanado_inmune(&executor,&arena_imm,&mutreintento_aplanado,ahora_imm"),
+        disparo.contains(LLAMADA),
         "el disparo del inmune aplana por la misma función"
+    );
+}
+
+/// El apagado y un reintento del aplanado inmune no se solapan: el inmune
+/// anuncia su intento antes de mirar si el apagado está anunciado, y el
+/// apagado se anuncia y espera al intento en curso antes de aplanar.
+#[test]
+fn i10_el_apagado_y_el_reintento_del_inmune_no_se_solapan() {
+    let h = compacto();
+    let f = tramo(
+        &h,
+        "asyncfnaplanado_inmune(",
+        "asyncfnensure_position_protected(",
+    );
+    let anuncio = f
+        .find("let_en_curso=AplanadoInmuneEnCurso::anunciar();")
+        .unwrap_or(usize::MAX);
+    let mira = f
+        .find("ifAPAGANDO.load(Ordering::SeqCst){return;}")
+        .unwrap_or(usize::MAX);
+    let aplana = f.find("begin_flatten()").unwrap_or(usize::MAX);
+    assert!(
+        anuncio < mira && mira < aplana && aplana != usize::MAX,
+        "el inmune anuncia su intento y no aplana si el apagado está anunciado"
+    );
+    assert!(
+        h.contains("fndrop(&mutself){APLANADO_INMUNE_EN_CURSO.store(false,Ordering::SeqCst);}"),
+        "el anuncio del inmune se retira al acabar el intento"
+    );
+    let apagado = tramo(
+        &h,
+        "UnifiedEventLoopsafelyterminated",
+        "std::process::exit(0)",
+    );
+    let se_anuncia = apagado
+        .find("APAGANDO.store(true,Ordering::SeqCst);")
+        .unwrap_or(usize::MAX);
+    let espera = apagado
+        .find("block_on(esperar_aplanado_inmune_en_curso())")
+        .unwrap_or(usize::MAX);
+    let aplana = apagado.find("begin_flatten()").unwrap_or(usize::MAX);
+    assert!(
+        se_anuncia < espera && espera < aplana && aplana != usize::MAX,
+        "el apagado se anuncia y espera al inmune antes de aplanar"
     );
 }
 
