@@ -72,15 +72,8 @@ fn derivada_de_rampa_converge_a_la_forma_cerrada() {
         ultimo = cap.push(n as f64);
     }
     let d = ultimo.expect("derivada tras warmup");
-    let n = 199.0f64;
-    let esperado = n.powf(1.0 - alfa) / (2.0 - alfa).gamma().recip();
-    let forma_cerrada = n.powf(1.0 - alfa) * (2.0 - alfa).gamma();
-    // D^α t = t^{1−α}·Γ(2−α) para β=1: Γ(2)/Γ(2−α)·t^{1−α} = Γ(2−α)·t^{1−α}
-    // porque Γ(2)=1... NO: Γ(2)=1!=1, Γ(2)=1. La forma es
-    // Γ(β+1)/Γ(β+1−α)·t^{β−α} con β=1 ⇒ Γ(2)/Γ(2−α) = 1/Γ(2−α).
-    let _ = esperado;
-    // GL truncada sobre rampa: Σ w_k = valor exacto de D^α(t)·h^{...};
-    // para paso h=1 la suma de pesos ES la derivada (diferencia=1).
+    // GL truncada sobre rampa: para paso h=1 la suma de pesos ES la
+    // derivada (diferencia constante 1).
     let suma_pesos: f64 = (0..cap.llenos()).map(|k| cap.peso(k).unwrap()).sum();
     assert!(
         (d - suma_pesos).abs() < 1e-12,
@@ -88,12 +81,14 @@ fn derivada_de_rampa_converge_a_la_forma_cerrada() {
     );
     // Convergencia a 1/Γ(2−α) con ventana creciente: el error de
     // truncamiento decae — la ventana 128 está más cerca que la 32.
+    // Γ(2−α) con α=0.5 ⇒ Γ(1.5) = √π/2 (forma cerrada explícita: el
+    // nightly del proyecto no estabiliza f64::gamma — E0658 en CI).
     let mut corto = CaputoStreaming::try_new(alfa, 32).expect("α válida");
     let mut corto_val = None;
     for n in 0..200u32 {
         corto_val = corto.push(n as f64);
     }
-    let objetivo = 1.0 / (2.0 - alfa).gamma();
+    let objetivo = 1.0 / (std::f64::consts::PI.sqrt() * 0.5);
     let err_largo = (d - objetivo).abs();
     let err_corto = (corto_val.expect("derivada") - objetivo).abs();
     assert!(
