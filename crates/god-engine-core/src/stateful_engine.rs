@@ -886,17 +886,21 @@ impl StatefulEngine {
                 self.spectral_centroid = centroid as f32;
                 // GLM 184 (§12.2): el MISMO espectro alimenta el flujo de
                 // renormalización de Wilson — observable vivo del régimen
-                // multi-escala, sin costo extra (el FFT ya se pagó). Sin
-                // cambio de conducta; consumo = decisión del consejo.
-                if let Ok(flujo) =
-                    feature_engine::flujo_rg::flujo_wilson(&self.spectral.power_by_bin)
-                {
-                    self.spectral_rg_beta = *flujo.betas.last().unwrap_or(&f64::NAN) as f32;
-                    self.spectral_rg_desvio = flujo.desvio_punto_fijo as f32;
-                    self.spectral_rg_escala = flujo
-                        .escala_rompimiento
-                        .map(|k| k as f32)
-                        .unwrap_or(f32::NAN);
+                // multi-escala, sin costo extra (el FFT ya se pagó). La
+                // vista V2 (EventSpectrumV2) expone la potencia unilateral
+                // por bin; sin cambio de conducta, consumo = consejo.
+                if let Ok(evento) = self.spectral.analyze_event_spectrum_v2() {
+                    if let Ok(flujo) =
+                        feature_engine::flujo_rg::flujo_wilson(&evento.power_by_bin)
+                    {
+                        self.spectral_rg_beta =
+                            *flujo.betas.last().unwrap_or(&f64::NAN) as f32;
+                        self.spectral_rg_desvio = flujo.desvio_punto_fijo as f32;
+                        self.spectral_rg_escala = flujo
+                            .escala_rompimiento
+                            .map(|k| k as f32)
+                            .unwrap_or(f32::NAN);
+                    }
                 }
                 // Err (bins a cero: log indefinido) ⇒ último valor o NaN —
                 // ausencia honesta, jamás β inventado.
