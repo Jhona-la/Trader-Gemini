@@ -22,6 +22,23 @@ fn tramo<'a>(h: &'a str, desde: &str, hasta: &str) -> &'a str {
     &h[i..f]
 }
 
+/// I-10 (N19): el aplanado del sistema inmune vive en `aplanado_inmune`, que
+/// llama el bloque del disparo y, mientras no se complete, el reintento del
+/// cerrojo. Devuelve el cuerpo de esa función, tras comprobar que el disparo
+/// la llama antes de cerrar el latch.
+fn aplanado_inmune(h: &str) -> &str {
+    let disparo = tramo(h, "[SISTEMAINMUNE]ACTIVADO", "latched=true;");
+    assert!(
+        disparo.contains("aplanado_inmune(&executor,&arena_imm,&mutreintento_aplanado,ahora_imm"),
+        "el disparo del inmune aplana con `aplanado_inmune`"
+    );
+    tramo(
+        h,
+        "asyncfnaplanado_inmune(",
+        "asyncfnensure_position_protected(",
+    )
+}
+
 /// Antes el vigilante hacía `if executor.is_kill_switch_active() {
 /// clear_dirty(); continue; }` antes de auditar: con el latch armado ninguna
 /// posición desnuda se re-protegía ni escalaba a cierre, aunque las piernas
@@ -63,11 +80,11 @@ fn cl44_x009_arma_el_latch_y_despierta_la_re_proteccion() {
 #[test]
 fn cl44_un_aplanado_fallido_del_sistema_inmune_despierta_al_vigilante() {
     let h = host();
-    let t = tramo(&h, "[SISTEMAINMUNE]ACTIVADO", "latched=true;");
+    let t = aplanado_inmune(&h);
     assert!(t.contains("flatten_all_positions()"));
     assert!(
-        t.ends_with("}quantum_arena::protection_health::mark_dirty();"),
-        "el vigilante se despierta tras el aplanado, en los dos brazos del resultado"
+        t.ends_with("}quantum_arena::protection_health::mark_dirty();}"),
+        "el vigilante se despierta tras el aplanado, en todos los brazos del resultado"
     );
 }
 
@@ -77,7 +94,7 @@ fn cl44_un_aplanado_fallido_del_sistema_inmune_despierta_al_vigilante() {
 #[test]
 fn cl44b_el_aplanado_inmune_consume_las_confirmaciones_antes_de_aplanar() {
     let h = host();
-    let t = tramo(&h, "[SISTEMAINMUNE]ACTIVADO", "latched=true;");
+    let t = aplanado_inmune(&h);
     let consumo = t
         .find("consume_exchange_confirmations()")
         .expect("el aplanado inmune consume las confirmaciones de las ranuras");
@@ -93,7 +110,7 @@ fn cl44b_el_aplanado_inmune_consume_las_confirmaciones_antes_de_aplanar() {
 #[test]
 fn cl44b_los_aplanados_y_el_vigilante_no_se_solapan() {
     let h = host();
-    let inmune = tramo(&h, "[SISTEMAINMUNE]ACTIVADO", "latched=true;");
+    let inmune = aplanado_inmune(&h);
     let apagado = tramo(&h, "UnifiedEventLoopsafelyterminated", "std::process::exit(0)");
     for (nombre, t) in [("inmune", inmune), ("apagado", apagado)] {
         let anuncio = t

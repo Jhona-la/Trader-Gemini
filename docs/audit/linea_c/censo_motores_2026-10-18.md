@@ -1195,6 +1195,13 @@ un escéptico por lote listo):
   cierres restantes sin enviar. Lo cubre el vigilante (CL-44: re-bracket
   o cierre de escalada); falta decidir si se reintenta el aplanado al
   acabar el freno.
+  Ejecutada en Línea I (I-10): el aplanado que no se completó se reintenta
+  mientras el inmune siga disparado (`execution_engine::aplanado_inmune`):
+  frenado, en cada ciclo de 5 s (no envía nada hasta que caduca el freno);
+  tras otro error, con espera doble de 5 s a 60 s (la cadencia del
+  vigilante). El rearme por archivo abandona el pendiente. Residual N19b
+  (sin verificar): una entrada en vuelo al disparo que se llena tras la
+  foto de posiciones del aplanado queda abierta con el aplanado cumplido.
 - N20 (de la tanda 13): peticiones fuera de la cuota del ejecutor, sin
   freno 429/418 ni libro en vuelo: ensure_hedge_mode (GET y POST de
   positionSide/dual), que OmsSession::refresh llama cada 60 s

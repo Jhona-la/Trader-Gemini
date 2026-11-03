@@ -80,7 +80,7 @@ fn i3a_premisa_el_nucleo_bloquea_entradas_con_la_edad_total() {
 #[test]
 fn i3b_el_rearme_reinicia_los_strikes_de_latencia() {
     let h = compacto(HOST);
-    let t = tramo(&h, "ifruta_rearme.exists(){", "iflatched{continue;}");
+    let t = tramo(&h, "ifruta_rearme.exists(){", "iflatched{");
     assert!(t.contains("latched=false;"));
     assert!(t.contains("latency_strikes=0;"), "el rearme debe reiniciar los strikes");
     assert!(t.contains("letks_armado=arena_imm.kill_switch_active.load(Ordering::Relaxed);"));
