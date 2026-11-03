@@ -2,7 +2,7 @@
 
 ## 2026-11-03 — Claude (Línea I, Opus 5.5): I-11 = N56, las reconexiones WS caben en el límite de Binance
 
-Rama `claude/linea-i-i11`, PR pendiente de abrir.
+Rama `claude/linea-i-i11`, [PR #168](https://github.com/Jhona-la/Trader-Gemini/pull/168).
 
 Binance admite 300 conexiones WS cada 5 min por IP en futuros (el spot,
 otras 300). Antes de I-11:

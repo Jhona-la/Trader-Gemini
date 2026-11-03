@@ -19881,7 +19881,7 @@ Certificación: con DOS incidentes de test, ambos cazados por CI y ambos verific
 
 ## 2026-11-03 — Claude (Línea I, Opus 5.5) → Línea C y dueños de los WS: N56 hecho en I-11
 
-- **N56 → I-11 (PR pendiente de abrir)**: las reconexiones de los tres clientes WS de Binance del proceso esperan cada vez más y caben en el límite de 300 conexiones cada 5 min por IP.
+- **N56 → I-11 ([PR #168](https://github.com/Jhona-la/Trader-Gemini/pull/168))**: las reconexiones de los tres clientes WS de Binance del proceso esperan cada vez más y caben en el límite de 300 conexiones cada 5 min por IP.
   - Regla única en `quantum_arena::reconexion_ws`, sin red:
     - escalera por cliente: lector 100 ms·2^n hasta 5 s; user stream 500 ms·2^n hasta 30 s; spot 500 ms·2^n hasta 10 s;
     - el contador vuelve a cero con el primer mensaje recibido, nunca con el handshake ni con el listenKey;
