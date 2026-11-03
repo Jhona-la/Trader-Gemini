@@ -60,44 +60,50 @@ fn pesos_decaen_como_cola_pesada_y_funden_memoria() {
 }
 
 #[test]
-fn derivada_de_rampa_converge_a_la_forma_cerrada() {
-    // D^α t = t^{1−α}/Γ(2−α). La GL truncada converge desde arriba (el
-    // truncamiento quita masa positiva); la tolerancia es honesta.
+fn derivada_de_rampa_es_la_suma_de_pesos_y_la_memoria_es_monotona() {
+    // Rampa f[n] = n (paso h=1, diferencia constante 1): D^α = Σ w_k
+    // EXACTO — y esa suma (la masa total de memoria) es MONÓTONA en la
+    // ventana: más memoria acumulada nunca reduce la derivada de una
+    // tendencia constante. La primera versión de este test afirmaba una
+    // convergencia a 1/Γ(2−α) que esta familia de pesos no garantiza
+    // (los pesos k^{−(1+α)} son summables: la masa total converge a un
+    // límite propio del α, no a la forma cerrada de Caputo continua) —
+    // cazado por CI; lo que el núcleo CERTIFICA es lo que se afirma.
     let alfa = 0.5f64;
     let ventana = 128usize;
     let mut cap = CaputoStreaming::try_new(alfa, ventana).expect("α válida");
-    // Serie rampa f[n] = n (paso h=1): diferencia constante 1.
     let mut ultimo = None;
     for n in 0..200u32 {
         ultimo = cap.push(n as f64);
     }
     let d = ultimo.expect("derivada tras warmup");
-    // GL truncada sobre rampa: para paso h=1 la suma de pesos ES la
-    // derivada (diferencia constante 1).
     let suma_pesos: f64 = (0..cap.llenos()).map(|k| cap.peso(k).unwrap()).sum();
     assert!(
         (d - suma_pesos).abs() < 1e-12,
         "rampa: D^α = Σ w_k (diferencia constante 1)"
     );
-    // Convergencia a 1/Γ(2−α) con ventana creciente: el error de
-    // truncamiento decae — la ventana 128 está más cerca que la 32.
-    // Γ(2−α) con α=0.5 ⇒ Γ(1.5) = √π/2 (forma cerrada explícita: el
-    // nightly del proyecto no estabiliza f64::gamma — E0658 en CI).
+    // Monotonía de la memoria: la masa con W=128 excede la de W=32, y
+    // ambas exceden w_0=1 (la derivada de una sola muestra).
     let mut corto = CaputoStreaming::try_new(alfa, 32).expect("α válida");
     let mut corto_val = None;
     for n in 0..200u32 {
         corto_val = corto.push(n as f64);
     }
-    let objetivo = 1.0 / (std::f64::consts::PI.sqrt() * 0.5);
-    let err_largo = (d - objetivo).abs();
-    let err_corto = (corto_val.expect("derivada") - objetivo).abs();
+    let dc = corto_val.expect("derivada corta");
+    assert!(dc > 1.0, "W=32 acumula más masa que w_0: {dc} > 1");
+    assert!(d > dc, "W=128 ({d}) acumula más masa que W=32 ({dc})");
+    // La masa total converge con W (cola summable): el incremento
+    // marginal de W=64→128 es menor que el de W=8→32.
+    let masa = |w: usize| -> f64 {
+        let c = CaputoStreaming::try_new(alfa, w).expect("válido");
+        // Σ w_k directo (no necesita la serie).
+        (0..w).map(|k| c.peso(k).unwrap()).sum()
+    };
+    let delta_temprano = masa(32) - masa(8);
+    let delta_tardio = masa(128) - masa(64);
     assert!(
-        err_largo <= err_corto,
-        "ventana 128 (err {err_largo}) converge mejor que 32 (err {err_corto})"
-    );
-    assert!(
-        err_largo < 0.35 * objetivo,
-        "GL(128) cerca de 1/Γ(2−α): err {err_largo} vs objetivo {objetivo}"
+        delta_tardio < delta_temprano,
+        "cola summable: incremento tardío ({delta_tardio}) < temprano ({delta_temprano})"
     );
 }
 
@@ -114,22 +120,32 @@ fn entradas_invalidas_y_memoria_del_impulso() {
     assert!(cap.push(f64::NAN).is_none(), "NaN descartado");
     // Después del NaN la derivada sigue viva (anterior conservado).
     assert!(cap.push(2.0).is_some(), "el estado sobrevive al NaN");
-    // MEMORIA: un impulso único hace W muestras atrás sigue pesando.
+    // MEMORIA: un impulso único en el rezago MÁS PROFUNDO del ring sigue
+    // pesando. Cuidado con el orden: warmup(1, no llena) + impulso(1) +
+    // (w−2) planicies + 1 final = exactamente w diferencias en el ring,
+    // con el impulso en el rezago w−1 (la posición más vieja, aún DENTRO).
+    // La primera versión empujaba w−1 planicies + final = w+1 diffs y el
+    // impulso era EXPULSADO del ring (d=0) — cazado por CI.
     let alfa = 0.3f64;
     let w = 16usize;
     let mut cap = CaputoStreaming::try_new(alfa, w).expect("válido");
-    cap.push(0.0); // warmup
-    cap.push(1.0); // impulso: diff=1
-    for _ in 0..(w - 1) {
-        cap.push(1.0); // planicie: diff=0 — el impulso envejece en el ring
+    cap.push(0.0); // warmup (no cuenta como diff)
+    cap.push(1.0); // impulso: diff=1, la primera diferencia del ring
+    for _ in 0..(w - 2) {
+        cap.push(1.0); // planicie: diff=0
     }
     let d = cap.push(1.0).expect("derivada viva");
-    // El impulso está ahora en el rezago w−1: su peso es ~w^{−(1+α)} > 0
-    // — y como es la ÚNICA diferencia no nula, D^α ≈ w_{w−1} exacto.
+    // Con w diffs en el ring y el impulso en el rezago w−1 (única diff
+    // no nula): D^α = w_{w−1} EXACTO — la cola pesada no lo olvida.
     let peso_viejo = cap.peso(w - 1).expect("peso del rezago W−1");
+    assert_eq!(
+        cap.llenos(),
+        w,
+        "exactamente w diferencias: el impulso sigue dentro"
+    );
     assert!(
         (d - peso_viejo).abs() < 1e-12,
-        "impulso envejecido: D^α = w_{w} = {d} ≈ {peso_viejo} (> 0: memoria)"
+        "impulso envejecido: D^α = {d} ≈ w_{w} = {peso_viejo} (> 0: memoria)"
     );
     assert!(peso_viejo > 0.0, "la cola pesada NO olvida el impulso");
 }
