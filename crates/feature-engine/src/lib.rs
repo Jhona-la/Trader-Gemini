@@ -13,6 +13,7 @@ pub mod hawkes;
 pub mod hawkes_cross;
 pub mod hodge_flow;
 pub mod hurst_dfa;
+pub mod caputo_fraccional;
 pub mod kalman;
 pub mod kam_eth_tur_stein;
 pub mod koopman_dmd;
