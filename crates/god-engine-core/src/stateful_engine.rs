@@ -888,15 +888,19 @@ impl StatefulEngine {
                 // renormalización de Wilson — observable vivo del régimen
                 // multi-escala, sin costo extra (el FFT ya se pagó). Sin
                 // cambio de conducta; consumo = decisión del consejo.
-                if let Ok(flujo) = feature_engine::flujo_rg::flujo_wilson(
-                    &self.spectral.power_by_bin,
-                ) {
+                if let Ok(flujo) =
+                    feature_engine::flujo_rg::flujo_wilson(&self.spectral.power_by_bin)
+                {
                     self.spectral_rg_beta = *flujo.betas.last().unwrap_or(&f64::NAN) as f32;
                     self.spectral_rg_desvio = flujo.desvio_punto_fijo as f32;
-                    self.spectral_rg_escala = flujo.escala_rompimiento.map(|k| k as f32).unwrap_or(f32::NAN);
+                    self.spectral_rg_escala = flujo
+                        .escala_rompimiento
+                        .map(|k| k as f32)
+                        .unwrap_or(f32::NAN);
                 }
                 // Err (bins a cero: log indefinido) ⇒ último valor o NaN —
                 // ausencia honesta, jamás β inventado.
+            }
             let (h_mic, h_mes, h_mac, _score, _micro_p, _macro_p) = self.multifractal.update(price);
             self.hurst_micro = h_mic as f32;
             self.hurst_meso = h_mes as f32;
