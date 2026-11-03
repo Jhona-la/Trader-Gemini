@@ -1850,7 +1850,15 @@ un escéptico por lote listo):
   único incremento, así que el backoff exponencial de después (100 ms·2^n,
   tope 5 s) quedó muerto: un handshake que falla se reintenta cada segundo
   sin crecer, y tras una caída se reconecta a los 100 ms. Medir contra el
-  límite de conexiones WS de Binance antes de decidir.
+  límite de conexiones WS de Binance antes de decidir. **Hecha en I-11
+  (Línea I):** espera creciente (`quantum_arena::reconexion_ws`) en las siete
+  salidas de la fase de conexión del lector, que sólo vuelve a cero con el
+  primer mensaje que no es un Close; el brazo inalcanzable se retiró. El
+  mismo defecto estaba en el user-data stream (volvía a 500 ms al obtener el
+  listenKey: con el REST sano y el WS fallando, una conexión cada 500 ms) y
+  en el feed spot (tras el corte de una conexión hecha reconectaba sin
+  esperar); los dos usan ya la regla. Peor caso en 5 min: 2×65 + 15 = 145
+  conexiones de futuros (límite 300) y 34 del spot.
 - N57 (de la tanda 19, Línea C, sin dueño: os-guardian): `subnormal_control.rs`
   usa `_mm_getcsr`/`_mm_setcsr`, obsoletos (8 warnings en Windows). Según
   su documentación, cambiar FTZ/DAZ del MXCSR desde Rust es comportamiento

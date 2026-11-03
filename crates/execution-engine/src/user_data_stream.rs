@@ -117,7 +117,10 @@ impl UserDataStreamer {
             "wss://fstream.binance.com/ws"
         };
 
-        let mut backoff_ms = 500u64;
+        // I-11 (N56): la espera entre reconexiones vuelve a cero con el primer
+        // mensaje recibido, no al obtener el listenKey (REST): antes, un WS que
+        // fallaba con el REST sano se reabría cada 500 ms.
+        let mut espera = crate::reconexion_ws::EsperaReconexion::usuario();
         // MOD1/4-009: distingue la PRIMERA conexión de las reconexiones —
         // el catch-up sólo aplica tras un gap (desconexión previa).
         let mut connected_once = false;
@@ -131,10 +134,7 @@ impl UserDataStreamer {
                 }
             }
             let listen_key = match self.client.create_listen_key().await {
-                Ok(k) if !k.is_empty() => {
-                    backoff_ms = 500;
-                    k
-                }
+                Ok(k) if !k.is_empty() => k,
                 Ok(_) => {
                     let jitter_ms = (std::time::SystemTime::now()
                         .duration_since(std::time::UNIX_EPOCH)
@@ -142,13 +142,12 @@ impl UserDataStreamer {
                         .unwrap_or(42)
                         % 200)
                         + 50;
+                    let pausa = espera.fallo(None) + std::time::Duration::from_millis(jitter_ms);
                     println!(
                         "⚠️ [USER-STREAM] listenKey vacío; reintentando en {}ms...",
-                        backoff_ms + jitter_ms
+                        pausa.as_millis()
                     );
-                    tokio::time::sleep(tokio::time::Duration::from_millis(backoff_ms + jitter_ms))
-                        .await;
-                    backoff_ms = (backoff_ms * 2).min(30_000);
+                    tokio::time::sleep(pausa).await;
                     continue;
                 }
                 Err(e) => {
@@ -158,14 +157,13 @@ impl UserDataStreamer {
                         .unwrap_or(42)
                         % 200)
                         + 50;
+                    let pausa = espera.fallo(None) + std::time::Duration::from_millis(jitter_ms);
                     println!(
                         "⚠️ [USER-STREAM] create_listen_key falló: {}; reintentando en {}ms...",
                         e,
-                        backoff_ms + jitter_ms
+                        pausa.as_millis()
                     );
-                    tokio::time::sleep(tokio::time::Duration::from_millis(backoff_ms + jitter_ms))
-                        .await;
-                    backoff_ms = (backoff_ms * 2).min(30_000);
+                    tokio::time::sleep(pausa).await;
                     continue;
                 }
             };
@@ -193,12 +191,14 @@ impl UserDataStreamer {
                     stream
                 }
                 Err(e) => {
+                    // I-11: un 429/418 al abrir el WS trae Retry-After.
+                    let pausa = espera.fallo(crate::reconexion_ws::espera_pedida_por_error(&e));
                     println!(
                         "⚠️ [USER-STREAM] Conexión falló: {}; reintentando en {}ms...",
-                        e, backoff_ms
+                        e,
+                        pausa.as_millis()
                     );
-                    tokio::time::sleep(tokio::time::Duration::from_millis(backoff_ms)).await;
-                    backoff_ms = (backoff_ms * 2).min(30_000);
+                    tokio::time::sleep(pausa).await;
                     continue;
                 }
             };
@@ -234,6 +234,7 @@ impl UserDataStreamer {
                 }
                 match msg {
                     Ok(tokio_tungstenite::tungstenite::Message::Text(text)) => {
+                        espera.datos_recibidos();
                         self.route_event(&text);
                         // D-198: Salida inmediata tras procesar listenKeyExpired para no colgar en read.next()
                         if self.expired_flag.swap(false, Ordering::Relaxed) {
@@ -242,7 +243,10 @@ impl UserDataStreamer {
                         }
                     }
                     Ok(tokio_tungstenite::tungstenite::Message::Ping(_)) => {
-                        // Tungstenite responde auto-PONG.
+                        // Tungstenite responde auto-PONG. I-11: el ping de
+                        // Binance (cada 3 min en una cuenta quieta) también
+                        // prueba que el servidor está sano.
+                        espera.datos_recibidos();
                     }
                     Ok(tokio_tungstenite::tungstenite::Message::Close(frame)) => {
                         println!("⚠️ [USER-STREAM] Servidor cerró conexión: {:?}", frame);
@@ -257,8 +261,14 @@ impl UserDataStreamer {
             }
 
             keepalive_handle.abort();
-            println!("🔌 [USER-STREAM] Desconectado. Reanudando en 1s...");
-            tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
+            // I-11: tras el corte, la escalera (una conexión que no entregó
+            // nada sigue subiendo; una que sí, empieza en el primer escalón).
+            let pausa = espera.fallo(None);
+            println!(
+                "🔌 [USER-STREAM] Desconectado. Reanudando en {}ms...",
+                pausa.as_millis()
+            );
+            tokio::time::sleep(pausa).await;
         }
     }
 

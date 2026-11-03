@@ -14,6 +14,7 @@ pub mod order_registry;
 pub mod order_types;
 pub mod purga_pendiente;
 pub mod reconciliation;
+pub mod reconexion_ws;
 pub mod router;
 pub mod simulator;
 pub mod trade_accounting;

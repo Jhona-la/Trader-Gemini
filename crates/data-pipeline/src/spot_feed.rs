@@ -327,7 +327,11 @@ async fn run_spot_ws_streamer(
     let streams_param = streams_vec.join("/");
     let ws_url = format!("{}/stream?streams={}", BINANCE_SPOT_WS_BASE, streams_param);
 
-    let mut backoff_ms = 500u64;
+    // I-11 (N56): espera creciente entre reconexiones; vuelve a cero con el
+    // primer mensaje recibido. Antes, tras el corte de una conexión hecha, se
+    // reconectaba sin esperar nada (un servidor que acepta y corta abría
+    // conexiones en bucle contra el límite de 300 cada 5 min por IP).
+    let mut espera = quantum_arena::reconexion_ws::EsperaReconexion::spot();
 
     loop {
         let url_parsed = match url::Url::parse(&ws_url) {
@@ -340,10 +344,10 @@ async fn run_spot_ws_streamer(
 
         match connect_async(url_parsed).await {
             Ok((mut ws_stream, _)) => {
-                backoff_ms = 500;
                 while let Some(msg_result) = ws_stream.next().await {
                     match msg_result {
                         Ok(tokio_tungstenite::tungstenite::Message::Text(text)) => {
+                            espera.datos_recibidos();
                             if let Some((sym, bid, ask, bid_qty, ask_qty)) =
                                 parse_ws_book_ticker(&text)
                             {
@@ -362,9 +366,15 @@ async fn run_spot_ws_streamer(
                         }
                         Ok(tokio_tungstenite::tungstenite::Message::Ping(payload)) => {
                             use futures_util::SinkExt;
-                            let _ = ws_stream
+                            espera.datos_recibidos();
+                            // Un Pong que no sale es una conexión rota.
+                            if ws_stream
                                 .send(tokio_tungstenite::tungstenite::Message::Pong(payload))
-                                .await;
+                                .await
+                                .is_err()
+                            {
+                                break;
+                            }
                         }
                         Ok(tokio_tungstenite::tungstenite::Message::Close(_)) => break,
                         Err(_) => break,
@@ -372,11 +382,25 @@ async fn run_spot_ws_streamer(
                     }
                 }
             }
-            Err(_) => {
-                tokio::time::sleep(Duration::from_millis(backoff_ms)).await;
-                backoff_ms = (backoff_ms * 2).min(10_000);
+            Err(e) => {
+                // I-11: un 429/418 al abrir el WS trae Retry-After.
+                let rechazo = match &e {
+                    tokio_tungstenite::tungstenite::Error::Http(resp) => {
+                        quantum_arena::reconexion_ws::espera_pedida(
+                            resp.status().as_u16(),
+                            resp.headers()
+                                .get("retry-after")
+                                .and_then(|v| v.to_str().ok()),
+                        )
+                    }
+                    _ => None,
+                };
+                tokio::time::sleep(espera.fallo(rechazo)).await;
+                continue;
             }
         }
+        // I-11: tras el corte, la escalera (antes se reconectaba sin esperar).
+        tokio::time::sleep(espera.fallo(None)).await;
     }
 }
 
