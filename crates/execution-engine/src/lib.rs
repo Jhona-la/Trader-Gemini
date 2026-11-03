@@ -11,6 +11,7 @@ pub mod ioc_evidence;
 pub mod ntp;
 pub mod order_registry;
 pub mod order_types;
+pub mod purga_pendiente;
 pub mod reconciliation;
 pub mod router;
 pub mod simulator;

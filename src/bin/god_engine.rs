@@ -273,6 +273,42 @@ struct ProtectionAudit {
     sl_gap: f64,
 }
 
+/// I-9 (N15b del censo C-F7b): las piernas de (símbolo, lado) siguen vivas
+/// tras un cierre, porque su purga falló o no llegó a intentarse. Quedan
+/// pendientes en `PURGAS_PENDIENTES`: el símbolo no admite entradas hasta que
+/// el vigilante, despierto aquí, las purgue (antes, una reentrada abría con
+/// la pierna vieja armada encima y el vigilante la contaba como protección).
+fn anotar_purga_pendiente(symbol: &str, is_long: bool) {
+    execution_engine::purga_pendiente::PURGAS_PENDIENTES.anotar(symbol, is_long);
+    quantum_arena::protection_health::mark_dirty();
+}
+
+/// I-9: el vigilante reintenta las purgas pendientes con la foto de
+/// posiciones de su auditoría, antes de la purga de huérfanas.
+async fn reintentar_purgas_pendientes(
+    executor: &execution_engine::executor::OrderExecutor,
+    positions: &[execution_engine::PositionRiskEntry],
+) {
+    use execution_engine::purga_pendiente::{Reintento, PURGAS_PENDIENTES};
+    for ((symbol, is_long), r) in PURGAS_PENDIENTES.reintentar(executor, positions).await {
+        let lado = if is_long { "LONG" } else { "SHORT" };
+        match r {
+            Reintento::Purgada(n) => telemetry_server::telemetry_log!(
+                "🧹 [PURGA-PENDIENTE] {} {}: {} pierna(s) cancelada(s); el símbolo vuelve a admitir entradas",
+                symbol, lado, n
+            ),
+            Reintento::Aplazada => telemetry_engine::telemetry_err!(
+                "🧹 [PURGA-PENDIENTE] {} {}: hay una posición abierta que sus piernas podrían proteger; no se purga a ciegas y el símbolo sigue sin entradas",
+                symbol, lado
+            ),
+            Reintento::Fallida(e) => telemetry_engine::telemetry_err!(
+                "🧹 [PURGA-PENDIENTE] {} {}: la purga volvió a fallar ({}); el símbolo sigue sin entradas",
+                symbol, lado, e
+            ),
+        }
+    }
+}
+
 /// B2.6 / D-698 — purga las piernas TP/SL sin posición debajo (en hedge,
 /// sin posición de su lado). Las usan el vigilante en cada auditoría y el
 /// apagado tras el aplanado final (CL-44b).
@@ -3269,6 +3305,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     // posición sana cuyo bracket apenas estaba en vuelo.
                     let mut open_syms: std::collections::HashSet<String> =
                         std::collections::HashSet::new();
+                    reintentar_purgas_pendientes(&executor, &positions).await;
                     purge_orphan_legs(&executor, &positions).await;
                     let mut naked_total = 0usize;
                     for p in positions
@@ -3409,16 +3446,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                                     // reporta, porque una pierna que
                                                     // sobrevive dispara sobre la posición
                                                     // siguiente, y el log ya no dice
-                                                    // «purgados» si no lo están. El
-                                                    // watchdog (purge_orphan_legs) NO la
-                                                    // recoge en esta auditoría (corre
-                                                    // antes, con la posición aún abierta),
-                                                    // y en la siguiente sólo si no hay
-                                                    // posición en el símbolo (one-way) o
-                                                    // en ese lado (hedge); en hedge, una
-                                                    // pierna sin positionSide no se purga
-                                                    // mientras viva el lado contrario
-                                                    // (fila N15b del censo).
+                                                    // «purgados» si no lo están. I-9
+                                                    // (N15b): el fallo deja la purga
+                                                    // pendiente; el vigilante la reintenta
+                                                    // y el símbolo no admite entradas
+                                                    // mientras tanto (purge_orphan_legs no
+                                                    // la recogería con una reentrada ya
+                                                    // abierta en el símbolo o el lado).
                                                     let purga = exec_esc
                                                         .cancel_position_oco_orders(
                                                             &close_sym,
@@ -3430,6 +3464,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                                             "⚠️ [NAKED-ESCALATION] {} cerrada pero brackets sin purgar: {}",
                                                             close_sym, e
                                                         );
+                                                        anotar_purga_pendiente(&close_sym, close_long);
                                                     }
                                                     naked_streak.remove(&close_sym);
                                                     // B3.19 — la emergencia también
@@ -3466,12 +3501,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                             }
                                         } else {
                                             // La posición ya no existe (TP disparó o
-                                            // cierre externo): la purga de huérfanas
-                                            // de la próxima auditoría la limpiará si
-                                            // para entonces no hay otra posición en
-                                            // ese símbolo o lado (la de esta corrió
-                                            // antes del bucle; fila N15b del censo).
+                                            // cierre externo) y sus piernas pueden
+                                            // seguir vivas: la purga de huérfanas de
+                                            // esta auditoría corrió antes del bucle,
+                                            // con la posición abierta. I-9 (N15b):
+                                            // queda pendiente para el vigilante y el
+                                            // símbolo no admite entradas hasta purgarla.
                                             naked_streak.remove(&close_sym);
+                                            anotar_purga_pendiente(&close_sym, close_long);
                                         }
                                     }
                                 }
@@ -4899,6 +4936,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                     // brackets huérfanos (ya sin subyacente).
                                     if let Err(e) = exec_clone.load().cancel_position_oco_orders(&parsed_sym_str, is_long_close).await {
                                         telemetry_engine::telemetry_err!("⚠️ [PURGE OCO] {} cerrada pero brackets sin purgar: {}", parsed_sym_str, e);
+                                        // I-9 (N15b): pendiente hasta que el vigilante la purgue.
+                                        anotar_purga_pendiente(&parsed_sym_str, is_long_close);
                                     } else {
                                         telemetry_engine::telemetry!("🛡️ [CLOSE SUCCESS] {} cerrada y brackets purgados.", parsed_sym_str);
                                     }
@@ -5240,6 +5279,20 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             if is_symbol_suspended(&parsed_sym_str) {
                                 telemetry_engine::telemetry!(
                                     "🛑 [FEE-BREAKER] Entrada de {} vetada (símbolo suspendido — fees > bruto ganador). Rollback de estado.",
+                                    parsed_sym_str
+                                );
+                                rollback_positions(&engine_real.arena);
+                                break 'envio None;
+                            }
+
+                            // I-9 (N15b): el símbolo tiene piernas de un cierre
+                            // anterior sin purgar. Una entrada ahora abriría con
+                            // ellas armadas encima, al precio de la posición vieja.
+                            if execution_engine::purga_pendiente::PURGAS_PENDIENTES
+                                .bloquea_entrada(&parsed_sym_str)
+                            {
+                                telemetry_engine::telemetry!(
+                                    "🧹 [PURGA-PENDIENTE] Entrada de {} vetada: piernas de un cierre anterior sin purgar. Rollback de estado.",
                                     parsed_sym_str
                                 );
                                 rollback_positions(&engine_real.arena);
@@ -5658,6 +5711,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                             // posición del lado contrario.
                                             if let Err(ce) = entry_executor.cancel_position_oco_orders(&parsed_sym_str, is_long_close).await {
                                                 telemetry_engine::telemetry_err!("⚠️ [EMERGENCY] Purga de órdenes de {} falló: {}", parsed_sym_str, ce);
+                                                // I-9 (N15b): pendiente hasta que el vigilante la purgue.
+                                                anotar_purga_pendiente(&parsed_sym_str, is_long_close);
                                             }
                                             match close_res {
                                                 Ok(()) => {
