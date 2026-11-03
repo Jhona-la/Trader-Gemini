@@ -5526,6 +5526,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                         // 350ms minimiza esa ventana.
                                         tokio::time::sleep(tokio::time::Duration::from_millis(350)).await;
                                         let mut oco_success = false;
+                                        // I-8 (N18): los rechazos de cada intento,
+                                        // para distinguir el freno temporal del
+                                        // exchange de un bracket inaplicable.
+                                        let mut errores_bracket: Vec<String> = Vec::with_capacity(3);
                                         for retry in 1..=3 {
                                             // CERT-M4-H03: verificar que la posición SIGUE ABIERTA
                                             // antes de cada retry — si el TP bracket llenó mientras
@@ -5608,11 +5612,45 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                                 }
                                                 Err(e) => {
                                                     telemetry_engine::telemetry_err!("⚠️ [OCO RETRY {}/3] Falló bracket para {}: {}", retry, parsed_sym_str, e);
+                                                    errores_bracket.push(e);
                                                     tokio::time::sleep(tokio::time::Duration::from_millis(50)).await;
                                                 }
                                             }
                                         }
-                                        if !oco_success {
+                                        if !oco_success
+                                            && execution_engine::freno_temporal::tras_bracket_fallido(&errores_bracket)
+                                                == execution_engine::freno_temporal::TrasBracketFallido::DiferirAlVigilante
+                                        {
+                                            // I-8 (Línea I, fila N18 del censo C-F7b): los
+                                            // tres intentos los rechazó el freno temporal
+                                            // del exchange (429/418 o su cuota) sin enviarlos.
+                                            // El cierre de emergencia y la purga los rechazaría
+                                            // el mismo freno, y X-009 armaba por eso el
+                                            // kill-switch PERMANENTE (rearme humano) por un
+                                            // freno que el exchange levanta solo (M4-C02). La
+                                            // posición sigue viva y llenada: su diario se
+                                            // anota, y la protección queda sucia para que el
+                                            // vigilante (CL-44) le ponga el bracket al acabar el
+                                            // freno (mientras dura, su lectura de posiciones
+                                            // también frena). Las entradas nuevas ya las para
+                                            // el propio freno. Con un solo rechazo genuino del
+                                            // exchange se sigue el X-009 de siempre.
+                                            telemetry_engine::telemetry_err!(
+                                                "⏸️ [OCO DIFERIDO] {}: los {} intentos de bracket los rechazó el freno temporal del exchange; sin cierre de emergencia ni kill-switch, el vigilante re-protege al acabar el freno. Último: {:?}",
+                                                parsed_sym_str,
+                                                errores_bracket.len(),
+                                                errores_bracket.last()
+                                            );
+                                            anotar_diario_de_posicion(
+                                                &arena_clone,
+                                                &reservation,
+                                                &parsed_sym_str,
+                                                final_is_long,
+                                                cantidad_llenada,
+                                                _entry_price,
+                                            );
+                                            quantum_arena::protection_health::mark_dirty();
+                                        } else if !oco_success {
                                             // X-009 (REHAB-3): protocolo de emergencia
                                             // CORRECTO: cerrar PRIMERO (la protección
                                             // sigue viva hasta el aterrizaje del close),
