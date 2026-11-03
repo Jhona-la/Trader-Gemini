@@ -1153,6 +1153,12 @@ un escéptico por lote listo):
   lo corrige). Propuesta: en el Err, `mark_dirty` y reintento de la purga
   para (símbolo, lado), con la reentrada en ese símbolo y lado bloqueada
   hasta un Ok. Cambia conducta: átomo propio con test.
+  Ejecutada en Línea I (I-9): `execution_engine::purga_pendiente` anota la
+  purga fallida (también en PURGE OCO y EMERGENCY, y la escalada que
+  encuentra la posición ya cerrada), el vigilante la reintenta antes de
+  `purge_orphan_legs` sin tocar piernas de una posición abierta, y el
+  símbolo no admite entradas hasta un Ok. Residual N15c: una reentrada
+  entre el cierre X-008 y su purga (spawn) puede perder sus brackets.
 - N16 (de la tanda 12, sin verificar como defecto): online_daemon.rs:306-325
   (observed_market_env) mide el medio spread del examen walk-forward con
   el libro del SPOT (spot_bid/spot_ask), no con el de futuros, y las
