@@ -1,6 +1,14 @@
 //! Matriz de correlación EWMA por pares + filtrado de Marchenko-Pastur
 //! (mandato §12.1 del operador, GLM-182).
 //!
+//! **PRECEDENCIA (errata GLM-186)**: el filtrado MP con denoising ya
+//! existía en `random_matrix_wilson.rs` (AGY, Fase 9 de Omega220,
+//! 2026-10-24, contrato F9-001) — este módulo lo duplicó sin saberlo.
+//! Aportes propios que NO están allí: el estimador EWMA de cortes
+//! sincronizados con T efectivo (2−α)/α y la clasificación honesta en
+//! ruido/señal/sub-crítico. Ver `docs/audit/CENSO_SOLAPE_RMT_2026-11-03.md`
+//! para el censo completo y la propuesta de unificación al consejo.
+//!
 //! «Al calcular matrices de covarianza y tensores de correlación entre el
 //! Top 10 de futuros y el resto del mercado, el 80 % de los autovalores
 //! suele ser ruido aleatorio de alta frecuencia. Filtra todos los

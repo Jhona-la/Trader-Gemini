@@ -1,6 +1,13 @@
 //! Grupo de Renormalización multi-escala de Wilson sobre el espectro de
 //! potencias (mandato §12.2 del operador, GLM-183).
 //!
+//! **PRECEDENCIA (errata GLM-186)**: `random_matrix_wilson.rs` (AGY, F9,
+//! 2026-10-24) ya implementaba un Wilson RG — sobre FLUJOS de libro con
+//! función β por escalas (clasificación de operadores). Este módulo es el
+//! RG del ESPECTRO FFT (β_k por octavas, punto fijo exacto por identidad
+//! algebraica) — observable complementario, pero el nombre duplica. Ver
+//! `docs/audit/CENSO_SOLAPE_RMT_2026-11-03.md`.
+//!
 //! «Aplica transformaciones de grupo de renormalización en el espacio de
 //! frecuencias y escalas temporales: integra los grados de libertad
 //! microscópicos (ticks) para extraer las leyes de escala macroscópicas,
