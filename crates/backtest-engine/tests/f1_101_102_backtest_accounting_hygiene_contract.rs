@@ -2,8 +2,12 @@
 //!
 //! 1. F1-101: Contabilidad completa de multi-cierre simultáneo depth + trade en `booktick_replay.rs`.
 //!    Erradicado `c1.or(c2)` que descartaba el segundo cierre (`c2`), alineando `stats.trades`,
-//!    `stats.net_pnl`, `pnl_list`, `fees_est`, `gross_pnl` y `risk_envelope.record_trade` con
-//!    la evolución real de `arena.unified_capital`.
+//!    `stats.net_pnl`, `pnl_list` y `risk_envelope.record_trade` con la evolución real de
+//!    `arena.unified_capital`. Este contrato es un espejo del conteo: no llama al replay.
+//!    LC-F0-20: las comisiones, el bruto, el WR bruto y el turnover del panel ya no son una
+//!    estimación (`qty · mid · roundtrip_fee`) sino el recibo de cada cierre del núcleo; los
+//!    guarda `qsr_lc_f0_20_replay_fee_receipt_contract`, que corre el replay real con dos
+//!    cierres en la misma fila (depth y trade, modo libro). Aquí ya no se fija aquella fórmula.
 //! 2. F1-102: Erradicación del evaluador muerto `vectorized.rs` y la dependencia pesada `polars`
 //!    en `backtest-engine`. Preservación limpia de `compute_multi_coin_event_priority` en `metrics.rs`.
 
@@ -16,8 +20,6 @@ fn test_f1_101_multi_close_accounting_contract() {
     // Slot 1 cierra en el evento trade del MISMO tick (c2): pérdida -1.0 USD, qty 0.1
     let c1: Option<(usize, f64, f64)> = Some((0, 2.5, 0.1));
     let c2: Option<(usize, f64, f64)> = Some((1, -1.0, 0.1));
-    let mid = 60_000.0;
-    let roundtrip_fee = 0.0004;
 
     // --- Comportamiento BUG previo: c1.or(c2) ---
     let mut bug_trades = 0;
@@ -34,35 +36,26 @@ fn test_f1_101_multi_close_accounting_contract() {
     assert_eq!(bug_pnls.len(), 1);
 
     // --- Comportamiento F1-101 corregido: [c1, c2].into_iter().flatten() ---
+    // Sólo el conteo: las comisiones, el bruto y el turnover salen del recibo
+    // de cada cierre (LC-F0-20) y los fija el contrato del replay real.
     let mut fix_trades = 0;
     let mut fix_net_pnl = 0.0;
-    let mut fix_fees_est = 0.0;
-    let mut fix_gross_pnl = 0.0;
     let mut fix_wins_net = 0;
     let mut fix_pnls = Vec::new();
-    let mut fix_turnover = 0.0;
 
-    for (_, pnl_net, qty) in [c1, c2].into_iter().flatten() {
-        let notional = qty * mid;
-        let fee = notional * roundtrip_fee;
+    for (_, pnl_net, _qty) in [c1, c2].into_iter().flatten() {
         fix_trades += 1;
         fix_net_pnl += pnl_net;
-        fix_fees_est += fee;
-        fix_gross_pnl += pnl_net + fee;
         if pnl_net > 0.0 {
             fix_wins_net += 1;
         }
         fix_pnls.push(pnl_net);
-        fix_turnover += notional + notional;
     }
 
     assert_eq!(fix_trades, 2, "F1-101: ambos cierres deben ser registrados");
     assert!((fix_net_pnl - 1.5).abs() < 1e-9, "F1-101: net PnL debe ser la suma exacta (+2.5 - 1.0 = +1.5)");
-    assert!((fix_fees_est - 4.8).abs() < 1e-9, "F1-101: fees estimados para 2 trades de 6000 USD al 0.04%");
-    assert!((fix_gross_pnl - 6.3).abs() < 1e-9, "F1-101: gross PnL debe incluir fees recuperados");
     assert_eq!(fix_wins_net, 1, "F1-101: 1 trade ganador de 2");
     assert_eq!(fix_pnls, vec![2.5, -1.0], "F1-101: lista de PnL contiene ambos eventos en orden causal");
-    assert!((fix_turnover - (2.0 * (0.1 * 60_000.0 * 2.0))).abs() < 1e-9, "Turnover acumulado de ambos lados");
 }
 
 #[test]

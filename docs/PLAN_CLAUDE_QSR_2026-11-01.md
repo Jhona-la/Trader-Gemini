@@ -94,7 +94,7 @@ BOOT-03/05/06, BT-01, SEL-01) y dos auditores encontraron el mismo defecto
 | BOOT-01 | CONFIRMADO, MEDIO | `src/bin/god_engine.rs:1445-1486, 1704-1764` | Todas las peticiones firmadas del arranque (balance, comisiones, posiciones, modo hedge) usan el reloj local crudo: la hora del servidor se mide después. Ninguna envía `recvWindow`. | Kimi (lease). |
 | FEE-03 | CONFIRMADO, MEDIO | genes `vec[68]`, `vec[69]`; `evolution-engine/src/random_forest.rs:72-107` | El deslizamiento que cobran la puerta, la física y la tolerancia IOC son genes: cada candidato se juzga con su propio modelo de coste, y la evolución puede «ganar» bajando lo que se cobra a sí misma. | Congelar o medir: Línea G / Fable. Examen: AGY. |
 | BOOT-04 | CONFIRMADO, BAJO | `god_engine.rs:1445-1486` | Los bucles de balance y comisiones reintentan para siempre errores permanentes (401, -2014, -2015, -1022). Los lanzadores de simulación ponen `BINANCE_API_KEY=shadow` y el arranque gira sin fin. | Kimi (lease). |
-| QSR-CL-07 | CONFIRMADO, BAJO | `quantum-arena/src/config.rs:8-12` | El doc deriva d* con c = 0,25 (daría 0,348), pero el valor 0,6316 es el de c = 0,5. El valor es correcto; el doc engaña a quien lo reutilice. | Fable / AGY (F1-009). |
+| QSR-CL-07 | CORREGIDO (§9), BAJO | `quantum-arena/src/config.rs:8-12` | El doc deriva d* con c = 0,25 (daría 0,348), pero el valor 0,6316 es el de c = 0,5. El valor es correcto; el doc engaña a quien lo reutilice. | Fable / AGY (F1-009). |
 | MUE-03 | CONFIRMADO, BAJO | `god-engine-core/src/stateful_engine.rs:828-840` | `FirmasMaxEnt::medir` crea 5 `Vec` cada 64 ticks por moneda y su salida no se publica ni se lee (AGENT_SYNC dice lo contrario). | GLM (GLM-175). |
 | MUE-04 | CONFIRMADO, BAJO | varios crates | 3 752 líneas de módulos sin uso fuera de sus tests (Feynman instantón, Wilson RG, Marchenko-Pastur, Lyapunov, Bergomi, Malliavin, fase cuántica…). Compilan en cada build. | Autores (AGY, GLM): conectar en sombra o retirar. |
 | QSR-CL-05 | PLAUSIBLE, BAJO | `config.rs:1109-1111`; `lib.rs:2163-2176` | `sync_from_registry` descarta `lg22_arl < 10`, contra F1-089e, y la sincronización siguiente pisa el valor de la gobernanza con el de la config. | Sol (F1-089e) + Codex QRA. |
@@ -378,3 +378,89 @@ en la fase), riesgo `fable_funding_carry_ev_gate_contract` 7/7 y ejecución
 | FEE-06d | Más allá del próximo asentamiento se supone la misma tasa f; para τ ≫ T habría que pronosticar la serie de funding. | quien pronostique el funding |
 | FEE-06e | Comentarios con la ley vieja en `src/bin/god_engine.rs:3115` y `crates/god-engine-core/src/lib.rs:3244` (leases ajenos). | Kimi / Codex QRA |
 | FEE-06f | `QuantumOrderRouter` no tiene llamadores de producción y conserva respaldos fijos (0,0002/0,0001) y `unwrap_or_default` en el reloj. | quien lo reclame |
+
+## 9. Átomo LC-F0-20 (2026-11-02): el panel de comisiones lee el recibo del núcleo
+
+**Qué.** El replay de libro (`booktick_replay.rs`) estimaba las comisiones de
+cada cierre como `qty·mid_salida·(max(maker, 2 pb) + max(taker, 4 pb))` = 7 pb
+y el turnover como `2·qty·mid`; el camino nativo (`run_backtest_native`), como
+`qty·close·2·taker` = 10 pb. El neto y la caja sí son los del núcleo, que cobra
+la entrada como taker y la salida como maker sólo en un TP con trade-through
+(taker en SL, trailing, zombie y tiempo). Resultado: el bruto, las comisiones,
+el WR antes de comisiones y el turnover del panel no eran lo que pagó la
+cuenta (un cierre por SL pagaba 10 pb y el panel decía 7). El turnover entra
+como penalización en el SA de `evolution`.
+
+**Arreglo** (rama `claude/qsr-lcf020`, base `545cb5636`). Una sola fuente: el
+recibo que el núcleo deja con cada cierre
+(`GodEngineCore::take_local_close_accounting`). Comisiones = entrada + salida
+cobradas; bruto = neto + esas comisiones; WR bruto sobre ese bruto; turnover =
+qty·(entrada + salida). El recibo se toma justo después de cada
+`process_event` que puede cerrar (hasta tres por fila en el replay, uno por
+barra en el nativo) y se empareja con ese cierre sólo si coinciden el reloj y
+los bits de la cantidad; se cuentan c1 y c2. Un cierre sin recibo válido se
+cuenta aparte (`ReplayStats::closes_without_receipt`; ranura opcional
+`STAT_CIERRES_SIN_RECIBO` en el nativo) y no entra en el panel: nunca se le
+supone una tarifa. No cambia lo que cobra el núcleo (el TP como maker es otro
+hallazgo, de Codex QRA), ni el neto, ni el capital final, ni el MTM.
+
+**Pruebas.** `qsr_lc_f0_20_replay_fee_receipt_contract` (trade-only y libro;
+5 cierres, dos SL taker y tres TP maker, uno con bruto > 0 y neto < 0, y dos
+cierres en la misma fila en modo libro; la caja del arena se cuadra en cada
+intervalo). RED sobre `545cb5636`: 0/2, comisiones 0,350070 informadas frente a
+0,410221 cobradas; el golden nativo también cae (bruto = neto + 10 pb frente a
+neto + lo cobrado). GREEN tras la revisión: el contrato 2/2,
+`backtest-engine --lib` 60/0 y las integraciones del replay y del golden 45/0
+(2 ignoradas, mediciones manuales); `cargo check --workspace --all-targets
+--locked` sin errores y la puerta de clippy en líneas cambiadas, limpia.
+
+**Cambio de línea base de las huellas (sin cambio de conducta).** Las huellas
+FNV del T-1 (por gen) y del T-2 (base) cubren las 8 estadísticas nativas, y
+`out_stats[5]` y `[7]` ahora salen del recibo: cambian en todo genoma que
+opere. Medido con `t2_diag_actividad_del_fixture_lateral_micro`: base
+`545cb5636` huella `ac3db6ada3ce80a5`, esta rama `4c2f51cff2dc0ca9`; en las dos,
+36 cierres, neto −0,30258178974323224, WR 0,3333… y capital
+12,697418210256767, bit a bit. Las comparaciones de huellas entre árboles
+deben empezar en este átomo. El número de genes sensibles del T-1 no debería
+moverse (el bruto sólo cambia si cambia el neto), pero no se ha medido: el
+oráculo largo no se corrió.
+
+**Revisión adversarial.** Tres lentes (contabilidad, regresiones, consumidores);
+cuatro hallazgos confirmados, los cuatro bajos:
+
+- *LC20-A1*: `test_f1_101_multi_close_accounting_contract` no llama al replay y
+  guardaba una copia de la fórmula vieja (fees, bruto, turnover) como
+  «comportamiento corregido»: seguía en verde si alguien devolvía la estimación.
+  Se queda sólo el conteo c1/c2.
+- *LC20-R1*: el cambio de huellas de arriba, sin registrar. Registrado aquí, en
+  el commit y en AGENT_SYNC.
+- *LC20-R3*: `evolution` imprimía el bruto y el WR bruto sin decir si faltó un
+  recibo; ahora avisa como `backtest_windows`. En el nativo ningún llamador
+  reserva la ranura del contador (FFI, `polars_evolver`, T-1/T-2/T-3): queda
+  documentado. Hoy es latente: el núcleo escribe el recibo en el mismo bloque
+  que devuelve el cierre.
+- *LC20-R2* (comentario corregido, defecto abierto): ver la tabla.
+
+Confirmados y fuera de este átomo:
+
+| Id | Severidad | Qué | Dueño |
+|---|---|---|---|
+| LC20-R2 | baja | El MTM nativo de lo que sigue abierto (drawdown por barra y capital final) descuenta `qty·precio·2·taker`, una tasa de ida y vuelta, sobre UNA sola pierna (la salida pendiente): ×2 frente a taker. El replay de libro cobra taker + deslizamiento. Infla el drawdown y rebaja el capital final de todo genoma que acabe con posición abierta. No se toca aquí para no mover el capital final. | a registrar en la lista LC-F0 (Línea C) o quien tome el camino nativo |
+| LC20-C1 | info | Compuesto con `origin/main` (`90894bdd9`, 15 commits sobre la base `545cb5636`, entre ellos FEE-06a y la Fase 13 de AGY): sólo chocaron AGENT_SYNC y este plan (FEE-06a queda como §8 y este átomo como §9). Diff contra cada padre revisado; check y suites en el árbol compuesto (abajo). | integrador |
+
+**Integración y CI.** El contrato nuevo y el de F1-101 no los corría ningún
+workflow; se añaden como paso propio de `replay-contracts.yml`.
+
+### QSR-CL-07 en el mismo PR (sólo documentación y un contrato)
+
+La doc de `CANONICAL_COUNCIL_MAX_DRAWDOWN` (`quantum-arena/src/config.rs`)
+derivaba d* con c = 0,25 de Kelly, que da 1 − 0,05^(1/7) ≈ 0,348. El valor del
+literal, 0,6316, es el de ½ Kelly (`FRACCION_KELLY_MAXIMA` = 0,5, ADR-0016/QS-D3):
+1 − 0,05^(1/3) ≈ 0,63159685013596134. Se corrige la doc y no se toca el valor.
+Un `const` no puede llamar a `powf`, así que el contrato
+`risk-engine/tests/qsr_cl07_drawdown_consejo_contract.rs` ata el literal a
+`drawdown_de_falsacion(FRACCION_KELLY_MAXIMA, ALFA_FALSACION)` con 4 ulps de
+margen (el literal queda 1 ulp por encima del redondeo correcto y `powf`, 1 por
+debajo) y comprueba que no es el d* de ¼ Kelly. La entrada del buzón que cita
+`test_canonical_constants_mathematical_derivation` con 1 − 0,05^(1/7) se corrige
+con una errata (ese test no existe en el árbol).

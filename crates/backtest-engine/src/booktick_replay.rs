@@ -15,6 +15,9 @@
 //!      - omni: 6 series FRED históricas reales por fecha (step-function) —
 //!        las mismas de producción (F4.1); sin red ⇒ omni neutro documentado.
 //!      - fees: los del genoma/arena (ya piso-realistas post-F3.4).
+//!      - panel (LC-F0-20): comisiones, PnL bruto, WR antes de comisiones y
+//!        turnover salen del recibo de cada cierre del núcleo
+//!        (`take_local_close_accounting`), no de una tarifa supuesta.
 //!      - sin relojes falsos: event_time = ts REAL del tick de disco.
 //!      - B3.19 SIZING: cada entrada pasa por la MISMA envolvente Kelly
 //!        bayesiana del host (D-442 stop real + D-116 bootstrap/autoridad +
@@ -222,10 +225,20 @@ pub enum ReplayCloseReason {
 pub struct ReplayStats {
     pub trades: u64,
     pub wins_net: u64,
+    /// LC-F0-20: cierres con bruto (neto + comisiones del recibo) > 0. Sólo
+    /// cuenta los cierres con recibo; ver `closes_without_receipt`.
     pub wins_gross: u64,
     pub net_pnl: f64,
+    /// LC-F0-20: neto + comisiones cobradas, sobre los cierres con recibo.
     pub gross_pnl: f64,
+    /// LC-F0-20: comisiones que COBRÓ el núcleo (entrada + salida, según el
+    /// recibo de cada cierre), no una estimación; el nombre es histórico.
     pub fees_est: f64,
+    /// LC-F0-20: cierres sin recibo del núcleo. No entran en `fees_est`,
+    /// `gross_pnl`, `wins_gross` ni en el turnover (nunca se les supone una
+    /// tarifa); con este contador > 0, `gross_pnl − fees_est` difiere de
+    /// `net_pnl` exactamente en el neto de esos cierres.
+    pub closes_without_receipt: u64,
     pub final_capital: f64,
     pub max_dd: f64,
     /// Sharpe por trade (media/σ de PnL neto).
@@ -265,6 +278,16 @@ impl ReplayStats {
             0.0
         }
     }
+    /// LC-F0-20: WR antes de comisiones sobre los cierres con recibo (los
+    /// únicos con bruto conocido).
+    pub fn wr_gross(&self) -> f64 {
+        let con_recibo = self.trades.saturating_sub(self.closes_without_receipt);
+        if con_recibo > 0 {
+            self.wins_gross as f64 / con_recibo as f64
+        } else {
+            0.0
+        }
+    }
     pub fn roi_net(&self, capital: f64) -> f64 {
         if capital > 0.0 {
             self.net_pnl / capital
@@ -273,6 +296,71 @@ impl ReplayStats {
         }
     }
 }
+
+/// LC-F0-20: recibo local de un cierre del núcleo (contabilidad de la
+/// propuesta de cierre, no liquidación del exchange).
+pub(crate) type ReciboDeCierre = god_engine_core::close_accounting::LocalCloseAccounting;
+
+/// LC-F0-20: el recibo que el núcleo emitió con un cierre, si es de ESE cierre.
+///
+/// El núcleo deja el recibo en la misma llamada que devuelve el cierre y lo
+/// borra al empezar la siguiente (`process_tick_dual`): el llamador lo toma
+/// justo después de cada `process_event`. Se acepta sólo si es de ese evento
+/// (mismo reloj) y de esa cantidad cerrada (mismos bits), con importes finitos
+/// y precios positivos. Las comisiones pueden ser negativas (rebate). Un cierre
+/// sin recibo válido devuelve `None`: el panel lo cuenta aparte y nunca lo
+/// rellena con una tarifa supuesta.
+pub(crate) fn recibo_del_cierre(
+    recibo: Option<ReciboDeCierre>,
+    event_time_ms: u64,
+    qty_cerrada: f64,
+) -> Option<ReciboDeCierre> {
+    recibo.filter(|r| {
+        r.event_time_ms == event_time_ms
+            && r.quantity.to_bits() == qty_cerrada.to_bits()
+            && r.total_fees().is_finite()
+            && r.entry_price.is_finite()
+            && r.entry_price > 0.0
+            && r.exit_price.is_finite()
+            && r.exit_price > 0.0
+    })
+}
+
+/// LC-F0-20: acumulado del panel (comisiones, bruto, WR antes de comisiones y
+/// turnover) según los recibos del núcleo. Una sola fuente para el replay de
+/// libro y el camino nativo; el neto y la caja siguen siendo los del núcleo.
+#[derive(Debug, Clone, Copy, Default)]
+pub(crate) struct PanelDeRecibos {
+    /// Σ (comisión de entrada + comisión de salida) cobradas.
+    pub(crate) fees: f64,
+    /// Σ (neto + comisiones) de los cierres con recibo.
+    pub(crate) gross: f64,
+    pub(crate) wins_gross: u64,
+    /// Nocional operado: qty·entrada + qty·salida de cada cierre.
+    pub(crate) turnover_notional: f64,
+    pub(crate) sin_recibo: u64,
+}
+
+impl PanelDeRecibos {
+    pub(crate) fn registrar(&mut self, pnl_net: f64, recibo: Option<ReciboDeCierre>) {
+        match recibo {
+            Some(r) => {
+                let comisiones = r.total_fees();
+                let bruto = pnl_net + comisiones;
+                self.fees += comisiones;
+                self.gross += bruto;
+                if bruto > 0.0 {
+                    self.wins_gross += 1;
+                }
+                self.turnover_notional += r.quantity * r.entry_price + r.quantity * r.exit_price;
+            }
+            None => self.sin_recibo += 1,
+        }
+    }
+}
+
+/// LC-F0-20: un cierre del núcleo junto al recibo que emitió en la misma llamada.
+type CierreConRecibo = ((bool, f64, f64), Option<ReciboDeCierre>);
 
 /// SOL-R5-02 (Sol, medición 2026-10-15 — fix GLM 123): mark-to-market
 /// del capital final del replay. Antes el final era SÓLO CAJA — las
@@ -388,17 +476,9 @@ fn run_booktick_replay_observed(
     // specs si las necesita (los bins lo hacen; sin registro, try_spec=None
     // y el core usa sus floors internos — replay válido igualmente).
 
-    let maker_fee = arena
-        .config
-        .live_maker_fee
-        .load(Ordering::Relaxed)
-        .max(0.0002);
-    let taker_fee = arena
-        .config
-        .live_taker_fee
-        .load(Ordering::Relaxed)
-        .max(0.0004);
-    let roundtrip_fee = maker_fee + taker_fee;
+    // LC-F0-20: sin tarifa supuesta. El panel lee lo que cobró el núcleo en
+    // cada cierre (entrada taker; salida maker en TP con trade-through y taker
+    // en el resto); antes estimaba qty·mid·(max(maker, 2 pb) + max(taker, 4 pb)).
 
     let omni_state = data_pipeline::omni_multiplexer::OmniState::new();
     let mut last_day = i64::MIN;
@@ -413,8 +493,9 @@ fn run_booktick_replay_observed(
     let mut risk_envelope = RiskEnvelope::new();
 
     let mut pnl_list: Vec<f64> = Vec::new();
-    // XLVIII·A: nocional bruto operado (entrada+salida) para turnover.
-    let mut turnover_notional: f64 = 0.0;
+    // XLVIII·A + LC-F0-20: comisiones, bruto y nocional operado (entrada +
+    // salida, para el turnover) de los recibos del núcleo.
+    let mut panel = PanelDeRecibos::default();
     let mut peak = cfg.initial_capital;
     let warmup = cfg.warmup_ticks;
     // B15-12: la marca terminal sólo puede proceder del prefijo admitido.
@@ -545,7 +626,9 @@ fn run_booktick_replay_observed(
         let is_minute_kline = i > 0 && (ticks[i - 1].ts_ms / 60_000) != (t.ts_ms / 60_000);
 
         let accepted_ticks_before = core.feature_engines[0].tick_count;
-        let (c1, c2): (Option<(bool, f64, f64)>, Option<(bool, f64, f64)>);
+        // LC-F0-20: cada cierre viaja con el recibo de SU llamada al núcleo
+        // (la siguiente llamada lo borra); una fila de libro puede cerrar dos.
+        let (c1, c2): (Option<CierreConRecibo>, Option<CierreConRecibo>);
         if cfg.trade_only {
             // MODO TRADE-ONLY (para datos de trades/aggTrades sin libro real):
             // UN solo evento de trade — el precio/volumen del trade alimenta
@@ -586,6 +669,7 @@ fn run_booktick_replay_observed(
                 // calcula la aptitud de cada genoma que este binario PROMUEVE.
                 t.bid_qty < t.ask_qty,
             );
+            let recibo = core.take_local_close_accounting(0);
             // F1-020 (Ola Ω153): Envolvente disparada POR ORDEN nueva sobre la ranura
             // resonante específica recién abierta (eliminando prev_open que silenciaba slots 1/2).
             if o2.is_some() {
@@ -610,7 +694,7 @@ fn run_booktick_replay_observed(
                 }
             }
             c1 = None;
-            c2 = closed;
+            c2 = closed.map(|c| (c, recibo_del_cierre(recibo, t.ts_ms, c.2)));
         } else {
             // Doble evento — patrón del forense (depth + trade).
             let gen_before1: [u64; 3] = if let Some(coin) = arena.coins.get(0) {
@@ -636,6 +720,7 @@ fn run_booktick_replay_observed(
                 &omni_features,
                 false,
             );
+            let recibo1 = core.take_local_close_accounting(0);
             if o1.is_some() {
                 if let Some(coin) = arena.coins.get(0) {
                     if let Some(slot_idx) = (0..3).find(|&i| {
@@ -681,6 +766,7 @@ fn run_booktick_replay_observed(
                 &omni_features,
                 maker_flag,
             );
+            let recibo2 = core.take_local_close_accounting(0);
             if o2.is_some() {
                 if let Some(coin) = arena.coins.get(0) {
                     if let Some(slot_idx) = (0..3).find(|&i| {
@@ -702,8 +788,8 @@ fn run_booktick_replay_observed(
                     }
                 }
             }
-            c1 = closed1;
-            c2 = closed2;
+            c1 = closed1.map(|c| (c, recibo_del_cierre(recibo1, t.ts_ms, c.2)));
+            c2 = closed2.map(|c| (c, recibo_del_cierre(recibo2, t.ts_ms, c.2)));
         }
 
         // El progreso de features acredita admisión, aunque no haya orden.
@@ -718,28 +804,21 @@ fn run_booktick_replay_observed(
         // F1-081 (paridad host): alimentar el posterior del edge con cada
         // cierre — pasando el trade neto individual para erradicar la doble EMA.
         // Las entradas vetadas nunca llegan aquí (rollback ⇒ sin cierre, B3.14).
-        for (_, pnl_net, _) in [c1, c2].into_iter().flatten() {
+        for ((_, pnl_net, _), _) in [c1, c2].into_iter().flatten() {
             risk_envelope.record_net_pnl(pnl_net);
         }
 
         if i >= warmup {
-            for (_, pnl_net, qty) in [c1, c2].into_iter().flatten() {
-                let notional = qty * mid;
-                let fee = notional * roundtrip_fee;
+            for ((_, pnl_net, _), recibo) in [c1, c2].into_iter().flatten() {
                 stats.trades += 1;
                 stats.net_pnl += pnl_net; // el core ya cobra fees físicos
-                stats.fees_est += fee;
-                stats.gross_pnl += pnl_net + fee;
                 if pnl_net > 0.0 {
                     stats.wins_net += 1;
                 }
-                if pnl_net + fee > 0.0 {
-                    stats.wins_gross += 1;
-                }
                 pnl_list.push(pnl_net);
-                // XLVIII·A: nocional por lado (entrada implícita en el qty
-                // del cierre + la salida al mid) — presión de capacity.
-                turnover_notional += notional + notional;
+                // LC-F0-20: comisiones, bruto y nocional por lado (entrada y
+                // salida a sus precios reales, presión de capacity) del recibo.
+                panel.registrar(pnl_net, recibo);
             }
         }
 
@@ -762,6 +841,10 @@ fn run_booktick_replay_observed(
     stats.executed_ticks = executed_ticks;
     stats.executed_last_ts = executed_last_ts;
     stats.close_reason = close_reason;
+    stats.fees_est = panel.fees;
+    stats.gross_pnl = panel.gross;
+    stats.wins_gross = panel.wins_gross;
+    stats.closes_without_receipt = panel.sin_recibo;
     stats.final_capital = arena.unified_capital.load(Ordering::Relaxed);
     // SOL-R5-02 (Sol, medición 2026-10-15 — fix GLM 123): la caja sola
     // no es el capital final — ver `aplicar_mtm_final`.
@@ -789,7 +872,7 @@ fn run_booktick_replay_observed(
     // ticks.last().ts_ms ⇒ bit-paridad con el régimen anterior.
     stats.metrics = crate::metrics::ex_post_metrics(
         &pnl_list,
-        turnover_notional,
+        panel.turnover_notional,
         cfg.initial_capital,
         stats.final_capital,
         stats.max_dd,
@@ -1917,6 +2000,86 @@ mod sol_r5_02b_tests {
             "paridad: mtm {} con último mid válido {}",
             stats.mtm_unrealized_pnl,
             ultimo_valido_mid
+        );
+    }
+}
+
+#[cfg(test)]
+mod tests_lc_f0_20 {
+    use super::*;
+
+    fn recibo(event_time_ms: u64, quantity: f64) -> ReciboDeCierre {
+        ReciboDeCierre {
+            event_time_ms,
+            quantity,
+            entry_price: 100.0,
+            exit_price: 99.0,
+            gross_pnl: -quantity,
+            entry_fee: quantity * 100.0 * 0.0005,
+            exit_fee: quantity * 99.0 * 0.0005,
+        }
+    }
+
+    /// El recibo sólo vale para el cierre de su llamada: mismo reloj de
+    /// evento y misma cantidad cerrada (bits), importes finitos.
+    #[test]
+    fn recibo_del_cierre_exige_que_sea_de_ese_cierre() {
+        let r = recibo(7_000, 0.5);
+        assert_eq!(recibo_del_cierre(Some(r), 7_000, 0.5), Some(r));
+        assert_eq!(recibo_del_cierre(None, 7_000, 0.5), None);
+        assert_eq!(recibo_del_cierre(Some(r), 7_001, 0.5), None, "otro evento");
+        assert_eq!(
+            recibo_del_cierre(Some(r), 7_000, 0.25),
+            None,
+            "otra cantidad"
+        );
+        let mut nan = r;
+        nan.exit_fee = f64::NAN;
+        assert_eq!(
+            recibo_del_cierre(Some(nan), 7_000, 0.5),
+            None,
+            "comisión no finita"
+        );
+        let mut sin_salida = r;
+        sin_salida.exit_price = 0.0;
+        assert_eq!(
+            recibo_del_cierre(Some(sin_salida), 7_000, 0.5),
+            None,
+            "precio de salida"
+        );
+        // Un rebate (comisión negativa) es un importe cobrado válido.
+        let mut rebate = r;
+        rebate.exit_fee = -0.01;
+        assert_eq!(recibo_del_cierre(Some(rebate), 7_000, 0.5), Some(rebate));
+    }
+
+    /// Un cierre sin recibo se cuenta aparte y no recibe ninguna tarifa:
+    /// comisiones, bruto, WR bruto y turnover sólo suman los cierres con recibo.
+    #[test]
+    fn panel_cuenta_aparte_el_cierre_sin_recibo() {
+        let r = recibo(7_000, 1.0);
+        let neto = (r.gross_pnl - r.exit_fee) - r.entry_fee;
+        let mut panel = PanelDeRecibos::default();
+        panel.registrar(neto, Some(r));
+        panel.registrar(0.75, None);
+        assert_eq!(panel.sin_recibo, 1);
+        assert_eq!(panel.fees.to_bits(), r.total_fees().to_bits());
+        assert_eq!(panel.gross.to_bits(), (neto + r.total_fees()).to_bits());
+        assert_eq!(panel.wins_gross, 0, "el bruto del SL es negativo");
+        assert_eq!(
+            panel.turnover_notional.to_bits(),
+            (100.0f64 + 99.0).to_bits()
+        );
+        let stats = ReplayStats {
+            trades: 2,
+            wins_gross: panel.wins_gross,
+            closes_without_receipt: panel.sin_recibo,
+            ..ReplayStats::default()
+        };
+        assert_eq!(
+            stats.wr_gross(),
+            0.0,
+            "WR bruto sobre el único cierre con recibo"
         );
     }
 }
