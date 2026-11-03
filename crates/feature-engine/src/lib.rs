@@ -2,6 +2,7 @@ pub mod connes_clifford_kan;
 pub mod copulas;
 pub mod correlation;
 pub mod entrelazamiento;
+pub mod flujo_rg;
 pub mod ewma;
 pub mod feynman_path_instanton;
 pub mod firma_maxent;
