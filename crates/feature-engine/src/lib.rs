@@ -21,6 +21,7 @@ pub mod mps;
 pub mod multifractal;
 pub mod navier_stokes;
 pub mod normalizer;
+pub mod norma_hinf;
 pub mod omni_strategies;
 pub mod path_signatures;
 pub mod random_matrix_wilson;
