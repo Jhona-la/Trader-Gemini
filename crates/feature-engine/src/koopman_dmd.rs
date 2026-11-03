@@ -59,6 +59,11 @@ pub struct EspectroKoopman {
     /// GLM-181 (mandato §12.3, dual ergódico de Koopman): exponente de
     /// Lyapunov dominante = max_i ln|λ_i| POR MUESTRA del flujo
     /// linealizado. ≤ 0 si todo el espectro es contractivo.
+    /// PRECEDENCIA (errata GLM-186): un estimador orbital continuo ya
+    /// existía en random_matrix_wilson::ContinuousLyapunovEstimator (AGY
+    /// F9, 2026-10-24); este campo es su DUAL exacto de Koopman — coste
+    /// marginal sobre autovalores ya computados. Ver
+    /// docs/audit/CENSO_SOLAPE_RMT_2026-11-03.md.
     pub lambda_max: f64,
     /// Entropía de Kolmogorov-Sinai = Σ_{ln|λ_i| > 0} ln|λ_i| por muestra:
     /// tasa total de creación de información del flujo. Los modos
