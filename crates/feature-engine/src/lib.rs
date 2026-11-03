@@ -1,11 +1,12 @@
 pub mod connes_clifford_kan;
 pub mod copulas;
 pub mod correlation;
+pub mod cover_orabona_wfr_ville;
 pub mod entrelazamiento;
-pub mod flujo_rg;
 pub mod ewma;
 pub mod feynman_path_instanton;
 pub mod firma_maxent;
+pub mod flujo_rg;
 pub mod grothendieck_sheaves;
 pub mod hairer_landauer_anderson;
 pub mod hawkes;
@@ -13,7 +14,9 @@ pub mod hawkes_cross;
 pub mod hodge_flow;
 pub mod hurst_dfa;
 pub mod kalman;
+pub mod kam_eth_tur_stein;
 pub mod koopman_dmd;
+pub mod landauer_bec_hopfield;
 pub mod lead_lag;
 pub mod matriz_rmt;
 pub mod microstructure;
@@ -35,7 +38,9 @@ pub mod tensor_ring;
 pub mod transfer_entropy;
 pub mod tropical_kdv_soliton;
 pub mod tzcnt_lut_kpz;
+pub mod voiculescu_jarzynski_svgd;
 pub mod welford;
+pub mod zakai_doob_amplituhedron;
 
 // Re-exportar primitivas matemáticas O(1)
 pub use connes_clifford_kan::{
@@ -44,6 +49,14 @@ pub use connes_clifford_kan::{
     HudsonParthasarathyState, NonCommutativeRegime, CONNES_HILBERT_DIM, KAN_SPLINE_BASIS_COUNT,
 };
 pub use correlation::MarketCorrelationHeatmap;
+pub use cover_orabona_wfr_ville::{
+    CoverOrabonaWfrVilleMasterEngine, CoverOrabonaWfrVilleReport, CoverVovkReport,
+    CoverVovkUniversalPortfolioEngine, FilocheMayborodaLocalizationEngine, FilocheMayborodaReport,
+    GrossmanZhouKyleFloorEngine, GrossmanZhouKyleReport, OrabonaCoinBettingEngine,
+    OrabonaCoinBettingReport, VilleMaximalSupermartingaleEngine, VilleSupermartingaleReport,
+    WassersteinFisherRaoEngine, WfrReport, ASSET_UNIVERSE, COVER_SIMPLEX_POINTS, FILOCHE_GRID_SIZE,
+    WFR_BINS,
+};
 pub use ewma::Ewma;
 pub use feynman_path_instanton::{
     FeynmanInstantonEngine, InstantonParams, InstantonRegime, InstantonTunnelingReport,
@@ -65,6 +78,20 @@ pub use hodge_flow::{
     HodgeDecompositionResult, HodgeRegime, MAX_HODGE_ASSETS,
 };
 pub use kalman::KalmanFilter1D;
+pub use kam_eth_tur_stein::{
+    BaratoSeifertTurEngine, EthMblOrderbookEngine, EthMblRegime, EthMblReport,
+    JamesSteinTweedieReport, JamesSteinTweedieShrinkageEngine, KamChirikovRegime,
+    KamChirikovReport, KamChirikovResonanceEngine, KamEthTurSteinMasterEngine,
+    KamEthTurSteinReport, LatticeBoltzmannD1Q3Engine, LatticeBoltzmannReport, TurReport,
+    ETH_MAX_LEVELS, JS_DIM, LATTICE_D1Q3_NODES,
+};
+pub use landauer_bec_hopfield::{
+    BecOrderbookReport, BecPhaseRegime, BoseEinsteinOrderbookEngine, KbnCompensatedAccumulator,
+    LandauerBecHopfieldMasterEngine, LandauerBecHopfieldReport, LandauerDissipationRegime,
+    LandauerThermodynamicEngine, LandauerThermodynamicReport, ModernContinuousHopfieldEngine,
+    ModernHopfieldReport, BEC_ENERGY_LEVELS, BOLTZMANN_K_MKT, HOPFIELD_FEATURE_DIM,
+    HOPFIELD_PROTOTYPE_COUNT, LN_2,
+};
 pub use lead_lag::LeadLagAlphaEngine;
 pub use microstructure::{
     obi_acceleration, order_book_imbalance, AdaptiveResonanceClustering,
@@ -114,4 +141,17 @@ pub use tzcnt_lut_kpz::{
     KpzSurfaceReport, TzcntLutKpzMasterEngine, TzcntLutKpzReport, DIGIT_PAIRS_LUT, KPZ_DYNAMIC_Z,
     KPZ_GROWTH_BETA, KPZ_ROUGHNESS_ALPHA, KPZ_SURFACE_SITES,
 };
+pub use voiculescu_jarzynski_svgd::{
+    JarzynskiCrooksEngine, JarzynskiRegime, JarzynskiReport, SteinVariationalGradientDescentEngine,
+    SvgdReport, VoiculescuFreeProbabilityEngine, VoiculescuFreeSpectrumReport,
+    VoiculescuJarzynskiSvgdMasterEngine, VoiculescuJarzynskiSvgdReport, MAX_FREE_EIGENVALUES,
+    MAX_JARZYNSKI_SAMPLES, MAX_SVGD_PARTICLES, SVGD_DIM,
+};
 pub use welford::WelfordOnline;
+pub use zakai_doob_amplituhedron::{
+    AmplituhedronReport, DoobMeyerCompensatorEngine, DoobMeyerReport, DoobMeyerToxicityRegime,
+    KramersKronigDispersionEngine, KramersKronigReport, PositiveGrassmannianAmplituhedronEngine,
+    ZakaiDoobAmplituhedronMasterEngine, ZakaiDoobAmplituhedronReport, ZakaiFilterEngine,
+    ZakaiFilterReport, AMPLITUHEDRON_K, AMPLITUHEDRON_N, DISPERSION_FREQS, PLUCKER_COORDS_COUNT,
+    ZAKAI_GRID_SIZE,
+};
