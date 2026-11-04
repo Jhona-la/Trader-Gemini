@@ -6287,7 +6287,9 @@ async fn bucle_lector_ws(
     estado_cola: Arc<data_ingest::cola_ws::EstadoCola>,
     mut rx_ws_control: Option<tokio::sync::mpsc::Receiver<()>>,
 ) {
-    let mut retry_count = 0;
+    // I-11 (N56): espera creciente entre reconexiones; vuelve a cero con el
+    // primer mensaje recibido, no con el handshake.
+    let mut espera = execution_engine::reconexion_ws::EsperaReconexion::lector();
     // I-6b (Línea I, rescate GLM-168): la política de espera (watchdog)
     // también gobierna la FASE DE CONEXIÓN — DNS, carrera TCP y handshake
     // TLS —, no sólo la lectura. Antes `TcpStream::connect` y
@@ -6358,7 +6360,7 @@ async fn bucle_lector_ws(
                 resolved_addrs.push(fallback);
             } else {
                 telemetry_server::telemetry_log!("❌ [WS] No IPs could be resolved or parsed. Retrying...");
-                tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
+                tokio::time::sleep(espera.fallo(None)).await;
                 continue;
             }
         }
@@ -6375,19 +6377,27 @@ async fn bucle_lector_ws(
         // I-6b: timeout de CONEXIÓN — la carrera Happy Eyeballs deja de ser
         // indefinida; un intento que no complete en watchdog_secs se
         // abandona (stall de conexión) y se reintenta.
-        let tcp_stream = match tokio::time::timeout(to_conexion, futures_util::future::select_ok(tasks)).await {
-            Ok(Ok((stream, _))) => stream,
-            Ok(Err(e)) => {
-                telemetry_server::telemetry_log!("❌ [WS] Happy Eyeballs Parallel Connect failed on all IPs: {}", e);
-                tokio::time::sleep(std::time::Duration::from_millis(1000)).await;
-                continue;
-            }
-            Err(_) => {
-                telemetry_server::telemetry_log!("⚠️ [WS:{}] conexión TCP sin completar en {}s (I-6b): reintento", cfg.nombre, watchdog_secs);
-                tokio::time::sleep(std::time::Duration::from_millis(1000)).await;
-                continue;
-            }
-        };
+        let tcp_stream =
+            match tokio::time::timeout(to_conexion, futures_util::future::select_ok(tasks)).await {
+                Ok(Ok((stream, _))) => stream,
+                Ok(Err(e)) => {
+                    telemetry_server::telemetry_log!(
+                        "❌ [WS] Happy Eyeballs Parallel Connect failed on all IPs: {}",
+                        e
+                    );
+                    tokio::time::sleep(espera.fallo(None)).await;
+                    continue;
+                }
+                Err(_) => {
+                    telemetry_server::telemetry_log!(
+                        "⚠️ [WS:{}] conexión TCP sin completar en {}s (I-6b): reintento",
+                        cfg.nombre,
+                        watchdog_secs
+                    );
+                    tokio::time::sleep(espera.fallo(None)).await;
+                    continue;
+                }
+            };
 
         // LG-28: el par puede cortar entre el connect y getpeername
         // (WSAENOTCONN); antes el `unwrap` abortaba el proceso.
@@ -6395,7 +6405,7 @@ async fn bucle_lector_ws(
             Ok(addr) => addr,
             Err(e) => {
                 telemetry_server::telemetry_log!("⚠️ [WS] conexión cortada antes de usarla: {}; reconecto", e);
-                tokio::time::sleep(std::time::Duration::from_millis(1000)).await;
+                tokio::time::sleep(espera.fallo(None)).await;
                 continue;
             }
         };
@@ -6413,17 +6423,24 @@ async fn bucle_lector_ws(
         match tokio::time::timeout(to_conexion, tokio_tungstenite::client_async_tls(url, tcp_stream)).await {
             Err(_) => {
                 telemetry_server::telemetry_log!("⚠️ [WS:{}] handshake TLS sin completar en {}s (I-6b): reintento", cfg.nombre, watchdog_secs);
-                tokio::time::sleep(std::time::Duration::from_millis(1000)).await;
+                tokio::time::sleep(espera.fallo(None)).await;
                 continue;
             }
             Ok(Err(e)) => {
-                telemetry_server::telemetry_log!("❌ [WS] handshake TLS falló: {}; reintento", e);
-                tokio::time::sleep(std::time::Duration::from_millis(1000)).await;
+                // I-11: un 429/418 de Binance al abrir el WS trae Retry-After.
+                let pausa =
+                    espera.fallo(execution_engine::reconexion_ws::espera_pedida_por_error(&e));
+                telemetry_server::telemetry_log!(
+                    "❌ [WS:{}] handshake TLS falló: {}; reintento en {} ms",
+                    cfg.nombre,
+                    e,
+                    pausa.as_millis()
+                );
+                tokio::time::sleep(pausa).await;
                 continue;
             }
             Ok(Ok((ws_stream, _))) => {
                 telemetry_server::telemetry_log!("✅ [WS] WebSocket TLS Connected with TCP_NODELAY. ({})", cfg.nombre);
-                retry_count = 0; // Reset retries on success
                 if conexiones.establecida() {
                     data_ingest::cola_ws::encolar(
                         &tx_events,
@@ -6444,6 +6461,11 @@ async fn bucle_lector_ws(
                         msg_opt = tokio::time::timeout(std::time::Duration::from_secs(watchdog_secs), read.next()) => {
                             match msg_opt {
                                 Ok(Some(Ok(msg))) => {
+                                    // I-11: un Close del servidor no prueba que
+                                    // esté sano (acepta y corta).
+                                    if !msg.is_close() {
+                                        espera.datos_recibidos();
+                                    }
                                     // Bounded Drop Oldest, contado (CL-52). I-2a:
                                     // sellado en el instante de recepción.
                                     data_ingest::cola_ws::encolar(
@@ -6486,16 +6508,16 @@ async fn bucle_lector_ws(
                 }
                 telemetry_server::telemetry_log!("⚠️ [WS] Reconnecting... ({})", cfg.nombre);
             }
-            Err(e) => {
-                telemetry_server::telemetry_log!("❌ [WS] TLS Handshake failed: {:?}", e);
-                retry_count += 1;
-            }
         }
 
-        // Exponential backoff capped at 5 seconds
-        let backoff_ms = std::cmp::min(100 * (2u64.pow(retry_count.min(6))), 5000);
-        telemetry_server::telemetry_log!("⏳ [WS] Waiting {}ms before next attempt...", backoff_ms);
-        sleep(Duration::from_millis(backoff_ms)).await;
+        // I-11: tras el corte, la escalera (una conexión que no entregó nada
+        // sigue subiendo; una que sí, empieza en el primer escalón).
+        let pausa = espera.fallo(None);
+        telemetry_server::telemetry_log!(
+            "⏳ [WS] Waiting {}ms before next attempt...",
+            pausa.as_millis()
+        );
+        sleep(pausa).await;
     }
 }
 
@@ -6548,6 +6570,56 @@ mod tests {
     use super::*;
     use quantum_arena::temporal_spectrum::{TAU_ANCHOR_FAST_MS, TAU_ANCHOR_SLOW_MS};
     use std::sync::atomic::Ordering;
+
+    /// I-11 (N56): un servidor que acepta el WS y corta sin enviar datos no
+    /// se reintenta cada 100 ms: la espera crece (0; 0,1; 0,3; 0,7; 1,5;
+    /// 3,1 s…). Antes el contador volvía a cero con el handshake y el lector
+    /// abría una conexión cada ~100 ms.
+    #[test]
+    fn i11_un_servidor_que_acepta_y_corta_no_se_reintenta_sin_espera() {
+        let rt = tokio::runtime::Builder::new_multi_thread()
+            .worker_threads(2)
+            .enable_all()
+            .build()
+            .expect("runtime de prueba");
+        let aceptadas = rt.block_on(async {
+            let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+                .await
+                .expect("bind local");
+            let puerto = listener.local_addr().expect("puerto local").port();
+            let cuenta = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+            let c = cuenta.clone();
+            let servidor = tokio::spawn(async move {
+                while let Ok((tcp, _)) = listener.accept().await {
+                    c.fetch_add(1, Ordering::SeqCst);
+                    tokio::spawn(async move {
+                        if let Ok(mut ws) = tokio_tungstenite::accept_async(tcp).await {
+                            ws.close(None).await.ok();
+                        }
+                    });
+                }
+            });
+            let (tx, rx) = crossbeam_channel::bounded(64);
+            let cfg = LectorWs {
+                nombre: "prueba",
+                url: Arc::new(arc_swap::ArcSwap::from_pointee(format!(
+                    "ws://127.0.0.1:{puerto}/ws"
+                ))),
+                anuncia_reconexion: false,
+                marca_stall: false,
+            };
+            let estado = Arc::new(data_ingest::cola_ws::EstadoCola::new());
+            let lector = tokio::spawn(bucle_lector_ws(cfg, tx, rx, estado, None));
+            tokio::time::sleep(std::time::Duration::from_millis(3_000)).await;
+            lector.abort();
+            servidor.abort();
+            cuenta.load(Ordering::SeqCst)
+        });
+        assert!(
+            (3..=6).contains(&aceptadas),
+            "en 3 s la escalera abre a lo sumo 6 conexiones (0; 0,1; 0,3; 0,7; 1,5; 3,1 s) y al menos 3: {aceptadas}"
+        );
+    }
 
     /// LG-10: con el adaptador de Binance (sin iceberg nativo) ningún nocional
     /// enruta a Iceberg; antes todo nocional sobre el gen se rechazaba.
