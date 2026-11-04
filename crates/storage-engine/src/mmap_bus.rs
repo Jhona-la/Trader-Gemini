@@ -21,7 +21,7 @@ pub struct TelemetryFrame {
     /// modificar el slot y seq par al commit; lector descarta si seq cambió
     /// o quedó impar (frame rasgado en reuso de slot). Vive en bytes 12-15
     /// (bits 32-63 de meta_u64), antes padding muerto.
-    pub seq: u32,         // 4 bytes (total 16)
+    pub seq: u32, // 4 bytes (total 16)
     pub payload: [f64; 6], // 48 bytes (total 64). Multiplexado según frame_type.
 }
 
@@ -413,9 +413,16 @@ mod tests {
         }
         let mut lector = MmapTelemetryReader::new(&path);
         let saltados = lector.skip_to_head().unwrap();
-        assert!(saltados >= 2, "debe saltar al menos los 2 frames escritos: {saltados}");
+        assert!(
+            saltados >= 2,
+            "debe saltar al menos los 2 frames escritos: {saltados}"
+        );
         let frames = lector.read_latest_frames().unwrap();
-        assert!(frames.is_empty(), "tras skip, la lectura sin escritas nuevas debe ser vacia: {}", frames.len());
+        assert!(
+            frames.is_empty(),
+            "tras skip, la lectura sin escritas nuevas debe ser vacia: {}",
+            frames.len()
+        );
         let _ = std::fs::remove_file(&path);
     }
 
@@ -514,7 +521,11 @@ mod tests {
 
         {
             let bus = MmapTelemetryBus::new(&path).expect("Failed to create mmap bus");
-            bus.write_trace(SUBSYSTEM_RISK_KELLY, FRAME_TYPE_BAYESIAN_PROB, [1.5, 2.5, 3.5, 4.5, 5.5, 6.5]);
+            bus.write_trace(
+                SUBSYSTEM_RISK_KELLY,
+                FRAME_TYPE_BAYESIAN_PROB,
+                [1.5, 2.5, 3.5, 4.5, 5.5, 6.5],
+            );
             bus.write_trace(SUBSYSTEM_TENSOR_ML, FRAME_TYPE_TENSOR_ENTROPY, [9.9; 6]);
 
             // Simular escritor interrumpido en el slot 1: seq impar in-place
@@ -524,7 +535,8 @@ mod tests {
             unsafe {
                 let mmap = &*corruptor.mmap.get();
                 let base_ptr = mmap.as_ptr().add(HEADER_SIZE) as *const u8;
-                let seq_ptr = base_ptr.add(1 * std::mem::size_of::<TelemetryFrame>() + 12) as *mut u32;
+                let seq_ptr =
+                    base_ptr.add(1 * std::mem::size_of::<TelemetryFrame>() + 12) as *mut u32;
                 let cur = seq_ptr.read_volatile();
                 assert_eq!(cur % 2, 0, "frame comprometido debe tener seq PAR");
                 seq_ptr.write_volatile(cur | 1); // escritor "congelado" a mitad

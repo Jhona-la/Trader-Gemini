@@ -87,13 +87,13 @@ fn cmi(counts: &Counts, transitions: u64) -> Option<f64> {
     }
     let mass = transitions as f64 + 8.0 * KT;
     let mut result = 0.0;
-    for a in 0..2 {
-        for b in 0..2 {
-            let ab = q[a][b][0] + q[a][b][1];
+    for qb in q.iter() {
+        for (b, qab) in qb.iter().enumerate() {
+            let ab = qab[0] + qab[1];
             let past = q[0][b][0] + q[0][b][1] + q[1][b][0] + q[1][b][1];
-            for c in 0..2 {
+            for (c, &qabc) in qab.iter().enumerate() {
                 let bc = q[0][b][c] + q[1][b][c];
-                result += q[a][b][c] / mass * ((q[a][b][c] / bc) / (ab / past)).log2();
+                result += qabc / mass * ((qabc / bc) / (ab / past)).log2();
             }
         }
     }

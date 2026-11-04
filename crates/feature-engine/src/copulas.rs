@@ -76,14 +76,14 @@ pub fn rho_desde_tau(tau: f64) -> f64 {
 fn ln_gamma(x: f64) -> f64 {
     const G: f64 = 7.0;
     const C: [f64; 9] = [
-        0.99999999999980993,
+        0.999_999_999_999_809_9,
         676.5203681218851,
         -1259.1392167224028,
-        771.32342877765313,
-        -176.61502916214059,
+        771.323_428_777_653_1,
+        -176.615_029_162_140_6,
         12.507343278686905,
         -0.13857109526572012,
-        9.9843695780195716e-6,
+        9.984_369_578_019_572e-6,
         1.5056327351493116e-7,
     ];
     if x < 0.5 {
@@ -190,7 +190,8 @@ pub fn t_cdf(x: f64, nu: f64) -> f64 {
 /// log-PDF de la t de Student.
 pub fn t_log_pdf(x: f64, nu: f64) -> f64 {
     let nu = nu.max(1e-9);
-    ln_gamma((nu + 1.0) / 2.0) - ln_gamma(nu / 2.0)
+    ln_gamma((nu + 1.0) / 2.0)
+        - ln_gamma(nu / 2.0)
         - 0.5 * (nu * PI).ln()
         - ((nu + 1.0) / 2.0) * (1.0 + x * x / nu).ln()
 }
@@ -235,7 +236,8 @@ pub fn log_copula_t(u: f64, v: f64, rho: f64, nu: f64) -> Option<f64> {
     let det = 1.0 - rho * rho;
     let cuad = (x * x - 2.0 * rho * x * y + y * y) / (nu * det);
     // densidad bivariada t₂
-    let log_f2 = ln_gamma((nu + 2.0) / 2.0) - ln_gamma(nu / 2.0)
+    let log_f2 = ln_gamma((nu + 2.0) / 2.0)
+        - ln_gamma(nu / 2.0)
         - (nu * PI).ln()
         - 0.5 * det.ln()
         - ((nu + 2.0) / 2.0) * (1.0 + cuad).ln();
@@ -329,10 +331,7 @@ pub fn lambda_empirica(x: &[f64], y: &[f64], q: f64) -> Option<(f64, f64)> {
     if nx_up < 5 || nx_lo < 5 {
         return None;
     }
-    Some((
-        nxy_up as f64 / nx_up as f64,
-        nxy_lo as f64 / nx_lo as f64,
-    ))
+    Some((nxy_up as f64 / nx_up as f64, nxy_lo as f64 / nx_lo as f64))
 }
 
 // ─────────────────────────────────────────────────────────────────
@@ -421,8 +420,7 @@ mod tests {
         let y = inversa_normal(v);
         let det = 1.0 - rho * rho;
         // c = f₂/(φ(x)φ(y)): el +(x²+y²)/2 es la división por las marginales
-        let log_c_gauss = -0.5 * det.ln() - (x * x - 2.0 * rho * x * y + y * y)
-            / (2.0 * det)
+        let log_c_gauss = -0.5 * det.ln() - (x * x - 2.0 * rho * x * y + y * y) / (2.0 * det)
             + 0.5 * (x * x + y * y);
         let log_c_t = log_copula_t(u, v, rho, 1e5).unwrap();
         assert!(
@@ -471,8 +469,7 @@ mod tests {
         } else if p <= 1.0 - p_low {
             let q = p - 0.5;
             let r = q * q;
-            (((((A[0] * r + A[1]) * r + A[2]) * r + A[3]) * r + A[4]) * r + A[5])
-                * q
+            (((((A[0] * r + A[1]) * r + A[2]) * r + A[3]) * r + A[4]) * r + A[5]) * q
                 / (((((B[0] * r + B[1]) * r + B[2]) * r + B[3]) * r + B[4]) * r + 1.0)
         } else {
             let q = (-2.0 * (1.0 - p).ln()).sqrt();
@@ -543,9 +540,7 @@ mod tests {
             for (pos, &i) in idx.iter().enumerate() {
                 r[i] = pos + 1;
             }
-            r.iter()
-                .map(|&p| p as f64 / (v.len() + 1) as f64)
-                .collect()
+            r.iter().map(|&p| p as f64 / (v.len() + 1) as f64).collect()
         };
         (ranks(x), ranks(y))
     }

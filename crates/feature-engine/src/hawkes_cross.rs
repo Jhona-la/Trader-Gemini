@@ -202,8 +202,8 @@ pub fn contagion_roles(matrix: &[Vec<f64>]) -> Option<Vec<ContagionRole>> {
     }
     let denom = (n - 1) as f64;
     let mut roles = Vec::with_capacity(n);
-    for j in 0..n {
-        let emitted: f64 = matrix[j].iter().sum::<f64>() / denom;
+    for (j, row) in matrix.iter().enumerate() {
+        let emitted: f64 = row.iter().sum::<f64>() / denom;
         let received: f64 = (0..n).map(|i| matrix[i][j]).sum::<f64>() / denom;
         roles.push(ContagionRole {
             emitted,
@@ -222,16 +222,23 @@ mod tests {
     #[test]
     fn xlv_seguidor_copiando_da_pico_en_lag_correcto() {
         let leader: Vec<u64> = (0..200).map(|i| 1_000 + (i as u64) * 1_000).collect();
-        let follower: Vec<u64> =
-            leader.iter().map(|&t| t + 200).collect();
+        let follower: Vec<u64> = leader.iter().map(|&t| t + 200).collect();
         let span = *follower.last().unwrap() - follower[0];
         let lags: Vec<u64> = vec![100, 200, 500, 1_000, 2_000];
         let exc = cross_excitation(&leader, &follower, span, &lags)
             .expect("contagio claro con 200 eventos copiando");
-        assert!(exc.peak_lag_ms == 200 || exc.peak_lag_ms == 500,
+        assert!(
+            exc.peak_lag_ms == 200 || exc.peak_lag_ms == 500,
             "pico debia estar en 200 o 500, dio {} (rate={:.3}, z={:.1})",
-            exc.peak_lag_ms, exc.peak_rate, exc.z_score);
-        assert!(exc.z_score > 5.0, "contagio perfecto debia dar z alto, dio {:.1}", exc.z_score);
+            exc.peak_lag_ms,
+            exc.peak_rate,
+            exc.z_score
+        );
+        assert!(
+            exc.z_score > 5.0,
+            "contagio perfecto debia dar z alto, dio {:.1}",
+            exc.z_score
+        );
     }
 
     /// Falsación: series independientes → None o z bajo.
@@ -239,17 +246,25 @@ mod tests {
     fn xlv_series_independientes_no_afirman_contagio() {
         let mut seed = 0xDEADBEEFu64;
         let mut next = || {
-            seed = seed.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+            seed = seed
+                .wrapping_mul(6364136223846793005)
+                .wrapping_add(1442695040888963407);
             (seed >> 33) as u64 % 10_000
         };
         let leader: Vec<u64> = (0..100).map(|_| next() * 100 + 1_000).collect();
         let follower: Vec<u64> = (0..100).map(|_| next() * 100 + 1_000).collect();
-        let mut l = leader.clone(); l.sort();
-        let mut f = follower.clone(); f.sort();
+        let mut l = leader.clone();
+        l.sort();
+        let mut f = follower.clone();
+        f.sort();
         let span = *f.last().unwrap() - f[0];
         let lags: Vec<u64> = vec![200, 500, 1_000];
         if let Some(exc) = cross_excitation(&l, &f, span, &lags) {
-            assert!(exc.z_score < 6.0, "independientes no debian dar z={:.1}", exc.z_score);
+            assert!(
+                exc.z_score < 6.0,
+                "independientes no debian dar z={:.1}",
+                exc.z_score
+            );
         }
     }
 
@@ -265,7 +280,11 @@ mod tests {
         let matrix = contagion_matrix(&series, &spans, &lags).expect("matriz 3x3");
         assert!(matrix[0][1] > 3.0, "lider→s1 z={}", matrix[0][1]);
         assert!(matrix[0][2] > 3.0, "lider→s2 z={}", matrix[0][2]);
-        assert!(matrix[1][0] < 3.0, "s1→líder z={} (asimetria)", matrix[1][0]);
+        assert!(
+            matrix[1][0] < 3.0,
+            "s1→líder z={} (asimetria)",
+            matrix[1][0]
+        );
         let roles = contagion_roles(&matrix).expect("roles");
         // El líder debe tener el net_role MÁS ALTO del universo (contagia
         // más de lo que es contagiado). s1 puede ser positivo también
@@ -274,7 +293,8 @@ mod tests {
         assert!(
             roles[0].net_role >= roles[1].net_role,
             "lider ({}) debia dominar a s1 ({})",
-            roles[0].net_role, roles[1].net_role
+            roles[0].net_role,
+            roles[1].net_role
         );
     }
 }

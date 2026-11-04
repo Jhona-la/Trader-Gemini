@@ -271,6 +271,7 @@ struct ProtectionAudit {
     /// Gap TP/SL restante tras el intento de top-up (unidades del activo).
     tp_gap: f64,
     sl_gap: f64,
+    evidence_unknown: bool,
 }
 
 /// I-9 (N15b del censo C-F7b): las piernas de (símbolo, lado) siguen vivas
@@ -509,7 +510,23 @@ async fn ensure_position_protected(
     entry_tau_ms: u64,
     tag: &str,
 ) -> ProtectionAudit {
-    let legs = executor.fetch_open_algo_orders(symbol).await.unwrap_or_default();
+    let legs = match executor.fetch_open_algo_orders(symbol).await {
+        Ok(legs) => legs,
+        Err(e) => {
+            quantum_arena::protection_health::mark_dirty();
+            telemetry_server::telemetry_log!(
+                "⚠️ [{}] {} cobertura DESCONOCIDA ({}): cero nuevas piernas hasta reconciliación",
+                tag,
+                symbol,
+                e
+            );
+            return ProtectionAudit {
+                tp_gap: 0.0,
+                sl_gap: 0.0,
+                evidence_unknown: true,
+            };
+        }
+    };
     let want_side = if is_long { "LONG" } else { "SHORT" };
     let mut tp_covered = 0.0f64;
     let mut sl_covered = 0.0f64;
@@ -535,6 +552,7 @@ async fn ensure_position_protected(
         return ProtectionAudit {
             tp_gap: pos_qty - tp_covered,
             sl_gap: pos_qty - sl_covered,
+            evidence_unknown: false,
         };
     };
     let tp_gap = (pos_qty - tp_covered).max(0.0);
@@ -543,6 +561,7 @@ async fn ensure_position_protected(
         return ProtectionAudit {
             tp_gap: 0.0,
             sl_gap: 0.0,
+            evidence_unknown: false,
         }; // protegida
     }
     if entry_price <= 0.0 {
@@ -554,6 +573,7 @@ async fn ensure_position_protected(
         return ProtectionAudit {
             tp_gap,
             sl_gap,
+            evidence_unknown: false,
         };
     }
     let (tp_price, sl_price) =
@@ -565,6 +585,7 @@ async fn ensure_position_protected(
     let mut audit = ProtectionAudit {
         tp_gap,
         sl_gap,
+        evidence_unknown: false,
     };
     // Precio VIVO del arena para el reintento -2021: cuando la posición
     // deriva más allá del nivel del genoma calculado desde el ENTRY, el
@@ -3475,6 +3496,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             "WATCHDOG",
                         )
                         .await;
+                        if prot.evidence_unknown {
+                            quantum_arena::protection_health::mark_dirty();
+                            telemetry_server::telemetry_log!(
+                                "⚠️ [WATCHDOG] {} cobertura desconocida: no se contabiliza gap ni se escala; reconciliación pendiente",
+                                p.symbol
+                            );
+                            continue;
+                        }
                         let (g_tp, g_sl) = (prot.tp_gap, prot.sl_gap);
                         // CL-17 — sólo un gap de STOP deja la posición
                         // desnuda. Un TP ausente con el SL completo no es
@@ -5083,20 +5112,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             };
                             let close_res = exec_clone
                                 .load()
-                                .execute_reduce_only_market(&parsed_sym_str, is_long_close, qty, sym_filter.step_size)
+                                .execute_reduce_only_market_with_reconciliation(
+                                    &parsed_sym_str,
+                                    is_long_close,
+                                    qty,
+                                    sym_filter.step_size,
+                                )
                                 .await;
-                            let close_res = match close_res {
-                                Ok(()) => Ok(()),
-                                Err(e1) => {
-                                    // Retry único: glitches transitorios de red.
-                                    tokio::time::sleep(std::time::Duration::from_millis(150)).await;
-                                    exec_clone
-                                        .load()
-                                        .execute_reduce_only_market(&parsed_sym_str, is_long_close, qty, sym_filter.step_size)
-                                        .await
-                                        .map_err(|e2| format!("{} / retry: {}", e1, e2))
-                                }
-                            };
                             match close_res {
                                 Ok(()) => {
                                     // Posición plana en el exchange: purgar los
@@ -5746,53 +5768,68 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                         // 350ms minimiza esa ventana.
                                         tokio::time::sleep(tokio::time::Duration::from_millis(350)).await;
                                         let mut oco_success = false;
+                                        let mut position_evidence_unknown = false;
                                         // I-8 (N18): los rechazos de cada intento,
                                         // para distinguir el freno temporal del
                                         // exchange de un bracket inaplicable.
                                         let mut errores_bracket: Vec<String> = Vec::with_capacity(3);
                                         for retry in 1..=3 {
-                                            // CERT-M4-H03: verificar que la posición SIGUE ABIERTA
-                                            // antes de cada retry — si el TP bracket llenó mientras
-                                            // el entry task estaba entre ack y OCO, colocar brackets
-                                            // sobre posición flat genera -2022 → retry ×3 → X-009
-                                            // emergency-close sobre nada → falsa escalada.
                                             {
-                                                let still_open = entry_executor
-                                                    .fetch_position_risk()
-                                                    .await
-                                                    .map(|ps| {
-                                                        // CL-12: el lado de ESTA entrada.
+                                                let still_open = match entry_executor.fetch_position_risk().await {
+                                                    Ok(ps) => {
                                                         execution_engine::reconciliation::cantidad_abierta_del_lado(
                                                             &ps, &parsed_sym_str, final_is_long,
                                                         )
                                                         .is_some()
-                                                    })
-                                                    .unwrap_or(true); // si fetch falla, no bloquear
+                                                    }
+                                                    Err(e) => {
+                                                        position_evidence_unknown = true;
+                                                        errores_bracket.push(format!("POSITION_EVIDENCE_UNKNOWN: {e}"));
+                                                        quantum_arena::protection_health::mark_dirty();
+                                                        telemetry_engine::telemetry_err!(
+                                                            "⚠️ [OCO UNKNOWN] {} positionRisk falló ({}): cero OCO; cantidad desconocida y reconciliación pendiente",
+                                                            parsed_sym_str, e
+                                                        );
+                                                        break;
+                                                    }
+                                                };
                                                 if !still_open {
                                                     telemetry_engine::telemetry!(
                                                         "✅ [OCO-SKIP] {} posición ya cerrada antes de bracket retry {}/3 — TP llenó durante entry task",
                                                         parsed_sym_str, retry
                                                     );
-                                                    oco_success = true; // no más retries
+                                                    oco_success = true;
                                                     break;
                                                 }
                                             }
                                             let qty_intent = cantidad_llenada;
-                                            let qty_bracket = entry_executor
-                                                .fetch_position_risk()
-                                                .await
-                                                .ok()
-                                                .and_then(|ps| {
-                                                    // HEDGE: DOS registros por símbolo
-                                                    // (LONG/SHORT). CL-12: el del lado de
-                                                    // esta entrada, no el primero abierto.
-                                                    execution_engine::reconciliation::cantidad_abierta_del_lado(
+                                            let qty_bracket = match entry_executor.fetch_position_risk().await {
+                                                Ok(ps) => {
+                                                    match execution_engine::reconciliation::cantidad_abierta_del_lado(
                                                         &ps, &parsed_sym_str, final_is_long,
-                                                    )
-                                                })
-                                                .filter(|a| *a > 0.0)
-                                                .map(|real| real.min(qty_intent))
-                                                .unwrap_or(qty_intent);
+                                                    ) {
+                                                        Some(real) if real > 0.0 => real.min(qty_intent),
+                                                        _ => {
+                                                            telemetry_engine::telemetry!(
+                                                                "✅ [OCO-SKIP] {} posición ya cerrada antes de bracket retry {}/3 — TP llenó durante entry task",
+                                                                parsed_sym_str, retry
+                                                            );
+                                                            oco_success = true;
+                                                            break;
+                                                        }
+                                                    }
+                                                }
+                                                Err(e) => {
+                                                    position_evidence_unknown = true;
+                                                    errores_bracket.push(format!("POSITION_EVIDENCE_UNKNOWN: {e}"));
+                                                    quantum_arena::protection_health::mark_dirty();
+                                                    telemetry_engine::telemetry_err!(
+                                                        "⚠️ [OCO UNKNOWN] {} positionRisk falló ({}): cero OCO; cantidad desconocida y reconciliación pendiente",
+                                                        parsed_sym_str, e
+                                                    );
+                                                    break;
+                                                }
+                                            };
                                             if qty_bracket < qty_intent {
                                                 telemetry_engine::telemetry!(
                                                     "⏳ [OCO] {} posición real {:.4} < intent {:.4} — bracketeando lo existente (intento {}/3)",
@@ -5837,7 +5874,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                                 }
                                             }
                                         }
-                                        if !oco_success
+                                        if position_evidence_unknown {
+                                            quantum_arena::protection_health::mark_dirty();
+                                            telemetry_engine::telemetry_err!(
+                                                "⚠️ [OCO UNKNOWN] {} queda sin nuevas órdenes ni cierre teórico; sólo reconciliación",
+                                                parsed_sym_str
+                                            );
+                                        } else if !oco_success
                                             && execution_engine::freno_temporal::tras_bracket_fallido(&errores_bracket)
                                                 == execution_engine::freno_temporal::TrasBracketFallido::DiferirAlVigilante
                                         {
@@ -5883,41 +5926,41 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                             // OCO-F2: cerrar la posición REAL del exchange,
                                             // no la qty teórica (reduceOnly con qty > posición
                                             // ⇒ rechazo -2022 y posición naked).
-                                            let close_qty = entry_executor
-                                                .fetch_position_risk()
-                                                .await
-                                                .ok()
-                                                .and_then(|ps| {
-                                                    // CL-12: la posición del lado que se
-                                                    // cierra (hedge: dos registros).
-                                                    execution_engine::reconciliation::cantidad_abierta_del_lado(
+                                            'close_with_known_quantity: {
+                                            let close_qty = match entry_executor.fetch_position_risk().await {
+                                                Ok(ps) => {
+                                                    match execution_engine::reconciliation::cantidad_abierta_del_lado(
                                                         &ps, &parsed_sym_str, is_long_close,
-                                                    )
-                                                })
-                                                .filter(|a| *a > 0.0)
-                                                .unwrap_or(final_qty.abs());
-                                            let close_res = entry_executor
-                                                .execute_reduce_only_market(&parsed_sym_str, is_long_close, close_qty, dyn_step_size)
-                                                .await;
-                                            let close_res = match close_res {
-                                                Ok(()) => Ok(()),
-                                                Err(e1) => {
-                                                    tokio::time::sleep(std::time::Duration::from_millis(150)).await;
-                                                    entry_executor
-                                                        .execute_reduce_only_market(&parsed_sym_str, is_long_close, close_qty, dyn_step_size)
-                                                        .await
-                                                        .map_err(|e2| format!("{} / retry: {}", e1, e2))
+                                                    ) {
+                                                        Some(quantity) if quantity > 0.0 => quantity,
+                                                        _ => break 'close_with_known_quantity,
+                                                    }
+                                                }
+                                                Err(e) => {
+                                                    quantum_arena::protection_health::mark_dirty();
+                                                    telemetry_engine::telemetry_err!(
+                                                        "⚠️ [EMERGENCY UNKNOWN] POSITION_EVIDENCE_UNKNOWN {}: {}; cero cierre/purga con cantidad teórica; sólo reconciliación",
+                                                        parsed_sym_str, e
+                                                    );
+                                                    break 'close_with_known_quantity;
                                                 }
                                             };
-                                            // Purgar órdenes restantes (haya cerrado o no:
-                                            // si no cerró, reduceOnly sigue siendo válida).
-                                            // CL-12: sólo las del LADO cerrado; la purga
-                                            // de todo el símbolo borraba el TP/SL de la
-                                            // posición del lado contrario.
-                                            if let Err(ce) = entry_executor.cancel_position_oco_orders(&parsed_sym_str, is_long_close).await {
-                                                telemetry_engine::telemetry_err!("⚠️ [EMERGENCY] Purga de órdenes de {} falló: {}", parsed_sym_str, ce);
-                                                // I-9 (N15b): pendiente hasta que el vigilante la purgue.
-                                                anotar_purga_pendiente(&parsed_sym_str, is_long_close);
+                                            let close_res = entry_executor
+                                                .execute_reduce_only_market_with_reconciliation(
+                                                    &parsed_sym_str,
+                                                    is_long_close,
+                                                    close_qty,
+                                                    dyn_step_size,
+                                                )
+                                                .await;
+                                            // La purga sólo sigue a un cierre completo o
+                                            // a una posición plana comprobada, nunca a un
+                                            // residual/unknown ni a un fallo de snapshot.
+                                            if close_res.is_ok() {
+                                                if let Err(ce) = entry_executor.cancel_position_oco_orders(&parsed_sym_str, is_long_close).await {
+                                                    telemetry_engine::telemetry_err!("⚠️ [EMERGENCY] Purga de órdenes de {} falló: {}", parsed_sym_str, ce);
+                                                    anotar_purga_pendiente(&parsed_sym_str, is_long_close);
+                                                }
                                             }
                                             match close_res {
                                                 Ok(()) => {
@@ -5955,6 +5998,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                                     // SIN rollback: el estado local refleja la
                                                     // posición que el exchange aún sostiene.
                                                 }
+                                            }
                                             }
                                         }
                                     }
