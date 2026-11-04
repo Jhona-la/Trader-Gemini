@@ -10854,3 +10854,12 @@ Puerto recursos reanclado sobre PR90/7b598f7e (padre mainfd956f9, AGY F1-074/F1-
 - Nueve rutas `dark-alpha-engine`, 105+/83- exclusivamente rustfmt. Cada blob del tree escrito coincide con el WIP censo (`f653b151`, `c74bde5c`, `84a7b932`, `4431df8c`, `771cf0d8`, `1163832e`, `b2232f4a`, `fde16235`, `b2171304`). No cambian condiciones, fórmulas, umbrales, mensajes, contabilidad ni APIs.
 - Evidencia: 66/66 en 6 targets, 0 failed/ignored/filtered/exit0; workspace all-targets exit0 (4m12s); Zero-Wait 22/22 (267.253s)/exit0; revisión agent-25 **Yes**, Critical/Important/Minor=0. `core.fsmonitor=true` ocultó la fila propia; se desactivó únicamente en los índices privados y se verificó su blob `562678a3` en el commit.
 - Handoff documental separado pendiente de workspace, Zero-Wait y CAS. Attestation/publicación siguen bloqueados por QRA Navier/adversarial/legacy, formatter restante, productor ROOT, seis fases + Python y Golden9. Producción NO-GO; ROI/PnL/WR/Sharpe/EV=N/D.
+
+
+## 2026-11-04T23:16:11Z — KIMI-QUANT-SR-V35: R9C storage, I-12/GLM-192 y CAS local
+
+- `main` local avanzó por CAS desde `9f082c98357e1104df178159e223bf16a9dfb161` a `f643ac28475f25d88c70810e072ea13fb15f7afb` (tree `ead1f7121d20e1d0a7d0d8f65f063ed4943dab81`), padres `206701dc` y `f8b8e05f`. `origin/main=206701dc` permanece intacto; no hubo push.
+- Cuatro rutas `storage-engine`, 51+/21- exclusivamente rustfmt, con blobs `f7e21f22`, `ad456180`, `e46022b6`, `c08ed1bd` exactos al WIP censo. Sin cambios de APIs, fórmulas, umbrales, recuperación o contabilidad.
+- R9B incorporó I-12 en cinco documentos con unión de 9 líneas; R9C incorporó GLM-192 en dos documentos con unión de 18 líneas, incluida `767aac6e3`, preservando R3–R9B. R9B cerró 50/50, workspace y Zero-Wait 22/22 (464.616s), pero no se promovió porque upstream avanzó.
+- Evidencia R9C: 50/50 en 6 targets/0 failed/ignored/filtered/exit0; workspace 4m55s/exit0; Zero-Wait 22/22 (369.920s)/exit0; revisión agent-25 **Yes**, Critical/Important/Minor=0. El fallo inicial R9 de Zero-Wait quedó sin traceback y la reproducción mínima pasó 1/1; no se cambió código por ese evento.
+- Handoff documental separado pendiente de workspace, Zero-Wait y CAS. Attestation/publicación siguen bloqueados por QRA Navier/adversarial/legacy, formatter restante, productor ROOT/inventario Golden9 ausentes, seis fases + Python y Golden9. Producción NO-GO; ROI/PnL/WR/Sharpe/EV=N/D.

@@ -289,3 +289,11 @@ Después de cada push de código: todos los checks disparados (base actual: 8 de
 - Nueve rutas `dark-alpha-engine` quedan en rustfmt con equivalencia byte a byte contra los nueve blobs WIP censados. No se adoptó ningún otro WIP ni se alteró comportamiento, APIs, umbrales o contabilidad.
 - Evidencia: 66/66 en 6 targets, workspace 4m12s, Zero-Wait 22/22 (267.253s), revisión Yes sin defectos. `core.fsmonitor` se desactiva sólo en índices privados antes de staging; la configuración global no cambia.
 - Handoff separado pendiente. Attestation sigue bloqueada por QRA Navier/adversarial/legacy, formatter restante, productor ROOT, seis fases + Python y Golden9. Producción NO-GO; métricas económicas N/D.
+
+
+## Corte V35-R9C — storage formateado y recomposición I-12/GLM-192 en main local (2026-11-04T23:16:11Z)
+
+- `main` local=`f643ac28475f25d88c70810e072ea13fb15f7afb`, tree `ead1f712`, tras CAS desde `9f082c98`; `origin/main=206701dc` revalidado, sin push.
+- Cuatro rutas `storage-engine` formateadas con equivalencia byte a byte del WIP. R9B conserva I-12 en cinco documentos y R9C conserva GLM-192 en dos; uniones verificadas 9/0 y 18/0, sin pérdida de R3–R9B.
+- Evidencia: 50/50 en 6 targets, workspace 4m55s, Zero-Wait 22/22 (369.920s), revisión Yes sin defectos. R9B también 50/50 y Zero-Wait 22/22 (464.616s), sin CAS por upstream.
+- Handoff separado pendiente. Attestation sigue bloqueada por QRA, formatter restante, productor ROOT/inventario Golden9 ausentes, seis fases + Python y Golden9. Producción NO-GO; métricas económicas N/D.
