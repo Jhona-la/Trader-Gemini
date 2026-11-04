@@ -6,6 +6,7 @@ pub mod entrelazamiento;
 pub mod ewma;
 pub mod feynman_path_instanton;
 pub mod firma_maxent;
+pub mod fisher_rao;
 pub mod flujo_rg;
 pub mod grothendieck_sheaves;
 pub mod hairer_landauer_anderson;
