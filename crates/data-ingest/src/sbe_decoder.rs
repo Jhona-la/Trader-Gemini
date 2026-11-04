@@ -133,32 +133,57 @@ impl SbeBookTicker {
 
         let payload = &buf[SBE_HEADER_LEN..Self::TOTAL_LEN];
         let event_time_us = u64::from_le_bytes([
-            payload[0], payload[1], payload[2], payload[3],
-            payload[4], payload[5], payload[6], payload[7],
+            payload[0], payload[1], payload[2], payload[3], payload[4], payload[5], payload[6],
+            payload[7],
         ]);
-        let symbol_id = u32::from_le_bytes([
-            payload[8], payload[9], payload[10], payload[11],
-        ]);
+        let symbol_id = u32::from_le_bytes([payload[8], payload[9], payload[10], payload[11]]);
 
         let best_bid_price = f64::from_bits(u64::from_le_bytes([
-            payload[12], payload[13], payload[14], payload[15],
-            payload[16], payload[17], payload[18], payload[19],
+            payload[12],
+            payload[13],
+            payload[14],
+            payload[15],
+            payload[16],
+            payload[17],
+            payload[18],
+            payload[19],
         ]));
         let best_bid_qty = f64::from_bits(u64::from_le_bytes([
-            payload[20], payload[21], payload[22], payload[23],
-            payload[24], payload[25], payload[26], payload[27],
+            payload[20],
+            payload[21],
+            payload[22],
+            payload[23],
+            payload[24],
+            payload[25],
+            payload[26],
+            payload[27],
         ]));
         let best_ask_price = f64::from_bits(u64::from_le_bytes([
-            payload[28], payload[29], payload[30], payload[31],
-            payload[32], payload[33], payload[34], payload[35],
+            payload[28],
+            payload[29],
+            payload[30],
+            payload[31],
+            payload[32],
+            payload[33],
+            payload[34],
+            payload[35],
         ]));
         let best_ask_qty = f64::from_bits(u64::from_le_bytes([
-            payload[36], payload[37], payload[38], payload[39],
-            payload[40], payload[41], payload[42], payload[43],
+            payload[36],
+            payload[37],
+            payload[38],
+            payload[39],
+            payload[40],
+            payload[41],
+            payload[42],
+            payload[43],
         ]));
 
-        if !best_bid_price.is_finite() || !best_bid_qty.is_finite()
-            || !best_ask_price.is_finite() || !best_ask_qty.is_finite() {
+        if !best_bid_price.is_finite()
+            || !best_bid_qty.is_finite()
+            || !best_ask_price.is_finite()
+            || !best_ask_qty.is_finite()
+        {
             return Err(SbeDecodeError::CorruptedPayload);
         }
 
@@ -172,7 +197,7 @@ impl SbeBookTicker {
         })
     }
 
-    /// Codifica en un búfer de al menos 48 bytes.
+    /// Codifica en un búfer de al menos `Self::TOTAL_LEN` bytes.
     pub fn encode(&self, out: &mut [u8]) -> Result<(), SbeDecodeError> {
         if out.len() < Self::TOTAL_LEN {
             return Err(SbeDecodeError::BufferTooShort {
@@ -242,23 +267,39 @@ impl SbeTrade {
 
         let payload = &buf[SBE_HEADER_LEN..Self::TOTAL_LEN];
         let event_time_us = u64::from_le_bytes([
-            payload[0], payload[1], payload[2], payload[3],
-            payload[4], payload[5], payload[6], payload[7],
+            payload[0], payload[1], payload[2], payload[3], payload[4], payload[5], payload[6],
+            payload[7],
         ]);
-        let symbol_id = u32::from_le_bytes([
-            payload[8], payload[9], payload[10], payload[11],
-        ]);
+        let symbol_id = u32::from_le_bytes([payload[8], payload[9], payload[10], payload[11]]);
         let trade_id = u64::from_le_bytes([
-            payload[12], payload[13], payload[14], payload[15],
-            payload[16], payload[17], payload[18], payload[19],
+            payload[12],
+            payload[13],
+            payload[14],
+            payload[15],
+            payload[16],
+            payload[17],
+            payload[18],
+            payload[19],
         ]);
         let price = f64::from_bits(u64::from_le_bytes([
-            payload[20], payload[21], payload[22], payload[23],
-            payload[24], payload[25], payload[26], payload[27],
+            payload[20],
+            payload[21],
+            payload[22],
+            payload[23],
+            payload[24],
+            payload[25],
+            payload[26],
+            payload[27],
         ]));
         let qty = f64::from_bits(u64::from_le_bytes([
-            payload[28], payload[29], payload[30], payload[31],
-            payload[32], payload[33], payload[34], payload[35],
+            payload[28],
+            payload[29],
+            payload[30],
+            payload[31],
+            payload[32],
+            payload[33],
+            payload[34],
+            payload[35],
         ]));
         let is_buyer_maker = payload[36] != 0;
 
@@ -276,7 +317,7 @@ impl SbeTrade {
         })
     }
 
-    /// Codifica en un búfer de al menos 44 bytes.
+    /// Codifica en un búfer de al menos `Self::TOTAL_LEN` bytes.
     pub fn encode(&self, out: &mut [u8]) -> Result<(), SbeDecodeError> {
         if out.len() < Self::TOTAL_LEN {
             return Err(SbeDecodeError::BufferTooShort {
@@ -346,50 +387,78 @@ impl SbeDepth5Snapshot {
 
         let payload = &buf[SBE_HEADER_LEN..Self::TOTAL_LEN];
         let event_time_us = u64::from_le_bytes([
-            payload[0], payload[1], payload[2], payload[3],
-            payload[4], payload[5], payload[6], payload[7],
+            payload[0], payload[1], payload[2], payload[3], payload[4], payload[5], payload[6],
+            payload[7],
         ]);
-        let symbol_id = u32::from_le_bytes([
-            payload[8], payload[9], payload[10], payload[11],
-        ]);
+        let symbol_id = u32::from_le_bytes([payload[8], payload[9], payload[10], payload[11]]);
         let first_update_id = u64::from_le_bytes([
-            payload[12], payload[13], payload[14], payload[15],
-            payload[16], payload[17], payload[18], payload[19],
+            payload[12],
+            payload[13],
+            payload[14],
+            payload[15],
+            payload[16],
+            payload[17],
+            payload[18],
+            payload[19],
         ]);
 
         let mut bids = [SbePriceLevel::default(); 5];
         let mut asks = [SbePriceLevel::default(); 5];
 
         let mut offset = 20;
-        for i in 0..5 {
+        for bid in bids.iter_mut() {
             let p = f64::from_bits(u64::from_le_bytes([
-                payload[offset], payload[offset + 1], payload[offset + 2], payload[offset + 3],
-                payload[offset + 4], payload[offset + 5], payload[offset + 6], payload[offset + 7],
+                payload[offset],
+                payload[offset + 1],
+                payload[offset + 2],
+                payload[offset + 3],
+                payload[offset + 4],
+                payload[offset + 5],
+                payload[offset + 6],
+                payload[offset + 7],
             ]));
             let q = f64::from_bits(u64::from_le_bytes([
-                payload[offset + 8], payload[offset + 9], payload[offset + 10], payload[offset + 11],
-                payload[offset + 12], payload[offset + 13], payload[offset + 14], payload[offset + 15],
+                payload[offset + 8],
+                payload[offset + 9],
+                payload[offset + 10],
+                payload[offset + 11],
+                payload[offset + 12],
+                payload[offset + 13],
+                payload[offset + 14],
+                payload[offset + 15],
             ]));
             if !p.is_finite() || !q.is_finite() {
                 return Err(SbeDecodeError::CorruptedPayload);
             }
-            bids[i] = SbePriceLevel { price: p, qty: q };
+            *bid = SbePriceLevel { price: p, qty: q };
             offset += 16;
         }
 
-        for i in 0..5 {
+        for ask in asks.iter_mut() {
             let p = f64::from_bits(u64::from_le_bytes([
-                payload[offset], payload[offset + 1], payload[offset + 2], payload[offset + 3],
-                payload[offset + 4], payload[offset + 5], payload[offset + 6], payload[offset + 7],
+                payload[offset],
+                payload[offset + 1],
+                payload[offset + 2],
+                payload[offset + 3],
+                payload[offset + 4],
+                payload[offset + 5],
+                payload[offset + 6],
+                payload[offset + 7],
             ]));
             let q = f64::from_bits(u64::from_le_bytes([
-                payload[offset + 8], payload[offset + 9], payload[offset + 10], payload[offset + 11],
-                payload[offset + 12], payload[offset + 13], payload[offset + 14], payload[offset + 15],
+                payload[offset + 8],
+                payload[offset + 9],
+                payload[offset + 10],
+                payload[offset + 11],
+                payload[offset + 12],
+                payload[offset + 13],
+                payload[offset + 14],
+                payload[offset + 15],
             ]));
             if !p.is_finite() || !q.is_finite() {
                 return Err(SbeDecodeError::CorruptedPayload);
             }
-            asks[i] = SbePriceLevel { price: p, qty: q };
+            *ask = SbePriceLevel { price: p, qty: q };
             offset += 16;
         }
 
@@ -402,7 +471,7 @@ impl SbeDepth5Snapshot {
         })
     }
 
-    /// Codifica en un búfer de al menos 184 bytes.
+    /// Codifica en un búfer de al menos `Self::TOTAL_LEN` bytes.
     pub fn encode(&self, out: &mut [u8]) -> Result<(), SbeDecodeError> {
         if out.len() < Self::TOTAL_LEN {
             return Err(SbeDecodeError::BufferTooShort {
@@ -426,14 +495,18 @@ impl SbeDepth5Snapshot {
 
         let mut offset = 20;
         for i in 0..5 {
-            payload[offset..offset + 8].copy_from_slice(&self.bids[i].price.to_bits().to_le_bytes());
-            payload[offset + 8..offset + 16].copy_from_slice(&self.bids[i].qty.to_bits().to_le_bytes());
+            payload[offset..offset + 8]
+                .copy_from_slice(&self.bids[i].price.to_bits().to_le_bytes());
+            payload[offset + 8..offset + 16]
+                .copy_from_slice(&self.bids[i].qty.to_bits().to_le_bytes());
             offset += 16;
         }
 
         for i in 0..5 {
-            payload[offset..offset + 8].copy_from_slice(&self.asks[i].price.to_bits().to_le_bytes());
-            payload[offset + 8..offset + 16].copy_from_slice(&self.asks[i].qty.to_bits().to_le_bytes());
+            payload[offset..offset + 8]
+                .copy_from_slice(&self.asks[i].price.to_bits().to_le_bytes());
+            payload[offset + 8..offset + 16]
+                .copy_from_slice(&self.asks[i].qty.to_bits().to_le_bytes());
             offset += 16;
         }
 

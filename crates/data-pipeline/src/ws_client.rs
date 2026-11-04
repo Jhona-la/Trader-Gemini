@@ -92,11 +92,12 @@ impl BinanceStreamer {
             .map(|v| v == "1")
             .unwrap_or(false)
         {
-            match storage_engine::raw_zone::RawTickArchive::open("data/raw_ticks", &self.symbol) {
+            let raw_dir = quantum_arena::paths::env_data_path("raw_ticks");
+            match storage_engine::raw_zone::RawTickArchive::open(&raw_dir, &self.symbol) {
                 Ok(a) => {
                     println!(
-                        "🗄️  [RAW-ZONE] Archivo vivo para {} en data/raw_ticks/",
-                        self.symbol
+                        "🗄️  [RAW-ZONE] Archivo vivo para {} en {}",
+                        self.symbol, raw_dir
                     );
                     Some(a)
                 }

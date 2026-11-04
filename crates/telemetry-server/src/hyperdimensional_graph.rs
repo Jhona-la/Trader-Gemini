@@ -96,7 +96,7 @@ pub struct HyperdimensionalGraphSnapshot {
 }
 
 impl HyperdimensionalGraphSnapshot {
-    /// Construye una topología de grafo a partir de los datos vivos de las monedas.
+    /// Construye una topología sólo con datos completos y finitos.
     pub fn build_from_state(
         symbols: &[String],
         entropies_vn: &[f64],
@@ -104,51 +104,49 @@ impl HyperdimensionalGraphSnapshot {
         gauge_actions: &[f64],
         void_risks: &[f64],
         betti_1_counts: &[f64],
-    ) -> Self {
-        let n = symbols.len().max(1);
+    ) -> Option<Self> {
+        let n = symbols.len();
+        let timestamp_ns = u64::try_from(
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .ok()?
+                .as_nanos(),
+        )
+        .ok()?;
+        let inputs_complete = entropies_vn.len() == n
+            && entropies_tsallis.len() == n
+            && gauge_actions.len() == n
+            && void_risks.len() == n
+            && betti_1_counts.len() == n;
+        let inputs_finite = entropies_vn.iter().all(|value| value.is_finite())
+            && entropies_tsallis.iter().all(|value| value.is_finite())
+            && gauge_actions.iter().all(|value| value.is_finite())
+            && void_risks.iter().all(|value| value.is_finite())
+            && betti_1_counts.iter().all(|value| value.is_finite());
+
+        if !inputs_complete || !inputs_finite {
+            return Some(Self {
+                timestamp_ns,
+                nodes: Vec::new(),
+                edges: Vec::new(),
+                pods: Vec::new(),
+                total_energy: 0.0,
+                global_betti_1_cycles: 0,
+            });
+        }
+
         let mut nodes = Vec::with_capacity(n);
         let mut edges = Vec::new();
-
-        let timestamp_ns = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map(|d| d.as_nanos() as u64)
-            .unwrap_or(0);
-
         let mut total_energy = 0.0;
         let mut global_cycles = 0;
 
         for i in 0..n {
-            let symbol = if i < symbols.len() {
-                symbols[i].clone()
-            } else {
-                format!("COIN_{}", i)
-            };
-
-            let s_vn = if i < entropies_vn.len() && entropies_vn[i].is_finite() {
-                entropies_vn[i]
-            } else {
-                0.5
-            };
-            let s_q = if i < entropies_tsallis.len() && entropies_tsallis[i].is_finite() {
-                entropies_tsallis[i]
-            } else {
-                0.5
-            };
-            let s_ym = if i < gauge_actions.len() && gauge_actions[i].is_finite() {
-                gauge_actions[i]
-            } else {
-                0.0
-            };
-            let v_risk = if i < void_risks.len() && void_risks[i].is_finite() {
-                void_risks[i]
-            } else {
-                0.0
-            };
-            let b1 = if i < betti_1_counts.len() && betti_1_counts[i].is_finite() {
-                betti_1_counts[i]
-            } else {
-                0.0
-            };
+            let symbol = symbols[i].clone();
+            let s_vn = entropies_vn[i];
+            let s_q = entropies_tsallis[i];
+            let s_ym = gauge_actions[i];
+            let v_risk = void_risks[i];
+            let b1 = betti_1_counts[i];
 
             total_energy += s_vn + s_ym;
             if b1 >= 1.0 {
@@ -198,7 +196,8 @@ impl HyperdimensionalGraphSnapshot {
 
                 // Información mutua simplificada I(A:B) = S(A) + S(B) - S(AB)
                 let joint_entropy = (n_a.von_neumann_entropy + n_b.von_neumann_entropy) * 0.85;
-                let mutual_info = (n_a.von_neumann_entropy + n_b.von_neumann_entropy - joint_entropy).max(0.0);
+                let mutual_info =
+                    (n_a.von_neumann_entropy + n_b.von_neumann_entropy - joint_entropy).max(0.0);
 
                 // Distancia euclídea hiperdimensional como proxy de transporte Wasserstein
                 let dx = (n_a.x - n_b.x) as f64;
@@ -225,14 +224,14 @@ impl HyperdimensionalGraphSnapshot {
         // Detección y agrupación en Pods de Aislamiento
         let pods = Self::partition_into_pods(&nodes, &edges);
 
-        Self {
+        Some(Self {
             timestamp_ns,
             nodes,
             edges,
             pods,
             total_energy,
             global_betti_1_cycles: global_cycles,
-        }
+        })
     }
 
     /// Particiona los nodos en pods de aislamiento según su estado de salud y acoplamiento.
@@ -329,7 +328,11 @@ mod tests {
 
     #[test]
     fn test_hyperdimensional_graph_construction() {
-        let symbols = vec!["BTCUSDT".to_string(), "ETHUSDT".to_string(), "SOLUSDT".to_string()];
+        let symbols = vec![
+            "BTCUSDT".to_string(),
+            "ETHUSDT".to_string(),
+            "SOLUSDT".to_string(),
+        ];
         let vn = vec![0.30, 0.45, 0.90];
         let tsallis = vec![0.35, 0.50, 0.95];
         let gauge = vec![1.2, 2.5, 12.0];
@@ -343,20 +346,33 @@ mod tests {
             &gauge,
             &void_risks,
             &betti_1,
-        );
+        )
+        .expect("reloj válido");
 
         assert_eq!(snapshot.nodes.len(), 3);
         assert_eq!(snapshot.edges.len(), 3); // (0,1), (0,2), (1,2)
         assert_eq!(snapshot.global_betti_1_cycles, 2);
 
         // Verificar estados de aislamiento
-        assert_eq!(snapshot.nodes[0].isolation_state, PodIsolationState::Optimal);
-        assert_eq!(snapshot.nodes[1].isolation_state, PodIsolationState::Optimal);
-        assert_eq!(snapshot.nodes[2].isolation_state, PodIsolationState::Quarantined);
+        assert_eq!(
+            snapshot.nodes[0].isolation_state,
+            PodIsolationState::Optimal
+        );
+        assert_eq!(
+            snapshot.nodes[1].isolation_state,
+            PodIsolationState::Optimal
+        );
+        assert_eq!(
+            snapshot.nodes[2].isolation_state,
+            PodIsolationState::Quarantined
+        );
 
         // Verificar pods
         assert!(snapshot.pods.len() >= 2);
-        let quarantined_pod = snapshot.pods.iter().find(|p| p.status == PodIsolationState::Quarantined);
+        let quarantined_pod = snapshot
+            .pods
+            .iter()
+            .find(|p| p.status == PodIsolationState::Quarantined);
         assert!(quarantined_pod.is_some());
         assert_eq!(quarantined_pod.unwrap().member_nodes, vec![2]);
     }
@@ -371,7 +387,8 @@ mod tests {
             &[0.0],
             &[0.0],
             &[0.0],
-        );
+        )
+        .expect("reloj válido");
 
         let n = &snap.nodes[0];
         assert!(n.x.is_finite());
