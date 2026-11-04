@@ -40,7 +40,10 @@ impl MensajeWs {
     /// Sella `datos` con el instante actual.
     #[inline]
     pub fn recibido_ahora(datos: Vec<u8>) -> Self {
-        Self { datos, recibido: Instant::now() }
+        Self {
+            datos,
+            recibido: Instant::now(),
+        }
     }
 
     /// `true` si es el centinela de reconexión.
@@ -160,12 +163,18 @@ impl Default for ConexionesWs {
 impl ConexionesWs {
     /// Lector que anuncia sus reconexiones (el público).
     pub fn new() -> Self {
-        Self { establecidas: 0, anuncia: true }
+        Self {
+            establecidas: 0,
+            anuncia: true,
+        }
     }
 
     /// Lector que nunca anuncia reconexiones (el de mercado).
     pub fn sin_anuncio() -> Self {
-        Self { establecidas: 0, anuncia: false }
+        Self {
+            establecidas: 0,
+            anuncia: false,
+        }
     }
 
     /// Conexiones establecidas desde el arranque.
@@ -256,7 +265,15 @@ mod tests {
         let Some(t0) = Instant::now().checked_sub(Duration::from_secs(5)) else {
             return; // reloj recién arrancado: sin pasado de 5 s que sellar
         };
-        assert!(encolar(&tx, &rx, MensajeWs { datos: b"x".to_vec(), recibido: t0 }, &estado));
+        assert!(encolar(
+            &tx,
+            &rx,
+            MensajeWs {
+                datos: b"x".to_vec(),
+                recibido: t0
+            },
+            &estado
+        ));
         let sacado = rx.try_recv().unwrap();
         assert_eq!(sacado.recibido, t0, "la cola no vuelve a sellar");
         assert!(sacado.recibido.elapsed() >= Duration::from_secs(5));
