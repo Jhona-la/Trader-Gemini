@@ -19,6 +19,7 @@ pub mod kam_eth_tur_stein;
 pub mod koopman_dmd;
 pub mod landauer_bec_hopfield;
 pub mod lead_lag;
+pub mod lppls_sornette;
 pub mod matriz_rmt;
 pub mod microstructure;
 pub mod mps;
