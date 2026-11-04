@@ -663,7 +663,6 @@ type ParOptimizado = (f64, Vec<f64>, Vec<f64>, Vec<usize>);
 /// El factor que carga la norma se re-normaliza por √(Σλ_kept) para que
 /// ‖ψ‖ = 1 sobreviva al truncado en cada paso (sin esto la norma deriva
 /// ~1e-3 en 12 sweeps y el contrato de autoconsistencia revienta).
-
 fn optimizar_par(
     mps: &Mps,
     mpos: &[Vec<f64>],
