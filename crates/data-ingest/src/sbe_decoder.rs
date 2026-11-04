@@ -197,7 +197,7 @@ impl SbeBookTicker {
         })
     }
 
-    /// Codifica en un búfer de al menos 48 bytes.
+    /// Codifica en un búfer de al menos `Self::TOTAL_LEN` bytes.
     pub fn encode(&self, out: &mut [u8]) -> Result<(), SbeDecodeError> {
         if out.len() < Self::TOTAL_LEN {
             return Err(SbeDecodeError::BufferTooShort {
@@ -317,7 +317,7 @@ impl SbeTrade {
         })
     }
 
-    /// Codifica en un búfer de al menos 44 bytes.
+    /// Codifica en un búfer de al menos `Self::TOTAL_LEN` bytes.
     pub fn encode(&self, out: &mut [u8]) -> Result<(), SbeDecodeError> {
         if out.len() < Self::TOTAL_LEN {
             return Err(SbeDecodeError::BufferTooShort {
@@ -471,7 +471,7 @@ impl SbeDepth5Snapshot {
         })
     }
 
-    /// Codifica en un búfer de al menos 184 bytes.
+    /// Codifica en un búfer de al menos `Self::TOTAL_LEN` bytes.
     pub fn encode(&self, out: &mut [u8]) -> Result<(), SbeDecodeError> {
         if out.len() < Self::TOTAL_LEN {
             return Err(SbeDecodeError::BufferTooShort {
