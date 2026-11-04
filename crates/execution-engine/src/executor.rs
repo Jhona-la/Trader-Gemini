@@ -2,6 +2,7 @@ use crate::binance_api::{
     sign_payload_to_buffer, ORDER_TYPE_LIMIT, ORDER_TYPE_MARKET, SIDE_BUY, SIDE_SELL,
     TIME_IN_FORCE_IOC,
 };
+use crate::execution_evidence::{classify_close_ack, CloseEvidenceError, CloseSettlement};
 use crate::order_types::{FillReport, OrderAck};
 use crate::ExecutionPayload;
 use arc_swap::{ArcSwap, ArcSwapOption};
@@ -1140,13 +1141,9 @@ impl OrderExecutor {
                     }
                 }
 
-                // CL-212 (N49): qué prueba la respuesta del cierre. Antes el
-                // brazo Ok daba por cerrado cualquier ACK 2xx legible (también
-                // un EXPIRED o con executedQty 0) y purgaba los brackets de una
-                // posición quizá abierta; F1-028 ya lo prohibía en el
-                // reduce-only (`OrderAck::prueba_llenado`, la misma regla).
-                // I-10: un llenado parcial tampoco cierra la pierna
-                // (`tras_ack_de_cierre`).
+                // CL-212 (N49) y F2A: el brazo Ok no da por cerrado cualquier
+                // ACK 2xx legible. `tras_ack_de_cierre` clasifica el settlement;
+                // `prueba_llenado` queda sólo para el texto de diagnóstico.
                 let tras_cierre = match close_res {
                     Ok((_, ack)) => {
                         let now = self.get_synced_timestamp();
@@ -3009,14 +3006,16 @@ impl OrderExecutor {
                 self.update_limits(&limits);
                 let now = self.get_synced_timestamp();
                 self.order_registry.apply_ack(&ack, now);
-                let report = FillReport::from_ack(&ack);
-                if ack.prueba_llenado() {
-                    Ok(report)
-                } else {
-                    Err(format!(
-                        "CLOSE_UNFILLED: status={}, executed_qty={}",
-                        ack.status, ack.executed_qty
-                    ))
+                match classify_close_ack(&ack) {
+                    CloseSettlement::Closed(report) => Ok(report),
+                    CloseSettlement::Residual { remaining_qty, .. } => {
+                        quantum_arena::protection_health::mark_dirty();
+                        Err(CloseEvidenceError::Residual { remaining_qty }.to_string())
+                    }
+                    CloseSettlement::Unknown(error) => {
+                        quantum_arena::protection_health::mark_dirty();
+                        Err(error.to_string())
+                    }
                 }
             }
             Err(e) => {
@@ -4637,25 +4636,22 @@ enum TrasCierre {
     Abierta,
 }
 
-/// CL-212 (N49) e I-10: qué prueba el ACK del cierre de una pierna de
-/// `cantidad`. La cierra un FILLED, o un estado terminal que ejecutó toda la
-/// cantidad. Sin llenado (`OrderAck::prueba_llenado`) o con llenado parcial
-/// (PARTIALLY_FILLED, o un EXPIRED con parte ejecutada) va a X-026: terminal,
-/// se reenvía el resto con la cantidad fresca; viva, el re-snapshot sólo
-/// confirma. Antes un llenado parcial se daba por cerrado y se purgaban los
-/// brackets del símbolo con el resto de la pierna abierto y desnudo.
+/// CL-212 (N49), I-10 y F2A: sólo un settlement completo y coherente con la
+/// pierna cierra. Residual y evidencia desconocida van a X-026: terminal, se
+/// reenvía el resto con cantidad fresca; viva, el re-snapshot sólo confirma.
 fn tras_ack_de_cierre(ack: &OrderAck, cantidad: f64) -> TrasCierre {
     // La cantidad enviada vuelve del exchange como texto: la tolerancia
     // relativa de 1e-9 cubre el redondeo de ida y vuelta, no un lote.
     let toda = ack.executed_qty.is_finite()
         && cantidad.is_finite()
         && ack.executed_qty >= cantidad * (1.0 - 1e-9);
-    if ack.prueba_llenado() && (ack.is_filled() || (!ack.is_active() && toda)) {
-        TrasCierre::Cerrada
-    } else {
-        TrasCierre::Resnapshot {
+    match classify_close_ack(ack) {
+        CloseSettlement::Closed(_) if toda => TrasCierre::Cerrada,
+        CloseSettlement::Closed(_)
+        | CloseSettlement::Residual { .. }
+        | CloseSettlement::Unknown(_) => TrasCierre::Resnapshot {
             reenviar: !ack.is_active(),
-        }
+        },
     }
 }
 
@@ -8129,6 +8125,11 @@ mod tests_lote18 {
     #[test]
     fn i10_solo_un_llenado_completo_cierra_la_pierna() {
         let ack = |status: &str, executed_qty: f64| OrderAck {
+            order_id: 7,
+            symbol: "BTCUSDT".into(),
+            client_order_id: "i10-close".into(),
+            side: "SELL".into(),
+            order_type: "MARKET".into(),
             status: status.to_string(),
             executed_qty,
             orig_qty: 0.010,
@@ -8142,8 +8143,8 @@ mod tests_lote18 {
         );
         assert_eq!(
             tras_ack_de_cierre(&ack("FILLED", 0.0), 0.010),
-            TrasCierre::Cerrada,
-            "como F1-028: FILLED basta"
+            reenvio,
+            "FILLED sin executedQty positivo es evidencia desconocida, no un cierre"
         );
         assert_eq!(
             tras_ack_de_cierre(&ack("EXPIRED", 0.010), 0.010),

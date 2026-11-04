@@ -1,9 +1,104 @@
 //! Exchange observations are not interchangeable with fills or local reservations.
 //! These contracts validate USD-M query responses, not profitability,
 //! snapshot freshness, or attribution of aggregate exposure to a particular intent.
-use crate::{executor::ActivePosition, OrderAck, OrderResolution, OrderStatus};
+use crate::{executor::ActivePosition, FillReport, OrderAck, OrderResolution, OrderStatus};
 use serde::Deserialize;
 use std::collections::HashMap;
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum CloseEvidenceError {
+    MissingIdentity,
+    InvalidQuantity,
+    InconsistentStatus,
+    Residual { remaining_qty: f64 },
+}
+
+impl std::fmt::Display for CloseEvidenceError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::MissingIdentity => write!(
+                f,
+                "CLOSE_UNKNOWN: missing exchange identity; reconciliation required; protection preserved"
+            ),
+            Self::InvalidQuantity => write!(
+                f,
+                "CLOSE_UNKNOWN: invalid close quantity; reconciliation required; protection preserved"
+            ),
+            Self::InconsistentStatus => write!(
+                f,
+                "CLOSE_UNKNOWN: status and quantities disagree; reconciliation required; protection preserved"
+            ),
+            Self::Residual { remaining_qty } => write!(
+                f,
+                "CLOSE_RESIDUAL: remaining_qty={remaining_qty}; reconciliation required; protection preserved"
+            ),
+        }
+    }
+}
+
+impl std::error::Error for CloseEvidenceError {}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum CloseSettlement {
+    Closed(FillReport),
+    Residual {
+        report: FillReport,
+        remaining_qty: f64,
+    },
+    Unknown(CloseEvidenceError),
+}
+
+pub fn classify_close_ack(ack: &OrderAck) -> CloseSettlement {
+    if ack.order_id == 0
+        || ack.symbol.is_empty()
+        || ack.symbol.trim() != ack.symbol
+        || ack.client_order_id.is_empty()
+        || ack.client_order_id.trim() != ack.client_order_id
+        || !matches!(ack.side.as_str(), "BUY" | "SELL")
+    {
+        return CloseSettlement::Unknown(CloseEvidenceError::MissingIdentity);
+    }
+    if [
+        ack.orig_qty,
+        ack.executed_qty,
+        ack.avg_price,
+        ack.cum_quote,
+        ack.price,
+    ]
+    .into_iter()
+    .any(|value| !value.is_finite())
+        || ack.orig_qty <= 0.0
+        || ack.executed_qty <= 0.0
+        || ack.executed_qty > ack.orig_qty
+        || ack.avg_price < 0.0
+        || ack.cum_quote < 0.0
+        || ack.price < 0.0
+    {
+        return CloseSettlement::Unknown(CloseEvidenceError::InvalidQuantity);
+    }
+
+    let remaining_qty = ack.orig_qty - ack.executed_qty;
+    let report = FillReport::from_ack(ack);
+    match OrderStatus::parse(&ack.status) {
+        OrderStatus::Filled if remaining_qty == 0.0 => CloseSettlement::Closed(report),
+        OrderStatus::PartiallyFilled if remaining_qty > 0.0 => CloseSettlement::Residual {
+            report,
+            remaining_qty,
+        },
+        OrderStatus::Canceled | OrderStatus::Expired if remaining_qty == 0.0 => {
+            CloseSettlement::Closed(report)
+        }
+        OrderStatus::Canceled | OrderStatus::Expired => CloseSettlement::Residual {
+            report,
+            remaining_qty,
+        },
+        OrderStatus::New
+        | OrderStatus::PartiallyFilled
+        | OrderStatus::Filled
+        | OrderStatus::Rejected
+        | OrderStatus::Unknown => CloseSettlement::Unknown(CloseEvidenceError::InconsistentStatus),
+    }
+}
 
 // Required wire fields: unlike the legacy internal DTO, absent positionAmt must
 // not default to zero. Additional venue fields are intentionally allowed.

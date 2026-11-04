@@ -165,16 +165,20 @@ fn test_f1_028_typed_reduce_only_contract() {
         "register_intent must occur strictly before execute_order_payload_typed dispatch"
     );
 
-    // F1-028: Must strictly validate executed_qty > 0.0 or terminal filled.
-    // CL-212 (N49): la regla vive en `OrderAck::prueba_llenado`, que también
-    // usa el aplanado; su semántica la fija `test_order_ack_fill_semantics`.
+    // F2A: sólo un CloseSettlement::Closed autoriza un Ok plano. Un fill
+    // parcial conserva remanente y toda evidencia desconocida exige reconciliar.
     assert!(
-        fn_body.contains("ack.prueba_llenado()"),
-        "Must check the fill with OrderAck::prueba_llenado"
+        fn_body.contains("classify_close_ack(&ack)"),
+        "Must classify the complete close settlement"
     );
     assert!(
-        fn_body.contains("CLOSE_UNFILLED:"),
-        "Must return CLOSE_UNFILLED error on unfilled reduce order"
+        fn_body.contains("CloseSettlement::Closed"),
+        "Only a complete CloseSettlement::Closed may return Ok"
+    );
+    assert!(
+        fn_body.contains("CloseSettlement::Residual")
+            && fn_body.contains("CloseSettlement::Unknown"),
+        "Residual and unknown evidence must remain typed failures"
     );
 }
 
@@ -218,7 +222,8 @@ fn test_order_ack_fill_semantics() {
     assert!(filled_ack.is_filled());
     assert!(filled_ack.executed_qty > 0.0);
 
-    // CL-212 (N49): la regla de llenado del reduce-only y del aplanado.
+    // CL-212 (N49): semántica legacy de diagnóstico; el cierre completo se
+    // clasifica con CloseSettlement, no con esta helper.
     let ack = |status: &str, executed_qty: f64| OrderAck {
         executed_qty,
         status: status.to_string(),
@@ -239,6 +244,6 @@ fn test_order_ack_fill_semantics() {
     assert!(ack(" partially_filled ", 0.0).prueba_llenado());
     assert!(
         ack("FILLED", 0.0).prueba_llenado(),
-        "como F1-028: FILLED basta"
+        "FILLED conserva evidencia legacy, pero no prueba cierre completo"
     );
 }
