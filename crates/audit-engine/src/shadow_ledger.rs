@@ -191,9 +191,7 @@ impl LibroSombra {
         for (k, slot) in self.abiertas.iter().enumerate() {
             match slot {
                 Some(a)
-                    if a.fuente == i.fuente
-                        && a.moneda == i.moneda
-                        && a.es_largo == i.es_largo =>
+                    if a.fuente == i.fuente && a.moneda == i.moneda && a.es_largo == i.es_largo =>
                 {
                     self.descartadas_solape += 1;
                     return false;

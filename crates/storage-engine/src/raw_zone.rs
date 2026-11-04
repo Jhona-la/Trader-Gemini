@@ -56,21 +56,11 @@ impl RawTick {
             return None;
         }
         Some(Self {
-            ts_ms: u64::from_le_bytes([
-                b[0], b[1], b[2], b[3], b[4], b[5], b[6], b[7],
-            ]),
-            bid: f64::from_le_bytes([
-                b[8], b[9], b[10], b[11], b[12], b[13], b[14], b[15],
-            ]),
-            ask: f64::from_le_bytes([
-                b[16], b[17], b[18], b[19], b[20], b[21], b[22], b[23],
-            ]),
-            bid_qty: f64::from_le_bytes([
-                b[24], b[25], b[26], b[27], b[28], b[29], b[30], b[31],
-            ]),
-            ask_qty: f64::from_le_bytes([
-                b[32], b[33], b[34], b[35], b[36], b[37], b[38], b[39],
-            ]),
+            ts_ms: u64::from_le_bytes([b[0], b[1], b[2], b[3], b[4], b[5], b[6], b[7]]),
+            bid: f64::from_le_bytes([b[8], b[9], b[10], b[11], b[12], b[13], b[14], b[15]]),
+            ask: f64::from_le_bytes([b[16], b[17], b[18], b[19], b[20], b[21], b[22], b[23]]),
+            bid_qty: f64::from_le_bytes([b[24], b[25], b[26], b[27], b[28], b[29], b[30], b[31]]),
+            ask_qty: f64::from_le_bytes([b[32], b[33], b[34], b[35], b[36], b[37], b[38], b[39]]),
         })
     }
 }
@@ -95,11 +85,141 @@ impl Fnv1a {
     }
 }
 
+static NEXT_SEGMENT_ID: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+static NEXT_ACTIVE_ID: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+fn open_active_writer(path: &Path) -> std::io::Result<BufWriter<File>> {
+    Ok(BufWriter::with_capacity(
+        1 << 20,
+        OpenOptions::new().append(true).open(path)?,
+    ))
+}
+
+fn next_final_path(dir: &Path, symbol: &str, count: u32) -> std::io::Result<PathBuf> {
+    let seconds = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?
+        .as_secs();
+    let id = NEXT_SEGMENT_ID.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    Ok(dir.join(format!(
+        "{}_{:06}_{}_{}_{}.tgrw",
+        symbol,
+        seconds,
+        std::process::id(),
+        count,
+        id
+    )))
+}
+
+fn next_active_path(dir: &Path, symbol: &str) -> std::io::Result<PathBuf> {
+    let nanos = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?
+        .as_nanos();
+    let id = NEXT_ACTIVE_ID.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    Ok(dir.join(format!(
+        "{}_active_{}_{}_{}.tgrw.tmp",
+        symbol,
+        nanos,
+        std::process::id(),
+        id
+    )))
+}
+
+fn lock_active(file: &File) -> std::io::Result<()> {
+    match file.try_lock() {
+        Ok(()) => Ok(()),
+        Err(std::fs::TryLockError::WouldBlock) => Err(std::io::Error::new(
+            std::io::ErrorKind::WouldBlock,
+            "el activo pertenece a otro writer",
+        )),
+        Err(std::fs::TryLockError::Error(e)) => Err(e),
+    }
+}
+
+fn active_lock_path(active_path: &Path) -> PathBuf {
+    let mut path = active_path.as_os_str().to_os_string();
+    path.push(".lock");
+    path.into()
+}
+
+fn create_active(dir: &Path, symbol: &str) -> std::io::Result<(PathBuf, File)> {
+    let path = next_active_path(dir, symbol)?;
+    let tick_file = OpenOptions::new()
+        .read(true)
+        .write(true)
+        .create_new(true)
+        .open(&path)?;
+    let lock_file = OpenOptions::new()
+        .read(true)
+        .write(true)
+        .create(true)
+        .truncate(false)
+        .open(active_lock_path(&path))?;
+    lock_active(&lock_file)?;
+    drop(tick_file);
+    Ok((path, lock_file))
+}
+
+fn recovery_candidates(dir: &Path, symbol: &str) -> std::io::Result<Vec<PathBuf>> {
+    let legacy_name = format!("{symbol}_active.tgrw.tmp");
+    let unique_prefix = format!("{symbol}_active_");
+    let mut paths = Vec::new();
+    for entry in std::fs::read_dir(dir)? {
+        let path = entry?.path();
+        let matches = path.file_name().is_some_and(|name| {
+            let name = name.to_string_lossy();
+            name.as_ref() == legacy_name
+                || (name.starts_with(&unique_prefix) && name.ends_with(".tgrw.tmp"))
+        });
+        if matches {
+            paths.push(path);
+        }
+    }
+    paths.sort();
+    Ok(paths)
+}
+
+fn claim_or_create_active(dir: &Path, symbol: &str) -> std::io::Result<(PathBuf, File, Vec<u8>)> {
+    for candidate in recovery_candidates(dir, symbol)? {
+        let lock_file = OpenOptions::new()
+            .read(true)
+            .write(true)
+            .create(true)
+            .truncate(false)
+            .open(active_lock_path(&candidate))?;
+        match lock_active(&lock_file) {
+            Ok(()) => {}
+            Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => continue,
+            Err(e) => return Err(e),
+        }
+        match std::fs::read(&candidate) {
+            Ok(bytes) => return Ok((candidate, lock_file, bytes)),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => continue,
+            Err(e) => return Err(e),
+        }
+    }
+    let (path, lock_file) = create_active(dir, symbol)?;
+    Ok((path, lock_file, Vec::new()))
+}
+
+#[cfg(unix)]
+fn sync_directory(dir: &Path) -> std::io::Result<()> {
+    File::open(dir)?.sync_all()
+}
+
+#[cfg(not(unix))]
+fn sync_directory(_dir: &Path) -> std::io::Result<()> {
+    Ok(())
+}
+
 pub struct RawTickArchive {
     dir: PathBuf,
     symbol: String,
     writer: Option<BufWriter<File>>,
+    active_lock: Option<File>,
     active_path: PathBuf,
+    rotation_path: PathBuf,
     count: u32,
     hash: Fnv1a,
     /// Rotación por cantidad de ticks (segmentos de ~8 MB con 200k ticks).
@@ -110,26 +230,70 @@ pub struct RawTickArchive {
 impl RawTickArchive {
     pub fn open(dir: impl AsRef<Path>, symbol: &str) -> std::io::Result<Self> {
         std::fs::create_dir_all(dir.as_ref())?;
-        let active_path = dir.as_ref().join(format!("{}_active.tgrw.tmp", symbol));
-        // Reabrir un tmp huérfano sería corrupción silenciosa: descartarlo
-        // (los ticks vivos no dependen del archivo; el archivo es archivo).
-        let _ = std::fs::remove_file(&active_path);
-        let writer = Some(BufWriter::with_capacity(
-            1 << 20,
-            OpenOptions::new()
-                .create(true)
-                .append(true)
-                .open(&active_path)?,
-        ));
+        let (mut active_path, mut active_lock, bytes) =
+            claim_or_create_active(dir.as_ref(), symbol)?;
+        let mut count = 0;
+        let mut hash = Fnv1a::new();
+        let mut segments_finalized = 0;
+
+        if !bytes.is_empty() {
+            match bytes.len() % 40 {
+                0 => {
+                    for (index, chunk) in bytes.as_chunks::<40>().0.iter().enumerate() {
+                        RawTick::from_bytes(chunk).ok_or_else(|| {
+                            std::io::Error::new(
+                                std::io::ErrorKind::InvalidData,
+                                format!("tick corrupto en el offset {}", index * 40),
+                            )
+                        })?;
+                    }
+                    count = u32::try_from(bytes.len() / 40).map_err(|_| {
+                        std::io::Error::new(
+                            std::io::ErrorKind::InvalidData,
+                            "el activo excede el contador de ticks del formato",
+                        )
+                    })?;
+                    hash.update(&bytes);
+                }
+                12 => {
+                    let ticks = verify_segment(&active_path)
+                        .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
+                    let count = u32::try_from(ticks.len()).map_err(|_| {
+                        std::io::Error::new(
+                            std::io::ErrorKind::InvalidData,
+                            "el segmento excede el contador de ticks del formato",
+                        )
+                    })?;
+                    let final_path = next_final_path(dir.as_ref(), symbol, count)?;
+                    std::fs::rename(&active_path, final_path)?;
+                    drop(active_lock);
+                    sync_directory(dir.as_ref())?;
+                    let (new_path, new_lock) = create_active(dir.as_ref(), symbol)?;
+                    active_path = new_path;
+                    active_lock = new_lock;
+                    segments_finalized = 1;
+                }
+                suffix => {
+                    return Err(std::io::Error::new(
+                        std::io::ErrorKind::InvalidData,
+                        format!("sufijo parcial de {suffix} bytes en el activo"),
+                    ))
+                }
+            }
+        }
+
+        let rotation_path = next_final_path(dir.as_ref(), symbol, count)?;
         Ok(Self {
             dir: dir.as_ref().to_path_buf(),
             symbol: symbol.to_string(),
-            writer,
+            writer: Some(open_active_writer(&active_path)?),
+            active_lock: Some(active_lock),
             active_path,
-            count: 0,
-            hash: Fnv1a::new(),
+            rotation_path,
+            count,
+            hash,
             max_ticks_per_segment: 200_000,
-            segments_finalized: 0,
+            segments_finalized,
         })
     }
 
@@ -152,50 +316,62 @@ impl RawTickArchive {
         }
     }
 
-    /// Finaliza el segmento: header reescrito no — formato append puro:
-    /// los ticks van crudos; el FOOTER (count+hash) se escribe al finalizar,
-    /// y luego rename atómico tmp→final. Sin footer = segmento inválido.
+    /// Finaliza el segmento: los ticks van crudos; el FOOTER (count+hash) se
+    /// escribe al finalizar, se sincroniza y se publica con rename atómico.
     pub fn rotate(&mut self) -> std::io::Result<()> {
         let Some(mut w) = self.writer.take() else {
-            return Ok(());
+            self.active_lock = None;
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::NotConnected,
+                "archivo activo cerrado; no se puede rotar",
+            ));
         };
-        // Footer: count + hash de TODOS los bytes de ticks.
-        w.write_all(&self.count.to_le_bytes())?;
-        w.write_all(&self.hash.finish().to_le_bytes())?;
-        w.flush()?;
+        let active_lock = self.active_lock.take();
+        let final_path = self.rotation_path.clone();
+        let outcome = (|| -> std::io::Result<()> {
+            w.write_all(&self.count.to_le_bytes())?;
+            w.write_all(&self.hash.finish().to_le_bytes())?;
+            w.flush()?;
+            w.get_ref().sync_all()?;
+            std::fs::rename(&self.active_path, &final_path)?;
+            drop(w);
+            drop(active_lock);
 
-        let final_name = format!(
-            "{}_{:06}_{}.tgrw",
-            self.symbol,
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap_or_default()
-                .as_secs(),
-            self.count
-        );
-        let final_path = self.dir.join(&final_name);
-        // Rename atómico: los lectores ven O inexistente O completo.
-        std::fs::rename(&self.active_path, &final_path)?;
-
-        self.segments_finalized += 1;
-        self.count = 0;
-        self.hash = Fnv1a::new();
-        self.writer = Some(BufWriter::with_capacity(
-            1 << 20,
-            OpenOptions::new()
-                .create(true)
-                .append(true)
-                .open(&self.active_path)?,
-        ));
+            self.segments_finalized += 1;
+            self.count = 0;
+            self.hash = Fnv1a::new();
+            sync_directory(&self.dir)?;
+            let (new_path, new_lock) = create_active(&self.dir, &self.symbol)?;
+            let new_writer = open_active_writer(&new_path)?;
+            let next_rotation_path = next_final_path(&self.dir, &self.symbol, self.count)?;
+            self.active_path = new_path;
+            self.rotation_path = next_rotation_path;
+            self.active_lock = Some(new_lock);
+            self.writer = Some(new_writer);
+            Ok(())
+        })();
+        if let Err(e) = outcome {
+            self.writer = None;
+            self.active_lock = None;
+            return Err(e);
+        }
         Ok(())
     }
 
+    pub fn rotation_path(&self) -> &Path {
+        &self.rotation_path
+    }
+
     pub fn flush(&mut self) -> std::io::Result<()> {
-        if let Some(w) = self.writer.as_mut() {
-            w.flush()
-        } else {
-            Ok(())
-        }
+        self.writer
+            .as_mut()
+            .ok_or_else(|| {
+                std::io::Error::new(
+                    std::io::ErrorKind::NotConnected,
+                    "archivo activo cerrado; no se puede flush",
+                )
+            })?
+            .flush()
     }
 
     pub fn segments_finalized(&self) -> u64 {
@@ -252,10 +428,10 @@ pub fn verify_segment(path: impl AsRef<Path>) -> Result<Vec<RawTick>, String> {
         return Err("checksum NO coincide — los bytes mutaron tras la finalización".to_string());
     }
     let mut ticks = Vec::with_capacity(n_ticks);
-    for chunk in buf[..body_len].chunks_exact(40) {
+    for chunk in buf[..body_len].as_chunks::<40>().0 {
         match RawTick::from_bytes(chunk) {
             Some(t) => ticks.push(t),
-            // Inalcanzable: `chunks_exact(40)` sólo entrega trozos de 40.
+            // Inalcanzable: `as_chunks::<40>()` sólo entrega trozos de 40.
             // Si algún día dejara de serlo, el segmento se rechaza entero en
             // vez de abortar el proceso con posiciones abiertas.
             None => {
