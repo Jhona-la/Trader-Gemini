@@ -9,11 +9,9 @@
 //! - Cumplimiento estricto del invariante U-ERR-6 (cero sufijos de banda scalp/swing).
 
 use telemetry_server::causal_attribution::{
-    CausalAttributionEngine, ShiryaevRobertsPollakDetector, SUBSYSTEM_COUNT,
+    CausalAttributionEngine, SUBSYSTEM_COUNT, ShiryaevRobertsPollakDetector,
 };
-use telemetry_server::hyperdimensional_graph::{
-    HyperdimensionalGraphSnapshot, PodIsolationState,
-};
+use telemetry_server::hyperdimensional_graph::{HyperdimensionalGraphSnapshot, PodIsolationState};
 use telemetry_server::mirofish_lattice::{MirofishLattice, TailRidge3D};
 use telemetry_server::mmap_viz_stream::{
     MmapVizStreamReader, MmapVizStreamWriter, TelemetrySnapshot,
@@ -44,7 +42,9 @@ fn test_c1_mmap_lock_free_decoupling_and_readback() {
     };
 
     let mut writer = MmapVizStreamWriter::new(&path).expect("writer init");
-    writer.write_snapshot(&snap_init).expect("write initial snapshot");
+    writer
+        .write_snapshot(&snap_init)
+        .expect("write initial snapshot");
 
     // Lector desacoplado
     let mut reader = MmapVizStreamReader::new(&path_str);
@@ -100,7 +100,11 @@ fn test_c2_mirofish_probability_conservation_and_32_scales() {
 
     // Comprobación del relieve de colas 3D
     let ridge = TailRidge3D::generate(spot, vol, 0.65, alpha);
-    assert_eq!(ridge.points.len(), 32, "Debe abarcar exactamente las 32 escalas diádicas");
+    assert_eq!(
+        ridge.points.len(),
+        32,
+        "Debe abarcar exactamente las 32 escalas diádicas"
+    );
 
     // Monotonicidad del exceso de curtosis (la microestructura es más leptocúrtica que el horizonte secular)
     assert!(
@@ -139,20 +143,30 @@ fn test_c3_hyperdimensional_graph_isolation_pods() {
         &gauge,
         &void_risks,
         &betti_1,
-    );
+    )
+    .expect("reloj válido");
 
     assert_eq!(snap.nodes.len(), 4);
     assert_eq!(snap.global_betti_1_cycles, 3);
 
     // SOLUSDT (índice 2) debe estar en cuarentena estricta
-    assert_eq!(snap.nodes[2].isolation_state, PodIsolationState::Quarantined);
+    assert_eq!(
+        snap.nodes[2].isolation_state,
+        PodIsolationState::Quarantined
+    );
     assert_eq!(snap.nodes[0].isolation_state, PodIsolationState::Optimal);
     assert_eq!(snap.nodes[1].isolation_state, PodIsolationState::Optimal);
     assert_eq!(snap.nodes[3].isolation_state, PodIsolationState::Optimal);
 
     // Debe existir al menos un pod en cuarentena que contenga el nodo 2
-    let q_pod = snap.pods.iter().find(|p| p.status == PodIsolationState::Quarantined);
-    assert!(q_pod.is_some(), "Debe existir un pod de aislamiento en cuarentena");
+    let q_pod = snap
+        .pods
+        .iter()
+        .find(|p| p.status == PodIsolationState::Quarantined);
+    assert!(
+        q_pod.is_some(),
+        "Debe existir un pod de aislamiento en cuarentena"
+    );
     assert!(q_pod.unwrap().member_nodes.contains(&2));
 }
 
@@ -172,7 +186,11 @@ fn test_c4_aumann_shapley_and_owen_exact_efficiency() {
     assert_eq!(report.attributions.len(), SUBSYSTEM_COUNT);
 
     // Suma de Aumann-Shapley == Net PnL exacto
-    let as_sum: f64 = report.attributions.iter().map(|a| a.aumann_shapley_pnl).sum();
+    let as_sum: f64 = report
+        .attributions
+        .iter()
+        .map(|a| a.aumann_shapley_pnl)
+        .sum();
     assert!(
         (as_sum - expected_net).abs() < 1e-9,
         "Aumann-Shapley {} != {}",
@@ -181,7 +199,11 @@ fn test_c4_aumann_shapley_and_owen_exact_efficiency() {
     );
 
     // Suma de Owen == Net PnL exacto
-    let owen_sum: f64 = report.attributions.iter().map(|a| a.owen_coalition_pnl).sum();
+    let owen_sum: f64 = report
+        .attributions
+        .iter()
+        .map(|a| a.owen_coalition_pnl)
+        .sum();
     assert!(
         (owen_sum - expected_net).abs() < 1e-9,
         "Owen {} != {}",
@@ -220,7 +242,10 @@ fn test_c5_srp_change_detection_and_silicon_efficiency() {
             break;
         }
     }
-    assert!(alarm_triggered, "SRP debió detectar el punto de cambio y disparar alarma");
+    assert!(
+        alarm_triggered,
+        "SRP debió detectar el punto de cambio y disparar alarma"
+    );
 
     // Gobernador de Silicio
     let mut engine = CausalAttributionEngine::new();
@@ -244,6 +269,20 @@ fn test_c5_srp_change_detection_and_silicon_efficiency() {
 fn test_c6_u_err_6_zero_scalp_swing_in_wire_protocol() {
     let temp_dir = std::env::temp_dir();
     let path = temp_dir.join("contract_c6_u_err_6.bin");
+    let snapshot = TelemetrySnapshot {
+        tick_counter: 8,
+        unified_capital: 125.0,
+        pnl_realized: 5.0,
+        global_leverage: 2.0,
+        ai_ml_prob: 0.6,
+        hurst_exponent: 0.55,
+        memory_used_mb: 64.0,
+        global_roi: 4.0,
+        win_rate: 0.5,
+        tensor_drift: 0.1,
+    };
+    let mut writer = MmapVizStreamWriter::new(&path).expect("writer");
+    writer.write_snapshot(&snapshot).expect("write");
     let mut reader = MmapVizStreamReader::new(&path);
 
     let symbols = vec!["BTCUSDT".to_string(), "ETHUSDT".to_string()];
@@ -253,7 +292,9 @@ fn test_c6_u_err_6_zero_scalp_swing_in_wire_protocol() {
     let void = vec![0.0, 0.0];
     let betti_1 = vec![0.0, 0.0];
 
-    let packet = reader.build_unified_packet(&symbols, &vn, &tsallis, &gauge, &void, &betti_1);
+    let packet = reader
+        .build_unified_packet(&symbols, &vn, &tsallis, &gauge, &void, &betti_1)
+        .expect("snapshot válido");
     let json_packet = serde_json::to_string(&packet).expect("serialization packet");
     let lower_json = json_packet.to_ascii_lowercase();
 
@@ -268,4 +309,8 @@ fn test_c6_u_err_6_zero_scalp_swing_in_wire_protocol() {
         "Wire contiene claves con swing: {}",
         json_packet
     );
+
+    drop(reader);
+    drop(writer);
+    std::fs::remove_file(path).expect("cleanup");
 }

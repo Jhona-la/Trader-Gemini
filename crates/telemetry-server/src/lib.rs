@@ -120,6 +120,55 @@ struct CoinState {
     is_active: bool,
 }
 
+/// Extrae una vista de telemetría sin sustituir datos ausentes por defaults.
+pub fn snapshot_from_arena(arena: &GlobalArena) -> mmap_viz_stream::TelemetrySnapshot {
+    let mut ml_sum = 0.0;
+    let mut ml_count = 0_u64;
+    let mut hurst_sum = 0.0;
+    let mut hurst_count = 0_u64;
+
+    for coin in arena.coins.iter() {
+        let ml = coin.ml_prob.load(Ordering::Relaxed);
+        if ml.is_finite() {
+            ml_sum += ml;
+            ml_count += 1;
+        }
+        let hurst = coin.hurst_exponent.load(Ordering::Relaxed);
+        if hurst.is_finite() {
+            hurst_sum += hurst;
+            hurst_count += 1;
+        }
+    }
+
+    let financials = profiler::read_financials_snapshot();
+    let (pnl_realized, global_roi, win_rate) = match financials {
+        Some(snapshot) => (snapshot.net_pnl, snapshot.roi_net, snapshot.win_rate),
+        None => (f64::NAN, f64::NAN, f64::NAN),
+    };
+    let system = os_guardian::telemetry::get_system_telemetry();
+
+    mmap_viz_stream::TelemetrySnapshot {
+        tick_counter: arena.tick_counter.load(Ordering::Relaxed),
+        unified_capital: arena.unified_capital.load(Ordering::Relaxed),
+        pnl_realized,
+        global_leverage: arena.config.global_leverage.load(Ordering::Relaxed),
+        ai_ml_prob: if ml_count > 0 {
+            ml_sum / ml_count as f64
+        } else {
+            f64::NAN
+        },
+        hurst_exponent: if hurst_count > 0 {
+            hurst_sum / hurst_count as f64
+        } else {
+            f64::NAN
+        },
+        memory_used_mb: system.memory_used_mb,
+        global_roi,
+        win_rate,
+        tensor_drift: f64::NAN,
+    }
+}
+
 /// Inicia el servidor web en background.
 /// Escucha en localhost:3000
 pub async fn start_telemetry_server(
@@ -140,7 +189,9 @@ pub async fn start_telemetry_server(
             });
         }
         Err(error) => {
-            telemetry_err!("[FORENSIC] no se pudo abrir {ruta_forense}: {error}; sigo sin base forense");
+            telemetry_err!(
+                "[FORENSIC] no se pudo abrir {ruta_forense}: {error}; sigo sin base forense"
+            );
         }
     }
 
@@ -167,6 +218,28 @@ pub async fn start_telemetry_server(
                 last_capital = current_capital;
             }
         });
+    }
+
+    let viz_path = quantum_arena::paths::env_data_path("telemetry_mmap.bin");
+    let viz_arena = arena.clone();
+    match mmap_viz_stream::MmapVizStreamWriter::new(&viz_path) {
+        Ok(mut writer) => {
+            tokio::spawn(async move {
+                loop {
+                    let snapshot = snapshot_from_arena(&viz_arena);
+                    if let Err(error) = writer.write_snapshot(&snapshot) {
+                        telemetry_err!(
+                            "[MMAP-VIZ] error escribiendo {viz_path}: {error}; worker detenido"
+                        );
+                        break;
+                    }
+                    tokio::time::sleep(tokio::time::Duration::from_millis(200)).await;
+                }
+            });
+        }
+        Err(error) => {
+            telemetry_err!("[MMAP-VIZ] no se pudo abrir {viz_path}: {error}; sigo sin worker mmap");
+        }
     }
 
     let app = Router::new()
@@ -445,15 +518,7 @@ async fn get_viz_mirofish(State(arena): State<Arc<GlobalArena>>) -> Json<Mirofis
     let avg_ml = if active > 0.0 { ml_sum / active } else { 0.5 };
     let ofi = (avg_ml - 0.5) * 2.0;
 
-    let lattice = mirofish_lattice::MirofishLattice::compute(
-        spot,
-        0.45,
-        ofi,
-        0.0,
-        0.10,
-        8,
-        1.0,
-    );
+    let lattice = mirofish_lattice::MirofishLattice::compute(spot, 0.45, ofi, 0.0, 0.10, 8, 1.0);
     let tail_ridge = mirofish_lattice::TailRidge3D::generate(spot, 0.45, 0.55, 0.05);
 
     Json(MirofishVizResponse {
@@ -467,7 +532,7 @@ async fn get_viz_mirofish(State(arena): State<Arc<GlobalArena>>) -> Json<Mirofis
 
 async fn get_viz_hypergraph(
     State(arena): State<Arc<GlobalArena>>,
-) -> Json<hyperdimensional_graph::HyperdimensionalGraphSnapshot> {
+) -> Json<Option<hyperdimensional_graph::HyperdimensionalGraphSnapshot>> {
     let active_symbols = quantum_arena::symbols::get_active_universe();
     let n = arena.coins.len();
     let mut symbols = Vec::with_capacity(n);
@@ -504,27 +569,12 @@ async fn get_viz_hypergraph(
 }
 
 async fn get_viz_causal(
-    State(arena): State<Arc<GlobalArena>>,
-) -> Json<causal_attribution::CausalMetaAnalyticsReport> {
-    let mut engine = causal_attribution::CausalAttributionEngine::new();
-    let mut realized = 0.0;
-    let mut gross = 0.0;
-    for coin in arena.coins.iter() {
-        realized += coin.metrics.pnl_realized.load(Ordering::Relaxed);
-        gross += coin.metrics.pnl_gross.load(Ordering::Relaxed);
-    }
-    let fees = (gross - realized).max(0.0);
-    let activity = [1.0, 0.85, 0.70, 0.60, 0.90, 0.75];
-    let cycles = [3500, 4100, 2900, 2200, 1800, 4800];
-    let misses = [30, 45, 20, 15, 12, 50];
-
-    let report = engine.evaluate(&activity, &cycles, &misses, gross, fees);
-    Json(report)
+    State(_arena): State<Arc<GlobalArena>>,
+) -> Json<Option<causal_attribution::CausalMetaAnalyticsReport>> {
+    Json(None)
 }
 
-async fn get_viz_financial(
-    State(arena): State<Arc<GlobalArena>>,
-) -> Json<FinancialVizResponse> {
+async fn get_viz_financial(State(arena): State<Arc<GlobalArena>>) -> Json<FinancialVizResponse> {
     let mut realized = 0.0;
     let mut gross = 0.0;
     let mut wr_sum = 0.0;
@@ -550,7 +600,11 @@ async fn get_viz_financial(
 
     let net_roi_pct = (realized / initial_cap) * 100.0;
     let gross_roi_pct = (gross / initial_cap) * 100.0;
-    let avg_wr = if active_count > 0.0 { wr_sum / active_count } else { 0.0 };
+    let avg_wr = if active_count > 0.0 {
+        wr_sum / active_count
+    } else {
+        0.0
+    };
 
     Json(FinancialVizResponse {
         tick_counter: arena.tick_counter.load(Ordering::Relaxed),
@@ -1496,7 +1550,8 @@ mod tests {
 
     #[test]
     fn test_viz_endpoints_serialization_and_u_err_6_compliance() {
-        let lattice = mirofish_lattice::MirofishLattice::compute(100.0, 0.40, 0.1, 0.0, 0.10, 4, 1.0);
+        let lattice =
+            mirofish_lattice::MirofishLattice::compute(100.0, 0.40, 0.1, 0.0, 0.10, 4, 1.0);
         let tail_ridge = mirofish_lattice::TailRidge3D::generate(100.0, 0.40, 0.55, 0.05);
 
         let miro = MirofishVizResponse {
