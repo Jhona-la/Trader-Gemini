@@ -84,7 +84,10 @@ fn extract_balanced(src: &str, start: usize, signature: &str) -> String {
 fn test_f1_027_flatten_causal_sequence_contract() {
     let src = executor_source();
 
-    let fn_body = fn_body_first(src, "pub async fn flatten_all_positions(&self)");
+    let fn_body = fn_body_first(
+        src,
+        "async fn aplanar_cuenta(&self, barrer_huerfanas: bool)",
+    );
 
     // F1-027 Protocol X-009: posiciones primero, purga de brackets después.
     let close_pos_idx = fn_body
@@ -179,7 +182,10 @@ fn test_f1_028_typed_reduce_only_contract() {
 fn test_f1_029_ws_timeout_and_fresh_coid_contract() {
     let src = executor_source();
 
-    let fn_body = fn_body_first(src, "pub async fn flatten_all_positions(&self)");
+    let fn_body = fn_body_first(
+        src,
+        "async fn aplanar_cuenta(&self, barrer_huerfanas: bool)",
+    );
 
     // F1-029: 20 iterations of 10 ms = 200 ms confirmation window
     assert!(

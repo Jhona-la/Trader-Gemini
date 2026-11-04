@@ -882,11 +882,26 @@ impl OrderExecutor {
         (cancelled, all_purged)
     }
 
-    /// FASE 13: Emergency Flatten All.
+    /// FASE 13: Emergency Flatten All. Cierra todas las posiciones y además
+    /// purga las órdenes de los símbolos sin posición (`aplanar_cuenta`).
+    pub async fn flatten_all_positions(&self) -> Result<(usize, usize), String> {
+        self.aplanar_cuenta(true).await
+    }
+
+    /// I-10 (N19): el mismo aplanado sin el barrido de huérfanas, para los
+    /// reintentos del sistema inmune. El barrido recorre todos los símbolos
+    /// sin posición de positionRisk (dos cancelaciones cada uno) y el primer
+    /// intento ya lo hizo; repetirlo en cada reintento alargaba el intento, y
+    /// con él el tiempo en que el vigilante no puede auditar.
+    pub async fn flatten_open_positions(&self) -> Result<(usize, usize), String> {
+        self.aplanar_cuenta(false).await
+    }
+
     /// F1-027 (Protocolo X-009): Cierra PRIMERO cada posición abierta para que la protección
     /// siga viva hasta el aterrizaje del cierre; sólo tras confirmación purga los brackets de ese símbolo.
     /// F1-029: Sondeo WS ampliado a 200 ms y COID fresco en fallback REST para evitar -4116 falso.
-    pub async fn flatten_all_positions(&self) -> Result<(usize, usize), String> {
+    /// Con `barrer_huerfanas`, purga también las órdenes de los símbolos sin posición.
+    async fn aplanar_cuenta(&self, barrer_huerfanas: bool) -> Result<(usize, usize), String> {
         if self.is_paper_trading {
             return Ok((0, 0));
         }
@@ -945,7 +960,11 @@ impl OrderExecutor {
 
         let entries = self.fetch_position_risk().await?;
         let open_positions: Vec<_> = entries.iter().filter(|p| p.is_open()).cloned().collect();
-        let sin_posicion = simbolos_sin_posicion(&entries);
+        let sin_posicion = if barrer_huerfanas {
+            simbolos_sin_posicion(&entries)
+        } else {
+            Vec::new()
+        };
 
         let mut closed = 0usize;
         let mut cancelled = 0usize;
@@ -1126,33 +1145,44 @@ impl OrderExecutor {
                 // un EXPIRED o con executedQty 0) y purgaba los brackets de una
                 // posición quizá abierta; F1-028 ya lo prohibía en el
                 // reduce-only (`OrderAck::prueba_llenado`, la misma regla).
+                // I-10: un llenado parcial tampoco cierra la pierna
+                // (`tras_ack_de_cierre`).
                 let tras_cierre = match close_res {
                     Ok((_, ack)) => {
                         let now = self.get_synced_timestamp();
                         self.order_registry.apply_ack(&ack, now);
-                        if ack.prueba_llenado() {
-                            println!(
+                        let cantidad = p.position_amt.abs();
+                        let tras = tras_ack_de_cierre(&ack, cantidad);
+                        let sin_reenvio = |reenviar: bool| {
+                            if reenviar {
+                                ""
+                            } else {
+                                " sin reenvío (la orden sigue viva)"
+                            }
+                        };
+                        match tras {
+                            TrasCierre::Cerrada => println!(
                                 "🧹 [FLATTEN] {} cerrada {} @ ~{} (status {})",
+                                p.symbol, cantidad, ack.avg_price, ack.status
+                            ),
+                            TrasCierre::Resnapshot { reenviar } if ack.prueba_llenado() => println!(
+                                "♻️ [X-026] {} cierre PARCIAL (status {}, executedQty {} de {}): re-snapshot fresco{}",
                                 p.symbol,
-                                p.position_amt.abs(),
-                                ack.avg_price,
-                                ack.status
-                            );
-                            TrasCierre::Cerrada
-                        } else {
-                            // Terminal sin llenado (EXPIRED, CANCELED): nada queda
-                            // en vuelo y X-026 puede reenviar. Viva (NEW): puede
-                            // llenar todavía; el re-snapshot sólo confirma.
-                            let reenviar = !ack.is_active();
-                            println!(
+                                ack.status,
+                                ack.executed_qty,
+                                cantidad,
+                                sin_reenvio(reenviar)
+                            ),
+                            TrasCierre::Resnapshot { reenviar } => println!(
                                 "♻️ [X-026] {} ACK sin llenado (status {}, executedQty {}): re-snapshot fresco{}",
                                 p.symbol,
                                 ack.status,
                                 ack.executed_qty,
-                                if reenviar { "" } else { " sin reenvío (la orden sigue viva)" }
-                            );
-                            TrasCierre::Resnapshot { reenviar }
+                                sin_reenvio(reenviar)
+                            ),
+                            TrasCierre::Abierta => {}
                         }
+                        tras
                     }
                     // CL-213 (N46): un cierre AMBIGUOUS (red, 5xx, 408,
                     // -1006/-1007, ACK ilegible) no prueba nada: antes caía al
@@ -4594,9 +4624,10 @@ fn trae_codigo(err: &str, codigo: i64) -> bool {
 }
 
 /// CL-212 (N49): lo que prueba la respuesta del cierre de una pierna en
-/// `flatten_all_positions`.
+/// `aplanar_cuenta`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum TrasCierre {
-    /// El ACK prueba llenado (`OrderAck::prueba_llenado`).
+    /// El ACK prueba que la pierna entera se cerró (`tras_ack_de_cierre`).
     Cerrada,
     /// No se sabe si sigue abierta: X-026 relee positionRisk. Con `reenviar`,
     /// si la pierna sigue abierta se cierra con la cantidad fresca; sin él (el
@@ -4604,6 +4635,28 @@ enum TrasCierre {
     Resnapshot { reenviar: bool },
     /// Rechazo o fallo sin re-snapshot: ni cerrada ni purgada.
     Abierta,
+}
+
+/// CL-212 (N49) e I-10: qué prueba el ACK del cierre de una pierna de
+/// `cantidad`. La cierra un FILLED, o un estado terminal que ejecutó toda la
+/// cantidad. Sin llenado (`OrderAck::prueba_llenado`) o con llenado parcial
+/// (PARTIALLY_FILLED, o un EXPIRED con parte ejecutada) va a X-026: terminal,
+/// se reenvía el resto con la cantidad fresca; viva, el re-snapshot sólo
+/// confirma. Antes un llenado parcial se daba por cerrado y se purgaban los
+/// brackets del símbolo con el resto de la pierna abierto y desnudo.
+fn tras_ack_de_cierre(ack: &OrderAck, cantidad: f64) -> TrasCierre {
+    // La cantidad enviada vuelve del exchange como texto: la tolerancia
+    // relativa de 1e-9 cubre el redondeo de ida y vuelta, no un lote.
+    let toda = ack.executed_qty.is_finite()
+        && cantidad.is_finite()
+        && ack.executed_qty >= cantidad * (1.0 - 1e-9);
+    if ack.prueba_llenado() && (ack.is_filled() || (!ack.is_active() && toda)) {
+        TrasCierre::Cerrada
+    } else {
+        TrasCierre::Resnapshot {
+            reenviar: !ack.is_active(),
+        }
+    }
 }
 
 /// N5 (CL-178): símbolos de positionRisk sin ninguna fila abierta, cada uno
@@ -5315,7 +5368,7 @@ mod tests_n5b {
     /// política de rate-limit (el barrido seguía enviando dentro del cooldown).
     #[test]
     fn n5b_las_salidas_respetan_el_freno() {
-        let aplanado = cuerpo("flatten_all_positions");
+        let aplanado = cuerpo("aplanar_cuenta");
         let cierres = envios(aplanado, "execute_order_payload_typed(");
         assert_eq!(cierres.len(), 2, "cierre y reintento -4061");
         for i in cierres {
@@ -5360,7 +5413,7 @@ mod tests_n5b {
     /// brackets de una posición quizá viva.
     #[test]
     fn n5b_un_re_snapshot_sin_respuesta_no_es_posicion_plana() {
-        let aplanado = cuerpo("flatten_all_positions");
+        let aplanado = cuerpo("aplanar_cuenta");
         assert!(!aplanado.contains("fetch_position_risk().await.ok()"));
         let x026 = aplanado.split("// X-026 (REHAB-3)").nth(1).unwrap_or("");
         let brazo = x026.split("Err(e2) =>").nth(1).unwrap_or("");
@@ -5672,7 +5725,7 @@ mod tests_n5c {
         assert!(cuerpo("fetch_open_algo_orders").contains("inner(Some(symbol))"));
         assert!(cuerpo("fetch_all_open_algo_orders").contains("inner(None)"));
 
-        let aplanado = cuerpo("flatten_all_positions");
+        let aplanado = cuerpo("aplanar_cuenta");
         assert_eq!(aplanado.matches("Tramo::Critica(crate::binance_api::COSTE_ORDEN)").count(), 2);
         let barrido = aplanado.split("for sym in &sin_posicion {").nth(1).unwrap_or("");
         assert!(
@@ -5714,7 +5767,7 @@ mod tests_n5c {
         };
         for (f, n) in [
             ("cancel_symbol_orders_and_brackets", 1),
-            ("flatten_all_positions", 2),
+            ("aplanar_cuenta", 2),
             ("execute_oco_order", 2),
         ] {
             let c = cuerpo(f);
@@ -6408,7 +6461,7 @@ pub(crate) mod tests_n20 {
         let lectores = [
             "fetch_hedge_mode",
             "ensure_hedge_mode",
-            "flatten_all_positions",
+            "aplanar_cuenta",
             "fetch_income_page",
             "fetch_position_risk",
             "fetch_open_algo_orders_inner",
@@ -7427,7 +7480,7 @@ mod tests_n23 {
     /// una sola vez, sin otra búsqueda de «reduceOnly» en el error.
     #[test]
     fn cl202_el_aplanado_conmuta_el_modo_solo_por_un_rechazo() {
-        let c = cuerpo("flatten_all_positions");
+        let c = cuerpo("aplanar_cuenta");
         assert_eq!(c.matches("if modo_rechazado(e) {").count(), 1);
         assert!(!c.contains(r#"e.contains("reduceOnly")"#));
         assert_eq!(c.matches("dual = !dual;").count(), 1);
@@ -7558,7 +7611,7 @@ mod tests_n23 {
         }
         for (f, n) in [
             ("cancel_symbol_orders_and_brackets", 1),
-            ("flatten_all_positions", 2),
+            ("aplanar_cuenta", 2),
             ("execute_oco_order", 2),
         ] {
             let c = cuerpo(f);
@@ -8040,21 +8093,176 @@ mod tests_lote18 {
         wires: Vec<String>,
         hedge: bool,
     ) -> (Option<Result<(usize, usize), String>>, Vec<String>) {
+        aplanar_con(wires, hedge, true).await
+    }
+
+    /// Como `aplanar`; sin `barrer`, el aplanado de los reintentos del
+    /// inmune (`flatten_open_positions`).
+    async fn aplanar_con(
+        wires: Vec<String>,
+        hedge: bool,
+        barrer: bool,
+    ) -> (Option<Result<(usize, usize), String>>, Vec<String>) {
         let servido = servidor(wires).await;
         assert!(servido.is_some(), "servidor local");
         let Some((base, bitacora, h)) = servido else {
             return (None, Vec::new());
         };
         let ex = ejecutor(&base, hedge);
-        let r = tokio::time::timeout(
-            std::time::Duration::from_secs(60),
-            ex.flatten_all_positions(),
-        )
-        .await
-        .ok();
+        let aplanado = async {
+            if barrer {
+                ex.flatten_all_positions().await
+            } else {
+                ex.flatten_open_positions().await
+            }
+        };
+        let r = tokio::time::timeout(std::time::Duration::from_secs(60), aplanado)
+            .await
+            .ok();
         h.abort();
         let lineas = bitacora.lock().map(|v| v.clone()).unwrap_or_default();
         (r, lineas)
+    }
+
+    /// I-10: sólo un llenado completo cierra la pierna. RED antes de I-10 en
+    /// los dos parciales (se daban por cerrados).
+    #[test]
+    fn i10_solo_un_llenado_completo_cierra_la_pierna() {
+        let ack = |status: &str, executed_qty: f64| OrderAck {
+            status: status.to_string(),
+            executed_qty,
+            orig_qty: 0.010,
+            ..Default::default()
+        };
+        let reenvio = TrasCierre::Resnapshot { reenviar: true };
+        let espera = TrasCierre::Resnapshot { reenviar: false };
+        assert_eq!(
+            tras_ack_de_cierre(&ack("FILLED", 0.010), 0.010),
+            TrasCierre::Cerrada
+        );
+        assert_eq!(
+            tras_ack_de_cierre(&ack("FILLED", 0.0), 0.010),
+            TrasCierre::Cerrada,
+            "como F1-028: FILLED basta"
+        );
+        assert_eq!(
+            tras_ack_de_cierre(&ack("EXPIRED", 0.010), 0.010),
+            TrasCierre::Cerrada,
+            "terminal con toda la cantidad ejecutada"
+        );
+        assert_eq!(
+            tras_ack_de_cierre(&ack("EXPIRED", 0.006), 0.010),
+            reenvio,
+            "expirado con llenado parcial: se reenvía el resto"
+        );
+        assert_eq!(
+            tras_ack_de_cierre(&ack("PARTIALLY_FILLED", 0.004), 0.010),
+            espera,
+            "parcial y viva: puede llenar el resto, sólo se confirma"
+        );
+        assert_eq!(tras_ack_de_cierre(&ack("EXPIRED", 0.0), 0.010), reenvio);
+        assert_eq!(tras_ack_de_cierre(&ack("NEW", 0.0), 0.010), espera);
+        assert_eq!(
+            tras_ack_de_cierre(&ack("EXPIRED", f64::NAN), 0.010),
+            reenvio,
+            "una cantidad no finita no prueba nada"
+        );
+        assert_eq!(
+            tras_ack_de_cierre(&ack("EXPIRED", 0.006), f64::NAN),
+            reenvio,
+            "sin cantidad finita no se sabe si cerró toda la pierna"
+        );
+    }
+
+    /// RED antes de I-10: el EXPIRED con 0.006 de 0.010 se daba por cerrado y
+    /// se purgaban los brackets con 0.004 abiertos (5 peticiones). Ahora va a
+    /// X-026 y cierra el resto con la cantidad fresca antes de purgar.
+    #[tokio::test]
+    async fn i10_un_cierre_expirado_con_llenado_parcial_reenvia_el_resto() {
+        let mut wires = vec![
+            modo(false),
+            filas(&[("BOTH", "0.010")]),
+            ack_cierre("SELL", "EXPIRED", "0.006"),
+            filas(&[("BOTH", "0.004")]),
+            llenada("SELL", "0.004"),
+            purgada(),
+            purgada(),
+        ];
+        wires.extend((0..3).map(|_| llenada("SELL", "0.010")));
+        let (r, lineas) = aplanar(wires, false).await;
+        assert!(matches!(r, Some(Ok((2, 1)))), "{r:?} {lineas:#?}");
+        assert_eq!(lineas.len(), 7, "{lineas:#?}");
+        assert!(
+            lineas[3].contains("positionRisk"),
+            "re-snapshot: {lineas:#?}"
+        );
+        assert!(
+            lineas[4].contains("side=SELL&type=MARKET&reduceOnly=true&quantity=0.004"),
+            "{lineas:#?}"
+        );
+        assert!(
+            lineas[5].contains("allOpenOrders") && lineas[6].contains("algoOpenOrders"),
+            "{lineas:#?}"
+        );
+    }
+
+    /// RED antes de I-10: el PARTIALLY_FILLED se daba por cerrado y se
+    /// purgaban los brackets. Ahora el re-snapshot ve 0.006 abiertos con el
+    /// cierre vivo: ni reenvío ni purga, y el aplanado queda incompleto (el
+    /// inmune lo reintenta).
+    #[tokio::test]
+    async fn i10_un_cierre_parcial_vivo_no_se_da_por_cerrado() {
+        let mut wires = vec![
+            modo(true),
+            filas(&[("LONG", "0.010")]),
+            ack_cierre("SELL", "PARTIALLY_FILLED", "0.004"),
+            filas(&[("LONG", "0.006")]),
+        ];
+        wires.extend((0..3).map(|_| purgada()));
+        let (r, lineas) = aplanar(wires, true).await;
+        assert!(
+            matches!(r, Some(Err(ref e)) if e.starts_with("FLATTEN_INCOMPLETE")),
+            "{r:?} {lineas:#?}"
+        );
+        assert_eq!(lineas.len(), 4, "{lineas:#?}");
+        assert!(
+            lineas[3].contains("positionRisk"),
+            "re-snapshot: {lineas:#?}"
+        );
+    }
+
+    /// I-10: el aplanado de los reintentos del inmune cierra y purga como el
+    /// total, pero no barre los símbolos sin posición.
+    #[tokio::test]
+    async fn i10_el_aplanado_de_los_reintentos_no_barre_los_simbolos_planos() {
+        let wires = || {
+            let mut w = vec![
+                modo(false),
+                ok(concat!(
+                    r#"[{"symbol":"BTCUSDT","positionSide":"BOTH","positionAmt":"0.010"},"#,
+                    r#"{"symbol":"ETHUSDT","positionSide":"BOTH","positionAmt":"0"}]"#
+                )),
+                llenada("SELL", "0.010"),
+                purgada(),
+                purgada(),
+            ];
+            w.extend((0..4).map(|_| purgada()));
+            w
+        };
+        let (r, lineas) = aplanar_con(wires(), false, true).await;
+        assert!(matches!(r, Some(Ok((4, 1)))), "{r:?} {lineas:#?}");
+        assert_eq!(lineas.len(), 7, "{lineas:#?}");
+        assert!(
+            lineas[5].contains("symbol=ETHUSDT") && lineas[6].contains("symbol=ETHUSDT"),
+            "el aplanado total barre ETHUSDT: {lineas:#?}"
+        );
+        let (r, lineas) = aplanar_con(wires(), false, false).await;
+        assert!(matches!(r, Some(Ok((2, 1)))), "{r:?} {lineas:#?}");
+        assert_eq!(lineas.len(), 5, "{lineas:#?}");
+        assert!(
+            lineas.iter().all(|l| !l.contains("ETHUSDT")),
+            "sin barrido: {lineas:#?}"
+        );
     }
 
     /// CL-209: la costura lleva al servidor local las dos rutas del aplanado
