@@ -33,16 +33,19 @@ fn i1b_el_host_arma_sus_urls_con_rutas_feed() {
 
 #[test]
 fn i1b_el_host_abre_un_lector_por_categoria_y_solo_el_publico_reinicia_el_libro() {
+    // Sólo el código de producción: las pruebas del host (I-11) arman su
+    // propio lector contra un servidor local.
+    let produccion = HOST.split("#[cfg(test)]").next().unwrap_or("");
     assert_eq!(
-        HOST.matches("bucle_lector_ws(").count(),
+        produccion.matches("bucle_lector_ws(").count(),
         3,
         "una definición y dos llamadas (lector público y lector de mercado)"
     );
-    assert_eq!(HOST.matches("anuncia_reconexion: true").count(), 1);
-    assert_eq!(HOST.matches("anuncia_reconexion: false").count(), 1);
-    assert_eq!(HOST.matches("marca_stall: true").count(), 1);
-    assert_eq!(HOST.matches("marca_stall: false").count(), 1);
-    assert!(HOST.contains("\"ws-reader-mercado\""), "falta el hilo del lector de mercado");
+    assert_eq!(produccion.matches("anuncia_reconexion: true").count(), 1);
+    assert_eq!(produccion.matches("anuncia_reconexion: false").count(), 1);
+    assert_eq!(produccion.matches("marca_stall: true").count(), 1);
+    assert_eq!(produccion.matches("marca_stall: false").count(), 1);
+    assert!(produccion.contains("\"ws-reader-mercado\""), "falta el hilo del lector de mercado");
 }
 
 #[test]
