@@ -10844,3 +10844,11 @@ Puerto recursos reanclado sobre PR90/7b598f7e (padre mainfd956f9, AGY F1-074/F1-
 - R7A `e693f57d` cerró contrato 4/4, workspace exit 0 (3m25s), Zero-Wait 22/22 (199.709s) y revisión Yes, pero no se promovió porque upstream avanzó a GLM-192. Se adopta su corrección `is_nan()` y se descarta el `to_bits()` duplicado.
 - Evidencia terminal R7B: execution-engine 517/517 en 49 suites, 5 ignored/0 filtered/exit 0; Fisher 4/4; workspace all-targets exit 0 (4m07s); Zero-Wait 22/22 (189.610s); revisión agent-25 **Yes**, Critical/Important/Minor=0. Warnings MXCSR y errores no fatales de checksum dep-info permanecen declarados.
 - Handoff documental se valida como commit separado antes de su CAS. Attestation/publicación siguen bloqueados por QRA Navier/adversarial/legacy, formatter restante, productor ROOT registrado, seis fases + Python legacy/Zero-Wait/bus y Golden9 del SHA final. Producción NO-GO; ROI/PnL/WR/Sharpe/EV=N/D.
+
+
+## 2026-11-04T22:34:38Z — KIMI-QUANT-SR-V35: R8 formato dark-alpha y CAS local
+
+- `main` local avanzó por CAS desde `13b3cc0d8b3682669ddd59904bcf8cd330db6b69` a `92950e1b832ea562675620151fcd4cff1714c099` (tree `44a2810df058d6eca24dd55ebd79f4808d73fc40`). `origin/main=ead6d683` revalidado; no hubo push.
+- Nueve rutas `dark-alpha-engine`, 105+/83- exclusivamente rustfmt. Cada blob del tree escrito coincide con el WIP censo (`f653b151`, `c74bde5c`, `84a7b932`, `4431df8c`, `771cf0d8`, `1163832e`, `b2232f4a`, `fde16235`, `b2171304`). No cambian condiciones, fórmulas, umbrales, mensajes, contabilidad ni APIs.
+- Evidencia: 66/66 en 6 targets, 0 failed/ignored/filtered/exit0; workspace all-targets exit0 (4m12s); Zero-Wait 22/22 (267.253s)/exit0; revisión agent-25 **Yes**, Critical/Important/Minor=0. `core.fsmonitor=true` ocultó la fila propia; se desactivó únicamente en los índices privados y se verificó su blob `562678a3` en el commit.
+- Handoff documental separado pendiente de workspace, Zero-Wait y CAS. Attestation/publicación siguen bloqueados por QRA Navier/adversarial/legacy, formatter restante, productor ROOT, seis fases + Python y Golden9. Producción NO-GO; ROI/PnL/WR/Sharpe/EV=N/D.

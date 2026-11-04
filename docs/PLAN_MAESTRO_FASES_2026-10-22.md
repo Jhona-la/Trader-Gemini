@@ -281,3 +281,11 @@ Después de cada push de código: todos los checks disparados (base actual: 8 de
 - R7A no fue promovido porque upstream avanzó a GLM-192. Se adopta `is_nan()` de `ead6d683`; el `to_bits()` duplicado se descarta. Frente a R7 sólo se añaden los dos archivos Fisher upstream.
 - Evidencia terminal: ejecución 517/517 en 49 suites/5 ignored/0 filtered, Fisher 4/4, workspace exit 0 (4m07s), Zero-Wait 22/22 (189.610s), revisión agent-25 **Yes** sin Critical/Important/Minor.
 - Handoff documental separado pendiente de Zero-Wait y CAS. Attestation sigue bloqueada por QRA Navier/adversarial/legacy, formatter restante, productor ROOT registrado, seis fases + Python legacy/Zero-Wait/bus y Golden9 del SHA final. Producción NO-GO; métricas económicas N/D; +100 %/72 h sigue siendo hipótesis OOS neta.
+
+
+## Corte V35-R8 — dark-alpha formateado e integrado localmente (2026-11-04T22:34:38Z)
+
+- `main` local=`92950e1b832ea562675620151fcd4cff1714c099`, tree `44a2810d`, tras CAS desde `13b3cc0d`; `origin/main=ead6d683` sin cambios, sin push.
+- Nueve rutas `dark-alpha-engine` quedan en rustfmt con equivalencia byte a byte contra los nueve blobs WIP censados. No se adoptó ningún otro WIP ni se alteró comportamiento, APIs, umbrales o contabilidad.
+- Evidencia: 66/66 en 6 targets, workspace 4m12s, Zero-Wait 22/22 (267.253s), revisión Yes sin defectos. `core.fsmonitor` se desactiva sólo en índices privados antes de staging; la configuración global no cambia.
+- Handoff separado pendiente. Attestation sigue bloqueada por QRA Navier/adversarial/legacy, formatter restante, productor ROOT, seis fases + Python y Golden9. Producción NO-GO; métricas económicas N/D.

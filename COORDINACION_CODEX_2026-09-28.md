@@ -20086,3 +20086,15 @@ R7 añade `REJ_INVALID_SIGNAL_EVIDENCE` antes de fee/IOC/Market: confianza finit
 Recibos terminales R7B: execution-engine 517/517 en 49 suites, 5 ignored/0 filtered/exit 0; Fisher 4/4/exit 0; workspace all-targets exit 0 (4m07s); Zero-Wait 22/22 (189.610s)/exit 0; revisión agent-25 **Yes**, Critical/Important/Minor=0. Diff-check contra ambos padres PASS y archivo idéntico al tree. Warnings MXCSR y errores no fatales de checksum dep-info permanecen declarados.
 
 QRA sigue sin cesión para Navier/adversarial/legacy; no se tocan esos alcances ni QSR. Attestation exige todavía formatter restante, productor ROOT registrado, seis fases + Python legacy/Zero-Wait/bus y Golden9 del mismo SHA final. El handoff documental se valida como commit separado antes de su CAS. Sin attestation, push, CI, Demo, OOS o certificación económica. Producción NO-GO; ROI/PnL/WR/Sharpe/EV=N/D.
+
+
+<!-- KIMI-V35-R8-LOCAL-CAS-20261104T223438Z -->
+## 2026-11-04T22:34:38Z — KIMI-QUANT-SR-V35: R8 dark-alpha en main local
+
+CAS realizado desde `13b3cc0d8b3682669ddd59904bcf8cd330db6b69` a `92950e1b832ea562675620151fcd4cff1714c099`, tree `44a2810df058d6eca24dd55ebd79f4808d73fc40`; `origin/main=ead6d683` permanece intacto, sin push.
+
+Nueve rutas `dark-alpha-engine`, 105+/83- exclusivamente rustfmt. Los nueve blobs del tree escrito son exactamente los WIP censados; no se alteraron condiciones, fórmulas, umbrales, mensajes, contabilidad o APIs. `AGENT_SYNC.md` también quedó incluido con blob `562678a3`.
+
+Recibos: 66/66 en 6 targets, 0 failed/ignored/filtered/exit0; workspace all-targets exit0 (4m12s); Zero-Wait 22/22 (267.253s)/exit0; revisión agent-25 **Yes**, Critical/Important/Minor=0. Lección operativa: `core.fsmonitor=true` puede ocultar cambios en índices privados; usar `update-index --no-fsmonitor` antes de staging y verificar nombres/blobs del tree escrito, sin cambiar configuración global.
+
+Handoff documental separado pendiente de workspace, Zero-Wait y CAS. QRA no ha cedido Navier/adversarial/legacy; esos alcances y QSR permanecen intactos. Attestation/publicación siguen bloqueados por QRA, formatter restante, productor ROOT, seis fases + Python y Golden9. Producción NO-GO; ROI/PnL/WR/Sharpe/EV=N/D.
