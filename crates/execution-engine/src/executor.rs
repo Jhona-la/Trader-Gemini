@@ -2,7 +2,9 @@ use crate::binance_api::{
     sign_payload_to_buffer, ORDER_TYPE_LIMIT, ORDER_TYPE_MARKET, SIDE_BUY, SIDE_SELL,
     TIME_IN_FORCE_IOC,
 };
-use crate::execution_evidence::{classify_close_ack, CloseEvidenceError, CloseSettlement};
+use crate::execution_evidence::{
+    classify_close_ack, classify_close_ack_for_intent, CloseEvidenceError, CloseSettlement,
+};
 use crate::order_types::{FillReport, OrderAck};
 use crate::ExecutionPayload;
 use arc_swap::{ArcSwap, ArcSwapOption};
@@ -976,6 +978,7 @@ impl OrderExecutor {
         for p in &open_positions {
             let is_long = p.is_long();
             let mut position_closed = false;
+            let mut ws_tras_cierre = None;
 
             // WS Execution Routing (Zero-TLS overhead) si está conectado
             if self.ws.is_connected() {
@@ -1015,17 +1018,42 @@ impl OrderExecutor {
                     for _ in 0..20 {
                         tokio::time::sleep(std::time::Duration::from_millis(10)).await;
                         if let Some(order) = self.order_registry.get(&coid_ws) {
-                            if !order.status.is_active() && order.executed_qty > 0.0 {
-                                position_closed = true;
-                                println!(
-                                    "🧹 [FLATTEN] {} cerrada por WS (ejecución confirmada)",
-                                    p.symbol
-                                );
-                                break;
+                            if order.status.is_active() && order.executed_qty == 0.0 {
+                                continue;
+                            }
+                            let tras = tras_ws_de_cierre(
+                                &order,
+                                if is_long { "SELL" } else { "BUY" },
+                                p.position_amt.abs(),
+                            );
+                            match tras {
+                                TrasCierre::Cerrada => {
+                                    position_closed = true;
+                                    println!(
+                                        "🧹 [FLATTEN] {} cerrada por WS (settlement completo)",
+                                        p.symbol
+                                    );
+                                    break;
+                                }
+                                TrasCierre::Resnapshot { .. } => {
+                                    quantum_arena::protection_health::mark_dirty();
+                                    ws_tras_cierre = Some(tras);
+                                    println!(
+                                        "♻️ [FLATTEN] {} WS con settlement residual/desconocido: reconciliación positionRisk antes de reenviar o purgar",
+                                        p.symbol
+                                    );
+                                    break;
+                                }
+                                TrasCierre::Abierta => {
+                                    quantum_arena::protection_health::mark_dirty();
+                                    ws_tras_cierre =
+                                        Some(TrasCierre::Resnapshot { reenviar: true });
+                                    break;
+                                }
                             }
                         }
                     }
-                    if !position_closed {
+                    if !position_closed && ws_tras_cierre.is_none() {
                         println!(
                             "⚠️ [FLATTEN] {} despachada por WS SIN confirmación de ejecución: se reintenta por REST con los fail-safes",
                             p.symbol
@@ -1035,6 +1063,10 @@ impl OrderExecutor {
             }
 
             if !position_closed {
+                let tras_cierre;
+                if let Some(tras) = ws_tras_cierre {
+                    tras_cierre = tras;
+                } else {
                 // Fallback a REST tipado con COID fresco independiente del WS (F1-029: evita duplicado -4116)
                 let ts = self.get_synced_timestamp();
                 let coid_rest = uuid::Uuid::now_v7().simple().to_string();
@@ -1141,23 +1173,23 @@ impl OrderExecutor {
                     }
                 }
 
-                // CL-212 (N49) y F2A: el brazo Ok no da por cerrado cualquier
-                // ACK 2xx legible. `tras_ack_de_cierre` clasifica el settlement;
-                // `prueba_llenado` queda sólo para el texto de diagnóstico.
-                let tras_cierre = match close_res {
-                    Ok((_, ack)) => {
-                        let now = self.get_synced_timestamp();
-                        self.order_registry.apply_ack(&ack, now);
-                        let cantidad = p.position_amt.abs();
-                        let tras = tras_ack_de_cierre(&ack, cantidad);
-                        let sin_reenvio = |reenviar: bool| {
-                            if reenviar {
-                                ""
-                            } else {
-                                " sin reenvío (la orden sigue viva)"
-                            }
-                        };
-                        match tras {
+                    // CL-212 (N49) y F2A: el brazo Ok no da por cerrado cualquier
+                    // ACK 2xx legible. `tras_ack_de_cierre` clasifica el settlement;
+                    // `prueba_llenado` queda sólo para el texto de diagnóstico.
+                    tras_cierre = match close_res {
+                        Ok((_, ack)) => {
+                            let now = self.get_synced_timestamp();
+                            self.order_registry.apply_ack(&ack, now);
+                            let cantidad = p.position_amt.abs();
+                            let tras = tras_ack_de_cierre(&ack, cantidad);
+                            let sin_reenvio = |reenviar: bool| {
+                                if reenviar {
+                                    ""
+                                } else {
+                                    " sin reenvío (la orden sigue viva)"
+                                }
+                            };
+                            match tras {
                             TrasCierre::Cerrada => println!(
                                 "🧹 [FLATTEN] {} cerrada {} @ ~{} (status {})",
                                 p.symbol, cantidad, ack.avg_price, ack.status
@@ -1218,6 +1250,7 @@ impl OrderExecutor {
                         TrasCierre::Abierta
                     }
                 };
+                }
 
                 match tras_cierre {
                     TrasCierre::Cerrada => position_closed = true,
@@ -2886,6 +2919,52 @@ impl OrderExecutor {
         }
     }
 
+    pub async fn execute_reduce_only_market_with_reconciliation(
+        &self,
+        symbol: &str,
+        is_long_close: bool,
+        quantity: f64,
+        step_size: f64,
+    ) -> Result<(), String> {
+        let first_error = match self
+            .execute_reduce_only_market(symbol, is_long_close, quantity, step_size)
+            .await
+        {
+            Ok(()) => return Ok(()),
+            Err(error) => error,
+        };
+        let evidence_unknown =
+            first_error.starts_with("CLOSE_RESIDUAL:") || first_error.starts_with("CLOSE_UNKNOWN:");
+        if !evidence_unknown {
+            tokio::time::sleep(std::time::Duration::from_millis(150)).await;
+            return self
+                .execute_reduce_only_market(symbol, is_long_close, quantity, step_size)
+                .await
+                .map_err(|retry| format!("{first_error} / retry: {retry}"));
+        }
+
+        let positions = match self.fetch_position_risk().await {
+            Ok(positions) => positions,
+            Err(snapshot_error) => {
+                quantum_arena::protection_health::mark_dirty();
+                return Err(format!("{first_error} / reconciliation: {snapshot_error}"));
+            }
+        };
+        match crate::reconciliation::cantidad_abierta_del_lado(&positions, symbol, is_long_close) {
+            Some(remaining) if remaining.is_finite() && remaining > 0.0 => {
+                self.execute_reduce_only_market(symbol, is_long_close, remaining, step_size)
+                    .await
+            }
+            Some(_) => {
+                quantum_arena::protection_health::mark_dirty();
+                Err(format!(
+                    "{first_error} / reconciliation: invalid remaining quantity"
+                ))
+            }
+            None => Ok(()),
+        }
+    }
+
     /// F1-031: Reduce-Only Market que retorna FillReport para retroalimentación de slippage y comisiones.
     pub async fn execute_reduce_only_market_with_report(
         &self,
@@ -3005,8 +3084,22 @@ impl OrderExecutor {
             Ok((limits, ack)) => {
                 self.update_limits(&limits);
                 let now = self.get_synced_timestamp();
+                let settlement = classify_close_ack_for_intent(
+                    &ack,
+                    &client_order_id,
+                    symbol,
+                    side,
+                    final_quantity,
+                );
+                if matches!(
+                    &settlement,
+                    CloseSettlement::Unknown(CloseEvidenceError::MismatchedIntent)
+                ) {
+                    quantum_arena::protection_health::mark_dirty();
+                    return Err(CloseEvidenceError::MismatchedIntent.to_string());
+                }
                 self.order_registry.apply_ack(&ack, now);
-                match classify_close_ack(&ack) {
+                match settlement {
                     CloseSettlement::Closed(report) => Ok(report),
                     CloseSettlement::Residual { remaining_qty, .. } => {
                         quantum_arena::protection_health::mark_dirty();
@@ -4634,6 +4727,44 @@ enum TrasCierre {
     Resnapshot { reenviar: bool },
     /// Rechazo o fallo sin re-snapshot: ni cerrada ni purgada.
     Abierta,
+}
+
+fn tras_ws_de_cierre(
+    order: &crate::order_registry::TrackedOrder,
+    side: &str,
+    cantidad: f64,
+) -> TrasCierre {
+    let status = match order.status {
+        crate::order_registry::OrderStatus::New => "NEW",
+        crate::order_registry::OrderStatus::PartiallyFilled => "PARTIALLY_FILLED",
+        crate::order_registry::OrderStatus::Filled => "FILLED",
+        crate::order_registry::OrderStatus::Canceled => "CANCELED",
+        crate::order_registry::OrderStatus::Expired => "EXPIRED",
+        crate::order_registry::OrderStatus::Rejected => "REJECTED",
+        crate::order_registry::OrderStatus::Unknown => "UNKNOWN",
+    };
+    let ack = OrderAck {
+        order_id: order.order_id,
+        symbol: order.symbol.clone(),
+        status: status.to_string(),
+        client_order_id: order.client_order_id.clone(),
+        orig_qty: order.orig_qty,
+        executed_qty: order.executed_qty,
+        cum_quote: order.cum_quote,
+        avg_price: order.avg_price,
+        price: order.last_fill_price,
+        side: order.side.clone(),
+        order_type: order.order_type.clone(),
+        update_time: order.updated_ms,
+        fills: Vec::new(),
+    };
+    match classify_close_ack_for_intent(&ack, &order.client_order_id, &order.symbol, side, cantidad)
+    {
+        CloseSettlement::Closed(_) => TrasCierre::Cerrada,
+        CloseSettlement::Residual { .. } | CloseSettlement::Unknown(_) => TrasCierre::Resnapshot {
+            reenviar: !order.status.is_active(),
+        },
+    }
 }
 
 /// CL-212 (N49), I-10 y F2A: sólo un settlement completo y coherente con la
@@ -7973,9 +8104,7 @@ mod tests_lote18 {
         Some((base, bitacora, h))
     }
 
-    /// Una respuesta con `{COID}` en el cuerpo lo recibe del
-    /// `origClientOrderId` de la petición (la consulta de una orden cuyo id
-    /// genera el aplanado), con su Content-Length recalculado.
+    /// Una respuesta con `{COID}` recibe el id de la orden enviada o consultada.
     fn con_coid(wire: String, linea: &str) -> String {
         if !wire.contains("{COID}") {
             return wire;
@@ -7984,6 +8113,12 @@ mod tests_lote18 {
             .split("origClientOrderId=")
             .nth(1)
             .and_then(|r| r.split(['&', ' ']).next())
+            .or_else(|| {
+                linea
+                    .split("newClientOrderId=")
+                    .nth(1)
+                    .and_then(|r| r.split(['&', ' ']).next())
+            })
             .unwrap_or("");
         let Some((cabecera, cuerpo)) = wire.split_once("\r\n\r\n") else {
             return wire;
@@ -8021,8 +8156,19 @@ mod tests_lote18 {
     }
 
     pub(super) fn llenada(lado: &str, cantidad: &str) -> String {
+        ack_para("{COID}", "BTCUSDT", lado, "FILLED", cantidad, cantidad)
+    }
+
+    fn ack_para(
+        coid: &str,
+        symbol: &str,
+        lado: &str,
+        estado: &str,
+        orig_qty: &str,
+        executed_qty: &str,
+    ) -> String {
         ok(&format!(
-            r#"{{"orderId":7,"symbol":"BTCUSDT","status":"FILLED","clientOrderId":"c","origQty":"{cantidad}","executedQty":"{cantidad}","avgPrice":"60000","side":"{lado}","type":"MARKET"}}"#
+            r#"{{"orderId":7,"symbol":"{symbol}","status":"{estado}","clientOrderId":"{coid}","origQty":"{orig_qty}","executedQty":"{executed_qty}","avgPrice":"60000","side":"{lado}","type":"MARKET"}}"#
         ))
     }
 
@@ -8118,6 +8264,175 @@ mod tests_lote18 {
         h.abort();
         let lineas = bitacora.lock().map(|v| v.clone()).unwrap_or_default();
         (r, lineas)
+    }
+
+    #[tokio::test]
+    async fn f2a_reduce_only_rejects_ack_from_another_intent() {
+        for (coid, symbol, side, quantity) in [
+            ("otro-coid", "BTCUSDT", "SELL", "0.010"),
+            ("{COID}", "ETHUSDT", "SELL", "0.010"),
+            ("{COID}", "BTCUSDT", "BUY", "0.010"),
+            ("{COID}", "BTCUSDT", "SELL", "0.020"),
+        ] {
+            let served = servidor(vec![ack_para(
+                coid, symbol, side, "FILLED", quantity, quantity,
+            )])
+            .await;
+            assert!(served.is_some(), "servidor local");
+            let Some((base, log, handle)) = served else {
+                return;
+            };
+            let ex = ejecutor(&base, true);
+            let result = ex
+                .execute_reduce_only_market("BTCUSDT", true, 0.010, 0.001)
+                .await;
+            handle.abort();
+            assert!(
+                matches!(result, Err(ref error) if error.starts_with("CLOSE_UNKNOWN")),
+                "ACK aceptado con identidad ajena: {coid} {symbol} {side} {quantity}: {result:?}"
+            );
+            let lines = log.lock().map(|v| v.clone()).unwrap_or_default();
+            assert_eq!(lines.len(), 1, "sin reenvío: {lines:#?}");
+            let sent_coid = lines[0]
+                .split("newClientOrderId=")
+                .nth(1)
+                .and_then(|rest| rest.split(['&', ' ']).next())
+                .unwrap_or("");
+            let intent = ex.registry().get(sent_coid).unwrap_or_else(|| {
+                panic!("intención original ausente tras ACK ajeno: {sent_coid}")
+            });
+            assert_eq!(intent.order_id, 0, "el ACK ajeno no pisa la identidad");
+            assert_eq!(intent.executed_qty, 0.0, "el ACK ajeno no pisa fills");
+        }
+    }
+
+    #[test]
+    fn f2a_ws_terminal_partial_requires_resnapshot_not_close() {
+        for status in ["EXPIRED", "CANCELED"] {
+            let registry = crate::order_registry::OrderRegistry::new();
+            registry.apply_ack(
+                &OrderAck {
+                    order_id: 7,
+                    symbol: "BTCUSDT".into(),
+                    client_order_id: "ws-close".into(),
+                    side: "SELL".into(),
+                    order_type: "MARKET".into(),
+                    status: status.into(),
+                    orig_qty: 0.010,
+                    executed_qty: 0.004,
+                    ..Default::default()
+                },
+                1,
+            );
+            let order = registry.get("ws-close").expect("tracked WS order");
+            assert_eq!(
+                tras_ws_de_cierre(&order, "SELL", 0.010),
+                TrasCierre::Resnapshot { reenviar: true },
+                "terminal parcial {status} no puede cerrar ni purgar"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn f2a_residual_snapshot_failure_stops_without_retry() {
+        let served = servidor(vec![
+            ack_para("{COID}", "BTCUSDT", "SELL", "EXPIRED", "0.010", "0.004"),
+            respuesta("500 Internal Server Error", "", "{}"),
+        ])
+        .await;
+        assert!(served.is_some(), "servidor local");
+        let Some((base, log, handle)) = served else {
+            return;
+        };
+        let ex = ejecutor(&base, false);
+        let result = ex
+            .execute_reduce_only_market_with_reconciliation("BTCUSDT", true, 0.010, 0.001)
+            .await;
+        handle.abort();
+        assert!(
+            result.is_err(),
+            "snapshot fallido no puede cerrar: {result:?}"
+        );
+        let lines = log.lock().map(|v| v.clone()).unwrap_or_default();
+        assert_eq!(
+            lines.len(),
+            2,
+            "cierre y snapshot, sin reenvío/purga: {lines:#?}"
+        );
+        assert_eq!(
+            lines
+                .iter()
+                .filter(|line| line.contains("/fapi/v1/order?"))
+                .count(),
+            1,
+            "ningún segundo cierre con la cantidad anterior: {lines:#?}"
+        );
+        assert!(
+            lines
+                .iter()
+                .all(|line| !line.contains("openAlgoOrders") && !line.contains("allOpenOrders")),
+            "ninguna purga sin posición plana probada: {lines:#?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn f2a_residual_retries_only_proven_remainder() {
+        let served = servidor(vec![
+            ack_para("{COID}", "BTCUSDT", "SELL", "EXPIRED", "0.010", "0.004"),
+            filas(&[("BOTH", "0.006")]),
+            llenada("SELL", "0.006"),
+        ])
+        .await;
+        assert!(served.is_some(), "servidor local");
+        let Some((base, log, handle)) = served else {
+            return;
+        };
+        let ex = ejecutor(&base, false);
+        let result = ex
+            .execute_reduce_only_market_with_reconciliation("BTCUSDT", true, 0.010, 0.001)
+            .await;
+        handle.abort();
+        assert!(
+            result.is_ok(),
+            "remanente comprobado debe cerrar: {result:?}"
+        );
+        let lines = log.lock().map(|v| v.clone()).unwrap_or_default();
+        assert_eq!(lines.len(), 3, "parcial, snapshot y remanente: {lines:#?}");
+        assert!(lines[0].contains("quantity=0.01"), "{lines:#?}");
+        assert!(lines[2].contains("quantity=0.006"), "{lines:#?}");
+    }
+
+    #[tokio::test]
+    async fn f2a_residual_flat_stops_without_second_close() {
+        let served = servidor(vec![
+            ack_para("{COID}", "BTCUSDT", "SELL", "EXPIRED", "0.010", "0.004"),
+            filas(&[("BOTH", "0")]),
+        ])
+        .await;
+        assert!(served.is_some(), "servidor local");
+        let Some((base, log, handle)) = served else {
+            return;
+        };
+        let ex = ejecutor(&base, false);
+        let result = ex
+            .execute_reduce_only_market_with_reconciliation("BTCUSDT", true, 0.010, 0.001)
+            .await;
+        handle.abort();
+        assert!(result.is_ok(), "posición plana comprobada: {result:?}");
+        let lines = log.lock().map(|v| v.clone()).unwrap_or_default();
+        assert_eq!(
+            lines.len(),
+            2,
+            "sin segundo cierre cuando ya está plana: {lines:#?}"
+        );
+        assert_eq!(
+            lines
+                .iter()
+                .filter(|line| line.contains("/fapi/v1/order?"))
+                .count(),
+            1,
+            "{lines:#?}"
+        );
     }
 
     /// I-10: sólo un llenado completo cierra la pierna. RED antes de I-10 en

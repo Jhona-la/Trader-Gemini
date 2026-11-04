@@ -5077,20 +5077,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             };
                             let close_res = exec_clone
                                 .load()
-                                .execute_reduce_only_market(&parsed_sym_str, is_long_close, qty, sym_filter.step_size)
+                                .execute_reduce_only_market_with_reconciliation(
+                                    &parsed_sym_str,
+                                    is_long_close,
+                                    qty,
+                                    sym_filter.step_size,
+                                )
                                 .await;
-                            let close_res = match close_res {
-                                Ok(()) => Ok(()),
-                                Err(e1) => {
-                                    // Retry único: glitches transitorios de red.
-                                    tokio::time::sleep(std::time::Duration::from_millis(150)).await;
-                                    exec_clone
-                                        .load()
-                                        .execute_reduce_only_market(&parsed_sym_str, is_long_close, qty, sym_filter.step_size)
-                                        .await
-                                        .map_err(|e2| format!("{} / retry: {}", e1, e2))
-                                }
-                            };
                             match close_res {
                                 Ok(()) => {
                                     // Posición plana en el exchange: purgar los
@@ -5918,27 +5911,21 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                                 }
                                             };
                                             let close_res = entry_executor
-                                                .execute_reduce_only_market(&parsed_sym_str, is_long_close, close_qty, dyn_step_size)
+                                                .execute_reduce_only_market_with_reconciliation(
+                                                    &parsed_sym_str,
+                                                    is_long_close,
+                                                    close_qty,
+                                                    dyn_step_size,
+                                                )
                                                 .await;
-                                            let close_res = match close_res {
-                                                Ok(()) => Ok(()),
-                                                Err(e1) => {
-                                                    tokio::time::sleep(std::time::Duration::from_millis(150)).await;
-                                                    entry_executor
-                                                        .execute_reduce_only_market(&parsed_sym_str, is_long_close, close_qty, dyn_step_size)
-                                                        .await
-                                                        .map_err(|e2| format!("{} / retry: {}", e1, e2))
+                                            // La purga sólo sigue a un cierre completo o
+                                            // a una posición plana comprobada, nunca a un
+                                            // residual/unknown ni a un fallo de snapshot.
+                                            if close_res.is_ok() {
+                                                if let Err(ce) = entry_executor.cancel_position_oco_orders(&parsed_sym_str, is_long_close).await {
+                                                    telemetry_engine::telemetry_err!("⚠️ [EMERGENCY] Purga de órdenes de {} falló: {}", parsed_sym_str, ce);
+                                                    anotar_purga_pendiente(&parsed_sym_str, is_long_close);
                                                 }
-                                            };
-                                            // Purgar órdenes restantes (haya cerrado o no:
-                                            // si no cerró, reduceOnly sigue siendo válida).
-                                            // CL-12: sólo las del LADO cerrado; la purga
-                                            // de todo el símbolo borraba el TP/SL de la
-                                            // posición del lado contrario.
-                                            if let Err(ce) = entry_executor.cancel_position_oco_orders(&parsed_sym_str, is_long_close).await {
-                                                telemetry_engine::telemetry_err!("⚠️ [EMERGENCY] Purga de órdenes de {} falló: {}", parsed_sym_str, ce);
-                                                // I-9 (N15b): pendiente hasta que el vigilante la purgue.
-                                                anotar_purga_pendiente(&parsed_sym_str, is_long_close);
                                             }
                                             match close_res {
                                                 Ok(()) => {

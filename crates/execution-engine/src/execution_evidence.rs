@@ -10,6 +10,7 @@ pub enum CloseEvidenceError {
     MissingIdentity,
     InvalidQuantity,
     InconsistentStatus,
+    MismatchedIntent,
     Residual { remaining_qty: f64 },
 }
 
@@ -27,6 +28,10 @@ impl std::fmt::Display for CloseEvidenceError {
             Self::InconsistentStatus => write!(
                 f,
                 "CLOSE_UNKNOWN: status and quantities disagree; reconciliation required; protection preserved"
+            ),
+            Self::MismatchedIntent => write!(
+                f,
+                "CLOSE_UNKNOWN: acknowledgement does not match close intent; reconciliation required; protection preserved"
             ),
             Self::Residual { remaining_qty } => write!(
                 f,
@@ -98,6 +103,26 @@ pub fn classify_close_ack(ack: &OrderAck) -> CloseSettlement {
         | OrderStatus::Rejected
         | OrderStatus::Unknown => CloseSettlement::Unknown(CloseEvidenceError::InconsistentStatus),
     }
+}
+
+pub fn classify_close_ack_for_intent(
+    ack: &OrderAck,
+    client_order_id: &str,
+    symbol: &str,
+    side: &str,
+    orig_qty: f64,
+) -> CloseSettlement {
+    if !orig_qty.is_finite() || orig_qty <= 0.0 {
+        return CloseSettlement::Unknown(CloseEvidenceError::InvalidQuantity);
+    }
+    if ack.client_order_id != client_order_id
+        || ack.symbol != symbol
+        || ack.side != side
+        || ack.orig_qty != orig_qty
+    {
+        return CloseSettlement::Unknown(CloseEvidenceError::MismatchedIntent);
+    }
+    classify_close_ack(ack)
 }
 
 // Required wire fields: unlike the legacy internal DTO, absent positionAmt must

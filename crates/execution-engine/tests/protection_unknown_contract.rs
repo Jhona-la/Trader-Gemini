@@ -60,3 +60,62 @@ fn position_risk_failures_never_use_theoretical_quantities() {
         "OCO and emergency-close failures must both leave unknown evidence for reconciliation"
     );
 }
+
+#[test]
+fn residual_close_paths_share_reconciliation() {
+    let source = host();
+    assert!(
+        source
+            .matches("execute_reduce_only_market_with_reconciliation(")
+            .count()
+            >= 2,
+        "X-008 y X-009 deben compartir la reconciliación conductual"
+    );
+    assert!(
+        !source.contains(
+            ".execute_reduce_only_market(&parsed_sym_str, is_long_close, qty, sym_filter.step_size)"
+        ),
+        "X-008 no debe repetir la cantidad anterior"
+    );
+    assert!(
+        !source.contains(
+            ".execute_reduce_only_market(&parsed_sym_str, is_long_close, close_qty, dyn_step_size)"
+        ),
+        "X-009 no debe repetir la cantidad anterior"
+    );
+}
+
+#[test]
+fn emergency_purge_waits_for_successful_close() {
+    let body = host()
+        .split("'close_with_known_quantity: {")
+        .nth(1)
+        .expect("emergency close body");
+    let flat_guard = body
+        .find("if close_res.is_ok()")
+        .expect("flat evidence guard");
+    let cancel = body
+        .find(".cancel_position_oco_orders(")
+        .expect("OCO purge");
+    let match_result = body.find("match close_res").expect("result match");
+    let err_branch = body.find("Err(es) => {").expect("error branch");
+    assert!(
+        flat_guard < cancel && cancel < match_result && match_result < err_branch,
+        "la purga sólo puede ejecutarse tras prueba de posición plana"
+    );
+}
+
+#[test]
+fn ws_residual_bypasses_rest_dispatch_before_resnapshot() {
+    let source = include_str!("../src/executor.rs");
+    let branch = source
+        .find("if let Some(tras) = ws_tras_cierre")
+        .expect("WS settlement branch");
+    let rest_dispatch = source
+        .find("let coid_rest = uuid::Uuid::now_v7()")
+        .expect("REST dispatch");
+    assert!(
+        branch < rest_dispatch,
+        "la rama residual WS debe abrir antes de cualquier envío REST con la cantidad anterior"
+    );
+}

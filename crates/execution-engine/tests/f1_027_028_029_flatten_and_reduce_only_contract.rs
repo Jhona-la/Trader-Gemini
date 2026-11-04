@@ -168,8 +168,22 @@ fn test_f1_028_typed_reduce_only_contract() {
     // F2A: sólo un CloseSettlement::Closed autoriza un Ok plano. Un fill
     // parcial conserva remanente y toda evidencia desconocida exige reconciliar.
     assert!(
-        fn_body.contains("classify_close_ack(&ack)"),
-        "Must classify the complete close settlement"
+        fn_body.contains("classify_close_ack_for_intent("),
+        "Must classify the complete close settlement against the original intent"
+    );
+    let classification_idx = fn_body
+        .find("classify_close_ack_for_intent(")
+        .expect("intent classification");
+    let apply_idx = fn_body
+        .find("self.order_registry.apply_ack(&ack, now)")
+        .expect("registry update");
+    assert!(
+        classification_idx < apply_idx,
+        "ACK identity must be validated before mutating the registry"
+    );
+    assert!(
+        fn_body.contains("CloseEvidenceError::MismatchedIntent"),
+        "Mismatched identity must remain a typed fail-closed error"
     );
     assert!(
         fn_body.contains("CloseSettlement::Closed"),
