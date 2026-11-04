@@ -7,6 +7,8 @@
 
 Este es el plan canónico de coordinación. Los planes de líneas aportan detalle, no fuentes paralelas de verdad. `AGENT_SYNC.md` contiene reservas y heartbeats; `.agents/MEMORIA.md` conserva los recibos de cierre.
 
+**Resultado F1 baseline y recomposición (2026-11-04T16:53:38Z):** CAS local `main=e4e47d95bf51b8b1f388f17f63311fb8b4bc418e`; `origin/main=2ab90d3a`, sin push. Catorce archivos de `feature-engine` corregidos sin supresiones ni cambios intencionales de comportamiento. Evidencia: 403/403 tests (20 ignored, 0 filtered, 57 suites), LPPLS 4/4, workspace `check --all-targets` exit0, Zero-Wait 22/22 y compiler bus 20/20. Clippy bajó 57→1: `navier_stokes::update`, cuyo llamador está bajo QRA. Revisión agent-25 `With fixes`; Jacobi y cardinalidad multifractal corregidos con RED→GREEN. Formatter ejecutó 632 targets/5 lotes y conserva deuda baseline (`auditor_interno.rs:92` primera causa). `test_pre_push_gate.py` no existe en el candidato; attestation global y publicación siguen bloqueados. Producción NO-GO; ROI/PnL/WR/Sharpe/EV=`N/D`. Estado: `.agent_tx/staging/KIMI-QUANT-SR-V35/F1_FEATURE_BASELINE_STATUS.json`.
+
 ## Corte 2026-10-29 — F0: verdad instalada, candidato y purga congelada
 
 **Corte de refs:** HEAD local `4d8db9a345bd1a78f3e479b5beba01bd0124fa3e`; `origin/main=9b2cde7c15eba058c67046317c22c1cfbc3f36c2`; remoto sólo `main`. `claude/linea-i-i6=46285e72feec1dc7b9a09dbf24b9f8f3f14bf121` se preserva con su worktree. El manifiesto por ruta, propietario, lease y SHA-256 vive en `AGENT_SYNC.md` §0A.
