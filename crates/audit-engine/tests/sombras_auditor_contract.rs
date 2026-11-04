@@ -24,9 +24,7 @@
 //!   EE = √(var/4) con var muestral = 1/3 ⇒ EE = √(1/12).
 //! - fricción: 5 bp reales vs 4 bp modelo ⇒ media +1 bp exacto.
 
-use audit_engine::auditor_interno::{
-    ExchangeFillRecord, AuditorInterno, MIN_FILLS_SOMBRA,
-};
+use audit_engine::auditor_interno::{AuditorInterno, ExchangeFillRecord, MIN_FILLS_SOMBRA};
 
 /// Cierre del canal independiente: nocional 50 (50 000 × 0,001).
 fn cierre(ts_ns: u64, pnl: f64, fee: f64) -> ExchangeFillRecord {
@@ -62,7 +60,11 @@ fn auditor_alternado() -> AuditorInterno {
     let mut a = AuditorInterno::with_capital(13.0);
     for i in 0..24u64 {
         let (pnl, fee) = if i % 2 == 0 { (0.5, 0.0) } else { (-0.2, 0.0) };
-        a.record_fill_independiente(cierre(1_700_000_000_000_000_000 + i * 1_000_000_000, pnl, fee));
+        a.record_fill_independiente(cierre(
+            1_700_000_000_000_000_000 + i * 1_000_000_000,
+            pnl,
+            fee,
+        ));
     }
     a
 }
@@ -70,7 +72,10 @@ fn auditor_alternado() -> AuditorInterno {
 #[test]
 fn sin_canal_las_sombras_no_se_publican() {
     let a = AuditorInterno::with_capital(13.0);
-    assert!(a.sombra_wr_disc(0.9).is_none(), "sin cierres no hay sombra WR");
+    assert!(
+        a.sombra_wr_disc(0.9).is_none(),
+        "sin cierres no hay sombra WR"
+    );
     assert!(
         a.sombra_friccion_bp(4.0).is_none(),
         "sin fills no hay sombra de fricción"
@@ -80,12 +85,29 @@ fn sin_canal_las_sombras_no_se_publican() {
 #[test]
 fn wr_disc_exacto_con_mitades_y_ee_alternado() {
     let a = auditor_alternado();
-    let s = a.sombra_wr_disc(0.9).expect("24 cierres ≥ MIN_FILLS_SOMBRA");
+    let s = a
+        .sombra_wr_disc(0.9)
+        .expect("24 cierres ≥ MIN_FILLS_SOMBRA");
     assert_eq!(s.n, 24);
-    assert!((s.wr_real - 0.5).abs() < 1e-12, "WR real 0,5 exacto, obtuvo {}", s.wr_real);
-    assert!((s.disc - 0.4).abs() < 1e-12, "interno 0,9 vs real 0,5 ⇒ 0,4 exacto");
-    assert!((s.disc_mitad_a - 0.4).abs() < 1e-12, "mitad A estable: {}", s.disc_mitad_a);
-    assert!((s.disc_mitad_b - 0.4).abs() < 1e-12, "mitad B estable: {}", s.disc_mitad_b);
+    assert!(
+        (s.wr_real - 0.5).abs() < 1e-12,
+        "WR real 0,5 exacto, obtuvo {}",
+        s.wr_real
+    );
+    assert!(
+        (s.disc - 0.4).abs() < 1e-12,
+        "interno 0,9 vs real 0,5 ⇒ 0,4 exacto"
+    );
+    assert!(
+        (s.disc_mitad_a - 0.4).abs() < 1e-12,
+        "mitad A estable: {}",
+        s.disc_mitad_a
+    );
+    assert!(
+        (s.disc_mitad_b - 0.4).abs() < 1e-12,
+        "mitad B estable: {}",
+        s.disc_mitad_b
+    );
     assert!(
         s.ee_real.abs() < 1e-12,
         "alternados ⇒ bloques homogéneos ⇒ EE 0 exacto, obtuvo {}",
@@ -98,14 +120,22 @@ fn wr_disc_honesto_y_ee_no_cero_con_series_agrupadas() {
     // Claim honesto vs el mismo canal ⇒ disc ≈ 0 (la sombra confirma, no acusa).
     let a = auditor_alternado();
     let s = a.sombra_wr_disc(0.5).expect("canal suficiente");
-    assert!(s.disc.abs() < 1e-12, "afirmación honesta ⇒ disc 0, obtuvo {}", s.disc);
+    assert!(
+        s.disc.abs() < 1e-12,
+        "afirmación honesta ⇒ disc 0, obtuvo {}",
+        s.disc
+    );
 
     // 12 wins seguidos de 12 loses: bloques [1,1,0,0] ⇒ var muestral 1/3 ⇒
     // EE = √((1/3)/4) = √(1/12). El EE mide la correlación, no la proporción.
     let mut b = AuditorInterno::with_capital(13.0);
     for i in 0..24u64 {
         let pnl = if i < 12 { 0.5 } else { -0.2 };
-        b.record_fill_independiente(cierre(1_700_000_000_000_000_000 + i * 1_000_000_000, pnl, 0.0));
+        b.record_fill_independiente(cierre(
+            1_700_000_000_000_000_000 + i * 1_000_000_000,
+            pnl,
+            0.0,
+        ));
     }
     let s = b.sombra_wr_disc(0.9).expect("canal suficiente");
     assert!((s.disc - 0.4).abs() < 1e-12);
@@ -124,15 +154,28 @@ fn n_min_y_guardas_de_estabilidad_numerica() {
     let mut a = AuditorInterno::with_capital(13.0);
     for i in 0..19u64 {
         let pnl = if i % 2 == 0 { 0.5 } else { -0.2 };
-        a.record_fill_independiente(cierre(1_700_000_000_000_000_000 + i * 1_000_000_000, pnl, 0.0));
+        a.record_fill_independiente(cierre(
+            1_700_000_000_000_000_000 + i * 1_000_000_000,
+            pnl,
+            0.0,
+        ));
     }
-    assert!(a.sombra_wr_disc(0.9).is_none(), "19 < MIN_FILLS_SOMBRA ⇒ sin sombra");
+    assert!(
+        a.sombra_wr_disc(0.9).is_none(),
+        "19 < MIN_FILLS_SOMBRA ⇒ sin sombra"
+    );
     assert!(a.sombra_friccion_bp(4.0).is_none());
 
     // Claim interno no finito ⇒ None (jamás claim inventado).
     let b = auditor_alternado();
-    assert!(b.sombra_wr_disc(f64::NAN).is_none(), "WR interno NaN ⇒ None");
-    assert!(b.sombra_wr_disc(f64::INFINITY).is_none(), "WR interno ∞ ⇒ None");
+    assert!(
+        b.sombra_wr_disc(f64::NAN).is_none(),
+        "WR interno NaN ⇒ None"
+    );
+    assert!(
+        b.sombra_wr_disc(f64::INFINITY).is_none(),
+        "WR interno ∞ ⇒ None"
+    );
 
     // Claim interno fuera de rango se satura a [0,1] (no se inventa, se acota).
     let s = b.sombra_wr_disc(1.5).expect("canal suficiente");
@@ -149,11 +192,20 @@ fn friccion_real_menos_modelada_exacta() {
     // 24 fills de 5 bp reales vs 4 bp modelo ⇒ media +1 bp, EE 0 (homogéneo).
     let mut a = AuditorInterno::with_capital(13.0);
     for i in 0..24u64 {
-        a.record_fill_independiente(apertura(1_700_000_000_000_000_000 + i * 1_000_000_000, 0.025));
+        a.record_fill_independiente(apertura(
+            1_700_000_000_000_000_000 + i * 1_000_000_000,
+            0.025,
+        ));
     }
-    let f = a.sombra_friccion_bp(4.0).expect("24 fills ≥ MIN_FILLS_SOMBRA");
+    let f = a
+        .sombra_friccion_bp(4.0)
+        .expect("24 fills ≥ MIN_FILLS_SOMBRA");
     assert_eq!(f.n, 24);
-    assert!((f.media_bp - 1.0).abs() < 1e-9, "5 bp − 4 bp = +1 bp exacto, obtuvo {}", f.media_bp);
+    assert!(
+        (f.media_bp - 1.0).abs() < 1e-9,
+        "5 bp − 4 bp = +1 bp exacto, obtuvo {}",
+        f.media_bp
+    );
     assert!(f.ee_bp.abs() < 1e-9, "homogéneo ⇒ EE 0, obtuvo {}", f.ee_bp);
     assert!((f.media_mitad_a_bp - 1.0).abs() < 1e-9, "mitad A = +1 bp");
     assert!((f.media_mitad_b_bp - 1.0).abs() < 1e-9, "mitad B = +1 bp");
@@ -165,7 +217,10 @@ fn friccion_descarta_fills_insalvables_sin_contaminar() {
     // los insalvables se ignoran; los 22 válidos sostienen la sombra.
     let mut a = AuditorInterno::with_capital(13.0);
     for i in 0..22u64 {
-        a.record_fill_independiente(apertura(1_700_000_000_000_000_000 + i * 1_000_000_000, 0.025));
+        a.record_fill_independiente(apertura(
+            1_700_000_000_000_000_000 + i * 1_000_000_000,
+            0.025,
+        ));
     }
     let mut roto_precio = apertura(1_700_000_000_100_000_000, 0.025);
     roto_precio.price = 0.0;
@@ -177,10 +232,18 @@ fn friccion_descarta_fills_insalvables_sin_contaminar() {
     roto_fee_neg.fee_usd = -1.0;
     a.record_fill_independiente(roto_fee_neg);
 
-    let f = a.sombra_friccion_bp(4.0).expect("22 válidos ≥ MIN_FILLS_SOMBRA");
+    let f = a
+        .sombra_friccion_bp(4.0)
+        .expect("22 válidos ≥ MIN_FILLS_SOMBRA");
     assert_eq!(f.n, 22, "sólo los fills salvables cuentan");
-    assert!((f.media_bp - 1.0).abs() < 1e-9, "los insalvables no contaminan la media");
-    assert!(f.media_bp.is_finite() && f.ee_bp.is_finite(), "nada de NaN en la sombra");
+    assert!(
+        (f.media_bp - 1.0).abs() < 1e-9,
+        "los insalvables no contaminan la media"
+    );
+    assert!(
+        f.media_bp.is_finite() && f.ee_bp.is_finite(),
+        "nada de NaN en la sombra"
+    );
 }
 
 #[test]
@@ -193,10 +256,26 @@ fn friccion_mitades_divergentes_se_ven_en_la_sombra() {
         a.record_fill_independiente(apertura(1_700_000_000_000_000_000 + i * 1_000_000_000, fee));
     }
     let f = a.sombra_friccion_bp(4.0).expect("canal suficiente");
-    assert!(f.media_bp.abs() < 1e-9, "media 0 exacto, obtuvo {}", f.media_bp);
-    assert!((f.media_mitad_a_bp - 2.0).abs() < 1e-9, "mitad A +2 bp, obtuvo {}", f.media_mitad_a_bp);
-    assert!((f.media_mitad_b_bp + 2.0).abs() < 1e-9, "mitad B −2 bp, obtuvo {}", f.media_mitad_b_bp);
-    assert!(f.ee_bp > 1.0, "la serie agrupada tiene EE alto, obtuvo {}", f.ee_bp);
+    assert!(
+        f.media_bp.abs() < 1e-9,
+        "media 0 exacto, obtuvo {}",
+        f.media_bp
+    );
+    assert!(
+        (f.media_mitad_a_bp - 2.0).abs() < 1e-9,
+        "mitad A +2 bp, obtuvo {}",
+        f.media_mitad_a_bp
+    );
+    assert!(
+        (f.media_mitad_b_bp + 2.0).abs() < 1e-9,
+        "mitad B −2 bp, obtuvo {}",
+        f.media_mitad_b_bp
+    );
+    assert!(
+        f.ee_bp > 1.0,
+        "la serie agrupada tiene EE alto, obtuvo {}",
+        f.ee_bp
+    );
 }
 
 #[test]
@@ -207,7 +286,10 @@ fn wr_solo_mira_cierres_no_aperturas() {
     for i in 0..24u64 {
         a.record_fill_independiente(apertura(1_700_000_000_000_000_000 + i * 1_000_000_000, 0.0));
     }
-    assert!(a.sombra_wr_disc(0.9).is_none(), "sin cierres no hay WR que medir");
+    assert!(
+        a.sombra_wr_disc(0.9).is_none(),
+        "sin cierres no hay WR que medir"
+    );
     // Pero la de fricción SÍ ve esas aperturas (toda ejecución paga).
     assert!(a.sombra_friccion_bp(4.0).is_some());
 }

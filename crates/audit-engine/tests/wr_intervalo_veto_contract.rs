@@ -92,7 +92,10 @@ fn el_ruido_de_muestreo_ya_no_veta() {
         (disc - esperado).abs() < 1e-9,
         "cota inferior = 0,4 − √(1/12) ≈ {esperado}, obtuvo {disc}"
     );
-    assert!(disc < 0.20, "0,1113 < 0,20 ⇒ el ruido no dispara autoengaño");
+    assert!(
+        disc < 0.20,
+        "0,1113 < 0,20 ⇒ el ruido no dispara autoengaño"
+    );
     // Umbrales del tribunal: recuperable 0,05 · peligroso 0,10 · autoengaño 0,20.
     // 0,1113 cae en la banda de «peligroso», pero NUNCA en autoengaño: el
     // ruido de muestreo no puede sostener la acusación máxima.
@@ -116,7 +119,11 @@ fn la_discrepancia_real_sobrevive_a_su_ruido_y_veta() {
     );
     assert!(disc > 0.20, "0,2113 > 0,20 ⇒ veta");
     let v = evaluate_tribunal_verdict(disc, &TribunalThresholds::default());
-    assert_eq!(v, TribunalVerdict::AutoengañoDetectado, "discrepancia real ⇒ veta");
+    assert_eq!(
+        v,
+        TribunalVerdict::AutoengañoDetectado,
+        "discrepancia real ⇒ veta"
+    );
 }
 
 /// LG-33: con menos de MIN_FILLS_SOMBRA cierres ya no hay pata puntual: no se
@@ -128,7 +135,10 @@ fn con_menos_de_n_min_no_hay_discrepancia() {
         let pnl = if i < 10 { 0.5 } else { -0.2 };
         a.record_fill_independiente(cierre(1_700_000_000_000_000_000 + i * 1_000_000_000, pnl));
     }
-    assert!(a.sombra_wr_disc(0.9).is_none(), "19 < MIN_FILLS_SOMBRA ⇒ sin sombra");
+    assert!(
+        a.sombra_wr_disc(0.9).is_none(),
+        "19 < MIN_FILLS_SOMBRA ⇒ sin sombra"
+    );
     let indep = a.compute_independent_metrics_from_host();
     assert_eq!(
         a.compute_internal_discrepancy_evidenciada(0.0, 0.9, indep.calculated_max_drawdown),
