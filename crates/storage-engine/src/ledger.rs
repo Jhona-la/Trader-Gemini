@@ -24,8 +24,8 @@ use std::thread;
 #[derive(Debug, Clone)]
 pub struct LedgerEvent {
     pub symbol: String,
-    pub position_side: String,      // "LONG" o "SHORT"
-    pub strategy: String,           // Etiqueta histórica de procedencia, no partición del motor
+    pub position_side: String, // "LONG" o "SHORT"
+    pub strategy: String,      // Etiqueta histórica de procedencia, no partición del motor
     /// Horizonte τ esperado de la operación en ms. `0` significa «τ
     /// desconocida» — es el valor que reciben los registros migrados desde el
     /// esquema antiguo, que no guardaba ningún horizonte.
@@ -509,13 +509,20 @@ mod tests {
             }
         }
 
-        let (qty, price, tau) = migrado.expect("la posesión histórica debe sobrevivir a la migración");
-        assert!((qty - 0.4).abs() < 1e-9, "cantidad colapsada incorrecta: {qty}");
+        let (qty, price, tau) =
+            migrado.expect("la posesión histórica debe sobrevivir a la migración");
+        assert!(
+            (qty - 0.4).abs() < 1e-9,
+            "cantidad colapsada incorrecta: {qty}"
+        );
         assert!(
             (price - 175.0).abs() < 1e-9,
             "el precio debe ser el medio ponderado por cantidad: {price}"
         );
-        assert_eq!(tau, 0, "un registro antiguo no tenía τ: debe quedar marcada como desconocida");
+        assert_eq!(
+            tau, 0,
+            "un registro antiguo no tenía τ: debe quedar marcada como desconocida"
+        );
 
         let _ = std::fs::remove_file(db_path);
     }
@@ -538,7 +545,10 @@ mod tests {
         let (tx, rx) = crossbeam_channel::bounded(1);
         let ledger = PositionLedger { tx };
         ledger.push_event(pending_event(0.0));
-        assert!(rx.try_recv().is_err(), "known defect: absolute zero never reaches delete branch");
+        assert!(
+            rx.try_recv().is_err(),
+            "known defect: absolute zero never reaches delete branch"
+        );
     }
 
     #[test]
@@ -546,7 +556,10 @@ mod tests {
         let (tx, rx) = crossbeam_channel::bounded(1);
         let ledger = PositionLedger { tx };
         ledger.push_event(pending_event(1e-13));
-        assert!(rx.try_recv().is_err(), "known defect: absolute unitless dust veto");
+        assert!(
+            rx.try_recv().is_err(),
+            "known defect: absolute unitless dust veto"
+        );
     }
 
     #[test]
@@ -556,6 +569,9 @@ mod tests {
         ledger.push_event(pending_event(1.0));
         ledger.push_event(pending_event(2.0));
         assert_eq!(rx.try_recv().unwrap().qty_delta, 1.0);
-        assert!(rx.try_recv().is_err(), "known defect: second valid event vanished");
+        assert!(
+            rx.try_recv().is_err(),
+            "known defect: second valid event vanished"
+        );
     }
 }

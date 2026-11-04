@@ -29,11 +29,7 @@ use std::path::{Path, PathBuf};
 use storage_engine::raw_zone::{verify_segment, RawTick, RawTickArchive};
 
 fn dir_de_prueba(nombre: &str) -> PathBuf {
-    let dir = std::env::temp_dir().join(format!(
-        "tgrw_f1094_{}_{}",
-        nombre,
-        std::process::id()
-    ));
+    let dir = std::env::temp_dir().join(format!("tgrw_f1094_{}_{}", nombre, std::process::id()));
     let _ = fs::remove_dir_all(&dir);
     fs::create_dir_all(&dir).expect("crear dir de prueba");
     dir
@@ -103,7 +99,10 @@ fn f1_094_segmento_mas_corto_que_el_footer_se_rechaza() {
     fs::write(&ruta, [0u8; 5]).expect("escribir 5 bytes");
 
     let err = verify_segment(&ruta).expect_err("5 bytes no son un segmento");
-    assert!(err.contains("truncado"), "error esperado de truncado: {err}");
+    assert!(
+        err.contains("truncado"),
+        "error esperado de truncado: {err}"
+    );
 
     let _ = fs::remove_dir_all(&dir);
 }
@@ -168,7 +167,10 @@ fn f1_094_decodificar_un_tick_corto_no_inventa_valores() {
     drop(f);
 
     let err = verify_segment(&ruta).expect_err("39B de cuerpo no es múltiplo de 40");
-    assert!(err.contains("múltiplo"), "error de alineación esperado: {err}");
+    assert!(
+        err.contains("múltiplo"),
+        "error de alineación esperado: {err}"
+    );
 
     let _ = fs::remove_dir_all(&dir);
 }

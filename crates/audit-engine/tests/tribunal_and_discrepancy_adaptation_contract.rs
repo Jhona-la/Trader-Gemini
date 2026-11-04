@@ -17,7 +17,10 @@ use omniscient_registry::OmniscientRegistry;
 #[test]
 fn test_tribunal_verdict_canonical_parity() {
     let thresholds = TribunalThresholds::default();
-    assert_eq!(thresholds.autoengano_threshold, DEFAULT_AUTOENGANO_THRESHOLD);
+    assert_eq!(
+        thresholds.autoengano_threshold,
+        DEFAULT_AUTOENGANO_THRESHOLD
+    );
     assert_eq!(
         thresholds.culpable_peligroso_threshold,
         DEFAULT_CULPABLE_PELIGROSO_THRESHOLD

@@ -57,7 +57,12 @@ fn escenario_13_16_9_13() -> (AuditorInterno, f64, f64, f64) {
     // Afirmaciones internas tal como las pasa el núcleo tras el round-trip:
     // sharpe sin escritor (0.0), WR de diagnóstico (1 victoria / 2 cierres),
     // drawdown actual contra capital base (capital de vuelta en 13 ⇒ 0.0).
-    (auditor, indep.calculated_sharpe, indep.calculated_win_rate, indep.calculated_max_drawdown)
+    (
+        auditor,
+        indep.calculated_sharpe,
+        indep.calculated_win_rate,
+        indep.calculated_max_drawdown,
+    )
 }
 
 #[test]
@@ -115,7 +120,10 @@ fn red_green_13_16_9_13_el_veto_deja_de_dispararse_solo() {
     let (max_disc, sharpe_disc, wr_disc, dd_disc) =
         calculate_max_discrepancy(0.0, indep_wr, 0.0, &auditor.compute_independent_metrics());
     assert_eq!(sharpe_disc, 0.0, "claim sharpe 0.0 ⇒ pata muda (F412)");
-    assert_eq!(wr_disc, 0.0, "WR interno == WR independiente en el escenario");
+    assert_eq!(
+        wr_disc, 0.0,
+        "WR interno == WR independiente en el escenario"
+    );
     assert!((dd_disc - disc_esperada).abs() < 1e-9, "pata DD = 0,2308");
     assert!((max_disc - disc_esperada).abs() < 1e-9);
     let _ = (indep_sharpe, indep_dd);
@@ -124,7 +132,10 @@ fn red_green_13_16_9_13_el_veto_deja_de_dispararse_solo() {
 #[test]
 fn fuente_independiente_habilita_veto_solo_con_evidencia_real() {
     let mut auditor = AuditorInterno::with_capital(13.0);
-    assert_eq!(auditor.compute_internal_discrepancy_evidenciada(0.0, 0.5, 0.0), None);
+    assert_eq!(
+        auditor.compute_internal_discrepancy_evidenciada(0.0, 0.5, 0.0),
+        None
+    );
 
     // Canal independiente: 20 cierres del host con WR real 0.5. LG-33: con menos
     // de MIN_FILLS_SOMBRA cierres no hay evidencia y no se publica discrepancia.
@@ -172,7 +183,10 @@ fn fuente_independiente_habilita_veto_solo_con_evidencia_real() {
     let mut payload = MarketSnapshotPayload::default();
     payload.internal_discrepancy = disc_inflada.unwrap_or(0.0);
     let op = evaluate_auditor_interno_opinion(&payload);
-    assert!(op.3, "con fuente independiente y disc=0.4 el veto es legítimo");
+    assert!(
+        op.3,
+        "con fuente independiente y disc=0.4 el veto es legítimo"
+    );
 
     // Recuperación: la misma afirmación vuelve a ser honesta ⇒ el veto se cae
     // (no hay histéresis: cada evaluación recalcula desde la evidencia).
@@ -207,7 +221,10 @@ fn publicacion_registro_sin_set_global_y_sin_contaminacion_entre_monedas() {
         registry.get_value_fast("internal_discrepancy").is_none(),
         "set_for_coin no crea la clave global"
     );
-    assert_eq!(registry.get_for_coin_or(5, "internal_discrepancy", 0.0), 0.42);
+    assert_eq!(
+        registry.get_for_coin_or(5, "internal_discrepancy", 0.0),
+        0.42
+    );
     assert_eq!(
         registry.get_for_coin_or(7, "internal_discrepancy", 0.0),
         0.0,
@@ -254,5 +271,8 @@ fn journal_independiente_acotado_y_rechaza_no_finitos() {
     });
     assert_eq!(auditor.fills_independientes_len(), MAX_FILLS_INDEPENDIENTES);
     let disc = auditor.compute_internal_discrepancy_evidenciada(0.0, 0.5, 0.0);
-    assert!(disc.is_some() && disc.unwrap_or(1.0).is_finite(), "sin NaN en salida");
+    assert!(
+        disc.is_some() && disc.unwrap_or(1.0).is_finite(),
+        "sin NaN en salida"
+    );
 }
