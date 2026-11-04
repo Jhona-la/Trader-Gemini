@@ -4,8 +4,12 @@
 //! Con la sesión OMS real, la arena real y reservas reales: sin red, sin claves, sin modelos.
 //! La reserva de entrada que el núcleo deja en el tick de la transición es una ranura abierta
 //! sin confirmar, y con ella `replace_executor` rehúsa (`OMS_EXECUTOR_BUSY`). El host de main
-//! reintentaba en cada mensaje WS: construía otro ejecutor (cliente reqwest nuevo), revocaba la
-//! sesión y encolaba otro `refresh` (instantáneas REST), mientras el núcleo siguiera proponiendo.
+//! reintentaba mientras el núcleo siguiera proponiendo. Cada intento construía otro ejecutor
+//! (cliente reqwest nuevo), revocaba la sesión y encolaba otro `refresh`. En papel (demo en
+//! mainnet sin MAINNET_ARMED, el modo por defecto de la cuenta micro) el refresco no hace REST y
+//! vuelve a Ready en el acto, así que el reintento llegaba casi en cada mensaje WS. En una sesión
+//! real cada reintento esperaba a que su refresco REST volviera a Ready. La prueba 2 mide el caso
+//! de papel.
 use arc_swap::ArcSwap;
 use execution_engine::executor::OrderExecutor;
 use god_engine_core::entry_reservation::EntryReservation;
@@ -148,8 +152,9 @@ fn i12_2_una_senal_persistente_ya_no_construye_ni_encola_un_refresco_por_mensaje
     const MENSAJES: u32 = 100;
     let _universe = universe();
 
-    // Protocolo de main: construir, sustituir, y tras el rechazo soltar la reserva y encolar
-    // un refresco. Con la reserva del tick abierta la sustitución rehúsa siempre.
+    // Protocolo de main en papel, donde el refresco vuelve a Ready antes del mensaje siguiente:
+    // construir, sustituir, y tras el rechazo soltar la reserva y encolar un refresco. Con la
+    // reserva del tick abierta la sustitución rehúsa siempre.
     let arena = GlobalArena::build_in_own_stack(100.0);
     let (session, _ready) = sesion_lista(&arena);
     let mut construidos_main = 0_u32;
@@ -319,14 +324,32 @@ fn i12_5_una_reserva_no_cancelable_se_informa_y_no_se_publica_encima() {
         ..reserva.clone()
     };
     let reintento = ReintentoTransicion::new();
+    // La marca es global al proceso; las pruebas que pueden ponerla toman el candado del
+    // universo, así que nadie la toca entre limpiarla y leerla.
+    quantum_arena::protection_health::clear_dirty();
     let paso = session.paso_transicion(&arena, Some(&ajena), &reintento, || executor(false, false));
     assert!(paso.reserva_no_cancelable.is_some());
+    assert!(
+        quantum_arena::protection_health::is_dirty(),
+        "una reserva que no se pudo soltar debe dejar la protección sucia"
+    );
     assert!(matches!(
         paso.resultado,
         ResultadoTransicion::Ocupada { .. }
     ));
     assert!(arena.coins[0].positions.get_slot(2).is_open());
-    assert!(reserva.cancel(&arena).is_ok());
+
+    // Control: la reserva propia se suelta sin ensuciar la protección.
+    quantum_arena::protection_health::clear_dirty();
+    let paso = session.paso_transicion(&arena, Some(&reserva), &reintento, || {
+        executor(false, false)
+    });
+    assert!(paso.reserva_no_cancelable.is_none());
+    assert!(!quantum_arena::protection_health::is_dirty());
+    assert!(matches!(
+        paso.resultado,
+        ResultadoTransicion::Publicada { .. }
+    ));
 }
 
 /// Guarda de fuente: el host transita por `paso_transicion`, soltando antes la entrada del tick,

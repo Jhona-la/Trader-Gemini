@@ -19902,13 +19902,16 @@ Certificación: con DOS incidentes de test, ambos cazados por CI y ambos verific
 - **N48 → I-12 (rama `claude/linea-i-i12`).** Causa verificada en el código:
   la reserva de entrada del tick de la transición es una ranura abierta sin
   confirmar, y `replace_executor` rehúsa con ella. El host cancelaba la
-  reserva DESPUÉS del rechazo y reintentaba en el mensaje siguiente; con una
-  señal persistente la transición no llegaba y cada mensaje construía otro
-  ejecutor, revocaba la sesión y encolaba otro `refresh` REST.
+  reserva DESPUÉS del rechazo y reintentaba; con una señal persistente la
+  transición no llegaba y cada intento construía otro ejecutor, revocaba la
+  sesión y encolaba otro `refresh`: en papel (demo en mainnet sin
+  MAINNET_ARMED) casi en cada mensaje WS, en una sesión real en cada ciclo
+  de refresco REST.
   `OmsSession::paso_transicion` suelta antes la reserva, no construye ni
   revoca con la sesión ocupada por otra causa y deja a lo sumo un refresco
-  de reintento en curso. Medido (sesión OMS real, 100 mensajes con entrada):
-  antes 100 ejecutores y 100 refrescos sin transición; ahora 1 y 0, con
+  de reintento en curso. Medido (sesión OMS real, caso de papel, 100
+  mensajes con entrada): antes 100 ejecutores y 100 refrescos sin
+  transición; ahora 1 y 0, con
   transición al primer mensaje. `replace_executor` conserva su predicado
   (extraído a `ocupada_locked`, público como `OmsSession::ocupada`) y su
   texto de error (`OMS_EXECUTOR_BUSY`).

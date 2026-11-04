@@ -1772,8 +1772,10 @@ un escéptico por lote listo):
   la sustitución siempre; `OmsSession::paso_transicion` la suelta antes,
   no construye ni revoca con la sesión ocupada por otra causa y deja a lo
   sumo un refresco de reintento en curso. Medido (contrato I-12, prueba
-  2): 100 mensajes con entrada daban 100 ejecutores y 100 refrescos sin
-  transición; ahora 1 ejecutor, 0 refrescos, transición al primero.
+  2, caso de papel, donde el refresco vuelve a Ready en el acto): 100
+  mensajes con entrada daban 100 ejecutores y 100 refrescos sin
+  transición; ahora 1 ejecutor, 0 refrescos, transición al primero. En
+  una sesión real cada intento esperaba a su refresco REST.
   Residual N48b: mientras espera, el mensaje no despacha cierres del
   núcleo (como antes).
 - N49 (de la revisión de la tanda 17, Línea C): **Hecha en la tanda 18 (CL-212, #153).** el brazo Ok del cierre del

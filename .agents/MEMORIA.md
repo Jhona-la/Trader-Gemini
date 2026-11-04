@@ -5,19 +5,26 @@
 - La reserva de entrada que el núcleo deja en el tick es una ranura abierta
   sin confirmar, y `OmsSession::replace_executor` rehúsa con cualquier ranura
   así (`OMS_EXECUTOR_BUSY`). El host de main cancelaba la reserva tras el
-  rechazo y reintentaba en el mensaje siguiente: con una señal que persiste,
-  la transición del calentamiento no llegaba y cada mensaje WS construía otro
-  `OrderExecutor` (cliente reqwest nuevo), revocaba la sesión y encolaba otro
-  `refresh` REST.
+  rechazo y reintentaba: con una señal que persiste, la transición del
+  calentamiento no llegaba y cada intento construía otro `OrderExecutor`
+  (cliente reqwest nuevo), revocaba la sesión y encolaba otro `refresh`. En
+  papel (demo en mainnet sin MAINNET_ARMED, el modo por defecto de la cuenta
+  micro) el refresco no hace REST y vuelve a Ready en el acto, así que el
+  intento llegaba casi en cada mensaje WS; en una sesión real, en cada ciclo
+  de refresco REST.
 - `OmsSession::paso_transicion` (src/host_oms.rs) suelta antes la reserva del
   tick; con la sesión ocupada por otra causa no construye ni revoca (avisa una
   vez); tras un rechazo entrega un solo testigo de refresco
   (`ReintentoTransicion`, `RefrescoDeReintento`) y no construye otro ejecutor
   hasta que se suelta. El host (sólo el bloque de la transición) lo usa.
-- Medido con la sesión OMS real (tests/i12_transicion_oms_contract.rs): 100
-  mensajes con entrada daban 100 ejecutores, 100 refrescos y ninguna
-  transición; ahora 1 ejecutor, 0 refrescos, transición al primer mensaje.
-  RED con el host de main: 5/1 (falla la guarda del host); con I-12, 6/6.
+- Medido con la sesión OMS real (tests/i12_transicion_oms_contract.rs), en el
+  caso de papel: 100 mensajes con entrada daban 100 ejecutores, 100
+  refrescos y ninguna transición; ahora 1 ejecutor, 0 refrescos, transición
+  al primer mensaje. RED con el host de main: 5/1 (falla la guarda del host);
+  con I-12, 6/6. Revisión adversarial (4 lentes, 2 escépticos por
+  hallazgo): 0 defectos; de ella, la prueba 5 comprueba ya que la reserva no
+  cancelable deja la protección sucia (antes borrar `mark_dirty` no la hacía
+  fallar).
 - Residuales: N48b (mientras espera, el mensaje sigue sin despachar cierres
   del núcleo, como antes) y N26 (el sucesor estrena freno y uso; toca
   `executor.rs`, coordinar con Línea C).
