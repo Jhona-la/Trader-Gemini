@@ -138,7 +138,9 @@ fn conducta_invariante_el_observable_no_alimenta_ninguna_puerta() {
     let mut b = StatefulEngine::new();
     alimentar_seno(&mut a);
     alimentar_seno(&mut b);
-    assert_eq!(a.fr_deformacion, b.fr_deformacion);
+    // 300 ticks < warmup 512: ambos sin análisis aún — NaN explícito
+    // (IEEE: NaN != NaN, jamás assert_eq sobre NaN — cazado por CI).
+    assert!(a.fr_deformacion.is_nan() && b.fr_deformacion.is_nan());
     // Veneno post-feed: la decisión no los lee.
     b.fr_deformacion_ultimo = -777.0;
     b.fr_deformacion = 999.0;
