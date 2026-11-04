@@ -114,7 +114,11 @@ impl HelmholtzHodgeEngine {
     /// - `price_delta_bps`: Desplazamiento de precio en bps (componente longitudinal u_p)
     /// - `order_flow_imbalance`: OFI normalizado en [-1.0, 1.0] (componente transversal u_v)
     #[inline]
-    pub fn update(&mut self, price_delta_bps: f64, order_flow_imbalance: f64) -> HelmholtzDecomposition {
+    pub fn update(
+        &mut self,
+        price_delta_bps: f64,
+        order_flow_imbalance: f64,
+    ) -> HelmholtzDecomposition {
         // Blindaje numérico estricto
         let p_vel = if price_delta_bps.is_finite() {
             price_delta_bps.clamp(-50.0, 50.0)
@@ -232,8 +236,7 @@ impl HelmholtzHodgeEngine {
         let h_turb = t_turb * t_turb * (3.0 - 2.0 * t_turb);
         let h_ens_gate = 1.0 - t_ens * t_ens * (3.0 - 2.0 * t_ens);
 
-        let conviction_factor =
-            (1.0 + 0.30 * h_lam * h_ens_gate - 0.90 * h_turb).clamp(0.10, 1.30);
+        let conviction_factor = (1.0 + 0.30 * h_lam * h_ens_gate - 0.90 * h_turb).clamp(0.10, 1.30);
 
         HelmholtzDecomposition {
             total_energy: raw_total,
