@@ -56,21 +56,11 @@ impl RawTick {
             return None;
         }
         Some(Self {
-            ts_ms: u64::from_le_bytes([
-                b[0], b[1], b[2], b[3], b[4], b[5], b[6], b[7],
-            ]),
-            bid: f64::from_le_bytes([
-                b[8], b[9], b[10], b[11], b[12], b[13], b[14], b[15],
-            ]),
-            ask: f64::from_le_bytes([
-                b[16], b[17], b[18], b[19], b[20], b[21], b[22], b[23],
-            ]),
-            bid_qty: f64::from_le_bytes([
-                b[24], b[25], b[26], b[27], b[28], b[29], b[30], b[31],
-            ]),
-            ask_qty: f64::from_le_bytes([
-                b[32], b[33], b[34], b[35], b[36], b[37], b[38], b[39],
-            ]),
+            ts_ms: u64::from_le_bytes([b[0], b[1], b[2], b[3], b[4], b[5], b[6], b[7]]),
+            bid: f64::from_le_bytes([b[8], b[9], b[10], b[11], b[12], b[13], b[14], b[15]]),
+            ask: f64::from_le_bytes([b[16], b[17], b[18], b[19], b[20], b[21], b[22], b[23]]),
+            bid_qty: f64::from_le_bytes([b[24], b[25], b[26], b[27], b[28], b[29], b[30], b[31]]),
+            ask_qty: f64::from_le_bytes([b[32], b[33], b[34], b[35], b[36], b[37], b[38], b[39]]),
         })
     }
 }
@@ -95,6 +85,41 @@ impl Fnv1a {
     }
 }
 
+static NEXT_SEGMENT_ID: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+fn open_active_writer(path: &Path) -> std::io::Result<BufWriter<File>> {
+    Ok(BufWriter::with_capacity(
+        1 << 20,
+        OpenOptions::new().create(true).append(true).open(path)?,
+    ))
+}
+
+fn next_final_path(dir: &Path, symbol: &str, count: u32) -> std::io::Result<PathBuf> {
+    let seconds = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?
+        .as_secs();
+    let id = NEXT_SEGMENT_ID.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    Ok(dir.join(format!(
+        "{}_{:06}_{}_{}_{}.tgrw",
+        symbol,
+        seconds,
+        std::process::id(),
+        count,
+        id
+    )))
+}
+
+#[cfg(unix)]
+fn sync_directory(dir: &Path) -> std::io::Result<()> {
+    File::open(dir)?.sync_all()
+}
+
+#[cfg(not(unix))]
+fn sync_directory(_dir: &Path) -> std::io::Result<()> {
+    Ok(())
+}
+
 pub struct RawTickArchive {
     dir: PathBuf,
     symbol: String,
@@ -111,25 +136,66 @@ impl RawTickArchive {
     pub fn open(dir: impl AsRef<Path>, symbol: &str) -> std::io::Result<Self> {
         std::fs::create_dir_all(dir.as_ref())?;
         let active_path = dir.as_ref().join(format!("{}_active.tgrw.tmp", symbol));
-        // Reabrir un tmp huérfano sería corrupción silenciosa: descartarlo
-        // (los ticks vivos no dependen del archivo; el archivo es archivo).
-        let _ = std::fs::remove_file(&active_path);
-        let writer = Some(BufWriter::with_capacity(
-            1 << 20,
-            OpenOptions::new()
-                .create(true)
-                .append(true)
-                .open(&active_path)?,
-        ));
+        let bytes = match std::fs::read(&active_path) {
+            Ok(bytes) => bytes,
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Vec::new(),
+            Err(e) => return Err(e),
+        };
+        let mut count = 0;
+        let mut hash = Fnv1a::new();
+        let mut segments_finalized = 0;
+
+        if !bytes.is_empty() {
+            match bytes.len() % 40 {
+                0 => {
+                    for (index, chunk) in bytes.as_chunks::<40>().0.iter().enumerate() {
+                        RawTick::from_bytes(chunk).ok_or_else(|| {
+                            std::io::Error::new(
+                                std::io::ErrorKind::InvalidData,
+                                format!("tick corrupto en el offset {}", index * 40),
+                            )
+                        })?;
+                    }
+                    count = u32::try_from(bytes.len() / 40).map_err(|_| {
+                        std::io::Error::new(
+                            std::io::ErrorKind::InvalidData,
+                            "el activo excede el contador de ticks del formato",
+                        )
+                    })?;
+                    hash.update(&bytes);
+                }
+                12 => {
+                    let ticks = verify_segment(&active_path)
+                        .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
+                    let count = u32::try_from(ticks.len()).map_err(|_| {
+                        std::io::Error::new(
+                            std::io::ErrorKind::InvalidData,
+                            "el segmento excede el contador de ticks del formato",
+                        )
+                    })?;
+                    let final_path = next_final_path(dir.as_ref(), symbol, count)?;
+                    std::fs::rename(&active_path, final_path)?;
+                    sync_directory(dir.as_ref())?;
+                    segments_finalized = 1;
+                }
+                suffix => {
+                    return Err(std::io::Error::new(
+                        std::io::ErrorKind::InvalidData,
+                        format!("sufijo parcial de {suffix} bytes en el activo"),
+                    ))
+                }
+            }
+        }
+
         Ok(Self {
             dir: dir.as_ref().to_path_buf(),
             symbol: symbol.to_string(),
-            writer,
+            writer: Some(open_active_writer(&active_path)?),
             active_path,
-            count: 0,
-            hash: Fnv1a::new(),
+            count,
+            hash,
             max_ticks_per_segment: 200_000,
-            segments_finalized: 0,
+            segments_finalized,
         })
     }
 
@@ -152,50 +218,45 @@ impl RawTickArchive {
         }
     }
 
-    /// Finaliza el segmento: header reescrito no — formato append puro:
-    /// los ticks van crudos; el FOOTER (count+hash) se escribe al finalizar,
-    /// y luego rename atómico tmp→final. Sin footer = segmento inválido.
+    /// Finaliza el segmento: los ticks van crudos; el FOOTER (count+hash) se
+    /// escribe al finalizar, se sincroniza y se publica con rename atómico.
     pub fn rotate(&mut self) -> std::io::Result<()> {
+        let final_path = next_final_path(&self.dir, &self.symbol, self.count)?;
         let Some(mut w) = self.writer.take() else {
             return Ok(());
         };
-        // Footer: count + hash de TODOS los bytes de ticks.
-        w.write_all(&self.count.to_le_bytes())?;
-        w.write_all(&self.hash.finish().to_le_bytes())?;
-        w.flush()?;
-
-        let final_name = format!(
-            "{}_{:06}_{}.tgrw",
-            self.symbol,
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap_or_default()
-                .as_secs(),
-            self.count
-        );
-        let final_path = self.dir.join(&final_name);
-        // Rename atómico: los lectores ven O inexistente O completo.
-        std::fs::rename(&self.active_path, &final_path)?;
+        let publication = (|| {
+            w.write_all(&self.count.to_le_bytes())?;
+            w.write_all(&self.hash.finish().to_le_bytes())?;
+            w.flush()?;
+            w.get_ref().sync_all()?;
+            std::fs::rename(&self.active_path, &final_path)
+        })();
+        if let Err(e) = publication {
+            self.writer = Some(w);
+            return Err(e);
+        }
+        drop(w);
 
         self.segments_finalized += 1;
         self.count = 0;
         self.hash = Fnv1a::new();
-        self.writer = Some(BufWriter::with_capacity(
-            1 << 20,
-            OpenOptions::new()
-                .create(true)
-                .append(true)
-                .open(&self.active_path)?,
-        ));
-        Ok(())
+        let new_writer = open_active_writer(&self.active_path);
+        let directory_sync = sync_directory(&self.dir);
+        self.writer = Some(new_writer?);
+        directory_sync
     }
 
     pub fn flush(&mut self) -> std::io::Result<()> {
-        if let Some(w) = self.writer.as_mut() {
-            w.flush()
-        } else {
-            Ok(())
-        }
+        self.writer
+            .as_mut()
+            .ok_or_else(|| {
+                std::io::Error::new(
+                    std::io::ErrorKind::NotConnected,
+                    "archivo activo cerrado; no se puede flush",
+                )
+            })?
+            .flush()
     }
 
     pub fn segments_finalized(&self) -> u64 {
