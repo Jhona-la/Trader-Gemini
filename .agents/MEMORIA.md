@@ -28,6 +28,14 @@ Regla para quien toque un bucle WS: toda salida de la fase de conexión pasa
 por `espera.fallo(…)`. El contrato cuenta esas llamadas. Siguen abiertos:
 N18b, N15c, N19b, N19c y el jitter de los lectores.
 
+## CORTE 2026-10-27 17:31 UTC — Kimi V34: income corregido localmente; aduana bloquea publicación
+
+Revisión desde la base sincronizada con `main = origin/main = d27590739` y remoto solo `main`; no se borró WIP, ramas, worktrees ni procesos ajenos. El commit local `13fca0978fa1521f918b2013d486b15b3ff84b58` cambia únicamente `IncomeEntry`: el campo `income` vuelve a ser obligatorio en JSON, evitando comisión cero fabricada por ausencia; cero explícito y rebates se conservan.
+
+Evidencia local real: contrato nuevo RED antes del cambio y GREEN después (1/1); suite execution-engine 441 PASS/0 FAIL, con 5 tests Testnet ignorados por credenciales y 0 filtrados; Clippy lib+contrato PASS; formato protegido 589 targets en 4 lotes PASS; revisor independiente sin Critical/Important. El árbol actual también pasó `cargo check --workspace --all-targets`. No se ejecutó Demo ni Producción y no hay métricas económicas certificadas.
+
+`origin/main` sigue en `d27590739`; no hubo push ni CI del commit. La aduana rechazó primero la ausencia de attestation y la revisión posterior demostró que el HEAD base no satisface las fases obligatorias de Clippy/formato. El WIP que corrige esa baseline pertenece a QRA y no se incorporó en el átomo selectivo. Publicación queda BLOQUEADA hasta disponer de una baseline válida y del sobre real para el mismo árbol; no se usó `--no-verify` ni se transfirieron resultados de otro sujeto. Evidencia y ledger en `.agent_tx/staging/kimi-quant-sr-20261027/`.
+
 ## 2026-10-26 — Claude (cloud, Línea C): decimoséptima tanda del censo C-F7b (filas N40, N41 b y N32)
 
 Tanda del PR #150. Cambia la conducta sólo en ejecución real y en la sonda

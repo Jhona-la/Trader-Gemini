@@ -72,11 +72,22 @@ impl Default for HelmholtzHodgeParams {
 
 impl HelmholtzHodgeParams {
     pub fn validate(&self) -> Result<(), String> {
-        if !self.return_sensitivity.is_finite() || !(1.0..=10000.0).contains(&self.return_sensitivity) {
-            return Err(format!("Invalid return_sensitivity: {}", self.return_sensitivity));
+        if !self.return_sensitivity.is_finite()
+            || !(1.0..=10000.0).contains(&self.return_sensitivity)
+        {
+            return Err(format!(
+                "Invalid return_sensitivity: {}",
+                self.return_sensitivity
+            ));
         }
-        if !self.min_flow_energy_threshold.is_finite() || self.min_flow_energy_threshold < 0.0 || self.min_flow_energy_threshold > 1e-3 {
-            return Err(format!("Invalid min_flow_energy_threshold: {}", self.min_flow_energy_threshold));
+        if !self.min_flow_energy_threshold.is_finite()
+            || self.min_flow_energy_threshold < 0.0
+            || self.min_flow_energy_threshold > 1e-3
+        {
+            return Err(format!(
+                "Invalid min_flow_energy_threshold: {}",
+                self.min_flow_energy_threshold
+            ));
         }
         Ok(())
     }
@@ -167,8 +178,8 @@ impl HelmholtzHodgeFlowEngine {
             }
         }
 
-        for i in 0..n {
-            if node_has_flow[i] {
+        for has_flow in node_has_flow.iter().take(n) {
+            if *has_flow {
                 non_isolated_nodes += 1;
             }
         }
@@ -272,7 +283,8 @@ impl HelmholtzHodgeFlowEngine {
         if n < 3 {
             return None;
         }
-        let ret_scale = if params.return_sensitivity.is_finite() && params.return_sensitivity > 0.0 {
+        let ret_scale = if params.return_sensitivity.is_finite() && params.return_sensitivity > 0.0
+        {
             params.return_sensitivity
         } else {
             100.0
@@ -315,7 +327,11 @@ impl HelmholtzHodgeFlowEngine {
         ofis: &[f64],
         returns: &[f64],
     ) -> Option<([[f64; MAX_HODGE_ASSETS]; MAX_HODGE_ASSETS], usize)> {
-        Self::build_cross_microstructure_flow_matrix_with_params(ofis, returns, &HelmholtzHodgeParams::default())
+        Self::build_cross_microstructure_flow_matrix_with_params(
+            ofis,
+            returns,
+            &HelmholtzHodgeParams::default(),
+        )
     }
 
     /// Ejecuta el análisis unificado de flujo cruzado multiactivo a partir de OFIs y retornos instantáneos.
@@ -333,8 +349,7 @@ impl HelmholtzHodgeFlowEngine {
         let mut max_pot = f64::NEG_INFINITY;
         let mut min_pot = f64::INFINITY;
 
-        for i in 0..active_n {
-            let p = potentials[i];
+        for (i, &p) in potentials.iter().enumerate().take(active_n) {
             if p > max_pot {
                 max_pot = p;
                 leader_idx = i;
