@@ -217,6 +217,37 @@ pub struct StatefulEngine {
     /// nulo caminante medido en el 189). false con evidencia NaN =
     /// sin análisis aún (warmup).
     pub lppls_estable: bool,
+    /// GLM 192 (§3.4): operador de deformación Fisher-Rao del RETORNO —
+    /// distancia FR entre la distribución de corto plazo (EWMA P=64) y
+    /// la de fondo (EWMA P=512): cuánto se deformó el régimen local
+    /// respecto al de fondo. O(1)/tick, sin asignaciones. WARM=512
+    /// (calibración 191: con menos, la convergencia de la escala lenta
+    /// CONTAMINA la deformación — medido, el diseño corto se descartó).
+    pub deformacion_fr: feature_engine::fisher_rao::DeformacionFisherRao,
+    /// Deformación FR cruda POR TICK (sin cadencia) — la señal viva.
+    /// NaN durante el warmup o con varianza degenerada — jamás un cero
+    /// fabricado. Calibración 191 del nulo caminante: máx 0.372 en 8
+    /// realizaciones; σ×2 ⇒ 0.69, drift +1σ ⇒ 0.73. El umbral de
+    /// «deformación extrema» lo fija el consumo con corroboración
+    /// (consejo) — documentado, no endurecido a ciegas.
+    pub fr_deformacion_ultimo: f64,
+    /// Instantánea de la deformación en la cadencia %64 — NAN hasta la
+    /// primera publicación (ausencia honesta). Patrón σz/λ_KS/β_RG/
+    /// caputo/LPPLS: observable sin cambio de conducta, consumo =
+    /// decisión del consejo.
+    pub fr_deformacion: f32,
+    /// PICO de la deformación cruda de la última época %64 COMPLETADA
+    /// (actualizado en cada frontera; el máximo corredor es estado
+    /// interno `pico_epoca_actual`). El §3.4 pide «deformaciones
+    /// EXTREMAS»: los extremos son picos transitorios que el muestreo
+    /// instantáneo pierde entre fronteras (medido: σ×2 instantánea 0.41
+    /// vs pico 0.71). NaN hasta la primera época con datos.
+    /// Calibración medida EN el engine (espejo, 10 caminantes LCG,
+    /// feed multiplicativo): pico-época máx 0.52; σ×4 ⇒ 0.98.
+    pub fr_deformacion_pico_epoca: f32,
+    /// Máximo corredor de la deformación dentro de la época en curso
+    /// (interno; 0.0 = época vacía).
+    pico_epoca_actual: f32,
     pub hurst_micro: f32,
     pub hurst_meso: f32,
     pub hurst_macro: f32,
@@ -367,6 +398,13 @@ impl StatefulEngine {
             lppls_omega: f32::NAN,
             lppls_evidencia: f32::NAN,
             lppls_estable: false,
+            // GLM 192: NaN hasta el primer análisis con la escala lenta
+            // convergida (push #512 = tick 513, que ES frontera %64).
+            deformacion_fr: feature_engine::fisher_rao::DeformacionFisherRao::new(),
+            fr_deformacion_ultimo: f64::NAN,
+            fr_deformacion: f32::NAN,
+            fr_deformacion_pico_epoca: f32::NAN,
+            pico_epoca_actual: 0.0,
             multifractal: feature_engine::MultiScaleHurstConfluence::new(),
             regime: MarketRegime::Neutral,
             kline_start_ms: 0,
@@ -981,6 +1019,35 @@ impl StatefulEngine {
                         self.lppls_evidencia = f32::NAN;
                         self.lppls_estable = false;
                     }
+                }
+            }
+            // GLM 192 (§3.4): deformación Fisher-Rao del RETORNO — mismo
+            // alimento que spectral/koopman/firma (la deformación es de
+            // la distribución de retornos, no del precio). O(1)/tick;
+            // None (warmup/var degenerada) conserva el último valor
+            // válido — ausencia honesta. El pico de época arrastra el
+            // máximo del crudo desde la última frontera (los extremos
+            // del §3.4 son transitorios: el muestreo instantáneo los
+            // pierde entre fronteras — medido antes de escribir esto).
+            if let Some(d) = self.deformacion_fr.push(norm_return) {
+                self.fr_deformacion_ultimo = d;
+                let d32 = d as f32;
+                // Máximo corredor de la época en curso (0.0 = vacía).
+                self.pico_epoca_actual = if self.pico_epoca_actual <= 0.0 {
+                    d32
+                } else {
+                    self.pico_epoca_actual.max(d32)
+                };
+            }
+            if self.tick_count % 64 == 0 {
+                // Instantánea de frontera (sin promedio — el contrato
+                // certifica el REZAGO de la cadencia, patrón caputo) y
+                // PROMOCIÓN del pico: la época que termina publica su
+                // máximo y la siguiente arranca vacía.
+                self.fr_deformacion = self.fr_deformacion_ultimo as f32;
+                if self.pico_epoca_actual > 0.0 {
+                    self.fr_deformacion_pico_epoca = self.pico_epoca_actual;
+                    self.pico_epoca_actual = 0.0;
                 }
             }
             // D-434: Invocar análisis espectral FFT Radix-2 periódicamente cada 64 ticks
