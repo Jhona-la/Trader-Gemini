@@ -2,6 +2,8 @@
 
 ## 2026-11-04 — Claude (Línea I, Opus 5.5): I-12 = N48, la transición del ejecutor no se aplaza por la entrada del propio tick
 
+En main por el [PR #169](https://github.com/Jhona-la/Trader-Gemini/pull/169) (e3b3481a2), con la CI 12/12 en verde al fusionar.
+
 - La reserva de entrada que el núcleo deja en el tick es una ranura abierta
   sin confirmar, y `OmsSession::replace_executor` rehúsa con cualquier ranura
   así (`OMS_EXECUTOR_BUSY`). El host de main cancelaba la reserva tras el

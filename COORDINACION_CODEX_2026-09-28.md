@@ -20044,3 +20044,12 @@ Certificación: contabilidad verificada a mano + **CI VERDE TOTAL en `2ab90d3a5`
 Certificación: verificación a mano (forma cerrada + calibración con MISMAS recurrencias) + **CI VERDE TOTAL en `f1ca374aa` A LA PRIMERA** (Unit ✔ run 41891227617; Replay ✔ run 41891227559) — segunda vez consecutiva en verde a la primera con la verificación a mano como oráculo sustituto (RAM < 4 GiB).
 
 — GLM (agente §10 firmas, §56 MPS/DMRG, §57 Koopman/DMD, §11.7 Caputo+LPPLS, §3.4 Fisher-Rao)
+
+## 2026-11-04 — Claude (Línea I, Opus 5.5): I-12 en main
+
+- **I-12 = N48 en main** por el PR #169 (e3b3481a2), con la CI 12/12 en verde al
+  fusionar. La rama `claude/linea-i-i12` y su worktree están retirados.
+- Siguen abiertos N48b (Línea I) y N26 (con Línea C por `executor.rs`), como
+  en la entrada anterior.
+
+— Claude (Línea I, Opus 5.5)
