@@ -86,11 +86,12 @@ impl Fnv1a {
 }
 
 static NEXT_SEGMENT_ID: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+static NEXT_ACTIVE_ID: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 
 fn open_active_writer(path: &Path) -> std::io::Result<BufWriter<File>> {
     Ok(BufWriter::with_capacity(
         1 << 20,
-        OpenOptions::new().create(true).append(true).open(path)?,
+        OpenOptions::new().append(true).open(path)?,
     ))
 }
 
@@ -110,6 +111,98 @@ fn next_final_path(dir: &Path, symbol: &str, count: u32) -> std::io::Result<Path
     )))
 }
 
+fn next_active_path(dir: &Path, symbol: &str) -> std::io::Result<PathBuf> {
+    let nanos = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?
+        .as_nanos();
+    let id = NEXT_ACTIVE_ID.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    Ok(dir.join(format!(
+        "{}_active_{}_{}_{}.tgrw.tmp",
+        symbol,
+        nanos,
+        std::process::id(),
+        id
+    )))
+}
+
+fn lock_active(file: &File) -> std::io::Result<()> {
+    match file.try_lock() {
+        Ok(()) => Ok(()),
+        Err(std::fs::TryLockError::WouldBlock) => Err(std::io::Error::new(
+            std::io::ErrorKind::WouldBlock,
+            "el activo pertenece a otro writer",
+        )),
+        Err(std::fs::TryLockError::Error(e)) => Err(e),
+    }
+}
+
+fn active_lock_path(active_path: &Path) -> PathBuf {
+    let mut path = active_path.as_os_str().to_os_string();
+    path.push(".lock");
+    path.into()
+}
+
+fn create_active(dir: &Path, symbol: &str) -> std::io::Result<(PathBuf, File)> {
+    let path = next_active_path(dir, symbol)?;
+    let tick_file = OpenOptions::new()
+        .read(true)
+        .write(true)
+        .create_new(true)
+        .open(&path)?;
+    let lock_file = OpenOptions::new()
+        .read(true)
+        .write(true)
+        .create(true)
+        .truncate(false)
+        .open(active_lock_path(&path))?;
+    lock_active(&lock_file)?;
+    drop(tick_file);
+    Ok((path, lock_file))
+}
+
+fn recovery_candidates(dir: &Path, symbol: &str) -> std::io::Result<Vec<PathBuf>> {
+    let legacy_name = format!("{symbol}_active.tgrw.tmp");
+    let unique_prefix = format!("{symbol}_active_");
+    let mut paths = Vec::new();
+    for entry in std::fs::read_dir(dir)? {
+        let path = entry?.path();
+        let matches = path.file_name().is_some_and(|name| {
+            let name = name.to_string_lossy();
+            name.as_ref() == legacy_name
+                || (name.starts_with(&unique_prefix) && name.ends_with(".tgrw.tmp"))
+        });
+        if matches {
+            paths.push(path);
+        }
+    }
+    paths.sort();
+    Ok(paths)
+}
+
+fn claim_or_create_active(dir: &Path, symbol: &str) -> std::io::Result<(PathBuf, File, Vec<u8>)> {
+    for candidate in recovery_candidates(dir, symbol)? {
+        let lock_file = OpenOptions::new()
+            .read(true)
+            .write(true)
+            .create(true)
+            .truncate(false)
+            .open(active_lock_path(&candidate))?;
+        match lock_active(&lock_file) {
+            Ok(()) => {}
+            Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => continue,
+            Err(e) => return Err(e),
+        }
+        match std::fs::read(&candidate) {
+            Ok(bytes) => return Ok((candidate, lock_file, bytes)),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => continue,
+            Err(e) => return Err(e),
+        }
+    }
+    let (path, lock_file) = create_active(dir, symbol)?;
+    Ok((path, lock_file, Vec::new()))
+}
+
 #[cfg(unix)]
 fn sync_directory(dir: &Path) -> std::io::Result<()> {
     File::open(dir)?.sync_all()
@@ -124,7 +217,9 @@ pub struct RawTickArchive {
     dir: PathBuf,
     symbol: String,
     writer: Option<BufWriter<File>>,
+    active_lock: Option<File>,
     active_path: PathBuf,
+    rotation_path: PathBuf,
     count: u32,
     hash: Fnv1a,
     /// Rotación por cantidad de ticks (segmentos de ~8 MB con 200k ticks).
@@ -135,12 +230,8 @@ pub struct RawTickArchive {
 impl RawTickArchive {
     pub fn open(dir: impl AsRef<Path>, symbol: &str) -> std::io::Result<Self> {
         std::fs::create_dir_all(dir.as_ref())?;
-        let active_path = dir.as_ref().join(format!("{}_active.tgrw.tmp", symbol));
-        let bytes = match std::fs::read(&active_path) {
-            Ok(bytes) => bytes,
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Vec::new(),
-            Err(e) => return Err(e),
-        };
+        let (mut active_path, mut active_lock, bytes) =
+            claim_or_create_active(dir.as_ref(), symbol)?;
         let mut count = 0;
         let mut hash = Fnv1a::new();
         let mut segments_finalized = 0;
@@ -175,7 +266,11 @@ impl RawTickArchive {
                     })?;
                     let final_path = next_final_path(dir.as_ref(), symbol, count)?;
                     std::fs::rename(&active_path, final_path)?;
+                    drop(active_lock);
                     sync_directory(dir.as_ref())?;
+                    let (new_path, new_lock) = create_active(dir.as_ref(), symbol)?;
+                    active_path = new_path;
+                    active_lock = new_lock;
                     segments_finalized = 1;
                 }
                 suffix => {
@@ -187,11 +282,14 @@ impl RawTickArchive {
             }
         }
 
+        let rotation_path = next_final_path(dir.as_ref(), symbol, count)?;
         Ok(Self {
             dir: dir.as_ref().to_path_buf(),
             symbol: symbol.to_string(),
             writer: Some(open_active_writer(&active_path)?),
+            active_lock: Some(active_lock),
             active_path,
+            rotation_path,
             count,
             hash,
             max_ticks_per_segment: 200_000,
@@ -221,30 +319,47 @@ impl RawTickArchive {
     /// Finaliza el segmento: los ticks van crudos; el FOOTER (count+hash) se
     /// escribe al finalizar, se sincroniza y se publica con rename atómico.
     pub fn rotate(&mut self) -> std::io::Result<()> {
-        let final_path = next_final_path(&self.dir, &self.symbol, self.count)?;
         let Some(mut w) = self.writer.take() else {
-            return Ok(());
+            self.active_lock = None;
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::NotConnected,
+                "archivo activo cerrado; no se puede rotar",
+            ));
         };
-        let publication = (|| {
+        let active_lock = self.active_lock.take();
+        let final_path = self.rotation_path.clone();
+        let outcome = (|| -> std::io::Result<()> {
             w.write_all(&self.count.to_le_bytes())?;
             w.write_all(&self.hash.finish().to_le_bytes())?;
             w.flush()?;
             w.get_ref().sync_all()?;
-            std::fs::rename(&self.active_path, &final_path)
+            std::fs::rename(&self.active_path, &final_path)?;
+            drop(w);
+            drop(active_lock);
+
+            self.segments_finalized += 1;
+            self.count = 0;
+            self.hash = Fnv1a::new();
+            sync_directory(&self.dir)?;
+            let (new_path, new_lock) = create_active(&self.dir, &self.symbol)?;
+            let new_writer = open_active_writer(&new_path)?;
+            let next_rotation_path = next_final_path(&self.dir, &self.symbol, self.count)?;
+            self.active_path = new_path;
+            self.rotation_path = next_rotation_path;
+            self.active_lock = Some(new_lock);
+            self.writer = Some(new_writer);
+            Ok(())
         })();
-        if let Err(e) = publication {
-            self.writer = Some(w);
+        if let Err(e) = outcome {
+            self.writer = None;
+            self.active_lock = None;
             return Err(e);
         }
-        drop(w);
+        Ok(())
+    }
 
-        self.segments_finalized += 1;
-        self.count = 0;
-        self.hash = Fnv1a::new();
-        let new_writer = open_active_writer(&self.active_path);
-        let directory_sync = sync_directory(&self.dir);
-        self.writer = Some(new_writer?);
-        directory_sync
+    pub fn rotation_path(&self) -> &Path {
+        &self.rotation_path
     }
 
     pub fn flush(&mut self) -> std::io::Result<()> {
