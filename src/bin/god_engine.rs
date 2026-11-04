@@ -3551,6 +3551,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         // The PhaseOrchestrator is injected into the execution context
         let _msg_count: u64 = 0;
         let mut has_transitioned = false;
+        // I-12 (Línea I, N48): a lo sumo un refresco de reintento de la transición en curso.
+        let reintento_transicion = quantum_engine::host_oms::ReintentoTransicion::new();
         // The host is execution-backed (including demo-live). Its local close
         // estimates need entry evidence; research constructors remain isolated.
         // This is not proof of exchange exit settlement or account-generation identity.
@@ -4547,50 +4549,83 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     // sin despacho (B3.14).
                 } else {
                     if newly_transitioned {
-                        telemetry_server::telemetry_log!("✅ [WARMUP COMPLETE] System state synchronized & Darwin Approved. Transitioning to {:?}", current_phase);
-
-                        let is_env_testnet = std::env::var("USE_TESTNET").unwrap_or_default().trim().to_lowercase() == "true";
-                        let (target_key, target_secret, target_is_testnet) = if is_env_testnet {
-                            (testnet_key.clone(), testnet_secret.clone(), true)
-                        } else {
-                            (mainnet_key.clone(), mainnet_secret.clone(), false)
-                        };
-
-                        // R3.2 / K-06: Hot-swap preservando el registry y la arena viva
-                        let old_registry = exec.load().registry();
-                        let mut mainnet_executor = execution_engine::executor::OrderExecutor::new_with_shared(
-                            target_key,
-                            target_secret,
-                            target_is_testnet,
-                            old_registry,
-                            Some(Arc::clone(&arena_real)),
-                        );
-                        if is_env_testnet {
-                            mainnet_executor.set_paper_trading(false);
-                        } else {
-                            mainnet_executor.set_paper_trading(is_paper_trading);
+                        // I-12 (Línea I, N48): el tick de la transición no abre exposición. Su
+                        // reserva (ranura abierta sin confirmar) se suelta ANTES de sustituir el
+                        // ejecutor: con ella `replace_executor` rehusaba siempre, y la transición
+                        // se aplazaba mientras el núcleo siguiera proponiendo entradas. Mientras
+                        // tanto, cada mensaje construía otro ejecutor y encolaba otro refresco.
+                        if new_order.is_some() && entry_reservation.is_none() {
+                            quantum_arena::protection_health::mark_dirty();
+                            telemetry_engine::telemetry_err!("[OMS TRANSITION] entrada sin identidad de reserva en el tick de la transición: no se envía; reconciliar el estado local");
                         }
-                        let new_exec_arc = Arc::new(mainnet_executor);
+                        new_order = None;
+                        let paso = oms_session.paso_transicion(
+                            &arena_real,
+                            entry_reservation.as_ref(),
+                            &reintento_transicion,
+                            || {
+                                let is_env_testnet = std::env::var("USE_TESTNET").unwrap_or_default().trim().to_lowercase() == "true";
+                                let (target_key, target_secret, target_is_testnet) = if is_env_testnet {
+                                    (testnet_key.clone(), testnet_secret.clone(), true)
+                                } else {
+                                    (mainnet_key.clone(), mainnet_secret.clone(), false)
+                                };
 
+                                // R3.2 / K-06: Hot-swap preservando el registry y la arena viva
+                                let old_registry = exec.load().registry();
+                                let mut mainnet_executor = execution_engine::executor::OrderExecutor::new_with_shared(
+                                    target_key,
+                                    target_secret,
+                                    target_is_testnet,
+                                    old_registry,
+                                    Some(Arc::clone(&arena_real)),
+                                );
+                                if is_env_testnet {
+                                    mainnet_executor.set_paper_trading(false);
+                                } else {
+                                    mainnet_executor.set_paper_trading(is_paper_trading);
+                                }
+                                Arc::new(mainnet_executor)
+                            },
+                        );
+                        if let Some(motivo) = paso.reserva_no_cancelable {
+                            telemetry_engine::telemetry_err!("[OMS TRANSITION] reserva del tick no cancelable: {:?}", motivo);
+                        }
                         // Revoke before publishing a new executor; in-flight observations from
                         // the previous generation cannot mutate the arena or reauthorize it.
-                        if let Err(reason) = oms_session.replace_executor(Arc::clone(&new_exec_arc), &arena_real) {
-                            telemetry_engine::telemetry_err!("[OMS TRANSITION] {}: executor conservado, entradas bloqueadas", reason);
-                            has_transitioned = false;
-                            if let Some(ref reservation) = entry_reservation {
-                                if let Err(cancel_error) = reservation.cancel(&engine_real.arena) {
-                                    quantum_arena::protection_health::mark_dirty();
-                                    telemetry_engine::telemetry_err!("[OMS TRANSITION] reserva nueva no enviada sin cancelar: {:?}", cancel_error);
-                                }
+                        let new_exec_arc = match paso.resultado {
+                            quantum_engine::host_oms::ResultadoTransicion::Publicada { generacion, ejecutor } => {
+                                telemetry_server::telemetry_log!("✅ [WARMUP COMPLETE] System state synchronized & Darwin Approved. Transitioning to {:?} (sesión OMS {})", current_phase, generacion);
+                                ejecutor
                             }
-                            let oms_retry = Arc::clone(&oms_session);
-                            let arena_retry = Arc::clone(&arena_real);
-                            rt_handle.spawn(async move {
-                                let outcome = oms_retry.refresh(&arena_retry).await;
-                                telemetry_server::telemetry_log!("[OMS TRANSITION RETRY] sesión conservada reconciliada: {:?}", outcome);
-                            });
-                            continue;
-                        }
+                            quantum_engine::host_oms::ResultadoTransicion::Esperando => {
+                                has_transitioned = false;
+                                continue;
+                            }
+                            quantum_engine::host_oms::ResultadoTransicion::Ocupada { primer_aviso } => {
+                                if primer_aviso {
+                                    telemetry_engine::telemetry_err!("[OMS TRANSITION] {}: transición aplazada sin construir otro ejecutor; entradas bloqueadas", quantum_engine::host_oms::OMS_EXECUTOR_BUSY);
+                                }
+                                has_transitioned = false;
+                                continue;
+                            }
+                            quantum_engine::host_oms::ResultadoTransicion::Rechazada { motivo, refresco } => {
+                                telemetry_engine::telemetry_err!("[OMS TRANSITION] {}: executor conservado, entradas bloqueadas", motivo);
+                                has_transitioned = false;
+                                if let Some(refresco) = refresco {
+                                    let oms_retry = Arc::clone(&oms_session);
+                                    let arena_retry = Arc::clone(&arena_real);
+                                    rt_handle.spawn(async move {
+                                        // El testigo vive lo que dura el refresco: hasta soltarlo,
+                                        // la transición no construye otro ejecutor.
+                                        let _refresco = refresco;
+                                        let outcome = oms_retry.refresh(&arena_retry).await;
+                                        telemetry_server::telemetry_log!("[OMS TRANSITION RETRY] sesión conservada reconciliada: {:?}", outcome);
+                                    });
+                                }
+                                continue;
+                            }
+                        };
                         {
                             let oms_transition = Arc::clone(&oms_session);
                             let arena_transition = Arc::clone(&arena_real);

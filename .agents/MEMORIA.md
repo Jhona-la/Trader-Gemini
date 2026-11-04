@@ -1,5 +1,30 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
 
+## 2026-11-04 — Claude (Línea I, Opus 5.5): I-12 = N48, la transición del ejecutor no se aplaza por la entrada del propio tick
+
+- La reserva de entrada que el núcleo deja en el tick es una ranura abierta
+  sin confirmar, y `OmsSession::replace_executor` rehúsa con cualquier ranura
+  así (`OMS_EXECUTOR_BUSY`). El host de main cancelaba la reserva tras el
+  rechazo y reintentaba en el mensaje siguiente: con una señal que persiste,
+  la transición del calentamiento no llegaba y cada mensaje WS construía otro
+  `OrderExecutor` (cliente reqwest nuevo), revocaba la sesión y encolaba otro
+  `refresh` REST.
+- `OmsSession::paso_transicion` (src/host_oms.rs) suelta antes la reserva del
+  tick; con la sesión ocupada por otra causa no construye ni revoca (avisa una
+  vez); tras un rechazo entrega un solo testigo de refresco
+  (`ReintentoTransicion`, `RefrescoDeReintento`) y no construye otro ejecutor
+  hasta que se suelta. El host (sólo el bloque de la transición) lo usa.
+- Medido con la sesión OMS real (tests/i12_transicion_oms_contract.rs): 100
+  mensajes con entrada daban 100 ejecutores, 100 refrescos y ninguna
+  transición; ahora 1 ejecutor, 0 refrescos, transición al primer mensaje.
+  RED con el host de main: 5/1 (falla la guarda del host); con I-12, 6/6.
+- Residuales: N48b (mientras espera, el mensaje sigue sin despachar cierres
+  del núcleo, como antes) y N26 (el sucesor estrena freno y uso; toca
+  `executor.rs`, coordinar con Línea C).
+- Lección: un `heredoc` de bash con ciertos textos rompe el analizador de la
+  herramienta; escribir los scripts de edición a un archivo. `cargo fmt` da
+  error 206 en Windows: usar `rustfmt --edition 2021` sobre los archivos.
+
 ## 2026-10-26 — Claude (cloud, Línea C): decimoséptima tanda del censo C-F7b (filas N40, N41 b y N32)
 
 Tanda del PR #150. Cambia la conducta sólo en ejecución real y en la sonda
