@@ -297,3 +297,11 @@ Después de cada push de código: todos los checks disparados (base actual: 8 de
 - Cuatro rutas `storage-engine` formateadas con equivalencia byte a byte del WIP. R9B conserva I-12 en cinco documentos y R9C conserva GLM-192 en dos; uniones verificadas 9/0 y 18/0, sin pérdida de R3–R9B.
 - Evidencia: 50/50 en 6 targets, workspace 4m55s, Zero-Wait 22/22 (369.920s), revisión Yes sin defectos. R9B también 50/50 y Zero-Wait 22/22 (464.616s), sin CAS por upstream.
 - Handoff separado pendiente. Attestation sigue bloqueada por QRA, formatter restante, productor ROOT/inventario Golden9 ausentes, seis fases + Python y Golden9. Producción NO-GO; métricas económicas N/D.
+
+
+## Corte V35-R10A — dos fuentes data-ingest formateadas e integradas localmente (2026-11-04T23:48:13Z)
+
+- `main` local=`34def09f16b65a9c9ab5c90bd884bb3ed3a9c8c6`, tree `8f02de21`, tras CAS desde `e77d3ce3`; `origin/main=206701dc` sin cambios, sin push.
+- `cola_ws.rs` y `rutas_feed.rs` formateados con equivalencia exacta de blobs WIP y sin cambio semántico. No se declara cerrado todo `data-ingest`.
+- Evidencia: 72/72 en 9 targets, workspace 3m32s, Zero-Wait 22/22 (260.316s), revisión Yes sin defectos. Contratos con cambios semánticos WIP restaurados a base; TRIANGULAR_PENDIENTE y archivos sin referencia intactos.
+- Handoff separado pendiente. Attestation sigue bloqueada por QRA, formatter restante, productor ROOT/Golden9, seis fases + Python y Golden9. Producción NO-GO; métricas económicas N/D.

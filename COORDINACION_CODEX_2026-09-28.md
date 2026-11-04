@@ -20137,3 +20137,17 @@ Cuatro rutas `storage-engine` sólo rustfmt, 51+/21-, con los cuatro blobs WIP e
 Recibos R9C: 50/50 en 6 targets/0 failed/ignored/filtered/exit0; workspace all-targets exit0 (4m55s); Zero-Wait 22/22 (369.920s)/exit0; revisión agent-25 **Yes**, Critical/Important/Minor=0. R9B también terminó 50/50, workspace y Zero-Wait 22/22 (464.616s), pero no se promovió por el nuevo upstream. El fallo inicial R9 sin traceback se investigó con reproducción mínima 1/1 verde; no hubo cambio sintomático de código.
 
 Handoff documental separado pendiente de workspace, Zero-Wait y CAS. Attestation/publicación siguen bloqueados por QRA, formatter restante, productor ROOT/inventario Golden9 ausentes, seis fases + Python y Golden9. Producción NO-GO; ROI/PnL/WR/Sharpe/EV=N/D.
+
+
+<!-- KIMI-V35-R10A-LOCAL-CAS-20261104T234813Z -->
+## 2026-11-04T23:48:13Z — KIMI-QUANT-SR-V35: R10A dos fuentes data-ingest en main local
+
+CAS realizado desde `e77d3ce31c166de15d1cd4b18ac8c82d6a126e92` a `34def09f16b65a9c9ab5c90bd884bb3ed3a9c8c6`, tree `8f02de2120a25d94481bb0d65f18a8cfab367d89`; `origin/main=206701dc` intacto, sin push.
+
+`cola_ws.rs` y `rutas_feed.rs`, 59+/13- exclusivamente rustfmt, blobs exactos `9e655161` y `a1b7ec93`. No cambian hosts, categorías, límites, mensajes, relojes, APIs o comportamiento de red.
+
+Recibos: 72/72 en 9 targets/0 failed/ignored/filtered/exit0; workspace all-targets exit0 (3m32s); Zero-Wait 22/22 (260.316s)/exit0; revisión agent-25 **Yes**, Critical/Important/Minor=0.
+
+Exclusiones preservadas: `inmune_latencia_contract.rs` con dos cambios semánticos host y `rutas_feed_contract.rs` con cambio producción vs `#[cfg(test)]`, ambos restaurados a base. `edad_feed*`/`f10_001` TRIANGULAR_PENDIENTE y `almacen_hot_path_contract`/`arranque_feed_contract` sin referencia WIP permanecen intactos. R10A no declara cerrado todo `data-ingest`.
+
+Handoff documental separado pendiente de workspace, Zero-Wait y CAS. QRA/Navier/adversarial/legacy intactos; attestation/publicación bloqueados. Producción NO-GO; ROI/PnL/WR/Sharpe/EV=N/D.

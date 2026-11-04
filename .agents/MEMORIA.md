@@ -10863,3 +10863,12 @@ Puerto recursos reanclado sobre PR90/7b598f7e (padre mainfd956f9, AGY F1-074/F1-
 - R9B incorporó I-12 en cinco documentos con unión de 9 líneas; R9C incorporó GLM-192 en dos documentos con unión de 18 líneas, incluida `767aac6e3`, preservando R3–R9B. R9B cerró 50/50, workspace y Zero-Wait 22/22 (464.616s), pero no se promovió porque upstream avanzó.
 - Evidencia R9C: 50/50 en 6 targets/0 failed/ignored/filtered/exit0; workspace 4m55s/exit0; Zero-Wait 22/22 (369.920s)/exit0; revisión agent-25 **Yes**, Critical/Important/Minor=0. El fallo inicial R9 de Zero-Wait quedó sin traceback y la reproducción mínima pasó 1/1; no se cambió código por ese evento.
 - Handoff documental separado pendiente de workspace, Zero-Wait y CAS. Attestation/publicación siguen bloqueados por QRA Navier/adversarial/legacy, formatter restante, productor ROOT/inventario Golden9 ausentes, seis fases + Python y Golden9. Producción NO-GO; ROI/PnL/WR/Sharpe/EV=N/D.
+
+
+## 2026-11-04T23:48:13Z — KIMI-QUANT-SR-V35: R10A dos fuentes data-ingest y CAS local
+
+- `main` local avanzó por CAS desde `e77d3ce31c166de15d1cd4b18ac8c82d6a126e92` a `34def09f16b65a9c9ab5c90bd884bb3ed3a9c8c6` (tree `8f02de2120a25d94481bb0d65f18a8cfab367d89`). `origin/main=206701dc` intacto; no hubo push.
+- `cola_ws.rs` y `rutas_feed.rs`, 59+/13- exclusivamente rustfmt, blobs exactos `9e655161` y `a1b7ec93`. Sin cambios de hosts, categorías, límites de streams, mensajes, relojes, APIs o comportamiento de red.
+- Evidencia: 72/72 en 9 targets/0 failed/ignored/filtered/exit0; workspace all-targets exit0 (3m32s); Zero-Wait 22/22 (260.316s)/exit0; revisión agent-25 **Yes**, Critical/Important/Minor=0.
+- `inmune_latencia_contract.rs` y `rutas_feed_contract.rs` contienen cambios semánticos WIP y quedaron restaurados a base; `edad_feed*`/`f10_001` TRIANGULAR_PENDIENTE y `almacen_hot_path_contract`/`arranque_feed_contract` sin referencia WIP permanecen intactos. R10A no declara cerrado todo `data-ingest`.
+- Handoff documental separado pendiente de workspace, Zero-Wait y CAS. Attestation/publicación siguen bloqueados por QRA, formatter restante, productor ROOT/Golden9, seis fases + Python y Golden9. Producción NO-GO; ROI/PnL/WR/Sharpe/EV=N/D.
