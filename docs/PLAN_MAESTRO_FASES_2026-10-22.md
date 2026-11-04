@@ -237,3 +237,47 @@ cargo tree --workspace --duplicates --locked
 ```
 
 Después de cada push de código: todos los checks disparados (base actual: 8 de Unit + 2 de Replay, más workflows de dominio), verificados contra el SHA publicado. Documentación sola sigue la exención de CI ya existente, pero no se utiliza para ocultar código en un commit documental.
+
+
+## Corte V35-F1R3 — formato, Fisher-Rao y attestation pendiente (2026-11-04T19:20:56Z)
+
+**Estado:** CAS local completado en `b8529f40ec7ee7681f68b495003c3b10eaabc301`; publicación no autorizada por attestation incompleta. `origin/main=f1ca374aa00d1c84124ae803799db5c0b4fa4b95` permanece sin cambios.
+
+1. Se integraron cuatro átomos exclusivamente de formato (`fac7fbe0`, `d6e1896b`, `41d7c615`, `c362239b`) en siete archivos de audit-engine y dos de backtest-engine. No se alteraron reglas, umbrales, contabilidad, OOS ni APIs; QSR/QRA permanecen intactos.
+2. El candidato tiene tree `c00748bdfaab9e640e9fd327dfd474ffa6cccfdb`, diff-check contra ambos padres PASS, Fisher-Rao 4/4, workspace all-targets exit 0, Zero-Wait 22/22 y backtest 43/43 +2 ignored. Revisión agent-25: **Yes**, sin Critical/Important.
+3. No se hereda ese verde parcial como attestation. Permanecen bloqueantes: `navier_stokes::update` y `adversarial_gate` con llamadores QRA, familia legacy `test_pre_push_gate.py`, formatter baseline y las seis fases + contratos Python/Golden9 sobre un único SHA final. Los warnings MXCSR y errores no fatales de checksum dep-info permanecen registrados.
+4. Siguiente acción: QRA aplica o cede explícitamente sus alcances; continuar formato sólo con propiedad verificada; repetir el sobre completo antes de cualquier push. Producción NO-GO; ROI/PnL/WR/Sharpe/EV=N/D. +100 %/72 h es hipótesis a falsar con evidencia OOS neta.
+
+## Corte V35-R4/R5 — audit-engine formateado e integrado localmente (2026-11-04T19:42:25Z)
+
+- `main` local=`dbdd79f7bb255347fc5a45a3fbbd1a08e8c45729`, tras CAS desde `b8529f40`; `origin/main=f1ca374a` sin cambios, sin push.
+- R4 `950882897` y R5 cierran `rustfmt --check` de todo `audit-engine` exclusivamente con cambios de formato. Cada suite: 90/90 en 14 targets, sin ignorados ni filtrados. Workspace exit 0, Zero-Wait 22/22 y revisión agent-25 **Yes** sin hallazgos.
+- Estos recibos no son attestation global. Permanecen QRA Navier/adversarial/legacy, formatter de otros crates, seis fases, Python legacy y Golden9 del SHA final. Producción NO-GO; métricas económicas N/D.
+
+## Corte V35-R6 — revisión causal config/lib y evidencia de fricción (2026-11-04T19:58:07Z)
+
+1. **Revisión desde base:** `dbdd79f7b` y archivo inmutable R5; ramas/agentes/WIP preservados. La constante `CANONICAL_COUNCIL_MAX_DRAWDOWN` está derivada de Cramér-Lundberg y no se considera hardcode arbitrario. El balance 13 USD no aparece como literal en las rutas config/lib inspeccionadas.
+2. **Defecto concreto seleccionado:** `route_order` fabrica maker 2 bps/funding 1 bp cuando faltan arena, símbolo o libro; `expected_funding_cost` devuelve 0.0 sin funding. Esto puede cambiar admisión y PnL.
+3. **Átomo autorizado:** sólo `execution-engine/src/router.rs` y `tests/adverse_selection_viability_contract.rs`. Ausencia ⇒ error tipado; evidencia estricta de funding ausente ⇒ error. Escenarios explícitos permanecen compatibles.
+4. **Prueba y entrega:** RED antes del cambio, GREEN, toda execution-engine, workspace, revisión independiente y CAS local sólo con recibos. Attestation/push siguen bloqueados por QRA, formatter restante y seis fases/Golden9. Producción NO-GO; ROI/PnL/WR/Sharpe/EV=N/D.
+
+## Corte V35-R6A — evidencia de fricción fail-closed integrada localmente (2026-11-04T20:42:02Z)
+
+- `main` local=`5e021ebb9d17cf5db586b023f3d414cba12be306`, tras CAS desde `dbdd79f7b`; `origin/main=cfe08162` sin cambios, sin push.
+- `route_order` deja de fabricar maker/funding por defecto: ausencia de arena/símbolo/tarifa ⇒ `REJ_FEE_EVIDENCE_MISSING`; funding requerido ausente/no finito ⇒ `REJ_FUNDING_EVIDENCE_MISSING`, antes de cualquier envío. Escenarios explícitos permanecen compatibles.
+- Evidencia: contratos 11/11, ejecución 514/514 en 49 suites, workspace exit 0, Zero-Wait 22/22, revisión agent-25 **Yes** sin defectos. La cadena truncada anterior fue reconstruida y no integrada; blob final `37f7b3a7`.
+- Attestation/publicación siguen bloqueados por QRA, formatter restante y seis fases/Golden9. Producción NO-GO; métricas económicas N/D.
+
+## Corte V35-R7 — evidencia de señal finita antes de ejecución (2026-11-04T21:09:55Z)
+
+- Base `5e021ebb`; R6A queda integrado localmente y no se reabre. QRA sigue sin cesión y sus archivos no se tocan.
+- `route_order` admite actualmente NaN/Inf en confianza, volatilidad y spread porque `evaluate_viability` los reemplaza por heurísticas. Se exige evidencia finita y producto de edge finito antes de cualquier envío, con `REJ_INVALID_SIGNAL_EVIDENCE`.
+- Átomo sólo en `router.rs` y `adverse_selection_viability_contract.rs`. RED de tres entradas corruptas, GREEN, toda execution-engine, workspace, Zero-Wait, revisión y CAS local con recibos. Sin push/attestation. Producción NO-GO; ROI/PnL/WR/Sharpe/EV=N/D.
+
+## Corte V35-R7B — evidencia finita de señal integrada localmente (2026-11-04T22:02:00Z)
+
+- `main` local=`6f95120f0cafefc0c857e062f6d1141411f6a836`, tree `f7966b523fa2d09cb96d77e1b840c7a5fb78988d`, tras CAS desde `5e021ebb`; padres `ead6d683` y `9bbb0b99`. `origin/main=ead6d683` revalidado, sin push.
+- La guarda `REJ_INVALID_SIGNAL_EVIDENCE` exige confianza finita en [0,1], volatilidad/spread finitos no negativos y producto edge finito antes de fee/IOC/Market. Flat retorna antes; R6A y el reúso del edge validado permanecen intactos.
+- R7A no fue promovido porque upstream avanzó a GLM-192. Se adopta `is_nan()` de `ead6d683`; el `to_bits()` duplicado se descarta. Frente a R7 sólo se añaden los dos archivos Fisher upstream.
+- Evidencia terminal: ejecución 517/517 en 49 suites/5 ignored/0 filtered, Fisher 4/4, workspace exit 0 (4m07s), Zero-Wait 22/22 (189.610s), revisión agent-25 **Yes** sin Critical/Important/Minor.
+- Handoff documental separado pendiente de Zero-Wait y CAS. Attestation sigue bloqueada por QRA Navier/adversarial/legacy, formatter restante, productor ROOT registrado, seis fases + Python legacy/Zero-Wait/bus y Golden9 del SHA final. Producción NO-GO; métricas económicas N/D; +100 %/72 h sigue siendo hipótesis OOS neta.
