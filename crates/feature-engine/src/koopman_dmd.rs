@@ -223,8 +223,8 @@ impl StreamingDmd {
         let eps = 1e-10 * traza / KOOPMAN_M as f64;
         // LU de G+εI con pivoteo parcial.
         let mut lu = self.g;
-        for i in 0..KOOPMAN_M {
-            lu[i][i] += eps;
+        for (i, row) in lu.iter_mut().enumerate() {
+            row[i] += eps;
         }
         let mut perm: [usize; KOOPMAN_M] = [0; KOOPMAN_M];
         let (ok_lu, _) = factorizar_lu(&mut lu, &mut perm);
@@ -233,18 +233,13 @@ impl StreamingDmd {
         }
         // A = Q G⁻¹ fila a fila (G a_i = q_i con G simétrica).
         let mut a = [[0.0f64; KOOPMAN_M]; KOOPMAN_M];
-        for i in 0..KOOPMAN_M {
-            let mut b = [0.0f64; KOOPMAN_M];
-            for j in 0..KOOPMAN_M {
-                b[j] = self.q[i][j];
-            }
+        for (q_row, a_row) in self.q.iter().zip(a.iter_mut()) {
+            let b = *q_row;
             let row = resolver_lu(&lu, &perm, &b);
             if row.iter().any(|v| !v.is_finite()) {
                 return Err(DmdError::GSingular);
             }
-            for j in 0..KOOPMAN_M {
-                a[i][j] = row[j];
-            }
+            a_row.copy_from_slice(&row);
         }
         let autovalores = autovalores_faddeev_durand(&a);
         if autovalores.is_empty()
@@ -310,16 +305,16 @@ fn factorizar_lu(
     perm: &mut [usize; KOOPMAN_M],
 ) -> (bool, f64) {
     let n = KOOPMAN_M;
-    for i in 0..n {
-        perm[i] = i;
+    for (i, p) in perm.iter_mut().enumerate() {
+        *p = i;
     }
     let mut det = 1.0;
     for k in 0..n {
         // Pivoteo parcial.
         let mut piv = k;
         let mut mejor = a[k][k].abs();
-        for r in k + 1..n {
-            let v = a[r][k].abs();
+        for (r, row) in a.iter().enumerate().skip(k + 1) {
+            let v = row[k].abs();
             if v > mejor {
                 mejor = v;
                 piv = r;
@@ -335,12 +330,13 @@ fn factorizar_lu(
         }
         let akk = a[k][k];
         det *= akk;
-        for r in k + 1..n {
-            let f = a[r][k] / akk;
-            a[r][k] = f;
+        let pivot = a[k];
+        for row in a.iter_mut().skip(k + 1) {
+            let f = row[k] / akk;
+            row[k] = f;
             if f != 0.0 {
-                for c in k + 1..n {
-                    a[r][c] -= f * a[k][c];
+                for (c, value) in row.iter_mut().enumerate().skip(k + 1) {
+                    *value -= f * pivot[c];
                 }
             }
         }
@@ -406,8 +402,8 @@ fn autovalores_faddeev_durand(a: &[[f64; KOOPMAN_M]; KOOPMAN_M]) -> Vec<(f64, f6
         }
         // M_k = A·M_{k-1} + c_{k-1}·I ; c_k = −tr(A·M_k)/k
         let c_prev = coef[k - 1];
-        for i in 0..n {
-            am[i][i] += c_prev;
+        for (i, row) in am.iter_mut().enumerate() {
+            row[i] += c_prev;
         }
         // tr(A·M_k)
         let mut traza = 0.0;
@@ -424,9 +420,9 @@ fn autovalores_faddeev_durand(a: &[[f64; KOOPMAN_M]; KOOPMAN_M]) -> Vec<(f64, f6
     // ── Durand–Kerner sobre p(λ) = λ^n + coef[1]λ^{n-1} + ... + coef[n].
     // Monomios en orden descendente (p[0]=1).
     let p = coef; // p[0]=1, p[k]=c_k
-    // Normalizar por el coeficiente líder (ya 1.0 por construcción).
-    // Semillas: círculo de radio R en el plano complejo (raíces de la unidad
-    // escaladas por un cota de Cauchy aproximada).
+                  // Normalizar por el coeficiente líder (ya 1.0 por construcción).
+                  // Semillas: círculo de radio R en el plano complejo (raíces de la unidad
+                  // escaladas por un cota de Cauchy aproximada).
     let radio = 1.0 + p[1..].iter().fold(0.0f64, |m, &c| m.max(c.abs()));
     #[derive(Clone, Copy)]
     struct C(f64, f64);
@@ -442,8 +438,8 @@ fn autovalores_faddeev_durand(a: &[[f64; KOOPMAN_M]; KOOPMAN_M]) -> Vec<(f64, f6
     let peval = |z: C| -> C {
         // Horner con p[0]=1.
         let mut acc = C(1.0, 0.0);
-        for k in 1..=n {
-            acc = cadd(cmul(acc, z), C(p[k], 0.0));
+        for &coefficient in p.iter().skip(1) {
+            acc = cadd(cmul(acc, z), C(coefficient, 0.0));
         }
         acc
     };
