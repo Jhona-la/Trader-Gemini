@@ -248,3 +248,111 @@ fn arena_snapshot_preserves_real_fields() {
     assert_eq!(snapshot.win_rate, 0.625);
     assert!(snapshot.tensor_drift.is_nan());
 }
+
+#[test]
+fn dashboard_source_guards_null_and_non_array_viz_payloads() {
+    let source = include_str!("../src/lib.rs");
+
+    assert!(source.contains("Array.isArray(causalData.attributions)"));
+    assert!(source.contains("Array.isArray(hyperData.nodes)"));
+    assert!(source.contains("Array.isArray(hyperData.pods)"));
+    assert!(source.contains("N/D"));
+    assert!(!source.contains("causalData.attributions.forEach"));
+    assert!(!source.contains("hyperData.pods.forEach"));
+}
+
+#[test]
+fn producer_and_trader_sources_share_the_environment_path() {
+    let telemetry_source = include_str!("../src/lib.rs");
+    let trader_source = include_str!("../../../src/bin/trader_viz.rs");
+
+    assert!(telemetry_source.contains("pub fn telemetry_viz_path() -> String"));
+    assert!(
+        telemetry_source.contains("quantum_arena::paths::env_data_path(\"telemetry_mmap.bin\")")
+    );
+    assert!(trader_source.contains("telemetry_server::telemetry_viz_path()"));
+    assert!(!trader_source.contains("possible_paths"));
+    assert!(!trader_source.contains("data/prod/telemetry_mmap.bin"));
+    assert!(!trader_source.contains("data/demo/telemetry_mmap.bin"));
+}
+
+#[test]
+fn infinite_tensor_drift_invalidates_the_snapshot() {
+    let path = temp_file("infinite_tensor");
+    let mut writer = MmapVizStreamWriter::new(&path).expect("writer");
+    let mut reader = MmapVizStreamReader::new(&path);
+
+    for tensor_drift in [f64::INFINITY, f64::NEG_INFINITY] {
+        let snapshot = TelemetrySnapshot {
+            tensor_drift,
+            ..valid_snapshot()
+        };
+        writer.write_snapshot(&snapshot).expect("write");
+        assert!(
+            reader.read_snapshot().is_none(),
+            "tensor_drift infinito aceptado: {tensor_drift}"
+        );
+    }
+
+    drop(reader);
+    drop(writer);
+    std::fs::remove_file(path).expect("cleanup");
+}
+
+#[test]
+fn telemetry_viz_path_matches_demo_and_production_policy() {
+    let _restore = EnvironmentRestore::capture();
+
+    for (demo, expected) in [
+        (true, "data/demo/telemetry_mmap.bin"),
+        (false, "data/prod/telemetry_mmap.bin"),
+    ] {
+        // SAFETY: este binario de pruebas se ejecuta con --test-threads=1 y el
+        // guard restaura las cuatro variables al terminar el escenario.
+        unsafe {
+            std::env::set_var("TG_GENOME_ENV", if demo { "demo" } else { "prod" });
+            std::env::set_var("USE_TESTNET", if demo { "true" } else { "false" });
+            std::env::remove_var("SHADOW_MODE");
+            std::env::remove_var("BINANCE_USE_DEMO");
+        }
+        let policy = quantum_arena::paths::env_data_path("telemetry_mmap.bin");
+        assert_eq!(telemetry_server::telemetry_viz_path(), policy);
+        assert_eq!(policy, expected);
+    }
+}
+
+struct EnvironmentRestore {
+    entries: Vec<(&'static str, Option<String>)>,
+}
+
+impl EnvironmentRestore {
+    fn capture() -> Self {
+        const KEYS: [&str; 4] = [
+            "TG_GENOME_ENV",
+            "USE_TESTNET",
+            "SHADOW_MODE",
+            "BINANCE_USE_DEMO",
+        ];
+        Self {
+            entries: KEYS
+                .into_iter()
+                .map(|key| (key, std::env::var(key).ok()))
+                .collect(),
+        }
+    }
+}
+
+impl Drop for EnvironmentRestore {
+    fn drop(&mut self) {
+        for (key, value) in &self.entries {
+            // SAFETY: restauración del entorno en el mismo binario monohilo.
+            unsafe {
+                if let Some(value) = value {
+                    std::env::set_var(key, value);
+                } else {
+                    std::env::remove_var(key);
+                }
+            }
+        }
+    }
+}

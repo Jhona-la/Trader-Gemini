@@ -38,23 +38,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args: Vec<String> = std::env::args().collect();
     let once_mode = args.iter().any(|a| a == "--once");
 
-    // Buscar ruta de telemetría mmap (prod, demo o fallback temporal)
-    let possible_paths = [
-        "data/telemetry_mmap.bin",
-        "data/demo/telemetry_mmap.bin",
-        "data/prod/telemetry_mmap.bin",
-        "telemetry_mmap.bin",
-    ];
-
-    let mut target_path = possible_paths[0];
-    for p in &possible_paths {
-        if std::path::Path::new(p).exists() {
-            target_path = p;
-            break;
-        }
-    }
-
-    let mut reader = MmapVizStreamReader::new(target_path);
+    let target_path = telemetry_server::telemetry_viz_path();
+    let mut reader = MmapVizStreamReader::new(&target_path);
 
     let active_symbols = quantum_arena::symbols::get_active_universe();
     let vn = Vec::new();
@@ -156,7 +141,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 &betti_1,
             );
 
-            render_tui(&mut stdout, packet.as_ref(), target_path)?;
+            render_tui(&mut stdout, packet.as_ref(), &target_path)?;
         }
     }
 

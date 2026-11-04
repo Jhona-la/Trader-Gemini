@@ -120,6 +120,11 @@ struct CoinState {
     is_active: bool,
 }
 
+/// Ruta mmap compartida por el productor y la suite visual desacoplada.
+pub fn telemetry_viz_path() -> String {
+    quantum_arena::paths::env_data_path("telemetry_mmap.bin")
+}
+
 /// Extrae una vista de telemetría sin sustituir datos ausentes por defaults.
 pub fn snapshot_from_arena(arena: &GlobalArena) -> mmap_viz_stream::TelemetrySnapshot {
     let mut ml_sum = 0.0;
@@ -220,7 +225,7 @@ pub async fn start_telemetry_server(
         });
     }
 
-    let viz_path = quantum_arena::paths::env_data_path("telemetry_mmap.bin");
+    let viz_path = telemetry_viz_path();
     let viz_arena = arena.clone();
     match mmap_viz_stream::MmapVizStreamWriter::new(&viz_path) {
         Ok(mut writer) => {
@@ -1302,11 +1307,20 @@ async fn dashboard_html() -> impl IntoResponse {
                 // 2. Hypergraph
                 const hyperRes = await fetch('/api/viz/hypergraph');
                 const hyperData = await hyperRes.json();
-                const hx = hyperData.nodes.map(n => n.x);
-                const hy = hyperData.nodes.map(n => n.y);
-                const hz = hyperData.nodes.map(n => n.z);
-                const htext = hyperData.nodes.map(n => `${n.symbol} | S_q: ${formatNumber(n.tsallis_entropy)} | Void: ${formatNumber(n.void_risk)}`);
-                const hcolor = hyperData.nodes.map(n => n.isolation_state === 'Quarantined' ? '#ff3366' : '#00ff88');
+                const hyperDataValid = hyperData !== null && hyperData !== undefined
+                    && Array.isArray(hyperData.nodes) && Array.isArray(hyperData.pods);
+                const hyperNodes = hyperDataValid ? hyperData.nodes : [];
+                const hyperPods = hyperDataValid ? hyperData.pods : [];
+                const hyperHasNodes = hyperDataValid && hyperNodes.length > 0;
+                const hx = hyperHasNodes ? hyperNodes.map(n => n.x) : [];
+                const hy = hyperHasNodes ? hyperNodes.map(n => n.y) : [];
+                const hz = hyperHasNodes ? hyperNodes.map(n => n.z) : [];
+                const htext = hyperHasNodes
+                    ? hyperNodes.map(n => `${n.symbol} | S_q: ${formatNumber(n.tsallis_entropy)} | Void: ${formatNumber(n.void_risk)}`)
+                    : ['N/D'];
+                const hcolor = hyperHasNodes
+                    ? hyperNodes.map(n => n.isolation_state === 'Quarantined' ? '#ff3366' : '#00ff88')
+                    : [];
 
                 const hTrace = {
                     x: hx, y: hy, z: hz, text: htext,
@@ -1327,42 +1341,52 @@ async fn dashboard_html() -> impl IntoResponse {
                 // Pods health list
                 const podsContainer = document.getElementById('pods-container');
                 let podsHtml = '';
-                hyperData.pods.forEach(p => {
-                    const statusClass = p.status === 'Optimal' ? 'positive' : (p.status === 'Quarantined' ? 'negative' : 'neutral');
-                    podsHtml += `
-                        <div style="background: rgba(20,20,30,0.8); border: 1px solid rgba(255,255,255,0.05); padding: 8px 12px; border-radius: 8px;">
-                            <div style="display: flex; justify-content: space-between; font-size: 0.8rem;">
-                                <span>Pod #${p.pod_id} (${p.member_nodes.length} assets)</span>
-                                <span class="${statusClass}">[${p.status}]</span>
+                if (!hyperDataValid || hyperPods.length === 0) {
+                    podsHtml = '<div style="color: #888;">N/D</div>';
+                } else {
+                    hyperPods.forEach(p => {
+                        const statusClass = p.status === 'Optimal' ? 'positive' : (p.status === 'Quarantined' ? 'negative' : 'neutral');
+                        podsHtml += `
+                            <div style="background: rgba(20,20,30,0.8); border: 1px solid rgba(255,255,255,0.05); padding: 8px 12px; border-radius: 8px;">
+                                <div style="display: flex; justify-content: space-between; font-size: 0.8rem;">
+                                    <span>Pod #${p.pod_id} (${p.member_nodes.length} assets)</span>
+                                    <span class="${statusClass}">[${p.status}]</span>
+                                </div>
+                                <div style="font-size: 0.75rem; color: #888; margin-top: 4px;">Mean S: ${formatNumber(p.mean_entanglement)} | Max Void: ${formatNumber(p.max_void_risk)}</div>
                             </div>
-                            <div style="font-size: 0.75rem; color: #888; margin-top: 4px;">Mean S: ${formatNumber(p.mean_entanglement)} | Max Void: ${formatNumber(p.max_void_risk)}</div>
-                        </div>
-                    `;
-                });
-                podsContainer.innerHTML = podsHtml || '<div style="color: #888;">No pods active</div>';
+                        `;
+                    });
+                }
+                podsContainer.innerHTML = podsHtml;
 
                 // 3. Causal Meta-Analytics
                 const causalRes = await fetch('/api/viz/causal');
                 const causalData = await causalRes.json();
+                const causalAttributions = causalData !== null && causalData !== undefined
+                    && Array.isArray(causalData.attributions) ? causalData.attributions : null;
                 const tbody = document.getElementById('causal-table-body');
                 let tableHtml = '';
-                causalData.attributions.forEach(a => {
-                    const pnlClass = a.aumann_shapley_pnl >= 0 ? 'positive' : 'negative';
-                    const statusClass = a.is_quarantined ? 'negative' : 'positive';
-                    const statusText = a.is_quarantined ? 'QUARANTINE (SRP)' : 'ACTIVE';
-                    tableHtml += `
-                        <tr style="border-bottom: 1px solid rgba(255,255,255,0.05);">
-                            <td style="padding: 6px 8px; color: var(--neon-blue);">${a.name}</td>
-                            <td style="padding: 6px 8px;" class="${pnlClass}">${formatNumber(a.aumann_shapley_pnl)} USD</td>
-                            <td style="padding: 6px 8px;">${formatNumber(a.owen_coalition_pnl)} USD</td>
-                            <td style="padding: 6px 8px;">${formatNumber(a.net_share_pct, 1)}%</td>
-                            <td style="padding: 6px 8px; color: var(--neon-red);">${formatNumber(a.attributed_fees)} USD</td>
-                            <td style="padding: 6px 8px;">${formatNumber(a.silicon_efficiency_eta, 3)}</td>
-                            <td style="padding: 6px 8px;">${formatNumber(a.srp_statistic, 2)}</td>
-                            <td style="padding: 6px 8px;" class="${statusClass}">${statusText}</td>
-                        </tr>
-                    `;
-                });
+                if (causalAttributions === null || causalAttributions.length === 0) {
+                    tableHtml = '<tr><td colspan="8" style="padding: 6px 8px; color: #888;">N/D</td></tr>';
+                } else {
+                    causalAttributions.forEach(a => {
+                        const pnlClass = a.aumann_shapley_pnl >= 0 ? 'positive' : 'negative';
+                        const statusClass = a.is_quarantined ? 'negative' : 'positive';
+                        const statusText = a.is_quarantined ? 'QUARANTINE (SRP)' : 'ACTIVE';
+                        tableHtml += `
+                            <tr style="border-bottom: 1px solid rgba(255,255,255,0.05);">
+                                <td style="padding: 6px 8px; color: var(--neon-blue);">${a.name}</td>
+                                <td style="padding: 6px 8px;" class="${pnlClass}">${formatNumber(a.aumann_shapley_pnl)} USD</td>
+                                <td style="padding: 6px 8px;">${formatNumber(a.owen_coalition_pnl)} USD</td>
+                                <td style="padding: 6px 8px;">${formatNumber(a.net_share_pct, 1)}%</td>
+                                <td style="padding: 6px 8px; color: var(--neon-red);">${formatNumber(a.attributed_fees)} USD</td>
+                                <td style="padding: 6px 8px;">${formatNumber(a.silicon_efficiency_eta, 3)}</td>
+                                <td style="padding: 6px 8px;">${formatNumber(a.srp_statistic, 2)}</td>
+                                <td style="padding: 6px 8px;" class="${statusClass}">${statusText}</td>
+                            </tr>
+                        `;
+                    });
+                }
                 tbody.innerHTML = tableHtml;
 
             } catch (err) { console.error("Error fetching viz data:", err); }

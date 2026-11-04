@@ -135,6 +135,7 @@ impl MmapVizStreamReader {
             || !first.memory_used_mb.is_finite()
             || !first.global_roi.is_finite()
             || !first.win_rate.is_finite()
+            || !(first.tensor_drift.is_finite() || first.tensor_drift.is_nan())
         {
             return None;
         }
