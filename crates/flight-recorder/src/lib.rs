@@ -7,7 +7,6 @@ use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 /// 🛸 ALGORITMO #79: CAJA NEGRA Y REGISTRADOR DE VUELO HFT (FLIGHT RECORDER ENGINE)
 /// Grabación continua en ring-buffer circular Lock-Free de 64 bytes por micro-evento,
 /// permitiendo autopsias forenses instantáneas post-crash sin latencia en el Hot-Path.
-
 pub const EVENT_TICK_PROCESSED: u16 = 1;
 pub const EVENT_ORDER_SUBMITTED: u16 = 2;
 pub const EVENT_ORDER_FILLED: u16 = 3;

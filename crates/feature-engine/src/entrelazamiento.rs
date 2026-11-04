@@ -102,7 +102,10 @@ fn mediana(vals: &[f64]) -> f64 {
 /// Bits de la serie bajo el modo elegido. Devuelve la serie de bits y el
 /// umbral efectivo usado (0.0 en signo; la mediana en mediana — o error si
 /// la serie es constante).
-fn binarizar(rets: &[f64], modo: ModoBinarizacion) -> Result<(Vec<bool>, f64), EntrelazamientoError> {
+fn binarizar(
+    rets: &[f64],
+    modo: ModoBinarizacion,
+) -> Result<(Vec<bool>, f64), EntrelazamientoError> {
     match modo {
         ModoBinarizacion::Signo => Ok((rets.iter().map(|&r| r > 0.0).collect(), 0.0)),
         ModoBinarizacion::Mediana => {
@@ -188,14 +191,15 @@ pub fn entrelazamiento_neto(
         return Err(EntrelazamientoError::SinVentanas);
     }
     let corte = l / 2;
-    let s = mps::entrelazamiento_corte(&psi, l, corte).map_err(|_| EntrelazamientoError::NucleoDegenerado)?;
+    let s = mps::entrelazamiento_corte(&psi, l, corte)
+        .map_err(|_| EntrelazamientoError::NucleoDegenerado)?;
     // Nulo: misma marginal, orden destruido — determinista y reproducible.
     let (limpios, _) = filtrar_finitos(rets);
     let mut perm = limpios;
     permutacion_determinista(&mut perm);
     let (psi_nulo, _, _) = estado_empirico(&perm, l, modo)?;
-    let s_nulo =
-        mps::entrelazamiento_corte(&psi_nulo, l, corte).map_err(|_| EntrelazamientoError::NucleoDegenerado)?;
+    let s_nulo = mps::entrelazamiento_corte(&psi_nulo, l, corte)
+        .map_err(|_| EntrelazamientoError::NucleoDegenerado)?;
     Ok(MedidaEntrelazamiento {
         s,
         s_nulo,
@@ -263,7 +267,7 @@ impl CurvaFases {
         g_max: f64,
         n: usize,
     ) -> Result<Self, EntrelazamientoError> {
-        if l < 2 || l > MPS_MAX_L {
+        if !(2..=MPS_MAX_L).contains(&l) {
             return Err(EntrelazamientoError::LongitudInvalida { l });
         }
         if !(g_min.is_finite() && g_max.is_finite()) || g_min <= 0.0 || g_max <= g_min || n < 4 {
@@ -275,7 +279,10 @@ impl CurvaFases {
             let g = g_min * (g_max / g_min).powf(k as f64 / (n - 1) as f64);
             let r = mps::dmrg_ising(l, 1.0, g, bond_max, sweeps)
                 .map_err(|_| EntrelazamientoError::NucleoDegenerado)?;
-            let estado = r.mps.estado_denso().map_err(|_| EntrelazamientoError::NucleoDegenerado)?;
+            let estado = r
+                .mps
+                .estado_denso()
+                .map_err(|_| EntrelazamientoError::NucleoDegenerado)?;
             let s = mps::entrelazamiento_corte(&estado, l, corte)
                 .map_err(|_| EntrelazamientoError::NucleoDegenerado)?;
             if !s.is_finite() {
@@ -339,7 +346,10 @@ impl CurvaFases {
             }
         }
         let distancias_log = cruces.iter().map(|g| g.ln().abs()).collect();
-        Ok(InversionFase { cruces, distancias_log })
+        Ok(InversionFase {
+            cruces,
+            distancias_log,
+        })
     }
 }
 
@@ -478,7 +488,10 @@ impl EntrelazamientoStreaming {
         let desc = self.descartados_desde_medida;
         self.descartados_desde_medida = 0;
         let m = entrelazamiento_neto_q(&tramo, self.l, self.modo, q)?;
-        Ok(MedidaEntrelazamiento { descartados: desc, ..m })
+        Ok(MedidaEntrelazamiento {
+            descartados: desc,
+            ..m
+        })
     }
 }
 
