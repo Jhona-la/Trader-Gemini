@@ -6,6 +6,12 @@ Candidato final `e4e47d95bf51b8b1f388f17f63311fb8b4bc418e`, padres `2ab90d3a` y 
 
 Evidencia: 403/403 tests en 57 suites (20 ignored, 0 filtered), LPPLS 4/4, workspace `check --all-targets` exit0, Zero-Wait 22/22 y compiler bus 20/20. Clippy bajó de 57 a 1: `navier_stokes::update`, cuyo llamador está bajo QRA y no se tocó. El formatter cubrió 632 targets en 5 lotes y conserva deuda baseline (`auditor_interno.rs:92` primera causa). `test_pre_push_gate.py` no existe en el snapshot; no se ejecutó la familia legacy. Attestation y publicación permanecen bloqueados. Producción NO-GO; ROI/PnL/WR/Sharpe/EV=`N/D`. Estado máquina: `.agent_tx/staging/KIMI-QUANT-SR-V35/F1_FEATURE_BASELINE_STATUS.json`.
 
+## 2026-11-04 — KIMI-QUANT-SR-V35 F1R2: lint complementario, SBE y persistencia
+
+Candidato `79e6fbc0455a9a327158a5bc8ad4bbaac5bae2b7`, con handoff `1fd5adf0` y upstream documental `91bd085f`; no hay CAS de este candidato todavía. Se integraron `omniscient-registry` (`if false` y `io::Error::other`), `flight-recorder` (rustdoc), SBE (iteradores bid/ask) y raw zone (`as_chunks::<40>`), sin cambios de layout ni recuperación.
+
+Evidencia nueva: nativas 914/914 (25 ignored), DAZ 17/17, átomos 19/19, SBE 6/6 y storage 50/50. Workspace Clippy deja sólo `navier_stokes::update` (QRA). Formatter 632 targets/5 lotes conserva deuda baseline; `test_pre_push_gate.py` sigue ausente. Attestation y publicación permanecen bloqueados. Producción NO-GO; ROI/PnL/WR/Sharpe/EV=`N/D`. Estado máquina: `.agent_tx/staging/KIMI-QUANT-SR-V35/F1_FEATURE_BASELINE_STATUS.json`.
+
 ## 2026-11-03 — Claude (Línea I, Opus 5.5): I-11 = N56, las reconexiones WS caben en el límite de Binance
 
 Rama `claude/linea-i-i11`, [PR #168](https://github.com/Jhona-la/Trader-Gemini/pull/168).
