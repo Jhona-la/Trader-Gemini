@@ -362,3 +362,111 @@ async fn missing_arena_is_rejected_without_scenario_defaults() {
         "missing arena must be explicit, got: {error}"
     );
 }
+
+#[tokio::test]
+async fn nonfinite_confidence_is_rejected_before_execution() {
+    let arena = GlobalArena::build_in_own_stack(100.0);
+    symbols::update_dynamic_universe(vec!["BTCUSDT".to_string()]);
+    let mut executor =
+        OrderExecutor::new("dummy_key".to_string(), "dummy_secret".to_string(), true);
+    executor.set_paper_trading(true);
+    executor.arena.store(Some(arena));
+    let router = QuantumOrderRouter::new(Arc::new(ArcSwap::from_pointee(executor)));
+    let decision = TensorDecision {
+        signal: SignalType::Long,
+        net_confidence: f64::NAN,
+        expected_volatility: 0.02,
+        expected_lifetime_ms: 10_000,
+    };
+
+    let result = router
+        .route_order(
+            "BTCUSDT",
+            &decision,
+            50000.0,
+            0.001,
+            0.001,
+            0.1,
+            20,
+            0.0001,
+            "ORD_NAN_CONFIDENCE",
+        )
+        .await;
+    let error = result.expect_err("NaN confidence must be rejected before execution");
+    assert!(
+        error.contains("REJ_INVALID_SIGNAL_EVIDENCE"),
+        "unexpected error: {error}"
+    );
+}
+
+#[tokio::test]
+async fn nonfinite_volatility_is_rejected_before_execution() {
+    let arena = GlobalArena::build_in_own_stack(100.0);
+    symbols::update_dynamic_universe(vec!["BTCUSDT".to_string()]);
+    let mut executor =
+        OrderExecutor::new("dummy_key".to_string(), "dummy_secret".to_string(), true);
+    executor.set_paper_trading(true);
+    executor.arena.store(Some(arena));
+    let router = QuantumOrderRouter::new(Arc::new(ArcSwap::from_pointee(executor)));
+    let decision = TensorDecision {
+        signal: SignalType::Long,
+        net_confidence: 0.95,
+        expected_volatility: f64::NAN,
+        expected_lifetime_ms: 10_000,
+    };
+
+    let result = router
+        .route_order(
+            "BTCUSDT",
+            &decision,
+            50000.0,
+            0.001,
+            0.001,
+            0.1,
+            20,
+            0.0001,
+            "ORD_NAN_VOLATILITY",
+        )
+        .await;
+    let error = result.expect_err("NaN volatility must be rejected before execution");
+    assert!(
+        error.contains("REJ_INVALID_SIGNAL_EVIDENCE"),
+        "unexpected error: {error}"
+    );
+}
+
+#[tokio::test]
+async fn nonfinite_spread_is_rejected_before_execution() {
+    let arena = GlobalArena::build_in_own_stack(100.0);
+    symbols::update_dynamic_universe(vec!["BTCUSDT".to_string()]);
+    let mut executor =
+        OrderExecutor::new("dummy_key".to_string(), "dummy_secret".to_string(), true);
+    executor.set_paper_trading(true);
+    executor.arena.store(Some(arena));
+    let router = QuantumOrderRouter::new(Arc::new(ArcSwap::from_pointee(executor)));
+    let decision = TensorDecision {
+        signal: SignalType::Long,
+        net_confidence: 0.95,
+        expected_volatility: 0.02,
+        expected_lifetime_ms: 10_000,
+    };
+
+    let result = router
+        .route_order(
+            "BTCUSDT",
+            &decision,
+            50000.0,
+            0.001,
+            0.001,
+            0.1,
+            20,
+            f64::NAN,
+            "ORD_NAN_SPREAD",
+        )
+        .await;
+    let error = result.expect_err("NaN spread must be rejected before execution");
+    assert!(
+        error.contains("REJ_INVALID_SIGNAL_EVIDENCE"),
+        "unexpected error: {error}"
+    );
+}

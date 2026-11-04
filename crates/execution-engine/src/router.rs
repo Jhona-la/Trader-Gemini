@@ -172,6 +172,17 @@ impl QuantumOrderRouter {
             SignalType::Short => false,
             SignalType::Flat => return Ok(()),
         };
+        let expected_edge_fraction = decision.net_confidence * decision.expected_volatility * 2.0;
+        if !decision.net_confidence.is_finite()
+            || !(0.0..=1.0).contains(&decision.net_confidence)
+            || !decision.expected_volatility.is_finite()
+            || decision.expected_volatility < 0.0
+            || !spread_pct.is_finite()
+            || spread_pct < 0.0
+            || !expected_edge_fraction.is_finite()
+        {
+            return Err(format!("REJ_INVALID_SIGNAL_EVIDENCE: {symbol}"));
+        }
 
         let (live_maker_fee, live_funding_cost) = {
             let exec = self.executor.load();
@@ -326,7 +337,7 @@ impl QuantumOrderRouter {
 
         // 3. Verificación de Viabilidad Financiera y Selección Adversa (Axioma: E[ΔW] >= 3x fricciones)
         let (viability, metrics) = AdverseSelectionGuard::evaluate_viability(
-            decision.net_confidence * decision.expected_volatility * 2.0,
+            expected_edge_fraction,
             spread_pct,
             decision.expected_volatility,
             decision.net_confidence,
