@@ -8,6 +8,23 @@
 > real: quién está vivo, quién toca qué, y qué recursos se están
 > consumiendo.
 
+### Manifiesto A4 — corte F0 (10 rutas originales; 7 deltas revisados)
+
+`root:<sha256>` identifica el comportamiento instalado en el workspace al corte. `staging:<sha256>` identifica el candidato revisado no instalado bajo `.agent_tx/staging/AGENT-01-live-red/`. Las rutas se declaran individualmente; los totales históricos no generan la lista.
+
+| Ruta | Dueño | Lease | Base | Candidato | Acción permitida |
+|---|---|---|---|---|---|
+| `crates/execution-engine/src/entry_dispatch.rs` | Kimi AGENT-01 / T2 | A4-T2; sin handoff | `root:acbe2520ee8d347a48ae6da62d005e2f2175570054c2ca32dafba895ddf9099b` | `staging:edd9e8f88f79863c7edd62e5ee81c1ad20a6008d58d723697db0a4ef0986c2ef` | T2: reconciliar; no instalar desde F0 |
+| `crates/execution-engine/src/execution_evidence.rs` | Kimi AGENT-01 / T2 | A4-T2; sin handoff | `root:8f2ad02d0baaa8759744ebb6480f1586040ea5531b7984cbe3a3db0713df74c7` | `root:8f2ad02d0baaa8759744ebb6480f1586040ea5531b7984cbe3a3db0713df74c7` | Conservar; sin delta A4 revisado |
+| `crates/execution-engine/src/executor.rs` | Kimi AGENT-01 / T2 | A4-T2; sin handoff | `root:0a7a78362093ff47d3eaf13694470da544f82a7e58a5a21144de7f53028e88a7` | `root:0a7a78362093ff47d3eaf13694470da544f82a7e58a5a21144de7f53028e88a7` | Conservar; sin delta A4 revisado |
+| `crates/execution-engine/tests/entry_route_contract.rs` | Kimi AGENT-01 / T2 | A4-T2; sin handoff | `root:3aac206ca2b3d5f95bcfa0c5d300a85d964f86d4b9293912007dbfe848972886` | `staging:42ae30d10084fc203f32c1fb4f2b487863c1909212716fb39deb5c0d20adbfc7` | T2: reconciliar; no instalar desde F0 |
+| `crates/execution-engine/tests/f325_min_notional_ioc_open_diagnostics.rs` | Kimi AGENT-01 / T2 | A4-T2; sin handoff | `root:a2678d440d1aafc1630755d3cb569d9a4099240a8086fcaa59512260640197e2` | `staging:9228628b8ae01e09c2b1e8de4f9c3b99abdafa3e8831fc2f71800e1b1cd2c004` | T2: reconciliar; no instalar desde F0 |
+| `crates/quantum-arena/src/symbol_registry.rs` | Kimi AGENT-01 / T2 | A4-T2; sin handoff | `root:eb70fa02aed20f04301f292f0fc261a291017dce85dfca32e0e904c76efcbbab` | `staging:9dcdd68776205a99bc356ee92a3d1dcd0f4a9179bc70185e047e33d1a5796294` | T2: reconciliar; no instalar desde F0 |
+| `crates/quantum-arena/src/symbols.rs` | Kimi AGENT-01 / T2 | A4-T2; sin handoff | `root:d46565744ae0197e956d119ee9da65aeae8a0d97478a398b0c376061cc889ccc` | `root:d46565744ae0197e956d119ee9da65aeae8a0d97478a398b0c376061cc889ccc` | Conservar; sin delta A4 revisado |
+| `src/bin/god_engine.rs` | Kimi AGENT-01 / T2 | A4-T2; sin handoff | `root:29551cf4c436930c8c25f73fc67277fc55d1347981b369b82e0979dee90ddea8` | `staging:b46c984f3272ecc421ae12edce9eb3d7acd987d59f5790db4fe48042c0856cb8` | T2: reconciliar; no instalar desde F0 |
+| `src/host_oms.rs` | Kimi AGENT-01 / T2 | A4-T2; sin handoff | `root:25b66dcae31d5bd396ab565a8df7158b4c5d9835792165a738a39660a4af3114` | `staging:7fd5e31d92ef08796fa290d686f00e24482f0c3a493bf0a9bdeb6ad069e82523` | T2: reconciliar; no instalar desde F0 |
+| `tests/host_oms_contract.rs` | Kimi AGENT-01 / T2 | A4-T2; sin handoff | `root:19e75f8c4f68859df94ebefb866b82239d7ef625f5def8fda194b8b874dc8a33` | `staging:0bc96cfad555f5ffefc36684bb645a1c74a787fb215a3c86a343715908734703` | T2: reconciliar; no instalar desde F0 |
+
 ## 1. Registro de agentes (heartbeat)
 
 Formato de fila (actualiza la tuya en cada paso, no borres las demás):
