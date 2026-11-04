@@ -209,7 +209,7 @@ impl MultifractalSpectrumEngine {
         // tamaño finito — las colas extremas mienten más de lo que informan.
         const Q: [f64; 5] = [-2.0, -1.0, 0.0, 1.0, 2.0];
         const B: [usize; 3] = [1, 2, 4];
-        if self.count < 32 {
+        if !(32..=self.returns_history.len()).contains(&self.count) {
             return None;
         }
         let n = self.count;
@@ -861,6 +861,18 @@ mod tests {
             (h_avg - 0.50).abs() < 0.02,
             "En nulo i.i.d. browniano, el Hurst promedio debe ser 0.50 +/- 0.02, dio: {}",
             h_avg
+        );
+    }
+
+    #[test]
+    fn estado_publico_mayor_que_el_anillo_no_genera_espectro_parcial() {
+        let mut engine = MultifractalSpectrumEngine::new(50);
+        engine.count = 51;
+        engine.returns_history[0] = 0.01;
+        let resultado = engine.espectro_f_alpha();
+        assert!(
+            resultado.is_none(),
+            "un count mayor que la capacidad debe rechazar el estado completo: {resultado:?}"
         );
     }
 }
