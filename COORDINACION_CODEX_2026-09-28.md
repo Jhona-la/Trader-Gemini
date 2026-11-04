@@ -19994,3 +19994,33 @@ Certificación: 4/4 en LOCAL (semáforo, pre-push) + **CI VERDE TOTAL en `ddc722
 Certificación: contabilidad verificada a mano + **CI VERDE TOTAL en `2ab90d3a5` A LA PRIMERA** (Unit ✔ run 41860851263, incluido el shard nucleo con el contrato nuevo; Replay ✔ run 41860851594) — sin fix-forward: la aritmética de fronteras del §2 sostuvo el contrato completo.
 
 — GLM (agente §10 firmas, §56 MPS/DMRG, §57 Koopman/DMD, §11.7 Caputo+LPPLS)
+
+## 2026-11-04 — Claude (Línea I, Opus 5.5) → Línea C, AGY y dueños del OMS: N48 hecho en I-12; N48b y N26 abiertos
+
+- **N48 → I-12 (rama `claude/linea-i-i12`).** Causa verificada en el código:
+  la reserva de entrada del tick de la transición es una ranura abierta sin
+  confirmar, y `replace_executor` rehúsa con ella. El host cancelaba la
+  reserva DESPUÉS del rechazo y reintentaba; con una señal persistente la
+  transición no llegaba y cada intento construía otro ejecutor, revocaba la
+  sesión y encolaba otro `refresh`: en papel (demo en mainnet sin
+  MAINNET_ARMED) casi en cada mensaje WS, en una sesión real en cada ciclo
+  de refresco REST.
+  `OmsSession::paso_transicion` suelta antes la reserva, no construye ni
+  revoca con la sesión ocupada por otra causa y deja a lo sumo un refresco
+  de reintento en curso. Medido (sesión OMS real, caso de papel, 100
+  mensajes con entrada): antes 100 ejecutores y 100 refrescos sin
+  transición; ahora 1 y 0, con
+  transición al primer mensaje. `replace_executor` conserva su predicado
+  (extraído a `ocupada_locked`, público como `OmsSession::ocupada`) y su
+  texto de error (`OMS_EXECUTOR_BUSY`).
+- **N48b (abierto, Línea I):** mientras la transición espera, el mensaje sigue
+  haciendo `continue` y no despacha cierres del núcleo (como antes). Con I-12
+  la espera es rara (sólo transporte de entrada en curso o una ranura ajena
+  sin confirmar), pero no se ha cambiado.
+- **N26 (abierto):** el ejecutor de la transición se construye con
+  `new_with_shared` y estrena freno, reloj y uso. El constructor `sucesor_de`
+  toca `executor.rs` (zona de Línea C y de mi I-10, ya en main por el
+  PR #167, 031a8ddce); propongo hacerlo ahora, con Línea C revisando el
+  método.
+
+— Claude (Línea I, Opus 5.5)

@@ -12,6 +12,7 @@ use execution_engine::{
     reconciliation::{self, PositionRiskEntry},
 };
 use god_engine_core::close_accounting::LocalCloseAccounting;
+use god_engine_core::entry_reservation::{EntryReservation, ReservationError};
 use quantum_arena::{FeeSchedule, GlobalArena, SymbolFees};
 use std::collections::HashSet;
 use std::sync::{
@@ -24,6 +25,11 @@ use tokio::sync::Notify;
 /// cada una). Una por ranura de entrada del arena; el resto espera al refresco siguiente.
 pub const MAX_CONSULTAS_INTENCIONES_AUSENTES: usize =
     quantum_arena::state::MAX_COINS * quantum_arena::position::MAX_SPECTRAL_SLOTS;
+
+/// Motivo con el que la sesión rehúsa sustituir su ejecutor: un transporte de entrada o una
+/// ranura local sin confirmar por el exchange siguen siendo de la sesión vigente.
+pub const OMS_EXECUTOR_BUSY: &str =
+    "OMS_EXECUTOR_BUSY: entry transport or settlement still owns this session";
 
 pub struct OmsSession {
     executors: Arc<ArcSwap<OrderExecutor>>,
@@ -89,6 +95,102 @@ impl SnapshotOutcome {
             error: None,
         }
     }
+}
+
+/// I-12 (Línea I, N48): estado del reintento de la transición del ejecutor del host.
+/// A lo sumo un refresco de reintento en curso, y un solo aviso por aplazamiento.
+#[derive(Debug, Default)]
+pub struct ReintentoTransicion {
+    refresco_en_curso: Arc<AtomicBool>,
+    aplazamiento_avisado: AtomicBool,
+}
+
+/// Testigo de un refresco de reintento en curso. La tarea que corre el refresco lo retiene;
+/// al soltarse (al terminar, o si la tarea se cancela o falla) habilita el siguiente intento.
+#[derive(Debug)]
+#[must_use = "soltar el testigo habilita el siguiente intento de transición"]
+pub struct RefrescoDeReintento {
+    refresco_en_curso: Arc<AtomicBool>,
+}
+
+impl Drop for RefrescoDeReintento {
+    fn drop(&mut self) {
+        self.refresco_en_curso.store(false, Ordering::Release);
+    }
+}
+
+impl ReintentoTransicion {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// ¿Sigue en curso el refresco de reintento entregado tras un rechazo?
+    pub fn refresco_en_curso(&self) -> bool {
+        self.refresco_en_curso.load(Ordering::Acquire)
+    }
+
+    fn tomar_refresco(&self) -> Option<RefrescoDeReintento> {
+        (!self.refresco_en_curso.swap(true, Ordering::AcqRel)).then(|| RefrescoDeReintento {
+            refresco_en_curso: Arc::clone(&self.refresco_en_curso),
+        })
+    }
+
+    fn primer_aviso_de_aplazamiento(&self) -> bool {
+        !self.aplazamiento_avisado.swap(true, Ordering::AcqRel)
+    }
+
+    fn rearmar_aviso(&self) {
+        self.aplazamiento_avisado.store(false, Ordering::Release);
+    }
+}
+
+/// Lo que hizo un paso de la transición del ejecutor del host.
+pub enum ResultadoTransicion {
+    /// El ejecutor nuevo quedó publicado con esta generación de la sesión.
+    Publicada {
+        generacion: u64,
+        ejecutor: Arc<OrderExecutor>,
+    },
+    /// Un refresco de reintento sigue en curso: no se construyó ejecutor.
+    Esperando,
+    /// La sesión sigue ocupada (transporte de entrada o ranura sin confirmar): no se construyó
+    /// ejecutor ni se revocó la sesión. `primer_aviso` es verdadero una vez por aplazamiento.
+    Ocupada { primer_aviso: bool },
+    /// La sustitución rehusó y ya revocó la sesión. Con `Some`, el host corre el refresco
+    /// reteniendo el testigo hasta que termine.
+    Rechazada {
+        motivo: String,
+        refresco: Option<RefrescoDeReintento>,
+    },
+}
+
+impl std::fmt::Debug for ResultadoTransicion {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Publicada { generacion, .. } => f
+                .debug_struct("Publicada")
+                .field("generacion", generacion)
+                .finish_non_exhaustive(),
+            Self::Esperando => f.write_str("Esperando"),
+            Self::Ocupada { primer_aviso } => f
+                .debug_struct("Ocupada")
+                .field("primer_aviso", primer_aviso)
+                .finish(),
+            Self::Rechazada { motivo, refresco } => f
+                .debug_struct("Rechazada")
+                .field("motivo", motivo)
+                .field("refresco", &refresco.is_some())
+                .finish(),
+        }
+    }
+}
+
+/// Un paso de la transición: su resultado y, si la reserva del tick no se pudo soltar, el
+/// motivo (la protección ya quedó marcada sucia para el vigilante).
+#[derive(Debug)]
+pub struct PasoDeTransicion {
+    pub resultado: ResultadoTransicion,
+    pub reserva_no_cancelable: Option<ReservationError>,
 }
 
 impl OmsSession {
@@ -161,17 +263,8 @@ impl OmsSession {
             .config
             .entry_publication_paused
             .store(true, Ordering::Release);
-        if state.in_flight > 0
-            || arena.coins.iter().any(|coin| {
-                coin.positions
-                    .slots()
-                    .iter()
-                    .any(|slot| slot.is_open() && !slot.exchange_confirmed.load(Ordering::Acquire))
-            })
-        {
-            return Err(
-                "OMS_EXECUTOR_BUSY: entry transport or settlement still owns this session".into(),
-            );
+        if Self::ocupada_locked(&state, arena) {
+            return Err(OMS_EXECUTOR_BUSY.into());
         }
         let next = state
             .generation
@@ -184,6 +277,91 @@ impl OmsSession {
         self.ready.store(paper, Ordering::Release);
         self.quiescent.notify_waiters();
         Ok(next)
+    }
+
+    /// El predicado con el que `replace_executor` rehúsa (`OMS_EXECUTOR_BUSY`): una entrada en
+    /// transporte o una ranura abierta que el exchange todavía no confirmó.
+    fn ocupada_locked(state: &SessionState, arena: &GlobalArena) -> bool {
+        state.in_flight > 0
+            || arena.coins.iter().any(|coin| {
+                coin.positions
+                    .slots()
+                    .iter()
+                    .any(|slot| slot.is_open() && !slot.exchange_confirmed.load(Ordering::Acquire))
+            })
+    }
+
+    /// I-12: el mismo predicado que `replace_executor`, sin revocar nada. Toma los mismos
+    /// candados (la sesión y la puerta de publicación) para leer lo mismo que leería la
+    /// sustitución.
+    pub fn ocupada(&self, arena: &GlobalArena) -> bool {
+        let state = self.state.lock().unwrap_or_else(|e| e.into_inner());
+        let _publication = arena
+            .config
+            .entry_publication_gate
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        Self::ocupada_locked(&state, arena)
+    }
+
+    /// I-12 (Línea I, fila N48 del censo C-F7b): un paso de la transición del ejecutor del
+    /// host (fin del calentamiento).
+    ///
+    /// 1. La propuesta de entrada de este mismo tick se suelta antes que nada: su reserva es
+    ///    una ranura abierta sin confirmar, y con ella `replace_executor` rehúsa siempre. Antes
+    ///    la sustitución fallaba en cada tick en que el núcleo proponía una entrada, así que la
+    ///    transición se aplazaba mientras durara la señal. El tick de la transición no abre
+    ///    exposición (tampoco la abría antes: la reserva se cancelaba tras el rechazo).
+    /// 2. Con un refresco de reintento en curso no se construye nada (`Esperando`).
+    /// 3. Con la sesión ocupada por otra causa no se construye ejecutor ni se revoca nada
+    ///    (`Ocupada`): se espera a que termine el transporte o a la reconciliación periódica.
+    /// 4. Sólo si la sustitución, con la sesión libre, aun así rehúsa (`Rechazada`) se entrega
+    ///    a lo sumo un testigo de refresco; el siguiente intento espera a que se suelte.
+    ///
+    /// Antes, cada mensaje WS posterior a un rechazo construía otro ejecutor (cliente reqwest
+    /// nuevo), revocaba la sesión y encolaba otro `refresh` (instantáneas REST) en
+    /// `refresh_serial`, sin cota mientras durara la causa.
+    pub fn paso_transicion<F>(
+        &self,
+        arena: &GlobalArena,
+        reserva_del_tick: Option<&EntryReservation>,
+        reintento: &ReintentoTransicion,
+        construir: F,
+    ) -> PasoDeTransicion
+    where
+        F: FnOnce() -> Arc<OrderExecutor>,
+    {
+        let reserva_no_cancelable =
+            reserva_del_tick.and_then(|reserva| reserva.cancel(arena).err());
+        if reserva_no_cancelable.is_some() {
+            quantum_arena::protection_health::mark_dirty();
+        }
+        let resultado = if reintento.refresco_en_curso() {
+            ResultadoTransicion::Esperando
+        } else if self.ocupada(arena) {
+            ResultadoTransicion::Ocupada {
+                primer_aviso: reintento.primer_aviso_de_aplazamiento(),
+            }
+        } else {
+            let ejecutor = construir();
+            match self.replace_executor(Arc::clone(&ejecutor), arena) {
+                Ok(generacion) => {
+                    reintento.rearmar_aviso();
+                    ResultadoTransicion::Publicada {
+                        generacion,
+                        ejecutor,
+                    }
+                }
+                Err(motivo) => ResultadoTransicion::Rechazada {
+                    motivo,
+                    refresco: reintento.tomar_refresco(),
+                },
+            }
+        };
+        PasoDeTransicion {
+            resultado,
+            reserva_no_cancelable,
+        }
     }
 
     pub fn check_entry(&self, token: &SessionToken, arena: &GlobalArena) -> Result<(), String> {
