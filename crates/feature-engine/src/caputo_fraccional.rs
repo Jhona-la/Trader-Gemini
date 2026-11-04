@@ -49,6 +49,24 @@ impl CaputoStreaming {
         if ventana < 4 {
             return Err("ventana >= 4 para memoria significativa");
         }
+        Ok(Self::construir(alfa, ventana))
+    }
+
+    /// Constructor infalible (GLM 188): α=0.5, W=64 — la configuración del
+    /// operador VIVO en `StatefulEngine`. α=0.5 es la frontera browniana
+    /// (H=0.5: ni persistencia ni anti-persistencia — la memoria neutral);
+    /// W=64 alinea el ring con la cadencia de publicación %64. Existe para
+    /// que el consumidor de engine tenga una vía SIN sitio de pánico (el
+    /// patrón `FirmasMaxEnt::ventana64` del GLM 175); las constantes son
+    /// estáticamente válidas (α∈(0,1], W≥4) y la equivalencia exacta con
+    /// `try_new(0.5, 64)` está certificada en el contrato del módulo.
+    pub fn caputo_neutral64() -> Self {
+        Self::construir(0.5, 64)
+    }
+
+    /// Construcción pura (sin validación): la validación vive en `try_new`
+    /// y las constantes de `caputo_neutral64` son válidas por inspección.
+    fn construir(alfa: f64, ventana: usize) -> Self {
         // Pesos GL: w_0 = 1; w_k = w_{k−1}·(k−α)/(k+1). La recursión es
         // estable (positivos, decrecientes) para α ∈ (0,1].
         let mut pesos = vec![0.0f64; ventana];
@@ -56,7 +74,7 @@ impl CaputoStreaming {
         for k in 1..ventana {
             pesos[k] = pesos[k - 1] * (k as f64 - alfa) / (k as f64 + 1.0);
         }
-        Ok(Self {
+        Self {
             pesos,
             diffs: vec![0.0; ventana],
             cabeza: 0,
@@ -64,7 +82,7 @@ impl CaputoStreaming {
             anterior: f64::NAN,
             calientes: false,
             alfa,
-        })
+        }
     }
 
     /// α del operador (la perilla de la memoria).

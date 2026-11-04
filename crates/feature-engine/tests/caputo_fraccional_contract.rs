@@ -149,3 +149,36 @@ fn entradas_invalidas_y_memoria_del_impulso() {
     );
     assert!(peso_viejo > 0.0, "la cola pesada NO olvida el impulso");
 }
+
+#[test]
+fn constructor_neutral64_es_equivalente_a_try_new() {
+    // GLM 188: el constructor infalible del engine (α=0.5, W=64) produce
+    // EXACTAMENTE la misma máquina que try_new(0.5, 64) — misma α, mismos
+    // pesos, mismas salidas bit a bit sobre una serie con estructura.
+    let mut por_try_new = CaputoStreaming::try_new(0.5, 64).expect("α=0.5, W=64 válidos");
+    let mut por_constructor = CaputoStreaming::caputo_neutral64();
+    assert_eq!(por_try_new.alfa(), por_constructor.alfa());
+    assert_eq!(por_try_new.alfa(), 0.5, "la frontera browniana H=0.5");
+    for k in [0usize, 1, 7, 32, 63] {
+        assert_eq!(
+            por_try_new.peso(k),
+            por_constructor.peso(k),
+            "w_{k} idéntico entre constructores"
+        );
+    }
+    assert_eq!(
+        por_try_new.llenos(),
+        por_constructor.llenos(),
+        "mismo warmup"
+    );
+    // Salidas bit a bit: rampa + impulso + planicies (estructura mixta).
+    let serie: Vec<f64> = (0..80)
+        .map(|i| if i == 40 { 50.0 } else { i as f64 })
+        .collect();
+    for s in serie {
+        let a = por_try_new.push(s);
+        let b = por_constructor.push(s);
+        assert_eq!(a, b, "salida idéntica para la muestra {s}");
+        assert!(a.map(|v| v.is_finite()).unwrap_or(true));
+    }
+}
