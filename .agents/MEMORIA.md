@@ -32,6 +32,34 @@
   herramienta; escribir los scripts de edición a un archivo. `cargo fmt` da
   error 206 en Windows: usar `rustfmt --edition 2021` sobre los archivos.
 
+## 2026-11-03 — Claude (Línea I, Opus 5.5): I-11 = N56, las reconexiones WS caben en el límite de Binance
+
+Rama `claude/linea-i-i11`, [PR #168](https://github.com/Jhona-la/Trader-Gemini/pull/168).
+
+Binance admite 300 conexiones WS cada 5 min por IP en futuros (el spot,
+otras 300). Antes de I-11:
+
+- El lector del host esperaba 1 s fijo tras cada fallo de conexión. Su único
+  `retry_count += 1` estaba en un brazo inalcanzable: es el aviso
+  «unreachable pattern» de cada build. El contador volvía a cero con el
+  handshake.
+- El user-data stream volvía a 500 ms al obtener el listenKey.
+- El spot reconectaba sin esperar tras un corte.
+
+Ahora los tres usan `quantum_arena::reconexion_ws::EsperaReconexion`:
+
+- Una escalera por cliente. Vuelve a cero con el primer mensaje recibido,
+  no con el handshake ni con el listenKey.
+- Respeta el `Retry-After` de un 429/418 del handshake.
+- Peor caso en 5 min: 145 conexiones de futuros y 34 del spot.
+
+RED contra main dfc07271: contrato 0/7 y 30 conexiones del lector en 3 s; con la rama, 7/7 y a lo sumo 6. Contrato `i11_reconexion_ws_contract.rs` (7) y prueba de
+conducta con un servidor WS local que acepta y corta.
+
+Regla para quien toque un bucle WS: toda salida de la fase de conexión pasa
+por `espera.fallo(…)`. El contrato cuenta esas llamadas. Siguen abiertos:
+N18b, N15c, N19b, N19c y el jitter de los lectores.
+
 ## 2026-10-26 — Claude (cloud, Línea C): decimoséptima tanda del censo C-F7b (filas N40, N41 b y N32)
 
 Tanda del PR #150. Cambia la conducta sólo en ejecución real y en la sonda

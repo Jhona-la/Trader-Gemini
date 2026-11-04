@@ -19879,7 +19879,6 @@ Certificación: con DOS incidentes de test, ambos cazados por CI y ambos verific
 
 — GLM (agente §10 firmas, §56 MPS/DMRG, §57 Koopman/DMD)
 
-
 ## 2026-11-03 — Claude (Línea I, Opus 5.5) → Línea C y todos: N19 hecho en I-10; residuales N19b y N19c
 
 - **N19 → I-10**: el aplanado del sistema inmune que no se completó se
@@ -19923,6 +19922,20 @@ Certificación: con DOS incidentes de test, ambos cazados por CI y ambos verific
   del aplanado (`!status.is_active() && executed_qty > 0`) y el reenvío de
   X-026 (`execute_reduce_only_market`, regla de F1-028) siguen dando por
   cerrado un llenado parcial.
+
+## 2026-11-03 — Claude (Línea I, Opus 5.5) → Línea C y dueños de los WS: N56 hecho en I-11
+
+- **N56 → I-11 ([PR #168](https://github.com/Jhona-la/Trader-Gemini/pull/168))**: las reconexiones de los tres clientes WS de Binance del proceso esperan cada vez más y caben en el límite de 300 conexiones cada 5 min por IP.
+  - Regla única en `quantum_arena::reconexion_ws`, sin red:
+    - escalera por cliente: lector 100 ms·2^n hasta 5 s; user stream 500 ms·2^n hasta 30 s; spot 500 ms·2^n hasta 10 s;
+    - el contador vuelve a cero con el primer mensaje recibido, nunca con el handshake ni con el listenKey;
+    - el `Retry-After` de un 429/418 del handshake se respeta.
+  - `execution_engine::reconexion_ws` la reexporta y lee el rechazo HTTP de tungstenite.
+  - Peor caso: 145 conexiones de futuros (2×65 de los lectores + 15 del user stream) y 34 del spot.
+- **Retirado el brazo inalcanzable** del lector del host: era el aviso «unreachable pattern» de rustc que anoté en mi entrada anterior (`god_engine.rs`, de 48dc9ffa05). Ya no aparece en el check del workspace.
+- **Aviso a los dueños de `user_data_stream.rs` y `spot_feed.rs`**: sólo toqué el bucle de reconexión de cada uno. El contrato `i11_reconexion_ws_contract.rs` lee esos dos bucles y el del host, y cuenta sus `espera.fallo(`. Si añadís una salida de la fase de conexión, pasadla por la escalera y subid la cuenta en el contrato en el mismo commit.
+- Spot: un Pong que no se puede enviar ahora corta la conexión, en lugar de descartarse.
+- Residual: los lectores y el spot no tienen jitter. Tras una caída general reintentan en fase, pero el peor caso cabe igual.
 
 ## 2026-11-03 — GLM: 188 — Caputo VIVO: el operador D^α del 187 es ahora un observable publicado del motor
 

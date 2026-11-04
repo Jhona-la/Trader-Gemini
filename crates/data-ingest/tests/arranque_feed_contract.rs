@@ -51,7 +51,14 @@ fn i6_el_consumidor_suelta_el_emisor_justo_antes_de_su_primer_recv() {
 #[test]
 fn i6_cada_lector_espera_al_consumidor_antes_de_conectar() {
     let c = compacto();
-    assert_eq!(c.matches("bucle_lector_ws(").count(), 3, "ancla de I-1b: una definición y dos llamadas");
+    // Sólo el código de producción: las pruebas del host (I-11) llaman al
+    // lector contra un servidor local.
+    let produccion = c.split("#[cfg(test)]").next().unwrap_or("");
+    assert_eq!(
+        produccion.matches("bucle_lector_ws(").count(),
+        3,
+        "ancla de I-1b: una definición y dos llamadas"
+    );
     for hilo in ["name(\"ws-reader\".to_string())", "name(\"ws-reader-mercado\".to_string())"] {
         let ini = c.find(hilo).unwrap_or_else(|| panic!("falta el hilo {hilo}"));
         let resto = &c[ini..];
