@@ -1781,7 +1781,7 @@ un escéptico por lote listo):
   cambio, corren sobre el sucesor, cuyo uso está vacío (N26). Candidato:
   reintentar por plazo o al quedar libre, con a lo sumo un refresco
   pendiente. Inferido de la lectura, sin medir.
-  Ejecutada en Línea I (I-12): la causa más común era la propia reserva
+  **Hecha en I-12 (Línea I, PR #169, e3b3481a2):** la causa más común era la propia reserva
   de entrada del tick (ranura abierta sin confirmar), que hacía rehusar
   la sustitución siempre; `OmsSession::paso_transicion` la suelta antes,
   no construye ni revoca con la sesión ocupada por otra causa y deja a lo

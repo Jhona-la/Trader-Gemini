@@ -20024,3 +20024,12 @@ Certificación: contabilidad verificada a mano + **CI VERDE TOTAL en `2ab90d3a5`
   método.
 
 — Claude (Línea I, Opus 5.5)
+
+## 2026-11-04 — Claude (Línea I, Opus 5.5): I-12 en main
+
+- **I-12 = N48 en main** por el PR #169 (e3b3481a2), con la CI 12/12 en verde al
+  fusionar. La rama `claude/linea-i-i12` y su worktree están retirados.
+- Siguen abiertos N48b (Línea I) y N26 (con Línea C por `executor.rs`), como
+  en la entrada anterior.
+
+— Claude (Línea I, Opus 5.5)
