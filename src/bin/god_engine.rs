@@ -377,6 +377,123 @@ async fn esperar_auditoria_en_curso() {
     );
 }
 
+/// I-10 (N19): el apagado y un reintento del aplanado inmune no se solapan.
+/// Antes el inmune sólo aplanaba en su disparo; con los reintentos, uno podía
+/// coincidir con el aplanado del apagado y enviar cierres dobles. El apagado
+/// anuncia `APAGANDO` y espera al intento en curso; el inmune anuncia el suyo
+/// y no empieza si el apagado ya está anunciado (los dos con SeqCst: al menos
+/// uno ve al otro).
+static APAGANDO: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+static APLANADO_INMUNE_EN_CURSO: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(false);
+
+/// Mientras vive, hay un intento del aplanado inmune en curso.
+struct AplanadoInmuneEnCurso;
+
+impl AplanadoInmuneEnCurso {
+    fn anunciar() -> Self {
+        APLANADO_INMUNE_EN_CURSO.store(true, Ordering::SeqCst);
+        Self
+    }
+}
+
+impl Drop for AplanadoInmuneEnCurso {
+    fn drop(&mut self) {
+        APLANADO_INMUNE_EN_CURSO.store(false, Ordering::SeqCst);
+    }
+}
+
+/// I-10: el apagado espera al intento del aplanado inmune en curso. Tope de
+/// 30 s (cada petición del aplanado tiene su propio plazo): el apagado no
+/// espera indefinidamente.
+async fn esperar_aplanado_inmune_en_curso() {
+    for _ in 0..600 {
+        if !APLANADO_INMUNE_EN_CURSO.load(Ordering::SeqCst) {
+            return;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+    }
+    telemetry_server::telemetry_log!(
+        "⚠️ [SHUTDOWN] El aplanado del sistema inmune sigue en curso tras 30 s: se aplana igual."
+    );
+}
+
+/// I-10 (N19): un intento del aplanado del sistema inmune, el del disparo o
+/// un reintento. Lo anota en `reintento`, que decide cuándo toca el
+/// siguiente si no se completó. `reloj` es el reloj monótono del inmune: el
+/// intento se anota con el instante en que TERMINA, y la espera hasta el
+/// siguiente cuenta desde ahí.
+async fn aplanado_inmune(
+    executor: &execution_engine::executor::OrderExecutor,
+    arena: &quantum_arena::GlobalArena,
+    reintento: &mut execution_engine::aplanado_inmune::ReintentoAplanado,
+    reloj: std::time::Instant,
+    aviso_frenado: &mut telemetry_server::estrangulador::Estrangulador,
+) {
+    use execution_engine::aplanado_inmune::TrasAplanado;
+    let _en_curso = AplanadoInmuneEnCurso::anunciar();
+    if APAGANDO.load(Ordering::SeqCst) {
+        // El apagado aplana todo él.
+        return;
+    }
+    // CL-44b (ADR-0015): el aplanado cierra en el exchange sin tocar las
+    // ranuras locales, que el núcleo sigue gestionando bajo el latch (CL-43).
+    // Sin consumir su confirmación, un SL o TP local posterior se aprendía
+    // como cierre real a un precio inventado. En un reintento consume las
+    // que se hayan confirmado desde el intento anterior.
+    let consumidas = arena.consume_exchange_confirmations();
+    let resultado = {
+        // CL-44b: el vigilante no audita mientras se aplana (re-armaba
+        // piernas que quedaban huérfanas).
+        let _aplanado = quantum_arena::protection_health::begin_flatten();
+        esperar_auditoria_en_curso().await;
+        // I-10: el primer intento barre además las órdenes huérfanas; los
+        // reintentos no lo repiten (el barrido recorre todos los símbolos sin
+        // posición y alargaba cada intento).
+        if reintento.intentos() == 0 {
+            executor.flatten_all_positions().await
+        } else {
+            executor.flatten_open_positions().await
+        }
+    };
+    let ahora_ms = reloj.elapsed().as_millis() as u64;
+    let tras = reintento.registrar(&resultado, ahora_ms);
+    let intento = reintento.intentos();
+    match &resultado {
+        Ok((cancelaciones, positions)) => telemetry_server::telemetry_log!(
+            "🧹 [SISTEMA INMUNE] Aplanado (intento {}): {} cancelaciones de órdenes, {} posiciones cerradas, {} ranuras dejan de contar como reales. Rearme manual: si fue por drawdown, reiniciar no basta (el pico se guarda); hay que retirar pico_capital.txt del entorno, que acepta el capital actual como nuevo pico.",
+            intento,
+            cancelaciones,
+            positions,
+            consumidas
+        ),
+        Err(e) if tras == TrasAplanado::Frenado => {
+            // Un baneo 418 puede durar minutos: un aviso por minuto, no uno
+            // por ciclo.
+            if let Some(n) = aviso_frenado.admitir(ahora_ms) {
+                telemetry_engine::telemetry_err!(
+                    "⏸️ [SISTEMA INMUNE] Aplanado (intento {}) frenado por el exchange, sin enviar cierres: {}. Se reintenta en cada ciclo del inmune hasta que acabe el freno; mientras tanto el vigilante mantiene la protección. (+{} avisos suprimidos)",
+                    intento,
+                    e,
+                    n
+                );
+            }
+        }
+        Err(e) => telemetry_server::telemetry_log!(
+            "🚨 [SISTEMA INMUNE] Aplanado (intento {}) FALLÓ: {}. Se reintenta en {} s mientras el inmune siga disparado; mientras tanto el vigilante mantiene la protección. INTERVENCIÓN MANUAL URGENTE si se repite.",
+            intento,
+            e,
+            reintento
+                .proximo_ms()
+                .map_or(0, |p| p.saturating_sub(ahora_ms) / 1_000)
+        ),
+    }
+    // CL-44 / CL-44b (ADR-0015): el vigilante audita ya, no a los 60 s,
+    // también si el aplanado devolvió Ok: `flatten_all_positions` devuelve
+    // Ok aunque la purga de un símbolo falle tras su cierre.
+    quantum_arena::protection_health::mark_dirty();
+}
+
 /// B1.3: audita la cobertura TP/SL de una posición viva contra las algo
 /// orders REALES del exchange y hace top-up QUIRÚRGICO por lado (solo el
 /// lado con shortfall — un OCO completo sobre-protegería el sano y el
@@ -2199,8 +2316,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 let mut aviso_atraso_local = telemetry_server::estrangulador::Estrangulador::new(60_000);
                 let mut aviso_feed_quieto = telemetry_server::estrangulador::Estrangulador::new(60_000);
                 let mut aviso_reloj = telemetry_server::estrangulador::Estrangulador::new(600_000);
+                // I-10 (N19): el aplanado del disparo que no se completó se
+                // reintenta mientras el inmune siga disparado.
+                let mut reintento_aplanado =
+                    execution_engine::aplanado_inmune::ReintentoAplanado::nuevo();
+                let mut aviso_aplanado_frenado =
+                    telemetry_server::estrangulador::Estrangulador::new(60_000);
                 loop {
-                    tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+                    tokio::time::sleep(std::time::Duration::from_millis(
+                        execution_engine::aplanado_inmune::PERIODO_CICLO_INMUNE_MS,
+                    ))
+                    .await;
 
                     // F1-011: Comando de rearme explícito por archivo: rearme_frenos.txt
                     let ruta_rearme = std::path::PathBuf::from(quantum_arena::paths::env_data_path("rearme_frenos.txt"));
@@ -2215,9 +2341,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         // primer ciclo tras rearmar volvía a aplanar con una sola
                         // muestra lenta, o con un stall puro, que CERT-M4-H04 excluye.
                         latency_strikes = 0;
+                        // I-10 (N19): el operador toma el control; si el
+                        // disparador sigue, el inmune vuelve a aplanar.
+                        let aplanado_pendiente = reintento_aplanado.pendiente();
+                        reintento_aplanado.olvidar();
                         let ks_armado = arena_imm.kill_switch_active.load(Ordering::Relaxed);
                         telemetry_server::telemetry_log!(
-                            "🛡️ [IMMUNE] Archivo rearme_frenos.txt consumido: frenos en stops rearmados, latch liberado y strikes de latencia a 0.{}",
+                            "🛡️ [IMMUNE] Archivo rearme_frenos.txt consumido: frenos en stops rearmados, latch liberado y strikes de latencia a 0.{}{}",
+                            if aplanado_pendiente {
+                                " Se abandona el aplanado pendiente: las posiciones que no cerró siguen abiertas con la protección del vigilante."
+                            } else {
+                                ""
+                            },
                             if ks_armado {
                                 " El kill-switch de arena y ejecutor sigue armado hasta reiniciar."
                             } else {
@@ -2227,6 +2362,22 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     }
 
                     if latched {
+                        // I-10 (N19): antes el aplanado que no se completó no
+                        // se volvía a intentar. Frenado, se reintenta en cada
+                        // ciclo (no envía cierres); tras otro error, con la
+                        // espera doble de `ReintentoAplanado`.
+                        let ahora_reintento = reloj_imm.elapsed().as_millis() as u64;
+                        if reintento_aplanado.toca(ahora_reintento) {
+                            let executor = exec_imm.load_full();
+                            aplanado_inmune(
+                                &executor,
+                                &arena_imm,
+                                &mut reintento_aplanado,
+                                reloj_imm,
+                                &mut aviso_aplanado_frenado,
+                            )
+                            .await;
+                        }
                         continue;
                     }
 
@@ -2433,35 +2584,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         arena_imm.kill_switch_active.store(true, Ordering::Relaxed);
                         let executor = exec_imm.load_full();
                         executor.trigger_kill_switch();
-                        // CL-44b (ADR-0015): el aplanado cierra en el exchange
-                        // sin tocar las ranuras locales, que el núcleo sigue
-                        // gestionando bajo el latch (CL-43). Sin consumir su
-                        // confirmación, un SL o TP local posterior se
-                        // aprendía como cierre real a un precio inventado.
-                        let consumidas = arena_imm.consume_exchange_confirmations();
-                        {
-                            // CL-44b: el vigilante no audita mientras se
-                            // aplana (re-armaba piernas que quedaban huérfanas).
-                            let _aplanado = quantum_arena::protection_health::begin_flatten();
-                            esperar_auditoria_en_curso().await;
-                            match executor.flatten_all_positions().await {
-                                Ok((syms, positions)) => telemetry_server::telemetry_log!(
-                                    "🧹 [SISTEMA INMUNE] Aplanado: {} símbolos con órdenes canceladas, {} posiciones cerradas, {} ranuras dejan de contar como reales. Rearme manual: si fue por drawdown, reiniciar no basta (el pico se guarda); hay que retirar pico_capital.txt del entorno, que acepta el capital actual como nuevo pico.",
-                                    syms,
-                                    positions,
-                                    consumidas
-                                ),
-                                Err(e) => telemetry_server::telemetry_log!(
-                                    "🚨 [SISTEMA INMUNE] Aplanado FALLÓ: {} — INTERVENCIÓN MANUAL URGENTE.",
-                                    e
-                                ),
-                            }
-                        }
-                        // CL-44 / CL-44b (ADR-0015): el vigilante audita ya, no
-                        // a los 60 s, también si el aplanado devolvió Ok:
-                        // `flatten_all_positions` devuelve Ok aunque un cierre
-                        // falle después de purgar las piernas de su símbolo.
-                        quantum_arena::protection_health::mark_dirty();
+                        // I-10 (N19): el aplanado (CL-44b) en `aplanado_inmune`,
+                        // que deja anotado si hay que reintentarlo.
+                        aplanado_inmune(
+                            &executor,
+                            &arena_imm,
+                            &mut reintento_aplanado,
+                            reloj_imm,
+                            &mut aviso_aplanado_frenado,
+                        )
+                        .await;
                         latched = true;
                     }
                 }
@@ -5981,15 +6113,21 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .kill_switch_active
                 .store(true, Ordering::SeqCst);
             executor.trigger_kill_switch();
+            // I-10: un reintento del aplanado inmune en curso termina antes
+            // del aplanado final, y no empieza otro después.
+            APAGANDO.store(true, Ordering::SeqCst);
+            rt_handle_for_thread.block_on(esperar_aplanado_inmune_en_curso());
             // CL-44b (ADR-0015): el vigilante no audita durante el aplanado
             // final. La guarda no se suelta: el proceso sale con ella puesta.
             let _aplanado = quantum_arena::protection_health::begin_flatten();
             rt_handle_for_thread.block_on(esperar_auditoria_en_curso());
             match rt_handle_for_thread.block_on(executor.flatten_all_positions()) {
-                Ok((closed, skipped)) => telemetry_server::telemetry_log!(
-                    "🛑 [SHUTDOWN] Flatten-all completado: {} cerradas, {} ya planas.",
-                    closed,
-                    skipped
+                // I-10: el primer número son cancelaciones de órdenes, no
+                // posiciones (el aviso decía «cerradas» y «ya planas»).
+                Ok((cancelaciones, cerradas)) => telemetry_server::telemetry_log!(
+                    "🛑 [SHUTDOWN] Flatten-all completado: {} posiciones cerradas, {} cancelaciones de órdenes.",
+                    cerradas,
+                    cancelaciones
                 ),
                 Err(e) => telemetry_server::telemetry_log!(
                     "🛑 [SHUTDOWN] Flatten-all con error: {:?} — el arranque próximo reconciliará.",
