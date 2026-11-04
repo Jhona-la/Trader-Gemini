@@ -191,6 +191,32 @@ pub struct StatefulEngine {
     /// ausencia honesta. Sin cambio de conducta: como σz (175), λ_KS
     /// (181) y β_RG (183/184), consumo = decisión del consejo.
     pub caputo_d_alfa: f32,
+    /// GLM 190 (mandato §11.7): anillo de precios de ventana fija (256,
+    /// O(1)/tick, sin asignaciones por tick) — el alimento del detector
+    /// LPPLS de Sornette (189). Box para no inflar el struct inline.
+    precios_ventana: Box<[f64; 256]>,
+    /// Cabeza del anillo (índice del precio más reciente; convención
+    /// idéntica a CaputoStreaming: el rezago k se lee en (cabeza+k)%n).
+    precios_cabeza: usize,
+    /// Muestras acumuladas (satura en 256).
+    precios_llenos: usize,
+    /// GLM 190: t_c LPPLS estimado ADELANTE de la última muestra, en
+    /// TICKS del feed (paso=1: el feed es irregular y NO se fabrica un
+    /// eje temporal en ms). NaN hasta el primer análisis con anillo
+    /// lleno — ausencia honesta. Calibración del 189: la evidencia SOLA
+    /// no es detector (cruza el umbral en ~la mitad de caminantes);
+    /// señal compuesta = evidencia >= 0.10 && estable; el consumo
+    /// natural es ACOPLADO al κ de Hawkes — decisión del consejo.
+    pub lppls_tc_ticks_adelante: f32,
+    /// Frecuencia log-periódica ω̂ del mejor ajuste (bin de la grilla).
+    pub lppls_omega: f32,
+    /// Evidencia: fracción de varianza que SÓLO la log-periodicidad
+    /// explica más allá de la tendencia suave. NO usar sola.
+    pub lppls_evidencia: f32,
+    /// Unanimidad de las tres ventanas ancladas al final (0/16 en el
+    /// nulo caminante medido en el 189). false con evidencia NaN =
+    /// sin análisis aún (warmup).
+    pub lppls_estable: bool,
     pub hurst_micro: f32,
     pub hurst_meso: f32,
     pub hurst_macro: f32,
@@ -331,6 +357,16 @@ impl StatefulEngine {
             caputo: feature_engine::caputo_fraccional::CaputoStreaming::caputo_neutral64(),
             caputo_ultimo: f64::NAN,
             caputo_d_alfa: f32::NAN,
+            // GLM 190: anillo LPPLS + observables NaN hasta el primer
+            // análisis con anillo lleno (primera frontera elegible: el
+            // tick 257 — frontera %64 con 256 precios acumulados).
+            precios_ventana: Box::new([0.0; 256]),
+            precios_cabeza: 0,
+            precios_llenos: 0,
+            lppls_tc_ticks_adelante: f32::NAN,
+            lppls_omega: f32::NAN,
+            lppls_evidencia: f32::NAN,
+            lppls_estable: false,
             multifractal: feature_engine::MultiScaleHurstConfluence::new(),
             regime: MarketRegime::Neutral,
             kline_start_ms: 0,
@@ -904,6 +940,48 @@ impl StatefulEngine {
                 // no un promedio — el contrato certifica el REZAGO de la
                 // cadencia (el crudo sigue moviéndose entre fronteras).
                 self.caputo_d_alfa = self.caputo_ultimo as f32;
+            }
+            // GLM 190 (§11.7): anillo de precios para el LPPLS — O(1)/tick,
+            // misma convención de ring que CaputoStreaming (la cabeza
+            // avanza hacia atrás al escribir).
+            {
+                let n = self.precios_ventana.len();
+                self.precios_cabeza = (self.precios_cabeza + n - 1) % n;
+                self.precios_ventana[self.precios_cabeza] = price;
+                if self.precios_llenos < n {
+                    self.precios_llenos += 1;
+                }
+            }
+            // Análisis LPPLS SÓLO en frontera %64 con anillo LLENO (la
+            // calibración del 189 es n=256; un anillo parcial no está
+            // calibrado y no se publica). Coste ~1.5 Mflop por frontera.
+            // Err (degenerado) ⇒ NaN/false: ausencia honesta, jamás un
+            // ajuste inventado. La ventana se copia en ORDEN CRONOLÓGICO
+            // (el rezago máximo es la muestra más vieja) — invertir el
+            // orden destruye el ajuste y el contrato lo cazaría.
+            if self.tick_count % 64 == 0 && self.precios_llenos == 256 {
+                let n = self.precios_ventana.len();
+                let mut ventana: [f64; 256] = [0.0; 256];
+                for (i, slot) in ventana.iter_mut().enumerate() {
+                    let rezago = n - 1 - i; // i=0 ⇒ la muestra más vieja
+                    *slot = self.precios_ventana[(self.precios_cabeza + rezago) % n];
+                }
+                // paso=1: t_c se publica en TICKS del feed (ver doc del
+                // campo — sin eje temporal fabricado).
+                match feature_engine::lppls_sornette::lppls_ventana(&ventana, 1) {
+                    Ok(informe) => {
+                        self.lppls_tc_ticks_adelante = informe.t_c_ms_adelante as f32;
+                        self.lppls_omega = informe.omega as f32;
+                        self.lppls_evidencia = informe.evidencia as f32;
+                        self.lppls_estable = informe.estable;
+                    }
+                    Err(_) => {
+                        self.lppls_tc_ticks_adelante = f32::NAN;
+                        self.lppls_omega = f32::NAN;
+                        self.lppls_evidencia = f32::NAN;
+                        self.lppls_estable = false;
+                    }
+                }
             }
             // D-434: Invocar análisis espectral FFT Radix-2 periódicamente cada 64 ticks
             if self.tick_count % 64 == 0 {
