@@ -166,9 +166,9 @@ pub fn jacobi_eigensolver_symmetric(
     let mut a = *matrix;
 
     // Inicializar matriz de autovectores como la identidad
-    for i in 0..MAX_ASSETS {
-        for j in 0..MAX_ASSETS {
-            eigenvectors[i][j] = if i == j && i < dim { 1.0 } else { 0.0 };
+    for (i, row) in eigenvectors.iter_mut().enumerate() {
+        for (j, value) in row.iter_mut().enumerate() {
+            *value = if i == j && i < dim { 1.0 } else { 0.0 };
         }
     }
 
@@ -183,9 +183,9 @@ pub fn jacobi_eigensolver_symmetric(
     for _sweep in 0..MAX_SWEEPS {
         // Calcular norma fuera de la diagonal
         let mut off_diag_sum = 0.0;
-        for p in 0..dim {
-            for q in (p + 1)..dim {
-                off_diag_sum += a[p][q].abs();
+        for (p, row) in a.iter().enumerate().take(dim) {
+            for &value in row.iter().skip(p + 1).take(dim - p - 1) {
+                off_diag_sum += value.abs();
             }
         }
 
@@ -228,23 +228,25 @@ pub fn jacobi_eigensolver_symmetric(
                 a[q][p] = 0.0;
 
                 // Actualizar resto de elementos fuera de diagonal
-                for r in 0..dim {
+                for (r, row) in a.iter_mut().enumerate().take(dim) {
                     if r != p && r != q {
-                        let arp = a[r][p];
-                        let arq = a[r][q];
-                        a[r][p] = arp - s * (arq + arp * tau_rot);
-                        a[p][r] = a[r][p];
-                        a[r][q] = arq + s * (arp - arq * tau_rot);
-                        a[q][r] = a[r][q];
+                        let arp = row[p];
+                        let arq = row[q];
+                        row[p] = arp - s * (arq + arp * tau_rot);
+                        row[q] = arq + s * (arp - arq * tau_rot);
                     }
                 }
+                let column_p: [f64; MAX_ASSETS] = std::array::from_fn(|r| a[r][p]);
+                let column_q: [f64; MAX_ASSETS] = std::array::from_fn(|r| a[r][q]);
+                a[p].copy_from_slice(&column_p);
+                a[q].copy_from_slice(&column_q);
 
                 // Acumular rotación en la base ortonormal de autovectores
-                for r in 0..dim {
-                    let vrp = eigenvectors[r][p];
-                    let vrq = eigenvectors[r][q];
-                    eigenvectors[r][p] = vrp - s * (vrq + vrp * tau_rot);
-                    eigenvectors[r][q] = vrq + s * (vrp - vrq * tau_rot);
+                for row in eigenvectors.iter_mut().take(dim) {
+                    let vrp = row[p];
+                    let vrq = row[q];
+                    row[p] = vrp - s * (vrq + vrp * tau_rot);
+                    row[q] = vrq + s * (vrp - vrq * tau_rot);
                 }
             }
         }
@@ -265,10 +267,8 @@ pub fn jacobi_eigensolver_symmetric(
         }
         if max_idx != i {
             eigenvalues.swap(i, max_idx);
-            for r in 0..dim {
-                let temp = eigenvectors[r][i];
-                eigenvectors[r][i] = eigenvectors[r][max_idx];
-                eigenvectors[r][max_idx] = temp;
+            for row in eigenvectors.iter_mut().take(dim) {
+                row.swap(i, max_idx);
             }
         }
     }
@@ -287,7 +287,11 @@ pub struct MarchenkoPasturFilter;
 impl MarchenkoPasturFilter {
     /// Calcula los bordes teóricos $[\lambda_-, \lambda_+]$ de la distribución de Marchenko-Pastur.
     #[inline]
-    pub fn compute_bounds(n_assets: usize, t_samples: usize, noise_variance: f64) -> MarchenkoPasturBounds {
+    pub fn compute_bounds(
+        n_assets: usize,
+        t_samples: usize,
+        noise_variance: f64,
+    ) -> MarchenkoPasturBounds {
         let n = (n_assets.clamp(1, MAX_ASSETS)) as f64;
         let t = (t_samples.max(2)) as f64;
         let q = (n / t).clamp(0.001, 1.0);
@@ -340,8 +344,8 @@ impl MarchenkoPasturFilter {
         let mut total_trace_sum = 0.0;
         let mut signal_trace_sum = 0.0;
 
-        for i in 0..dim {
-            let lambda = raw_eigs[i].max(0.0);
+        for &raw in raw_eigs.iter().take(dim) {
+            let lambda = raw.max(0.0);
             total_trace_sum += lambda;
             if lambda > bounds.lambda_plus {
                 signal_count += 1;
@@ -450,8 +454,8 @@ impl WilsonRGEngine {
 
             // 1. Calcular acoplamiento de autocorrelación lag-1 g1
             let mut mean = 0.0;
-            for i in 0..current_len {
-                mean += current_buf[i];
+            for &value in current_buf.iter().take(current_len) {
+                mean += value;
             }
             mean /= current_len as f64;
 
@@ -459,8 +463,8 @@ impl WilsonRGEngine {
             let mut cov1 = 0.0;
             let mut m4 = 0.0;
 
-            for i in 0..current_len {
-                let diff = current_buf[i] - mean;
+            for &value in current_buf.iter().take(current_len) {
+                let diff = value - mean;
                 let diff_sq = diff * diff;
                 var += diff_sq;
                 m4 += diff_sq * diff_sq;
@@ -715,20 +719,22 @@ impl RandomMatrixWilsonEngine {
         let count = self.history_counts[asset_idx];
         if count >= LYAPUNOV_EMBED_DIM {
             let mut state = [0.0; LYAPUNOV_EMBED_DIM];
-            for lag in 0..LYAPUNOV_EMBED_DIM {
-                let idx = (self.history_heads[asset_idx] + RETURNS_HISTORY_SIZE - 1 - lag) % RETURNS_HISTORY_SIZE;
-                state[lag] = self.returns_history[asset_idx][idx];
+            for (lag, slot) in state.iter_mut().enumerate() {
+                let idx = (self.history_heads[asset_idx] + RETURNS_HISTORY_SIZE - 1 - lag)
+                    % RETURNS_HISTORY_SIZE;
+                *slot = self.returns_history[asset_idx][idx];
             }
             let diag = self.lyapunov_estimators[asset_idx].update(state);
             self.lyapunov_diagnostics[asset_idx] = diag;
         }
 
         // 3. Actualizar Grupo de Renormalización de Wilson periódicamente (cada 8 ticks)
-        if count >= 32 && (count % 8 == 0) {
+        if count >= 32 && count.is_multiple_of(8) {
             let mut ordered = [0.0; RETURNS_HISTORY_SIZE];
-            let start = (self.history_heads[asset_idx] + RETURNS_HISTORY_SIZE - count) % RETURNS_HISTORY_SIZE;
-            for i in 0..count {
-                ordered[i] = self.returns_history[asset_idx][(start + i) % RETURNS_HISTORY_SIZE];
+            let start = (self.history_heads[asset_idx] + RETURNS_HISTORY_SIZE - count)
+                % RETURNS_HISTORY_SIZE;
+            for (i, slot) in ordered.iter_mut().enumerate().take(count) {
+                *slot = self.returns_history[asset_idx][(start + i) % RETURNS_HISTORY_SIZE];
             }
             self.wilson_reports[asset_idx] = WilsonRGEngine::compute_scale_flow(&ordered[..count]);
         }
@@ -736,7 +742,11 @@ impl RandomMatrixWilsonEngine {
 
     /// Recalcula la matriz empírica de correlación y ejecuta el Denoising cuántico de Marchenko-Pastur.
     pub fn update_correlation_denoising(&mut self) -> Option<DenoisedCorrelationResult> {
-        let min_count = self.history_counts[..self.n_assets].iter().copied().min().unwrap_or(0);
+        let min_count = self.history_counts[..self.n_assets]
+            .iter()
+            .copied()
+            .min()
+            .unwrap_or(0);
         if min_count < 16 {
             return None;
         }
@@ -751,7 +761,8 @@ impl RandomMatrixWilsonEngine {
         // Calcular medias y desviaciones estándar
         for i in 0..self.n_assets {
             let mut m = 0.0;
-            let start = (self.history_heads[i] + RETURNS_HISTORY_SIZE - t_samples) % RETURNS_HISTORY_SIZE;
+            let start =
+                (self.history_heads[i] + RETURNS_HISTORY_SIZE - t_samples) % RETURNS_HISTORY_SIZE;
             for k in 0..t_samples {
                 m += self.returns_history[i][(start + k) % RETURNS_HISTORY_SIZE];
             }
@@ -770,14 +781,18 @@ impl RandomMatrixWilsonEngine {
         // Calcular correlaciones cruzadas Pearson
         for i in 0..self.n_assets {
             corr[i][i] = 1.0;
-            let start_i = (self.history_heads[i] + RETURNS_HISTORY_SIZE - t_samples) % RETURNS_HISTORY_SIZE;
+            let start_i =
+                (self.history_heads[i] + RETURNS_HISTORY_SIZE - t_samples) % RETURNS_HISTORY_SIZE;
 
             for j in (i + 1)..self.n_assets {
-                let start_j = (self.history_heads[j] + RETURNS_HISTORY_SIZE - t_samples) % RETURNS_HISTORY_SIZE;
+                let start_j = (self.history_heads[j] + RETURNS_HISTORY_SIZE - t_samples)
+                    % RETURNS_HISTORY_SIZE;
                 let mut cov = 0.0;
                 for k in 0..t_samples {
-                    let di = self.returns_history[i][(start_i + k) % RETURNS_HISTORY_SIZE] - means[i];
-                    let dj = self.returns_history[j][(start_j + k) % RETURNS_HISTORY_SIZE] - means[j];
+                    let di =
+                        self.returns_history[i][(start_i + k) % RETURNS_HISTORY_SIZE] - means[i];
+                    let dj =
+                        self.returns_history[j][(start_j + k) % RETURNS_HISTORY_SIZE] - means[j];
                     cov += di * dj;
                 }
                 cov /= t_samples as f64;
@@ -802,7 +817,11 @@ impl RandomMatrixWilsonEngine {
         if let Some(ref res) = self.last_denoised_result {
             res.cleaned_matrix[i][j]
         } else {
-            if i == j { 1.0 } else { 0.0 }
+            if i == j {
+                1.0
+            } else {
+                0.0
+            }
         }
     }
 

@@ -111,17 +111,17 @@ impl MultifractalSpectrumEngine {
 
         let mut rets = [0.0f64; 50];
         let mut mean_r = 0.0f64;
-        for i in 0..n {
+        for (i, slot) in rets.iter_mut().enumerate().take(n) {
             let r = self.returns_history[(start_idx + i) % self.window_size];
-            rets[i] = r;
+            *slot = r;
             mean_r += r;
         }
         mean_r /= n as f64;
 
         // Varianza escala 1 (1 tick) insesgada: divisor (n - 1)
         let mut s1 = 0.0f64;
-        for i in 0..n {
-            let d = rets[i] - mean_r;
+        for &r in rets.iter().take(n) {
+            let d = r - mean_r;
             s1 += d * d;
         }
         if s1 < 1e-14 {
@@ -215,10 +215,10 @@ impl MultifractalSpectrumEngine {
         let n = self.count;
         let mut p = [0.0f64; 50];
         let mut total = 0.0;
-        for i in 0..n {
+        for (i, slot) in p.iter_mut().enumerate().take(n) {
             let idx = (self.head + self.window_size - n + i) % self.window_size;
             let m = self.returns_history[idx].abs();
-            p[i] = m;
+            *slot = m;
             total += m;
         }
         if !(total.is_finite() && total > 0.0) {
@@ -252,8 +252,8 @@ impl MultifractalSpectrumEngine {
                 let mut z = 0.0f64;
                 for c in 0..cajas {
                     let mut pc = 0.0f64;
-                    for i in (c * b)..((c + 1) * b) {
-                        pc += p[i];
+                    for &value in p.iter().skip(c * b).take(b) {
+                        pc += value;
                     }
                     // q < 0: las cajas vacías no son soporte de la medida.
                     if q < 0.0 && pc <= 0.0 {
@@ -407,9 +407,12 @@ impl MultifractalParams {
     }
 
     pub fn validate(&self) -> Result<(), &'static str> {
-        if !self.w_micro.is_finite() || self.w_micro < 0.0
-            || !self.w_meso.is_finite() || self.w_meso < 0.0
-            || !self.w_macro.is_finite() || self.w_macro < 0.0
+        if !self.w_micro.is_finite()
+            || self.w_micro < 0.0
+            || !self.w_meso.is_finite()
+            || self.w_meso < 0.0
+            || !self.w_macro.is_finite()
+            || self.w_macro < 0.0
         {
             return Err("Pesos multifractales deben ser finitos y no negativos");
         }
@@ -423,10 +426,12 @@ impl MultifractalParams {
         if !self.prior_weight_k.is_finite() || self.prior_weight_k < 0.1 {
             return Err("Peso prior Bayesiano k debe ser finito y >= 0.1");
         }
-        if !self.persistence_threshold_micro.is_finite() || self.persistence_threshold_micro <= 0.0 {
+        if !self.persistence_threshold_micro.is_finite() || self.persistence_threshold_micro <= 0.0
+        {
             return Err("Umbral de persistencia micro debe ser finito y positivo");
         }
-        if !self.persistence_threshold_macro.is_finite() || self.persistence_threshold_macro <= 0.0 {
+        if !self.persistence_threshold_macro.is_finite() || self.persistence_threshold_macro <= 0.0
+        {
             return Err("Umbral de persistencia macro debe ser finito y positivo");
         }
         if !self.transition_width.is_finite() || self.transition_width < 1e-4 {
@@ -539,9 +544,15 @@ impl MultiScaleHurstConfluence {
             MultifractalParams::default()
         };
         let params = &safe_params;
-        let (h_micro, _) = self.engine_micro.update_with_prior_k(price, params.prior_weight_k);
-        let (h_meso, _) = self.engine_meso.update_with_prior_k(price, params.prior_weight_k);
-        let (h_macro, _) = self.engine_macro.update_with_prior_k(price, params.prior_weight_k);
+        let (h_micro, _) = self
+            .engine_micro
+            .update_with_prior_k(price, params.prior_weight_k);
+        let (h_meso, _) = self
+            .engine_meso
+            .update_with_prior_k(price, params.prior_weight_k);
+        let (h_macro, _) = self
+            .engine_macro
+            .update_with_prior_k(price, params.prior_weight_k);
 
         let t_scale = params.tanh_scale;
 
@@ -555,7 +566,8 @@ impl MultiScaleHurstConfluence {
         let norm_w_macro = params.w_macro / w_sum;
 
         let confluence_score =
-            (c_micro * norm_w_micro + c_meso * norm_w_meso + c_macro * norm_w_macro).clamp(-1.0, 1.0);
+            (c_micro * norm_w_micro + c_meso * norm_w_meso + c_macro * norm_w_macro)
+                .clamp(-1.0, 1.0);
 
         let p_micro = smooth_persistence_degree(
             h_micro,
@@ -621,7 +633,10 @@ mod tests {
             p *= 1.0 + 0.01 * gauss(&mut lcg);
             e.update(p);
         }
-        assert!(e.espectro_f_alpha().is_none(), "31 muestras no particionan b=8");
+        assert!(
+            e.espectro_f_alpha().is_none(),
+            "31 muestras no particionan b=8"
+        );
         for _ in 31..60 {
             p *= 1.0 + 0.01 * gauss(&mut lcg);
             e.update(p);
@@ -774,7 +789,11 @@ mod tests {
             h_btc,
             h_alt
         );
-        assert!(h_btc > 0.10 && h_btc < 0.90, "Hurst no debe estar bloqueado en extremos 0.10/0.90: {}", h_btc);
+        assert!(
+            h_btc > 0.10 && h_btc < 0.90,
+            "Hurst no debe estar bloqueado en extremos 0.10/0.90: {}",
+            h_btc
+        );
     }
 
     #[test]
@@ -788,7 +807,11 @@ mod tests {
             e_trend.update(p);
         }
         let (h_trend, _) = e_trend.update(p * 1.003);
-        assert!(h_trend > 0.55, "Tendencia persistente debe dar H > 0.55, dio: {}", h_trend);
+        assert!(
+            h_trend > 0.55,
+            "Tendencia persistente debe dar H > 0.55, dio: {}",
+            h_trend
+        );
 
         // 2. Serie anti-persistente pura (oscilador / mean reversion fuerte)
         let mut e_revert = MultifractalSpectrumEngine::new(50);
@@ -799,7 +822,11 @@ mod tests {
             e_revert.update(p_rev);
         }
         let (h_revert, _) = e_revert.update(p_rev * 1.004);
-        assert!(h_revert < 0.45, "Oscilación anti-persistente debe dar H < 0.45, dio: {}", h_revert);
+        assert!(
+            h_revert < 0.45,
+            "Oscilación anti-persistente debe dar H < 0.45, dio: {}",
+            h_revert
+        );
 
         // 3. Flat line (precio constante) -> régimen neutro exacto
         let mut e_flat = MultifractalSpectrumEngine::new(50);
