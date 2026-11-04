@@ -50,10 +50,22 @@ pub struct Parameter {
 
 impl Parameter {
     pub fn new(name: &str, kind: ParameterKind, initial_value: f64, owner: &str) -> Self {
-        Self::new_with_ts(name, kind, initial_value, owner, chrono::Utc::now().timestamp_millis())
+        Self::new_with_ts(
+            name,
+            kind,
+            initial_value,
+            owner,
+            chrono::Utc::now().timestamp_millis(),
+        )
     }
 
-    pub fn new_with_ts(name: &str, kind: ParameterKind, initial_value: f64, owner: &str, timestamp: i64) -> Self {
+    pub fn new_with_ts(
+        name: &str,
+        kind: ParameterKind,
+        initial_value: f64,
+        owner: &str,
+        timestamp: i64,
+    ) -> Self {
         Self {
             id: Uuid::now_v7(),
             name: name.to_string(),
@@ -174,7 +186,8 @@ impl OmniscientRegistry {
     /// P1: Actualiza el reloj de eventos en el registro (1 atomic write por evento, 0.3 ns).
     #[inline(always)]
     pub fn update_event_time(&self, event_time_ms: i64) {
-        self.active_event_time_ms.store(event_time_ms, Ordering::Relaxed);
+        self.active_event_time_ms
+            .store(event_time_ms, Ordering::Relaxed);
     }
 
     /// P1: Obtiene el reloj de eventos activo registrado.
@@ -218,7 +231,14 @@ impl OmniscientRegistry {
         self.register_or_update_with_ts(name, kind, val, owner, ts);
     }
 
-    pub fn register_or_update_with_ts(&self, name: &str, kind: ParameterKind, val: f64, owner: &str, ts: i64) {
+    pub fn register_or_update_with_ts(
+        &self,
+        name: &str,
+        kind: ParameterKind,
+        val: f64,
+        owner: &str,
+        ts: i64,
+    ) {
         if let Some(entry) = self.map.get(name) {
             entry.value().set_value_with_ts(val, ts);
         } else {
@@ -230,7 +250,6 @@ impl OmniscientRegistry {
     pub fn get(&self, name: &str, _consumer_name: &str) -> Option<Arc<Parameter>> {
         if let Some(entry) = self.map.get(name) {
             let param = entry.value().clone();
-            if false {}
             Some(param)
         } else {
             None
@@ -329,9 +348,7 @@ impl OmniscientRegistry {
     /// D38: Lectura estricta por coin_id SIN fallback al parámetro global (Aislamiento Multi-Activo Estricto).
     #[inline(always)]
     pub fn get_for_coin_strict(&self, coin_id: usize, name: &str) -> Option<f64> {
-        format_coin_key(coin_id, name, |key| {
-            self.get_value_fast(key)
-        })
+        format_coin_key(coin_id, name, |key| self.get_value_fast(key))
     }
 
     /// D38: Lectura estricta por coin_id con default SIN fallback al parámetro global (Aislamiento Multi-Activo Estricto).
@@ -362,9 +379,7 @@ impl OmniscientRegistry {
             }
         }
         if let Some(cid) = coin_id {
-            let p = format_coin_key(cid, name, |scoped_cid| {
-                self.get(scoped_cid, consumer_name)
-            });
+            let p = format_coin_key(cid, name, |scoped_cid| self.get(scoped_cid, consumer_name));
             if p.is_some() {
                 return p;
             }
@@ -394,9 +409,7 @@ impl OmniscientRegistry {
             }
         }
         if let Some(cid) = coin_id {
-            let val = format_coin_key(cid, name, |scoped_cid| {
-                self.get_value_fast(scoped_cid)
-            });
+            let val = format_coin_key(cid, name, |scoped_cid| self.get_value_fast(scoped_cid));
             if let Some(v) = val {
                 if v.is_finite() {
                     return v;
@@ -432,9 +445,7 @@ impl OmniscientRegistry {
             }
         }
         if let Some(cid) = coin_id {
-            let p = format_coin_key(cid, name, |scoped_cid| {
-                self.get(scoped_cid, consumer_name)
-            });
+            let p = format_coin_key(cid, name, |scoped_cid| self.get(scoped_cid, consumer_name));
             if p.is_some() {
                 return p;
             }
@@ -465,9 +476,7 @@ impl OmniscientRegistry {
             }
         }
         if let Some(cid) = coin_id {
-            let val = format_coin_key(cid, name, |scoped_cid| {
-                self.get_value_fast(scoped_cid)
-            });
+            let val = format_coin_key(cid, name, |scoped_cid| self.get_value_fast(scoped_cid));
             if let Some(v) = val {
                 if v.is_finite() {
                     return v;
@@ -533,7 +542,6 @@ impl OmniscientRegistry {
         restored
     }
 
-
     /// Reconcilia valores de estado atómico con datos confirmados por REST API (Punto #275)
     pub fn reconcile_with_remote(&self, remote_values: &[(String, f64)], owner: &str) -> usize {
         let mut reconciled = 0;
@@ -549,7 +557,7 @@ impl OmniscientRegistry {
     pub fn persist_to_disk(&self, path: &str) -> std::io::Result<()> {
         let snapshot = self.take_snapshot();
         let bytes = rkyv::to_bytes::<_, 4096>(&snapshot)
-            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e.to_string()))?
+            .map_err(|e| std::io::Error::other(e.to_string()))?
             .to_vec();
 
         let path_str = path.to_string();
@@ -640,7 +648,6 @@ mod tests {
         assert_eq!(registry.get_value_or("non_existent", 99.0), 99.0);
     }
 
-
     #[test]
     fn test_omniscient_registry_file_dump_and_reload() {
         let registry = OmniscientRegistry::new();
@@ -703,8 +710,14 @@ mod tests {
 
         // 3. Probar scoped por símbolo
         registry.set_scoped("BTCUSDT", "spread", 0.0001);
-        assert_eq!(registry.get_scoped_value_or("BTCUSDT", "spread", 0.0), 0.0001);
-        assert_eq!(registry.get_scoped_value_or("ETHUSDT", "spread", 0.0005), 0.0005);
+        assert_eq!(
+            registry.get_scoped_value_or("BTCUSDT", "spread", 0.0),
+            0.0001
+        );
+        assert_eq!(
+            registry.get_scoped_value_or("ETHUSDT", "spread", 0.0005),
+            0.0005
+        );
 
         // 4. Probar resolución polimórfica (símbolo + coin_id)
         assert_eq!(
@@ -759,9 +772,6 @@ mod tests {
             0.0005
         );
         // Incluso en get_for_coin_or tradicional, si no hay parámetro global "local_spread", Moneda 1 recibe default
-        assert_eq!(
-            registry.get_for_coin_or(1, "local_spread", 0.0005),
-            0.0005
-        );
+        assert_eq!(registry.get_for_coin_or(1, "local_spread", 0.0005), 0.0005);
     }
 }

@@ -428,10 +428,10 @@ pub fn verify_segment(path: impl AsRef<Path>) -> Result<Vec<RawTick>, String> {
         return Err("checksum NO coincide — los bytes mutaron tras la finalización".to_string());
     }
     let mut ticks = Vec::with_capacity(n_ticks);
-    for chunk in buf[..body_len].chunks_exact(40) {
+    for chunk in buf[..body_len].as_chunks::<40>().0 {
         match RawTick::from_bytes(chunk) {
             Some(t) => ticks.push(t),
-            // Inalcanzable: `chunks_exact(40)` sólo entrega trozos de 40.
+            // Inalcanzable: `as_chunks::<40>()` sólo entrega trozos de 40.
             // Si algún día dejara de serlo, el segmento se rechaza entero en
             // vez de abortar el proceso con posiciones abiertas.
             None => {
