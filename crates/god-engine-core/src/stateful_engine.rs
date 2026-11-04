@@ -174,6 +174,23 @@ pub struct StatefulEngine {
     pub quantum_firma_z: f32,
     /// σ muestral de los retornos de la ventana del z (contexto de régimen).
     pub quantum_firma_sigma_x: f32,
+    /// GLM 188 (mandato §11.7): operador D^α de Caputo del PRECIO en
+    /// streaming (Grünwald–Letnikov, pesos precomputados, O(1)/tick en
+    /// ring sin asignaciones). α=0.5 — la frontera browniana H=0.5, la
+    /// memoria neutral; W=64 alineado con la cadencia de publicación.
+    /// La perilla α queda expuesta para un futuro gen del consejo: no se
+    /// cablea sola porque cambiarla es un cambio de RÉGIMEN del operador,
+    /// no un default.
+    pub caputo: feature_engine::caputo_fraccional::CaputoStreaming,
+    /// Último D^α crudo POR TICK (sin cadencia) — la señal viva del
+    /// operador. NaN durante el warmup (primera muestra) o mientras toda
+    /// entrada sea no finita — jamás un cero fabricado.
+    pub caputo_ultimo: f64,
+    /// D^α publicado en la cadencia %64 (instantánea de `caputo_ultimo`
+    /// en el tick de la frontera) — NAN hasta la primera publicación:
+    /// ausencia honesta. Sin cambio de conducta: como σz (175), λ_KS
+    /// (181) y β_RG (183/184), consumo = decisión del consejo.
+    pub caputo_d_alfa: f32,
     pub hurst_micro: f32,
     pub hurst_meso: f32,
     pub hurst_macro: f32,
@@ -308,6 +325,12 @@ impl StatefulEngine {
             firma_maxent: feature_engine::firma_maxent::FirmasMaxEnt::ventana64(),
             quantum_firma_z: f32::NAN,
             quantum_firma_sigma_x: f32::NAN,
+            // GLM 188: constructor infalible (α=0.5, W=64) — sin sitio de
+            // pánico en el engine (RB-P1); equivalencia certificada en el
+            // contrato del módulo.
+            caputo: feature_engine::caputo_fraccional::CaputoStreaming::caputo_neutral64(),
+            caputo_ultimo: f64::NAN,
+            caputo_d_alfa: f32::NAN,
             multifractal: feature_engine::MultiScaleHurstConfluence::new(),
             regime: MarketRegime::Neutral,
             kline_start_ms: 0,
@@ -867,6 +890,21 @@ impl StatefulEngine {
                 // None (ventana incompleta / nulo degenerado) ⇒ se conserva
                 // el último valor válido o NaN inicial: ausencia honesta.
             }
+            // GLM 188 (§11.7): D^α del PRECIO — el precio entra crudo (no
+            // el norm_return, que ya alimenta spectral/koopman/firma):
+            // D^α(precio) es el momento fraccional del mandato, con la
+            // cola k^{−(1+α)} fundiendo corto/mediano/largo plazo en un
+            // solo operador. Ring O(1)/tick; None (warmup de la primera
+            // muestra) conserva el último valor válido — ausencia honesta.
+            if let Some(d) = self.caputo.push(price) {
+                self.caputo_ultimo = d;
+            }
+            if self.tick_count % 64 == 0 {
+                // Instantánea de frontera: publica el crudo del instante,
+                // no un promedio — el contrato certifica el REZAGO de la
+                // cadencia (el crudo sigue moviéndose entre fronteras).
+                self.caputo_d_alfa = self.caputo_ultimo as f32;
+            }
             // D-434: Invocar análisis espectral FFT Radix-2 periódicamente cada 64 ticks
             if self.tick_count % 64 == 0 {
                 let (dominant_bin, max_power, centroid) = self.spectral.analyze_spectrum();
@@ -884,11 +922,18 @@ impl StatefulEngine {
                 self.spectral_bin = dominant_bin as f32;
                 self.spectral_power = max_power as f32;
                 self.spectral_centroid = centroid as f32;
-                // GLM 184 (§12.2): el MISMO espectro alimenta el flujo de
-                // renormalización de Wilson — observable vivo del régimen
-                // multi-escala, sin costo extra (el FFT ya se pagó). La
-                // vista V2 (EventSpectrumV2) expone la potencia unilateral
-                // por bin; sin cambio de conducta, consumo = consejo.
+                // GLM 184 (§12.2): el MISMO análisis de cadencia alimenta
+                // el flujo de renormalización de Wilson — observable vivo
+                // del régimen multi-escala. NOTA DE COSTE (errata pedida
+                // por AGENT-01, 2026-11-03T09:34Z): la vista V2 recalcula
+                // el FFT — NO es gratis. Se conservan ambas llamadas a
+                // propósito: V2 NO es bit-compatible con analyze_spectrum()
+                // (centrado previo al taper, normalización por energía de
+                // ventana, bins interiores duplicados) y las features
+                // legacy del vector 34D deben seguir exactas. La vista V2
+                // (EventSpectrumV2) expone la potencia unilateral por bin;
+                // sin cambio de conducta, consumo = consejo. Unificar las
+                // dos FFT exigiría API versionada + contratos de paridad.
                 if let Ok(evento) = self.spectral.analyze_event_spectrum_v2() {
                     if let Ok(flujo) =
                         feature_engine::flujo_rg::flujo_wilson(&evento.power_by_bin)
