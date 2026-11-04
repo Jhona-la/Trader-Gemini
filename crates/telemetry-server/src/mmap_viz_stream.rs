@@ -5,8 +5,8 @@
 //! sin interferir ni bloquear el hot path de nanosegundos del motor.
 //!
 //! # QUÉ:
-//! Lector de memoria compartida en modo sólo lectura (SHM read-only) con seqlock
-//! para consumir snapshots del estado unificado y trazas de telemetría en streaming.
+//! Lector de memoria compartida en modo sólo lectura (SHM read-only) con doble
+//! lectura idéntica para consumir snapshots del estado unificado en streaming.
 //!
 //! # POR QUÉ:
 //! El motor de trading no debe hacer operaciones de red lentas, serialización JSON
@@ -16,11 +16,11 @@
 //! # PARA QUÉ:
 //! 1. Alimentar la aplicación interactiva de terminal `trader_viz`.
 //! 2. Servir la suite visual desacoplada en tiempo real.
-//! 3. Proporcionar snapshots consistentes libres de carreras de datos (data races).
+//! 3. Rechazar snapshots cambiantes o inválidos sin inventar valores.
 //!
 //! # CÓMO:
-//! Mapeo vía `memmap2::MmapOptions`, lectura atómica volátil con comprobación
-//! de finitud y validación seqlock sin allocations en el ciclo de muestreo.
+//! Mapeo vía `memmap2::MmapOptions`, dos lecturas volátiles con comparación bit a
+//! bit, campos requeridos finitos y `tensor_drift=NaN` como ausencia opcional.
 //!
 //! # DÓNDE:
 //! En `crates/telemetry-server/src/mmap_viz_stream.rs`.
@@ -28,7 +28,7 @@
 //! # QUIÉN:
 //! Ingeniero de Silicio HFT & DevOps / SRE (Fase 5).
 
-use crate::causal_attribution::{CausalAttributionEngine, CausalMetaAnalyticsReport};
+use crate::causal_attribution::CausalMetaAnalyticsReport;
 use crate::hyperdimensional_graph::HyperdimensionalGraphSnapshot;
 use crate::mirofish_lattice::{MirofishLattice, TailRidge3D};
 use memmap2::{Mmap, MmapMut, MmapOptions};
@@ -63,17 +63,16 @@ pub struct UnifiedVizPacket {
     pub global_roi: f64,
     pub win_rate: f64,
     pub memory_used_mb: f64,
-    pub lattice: MirofishLattice,
-    pub tail_ridge: TailRidge3D,
-    pub hypergraph: HyperdimensionalGraphSnapshot,
-    pub causal_report: CausalMetaAnalyticsReport,
+    pub lattice: Option<MirofishLattice>,
+    pub tail_ridge: Option<TailRidge3D>,
+    pub hypergraph: Option<HyperdimensionalGraphSnapshot>,
+    pub causal_report: Option<CausalMetaAnalyticsReport>,
 }
 
 /// Lector desacoplado de telemetría por memoria compartida (mmap).
 pub struct MmapVizStreamReader {
     mmap_path: PathBuf,
     mmap_handle: Option<Mmap>,
-    causal_engine: CausalAttributionEngine,
 }
 
 impl MmapVizStreamReader {
@@ -84,7 +83,6 @@ impl MmapVizStreamReader {
         Self {
             mmap_path: p,
             mmap_handle,
-            causal_engine: CausalAttributionEngine::new(),
         }
     }
 
@@ -108,7 +106,7 @@ impl MmapVizStreamReader {
         unsafe { MmapOptions::new().map(&file).ok() }
     }
 
-    /// Lee el último snapshot atómico disponible desde el archivo mapeado.
+    /// Lee dos veces el mismo snapshot y rechaza carreras o campos inválidos.
     pub fn read_snapshot(&mut self) -> Option<TelemetrySnapshot> {
         if self.mmap_handle.is_none() {
             self.mmap_handle = Self::try_open(&self.mmap_path);
@@ -121,26 +119,31 @@ impl MmapVizStreamReader {
             return None;
         }
 
-        let snap: TelemetrySnapshot = unsafe {
-            std::ptr::read_volatile(mmap.as_ptr() as *const TelemetrySnapshot)
-        };
+        let first: TelemetrySnapshot =
+            unsafe { std::ptr::read_volatile(mmap.as_ptr() as *const TelemetrySnapshot) };
+        let second: TelemetrySnapshot =
+            unsafe { std::ptr::read_volatile(mmap.as_ptr() as *const TelemetrySnapshot) };
 
-        // Sanitización defensiva de flotantes
-        Some(TelemetrySnapshot {
-            tick_counter: snap.tick_counter,
-            unified_capital: if snap.unified_capital.is_finite() { snap.unified_capital } else { 0.0 },
-            pnl_realized: if snap.pnl_realized.is_finite() { snap.pnl_realized } else { 0.0 },
-            global_leverage: if snap.global_leverage.is_finite() { snap.global_leverage } else { 1.0 },
-            ai_ml_prob: if snap.ai_ml_prob.is_finite() { snap.ai_ml_prob } else { 0.5 },
-            hurst_exponent: if snap.hurst_exponent.is_finite() { snap.hurst_exponent } else { 0.5 },
-            memory_used_mb: if snap.memory_used_mb.is_finite() { snap.memory_used_mb } else { 0.0 },
-            global_roi: if snap.global_roi.is_finite() { snap.global_roi } else { 0.0 },
-            win_rate: if snap.win_rate.is_finite() { snap.win_rate } else { 0.0 },
-            tensor_drift: if snap.tensor_drift.is_finite() { snap.tensor_drift } else { 0.0 },
-        })
+        if snapshot_bits(&first) != snapshot_bits(&second)
+            || !first.unified_capital.is_finite()
+            || first.unified_capital <= 0.0
+            || !first.global_leverage.is_finite()
+            || first.global_leverage <= 0.0
+            || !first.pnl_realized.is_finite()
+            || !first.ai_ml_prob.is_finite()
+            || !first.hurst_exponent.is_finite()
+            || !first.memory_used_mb.is_finite()
+            || !first.global_roi.is_finite()
+            || !first.win_rate.is_finite()
+            || !(first.tensor_drift.is_finite() || first.tensor_drift.is_nan())
+        {
+            return None;
+        }
+
+        Some(first)
     }
 
-    /// Ensambla el paquete completo unificado para la suite visual desacoplada.
+    /// Ensambla un paquete sólo con evidencia disponible; no fabrica ausencias.
     pub fn build_unified_packet(
         &mut self,
         symbols: &[String],
@@ -149,62 +152,38 @@ impl MmapVizStreamReader {
         gauge_actions: &[f64],
         void_risks: &[f64],
         betti_1_counts: &[f64],
-    ) -> UnifiedVizPacket {
-        let snap = self.read_snapshot().unwrap_or(TelemetrySnapshot {
-            tick_counter: 0,
-            unified_capital: 100.0,
-            pnl_realized: 0.0,
-            global_leverage: 1.0,
-            ai_ml_prob: 0.5,
-            hurst_exponent: 0.5,
-            memory_used_mb: 0.0,
-            global_roi: 0.0,
-            win_rate: 0.0,
-            tensor_drift: 0.0,
+    ) -> Option<UnifiedVizPacket> {
+        let snap = self.read_snapshot()?;
+        let timestamp_ns = u64::try_from(
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .ok()?
+                .as_nanos(),
+        )
+        .ok()?;
+        let spot = snap.unified_capital;
+        let lattice = snap.tensor_drift.is_finite().then(|| {
+            MirofishLattice::compute(
+                spot,
+                0.45,
+                snap.ai_ml_prob - 0.5,
+                snap.tensor_drift,
+                0.10,
+                8,
+                1.0,
+            )
         });
-
-        let spot = snap.unified_capital.max(10.0);
-        let lattice = MirofishLattice::compute(
-            spot,
-            0.45,
-            snap.ai_ml_prob - 0.5,
-            snap.tensor_drift,
-            0.10,
-            8,
-            1.0,
-        );
-
-        let tail_ridge = TailRidge3D::generate(spot, 0.45, snap.hurst_exponent, 0.05);
-
-        let hypergraph = HyperdimensionalGraphSnapshot::build_from_state(
+        let tail_ridge = Some(TailRidge3D::generate(spot, 0.45, snap.hurst_exponent, 0.05));
+        let hypergraph = Some(HyperdimensionalGraphSnapshot::build_from_state(
             symbols,
             vn_entropies,
             tsallis_entropies,
             gauge_actions,
             void_risks,
             betti_1_counts,
-        );
+        )?);
 
-        let activity = [1.0, 0.85, 0.70, 0.60, 0.90, 0.75];
-        let cycles = [3500, 4100, 2900, 2200, 1800, 4800];
-        let misses = [30, 45, 20, 15, 12, 50];
-        let gross_pnl = snap.pnl_realized * 1.15; // Estimación bruta antes de fees
-        let fees = (gross_pnl - snap.pnl_realized).max(0.0);
-
-        let causal_report = self.causal_engine.evaluate(
-            &activity,
-            &cycles,
-            &misses,
-            gross_pnl,
-            fees,
-        );
-
-        let timestamp_ns = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map(|d| d.as_nanos() as u64)
-            .unwrap_or(0);
-
-        UnifiedVizPacket {
+        Some(UnifiedVizPacket {
             timestamp_ns,
             tick_counter: snap.tick_counter,
             unified_capital: snap.unified_capital,
@@ -216,9 +195,24 @@ impl MmapVizStreamReader {
             lattice,
             tail_ridge,
             hypergraph,
-            causal_report,
-        }
+            causal_report: None,
+        })
     }
+}
+
+fn snapshot_bits(snapshot: &TelemetrySnapshot) -> [u64; 10] {
+    [
+        snapshot.tick_counter,
+        snapshot.unified_capital.to_bits(),
+        snapshot.pnl_realized.to_bits(),
+        snapshot.global_leverage.to_bits(),
+        snapshot.ai_ml_prob.to_bits(),
+        snapshot.hurst_exponent.to_bits(),
+        snapshot.memory_used_mb.to_bits(),
+        snapshot.global_roi.to_bits(),
+        snapshot.win_rate.to_bits(),
+        snapshot.tensor_drift.to_bits(),
+    ]
 }
 
 /// Escritor atómico de telemetría por memoria compartida (mmap lock-free).
@@ -251,21 +245,22 @@ impl MmapVizStreamWriter {
         })
     }
 
-    /// Escribe un snapshot atómico en la región mapeada compartida.
+    /// Escribe un snapshot y propaga tanto handle ausente como fallo de flush.
     pub fn write_snapshot(&mut self, snapshot: &TelemetrySnapshot) -> std::io::Result<()> {
-        if let Some(mmap) = self.mmap_handle.as_mut() {
-            let bytes = unsafe {
-                std::slice::from_raw_parts(
-                    snapshot as *const TelemetrySnapshot as *const u8,
-                    std::mem::size_of::<TelemetrySnapshot>(),
-                )
-            };
-            mmap[..bytes.len()].copy_from_slice(bytes);
-            let _ = mmap.flush();
-            Ok(())
-        } else {
-            Err(std::io::Error::new(std::io::ErrorKind::Other, "mmap mut handle not available"))
-        }
+        let mmap = self.mmap_handle.as_mut().ok_or_else(|| {
+            std::io::Error::new(
+                std::io::ErrorKind::NotConnected,
+                "mmap mut handle not available",
+            )
+        })?;
+        let bytes = unsafe {
+            std::slice::from_raw_parts(
+                snapshot as *const TelemetrySnapshot as *const u8,
+                std::mem::size_of::<TelemetrySnapshot>(),
+            )
+        };
+        mmap[..bytes.len()].copy_from_slice(bytes);
+        mmap.flush()
     }
 }
 
@@ -277,9 +272,21 @@ mod tests {
     fn test_mmap_viz_stream_packet_assembly() {
         let temp_dir = std::env::temp_dir();
         let path = temp_dir.join("test_mmap_viz_stream_packet.bin");
-        let path_str = path.to_string_lossy().to_string();
-
-        let mut reader = MmapVizStreamReader::new(&path_str);
+        let snapshot = TelemetrySnapshot {
+            tick_counter: 42,
+            unified_capital: 150.0,
+            pnl_realized: 25.0,
+            global_leverage: 1.0,
+            ai_ml_prob: 0.75,
+            hurst_exponent: 0.60,
+            memory_used_mb: 120.0,
+            global_roi: 50.0,
+            win_rate: 0.80,
+            tensor_drift: 0.2,
+        };
+        let mut writer = MmapVizStreamWriter::new(&path).expect("writer");
+        writer.write_snapshot(&snapshot).expect("write");
+        let mut reader = MmapVizStreamReader::new(&path);
         let symbols = vec!["BTCUSDT".to_string(), "ETHUSDT".to_string()];
         let vn = vec![0.40, 0.60];
         let tsallis = vec![0.45, 0.65];
@@ -287,18 +294,17 @@ mod tests {
         let void = vec![0.05, 0.15];
         let betti_1 = vec![0.0, 1.0];
 
-        let packet = reader.build_unified_packet(
-            &symbols,
-            &vn,
-            &tsallis,
-            &gauge,
-            &void,
-            &betti_1,
-        );
+        let packet = reader
+            .build_unified_packet(&symbols, &vn, &tsallis, &gauge, &void, &betti_1)
+            .expect("snapshot válido");
 
-        assert_eq!(packet.hypergraph.nodes.len(), 2);
-        assert_eq!(packet.tail_ridge.points.len(), 32);
-        assert_eq!(packet.causal_report.attributions.len(), 6);
-        assert!(packet.lattice.levels.len() >= 8);
+        assert_eq!(packet.hypergraph.as_ref().expect("graph").nodes.len(), 2);
+        assert_eq!(packet.tail_ridge.as_ref().expect("ridge").points.len(), 32);
+        assert!(packet.causal_report.is_none());
+        assert!(packet.lattice.as_ref().expect("lattice").levels.len() >= 8);
+
+        drop(reader);
+        drop(writer);
+        std::fs::remove_file(path).expect("cleanup");
     }
 }
