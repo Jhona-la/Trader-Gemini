@@ -45,7 +45,10 @@ fn i1b_el_host_abre_un_lector_por_categoria_y_solo_el_publico_reinicia_el_libro(
     assert_eq!(produccion.matches("anuncia_reconexion: false").count(), 1);
     assert_eq!(produccion.matches("marca_stall: true").count(), 1);
     assert_eq!(produccion.matches("marca_stall: false").count(), 1);
-    assert!(produccion.contains("\"ws-reader-mercado\""), "falta el hilo del lector de mercado");
+    assert!(
+        produccion.contains("\"ws-reader-mercado\""),
+        "falta el hilo del lector de mercado"
+    );
 }
 
 #[test]
