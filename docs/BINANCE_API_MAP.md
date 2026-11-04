@@ -34,6 +34,12 @@
 | `/fapi/v1/openOrders` | GET | 1 con símbolo / 40 sin él ✔ | Reconciliación OMS cada 60 s (`OmsSession::refresh`, sin símbolo) | fetch_all_open_orders, fetch_open_orders_inner |
 | `/fapi/v1/positionSide/dual` | GET 30 ✔ / POST 1 ✔ (antes figuraba 1 para los dos) | Modo hedge (arranque, OmsSession::refresh cada 60 s, aplanado) | ensure_hedge_mode, fetch_hedge_mode |
 
+### Corte F0 de A4: comportamiento instalado frente a candidato
+
+- **Comportamiento instalado:** A4 original en diez rutas, con HEAD local `4d8db9a345bd1a78f3e479b5beba01bd0124fa3e` y `origin/main=9b2cde7c15eba058c67046317c22c1cfbc3f36c2`. `execution_evidence.rs`, `executor.rs` y `symbols.rs` no tienen delta revisado. La llamada autenticada, permisos, firma y JSON reales de `leverageBracket` continúan `unverified`.
+- **Candidato revisado no instalado:** siete rutas en `.agent_tx/staging/AGENT-01-live-red/` (`entry_dispatch.rs`, `entry_route_contract.rs`, `f325_min_notional_ioc_open_diagnostics.rs`, `symbol_registry.rs`, `god_engine.rs`, `host_oms.rs` y `tests/host_oms_contract.rs`). La cota taker viva no es reducible por request, toda posición abierta cuenta y `reserved_slot`/`reserved_generation` se retiran del contrato; batches parciales conservan evidencia. Instalación pendiente de gates de memoria.
+- **Propiedad y evidencia:** las rutas, hashes y acciones permitidas están en `AGENT_SYNC.md` §0A. Las 498 pruebas y los estados `FUSIONADO`/`CERRADO` son históricos no operativos para este árbol; no certifican el candidato, una llamada real, Demo ni Producción. No se ejecutó purga ni se tocó el lease QRA.
+
 > N5 (CL-179): sólo los pesos de las peticiones críticas son costes del
 > ejecutor (`CosteBinance` en binance_api.rs): order POST/GET/DELETE,
 > positionRisk de fetch_position_risk, algoOrder POST/DELETE, algoOpenOrders y
