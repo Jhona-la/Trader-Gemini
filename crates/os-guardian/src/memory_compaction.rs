@@ -101,7 +101,8 @@ pub fn compactar_si_hay_presion() -> bool {
     let mut sys = sysinfo::System::new();
     sys.refresh_memory();
     let disponible = sys.available_memory();
-    let working_set = (crate::memory_audit::get_memory_usage_mb().max(0.0) * 1024.0 * 1024.0) as u64;
+    let working_set =
+        (crate::memory_audit::get_memory_usage_mb().max(0.0) * 1024.0 * 1024.0) as u64;
     if hay_presion_de_memoria(disponible, working_set) {
         // SAFETY: llamada de sistema sobre el propio proceso; sólo descarta
         // páginas no bloqueadas del working set.
@@ -147,10 +148,22 @@ mod tests_lg13 {
     #[test]
     fn lg13_solo_hay_presion_si_no_cabe_otra_copia_del_working_set() {
         let gb = 1u64 << 30;
-        assert!(!hay_presion_de_memoria(8 * gb, gb), "con 8 GB libres y 1 GB ocupado no se compacta");
-        assert!(hay_presion_de_memoria(gb / 2, gb), "con menos libre que el working set sí");
-        assert!(!hay_presion_de_memoria(0, gb), "sin dato del sistema no se compacta a ciegas");
-        assert!(!hay_presion_de_memoria(gb, 0), "sin dato del proceso no se compacta a ciegas");
+        assert!(
+            !hay_presion_de_memoria(8 * gb, gb),
+            "con 8 GB libres y 1 GB ocupado no se compacta"
+        );
+        assert!(
+            hay_presion_de_memoria(gb / 2, gb),
+            "con menos libre que el working set sí"
+        );
+        assert!(
+            !hay_presion_de_memoria(0, gb),
+            "sin dato del sistema no se compacta a ciegas"
+        );
+        assert!(
+            !hay_presion_de_memoria(gb, 0),
+            "sin dato del proceso no se compacta a ciegas"
+        );
     }
 }
 
