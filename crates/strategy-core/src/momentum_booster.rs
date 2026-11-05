@@ -154,9 +154,17 @@ mod tests {
     #[test]
     fn test_momentum_booster_symmetric_short_expansion() {
         let arena = quantum_arena::GlobalArena::build_in_own_stack(13.0);
-        let boost_short = VolatileMomentumBooster::calculate_tp_extension(-1.0, 0.05, 3.0, 0.01, &arena);
-        let boost_long = VolatileMomentumBooster::calculate_tp_extension(1.0, 0.05, 3.0, 0.01, &arena);
-        assert!(boost_short > 1.0, "Short ganador debe expandir TP ante momentum: {boost_short}");
-        assert_eq!(boost_short, boost_long, "Simetría perfecta entre Long y Short ganadores");
+        let boost_short =
+            VolatileMomentumBooster::calculate_tp_extension(-1.0, 0.05, 3.0, 0.01, &arena);
+        let boost_long =
+            VolatileMomentumBooster::calculate_tp_extension(1.0, 0.05, 3.0, 0.01, &arena);
+        assert!(
+            boost_short > 1.0,
+            "Short ganador debe expandir TP ante momentum: {boost_short}"
+        );
+        assert_eq!(
+            boost_short, boost_long,
+            "Simetría perfecta entre Long y Short ganadores"
+        );
     }
 }

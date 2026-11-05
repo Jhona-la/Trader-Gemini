@@ -23,7 +23,9 @@
 //! dependencias nuevas: LCG propio, exponenciales por inversión, Poisson de
 //! Knuth y adelgazamiento de Ogata.
 
-use signal_engine::hawkes_bessel::{excitacion_hawkes_norm, HawkesBesselEngine, STEADY_STATE_RATIO};
+use signal_engine::hawkes_bessel::{
+    excitacion_hawkes_norm, HawkesBesselEngine, STEADY_STATE_RATIO,
+};
 
 /// LCG de 64 bits (constantes de Knuth/MMIX); se usan los 53 bits altos.
 struct Lcg(u64);
@@ -230,7 +232,10 @@ fn cf2_hawkes_lotes_mismo_ms_fase_uniforme_ancla_1_6() {
         (r - STEADY_STATE_RATIO).abs() <= 0.05,
         "ratio medio {r} (EE {ee} con {nb} bloques; esperado 1,6; hoy ~1 + 0,6·m = 2,2)"
     );
-    assert!(e.abs() <= 0.03, "excitación media {e} (esperado 0; hoy ~0,35)");
+    assert!(
+        e.abs() <= 0.03,
+        "excitación media {e} (esperado 0; hoy ~0,35)"
+    );
 }
 
 /// Poisson a 1/s leído en cada evento, como en vivo. Verdadero (PASTA): la
@@ -250,7 +255,10 @@ fn cf2_hawkes_poisson_1hz_lectura_en_evento_excitacion_nula() {
         (r - STEADY_STATE_RATIO).abs() <= 0.05,
         "ratio en eventos {r} (EE {ee} con {nb} bloques; esperado 1,6; hoy ~1,89)"
     );
-    assert!(e.abs() <= 0.03, "excitación en eventos {e} (esperado 0; hoy ~0,18)");
+    assert!(
+        e.abs() <= 0.03,
+        "excitación en eventos {e} (esperado 0; hoy ~0,18)"
+    );
 }
 
 /// Hawkes (μ0 = 0,4; α = 0,3; β = 0,5; n = 0,6; tasa 1/s) frente a Poisson a
@@ -265,16 +273,29 @@ fn cf2_hawkes_n06_excita_mas_que_poisson_en_lectura_viva() {
     let h = hawkes(&mut rng, 0.4, 0.3, 0.5, 10_800.0);
     let p = tiempos_poisson(&mut rng, 1.0, 10_800.0);
     let tasa = h.len() as f64 / 10_800.0;
-    assert!((tasa - 1.0).abs() <= 0.08, "tasa Hawkes {tasa} (mu/(1-n) = 1)");
+    assert!(
+        (tasa - 1.0).abs() <= 0.08,
+        "tasa Hawkes {tasa} (mu/(1-n) = 1)"
+    );
     let lh = lecturas_en_eventos(&h, 300.0);
     let lp = lecturas_en_eventos(&p, 300.0);
     let (rh, eeh, _) = media_y_ee(&lh, 600.0, identidad);
     let (rp, eep, _) = media_y_ee(&lp, 600.0, identidad);
     let (eh, _, _) = media_y_ee(&lh, 600.0, excitacion_hawkes_norm);
     let (ep, _, _) = media_y_ee(&lp, 600.0, excitacion_hawkes_norm);
-    println!("tasa {tasa}; Hawkes ratio {rh} ± {eeh}, exc {eh}; Poisson ratio {rp} ± {eep}, exc {ep}");
-    assert!(rh - rp > 0.08, "delta ratio {} (Hawkes {rh} ± {eeh}, Poisson {rp} ± {eep})", rh - rp);
-    assert!(eh - ep > 0.03, "delta excitación {} (Hawkes {eh}, Poisson {ep})", eh - ep);
+    println!(
+        "tasa {tasa}; Hawkes ratio {rh} ± {eeh}, exc {eh}; Poisson ratio {rp} ± {eep}, exc {ep}"
+    );
+    assert!(
+        rh - rp > 0.08,
+        "delta ratio {} (Hawkes {rh} ± {eeh}, Poisson {rp} ± {eep})",
+        rh - rp
+    );
+    assert!(
+        eh - ep > 0.03,
+        "delta excitación {} (Hawkes {eh}, Poisson {ep})",
+        eh - ep
+    );
 }
 
 /// Versión monótona (corrección del escéptico de completitud): misma tasa
@@ -326,8 +347,14 @@ fn diagnostico_open_f2_4_06_fase_uniforme_ciega_a_n() {
     let (rh, eeh, _) = media_y_ee(&lecturas_fase_uniforme(&h, 0.5, 300.0), 60.0, identidad);
     let (rp, eep, _) = media_y_ee(&lecturas_fase_uniforme(&p, 0.5, 300.0), 60.0, identidad);
     println!("fase uniforme: Hawkes {rh} ± {eeh}, Poisson {rp} ± {eep}");
-    assert!((rh - STEADY_STATE_RATIO).abs() <= 0.05, "Hawkes n=0,6: {rh} (EE {eeh})");
-    assert!((rp - STEADY_STATE_RATIO).abs() <= 0.05, "Poisson n=0: {rp} (EE {eep})");
+    assert!(
+        (rh - STEADY_STATE_RATIO).abs() <= 0.05,
+        "Hawkes n=0,6: {rh} (EE {eeh})"
+    );
+    assert!(
+        (rp - STEADY_STATE_RATIO).abs() <= 0.05,
+        "Poisson n=0: {rp} (EE {eep})"
+    );
     assert!((rh - rp).abs() <= 0.05, "delta {}", rh - rp);
 }
 
@@ -358,10 +385,22 @@ fn cf2_hawkes_tasa_de_falsa_cascada_no_depende_del_ritmo() {
     let mut rng = Lcg(0xA7A7_0007);
     let lento = tiempos_poisson(&mut rng, 0.5, 40_000.0);
     let rapido = tiempos_poisson(&mut rng, 30.0, 7_200.0);
-    let (wl, eel, nbl) = media_y_ee(&lecturas_fase_uniforme(&lento, 0.25, 300.0), 60.0, peso_vivo);
-    let (wr, eer, nbr) = media_y_ee(&lecturas_fase_uniforme(&rapido, 0.25, 300.0), 60.0, peso_vivo);
+    let (wl, eel, nbl) = media_y_ee(
+        &lecturas_fase_uniforme(&lento, 0.25, 300.0),
+        60.0,
+        peso_vivo,
+    );
+    let (wr, eer, nbr) = media_y_ee(
+        &lecturas_fase_uniforme(&rapido, 0.25, 300.0),
+        60.0,
+        peso_vivo,
+    );
     let (wle, _, _) = media_y_ee(&lecturas_en_eventos(&lento, 300.0), 60.0, peso_vivo);
-    let (wre, _, _) = media_y_ee(&lecturas_en_eventos(&rapido[..rapido.len().min(36_000)], 300.0), 60.0, peso_vivo);
+    let (wre, _, _) = media_y_ee(
+        &lecturas_en_eventos(&rapido[..rapido.len().min(36_000)], 300.0),
+        60.0,
+        peso_vivo,
+    );
     println!("E[w] fase uniforme: lento {wl} ± {eel} ({nbl}), rápido {wr} ± {eer} ({nbr}); eventos: {wle} frente a {wre}");
     assert!(
         (wl - wr).abs() <= 0.03,

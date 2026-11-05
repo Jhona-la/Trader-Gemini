@@ -77,7 +77,10 @@ fn test_bayes_prior_empirical_bayes_portfolio_pooling() {
     // Total ganancias del pool: 14 + 16 = 30
     // Win rate medio ponderado del pool: 30 / 40 = 0.75
     let (p_pool, k_pool) = resolve_bayes_prior(&arena, 0);
-    assert!((p_pool - 0.75).abs() < 1e-9, "p_pool esperado 0.75, obtenido {p_pool}");
+    assert!(
+        (p_pool - 0.75).abs() < 1e-9,
+        "p_pool esperado 0.75, obtenido {p_pool}"
+    );
     assert_eq!(k_pool, DEFAULT_BAYES_PRIOR_MASS);
 
     // Moneda 0 con 1 pérdida temprana (w=0.0, n=1):

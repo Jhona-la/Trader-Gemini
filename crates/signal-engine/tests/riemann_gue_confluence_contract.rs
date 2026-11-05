@@ -34,7 +34,11 @@ fn c1_riemann_gue_optimal_repulsion_amplifies_confluence_vote() {
     // Base neutral (riemann_gue_conviction = 1.0)
     reg.set("riemann_gue_conviction", 1.0);
     let vote_neutral = engine.evaluate_for_coin(0, "BTCUSDT");
-    assert!(vote_neutral > 0.10, "El voto base debe ser positivo, obtuvimos {}", vote_neutral);
+    assert!(
+        vote_neutral > 0.10,
+        "El voto base debe ser positivo, obtuvimos {}",
+        vote_neutral
+    );
 
     // Repulsión cuántica óptima en la línea crítica de Riemann (1.15)
     reg.set("riemann_gue_conviction", 1.15);

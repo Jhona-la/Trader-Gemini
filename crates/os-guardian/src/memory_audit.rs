@@ -17,7 +17,11 @@ use std::sync::Arc;
 /// magnitud que el tope. Devuelve el nuevo estado del pánico, o `None` si no
 /// cambia: se arma por encima del 85 % del límite y se suelta por debajo del
 /// 70 %.
-pub fn transicion_panico_memoria(commit_bytes: u64, max_bytes: u64, panico_actual: bool) -> Option<bool> {
+pub fn transicion_panico_memoria(
+    commit_bytes: u64,
+    max_bytes: u64,
+    panico_actual: bool,
+) -> Option<bool> {
     if max_bytes == 0 {
         return None;
     }
@@ -92,7 +96,11 @@ mod tests_lg14 {
     fn lg14_el_veto_de_memoria_tiene_histeresis_sobre_el_commit() {
         let max = 1_000u64;
         assert_eq!(transicion_panico_memoria(860, max, false), Some(true));
-        assert_eq!(transicion_panico_memoria(800, max, true), None, "entre 70 % y 85 % se mantiene");
+        assert_eq!(
+            transicion_panico_memoria(800, max, true),
+            None,
+            "entre 70 % y 85 % se mantiene"
+        );
         assert_eq!(transicion_panico_memoria(690, max, true), Some(false));
         assert_eq!(transicion_panico_memoria(500, max, false), None);
         assert_eq!(transicion_panico_memoria(900, 0, false), None);
@@ -102,7 +110,10 @@ mod tests_lg14 {
     fn lg14_el_job_limita_por_proceso_y_el_veto_mide_el_commit() {
         let lib = include_str!("lib.rs");
         let por_job = ["LimitFlags = JOB_OBJECT_", "LIMIT_JOB_MEMORY"].concat();
-        assert!(!lib.contains(&por_job), "el tope no debe sumar el commit del entrenador hijo");
+        assert!(
+            !lib.contains(&por_job),
+            "el tope no debe sumar el commit del entrenador hijo"
+        );
         assert!(lib.contains("JOB_OBJECT_LIMIT_PROCESS_MEMORY"));
         let audit = include_str!("memory_audit.rs");
         assert!(audit.contains("counters.PagefileUsage as u64;"));

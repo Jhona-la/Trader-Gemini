@@ -59,12 +59,7 @@ fn test_vecm_c1_smoothstep_and_zero_derivatives() {
 
     // Infinitesimalmente por encima del umbral: u = eps / 1.5, señal = 3u^2 - 2u^3 ≈ 3 (eps/1.5)^2 -> orden cuadrático C1
     let eps = 0.001;
-    reg.register_or_update(
-        "vecm_zscore",
-        ParameterKind::Adaptive,
-        1.50 + eps,
-        "test",
-    );
+    reg.register_or_update("vecm_zscore", ParameterKind::Adaptive, 1.50 + eps, "test");
     let val_above = vecm.evaluate();
     assert!(val_above < 0.0); // Z positivo genera señal de reversión negativa (short)
     let u_expected = eps / 1.5;
@@ -91,12 +86,7 @@ fn test_vecm_c1_smoothstep_and_zero_derivatives() {
 
     // Modificación dinámica mediante registro omnisciente
     reg.register_or_update("vecm_z_entry", ParameterKind::Adaptive, 2.0, "test");
-    reg.register_or_update(
-        "vecm_z_saturation",
-        ParameterKind::Adaptive,
-        4.0,
-        "test",
-    );
+    reg.register_or_update("vecm_z_saturation", ParameterKind::Adaptive, 4.0, "test");
     // Con z = 1.8, ahora debe dar 0.0 porque el nuevo umbral es 2.0
     reg.register_or_update("vecm_zscore", ParameterKind::Adaptive, 1.8, "test");
     assert_eq!(vecm.evaluate(), 0.0);

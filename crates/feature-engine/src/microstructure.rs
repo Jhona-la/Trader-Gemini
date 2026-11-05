@@ -799,6 +799,4 @@ impl SpoofingDetector {
 
         self.spoofing_risk_score
     }
-
-
 }

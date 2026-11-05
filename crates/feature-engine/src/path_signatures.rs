@@ -57,10 +57,10 @@ impl Signature2 {
 ///
 /// Firma geométrica del camino lineal por partes: S^{ij} = Σ_{a<b} δ^i_a δ^j_b
 /// + ½ Σ_a δ^i_a δ^j_a. El término de diagonal media hace que la firma del
-/// camino recto sea exacta en aritmética real a cualquier subdivisión (S^{ij} =
-/// x_i·x_j/2) y conserva Chen y reverso salvo redondeo numérico (ver tests).
-/// Sin ella, la suma discreta de
-/// pares ordenados arrastra una corrección O(δ) dependiente del muestreo.
+///   camino recto sea exacta en aritmética real a cualquier subdivisión (S^{ij} =
+///   x_i·x_j/2) y conserva Chen y reverso salvo redondeo numérico (ver tests).
+///   Sin ella, la suma discreta de
+///   pares ordenados arrastra una corrección O(δ) dependiente del muestreo.
 ///
 /// API algebraica SIN validación: el llamador debe asegurar incrementos e
 /// intermedios representables y finitos. No recorta overflow/NaN ni certifica

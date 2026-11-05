@@ -209,7 +209,10 @@ mod tests {
         // La siembra rápida ajusta mu_hat instantáneamente a 20.0
         engine.update(1050, 0.0, 1000.0, 1000.0);
         assert_eq!(engine.n_seen, 2);
-        assert!((engine.mu_hat() - 20.0).abs() < 1e-6, "Siembra rápida a 20.0 Hz");
+        assert!(
+            (engine.mu_hat() - 20.0).abs() < 1e-6,
+            "Siembra rápida a 20.0 Hz"
+        );
 
         // Alimentar 10 ticks a cadencia rápida constante de 50 ms
         for i in 3..=12 {
@@ -220,6 +223,9 @@ mod tests {
 
         // En ausencia de impulsos netos (delta_ofi = 0), intensity_ratio debe estar cercano a 2.0 (bull + bear = 2*mu)
         let ir = engine.intensity_ratio();
-        assert!((ir - 2.0).abs() < 0.1, "Intensity ratio neutral debe ser ~2.0 (bull+bear)/mu");
+        assert!(
+            (ir - 2.0).abs() < 0.1,
+            "Intensity ratio neutral debe ser ~2.0 (bull+bear)/mu"
+        );
     }
 }

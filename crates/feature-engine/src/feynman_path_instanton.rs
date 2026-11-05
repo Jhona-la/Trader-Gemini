@@ -83,17 +83,29 @@ impl Default for InstantonParams {
 
 impl InstantonParams {
     pub fn validate(&self) -> Result<(), String> {
-        if !self.effective_mass.is_finite() || self.effective_mass <= 0.0 || self.effective_mass > 1000.0 {
+        if !self.effective_mass.is_finite()
+            || self.effective_mass <= 0.0
+            || self.effective_mass > 1000.0
+        {
             return Err(format!("Invalid effective_mass: {}", self.effective_mass));
         }
         if !self.hbar_eff.is_finite() || self.hbar_eff <= 1e-6 || self.hbar_eff > 10.0 {
             return Err(format!("Invalid hbar_eff: {}", self.hbar_eff));
         }
-        if !self.lambda_coupling.is_finite() || self.lambda_coupling <= 0.0 || self.lambda_coupling > 1000.0 {
+        if !self.lambda_coupling.is_finite()
+            || self.lambda_coupling <= 0.0
+            || self.lambda_coupling > 1000.0
+        {
             return Err(format!("Invalid lambda_coupling: {}", self.lambda_coupling));
         }
-        if !self.well_separation_a.is_finite() || self.well_separation_a <= 0.0 || self.well_separation_a > 1000.0 {
-            return Err(format!("Invalid well_separation_a: {}", self.well_separation_a));
+        if !self.well_separation_a.is_finite()
+            || self.well_separation_a <= 0.0
+            || self.well_separation_a > 1000.0
+        {
+            return Err(format!(
+                "Invalid well_separation_a: {}",
+                self.well_separation_a
+            ));
         }
         Ok(())
     }
@@ -138,7 +150,9 @@ impl FeynmanInstantonEngine {
         } else {
             InstantonParams::default()
         };
-        Self { params: valid_params }
+        Self {
+            params: valid_params,
+        }
     }
 
     /// Evalúa el potencial de doble pozo $V(x) = \frac{\lambda}{4} (x^2 - a^2)^2 - \epsilon x$.
@@ -354,21 +368,15 @@ impl FeynmanInstantonEngine {
     }
 
     /// Cuadratura de Gauss-Legendre de 8 puntos en stack para $B = \int_{x_1}^{x_2} \sqrt{2m (V(x) - E)} \, dx$.
-    fn integrate_wkb_action(
-        &self,
-        x1: f64,
-        x2: f64,
-        energy: f64,
-        epsilon_bias: f64,
-    ) -> f64 {
+    fn integrate_wkb_action(&self, x1: f64, x2: f64, energy: f64, epsilon_bias: f64) -> f64 {
         // Nodos y pesos normalizados en [-1, 1] de Gauss-Legendre de orden 8
         const NODES: [f64; 8] = [
             -0.9602898564975363,
             -0.7966664774136267,
-            -0.5255324099163290,
+            -0.525_532_409_916_329,
             -0.1834346424956498,
             0.1834346424956498,
-            0.5255324099163290,
+            0.525_532_409_916_329,
             0.7966664774136267,
             0.9602898564975363,
         ];
@@ -376,8 +384,8 @@ impl FeynmanInstantonEngine {
             0.1012285362903763,
             0.2223810344533745,
             0.3137066458778873,
-            0.3626837833783620,
-            0.3626837833783620,
+            0.362_683_783_378_362,
+            0.362_683_783_378_362,
             0.3137066458778873,
             0.2223810344533745,
             0.1012285362903763,

@@ -146,11 +146,7 @@ fn test_flat_api_rejects_malformed_and_invalid() {
     assert!(largest_eigenvalue_flat(&bad_diag, 2).is_none());
 
     // Indefinite matrix (star graph with rho=0.9 for N=3 is indefinite: det < 0)
-    let indefinite = vec![
-        1.0, 0.9, 0.9,
-        0.9, 1.0, 0.0,
-        0.9, 0.0, 1.0,
-    ];
+    let indefinite = vec![1.0, 0.9, 0.9, 0.9, 1.0, 0.0, 0.9, 0.0, 1.0];
     assert!(largest_eigenvalue_flat(&indefinite, 3).is_none());
 
     // NaN / Infinity

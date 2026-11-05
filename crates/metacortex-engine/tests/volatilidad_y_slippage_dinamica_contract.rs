@@ -116,7 +116,10 @@ fn ola102_volatilidad_regime_spectral_expansion_continua() {
     let conf_s05 = evaluate_volatility_regime_spectral(0.0060, 0.5, 0.0010, 0.0040, 2.0);
     let conf_s1 = evaluate_volatility_regime_spectral(0.0060, 1.0, 0.0010, 0.0040, 2.0);
 
-    assert_eq!(conf_s0, 0.40, "Para scalp rápido 60 bps debe saturar a peligro");
+    assert_eq!(
+        conf_s0, 0.40,
+        "Para scalp rápido 60 bps debe saturar a peligro"
+    );
     assert!(
         (conf_s05 - 0.60).abs() < 1e-12,
         "Para escala intermedia 60 bps debe dar 0.60 exacto, obtenido: {conf_s05}"
@@ -139,12 +142,19 @@ fn ola102_volatilidad_regime_inmunidad_a_nan_y_negativos() {
     assert_eq!(conf_nan, 1.0, "NaN en atr_pct debe retornar seguro 1.0");
 
     let conf_neg = evaluate_volatility_regime(-0.05);
-    assert_eq!(conf_neg, 1.0, "Valor negativo en atr_pct debe clampear a calma 1.0");
+    assert_eq!(
+        conf_neg, 1.0,
+        "Valor negativo en atr_pct debe clampear a calma 1.0"
+    );
 
     let conf_inf = evaluate_volatility_regime(f64::INFINITY);
-    assert_eq!(conf_inf, 0.40, "Infinito en atr_pct debe activar piso defensivo 0.40");
+    assert_eq!(
+        conf_inf, 0.40,
+        "Infinito en atr_pct debe activar piso defensivo 0.40"
+    );
 
-    let conf_spectral_nan = evaluate_volatility_regime_spectral(0.0025, f64::NAN, 0.0010, 0.0040, 2.0);
+    let conf_spectral_nan =
+        evaluate_volatility_regime_spectral(0.0025, f64::NAN, 0.0010, 0.0040, 2.0);
     assert!(
         conf_spectral_nan.is_finite() && (conf_spectral_nan - 0.70).abs() < 1e-12,
         "NaN en spectral_s debe degradar limpiamente a s = 0.0"
@@ -176,5 +186,8 @@ fn ola102_execution_slippage_paridad_y_dinamismo() {
     // base_slippage = 50.0 + 100.0 * 0.5 = 100.0 bps
     assert!((eff_custom - 44.805).abs() < 1e-10);
     assert!((max_custom - 100.00).abs() < 1e-10);
-    assert!(!veto_custom, "Con tolerancia desacoplada de 100 bps no debe vetar");
+    assert!(
+        !veto_custom,
+        "Con tolerancia desacoplada de 100 bps no debe vetar"
+    );
 }

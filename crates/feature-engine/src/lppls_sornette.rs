@@ -125,13 +125,15 @@ fn resolver(mat: [[f64; 4]; 4], rhs: [f64; 4], k: usize) -> Option<[f64; 4]> {
         }
         a.swap(c, piv);
         b.swap(c, piv);
-        for r in 0..k {
+        let pivot = a[c];
+        let b_c = b[c];
+        for (r, row) in a.iter_mut().enumerate().take(k) {
             if r != c {
-                let f = a[r][c] / a[c][c];
-                for col in c..k {
-                    a[r][col] -= f * a[c][col];
+                let f = row[c] / pivot[c];
+                for (col, value) in row.iter_mut().enumerate().skip(c) {
+                    *value -= f * pivot[col];
                 }
-                b[r] -= f * b[c];
+                b[r] -= f * b_c;
             }
         }
     }
@@ -185,7 +187,11 @@ fn sse_base(y: &[f64], u: &[f64], m: f64, omega: f64, periodica: bool) -> Option
         let e = y[i] - pred;
         sse += e * e;
     }
-    if sse.is_finite() { Some(sse) } else { None }
+    if sse.is_finite() {
+        Some(sse)
+    } else {
+        None
+    }
 }
 
 /// Construye el vector u = (t_c − t)/T_w de la ventana (tiempo en
@@ -204,7 +210,7 @@ fn ajustar_ventana(y: &[f64], t0: usize) -> Option<AjusteVentana> {
     let tw = (n - 1) as f64;
     let media = y.iter().sum::<f64>() / n as f64;
     let sst: f64 = y.iter().map(|v| (v - media) * (v - media)).sum();
-    if !(sst > 0.0) {
+    if sst.partial_cmp(&0.0) != Some(std::cmp::Ordering::Greater) {
         return None;
     }
     // (sse_lp, delta, m, omega) del mejor ajuste periódico por mínima SSE.

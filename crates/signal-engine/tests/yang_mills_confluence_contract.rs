@@ -9,9 +9,9 @@
 
 use omniscient_registry::OmniscientRegistry;
 use signal_engine::flow_excitation_confluence::FlowExcitationConfluenceEngine;
-use strategy_core::QuantumStrategy;
 use std::sync::Arc;
 use std::time::Instant;
+use strategy_core::QuantumStrategy;
 
 fn build_base_long_registry() -> Arc<OmniscientRegistry> {
     let reg = Arc::new(OmniscientRegistry::new());
@@ -46,7 +46,10 @@ fn test_yang_mills_confluence_aligned_boost() {
     let v_neutral = engine_neutral.evaluate();
     let v_boosted = engine_boosted.evaluate();
 
-    assert!(v_neutral > 0.0, "El voto neutral base debe ser positivo (Long)");
+    assert!(
+        v_neutral > 0.0,
+        "El voto neutral base debe ser positivo (Long)"
+    );
     assert!(
         v_boosted > v_neutral,
         "La corriente restauradora alineada debe amplificar el voto: boosted ({:.4}) > neutral ({:.4})",

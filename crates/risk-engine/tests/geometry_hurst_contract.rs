@@ -29,7 +29,9 @@ fn arena(hurst_por_eventos: f64) -> Arc<GlobalArena> {
     // DFA al cierre de la vela de 1 minuto: difusión browniana.
     a.coins[0].hurst_exponent.store(0.5, Relaxed);
     // Proxy multifractal por eventos (S-7): con ticks repetidos cae a ~0,2.
-    a.coins[0].hurst_scale_matched.store(hurst_por_eventos, Relaxed);
+    a.coins[0]
+        .hurst_scale_matched
+        .store(hurst_por_eventos, Relaxed);
     a.config.global_leverage.store(20.0, Relaxed);
     a.config.global_max_drawdown.store(0.2, Relaxed);
     a.config.kelly_clamp_min.store(0.01, Relaxed);
