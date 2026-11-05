@@ -170,8 +170,16 @@ impl CausalAttributionEngine {
         total_gross_pnl: f64,
         total_fees: f64,
     ) -> CausalMetaAnalyticsReport {
-        let safe_gross = if total_gross_pnl.is_finite() { total_gross_pnl } else { 0.0 };
-        let safe_fees = if total_fees.is_finite() && total_fees >= 0.0 { total_fees } else { 0.0 };
+        let safe_gross = if total_gross_pnl.is_finite() {
+            total_gross_pnl
+        } else {
+            0.0
+        };
+        let safe_fees = if total_fees.is_finite() && total_fees >= 0.0 {
+            total_fees
+        } else {
+            0.0
+        };
         let safe_net = safe_gross - safe_fees;
 
         // Pesos lineales base w_i de cada pilar en la función de juego continuo
@@ -311,7 +319,11 @@ mod tests {
         assert_eq!(report.attributions.len(), SUBSYSTEM_COUNT);
 
         // Axioma de Eficiencia: sum(phi_i) == total_net_pnl exacto
-        let sum_as_pnl: f64 = report.attributions.iter().map(|a| a.aumann_shapley_pnl).sum();
+        let sum_as_pnl: f64 = report
+            .attributions
+            .iter()
+            .map(|a| a.aumann_shapley_pnl)
+            .sum();
         assert!(
             (sum_as_pnl - expected_net).abs() < 1e-9,
             "Aumann-Shapley sum {} != expected net {}",
@@ -320,7 +332,11 @@ mod tests {
         );
 
         // Axioma de Eficiencia de Owen: sum(psi_i) == total_net_pnl exacto
-        let sum_owen: f64 = report.attributions.iter().map(|a| a.owen_coalition_pnl).sum();
+        let sum_owen: f64 = report
+            .attributions
+            .iter()
+            .map(|a| a.owen_coalition_pnl)
+            .sum();
         assert!(
             (sum_owen - expected_net).abs() < 1e-9,
             "Owen value sum {} != expected net {}",
@@ -353,7 +369,10 @@ mod tests {
                 break;
             }
         }
-        assert!(triggered, "Detector SRP debió activar alarma ante degradación sostenida");
+        assert!(
+            triggered,
+            "Detector SRP debió activar alarma ante degradación sostenida"
+        );
     }
 
     #[test]
