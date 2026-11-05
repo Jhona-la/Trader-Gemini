@@ -321,3 +321,11 @@ Después de cada push de código: todos los checks disparados (base actual: 8 de
 - `memory_audit.rs` y `memory_compaction.rs` formateados con equivalencia exacta de blobs WIP y sin cambio semántico. No se declara cerrado todo `os-guardian`.
 - Evidencia: 29/29 en 4 targets, workspace 3m34s, Zero-Wait 22/22 (260.881s), revisión Yes sin defectos. Overflow, préstamos, FTZ/DAZ y `silicon_topology` permanecen excluidos por cambios semánticos/TRIANGULAR.
 - Handoff separado pendiente. Attestation sigue bloqueada por QRA, formatter restante, productor ROOT/Golden9, seis fases + Python y Golden9. Producción NO-GO; métricas económicas N/D.
+
+
+## Corte V35-R13A — dos archivos omniscient-registry formateados e integrados localmente (2026-11-05T00:56:32Z)
+
+- `main` local=`1c00e0c8d05564b3238b8f87ff20ce213ebb3343`, tree `afe418d5`, tras CAS desde `a50d4d3c`; `origin/main=206701dc` sin cambios, sin push.
+- `src/tests.rs` y `aislamiento_ambito_multiactivo_contract.rs` formateados con equivalencia exacta de blobs WIP y sin cambio semántico. No se declara cerrado todo `omniscient-registry`.
+- Evidencia: 14/14 en 3 targets, workspace 3m41s, Zero-Wait 22/22 (247.075s), revisión Yes sin defectos. `src/lib.rs` permanece excluido por migración `SkipMap→SkipList` y nuevo `unsafe`.
+- Handoff separado pendiente. Attestation sigue bloqueada por QRA, formatter restante, productor ROOT/Golden9, seis fases + Python y Golden9. Producción NO-GO; métricas económicas N/D.

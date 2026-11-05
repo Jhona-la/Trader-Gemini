@@ -20179,3 +20179,17 @@ Recibos: 29/29 en 4 targets/0 failed/ignored/filtered/exit0; workspace all-targe
 `large_pages.rs` (overflow/alineación), `simd_crypto.rs` (préstamos), `f8_001_silicon_physics_contract.rs` (activación FTZ/DAZ) y `silicon_topology.rs` (TRIANGULAR_PENDIENTE) permanecen restaurados/intactos a base. R12A no declara cerrado todo `os-guardian`.
 
 Handoff documental separado pendiente de workspace, Zero-Wait y CAS. QRA/Navier/adversarial/legacy intactos; attestation/publicación bloqueados. Producción NO-GO; ROI/PnL/WR/Sharpe/EV=N/D.
+
+
+<!-- KIMI-V35-R13A-LOCAL-CAS-20261105T005632Z -->
+## 2026-11-05T00:56:32Z — KIMI-QUANT-SR-V35: R13A dos archivos omniscient-registry en main local
+
+CAS realizado desde `a50d4d3c5848cfd7741bf2768df1197a008ef887` a `1c00e0c8d05564b3238b8f87ff20ce213ebb3343`, tree `afe418d5ad64b139abe4765c77bfe052f615fb4c`; `origin/main=206701dc` intacto, sin push.
+
+`src/tests.rs` y `aislamiento_ambito_multiactivo_contract.rs`, 25+/11- exclusivamente rustfmt: orden de imports, espacios y layouts de llamadas/`assert!`, sin cambios de aislamiento, precedencia símbolo/coin_id, comparaciones, fixtures, umbrales o APIs. Blobs exactos `78e92dfe` y `3a7045cd`.
+
+Recibos: 14/14 en 3 targets/0 failed/ignored/filtered/exit0; workspace all-targets exit0 (3m41s); Zero-Wait 22/22 (247.075s)/exit0; revisión agent-25 **Yes**, Critical/Important/Minor=0.
+
+`src/lib.rs` permanece restaurado a base: no se adoptó la migración `SkipMap→SkipList` ni el nuevo `unsafe`. R13A no declara cerrado todo `omniscient-registry`.
+
+Handoff documental separado pendiente de workspace, Zero-Wait y CAS. QRA/Navier/adversarial/legacy intactos; attestation/publicación bloqueados. Producción NO-GO; ROI/PnL/WR/Sharpe/EV=N/D.
