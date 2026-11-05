@@ -20207,3 +20207,15 @@ Recibos: 87/87 en 6 targets/0 failed/ignored/filtered/exit0; workspace all-targe
 `forensic_auditor.rs` (let-chain/import order), `ret51b_una_sola_cola.rs` (import order), `macros.rs` (semántica grande) y `mirofish_lattice.rs` (TRIANGULAR_PENDIENTE) permanecen restaurados/intactos a base. R14A no declara cerrado todo `telemetry-server`.
 
 Handoff documental separado pendiente de workspace, Zero-Wait y CAS. QRA/Navier/adversarial/legacy intactos; attestation/publicación bloqueados. Producción NO-GO; ROI/PnL/WR/Sharpe/EV=N/D.
+
+
+<!-- KIMI-V35-R15-LOCAL-CAS-20261105T021426Z -->
+## 2026-11-05T02:14:26Z — KIMI-QUANT-SR-V35: R15B, R15A2 y R15C en main local
+
+CAS encadenados: R15B `fed28c787f527b16e8dd67679c3c1c1004d364b1` (tree `0226db51`), R15A2 `369806361c075038d257d80e2168e74b59205a5e` (tree `1280eafc`) y R15C `9d59f5dc235f65b2882aead772e8bdd71d5524b8` (tree `138f5a0e`). `origin/main=206701dc` revalidado; sin push.
+
+R15B implementa LUT de caracteres cuadráticos con fallback Euler y oráculos independientes, sin relajar la latencia que falló cuatro veces en base: focal 7/7, suite 132/132/21, workspace 3m35s, Zero-Wait 199.152s, agent-26 Yes. R15A2 integra 14 rutas rustfmt/378+/90- con blobs WIP exactos: 132/132/21, workspace 3m51s, Zero-Wait 237.559s, agent-27 apto. R15C sólo documenta LUT/Euler (3+/2-): 132/132/21, workspace 3m45s, Zero-Wait 234.452s, agent-26 Yes/0 y Minor anterior cerrado.
+
+`partial_cmp`, `TradeHorizon` y TRIANGULAR_PENDIENTE no se adoptaron. R15 no cierra todo `strategy-core`; overlays verificados idénticos a sus trees. QRA/QSR/Navier/adversarial/legacy intactos.
+
+Handoff documental separado en validación; attestation/publicación bloqueados. Producción NO-GO; ROI/PnL/WR/Sharpe/EV=N/D.

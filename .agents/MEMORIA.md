@@ -10908,3 +10908,13 @@ Puerto recursos reanclado sobre PR90/7b598f7e (padre mainfd956f9, AGY F1-074/F1-
 - Evidencia: 87/87 en 6 targets/0 failed/ignored/filtered/exit0; workspace all-targets exit0 (3m35s); Zero-Wait 22/22 (224.937s)/exit0; revisión agent-25 **Yes**, Critical/Important/Minor=0.
 - `forensic_auditor.rs` (let-chain/import order), `ret51b_una_sola_cola.rs` (import order), `macros.rs` (semántica grande) y `mirofish_lattice.rs` (TRIANGULAR_PENDIENTE) permanecen restaurados/intactos a base. R14A no declara cerrado todo `telemetry-server`.
 - Handoff documental separado pendiente de workspace, Zero-Wait y CAS. Attestation/publicación siguen bloqueados por QRA, formatter restante, productor ROOT/Golden9, seis fases + Python y Golden9. Producción NO-GO; ROI/PnL/WR/Sharpe/EV=N/D.
+
+
+## 2026-11-05T02:14:26Z — KIMI-QUANT-SR-V35: R15B, R15A2 y R15C integrados localmente
+
+- Cadena CAS: R15B `fed28c787f527b16e8dd67679c3c1c1004d364b1` (tree `0226db51cec916b12837c76f336016306278f030`, padre `5f119337`), R15A2 `369806361c075038d257d80e2168e74b59205a5e` (tree `1280eafcf0422ca35c8755fcdccc8a0b908d01e9`, padre R15B) y R15C `9d59f5dc235f65b2882aead772e8bdd71d5524b8` (tree `138f5a0e96601f1d96fdcb15539a0c0033a345aa`, padre R15A2). `origin/main=206701dc` revalidado; sin push.
+- R15B corrige la latencia BSD base que falló cuatro veces (47.675/43.454/42.013/50.510 ns >25.000 ns) con LUT de caracteres cuadráticos y fallback Euler preservado. Contrato focal 7/7 con oráculos independientes; suite 132/132 en 21 targets/2 ignored/0 filtered, workspace 3m35s, Zero-Wait 22/22 (199.152s), agent-26 Yes. Su Minor documental quedó cerrado por R15C.
+- R15A2 integra 14 rutas exclusivamente rustfmt (378+/90-) con blobs WIP exactos: suite 132/132/21, workspace 3m51s, Zero-Wait 22/22 (237.559s), agent-27 apto sin Critical/Important/Minor.
+- R15C sólo documenta LUT versus fallback Euler (3+/2-), sin cambios ejecutables: suite 132/132/21, workspace 3m45s, Zero-Wait 22/22 (234.452s), agent-26 Yes/0 hallazgos.
+- `partial_cmp`, `TradeHorizon`, nuevas APIs y todas las rutas TRIANGULAR_PENDIENTE permanecen excluidos; R15 no declara cerrado todo `strategy-core`. Los overlays fueron verificados idénticos a sus trees.
+- Handoff documental separado en validación. Attestation/publicación siguen bloqueados por QRA, formatter restante, productor ROOT/Golden9, seis fases + Python y Golden9. Producción NO-GO; ROI/PnL/WR/Sharpe/EV=N/D.

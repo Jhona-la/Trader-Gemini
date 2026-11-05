@@ -337,3 +337,11 @@ Después de cada push de código: todos los checks disparados (base actual: 8 de
 - `causal_attribution.rs` y `estrangulador.rs` formateados con equivalencia exacta de blobs WIP y sin cambio semántico. No se declara cerrado todo `telemetry-server`.
 - Evidencia: 87/87 en 6 targets, workspace 3m35s, Zero-Wait 22/22 (224.937s), revisión Yes sin defectos. `forensic_auditor`, `ret51b`, `macros` y `mirofish_lattice` permanecen excluidos por diferencias semánticas/TRIANGULAR.
 - Handoff separado pendiente. Attestation sigue bloqueada por QRA, formatter restante, productor ROOT/Golden9, seis fases + Python y Golden9. Producción NO-GO; métricas económicas N/D.
+
+
+## Corte V35-R15 — LUT BSD, formato strategy-core y handoff en main local (2026-11-05T02:14:26Z)
+
+- Cadena CAS: R15B `fed28c787f527b16e8dd67679c3c1c1004d364b1`, R15A2 `369806361c075038d257d80e2168e74b59205a5e`, R15C `9d59f5dc235f65b2882aead772e8bdd71d5524b8`; `origin/main=206701dc` revalidado, sin push.
+- R15B valida LUT/oráculos BSD y la misma puerta de latencia que fallaba en base: 132/132/21, workspace 3m35s, Zero-Wait 199.152s. R15A2 conserva 14 rutas rustfmt/378+/90-: 132/132/21, workspace 3m51s, Zero-Wait 237.559s. R15C cierra el comentario LUT/Euler: 132/132/21, workspace 3m45s, Zero-Wait 234.452s.
+- Agentes 26/27 sin defectos abiertos; Minor documental cerrado. `partial_cmp`, `TradeHorizon` y TRIANGULAR permanecen excluidos; R15 no cierra todo `strategy-core`.
+- Handoff documental separado en validación. Attestation/publicación bloqueados por QRA, formatter restante, productor ROOT/Golden9, seis fases + Python y Golden9. Producción NO-GO; métricas económicas N/D.
