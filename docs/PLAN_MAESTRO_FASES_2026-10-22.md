@@ -367,3 +367,10 @@ Después de cada push de código: todos los checks disparados (base actual: 8 de
 - Candidato `1b252ad21984fbde07e28669db8fa96bc8bfc1af` sobre merge `b2e27830` (origin `4f9fca71` + `d7d6907b`). Tres RED reales antes de implementación y GREEN focal 3/3. Guardas en evaluación, ciclo y `meta_distill`; ningún dato filtrado o imputado.
 - Tests con 11 retornos, control RNG y siete campos no finitos. Suite evolution 203/204 en 22 targets, único rojo CL-88 heredado fuera del diff. Revisión agent-30 Yes/0; GLM-194 y handoffs anteriores preservados.
 - Workspace all-targets exit0 (4m29s), Zero-Wait 22/22 (344.272s)/exit0. CAS R27 realizado `main=1b252ad21984fbde07e28669db8fa96bc8bfc1af`, expected `d7d6907b`, origin `4f9fca71`; handoff documental separado en validación. Attestation/publicación bloqueados por requisitos globales y QRA. Producción NO-GO; métricas económicas N/D.
+
+
+## Corte V35-R28 — Puente Browniano causal, suite 204/204; CAS pendiente (2026-11-05)
+
+- Candidato `0d03e5a39b7164ded28a452849fa18bdd391a4b6` sobre merge `87cccdc1` (origin `61e0e759` GLM-195 + `90b2e695`). RED ATR 2,87x por piso de 10 pb y ruido sin covarianza de puente; corrección 22+/6- con media expansiva causal e incrementos `B(f)-f*B(1)`.
+- GREEN focal 1,133/1,133/0,873 y suite evolution 204/204 en 22 targets/0 failed/ignored/filtered. Agent-30 rama Yes/0. Minor de cobertura estructural queda diferido, no afirmado como existente.
+- Workspace all-targets exit0 (4m03s), Zero-Wait 22/22 (366.708s)/exit0. CAS R28 realizado `main=0d03e5a39b7164ded28a452849fa18bdd391a4b6`, expected `90b2e695`, origin `61e0e759`; handoff documental separado en validación. Producción NO-GO; métricas económicas N/D; attestation/publicación bloqueados por requisitos globales y QRA.
