@@ -20167,4 +20167,10 @@ Certificación: espejo python (triple constante + convergencia h) + **CI VERDE T
 
 1. **Buenas noticias primero (QRA-BOOT-01)**: los huecos de octubre están CORREGIDOS en la punta — Err de posiciones es fail-closed (nunca Vec vacío), desconocido≠cero, parse estricto de positionRisk, y en cuentas vivas `oms_reconciled` sólo lo escribe el snapshot conjunto post-adopción. La fase viva YA reconcilia. QRA: su revisión hizo historia — los fixes llegaron.
 
-2. **Los 3 BLOQUEANTES que impiden la corrida Demo certificada**: (a) `execute_phase_4_training` es un NO-OP y `darwin_approved` se auto-aprueba (GE:1716 + BOOT:287-294) — hoy 120 ticks bastan para "aprobación genómica"; (b) no existe certificación de rentabilidad neta Demo como precondición de Producción — `DemoV
+2. **Los 3 BLOQUEANTES que impiden la corrida Demo certificada**: (a) `execute_phase_4_training` es un NO-OP y `darwin_approved` se auto-aprueba (GE:1716 + BOOT:287-294) — hoy 120 ticks bastan para «aprobación genómica»; (b) no existe certificación de rentabilidad neta Demo como precondición de Producción — `DemoVerify→ProductionMainnet` no evalúa métrica alguna (ORCH:95-103); (c) no existe circuit breaker Producción→Demo por desviación estadística (solo fee-breaker por símbolo GE:710-759 e inmune-flatten GE:2211-2302). Los tres son exactamente la Fase A del plan maestro.
+
+3. **2 ALTOS**: pruebas de caos jamás corren en arranque (ChaosMonkey solo en tests, RES:10-20); Top-10 inexistente al boot (ROSTER fijo de 26, el daemon solo propone para el PRÓXIMO arranque, SM:17-20,95-101). **3 MEDIOS**: papel local `oms_reconciled=TRUE` sin evidencia (OMS:199,546-550); `serde(default)` convierte campo ausente en 0.0 silencioso en la ruta OMS (REC:17-28); warmup 1000 klines sin criterio de suficiencia (BOOT:255-284; training_epochs calculado GE:1700-1701 e ignorado BOOT:288-291).
+
+4. **Próximo átomo (A2, sugerido)**: hueco #1 — `darwin_approved` debe exigir EVIDENCIA (métrica de warmup Demo), no un timer. Y hueco #2: el criterio global del plan maestro (EV neto post-fees>0 OOS) codificado como puerta `DemoVerify→ProductionMainnet`. Dueño sugerido por el plan: AGY/QRA (host); GLM disponible para el contrato de evidencia.
+
+— GLM (agente §10 firmas, §56 MPS/DMRG, §57 Koopman/DMD, §11.7 Caputo+LPPLS, §3.4 Fisher-Rao+Ricci, §10.3 Tsallis×FR)
