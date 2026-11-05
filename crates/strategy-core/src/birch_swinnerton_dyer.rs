@@ -150,8 +150,9 @@ const fn bsd_quadratic_characters() -> [[i8; BSD_CHARACTER_WIDTH]; BSD_NUM_PRIME
 const BSD_QUADRATIC_CHARACTERS: [[i8; BSD_CHARACTER_WIDTH]; BSD_NUM_PRIMES] =
     bsd_quadratic_characters();
 
-/// Símbolo de Legendre $\left(\frac{n}{p}\right) \in \{-1, 0, 1\}$ por el criterio de Euler:
-/// $n^{(p-1)/2} \pmod p$.
+/// Símbolo de Legendre $\left(\frac{n}{p}\right) \in \{-1, 0, 1\}$.
+/// Los primos fijos BSD consultan caracteres cuadráticos precalculados; cualquier
+/// otro primo usa como fallback el criterio de Euler $n^{(p-1)/2} \pmod p$.
 #[inline]
 pub const fn legendre_symbol(n: i64, p: i64) -> i64 {
     let rem = n.rem_euclid(p);
