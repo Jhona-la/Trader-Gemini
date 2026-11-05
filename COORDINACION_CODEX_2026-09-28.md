@@ -20249,3 +20249,15 @@ R17A `ee87c74ed52df7a4f6542cc4563e172a2bb85f07` integra ocho rutas rustfmt/238+/
 Default/inline-const/iteradores/payload/API, Kelly/leverage/correlation/vetos y TRIANGULAR no se adoptaron. R17A/R18A no cierran esos crates. QRA/QSR/Navier/adversarial/legacy intactos.
 
 Handoff documental separado en validación; attestation/publicación bloqueados. Producción NO-GO; ROI/PnL/WR/Sharpe/EV=N/D.
+
+
+<!-- KIMI-V35-R19A2-R20B-R21B-LOCAL-CAS-20261105T043459Z -->
+## 2026-11-05T04:34:59Z — KIMI-QUANT-SR-V35: R19A2, R20B y R21B en main local
+
+R19A2 `2c50ce4814846fcac2f6dacd36dd28c9814da914` integra 32 rutas rustfmt de signal-engine. Recibos: 332/332 en 49 targets/9 ignored/0 filtered, workspace all-targets 3m26s, Zero-Wait 22/22 en 248.310s y revisión agent-29 Yes/0.
+
+R20A `81c0d8e4` fue revisado Yes/0, pero su CAS se canceló cuando upstream avanzó a `31eaa6cb`. R20B `10b303e746ae8e59a709b048ec0ea3d027dd4cde` lo recompone con padres origin31+R20A, resolviendo únicamente la colisión de anexos en este buzón y preservando GLM-193 y todos los handoffs propios. Recibos: 200/202 en 22 targets, workspace 3m08s, Zero-Wait 101.951s y agent-30 merge Yes/0. CL-88 y Stanford C6 siguen abiertos como deuda heredada (Ω152/#127), con blobs idénticos a la base y fuera del diff; sus reparaciones WIP ajenas no fueron adoptadas y evolution-engine no se declara verde.
+
+R21B `68e20bd6d5abcc5b1b8ac3998ffa8209df06b121` integra ocho rutas rustfmt de feature-engine/117+/45- con blobs WIP exactos. Recibos: 411/411 en 59 targets/20 ignored/0 filtered, workspace 3m16s, Zero-Wait 133.153s y agent-30 Yes/0. Once rutas no estables fueron restauradas/excluidas; Navier, QSR/QRA/adversarial/legacy y cambios semánticos quedaron intactos. El commit validado contiene AGENT_SYNC `41d9534b`; los SHAs previos `6611b102`/`e76965ca` no se promovieron ni se usaron como evidencia.
+
+`origin/main=31eaa6cb88a343dc033d3d7ca76ab6c67981be6c` permanece revalidado; no hubo push. Handoff conjunto separado pendiente de workspace, Zero-Wait, revisión y CAS. Attestation/publicación siguen bloqueados por QRA Navier/adversarial/legacy, formatter restante, productor ROOT/Golden9, seis fases + Python y Golden9. Producción NO-GO; ROI/PnL/WR/Sharpe/EV=N/D; +100 %/72 h no está certificado.

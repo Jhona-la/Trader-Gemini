@@ -10926,3 +10926,12 @@ Puerto recursos reanclado sobre PR90/7b598f7e (padre mainfd956f9, AGY F1-074/F1-
 - R18A `f8aaab82861cc3d94f649093c40f9194a7d5fa54` (tree `c7aa8932b1cbf9ffc4b23a0d0480d61f8d73a771`, padre R17A) integra nueve rutas rustfmt/25+/22- en `risk-engine`: 580/580 en 85 targets/10 ignored/0 filtered, workspace 3m50s, Zero-Wait 22/22 (293.916s). El fallo inicial de latencia (12.653 ns >10.000 ns) fue transitorio: tres repeticiones focalizadas pasaron 6.928/8.589/9.095 ns y la suite completa se repitió verde.
 - `origin/main=206701dc` revalidado; sin push. Cambios Default/inline-const/iteradores/payload/API, Kelly/leverage/correlation/vetos y todas las rutas TRIANGULAR_PENDIENTE no se adoptaron. R17A/R18A no declaran cerrados esos crates.
 - Handoff documental separado en validación. Attestation/publicación siguen bloqueados por QRA, formatter restante, productor ROOT/Golden9, seis fases + Python y Golden9. Producción NO-GO; ROI/PnL/WR/Sharpe/EV=N/D.
+
+
+## 2026-11-05T04:34:59Z — KIMI-QUANT-SR-V35: R19A2, R20B y R21B integrados localmente
+
+- Cadena CAS: R19A2 `2c50ce4814846fcac2f6dacd36dd28c9814da914`, R20B `10b303e746ae8e59a709b048ec0ea3d027dd4cde` y R21B `68e20bd6d5abcc5b1b8ac3998ffa8209df06b121`. `origin/main=31eaa6cb88a343dc033d3d7ca76ab6c67981be6c` revalidado; no hubo push.
+- R19A2 integra 32 rutas rustfmt de signal-engine: 332/332 en 49 targets/9 ignored/0 filtered, workspace 3m26s, Zero-Wait 22/22 en 248.310s y revisión agent-29 Yes/0.
+- R20A `81c0d8e4` fue aprobado pero no promovido porque upstream avanzó. R20B lo recompone sobre GLM-193, conserva los anexos de ambos lados y queda en main local: 200/202 en 22 targets, workspace 3m08s, Zero-Wait 101.951s y agent-30 merge Yes/0. Los dos rojos son CL-88 (Ω152) y Stanford C6 (#127), heredados y fuera del diff; evolution-engine no se declara verde y las reparaciones WIP ajenas no se adoptaron.
+- R21B integra ocho rutas rustfmt de feature-engine/117+/45- con blobs WIP exactos: 411/411 en 59 targets/20 ignored/0 filtered, workspace 3m16s, Zero-Wait 133.153s y agent-30 Yes/0. Once rutas no estables quedaron excluidas. Los SHAs documentales previos `6611b102`/`e76965ca` no se usaron; el SHA validado contiene el blob AGENT_SYNC `41d9534b`.
+- Handoff conjunto separado en validación. Attestation/publicación siguen bloqueados por QRA Navier/adversarial/legacy, formatter restante, productor ROOT/Golden9, seis fases + Python y Golden9. Producción NO-GO; ROI/PnL/WR/Sharpe/EV=N/D; +100 %/72 h sigue siendo hipótesis OOS neta.

@@ -352,3 +352,11 @@ Después de cada push de código: todos los checks disparados (base actual: 8 de
 - R17A `ee87c74ed52df7a4f6542cc4563e172a2bb85f07`: ocho rutas rustfmt/238+/104-, 138/138/21, workspace 4m02s, Zero-Wait 249.188s, agent-28 Yes. R18A `f8aaab82861cc3d94f649093c40f9194a7d5fa54`: nueve rutas rustfmt/25+/22-, 580/580/85/10 ignored, workspace 3m50s, Zero-Wait 293.916s.
 - `prospect_theory` y `consejo_seniors` fueron excluidos/restaurados; `skip_children=true` verificado. El fallo inicial de latencia R18A fue transitorio con tres repeticiones bajo umbral y suite completa repetida.
 - Cambios funcionales/API y TRIANGULAR no se adoptaron; R17A/R18A no cierran esos crates. Handoff separado en validación; attestation/publicación bloqueados. Producción NO-GO; métricas económicas N/D.
+
+
+## Corte V35-R19A2/R20B/R21B — signal/evolution/feature en main local (2026-11-05T04:34:59Z)
+
+- Cadena local `2c50ce48` → `10b303e7` → `68e20bd6`; `origin/main=31eaa6cb` revalidado, sin push. R19A2 conserva 32 rutas rustfmt de signal-engine: 332/332/49/9 ignored, workspace 3m26s, Zero-Wait 248.310s y agent-29 Yes/0.
+- R20B recompone R20A sobre GLM-193 sin perder anexos. Sus tres contratos pasan 7/7; el censo evolution es 200/202 en 22 targets por CL-88 y Stanford C6, ambos heredados, documentados y fuera del diff. Workspace 3m08s, Zero-Wait 101.951s y agent-30 merge Yes/0. No se declara evolution-engine verde.
+- R21B conserva ocho rutas rustfmt de feature-engine con equivalencia exacta WIP: 411/411/59/20 ignored, workspace 3m16s, Zero-Wait 133.153s y agent-30 Yes/0. Once rutas no estables y todo cambio semántico/QRA/TRIANGULAR permanecen excluidos.
+- Handoff documental separado pendiente de workspace, Zero-Wait, revisión y CAS. Attestation/publicación siguen bloqueados por QRA Navier/adversarial/legacy, formatter restante, productor ROOT/Golden9, seis fases + Python y Golden9. Producción NO-GO; métricas económicas N/D.
