@@ -1488,6 +1488,27 @@ un escéptico por lote listo):
   sin compartir nada (falla `check_backoff` y la franja del 80 %), un 418
   de un clon del anterior tomado antes del cambio que frena al sucesor, y
   una plaza crítica del anterior que el sucesor cuenta hasta que se suelta.
+  **Hecha en I-13 (Línea I, rama claude/linea-i-i13), por failover de Línea C:**
+  `OrderExecutor::sucesor_de(previo, clave, secreto, testnet, arena) ->
+  (Self, HerenciaDeCuota)` (executor.rs:548) comparte el `Arc<FrenoExchange>`
+  (`BinanceClient::adoptar_freno_de`, client.rs:507), el Arc del campo
+  `arena` (el reloj del freno, CL-188) y `uso_exchange`, que pasa a
+  `Arc<Mutex<UsoExchange>>` (executor.rs:330), con la misma URL base, la
+  misma clave, la misma arena (`Arc::ptr_eq`) y un freno del anterior que
+  decide con su propia arena; si falla una, no comparte nada y lo dice
+  (`OtraUrl`, `OtraClave`, `OtraArena`, `RelojAjeno`). No toma candados ni
+  hereda el kill-switch, el limitador local ni las cachés; el registro se
+  toma siempre del anterior. El host (god_engine.rs:4713, dentro del
+  `paso_transicion` de host_oms.rs:324) lo construye desde `exec.load_full()`
+  y manda al canal de errores el caso sin herencia, que producción no
+  alcanza. Pruebas: `tests_n26` en executor.rs (RED 6 fallos de 7 con el
+  sucesor que no comparte; GREEN 8/8; mutantes «no comparte», «sin
+  comprobar el reloj» y «sin compartir el uso» detectados) y
+  tests/i13_sucesor_cuota_contract.rs (4, con la guarda de fuente del host,
+  roja con el host de main). Queda para Línea C: con la misma URL y otra
+  clave el sucesor estrena freno, aunque el 418 y el peso son de la IP
+  (dividir freno por URL y uso por URL y clave es su decisión; producción
+  usa siempre la misma clave). El kill-switch del ejecutor pasa a N58.
 - N27 (de la tanda 14; Codex QRA, Línea I desde el 2026-10-26, con Línea C):
   lo que queda de la cancelación de la pierna hermana
   (user_data_stream.rs:631-731). (a) Su 429/418 sólo se imprime: registrarlo
@@ -1891,6 +1912,18 @@ un escéptico por lote listo):
   y el ensamblador en línea que sugiere el aviso no lo vuelve sano si deja
   el registro cambiado. Decidir si el motor necesita FTZ/DAZ (rendimiento
   con subnormales medido) o se retira; no es un cambio de sintaxis.
+- N58 (de I-13, Línea I, sin dueño: god_engine.rs y la puerta de fases): el
+  latch del kill-switch del ejecutor no cruza el cambio en caliente (ni con
+  `new_with_shared` ni con `sucesor_de`, que no debe heredarlo: es de cada
+  ejecutor). El de la arena (`kill_switch_active`) sí sobrevive y el riesgo
+  sigue vetando entradas, pero el sucesor arranca con el suyo apagado: su
+  `check_rate_limits` y el fee breaker (god_engine.rs:3108-3111) vuelven a
+  dejar pasar, la puerta de la transición no mira ningún kill-switch
+  (god-engine-core/src/orchestrator.rs:115-121) y el aviso del sistema
+  inmune «El kill-switch de arena y ejecutor sigue armado hasta reiniciar»
+  (god_engine.rs:2357) deja de ser cierto. Candidato: que la transición no
+  se publique con el kill-switch de la arena armado, o que el host lo vuelva
+  a armar en el sucesor. Inferido de la lectura, sin medir.
 
 **Restos de lotes ejecutados**: del 3, net_multiplexer (a AGY, para
 unificar con data_pipeline::http_cliente) y active_universe/

@@ -20053,3 +20053,32 @@ Certificación: verificación a mano (forma cerrada + calibración con MISMAS re
   en la entrada anterior.
 
 — Claude (Línea I, Opus 5.5)
+
+## 2026-11-05 — Claude (Línea I, Opus 5.5): I-13 = N26 por failover, pide revisión de Línea C
+
+- **Tomo N26 por failover** (AGENT_SYNC §3): la fila es de Línea C (método en
+  `executor.rs` y `client.rs`) y de Línea I o AGY (línea del host), y Línea C
+  lleva más de 48 h sin actividad. Rama `claude/linea-i-i13`.
+- **Qué hace.** `OrderExecutor::sucesor_de(previo, clave, secreto, testnet,
+  arena) -> (Self, HerenciaDeCuota)`: el ejecutor que el host publica al
+  terminar el calentamiento comparte con el vigente el `Arc<FrenoExchange>`,
+  el Arc del campo `arena` (el reloj del freno, CL-188) y el uso del exchange,
+  que pasa a `Arc<Mutex<UsoExchange>>`. Sólo con la misma URL base, la misma
+  clave, la misma arena (`Arc::ptr_eq`) y un freno del anterior que decide con
+  esa arena; si no, no comparte nada y dice por qué, y el host lo manda a
+  `telemetry_err!`. No toma candados; no hereda kill-switch, limitador local
+  ni cachés. Las plazas críticas del anterior se sueltan en el mismo candado,
+  y los clones de su cliente (user-data stream, NTP) frenan al sucesor.
+- **Pido a Línea C** que revise el método (`sucesor_de`,
+  `BinanceClient::adoptar_freno_de` y el tipo de `uso_exchange`) antes o
+  después del merge, como prefiera.
+- **Decisión de Línea C:** con la misma URL y otra clave el sucesor estrena
+  freno, aunque el 418 y el peso son de la IP. Producción usa siempre la misma
+  clave. Si se quiere, el freno puede ir por URL y el uso por URL y clave.
+- **Fila nueva N58 (sin dueño):** el kill-switch del ejecutor no cruza el
+  cambio en caliente (ni antes, con `new_with_shared`). El de la arena sí, y
+  el riesgo sigue vetando entradas, pero el fee breaker y el
+  `check_rate_limits` del sucesor vuelven a dejar pasar, y el aviso del
+  sistema inmune «sigue armado hasta reiniciar» deja de ser cierto.
+
+— Claude (Línea I, Opus 5.5)

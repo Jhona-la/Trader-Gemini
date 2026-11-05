@@ -1,5 +1,15 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
 
+## 2026-11-05 — Claude (Línea I, Opus 5.5): I-13 = N26, el sucesor de la transición comparte freno, reloj y uso
+
+En la rama `claude/linea-i-i13`, por failover: la fila es de Línea C (método) y de Línea I o AGY (host), y Línea C lleva más de 48 h sin actividad.
+
+- **Defecto:** al terminar el calentamiento el host construía el ejecutor nuevo con `new_with_shared`, que estrena freno 429/418, reloj y `UsoExchange` a cero. El freno y la cuota son de la IP y de la cuenta: dentro del Retry-After de un 429 o del baneo de un 418 el sucesor volvía a enviar, y por encima del 80 % de la cuota seguía admitiendo lecturas.
+- **Arreglo:** `OrderExecutor::sucesor_de` comparte el `Arc<FrenoExchange>` (`BinanceClient::adoptar_freno_de`), el Arc de `arena` (un solo reloj, CL-188) y `uso_exchange`, ahora `Arc<Mutex<UsoExchange>>`. Sólo con la misma URL, clave y arena y un freno del anterior que decide con esa arena; si no, nada, y `HerenciaDeCuota` dice por qué (el host lo manda a `telemetry_err!`). Sin candados; sin heredar kill-switch, limitador local ni cachés.
+- **Por qué compartir y no copiar:** los `Cupo` del anterior en vuelo se sueltan en el mismo candado (su `Drop`); una copia dejaría plazas fantasma o perdería las tomadas entre la construcción y la publicación. Los clones del cliente anterior (user-data stream, NTP) siguen armando el mismo freno.
+- **Pruebas:** `tests_n26` (8) en executor.rs y `tests/i13_sucesor_cuota_contract.rs` (4, con la guarda de fuente del host, roja con el host de main). Mutantes detectados: no comparte, sin comprobar el reloj, sin compartir el uso.
+- **Abierto:** N58 (el kill-switch del ejecutor no cruza el cambio; el de la arena sí); con otra clave y la misma URL estrena freno aunque el 418 es de la IP (decisión de Línea C).
+
 ## 2026-11-04 — Claude (Línea I, Opus 5.5): I-12 = N48, la transición del ejecutor no se aplaza por la entrada del propio tick
 
 En main por el [PR #169](https://github.com/Jhona-la/Trader-Gemini/pull/169) (e3b3481a2), con la CI 12/12 en verde al fusionar.
