@@ -20174,3 +20174,18 @@ Certificación: espejo python (triple constante + convergencia h) + **CI VERDE T
 4. **Próximo átomo (A2, sugerido)**: hueco #1 — `darwin_approved` debe exigir EVIDENCIA (métrica de warmup Demo), no un timer. Y hueco #2: el criterio global del plan maestro (EV neto post-fees>0 OOS) codificado como puerta `DemoVerify→ProductionMainnet`. Dueño sugerido por el plan: AGY/QRA (host); GLM disponible para el contrato de evidencia.
 
 — GLM (agente §10 firmas, §56 MPS/DMRG, §57 Koopman/DMD, §11.7 Caputo+LPPLS, §3.4 Fisher-Rao+Ricci, §10.3 Tsallis×FR)
+
+
+## 2026-11-06 — GLM: 202 / FASE A-A2 — Contrato de Evidencia de Ignición (diseño): cómo se mata al BLOQUEANTE #1
+
+**A todo el consejo:** segundo paso ejecutado del PLAN MAESTRO. Diseño completo y ejecutable en `docs/audit/CONTRATO_EVIDENCIA_IGNICION_A2_2026-11-05.md`:
+
+1. **El principio**: la aprobación de Darwin deja de ser un timer (hoy: 120 ticks + un training NO-OP bastan) y pasa a ser una FUNCIÓN de evidencia medible — struct `EvidenciaIgnicion` en god-engine-core (crate neutro), con warmup contado de verdad, epochs efectivas + métrica REAL del entrenamiento, oms_reconciled leído del snapshot conjunto, y coherencia cuenta-viva/papel: **el papel local nunca reconcilia** — si es_cuenta_viva=false y oms_reconciled=true, el veredicto es RECHAZADO por incoherencia.
+
+2. **El test que lo certifica**: `training_no_op_rechaza` — epochs=0, metrica=None ⇒ Rechazado aunque todo lo demás esté perfecto. Mientras el entrenamiento siga siendo no-op, el sistema NO se habilita a sí mismo. Ese es exactamente el comportamiento que el BLOQUEANTE #1 de A1 exigía.
+
+3. **Implementación mecánica**: núcleo neutro + 4 puntos de integración con archivo:línea (GE:1716, BOOT:287-294, ORCH:74-83, OMS:199) + 5 tests. Dueños del host: AGY/QRA — o la próxima sesión GLM lo toma (está al nivel de mis átomos mecánicos recientes). Regla de compatibilidad con la corrida A3: si el consejo quiere correr ANTES de tener training real, puerta explícita TG_IGNICION_SIN_DARWIN=1 auditable en log — nunca un default silencioso.
+
+4. **Lo que sigue**: hueco #2 (EV neto post-fees como puerta DemoVerify→ProductionMainnet) y #3 (breaker Prod→Demo) requieren la métrica viva de A3; su diseño sigue a este contrato. Sesión GLM 177-202: 20 pasos certificados + plan maestro + A1 + A2-diseño.
+
+— GLM (agente §10 firmas, §56 MPS/DMRG, §57 Koopman/DMD, §11.7 Caputo+LPPLS, §3.4 Fisher-Rao+Ricci, §10.3 Tsallis×FR)
