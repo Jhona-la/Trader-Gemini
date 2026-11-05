@@ -39,14 +39,23 @@ use strategy_core::prueba_reversion::CRITICO;
 fn medicion_critico_en_la_frontera() {
     let edades = [0.55, 0.6, 0.75, 1.0, 1.5, 2.0, 3.0, 4.0];
     let mut peor: f64 = 0.0;
-    for &(k, paso) in &[(17usize, 1_000.0f64), (17, 250.0), (18, 2_000.0), (18, 1_000.0), (19, 4_000.0)] {
+    for &(k, paso) in &[
+        (17usize, 1_000.0f64),
+        (17, 250.0),
+        (18, 2_000.0),
+        (18, 1_000.0),
+        (19, 4_000.0),
+    ] {
         for &r in &[0.0, 0.25, 0.5, 1.0] {
             let n = if k == 19 { 3_000 } else { 10_000 };
             let semilla = (k as u64) * 1_000 + (r * 100.0) as u64 + paso as u64;
             let b = barrido(k, n, theta0(k), r, paso, &edades, semilla);
             let mut linea = format!("nodo {k}, paso {paso} ms, ruido {r}:");
             for j in 0..edades.len() {
-                linea += &format!(" [{:.2} mem: {:.3} q95 {:.2}]", edades[j], b.rechazo_corta[j], b.q95[j]);
+                linea += &format!(
+                    " [{:.2} mem: {:.3} q95 {:.2}]",
+                    edades[j], b.rechazo_corta[j], b.q95[j]
+                );
                 peor = peor.max(b.q95[j]);
             }
             println!("{linea}");
@@ -64,12 +73,21 @@ fn medicion_critico_largo_en_su_frontera() {
     let mut medir = |nombre: String, b: &Barrido| {
         let mut linea = format!("{nombre}:");
         for j in 0..edades.len() {
-            linea += &format!(" [{:.1} mem: {:.4} q95 {:.2}]", edades[j], b.rechazo_larga[j], b.q95_largo[j]);
+            linea += &format!(
+                " [{:.1} mem: {:.4} q95 {:.2}]",
+                edades[j], b.rechazo_larga[j], b.q95_largo[j]
+            );
             peor = peor.max(b.rechazo_larga[j]);
         }
         println!("{linea}");
     };
-    let combos = [(17usize, 250.0f64), (17, 1_000.0), (17, 2_000.0), (18, 1_000.0), (18, 4_000.0)];
+    let combos = [
+        (17usize, 250.0f64),
+        (17, 1_000.0),
+        (17, 2_000.0),
+        (18, 1_000.0),
+        (18, 4_000.0),
+    ];
     for &(k, paso) in &combos {
         for &(r, celdas) in &[(0.0, 7.7591), (0.25, 7.011), (0.5, 5.2285)] {
             let semilla = 50_000 + (k as u64) * 1_000 + (r * 100.0) as u64 + paso as u64;
@@ -81,7 +99,10 @@ fn medicion_critico_largo_en_su_frontera() {
         for &r in &[1.0, 2.0, 3.0, 10.0] {
             let semilla = 60_000 + (k as u64) * 1_000 + (r * 10.0) as u64 + paso as u64;
             let b = barrido(k, 3_000, theta_celdas(k, 1.6), r, paso, &edades, semilla);
-            medir(format!("t½ = τ_k/5, nodo {k}, paso {paso} ms, ruido {r}"), &b);
+            medir(
+                format!("t½ = τ_k/5, nodo {k}, paso {paso} ms, ruido {r}"),
+                &b,
+            );
         }
     }
     for &k in &[17usize, 18] {
@@ -92,7 +113,16 @@ fn medicion_critico_largo_en_su_frontera() {
                 referencia_ms: 1_000.0,
             }];
             let semilla = 70_000 + (k as u64) * 1_000 + (sd * 10.0) as u64 + semivida as u64;
-            let b = barrido_rachas(k, 5_000, &comps, 0.0, 1_000.0, &edades, semilla, (sd, semivida));
+            let b = barrido_rachas(
+                k,
+                5_000,
+                &comps,
+                0.0,
+                1_000.0,
+                &edades,
+                semilla,
+                (sd, semivida),
+            );
             medir(format!("rachas {sd} y {semivida} celdas, nodo {k}"), &b);
         }
     }

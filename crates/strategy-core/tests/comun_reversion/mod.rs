@@ -56,7 +56,15 @@ pub struct Componente {
 /// `n` trayectorias de la base en el nodo `k`: OU con `theta` (por ms; 0 =
 /// caminata con innovación s por √paso), ruido de medida `r`·s, pares cada
 /// `paso` ms de media. Mira el veredicto a τ_k en cada edad (en memorias).
-pub fn barrido(k: usize, n: u64, theta: f64, r: f64, paso: f64, edades: &[f64], semilla: u64) -> Barrido {
+pub fn barrido(
+    k: usize,
+    n: u64,
+    theta: f64,
+    r: f64,
+    paso: f64,
+    edades: &[f64],
+    semilla: u64,
+) -> Barrido {
     let c = Componente {
         theta,
         sd: 1e-4,
@@ -95,7 +103,17 @@ pub fn barrido_rachas(
     semilla: u64,
     (s, semivida_celdas): (f64, f64),
 ) -> Barrido {
-    barrido_con(k, n, comps, r, paso, edades, semilla, true, Some((s, semivida_celdas)))
+    barrido_con(
+        k,
+        n,
+        comps,
+        r,
+        paso,
+        edades,
+        semilla,
+        true,
+        Some((s, semivida_celdas)),
+    )
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -114,7 +132,11 @@ fn barrido_con(
     let theta_g = rachas.map_or(0.0, |(_, h)| std::f64::consts::LN_2 / (h * tau / 8.0));
     let memoria = 16.0 * tau;
     let s0 = {
-        let v: f64 = comps.iter().filter(|c| c.theta > 0.0).map(|c| c.sd * c.sd).sum();
+        let v: f64 = comps
+            .iter()
+            .filter(|c| c.theta > 0.0)
+            .map(|c| c.sd * c.sd)
+            .sum();
         if v > 0.0 {
             v.sqrt()
         } else {
@@ -206,7 +228,13 @@ fn barrido_con(
         q95: ts_t.iter_mut().map(q).collect(),
         q95_largo: ts_l.iter_mut().map(q).collect(),
         reversion: (0..ne)
-            .map(|i| if votos[i] >= 5 && den[i] > 0.0 { -num[i] / den[i] } else { f64::NAN })
+            .map(|i| {
+                if votos[i] >= 5 && den[i] > 0.0 {
+                    -num[i] / den[i]
+                } else {
+                    f64::NAN
+                }
+            })
             .collect(),
         reversion_total: {
             let (nt, dt): (f64, f64) = (num.iter().sum(), den.iter().sum());

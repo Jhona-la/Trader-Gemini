@@ -151,5 +151,8 @@ fn accion_media_triangulo(semilla: u64, dislocacion: bool) -> (f64, f64, f64) {
 fn cf2_ym_triangulo_exacto_sin_dislocacion_es_nulo() {
     let (media, _, dev) = accion_media_triangulo(0x7A1A, false);
     println!("triángulo exacto: acción media {media:e}, |1-beta| {dev:e}");
-    assert!(media < 1e-11, "acción media {media:e} sin dislocación; |1-beta| {dev:e}");
+    assert!(
+        media < 1e-11,
+        "acción media {media:e} sin dislocación; |1-beta| {dev:e}"
+    );
 }

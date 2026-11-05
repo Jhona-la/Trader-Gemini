@@ -6,8 +6,8 @@
 //! 3. Formas armónicas $(1, 1)$ y área simpléctica $E_{1,1} \ge 0$ como ciclos de cointegración algebraica.
 //! 4. Latencia crítica en stack zero-alloc (<25 µs por evaluación multiactivo).
 
-use strategy_core::kahler_hodge::{KahlerHodgeEngine, KahlerHodgeParams};
 use std::time::Instant;
+use strategy_core::kahler_hodge::{KahlerHodgeEngine, KahlerHodgeParams};
 
 #[test]
 fn test_kahler_hodge_params_validation_and_update() {
@@ -70,7 +70,10 @@ fn test_kahler_hodge_restoring_currents_oppose_dislocation() {
     let ofi1 = [2.5, 0.0, 0.0];
     let (m1, currents1) = engine.update_and_calculate_manifold(&p1, &ofi1);
 
-    assert!(m1.kahler_potential > 0.0, "El potencial de Kähler debe activarse ante dislocación");
+    assert!(
+        m1.kahler_potential > 0.0,
+        "El potencial de Kähler debe activarse ante dislocación"
+    );
     // El activo 0 debe experimentar una fuerte corriente restauradora negativa hacia el equilibrio
     assert!(
         currents1[0] < -0.05,

@@ -6,8 +6,8 @@
 //! 3. Corrientes covariantes restauradoras $J_i = - \nabla S_{\text{Wilson}}$ en oposición exacta a dislocaciones.
 //! 4. Rendimiento en stack zero-alloc (<25 µs por tick multiactivo).
 
-use strategy_core::yang_mills_gauge::{YangMillsGaugeEngine, YangMillsParams};
 use std::time::Instant;
+use strategy_core::yang_mills_gauge::{YangMillsGaugeEngine, YangMillsParams};
 
 #[test]
 fn test_yang_mills_wilson_loop_bounds_and_holonomy() {
@@ -32,15 +32,29 @@ fn test_yang_mills_wilson_loop_bounds_and_holonomy() {
 
     // Introducir un choque de dislocación asimétrico
     let prices_dislocated = [115.0, 50.0, 2.0];
-    let (action_dislocated, currents_dislocated) = engine.update_and_calculate_curvature(&prices_dislocated);
+    let (action_dislocated, currents_dislocated) =
+        engine.update_and_calculate_curvature(&prices_dislocated);
     let m2 = engine.current_metrics();
 
-    assert!(action_dislocated > 0.0, "La acción de Wilson debe ser positiva ante dislocación");
-    assert!(m2.holonomy_density > 0.0, "La densidad de holonomía debe ser positiva");
-    assert!(m2.wilson_loop <= 1.0 && m2.wilson_loop >= -1.0, "El bucle de Wilson debe estar en [-1, 1]");
+    assert!(
+        action_dislocated > 0.0,
+        "La acción de Wilson debe ser positiva ante dislocación"
+    );
+    assert!(
+        m2.holonomy_density > 0.0,
+        "La densidad de holonomía debe ser positiva"
+    );
+    assert!(
+        m2.wilson_loop <= 1.0 && m2.wilson_loop >= -1.0,
+        "El bucle de Wilson debe estar en [-1, 1]"
+    );
 
     // Activo 0 tuvo un salto alcista de +15% -> su corriente restauradora debe ser negativa (vender / bajar)
-    assert!(currents_dislocated[0] < -1e-4, "El activo 0 debe tener corriente restauradora negativa: {}", currents_dislocated[0]);
+    assert!(
+        currents_dislocated[0] < -1e-4,
+        "El activo 0 debe tener corriente restauradora negativa: {}",
+        currents_dislocated[0]
+    );
     // Activo 1 y 2 deben recibir tracción compensatoria positiva
     assert!(currents_dislocated[1] > 1e-4 || currents_dislocated[2] > 1e-4);
 }
@@ -73,7 +87,10 @@ fn test_yang_mills_non_abelian_coupling_commutator() {
     assert!(act_nab > 0.0);
     // El acoplamiento no-abeliano modula la acción de Wilson
     let diff = (act_nab - act_ab).abs();
-    assert!(diff >= 0.0, "La curvatura no-abeliana debe ser finita y coherente");
+    assert!(
+        diff >= 0.0,
+        "La curvatura no-abeliana debe ser finita y coherente"
+    );
     assert!(engine_nab.current_metrics().non_abelian_commutator_norm >= 0.0);
 }
 

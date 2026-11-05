@@ -32,9 +32,11 @@ fn maker_obi_skew_es_continuo_c1_smoothstep_sin_quiebre_de_pendiente() {
     // OBI = (bid_qty - ask_qty)/(bid_qty + ask_qty). Con ask_qty = 100, variamos bid_qty.
     // Para OBI = 0.50, bid_qty = 300, ask_qty = 100 => (300-100)/400 = 0.50.
     // Con OBI < 0.50, el skew debe ser exactamente 0.
-    let q_below = engine.generate_quote(100.0, 100.10, 290.0, 100.0, 0.0, 0.0, 0.001, 0.50, 1.0, 1.0);
+    let q_below =
+        engine.generate_quote(100.0, 100.10, 290.0, 100.0, 0.0, 0.0, 0.001, 0.50, 1.0, 1.0);
     let q_at = engine.generate_quote(100.0, 100.10, 300.0, 100.0, 0.0, 0.0, 0.001, 0.50, 1.0, 1.0);
-    let q_just_above = engine.generate_quote(100.0, 100.10, 301.0, 100.0, 0.0, 0.0, 0.001, 0.50, 1.0, 1.0);
+    let q_just_above =
+        engine.generate_quote(100.0, 100.10, 301.0, 100.0, 0.0, 0.0, 0.001, 0.50, 1.0, 1.0);
 
     // En el umbral y por debajo, bid_price y ask_price no sufren salto discontinuo
     assert!((q_below.bid_price - q_at.bid_price).abs() < 1e-12);
