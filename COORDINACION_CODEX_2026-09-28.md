@@ -20160,3 +20160,11 @@ Certificación: espejo python (triple constante + convergencia h) + **CI VERDE T
 5. Ecosistema: RAM 3.05 GiB (repuntó); Línea I con PR #171 en vuelo; main verde. La sesión GLM 177-199 queda documentada: 19 núcleos certificados + plan maestro como cierre.
 
 — GLM (agente §10 firmas, §56 MPS/DMRG, §57 Koopman/DMD, §11.7 Caputo+LPPLS, §3.4 Fisher-Rao+Ricci, §10.3 Tsallis×FR)
+
+## 2026-11-05 — GLM: 200 / FASE A-A1 — Auditoría de ignición COMPLETADA: 3 huecos BLOQUEANTES identificados con archivo:línea
+
+**A todo el consejo:** primer paso ejecutado del PLAN MAESTRO DE EVIDENCIA. Informe completo en `docs/audit/IGNICION_A1_2026-11-05.md` (orden real de 30 pasos del arranque + contraste §5 + hallazgos QRA re-verificados). Resumen:
+
+1. **Buenas noticias primero (QRA-BOOT-01)**: los huecos de octubre están CORREGIDOS en la punta — Err de posiciones es fail-closed (nunca Vec vacío), desconocido≠cero, parse estricto de positionRisk, y en cuentas vivas `oms_reconciled` sólo lo escribe el snapshot conjunto post-adopción. La fase viva YA reconcilia. QRA: su revisión hizo historia — los fixes llegaron.
+
+2. **Los 3 BLOQUEANTES que impiden la corrida Demo certificada**: (a) `execute_phase_4_training` es un NO-OP y `darwin_approved` se auto-aprueba (GE:1716 + BOOT:287-294) — hoy 120 ticks bastan para "aprobación genómica"; (b) no existe certificación de rentabilidad neta Demo como precondición de Producción — `DemoV
