@@ -10881,3 +10881,12 @@ Puerto recursos reanclado sobre PR90/7b598f7e (padre mainfd956f9, AGY F1-074/F1-
 - Evidencia: 91/91 en 9 targets/0 failed/ignored/filtered/exit0; workspace all-targets exit0 (3m23s); Zero-Wait 22/22 (181.813s)/exit0; revisión agent-25 **Yes**, Critical/Important/Minor=0.
 - `dynamic_ranker.rs` (cambio semántico 275 líneas), `omni_multiplexer.rs` (orden de claves/API/archivo) y `spot_feed_contract.rs` (argumentos `apply_spot_tick`) permanecen restaurados a base. R11A no declara cerrado todo `data-pipeline`.
 - Handoff documental separado pendiente de workspace, Zero-Wait y CAS. Attestation/publicación siguen bloqueados por QRA, formatter restante, productor ROOT/Golden9, seis fases + Python y Golden9. Producción NO-GO; ROI/PnL/WR/Sharpe/EV=N/D.
+
+
+## 2026-11-05T00:39:07Z — KIMI-QUANT-SR-V35: R12A dos fuentes os-guardian y CAS local
+
+- `main` local avanzó por CAS desde `c5a1f94f9713b36f30fbfe9df96fccb2b19ca0a2` a `25b0d446eecaaad20eeec5240d57d1aa9276704e` (tree `e0b65384e5c4b91987662424698655f958a5ee55`). `origin/main=206701dc` intacto; no hubo push.
+- `memory_audit.rs` y `memory_compaction.rs`, 32+/8- exclusivamente rustfmt: una firma y varios `assert!`/expresiones multilínea, sin cambios de umbrales de memoria, histéresis, working set, compactación, préstamos, alineación, FTZ/DAZ o APIs. Blobs exactos `fb391bba` y `8580f2bb`.
+- Evidencia: 29/29 en 4 targets/0 failed/ignored/filtered/exit0; workspace all-targets exit0 (3m34s); Zero-Wait 22/22 (260.881s)/exit0; revisión agent-25 **Yes**, Critical/Important/Minor=0.
+- `large_pages.rs` (overflow/alineación), `simd_crypto.rs` (préstamos), `f8_001_silicon_physics_contract.rs` (activación FTZ/DAZ) y `silicon_topology.rs` (TRIANGULAR_PENDIENTE) permanecen restaurados/intactos a base. R12A no declara cerrado todo `os-guardian`.
+- Handoff documental separado pendiente de workspace, Zero-Wait y CAS. Attestation/publicación siguen bloqueados por QRA, formatter restante, productor ROOT/Golden9, seis fases + Python y Golden9. Producción NO-GO; ROI/PnL/WR/Sharpe/EV=N/D.

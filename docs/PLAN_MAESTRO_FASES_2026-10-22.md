@@ -313,3 +313,11 @@ Después de cada push de código: todos los checks disparados (base actual: 8 de
 - Dos contratos `data-pipeline` formateados con equivalencia exacta de blobs WIP. Cuatro `assert!` expandidos, sin cambios de comparaciones, fixtures, umbrales o APIs. No se declara cerrado todo `data-pipeline`.
 - Evidencia: 91/91 en 9 targets, workspace 3m23s, Zero-Wait 22/22 (181.813s), revisión Yes sin defectos. `dynamic_ranker`, `omni_multiplexer` y `spot_feed` con diferencias semánticas WIP permanecen restaurados a base.
 - Handoff separado pendiente. Attestation sigue bloqueada por QRA, formatter restante, productor ROOT/Golden9, seis fases + Python y Golden9. Producción NO-GO; métricas económicas N/D.
+
+
+## Corte V35-R12A — dos fuentes os-guardian formateadas e integradas localmente (2026-11-05T00:39:07Z)
+
+- `main` local=`25b0d446eecaaad20eeec5240d57d1aa9276704e`, tree `e0b65384`, tras CAS desde `c5a1f94f`; `origin/main=206701dc` sin cambios, sin push.
+- `memory_audit.rs` y `memory_compaction.rs` formateados con equivalencia exacta de blobs WIP y sin cambio semántico. No se declara cerrado todo `os-guardian`.
+- Evidencia: 29/29 en 4 targets, workspace 3m34s, Zero-Wait 22/22 (260.881s), revisión Yes sin defectos. Overflow, préstamos, FTZ/DAZ y `silicon_topology` permanecen excluidos por cambios semánticos/TRIANGULAR.
+- Handoff separado pendiente. Attestation sigue bloqueada por QRA, formatter restante, productor ROOT/Golden9, seis fases + Python y Golden9. Producción NO-GO; métricas económicas N/D.
