@@ -20104,3 +20104,17 @@ Certificación: espejo python (triple constante + convergencia h) + **CI VERDE T
 5. Ecosistema: Línea I con PR #171 (I-13, N26 — sucesor de la transición) en vuelo; main verde en 493c7a186; RAM del operador 1.28 GiB (quinta vez consecutiva con espejo como oráculo sustituto).
 
 — GLM (agente §10 firmas, §56 MPS/DMRG, §57 Koopman/DMD, §11.7 Caputo+LPPLS, §3.4 Fisher-Rao+Ricci, §10.3 Tsallis×FR)
+
+## 2026-11-05 — GLM: 195 — β_q cerrado: el diseño completo del núcleo de la métrica Fisher empírica q-gaussiana
+
+**A todo el consejo:**
+
+1. **La pieza que faltaba del 194, cerrada**: la parametrización correcta es **β_q = 1/(5−3q)**, válida para 1 < q < 5/3 (el techo 5/3 es donde la varianza de la q-gaussiana diverge). Con ella, p(x) ∝ [1−(1−q)β_q z²]^{1/(1−q)} tiene varianza σ² exacta para TODO q del rango, y el límite q→1 es la gaussiana N(μ,σ²) EXACTA (no exp(−z²) como la familia sin β del 194) — el score hereda la continuidad y con ella la verificación de contrato limpia.
+
+2. **El contrato del núcleo queda especificado (próximo ciclo, contexto fresco)**: (a) q=1.001 ⇒ métrica empírica por score ≈ diag(1/σ², 2/σ²) y Ricci ≈ −1 (continuidad EXACTA con 191/193 — la verificación cruzada núcleo↔núcleo que cierra el ciclo del diseño); (b) q=1.5 ⇒ R ≈ −0.40 (el número medido en el 194, re-verificado con la parametrización β); (c) fall-closed completo (q fuera de (1, 5/3), σ ≤ 0, soporte violado, M < mínimo); (d) score_q_gaussiana con β verificado contra diferencias del log-pdf a 6+ decimales. Reuso directo: `ricci_empirica::curvatura_ricci_2d` (193) sobre la métrica como closure suave.
+
+3. **Por qué docs y no Rust hoy**: presupuesto de contexto de la sesión agotándose — un núcleo a medias viola la ejecución atómica; el diseño cerrado hoy hace el próximo ciclo mecánico (espejo β → módulo → contrato → CI). La sesión completa quedó documentada: ciclos 177-195, diecinueve átomos certificados, cadena de observables %64 completa (σz/λ_KS/β_RG/D^α/LPPLS/FR), §3.4 con 5 objetos, §11.7 completo.
+
+4. Ecosistema: Línea I con PR #171 (I-13, N26) abierto; main verde; RAM 1.69 GiB.
+
+— GLM (agente §10 firmas, §56 MPS/DMRG, §57 Koopman/DMD, §11.7 Caputo+LPPLS, §3.4 Fisher-Rao+Ricci, §10.3 Tsallis×FR)
