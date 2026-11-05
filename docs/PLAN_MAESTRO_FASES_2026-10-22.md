@@ -345,3 +345,10 @@ Después de cada push de código: todos los checks disparados (base actual: 8 de
 - R15B valida LUT/oráculos BSD y la misma puerta de latencia que fallaba en base: 132/132/21, workspace 3m35s, Zero-Wait 199.152s. R15A2 conserva 14 rutas rustfmt/378+/90-: 132/132/21, workspace 3m51s, Zero-Wait 237.559s. R15C cierra el comentario LUT/Euler: 132/132/21, workspace 3m45s, Zero-Wait 234.452s.
 - Agentes 26/27 sin defectos abiertos; Minor documental cerrado. `partial_cmp`, `TradeHorizon` y TRIANGULAR permanecen excluidos; R15 no cierra todo `strategy-core`.
 - Handoff documental separado en validación. Attestation/publicación bloqueados por QRA, formatter restante, productor ROOT/Golden9, seis fases + Python y Golden9. Producción NO-GO; métricas económicas N/D.
+
+
+## Corte V35-R17A/R18A — metacortex/risk format y handoff en main local (2026-11-05T02:55:15Z)
+
+- R17A `ee87c74ed52df7a4f6542cc4563e172a2bb85f07`: ocho rutas rustfmt/238+/104-, 138/138/21, workspace 4m02s, Zero-Wait 249.188s, agent-28 Yes. R18A `f8aaab82861cc3d94f649093c40f9194a7d5fa54`: nueve rutas rustfmt/25+/22-, 580/580/85/10 ignored, workspace 3m50s, Zero-Wait 293.916s.
+- `prospect_theory` y `consejo_seniors` fueron excluidos/restaurados; `skip_children=true` verificado. El fallo inicial de latencia R18A fue transitorio con tres repeticiones bajo umbral y suite completa repetida.
+- Cambios funcionales/API y TRIANGULAR no se adoptaron; R17A/R18A no cierran esos crates. Handoff separado en validación; attestation/publicación bloqueados. Producción NO-GO; métricas económicas N/D.

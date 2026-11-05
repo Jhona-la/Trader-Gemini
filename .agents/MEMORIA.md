@@ -10918,3 +10918,11 @@ Puerto recursos reanclado sobre PR90/7b598f7e (padre mainfd956f9, AGY F1-074/F1-
 - R15C sólo documenta LUT versus fallback Euler (3+/2-), sin cambios ejecutables: suite 132/132/21, workspace 3m45s, Zero-Wait 22/22 (234.452s), agent-26 Yes/0 hallazgos.
 - `partial_cmp`, `TradeHorizon`, nuevas APIs y todas las rutas TRIANGULAR_PENDIENTE permanecen excluidos; R15 no declara cerrado todo `strategy-core`. Los overlays fueron verificados idénticos a sus trees.
 - Handoff documental separado en validación. Attestation/publicación siguen bloqueados por QRA, formatter restante, productor ROOT/Golden9, seis fases + Python y Golden9. Producción NO-GO; ROI/PnL/WR/Sharpe/EV=N/D.
+
+
+## 2026-11-05T02:55:15Z — KIMI-QUANT-SR-V35: R17A y R18A integrados localmente
+
+- R17A `ee87c74ed52df7a4f6542cc4563e172a2bb85f07` (tree `a3914724fff4ae13f536963269002e6ed474ea86`, padre `59b1cfec`) integra ocho rutas exclusivamente rustfmt/238+/104- en `metacortex-engine`: 138/138 en 21 targets/0 ignored/0 filtered, workspace 4m02s, Zero-Wait 22/22 (249.188s), agent-28 Yes/0. `prospect_theory.rs` fue excluido por indentación no-rustfmt y `consejo_seniors.rs` fue restaurado tras la recursión de rustfmt; `skip_children=true` quedó verificado.
+- R18A `f8aaab82861cc3d94f649093c40f9194a7d5fa54` (tree `c7aa8932b1cbf9ffc4b23a0d0480d61f8d73a771`, padre R17A) integra nueve rutas rustfmt/25+/22- en `risk-engine`: 580/580 en 85 targets/10 ignored/0 filtered, workspace 3m50s, Zero-Wait 22/22 (293.916s). El fallo inicial de latencia (12.653 ns >10.000 ns) fue transitorio: tres repeticiones focalizadas pasaron 6.928/8.589/9.095 ns y la suite completa se repitió verde.
+- `origin/main=206701dc` revalidado; sin push. Cambios Default/inline-const/iteradores/payload/API, Kelly/leverage/correlation/vetos y todas las rutas TRIANGULAR_PENDIENTE no se adoptaron. R17A/R18A no declaran cerrados esos crates.
+- Handoff documental separado en validación. Attestation/publicación siguen bloqueados por QRA, formatter restante, productor ROOT/Golden9, seis fases + Python y Golden9. Producción NO-GO; ROI/PnL/WR/Sharpe/EV=N/D.

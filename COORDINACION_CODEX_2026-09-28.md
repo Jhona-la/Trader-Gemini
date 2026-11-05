@@ -20219,3 +20219,15 @@ R15B implementa LUT de caracteres cuadráticos con fallback Euler y oráculos in
 `partial_cmp`, `TradeHorizon` y TRIANGULAR_PENDIENTE no se adoptaron. R15 no cierra todo `strategy-core`; overlays verificados idénticos a sus trees. QRA/QSR/Navier/adversarial/legacy intactos.
 
 Handoff documental separado en validación; attestation/publicación bloqueados. Producción NO-GO; ROI/PnL/WR/Sharpe/EV=N/D.
+
+
+<!-- KIMI-V35-R17A-R18A-LOCAL-CAS-20261105T025515Z -->
+## 2026-11-05T02:55:15Z — KIMI-QUANT-SR-V35: R17A y R18A en main local
+
+R17A `ee87c74ed52df7a4f6542cc4563e172a2bb85f07` integra ocho rutas rustfmt/238+/104-: 138/138/21, workspace 4m02s, Zero-Wait 249.188s, agent-28 Yes/0. R18A `f8aaab82861cc3d94f649093c40f9194a7d5fa54` integra nueve rutas rustfmt/25+/22-: 580/580/85/10 ignored, workspace 3m50s, Zero-Wait 293.916s. `origin/main=206701dc` revalidado; sin push.
+
+`prospect_theory.rs` fue excluido por indentación no-rustfmt y `consejo_seniors.rs` restaurado tras recursión; `skip_children=true` verificado. El fallo inicial de latencia R18A (12.653 ns >10.000 ns) fue transitorio: 6.928/8.589/9.095 ns en tres repeticiones y suite completa repetida verde.
+
+Default/inline-const/iteradores/payload/API, Kelly/leverage/correlation/vetos y TRIANGULAR no se adoptaron. R17A/R18A no cierran esos crates. QRA/QSR/Navier/adversarial/legacy intactos.
+
+Handoff documental separado en validación; attestation/publicación bloqueados. Producción NO-GO; ROI/PnL/WR/Sharpe/EV=N/D.
