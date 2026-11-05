@@ -31,6 +31,7 @@ pub mod norma_hinf;
 pub mod omni_strategies;
 pub mod path_signatures;
 pub mod random_matrix_wilson;
+pub mod ricci_empirica;
 pub mod rough_ergodic;
 pub mod simd_neural_network;
 pub mod simd_yoshida_replicator;

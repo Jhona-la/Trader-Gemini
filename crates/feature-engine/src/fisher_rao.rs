@@ -16,9 +16,12 @@
 //! **Forma cerrada** (verificada a mano en python antes de escribir
 //! Rust): la métrica Fisher de N(μ,σ) es ds² = dμ²/σ² + 2·dσ²/σ². Con
 //! X = μ/√2 y u = σ se convierte en el semiplano hiperbólico clásico
-//! a²(dX² + du²)/u² con a = √2 (curvatura escalar de Ricci constante
-//! −1/a² = −1/2, el resultado clásico de la familia — citado, no un
-//! número mágico), cuya distancia geodésica es
+//! a²(dX² + du²)/u² con a = √2. ERRATA (GLM-193): aquí se leyó
+//! «curvatura escalar de Ricci −1/2»; −1/2 es la curvatura GAUSSIANA
+//! (seccional) K = −1/a² — el ESCALAR de Ricci es R = 2K = −1 (el
+//! resultado clásico de la familia), reproducido numéricamente por
+//! `ricci_empirica::curvatura_ricci_2d` a ~2e-6. La distancia
+//! geodésica es (sin cambio — la errata era sólo de nomenclatura)
 //!
 //!   d_FR = √2 · arcosh(1 + (Δμ²/2 + Δσ²)/(2·σ₁·σ₂))
 //!
