@@ -20151,3 +20151,17 @@ Recibos: 72/72 en 9 targets/0 failed/ignored/filtered/exit0; workspace all-targe
 Exclusiones preservadas: `inmune_latencia_contract.rs` con dos cambios semánticos host y `rutas_feed_contract.rs` con cambio producción vs `#[cfg(test)]`, ambos restaurados a base. `edad_feed*`/`f10_001` TRIANGULAR_PENDIENTE y `almacen_hot_path_contract`/`arranque_feed_contract` sin referencia WIP permanecen intactos. R10A no declara cerrado todo `data-ingest`.
 
 Handoff documental separado pendiente de workspace, Zero-Wait y CAS. QRA/Navier/adversarial/legacy intactos; attestation/publicación bloqueados. Producción NO-GO; ROI/PnL/WR/Sharpe/EV=N/D.
+
+
+<!-- KIMI-V35-R11A-LOCAL-CAS-20261105T001717Z -->
+## 2026-11-05T00:17:17Z — KIMI-QUANT-SR-V35: R11A dos contratos data-pipeline en main local
+
+CAS realizado desde `fc16a4a6f42301309fd06614928e17c8624f8fd8` a `d9fd55c3136d64b1c836f3162c574ae94d67e2ea`, tree `017a2625916ca1bf4a129f37b18d1540bc0ad23f`; `origin/main=206701dc` intacto, sin push.
+
+`dynamic_ranker_spectral_unification_contract.rs` y `xcv_dims_cross_exchange_muertas_por_contrato.rs`, 12+/3- exclusivamente rustfmt: cuatro `assert!` expandidos, sin cambios de comparaciones, mensajes, fixtures, umbrales, contabilidad o APIs. Blobs exactos `baf87a0a` y `3f48c3f4`.
+
+Recibos: 91/91 en 9 targets/0 failed/ignored/filtered/exit0; workspace all-targets exit0 (3m23s); Zero-Wait 22/22 (181.813s)/exit0; revisión agent-25 **Yes**, Critical/Important/Minor=0.
+
+`dynamic_ranker.rs` (275 líneas semánticas), `omni_multiplexer.rs` (orden de claves/API/archivo) y `spot_feed_contract.rs` (argumentos `apply_spot_tick`) permanecen restaurados a base. R11A no declara cerrado todo `data-pipeline`.
+
+Handoff documental separado pendiente de workspace, Zero-Wait y CAS. QRA/Navier/adversarial/legacy intactos; attestation/publicación bloqueados. Producción NO-GO; ROI/PnL/WR/Sharpe/EV=N/D.

@@ -305,3 +305,11 @@ Después de cada push de código: todos los checks disparados (base actual: 8 de
 - `cola_ws.rs` y `rutas_feed.rs` formateados con equivalencia exacta de blobs WIP y sin cambio semántico. No se declara cerrado todo `data-ingest`.
 - Evidencia: 72/72 en 9 targets, workspace 3m32s, Zero-Wait 22/22 (260.316s), revisión Yes sin defectos. Contratos con cambios semánticos WIP restaurados a base; TRIANGULAR_PENDIENTE y archivos sin referencia intactos.
 - Handoff separado pendiente. Attestation sigue bloqueada por QRA, formatter restante, productor ROOT/Golden9, seis fases + Python y Golden9. Producción NO-GO; métricas económicas N/D.
+
+
+## Corte V35-R11A — dos contratos data-pipeline formateados e integrados localmente (2026-11-05T00:17:17Z)
+
+- `main` local=`d9fd55c3136d64b1c836f3162c574ae94d67e2ea`, tree `017a2625`, tras CAS desde `fc16a4a6`; `origin/main=206701dc` sin cambios, sin push.
+- Dos contratos `data-pipeline` formateados con equivalencia exacta de blobs WIP. Cuatro `assert!` expandidos, sin cambios de comparaciones, fixtures, umbrales o APIs. No se declara cerrado todo `data-pipeline`.
+- Evidencia: 91/91 en 9 targets, workspace 3m23s, Zero-Wait 22/22 (181.813s), revisión Yes sin defectos. `dynamic_ranker`, `omni_multiplexer` y `spot_feed` con diferencias semánticas WIP permanecen restaurados a base.
+- Handoff separado pendiente. Attestation sigue bloqueada por QRA, formatter restante, productor ROOT/Golden9, seis fases + Python y Golden9. Producción NO-GO; métricas económicas N/D.
