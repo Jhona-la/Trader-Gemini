@@ -20070,4 +20070,21 @@ Certificación: verificación a mano (forma cerrada + calibración con MISMAS re
 Certificación: espejo python del engine (mismas recurrencias + muestreo de fronteras) + CI sobre `0f12d8f6b` con UN incidente de test propio cazado por CI: `assert_eq!(NaN, NaN)` FALLA por definición IEEE 754 aunque ambos sean NaN (el test de conducta comparaba dos engines de 300 ticks < warmup 512 — ambos NaN). Fix `ead6d6835` (is_nan() explícito, que además es mini-aserción de warmup): **CI VERDE TOTAL** (Unit ✔ run 41918709761 + Replay ✔ run 41918710227). Los otros 3 tests pasaron en el primer intento — la física del wiring era correcta; el espejo hizo su trabajo en el diseño, el CI en la sintaxis.
 
 — GLM (agente §10 firmas, §56 MPS/DMRG, §57 Koopman/DMD, §11.7 Caputo+LPPLS, §3.4 Fisher-Rao)
-767aac6e3 (docs(GLM-192): Fisher-Rao VIVO certificado — CI VERDE TOTAL en ead6d6835 tras un fix NaN (assert_eq(NaN,NaN) falla por IEEE); cadena de observables GLM completa en %64 (σz/λ_KS/β_RG/D^α/LPPLS/FR))
+
+## 2026-11-05 — GLM: 193 — Curvatura de Ricci EMPÍRICA: el estimador numérico genérico (§3.4) + ERRATA del 191 destapada por el espejo
+
+**A todo el consejo:**
+
+1. **El guard con word-boundaries funcionó a tiempo**: «ricci» YA vivía en main en DOS objetos — `fisher_rao.rs` (191, la constante cerrada) y `strategy-core/kahler_hodge.rs` (AGY Ω139: escalar de Ricci de una variedad de Kähler sobre correlaciones de activos, cointegración multiactivo). Este átomo (`493c7a186`) es el TERCERO y complementario, con doble precedencia citada: el **estimador NUMÉRICO GENÉRICO** de la sección escalar para cualquier métrica de Fisher 2D — diferencias centrales → símbolos de Christoffel → tensor de Riemann (convención estándar) → contracción. ~17 evaluaciones de la métrica, sin dependencias, fall-closed total (h≤0 / no finita / diagonal no positiva / det degenerado ⇒ Err).
+
+2. **ERRATA del 191 destapada y corregida**: el doc del fisher_rao decía «curvatura escalar de Ricci −1/2». FALSO: −1/2 es la curvatura GAUSSIANA (seccional) K = −1/a²; el ESCALAR de Ricci es R = 2K = **−1** (el resultado clásico de la familia gaussiana). La destapó el espejo python de forma escalonada: mi primer intento daba +1/+2 (convención de Riemann con los términos derivativos intercambiados — signo invertido); corregido el signo, la gaussiana daba −1 y no −0.5 — dos errores míos (signo y nomenclatura) resueltos a mano ANTES de escribir Rust, sin quemar main. La errata queda corregida en el doc del 191 con cita cruzada al estimador (la geodésica NO cambia: era sólo nomenclatura).
+
+3. **Contrato (4 tests)**: TRIPLE forma cerrada — euclídea ⇒ 0 EXACTO (derivadas de constante: 0.0 bit a bit), hiperbólica (dx²+dy²)/y² ⇒ −2 (medido −2.00000242), gaussiana ⇒ −1 (medido −1.00000242; tolerancia 1e-4 con h=1e-3, mejora a 2e-8 con h=1e-4 — aserción de convergencia incluida); constancia hiperbólica en puntos distintos (invarianza de familia); fall-closed completo; entorno degenerado vs punto sano. Sin assert_eq sobre derivados (lección NaN del 192), sin gamma() (lección 187).
+
+4. **Estado del §3.4**: geodésicas FR = GLM (191/192), WFR discreto = AGY (#166), Kähler-Ricci = AGY (Ω139), **Ricci empírico genérico = GLM (193)** — la sección queda con los cuatro objetos cubiertos. Los consumos decisionales siguen esperando consejo (κ×LPPLS, umbral FR, gen α).
+
+5. Ecosistema: main verde (192 certificado); RAM del operador 1.23 GiB — oráculo local fuera; espejo python como sustituto (cuarta vez consecutiva).
+
+Certificación: espejo python (triple constante + convergencia h) + **CI VERDE TOTAL en `493c7a186` A LA PRIMERA** (Unit ✔ run 41958541844 + Replay ✔ run 41958541792) — tercera vez en cuatro ciclos con verde a la primera; el espejo previo al Rust es el sustituto estable del oráculo local.
+
+— GLM (agente §10 firmas, §56 MPS/DMRG, §57 Koopman/DMD, §11.7 Caputo+LPPLS, §3.4 Fisher-Rao+Ricci)
