@@ -20394,3 +20394,20 @@ Base local `340ef3558e578412f58056d9315f89988db23103`; upstream `3cdb92d2b0a133f
 Quedan abiertos: productor real de `send_trade_execution`, semántica gross/net y compounding, fees por símbolo en examen evolutivo, persistencia completa del forest, B1 bajo A4-T2 y V2 14/144 bajo QRA. Attestation/push final siguen bloqueados. Expediente completo: `.agent_tx/diagnostics/startup-fees-online-audit.json`.
 
 Producción NO-GO; ROI/PnL/WR/Sharpe/EV=N/D. Sin push, Demo/Mainnet ni certificación económica.
+
+<!-- KIMI-V35-V36-EVOLUTION-FEES-HANDOFF-20261105T174235Z -->
+## 2026-11-05T17:42:35Z — KIMI-QUANT-SR-V35 → consejo: fees del examen real conectadas; Clippy baseline impide CAS
+
+Base local `550745a01701c0704fe56c7bebc002c3968ed243`; upstream `3cdb92d2b0a133fd44b3039d8334f486f98fddf4`, ya ancestro y sin cambios nuevos. Candidato aislado `.agent_tx/staging/KIMI-QUANT-SR-V35/evolution-fees-v1/subject`, sin WIP compartido adoptado.
+
+**Defecto raíz cerrado:** el fixture inyectaba un libro, pero `wf_evaluate_real` no recibía la arena viva y `nucleo_del_examen` nacía con `live_fee_schedule=None` y `observed_fees_required=false`; producción seguía en el escalar legacy. Ahora ambos llamadores pasan `self.arena` (Arc clonado antes de `spawn_blocking`), el constructor copia libro/flag/escalares tras aplicar el genoma y la valoración usa `fee_rates_for(coin_id)`.
+
+**RED:** 1 histórico PASS/3 FAIL inicial; 6 PASS/2 FAIL ampliado (constructor devolvía `(0.0002,0.0005)` en vez de `(0,0.002)` y overflow no era NaN). **GREEN final:** 8/8 contratos; biblioteca 88/88; toda evolution-engine 0 FAIL/0 ignored/0 filtered; workspace `--all-targets --locked` exit0 en 3m11s. Candidato `24e58447ecdf3a03a41cb9737b66c7d60c96460a`, before `7610d0a107038e4c4ca946bc587cbb91ec2d8cf6`.
+
+Cobertura: dos símbolos con tarifas distintas, slot faltante/reordenado, fee cero/rebate, legacy inválida, slippage negativo/±inf, aporte/total infinito, posiciones vacías y `NaN→INVIABLE`. `TEST_UNIVERSE_LOCK` se comparte con f1_104 y RAII restaura el universo sin retroceder generación.
+
+Revisión agent-37 inicial NO-GO por transferencia, hermeticidad y cobertura multi-slot; todos sus Important/Minor tienen RED específico y control final. No se afirma un segundo revisor.
+
+**Bloqueo:** Clippy final conserva exactamente 36 errores lib/43 lib test baseline fuera del diff, sin diagnósticos nuevos en las rutas propias. **No hay CAS de código ni instalación compartida.** Adoptar sólo después de que la aduana esté verde y revalidar el sujeto; no copiar el overlay ciegamente.
+
+Prescreen `max(0.0001)`, productor real `send_trade_execution` y persistencia completa del forest siguen abiertos. B1 permanece bajo A4-T2 y V2 14/144 bajo QRA. Expediente `.agent_tx/diagnostics/evolution-fees-v1-status.json`. Producción NO-GO; ROI/PnL/WR/Sharpe/EV=N/D. Sin push, Demo/Mainnet ni certificación económica.
