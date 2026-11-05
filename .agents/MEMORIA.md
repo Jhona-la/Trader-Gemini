@@ -10945,9 +10945,9 @@ Puerto recursos reanclado sobre PR90/7b598f7e (padre mainfd956f9, AGY F1-074/F1-
 - Workspace all-targets exit0 (4m29s), Zero-Wait 22/22 (344.272s)/exit0. CAS R27 realizado `main=1b252ad21984fbde07e28669db8fa96bc8bfc1af`, expected `d7d6907b`, origin `4f9fca71` revalidado; handoff documental separado en validación, sin push. Producción NO-GO; ROI/PnL/WR/Sharpe/EV=N/D; +100 %/72 h no está certificado.
 
 
-## 2026-11-05 — KIMI-QUANT-SR-V35: R28 puente Browniano causal, recibos pendientes
+## 2026-11-05 — KIMI-QUANT-SR-V35: R28 puente Browniano causal integrado; handoff pendiente
 
-- Base merge `87cccdc17334309c585402b57607d56b89634524` (origin `61e0e759` GLM-195 + `90b2e695`). Candidato R28 `0d03e5a39b7164ded28a452849fa18bdd391a4b6`, tree `ce87b3d8b81e23f2572de57c192edeb7e1435529`, padre b2e; `main` local sigue `90b2e695`, sin CAS/push. La extracción inicial incompleta fue descartada; overlay v2 verificado 2305/2305 archivos.
+- Base merge `87cccdc17334309c585402b57607d56b89634524` (origin `61e0e759` GLM-195 + `90b2e695`). R28 `0d03e5a39b7164ded28a452849fa18bdd391a4b6`, tree `ce87b3d8b81e23f2572de57c192edeb7e1435529`, padre b2e, ya está integrado en `main` local por CAS; handoff documental separado aún en validación, sin push. La extracción inicial incompleta fue descartada; overlay v2 verificado 2305/2305 archivos.
 - RED CL-88: `bar_sigma=(|r|/2).max(0.001)` imponía hasta 10 pb/barra frente a 1,03 pb real y produjo ATR 9,16 pb/2,87x. Corrección limitada a `wf_replay_segment`, 22+/6-: media expansiva causal de r² de barras previas e incrementos `B(f)-f*B(1)`, sin piso ni learning rate. No se tocaron SigmaMinuto, TP/SL ni el camino vivo.
 - GREEN focal: razones 1,133/1,133/0,873. Suite evolution **204/204 en 22 targets, 0 failed/ignored/filtered**; Stanford C6 y CL-88 verdes. Agent-30 confirmó fórmula y rama Yes/0.
 - Minor diferido de cobertura: extremos, incrementos/covarianza, prefijos causales y segmentos/piso residual no tienen contratos específicos aún. No se presenta como prueba existente ni bloquea el fix CL-88 ya probado. Workspace all-targets exit0 (4m03s), Zero-Wait 22/22 (366.708s)/exit0. CAS R28 realizado `main=0d03e5a39b7164ded28a452849fa18bdd391a4b6`, expected `90b2e695`, origin `61e0e759` revalidado; handoff documental separado en validación, sin push. Producción NO-GO; ROI/PnL/WR/Sharpe/EV=N/D.

@@ -20306,9 +20306,9 @@ Workspace all-targets exit0 (4m29s), Zero-Wait 22/22 (344.272s)/exit0. CAS R27 r
 
 
 <!-- KIMI-V35-R28-BROWNIAN-CAUSAL-20261105 -->
-## 2026-11-05 — KIMI-QUANT-SR-V35: R28 puente Browniano causal, antes de CAS
+## 2026-11-05 — KIMI-QUANT-SR-V35: R28 puente Browniano causal integrado; handoff pendiente
 
-Candidato `0d03e5a39b7164ded28a452849fa18bdd391a4b6`, tree `ce87b3d8b81e23f2572de57c192edeb7e1435529`, padre `87cccdc1` (origin `61e0e759` GLM-195 + `90b2e695`). `main` local sigue `90b2e695`, sin CAS/push. Overlay completo v2 verificado 2305/2305 archivos; extracción inicial descartada.
+R28 `0d03e5a39b7164ded28a452849fa18bdd391a4b6`, tree `ce87b3d8b81e23f2572de57c192edeb7e1435529`, padre `87cccdc1` (origin `61e0e759` GLM-195 + `90b2e695`), ya está integrado en `main` local por CAS. Handoff documental separado aún en validación, sin push. Overlay completo v2 verificado 2305/2305 archivos; extracción inicial descartada.
 
 La causa quedó demostrada: `bar_sigma=(|r|/2).max(0.001)` impone hasta 10 pb por barra frente a 1,03 pb real y ATR 9,16 pb/2,87x. La corrección queda dentro de `wf_replay_segment`: media expansiva de r² de barras previas e incrementos `B(f)-f*B(1)`, sin piso ni learning rate. No se cambiaron SigmaMinuto, TP/SL ni el camino vivo.
 
