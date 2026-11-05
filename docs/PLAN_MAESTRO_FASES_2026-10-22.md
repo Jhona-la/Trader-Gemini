@@ -360,3 +360,10 @@ Después de cada push de código: todos los checks disparados (base actual: 8 de
 - R20B recompone R20A sobre GLM-193 sin perder anexos. Sus tres contratos pasan 7/7; el censo evolution es 200/202 en 22 targets por CL-88 y Stanford C6, ambos heredados, documentados y fuera del diff. Workspace 3m08s, Zero-Wait 101.951s y agent-30 merge Yes/0. No se declara evolution-engine verde.
 - R21B conserva ocho rutas rustfmt de feature-engine con equivalencia exacta WIP: 411/411/59/20 ignored, workspace 3m16s, Zero-Wait 133.153s y agent-30 Yes/0. Once rutas no estables y todo cambio semántico/QRA/TRIANGULAR permanecen excluidos.
 - Handoff documental separado pendiente de workspace, Zero-Wait, revisión y CAS. Attestation/publicación siguen bloqueados por QRA Navier/adversarial/legacy, formatter restante, productor ROOT/Golden9, seis fases + Python y Golden9. Producción NO-GO; métricas económicas N/D.
+
+
+## Corte V35-R27 — Stanford fail-closed con TDD, antes de CAS (2026-11-05)
+
+- Candidato `1b252ad21984fbde07e28669db8fa96bc8bfc1af` sobre merge `b2e27830` (origin `4f9fca71` + `d7d6907b`). Tres RED reales antes de implementación y GREEN focal 3/3. Guardas en evaluación, ciclo y `meta_distill`; ningún dato filtrado o imputado.
+- Tests con 11 retornos, control RNG y siete campos no finitos. Suite evolution 203/204 en 22 targets, único rojo CL-88 heredado fuera del diff. Revisión agent-30 Yes/0; GLM-194 y handoffs anteriores preservados.
+- Workspace all-targets exit0 (4m29s), Zero-Wait 22/22 (344.272s)/exit0. CAS R27 realizado `main=1b252ad21984fbde07e28669db8fa96bc8bfc1af`, expected `d7d6907b`, origin `4f9fca71`; handoff documental separado en validación. Attestation/publicación bloqueados por requisitos globales y QRA. Producción NO-GO; métricas económicas N/D.

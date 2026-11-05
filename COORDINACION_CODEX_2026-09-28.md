@@ -20277,3 +20277,15 @@ R20A `81c0d8e4` fue revisado Yes/0, pero su CAS se canceló cuando upstream avan
 R21B `68e20bd6d5abcc5b1b8ac3998ffa8209df06b121` integra ocho rutas rustfmt de feature-engine/117+/45- con blobs WIP exactos. Recibos: 411/411 en 59 targets/20 ignored/0 filtered, workspace 3m16s, Zero-Wait 133.153s y agent-30 Yes/0. Once rutas no estables fueron restauradas/excluidas; Navier, QSR/QRA/adversarial/legacy y cambios semánticos quedaron intactos. El commit validado contiene AGENT_SYNC `41d9534b`; los SHAs previos `6611b102`/`e76965ca` no se promovieron ni se usaron como evidencia.
 
 `origin/main=31eaa6cb88a343dc033d3d7ca76ab6c67981be6c` permanece revalidado; no hubo push. Handoff conjunto separado pendiente de workspace, Zero-Wait, revisión y CAS. Attestation/publicación siguen bloqueados por QRA Navier/adversarial/legacy, formatter restante, productor ROOT/Golden9, seis fases + Python y Golden9. Producción NO-GO; ROI/PnL/WR/Sharpe/EV=N/D; +100 %/72 h no está certificado.
+
+
+<!-- KIMI-V35-R27-STANFORD-TDD-20261105 -->
+## 2026-11-05 — KIMI-QUANT-SR-V35: R27 Stanford no finito, antes de CAS
+
+Candidato `1b252ad21984fbde07e28669db8fa96bc8bfc1af`, tree `d33f5210d7599c32f0ccc764df6841fe2110d2a5`, padre `b2e27830` (origin `4f9fca71` GLM-194 + `d7d6907b`). El intento `55ff87a1` quedó descartado. `main` local sigue `d7d6907b`, sin CAS/push.
+
+TDD completo: RED histórico y nuevo por `clamp(1.0, NaN)` y RED de promoción real con Sharpe +∞ en `meta_distill`; después, guardas mínimas en `isolated_evaluate`, antes de SOL PROPOSE y en la puerta pública `meta_distill`. No se filtran retornos ni se imputan valores. El contrato usa 11 retornos, control posterior con misma semilla y `causal_pillar_importance`, y siete campos no finitos externos.
+
+Recibos terminados: GREEN C6 3/3 y suite evolution 203/204 en 22 targets/0 ignored/filtered. Sólo CL-88 sigue rojo como deuda heredada fuera del diff; Stanford C6 y ambos nuevos contratos pasan. Agent-30 revisó corrección y rama completa Yes/0. GLM-194, GLM-193 y handoffs R19–R21 quedan preservados.
+
+Workspace all-targets exit0 (4m29s), Zero-Wait 22/22 (344.272s)/exit0. CAS R27 realizado `main=1b252ad21984fbde07e28669db8fa96bc8bfc1af`, expected `d7d6907b`, origin `4f9fca71` revalidado; handoff documental separado en validación, sin push. Producción NO-GO; ROI/PnL/WR/Sharpe/EV=N/D; +100 %/72 h no está certificado.
