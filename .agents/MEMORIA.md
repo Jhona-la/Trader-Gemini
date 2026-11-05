@@ -10899,3 +10899,12 @@ Puerto recursos reanclado sobre PR90/7b598f7e (padre mainfd956f9, AGY F1-074/F1-
 - Evidencia: 14/14 en 3 targets/0 failed/ignored/filtered/exit0; workspace all-targets exit0 (3m41s); Zero-Wait 22/22 (247.075s)/exit0; revisión agent-25 **Yes**, Critical/Important/Minor=0.
 - `src/lib.rs` permanece restaurado a base: no se adoptó la migración `SkipMap→SkipList` ni el nuevo `unsafe`. R13A no declara cerrado todo `omniscient-registry`.
 - Handoff documental separado pendiente de workspace, Zero-Wait y CAS. Attestation/publicación siguen bloqueados por QRA, formatter restante, productor ROOT/Golden9, seis fases + Python y Golden9. Producción NO-GO; ROI/PnL/WR/Sharpe/EV=N/D.
+
+
+## 2026-11-05T01:18:04Z — KIMI-QUANT-SR-V35: R14A dos fuentes telemetry-server y CAS local
+
+- `main` local avanzó por CAS desde `893f830fc8602e0aace936fdbe9de8d4b3ac1db3` a `54784471c7f268e5a8b724ce53827a9bb5e3ae12` (tree `c295407e0dc6293711685cfa5d09dba0c58463b3`). `origin/main=206701dc` intacto; no hubo push.
+- `causal_attribution.rs` y `estrangulador.rs`, 39+/8- exclusivamente rustfmt: condicionales multilínea, constructor y layouts de `assert!`, sin cambios de safe gross/fees/net, atribución Aumann-Shapley/Owen, supresión de avisos, ventanas temporales o APIs. Blobs exactos `a8df6e5a` y `01f090fc`.
+- Evidencia: 87/87 en 6 targets/0 failed/ignored/filtered/exit0; workspace all-targets exit0 (3m35s); Zero-Wait 22/22 (224.937s)/exit0; revisión agent-25 **Yes**, Critical/Important/Minor=0.
+- `forensic_auditor.rs` (let-chain/import order), `ret51b_una_sola_cola.rs` (import order), `macros.rs` (semántica grande) y `mirofish_lattice.rs` (TRIANGULAR_PENDIENTE) permanecen restaurados/intactos a base. R14A no declara cerrado todo `telemetry-server`.
+- Handoff documental separado pendiente de workspace, Zero-Wait y CAS. Attestation/publicación siguen bloqueados por QRA, formatter restante, productor ROOT/Golden9, seis fases + Python y Golden9. Producción NO-GO; ROI/PnL/WR/Sharpe/EV=N/D.

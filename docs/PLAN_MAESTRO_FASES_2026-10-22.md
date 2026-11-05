@@ -329,3 +329,11 @@ Después de cada push de código: todos los checks disparados (base actual: 8 de
 - `src/tests.rs` y `aislamiento_ambito_multiactivo_contract.rs` formateados con equivalencia exacta de blobs WIP y sin cambio semántico. No se declara cerrado todo `omniscient-registry`.
 - Evidencia: 14/14 en 3 targets, workspace 3m41s, Zero-Wait 22/22 (247.075s), revisión Yes sin defectos. `src/lib.rs` permanece excluido por migración `SkipMap→SkipList` y nuevo `unsafe`.
 - Handoff separado pendiente. Attestation sigue bloqueada por QRA, formatter restante, productor ROOT/Golden9, seis fases + Python y Golden9. Producción NO-GO; métricas económicas N/D.
+
+
+## Corte V35-R14A — dos fuentes telemetry-server formateadas e integradas localmente (2026-11-05T01:18:04Z)
+
+- `main` local=`54784471c7f268e5a8b724ce53827a9bb5e3ae12`, tree `c295407e`, tras CAS desde `893f830f`; `origin/main=206701dc` sin cambios, sin push.
+- `causal_attribution.rs` y `estrangulador.rs` formateados con equivalencia exacta de blobs WIP y sin cambio semántico. No se declara cerrado todo `telemetry-server`.
+- Evidencia: 87/87 en 6 targets, workspace 3m35s, Zero-Wait 22/22 (224.937s), revisión Yes sin defectos. `forensic_auditor`, `ret51b`, `macros` y `mirofish_lattice` permanecen excluidos por diferencias semánticas/TRIANGULAR.
+- Handoff separado pendiente. Attestation sigue bloqueada por QRA, formatter restante, productor ROOT/Golden9, seis fases + Python y Golden9. Producción NO-GO; métricas económicas N/D.
