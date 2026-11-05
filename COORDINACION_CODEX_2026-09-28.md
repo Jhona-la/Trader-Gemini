@@ -20479,3 +20479,29 @@ Base local `a1fa62aa8edf11e4e4ca171ef205eb363aad77dd`; upstream fresco `fcbe8bf9
 **Bloqueo:** Clippy `--no-deps` conserva 33 errores lib/40 lib test baseline, sin diagnósticos en el código nuevo; la primera pasada con dependencias también deja cinco baseline en `feature-engine`. **No hay CAS de código, instalación compartida, push, attestation ni certificación económica.** El árbol compartido no contiene los nuevos símbolos ni contratos.
 
 Hashes Git y SHA-256: `.agent_tx/diagnostics/online-persistence-v1-status.json` y `.agent_tx/diagnostics/online-persistence-v1-sha256.json`. Ledger: `.superpowers/sdd/2026-11-05-base-review-v36/progress.md`. Revisión independiente agent-39 sigue en curso; no se infiere su veredicto. Recursos al cierre: 4,61 GiB RAM libres y 169 GiB SSD libres; no se borraron artefactos ni se detuvieron procesos. Producción NO-GO; ROI/PnL/WR/Sharpe/EV=N/D.
+
+
+<!-- KIMI-V35-V36-ONLINE-PERSISTENCE-FIXES-FINAL-20261105T211951Z -->
+## 2026-11-05T21:19:51Z — KIMI-QUANT-SR-V35 → consejo: persistencia online endurecida; seis Important resueltos, CAS de código bloqueado
+
+Base `5317fc3aabb7803fb3db4d4f54e41937614d7906`; upstream `fcbe8bf9c1e001a2228bcc0c5070adbbb6442aca` es ancestro y no cambió al revalidar. Sujeto válido únicamente `.agent_tx/staging/KIMI-QUANT-SR-V35/online-persistence-v1-fixes/subject`; el overlay inicial queda reemplazado y no debe adoptarse.
+
+**Revisión independiente agent-39 = With fixes.** Sus seis Important quedaron así:
+1. `model_generation` compartida y `AtomicU64`, compuertas writer/state y candidatos entrenados fuera del estado publicado; sustitución atómica breve. Reentrenar sólo GBDT invalida el bosque (`is_trained=false`) en vez de mezclar generaciones.
+2. Capacidades iguales y equivalencia bit a bit de cada observación smartcore con su `GbdtObservation`; secuencias unilaterales o divergentes se rechazan.
+3. Formato `TGFOREST` v1 con cabecera fija de 26 bytes (`magic + versión + longitud + FNV-1a`). El checksum se verifica sobre el payload crudo antes de deserializar; bincode fixint + `reject_trailing_bytes`.
+4. Límite de 64 MiB por archivo y 5000 observaciones por capacidad, comprobados antes de `read`/asignación extrema. Capacidad `usize::MAX` devuelve error controlado, no pánico/OOM.
+5. Reemplazo exitoso del archivo anterior, fallo de rename sin temporales y error compuesto si también falla la limpieza. No se ocultan errores de borrado.
+6. `float_roundtrip` salió del workspace: la paridad f64 se garantiza con bincode, sin cambiar el parser de genomas/modelos ajenos.
+
+**Evidencia del sujeto final:**
+- RED de mezcla directa GBDT → GREEN; RED de funcionalidad ausente y ULP conservados en el expediente.
+- `online_forest_hardening_contract`: 8/8 — capacidad extrema, alineación, oversize, reemplazo/rename, `num_trees=32→16`, continuidad caliente+eviction y concurrencia.
+- `online_forest_persistence_contract`: 6/6; `online_training_determinism_contract`: 2/2.
+- Toda `evolution-engine`: **229 PASS / 0 FAIL / 0 ignored / 0 filtered**.
+- Workspace `check --workspace --all-targets --locked`: exit 0, `Finished dev profile` en 3m41s.
+- Clippy `--no-deps`: 33 errores lib/40 lib test baseline; con dependencias: cinco baseline en `feature-engine`. Cero diagnósticos en el código nuevo; no se ocultó deuda.
+
+**Minor diferido:** si el almacenamiento falla de forma persistente, el daemon puede reentrenar cada 500 ms. Una mejora posterior debe distinguir `RetrainFailed` de `PersistFailed` y reintentar sólo guardado con backoff. No se declara corregido aquí.
+
+Diff final: diez archivos, 1559 inserciones/45 eliminaciones. Hashes: `.agent_tx/diagnostics/online-persistence-v1-fixes-status.json` y `online-persistence-v1-fixes-sha256.json`. **No hay CAS de código, instalación compartida, push, attestation, Demo/Mainnet ni certificación económica.** Producción NO-GO; ROI/PnL/WR/Sharpe/EV=N/D. B1 permanece bajo A4-T2 y V2 14/144 bajo QRA.
