@@ -30,11 +30,20 @@ pub const MPS_MAX_L: usize = 12;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum MpsError {
-    LongitudInvalida { l: usize },
-    BondInvalido { d: usize },
-    EstadoLongitud { esperado: usize, recibido: usize },
+    LongitudInvalida {
+        l: usize,
+    },
+    BondInvalido {
+        d: usize,
+    },
+    EstadoLongitud {
+        esperado: usize,
+        recibido: usize,
+    },
     /// Norma/entrada degenerada: ausencia honesta (CL-15), jamás clamp.
-    NormaDegenerada { valor: f64 },
+    NormaDegenerada {
+        valor: f64,
+    },
     EntradaNoFinita,
 }
 
@@ -65,10 +74,8 @@ impl Mps {
                                 continue;
                             }
                             for fs in 0..MPS_D_FIS {
-                                let a = self.tensores[l]
-                                    [((i * MPS_D_FIS + fs) * dnext) + j];
-                                let ap = self.tensores[l]
-                                    [((ip * MPS_D_FIS + fs) * dnext) + jp];
+                                let a = self.tensores[l][((i * MPS_D_FIS + fs) * dnext) + j];
+                                let ap = self.tensores[l][((ip * MPS_D_FIS + fs) * dnext) + jp];
                                 s_total += e * a * ap;
                             }
                         }
@@ -106,10 +113,8 @@ impl Mps {
                                 continue;
                             }
                             for fs in 0..MPS_D_FIS {
-                                let a = self.tensores[l]
-                                    [((ia * MPS_D_FIS + fs) * dna) + ja];
-                                let b = otro.tensores[l]
-                                    [((ib * MPS_D_FIS + fs) * dnb) + jb];
+                                let a = self.tensores[l][((ia * MPS_D_FIS + fs) * dna) + ja];
+                                let b = otro.tensores[l][((ib * MPS_D_FIS + fs) * dnb) + jb];
                                 s_total += e * a * b;
                             }
                         }
@@ -269,7 +274,9 @@ fn autovectores_jacobi(a: &[f64], n: usize, k: usize) -> Option<(Vec<f64>, Vec<f
     }
     let mut idx: Vec<usize> = (0..n).collect();
     idx.sort_by(|&i, &j| {
-        m[j * n + j].partial_cmp(&m[i * n + i]).unwrap_or(std::cmp::Ordering::Equal)
+        m[j * n + j]
+            .partial_cmp(&m[i * n + i])
+            .unwrap_or(std::cmp::Ordering::Equal)
     });
     let mut out_v = vec![0.0; n * k];
     let mut out_l = vec![0.0; k];
@@ -301,7 +308,10 @@ pub fn mps_desde_estado(
     }
     let esperado = 1usize << l;
     if estado.len() != esperado {
-        return Err(MpsError::EstadoLongitud { esperado, recibido: estado.len() });
+        return Err(MpsError::EstadoLongitud {
+            esperado,
+            recibido: estado.len(),
+        });
     }
     if estado.iter().any(|v| !v.is_finite()) {
         return Err(MpsError::EntradaNoFinita);
@@ -320,11 +330,10 @@ pub fn mps_desde_estado(
     let mut error_total = 0.0f64;
 
     for sitio in 0..l {
-        let fisicas = if sitio == 0 { 1 } else { MPS_D_FIS };
         // Reshape M: (dl·fisicas... para sitio 0 la física s_0 son los bits
         // más significativos del estado: M = psi.reshape(d, d^{L-1}).
         // Para sitios >0: M[(i,s), k] = resto[i, s·(cols/2) + k].
-        let m_cols = if sitio == 0 { resto_cols / MPS_D_FIS } else { resto_cols / MPS_D_FIS };
+        let m_cols = resto_cols / MPS_D_FIS;
         let m_filas = dl * MPS_D_FIS;
         let mut m = vec![0.0; m_filas * m_cols];
         for i in 0..dl {
@@ -335,7 +344,6 @@ pub fn mps_desde_estado(
                 }
             }
         }
-        let _ = fisicas;
         if sitio == l - 1 {
             // A[L-1] = M con D_L = 1: m_cols == 1 garantizado.
             tensores.push(m);
@@ -397,8 +405,14 @@ pub fn mps_desde_estado(
         resto_cols = m_cols;
     }
 
-    Ok((Mps { tensores, dims, largo: l }, error_total)
-    )
+    Ok((
+        Mps {
+            tensores,
+            dims,
+            largo: l,
+        },
+        error_total,
+    ))
 }
 
 /// Espectro de Schmidt NORMALIZADO del corte: p = autovalores de
@@ -406,17 +420,16 @@ pub fn mps_desde_estado(
 /// Consumido por `entrelazamiento_corte` (von Neumann) y por la familia
 /// Tsallis S_q del 158 — UNA sola diagonalización, entropías intercambiables.
 /// Solución conocida: producto ⇒ {1}; GHZ ⇒ {½, ½}.
-pub fn espectro_schmidt(
-    estado: &[f64],
-    l: usize,
-    corte: usize,
-) -> Result<Vec<f64>, MpsError> {
+pub fn espectro_schmidt(estado: &[f64], l: usize, corte: usize) -> Result<Vec<f64>, MpsError> {
     if l == 0 || l > MPS_MAX_L || corte == 0 || corte >= l {
         return Err(MpsError::LongitudInvalida { l });
     }
     let esperado = 1usize << l;
     if estado.len() != esperado {
-        return Err(MpsError::EstadoLongitud { esperado, recibido: estado.len() });
+        return Err(MpsError::EstadoLongitud {
+            esperado,
+            recibido: estado.len(),
+        });
     }
     if estado.iter().any(|v| !v.is_finite()) {
         return Err(MpsError::EntradaNoFinita);
@@ -433,8 +446,8 @@ pub fn espectro_schmidt(
             g[i * filas + j] = s;
         }
     }
-    let espectro = jacobi_simetrico(&g, filas, 1e-24)
-        .ok_or(MpsError::NormaDegenerada { valor: f64::NAN })?;
+    let espectro =
+        jacobi_simetrico(&g, filas, 1e-24).ok_or(MpsError::NormaDegenerada { valor: f64::NAN })?;
     let traza: f64 = espectro.iter().sum();
     if !(traza.is_finite() && traza > 1e-300) {
         return Err(MpsError::NormaDegenerada { valor: traza });
@@ -495,7 +508,15 @@ impl MpoIsing {
         // Local (s,s'): I=δ, Z=diag(1,−1), X=antidiag(1,1).
         for s in 0..MPS_D_FIS {
             for sp in 0..MPS_D_FIS {
-                let z = if s == sp { if s == 0 { 1.0 } else { -1.0 } } else { 0.0 };
+                let z = if s == sp {
+                    if s == 0 {
+                        1.0
+                    } else {
+                        -1.0
+                    }
+                } else {
+                    0.0
+                };
                 let x = if s != sp { 1.0 } else { 0.0 };
                 // (0→0)=I transporta; (0→2)=−hσˣ añade el campo UNA vez por
                 // sitio (fix 153: en la fila 2 se acumulaba multiplicativa-
@@ -556,14 +577,22 @@ pub fn dmrg_ising(
         // Matriz 2×2 en orden de filas: (0, 1) es el índice 1 y (1, 0) el 2.
         h1[1] = -h;
         h1[2] = -h;
-        let espectro = jacobi_simetrico(&h1, 2, 1e-18)
-            .ok_or(MpsError::NormaDegenerada { valor: f64::NAN })?;
+        let espectro =
+            jacobi_simetrico(&h1, 2, 1e-18).ok_or(MpsError::NormaDegenerada { valor: f64::NAN })?;
         let energia = espectro.iter().cloned().fold(f64::INFINITY, f64::min);
         let neg: Vec<f64> = h1.iter().map(|x| -x).collect();
-        let (v, _) = autovectores_jacobi(&neg, 2, 1)
-            .ok_or(MpsError::NormaDegenerada { valor: f64::NAN })?;
-        let mps = Mps { tensores: vec![vec![v[0], v[1]]], dims: vec![1, 1], largo: 1 };
-        return Ok(DmrgResultado { energia, mps, sweeps: sweeps.max(2) });
+        let (v, _) =
+            autovectores_jacobi(&neg, 2, 1).ok_or(MpsError::NormaDegenerada { valor: f64::NAN })?;
+        let mps = Mps {
+            tensores: vec![vec![v[0], v[1]]],
+            dims: vec![1, 1],
+            largo: 1,
+        };
+        return Ok(DmrgResultado {
+            energia,
+            mps,
+            sweeps: sweeps.max(2),
+        });
     }
     let hpo = MpoIsing { largo: l, j, h };
     let mpos: Vec<Vec<f64>> = (0..l).map(|i| hpo.tensor(i)).collect();
@@ -575,7 +604,11 @@ pub fn dmrg_ising(
         tensores.push(vec![1.0, 0.0]);
     }
     let dims: Vec<usize> = vec![1; l + 1];
-    let mut mps = Mps { tensores, dims, largo: l };
+    let mut mps = Mps {
+        tensores,
+        dims,
+        largo: l,
+    };
 
     let dw = 3usize;
     let mut energia = 0.0f64;
@@ -604,8 +637,14 @@ pub fn dmrg_ising(
     if !energia.is_finite() {
         return Err(MpsError::NormaDegenerada { valor: energia });
     }
-    Ok(DmrgResultado { energia, mps, sweeps: sweeps.max(2) })
+    Ok(DmrgResultado {
+        energia,
+        mps,
+        sweeps: sweeps.max(2),
+    })
 }
+
+type ParOptimizado = (f64, Vec<f64>, Vec<f64>, Vec<usize>);
 
 /// Optimiza el par (`par`, `par`+1): contrae L (sitios < par), W_par·W_{par+1}
 /// precontraído sobre el canal MPO intermedio y R (sitios > par+1) al
@@ -631,7 +670,7 @@ fn optimizar_par(
     bond_max: usize,
     dw: usize,
     hacia_izquierda: bool,
-) -> Result<(f64, Vec<f64>, Vec<f64>, Vec<usize>), MpsError> {
+) -> Result<ParOptimizado, MpsError> {
     let l = mps.largo;
     let dl = mps.dims[par];
     let dr = mps.dims[par + 2];
@@ -639,9 +678,8 @@ fn optimizar_par(
     let mut env_l: Vec<f64> = vec![1.0];
     let mut dim_l_mps = 1usize;
     let mut dim_l_mpo = 1usize;
-    for s in 0..par {
+    for (s, w) in mpos.iter().enumerate().take(par) {
         let a = &mps.tensores[s];
-        let w = &mpos[s];
         env_l = contraer_entorno_izq(&env_l, dim_l_mps, dim_l_mpo, w, a, dw);
         dim_l_mps = mps.dims[s + 1];
         dim_l_mpo = dw;
@@ -650,7 +688,7 @@ fn optimizar_par(
     // Seed en delta del canal COMPLETADO (wd=2) — fix del 153 vigente: el
     // MPO abre en wu=0 (izquierda) y cierra en wd=2 (derecha).
     let mut env_r: Vec<f64> = vec![0.0; dw];
-    env_r[(2 * 1 + 0) * 1 + 0] = 1.0; // índice (wd=2, b=0, bp=0)
+    env_r[2] = 1.0; // índice (wd=2, b=0, bp=0)
     let mut dim_r_mps = 1usize;
     let mut dim_r_mpo = dw;
     for s in ((par + 2)..l).rev() {
@@ -686,13 +724,11 @@ fn optimizar_par(
                             let col = (fsp * MPS_D_FIS + fsp1) * dw + wd;
                             let mut acc = 0.0;
                             for wm in 0..dw {
-                                let wa = w_a
-                                    [((wu * MPS_D_FIS + fs) * MPS_D_FIS + fsp) * dw + wm];
+                                let wa = w_a[((wu * MPS_D_FIS + fs) * MPS_D_FIS + fsp) * dw + wm];
                                 if wa == 0.0 {
                                     continue;
                                 }
-                                let wb = w_b
-                                    [((wm * MPS_D_FIS + fs1) * MPS_D_FIS + fsp1) * dw + wd];
+                                let wb = w_b[((wm * MPS_D_FIS + fs1) * MPS_D_FIS + fsp1) * dw + wd];
                                 if wb == 0.0 {
                                     continue;
                                 }
@@ -723,11 +759,9 @@ fn optimizar_par(
                             let fbase = (fsp * MPS_D_FIS + fsp1) * dw;
                             for ib in 0..dr {
                                 for ipb in 0..dr {
-                                    let fila =
-                                        ((ia * MPS_D_FIS + fs) * MPS_D_FIS + fs1) * dr + ib;
-                                    let col = ((ipa * MPS_D_FIS + fsp) * MPS_D_FIS + fsp1)
-                                        * dr
-                                        + ipb;
+                                    let fila = ((ia * MPS_D_FIS + fs) * MPS_D_FIS + fs1) * dr + ib;
+                                    let col =
+                                        ((ipa * MPS_D_FIS + fsp) * MPS_D_FIS + fsp1) * dr + ipb;
                                     let mut acc = 0.0;
                                     for wu in 0..dim_l_mpo {
                                         let lv = env_l[(wu * dl + ia) * dl + ipa];
@@ -756,12 +790,12 @@ fn optimizar_par(
     }
     // Mínimo autovalor por Jacobi (Heff simétrico por H†=H) + autovector
     // del mínimo vía −Heff (autovectores_jacobi con k=1 da el MÁXIMO).
-    let espectro = jacobi_simetrico(&heff, n, 1e-18)
-        .ok_or(MpsError::NormaDegenerada { valor: f64::NAN })?;
+    let espectro =
+        jacobi_simetrico(&heff, n, 1e-18).ok_or(MpsError::NormaDegenerada { valor: f64::NAN })?;
     let min_e = espectro.iter().cloned().fold(f64::INFINITY, f64::min);
     let neg: Vec<f64> = heff.iter().map(|x| -x).collect();
-    let (v, _) = autovectores_jacobi(&neg, n, 1)
-        .ok_or(MpsError::NormaDegenerada { valor: f64::NAN })?;
+    let (v, _) =
+        autovectores_jacobi(&neg, n, 1).ok_or(MpsError::NormaDegenerada { valor: f64::NAN })?;
     // theta como matriz (dl·d, d·dr): fila = (a,σ) del sitio par,
     // columna = (σ₁,b) del sitio par+1.
     let filas = dl * MPS_D_FIS;
@@ -771,8 +805,8 @@ fn optimizar_par(
         for fs in 0..MPS_D_FIS {
             for fs1 in 0..MPS_D_FIS {
                 for b in 0..dr {
-                    theta[(a * MPS_D_FIS + fs) * cols + (fs1 * dr + b)] = v
-                        [((a * MPS_D_FIS + fs) * MPS_D_FIS + fs1) * dr + b];
+                    theta[(a * MPS_D_FIS + fs) * cols + (fs1 * dr + b)] =
+                        v[((a * MPS_D_FIS + fs) * MPS_D_FIS + fs1) * dr + b];
                 }
             }
         }
@@ -949,7 +983,12 @@ fn svp_truncado(m: &[f64], filas: usize, cols: usize, b: usize) -> Option<(Vec<f
     let (u, lambdas) = autovectores_jacobi(&g, filas, filas.min(b))?;
     let k = lambdas.len();
     let lam_max = lambdas.iter().cloned().fold(0.0f64, f64::max);
-    let d_bond = lambdas.iter().filter(|&&x| x > lam_max * 1e-24).count().max(1).min(b);
+    let d_bond = lambdas
+        .iter()
+        .filter(|&&x| x > lam_max * 1e-24)
+        .count()
+        .max(1)
+        .min(b);
     let mut out_u = vec![0.0; filas * d_bond];
     for f in 0..filas {
         for alfa in 0..d_bond {

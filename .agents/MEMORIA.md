@@ -34,6 +34,18 @@ En main por el [PR #169](https://github.com/Jhona-la/Trader-Gemini/pull/169) (e3
   herramienta; escribir los scripts de edición a un archivo. `cargo fmt` da
   error 206 en Windows: usar `rustfmt --edition 2021` sobre los archivos.
 
+## 2026-11-04 — KIMI-QUANT-SR-V35 F1: baseline matemática y recomposición local
+
+Candidato final `e4e47d95bf51b8b1f388f17f63311fb8b4bc418e`, padres `2ab90d3a` y `e041cb0b`; CAS local `main=e4e47d95`, sin push ni CI nueva. Catorce archivos de `feature-engine` corregidos sin supresiones ni cambios intencionales de comportamiento. Jacobi recuperó su exclusión `r != p && r != q` tras RED real (λ₀=4.954309500007513 frente a 5.6180339887) y multifractal rechaza `count>50` tras devolver antes un espectro parcial; ambos quedaron GREEN. Revisión independiente agent-25 `With fixes`, sin Critical/Important restantes.
+
+Evidencia: 403/403 tests en 57 suites (20 ignored, 0 filtered), LPPLS 4/4, workspace `check --all-targets` exit0, Zero-Wait 22/22 y compiler bus 20/20. Clippy bajó de 57 a 1: `navier_stokes::update`, cuyo llamador está bajo QRA y no se tocó. El formatter cubrió 632 targets en 5 lotes y conserva deuda baseline (`auditor_interno.rs:92` primera causa). `test_pre_push_gate.py` no existe en el snapshot; no se ejecutó la familia legacy. Attestation y publicación permanecen bloqueados. Producción NO-GO; ROI/PnL/WR/Sharpe/EV=`N/D`. Estado máquina: `.agent_tx/staging/KIMI-QUANT-SR-V35/F1_FEATURE_BASELINE_STATUS.json`.
+
+## 2026-11-04 — KIMI-QUANT-SR-V35 F1R2: lint complementario, SBE y persistencia
+
+Candidato `79e6fbc0455a9a327158a5bc8ad4bbaac5bae2b7`, con handoff `1fd5adf0` y upstream documental `91bd085f`; no hay CAS de este candidato todavía. Se integraron `omniscient-registry` (`if false` y `io::Error::other`), `flight-recorder` (rustdoc), SBE (iteradores bid/ask) y raw zone (`as_chunks::<40>`), sin cambios de layout ni recuperación.
+
+Evidencia nueva: nativas 914/914 (25 ignored), DAZ 17/17, átomos 19/19, SBE 6/6 y storage 50/50. Workspace Clippy deja sólo `navier_stokes::update` (QRA). Formatter 632 targets/5 lotes conserva deuda baseline; `test_pre_push_gate.py` sigue ausente. Attestation y publicación permanecen bloqueados. Producción NO-GO; ROI/PnL/WR/Sharpe/EV=`N/D`. Estado máquina: `.agent_tx/staging/KIMI-QUANT-SR-V35/F1_FEATURE_BASELINE_STATUS.json`.
+
 ## 2026-11-03 — Claude (Línea I, Opus 5.5): I-11 = N56, las reconexiones WS caben en el límite de Binance
 
 Rama `claude/linea-i-i11`, [PR #168](https://github.com/Jhona-la/Trader-Gemini/pull/168).
@@ -61,6 +73,14 @@ conducta con un servidor WS local que acepta y corta.
 Regla para quien toque un bucle WS: toda salida de la fase de conexión pasa
 por `espera.fallo(…)`. El contrato cuenta esas llamadas. Siguen abiertos:
 N18b, N15c, N19b, N19c y el jitter de los lectores.
+
+## CORTE 2026-10-27 17:31 UTC — Kimi V34: income corregido localmente; aduana bloquea publicación
+
+Revisión desde la base sincronizada con `main = origin/main = d27590739` y remoto solo `main`; no se borró WIP, ramas, worktrees ni procesos ajenos. El commit local `13fca0978fa1521f918b2013d486b15b3ff84b58` cambia únicamente `IncomeEntry`: el campo `income` vuelve a ser obligatorio en JSON, evitando comisión cero fabricada por ausencia; cero explícito y rebates se conservan.
+
+Evidencia local real: contrato nuevo RED antes del cambio y GREEN después (1/1); suite execution-engine 441 PASS/0 FAIL, con 5 tests Testnet ignorados por credenciales y 0 filtrados; Clippy lib+contrato PASS; formato protegido 589 targets en 4 lotes PASS; revisor independiente sin Critical/Important. El árbol actual también pasó `cargo check --workspace --all-targets`. No se ejecutó Demo ni Producción y no hay métricas económicas certificadas.
+
+`origin/main` sigue en `d27590739`; no hubo push ni CI del commit. La aduana rechazó primero la ausencia de attestation y la revisión posterior demostró que el HEAD base no satisface las fases obligatorias de Clippy/formato. El WIP que corrige esa baseline pertenece a QRA y no se incorporó en el átomo selectivo. Publicación queda BLOQUEADA hasta disponer de una baseline válida y del sobre real para el mismo árbol; no se usó `--no-verify` ni se transfirieron resultados de otro sujeto. Evidencia y ledger en `.agent_tx/staging/kimi-quant-sr-20261027/`.
 
 ## 2026-10-26 — Claude (cloud, Línea C): decimoséptima tanda del censo C-F7b (filas N40, N41 b y N32)
 
@@ -10795,3 +10815,114 @@ Puerto recursos reanclado sobre PR90/7b598f7e (padre mainfd956f9, AGY F1-074/F1-
     3. `test_f1_016_hawkes_scale_free_asset_invariance_calm_vs_liquid`: certifica invarianza de escala universal entre altcoin calma (0.2 tps) y BTC masivo (20.0 tps), anclando ambos a $\text{STEADY\_STATE\_RATIO} = 1.60 \pm 0.08$ con excitación nula ($|e| < 0.055$) bajo Poisson.
     4. `test_f1_016_hawkes_genuine_burst_responsiveness`: certifica que ante ráfagas reales (5x-10x ritmo normal), el ratio predecible escala contundentemente a $> 2.0$ y $e > 0.2$.
     5. `test_f1_016_hawkes_numerical_finite_guards`: certifica inmunidad a NaN/Inf y ejecución $O(1)$ estricta sin allocations.
+
+
+## 2026-11-04T19:20:56Z — KIMI-QUANT-SR-V35: F1R3 formato, Fisher-Rao y CAS local
+
+- `main` local avanzó por CAS desde `711317a26da7f871d7c6c999f0bb8af5d16b76c5` a `b8529f40ec7ee7681f68b495003c3b10eaabc301` (tree `c00748bdfaab9e640e9fd327dfd474ffa6cccfdb`), con padres `f1ca374aa00d1c84124ae803799db5c0b4fa4b95` y `c362239b4792a84448ab1ce3b18bc820c12c4c3d`. `origin/main` sigue en `f1ca374a`; no hubo push ni CI del candidato.
+- Cuatro átomos de formato (`fac7fbe0`, `d6e1896b`, `41d7c615`, `c362239b`) tocaron siete archivos de audit-engine y dos de backtest-engine, sin cambios de umbrales, condiciones, veredictos, contabilidad, OOS o APIs. `ex_post_metrics_contract.rs` estaba idéntico y se excluyó; QSR y QRA quedaron intactos.
+- Evidencia del SHA: Fisher-Rao 4/4, workspace `check --workspace --all-targets --locked` exit 0, Zero-Wait 22/22; backtest 43/43 +2 ignored. Revisión independiente agent-25: **Yes**, sin Critical/Important. El workspace conserva warnings MXCSR y errores no fatales de checksum dep-info; no se presentan como Clippy verde.
+- Attestation/publicación siguen bloqueados por Navier/adversarial/legacy bajo QRA, formatter baseline y seis fases + Python/Golden9 del mismo SHA. Handoff publicado en `COORDINACION_CODEX_2026-09-28.md`. Producción NO-GO; ROI/PnL/WR/Sharpe/EV=N/D. La meta +100 %/72 h sigue siendo hipótesis OOS neta, no certificado.
+
+## 2026-11-04T19:42:25Z — KIMI-QUANT-SR-V35: R4+R5 cierran formato de audit-engine y CAS local
+
+- R4 `950882897da3b54d7a151ecdd24b21e781688b9d` y R5 `dbdd79f7bb255347fc5a45a3fbbd1a08e8c45729` quedaron integrados en `main` local por CAS desde `b8529f40`. `origin/main=f1ca374a` no cambió; no hubo push. Local queda 36 ahead/0 behind.
+- R4 formatea `drift_recovery_contract.rs`; R5 formatea los otros siete contratos pendientes. Todo `audit-engine` pasa `rustfmt --check`. Cada suite terminó 90/90 en 14 targets, 0 failed/ignored/filtered. No se alteraron condiciones, umbrales, mensajes, contabilidad, OOS o APIs; QSR/QRA y WIP de raíz no fueron adoptados.
+- Candidato R5: workspace all-targets exit 0 (4m13s) y Zero-Wait 22/22 (286.401s). Revisión independiente agent-25 R4+R5: **Yes**, Critical/Important/Minor=0. Warnings MXCSR y errores no fatales de checksum dep-info permanecen declarados.
+- Attestation/publicación siguen bloqueados por QRA Navier/adversarial/legacy, formatter de otros crates y seis fases + Python legacy/Golden9 de un SHA final. Producción NO-GO; ROI/PnL/WR/Sharpe/EV=N/D.
+
+## 2026-11-04T20:42:02Z — KIMI-QUANT-SR-V35: R6A evidencia de fees/funding y CAS local
+
+- `main` local avanzó por CAS desde `dbdd79f7b` a `5e021ebb9d17cf5db586b023f3d414cba12be306` (tree `c7f665bcd0d83bbad5c8c2e5cec18ee620916959`), con padres `cfe08162` y `51f9f162`. `origin/main=cfe08162` permanece intacto; no hubo push. Local 38 ahead/0 behind.
+- `route_order` ahora exige arena, símbolo y maker antes de latencia/IOC/Market; ausencia devuelve `REJ_FEE_EVIDENCE_MISSING`. Con `observed_fees_required=true`, ausencia/no finitud de funding devuelve `REJ_FUNDING_EVIDENCE_MISSING` antes de que `expected_funding_cost` pueda convertirla en 0.0. Escenarios explícitos conservan comportamiento.
+- Evidencia del candidato: contratos 11/11, toda execution-engine 514/514 en 49 suites, 5 ignored/0 filtered, workspace all-targets exit 0 (3m30s), Zero-Wait 22/22 (198.894s), revisión agent-25 **Yes** sin defectos. Dos fixtures antiguos sólo registraron `BTCUSDT`, sin cambiar expectativas.
+- `82812ec` y `b37c79b` fueron descartados por blob truncado y nunca promovidos. La cadena limpia `51f9f162` restauró el contrato con blob `37f7b3a7`; identidad archivo/commit verificada. Recomposición conserva A4, Kimi V34, GLM-191 y todas las entradas propias.
+- Attestation/publicación siguen bloqueados por QRA Navier/adversarial/legacy, formatter restante y seis fases + Python legacy/Golden9. Producción NO-GO; ROI/PnL/WR/Sharpe/EV=N/D.
+
+## 2026-11-04T22:02:00Z — KIMI-QUANT-SR-V35: R7B evidencia finita de señal y CAS local
+
+- `main` local avanzó por CAS desde `5e021ebb9d17cf5db586b023f3d414cba12be306` a `6f95120f0cafefc0c857e062f6d1141411f6a836` (tree `f7966b523fa2d09cb96d77e1b840c7a5fb78988d`), con padres `ead6d683579c2f2f497ee6d3ac897a28e2649cf2` y `9bbb0b9986d556d9eaaef49b201ef93d1181cd62`. `origin/main=ead6d683` fue revalidado; no hubo push.
+- `route_order` rechaza `REJ_INVALID_SIGNAL_EVIDENCE` cuando confianza no finita/fuera de [0,1], volatilidad o spread no finitos/negativos, o producto de edge desbordado. La guarda queda después del retorno Flat y antes de fee/IOC/Market; el producto validado se reutiliza en `evaluate_viability`. R6A queda intacto.
+- R7A `e693f57d` cerró contrato 4/4, workspace exit 0 (3m25s), Zero-Wait 22/22 (199.709s) y revisión Yes, pero no se promovió porque upstream avanzó a GLM-192. Se adopta su corrección `is_nan()` y se descarta el `to_bits()` duplicado.
+- Evidencia terminal R7B: execution-engine 517/517 en 49 suites, 5 ignored/0 filtered/exit 0; Fisher 4/4; workspace all-targets exit 0 (4m07s); Zero-Wait 22/22 (189.610s); revisión agent-25 **Yes**, Critical/Important/Minor=0. Warnings MXCSR y errores no fatales de checksum dep-info permanecen declarados.
+- Handoff documental se valida como commit separado antes de su CAS. Attestation/publicación siguen bloqueados por QRA Navier/adversarial/legacy, formatter restante, productor ROOT registrado, seis fases + Python legacy/Zero-Wait/bus y Golden9 del SHA final. Producción NO-GO; ROI/PnL/WR/Sharpe/EV=N/D.
+
+
+## 2026-11-04T22:34:38Z — KIMI-QUANT-SR-V35: R8 formato dark-alpha y CAS local
+
+- `main` local avanzó por CAS desde `13b3cc0d8b3682669ddd59904bcf8cd330db6b69` a `92950e1b832ea562675620151fcd4cff1714c099` (tree `44a2810df058d6eca24dd55ebd79f4808d73fc40`). `origin/main=ead6d683` revalidado; no hubo push.
+- Nueve rutas `dark-alpha-engine`, 105+/83- exclusivamente rustfmt. Cada blob del tree escrito coincide con el WIP censo (`f653b151`, `c74bde5c`, `84a7b932`, `4431df8c`, `771cf0d8`, `1163832e`, `b2232f4a`, `fde16235`, `b2171304`). No cambian condiciones, fórmulas, umbrales, mensajes, contabilidad ni APIs.
+- Evidencia: 66/66 en 6 targets, 0 failed/ignored/filtered/exit0; workspace all-targets exit0 (4m12s); Zero-Wait 22/22 (267.253s)/exit0; revisión agent-25 **Yes**, Critical/Important/Minor=0. `core.fsmonitor=true` ocultó la fila propia; se desactivó únicamente en los índices privados y se verificó su blob `562678a3` en el commit.
+- Handoff documental separado pendiente de workspace, Zero-Wait y CAS. Attestation/publicación siguen bloqueados por QRA Navier/adversarial/legacy, formatter restante, productor ROOT, seis fases + Python y Golden9. Producción NO-GO; ROI/PnL/WR/Sharpe/EV=N/D.
+
+
+## 2026-11-04T23:16:11Z — KIMI-QUANT-SR-V35: R9C storage, I-12/GLM-192 y CAS local
+
+- `main` local avanzó por CAS desde `9f082c98357e1104df178159e223bf16a9dfb161` a `f643ac28475f25d88c70810e072ea13fb15f7afb` (tree `ead1f7121d20e1d0a7d0d8f65f063ed4943dab81`), padres `206701dc` y `f8b8e05f`. `origin/main=206701dc` permanece intacto; no hubo push.
+- Cuatro rutas `storage-engine`, 51+/21- exclusivamente rustfmt, con blobs `f7e21f22`, `ad456180`, `e46022b6`, `c08ed1bd` exactos al WIP censo. Sin cambios de APIs, fórmulas, umbrales, recuperación o contabilidad.
+- R9B incorporó I-12 en cinco documentos con unión de 9 líneas; R9C incorporó GLM-192 en dos documentos con unión de 18 líneas, incluida `767aac6e3`, preservando R3–R9B. R9B cerró 50/50, workspace y Zero-Wait 22/22 (464.616s), pero no se promovió porque upstream avanzó.
+- Evidencia R9C: 50/50 en 6 targets/0 failed/ignored/filtered/exit0; workspace 4m55s/exit0; Zero-Wait 22/22 (369.920s)/exit0; revisión agent-25 **Yes**, Critical/Important/Minor=0. El fallo inicial R9 de Zero-Wait quedó sin traceback y la reproducción mínima pasó 1/1; no se cambió código por ese evento.
+- Handoff documental separado pendiente de workspace, Zero-Wait y CAS. Attestation/publicación siguen bloqueados por QRA Navier/adversarial/legacy, formatter restante, productor ROOT/inventario Golden9 ausentes, seis fases + Python y Golden9. Producción NO-GO; ROI/PnL/WR/Sharpe/EV=N/D.
+
+
+## 2026-11-04T23:48:13Z — KIMI-QUANT-SR-V35: R10A dos fuentes data-ingest y CAS local
+
+- `main` local avanzó por CAS desde `e77d3ce31c166de15d1cd4b18ac8c82d6a126e92` a `34def09f16b65a9c9ab5c90bd884bb3ed3a9c8c6` (tree `8f02de2120a25d94481bb0d65f18a8cfab367d89`). `origin/main=206701dc` intacto; no hubo push.
+- `cola_ws.rs` y `rutas_feed.rs`, 59+/13- exclusivamente rustfmt, blobs exactos `9e655161` y `a1b7ec93`. Sin cambios de hosts, categorías, límites de streams, mensajes, relojes, APIs o comportamiento de red.
+- Evidencia: 72/72 en 9 targets/0 failed/ignored/filtered/exit0; workspace all-targets exit0 (3m32s); Zero-Wait 22/22 (260.316s)/exit0; revisión agent-25 **Yes**, Critical/Important/Minor=0.
+- `inmune_latencia_contract.rs` y `rutas_feed_contract.rs` contienen cambios semánticos WIP y quedaron restaurados a base; `edad_feed*`/`f10_001` TRIANGULAR_PENDIENTE y `almacen_hot_path_contract`/`arranque_feed_contract` sin referencia WIP permanecen intactos. R10A no declara cerrado todo `data-ingest`.
+- Handoff documental separado pendiente de workspace, Zero-Wait y CAS. Attestation/publicación siguen bloqueados por QRA, formatter restante, productor ROOT/Golden9, seis fases + Python y Golden9. Producción NO-GO; ROI/PnL/WR/Sharpe/EV=N/D.
+
+
+## 2026-11-05T00:17:17Z — KIMI-QUANT-SR-V35: R11A dos contratos data-pipeline y CAS local
+
+- `main` local avanzó por CAS desde `fc16a4a6f42301309fd06614928e17c8624f8fd8` a `d9fd55c3136d64b1c836f3162c574ae94d67e2ea` (tree `017a2625916ca1bf4a129f37b18d1540bc0ad23f`). `origin/main=206701dc` intacto; no hubo push.
+- `dynamic_ranker_spectral_unification_contract.rs` y `xcv_dims_cross_exchange_muertas_por_contrato.rs`, 12+/3- exclusivamente rustfmt: cuatro `assert!` expandidos, sin cambios de comparaciones, mensajes, fixtures, umbrales, contabilidad o APIs. Blobs exactos `baf87a0a` y `3f48c3f4`.
+- Evidencia: 91/91 en 9 targets/0 failed/ignored/filtered/exit0; workspace all-targets exit0 (3m23s); Zero-Wait 22/22 (181.813s)/exit0; revisión agent-25 **Yes**, Critical/Important/Minor=0.
+- `dynamic_ranker.rs` (cambio semántico 275 líneas), `omni_multiplexer.rs` (orden de claves/API/archivo) y `spot_feed_contract.rs` (argumentos `apply_spot_tick`) permanecen restaurados a base. R11A no declara cerrado todo `data-pipeline`.
+- Handoff documental separado pendiente de workspace, Zero-Wait y CAS. Attestation/publicación siguen bloqueados por QRA, formatter restante, productor ROOT/Golden9, seis fases + Python y Golden9. Producción NO-GO; ROI/PnL/WR/Sharpe/EV=N/D.
+
+
+## 2026-11-05T00:39:07Z — KIMI-QUANT-SR-V35: R12A dos fuentes os-guardian y CAS local
+
+- `main` local avanzó por CAS desde `c5a1f94f9713b36f30fbfe9df96fccb2b19ca0a2` a `25b0d446eecaaad20eeec5240d57d1aa9276704e` (tree `e0b65384e5c4b91987662424698655f958a5ee55`). `origin/main=206701dc` intacto; no hubo push.
+- `memory_audit.rs` y `memory_compaction.rs`, 32+/8- exclusivamente rustfmt: una firma y varios `assert!`/expresiones multilínea, sin cambios de umbrales de memoria, histéresis, working set, compactación, préstamos, alineación, FTZ/DAZ o APIs. Blobs exactos `fb391bba` y `8580f2bb`.
+- Evidencia: 29/29 en 4 targets/0 failed/ignored/filtered/exit0; workspace all-targets exit0 (3m34s); Zero-Wait 22/22 (260.881s)/exit0; revisión agent-25 **Yes**, Critical/Important/Minor=0.
+- `large_pages.rs` (overflow/alineación), `simd_crypto.rs` (préstamos), `f8_001_silicon_physics_contract.rs` (activación FTZ/DAZ) y `silicon_topology.rs` (TRIANGULAR_PENDIENTE) permanecen restaurados/intactos a base. R12A no declara cerrado todo `os-guardian`.
+- Handoff documental separado pendiente de workspace, Zero-Wait y CAS. Attestation/publicación siguen bloqueados por QRA, formatter restante, productor ROOT/Golden9, seis fases + Python y Golden9. Producción NO-GO; ROI/PnL/WR/Sharpe/EV=N/D.
+
+
+## 2026-11-05T00:56:32Z — KIMI-QUANT-SR-V35: R13A dos archivos omniscient-registry y CAS local
+
+- `main` local avanzó por CAS desde `a50d4d3c5848cfd7741bf2768df1197a008ef887` a `1c00e0c8d05564b3238b8f87ff20ce213ebb3343` (tree `afe418d5ad64b139abe4765c77bfe052f615fb4c`). `origin/main=206701dc` intacto; no hubo push.
+- `src/tests.rs` y `aislamiento_ambito_multiactivo_contract.rs`, 25+/11- exclusivamente rustfmt: orden de imports, espacios y layouts de llamadas/`assert!`, sin cambios de aislamiento, precedencia símbolo/coin_id, comparaciones, fixtures, umbrales o APIs. Blobs exactos `78e92dfe` y `3a7045cd`.
+- Evidencia: 14/14 en 3 targets/0 failed/ignored/filtered/exit0; workspace all-targets exit0 (3m41s); Zero-Wait 22/22 (247.075s)/exit0; revisión agent-25 **Yes**, Critical/Important/Minor=0.
+- `src/lib.rs` permanece restaurado a base: no se adoptó la migración `SkipMap→SkipList` ni el nuevo `unsafe`. R13A no declara cerrado todo `omniscient-registry`.
+- Handoff documental separado pendiente de workspace, Zero-Wait y CAS. Attestation/publicación siguen bloqueados por QRA, formatter restante, productor ROOT/Golden9, seis fases + Python y Golden9. Producción NO-GO; ROI/PnL/WR/Sharpe/EV=N/D.
+
+
+## 2026-11-05T01:18:04Z — KIMI-QUANT-SR-V35: R14A dos fuentes telemetry-server y CAS local
+
+- `main` local avanzó por CAS desde `893f830fc8602e0aace936fdbe9de8d4b3ac1db3` a `54784471c7f268e5a8b724ce53827a9bb5e3ae12` (tree `c295407e0dc6293711685cfa5d09dba0c58463b3`). `origin/main=206701dc` intacto; no hubo push.
+- `causal_attribution.rs` y `estrangulador.rs`, 39+/8- exclusivamente rustfmt: condicionales multilínea, constructor y layouts de `assert!`, sin cambios de safe gross/fees/net, atribución Aumann-Shapley/Owen, supresión de avisos, ventanas temporales o APIs. Blobs exactos `a8df6e5a` y `01f090fc`.
+- Evidencia: 87/87 en 6 targets/0 failed/ignored/filtered/exit0; workspace all-targets exit0 (3m35s); Zero-Wait 22/22 (224.937s)/exit0; revisión agent-25 **Yes**, Critical/Important/Minor=0.
+- `forensic_auditor.rs` (let-chain/import order), `ret51b_una_sola_cola.rs` (import order), `macros.rs` (semántica grande) y `mirofish_lattice.rs` (TRIANGULAR_PENDIENTE) permanecen restaurados/intactos a base. R14A no declara cerrado todo `telemetry-server`.
+- Handoff documental separado pendiente de workspace, Zero-Wait y CAS. Attestation/publicación siguen bloqueados por QRA, formatter restante, productor ROOT/Golden9, seis fases + Python y Golden9. Producción NO-GO; ROI/PnL/WR/Sharpe/EV=N/D.
+
+
+## 2026-11-05T02:14:26Z — KIMI-QUANT-SR-V35: R15B, R15A2 y R15C integrados localmente
+
+- Cadena CAS: R15B `fed28c787f527b16e8dd67679c3c1c1004d364b1` (tree `0226db51cec916b12837c76f336016306278f030`, padre `5f119337`), R15A2 `369806361c075038d257d80e2168e74b59205a5e` (tree `1280eafcf0422ca35c8755fcdccc8a0b908d01e9`, padre R15B) y R15C `9d59f5dc235f65b2882aead772e8bdd71d5524b8` (tree `138f5a0e96601f1d96fdcb15539a0c0033a345aa`, padre R15A2). `origin/main=206701dc` revalidado; sin push.
+- R15B corrige la latencia BSD base que falló cuatro veces (47.675/43.454/42.013/50.510 ns >25.000 ns) con LUT de caracteres cuadráticos y fallback Euler preservado. Contrato focal 7/7 con oráculos independientes; suite 132/132 en 21 targets/2 ignored/0 filtered, workspace 3m35s, Zero-Wait 22/22 (199.152s), agent-26 Yes. Su Minor documental quedó cerrado por R15C.
+- R15A2 integra 14 rutas exclusivamente rustfmt (378+/90-) con blobs WIP exactos: suite 132/132/21, workspace 3m51s, Zero-Wait 22/22 (237.559s), agent-27 apto sin Critical/Important/Minor.
+- R15C sólo documenta LUT versus fallback Euler (3+/2-), sin cambios ejecutables: suite 132/132/21, workspace 3m45s, Zero-Wait 22/22 (234.452s), agent-26 Yes/0 hallazgos.
+- `partial_cmp`, `TradeHorizon`, nuevas APIs y todas las rutas TRIANGULAR_PENDIENTE permanecen excluidos; R15 no declara cerrado todo `strategy-core`. Los overlays fueron verificados idénticos a sus trees.
+- Handoff documental separado en validación. Attestation/publicación siguen bloqueados por QRA, formatter restante, productor ROOT/Golden9, seis fases + Python y Golden9. Producción NO-GO; ROI/PnL/WR/Sharpe/EV=N/D.
+
+
+## 2026-11-05T02:55:15Z — KIMI-QUANT-SR-V35: R17A y R18A integrados localmente
+
+- R17A `ee87c74ed52df7a4f6542cc4563e172a2bb85f07` (tree `a3914724fff4ae13f536963269002e6ed474ea86`, padre `59b1cfec`) integra ocho rutas exclusivamente rustfmt/238+/104- en `metacortex-engine`: 138/138 en 21 targets/0 ignored/0 filtered, workspace 4m02s, Zero-Wait 22/22 (249.188s), agent-28 Yes/0. `prospect_theory.rs` fue excluido por indentación no-rustfmt y `consejo_seniors.rs` fue restaurado tras la recursión de rustfmt; `skip_children=true` quedó verificado.
+- R18A `f8aaab82861cc3d94f649093c40f9194a7d5fa54` (tree `c7aa8932b1cbf9ffc4b23a0d0480d61f8d73a771`, padre R17A) integra nueve rutas rustfmt/25+/22- en `risk-engine`: 580/580 en 85 targets/10 ignored/0 filtered, workspace 3m50s, Zero-Wait 22/22 (293.916s). El fallo inicial de latencia (12.653 ns >10.000 ns) fue transitorio: tres repeticiones focalizadas pasaron 6.928/8.589/9.095 ns y la suite completa se repitió verde.
+- `origin/main=206701dc` revalidado; sin push. Cambios Default/inline-const/iteradores/payload/API, Kelly/leverage/correlation/vetos y todas las rutas TRIANGULAR_PENDIENTE no se adoptaron. R17A/R18A no declaran cerrados esos crates.
+- Handoff documental separado en validación. Attestation/publicación siguen bloqueados por QRA, formatter restante, productor ROOT/Golden9, seis fases + Python y Golden9. Producción NO-GO; ROI/PnL/WR/Sharpe/EV=N/D.

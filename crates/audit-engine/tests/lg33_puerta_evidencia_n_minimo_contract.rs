@@ -43,10 +43,17 @@ fn lg33_la_puerta_se_abre_exactamente_en_min_fills_sombra() {
     for i in 0..MIN_FILLS_SOMBRA - 1 {
         a.record_fill_independiente(cierre(i, if i % 2 == 0 { 0.5 } else { -0.2 }));
     }
-    assert_eq!(a.compute_internal_discrepancy_evidenciada(0.0, 0.9, 0.0), None, "n = MIN − 1");
+    assert_eq!(
+        a.compute_internal_discrepancy_evidenciada(0.0, 0.9, 0.0),
+        None,
+        "n = MIN − 1"
+    );
     a.record_fill_independiente(cierre(MIN_FILLS_SOMBRA - 1, 0.5));
     let d = a.compute_internal_discrepancy_evidenciada(0.0, 0.9, 0.0);
-    assert!(d.is_some_and(f64::is_finite), "n = MIN: hay evidencia ({d:?})");
+    assert!(
+        d.is_some_and(f64::is_finite),
+        "n = MIN: hay evidencia ({d:?})"
+    );
 }
 
 /// Los fills que no cierran posición no cuentan como evidencia de win rate.
@@ -58,5 +65,8 @@ fn lg33_fills_sin_cierre_no_cuentan() {
         f.is_closed_position = false;
         a.record_fill_independiente(f);
     }
-    assert_eq!(a.compute_internal_discrepancy_evidenciada(0.0, 0.9, 0.0), None);
+    assert_eq!(
+        a.compute_internal_discrepancy_evidenciada(0.0, 0.9, 0.0),
+        None
+    );
 }

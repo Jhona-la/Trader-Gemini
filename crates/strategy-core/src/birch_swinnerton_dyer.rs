@@ -115,13 +115,57 @@ pub const fn mod_pow_i64(mut base: i64, mut exp: i64, modulus: i64) -> i64 {
     result
 }
 
-/// Símbolo de Legendre $\left(\frac{n}{p}\right) \in \{-1, 0, 1\}$ por el criterio de Euler:
-/// $n^{(p-1)/2} \pmod p$.
+// The table size and entries follow BSD_ODD_PRIMES, not market inputs.
+const fn bsd_character_width() -> usize {
+    let mut largest = 0_i64;
+    let mut i = 0;
+    while i < BSD_NUM_PRIMES {
+        if BSD_ODD_PRIMES[i] > largest {
+            largest = BSD_ODD_PRIMES[i];
+        }
+        i += 1;
+    }
+    largest as usize
+}
+
+const BSD_CHARACTER_WIDTH: usize = bsd_character_width();
+
+const fn bsd_quadratic_characters() -> [[i8; BSD_CHARACTER_WIDTH]; BSD_NUM_PRIMES] {
+    let mut characters = [[-1_i8; BSD_CHARACTER_WIDTH]; BSD_NUM_PRIMES];
+    let mut row = 0;
+    while row < BSD_NUM_PRIMES {
+        let p = BSD_ODD_PRIMES[row];
+        let mut y = 1_i64;
+        while y < p {
+            let square = (y * y).rem_euclid(p) as usize;
+            characters[row][square] = 1;
+            y += 1;
+        }
+        characters[row][0] = 0;
+        row += 1;
+    }
+    characters
+}
+
+const BSD_QUADRATIC_CHARACTERS: [[i8; BSD_CHARACTER_WIDTH]; BSD_NUM_PRIMES] =
+    bsd_quadratic_characters();
+
+/// Símbolo de Legendre $\left(\frac{n}{p}\right) \in \{-1, 0, 1\}$.
+/// Los primos fijos BSD consultan caracteres cuadráticos precalculados; cualquier
+/// otro primo usa como fallback el criterio de Euler $n^{(p-1)/2} \pmod p$.
 #[inline]
 pub const fn legendre_symbol(n: i64, p: i64) -> i64 {
     let rem = n.rem_euclid(p);
     if rem == 0 {
         return 0;
+    }
+    // Only the fixed BSD primes use the compile-time quadratic characters.
+    let mut row = 0;
+    while row < BSD_NUM_PRIMES {
+        if p == BSD_ODD_PRIMES[row] {
+            return BSD_QUADRATIC_CHARACTERS[row][rem as usize] as i64;
+        }
+        row += 1;
     }
     let euler = mod_pow_i64(rem, (p - 1) / 2, p);
     if euler == 1 {
@@ -279,8 +323,7 @@ impl BirchSwinnertonDyerEngine {
             l_prod_neg *= p_f / (n_p_neg as f64).max(1.0);
 
             let hasse_bound = 2.0 * p_f.sqrt();
-            let norm_ap =
-                (0.5 * (a_p_pos + a_p_neg) as f64 / hasse_bound).clamp(-1.0, 1.0);
+            let norm_ap = (0.5 * (a_p_pos + a_p_neg) as f64 / hasse_bound).clamp(-1.0, 1.0);
             sum_norm_trace += norm_ap;
 
             let ln_p = p_f.ln();
@@ -317,7 +360,11 @@ impl BirchSwinnertonDyerEngine {
         let inner = 4.0 * a_safe * a_safe * a_safe + 27.0 * b_safe * b_safe;
         let discriminant = -16.0 * inner;
         let denom = if inner.abs() < 1e-9 {
-            if inner >= 0.0 { 1e-9 } else { -1e-9 }
+            if inner >= 0.0 {
+                1e-9
+            } else {
+                -1e-9
+            }
         } else {
             inner
         };
@@ -349,8 +396,7 @@ impl BirchSwinnertonDyerEngine {
         let w11 = wa * wb;
 
         let l_value_at_one = (w00 * l00 + w10 * l10 + w01 * l01 + w11 * l11).clamp(0.05, 20.0);
-        let frobenius_trace_norm =
-            (w00 * t00 + w10 * t10 + w01 * t01 + w11 * t11).clamp(-1.0, 1.0);
+        let frobenius_trace_norm = (w00 * t00 + w10 * t10 + w01 * t01 + w11 * t11).clamp(-1.0, 1.0);
         let mestre_slope = w00 * m00 + w10 * m10 + w01 * m01 + w11 * m11;
 
         // 3. Proxy continuo del rango analítico de Birch y Swinnerton-Dyer r_BSD:

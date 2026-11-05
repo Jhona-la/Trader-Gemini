@@ -42,5 +42,8 @@ fn xcv_el_fallo_guia_la_accion_no_solo_cuenta() {
     let msg = "las dims cross-exchange son ceros estructurales \
                (muertas por contrato, F6-A-H4/XCV) — si esto cambió, un poller \
                se activó: RE-ENTRENAR los modelos antes de fusionar";
-    assert!(msg.contains("RE-ENTRENAR"), "el contrato debe ser accionable");
+    assert!(
+        msg.contains("RE-ENTRENAR"),
+        "el contrato debe ser accionable"
+    );
 }

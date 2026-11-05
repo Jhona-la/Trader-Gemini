@@ -37,7 +37,7 @@ fn open_reader_permanently_skips_a_reserved_frame_committed_later() {
         assert!(reader.read_latest_frames().unwrap().is_empty());
         writer[80..88].copy_from_slice(&0.125_f64.to_ne_bytes());
         writer[76..80].copy_from_slice(&2_u32.to_ne_bytes()); // same reservation committed
-        // EL FIX: la MISMA instancia ahora SÍ ve el frame commiteado.
+                                                              // EL FIX: la MISMA instancia ahora SÍ ve el frame commiteado.
         let frames = reader.read_latest_frames().unwrap();
         assert_eq!(frames.len(), 1, "el frame commiteado después se recupera");
         assert_eq!(frames[0].payload[0], 0.125);

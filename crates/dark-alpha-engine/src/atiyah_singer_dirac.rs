@@ -146,7 +146,11 @@ impl AtiyahSingerDiracEngine {
     /// Observa un nuevo estado espinorial $(x_t, A_t)$ y actualiza el índice topológico de Atiyah-Singer
     /// y la densidad de modos cero quirales $\ker D_\pm$ en tiempo $O(1)$ y 0 asignaciones en heap.
     #[inline]
-    pub fn observe_spinor_state(&mut self, price_disp: f64, gauge_flow: f64) -> AtiyahSingerDiracMetrics {
+    pub fn observe_spinor_state(
+        &mut self,
+        price_disp: f64,
+        gauge_flow: f64,
+    ) -> AtiyahSingerDiracMetrics {
         if !price_disp.is_finite() || !gauge_flow.is_finite() {
             return self.last_metrics;
         }
@@ -220,8 +224,7 @@ impl AtiyahSingerDiracEngine {
                 .exp()
                 * a_mid.abs().min(2.0);
 
-            let gate_plus =
-                dirac_hermite_c1(a_mid, 0.0, 0.10) * dirac_hermite_c1(dx, -0.10, 0.02);
+            let gate_plus = dirac_hermite_c1(a_mid, 0.0, 0.10) * dirac_hermite_c1(dx, -0.10, 0.02);
             let gate_minus =
                 dirac_hermite_c1(-a_mid, 0.0, 0.10) * dirac_hermite_c1(-dx, -0.10, 0.02);
             zero_plus += gauss_kernel * gate_plus;
@@ -245,7 +248,8 @@ impl AtiyahSingerDiracEngine {
         let topological_index = (chern_character * a_roof_genus).clamp(-3.0, 3.0);
 
         // Por el Teorema del Índice de Atiyah-Singer, ind(D_+) = analytical_index = topological_index
-        let atiyah_singer_index = (0.55 * analytical_index + 0.45 * topological_index).clamp(-3.0, 3.0);
+        let atiyah_singer_index =
+            (0.55 * analytical_index + 0.45 * topological_index).clamp(-3.0, 3.0);
 
         let chiral_zero_mode_asymmetry = ((zero_modes_plus - zero_modes_minus)
             / (zero_modes_plus + zero_modes_minus + 0.25))
@@ -253,9 +257,9 @@ impl AtiyahSingerDiracEngine {
 
         // 6. Corriente de anomalía quiral de Adler-Bell-Jackiw:
         // J_5 = \hat{A}(M) * tanh(atiyah_singer_index + 0.8 * chiral_zero_mode_asymmetry)
-        let chiral_anomaly_current =
-            (a_roof_genus * (atiyah_singer_index * 0.9 + chiral_zero_mode_asymmetry * 0.8).tanh())
-                .clamp(-1.0, 1.0);
+        let chiral_anomaly_current = (a_roof_genus
+            * (atiyah_singer_index * 0.9 + chiral_zero_mode_asymmetry * 0.8).tanh())
+        .clamp(-1.0, 1.0);
 
         // 7. Modulación continua C^1 Hermite de la convicción (G8-OMEGA-15):
         // - Si la variedad sufre whipsaw violento sin protección topológica (\hat{A} -> 0), atenúa hacia 0.30.

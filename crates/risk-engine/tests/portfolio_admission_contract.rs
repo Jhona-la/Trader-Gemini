@@ -60,7 +60,12 @@ fn invalid_open_position_margin_cannot_hide_exposure() {
         for bad in [f64::NAN, f64::NEG_INFINITY, -1.0] {
             position.margin_used.store(bad, Ordering::Relaxed);
             assert!(
-                !PortfolioOrchestrator::new(&arena).allow_trade(true, 1.0, MarketRegime::Range, 5.0),
+                !PortfolioOrchestrator::new(&arena).allow_trade(
+                    true,
+                    1.0,
+                    MarketRegime::Range,
+                    5.0
+                ),
                 "margin={bad},side={side}"
             );
         }
@@ -169,4 +174,3 @@ fn continuous_regime_simplex_contracts_margin_smoothly() {
     // Los cortos permanecen permitidos (pueden surfear la caída con margen acotado por p_bull)
     assert!(guard.allow_trade(false, 75.0, MarketRegime::Range, 5.0));
 }
-

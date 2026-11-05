@@ -115,7 +115,10 @@ pub enum ErrorRutas {
     /// Stream sin categoría conocida.
     SinCategoria(String),
     /// Demasiados streams para una conexión.
-    DemasiadosStreams { categoria: Categoria, cuantos: usize },
+    DemasiadosStreams {
+        categoria: Categoria,
+        cuantos: usize,
+    },
 }
 
 impl std::fmt::Display for ErrorRutas {
@@ -186,7 +189,9 @@ fn host_valido(host: &str) -> bool {
         && !nombre.ends_with(['.', '-']);
     let puerto_ok = match puerto {
         None => true,
-        Some(p) => !p.is_empty() && p.len() <= 5 && p.parse::<u16>().map(|v| v > 0).unwrap_or(false),
+        Some(p) => {
+            !p.is_empty() && p.len() <= 5 && p.parse::<u16>().map(|v| v > 0).unwrap_or(false)
+        }
     };
     nombre_ok && puerto_ok
 }
@@ -208,18 +213,28 @@ pub fn urls_para(host: &str, streams: &[String]) -> Result<UrlsFeed, ErrorRutas>
             None => return Err(ErrorRutas::SinCategoria(s.clone())),
         }
     }
-    for (cat, lista) in [(Categoria::Publica, &publicos), (Categoria::Mercado, &mercado)] {
+    for (cat, lista) in [
+        (Categoria::Publica, &publicos),
+        (Categoria::Mercado, &mercado),
+    ] {
         if lista.is_empty() {
             // Una conexión sin streams no recibe nada y el watchdog la
             // reconectaría sin fin: el host suscribe siempre las dos.
             return Err(ErrorRutas::UniversoVacio);
         }
         if lista.len() > MAX_STREAMS_POR_CONEXION {
-            return Err(ErrorRutas::DemasiadosStreams { categoria: cat, cuantos: lista.len() });
+            return Err(ErrorRutas::DemasiadosStreams {
+                categoria: cat,
+                cuantos: lista.len(),
+            });
         }
     }
     let url = |cat: Categoria, lista: &[&str]| {
-        format!("wss://{host}/{}/stream?streams={}", cat.ruta(), lista.join("/"))
+        format!(
+            "wss://{host}/{}/stream?streams={}",
+            cat.ruta(),
+            lista.join("/")
+        )
     };
     Ok(UrlsFeed {
         publica: url(Categoria::Publica, &publicos),
@@ -243,7 +258,12 @@ mod tests {
     #[test]
     fn i1b_categorias_medidas_en_las_sondas() {
         // Sondas del 2026-10-24: públicas y de mercado.
-        for s in ["btcusdt@trade", "btcusdt@depth5", "btcusdt@bookTicker", "ethusdt@depth5@100ms"] {
+        for s in [
+            "btcusdt@trade",
+            "btcusdt@depth5",
+            "btcusdt@bookTicker",
+            "ethusdt@depth5@100ms",
+        ] {
             assert_eq!(categoria(s), Some(Categoria::Publica), "{s}");
         }
         for s in ["btcusdt@kline_1m", "btcusdt@aggTrade", STREAM_LIQUIDACIONES] {
@@ -272,7 +292,11 @@ mod tests {
 
     #[test]
     fn i1b_urls_del_host_separan_libro_de_velas_y_liquidaciones() {
-        let u = urls_feed("fstream.binance.com", &universo(&["BTCUSDT", "1000SHIBUSDT"])).unwrap();
+        let u = urls_feed(
+            "fstream.binance.com",
+            &universo(&["BTCUSDT", "1000SHIBUSDT"]),
+        )
+        .unwrap();
         assert_eq!(
             u.publica,
             "wss://fstream.binance.com/public/stream?streams=btcusdt@trade/btcusdt@depth5/1000shibusdt@trade/1000shibusdt@depth5"
@@ -337,12 +361,17 @@ mod tests {
             Err(ErrorRutas::SinCategoria("btcusdt@markPrice".into()))
         );
         // Sólo públicos: la conexión de mercado quedaría vacía.
-        assert_eq!(urls_para(h, &universo(&["btcusdt@trade"])), Err(ErrorRutas::UniversoVacio));
+        assert_eq!(
+            urls_para(h, &universo(&["btcusdt@trade"])),
+            Err(ErrorRutas::UniversoVacio)
+        );
     }
 
     #[test]
     fn i1b_tope_de_streams_por_conexion() {
-        let muchos: Vec<String> = (0..=MAX_STREAMS_POR_CONEXION / 2).map(|i| format!("S{i}USDT")).collect();
+        let muchos: Vec<String> = (0..=MAX_STREAMS_POR_CONEXION / 2)
+            .map(|i| format!("S{i}USDT"))
+            .collect();
         assert_eq!(
             urls_feed("fstream.binance.com", &muchos),
             Err(ErrorRutas::DemasiadosStreams {

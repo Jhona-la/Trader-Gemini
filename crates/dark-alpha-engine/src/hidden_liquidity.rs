@@ -113,14 +113,9 @@ pub enum ConformalGateVerdict {
         band_scale: f64,
     },
     /// Veto conformal: intento colisiona directamente contra un bloque de absorción masivo.
-    OpposingAbsorptionVeto {
-        reason: &'static str,
-    },
+    OpposingAbsorptionVeto { reason: &'static str },
     /// Desescalada a tamaño sonda: riesgo elevado de squeeze, acotar tamaño de lote.
-    ProbeOnlyDeescalation {
-        max_lot_scale: f64,
-        band_scale: f64,
-    },
+    ProbeOnlyDeescalation { max_lot_scale: f64, band_scale: f64 },
 }
 
 /// Motor de detección de liquidez oculta y compuerta conformal.
@@ -288,7 +283,8 @@ impl HiddenLiquidityEngine {
         let eff_bid_abs = (taker_sell_volume.max(0.0) / bid_depth_safe) * dampening;
 
         let directional_diff = eff_ask_abs - eff_bid_abs;
-        let net_pressure = (directional_diff / self.params.absorption_ratio_threshold.max(EPS)).tanh();
+        let net_pressure =
+            (directional_diff / self.params.absorption_ratio_threshold.max(EPS)).tanh();
 
         let is_active = eff_ask_abs >= self.params.absorption_ratio_threshold
             || eff_bid_abs >= self.params.absorption_ratio_threshold;
@@ -318,7 +314,8 @@ impl HiddenLiquidityEngine {
         intent_direction: f64,
         state: &BlockAbsorptionState,
     ) -> ConformalGateVerdict {
-        if !intent_direction.is_finite() || intent_direction.abs() < 0.1 || !state.is_iceberg_active {
+        if !intent_direction.is_finite() || intent_direction.abs() < 0.1 || !state.is_iceberg_active
+        {
             return ConformalGateVerdict::Admitted {
                 confidence_multiplier: 1.0,
                 band_scale: state.conformal_band_scale,

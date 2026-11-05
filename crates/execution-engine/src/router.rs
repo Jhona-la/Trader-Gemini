@@ -49,16 +49,44 @@ impl AdverseSelectionGuard {
         queue_depth_ahead_usd: f64,
         passive_depth_level_usd: f64,
     ) -> (OrderViability, FifoQueueMetrics) {
-        let safe_spread = if spread_pct.is_finite() && spread_pct >= 0.0 { spread_pct } else { 0.0002 };
-        let safe_vol = if expected_volatility.is_finite() && expected_volatility >= 0.0 { expected_volatility } else { 0.001 };
-        let safe_conf = if confidence.is_finite() { confidence.clamp(0.0, 1.0) } else { 0.5 };
-        let safe_maker_fee = if maker_fee_pct.is_finite() && maker_fee_pct >= 0.0 { maker_fee_pct } else { 0.0002 }; // 2 bps default
-        let safe_funding = if funding_rate_pct.is_finite() { funding_rate_pct.abs() } else { 0.0001 }; // 1 bp default
+        let safe_spread = if spread_pct.is_finite() && spread_pct >= 0.0 {
+            spread_pct
+        } else {
+            0.0002
+        };
+        let safe_vol = if expected_volatility.is_finite() && expected_volatility >= 0.0 {
+            expected_volatility
+        } else {
+            0.001
+        };
+        let safe_conf = if confidence.is_finite() {
+            confidence.clamp(0.0, 1.0)
+        } else {
+            0.5
+        };
+        let safe_maker_fee = if maker_fee_pct.is_finite() && maker_fee_pct >= 0.0 {
+            maker_fee_pct
+        } else {
+            0.0002
+        }; // 2 bps default
+        let safe_funding = if funding_rate_pct.is_finite() {
+            funding_rate_pct.abs()
+        } else {
+            0.0001
+        }; // 1 bp default
 
         // 1. Toxicidad del flujo y probabilidad de llenado limpio (Glosten-Milgrom / VPIN proxy)
         let vpin_proxy = ((safe_vol * 10.0) / (safe_conf + 0.1)).clamp(0.05, 0.95);
-        let q_ahead = if queue_depth_ahead_usd.is_finite() && queue_depth_ahead_usd >= 0.0 { queue_depth_ahead_usd } else { 1000.0 };
-        let p_level = if passive_depth_level_usd.is_finite() && passive_depth_level_usd > 0.0 { passive_depth_level_usd } else { 5000.0 };
+        let q_ahead = if queue_depth_ahead_usd.is_finite() && queue_depth_ahead_usd >= 0.0 {
+            queue_depth_ahead_usd
+        } else {
+            1000.0
+        };
+        let p_level = if passive_depth_level_usd.is_finite() && passive_depth_level_usd > 0.0 {
+            passive_depth_level_usd
+        } else {
+            5000.0
+        };
         let queue_ratio = (q_ahead / p_level).clamp(0.1, 10.0);
 
         let clean_fill_prob = (1.0 / (1.0 + vpin_proxy * queue_ratio)).clamp(0.01, 0.99);
@@ -69,7 +97,8 @@ impl AdverseSelectionGuard {
 
         // 3. Fricciones combinadas totales
         let half_spread = safe_spread * 0.5;
-        let total_friction = (safe_maker_fee + safe_funding + half_spread + adverse_cost_fraction).max(1e-6);
+        let total_friction =
+            (safe_maker_fee + safe_funding + half_spread + adverse_cost_fraction).max(1e-6);
 
         // 4. Edge bruto esperado
         let gross_edge = if expected_edge_fraction.is_finite() && expected_edge_fraction > 0.0 {
@@ -143,6 +172,65 @@ impl QuantumOrderRouter {
             SignalType::Short => false,
             SignalType::Flat => return Ok(()),
         };
+        let expected_edge_fraction = decision.net_confidence * decision.expected_volatility * 2.0;
+        if !decision.net_confidence.is_finite()
+            || !(0.0..=1.0).contains(&decision.net_confidence)
+            || !decision.expected_volatility.is_finite()
+            || decision.expected_volatility < 0.0
+            || !spread_pct.is_finite()
+            || spread_pct < 0.0
+            || !expected_edge_fraction.is_finite()
+        {
+            return Err(format!("REJ_INVALID_SIGNAL_EVIDENCE: {symbol}"));
+        }
+
+        let (live_maker_fee, live_funding_cost) = {
+            let exec = self.executor.load();
+            let arena = exec
+                .arena
+                .load_full()
+                .ok_or_else(|| format!("REJ_FEE_EVIDENCE_MISSING: missing arena for {symbol}"))?;
+            let coin_id = quantum_arena::symbols::get_coin_id(symbol)
+                .ok_or_else(|| format!("REJ_FEE_EVIDENCE_MISSING: unknown symbol {symbol}"))?;
+            let maker = arena
+                .config
+                .fee_rates_for(coin_id)
+                .map(|(maker, _)| maker)
+                .ok_or_else(|| {
+                    format!("REJ_FEE_EVIDENCE_MISSING: missing observed maker for {symbol}")
+                })?;
+            let now_ms = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map_err(|_| {
+                    format!("REJ_FEE_EVIDENCE_MISSING: system clock before epoch for {symbol}")
+                })?
+                .as_millis() as u64;
+            let tau_ms = if decision.expected_lifetime_ms > 0 {
+                decision.expected_lifetime_ms as f64
+            } else {
+                quantum_arena::temporal_spectrum::TAU_ANCHOR_FAST_MS
+            };
+            let coin = arena.coins.get(coin_id).ok_or_else(|| {
+                format!("REJ_FEE_EVIDENCE_MISSING: missing coin state for {symbol}")
+            })?;
+            if arena
+                .config
+                .observed_fees_required
+                .load(std::sync::atomic::Ordering::Acquire)
+                && coin.funding_next_at(now_ms).is_none()
+            {
+                return Err(format!(
+                    "REJ_FUNDING_EVIDENCE_MISSING: missing funding for {symbol}"
+                ));
+            }
+            let funding = coin.expected_funding_cost(is_long, tau_ms, now_ms);
+            if !funding.is_finite() {
+                return Err(format!(
+                    "REJ_FUNDING_EVIDENCE_MISSING: nonfinite funding for {symbol}"
+                ));
+            }
+            (maker, funding)
+        };
 
         // Reglas de Ruteo Avanzadas (FASE 15, Ola Ω106)
         // Se resuelven umbrales dinámicos de latencia, spread y volatilidad continua desde la arena.
@@ -164,9 +252,7 @@ impl QuantumOrderRouter {
                     } else {
                         500.0
                     };
-                    let max_spread = arena
-                        .registry
-                        .get_value_or("router_max_spread_pct", 0.005);
+                    let max_spread = arena.registry.get_value_or("router_max_spread_pct", 0.005);
                     let max_spread = if max_spread.is_finite() && max_spread > 0.0 {
                         max_spread
                     } else {
@@ -202,7 +288,13 @@ impl QuantumOrderRouter {
             return self
                 .executor
                 .load()
-                .execute_raw_qty_with_client_id(symbol, is_long, quantity, step_size, client_order_id)
+                .execute_raw_qty_with_client_id(
+                    symbol,
+                    is_long,
+                    quantity,
+                    step_size,
+                    client_order_id,
+                )
                 .await;
         }
 
@@ -244,36 +336,8 @@ impl QuantumOrderRouter {
         }
 
         // 3. Verificación de Viabilidad Financiera y Selección Adversa (Axioma: E[ΔW] >= 3x fricciones)
-        let (live_maker_fee, live_funding_cost) = {
-            let exec = self.executor.load();
-            match exec.arena.load_full() {
-                Some(arena) => {
-                    let coin_id_opt = quantum_arena::symbols::get_coin_id(symbol);
-                    let maker = coin_id_opt
-                        .and_then(|id| arena.config.fee_rates_for(id))
-                        .map(|(m, _t)| m)
-                        .unwrap_or(0.0002);
-                    let now_ms = std::time::SystemTime::now()
-                        .duration_since(std::time::UNIX_EPOCH)
-                        .unwrap_or_default()
-                        .as_millis() as u64;
-                    let tau_ms = if decision.expected_lifetime_ms > 0 {
-                        decision.expected_lifetime_ms as f64
-                    } else {
-                        quantum_arena::temporal_spectrum::TAU_ANCHOR_FAST_MS
-                    };
-                    let funding = coin_id_opt
-                        .and_then(|id| arena.coins.get(id))
-                        .map(|coin| coin.expected_funding_cost(is_long, tau_ms, now_ms))
-                        .unwrap_or(0.0001);
-                    (maker, funding)
-                }
-                None => (0.0002, 0.0001),
-            }
-        };
-
         let (viability, metrics) = AdverseSelectionGuard::evaluate_viability(
-            decision.net_confidence * decision.expected_volatility * 2.0,
+            expected_edge_fraction,
             spread_pct,
             decision.expected_volatility,
             decision.net_confidence,
@@ -488,8 +552,7 @@ mod tests {
             0.90,   // 90% conf
             0.0002, // 2 bps fee
             0.0001, // 1 bp funding
-            500.0,
-            10000.0,
+            500.0, 10000.0,
         );
         assert_eq!(status, OrderViability::Viable);
         assert!(metrics.viability_ratio >= 3.0);
@@ -504,8 +567,7 @@ mod tests {
             0.30,   // 30% conf
             0.0004, // 4 bps fee
             0.0002, // 2 bps funding
-            20000.0,
-            1000.0,
+            20000.0, 1000.0,
         );
         assert_eq!(status_insuf, OrderViability::InsufficientEdge);
         assert!(metrics_insuf.viability_ratio < 3.0);
