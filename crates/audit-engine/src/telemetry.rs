@@ -122,10 +122,9 @@ impl ReciboEconomico {
         };
         let pnl_neto = self.pnl_bruto - self.fees;
         let (roi_pre, roi_post) = match self.capital_inicial {
-            Some(c) if c > 0.0 && self.pnl_bruto.is_finite() && self.fees.is_finite() => (
-                Some(self.pnl_bruto / c * 100.0),
-                Some(pnl_neto / c * 100.0),
-            ),
+            Some(c) if c > 0.0 && self.pnl_bruto.is_finite() && self.fees.is_finite() => {
+                (Some(self.pnl_bruto / c * 100.0), Some(pnl_neto / c * 100.0))
+            }
             _ => (None, None),
         };
         let sharpe = if self.n_roi_post > 1 {
@@ -178,9 +177,17 @@ impl ReciboEconomico {
                 "null".into()
             },
             opt(sharpe),
-            self.primer_ns.map(|v| v.to_string()).unwrap_or_else(|| "null".into()),
-            if self.ultimo_ns > 0 { self.ultimo_ns.to_string() } else { "null".into() },
-            Self::ahora_ns().map(|v| v.to_string()).unwrap_or_else(|| "null".into()),
+            self.primer_ns
+                .map(|v| v.to_string())
+                .unwrap_or_else(|| "null".into()),
+            if self.ultimo_ns > 0 {
+                self.ultimo_ns.to_string()
+            } else {
+                "null".into()
+            },
+            Self::ahora_ns()
+                .map(|v| v.to_string())
+                .unwrap_or_else(|| "null".into()),
         );
         if let Err(e) = std::fs::write(ruta, json) {
             eprintln!("⚠️ [TELEMETRÍA] recibo económico no escrito ({ruta}): {e}");
@@ -226,8 +233,8 @@ impl TelemetryManager {
         let mut total_fees = 0.0;
         let mut total_trades = 0;
         let mut compounding_capital = 0.0; // Se inicializará con UpdateCapital
-        // GLM 144 (§52): recibo económico para el informe integral; se vuelca
-        // en outputs/ cada 10 trades (cadencia existente) y con cada capital.
+                                           // GLM 144 (§52): recibo económico para el informe integral; se vuelca
+                                           // en outputs/ cada 10 trades (cadencia existente) y con cada capital.
         let mut recibo = ReciboEconomico::nuevo();
         let ruta_recibo = "outputs/economia_live.json";
 

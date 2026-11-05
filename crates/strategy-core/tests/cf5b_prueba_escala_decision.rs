@@ -107,7 +107,11 @@ fn definicion(b: &[f64]) -> (f64, f64, f64, f64, f64) {
     let filas: Vec<[f64; 3]> = (big_l + 2..=t_ult)
         .map(|c| {
             let w = lam.powi((t_ult - c) as i32);
-            [w, d[c - big_l], s[c] - (2.0 * s[c - big_l - 1] - s[c - big_l - 2])]
+            [
+                w,
+                d[c - big_l],
+                s[c] - (2.0 * s[c - big_l - 1] - s[c - big_l - 2]),
+            ]
         })
         .collect();
     let w: f64 = filas.iter().map(|f| f[0]).sum();
@@ -116,7 +120,10 @@ fn definicion(b: &[f64]) -> (f64, f64, f64, f64, f64) {
     let sxy: f64 = filas.iter().map(|f| f[0] * f[1] * f[2]).sum();
     let x4: f64 = filas.iter().map(|f| f[0] * f[0] * f[1].powi(4)).sum();
     let r = -sxy / sxx;
-    let g: Vec<f64> = filas.iter().map(|f| f[1] * f[2] + r * f[1] * f[1]).collect();
+    let g: Vec<f64> = filas
+        .iter()
+        .map(|f| f[1] * f[2] + r * f[1] * f[1])
+        .collect();
     let mut v = 0.0;
     for i in 0..filas.len() {
         for j in i.saturating_sub(big_l)..(i + big_l + 1).min(filas.len()) {
@@ -133,7 +140,10 @@ fn comparar_con_la_definicion(b: &[f64]) {
     let p = una_por_celda(b);
     let l = p.estado_largo(NODO).expect("estado");
     let (w, n_ef, n, r, t) = definicion(b);
-    println!("observado: R̂ {} vs {r}, n {} vs {n}, t {} vs {t}", l.reversion, l.n, l.t);
+    println!(
+        "observado: R̂ {} vs {r}, n {} vs {n}, t {} vs {t}",
+        l.reversion, l.n, l.t
+    );
     let cerca = |a: f64, b: f64| (a - b).abs() <= 1e-7 * b.abs().max(1e-12);
     assert!(cerca(l.masa, w), "masa {} vs {w}", l.masa);
     assert!(cerca(l.n_ef, n_ef), "n_ef {} vs {n_ef}", l.n_ef);
@@ -170,20 +180,41 @@ fn cf5e_el_estadistico_no_pierde_precision_lejos_del_origen() {
     let p0 = una_por_celda(&sin_salto);
     let l0 = p0.estado_largo(NODO).expect("prueba larga sin salto");
     let c0 = p0.estado_nodo(NODO).expect("prueba corta sin salto");
-    assert!(l0.madura && l0.t.is_finite() && c0.t.is_finite(), "{l0:?} {c0:?}");
+    assert!(
+        l0.madura && l0.t.is_finite() && c0.t.is_finite(),
+        "{l0:?} {c0:?}"
+    );
     let salto = |s: &[f64], d: f64| -> Vec<f64> {
-        s.iter().enumerate().map(|(c, v)| if c == 0 { *v } else { v + d }).collect()
+        s.iter()
+            .enumerate()
+            .map(|(c, v)| if c == 0 { *v } else { v + d })
+            .collect()
     };
     for d in [0.1, 10.0] {
         let p = una_por_celda(&salto(&sin_salto, d));
         let l = p.estado_largo(NODO).expect("prueba larga con salto");
         let c = p.estado_nodo(NODO).expect("prueba corta con salto");
-        println!("observado: D = {d}: t {} vs {}, R̂ {} vs {}, t corto {} vs {}", l.t, l0.t, l.reversion, l0.reversion, c.t, c0.t);
-        assert!((l.t - l0.t).abs() <= 1e-8 * l0.t.abs().max(1.0), "D = {d}: {l:?} vs {l0:?}");
-        assert!((l.reversion - l0.reversion).abs() <= 1e-8, "D = {d}: {l:?} vs {l0:?}");
-        assert!((l.n - l0.n).abs() <= 1e-8 * l0.n, "D = {d}: {l:?} vs {l0:?}");
+        println!(
+            "observado: D = {d}: t {} vs {}, R̂ {} vs {}, t corto {} vs {}",
+            l.t, l0.t, l.reversion, l0.reversion, c.t, c0.t
+        );
+        assert!(
+            (l.t - l0.t).abs() <= 1e-8 * l0.t.abs().max(1.0),
+            "D = {d}: {l:?} vs {l0:?}"
+        );
+        assert!(
+            (l.reversion - l0.reversion).abs() <= 1e-8,
+            "D = {d}: {l:?} vs {l0:?}"
+        );
+        assert!(
+            (l.n - l0.n).abs() <= 1e-8 * l0.n,
+            "D = {d}: {l:?} vs {l0:?}"
+        );
         if d <= 0.1 {
-            assert!((c.t - c0.t).abs() <= 1e-6 * c0.t.abs().max(1.0), "D = {d}: {c:?} vs {c0:?}");
+            assert!(
+                (c.t - c0.t).abs() <= 1e-6 * c0.t.abs().max(1.0),
+                "D = {d}: {c:?} vs {c0:?}"
+            );
         }
         comparar_con_la_definicion(&salto(&serie(2_000, 43), d));
     }
@@ -199,10 +230,22 @@ fn cf5b_invariante_al_origen_y_a_la_escala() {
     let p1 = una_por_celda(&b);
     let b2: Vec<f64> = b.iter().map(|v| 3.0 * v + 0.7).collect();
     let p2 = una_por_celda(&b2);
-    let (l1, l2) = (p1.estado_largo(NODO).expect("1"), p2.estado_largo(NODO).expect("2"));
-    println!("observado: t {} vs {}, R̂ {} vs {}", l1.t, l2.t, l1.reversion, l2.reversion);
-    assert!((l1.t - l2.t).abs() <= 1e-6 * l1.t.abs().max(1.0), "{l1:?} vs {l2:?}");
-    assert!((l1.reversion - l2.reversion).abs() <= 1e-6, "{l1:?} vs {l2:?}");
+    let (l1, l2) = (
+        p1.estado_largo(NODO).expect("1"),
+        p2.estado_largo(NODO).expect("2"),
+    );
+    println!(
+        "observado: t {} vs {}, R̂ {} vs {}",
+        l1.t, l2.t, l1.reversion, l2.reversion
+    );
+    assert!(
+        (l1.t - l2.t).abs() <= 1e-6 * l1.t.abs().max(1.0),
+        "{l1:?} vs {l2:?}"
+    );
+    assert!(
+        (l1.reversion - l2.reversion).abs() <= 1e-6,
+        "{l1:?} vs {l2:?}"
+    );
     assert!((l1.n - l2.n).abs() <= 1e-6 * l1.n, "{l1:?} vs {l2:?}");
     assert_eq!(l1.n_ef, l2.n_ef);
 }
@@ -223,11 +266,29 @@ fn cf5b_nivel_de_la_prueba_larga_en_su_frontera_nodo_17() {
     let edades = [2.2, 3.0, 4.0, 8.0];
     let casos = [(0.0, FRONTERA_SIN_RUIDO), (0.5, FRONTERA_RUIDO_MEDIO)];
     for (i, (r, celdas)) in casos.into_iter().enumerate() {
-        let b = barrido(NODO, 1_000, theta_celdas(NODO, celdas), r, 1_000.0, &edades, 170 + i as u64);
+        let b = barrido(
+            NODO,
+            1_000,
+            theta_celdas(NODO, celdas),
+            r,
+            1_000.0,
+            &edades,
+            170 + i as u64,
+        );
         informe(&format!("frontera larga nodo 17, ruido {r}"), &b);
         for j in 0..edades.len() {
-            assert!(b.rechazo_larga[j] <= 0.08, "ruido {r}, edad {}: {}", edades[j], b.rechazo_larga[j]);
-            assert!(b.rechazo[j] <= 0.08, "ruido {r}, edad {}: {}", edades[j], b.rechazo[j]);
+            assert!(
+                b.rechazo_larga[j] <= 0.08,
+                "ruido {r}, edad {}: {}",
+                edades[j],
+                b.rechazo_larga[j]
+            );
+            assert!(
+                b.rechazo[j] <= 0.08,
+                "ruido {r}, edad {}: {}",
+                edades[j],
+                b.rechazo[j]
+            );
         }
     }
 }
@@ -237,10 +298,23 @@ fn cf5b_nivel_de_la_prueba_larga_en_su_frontera_nodo_17() {
 #[test]
 fn cf5b_nivel_de_la_prueba_larga_en_su_frontera_nodo_18() {
     let edades = [2.2, 3.0, 4.0];
-    let b = barrido(18, 600, theta_celdas(18, FRONTERA_RUIDO_MEDIO), 0.5, 4_000.0, &edades, 180);
+    let b = barrido(
+        18,
+        600,
+        theta_celdas(18, FRONTERA_RUIDO_MEDIO),
+        0.5,
+        4_000.0,
+        &edades,
+        180,
+    );
     informe("frontera larga nodo 18, ruido 0.5", &b);
     for j in 0..edades.len() {
-        assert!(b.rechazo_larga[j] <= 0.08, "edad {}: {}", edades[j], b.rechazo_larga[j]);
+        assert!(
+            b.rechazo_larga[j] <= 0.08,
+            "edad {}: {}",
+            edades[j],
+            b.rechazo_larga[j]
+        );
     }
 }
 
@@ -260,7 +334,12 @@ fn cf5e_nivel_con_volatilidad_por_rachas() {
     let b = barrido_rachas(NODO, 1_000, &[c], 0.0, 1_000.0, &edades, 175, (1.0, 50.0));
     informe("frontera larga con rachas", &b);
     for j in 0..edades.len() {
-        assert!(b.rechazo_larga[j] <= 0.08, "edad {}: {}", edades[j], b.rechazo_larga[j]);
+        assert!(
+            b.rechazo_larga[j] <= 0.08,
+            "edad {}: {}",
+            edades[j],
+            b.rechazo_larga[j]
+        );
     }
 }
 
@@ -273,10 +352,23 @@ fn cf5e_nivel_con_volatilidad_por_rachas() {
 fn cf5e_con_ruido_fuerte_no_vota_lo_que_no_revierte() {
     let edades = [2.2, 4.0, 8.0];
     for (i, r) in [1.0, 2.0].into_iter().enumerate() {
-        let b = barrido(NODO, 1_000, theta_celdas(NODO, 1.6), r, 1_000.0, &edades, 120 + i as u64);
+        let b = barrido(
+            NODO,
+            1_000,
+            theta_celdas(NODO, 1.6),
+            r,
+            1_000.0,
+            &edades,
+            120 + i as u64,
+        );
         informe(&format!("t½ = τ_17/5, ruido {r}"), &b);
         for j in 0..edades.len() {
-            assert!(b.rechazo[j] <= 0.02, "ruido {r}, edad {}: {}", edades[j], b.rechazo[j]);
+            assert!(
+                b.rechazo[j] <= 0.02,
+                "ruido {r}, edad {}: {}",
+                edades[j],
+                b.rechazo[j]
+            );
         }
     }
 }
@@ -300,9 +392,18 @@ fn cf5b_el_caso_del_revisor_no_vota() {
     let comps = [ou(NODO, 2.0, 1e-4), ou(NODO, 1_676.0, 10.4e-4)];
     let b = barrido_mezcla(NODO, 1_000, &comps, 0.0, 1_000.0, &edades, 31);
     informe("caso del revisor", &b);
-    assert!(b.rechazo_corta[0] >= 0.10, "precondición (antes): corta {}", b.rechazo_corta[0]);
+    assert!(
+        b.rechazo_corta[0] >= 0.10,
+        "precondición (antes): corta {}",
+        b.rechazo_corta[0]
+    );
     for j in 0..edades.len() {
-        assert!(b.rechazo[j] <= 0.03, "edad {}: veredicto {}", edades[j], b.rechazo[j]);
+        assert!(
+            b.rechazo[j] <= 0.03,
+            "edad {}: veredicto {}",
+            edades[j],
+            b.rechazo[j]
+        );
     }
 }
 
@@ -325,14 +426,28 @@ fn cf5b_lo_votado_revierte_al_menos_la_mitad() {
     };
     let familias = [
         ("OU 2 celdas + caminata", [ou(NODO, 2.0, 1e-4), caminata]),
-        ("OU 2 celdas + OU 1 676 celdas", [ou(NODO, 2.0, 1e-4), ou(NODO, 1_676.0, 4.1763e-4)]),
+        (
+            "OU 2 celdas + OU 1 676 celdas",
+            [ou(NODO, 2.0, 1e-4), ou(NODO, 1_676.0, 4.1763e-4)],
+        ),
     ];
     for (i, (nombre, comps)) in familias.iter().enumerate() {
         let b = barrido_mezcla(NODO, 1_000, comps, 0.0, 1_000.0, &edades, 60 + i as u64);
         informe(nombre, &b);
-        println!("observado: {nombre}: reversión de todo lo votado {:.3}", b.reversion_total);
-        assert!(b.rechazo[0] >= 0.05, "{nombre}: precondición, hay votos: {}", b.rechazo[0]);
-        assert!(b.reversion_total >= 0.5, "{nombre}: reversión {}", b.reversion_total);
+        println!(
+            "observado: {nombre}: reversión de todo lo votado {:.3}",
+            b.reversion_total
+        );
+        assert!(
+            b.rechazo[0] >= 0.05,
+            "{nombre}: precondición, hay votos: {}",
+            b.rechazo[0]
+        );
+        assert!(
+            b.reversion_total >= 0.5,
+            "{nombre}: reversión {}",
+            b.reversion_total
+        );
     }
 }
 
@@ -344,10 +459,23 @@ fn cf5b_lo_votado_revierte_al_menos_la_mitad() {
 fn cf5b_ruido_fuerte_no_vota_en_la_frontera_corta() {
     let edades = [2.2, 4.0, 8.0];
     for (i, r) in [3.0, 10.0].into_iter().enumerate() {
-        let b = barrido(NODO, 1_000, theta0(NODO), r, 1_000.0, &edades, 90 + i as u64);
+        let b = barrido(
+            NODO,
+            1_000,
+            theta0(NODO),
+            r,
+            1_000.0,
+            &edades,
+            90 + i as u64,
+        );
         informe(&format!("frontera corta, ruido {r}"), &b);
         for j in 0..edades.len() {
-            assert!(b.rechazo[j] <= 0.02, "ruido {r}, edad {}: {}", edades[j], b.rechazo[j]);
+            assert!(
+                b.rechazo[j] <= 0.02,
+                "ruido {r}, edad {}: {}",
+                edades[j],
+                b.rechazo[j]
+            );
         }
     }
 }
@@ -361,7 +489,15 @@ fn cf5b_ruido_fuerte_no_vota_en_la_frontera_corta() {
 #[test]
 fn cf5b_potencia_con_reversion_rapida() {
     let edades = [3.0, 4.0];
-    let b = barrido(NODO, 400, theta_celdas(NODO, 1.6), 0.0, 1_000.0, &edades, 99);
+    let b = barrido(
+        NODO,
+        400,
+        theta_celdas(NODO, 1.6),
+        0.0,
+        1_000.0,
+        &edades,
+        99,
+    );
     informe("t½ = τ_17/5", &b);
     assert!(b.rechazo[0] >= 0.84, "edad 3: {}", b.rechazo[0]);
     assert!(b.rechazo[1] >= 0.93, "edad 4: {}", b.rechazo[1]);
@@ -388,11 +524,17 @@ fn cf5b_un_hueco_largo_devuelve_la_prueba_larga_a_la_inmadurez() {
     }
     let l = p.estado_largo(NODO).expect("estado");
     assert!(l.madura && l.t > CRITICO_LARGO, "precondición: {l:?}");
-    assert!(p.veredicto(tau).expect("pares").demostrada, "precondición: demostrada");
+    assert!(
+        p.veredicto(tau).expect("pares").demostrada,
+        "precondición: demostrada"
+    );
     t += MEMORIA_LARGA_EN_TAU * tau;
     x = paso(&mut g, x, MEMORIA_LARGA_EN_TAU * tau);
     p.observar(t as u64, x);
     let l = p.estado_largo(NODO).expect("estado");
-    println!("observado: tras el hueco, masa {:.1}, madura {}", l.masa, l.madura);
+    println!(
+        "observado: tras el hueco, masa {:.1}, madura {}",
+        l.masa, l.madura
+    );
     assert!(!l.madura && !p.veredicto(tau).expect("pares").demostrada);
 }

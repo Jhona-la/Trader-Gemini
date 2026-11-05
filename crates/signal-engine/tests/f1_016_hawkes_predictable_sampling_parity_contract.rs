@@ -37,7 +37,10 @@ impl Lcg {
         Self(seed)
     }
     fn u01(&mut self) -> f64 {
-        self.0 = self.0.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+        self.0 = self
+            .0
+            .wrapping_mul(6364136223846793005)
+            .wrapping_add(1442695040888963407);
         ((self.0 >> 11) as f64 + 0.5) / (1u64 << 53) as f64
     }
     fn exp(&mut self, rate: f64) -> f64 {
@@ -205,8 +208,12 @@ fn test_f1_016_hawkes_scale_free_asset_invariance_calm_vs_liquid() {
     let mean_r_liquid: f64 = ratios_liquid.iter().sum::<f64>() / ratios_liquid.len() as f64;
     let mean_e_liquid: f64 = excits_liquid.iter().sum::<f64>() / excits_liquid.len() as f64;
 
-    println!("Altcoin calma (0.2 tps): mean ratio = {mean_r_calm:.4}, mean excit = {mean_e_calm:.4}");
-    println!("BTC líquido  (20.0 tps): mean ratio = {mean_r_liquid:.4}, mean excit = {mean_e_liquid:.4}");
+    println!(
+        "Altcoin calma (0.2 tps): mean ratio = {mean_r_calm:.4}, mean excit = {mean_e_calm:.4}"
+    );
+    println!(
+        "BTC líquido  (20.0 tps): mean ratio = {mean_r_liquid:.4}, mean excit = {mean_e_liquid:.4}"
+    );
 
     // Verificación 1: Ambos deben anclarse a STEADY_STATE_RATIO (1.60) dentro de tolerancia estadística
     assert!(

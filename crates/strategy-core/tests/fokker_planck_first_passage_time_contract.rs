@@ -129,7 +129,9 @@ fn expected_first_hitting_time_properties() {
 
     // Con theta = 0 el tiempo esperado tiende a infinito
     let sde_flat = ContinuousOrnsteinUhlenbeckSde::new(0.0, mu, 1.0);
-    assert!(sde_flat.expected_first_hitting_time_seconds(55.0, 50.0).is_infinite());
+    assert!(sde_flat
+        .expected_first_hitting_time_seconds(55.0, 50.0)
+        .is_infinite());
 }
 
 #[test]
@@ -175,7 +177,9 @@ fn fail_closed_nan_inf_immunity() {
 
     assert_eq!(sde.stationary_density(f64::NAN), 0.0);
     assert_eq!(sde.transition_density(f64::NAN, 10.0, 1.0), 0.0);
-    assert!(sde.expected_first_hitting_time_seconds(f64::NAN, 10.0).is_infinite());
+    assert!(sde
+        .expected_first_hitting_time_seconds(f64::NAN, 10.0)
+        .is_infinite());
 }
 
 #[test]

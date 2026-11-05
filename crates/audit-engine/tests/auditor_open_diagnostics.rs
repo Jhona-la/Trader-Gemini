@@ -23,16 +23,16 @@ fn repaired_drift_rejects_unrelated_symbols_and_sides() {
     let mut unrelated = trade(0.01);
     unrelated.symbol_id = 8;
     unrelated.is_long = false;
-    assert!(DriftAuditor::default().audit_execution(&trade(0.01), &unrelated).is_err());
+    assert!(DriftAuditor::default()
+        .audit_execution(&trade(0.01), &unrelated)
+        .is_err());
 }
 
 #[test]
 fn repaired_nan_drift_limit_cannot_authorize_comparison() {
-    assert!(
-        DriftAuditor::new(f64::NAN)
-            .audit_execution(&trade(-1.0), &trade(1.0))
-            .is_err()
-    );
+    assert!(DriftAuditor::new(f64::NAN)
+        .audit_execution(&trade(-1.0), &trade(1.0))
+        .is_err());
 }
 
 #[test]

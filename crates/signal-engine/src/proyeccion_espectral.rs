@@ -117,7 +117,11 @@ impl ProyeccionEspectralEngine {
 
     fn lee(&self, coin_id: usize, symbol: &str, clave: &str) -> Option<f64> {
         let r = self.registry.as_ref()?;
-        let sym_opt = if symbol.is_empty() { None } else { Some(symbol) };
+        let sym_opt = if symbol.is_empty() {
+            None
+        } else {
+            Some(symbol)
+        };
         r.get_scoped_parameter(sym_opt, Some(coin_id), clave, "ProyeccionEspectralEngine")
             .map(|p| p.get_value())
     }
@@ -215,20 +219,32 @@ mod tests {
     fn sin_telemetria_espectral_abstiene() {
         let e = motor(Arc::new(OmniscientRegistry::new()));
         assert_eq!(e.evaluate_for_coin(0, "BTCUSDT"), 0.0);
-        assert!(!e.is_operable_for_coin(0, "BTCUSDT"), "sin datos no debe ser operable");
+        assert!(
+            !e.is_operable_for_coin(0, "BTCUSDT"),
+            "sin datos no debe ser operable"
+        );
     }
 
     #[test]
     fn operabilidad_espectral_segun_masa_resuelta() {
         let r = Arc::new(OmniscientRegistry::new());
         let e = motor(r.clone());
-        assert!(!e.is_operable_for_coin(0, "BTCUSDT"), "frío sin masa => inoperable");
+        assert!(
+            !e.is_operable_for_coin(0, "BTCUSDT"),
+            "frío sin masa => inoperable"
+        );
 
         r.set("espectral_masa_resuelta", 0.15);
-        assert!(!e.is_operable_for_coin(0, "BTCUSDT"), "masa 0.15 <= 0.25 => inoperable");
+        assert!(
+            !e.is_operable_for_coin(0, "BTCUSDT"),
+            "masa 0.15 <= 0.25 => inoperable"
+        );
 
         r.set("espectral_masa_resuelta", 0.50);
-        assert!(e.is_operable_for_coin(0, "BTCUSDT"), "masa 0.50 > 0.25 => operable");
+        assert!(
+            e.is_operable_for_coin(0, "BTCUSDT"),
+            "masa 0.50 > 0.25 => operable"
+        );
     }
 
     #[test]

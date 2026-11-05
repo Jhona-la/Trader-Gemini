@@ -53,13 +53,19 @@ fn test_f1_006_no_double_fee_subtraction_contract() {
 
     // 1 win (Trade 1), 2 losses (Trade 2 and 3)
     // Win rate must be 1/3 ~ 0.3333:
-    assert!((metrics.calculated_win_rate - (1.0 / 3.0)).abs() < 1e-4,
-        "Win rate must reflect net positive trades (1/3), got {}", metrics.calculated_win_rate);
+    assert!(
+        (metrics.calculated_win_rate - (1.0 / 3.0)).abs() < 1e-4,
+        "Win rate must reflect net positive trades (1/3), got {}",
+        metrics.calculated_win_rate
+    );
 
     // Total net PnL = +0.96 - 0.02 - 0.54 = +0.40 USD.
     // Base capital = 13.0 USD => Peak equity = 13.96 USD (after Trade 1).
     // Final equity = 13.40 USD.
     // Max DD from peak: (13.96 - 13.40) / 13.96 = 0.56 / 13.96 ~ 0.04011.
-    assert!((metrics.calculated_max_drawdown - (0.56 / 13.96)).abs() < 1e-4,
-        "Max DD must be calculated from genuine net equity, got {}", metrics.calculated_max_drawdown);
+    assert!(
+        (metrics.calculated_max_drawdown - (0.56 / 13.96)).abs() < 1e-4,
+        "Max DD must be calculated from genuine net equity, got {}",
+        metrics.calculated_max_drawdown
+    );
 }

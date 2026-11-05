@@ -90,9 +90,15 @@ fn lg35_reloj_de_otra_base_reinicia_la_espera_y_libera_a_los_60_s() {
     let mut r = recovery();
     r.observe_at(&Err(E::NonfinitePnl), 1_760_000_000_000);
     assert!(r.is_blocked());
-    assert!(!r.try_idle_recovery(5_000, 60_000, 0), "reinicia la espera en 5 000");
+    assert!(
+        !r.try_idle_recovery(5_000, 60_000, 0),
+        "reinicia la espera en 5 000"
+    );
     assert!(!r.try_idle_recovery(64_999, 60_000, 0), "aún no pasan 60 s");
-    assert!(r.try_idle_recovery(65_000, 60_000, 0), "60 s planos y sin incidentes: libera");
+    assert!(
+        r.try_idle_recovery(65_000, 60_000, 0),
+        "60 s planos y sin incidentes: libera"
+    );
     assert!(!r.is_blocked());
 }
 

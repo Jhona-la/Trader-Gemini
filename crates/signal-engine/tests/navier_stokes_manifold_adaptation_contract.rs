@@ -8,7 +8,9 @@
 //! 5. `turbulent_cascade_flux` y `kolmogorov_energy_spectrum` mantengan conservación de flujo.
 //! 6. `evaluate_for_coin` sea seguro y use `velocity_scale` dinámico sin divisiones por cero ni pánicos.
 
-use signal_engine::navier_stokes_manifold::{NavierStokesManifoldEngine, NavierStokesManifoldParams};
+use signal_engine::navier_stokes_manifold::{
+    NavierStokesManifoldEngine, NavierStokesManifoldParams,
+};
 use signal_engine::voto_espectral::ESCALAS_VOTO;
 use strategy_core::QuantumStrategy;
 
@@ -80,7 +82,10 @@ fn test_voto_espectral_with_params_smoothness_and_bounds() {
     for k in 0..ESCALAS_VOTO {
         let v = voto.en_escala(k);
         assert!(v.is_finite(), "Voto en escala {k} debe ser finito");
-        assert!(v >= -1.0 && v <= 1.0, "Voto en escala {k} debe estar en [-1, 1]");
+        assert!(
+            v >= -1.0 && v <= 1.0,
+            "Voto en escala {k} debe estar en [-1, 1]"
+        );
     }
 
     // Media de banda rápida vs lenta
@@ -116,7 +121,10 @@ fn test_energy_spectrum_and_cascade_flux_conservation() {
 
     let flux = NavierStokesManifoldEngine::turbulent_cascade_flux(&desplazamientos);
     assert!(flux.is_finite());
-    assert!(flux > 0.0, "Flujo de cascada debe ser positivo para energía creciente con escala");
+    assert!(
+        flux > 0.0,
+        "Flujo de cascada debe ser positivo para energía creciente con escala"
+    );
 }
 
 #[test]

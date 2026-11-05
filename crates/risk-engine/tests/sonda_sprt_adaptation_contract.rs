@@ -7,8 +7,8 @@
 
 use quantum_arena::GlobalArena;
 use risk_engine::sonda::{
-    admite_sonda, en_fase_de_sonda, hay_sonda_abierta, resolve_max_cierres_sonda,
-    sprt_bernoulli, sprt_evalua_salida_sonda, SprtDecision, CIERRES_DE_SONDA,
+    admite_sonda, en_fase_de_sonda, hay_sonda_abierta, resolve_max_cierres_sonda, sprt_bernoulli,
+    sprt_evalua_salida_sonda, SprtDecision, CIERRES_DE_SONDA,
 };
 use std::sync::atomic::Ordering::Relaxed;
 

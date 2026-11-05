@@ -164,3 +164,77 @@ fn contract_bsd_sub_microsecond_stack_latency() {
         ns_per_op
     );
 }
+
+// Independent Euler oracle: repeated multiplication, no production helper or table.
+fn slow_euler_character(n: i64, p: i64) -> i64 {
+    let rem = n.rem_euclid(p);
+    if rem == 0 {
+        return 0;
+    }
+    let mut value = 1_i64;
+    for _ in 0..(p - 1) / 2 {
+        value = (value * rem).rem_euclid(p);
+    }
+    if value == 1 {
+        1
+    } else {
+        -1
+    }
+}
+
+#[test]
+fn contract_bsd_cached_characters_match_independent_euler_and_fallback() {
+    for p in BSD_ODD_PRIMES.into_iter().chain([29]) {
+        for n in -3 * p..=3 * p {
+            assert_eq!(
+                legendre_symbol(n, p),
+                slow_euler_character(n, p),
+                "quadratic character n={n}, p={p}"
+            );
+        }
+        for n in [i64::MIN, i64::MIN + 1, i64::MAX - 1, i64::MAX] {
+            assert_eq!(legendre_symbol(n, p), slow_euler_character(n, p));
+        }
+    }
+}
+
+// Count every affine (x,y) directly, plus the projective point at infinity.
+// This oracle never calls Legendre, modular power or the production counter.
+fn independently_enumerated_points(a: i64, b: i64, p: i64) -> i64 {
+    let mut count = 1_i64;
+    for x in 0..p {
+        let rhs = (x * x * x + a * x + b).rem_euclid(p);
+        for y in 0..p {
+            if (y * y).rem_euclid(p) == rhs {
+                count += 1;
+            }
+        }
+    }
+    count
+}
+
+#[test]
+fn contract_bsd_every_residue_curve_matches_independent_point_enumeration() {
+    let mut singular_curves = 0;
+    for p in BSD_ODD_PRIMES {
+        for a in 0..p {
+            for b in 0..p {
+                let expected_n = independently_enumerated_points(a, b, p);
+                let expected = (expected_n, p + 1 - expected_n);
+                assert_eq!(
+                    frobenius_trace_mod_p(a, b, p),
+                    expected,
+                    "p={p}, a={a}, b={b}"
+                );
+                assert_eq!(frobenius_trace_mod_p(a - p, b - p, p), expected);
+                if (4 * a * a * a + 27 * b * b).rem_euclid(p) == 0 {
+                    singular_curves += 1;
+                }
+            }
+        }
+    }
+    assert!(
+        singular_curves > 0,
+        "singular curves must also be enumerated"
+    );
+}

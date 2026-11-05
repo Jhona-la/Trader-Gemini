@@ -25,7 +25,10 @@ fn cl80_conformal_moneda_sin_z_propia_no_hereda_la_global() {
     set_reg(&r, 0, "BTCUSDT", "ema_trend_swing_z", -1.0);
     let mut cf = ConformalReversionFilterEngine::new();
     assert!(cf.init(r).is_ok());
-    let (v0, v1) = (cf.evaluate_for_coin(0, "BTCUSDT"), cf.evaluate_for_coin(1, "ETHUSDT"));
+    let (v0, v1) = (
+        cf.evaluate_for_coin(0, "BTCUSDT"),
+        cf.evaluate_for_coin(1, "ETHUSDT"),
+    );
     println!("observado: conformal moneda 0 = {v0:.4}, moneda 1 = {v1:.4}");
     assert!(v0 < 0.0, "control: la moneda 0 vota reversión ({v0})");
     assert_eq!(v1, 0.0, "la moneda 1 vota con la z de la moneda 0: {v1}");

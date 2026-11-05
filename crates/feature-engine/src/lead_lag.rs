@@ -54,7 +54,7 @@ pub fn rho_critico_adaptativo(n: usize) -> f64 {
     }
     let t_crit = 2.0_f64;
     let rho_student = t_crit / ((n as f64) + 2.0).sqrt();
-    rho_student.max(RHO_MIN_FLOOR).min(0.99)
+    rho_student.clamp(RHO_MIN_FLOOR, 0.99)
 }
 
 impl LeadLagAlphaEngine {
@@ -405,14 +405,20 @@ mod tests {
         }
         // Llamar predict_eth_impulse_con_reloj: btc_buf está vacío, por lo que NO debe auto-evaluar contra ETH
         let (mom, div) = e.predict_eth_impulse_con_reloj(1, 1.0, t0 + 41.0 * 250.0);
-        assert_eq!(e.ultimo_lag_eth_ms, 0.0, "ETH no debe generar lag de sí mismo");
+        assert_eq!(
+            e.ultimo_lag_eth_ms, 0.0,
+            "ETH no debe generar lag de sí mismo"
+        );
         assert_eq!(e.ultimo_lag_btc_ms, 0.0, "Sin BTC no hay lag de BTC");
         assert_eq!(div, 0.0, "Sin liderazgo de BTC la divergencia debe ser 0.0");
         // H2-12 (GLM 113): con líder BTC PURO, sin BTC tampoco hay
         // MOMENTUM de líder en la ruta ETH — el viejo `mom > 0` vivía de
         // la ponderación ETH (exactamente la auto-referencia erradicada:
         // el propio sujeto de la señal haciéndose pasar por su líder).
-        assert_eq!(mom, 0.0, "sin BTC no hay momentum de líder para la ruta ETH");
+        assert_eq!(
+            mom, 0.0,
+            "sin BTC no hay momentum de líder para la ruta ETH"
+        );
     }
 
     /// H2-12-conducta (GLM 113): la divergencia de la ruta ETH vive a
@@ -466,7 +472,10 @@ mod tests {
             "anti-líder: ningún lag positivo acredita liderazgo"
         );
         assert_eq!(div, 0.0, "el anti-líder no firma: {div}");
-        assert!(mom.is_finite(), "momentum finito (el líder sigue existiendo como feature)");
+        assert!(
+            mom.is_finite(),
+            "momentum finito (el líder sigue existiendo como feature)"
+        );
     }
 
     #[test]
@@ -502,9 +511,13 @@ mod tests {
         // Simular dos series con correlación débil (~0.30) en n=12 muestras
         // Con el umbral anterior (0.25) habría firmado falsamente como liderazgo institucional;
         // con el umbral adaptativo (>= 0.5345 para n=12), se rechaza como ruido blanco indistinguible de H0.
-        let leader_vals = [1.0, -1.0, 1.0, -1.0, 1.0, -1.0, 1.0, -1.0, 1.0, -1.0, 1.0, -1.0];
+        let leader_vals = [
+            1.0, -1.0, 1.0, -1.0, 1.0, -1.0, 1.0, -1.0, 1.0, -1.0, 1.0, -1.0,
+        ];
         // y_i = 0.30 * x_i + 0.95 * z_i produce ρ ≈ 0.3012
-        let alt_vals = [1.25, 0.65, -0.65, -1.25, 1.25, 0.65, -0.65, -1.25, 1.25, 0.65, -0.65, -1.25];
+        let alt_vals = [
+            1.25, 0.65, -0.65, -1.25, 1.25, 0.65, -0.65, -1.25, 1.25, 0.65, -0.65, -1.25,
+        ];
 
         for i in 0..12 {
             let t = t0 + (i as f64) * 500.0;
@@ -516,7 +529,10 @@ mod tests {
         let alt_buf = e.alt_bufs.get(&9).unwrap();
         let (lag, rho) = e.lag_optimo(&e.btc_buf, alt_buf, t0 + 12.0 * 500.0);
         // Debe ser 0.0 porque la correlación muestral pequeña no supera el umbral de significancia t-Student
-        assert_eq!(lag, 0.0, "Ruido con n=12 no debe acreditar lag óptimo: lag={lag}, rho={rho}");
+        assert_eq!(
+            lag, 0.0,
+            "Ruido con n=12 no debe acreditar lag óptimo: lag={lag}, rho={rho}"
+        );
         assert_eq!(rho, 0.0);
 
         // La divergencia debe ser 0.0 (abstención en ruido)

@@ -39,7 +39,13 @@ fn traza(seed: u64, n: usize) -> Vec<f64> {
     (0..n)
         .map(|_| {
             let u = r.u01();
-            let dt = if u < 0.70 { 0.001 + 0.2 * r.u01() } else if u < 0.95 { 0.2 + 3.0 * r.u01() } else { 3.0 + 27.0 * r.u01() };
+            let dt = if u < 0.70 {
+                0.001 + 0.2 * r.u01()
+            } else if u < 0.95 {
+                0.2 + 3.0 * r.u01()
+            } else {
+                3.0 + 27.0 * r.u01()
+            };
             t += dt;
             t
         })
@@ -69,12 +75,16 @@ fn la_recursion_es_la_suma_explicita_en_eventos_y_entre_eventos() {
         // …y entre eventos, a un cuarto del hueco siguiente.
         if let Some(&sig) = ev.get(i + 1) {
             let tq = t + 0.25 * (sig - t);
-            let exacto_q = suma_explicita(&ev[..=i], tq, h.base_rate(), DEFAULT_ALPHA, DEFAULT_BETA);
+            let exacto_q =
+                suma_explicita(&ev[..=i], tq, h.base_rate(), DEFAULT_ALPHA, DEFAULT_BETA);
             let rel_q = (h.intensity(tq) - exacto_q).abs() / exacto_q;
             err_max = err_max.max(rel_q);
         }
     }
-    assert!(err_max <= 1e-9, "error relativo máximo frente a la suma explícita: {err_max:e}");
+    assert!(
+        err_max <= 1e-9,
+        "error relativo máximo frente a la suma explícita: {err_max:e}"
+    );
     // La excitación acumulada también es la suma (sin μ̂).
     let t_fin = *ev.last().expect("traza");
     let s_exacta = suma_explicita(&ev, t_fin, 0.0, DEFAULT_ALPHA, DEFAULT_BETA);
@@ -117,11 +127,24 @@ fn un_evento_retrogrado_no_excita_ni_mueve_el_reloj() {
     let mut h = HawkesBesselEngine::new();
     h.record_event(10.0);
     h.record_event(10.5);
-    let antes = (h.excitacion_acumulada(), h.intensity(10.5), h.ultimo_evento_s(), h.base_rate());
+    let antes = (
+        h.excitacion_acumulada(),
+        h.intensity(10.5),
+        h.ultimo_evento_s(),
+        h.base_rate(),
+    );
     h.record_event(9.0); // retrógrado
     h.record_event(f64::NAN); // no finito
-    let despues = (h.excitacion_acumulada(), h.intensity(10.5), h.ultimo_evento_s(), h.base_rate());
-    assert_eq!(antes, despues, "un evento retrógrado o no finito no cambia el estado");
+    let despues = (
+        h.excitacion_acumulada(),
+        h.intensity(10.5),
+        h.ultimo_evento_s(),
+        h.base_rate(),
+    );
+    assert_eq!(
+        antes, despues,
+        "un evento retrógrado o no finito no cambia el estado"
+    );
     assert_eq!(h.ultimo_evento_s(), Some(10.5));
     // Un evento simultáneo (dt = 0) sí excita, sin tocar μ̂ (necesita dt > 0).
     let mu = h.base_rate();
@@ -140,17 +163,34 @@ fn el_modulo_no_tiene_mutex_ni_deque() {
         .filter(|l| !l.trim_start().starts_with("//"))
         .collect::<Vec<_>>()
         .join("\n");
-    assert!(!codigo.contains("Mutex"), "hawkes_bessel.rs vuelve a usar Mutex");
-    assert!(!codigo.contains("VecDeque"), "hawkes_bessel.rs vuelve a usar VecDeque");
-    assert!(!codigo.contains("max_events"), "max_events era un parámetro muerto");
+    assert!(
+        !codigo.contains("Mutex"),
+        "hawkes_bessel.rs vuelve a usar Mutex"
+    );
+    assert!(
+        !codigo.contains("VecDeque"),
+        "hawkes_bessel.rs vuelve a usar VecDeque"
+    );
+    assert!(
+        !codigo.contains("max_events"),
+        "max_events era un parámetro muerto"
+    );
 }
 
 #[test]
 fn el_estado_estacionario_de_535_se_conserva_con_parametros_propios() {
     // #535: en un stream regular λ/μ̂ → 1 + α/β en fase uniforme; la
     // recursión no lo mueve, con los parámetros por defecto o con otros.
-    for (alpha, beta, dt_ev) in [(DEFAULT_ALPHA, DEFAULT_BETA, 0.1), (0.4, 0.8, 0.05), (0.1, 2.0, 1.0)] {
-        let p = HawkesBesselParams { alpha, beta, ..HawkesBesselParams::default() };
+    for (alpha, beta, dt_ev) in [
+        (DEFAULT_ALPHA, DEFAULT_BETA, 0.1),
+        (0.4, 0.8, 0.05),
+        (0.1, 2.0, 1.0),
+    ] {
+        let p = HawkesBesselParams {
+            alpha,
+            beta,
+            ..HawkesBesselParams::default()
+        };
         let mut h = HawkesBesselEngine::with_params(p);
         let (mut suma, mut n) = (0.0, 0.0);
         let mut t = 0.0;
@@ -168,7 +208,12 @@ fn el_estado_estacionario_de_535_se_conserva_con_parametros_propios() {
         }
         let medio = suma / n;
         let ss = p.steady_state_ratio();
-        assert!((medio - ss).abs() < 0.05 * ss, "α={alpha} β={beta}: ⟨λ/μ̂⟩={medio} vs SS={ss}");
+        assert!(
+            (medio - ss).abs() < 0.05 * ss,
+            "α={alpha} β={beta}: ⟨λ/μ̂⟩={medio} vs SS={ss}"
+        );
     }
-    assert!((HawkesBesselParams::default().steady_state_ratio() - STEADY_STATE_RATIO).abs() < 1e-12);
+    assert!(
+        (HawkesBesselParams::default().steady_state_ratio() - STEADY_STATE_RATIO).abs() < 1e-12
+    );
 }

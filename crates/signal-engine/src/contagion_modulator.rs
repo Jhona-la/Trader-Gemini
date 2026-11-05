@@ -38,10 +38,7 @@ pub fn modulate_by_net_role(raw_confidence: f64, net_role: f64) -> f64 {
 /// La forma: factor = 1 − 0.30 · |net|/(|net| + 5.0) — con |net|=5 (un
 /// seguidor con z-scores medios de −5), el descuento es 0.15 (15%); con
 /// |net|=20, 0.24; el máximo descuento es 30%.
-pub fn modulate_by_contagion(
-    raw_confidence: f64,
-    role: Option<ContagionRole>,
-) -> f64 {
+pub fn modulate_by_contagion(raw_confidence: f64, role: Option<ContagionRole>) -> f64 {
     let Some(r) = role else {
         return raw_confidence;
     };
@@ -55,7 +52,11 @@ mod tests {
     /// Líder neto → sin descuento.
     #[test]
     fn xlvf_lider_no_descuenta() {
-        let role = ContagionRole { emitted: 10.0, received: 2.0, net_role: 8.0 };
+        let role = ContagionRole {
+            emitted: 10.0,
+            received: 2.0,
+            net_role: 8.0,
+        };
         assert_eq!(modulate_by_contagion(0.8, Some(role)), 0.8);
     }
 
@@ -68,22 +69,37 @@ mod tests {
     /// Seguidor fuerte (net=−20) → descuento ~24%.
     #[test]
     fn xlvf_seguidor_fuerte_descuenta() {
-        let role = ContagionRole { emitted: 2.0, received: 22.0, net_role: -20.0 };
+        let role = ContagionRole {
+            emitted: 2.0,
+            received: 22.0,
+            net_role: -20.0,
+        };
         let adjusted = modulate_by_contagion(0.8, Some(role));
         // factor = 1 - 0.30*20/(20+5) = 1 - 0.24 = 0.76
-        assert!((adjusted - 0.8 * 0.76).abs() < 1e-6,
-            "esperaba ~{:.4}, dio {:.4}", 0.8 * 0.76, adjusted);
+        assert!(
+            (adjusted - 0.8 * 0.76).abs() < 1e-6,
+            "esperaba ~{:.4}, dio {:.4}",
+            0.8 * 0.76,
+            adjusted
+        );
         assert!(adjusted < 0.8, "debe ser < original");
     }
 
     /// Seguidor débil (net=−2) → descuento suave ~8.6%.
     #[test]
     fn xlvf_seguidor_debil_descuenta_suave() {
-        let role = ContagionRole { emitted: 4.0, received: 6.0, net_role: -2.0 };
+        let role = ContagionRole {
+            emitted: 4.0,
+            received: 6.0,
+            net_role: -2.0,
+        };
         let adjusted = modulate_by_contagion(0.9, Some(role));
         // factor = 1 - 0.30*2/(2+5) = 1 - 0.0857 = 0.914
-        assert!(adjusted < 0.9 && adjusted > 0.8,
-            "descuento suave, dio {:.4}", adjusted);
+        assert!(
+            adjusted < 0.9 && adjusted > 0.8,
+            "descuento suave, dio {:.4}",
+            adjusted
+        );
     }
 
     /// Modulación directa por net_role con defensas de IEEE-754.

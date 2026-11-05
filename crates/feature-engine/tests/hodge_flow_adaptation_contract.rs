@@ -52,17 +52,21 @@ fn test_hodge_cross_microstructure_return_sensitivity() {
         ..Default::default()
     };
 
-    let (mat_low, n_low) = HelmholtzHodgeFlowEngine::build_cross_microstructure_flow_matrix_with_params(
-        &ofis,
-        &rets,
-        &params_low,
-    ).expect("valid matrix low");
+    let (mat_low, n_low) =
+        HelmholtzHodgeFlowEngine::build_cross_microstructure_flow_matrix_with_params(
+            &ofis,
+            &rets,
+            &params_low,
+        )
+        .expect("valid matrix low");
 
-    let (mat_high, n_high) = HelmholtzHodgeFlowEngine::build_cross_microstructure_flow_matrix_with_params(
-        &ofis,
-        &rets,
-        &params_high,
-    ).expect("valid matrix high");
+    let (mat_high, n_high) =
+        HelmholtzHodgeFlowEngine::build_cross_microstructure_flow_matrix_with_params(
+            &ofis,
+            &rets,
+            &params_high,
+        )
+        .expect("valid matrix high");
 
     assert_eq!(n_low, 3);
     assert_eq!(n_high, 3);

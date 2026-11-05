@@ -320,4 +320,3 @@ fn test_fase_sonda_ev_prior_gate_contract() {
         "con muestra madura n=20 y w=0.0 el LCB debe vetar limpiamente con rej(4)"
     );
 }
-
