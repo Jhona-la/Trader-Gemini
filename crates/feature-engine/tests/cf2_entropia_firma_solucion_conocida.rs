@@ -35,9 +35,21 @@ fn cf2_firma_exponencial_irregular_forma_cerrada() {
     let tol = 1e-12;
     assert!((s.level1[0] - a).abs() < tol, "S1 {}", s.level1[0]);
     assert!((s.level1[1] - 1.0).abs() < tol, "S2 {}", s.level1[1]);
-    assert!((s.level2[0][0] - a * a / 2.0).abs() < tol, "S11 {}", s.level2[0][0]);
-    assert!((s.level2[0][1] - a / 2.0).abs() < tol, "S12 {}", s.level2[0][1]);
-    assert!((s.level2[1][0] - a / 2.0).abs() < tol, "S21 {}", s.level2[1][0]);
+    assert!(
+        (s.level2[0][0] - a * a / 2.0).abs() < tol,
+        "S11 {}",
+        s.level2[0][0]
+    );
+    assert!(
+        (s.level2[0][1] - a / 2.0).abs() < tol,
+        "S12 {}",
+        s.level2[0][1]
+    );
+    assert!(
+        (s.level2[1][0] - a / 2.0).abs() < tol,
+        "S21 {}",
+        s.level2[1][0]
+    );
     assert!((s.level2[1][1] - 0.5).abs() < tol, "S22 {}", s.level2[1][1]);
 }
 
@@ -60,7 +72,10 @@ fn cf2_firma_area_de_levy_poligono_regular() {
         let s = firma_nivel2_incrementos(&inc);
         let area = 0.5 * (s.level2[0][1] - s.level2[1][0]);
         let esperado = 0.5 * n as f64 * (std::f64::consts::TAU / n as f64).sin();
-        assert!((area - esperado).abs() < 1e-12, "n={n}: {area} frente a {esperado}");
+        assert!(
+            (area - esperado).abs() < 1e-12,
+            "n={n}: {area} frente a {esperado}"
+        );
         assert!(
             s.level1[0].abs() < 1e-12 && s.level1[1].abs() < 1e-12,
             "n={n}: lazo no cerrado ({}, {})",

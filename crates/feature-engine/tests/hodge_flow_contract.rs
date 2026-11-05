@@ -11,10 +11,12 @@ fn hodge_contrato_flujo_gradiente_puro_tiene_curl_cero() {
     // Un flujo generado por potenciales escalares locales (ej. OFI = [12.0, 8.0, 4.0, 0.0])
     // F_{ij} = phi_i - phi_j es un gradiente exacto puro.
     let scalars = [12.0, 8.0, 4.0, 0.0];
-    let (matrix, n) = HelmholtzHodgeFlowEngine::build_gradient_flow_matrix(&scalars)
-        .expect("matriz válida");
+    let (matrix, n) =
+        HelmholtzHodgeFlowEngine::build_gradient_flow_matrix(&scalars).expect("matriz válida");
 
-    let (res, potentials) = engine.decompose(&matrix, n).expect("descomposición exitosa");
+    let (res, potentials) = engine
+        .decompose(&matrix, n)
+        .expect("descomposición exitosa");
 
     // En un gradiente puro, el rotacional (curl) debe ser idénticamente 0.0
     assert!(
@@ -49,7 +51,9 @@ fn hodge_contrato_vortice_puro_tiene_curl_uno() {
     // 3-ciclo cerrado puro A -> B -> C -> A
     let (vortex_matrix, n) = HelmholtzHodgeFlowEngine::build_pure_vortex_matrix(3.5);
 
-    let (res, potentials) = engine.decompose(&vortex_matrix, n).expect("descomposición exitosa");
+    let (res, potentials) = engine
+        .decompose(&vortex_matrix, n)
+        .expect("descomposición exitosa");
 
     // En un vórtice puro cerrado, el curl debe ser idénticamente 1.0 (100% circulación)
     assert!(
@@ -88,7 +92,9 @@ fn hodge_contrato_ortogonalidad_l2_de_componentes() {
     mixed_matrix[3][0] = 2.0;
     mixed_matrix[0][3] = -2.0;
 
-    let (res, _) = engine.decompose(&mixed_matrix, 4).expect("descomposición exitosa");
+    let (res, _) = engine
+        .decompose(&mixed_matrix, 4)
+        .expect("descomposición exitosa");
 
     // Teorema de Pitágoras / Ortogonalidad L2: ||F||^2 = ||grad||^2 + ||curl||^2
     let sum_energies = res.gradient_energy + res.curl_energy;
@@ -128,13 +134,20 @@ fn hodge_contrato_flujo_cruzado_microestructura_produce_curl_dinamico() {
 
     let ofis_asym = [15.0, -5.0, 2.0];
     let rets_asym = [0.005, 0.012, -0.008];
-    let (mat_asym, n_asym) = HelmholtzHodgeFlowEngine::build_cross_microstructure_flow_matrix(&ofis_asym, &rets_asym)
-        .expect("matriz asimétrica válida");
-    let (res, _) = engine.decompose(&mat_asym, n_asym).expect("descomposición válida");
+    let (mat_asym, n_asym) =
+        HelmholtzHodgeFlowEngine::build_cross_microstructure_flow_matrix(&ofis_asym, &rets_asym)
+            .expect("matriz asimétrica válida");
+    let (res, _) = engine
+        .decompose(&mat_asym, n_asym)
+        .expect("descomposición válida");
 
     assert!(res.total_energy > 0.0);
     assert!(res.curl_share >= 0.0 && res.curl_share <= 1.0);
-    assert!(res.curl_share > 0.0, "El flujo cruzado asimétrico debe producir rotacional no nulo: got {}", res.curl_share);
+    assert!(
+        res.curl_share > 0.0,
+        "El flujo cruzado asimétrico debe producir rotacional no nulo: got {}",
+        res.curl_share
+    );
 }
 
 #[test]
@@ -154,10 +167,14 @@ fn test_r7_r3_a1_curl_invariante_a_padding_de_nodos_mudos() {
     matrix[1][2] = 4.0;
     matrix[2][1] = -4.0;
 
-    let (res, potentials) = engine.decompose(&matrix, 30)
+    let (res, potentials) = engine
+        .decompose(&matrix, 30)
         .expect("debe descomponer con 3 nodos activos de 30");
 
-    assert_eq!(res.num_nodes, 3, "El conteo de nodos debe ser 3 nodos activos, no 30");
+    assert_eq!(
+        res.num_nodes, 3,
+        "El conteo de nodos debe ser 3 nodos activos, no 30"
+    );
     assert!(
         res.curl_share < 1e-12,
         "El curl de un gradiente puro con padding de nodos mudos debe ser exactamente 0.0, got {}",
@@ -172,6 +189,10 @@ fn test_r7_r3_a1_curl_invariante_a_padding_de_nodos_mudos() {
 
     // Los nodos mudos (3..30) deben tener potencial exactamente 0.0
     for i in 3..30 {
-        assert_eq!(potentials[i], 0.0, "Nodo mudo {} debe tener potencial 0.0", i);
+        assert_eq!(
+            potentials[i], 0.0,
+            "Nodo mudo {} debe tener potencial 0.0",
+            i
+        );
     }
 }

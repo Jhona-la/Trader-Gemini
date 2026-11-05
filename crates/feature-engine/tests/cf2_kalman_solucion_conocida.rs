@@ -76,7 +76,12 @@ fn cf2_kalman_riccati_estacionaria() {
     for _ in 0..200 {
         kf.update(0.0);
     }
-    assert!((kf.p - p_post).abs() < 1e-9, "P {} frente a {}", kf.p, p_post);
+    assert!(
+        (kf.p - p_post).abs() < 1e-9,
+        "P {} frente a {}",
+        kf.p,
+        p_post
+    );
 }
 
 /// Verdades: ECM = P⁺, E[ν²/S] = 1 y autocorrelación de orden 1 de ν = 0.
@@ -97,15 +102,17 @@ fn cf2_kalman_recupera_modelo_lineal_gaussiano() {
     let z2 = nus.iter().map(|v| v * v / s).sum::<f64>() / n as f64;
     let m = nus.iter().sum::<f64>() / n as f64;
     let var = nus.iter().map(|v| (v - m).powi(2)).sum::<f64>() / n as f64;
-    let rho1 = nus
-        .windows(2)
-        .map(|w| (w[0] - m) * (w[1] - m))
-        .sum::<f64>()
-        / (n as f64 * var);
+    let rho1 = nus.windows(2).map(|w| (w[0] - m) * (w[1] - m)).sum::<f64>() / (n as f64 * var);
     eprintln!("[cf2 kalman] ECM {mse:.4} (P+ {p_post:.4}), nu^2/S {z2:.4}, rho1 {rho1:.4}");
-    assert!((mse - p_post).abs() < 0.10, "ECM {mse:.4} frente a P+ {p_post:.4}");
+    assert!(
+        (mse - p_post).abs() < 0.10,
+        "ECM {mse:.4} frente a P+ {p_post:.4}"
+    );
     assert!((z2 - 1.0).abs() < 0.04, "media de nu^2/S {z2:.4}");
-    assert!(rho1.abs() < 0.028, "autocorrelación de innovaciones {rho1:.4}");
+    assert!(
+        rho1.abs() < 0.028,
+        "autocorrelación de innovaciones {rho1:.4}"
+    );
 }
 
 /// Verdad: cobertura 0,95 de x̂ ± 1,96·√P⁺ (puerta de cobertura del plan,
@@ -124,5 +131,8 @@ fn cf2_kalman_cobertura_95_estacionaria() {
     let dentro = errores.iter().filter(|e| e.abs() <= c).count();
     let cobertura = dentro as f64 / n as f64;
     eprintln!("[cf2 kalman] cobertura {cobertura:.4}");
-    assert!((cobertura - 0.95).abs() < 0.01, "cobertura {cobertura:.4} frente a 0,95");
+    assert!(
+        (cobertura - 0.95).abs() < 0.01,
+        "cobertura {cobertura:.4} frente a 0,95"
+    );
 }
