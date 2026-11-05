@@ -20280,9 +20280,9 @@ R21B `68e20bd6d5abcc5b1b8ac3998ffa8209df06b121` integra ocho rutas rustfmt de fe
 
 
 <!-- KIMI-V35-R27-STANFORD-TDD-20261105 -->
-## 2026-11-05 — KIMI-QUANT-SR-V35: R27 Stanford no finito, antes de CAS
+## 2026-11-05 — KIMI-QUANT-SR-V35: R27 Stanford no finito integrado; handoff pendiente
 
-Candidato `1b252ad21984fbde07e28669db8fa96bc8bfc1af`, tree `d33f5210d7599c32f0ccc764df6841fe2110d2a5`, padre `b2e27830` (origin `4f9fca71` GLM-194 + `d7d6907b`). El intento `55ff87a1` quedó descartado. `main` local sigue `d7d6907b`, sin CAS/push.
+R27 `1b252ad21984fbde07e28669db8fa96bc8bfc1af`, tree `d33f5210d7599c32f0ccc764df6841fe2110d2a5`, padre `b2e27830` (origin `4f9fca71` GLM-194 + `d7d6907b`), ya está integrado en `main` local por CAS. El intento `55ff87a1` quedó descartado. Handoff documental separado aún en validación, sin push.
 
 TDD completo: RED histórico y nuevo por `clamp(1.0, NaN)` y RED de promoción real con Sharpe +∞ en `meta_distill`; después, guardas mínimas en `isolated_evaluate`, antes de SOL PROPOSE y en la puerta pública `meta_distill`. No se filtran retornos ni se imputan valores. El contrato usa 11 retornos, control posterior con misma semilla y `causal_pillar_importance`, y siete campos no finitos externos.
 

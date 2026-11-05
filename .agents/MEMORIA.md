@@ -10937,9 +10937,9 @@ Puerto recursos reanclado sobre PR90/7b598f7e (padre mainfd956f9, AGY F1-074/F1-
 - Handoff conjunto separado en validación. Attestation/publicación siguen bloqueados por QRA Navier/adversarial/legacy, formatter restante, productor ROOT/Golden9, seis fases + Python y Golden9. Producción NO-GO; ROI/PnL/WR/Sharpe/EV=N/D; +100 %/72 h sigue siendo hipótesis OOS neta.
 
 
-## 2026-11-05 — KIMI-QUANT-SR-V35: R27 Stanford fail-closed, validación dinámica pendiente
+## 2026-11-05 — KIMI-QUANT-SR-V35: R27 Stanford fail-closed integrado; handoff pendiente
 
-- Base merge aislada `b2e278302329e74c708301d60c7ad1a1eb6a34a6` (origin `4f9fca71` GLM-194 + `d7d6907b`). El intento documental `55ff87a1` fue descartado y no forma parte de la cadena. Candidato R27 `1b252ad21984fbde07e28669db8fa96bc8bfc1af`, tree `d33f5210d7599c32f0ccc764df6841fe2110d2a5`, padre b2e; `main` local sigue `d7d6907b`, sin CAS/push.
+- Base merge aislada `b2e278302329e74c708301d60c7ad1a1eb6a34a6` (origin `4f9fca71` GLM-194 + `d7d6907b`). El intento documental `55ff87a1` fue descartado y no forma parte de la cadena. R27 `1b252ad21984fbde07e28669db8fa96bc8bfc1af`, tree `d33f5210d7599c32f0ccc764df6841fe2110d2a5`, padre b2e, ya está integrado en `main` local por CAS; handoff documental separado aún en validación, sin push.
 - TDD: C6 histórico y el nuevo contrato de evidencia no finita fallaron por `clamp(1.0, NaN)`; el contrato de `meta_distill` promovía Sharpe +∞. Sólo después se añadieron tres guardas mínimas: sentinel existente para retornos no finitos, retorno antes de SOL PROPOSE y rechazo de los siete campos no finitos en `meta_distill`, sin filtrar ni imputar datos.
 - Contratos reforzados con 11 retornos y control de RNG (`causal_pillar_importance`) para detectar filtrado/consumo de RNG, y siete variantes no finitas de métricas externas. GREEN focal 3/3; suite evolution 203/204 en 22 targets/0 ignored/filtered, único rojo CL-88 heredado fuera del diff. Agent-30 revisó corrección y rama completa Yes/0.
 - Workspace all-targets exit0 (4m29s), Zero-Wait 22/22 (344.272s)/exit0. CAS R27 realizado `main=1b252ad21984fbde07e28669db8fa96bc8bfc1af`, expected `d7d6907b`, origin `4f9fca71` revalidado; handoff documental separado en validación, sin push. Producción NO-GO; ROI/PnL/WR/Sharpe/EV=N/D; +100 %/72 h no está certificado.

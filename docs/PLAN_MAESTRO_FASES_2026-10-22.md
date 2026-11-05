@@ -362,7 +362,7 @@ Después de cada push de código: todos los checks disparados (base actual: 8 de
 - Handoff documental separado pendiente de workspace, Zero-Wait, revisión y CAS. Attestation/publicación siguen bloqueados por QRA Navier/adversarial/legacy, formatter restante, productor ROOT/Golden9, seis fases + Python y Golden9. Producción NO-GO; métricas económicas N/D.
 
 
-## Corte V35-R27 — Stanford fail-closed con TDD, antes de CAS (2026-11-05)
+## Corte V35-R27 — Stanford fail-closed con TDD integrado; handoff pendiente (2026-11-05)
 
 - Candidato `1b252ad21984fbde07e28669db8fa96bc8bfc1af` sobre merge `b2e27830` (origin `4f9fca71` + `d7d6907b`). Tres RED reales antes de implementación y GREEN focal 3/3. Guardas en evaluación, ciclo y `meta_distill`; ningún dato filtrado o imputado.
 - Tests con 11 retornos, control RNG y siete campos no finitos. Suite evolution 203/204 en 22 targets, único rojo CL-88 heredado fuera del diff. Revisión agent-30 Yes/0; GLM-194 y handoffs anteriores preservados.
