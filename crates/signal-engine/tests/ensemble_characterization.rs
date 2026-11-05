@@ -113,9 +113,7 @@ fn mixed_signs_in_one_source_attenuate_by_mean() {
 
 // ── GLM 130: HEDGE POR FUENTE (exponential-weights) ──────────────────
 
-fn hedge_engine(
-    fuentes: &[(&'static str, f64)],
-) -> TensorVoteOrchestrator {
+fn hedge_engine(fuentes: &[(&'static str, f64)]) -> TensorVoteOrchestrator {
     let arena = quantum_arena::GlobalArena::build_in_own_stack(13.0);
     arena.registry.set("hedge_eta", 0.05);
     let mut engine = TensorVoteOrchestrator::new(arena);
@@ -240,7 +238,10 @@ fn missing_model_base_means_ml_abstains_not_fabricated_lift() {
     // (rampa en 0.01/0.05) — voto ~0, y sobre todo JAMÁS negativo-fuerte.
     registry.set("ml_model_base", 0.3);
     let v = trigger.evaluate();
-    assert!(v >= 0.0 || v.abs() < 0.05, "sin lift medido no hay voto fuerte: {v}");
+    assert!(
+        v >= 0.0 || v.abs() < 0.05,
+        "sin lift medido no hay voto fuerte: {v}"
+    );
     // Sin PROB (sin modelo): también ausencia, aunque la base exista.
     let registry2 = Arc::new(OmniscientRegistry::new());
     registry2.set("hawkes_intensity", 2.0);
@@ -265,7 +266,10 @@ fn trend_extension_never_shrinks_the_base_target() {
     // Sobre el bound: satura hacia él sin kink pero sigue CRECIENTE.
     let expandido = HighPayoffTrendRunner::calculate_expanded_tp(0.02, 0.9, 0.0, 0.001, 0.1);
     assert!(expandido > target, "más persistencia ⇒ más target");
-    assert!(expandido <= 0.1 + 1e-9, "satura hacia el bound: {expandido}");
+    assert!(
+        expandido <= 0.1 + 1e-9,
+        "satura hacia el bound: {expandido}"
+    );
 }
 
 /// (e) DRENADO (GLM 109): PnL negativo NO activa la extensión de
@@ -401,7 +405,7 @@ fn csg_2_hedge_cadence_scores_anchored_t_prev_vote_with_dimensionless_return() {
         .store(60_000.0, Ordering::Relaxed);
 
     let sign_flipper = Arc::new(AtomicI64::new(1)); // En t=0 vota Long (+0.8)
-    let sign_bear = Arc::new(AtomicI64::new(-1));   // En t=0 vota Short (-0.8)
+    let sign_bear = Arc::new(AtomicI64::new(-1)); // En t=0 vota Short (-0.8)
 
     let mut orch = TensorVoteOrchestrator::new(Arc::clone(&arena));
     orch.add_strategy(Box::new(FlippingVoter {
@@ -432,8 +436,7 @@ fn csg_2_hedge_cadence_scores_anchored_t_prev_vote_with_dimensionless_return() {
 
     let _ = orch.evaluate_continuous_consensus_for_coin(0, "BTCUSDT");
 
-    let pesos: std::collections::HashMap<_, _> =
-        orch.pesos_hedge_snapshot().into_iter().collect();
+    let pesos: std::collections::HashMap<_, _> = orch.pesos_hedge_snapshot().into_iter().collect();
     let w_flipper = *pesos.get("flipper_correct_at_t0").unwrap();
     let w_bear = *pesos.get("bear_wrong_at_t0").unwrap();
 
@@ -442,4 +445,3 @@ fn csg_2_hedge_cadence_scores_anchored_t_prev_vote_with_dimensionless_return() {
         "CSG-2: Hedge debe premiar el voto emitido en t=0 (ancla) frente al retorno [0, 1024], no el voto de t=1024: w_flipper={w_flipper}, w_bear={w_bear}"
     );
 }
-

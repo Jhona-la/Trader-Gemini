@@ -31,8 +31,14 @@ impl QuantumStrategy for VotoFijo {
 fn qo_611_el_censo_mide_vida_por_estrategia() {
     let arena = quantum_arena::GlobalArena::build_in_own_stack(13.0);
     let mut orch = TensorVoteOrchestrator::new(arena);
-    orch.add_strategy(Box::new(VotoFijo { nombre: "Mudo", voto: 0.0 }));
-    orch.add_strategy(Box::new(VotoFijo { nombre: "Vivo", voto: 0.9 }));
+    orch.add_strategy(Box::new(VotoFijo {
+        nombre: "Mudo",
+        voto: 0.0,
+    }));
+    orch.add_strategy(Box::new(VotoFijo {
+        nombre: "Vivo",
+        voto: 0.9,
+    }));
 
     for _ in 0..7 {
         let _ = orch.evaluate_continuous_consensus_for_coin(0, "TESTUSDT");
@@ -46,6 +52,9 @@ fn qo_611_el_censo_mide_vida_por_estrategia() {
     assert_eq!(nombre_v, "Vivo");
     assert_eq!(total_m, 14, "7 consensos × 2 monedas");
     assert_eq!(total_v, 14);
-    assert_eq!(nc_m, 0, "el voto mudo JAMÁS suma no-cero — esa es la muerte que el censo detecta");
+    assert_eq!(
+        nc_m, 0,
+        "el voto mudo JAMÁS suma no-cero — esa es la muerte que el censo detecta"
+    );
     assert_eq!(nc_v, 14, "el voto vivo suma siempre");
 }

@@ -20,8 +20,8 @@
 
 use omniscient_registry::OmniscientRegistry;
 use signal_engine::perceptron_gate::PerceptronGateEngine;
-use strategy_core::QuantumStrategy;
 use std::sync::Arc;
+use strategy_core::QuantumStrategy;
 
 #[test]
 fn f1_098_perceptron_hebbian_cross_coin_isolation_contract() {

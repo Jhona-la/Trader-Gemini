@@ -45,12 +45,7 @@ fn test_soliton_params_validation_and_dynamic_scale() {
     engine.init(reg.clone()).unwrap();
 
     // Evaluación con parámetros en registro
-    reg.register_or_update(
-        "soliton_amplitude",
-        ParameterKind::Adaptive,
-        0.5,
-        "test",
-    );
+    reg.register_or_update("soliton_amplitude", ParameterKind::Adaptive, 0.5, "test");
     reg.register_or_update("soliton_velocity", ParameterKind::Adaptive, 10.0, "test");
     reg.register_or_update("mid_price", ParameterKind::Adaptive, 100.0, "test");
     reg.register_or_update("soliton_pos", ParameterKind::Adaptive, 0.0, "test");
@@ -59,12 +54,7 @@ fn test_soliton_params_validation_and_dynamic_scale() {
     assert!(signal_init.is_finite() && signal_init > 0.0);
 
     // Override dinámico en registro omnisciente
-    reg.register_or_update(
-        "soliton_amp_scale",
-        ParameterKind::Adaptive,
-        2.0,
-        "test",
-    );
+    reg.register_or_update("soliton_amp_scale", ParameterKind::Adaptive, 2.0, "test");
     let signal_boosted = engine.evaluate();
     assert!(signal_boosted.is_finite());
     assert!(signal_boosted > signal_init);
@@ -88,8 +78,7 @@ fn test_stochastic_resonance_tunable_q_and_peak_gain() {
     let noise_var = 0.0004; // σ = 0.02
     let sigma = 0.02;
 
-    let res_at_peak =
-        StochasticResonanceEngine::amplify_signal_with_params(sigma, noise_var, &def);
+    let res_at_peak = StochasticResonanceEngine::amplify_signal_with_params(sigma, noise_var, &def);
     // Ganancia en el pico debe ser peak_gain (2.0) -> res = sigma * 2.0 = 0.04
     assert!((res_at_peak - sigma * 2.0).abs() < 1e-9);
 
@@ -113,7 +102,6 @@ fn test_stochastic_resonance_tunable_q_and_peak_gain() {
     let res_nan = StochasticResonanceEngine::amplify_signal_with_params(f64::NAN, noise_var, &def);
     assert_eq!(res_nan, 0.0);
 
-    let res_zero_noise =
-        StochasticResonanceEngine::amplify_signal_with_params(sigma, 0.0, &def);
+    let res_zero_noise = StochasticResonanceEngine::amplify_signal_with_params(sigma, 0.0, &def);
     assert!(res_zero_noise.is_finite());
 }

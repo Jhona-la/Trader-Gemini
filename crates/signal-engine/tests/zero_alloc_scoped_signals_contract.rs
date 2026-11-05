@@ -1,8 +1,8 @@
 use omniscient_registry::OmniscientRegistry;
 use signal_engine::flow_impulse::FlowImpulseEngine;
 use signal_engine::RenyiTsallisEntropyEngine;
-use strategy_core::QuantumStrategy;
 use std::sync::Arc;
+use strategy_core::QuantumStrategy;
 
 #[test]
 fn test_flow_impulse_scoped_evaluation_strict_isolation() {
@@ -77,11 +77,16 @@ fn test_cero_heap_en_consultas_estrictas_de_registro() {
     assert_eq!(val_cid, Some(0.0001));
 
     // 3. Consulta de parámetro ausente retorna None sin caer a global ni alojar
-    let val_absent = registry.get_scoped_val_strict(Some("BTCUSDT"), Some(0), "parametro_inexistente");
+    let val_absent =
+        registry.get_scoped_val_strict(Some("BTCUSDT"), Some(0), "parametro_inexistente");
     assert_eq!(val_absent, None);
 
     // 4. Parámetro global no es devuelto por la API estricta
     registry.set("parametro_global_solo", 999.0);
-    let val_global = registry.get_scoped_val_strict(Some("ETHUSDT"), Some(1), "parametro_global_solo");
-    assert_eq!(val_global, None, "API estricta jamás debe caer al parámetro global");
+    let val_global =
+        registry.get_scoped_val_strict(Some("ETHUSDT"), Some(1), "parametro_global_solo");
+    assert_eq!(
+        val_global, None,
+        "API estricta jamás debe caer al parámetro global"
+    );
 }

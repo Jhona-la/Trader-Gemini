@@ -60,7 +60,11 @@ fn malla(spec: &TemporalSpectrum) -> [f64; ESCALAS_VOTO] {
     let mut z = [0.0; ESCALAS_VOTO];
     for k in 0..ESCALAS_VOTO {
         let m = spec.scales[k].momentum_z;
-        z[k] = if m.is_finite() { m.clamp(-10.0, 10.0) } else { 0.0 };
+        z[k] = if m.is_finite() {
+            m.clamp(-10.0, 10.0)
+        } else {
+            0.0
+        };
     }
     z
 }
@@ -112,13 +116,35 @@ fn media_y_ee_bloques(x: &[f64], largo: usize) -> (f64, f64, usize) {
 #[test]
 fn cf2_6_feynman_fase_constante_coherencia_unitaria_y_espejo() {
     for &c in &[0.3, 1.0, 2.5, 7.0] {
-        let (vp, cp) = FeynmanPropagatorEngine::voto_espectral_con_coherencia(&[c; ESCALAS_VOTO], 1.0, 1.0, 1.0);
-        let (vn, cn) = FeynmanPropagatorEngine::voto_espectral_con_coherencia(&[-c; ESCALAS_VOTO], 1.0, 1.0, 1.0);
-        assert!((cp - 1.0).abs() < 1e-9 && (cn - 1.0).abs() < 1e-9, "c={c}: C+={cp} C-={cn}");
+        let (vp, cp) = FeynmanPropagatorEngine::voto_espectral_con_coherencia(
+            &[c; ESCALAS_VOTO],
+            1.0,
+            1.0,
+            1.0,
+        );
+        let (vn, cn) = FeynmanPropagatorEngine::voto_espectral_con_coherencia(
+            &[-c; ESCALAS_VOTO],
+            1.0,
+            1.0,
+            1.0,
+        );
+        assert!(
+            (cp - 1.0).abs() < 1e-9 && (cn - 1.0).abs() < 1e-9,
+            "c={c}: C+={cp} C-={cn}"
+        );
         let a = (c * 0.5).tanh();
         for k in 0..ESCALAS_VOTO {
-            assert!((vp.en_escala(k) - a).abs() < 1e-9, "c={c} k={k}: {} frente a {a}", vp.en_escala(k));
-            assert!((vn.en_escala(k) + a).abs() < 1e-9, "c={c} k={k}: {} frente a {}", vn.en_escala(k), -a);
+            assert!(
+                (vp.en_escala(k) - a).abs() < 1e-9,
+                "c={c} k={k}: {} frente a {a}",
+                vp.en_escala(k)
+            );
+            assert!(
+                (vn.en_escala(k) + a).abs() < 1e-9,
+                "c={c} k={k}: {} frente a {}",
+                vn.en_escala(k),
+                -a
+            );
         }
     }
     let mut rng = Lcg(0xF26_0002);
@@ -172,8 +198,14 @@ fn cf2_6_feynman_coherencia_es_rayleigh_con_fases_uniformes() {
     let media = suma / m as f64;
     let p_cola = cola as f64 / m as f64;
     println!("E[N·C] = {media}; P(C > 0,20) = {p_cola}");
-    assert!((media - 1.0).abs() < 0.028, "E[N·C] = {media}, esperado 1 ± 4 EE");
-    assert!(p_cola < 0.005, "P(C > 0,20) = {p_cola}, Rayleigh ≈ e^-6,4 ≈ 0,0017");
+    assert!(
+        (media - 1.0).abs() < 0.028,
+        "E[N·C] = {media}, esperado 1 ± 4 EE"
+    );
+    assert!(
+        p_cola < 0.005,
+        "P(C > 0,20) = {p_cola}, Rayleigh ≈ e^-6,4 ≈ 0,0017"
+    );
 }
 
 /// Fracción de eventos con C > 0,20 en una caminata aleatoria: (a) con la
@@ -181,7 +213,12 @@ fn cf2_6_feynman_coherencia_es_rayleigh_con_fases_uniformes() {
 /// observables, resolucion_efectiva_ms() ≤ τ_k ≤ tiempo transcurrido, y
 /// z_k = 0 en las demás. Devuelve ((frac, EE), (frac, EE)) por bloques de
 /// 600 eventos.
-fn fraccion_coherente(semilla: u64, media_ms: f64, n: usize, calentamiento: usize) -> ((f64, f64), (f64, f64)) {
+fn fraccion_coherente(
+    semilla: u64,
+    media_ms: f64,
+    n: usize,
+    calentamiento: usize,
+) -> ((f64, f64), (f64, f64)) {
     let mut malla_sobre = Vec::with_capacity(n);
     let mut obs_sobre = Vec::with_capacity(n);
     caminata(semilla, 1e-4, media_ms, n, |i, spec, transcurrido_ms| {
@@ -259,9 +296,15 @@ fn cf2_6_navier_flujo_de_cascada_es_la_diferencia_de_extremos() {
             *v = 24.0 * rng.unif() - 12.0;
         }
         let flujo = NavierStokesManifoldEngine::turbulent_cascade_flux(&z);
-        let (a, b) = (z[0].clamp(-10.0, 10.0), z[ESCALAS_VOTO - 1].clamp(-10.0, 10.0));
+        let (a, b) = (
+            z[0].clamp(-10.0, 10.0),
+            z[ESCALAS_VOTO - 1].clamp(-10.0, 10.0),
+        );
         let esperado = 0.5 * b * b - 0.5 * a * a;
-        assert!((flujo - esperado).abs() < 1e-9, "Π={flujo} vs E31−E0={esperado}");
+        assert!(
+            (flujo - esperado).abs() < 1e-9,
+            "Π={flujo} vs E31−E0={esperado}"
+        );
     }
 }
 
@@ -270,7 +313,13 @@ const K_RESUELTAS: std::ops::RangeInclusive<usize> = 15..=21;
 
 /// Ē_k medio de una caminata (σ en 1/√s, llegadas de media 1 s), por bloques
 /// de `bloque` eventos tras `calentamiento`.
-fn energia_por_bloques(semilla: u64, sigma: f64, n: usize, calentamiento: usize, bloque: usize) -> Vec<[f64; ESCALAS_VOTO]> {
+fn energia_por_bloques(
+    semilla: u64,
+    sigma: f64,
+    n: usize,
+    calentamiento: usize,
+    bloque: usize,
+) -> Vec<[f64; ESCALAS_VOTO]> {
     let mut bloques: Vec<[f64; ESCALAS_VOTO]> = Vec::new();
     let mut acum = [0.0f64; ESCALAS_VOTO];
     let mut cuenta = 0usize;
@@ -320,7 +369,10 @@ fn cf2_6_navier_energia_espectral_crece_con_la_energia_inyectada() {
     }
     let razon = e[1] / e[0];
     println!("Ē(σ) = {}, Ē(10σ) = {}, razón {razon}", e[0], e[1]);
-    assert!(razon > 10.0, "E(10σ)/E(σ) = {razon}: K41 (y ½u²) exige ≈ 100; la «energía» no ve la energía inyectada");
+    assert!(
+        razon > 10.0,
+        "E(10σ)/E(σ) = {razon}: K41 (y ½u²) exige ≈ 100; la «energía» no ve la energía inyectada"
+    );
 }
 
 /// Pendiente MCO de y sobre x.
@@ -347,7 +399,9 @@ fn pendiente(x: &[f64], y: &[f64]) -> f64 {
 #[ignore = "OPEN F2.6-04 (AGY): la «energía espectral» ½z² es plana en la escala (pendiente ≈ 0), no un espectro K41 ni browniano"]
 fn cf2_6_navier_energia_espectral_decrece_con_la_frecuencia() {
     let bloques = energia_por_bloques(0x5EED_F262, 1e-4, 12_000, 2_000, 1_000);
-    let x: Vec<f64> = K_RESUELTAS.map(|k| (1.0 / SPECTRUM_SCALES_MS[k]).ln()).collect();
+    let x: Vec<f64> = K_RESUELTAS
+        .map(|k| (1.0 / SPECTRUM_SCALES_MS[k]).ln())
+        .collect();
     let pendientes: Vec<f64> = bloques
         .iter()
         .map(|b| {
@@ -364,7 +418,10 @@ fn cf2_6_navier_energia_espectral_decrece_con_la_frecuencia() {
     }
     let y: Vec<f64> = K_RESUELTAS.map(|k| global[k].ln()).collect();
     let p = pendiente(&x, &y);
-    println!("pendiente global {p}; media por bloque {p_media} ± {ee} ({nb} bloques); Ē_k = {:?}", &global[15..=21]);
+    println!(
+        "pendiente global {p}; media por bloque {p_media} ± {ee} ({nb} bloques); Ē_k = {:?}",
+        &global[15..=21]
+    );
     assert!(
         p <= -0.5,
         "pendiente de ln Ē_k sobre ln(1/τ_k) = {p} (por bloques {p_media} ± {ee}, {nb} bloques); \
