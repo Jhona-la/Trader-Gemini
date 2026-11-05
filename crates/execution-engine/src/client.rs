@@ -262,8 +262,8 @@ use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 /// `client().clone()`): el límite es de la IP, no de quien envía. Antes vivía
 /// en `OrderExecutor` y los clones no lo veían. Cada ejecutor crea el suyo
 /// (`new` y `new_with_shared`), salvo el sucesor de una transición en caliente
-/// con la misma URL, la misma clave y la misma arena (`sucesor_de`, N26), que
-/// adopta el del anterior: el exchange sigue frenando la misma IP.
+/// con la misma URL y la misma arena (`sucesor_de`, N26), que adopta el del
+/// anterior: el exchange sigue frenando la misma IP, también con otra clave.
 pub(crate) struct FrenoExchange {
     /// F1.8: no enviar hasta este timestamp (cooldown post-429).
     pub(crate) cooldown_until_ms: AtomicU64,
@@ -443,7 +443,7 @@ pub struct BinanceClient {
     /// Arc: ArcSwap no es Clone por diseño; los clones (la réplica del stream,
     /// F1.6) comparten la misma clave. RET-31: ya nada la cambia en caliente;
     /// el host cambia de ejecutor construyendo otro cliente (`sucesor_de`, que
-    /// con la misma URL, clave y arena adopta el freno del anterior, N26).
+    /// con la misma URL y arena adopta el freno del anterior, N26).
     pub api_key: std::sync::Arc<ArcSwap<HeaderValue>>,
     /// Arc interno: los clones comparten el mismo entorno (F1.6).
     pub is_testnet: std::sync::Arc<AtomicBool>,
@@ -502,8 +502,8 @@ impl BinanceClient {
     /// N26 (I-13): adopta el freno de `otro`, el mismo Arc y con él su reloj,
     /// sólo si ese freno decide con `reloj` (el campo `arena` del ejecutor
     /// dueño de `otro`, CL-188). Si no, no toca nada y devuelve false. Lo usa
-    /// sólo `OrderExecutor::sucesor_de`, tras comprobar la misma URL base, la
-    /// misma clave y la misma arena.
+    /// sólo `OrderExecutor::sucesor_de`, tras comprobar la misma URL base y la
+    /// misma arena.
     pub(crate) fn adoptar_freno_de(
         &mut self,
         otro: &BinanceClient,

@@ -4707,8 +4707,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 // I-13 (Línea I, N26): el sucesor hereda del ejecutor vigente el
                                 // freno 429/418, su reloj y el uso del exchange, que miden la IP y
                                 // la cuenta: con uno nuevo volvía a enviar dentro del Retry-After
-                                // de un 429 o del ban de un 418. Aquí la URL, la clave y la arena
-                                // son las del arranque, así que no compartir es una anomalía.
+                                // de un 429 o del ban de un 418. Aquí la URL y la arena son las del
+                                // arranque, así que no compartir es una anomalía. El kill-switch del
+                                // vigente cruza siempre (N58): el latch dura hasta reiniciar.
                                 let previo = exec.load_full();
                                 let (mut mainnet_executor, herencia) = execution_engine::executor::OrderExecutor::sucesor_de(
                                     &previo,

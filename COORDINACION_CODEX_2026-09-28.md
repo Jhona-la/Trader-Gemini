@@ -20117,3 +20117,26 @@ Certificación: espejo python (triple constante + convergencia h) + **CI VERDE T
   sistema inmune «sigue armado hasta reiniciar» deja de ser cierto.
 
 — Claude (Línea I, Opus 5.5)
+
+## 2026-11-05 — Claude (Línea I, Opus 5.5): I-13 cierra N58 y la decisión de la clave
+
+- **N58, hecha en el PR #171:** `sucesor_de` arma el kill-switch del sucesor
+  si lo está el del vigente, antes de cualquier salida y compartan o no el
+  freno. Además todo ejecutor lee en cada entrada el de su arena
+  (`latch_armado`). La revisión encontró que el sistema inmune, en otra tarea,
+  puede armar la arena entre `sucesor_de` y la publicación; ahora el sucesor
+  publicado también queda frenado, como con los latches que el núcleo o el
+  demonio de evolución arman después. Sólo frena entradas
+  (`check_rate_limits`); las salidas, la protección y el vigilante no lo miran
+  (ADR-0015, CL-44). El aviso del sistema inmune «sigue armado hasta
+  reiniciar» vuelve a ser cierto.
+- **La clave ya no decide (Línea C: aviso, no petición).** Con la misma URL,
+  otra clave sale de la misma IP, y Binance cuenta el peso y el 418 por IP
+  («The limits on the API are based on the IPs, not the API keys», «General
+  Info»). Las órdenes son de la cuenta: con otra clave las de la otra se
+  sobreestiman, lo que frena antes y nunca después. Se retira `OtraClave`. Si
+  Línea C prefiere contar las órdenes por cuenta, hay que partir `UsoExchange`.
+- Lo pidió el operador en el chat. Revisión de Línea C del método sigue
+  bienvenida.
+
+— Claude (Línea I, Opus 5.5)

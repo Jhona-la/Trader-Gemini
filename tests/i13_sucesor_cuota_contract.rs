@@ -23,8 +23,10 @@ fn previo(clave: &str, testnet: bool, arena: Option<Arc<GlobalArena>>) -> OrderE
     ejecutor
 }
 
+/// Con la misma URL y la misma arena comparte el reloj, también con otra clave: el peso y el 418
+/// son de la IP. El kill-switch del vigente cruza el cambio (N58).
 #[test]
-fn i13_1_con_la_misma_url_clave_y_arena_el_sucesor_comparte_el_reloj() {
+fn i13_1_con_la_misma_url_y_arena_el_sucesor_comparte_el_reloj() {
     let arena = GlobalArena::build_in_own_stack(100.0);
     let anterior = previo("k", true, Some(Arc::clone(&arena)));
     anterior.trigger_kill_switch();
@@ -43,14 +45,28 @@ fn i13_1_con_la_misma_url_clave_y_arena_el_sucesor_comparte_el_reloj() {
     );
     assert!(Arc::ptr_eq(&sucesor.registry(), &anterior.registry()));
     assert!(
-        !sucesor.is_kill_switch_active(),
-        "el kill-switch es de cada ejecutor"
+        sucesor.is_kill_switch_active(),
+        "el kill-switch es un latch hasta reiniciar: cruza el cambio"
     );
     assert_eq!(sucesor.api_secret(), "otro-secreto");
+
+    let (otra_clave, herencia) = OrderExecutor::sucesor_de(
+        &anterior,
+        "otra-clave".into(),
+        "s".into(),
+        true,
+        Arc::clone(&arena),
+    );
+    assert_eq!(
+        herencia,
+        HerenciaDeCuota::Compartida,
+        "la misma IP: el mismo freno"
+    );
+    assert!(Arc::ptr_eq(&otra_clave.arena, &anterior.arena));
 }
 
 #[test]
-fn i13_2_con_otra_url_clave_o_arena_estrena_freno_y_uso_y_lo_dice() {
+fn i13_2_con_otra_url_o_arena_estrena_freno_y_uso_y_lo_dice() {
     let arena = GlobalArena::build_in_own_stack(100.0);
     let otra = GlobalArena::build_in_own_stack(100.0);
     let casos = [
@@ -59,12 +75,6 @@ fn i13_2_con_otra_url_clave_o_arena_estrena_freno_y_uso_y_lo_dice() {
             "k",
             false,
             HerenciaDeCuota::OtraUrl,
-        ),
-        (
-            previo("k", true, Some(Arc::clone(&arena))),
-            "k2",
-            true,
-            HerenciaDeCuota::OtraClave,
         ),
         (
             previo("k", true, Some(otra)),
@@ -80,6 +90,7 @@ fn i13_2_con_otra_url_clave_o_arena_estrena_freno_y_uso_y_lo_dice() {
         ),
     ];
     for (anterior, clave, testnet, esperado) in casos {
+        anterior.trigger_kill_switch();
         let (sucesor, herencia) = OrderExecutor::sucesor_de(
             &anterior,
             clave.into(),
@@ -89,6 +100,10 @@ fn i13_2_con_otra_url_clave_o_arena_estrena_freno_y_uso_y_lo_dice() {
         );
         assert_eq!(herencia, esperado);
         assert!(herencia.motivo_sin_herencia().is_some(), "{esperado:?}");
+        assert!(
+            sucesor.is_kill_switch_active(),
+            "{esperado:?}: el kill-switch cruza aunque no comparta el freno"
+        );
         assert!(
             !Arc::ptr_eq(&sucesor.arena, &anterior.arena),
             "{esperado:?}"
