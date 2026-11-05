@@ -124,6 +124,15 @@
   `check_backoff`, salidas incluidas. El freno vive en el cliente (`FrenoExchange`, CL-188) y lo
   comparten sus clones: la hora del NTP y el listenKey lo miran y lo arman con su propio 429/418, una
   sola vez (CL-189), y la cancelación de la pierna hermana del user-data stream sólo lo mira (CL-190).
+  El ejecutor que el host publica al terminar el calentamiento hereda del vigente el freno, su
+  reloj y el uso del exchange (`OrderExecutor::sucesor_de`, I-13, fila N26): con la misma URL y la
+  misma arena comparte los mismos Arc, y los cupos y los clones del anterior que siguen vivos cuentan
+  y frenan también al sucesor. Antes estrenaba un freno y un uso a cero. La clave no decide: el peso
+  y el 418 son de la IP («The limits on the API are based on the IPs, not the API keys», «General
+  Info»), y las órdenes, que son de la cuenta, se sobreestiman con otra clave (lo conservador). El
+  kill-switch del vigente cruza siempre el cambio (fila N58), y todo ejecutor lee además el de su
+  arena en cada entrada: un latch armado durante el cambio o después también lo frena. Sólo frena
+  entradas.
   Siguen fuera los sondeos con su propio cliente HTTP (OI del host, data-pipeline, velas del
   bootloader; filas N29 a N31) y los binarios de operador (fila N32, abajo). Fuera de los frenos, dos tramos de cuota (CL-179): entradas y lecturas
   frenan con el uso por encima del 80 % del límite; las críticas (cierres, protección, el positionRisk de

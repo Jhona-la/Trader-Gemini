@@ -4732,15 +4732,24 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                     (mainnet_key.clone(), mainnet_secret.clone(), false)
                                 };
 
-                                // R3.2 / K-06: Hot-swap preservando el registry y la arena viva
-                                let old_registry = exec.load().registry();
-                                let mut mainnet_executor = execution_engine::executor::OrderExecutor::new_with_shared(
+                                // R3.2 / K-06: Hot-swap preservando el registry y la arena viva.
+                                // I-13 (Línea I, N26): el sucesor hereda del ejecutor vigente el
+                                // freno 429/418, su reloj y el uso del exchange, que miden la IP y
+                                // la cuenta: con uno nuevo volvía a enviar dentro del Retry-After
+                                // de un 429 o del ban de un 418. Aquí la URL y la arena son las del
+                                // arranque, así que no compartir es una anomalía. El kill-switch del
+                                // vigente cruza siempre (N58): el latch dura hasta reiniciar.
+                                let previo = exec.load_full();
+                                let (mut mainnet_executor, herencia) = execution_engine::executor::OrderExecutor::sucesor_de(
+                                    &previo,
                                     target_key,
                                     target_secret,
                                     target_is_testnet,
-                                    old_registry,
-                                    Some(Arc::clone(&arena_real)),
+                                    Arc::clone(&arena_real),
                                 );
+                                if let Some(motivo) = herencia.motivo_sin_herencia() {
+                                    telemetry_engine::telemetry_err!("[OMS TRANSITION] el ejecutor nuevo estrena freno 429/418 y uso del exchange ({}): puede enviar dentro del Retry-After o del ban del anterior", motivo);
+                                }
                                 if is_env_testnet {
                                     mainnet_executor.set_paper_trading(false);
                                 } else {

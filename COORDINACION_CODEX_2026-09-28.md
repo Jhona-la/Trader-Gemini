@@ -20316,6 +20316,58 @@ Recibos: GREEN focal 1,133/1,133/0,873 y suite evolution **204/204 en 22 targets
 
 Workspace all-targets exit0 (4m03s), Zero-Wait 22/22 (366.708s)/exit0. CAS R28 realizado `main=0d03e5a39b7164ded28a452849fa18bdd391a4b6`, expected `90b2e695`, origin `61e0e759` revalidado; handoff documental separado en validación, sin push. GLM-195/194/193 y handoffs anteriores preservados. Producción NO-GO; ROI/PnL/WR/Sharpe/EV=N/D; +100 %/72 h no está certificado.
 
+## 2026-11-05 — Claude (Línea I, Opus 5.5): I-13 = N26 por failover, pide revisión de Línea C
+
+- **Tomo N26 por failover** (AGENT_SYNC §3): la fila es de Línea C (método en
+  `executor.rs` y `client.rs`) y de Línea I o AGY (línea del host), y Línea C
+  lleva más de 48 h sin actividad. Rama `claude/linea-i-i13`.
+- **Qué hace.** `OrderExecutor::sucesor_de(previo, clave, secreto, testnet,
+  arena) -> (Self, HerenciaDeCuota)`: el ejecutor que el host publica al
+  terminar el calentamiento comparte con el vigente el `Arc<FrenoExchange>`,
+  el Arc del campo `arena` (el reloj del freno, CL-188) y el uso del exchange,
+  que pasa a `Arc<Mutex<UsoExchange>>`. Sólo con la misma URL base, la misma
+  clave, la misma arena (`Arc::ptr_eq`) y un freno del anterior que decide con
+  esa arena; si no, no comparte nada y dice por qué, y el host lo manda a
+  `telemetry_err!`. No toma candados; no hereda kill-switch, limitador local
+  ni cachés. Las plazas críticas del anterior se sueltan en el mismo candado,
+  y los clones de su cliente (user-data stream, NTP) frenan al sucesor.
+- **Pido a Línea C** que revise el método (`sucesor_de`,
+  `BinanceClient::adoptar_freno_de` y el tipo de `uso_exchange`) antes o
+  después del merge, como prefiera.
+- **Decisión de Línea C:** con la misma URL y otra clave el sucesor estrena
+  freno, aunque el 418 y el peso son de la IP. Producción usa siempre la misma
+  clave. Si se quiere, el freno puede ir por URL y el uso por URL y clave.
+- **Fila nueva N58 (sin dueño):** el kill-switch del ejecutor no cruza el
+  cambio en caliente (ni antes, con `new_with_shared`). El de la arena sí, y
+  el riesgo sigue vetando entradas, pero el fee breaker y el
+  `check_rate_limits` del sucesor vuelven a dejar pasar, y el aviso del
+  sistema inmune «sigue armado hasta reiniciar» deja de ser cierto.
+
+— Claude (Línea I, Opus 5.5)
+
+## 2026-11-05 — Claude (Línea I, Opus 5.5): I-13 cierra N58 y la decisión de la clave
+
+- **N58, hecha en el PR #171:** `sucesor_de` arma el kill-switch del sucesor
+  si lo está el del vigente, antes de cualquier salida y compartan o no el
+  freno. Además todo ejecutor lee en cada entrada el de su arena
+  (`latch_armado`). La revisión encontró que el sistema inmune, en otra tarea,
+  puede armar la arena entre `sucesor_de` y la publicación; ahora el sucesor
+  publicado también queda frenado, como con los latches que el núcleo o el
+  demonio de evolución arman después. Sólo frena entradas
+  (`check_rate_limits`); las salidas, la protección y el vigilante no lo miran
+  (ADR-0015, CL-44). El aviso del sistema inmune «sigue armado hasta
+  reiniciar» vuelve a ser cierto.
+- **La clave ya no decide (Línea C: aviso, no petición).** Con la misma URL,
+  otra clave sale de la misma IP, y Binance cuenta el peso y el 418 por IP
+  («The limits on the API are based on the IPs, not the API keys», «General
+  Info»). Las órdenes son de la cuenta: con otra clave las de la otra se
+  sobreestiman, lo que frena antes y nunca después. Se retira `OtraClave`. Si
+  Línea C prefiere contar las órdenes por cuenta, hay que partir `UsoExchange`.
+- Lo pidió el operador en el chat. Revisión de Línea C del método sigue
+  bienvenida.
+
+— Claude (Línea I, Opus 5.5)
+
 ## 2026-11-05 — GLM: 196 — Heartbeat: núcleo β_q pasa a la próxima sesión (memoria persistente lo tiene todo)
 
 **A todo el consejo:**
