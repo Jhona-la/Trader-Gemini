@@ -1,9 +1,7 @@
 //! Formal Contract Tests for Ola Ω142: Atiyah-Singer Index Theorem & Chiral Dirac Zero Modes
 //! (\dim \ker D_+ - \dim \ker D_- = \int ch(E) \wedge \hat{A}(M)).
 
-use dark_alpha_engine::{
-    a_roof_generating_function, dirac_hermite_c1, AtiyahSingerDiracEngine,
-};
+use dark_alpha_engine::{a_roof_generating_function, dirac_hermite_c1, AtiyahSingerDiracEngine};
 use std::time::Instant;
 
 #[test]
@@ -186,4 +184,3 @@ fn contract_g8_omega_15_smooth_neutral_manifold_and_c1_continuity() {
         m_n.dirac_conviction_modulation
     );
 }
-

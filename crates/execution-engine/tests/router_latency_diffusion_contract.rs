@@ -63,15 +63,16 @@ fn test_fractional_diffusion_properties_and_sanitization() {
 #[tokio::test]
 async fn test_router_dynamic_panic_latency_and_idempotency_preservation() {
     let arena = GlobalArena::build_in_own_stack(13.0);
+    quantum_arena::symbols::update_dynamic_universe(vec!["BTCUSDT".to_string()]);
     // Configuramos un umbral de pánico calibrado en 200 ms (en vez de 500 ms fijo)
-    arena.config.latency_ms_panic_threshold.store(200.0, Relaxed);
+    arena
+        .config
+        .latency_ms_panic_threshold
+        .store(200.0, Relaxed);
     arena.registry.set("router_max_spread_pct", 0.004);
 
-    let mut executor = OrderExecutor::new(
-        "dummy_key".to_string(),
-        "dummy_secret".to_string(),
-        true,
-    );
+    let mut executor =
+        OrderExecutor::new("dummy_key".to_string(), "dummy_secret".to_string(), true);
     executor.set_paper_trading(true);
     executor.arena.store(Some(arena));
 
@@ -100,17 +101,18 @@ async fn test_router_dynamic_panic_latency_and_idempotency_preservation() {
         )
         .await;
 
-    assert!(res.is_ok(), "El ruteo de emergencia con client_order_id debe completarse con éxito");
+    assert!(
+        res.is_ok(),
+        "El ruteo de emergencia con client_order_id debe completarse con éxito"
+    );
 }
 
 #[tokio::test]
 async fn test_adverse_selection_guard_blocks_frictional_death_for_low_ev_orders() {
     let arena = GlobalArena::build_in_own_stack(13.0);
-    let mut executor = OrderExecutor::new(
-        "dummy_key".to_string(),
-        "dummy_secret".to_string(),
-        true,
-    );
+    quantum_arena::symbols::update_dynamic_universe(vec!["BTCUSDT".to_string()]);
+    let mut executor =
+        OrderExecutor::new("dummy_key".to_string(), "dummy_secret".to_string(), true);
     executor.set_paper_trading(true);
     executor.arena.store(Some(arena));
 
@@ -133,13 +135,16 @@ async fn test_adverse_selection_guard_blocks_frictional_death_for_low_ev_orders(
             0.001,
             0.001,
             0.1,
-            15, // latencia baja y normal (15 ms)
+            15,     // latencia baja y normal (15 ms)
             0.0005, // spread 5 bps
             "WEAK_CHURN_ORDER_01",
         )
         .await;
 
-    assert!(res.is_err(), "La orden de micro-edge devorada por fricciones DEBE ser rechazada");
+    assert!(
+        res.is_err(),
+        "La orden de micro-edge devorada por fricciones DEBE ser rechazada"
+    );
     let err_msg = res.unwrap_err();
     assert!(
         err_msg.contains("REJ_INSUFFICIENT_VIABILITY"),

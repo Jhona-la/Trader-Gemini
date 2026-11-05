@@ -408,7 +408,10 @@ mod tests {
             "el código emitido conserva el parámetro de bifurcación"
         );
         // Y sí lleva la parametrización del continuo.
-        assert!(codigo.contains("tau_ms"), "el código emitido debe recibir τ");
+        assert!(
+            codigo.contains("tau_ms"),
+            "el código emitido debe recibir τ"
+        );
         assert!(
             codigo.contains("fn take_profit_at") && codigo.contains("fn min_volume_at"),
             "las geometrías y los mínimos deben ser funciones de τ"

@@ -57,14 +57,20 @@ fn test_block_absorption_iceberg_detection_and_directional_pressure() {
     let state_ask = engine.compute_absorption(500.0, 100.0, 100.0, 0.01, safe_atr);
     assert!(state_ask.is_iceberg_active);
     assert!(state_ask.ask_absorption_ratio > 1.25);
-    assert!(state_ask.net_iceberg_pressure > 0.0, "net pressure should be positive (ask absorption)");
+    assert!(
+        state_ask.net_iceberg_pressure > 0.0,
+        "net pressure should be positive (ask absorption)"
+    );
     assert_eq!(state_ask.conformal_band_scale, 0.70);
 
     // Case 2: Massive trade volume absorbed in bid with minimal downward displacement (-0.01)
     let state_bid = engine.compute_absorption(500.0, 100.0, 100.0, -0.01, safe_atr);
     assert!(state_bid.is_iceberg_active);
     assert!(state_bid.bid_absorption_ratio > 1.25);
-    assert!(state_bid.net_iceberg_pressure < 0.0, "net pressure should be negative (bid absorption)");
+    assert!(
+        state_bid.net_iceberg_pressure < 0.0,
+        "net pressure should be negative (bid absorption)"
+    );
     assert_eq!(state_bid.conformal_band_scale, 0.70);
 
     // Case 3: Large price displacement (50.0 >> atr) dampens absorption ratio (no iceberg)
@@ -96,8 +102,14 @@ fn test_conformal_risk_gate_verdicts() {
     // Attempting Short aligned with distribution -> ADMITTED with bonus
     let verdict_short = engine.evaluate_conformal_gate(-1.0, &state_distribution);
     match verdict_short {
-        ConformalGateVerdict::Admitted { confidence_multiplier, band_scale } => {
-            assert!(confidence_multiplier > 1.0, "aligned intent gets confidence bonus");
+        ConformalGateVerdict::Admitted {
+            confidence_multiplier,
+            band_scale,
+        } => {
+            assert!(
+                confidence_multiplier > 1.0,
+                "aligned intent gets confidence bonus"
+            );
             assert_eq!(band_scale, 0.70);
         }
         _ => panic!("aligned trade should be admitted"),
@@ -114,7 +126,10 @@ fn test_conformal_risk_gate_verdicts() {
     let verdict_mod = engine.evaluate_conformal_gate(1.0, &state_moderate);
     assert!(matches!(
         verdict_mod,
-        ConformalGateVerdict::ProbeOnlyDeescalation { max_lot_scale: 0.25, band_scale: 1.50 }
+        ConformalGateVerdict::ProbeOnlyDeescalation {
+            max_lot_scale: 0.25,
+            band_scale: 1.50
+        }
     ));
 }
 

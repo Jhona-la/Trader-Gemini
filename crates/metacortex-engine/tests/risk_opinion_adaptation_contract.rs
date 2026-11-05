@@ -88,7 +88,10 @@ fn test_risk_opinion_dynamic_payload_override() {
 
     // 1. Con defaults (d* ≈ 0.6316 -> max_dd = 0.60): 28% DD no es veto
     let op_default = SeniorRiesgo.evaluate(&payload, 0.55);
-    assert!(!op_default.is_veto, "Con límite canónico ~60%, 28% DD no debe vetar");
+    assert!(
+        !op_default.is_veto,
+        "Con límite canónico ~60%, 28% DD no debe vetar"
+    );
 
     // 2. Con override adaptativo de micro-capital (d* = 0.25 -> max_dd = 0.25 * 0.95 = 0.2375)
     payload.max_drawdown_limit = 0.25;
@@ -144,11 +147,17 @@ fn test_risk_opinion_council_params_propagation() {
 fn test_risk_opinion_bounds_validation_and_fail_closed() {
     // 1. Validación en CouncilParams
     assert!(CouncilParams::default().with_risk_bounds(0.50, 1.0).is_ok());
-    assert!(CouncilParams::default().with_risk_bounds(-0.1, 1.0).is_err());
+    assert!(CouncilParams::default()
+        .with_risk_bounds(-0.1, 1.0)
+        .is_err());
     assert!(CouncilParams::default().with_risk_bounds(0.0, 1.0).is_err());
     assert!(CouncilParams::default().with_risk_bounds(1.5, 1.0).is_err());
-    assert!(CouncilParams::default().with_risk_bounds(0.5, -1.0).is_err());
-    assert!(CouncilParams::default().with_risk_bounds(0.5, 15.0).is_err());
+    assert!(CouncilParams::default()
+        .with_risk_bounds(0.5, -1.0)
+        .is_err());
+    assert!(CouncilParams::default()
+        .with_risk_bounds(0.5, 15.0)
+        .is_err());
 
     // 2. Validación en MarketSnapshotPayload
     let mut payload = base_risk_payload();
@@ -193,7 +202,10 @@ fn test_risk_opinion_spectral_continuity_and_monotonicity() {
         let s = step as f64 / 100.0;
         let (_conf, _veto, max_dd) =
             evaluate_risk_drawdown_and_conviction(0.10, 0, s, 1.0, d_star, streak_decay);
-        assert!(max_dd <= prev_max_dd + 1e-12, "max_drawdown debe ser monótono no-creciente en s");
+        assert!(
+            max_dd <= prev_max_dd + 1e-12,
+            "max_drawdown debe ser monótono no-creciente en s"
+        );
         prev_max_dd = max_dd;
     }
 }

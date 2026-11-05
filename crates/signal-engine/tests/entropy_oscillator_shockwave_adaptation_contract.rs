@@ -4,9 +4,8 @@
 //! para RenyiTsallisEntropyEngine, QuantumOscillatorEngine, y SupersonicShockwaveEngine.
 
 use signal_engine::{
-    QuantumOscillatorEngine, QuantumOscillatorParams,
-    RenyiTsallisEntropyEngine, RenyiTsallisEntropyParams,
-    SupersonicShockwaveEngine, SupersonicShockwaveParams,
+    QuantumOscillatorEngine, QuantumOscillatorParams, RenyiTsallisEntropyEngine,
+    RenyiTsallisEntropyParams, SupersonicShockwaveEngine, SupersonicShockwaveParams,
 };
 
 #[test]
@@ -81,8 +80,14 @@ fn test_renyi_tsallis_engine_adaptation_and_smoothness() {
     assert!(vote_high_obi <= 1.0);
 
     // Fail-closed en NaN
-    assert_eq!(RenyiTsallisEntropyEngine::vote_with_params(f64::NAN, 0.5, &updated_params), 0.0);
-    assert_eq!(RenyiTsallisEntropyEngine::vote_with_params(0.2, f64::NAN, &updated_params), 0.0);
+    assert_eq!(
+        RenyiTsallisEntropyEngine::vote_with_params(f64::NAN, 0.5, &updated_params),
+        0.0
+    );
+    assert_eq!(
+        RenyiTsallisEntropyEngine::vote_with_params(0.2, f64::NAN, &updated_params),
+        0.0
+    );
 }
 
 #[test]
@@ -123,7 +128,8 @@ fn test_quantum_oscillator_params_validation_and_force() {
     desplazamientos[15] = -1.2;
     desplazamientos[31] = f64::NAN;
 
-    let voto = QuantumOscillatorEngine::voto_espectral_with_params(&desplazamientos, &custom_params);
+    let voto =
+        QuantumOscillatorEngine::voto_espectral_with_params(&desplazamientos, &custom_params);
     let scale_0 = voto.en_escala(0);
     let scale_15 = voto.en_escala(15);
     let scale_31 = voto.en_escala(31);
@@ -171,7 +177,8 @@ fn test_supersonic_shockwave_params_validation_and_mach_jump() {
     let jump_subsonic = SupersonicShockwaveEngine::compute_shockwave_jump_with_threshold(1.3, 1.4);
     assert_eq!(jump_subsonic, 0.0);
 
-    let jump_supersonic = SupersonicShockwaveEngine::compute_shockwave_jump_with_threshold(2.0, 1.4);
+    let jump_supersonic =
+        SupersonicShockwaveEngine::compute_shockwave_jump_with_threshold(2.0, 1.4);
     assert!(jump_supersonic > 0.0 && jump_supersonic <= 1.0);
 
     // Spectral vote with params
@@ -180,7 +187,8 @@ fn test_supersonic_shockwave_params_validation_and_mach_jump() {
     desplazamientos[10] = -3.0;
     desplazamientos[20] = f64::NAN;
 
-    let voto = SupersonicShockwaveEngine::voto_espectral_with_params(&desplazamientos, &updated_params);
+    let voto =
+        SupersonicShockwaveEngine::voto_espectral_with_params(&desplazamientos, &updated_params);
     let scale_5 = voto.en_escala(5);
     let scale_10 = voto.en_escala(10);
     let scale_20 = voto.en_escala(20);

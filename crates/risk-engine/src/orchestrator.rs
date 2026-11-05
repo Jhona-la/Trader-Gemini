@@ -102,7 +102,8 @@ impl<'a> PortfolioOrchestrator<'a> {
             escasez,
         );
         // F1-083: manifold continuo C1 sin acantilado ni piso muerto .max(0.05)
-        let exposure_limit = Self::continuous_exposure_limit(cushion, directional_max, systemic_pressure);
+        let exposure_limit =
+            Self::continuous_exposure_limit(cushion, directional_max, systemic_pressure);
 
         let max_capital = capital * exposure_limit;
 
@@ -179,8 +180,7 @@ impl<'a> PortfolioOrchestrator<'a> {
         // F1-119: En producción viva, el símplex continuo (p_crash >= 0.90) gobierna el veto duro.
         // fallback_discrete_veto actúa como red de seguridad para fixtures de prueba y arranque en frío
         // donde p_crash aún no ha sido inicializado por el pipeline continuo (p_crash <= 0.0).
-        let fallback_discrete_veto = p_crash <= 0.0
-            && regime == crate::regime::MarketRegime::Crash;
+        let fallback_discrete_veto = p_crash <= 0.0 && regime == crate::regime::MarketRegime::Crash;
         if (systemic_crash_veto || fallback_discrete_veto) && intent_is_long {
             return false; // Bloqueo absoluto de compras en caída libre sistémica.
         }

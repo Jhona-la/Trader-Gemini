@@ -53,7 +53,9 @@ fn xlvl_capitalizacion_compuesta_100_trades_exacta() {
     assert!(
         rel_err < 1e-12,
         "capital={:.12} vs teórico={:.12}, rel_err={:.2e}",
-        capital, theoretical, rel_err
+        capital,
+        theoretical,
+        rel_err
     );
 }
 
@@ -115,6 +117,7 @@ fn xlvl_perdida_maxima_respecta_tope_ruina() {
     assert!(
         max_loss_pct <= 0.005, // ≤ 0.5% del capital por trade
         "pérdida max={:.4} ({:.2}%) del capital, esperaba ≤0.5%",
-        max_loss, max_loss_pct * 100.0
+        max_loss,
+        max_loss_pct * 100.0
     );
 }

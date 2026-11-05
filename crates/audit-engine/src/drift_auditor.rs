@@ -41,7 +41,12 @@ pub struct DriftRecovery {
 
 impl DriftRecovery {
     pub fn new(required_clean: std::num::NonZeroU32) -> Self {
-        Self { required_clean, clean: 0, blocked: false, blocked_since_ms: 0 }
+        Self {
+            required_clean,
+            clean: 0,
+            blocked: false,
+            blocked_since_ms: 0,
+        }
     }
 
     pub fn observe(&mut self, result: &Result<f64, DriftAuditError>) {
@@ -63,9 +68,15 @@ impl DriftRecovery {
         }
     }
 
-    pub fn is_blocked(&self) -> bool { self.blocked }
-    pub fn clean_count(&self) -> u32 { self.clean }
-    pub fn blocked_since_ms(&self) -> u64 { self.blocked_since_ms }
+    pub fn is_blocked(&self) -> bool {
+        self.blocked
+    }
+    pub fn clean_count(&self) -> u32 {
+        self.clean
+    }
+    pub fn blocked_since_ms(&self) -> u64 {
+        self.blocked_since_ms
+    }
 
     /// CL-xxx (F1-062, Ola Ω171): Prevención de estado absorbente cuando la cartera está inactiva.
     /// Si el veto de deriva está activo pero NO hay posiciones abiertas (`open_positions == 0`),
@@ -78,7 +89,12 @@ impl DriftRecovery {
     /// base), la espera se reinicia en `now_ms`: nunca libera antes de tiempo. El host
     /// fechaba el bloqueo en ms epoch y consultaba con ms del proceso, y la espera no
     /// se cumplía nunca (veto absorbente hasta reiniciar).
-    pub fn try_idle_recovery(&mut self, now_ms: u64, cooldown_ms: u64, open_positions: usize) -> bool {
+    pub fn try_idle_recovery(
+        &mut self,
+        now_ms: u64,
+        cooldown_ms: u64,
+        open_positions: usize,
+    ) -> bool {
         if self.blocked && open_positions == 0 {
             if now_ms < self.blocked_since_ms {
                 self.blocked_since_ms = now_ms;
@@ -122,10 +138,11 @@ impl DriftAuditor {
     /// Legacy adapter. Invalid evidence becomes Err(NaN), never Ok(NaN).
     /// New consumers use the typed API to distinguish invalidity from excess drift.
     pub fn audit_execution(&self, real: &TradeResult, shadow: &TradeResult) -> Result<f64, f64> {
-        self.audit_execution_checked(real, shadow).map_err(|error| match error {
-            DriftAuditError::Exceeded { drift, .. } => drift,
-            _ => f64::NAN,
-        })
+        self.audit_execution_checked(real, shadow)
+            .map_err(|error| match error {
+                DriftAuditError::Exceeded { drift, .. } => drift,
+                _ => f64::NAN,
+            })
     }
 
     /// Compares supplied fractional PnLs for compatible symbols/sides, not prices.
@@ -133,7 +150,11 @@ impl DriftAuditor {
     /// deduplication or independent shadow is established by this API.
     /// The signed total is telemetry; the limit applies to EACH observation.
     /// This method never activates or releases a trading interlock.
-    pub fn audit_execution_checked(&self, real: &TradeResult, shadow: &TradeResult) -> Result<f64, DriftAuditError> {
+    pub fn audit_execution_checked(
+        &self,
+        real: &TradeResult,
+        shadow: &TradeResult,
+    ) -> Result<f64, DriftAuditError> {
         if !self.max_allowed_drift.is_finite() || self.max_allowed_drift < 0.0 {
             return Err(DriftAuditError::InvalidLimit);
         }
@@ -159,7 +180,10 @@ impl DriftAuditor {
                 return Err(DriftAuditError::AccumulatorOverflow);
             }
             match self.total_drift_pct.compare_exchange_weak(
-                current_bits, new_drift.to_bits(), Ordering::AcqRel, Ordering::Acquire,
+                current_bits,
+                new_drift.to_bits(),
+                Ordering::AcqRel,
+                Ordering::Acquire,
             ) {
                 Ok(_) => break,
                 Err(actual) => current_bits = actual,
@@ -168,7 +192,10 @@ impl DriftAuditor {
 
         if drift.abs() > self.max_allowed_drift {
             self.mismatch_count.fetch_add(1, Ordering::Relaxed);
-            return Err(DriftAuditError::Exceeded { drift, limit: self.max_allowed_drift });
+            return Err(DriftAuditError::Exceeded {
+                drift,
+                limit: self.max_allowed_drift,
+            });
         }
 
         Ok(drift)
@@ -202,7 +229,10 @@ impl DriftAuditor {
                 return Err(DriftAuditError::AccumulatorOverflow);
             }
             match self.total_drift_pct.compare_exchange_weak(
-                current_bits, new_drift.to_bits(), Ordering::AcqRel, Ordering::Acquire,
+                current_bits,
+                new_drift.to_bits(),
+                Ordering::AcqRel,
+                Ordering::Acquire,
             ) {
                 Ok(_) => break,
                 Err(actual) => current_bits = actual,
@@ -211,7 +241,10 @@ impl DriftAuditor {
 
         if drift.abs() > self.max_allowed_drift {
             self.mismatch_count.fetch_add(1, Ordering::Relaxed);
-            return Err(DriftAuditError::Exceeded { drift, limit: self.max_allowed_drift });
+            return Err(DriftAuditError::Exceeded {
+                drift,
+                limit: self.max_allowed_drift,
+            });
         }
 
         Ok(drift)
@@ -219,7 +252,12 @@ impl DriftAuditor {
 
     /// CL-xxx (F1-062, Ola Ω171): Audita la divergencia real de cartera entre el universo de control (ShadowForest) y la ejecución viva.
     /// Retorna Ok(divergencia) si |divergencia| <= max_divergence, o Err si no es finita o excede el límite.
-    pub fn audit_control_divergence(&self, control_pct: f64, real_pct: f64, max_divergence: f64) -> Result<f64, DriftAuditError> {
+    pub fn audit_control_divergence(
+        &self,
+        control_pct: f64,
+        real_pct: f64,
+        max_divergence: f64,
+    ) -> Result<f64, DriftAuditError> {
         if !max_divergence.is_finite() || max_divergence < 0.0 {
             return Err(DriftAuditError::InvalidLimit);
         }
@@ -231,7 +269,10 @@ impl DriftAuditor {
             return Err(DriftAuditError::NonfiniteDifference);
         }
         if divergencia.abs() > max_divergence {
-            return Err(DriftAuditError::Exceeded { drift: divergencia, limit: max_divergence });
+            return Err(DriftAuditError::Exceeded {
+                drift: divergencia,
+                limit: max_divergence,
+            });
         }
         Ok(divergencia)
     }
@@ -308,8 +349,14 @@ mod tests {
         assert!((res.unwrap() - (-0.001)).abs() < 1e-7);
 
         // Retorno no finito
-        assert_eq!(auditor.centinela_contable(f64::NAN), Err(DriftAuditError::NonfinitePnl));
-        assert_eq!(auditor.centinela_contable(f64::INFINITY), Err(DriftAuditError::NonfinitePnl));
+        assert_eq!(
+            auditor.centinela_contable(f64::NAN),
+            Err(DriftAuditError::NonfinitePnl)
+        );
+        assert_eq!(
+            auditor.centinela_contable(f64::INFINITY),
+            Err(DriftAuditError::NonfinitePnl)
+        );
 
         // Retorno corrupto > 100% no apalancado (|pnl_pct| > 1.0 => |drift| > 0.05)
         let res_corrupt = auditor.centinela_contable(1.20);
@@ -349,6 +396,9 @@ mod tests {
         assert!(matches!(err, Err(DriftAuditError::Exceeded { .. })));
 
         // PnL no finito
-        assert_eq!(auditor.audit_control_divergence(f64::NAN, 0.05, 0.05), Err(DriftAuditError::NonfinitePnl));
+        assert_eq!(
+            auditor.audit_control_divergence(f64::NAN, 0.05, 0.05),
+            Err(DriftAuditError::NonfinitePnl)
+        );
     }
 }

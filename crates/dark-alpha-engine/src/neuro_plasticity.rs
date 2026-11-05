@@ -192,12 +192,9 @@ mod tests {
     #[test]
     fn cl15_capital_invalido_abstiene_la_modulacion_por_micro_cuenta() {
         let p = NeuroPlasticityParams::default();
-        let m_nan = NeuroPlasticityEngine::compute_plasticity_multiplier_with_params(
-            &p, 0.9, f64::NAN,
-        );
-        let m_neg = NeuroPlasticityEngine::compute_plasticity_multiplier_with_params(
-            &p, 0.9, -5.0,
-        );
+        let m_nan =
+            NeuroPlasticityEngine::compute_plasticity_multiplier_with_params(&p, 0.9, f64::NAN);
+        let m_neg = NeuroPlasticityEngine::compute_plasticity_multiplier_with_params(&p, 0.9, -5.0);
         let m_grande = NeuroPlasticityEngine::compute_plasticity_multiplier_with_params(
             &p,
             0.9,
@@ -211,9 +208,8 @@ mod tests {
             (m_neg - m_grande).abs() < 1e-12,
             "capital negativo ⇒ modulación OFF (neutro)"
         );
-        let m_micro = NeuroPlasticityEngine::compute_plasticity_multiplier_with_params(
-            &p, 0.9, 1.0,
-        );
+        let m_micro =
+            NeuroPlasticityEngine::compute_plasticity_multiplier_with_params(&p, 0.9, 1.0);
         assert!(
             m_micro > m_grande,
             "el micro_boost sólo con capital REAL pequeño declarado"

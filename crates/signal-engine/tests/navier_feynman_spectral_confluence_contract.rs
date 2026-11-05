@@ -2,10 +2,10 @@
 //! 15-Motor Spectral Consensus Integration & Prequential Skill Calibration.
 
 use signal_engine::skill_motores::{
-    SkillMotores, MOTOR_FEYNMAN, MOTOR_NAVIER_STOKES, MOTORES, NOMBRES_MOTORES,
+    SkillMotores, MOTORES, MOTOR_FEYNMAN, MOTOR_NAVIER_STOKES, NOMBRES_MOTORES,
     NUM_PARES_MOTOR_ESCALA, PISO_EXPLORACION,
 };
-use signal_engine::voto_espectral::{ESCALAS_VOTO, VotoEspectral};
+use signal_engine::voto_espectral::{VotoEspectral, ESCALAS_VOTO};
 
 #[test]
 fn contract_15_motors_constants_and_family_multiplicity() {
@@ -176,7 +176,8 @@ fn contract_anti_aligned_navier_feynman_retains_exploration_floor_without_invers
 }
 
 #[test]
-fn contract_lg8_146_02_feynman_abstains_under_decoherence_and_navier_stokes_breaks_sign_collinearity() {
+fn contract_lg8_146_02_feynman_abstains_under_decoherence_and_navier_stokes_breaks_sign_collinearity(
+) {
     use signal_engine::feynman_propagator::{FeynmanPropagatorEngine, FeynmanPropagatorParams};
     use signal_engine::navier_stokes_manifold::{
         NavierStokesManifoldEngine, NavierStokesManifoldParams,
@@ -225,4 +226,3 @@ fn contract_lg8_146_02_feynman_abstains_under_decoherence_and_navier_stokes_brea
         voto_ns.en_escala(10)
     );
 }
-

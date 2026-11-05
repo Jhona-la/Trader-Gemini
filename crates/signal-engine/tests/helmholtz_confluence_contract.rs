@@ -21,8 +21,8 @@
 
 use omniscient_registry::OmniscientRegistry;
 use signal_engine::flow_excitation_confluence::FlowExcitationConfluenceEngine;
-use strategy_core::QuantumStrategy;
 use std::sync::Arc;
+use strategy_core::QuantumStrategy;
 
 fn build_base_long_registry() -> Arc<OmniscientRegistry> {
     let reg = Arc::new(OmniscientRegistry::new());
@@ -152,12 +152,18 @@ fn test_helmholtz_nan_inf_immunity() {
     let mut eng_nan = FlowExcitationConfluenceEngine::new();
     assert!(eng_nan.init(reg_nan).is_ok());
     let v_nan = eng_nan.evaluate();
-    assert!(v_nan.is_finite(), "NaN en helmholtz_conviction no debe propagarse");
+    assert!(
+        v_nan.is_finite(),
+        "NaN en helmholtz_conviction no debe propagarse"
+    );
 
     let reg_inf = build_base_long_registry();
     reg_inf.set("helmholtz_conviction", f64::INFINITY);
     let mut eng_inf = FlowExcitationConfluenceEngine::new();
     assert!(eng_inf.init(reg_inf).is_ok());
     let v_inf = eng_inf.evaluate();
-    assert!(v_inf.is_finite(), "INFINITY en helmholtz_conviction no debe propagarse");
+    assert!(
+        v_inf.is_finite(),
+        "INFINITY en helmholtz_conviction no debe propagarse"
+    );
 }

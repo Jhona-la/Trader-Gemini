@@ -21,7 +21,8 @@ fn test_aislamiento_estricto_sin_caida_al_global() {
     registry.set_for_coin(0, "mid_price", 60_000.0);
 
     // 2. Consulta para BTCUSDT (coin 0): debe obtener 60_000.0
-    let btc_val = registry.get_scoped_val_strict_or(Some("BTCUSDT"), Some(0), "mid_price", f64::NAN);
+    let btc_val =
+        registry.get_scoped_val_strict_or(Some("BTCUSDT"), Some(0), "mid_price", f64::NAN);
     assert!(
         (btc_val - 60_000.0).abs() < 1e-6,
         "BTCUSDT debe leer su propio valor escopado, obtenido: {btc_val}"
@@ -29,25 +30,32 @@ fn test_aislamiento_estricto_sin_caida_al_global() {
 
     // 3. Consulta estricta para ETHUSDT (coin 1) que NO tiene valor registrado:
     // Con get_scoped_val_or (antiguo con fallback), caería a 50_000.0 (global contaminado)
-    let eth_val_con_fallback = registry.get_scoped_val_or(Some("ETHUSDT"), Some(1), "mid_price", 0.0);
+    let eth_val_con_fallback =
+        registry.get_scoped_val_or(Some("ETHUSDT"), Some(1), "mid_price", 0.0);
     assert!(
         (eth_val_con_fallback - 50_000.0).abs() < 1e-6,
         "get_scoped_val_or con fallback hereda globalmente (demuestra el comportamiento heredado)"
     );
 
     // Con get_scoped_val_strict_or, NUNCA cae al global: devuelve default (NaN)
-    let eth_val_estricto = registry.get_scoped_val_strict_or(Some("ETHUSDT"), Some(1), "mid_price", f64::NAN);
+    let eth_val_estricto =
+        registry.get_scoped_val_strict_or(Some("ETHUSDT"), Some(1), "mid_price", f64::NAN);
     assert!(
         eth_val_estricto.is_nan(),
         "ETHUSDT debe devolver NaN en lectura estricta, jamás heredar el global: obtenido: {eth_val_estricto}"
     );
 
     // 4. Parámetro estricto get_scoped_parameter_strict
-    let btc_param = registry.get_scoped_parameter_strict(Some("BTCUSDT"), Some(0), "mid_price", "test");
-    assert!(btc_param.is_some(), "BTCUSDT debe resolver su parámetro escopado");
+    let btc_param =
+        registry.get_scoped_parameter_strict(Some("BTCUSDT"), Some(0), "mid_price", "test");
+    assert!(
+        btc_param.is_some(),
+        "BTCUSDT debe resolver su parámetro escopado"
+    );
     assert!((btc_param.unwrap().get_value() - 60_000.0).abs() < 1e-6);
 
-    let eth_param = registry.get_scoped_parameter_strict(Some("ETHUSDT"), Some(1), "mid_price", "test");
+    let eth_param =
+        registry.get_scoped_parameter_strict(Some("ETHUSDT"), Some(1), "mid_price", "test");
     assert!(
         eth_param.is_none(),
         "ETHUSDT no tiene parámetro registrado: debe ser None, nunca el global"
@@ -84,9 +92,15 @@ fn test_resolucion_precedencia_simbolo_sobre_coin_id() {
     registry.set_scoped("BTCUSDT", "atr_1s", 15.0);
 
     let val = registry.get_scoped_val_strict_or(Some("BTCUSDT"), Some(0), "atr_1s", 0.0);
-    assert_eq!(val, 15.0, "El ámbito por símbolo debe preceder al de coin_id");
+    assert_eq!(
+        val, 15.0,
+        "El ámbito por símbolo debe preceder al de coin_id"
+    );
 
     // Si falta por símbolo, recurre a coin_id
     let val_cid = registry.get_scoped_val_strict_or(Some("OTHER"), Some(0), "atr_1s", 0.0);
-    assert_eq!(val_cid, 10.0, "Si no hay clave por símbolo, recurre a coin_id");
+    assert_eq!(
+        val_cid, 10.0,
+        "Si no hay clave por símbolo, recurre a coin_id"
+    );
 }

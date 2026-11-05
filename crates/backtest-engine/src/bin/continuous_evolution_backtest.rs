@@ -15,23 +15,15 @@ static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
 /// nichos no diferenciaban lo que decían diferenciar.
 fn nicho_curva_tp(g: &mut quantum_arena::genome::SuperGenotype, tp_fast: f64, tp_slow: f64) {
     use quantum_arena::temporal_spectrum::{HorizonCurve, TAU_ANCHOR_FAST_MS, TAU_ANCHOR_SLOW_MS};
-    g.tp_horizon_curve = HorizonCurve::through_two_points(
-        TAU_ANCHOR_FAST_MS,
-        tp_fast,
-        TAU_ANCHOR_SLOW_MS,
-        tp_slow,
-    );
+    g.tp_horizon_curve =
+        HorizonCurve::through_two_points(TAU_ANCHOR_FAST_MS, tp_fast, TAU_ANCHOR_SLOW_MS, tp_slow);
     g.derive_anchors_from_curves();
 }
 
 fn nicho_curva_sl(g: &mut quantum_arena::genome::SuperGenotype, sl_fast: f64, sl_slow: f64) {
     use quantum_arena::temporal_spectrum::{HorizonCurve, TAU_ANCHOR_FAST_MS, TAU_ANCHOR_SLOW_MS};
-    g.sl_horizon_curve = HorizonCurve::through_two_points(
-        TAU_ANCHOR_FAST_MS,
-        sl_fast,
-        TAU_ANCHOR_SLOW_MS,
-        sl_slow,
-    );
+    g.sl_horizon_curve =
+        HorizonCurve::through_two_points(TAU_ANCHOR_FAST_MS, sl_fast, TAU_ANCHOR_SLOW_MS, sl_slow);
     g.derive_anchors_from_curves();
 }
 
@@ -55,8 +47,8 @@ fn daily_report(
                 let price = coin.current_price.load(Ordering::Relaxed);
                 let exit_price = if price > 0.0 { price } else { fallback_price };
                 let exit_fee = qty * exit_price * 0.0005;
-                let value = (exit_price - entry) * qty * if is_long { 1.0 } else { -1.0 }
-                    - exit_fee;
+                let value =
+                    (exit_price - entry) * qty * if is_long { 1.0 } else { -1.0 } - exit_fee;
                 if value.is_finite() {
                     floating += value;
                 }
@@ -68,7 +60,11 @@ fn daily_report(
     // new gain/loss on the next day. Initial reporting equity is the flat
     // account's initial capital, independently of candidate sizing state.
     let pnl = equity - *previous_equity;
-    let pct = if *previous_equity > 0.0 { pnl / *previous_equity * 100.0 } else { 0.0 };
+    let pct = if *previous_equity > 0.0 {
+        pnl / *previous_equity * 100.0
+    } else {
+        0.0
+    };
     *cumulative_pnl += pnl;
     *previous_equity = equity;
     (cash, floating, equity, pnl, pct)
@@ -539,9 +535,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             omni[4] = (live_ofi * 100.0).clamp(0.0, 200.0);
             omni[5] = 50.0; // Benchmark neutral RSI proxy
             omni[11] = 0.0001; // agg_funding_rate
-            // SOL-F9-4: bloque macro 21-29 = SENTINELA 0.0 (sin tape macro).
-            // Ver darwin.rs: los literales 2024 (y el VIX 18.5 fijo)
-            // divergían del harness ML y del servido vivo.
+                               // SOL-F9-4: bloque macro 21-29 = SENTINELA 0.0 (sin tape macro).
+                               // Ver darwin.rs: los literales 2024 (y el VIX 18.5 fijo)
+                               // divergían del harness ML y del servido vivo.
             omni[21] = 0.0; // dxy
             omni[22] = 0.0; // sp500
             omni[23] = 0.0; // nasdaq
@@ -680,12 +676,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         } else {
             ticks[0].bid_price
         };
-        let (day_final_cap, open_unrealized, total_equity, day_pnl, pnl_pct) = daily_report(
-            &arena,
-            last_tick_price,
-            &mut report_equity,
-            &mut global_pnl,
-        );
+        let (day_final_cap, open_unrealized, total_equity, day_pnl, pnl_pct) =
+            daily_report(&arena, last_tick_price, &mut report_equity, &mut global_pnl);
         current_capital = total_equity;
 
         println!(
@@ -790,7 +782,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         };
                         let exit_fee = qty * exit_price * 0.0005;
                         let unrealized =
-                            (exit_price - entry) * qty * if is_long { 1.0 } else { -1.0 } - exit_fee;
+                            (exit_price - entry) * qty * if is_long { 1.0 } else { -1.0 }
+                                - exit_fee;
                         if unrealized.is_finite() {
                             cap += unrealized;
                         }
@@ -1132,11 +1125,19 @@ mod reporting_contract {
     use quantum_arena::position::PositionHorizon;
 
     fn near(actual: f64, expected: f64) {
-        assert!(actual.is_finite() && (actual - expected).abs() <= 2e-12 * expected.abs().max(1.0),
-            "actual={actual:?}, expected={expected:?}");
+        assert!(
+            actual.is_finite() && (actual - expected).abs() <= 2e-12 * expected.abs().max(1.0),
+            "actual={actual:?}, expected={expected:?}"
+        );
     }
 
-    fn checkpoint(arena: &GlobalArena, previous: &mut f64, sum: &mut f64, expected_pnl: f64, expected_equity: f64) {
+    fn checkpoint(
+        arena: &GlobalArena,
+        previous: &mut f64,
+        sum: &mut f64,
+        expected_pnl: f64,
+        expected_equity: f64,
+    ) {
         let cash = arena.unified_capital.load(Ordering::Relaxed);
         let margin = arena.used_margin.load(Ordering::Relaxed);
         let start_equity = *previous;
@@ -1171,8 +1172,19 @@ mod reporting_contract {
         let (mut previous, mut sum) = (100.0, 0.0);
         checkpoint(&arena, &mut previous, &mut sum, 0.0, 100.0);
         let pos = &arena.coins[0].positions.slot_2;
-        assert!(pos.open_with_fee(true, 100.0, 1.0, 10.0, 1_000, 150.0, 50.0,
-            PositionHorizon::Continuous, 0.6, 0.5, 0.05));
+        assert!(pos.open_with_fee(
+            true,
+            100.0,
+            1.0,
+            10.0,
+            1_000,
+            150.0,
+            50.0,
+            PositionHorizon::Continuous,
+            0.6,
+            0.5,
+            0.05
+        ));
         arena.used_margin.fetch_add(10.0, Ordering::Relaxed);
         arena.unified_capital.fetch_add(-0.05, Ordering::Relaxed);
         arena.coins[0].current_price.store(110.0, Ordering::Relaxed);
@@ -1184,7 +1196,10 @@ mod reporting_contract {
         assert!(long && !pos.is_open());
         near(entry_fee, 0.05);
         arena.used_margin.fetch_add(-margin, Ordering::Relaxed);
-        arena.unified_capital.fetch_add((120.0 - entry) * qty - qty * 120.0 * 0.0005, Ordering::Relaxed);
+        arena.unified_capital.fetch_add(
+            (120.0 - entry) * qty - qty * 120.0 * 0.0005,
+            Ordering::Relaxed,
+        );
         checkpoint(&arena, &mut previous, &mut sum, 0.0, 119.89);
         arena.unified_capital.fetch_add(-0.25, Ordering::Relaxed);
         checkpoint(&arena, &mut previous, &mut sum, -0.25, 119.64);
@@ -1199,9 +1214,24 @@ mod reporting_contract {
         let long = &arena.coins[0].positions.slot_2;
         let short = &arena.coins[1].positions.slot_2;
         let second_slot = &arena.coins[0].positions.slots()[0];
-        for (pos, is_long, qty) in [(long, true, 1.0), (short, false, 2.0), (second_slot, true, 0.5)] {
-            assert!(pos.open_with_fee(is_long, 100.0, qty, 1.0, 1_000, 0.0, 0.0,
-                PositionHorizon::Continuous, 0.5, 0.5, 0.0));
+        for (pos, is_long, qty) in [
+            (long, true, 1.0),
+            (short, false, 2.0),
+            (second_slot, true, 0.5),
+        ] {
+            assert!(pos.open_with_fee(
+                is_long,
+                100.0,
+                qty,
+                1.0,
+                1_000,
+                0.0,
+                0.0,
+                PositionHorizon::Continuous,
+                0.5,
+                0.5,
+                0.0
+            ));
         }
         arena.coins[0].current_price.store(90.0, Ordering::Relaxed);
         arena.coins[1].current_price.store(105.0, Ordering::Relaxed);

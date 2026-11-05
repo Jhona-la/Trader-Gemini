@@ -36,15 +36,23 @@ pub struct VotoEspectral {
 
 impl Default for VotoEspectral {
     fn default() -> Self {
-        Self { por_escala: [0.0; ESCALAS_VOTO] }
+        Self {
+            por_escala: [0.0; ESCALAS_VOTO],
+        }
     }
 }
 
 impl VotoEspectral {
     /// El voto plano de un motor NO refactorizado, extendido a la malla.
     pub fn desde_escalar(v: f64) -> Self {
-        let v = if v.is_finite() { v.clamp(-1.0, 1.0) } else { 0.0 };
-        Self { por_escala: [v; ESCALAS_VOTO] }
+        let v = if v.is_finite() {
+            v.clamp(-1.0, 1.0)
+        } else {
+            0.0
+        };
+        Self {
+            por_escala: [v; ESCALAS_VOTO],
+        }
     }
 
     /// El voto de un motor REFACTORIZADO: `f` evaluado en el desplazamiento
@@ -53,7 +61,11 @@ impl VotoEspectral {
         let mut por_escala = [0.0; ESCALAS_VOTO];
         for (k, &x) in x_por_escala.iter().enumerate() {
             let v = f(x);
-            por_escala[k] = if v.is_finite() { v.clamp(-1.0, 1.0) } else { 0.0 };
+            por_escala[k] = if v.is_finite() {
+                v.clamp(-1.0, 1.0)
+            } else {
+                0.0
+            };
         }
         Self { por_escala }
     }
@@ -200,7 +212,7 @@ mod tests {
         assert_eq!(voto.en_escala(0), -0.5);
         assert_eq!(voto.en_escala(1), 0.5);
         assert_eq!(voto.dominante(), Some((0, -0.5))); // primer máximo |·|
-        // Banda parcial.
+                                                       // Banda parcial.
         assert_eq!(voto.media_banda(0, 1), Some(0.0));
     }
 
@@ -243,7 +255,10 @@ mod tests {
 
         // media_banda_activa(0, 31) divide sólo entre las 22 escalas activas -> exactamente 0.8!
         let media_activa = voto.media_banda_activa(0, 31).unwrap();
-        assert!((media_activa - 0.8).abs() < 1e-12, "media_activa debe ser 0.8, got {media_activa}");
+        assert!(
+            (media_activa - 0.8).abs() < 1e-12,
+            "media_activa debe ser 0.8, got {media_activa}"
+        );
     }
 }
 
@@ -253,7 +268,11 @@ impl VotoEspectral {
     pub fn desde_arr(por_escala: &[f64; ESCALAS_VOTO]) -> Self {
         let mut arr = [0.0; ESCALAS_VOTO];
         for (k, &v) in por_escala.iter().enumerate() {
-            arr[k] = if v.is_finite() { v.clamp(-1.0, 1.0) } else { 0.0 };
+            arr[k] = if v.is_finite() {
+                v.clamp(-1.0, 1.0)
+            } else {
+                0.0
+            };
         }
         Self { por_escala: arr }
     }

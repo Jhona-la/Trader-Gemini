@@ -46,7 +46,7 @@ fn test_helmholtz_vortical_spoofing_detection() {
     for i in 0..30 {
         let sign = if i % 2 == 0 { 1.0 } else { -1.0 };
         let p_vel = 0.05 * sign; // Precio plano
-        let ofi = 0.95 * sign;   // Libro oscilando agresivamente (wash/spoof)
+        let ofi = 0.95 * sign; // Libro oscilando agresivamente (wash/spoof)
         let decomp = engine.update(p_vel, ofi);
 
         if i > 20 {
@@ -78,7 +78,10 @@ fn test_helmholtz_zero_alloc_latency_budget() {
     let elapsed = start.elapsed();
     let per_update_ns = elapsed.as_nanos() as f64 / iterations as f64;
 
-    println!("⚡ Latencia Descomposición Helmholtz-Hodge: {:.2} ns / actualización", per_update_ns);
+    println!(
+        "⚡ Latencia Descomposición Helmholtz-Hodge: {:.2} ns / actualización",
+        per_update_ns
+    );
     // Mandato estricto: ejecución en nanosegundos / microsegundos (<25 µs = 25,000 ns)
     assert!(
         per_update_ns < 25_000.0,
@@ -148,4 +151,3 @@ fn test_g8_omega_07_c1_continuity_and_scale_invariance() {
         );
     }
 }
-

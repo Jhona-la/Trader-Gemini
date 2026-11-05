@@ -43,12 +43,22 @@ fn votos_por_fuente_media_con_signo_de_instancias() {
     let votos = engine.votos_por_fuente_snapshot();
     let dato = |n: &str| votos.iter().find(|(k, _)| *k == n).map(|(_, v)| *v);
     let alpha = dato("alpha").expect("alpha presente");
-    assert!((alpha - 0.4).abs() < 1e-12, "alpha = media de instancias: {alpha}");
+    assert!(
+        (alpha - 0.4).abs() < 1e-12,
+        "alpha = media de instancias: {alpha}"
+    );
     let beta = dato("beta").expect("beta presente");
-    assert!((beta - (-0.4)).abs() < 1e-12, "beta conserva el SIGNO: {beta}");
+    assert!(
+        (beta - (-0.4)).abs() < 1e-12,
+        "beta conserva el SIGNO: {beta}"
+    );
     let gamma = dato("gamma").expect("gamma presente (muda con 0.0 honesto)");
     assert_eq!(gamma, 0.0);
-    assert_eq!(votos.len(), 3, "una fila por FUENTE distinta, no por instancia");
+    assert_eq!(
+        votos.len(),
+        3,
+        "una fila por FUENTE distinta, no por instancia"
+    );
 }
 
 #[test]

@@ -42,9 +42,15 @@ fn cl80_statarb_moneda_sin_fisica_propia_no_hereda_z_global() {
     set_propia(&r, 1, "ETHUSDT", "vecm_zscore", 0.0);
     let mut sa = StatArbEngine::new(30, 1.5);
     assert!(sa.init(r).is_ok());
-    let (v0, v1) = (sa.evaluate_for_coin(0, "BTCUSDT"), sa.evaluate_for_coin(1, "ETHUSDT"));
+    let (v0, v1) = (
+        sa.evaluate_for_coin(0, "BTCUSDT"),
+        sa.evaluate_for_coin(1, "ETHUSDT"),
+    );
     println!("observado: StatArb moneda 0 = {v0:.4}, moneda 1 = {v1:.4}");
-    assert!((v0 + (1.0f64 / 1.5).tanh()).abs() < 1e-12, "control: moneda 0 = {v0}");
+    assert!(
+        (v0 + (1.0f64 / 1.5).tanh()).abs() < 1e-12,
+        "control: moneda 0 = {v0}"
+    );
     assert_eq!(v1, 0.0, "la moneda 1 vota con la z de la moneda 0: {v1}");
 }
 
@@ -54,7 +60,10 @@ fn cl80_vecm_moneda_sin_z_propia_no_hereda_la_global() {
     set_reg(&r, 0, "BTCUSDT", "vecm_zscore", 2.5);
     let mut ve = JohansenVecmEngine::default();
     assert!(ve.init(r).is_ok());
-    let (v0, v1) = (ve.evaluate_for_coin(0, "BTCUSDT"), ve.evaluate_for_coin(1, "ETHUSDT"));
+    let (v0, v1) = (
+        ve.evaluate_for_coin(0, "BTCUSDT"),
+        ve.evaluate_for_coin(1, "ETHUSDT"),
+    );
     println!("observado: VECM moneda 0 = {v0:.4}, moneda 1 = {v1:.4}");
     assert!(v0 < 0.0, "control: la moneda 0 vota reversión ({v0})");
     assert_eq!(v1, 0.0, "la moneda 1 vota con la z de la moneda 0: {v1}");
