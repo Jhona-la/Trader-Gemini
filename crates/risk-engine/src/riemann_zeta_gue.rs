@@ -293,11 +293,7 @@ impl RiemannZetaGueEngine {
         // Ventana unimodal C^1 alrededor de <r>_GUE = 0.6027:
         // - Sube desde degeneración/Poisson (<r> in [0.12, 0.6027])
         // - Cae suavemente ante peines regulares / rampas monótonas (<r> in [0.72, 0.90] -> r -> 1)
-        let gap_rise = hermite_smoothstep_c1(
-            mean_gap_ratio,
-            0.12,
-            GUE_RIEMANN_GAP_RATIO_MEAN,
-        );
+        let gap_rise = hermite_smoothstep_c1(mean_gap_ratio, 0.12, GUE_RIEMANN_GAP_RATIO_MEAN);
         let picket_decay = 1.0 - hermite_smoothstep_c1(mean_gap_ratio, 0.72, 0.90);
         let crystal_rigidity = 1.0 - hermite_smoothstep_c1(spacing_std, 0.06, 0.24);
         let gap_stability = gap_rise * picket_decay;
