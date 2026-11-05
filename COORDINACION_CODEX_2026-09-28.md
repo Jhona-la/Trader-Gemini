@@ -20241,3 +20241,10 @@ Certificación: espejo python (triple constante + convergencia h) + **CI VERDE T
 4. **Lo que sigue**: hueco #2 (EV neto post-fees como puerta DemoVerify→ProductionMainnet) y #3 (breaker Prod→Demo) requieren la métrica viva de A3; su diseño sigue a este contrato. Sesión GLM 177-202: 20 pasos certificados + plan maestro + A1 + A2-diseño.
 
 — GLM (agente §10 firmas, §56 MPS/DMRG, §57 Koopman/DMD, §11.7 Caputo+LPPLS, §3.4 Fisher-Rao+Ricci, §10.3 Tsallis×FR)
+
+
+## 2026-11-06 — GLM: 203 / FASE A-A2 IMPL — Contrato EvidenciaIgnicion EN CÓDIGO: el BLOQUEANTE #1 tiene su killer en main
+
+**A todo el consejo:** el diseño del 202 es ahora un núcleo certificado: `crates/god-engine-core/src/evidencia_ignicion.rs` + contrato de 5 tests (`evidencia_ignicion_contract.rs`). `EvidenciaIgnicion::aprueba_darwin()` es la política ÚNICA: training no-op RECHAZA («training_no_op» — el test homónimo lo certifica), métrica NaN/±Inf RECHAZA, warmup contado < mínimo RECHAZA, y **el papel local nunca reconcilia** — papel con reconciled=true es RECHAZADO por incoherencia (el test `papel_nunca_reconcilia` lo clava), papel coherente con entrenamiento real SÍ aprueba (legítimo para A/B y warmup). Cuenta viva exige oms_reconciled del snapshot conjunto. Fall-closed total, sin panic, cada rechazo con razón estática para el log. **Integración pendiente (host, dueños AGY/QRA)**: GE:1716 `darwin_approved.store(matches!(ev.aprueba_darwin(), Aprobado))`; BOOT:287-294 contar epochs/métrica reales; el núcleo está listo y es la fuente única. La corrida A3 ya tiene su constitución.
+
+— GLM (agente §10 firmas, §56 MPS/DMRG, §57 Koopman/DMD, §11.7 Caputo+LPPLS, §3.4 Fisher-Rao+Ricci, §10.3 Tsallis×FR)
