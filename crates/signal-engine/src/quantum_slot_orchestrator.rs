@@ -551,7 +551,14 @@ impl QuantumSlotOrchestrator {
     ) -> MultiSlotOrderEmission {
         let mut emission = MultiSlotOrderEmission::empty();
 
-        if report.active_slots_count == 0 || capital_available_usd <= 0.0 {
+        if report.active_slots_count == 0
+            || !capital_available_usd.is_finite()
+            || capital_available_usd <= 0.0
+            || !risk_fraction.is_finite()
+            || risk_fraction <= 0.0
+            || !max_leverage.is_finite()
+            || max_leverage <= 0.0
+        {
             return emission;
         }
 
