@@ -88,31 +88,26 @@ fn c2_grossman_zhou_floor_breach_and_deceleration() {
 }
 
 #[test]
-fn c3_ville_ruin_bound_convergence() {
+fn c3_ville_edge_evidence_is_not_ruin_probability() {
     let params = VilleGrossmanParams::default();
     let mut gate = VilleGrossmanIgnitionGate::new(100.0, params);
 
-    // Alimentar 25 operaciones OOS con edge neto consistente (+15 bps por operación)
     for _ in 0..25 {
         gate.record_oos_trade(15.0);
     }
 
     let report = gate.evaluate_ignition_readiness();
 
-    assert!(
-        report.ville_e_value > 1.0,
-        "El e-value de Ville debe ser > 1.0 ante edge sostenido"
-    );
-    assert!(
-        report.ruin_probability_bound < 1.0,
-        "La cota de ruina debe converger hacia valores decrecientes"
-    );
+    assert!(report.ville_e_value > 1.0);
+    assert!(report.ruin_probability_bound.is_nan());
+    assert!(report.violation_mask & (1 << 6) != 0);
+    assert!(!report.certified_for_live_ignition);
 }
 
 #[test]
-fn c4_full_oos_ignition_certification_pass() {
+fn c4_full_oos_edge_does_not_open_unidentified_ruin() {
     let params = VilleGrossmanParams {
-        max_ruin_probability: 0.10, // Umbral accesible en prueba sintética de 30 operaciones
+        max_ruin_probability: 0.10,
         grossman_alpha_floor: 0.985,
         max_allowed_drawdown_pct: 0.015,
         min_oos_sharpe: 2.0,
@@ -120,7 +115,6 @@ fn c4_full_oos_ignition_certification_pass() {
     };
     let mut gate = VilleGrossmanIgnitionGate::new(100.0, params);
 
-    // Simular 40 operaciones OOS con excelente performance: Sharpe alto y Win Rate > 75%
     for i in 0..40 {
         let pnl = if i % 5 == 0 { -2.0 } else { 25.0 };
         gate.record_oos_trade(pnl);
@@ -128,17 +122,12 @@ fn c4_full_oos_ignition_certification_pass() {
 
     let report = gate.evaluate_ignition_readiness();
 
-    assert!(report.oos_sample_count >= 25, "Muestras OOS suficientes");
-    assert!(report.oos_sharpe_estimate >= 2.0, "Sharpe OOS >= 2.0");
-    assert!(report.current_drawdown_pct <= 0.015, "Drawdown <= 1.5%");
-    assert_eq!(
-        report.violation_mask, 0,
-        "Máscara de violaciones debe ser 0 (CLEAN PASS)"
-    );
-    assert!(
-        report.certified_for_live_ignition,
-        "Debe certificar formalmente la puerta de ignición para producción"
-    );
+    assert!(report.oos_sample_count >= 25);
+    assert!(report.oos_sharpe_estimate >= 2.0);
+    assert!(report.current_drawdown_pct <= 0.015);
+    assert!(report.ruin_probability_bound.is_nan());
+    assert!(report.violation_mask & (1 << 6) != 0);
+    assert!(!report.certified_for_live_ignition);
 }
 
 #[test]
@@ -146,18 +135,47 @@ fn c5_nan_and_infinite_wealth_safety_resilience() {
     let params = VilleGrossmanParams::default();
     let mut gate = VilleGrossmanIgnitionGate::new(100.0, params);
 
-    // Inyección de valores anómalos / ruido numérico
     gate.update_wealth(f64::NAN);
     gate.update_wealth(f64::INFINITY);
     gate.record_oos_trade(f64::NAN);
 
-    assert_eq!(
-        gate.current_wealth(),
-        100.0,
-        "Riqueza debe permanecer invariante ante NaNs"
-    );
-
+    assert!(!gate.current_wealth().is_finite());
     let report = gate.evaluate_ignition_readiness();
-    assert!(gate.current_wealth().is_finite());
-    assert!(report.ruin_probability_bound.is_finite());
+    assert!(!report.certified_for_live_ignition);
+    assert!(report.violation_mask & IgnitionViolationBits::WEALTH_NON_FINITE != 0);
+}
+
+#[test]
+fn c6_invalid_wealth_revokes_prior_live_certification() {
+    for wealth in [0.0, -1.0, f64::NAN, f64::INFINITY] {
+        let params = VilleGrossmanParams {
+            max_ruin_probability: 0.10,
+            ..VilleGrossmanParams::default()
+        };
+        let mut gate = VilleGrossmanIgnitionGate::new(100.0, params);
+        for i in 0..40 {
+            let pnl = if i % 5 == 0 { -2.0 } else { 25.0 };
+            gate.record_oos_trade(pnl);
+        }
+        gate.update_wealth(wealth);
+
+        if wealth.is_nan() {
+            assert!(gate.current_wealth().is_nan());
+        } else {
+            assert_eq!(gate.current_wealth(), wealth);
+        }
+        let report = gate.evaluate_ignition_readiness();
+        assert!(!report.certified_for_live_ignition);
+        assert!(report.violation_mask & IgnitionViolationBits::WEALTH_NON_FINITE != 0);
+    }
+}
+
+#[test]
+fn c7_initial_wealth_invalid_has_no_fallback() {
+    let gate = VilleGrossmanIgnitionGate::new(0.0, VilleGrossmanParams::default());
+
+    assert_eq!(gate.initial_wealth(), 0.0);
+    let report = gate.evaluate_ignition_readiness();
+    assert!(!report.certified_for_live_ignition);
+    assert!(report.violation_mask & IgnitionViolationBits::WEALTH_NON_FINITE != 0);
 }
