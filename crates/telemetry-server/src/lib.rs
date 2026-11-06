@@ -16,6 +16,7 @@ pub mod hyperdimensional_graph;
 pub mod macros;
 pub mod mirofish_lattice;
 pub mod mmap_viz_stream;
+pub mod online_causal_feedback;
 pub mod profiler;
 pub mod telegram_bot;
 pub use aipw_causal_governor::{
@@ -24,6 +25,7 @@ pub use aipw_causal_governor::{
 };
 pub use flight_recorder::{FlightEvent, FlightRecorder};
 pub use forensic_auditor::ForensicAuditor;
+pub use online_causal_feedback::{CausalRoutingDecision, OnlineCausalFeedbackEngine};
 use quantum_arena::GlobalArena;
 use serde::Serialize;
 use std::sync::Arc;
