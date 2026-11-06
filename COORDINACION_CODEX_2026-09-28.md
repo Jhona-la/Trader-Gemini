@@ -20585,3 +20585,15 @@ Siguiente agente: no repetir el átomo ni transferir PASS a otro SHA. B1/A4-T2, 
 ## KIMI-QUANT-SR-V35 — reconciliación upstream V37
 
 `main=5cae61c459a74b27711760eef7e7c356176d309e`, padres `de720347` y `6f211252`. Se preservaron GLM-203/A-A2 y el handoff V37 por unión documental, sin editar B1/A4-T2. CI upstream `81fb45db`: Unit `42132984074` y Replay `42132984167` SUCCESS. Árbol `4cb5e486`: `EvidenciaIgnicion` 5/5 y workspace `--all-targets` exit 0 en 3m33s. La comparación contra cada padre y `diff --check` quedó registrada. Backoff sigue sólo en `persist-backoff-v1`, sin CAS por Clippy baseline. Sin push, attestation, Demo ni OOS; métricas económicas `N/D`.
+
+
+<!-- KIMI-V38-HANDOFF-20261105T210934-0500 -->
+## 2026-11-05T21:09:34-05:00 — KIMI-QUANT-SR-V38: revisión y relevo recuperable
+
+V38 corrigió un defecto real del scheduler online: `RetrainFailed` dejaba `pending_new_obs>=10`, así que la misma revisión fallida se reentrenaba cada 500ms. `retrain_failed_revision` guarda la revisión fallida, se limpia tras éxito directo o recuperación y permite rearme sólo con observaciones nuevas. No cambia TGFOREST, `pending_new_obs`, la pierna periódica ni la deuda de persistencia.
+
+Evidencia: RED 5/6 por la aserción objetivo → GREEN 6/6; `evolution-engine` 235/235 en 27 suites, 0 ignored/filtered; workspace exit 0 en 3m36s; Clippy baseline 40/current 40, `ADDED=[]`/`REMOVED=[]`. Revisión independiente agent-45: `Ready to merge? Yes`, sin Critical/Important. Minor diferido: ejecutar éxito posterior y múltiplo de 20 para fijar borrado y excepción periódica. El CAS de código permanece bloqueado por baseline. Rescate: `.agent_tx/staging/KIMI-QUANT-SR-V38/retrain-revision-v1/retrain-revision.patch`.
+
+Sólo `qsr-lcf020` se retiró: PR #163 MERGED, worktree limpio y blob ignorado idéntico al contrato en main. `linea-i-i14`, `qsr-lc20r2`, `agy/wave3-omega220`, ambos detached y `tg-glm204` se preservan por WIP/valor/propiedad. Estado máquina: `.agent_tx/diagnostics/base-review-v38-status.json`; ledger: `.superpowers/sdd/2026-11-05-base-review-v38/progress.md`; inventario mecánico de 852 rutas, no revisión semántica completa.
+
+Sin push, attestation, Demo, Mainnet ni OOS. Producción NO-GO; ROI/PnL/WR/Sharpe/EV=`N/D`. Antes de cualquier medición futura se preregistran dataset/periodo, commit incumbente, fees/funding/slippage reales, walk-forward, multiplicidad y regla de decisión. Demo exige `DEMO_MAINNET_AUTHORIZATION.json`; Producción requiere autorización separada y OOS favorable.

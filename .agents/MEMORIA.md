@@ -10976,3 +10976,10 @@ Censo config/lib: cuatro `NO_CHANGE`, cero `OPEN_ATOM`, sin producción. Detalle
 ## 2026-11-05 — KIMI-QUANT-SR-V35 V37: reconciliación upstream
 
 `main=5cae61c459a74b27711760eef7e7c356176d309e`, padres `de720347` y `6f211252`. GLM-203/A-A2 y V37 se conservaron por unión; no se editó B1/A4-T2. CI upstream `81fb45db` Unit+Replay SUCCESS. Árbol fusionado: `EvidenciaIgnicion` 5/5 y workspace `--all-targets` exit 0 en 3m33s. Backoff permanece en `persist-backoff-v1`, sin CAS por Clippy baseline. Sin push, attestation, Demo ni OOS; métricas económicas `N/D`.
+
+
+## 2026-11-05 — KIMI-QUANT-SR-V38: revisión de base y backoff por revisión
+
+V38 implementó `retrain_failed_revision` para impedir reentrenamiento cada 500ms de una revisión fallida sin observaciones nuevas; una nueva observación vuelve a armar el disparador. RED 5/6→GREEN 6/6; `evolution-engine` 235/235; workspace 3m36s; Clippy baseline 40/40 sin delta. Revisión agent-45 `Ready to merge? Yes`, sin Critical/Important. Un Minor de cobertura de éxito/periodicidad queda diferido. Candidato `.agent_tx/staging/KIMI-QUANT-SR-V38/retrain-revision-v1/retrain-revision.patch`; CAS de código bloqueado por baseline.
+
+Sólo `qsr-lcf020` se retiró con PR #163 MERGED y preservación de blob. Los demás trabajos se conservan, incluido `tg-glm204`. Plan `docs/superpowers/plans/2026-11-05-base-review-v38.md`, estado `.agent_tx/diagnostics/base-review-v38-status.json` e inventario mecánico de 852 rutas Rust. Sin push, attestation, Demo ni OOS. Producción NO-GO; ROI/PnL/WR/Sharpe/EV=`N/D`.

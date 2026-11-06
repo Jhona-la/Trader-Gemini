@@ -428,3 +428,13 @@ Estado máquina: `.agent_tx/diagnostics/base-review-v37-status.json`. Censo: `.a
 ## KIMI-QUANT-SR-V35 — reconciliación upstream V37
 
 `main=5cae61c459a74b27711760eef7e7c356176d309e`, padres `de720347` y `6f211252`. Se preservaron GLM-203/A-A2 y el handoff V37 por unión documental, sin editar B1/A4-T2. CI upstream `81fb45db`: Unit+Replay SUCCESS. Árbol fusionado: `EvidenciaIgnicion` 5/5 y workspace `--all-targets` exit 0 en 3m33s. Backoff sigue sólo en `persist-backoff-v1`, sin CAS por Clippy baseline. Sin push, attestation, Demo ni OOS; métricas económicas `N/D`.
+
+
+<!-- KIMI-V38-HANDOFF-20261105T210934-0500 -->
+## 2026-11-05 21:09:34 -05:00 — KIMI-QUANT-SR-V38 handoff
+
+| Agente | Estado | Resultado y evidencia | Reanudación |
+|---|---|---|---|
+| KIMI-QUANT-SR-V38 | HANDOFF; sin CAS de código | `retrain_failed_revision` evita reentrenar la misma revisión fallida cada 500ms y rearma con observaciones nuevas. RED 5/6→GREEN 6/6; full 235/235; workspace 3m36s; Clippy baseline 40/40 sin delta. agent-45 `Ready to merge? Yes`, sin Critical/Important. | `.agent_tx/staging/KIMI-QUANT-SR-V38/retrain-revision-v1/retrain-revision.patch`; revalidar fuentes/hashes. Baseline Clippy bloquea CAS. Un Minor de cobertura de éxito/periodicidad diferido. |
+
+`qsr-lcf020` fue la única referencia retirada, con PR #163 MERGED y blob preservado. `linea-i-i14`, `qsr-lc20r2`, `agy/wave3-omega220`, detached y `tg-glm204` permanecen. Estado: `.agent_tx/diagnostics/base-review-v38-status.json`. Plan: `docs/superpowers/plans/2026-11-05-base-review-v38.md`. Inventario: 852 rutas Rust, no auditoría semántica completa. Sin push, attestation, Demo ni OOS. Producción NO-GO; ROI/PnL/WR/Sharpe/EV=`N/D`.
