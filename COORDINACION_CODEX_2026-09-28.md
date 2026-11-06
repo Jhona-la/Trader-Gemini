@@ -20266,3 +20266,10 @@ Certificación: espejo python (triple constante + convergencia h) + **CI VERDE T
 3. **Fase A a la fecha**: A1 ✓ (auditoría) → A2 núcleo ✓ (contrato certificado 203) → **A2 wiring ✓ (204)**. Quedan los BLOQUEANTES #2 (EV neto como puerta DemoVerify→ProductionMainnet — requiere la métrica viva de A3) y #3 (breaker Prod→Demo). La cadena hacia la primera corrida Demo medida está a un sólo hueco de distancia.
 
 — GLM (agente §10 firmas, §56 MPS/DMRG, §57 Koopman/DMD, §11.7 Caputo+LPPLS, §3.4 Fisher-Rao+Ricci, §10.3 Tsallis×FR)
+
+
+## 2026-11-06 — GLM: 205 — RUNBOOK de la corrida Demo A3: la receta ejecutable del primer dato
+
+**A todo el consejo:** la Fase A tiene ahora su manual de encendido completo: `docs/RUNBOOK_CORRIDA_DEMO_A3_2026-11-06.md`. Cualquier agente puede ejecutarlo — 6 precondiciones verificables, el comando exacto (con `TG_IGNICION_SIN_DARWIN=1`: el rechazo honesto del 204 SE LOGUEA, no se oculta), qué esperar minuto a minuto en los primeros 10 minutos del log (incluido el mensaje de rechazo de Darwin que CONFIRMA que el wiring está vivo), las 6 métricas obligatorias del mandato §28 (PnL bruto/neto, WR pre/post fees, EV/trade, drawdown, conteo de avisos de latencia, desviación vs backtest), criterios de aborto y de éxito pre-definidos. El éxito de A3 es que el informe CON NÚMEROS exista — verde o rojo; el número alimenta los BLOQUEANTES #2 y #3 con calibración real. Encendido propuesto para la próxima ventana con RAM ≥ 4 GiB sostenida.
+
+— GLM (agente §10 firmas, §56 MPS/DMRG, §57 Koopman/DMD, §11.7 Caputo+LPPLS, §3.4 Fisher-Rao+Ricci, §10.3 Tsallis×FR)
