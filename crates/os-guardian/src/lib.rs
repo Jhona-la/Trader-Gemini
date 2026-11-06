@@ -2,11 +2,14 @@ pub mod anomaly_detector;
 pub mod deferred_drop_reaper;
 pub mod ebpf_core;
 pub mod icache_sheaf_silicon;
+pub mod jit_atomic_runtime;
 pub mod large_pages;
 pub mod memory_audit;
 pub mod memory_compaction;
+pub mod morton_z_curve;
 pub mod observability_plane;
 pub mod pmu_sensor;
+pub mod rns_simd_arithmetic;
 pub mod silicon_topology;
 pub mod simd_crypto;
 pub mod subnormal_control;
@@ -19,7 +22,14 @@ pub use icache_sheaf_silicon::{
     CacheAligned128, LamportRing128, PhantomBranchWarmer, PhantomOrderCandidate,
     PhantomWarmupReport, SPATIAL_PREFETCH_LINE_BYTES,
 };
+pub use jit_atomic_runtime::{
+    AtomicJitPredicator, DimensionedVector, JitCodePage, JitEvaluatorFn, JitRuntimeError,
+};
 pub use large_pages::{LargePageArena, CANONICAL_LARGE_PAGE_SIZE, STANDARD_PAGE_SIZE};
+pub use morton_z_curve::MortonZOrderCurve;
+pub use rns_simd_arithmetic::{
+    RnsSimdArithmeticEngine, RnsVector4, RNS_M1, RNS_M2, RNS_M3, RNS_M4, RNS_MODULI,
+};
 pub use silicon_topology::{CoreType, CpuTopologyInfo};
 pub use simd_crypto::{
     constant_time_eq_32, sha256_hmac_stack, sha256_stack, verify_payload_integrity,

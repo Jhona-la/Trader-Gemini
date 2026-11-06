@@ -1,3 +1,9 @@
+pub mod mmap_flight_recorder;
+
+pub use mmap_flight_recorder::{
+    FlightEventRecord, LOG_HISTOGRAM_BINS, LzcntLogHistogram, MmapFlightRecordRing,
+};
+
 use std::cell::UnsafeCell;
 use std::fs::File;
 use std::io::Write;
