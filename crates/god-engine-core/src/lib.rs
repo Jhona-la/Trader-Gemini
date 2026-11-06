@@ -45,6 +45,7 @@ pub mod ml_coverage;
 pub mod ml_inference;
 pub mod ml_registry;
 pub mod model_reload;
+pub mod omniscient_living_graph;
 pub mod orchestrator;
 pub mod order_flow_aggregator;
 pub mod outcome_context;
@@ -1129,6 +1130,7 @@ pub struct GodEngineCore {
     pub tensor_orchestrator: signal_engine::orchestrator::TensorVoteOrchestrator,
     pub quantum_slot_orchestrator:
         signal_engine::quantum_slot_orchestrator::QuantumSlotOrchestrator,
+    pub living_graph_orchestrator: omniscient_living_graph::OmniscientLivingGraphOrchestrator,
     /// #592 — ancla de la deriva de régimen por moneda: (bits de ln(τ*),
     /// ts_ms de la observación anclada). El crash_flux necesita la deriva de
     /// la escala dominante ENTRE observaciones del régimen (cadencia de una
@@ -1574,6 +1576,8 @@ impl GodEngineCore {
             tensor_orchestrator,
             quantum_slot_orchestrator:
                 signal_engine::quantum_slot_orchestrator::QuantumSlotOrchestrator::default(),
+            living_graph_orchestrator:
+                omniscient_living_graph::OmniscientLivingGraphOrchestrator::new(n_coins),
             swing_nn,
             ensemble: crate::ensemble::ModelEnsemble::new(),
             ensembles: (0..n_coins)
@@ -10615,6 +10619,76 @@ impl GodEngineCore {
             capital_available_usd,
             max_leverage,
             risk_fraction,
+        )
+    }
+
+    /// FASE 39 (§39): Evaluación holística del grafo vivo omnisciente en tiempo real continuo.
+    /// Conecta y sincroniza en nanosegundos:
+    /// - CWT Morlet y Operador Hermítico de Volatilidad Continua (Fase 34)
+    /// - Shockwaves Riemann-Burgers y Convección de Cole-Hopf (Fase 35)
+    /// - Gobernanza Adaptativa Conformal y Elasticidad de Riesgo (Fase 36)
+    /// - Teoría Gauge No Abeliana SU(3) y Curvatura Yang-Mills (Fase 37)
+    /// - Mean Field Games HJB+FPK y Psicología de Masas (Fase 38)
+    /// - Despacho tri-slot coordinado sin canibalización (Fase 28 / Fase 33)
+    #[allow(clippy::too_many_arguments)]
+    pub fn evaluate_omniscient_living_graph(
+        &mut self,
+        coin_id: usize,
+        bid: f64,
+        ask: f64,
+        bid_qty: f64,
+        ask_qty: f64,
+        event_time_ms: u64,
+        triad_assets: &[strategy_core::AssetColorState; strategy_core::SU3_COLORS],
+        capital_available_usd: f64,
+        max_leverage: f64,
+        risk_fraction: f64,
+    ) -> omniscient_living_graph::OmniscientLivingGraphReport {
+        let (open_slots, open_taus, open_is_long) = if coin_id < self.arena.coins.len() {
+            let coin = &self.arena.coins[coin_id];
+            let slots = coin.positions.slots();
+            (
+                [slots[0].is_open(), slots[1].is_open(), slots[2].is_open()],
+                [
+                    slots[0]
+                        .entry_tau_ms
+                        .load(std::sync::atomic::Ordering::Relaxed) as f64,
+                    slots[1]
+                        .entry_tau_ms
+                        .load(std::sync::atomic::Ordering::Relaxed) as f64,
+                    slots[2]
+                        .entry_tau_ms
+                        .load(std::sync::atomic::Ordering::Relaxed) as f64,
+                ],
+                [
+                    slots[0].is_long.load(std::sync::atomic::Ordering::Relaxed),
+                    slots[1].is_long.load(std::sync::atomic::Ordering::Relaxed),
+                    slots[2].is_long.load(std::sync::atomic::Ordering::Relaxed),
+                ],
+            )
+        } else {
+            (
+                [false, false, false],
+                [0.0, 0.0, 0.0],
+                [false, false, false],
+            )
+        };
+
+        self.living_graph_orchestrator.evaluate_and_synthesize(
+            coin_id,
+            bid,
+            ask,
+            bid_qty,
+            ask_qty,
+            event_time_ms,
+            triad_assets,
+            capital_available_usd,
+            max_leverage,
+            risk_fraction,
+            &mut self.quantum_slot_orchestrator,
+            &open_slots,
+            &open_taus,
+            &open_is_long,
         )
     }
 }
