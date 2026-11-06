@@ -1127,7 +1127,8 @@ pub struct GodEngineCore {
     /// dispersión, por moneda (`vecm_zscore` con spot).
     pub base_z: Vec<base_z::BaseZ>,
     pub tensor_orchestrator: signal_engine::orchestrator::TensorVoteOrchestrator,
-    pub quantum_slot_orchestrator: signal_engine::quantum_slot_orchestrator::QuantumSlotOrchestrator,
+    pub quantum_slot_orchestrator:
+        signal_engine::quantum_slot_orchestrator::QuantumSlotOrchestrator,
     /// #592 — ancla de la deriva de régimen por moneda: (bits de ln(τ*),
     /// ts_ms de la observación anclada). El crash_flux necesita la deriva de
     /// la escala dominante ENTRE observaciones del régimen (cadencia de una
@@ -1571,7 +1572,8 @@ impl GodEngineCore {
                 })
                 .collect(),
             tensor_orchestrator,
-            quantum_slot_orchestrator: signal_engine::quantum_slot_orchestrator::QuantumSlotOrchestrator::default(),
+            quantum_slot_orchestrator:
+                signal_engine::quantum_slot_orchestrator::QuantumSlotOrchestrator::default(),
             swing_nn,
             ensemble: crate::ensemble::ModelEnsemble::new(),
             ensembles: (0..n_coins)
@@ -10545,9 +10547,15 @@ impl GodEngineCore {
         let slots = coin.positions.slots();
         let open_positions_slots = [slots[0].is_open(), slots[1].is_open(), slots[2].is_open()];
         let open_positions_taus = [
-            slots[0].entry_tau_ms.load(std::sync::atomic::Ordering::Relaxed) as f64,
-            slots[1].entry_tau_ms.load(std::sync::atomic::Ordering::Relaxed) as f64,
-            slots[2].entry_tau_ms.load(std::sync::atomic::Ordering::Relaxed) as f64,
+            slots[0]
+                .entry_tau_ms
+                .load(std::sync::atomic::Ordering::Relaxed) as f64,
+            slots[1]
+                .entry_tau_ms
+                .load(std::sync::atomic::Ordering::Relaxed) as f64,
+            slots[2]
+                .entry_tau_ms
+                .load(std::sync::atomic::Ordering::Relaxed) as f64,
         ];
         let open_positions_is_long = [
             slots[0].is_long.load(std::sync::atomic::Ordering::Relaxed),
