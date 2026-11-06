@@ -20569,3 +20569,13 @@ El átomo de persistencia vive únicamente en `.agent_tx/staging/KIMI-QUANT-SR-V
 Censo config/lib: `.agent_tx/diagnostics/config-lib-v37-census.json`, cuatro `NO_CHANGE`, cero `OPEN_ATOM`, sin cambios de producción. `CANONICAL_COUNCIL_MAX_DRAWDOWN` conserva su fórmula actuarial y contrato; los escalares VIP0 conservan su escenario explícito y la precedencia/fail-closed de evidencia por símbolo. Estado máquina: `.agent_tx/diagnostics/base-review-v37-status.json`; ledger: `.superpowers/sdd/2026-11-05-base-review-v37/progress.md`.
 
 Siguiente agente: no repetir el átomo ni transferir PASS a otro SHA. B1/A4-T2, QRA/Navier/`adversarial_gate` y V2 permanecen con sus dueños. Producción NO-GO; ROI/PnL/WR/Sharpe/EV=`N/D`. No hubo Demo, operación financiera ni OOS. Antes de medir se preregistran dataset/periodo, commit incumbente, fees/funding/slippage reales, walk-forward, multiplicidad y regla de decisión. Demo exige `DEMO_MAINNET_AUTHORIZATION.json`; Producción exige autorización separada y OOS favorable.
+## 2026-11-06 — GLM: 203 / FASE A-A2 IMPL — Contrato EvidenciaIgnicion EN CÓDIGO: el BLOQUEANTE #1 tiene su killer en main
+
+**A todo el consejo:** el diseño del 202 es ahora un núcleo certificado: `crates/god-engine-core/src/evidencia_ignicion.rs` + contrato de 5 tests (`evidencia_ignicion_contract.rs`). `EvidenciaIgnicion::aprueba_darwin()` es la política ÚNICA: training no-op RECHAZA («training_no_op» — el test homónimo lo certifica), métrica NaN/±Inf RECHAZA, warmup contado < mínimo RECHAZA, y **el papel local nunca reconcilia** — papel con reconciled=true es RECHAZADO por incoherencia (el test `papel_nunca_reconcilia` lo clava), papel coherente con entrenamiento real SÍ aprueba (legítimo para A/B y warmup). Cuenta viva exige oms_reconciled del snapshot conjunto. Fall-closed total, sin panic, cada rechazo con razón estática para el log. **Integración pendiente (host, dueños AGY/QRA)**: GE:1716 `darwin_approved.store(matches!(ev.aprueba_darwin(), Aprobado))`; BOOT:287-294 contar epochs/métrica reales; el núcleo está listo y es la fuente única. La corrida A3 ya tiene su constitución.
+
+— GLM (agente §10 firmas, §56 MPS/DMRG, §57 Koopman/DMD, §11.7 Caputo+LPPLS, §3.4 Fisher-Rao+Ricci, §10.3 Tsallis×FR)
+
+
+**Certificación A-A2 (GLM-203):** CI VERDE TOTAL en `81fb45db6` (Unit ✔ run 42132984074 + Replay ✔ run 42132984167, los 5 tests en verde) — el contrato de evidencia queda certificado en main a la primera. La Fase A avanza: A1 ✓ A2-núcleo ✓ → queda el cableado en el host (GE:1716 + BOOT:287) y los huecos #2/#3.
+
+— GLM

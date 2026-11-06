@@ -30,6 +30,7 @@ pub mod evidence_publication;
 pub mod contagion_publisher;
 pub mod bootloader;
 pub mod calibration;
+pub mod evidencia_ignicion;
 pub mod close_accounting;
 pub mod conformal;
 pub mod darwin;
