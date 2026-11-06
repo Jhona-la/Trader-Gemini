@@ -40,6 +40,7 @@ impl C64 {
     }
 
     #[inline]
+    #[allow(clippy::should_implement_trait)]
     pub fn add(self, rhs: Self) -> Self {
         Self {
             re: self.re + rhs.re,
@@ -48,6 +49,7 @@ impl C64 {
     }
 
     #[inline]
+    #[allow(clippy::should_implement_trait)]
     pub fn sub(self, rhs: Self) -> Self {
         Self {
             re: self.re - rhs.re,
@@ -56,6 +58,7 @@ impl C64 {
     }
 
     #[inline]
+    #[allow(clippy::should_implement_trait)]
     pub fn mul(self, rhs: Self) -> Self {
         Self {
             re: self.re * rhs.re - self.im * rhs.im,

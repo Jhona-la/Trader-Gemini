@@ -309,8 +309,7 @@ impl OmniscientLivingGraphOrchestrator {
             self.adaptive_veto_governors[safe_coin_id].evaluate_governance(&market_input);
 
         // 13. Factor de Escala de Riesgo Holístico Tri-Slot $\eta_{\text{holistic}}$
-        let mps_weight_factor = (mps_dmrg_report.optimal_weights
-            [safe_coin_id % MPS_ASSET_CHANNELS]
+        let mps_weight_factor = (mps_dmrg_report.asset_weights[safe_coin_id % MPS_ASSET_CHANNELS]
             * (MPS_ASSET_CHANNELS as f64))
             .clamp(0.50, 1.50);
         let holistic_slot_scale = (navier_stokes_report.slot_scaling_factor
