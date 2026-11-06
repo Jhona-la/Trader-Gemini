@@ -189,3 +189,21 @@ fn c6_morton_continuous_discretization_locality() {
         diff_far
     );
 }
+
+/// C7: Un fallo real de protección no puede declarar la página ejecutable.
+#[cfg(windows)]
+#[test]
+fn c7_failed_virtual_protect_is_not_executable() {
+    let mut page = JitCodePage::allocate(64).expect("Asignación de página debe ser exitosa");
+    let raw = page.as_ptr() as *mut c_void;
+    unsafe {
+        use windows::Win32::System::Memory::{VirtualFree, MEM_RELEASE};
+        VirtualFree(raw, 0, MEM_RELEASE).expect("Liberar la página para forzar protección inválida");
+    }
+
+    let result = page.make_executable();
+    let executable = page.is_executable();
+    std::mem::forget(page);
+    assert!(result.is_err(), "VirtualProtect sobre memoria liberada debe fallar");
+    assert!(!executable);
+}

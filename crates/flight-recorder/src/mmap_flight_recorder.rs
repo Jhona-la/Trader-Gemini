@@ -244,6 +244,9 @@ impl<const CAPACITY: usize> MmapFlightRecordRing<CAPACITY> {
         price: f64,
         quantity: f64,
     ) {
+        if CAPACITY == 0 {
+            return;
+        }
         let seq = self.cursor.fetch_add(1, Ordering::Relaxed);
         let idx = seq % CAPACITY;
 
@@ -271,7 +274,7 @@ impl<const CAPACITY: usize> MmapFlightRecordRing<CAPACITY> {
     /// Retorna el último evento registrado si existe.
     pub fn latest_event(&self) -> Option<&FlightEventRecord> {
         let cur = self.cursor.load(Ordering::Relaxed);
-        if cur == 0 {
+        if cur == 0 || CAPACITY == 0 {
             None
         } else {
             let idx = (cur - 1) % CAPACITY;
