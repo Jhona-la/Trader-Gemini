@@ -10992,3 +10992,12 @@ V39 corrigió en overlay la pérdida de `source_coin_id` al filtrar y ordenar se
 Candidato y rescate: `.agent_tx/staging/KIMI-QUANT-SR-V39/fee-identity-v1/`, con dos parches y `SHA256SUMS`. CAS de código bloqueado por baseline. Minor para el siguiente átomo: deduplicar la transformación ID-preservante y cubrir directamente series cortas/window/máximo de monedas; comportamiento actual correcto, coste acotado de duplicación y riesgo futuro de divergencia.
 
 El handoff documental excluye WIP ajeno. `origin/main=a968a5e7` (GLM-205 documental) requiere reconciliación separada. Sin push, attestation, Demo ni OOS. Producción NO-GO; ROI/PnL/WR/Sharpe/EV=`N/D`. La meta +100 %/72 h permanece sujeta a protocolo OOS prerregistrado y autorizaciones.
+
+
+## 2026-11-06 — KIMI-QUANT-SR-V40: huecos de mercado sin compresión temporal
+
+V40 reconcilió V39 con GLM-205/206 en `96d27840` y corrigió en overlay `barra_de_mercado`: cualquier `dt >= 2*WF_BAR_MS` reinicia la referencia en vez de emitir una barra comprimida de 16 s. RED específico con retorno 1 % → GREEN exacto 1/1; CL27 5/5; crate 207/207 también en cierre `task-done`; numerario 2/2; workspace exit 0. Baseline y actual Clippy 36/43 con `ADDED=[]`/`REMOVED=[]`.
+
+Revisión agent-51 `Ready to merge? Yes`, sin Critical/Important; el umbral se deriva de la unidad temporal y admite jitter. Minor documental corregido a tres pruebas nuevas/207 total. Rescate: `.agent_tx/staging/KIMI-QUANT-SR-V40/cl27-gap-v1/cl27-gap.patch` y `SHA256SUMS`. CAS de código bloqueado por baseline.
+
+El handoff documental excluye WIP ajeno. `origin/main=fdb8e2f8` ya incluye Wave 3/4 y requiere reconciliación separada. Recursos sin topes ni colas bajo zero-wait, sin purgas ni targets alternativos. Sin push, attestation, Demo ni OOS. Producción NO-GO; ROI/PnL/WR/Sharpe/EV=`N/D`; +100 %/72 h sigue como hipótesis OOS prerregistrada.
