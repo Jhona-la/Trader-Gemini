@@ -10,7 +10,8 @@
 //! - C5: Inmunidad total a valores no finitos (NaN, ±Inf) y ejecución zero-alloc.
 
 use signal_engine::quantum_behavioral_field::{
-    BehavioralStateReport, QuantumBehavioralFieldEngine, QuantumBehavioralParams,
+    BehavioralMarketInput, BehavioralStateReport, QuantumBehavioralFieldEngine,
+    QuantumBehavioralParams,
 };
 
 #[test]
@@ -116,7 +117,15 @@ fn c4_behavioral_resonance_bounds_and_conviction_expansion() {
     let engine = QuantumBehavioralFieldEngine::new();
 
     // Squeeze alcista inminente: cortos atrapados cerca del pivot_high
-    let report_bull = engine.evaluate(100.0, 99.0, 100.5, 95.0, 0.02, 100.0, 1.0);
+    let report_bull = engine.evaluate(&BehavioralMarketInput {
+        current_price: 100.0,
+        anchor_price: 99.0,
+        pivot_high: 100.5,
+        pivot_low: 95.0,
+        raw_crash_prob: 0.02,
+        short_liq_vol: 100.0,
+        long_liq_vol: 1.0,
+    });
     assert!(
         report_bull.behavioral_resonance > 0.0,
         "Resonancia debe favorecer LONGs ante squeeze de cortos"
@@ -132,7 +141,15 @@ fn c4_behavioral_resonance_bounds_and_conviction_expansion() {
     );
 
     // Liquidación bajista inminente: largos atrapados bajo el soporte
-    let report_bear = engine.evaluate(100.0, 102.0, 108.0, 99.5, 0.40, 1.0, 100.0);
+    let report_bear = engine.evaluate(&BehavioralMarketInput {
+        current_price: 100.0,
+        anchor_price: 102.0,
+        pivot_high: 108.0,
+        pivot_low: 99.5,
+        raw_crash_prob: 0.40,
+        short_liq_vol: 1.0,
+        long_liq_vol: 100.0,
+    });
     assert!(
         report_bear.behavioral_resonance < 0.0,
         "Resonancia debe favorecer SHORTs ante cascada de largos"
@@ -154,15 +171,15 @@ fn c5_non_finite_immunity_and_zero_alloc_safety() {
         hunt_force_gain: f64::NAN,
     });
 
-    let report_nan = engine.evaluate(
-        f64::NAN,
-        f64::INFINITY,
-        -100.0,
-        f64::NAN,
-        f64::NAN,
-        f64::INFINITY,
-        -50.0,
-    );
+    let report_nan = engine.evaluate(&BehavioralMarketInput {
+        current_price: f64::NAN,
+        anchor_price: f64::INFINITY,
+        pivot_high: -100.0,
+        pivot_low: f64::NAN,
+        raw_crash_prob: f64::NAN,
+        short_liq_vol: f64::INFINITY,
+        long_liq_vol: -50.0,
+    });
 
     assert_eq!(
         report_nan,

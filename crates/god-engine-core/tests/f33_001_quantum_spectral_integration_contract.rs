@@ -10,8 +10,7 @@
 //! - C4: Resiliencia ante fallos extremos y pánicos con invariante `rb_p1` estricto (0 panics).
 
 use god_engine_core::GodEngineCore;
-use quantum_arena::position::MAX_SPECTRAL_SLOTS;
-use quantum_arena::GlobalArena;
+use quantum_arena::{position::MAX_SPECTRAL_SLOTS, GlobalArena};
 use signal_engine::QuantumSlotOrchestratorParams;
 
 #[test]
@@ -44,7 +43,10 @@ fn c1_god_engine_multi_slot_behavioral_evaluation() {
 #[test]
 fn c2_asymmetric_rr_expansion_on_behavioral_squeeze() {
     let mut orchestrator =
-        signal_engine::QuantumSlotOrchestrator::new(QuantumSlotOrchestratorParams::default());
+        signal_engine::QuantumSlotOrchestrator::new(QuantumSlotOrchestratorParams {
+            enable_behavioral_asymmetry: true,
+            ..Default::default()
+        });
 
     let mid_price = 50.0;
     let bid = 49.95;

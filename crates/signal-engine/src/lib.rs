@@ -42,7 +42,8 @@ pub use orchestrator::{
 pub use perceptron_gate::{PerceptronGateEngine, PerceptronGateParams};
 pub use proyeccion_espectral::{ProyeccionEspectralEngine, ProyeccionEspectralParams};
 pub use quantum_behavioral_field::{
-    BehavioralStateReport, QuantumBehavioralFieldEngine, QuantumBehavioralParams,
+    BehavioralMarketInput, BehavioralStateReport, QuantumBehavioralFieldEngine,
+    QuantumBehavioralParams,
 };
 pub use quantum_oscillator::{QuantumOscillatorEngine, QuantumOscillatorParams};
 pub use quantum_slot_orchestrator::{

@@ -227,6 +227,8 @@ pub struct QuantumSlotOrchestratorParams {
     pub min_confidence_threshold: f64,
     /// Sensibilidad del microprecio de Stoikov para sesgo direccional.
     pub stoikov_bias_sensitivity: f64,
+    /// Activa la expansión asimétrica del ratio R:R ante resonancia conductual (stop hunting a favor).
+    pub enable_behavioral_asymmetry: bool,
 }
 
 impl Default for QuantumSlotOrchestratorParams {
@@ -236,6 +238,7 @@ impl Default for QuantumSlotOrchestratorParams {
             min_opposite_direction_delta_ln: 0.60,
             min_confidence_threshold: 0.50,
             stoikov_bias_sensitivity: 0.50,
+            enable_behavioral_asymmetry: false,
         }
     }
 }
@@ -414,15 +417,16 @@ impl QuantumSlotOrchestrator {
         } else {
             0.05
         };
-        let behavioral_report = self.behavioral.evaluate(
-            safe_mid,
-            safe_mid,
+        let input = crate::quantum_behavioral_field::BehavioralMarketInput {
+            current_price: safe_mid,
+            anchor_price: safe_mid,
             pivot_high,
             pivot_low,
             raw_crash_prob,
             short_liq_vol,
             long_liq_vol,
-        );
+        };
+        let behavioral_report = self.behavioral.evaluate(&input);
 
         let mut active_count = 0;
 
@@ -639,8 +643,9 @@ impl QuantumSlotOrchestrator {
             let mut sl_pct = tp_pct / 2.0; // Ratio Asimétrico base R:R = 2.0
 
             // Ajuste asimétrico si el campo conductual apoya la dirección (stop hunting a favor)
-            if (is_long && decision.behavioral_resonance > 0.10)
-                || (!is_long && decision.behavioral_resonance < -0.10)
+            if self.params.enable_behavioral_asymmetry
+                && ((is_long && decision.behavioral_resonance > 0.10)
+                    || (!is_long && decision.behavioral_resonance < -0.10))
             {
                 tp_pct *= 1.25;
                 sl_pct *= 0.90;

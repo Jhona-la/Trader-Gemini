@@ -105,6 +105,40 @@ impl QuantumBehavioralParams {
     }
 }
 
+/// Entradas de mercado y microestructura para la evaluación del campo conductual cuántico.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct BehavioralMarketInput {
+    /// Precio actual del activo ($P > 0$).
+    pub current_price: f64,
+    /// Precio de referencia / coste medio de la masa ($P_{\text{ref}} > 0$).
+    pub anchor_price: f64,
+    /// Resistencia técnica de liquidación de cortos.
+    pub pivot_high: f64,
+    /// Soporte técnico de liquidación de largos.
+    pub pivot_low: f64,
+    /// Probabilidad base de crash antes de la distorsión de Prelec $[0.0, 1.0]$.
+    pub raw_crash_prob: f64,
+    /// Volumen nocional de cortos en riesgo de liquidación.
+    pub short_liq_vol: f64,
+    /// Volumen nocional de largos en riesgo de liquidación.
+    pub long_liq_vol: f64,
+}
+
+impl Default for BehavioralMarketInput {
+    #[inline(always)]
+    fn default() -> Self {
+        Self {
+            current_price: 0.0,
+            anchor_price: 0.0,
+            pivot_high: 0.0,
+            pivot_low: 0.0,
+            raw_crash_prob: 0.0,
+            short_liq_vol: 0.0,
+            long_liq_vol: 0.0,
+        }
+    }
+}
+
 /// Diagnóstico completo del estado conductual cuántico emitido por el motor.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct BehavioralStateReport {
@@ -258,23 +292,16 @@ impl QuantumBehavioralFieldEngine {
     /// Evaluación integral del estado conductual de mercado en $O(1)$ stack.
     ///
     /// # Argumentos:
-    /// - `current_price`: precio actual del activo ($P > 0$).
-    /// - `anchor_price`: precio de referencia / coste medio de la masa ($P_{\text{ref}} > 0$).
-    /// - `pivot_high`: resistencia técnica de liquidación de cortos.
-    /// - `pivot_low`: soporte técnico de liquidación de largos.
-    /// - `raw_crash_prob`: probabilidad base de crash antes de la distorsión de Prelec $[0.0, 1.0]$.
-    /// - `short_liq_vol`: volumen nocional de cortos en riesgo de liquidación.
-    /// - `long_liq_vol`: volumen nocional de largos en riesgo de liquidación.
-    pub fn evaluate(
-        &self,
-        current_price: f64,
-        anchor_price: f64,
-        pivot_high: f64,
-        pivot_low: f64,
-        raw_crash_prob: f64,
-        short_liq_vol: f64,
-        long_liq_vol: f64,
-    ) -> BehavioralStateReport {
+    /// - `input`: estructura con precios, umbrales y volúmenes nocionales en riesgo.
+    pub fn evaluate(&self, input: &BehavioralMarketInput) -> BehavioralStateReport {
+        let current_price = input.current_price;
+        let anchor_price = input.anchor_price;
+        let pivot_high = input.pivot_high;
+        let pivot_low = input.pivot_low;
+        let raw_crash_prob = input.raw_crash_prob;
+        let short_liq_vol = input.short_liq_vol;
+        let long_liq_vol = input.long_liq_vol;
+
         if !current_price.is_finite() || current_price <= 0.0 {
             return BehavioralStateReport::default();
         }
