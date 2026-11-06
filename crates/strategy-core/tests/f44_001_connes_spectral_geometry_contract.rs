@@ -11,6 +11,7 @@ use strategy_core::connes_spectral_geometry::{
     Matrix4c, C64, DIRAC_DIM,
 };
 
+#[allow(clippy::needless_range_loop)]
 fn mat4_identity() -> Matrix4c {
     let mut id = [[C64::ZERO; DIRAC_DIM]; DIRAC_DIM];
     for i in 0..DIRAC_DIM {
@@ -19,6 +20,7 @@ fn mat4_identity() -> Matrix4c {
     id
 }
 
+#[allow(clippy::needless_range_loop)]
 fn mat4_is_approx_equal(a: &Matrix4c, b: &Matrix4c, eps: f64) -> bool {
     for i in 0..DIRAC_DIM {
         for j in 0..DIRAC_DIM {
@@ -31,6 +33,7 @@ fn mat4_is_approx_equal(a: &Matrix4c, b: &Matrix4c, eps: f64) -> bool {
 }
 
 #[test]
+#[allow(clippy::needless_range_loop)]
 fn test_c1_dirac_clifford_algebra_anticommutation() {
     let g0 = DiracGammaAlgebra::gamma0();
     let g1 = DiracGammaAlgebra::gamma1();
