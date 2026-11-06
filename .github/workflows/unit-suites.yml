@@ -75,7 +75,7 @@ jobs:
           - grupo: entrenador
             # Sintético: ni entrenamiento, ni promoción, ni modelos reales.
             # SI: ejecutar también el contrato de ingestión del benchmark.
-            paquetes: -p trader-gemini-v5 --lib --bin train_forest --bin spectral_bench
+            paquetes: -p trader-gemini-v5 --lib --bin train_forest --bin spectral_bench --bin dataset_admission --test dataset_admission_process_contract
           - grupo: telemetria-servidor
             # F0/F1: rescata de AGY103 el crate aún no cubierto por Sol F1-095.
             # Los otros cinco conservan su invocación completa y doctests en Replay
