@@ -20608,3 +20608,17 @@ Sin push, attestation, Demo, Mainnet ni OOS. Producción NO-GO; ROI/PnL/WR/Sharp
 3. **Fase A a la fecha**: A1 ✓ (auditoría) → A2 núcleo ✓ (contrato certificado 203) → **A2 wiring ✓ (204)**. Quedan los BLOQUEANTES #2 (EV neto como puerta DemoVerify→ProductionMainnet — requiere la métrica viva de A3) y #3 (breaker Prod→Demo). La cadena hacia la primera corrida Demo medida está a un sólo hueco de distancia.
 
 — GLM (agente §10 firmas, §56 MPS/DMRG, §57 Koopman/DMD, §11.7 Caputo+LPPLS, §3.4 Fisher-Rao+Ricci, §10.3 Tsallis×FR)
+
+
+<!-- KIMI-V39-HANDOFF-20261106T000918-0500 -->
+## 2026-11-06T00:09:18-05:00 — KIMI-QUANT-SR-V39: identidad de fees y relevo
+
+El examen walk-forward perdía los IDs reales al filtrar y ordenar series: una moneda elegible podía heredar la comisión de una plana excluida. El átomo `fee_identity-v1`, limitado a `crates/evolution-engine/src/online_daemon.rs` y `tests/fee_identity_contract.rs`, conserva `(source_coin_id, returns)` hasta `roundtrip_fees`, `wf_evaluate_real` y la valoración de posiciones abiertas. Registry, precios, simulación y demás crates permanecen intactos.
+
+RED conductual `red-behavior6.log`: fee de coin 0 e IDs `[1,0]` en vez de fee de coin 1 e IDs `[0,1]`. GREEN: contrato 1/1; backoff/persistencia/hardening/determinismo 22/22; `evolution-engine` 236/236 con 0 failed/ignored/filtered, también con `--no-fail-fast -- --test-threads=1`; `cargo check --workspace --all-targets --locked` exit 0 en 3m17s. Clippy conserva 33 lib/40 lib-test con `ADDED=[]` y `REMOVED=[]`; whitespace limpio, sin rustfmt global por deuda previa.
+
+Revisión independiente agent-48: `Ready to merge? Yes`, sin Critical/Important. Minor diferidos con coste explícito: (1) compartir una única transformación ID-preservante; hoy las dos rutas producen exactamente lo mismo, pero duplican escaneo/clonaciones acotadas una vez por ronda y pueden divergir en el futuro; (2) añadir pruebas directas de series cortas, `WF_REAL_WINDOW` y `WF_REAL_MAX_COINS`; hoy esos límites tienen cobertura indirecta. Ninguno es un fallo del comportamiento actual.
+
+Código y parches únicamente en `.agent_tx/staging/KIMI-QUANT-SR-V39/fee-identity-v1/`; no hay CAS de código por baseline Clippy roja. El CAS de este handoff es exclusivamente documental y no incorpora el WIP staged+unstaged ajeno presente en el workspace. `origin/main=a968a5e7b4ababbecf3c9111e4dca209595dfeeb` corresponde a GLM-205 documental y queda para reconciliación separada; no se hereda CI ni se hace push.
+
+Antes de cualquier medición futura se preregistran dataset/periodo, commit incumbente, fees/funding/slippage reales, walk-forward, multiplicidad y regla de decisión. Sin autorizaciones no hay Demo/Mainnet/Producción ni OOS. Producción NO-GO; ROI/PnL/WR/Sharpe/EV=`N/D`; +100 %/72 h sigue siendo una hipótesis por falsar, nunca una garantía.

@@ -438,3 +438,13 @@ Estado máquina: `.agent_tx/diagnostics/base-review-v37-status.json`. Censo: `.a
 | KIMI-QUANT-SR-V38 | HANDOFF; sin CAS de código | `retrain_failed_revision` evita reentrenar la misma revisión fallida cada 500ms y rearma con observaciones nuevas. RED 5/6→GREEN 6/6; full 235/235; workspace 3m36s; Clippy baseline 40/40 sin delta. agent-45 `Ready to merge? Yes`, sin Critical/Important. | `.agent_tx/staging/KIMI-QUANT-SR-V38/retrain-revision-v1/retrain-revision.patch`; revalidar fuentes/hashes. Baseline Clippy bloquea CAS. Un Minor de cobertura de éxito/periodicidad diferido. |
 
 `qsr-lcf020` fue la única referencia retirada, con PR #163 MERGED y blob preservado. `linea-i-i14`, `qsr-lc20r2`, `agy/wave3-omega220`, detached y `tg-glm204` permanecen. Estado: `.agent_tx/diagnostics/base-review-v38-status.json`. Plan: `docs/superpowers/plans/2026-11-05-base-review-v38.md`. Inventario: 852 rutas Rust, no auditoría semántica completa. Sin push, attestation, Demo ni OOS. Producción NO-GO; ROI/PnL/WR/Sharpe/EV=`N/D`.
+
+
+<!-- KIMI-V39-HANDOFF-20261106T000918-0500 -->
+## 2026-11-06 00:09:18 -05:00 — KIMI-QUANT-SR-V39 handoff
+
+| Agente | Estado | Resultado y evidencia | Reanudación |
+|---|---|---|---|
+| KIMI-QUANT-SR-V39 | HANDOFF; sin CAS de código | `fee_identity-v1` conserva `source_coin_id` en filtrado, fees, ordenación y replay walk-forward. RED: fee de coin 0 e IDs `[1,0]`; GREEN: fee de coin 1 e IDs `[0,1]`. Contrato 1/1; vecinos 22/22; crate 236/236 también serial; workspace exit 0; Clippy 33/40 con `ADDED=[]`/`REMOVED=[]`. agent-48 `Ready to merge? Yes`, sin Critical/Important. | `.agent_tx/staging/KIMI-QUANT-SR-V39/fee-identity-v1/{fee-identity-code.patch,fee-identity-test.patch,SHA256SUMS}`. Baseline Clippy bloquea CAS de código. Minor diferidos: deduplicar transformación y cubrir window/límites directamente. `origin/main=a968a5e7` (GLM-205 documental) pendiente de reconciliación. |
+
+Estado máquina: `.agent_tx/diagnostics/base-review-v39-status.json`. Ledger: `.superpowers/sdd/2026-11-05-base-review-v39/progress.md`. WIP documental ajeno del workspace preservado y excluido. Sin push, attestation, Demo, Mainnet ni OOS. Producción NO-GO; ROI/PnL/WR/Sharpe/EV=`N/D`.

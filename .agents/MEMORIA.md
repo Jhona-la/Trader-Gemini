@@ -10983,3 +10983,12 @@ Censo config/lib: cuatro `NO_CHANGE`, cero `OPEN_ATOM`, sin producción. Detalle
 V38 implementó `retrain_failed_revision` para impedir reentrenamiento cada 500ms de una revisión fallida sin observaciones nuevas; una nueva observación vuelve a armar el disparador. RED 5/6→GREEN 6/6; `evolution-engine` 235/235; workspace 3m36s; Clippy baseline 40/40 sin delta. Revisión agent-45 `Ready to merge? Yes`, sin Critical/Important. Un Minor de cobertura de éxito/periodicidad queda diferido. Candidato `.agent_tx/staging/KIMI-QUANT-SR-V38/retrain-revision-v1/retrain-revision.patch`; CAS de código bloqueado por baseline.
 
 Sólo `qsr-lcf020` se retiró con PR #163 MERGED y preservación de blob. Los demás trabajos se conservan, incluido `tg-glm204`. Plan `docs/superpowers/plans/2026-11-05-base-review-v38.md`, estado `.agent_tx/diagnostics/base-review-v38-status.json` e inventario mecánico de 852 rutas Rust. Sin push, attestation, Demo ni OOS. Producción NO-GO; ROI/PnL/WR/Sharpe/EV=`N/D`.
+
+
+## 2026-11-06 — KIMI-QUANT-SR-V39: identidad de moneda en fees walk-forward
+
+V39 corrigió en overlay la pérdida de `source_coin_id` al filtrar y ordenar series del examen. Fees y replay ahora usan el ID real, no posiciones densas. RED con fee e IDs erróneos → GREEN 1/1; vecinos 22/22; `evolution-engine` 236/236 también serial, sin ignored/filtered; workspace exit 0; Clippy baseline 33/40 con `ADDED=[]`/`REMOVED=[]`. Revisión agent-48 `Ready to merge? Yes`, sin Critical/Important.
+
+Candidato y rescate: `.agent_tx/staging/KIMI-QUANT-SR-V39/fee-identity-v1/`, con dos parches y `SHA256SUMS`. CAS de código bloqueado por baseline. Minor para el siguiente átomo: deduplicar la transformación ID-preservante y cubrir directamente series cortas/window/máximo de monedas; comportamiento actual correcto, coste acotado de duplicación y riesgo futuro de divergencia.
+
+El handoff documental excluye WIP ajeno. `origin/main=a968a5e7` (GLM-205 documental) requiere reconciliación separada. Sin push, attestation, Demo ni OOS. Producción NO-GO; ROI/PnL/WR/Sharpe/EV=`N/D`. La meta +100 %/72 h permanece sujeta a protocolo OOS prerregistrado y autorizaciones.
