@@ -215,7 +215,13 @@ fn both_queries_and_complete_arena_reconciliation_are_required_and_errors_revoke
     assert_eq!(success.status, SnapshotStatus::Ready);
     assert!(session.check_entry(&token, &arena).is_ok());
 
-    let missing = session.apply_snapshot(
+    // GLM-208: positionRisk NO garantiza fila para símbolos nunca operados
+    // por la cuenta. Sin filas y SIN posición local abierta, el snapshot está
+    // Ready (plano en ambos lados); la fila ausente sólo bloquea cuando hay
+    // una posición local abierta sin evidencia remota (fail-closed real).
+    // Antes, la fila ausente de un símbolo plano dejaba el OMS en Blocked
+    // eterno con la cuenta limpia (corrida A3: 0 órdenes en horas).
+    let no_filas_plano = session.apply_snapshot(
         &token,
         Ok(Vec::new()),
         Ok(Vec::new()),
@@ -223,8 +229,37 @@ fn both_queries_and_complete_arena_reconciliation_are_required_and_errors_revoke
         &arena,
         3_000,
     );
-    assert_eq!(missing.status, SnapshotStatus::Blocked);
-    assert!(missing.unresolved > 0);
+    assert_eq!(no_filas_plano.status, SnapshotStatus::Ready);
+    assert_eq!(no_filas_plano.unresolved, 0);
+    assert!(ready.load(Ordering::Acquire));
+
+    let coin = &arena.coins[0];
+    assert!(coin.positions.get_slot(2).open_with_horizon(
+        true,
+        100.0,
+        1.0,
+        10.0,
+        1,
+        110.0,
+        90.0,
+        PositionHorizon::Continuous
+    ));
+    // Confirmada por el exchange para que el Blocked venga de la fila remota
+    // ausente (MissingRemoteEvidence), no del gate de reserva no confirmada.
+    coin.positions
+        .get_slot(2)
+        .exchange_confirmed
+        .store(true, Ordering::Release);
+    let sin_evidencia = session.apply_snapshot(
+        &token,
+        Ok(Vec::new()),
+        Ok(Vec::new()),
+        fees(&token),
+        &arena,
+        3_500,
+    );
+    assert_eq!(sin_evidencia.status, SnapshotStatus::Blocked);
+    assert!(sin_evidencia.unresolved > 0);
     assert!(!ready.load(Ordering::Acquire));
 
     session.apply_snapshot(

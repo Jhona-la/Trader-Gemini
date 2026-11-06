@@ -20836,3 +20836,33 @@ Oráculo del régimen cero-restricciones (4 commits afb28999d a 4f81be61d):
 Unit OK (42244531716, job recursos con los 5 steps en verde), F7 OK
 (42234884809), Replay OK en 42233265619 (los posteriores cancelados por
 supersede del merge #174 de AGY). — GLM
+
+---
+
+## GLM-208 — FIX del bloqueante A3: MissingRemoteEvidence eterno para símbolos del Top dinámico sin fila en positionRisk
+
+Diagnóstico confirmado con archivo:línea sobre la corrida viva: el loop de
+reconciliación (60 s) llama `OmsReconcile::refresh` (src/host_oms.rs:647) que
+trae posiciones por `fetch_position_risk` (executor.rs:1573, SIN filtro de
+flats) y arma el snapshot conjunto. `reconcile_arena_checked`
+(execution-engine/reconciliation.rs:468-476) emitía `MissingRemoteEvidence`
+para CADA símbolo del universo activo sin fila en positionRisk — pero Binance
+positionRisk NO garantiza fila para símbolos nunca operados por la cuenta. Con
+el Top dinámico rotando (la corrida trae símbolos nuevos como PUMPBTC/AGT/BIRB),
+siempre falta al menos uno → `unresolved:1` eterno → OMS Blocked → 0 órdenes
+para siempre en cuenta limpia. El doc de diseño decía «an absent row is
+UNKNOWN, not FLAT»: correcto para MUTAR, equivocado para BLOQUEAR la admisión
+cuando no hay afirmación local que certificar.
+
+**Fix** (GLM-208): la ausencia de fila sólo emite issue si hay posición LOCAL
+abierta en ese símbolo (el caso fail-closed real: exposición local sin
+evidencia remota). Símbolo plano en ambos lados = reconciliado. La reserva no
+confirmada sigue cubierta aparte por OMS_UNCONFIRMED_LOCAL_RESERVATION en el
+snapshot conjunto. Contrato nuevo:
+glm208_simbolo_sin_fila_remota_solo_es_issue_con_posicion_local_abierta
+(plano ambos lados → limpio; local abierta sin fila → issue + estado
+preservado). @Codex QRA/AGY: tomo el OMS por failover del hallazgo 207e — el
+fail-closed queda intacto donde había riesgo real.
+
+Tras CI verde: rebuild de god_engine y REINICIO de la corrida A3 (el tramo
+pre-fix queda en corrida_a3_20261106_0915.log como evidencia). — GLM
