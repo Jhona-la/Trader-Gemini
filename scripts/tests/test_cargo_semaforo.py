@@ -1,7 +1,10 @@
-"""Contratos del semáforo de compilación (LG-25): turno, espera, cerrojo
-huérfano y entorno forzado. Corre el script real con bash en una raíz
-temporal; las costuras SEMAFORO_PROCESOS / SEMAFORO_RAM_GB fijan lo que en
-producción mide el sistema operativo."""
+"""Contratos del semáforo de compilación (LG-25): turno, cerrojo huérfano y
+entorno forzado. RÉGIMEN 2026-11-06 (mandato del operador, cero
+restricciones de recursos): la RAM y los builds ajenos ya NO bloquean — el
+tope SEMAFORO_RAM_MIN_GB es OPT-IN y los hilos van al 100 % de los núcleos.
+Corre el script real con bash en una raíz temporal; las costuras
+SEMAFORO_PROCESOS / SEMAFORO_RAM_GB fijan lo que en producción mide el
+sistema operativo."""
 
 from pathlib import Path
 import os
@@ -68,11 +71,13 @@ class CargoSemaforoTests(unittest.TestCase):
         shim.chmod(0o700)
         return bin_dir, registro
 
-    def test_turno_libre_fuerza_target_compartido_y_dos_hilos(self):
+    def test_turno_libre_fuerza_target_compartido_sin_tope_de_hilos(self):
         r = self.correr("check", SEMAFORO_SOLO_DECIDIR=1)
         self.assertEqual(r.returncode, 0, r.stderr)
         self.assertIn(f"CARGO_TARGET_DIR={self.raiz.as_posix()}/target", r.stdout.replace("\\", "/"))
-        self.assertIn("CARGO_BUILD_JOBS=2", r.stdout)
+        # RÉGIMEN 2026-11-06: sin tope de hilos por defecto — el 100 % de los
+        # núcleos salvo CARGO_BUILD_JOBS explícito (test_respeta_jobs_explicitos).
+        self.assertIn("CARGO_BUILD_JOBS=todos", r.stdout)
         # RB-H2: con el target compartido, frescura por contenido aunque la
         # rama aún no traiga la clave en .cargo/config.toml.
         self.assertIn("CARGO_UNSTABLE_CHECKSUM_FRESHNESS=true", r.stdout)
@@ -81,14 +86,33 @@ class CargoSemaforoTests(unittest.TestCase):
         self.assertIn("ADQUIERE", log)
         self.assertIn("LIBERA", log)
 
-    def test_con_otro_build_vivo_no_compila_y_sale_75(self):
-        r = self.correr("check", SEMAFORO_PROCESOS=2, SEMAFORO_ESPERA_MAX_MIN=0)
-        self.assertEqual(r.returncode, 75, r.stderr)
-        self.assertIn("procesos cargo/rustc ajenos", r.stderr)
-        self.assertIn("SIN TURNO", self.bitacora.read_text(encoding="utf-8"))
+    def test_builds_ajenos_no_bloquean(self):
+        # RÉGIMEN 2026-11-06: los cargo/rustc ajenos (de quien compila por
+        # fuera del semáforo) ya NO bloquean el turno — el file-lock interno
+        # de cargo serializa el acceso real al target compartido.
+        r = self.correr(
+            "check", SEMAFORO_SOLO_DECIDIR=1, SEMAFORO_PROCESOS=2,
+            SEMAFORO_ESPERA_MAX_MIN=0,
+        )
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertIn("ADQUIERE", self.bitacora.read_text(encoding="utf-8"))
 
-    def test_con_poca_ram_no_compila(self):
-        r = self.correr("check", SEMAFORO_RAM_GB="1.5", SEMAFORO_ESPERA_MAX_MIN=0)
+    def test_poca_ram_no_bloquea_por_defecto(self):
+        # RÉGIMEN 2026-11-06: el tope de RAM es OPT-IN; con el default (0) la
+        # RAM medida es TELEMETRÍA (se anota en la bitácora) y nunca bloquea.
+        r = self.correr(
+            "check", SEMAFORO_SOLO_DECIDIR=1, SEMAFORO_RAM_GB="1.5",
+            SEMAFORO_ESPERA_MAX_MIN=0,
+        )
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertIn("ram_libre=1.5GB", self.bitacora.read_text(encoding="utf-8"))
+
+    def test_tope_ram_opt_in_bloquea(self):
+        # El tope sigue existiendo para el agente que lo declare explícito.
+        r = self.correr(
+            "check", SEMAFORO_RAM_MIN_GB=4, SEMAFORO_RAM_GB="1.5",
+            SEMAFORO_ESPERA_MAX_MIN=0,
+        )
         self.assertEqual(r.returncode, 75, r.stderr)
         self.assertIn("RAM libre 1.5 GB < 4 GB", r.stderr)
 
@@ -120,36 +144,15 @@ class CargoSemaforoTests(unittest.TestCase):
         self.assertEqual(r.returncode, 0, r.stderr)
         self.assertIn("agente-viejo", self.bitacora.read_text(encoding="utf-8"))
 
-    def test_tras_la_paciencia_los_builds_ajenos_no_bloquean_si_sobra_ram(self):
-        # LG-25b: con builds ajenos (fuera del semáforo) que no toman el
-        # cerrojo, pasada la paciencia y con RAM ≥ mínimo + margen, hay turno.
-        r = self.correr(
-            "check", SEMAFORO_SOLO_DECIDIR=1, SEMAFORO_PROCESOS=2,
-            SEMAFORO_PACIENCIA_MIN=0, SEMAFORO_ESPERA_MAX_MIN=0,
-        )
-        self.assertEqual(r.returncode, 0, r.stderr)
-        log = self.bitacora.read_text(encoding="utf-8")
-        self.assertIn("turno por paciencia: 2 procesos", log)
-        self.assertIn("ADQUIERE", log)
-
-    def test_la_paciencia_no_salta_la_ram(self):
-        # Con builds ajenos y sólo 5 GB libres (< 4 + 2), la paciencia no basta.
-        r = self.correr(
-            "check", SEMAFORO_SOLO_DECIDIR=1, SEMAFORO_PROCESOS=2, SEMAFORO_RAM_GB="5",
-            SEMAFORO_PACIENCIA_MIN=0, SEMAFORO_ESPERA_MAX_MIN=0,
-        )
-        self.assertEqual(r.returncode, 75, r.stderr)
-        self.assertIn("procesos cargo/rustc ajenos", r.stderr)
-
-    def test_la_paciencia_no_salta_el_cerrojo_de_otro_usuario(self):
-        # Otro usuario del semáforo tiene el turno (cerrojo fresco) y su
-        # cargo corre: la paciencia sólo ignora a los que van por fuera.
+    def test_el_cerrojo_fresco_sigue_mandando_con_builds_vivos(self):
+        # Otro usuario del semáforo tiene el turno (cerrojo fresco) y su cargo
+        # corre: el cerrojo bloquea aunque los builds ajenos ya no bloqueen.
         self.cerrojo.mkdir(parents=True)
         (self.cerrojo / "creado").write_text(str(int(time.time())))
         (self.cerrojo / "dueno").write_text("agente-en-turno pid=5 cargo test" + chr(10))
         r = self.correr(
             "check", SEMAFORO_SOLO_DECIDIR=1, SEMAFORO_PROCESOS=1,
-            SEMAFORO_PACIENCIA_MIN=0, SEMAFORO_ESPERA_MAX_MIN=0,
+            SEMAFORO_ESPERA_MAX_MIN=0,
         )
         self.assertEqual(r.returncode, 75, r.stderr)
         self.assertIn("cerrojo de agente-en-turno", r.stderr)
@@ -232,35 +235,23 @@ class CargoSemaforoTests(unittest.TestCase):
         invocaciones = registro.read_text(encoding="utf-8")
         self.assertIn("AvailableMBytes", invocaciones)
         self.assertNotIn("FreePhysicalMemory", invocaciones)
-        # Y el valor medido es el que decide: 9.5 GB cubre el mínimo de 4.
+        # Y el valor medido es el que se anota como telemetría (RÉGIMEN
+        # 2026-11-06: la RAM no gobierna el turno, se registra).
         self.assertIn("ram_libre=9.5GB", self.bitacora.read_text(encoding="utf-8"))
 
-    def test_una_medicion_ilegible_no_se_confunde_con_cero(self):
-        # F1-097: antes `ram=""` se coercionaba a 0 y el mensaje salía
-        # «RAM libre  GB < 4 GB». Un valor ilegible es DESCONOCIDO, no cero.
+    def test_medicion_ilegible_es_telemetria_y_no_puerta(self):
+        # F1-097 + RÉGIMEN 2026-11-06: una medición ilegible sigue siendo
+        # DESCONOCIDA (nunca cero) en la bitácora, pero ya NO bloquea — no hay
+        # puerta de RAM que gobernar por defecto.
         bin_dir, _ = self.medidor_falso("")
         r = self.correr(
-            "check", SEMAFORO_ESPERA_MAX_MIN=0,
+            "check", SEMAFORO_SOLO_DECIDIR=1, SEMAFORO_ESPERA_MAX_MIN=0,
             SEMAFORO_RAM_GB=None, SEMAFORO_PROCESOS=None,
             PATH=str(bin_dir) + os.pathsep + os.environ["PATH"],
         )
-        self.assertEqual(r.returncode, 75, r.stdout + r.stderr)
-        self.assertIn("DESCONOCIDA", r.stderr)
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
         self.assertNotIn("RAM libre  GB", r.stderr)
         self.assertIn("ram_libre=desconocida", self.bitacora.read_text(encoding="utf-8"))
-
-    def test_la_paciencia_no_se_salta_con_ram_desconocida(self):
-        # La paciencia (LG-25b) sólo puede ignorar builds ajenos si la RAM
-        # cubre mínimo + margen. Una medición ilegible no es «sobra RAM».
-        bin_dir, _ = self.medidor_falso("no-es-un-numero")
-        r = self.correr(
-            "check", SEMAFORO_PROCESOS=2, SEMAFORO_PACIENCIA_MIN=0,
-            SEMAFORO_ESPERA_MAX_MIN=0,
-            SEMAFORO_RAM_GB=None,
-            PATH=str(bin_dir) + os.pathsep + os.environ["PATH"],
-        )
-        self.assertEqual(r.returncode, 75, r.stdout + r.stderr)
-        self.assertIn("procesos cargo/rustc ajenos", r.stderr)
 
 
 if __name__ == "__main__":

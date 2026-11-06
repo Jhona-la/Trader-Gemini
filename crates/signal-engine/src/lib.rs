@@ -20,6 +20,7 @@ pub mod orchestrator;
 pub mod perceptron_gate;
 pub mod proyeccion_espectral;
 pub mod quantum_oscillator;
+pub mod quantum_slot_orchestrator;
 pub mod renyi_tsallis_entropy;
 pub mod skill_motores;
 pub mod soliton_wave;
@@ -40,6 +41,10 @@ pub use orchestrator::{
 pub use perceptron_gate::{PerceptronGateEngine, PerceptronGateParams};
 pub use proyeccion_espectral::{ProyeccionEspectralEngine, ProyeccionEspectralParams};
 pub use quantum_oscillator::{QuantumOscillatorEngine, QuantumOscillatorParams};
+pub use quantum_slot_orchestrator::{
+    MultiSlotEvaluationReport, MultiSlotOrderEmission, QuantumSlotDecision,
+    QuantumSlotOrchestrator, QuantumSlotOrchestratorParams, SlotOrderProposal, SpectralSlot,
+};
 pub use renyi_tsallis_entropy::{RenyiTsallisEntropyEngine, RenyiTsallisEntropyParams};
 pub use soliton_wave::{SolitonWaveEngine, SolitonWaveParams};
 pub use stochastic_resonance::{StochasticResonanceEngine, StochasticResonanceParams};
