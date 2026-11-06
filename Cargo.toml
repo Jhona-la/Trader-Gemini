@@ -97,6 +97,10 @@ name = "model_manifest"
 path = "src/bin/model_manifest.rs"
 
 [[bin]]
+name = "dataset_admission"
+path = "src/bin/dataset_admission.rs"
+
+[[bin]]
 name = "copulas_manifest"
 path = "src/bin/copulas_manifest.rs"
 
