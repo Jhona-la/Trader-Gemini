@@ -10503,6 +10503,7 @@ impl GodEngineCore {
                 liquidity_pareto_mu: 1.0,
                 stoikov_microprice: 0.0,
                 dynamic_recv_window_ms: 1000,
+                behavioral_resonance: 0.0,
             };
         }
 

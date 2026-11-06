@@ -3,6 +3,7 @@ pub mod adaptive_quantiles;
 pub mod atomic_float;
 pub mod capital_entrada;
 pub mod config;
+pub mod continuous_spectral_portfolio;
 pub mod espectral_multiactivo;
 pub mod evalues;
 pub mod fee_schedule;
@@ -34,11 +35,15 @@ pub use adaptive_quantiles::{
 };
 pub use atomic_float::AtomicF64;
 pub use config::QuantumConfig;
-pub use fee_schedule::{FeeSchedule, FeeScheduleError, SymbolFees};
+pub use continuous_spectral_portfolio::{
+    AssetSpectralAllocation, ContinuousPortfolioParams, ContinuousPortfolioReport,
+    ContinuousSpectralPortfolioEngine, MAX_PORTFOLIO_ASSETS,
+};
 pub use espectral_multiactivo::{
     credibilidad_continua, familia_honesta, EspectralMultiactivo, EspectralMultiactivoParams,
     SnapshotParEscala,
 };
+pub use fee_schedule::{FeeSchedule, FeeScheduleError, SymbolFees};
 pub use genome::{GenomeError, SuperGenotype};
 pub use net_multiplexer::get_global_client;
 pub use position::{Position, PositionManager};
@@ -50,8 +55,8 @@ pub use spectral_regime::{SpectralRegimeField, SpectralRegimeParams};
 pub use state::GlobalArena;
 pub use tick_source::TickEvent;
 pub use topological_persistence::{
-    MicroPoint3D, TopologicalMetrics, TopologicalPersistenceEngine,
-    NUM_FILTRATION_SCALES, TOPOLOGICAL_WINDOW_CAP,
+    MicroPoint3D, TopologicalMetrics, TopologicalPersistenceEngine, NUM_FILTRATION_SCALES,
+    TOPOLOGICAL_WINDOW_CAP,
 };
 pub use wasserstein_kantorovich::{
     exact_empirical_w2_distance_8, wasserstein_hermite_c1, WassersteinKantorovichEngine,

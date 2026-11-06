@@ -110,6 +110,7 @@ pub struct SlotOrderProposal {
     pub microprice_ref: f64,
     pub expected_lifetime_ms: u64,
     pub is_maker: bool,
+    pub behavioral_resonance: f64,
 }
 
 /// Emisión multi-slot que permite despachar múltiples órdenes simultáneas en un mismo tick sin colisiones.
@@ -179,6 +180,7 @@ pub struct QuantumSlotDecision {
     pub is_maker_preferred: bool,
     pub vetoed: bool,
     pub veto_reason: Option<&'static str>,
+    pub behavioral_resonance: f64,
 }
 
 impl QuantumSlotDecision {
@@ -196,6 +198,7 @@ impl QuantumSlotDecision {
             is_maker_preferred: true,
             vetoed: false,
             veto_reason: None,
+            behavioral_resonance: 0.0,
         }
     }
 }
@@ -210,6 +213,7 @@ pub struct MultiSlotEvaluationReport {
     pub liquidity_pareto_mu: f64,
     pub stoikov_microprice: f64,
     pub dynamic_recv_window_ms: u64,
+    pub behavioral_resonance: f64,
 }
 
 /// Parámetros de configuración del orquestador cuántico multi-slot.
@@ -223,6 +227,8 @@ pub struct QuantumSlotOrchestratorParams {
     pub min_confidence_threshold: f64,
     /// Sensibilidad del microprecio de Stoikov para sesgo direccional.
     pub stoikov_bias_sensitivity: f64,
+    /// Activa la expansión asimétrica del ratio R:R ante resonancia conductual (stop hunting a favor).
+    pub enable_behavioral_asymmetry: bool,
 }
 
 impl Default for QuantumSlotOrchestratorParams {
@@ -232,6 +238,7 @@ impl Default for QuantumSlotOrchestratorParams {
             min_opposite_direction_delta_ln: 0.60,
             min_confidence_threshold: 0.50,
             stoikov_bias_sensitivity: 0.50,
+            enable_behavioral_asymmetry: false,
         }
     }
 }
@@ -248,6 +255,7 @@ pub struct QuantumSlotOrchestrator {
     pub ewl_quantum: EwlQuantumGameEngine,
     pub tqft_anyons: TqftFibonacciAnyonEngine,
     pub virasoro: VirasoroCftBootstrapEngine,
+    pub behavioral: crate::quantum_behavioral_field::QuantumBehavioralFieldEngine,
 }
 
 impl Default for QuantumSlotOrchestrator {
@@ -268,6 +276,7 @@ impl QuantumSlotOrchestrator {
             ewl_quantum: EwlQuantumGameEngine::new(0.5),
             tqft_anyons: TqftFibonacciAnyonEngine::default(),
             virasoro: VirasoroCftBootstrapEngine::default(),
+            behavioral: crate::quantum_behavioral_field::QuantumBehavioralFieldEngine::new(),
         }
     }
 
@@ -384,6 +393,41 @@ impl QuantumSlotOrchestrator {
             ),
         ];
 
+        // Evaluación del campo conductual y potencial de liquidación minorista
+        let pivot_high = safe_mid * (1.0 + (atr_pct * 1.5).clamp(0.005, 0.10));
+        let pivot_low = safe_mid * (1.0 - (atr_pct * 1.5).clamp(0.005, 0.10));
+
+        // Estimación dinámica del volumen de liquidación vulnerable según el desequilibrio de flujo y libro:
+        // Con fuerte flujo comprador (OBI > 0, CVD > 0), los operadores cortos están atrapados y su liquidez
+        // de stop por encima de pivot_high es el objetivo de caza institucional (short squeeze).
+        let skew = (obi * 0.50 + ofi * 0.30 + cvd * 0.20).clamp(-1.0, 1.0);
+        let short_liq_vol = if skew >= 0.0 {
+            (bid_qty * (1.0 + skew) + ask_qty).max(1.0)
+        } else {
+            (ask_qty * (1.0 + skew).max(0.1)).max(1.0)
+        };
+        let long_liq_vol = if skew <= 0.0 {
+            (ask_qty * (1.0 - skew) + bid_qty).max(1.0)
+        } else {
+            (bid_qty * (1.0 - skew).max(0.1)).max(1.0)
+        };
+
+        let raw_crash_prob = if cvd < -0.30 {
+            (-cvd * 0.8).clamp(0.0, 0.95)
+        } else {
+            0.05
+        };
+        let input = crate::quantum_behavioral_field::BehavioralMarketInput {
+            current_price: safe_mid,
+            anchor_price: safe_mid,
+            pivot_high,
+            pivot_low,
+            raw_crash_prob,
+            short_liq_vol,
+            long_liq_vol,
+        };
+        let behavioral_report = self.behavioral.evaluate(&input);
+
         let mut active_count = 0;
 
         for (slot_idx, decision) in decisions.iter_mut().enumerate().take(MAX_SPECTRAL_SLOTS) {
@@ -416,10 +460,10 @@ impl QuantumSlotOrchestrator {
                 }
             };
 
-            // Cálculo direccional por slot
+            // Cálculo direccional por slot modulado por resonancia conductual
             let (raw_signal, raw_confidence) = match slot {
                 SpectralSlot::MicroScalp => {
-                    // MicroScalp: dominado por desequilibrio de libro (OFI/OBI) y microprice delta
+                    // MicroScalp: desequilibrio de libro (OFI/OBI), microprice delta y resonancia conductual
                     let microprice_delta_bps = if safe_mid > 0.0 {
                         ((microprice - safe_mid) / safe_mid) * 10_000.0
                     } else {
@@ -427,8 +471,10 @@ impl QuantumSlotOrchestrator {
                     };
                     let micro_score = ofi * 0.40
                         + obi * 0.35
-                        + (microprice_delta_bps * 0.10).clamp(-1.0, 1.0) * 0.25;
-                    let conf = 0.50 + micro_score.abs() * 0.40;
+                        + (microprice_delta_bps * 0.10).clamp(-1.0, 1.0) * 0.25
+                        + behavioral_report.behavioral_resonance * 0.15;
+                    let conf =
+                        (0.50 + micro_score.abs() * 0.40) * behavioral_report.conviction_multiplier;
                     if micro_score > 0.15 {
                         (SignalType::Long, conf.clamp(0.0, 1.0))
                     } else if micro_score < -0.15 {
@@ -438,9 +484,11 @@ impl QuantumSlotOrchestrator {
                     }
                 }
                 SpectralSlot::MesoTactical => {
-                    // MesoTactical: dominado por impulso de flujo y CVD
-                    let meso_score = cvd * 0.60 + ofi * 0.40;
-                    let conf = 0.50 + meso_score.abs() * 0.35;
+                    // MesoTactical: dominado por impulso de flujo, CVD y resonancia conductual
+                    let meso_score =
+                        cvd * 0.55 + ofi * 0.30 + behavioral_report.behavioral_resonance * 0.25;
+                    let conf =
+                        (0.50 + meso_score.abs() * 0.35) * behavioral_report.conviction_multiplier;
                     if meso_score > 0.20 {
                         (SignalType::Long, conf.clamp(0.0, 1.0))
                     } else if meso_score < -0.20 {
@@ -450,9 +498,11 @@ impl QuantumSlotOrchestrator {
                     }
                 }
                 SpectralSlot::MacroSwing => {
-                    // MacroSwing: dominado por régimen macro y tendencia acumulada
-                    let macro_score = cvd * 0.80 + obi * 0.20;
-                    let conf = 0.50 + macro_score.abs() * 0.30;
+                    // MacroSwing: régimen macro, tendencia acumulada y resonancia conductual
+                    let macro_score =
+                        cvd * 0.70 + obi * 0.15 + behavioral_report.behavioral_resonance * 0.35;
+                    let conf =
+                        (0.50 + macro_score.abs() * 0.30) * behavioral_report.conviction_multiplier;
                     if macro_score > 0.25 {
                         (SignalType::Long, conf.clamp(0.0, 1.0))
                     } else if macro_score < -0.25 {
@@ -521,6 +571,7 @@ impl QuantumSlotOrchestrator {
                 is_maker_preferred: is_maker,
                 vetoed,
                 veto_reason,
+                behavioral_resonance: behavioral_report.behavioral_resonance,
             };
 
             if decision.signal != SignalType::Flat {
@@ -538,6 +589,7 @@ impl QuantumSlotOrchestrator {
             liquidity_pareto_mu: pareto_mu,
             stoikov_microprice: microprice,
             dynamic_recv_window_ms,
+            behavioral_resonance: behavioral_report.behavioral_resonance,
         }
     }
 
@@ -583,12 +635,21 @@ impl QuantumSlotOrchestrator {
 
             // TP y SL ajustados por la volatilidad esperada y la escala temporal del slot
             let vol = decision.expected_volatility.clamp(0.001, 0.10);
-            let tp_pct = match decision.slot {
+            let mut tp_pct = match decision.slot {
                 SpectralSlot::MicroScalp => vol * 1.5,
                 SpectralSlot::MesoTactical => vol * 2.5,
                 SpectralSlot::MacroSwing => vol * 4.0,
             };
-            let sl_pct = tp_pct / 2.0; // Ratio Asimétrico R:R = 2.0
+            let mut sl_pct = tp_pct / 2.0; // Ratio Asimétrico base R:R = 2.0
+
+            // Ajuste asimétrico si el campo conductual apoya la dirección (stop hunting a favor)
+            if self.params.enable_behavioral_asymmetry
+                && ((is_long && decision.behavioral_resonance > 0.10)
+                    || (!is_long && decision.behavioral_resonance < -0.10))
+            {
+                tp_pct *= 1.25;
+                sl_pct *= 0.90;
+            }
 
             let (tp_price, sl_price) = if is_long {
                 (ref_price * (1.0 + tp_pct), ref_price * (1.0 - sl_pct))
@@ -608,6 +669,7 @@ impl QuantumSlotOrchestrator {
                 microprice_ref: decision.microprice,
                 expected_lifetime_ms: decision.expected_lifetime_ms,
                 is_maker: decision.is_maker_preferred,
+                behavioral_resonance: decision.behavioral_resonance,
             };
 
             emission.push(proposal);
