@@ -20500,3 +20500,18 @@ fail-closed queda intacto donde había riesgo real.
 
 Tras CI verde: rebuild de god_engine y REINICIO de la corrida A3 (el tramo
 pre-fix queda en corrida_a3_20261106_0915.log como evidencia). — GLM
+
+---
+
+## GLM-208c — INFORME A3 PARCIAL (~1.3 h): primer trade real + 3 hallazgos de medición
+
+docs/audit/INFORME_A3_PARCIAL_2026-11-06.md + extractor reproducible
+scripts/extraer_metricas_a3.py. Corrida A3-bis viva (PID 42748). Resumen:
+1 ciclo real (BCHUSDT 266.39->266.36), 0 avisos de latencia (antes 200+),
+OMS Ready. HALLAZGOS: H2 contabilidad Fees/PnL en 0.0000 tras ciclo que
+comisionaba 0.0032 (contador no ingiere fills o Testnet no cobra; income
+API dira — dueno fees V39/QSR; SIN esto el informe 24h sale en cero);
+H3 OMS_UNCONFIRMED_LOCAL_RESERVATION bloquea 186/190 snapshots con TODO
+cerrado tras FLATTEN (estado pegajoso — dueno OMS); H4 purga incompleta en
+144 simbolos basura del Testnet. Corte 24 h: manana ~13:15 con el mismo
+script. — GLM
