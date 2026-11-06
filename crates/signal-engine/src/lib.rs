@@ -17,6 +17,7 @@ pub mod flow_impulse;
 pub mod game_theoretic_nash;
 pub mod hawkes_bessel;
 pub mod mean_field_games_psychology;
+pub mod navier_stokes_kolmogorov;
 pub mod navier_stokes_manifold;
 pub mod orchestrator;
 pub mod perceptron_gate;
@@ -43,6 +44,9 @@ pub use hawkes_bessel::{HawkesBesselEngine, HawkesBesselParams};
 pub use maker::{MakerEngine, MakerQuote};
 pub use mean_field_games_psychology::{
     MeanFieldGamesParams, MeanFieldGamesPsychologyEngine, MeanFieldGamesReport, MFG_SPATIAL_NODES,
+};
+pub use navier_stokes_kolmogorov::{
+    NavierStokesKolmogorovEngine, NavierStokesParams, NavierStokesReport, NS_GRID_DIM,
 };
 pub use navier_stokes_manifold::{NavierStokesManifoldEngine, NavierStokesManifoldParams};
 pub use orchestrator::{
