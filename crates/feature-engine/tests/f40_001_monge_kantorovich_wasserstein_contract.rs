@@ -128,10 +128,7 @@ fn c3_subnormal_and_degenerate_numerical_stability() {
 #[test]
 fn c4_zero_alloc_and_zero_panic_guarantee() {
     let mut engine = MongeKantorovichWassersteinEngine::new(WassersteinParams::default());
-    let mut weights = [0.0; WASSERSTEIN_NODES];
-    for i in 0..WASSERSTEIN_NODES {
-        weights[i] = 1.0 / (WASSERSTEIN_NODES as f64);
-    }
+    let weights = [1.0 / (WASSERSTEIN_NODES as f64); WASSERSTEIN_NODES];
 
     // Ejecución continua repetitiva para comprobar determinismo O(1)
     let t_start = 50_000u64;
