@@ -269,7 +269,10 @@ class BarridoTargetTests(unittest.TestCase):
 
 @unittest.skipIf(BASH is None, "bash de GNU no disponible")
 class SemaforoBarridoTests(unittest.TestCase):
-    """Integración: el semáforo barre con el turno tomado y antes de cargo."""
+    """Integración: el semáforo barre con el turno tomado y antes de cargo.
+    RÉGIMEN 2026-11-06 (mandato del operador): el barrido automático queda
+    APAGADO por defecto; los casos que lo ejercitan lo piden con
+    SEMAFORO_BARRIDO=1 (OPT-IN)."""
 
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory(prefix="semaforo-barrido-")
@@ -311,7 +314,7 @@ class SemaforoBarridoTests(unittest.TestCase):
         return (self.raiz / "logs" / "semaforo.log").read_text(encoding="utf-8")
 
     def test_barre_con_el_turno_tomado_y_antes_de_compilar(self):
-        r = self.correr()
+        r = self.correr(SEMAFORO_BARRIDO=1)
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
         self.assertIn("cargo check testigo=ausente", self.traza.read_text(), "el barrido corre ANTES de cargo")
         self.assertFalse(self.vieja.exists())
@@ -322,32 +325,39 @@ class SemaforoBarridoTests(unittest.TestCase):
 
     def test_con_sello_reciente_no_barre_pero_compila(self):
         self.sello.write_text(str(int(time.time())))
-        r = self.correr()
+        r = self.correr(SEMAFORO_BARRIDO=1)
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
         self.assertTrue(self.vieja.exists())
         self.assertIn("cargo check testigo=presente", self.traza.read_text())
 
-    def test_desactivable(self):
-        r = self.correr(SEMAFORO_BARRIDO=0)
-        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
-        self.assertTrue(self.vieja.exists())
-        self.assertNotIn("barrido", self.bitacora())
+    def test_apagado_por_defecto_y_con_cero_explicito(self):
+        # RÉGIMEN 2026-11-06: sin pedirlo no se barre (el mandato prohíbe
+        # detenerse en auditorías de tamaño de carpeta); con 0 explícito, igual.
+        for env in ({}, {"SEMAFORO_BARRIDO": 0}):
+            with self.subTest(env=env):
+                r = self.correr(**env)
+                self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+                self.assertTrue(self.vieja.exists())
+                self.assertNotIn("barrido", self.bitacora())
 
     def test_solo_decidir_no_barre_ni_compila(self):
-        r = self.correr(SEMAFORO_SOLO_DECIDIR=1)
+        r = self.correr(SEMAFORO_SOLO_DECIDIR=1, SEMAFORO_BARRIDO=1)
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
         self.assertTrue(self.vieja.exists())
         self.assertFalse(self.traza.exists())
 
-    def test_turno_por_paciencia_con_builds_ajenos_no_barre(self):
-        r = self.correr(SEMAFORO_PROCESOS=2, SEMAFORO_PACIENCIA_MIN=0)
+    def test_con_builds_ajenos_vivos_hay_turno_pero_no_se_barre(self):
+        # RÉGIMEN 2026-11-06: los cargo/rustc ajenos ya no bloquean el turno
+        # (sin paciencia), pero el barrido sigue exigiendo 0 compiladores vivos.
+        r = self.correr(SEMAFORO_PROCESOS=2, SEMAFORO_BARRIDO=1)
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
-        self.assertIn("turno por paciencia", self.bitacora())
+        self.assertIn("ADQUIERE", self.bitacora())
+        self.assertNotIn("barrido automático", self.bitacora())
         self.assertTrue(self.vieja.exists(), "con builds ajenos vivos no se borra nada")
         self.assertIn("cargo check testigo=presente", self.traza.read_text())
 
     def test_un_fallo_del_barrido_no_bloquea_el_build(self):
-        r = self.correr(BARRIDO_INCREMENTAL_MAX_MB="abc")
+        r = self.correr(BARRIDO_INCREMENTAL_MAX_MB="abc", SEMAFORO_BARRIDO=1)
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
         self.assertIn("barrido automático codigo=2", self.bitacora())
         self.assertFalse(self.sello.exists(), "un barrido fallido no sella: se reintenta en el próximo turno")
