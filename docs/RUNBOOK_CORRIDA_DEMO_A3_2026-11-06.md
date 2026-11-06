@@ -10,9 +10,11 @@
 | # | Chequeo | Cómo |
 |---|---------|------|
 | 1 | main verde en su punta de código | `gh run list --branch main --limit 4` — ambos workflows success |
-| 2 | Claves Testnet presentes | `TESTNET_API_KEY`/`TESTNET_API_KEY_SECRET` en `.env` (GE:1532-1567 las exige) |
+| 2 | Claves Testnet presentes | `BINANCE_TESTNET_API_KEY`/`BINANCE_TESTNET_SECRET_KEY` en `.env` — VERIFICADAS len=64 el 2026-11-06; el código lee exactamente esos nombres (GE:1415-1416) |
 | 3 | Genoma demo disponible | `genomes/demo/active.json` existe (prod exige el suyo fail-closed, GE:1649-1688) |
-| 4 | `.env` con `USE_TESTNET=1` | Es el discriminador de venue (GE:1586): Testnet vivo, NO papel |
+| 4 | `.env` con `USE_TESTNET=true` | VERIFICADO ya en `.env` (GE:1586 discrimina venue) |
+| 4b | `TG_SHADOW_MODE=0` | HOY está en `1` (modo sombra — NO es la corrida de trading; apagarla para A3) |
+| 4c | `TRADER_GEMINI_ENV=demo` | HOY está en `PROD` (exigiría genoma prod fail-closed; para A3 usar demo con baseline) |
 | 5 | Sin `MAINNET_ARMED` en config_dir | Para que `is_demo_mode` no arme producción (GE:1191-1219) |
 | 6 | RAM del operador ≥ 4 GiB libres | El bin + telemetría corren en la máquina del operador; si < 4, pedir cierre de apps antes |
 
