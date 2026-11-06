@@ -227,3 +227,25 @@ fn explicit_flat_and_single_position_adoption_still_work() {
         .is_long
         .load(Ordering::Relaxed));
 }
+#[test]
+fn glm208_simbolo_sin_fila_remota_solo_es_issue_con_posicion_local_abierta() {
+    // Corrida A3 (2026-11-06): Binance positionRisk no garantiza fila para
+    // símbolos nunca operados por la cuenta; con un Top dinámico que rota
+    // SIEMPRE hay alguno sin fila, y el MissingRemoteEvidence eterno dejaba
+    // el OMS en Blocked con la cuenta limpia (0 posiciones, 0 órdenes,
+    // >100 ciclos). Un símbolo plano en ambos lados no bloquea; uno con
+    // posición local abierta y sin evidencia remota sigue siendo fail-closed.
+    let _guard = UNIVERSE.lock().unwrap_or_else(|p| p.into_inner());
+    // Plano en ambos lados: sin fila remota y sin posición local → limpio.
+    let a = arena();
+    let plano = reconcile_arena_checked(&[], &a, 3);
+    assert!(plano.unresolved.is_empty(), "{:?}", plano.unresolved);
+    assert_eq!(plano.adjustments, 0);
+    // Posición local abierta sin fila remota → issue real, estado preservado.
+    open(&a, 2, 1.0);
+    let bloqueado = reconcile_arena_checked(&[], &a, 3);
+    assert!(bloqueado.unresolved.iter().any(|i| i.symbol == "XIXUSDT"
+        && i.kind == ReconciliationIssueKind::MissingRemoteEvidence));
+    assert!(a.coins[0].positions.slot_2.is_open());
+    assert_eq!(a.used_margin.load(Ordering::Relaxed), 10.0);
+}

@@ -468,10 +468,28 @@ pub fn reconcile_arena_checked(
     for (coin_idx, symbol) in universe.iter().enumerate() {
         let sym = symbol.to_uppercase();
         let Some(rows) = remote_map.get(&sym) else {
-            report.unresolved.push(ReconciliationIssue {
-                symbol: sym,
-                kind: MissingRemoteEvidence,
-            });
+            // GLM-208 (A3 2026-11-06): positionRisk NO garantiza fila para
+            // símbolos nunca operados por la cuenta. Un símbolo del universo
+            // dinámico sin fila y SIN posición local abierta está plano en
+            // ambos lados: la ausencia no certifica nada porque no hay
+            // afirmación local que certificar. Exigir la fila igualmente
+            // dejaba el OMS en Blocked eterno en cuentas limpias (corrida A3:
+            // unresolved:1 con 0 posiciones y 0 órdenes, >100 ciclos, 0
+            // órdenes enviadas). Con posición local ABIERTA la fila ausente
+            // sigue siendo issue: exposición local sin evidencia remota
+            // (fail-closed intacto; la reserva no confirmada la cubre además
+            // OMS_UNCONFIRMED_LOCAL_RESERVATION en el snapshot conjunto).
+            let hay_local_abierta = arena.coins[coin_idx]
+                .positions
+                .slots()
+                .iter()
+                .any(|p| p.is_open());
+            if hay_local_abierta {
+                report.unresolved.push(ReconciliationIssue {
+                    symbol: sym,
+                    kind: MissingRemoteEvidence,
+                });
+            }
             continue;
         };
         let remote_position = match single_remote_position(rows) {
