@@ -140,31 +140,29 @@ fn c4_multi_slot_emission_synthesis_without_cancellation() {
         "La emisión multirranura no debe superar la capacidad de slots"
     );
 
-    for opt_prop in &emission.slots {
-        if let Some(prop) = opt_prop {
-            assert!(prop.quantity > 0.0, "Cantidad debe ser positiva");
-            assert!(prop.price > 0.0, "Precio de entrada debe ser positivo");
-            assert!(
-                prop.sl_price > 0.0,
-                "Stop loss debe ser estrictamente positivo"
-            );
-            assert!(
-                prop.tp_price > 0.0,
-                "Take profit debe ser estrictamente positivo"
-            );
+    for prop in emission.slots.iter().flatten() {
+        assert!(prop.quantity > 0.0, "Cantidad debe ser positiva");
+        assert!(prop.price > 0.0, "Precio de entrada debe ser positivo");
+        assert!(
+            prop.sl_price > 0.0,
+            "Stop loss debe ser estrictamente positivo"
+        );
+        assert!(
+            prop.tp_price > 0.0,
+            "Take profit debe ser estrictamente positivo"
+        );
 
-            // Asimetría de recompensa: el Take Profit debe tener ratio RR >= 1.5 frente al Stop Loss
-            let risk = (prop.price - prop.sl_price).abs();
-            let reward = (prop.tp_price - prop.price).abs();
+        // Asimetría de recompensa: el Take Profit debe tener ratio RR >= 1.5 frente al Stop Loss
+        let risk = (prop.price - prop.sl_price).abs();
+        let reward = (prop.tp_price - prop.price).abs();
 
-            if risk > 1e-4 {
-                let rr = reward / risk;
-                assert!(
-                    rr >= 1.49,
-                    "El ratio Reward-to-Risk ({:.2}) debe ser asimétrico (>= 1.5)",
-                    rr
-                );
-            }
+        if risk > 1e-4 {
+            let rr = reward / risk;
+            assert!(
+                rr >= 1.49,
+                "El ratio Reward-to-Risk ({:.2}) debe ser asimétrico (>= 1.5)",
+                rr
+            );
         }
     }
 }

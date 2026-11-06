@@ -304,6 +304,7 @@ impl QuantumSlotOrchestrator {
 
     /// Evalúa el espectro continuo de mercado en los tres slots resonantes (`MicroScalp`, `MesoTactical`, `MacroSwing`)
     /// considerando el estado del libro de órdenes, flujo agresor y posiciones vivas existentes.
+    #[allow(clippy::too_many_arguments)]
     pub fn evaluate_multi_slot_signals(
         &mut self,
         mid_price: f64,
@@ -385,7 +386,7 @@ impl QuantumSlotOrchestrator {
 
         let mut active_count = 0;
 
-        for slot_idx in 0..MAX_SPECTRAL_SLOTS {
+        for (slot_idx, decision) in decisions.iter_mut().enumerate().take(MAX_SPECTRAL_SLOTS) {
             let slot = match SpectralSlot::from_index(slot_idx) {
                 Some(s) => s,
                 None => continue,
@@ -509,7 +510,7 @@ impl QuantumSlotOrchestrator {
             let lifetime_ms = (tau_k * 1.5) as u64;
             let is_maker = slot == SpectralSlot::MicroScalp || (raw_confidence < 0.70);
 
-            decisions[slot_idx] = QuantumSlotDecision {
+            *decision = QuantumSlotDecision {
                 slot,
                 signal: if vetoed { SignalType::Flat } else { raw_signal },
                 net_confidence: if vetoed { 0.0 } else { raw_confidence },
@@ -522,7 +523,7 @@ impl QuantumSlotOrchestrator {
                 veto_reason,
             };
 
-            if decisions[slot_idx].signal != SignalType::Flat {
+            if decision.signal != SignalType::Flat {
                 active_count += 1;
             }
         }
