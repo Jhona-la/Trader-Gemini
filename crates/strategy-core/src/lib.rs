@@ -1,4 +1,5 @@
 pub mod birch_swinnerton_dyer;
+pub mod chromodynamic_gauge_su3;
 pub mod kahler_hodge;
 pub mod maker;
 pub mod momentum_booster;
@@ -12,6 +13,10 @@ pub mod yang_mills_gauge;
 pub use birch_swinnerton_dyer::{
     bsd_hermite_c1, frobenius_trace_mod_p, legendre_symbol, BirchSwinnertonDyerEngine,
     BirchSwinnertonDyerMetrics, BSD_NUM_PRIMES, BSD_ODD_PRIMES,
+};
+pub use chromodynamic_gauge_su3::{
+    AssetColorState, ChromodynamicGaugeSu3Engine, Su3GaugeParams, Su3GaugeReport, SU3_COLORS,
+    SU3_GENERATORS,
 };
 pub use kahler_hodge::{KahlerHodgeEngine, KahlerHodgeMetrics, KahlerHodgeParams};
 pub use multivariate_coint::MultivariateCointegrationEngine;
