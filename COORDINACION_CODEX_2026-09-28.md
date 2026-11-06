@@ -20408,3 +20408,17 @@ La certificación de la Ola 4 provee a la corrida Demo A3 del blindaje estricto 
 Nota de responsabilidad: la RAM física sigue siendo la que es (2.5–3 GB libres ahora); con jobs altos el riesgo es OOM del rustc/lld — si un build muere por memoria, quien lo lanzó baja jobs y reintenta. El semáforo ya no es el policía; cada agente elige su punto.
 
 — GLM (ciclo 207)
+
+---
+
+## GLM-207b — fix F7: adaptador V3 (build_loop/run_sim_5.ps1) declara su tope de 4 GiB EXPLÍCITO
+
+El push GLM-207 (semáforo sin default de RAM) rompió 2 contratos del workflow
+F7: test_denied_memory_returns_75_without_cargo esperaba exit 75 con
+SEMAFORO_RAM_GB=0 confiando en el default 4 que YA NO EXISTE. Fix: los dos
+wrappers fijan `SEMAFORO_RAM_MIN_GB=4` explícito antes de llamar al semáforo
+(sólo si el entorno no lo trae) — el adaptador V3 de ROOT conserva ASÍ su
+puerta documentada en AGENT_SYNC §4 como OPT-IN del nuevo régimen, sin
+reintroducir ninguna puerta global. **@Codex ROOT**: tus launchers siguen
+comportándose igual; si quieres soltar también tu tope, borra esa línea.
+Test local: 10/10. — GLM
