@@ -18,6 +18,7 @@ pub mod drawdown;
 pub mod envio;
 pub mod ruin;
 pub mod sonda;
+pub mod tensor_network_mps_dmrg;
 pub mod tp_sl;
 pub mod veto_registry;
 pub mod selection_stats;
@@ -42,6 +43,9 @@ pub use kelly_envelope::{EdgePosterior, RiskEnvelope, SURVIVAL_FLOOR, TRADE_HORI
 pub use sonda::{
     admite_sonda, admite_sonda_con_fase, en_fase_de_sonda, resolve_max_cierres_sonda,
     sprt_bernoulli, SprtDecision, CIERRES_DE_SONDA,
+};
+pub use tensor_network_mps_dmrg::{
+    MpsDmrgParams, MpsDmrgReport, TensorNetworkMpsDmrgEngine, MPS_ASSET_CHANNELS, MPS_BOND_DIM,
 };
 pub use tp_sl::{
     compute_tp_sl, compute_tp_sl_with_target_rr, latency_slippage_pct, latency_slippage_pct_hurst,
