@@ -24,6 +24,7 @@ pub mod lead_lag;
 pub mod lppls_sornette;
 pub mod matriz_rmt;
 pub mod microstructure;
+pub mod monge_kantorovich_wasserstein;
 pub mod mps;
 pub mod multifractal;
 pub mod navier_stokes;
@@ -109,6 +110,9 @@ pub use lead_lag::LeadLagAlphaEngine;
 pub use microstructure::{
     obi_acceleration, order_book_imbalance, AdaptiveResonanceClustering,
     InstitutionalVolumeTracker, OFIModel, OrderFlowTracker, SpoofingDetector,
+};
+pub use monge_kantorovich_wasserstein::{
+    MongeKantorovichWassersteinEngine, WassersteinParams, WassersteinReport, WASSERSTEIN_NODES,
 };
 pub use multifractal::{
     smooth_persistence_degree, MultiScaleHurstConfluence, MultifractalParams,
