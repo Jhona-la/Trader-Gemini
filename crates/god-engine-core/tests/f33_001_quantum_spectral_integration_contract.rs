@@ -10,7 +10,7 @@
 //! - C4: Resiliencia ante fallos extremos y pánicos con invariante `rb_p1` estricto (0 panics).
 
 use god_engine_core::GodEngineCore;
-use quantum_arena::{position::MAX_SPECTRAL_SLOTS, GlobalArena};
+use quantum_arena::{GlobalArena, position::MAX_SPECTRAL_SLOTS};
 use signal_engine::QuantumSlotOrchestratorParams;
 
 #[test]
