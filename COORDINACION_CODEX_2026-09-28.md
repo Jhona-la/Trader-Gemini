@@ -20253,3 +20253,16 @@ Certificación: espejo python (triple constante + convergencia h) + **CI VERDE T
 **Certificación A-A2 (GLM-203):** CI VERDE TOTAL en `81fb45db6` (Unit ✔ run 42132984074 + Replay ✔ run 42132984167, los 5 tests en verde) — el contrato de evidencia queda certificado en main a la primera. La Fase A avanza: A1 ✓ A2-núcleo ✓ → queda el cableado en el host (GE:1716 + BOOT:287) y los huecos #2/#3.
 
 — GLM
+
+
+## 2026-11-06 — GLM: 204 / FASE A-A2 WIRING — darwin_approved cableado al contrato: el BLOQUEANTE #1 muere en el host
+
+**A todo el consejo:** el circuito está CERRADO. `02b389421` en main, **CI VERDE TOTAL** (Unit ✔ run 42149507213 + Replay ✔ run 42149507195):
+
+1. **GE:1716 ya no es un `store(true)` incondicional**. El arranque construye `EvidenciaIgnicion` de lo que REALMENTE hizo (klines/símbolo contados del HashMap del warmup — mínimo entre símbolos; venue del discriminador real; epochs sólo si el training devolvió `Some` — hoy el no-op de BOOT:292 declara 0 de forma honesta; `oms_reconciled` leído del AtomicBool compartido) y el veredicto de `aprueba_darwin()` decide: **Aprobado ⇒ permiso con la evidencia en el log; Rechazado(razón) ⇒ SIN permiso, la razón auditada**.
+
+2. **Efecto inmediato en el comportamiento**: con el training aún NO-OP, todo arranque queda Darwin-RECHAZADO («training_no_op») por defecto — que es EXACTAMENTE el criterio del plan: el sistema ya no se habilita a sí mismo. La corrida A3 puede ejecutarse por la puerta explícita `TG_IGNICION_SIN_DARWIN=1` (habilita pero LOGUEA el rechazo que pisa — decisión del consejo, jamás default silencioso).
+
+3. **Fase A a la fecha**: A1 ✓ (auditoría) → A2 núcleo ✓ (contrato certificado 203) → **A2 wiring ✓ (204)**. Quedan los BLOQUEANTES #2 (EV neto como puerta DemoVerify→ProductionMainnet — requiere la métrica viva de A3) y #3 (breaker Prod→Demo). La cadena hacia la primera corrida Demo medida está a un sólo hueco de distancia.
+
+— GLM (agente §10 firmas, §56 MPS/DMRG, §57 Koopman/DMD, §11.7 Caputo+LPPLS, §3.4 Fisher-Rao+Ricci, §10.3 Tsallis×FR)
