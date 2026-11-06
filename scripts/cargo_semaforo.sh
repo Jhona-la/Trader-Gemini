@@ -1,53 +1,52 @@
 #!/usr/bin/env bash
 # LG-25 (Línea G) — semáforo de compilación compartido por todos los agentes.
 #
-# Por qué: la máquina tiene 16 GB útiles para builds y varios agentes compilan
-# en paralelo (cada rustc ocupa 0,4–0,9 GB; AGY midió 6 rustc = 4,3 GB). La
-# regla de AGENT_SYNC §4 («-j2, un build a la vez, target compartido») no la
-# hacía cumplir nada. Este envoltorio la hace cumplir:
+# RÉGIMEN 2026-11-06 (mandato del operador: «cero restricciones de recursos»
+# — acceso libre, total y sin restricciones a toda la RAM, todos los núcleos
+# de CPU y todo el SSD; quedan eliminados los topes artificiales de RAM y de
+# hilos de compilación, y las esperas por builds ajenos). Este envoltorio ya
+# NO restringe recursos. Conserva sólo lo que protege la INTEGRIDAD del
+# target/ compartido y la observabilidad:
 #   1. target ÚNICO: CARGO_TARGET_DIR = <raíz del repo>/target, también desde
 #      cualquier worktree (lo deduce de `git rev-parse --git-common-dir`).
 #      RB-H2: es seguro entre worktrees SÓLO con la frescura por contenido de
 #      `.cargo/config.toml` ([unstable] checksum-freshness = true): dos
 #      worktrees escriben los mismos artefactos y, por mtime, uno puede
 #      ejecutar el código del otro (scripts/tests/test_frescura_target.py).
-#   2. CARGO_BUILD_JOBS=2 salvo que se pida otra cosa explícitamente.
-#   3. Espera mientras haya OTRO cargo/rustc vivo o la RAM DISPONIBLE esté por
-#      debajo de SEMAFORO_RAM_MIN_GB (4 por defecto).
-#      F1-097: «disponible» es la memoria que el sistema puede entregar SIN
-#      paginar — `MemAvailable` en Linux y `AvailableMBytes` en Windows (libre
-#      + standby reclamable). Antes Windows medía `FreePhysicalMemory`, que
-#      sólo cuenta páginas libres y deja fuera el standby: en una máquina de
-#      builds con un target/ de decenas de GB, el semáforo anunciaba «2 GB»
-#      donde el Administrador de tareas mostraba 9, y los agentes aprendían a
-#      compilar por fuera del cerrojo. Medido 2026-10-23: el contador correcto
-#      cuesta ~36 ms por muestra frente a ~590 ms del anterior.
-#   4. Cerrojo atómico (mkdir) en <raíz>/target/.semaforo.lock con su dueño.
-#      Un cerrojo es huérfano si supera SEMAFORO_TTL_MIN (240), o si pasada
-#      la gracia SEMAFORO_GRACIA_S (120 s) no hay ningún cargo/rustc vivo: un
-#      agente sin cuota no bloquea a nadie y dos agentes no se roban el turno.
+#   2. Sin tope de hilos: CARGO_BUILD_JOBS sólo se exporta si el agente lo
+#      pide; por defecto cargo usa el 100 % de los núcleos de la CPU.
+#   3. RAM SIN puerta: la RAM disponible se MIDE y se anota como telemetría
+#      (F1-097: AvailableMBytes en Windows / MemAvailable en Linux — la
+#      memoria que el sistema puede entregar sin paginar), pero nunca bloquea
+#      por defecto. SEMAFORO_RAM_MIN_GB queda como tope OPT-IN (default 0)
+#      para quien lo declare explícitamente; una medición ilegible se anota
+#      como `desconocida` y NO bloquea (ya no hay puerta que gobernar).
+#   4. Cerrojo atómico (mkdir) en <raíz>/target/.semaforo.lock con su dueño:
+#      un solo escritor del target a la vez (además del file-lock interno de
+#      cargo). Un cerrojo es huérfano si supera SEMAFORO_TTL_MIN (240), o si
+#      pasada la gracia SEMAFORO_GRACIA_S (120 s) no hay ningún cargo/rustc
+#      vivo: un agente sin cuota no bloquea a nadie y dos agentes no se roban
+#      el turno (LG-25c). Los cargo/rustc ajenos (de quien compila por fuera
+#      del semáforo) ya NO bloquean: el file-lock de cargo serializa el
+#      acceso real al target.
 #   5. Una línea por adquisición y liberación en <raíz>/logs/semaforo.log
 #      (agente, comando, RAM libre, duración).
-#   6. LG-25b — paciencia: pasados SEMAFORO_PACIENCIA_MIN (30) minutos de
-#      espera, los cargo/rustc AJENOS (de quien compila por fuera del
-#      semáforo) dejan de bloquear si la RAM libre llega a
-#      SEMAFORO_RAM_MIN_GB + SEMAFORO_RAM_EXTRA_GB (4 + 2). El cerrojo entre
-#      usuarios del semáforo no se salta nunca.
-#   7. RB-H1 — barrido automático del target/ compartido por PRESUPUESTO
-#      (scripts/barrido_target.sh: LRU de incremental + variantes superadas
-#      de deps) como mucho cada SEMAFORO_BARRIDO_H (6) horas, con el turno ya
-#      tomado y 0 cargo/rustc vivos. Nunca bloquea el build; sello en
-#      <raíz>/target/.barrido_ultimo; SEMAFORO_BARRIDO=0 lo apaga.
+#   6. RB-H1 — barrido automático del target/ compartido por PRESUPUESTO
+#      (scripts/barrido_target.sh): ahora APAGADO por defecto (el mandato
+#      prohíbe detenerse en auditorías de tamaño de carpeta);
+#      SEMAFORO_BARRIDO=1 lo reactiva, cada SEMAFORO_BARRIDO_H (6) horas,
+#      con el turno ya tomado y 0 cargo/rustc vivos. Nunca bloquea el build.
 #
 # Uso:   bash scripts/cargo_semaforo.sh <argumentos de cargo>
 #        p. ej. bash scripts/cargo_semaforo.sh check --workspace --all-targets
-# Entorno: SEMAFORO_AGENTE (quién eres), SEMAFORO_RAM_MIN_GB, SEMAFORO_TTL_MIN,
-#          SEMAFORO_ESPERA_MAX_MIN (60; al agotarla sale con 75 sin compilar),
+# Entorno: SEMAFORO_AGENTE (quién eres), SEMAFORO_RAM_MIN_GB (0 = sin tope,
+#          OPT-IN), SEMAFORO_TTL_MIN, SEMAFORO_ESPERA_MAX_MIN (60 de espera
+#          del cerrojo; al agotarla sale con 75 sin compilar),
 #          SEMAFORO_PAUSA_S (15), SEMAFORO_SOLO_DECIDIR=1 (imprime la decisión
-#          y el entorno y sale sin compilar).
+#          y el entorno y sale sin compilar), SEMAFORO_BARRIDO (0 por defecto).
 # Costuras de prueba (scripts/tests/test_cargo_semaforo.py): SEMAFORO_RAIZ,
 #          SEMAFORO_PROCESOS (fuerza el nº de cargo/rustc ajenos),
-#          SEMAFORO_RAM_GB (fuerza la RAM libre).
+#          SEMAFORO_RAM_GB (fuerza la RAM libre medida).
 set -uo pipefail
 
 raiz=${SEMAFORO_RAIZ:-}
@@ -59,21 +58,18 @@ if [ -z "$raiz" ]; then
   raiz=$(dirname "$comun")
 fi
 agente=${SEMAFORO_AGENTE:-${USER:-${USERNAME:-agente}}}
-ram_min=${SEMAFORO_RAM_MIN_GB:-4}
+# RÉGIMEN 2026-11-06: tope de RAM OPT-IN (default 0 = sin puerta). La RAM se
+# mide y se anota, pero ya no gobierna el turno salvo petición explícita.
+ram_min=${SEMAFORO_RAM_MIN_GB:-0}
 ttl_min=${SEMAFORO_TTL_MIN:-240}
 gracia_s=${SEMAFORO_GRACIA_S:-120}
 espera_max_min=${SEMAFORO_ESPERA_MAX_MIN:-60}
 pausa_s=${SEMAFORO_PAUSA_S:-15}
-# LG-25b: quien compila POR FUERA del semáforo no toma el cerrojo, así que
-# esperar a «cero procesos ajenos» deja sin turno a los que sí lo usan (el
-# 17-oct dos builds ajenos de dos horas dejaron sin turno a AGY, Fable y la
-# Línea G). Pasada la paciencia, los ajenos dejan de bloquear si la RAM libre
-# cubre el mínimo más un margen; el cerrojo entre usuarios sigue mandando.
-paciencia_min=${SEMAFORO_PACIENCIA_MIN:-30}
-ram_extra=${SEMAFORO_RAM_EXTRA_GB:-2}
 
 export CARGO_TARGET_DIR="$raiz/target"
-export CARGO_BUILD_JOBS=${CARGO_BUILD_JOBS:-2}
+# Sin tope de hilos por defecto (mandato 2026-11-06): cargo usa el 100 % de
+# los núcleos salvo que el agente pida CARGO_BUILD_JOBS explícitamente.
+[ -n "${CARGO_BUILD_JOBS:-}" ] && export CARGO_BUILD_JOBS
 # RB-H2: frescura por contenido también para las ramas cuya .cargo/config.toml
 # aún no trae la clave (el target es compartido entre worktrees; ver punto 1).
 export CARGO_UNSTABLE_CHECKSUM_FRESHNESS=true
@@ -183,29 +179,17 @@ cerrojo_huerfano() {
 inicio=$(ahora)
 limite=$(( inicio + espera_max_min * 60 ))
 while :; do
-  ajenos=$(procesos_ajenos)
   ram=$(ram_libre_gb)
   # Etiqueta de bitácora: una medición ilegible se registra como
   # `ram_libre=desconocida`, nunca como `ram_libre=0GB`.
   if ram_conocida "$ram"; then ram_log="${ram}GB"; else ram_log="desconocida"; fi
   motivo=""
-  paciencia_agotada=0
-  # LG-25b sólo puede ignorar una cuenta numérica conocida, nunca «?», y sólo
-  # con una medición de RAM utilizable: una lectura desconocida no habilita
-  # saltarse la espera. El orden conserva el cortocircuito original: no se
-  # lanza ningún proceso extra si la paciencia no ha vencido.
-  if [[ "$ajenos" =~ ^[0-9]+$ ]] \
-    && [ $(( $(ahora) - inicio )) -ge $(( paciencia_min * 60 )) ] \
-    && ram_conocida "$ram" \
-    && ! menor_que "$ram" "$(awk -v a="$ram_min" -v b="$ram_extra" 'BEGIN { print a + b }')"; then
-    paciencia_agotada=1
-  fi
-  if [ "${ajenos:-0}" != "0" ] && [ "$paciencia_agotada" = "0" ]; then
-    motivo="$ajenos procesos cargo/rustc ajenos"
-  elif ! ram_conocida "$ram"; then
-    motivo="RAM disponible DESCONOCIDA (la medición no devolvió un número; SEMAFORO_RAM_GB la fuerza)"
-  elif menor_que "$ram" "$ram_min"; then
-    motivo="RAM libre ${ram} GB < ${ram_min} GB"
+  # RÉGIMEN 2026-11-06: ni la RAM ni los cargo/rustc ajenos bloquean. El
+  # tope SEMAFORO_RAM_MIN_GB es OPT-IN (default 0) y sólo decide con una
+  # medición CONOCIDA; una lectura ilegible es telemetría (`desconocida`),
+  # no puerta. Del cerrojo se encarga la rama else.
+  if ram_conocida "$ram" && menor_que "$ram" "$ram_min"; then
+    motivo="RAM libre ${ram} GB < ${ram_min} GB (tope OPT-IN de este agente)"
   else
     if cerrojo_huerfano; then
       registrar "cerrojo huérfano liberado (dueño: $(cat "$cerrojo/dueno" 2> /dev/null))"
@@ -240,29 +224,28 @@ if [ -n "${SEMAFORO_PRUEBA_ROBO:-}" ]; then
   # Costura de prueba: otro agente toma el cerrojo mientras «compilamos».
   printf '%s\n' "$SEMAFORO_PRUEBA_ROBO" > "$cerrojo/dueno"
 fi
-if [ "${ajenos:-0}" != "0" ]; then
-  registrar "turno por paciencia: ${ajenos} procesos cargo/rustc ajenos (fuera del semáforo), ram_libre=${ram_log}"
-fi
-registrar "ADQUIERE ram_libre=${ram_log} jobs=$CARGO_BUILD_JOBS: cargo $*"
+registrar "ADQUIERE ram_libre=${ram_log} jobs=${CARGO_BUILD_JOBS:-todos}: cargo $*"
 
 if [ "${SEMAFORO_SOLO_DECIDIR:-0}" = "1" ]; then
-  echo "[semaforo] turno concedido; CARGO_TARGET_DIR=$CARGO_TARGET_DIR CARGO_BUILD_JOBS=$CARGO_BUILD_JOBS CARGO_UNSTABLE_CHECKSUM_FRESHNESS=$CARGO_UNSTABLE_CHECKSUM_FRESHNESS"
+  echo "[semaforo] turno concedido; CARGO_TARGET_DIR=$CARGO_TARGET_DIR CARGO_BUILD_JOBS=${CARGO_BUILD_JOBS:-todos} CARGO_UNSTABLE_CHECKSUM_FRESHNESS=$CARGO_UNSTABLE_CHECKSUM_FRESHNESS"
   registrar "LIBERA (solo decidir)"
   exit 0
 fi
 
 # RB-H1 (Codex RB, 2026-10-19) — barrido automático del target/ compartido.
 # target/ llegó a 77 GB (27,7 GB de incremental por churn de variantes y
-# 30,9 GB de variantes superadas en deps; ver scripts/barrido_target.sh) porque
-# la higiene dependía de que alguien la ejecutara a mano. Aquí corre sola: como
-# mucho cada SEMAFORO_BARRIDO_H horas (6), con el turno YA tomado (nadie más
-# compila por el semáforo) y sólo si la última cuenta de cargo/rustc fue 0 (con
-# turno por paciencia hay builds ajenos vivos: no se barre). Nunca bloquea ni
-# altera el build: cualquier fallo sólo se anota. Desactivable con
-# SEMAFORO_BARRIDO=0. No corre con SEMAFORO_SOLO_DECIDIR (decide, no actúa).
+# 30,9 GB de variantes superadas en deps; ver scripts/barrido_target.sh).
+# RÉGIMEN 2026-11-06: APAGADO por defecto — el mandato del operador prohíbe
+# detenerse en auditorías de tamaño de carpeta. SEMAFORO_BARRIDO=1 lo
+# reactiva: como mucho cada SEMAFORO_BARRIDO_H horas (6), con el turno YA
+# tomado y sólo si la cuenta de cargo/rustc es 0 (con builds ajenos vivos no
+# se barre). Nunca bloquea ni altera el build: cualquier fallo sólo se anota.
+# No corre con SEMAFORO_SOLO_DECIDIR (decide, no actúa).
 barrido_si_toca() {
-  [ "${SEMAFORO_BARRIDO:-1}" = "1" ] || return 0
-  [ "${ajenos:-?}" = "0" ] || return 0
+  [ "${SEMAFORO_BARRIDO:-0}" = "1" ] || return 0
+  local ajenos
+  ajenos=$(procesos_ajenos)
+  [ "$ajenos" = "0" ] || return 0
   local sello="$raiz/target/.barrido_ultimo" ultimo=0 cada_h=${SEMAFORO_BARRIDO_H:-6}
   local dir_scripts=. salida codigo_b fuente=${BASH_SOURCE[0]//\\//}
   if [ -f "$sello" ]; then ultimo=$(cat "$sello" 2> /dev/null || echo 0); fi

@@ -20387,3 +20387,24 @@ La **Ola 4 (Fases 28, 29 y 30)** ha sido totalmente implementada, verificada y c
 La certificación de la Ola 4 provee a la corrida Demo A3 del blindaje estricto de Ville y Grossman-Zhou, así como la capacidad de evaluar órdenes multi-slot sin riesgo de canibalización. Quedamos listos para abrir el PR correspondiente a la Ola 4 (`agy/wave4-omega220`) y avanzar a la Ola 5 (Extensión de Dinámica de Mercados Extremos, Entropía de Rényi/Tsallis Multivariable y Sincronización Topológica de Redes Complejas).
 
 — Antigravity (AGY, Quant Sr. Lead)
+
+---
+
+## GLM-207 — 2026-11-06 (GLM) — RÉGIMEN CERO-RESTRICCIONES DEL OPERADOR: semáforo sin compuertas de RAM/hilos + build A3 en curso
+
+**ORDEN DIRECTA DEL OPERADOR** (hoy): «Hazlo, BORRA LAS RESTRICCIONES DE SEMAFORO, EN MI INSTRUCCION EXPLICO LA NUEVA MANERA DE TRABAJAR, YA NO MÁS RESTRICCIONES DE RAM». El mandato extendido (§2 y §9-2) dice: «Quedan eliminados todos los topes artificiales de RAM, SSD o número de hilos de compilación. Los agentes deben utilizar el 100 % de los núcleos e hilos del procesador y toda la capacidad de memoria y disco necesaria… sin detenerse a realizar auditorías de tamaño de carpeta ni limitar rustc».
+
+**Hecho** (commit de este átomo), en `scripts/cargo_semaforo.sh`:
+1. **Gate de RAM ELIMINADA**: default `SEMAFORO_RAM_MIN_GB` 4 → 0. La RAM disponible (F1-097, AvailableMBytes) se sigue MIDIENDO y anotando en `logs/semaforo.log` como telemetría, pero nunca bloquea por defecto. El tope queda OPT-IN para quien lo declare explícito.
+2. **Tope de 2 jobs ELIMINADO**: `CARGO_BUILD_JOBS` ya no se exporta por defecto → cargo usa el 100 % de los 16 núcleos.
+3. **Espera por builds ajenos ELIMINADA** (LG-25b/paciencia retirada): los cargo/rustc ajenos ya no bloquean; el file-lock interno de cargo serializa el acceso real al target compartido.
+4. **Barrido automático RB-H1 APAGADO por defecto** (`SEMAFORO_BARRIDO` default 1→0): el mandato prohíbe detenerse en auditorías de tamaño de carpeta. Quien quiera barrer: `SEMAFORO_BARRIDO=1`.
+5. **Se CONSERVA** (integridad, no recursos): target único compartido + checksum-freshness RB-H2 + cerrojo de escritura (un escritor del target a la vez; huérfano sólo por muerte comprobada) + bitácora. Tests: 29/29 en verde (14+9+6); suites reescritos al nuevo rol del enumerador (proteger el cerrojo, no gobernar recursos).
+
+**AGENT_SYNC §4 actualizado** en consecuencia (adiós regla `-j2`).
+
+**A3 EN CURSO**: build de `god_engine` (wiring de evidencia del 204 + W3/W4 Ω220 de AGY, fdb8e2f8b) corriendo DESDE YA bajo el régimen nuevo — turno tomado con 2.5 GB libres que el semáforo viejo habría rechazado, jobs=6. Cuando el binario esté: overlay `docs/ENV_OVERLAY_A3.md` + `TG_IGNICION_SIN_DARWIN=1` según `docs/RUNBOOK_CORRIDA_DEMO_A3_2026-11-06.md` — el PRIMER DATO real del sistema.
+
+Nota de responsabilidad: la RAM física sigue siendo la que es (2.5–3 GB libres ahora); con jobs altos el riesgo es OOM del rustc/lld — si un build muere por memoria, quien lo lanzó baja jobs y reintenta. El semáforo ya no es el policía; cada agente elige su punto.
+
+— GLM (ciclo 207)

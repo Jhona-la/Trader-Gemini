@@ -1,4 +1,9 @@
-"""Synthetic fail-closed contracts. Never real availability; only external dummy roots/tool mocks."""
+"""Synthetic fail-closed contracts. Never real availability; only external dummy roots/tool mocks.
+
+RÉGIMEN 2026-11-06 (mandato del operador: cero restricciones de recursos): la
+cuenta de procesos y la RAM ya NO gobiernan el turno — sólo protegen el
+cerrojo (un cerrojo vencido no se roba si hay compiladores vivos o la cuenta
+es desconocida) y se anotan como telemetría."""
 from pathlib import Path
 import os,shutil,subprocess,tempfile,unittest
 
@@ -38,7 +43,7 @@ class SemaforoFailClosedTests(unittest.TestCase):
 else printf '2026-10-18T00:00:00Z\n'; fi
 """.replace("__AFTER__",str(int(after))))
         env={k:v for k,v in os.environ.items() if not k.upper().startswith(("GIT_","SEMAFORO_")) and k not in ("BASH_ENV","ENV")}
-        env.update(PATH=str(self.bin),SEMAFORO_RAIZ=str(self.root),SEMAFORO_AGENTE="synthetic-failclosed",SEMAFORO_SOLO_DECIDIR="1",SEMAFORO_ESPERA_MAX_MIN="0",SEMAFORO_PAUSA_S="0",SEMAFORO_PACIENCIA_MIN="30",SEMAFORO_RAM_GB=ram)
+        env.update(PATH=str(self.bin),SEMAFORO_RAIZ=str(self.root),SEMAFORO_AGENTE="synthetic-failclosed",SEMAFORO_SOLO_DECIDIR="1",SEMAFORO_ESPERA_MAX_MIN="0",SEMAFORO_PAUSA_S="0",SEMAFORO_RAM_GB=ram)
         if processes is not None:env["SEMAFORO_PROCESOS"]=processes
         # Confirm the mock PATH cannot resolve real enumerators or pgrep.
         probe=subprocess.run([str(BASH),"--noprofile","--norc","-c","for c in powershell powershell.exe pwsh pwsh.exe pgrep; do if command -v \"$c\" >/dev/null 2>&1; then exit 91; fi; done"],cwd=self.root,env=env,capture_output=True,text=True,timeout=10)
@@ -61,36 +66,42 @@ else printf '2026-10-18T00:00:00Z\n'; fi
         self.assertIn("ADQUIERE",self.log.read_text(encoding="utf-8"))
         self.assertFalse(self.lock.exists(),"Own synthetic lock must be released")
 
-    def test_unknown_after_140_minutes_with_high_ram_is_not_a_count(self):
-        self.blocked(self.run_case(processes="?"))
+    def test_unknown_count_with_free_lock_still_admits(self):
+        # RÉGIMEN 2026-11-06: la cuenta de procesos ya no es puerta del turno.
+        self.admitted(self.run_case(processes="?"))
 
-    def test_unknown_cannot_enter_ttl_recovery_or_remove_foreign_lock(self):
-        self.blocked(self.run_case(processes="?",foreign=0))
+    def test_unknown_count_cannot_steal_stale_lock(self):
+        # Cerrojo vencido por gracia (140 min) con cuenta desconocida: duda
+        # conserva — el dueño puede estar compilando y no se puede saber.
+        self.blocked(self.run_case(processes="?",foreign=100000))
 
-    def test_tasklist_failure_empty_stdout_before_patience_is_unknown(self):
-        self.blocked(self.run_case(tasklist='printf "enumeration failed\\n" >&2; exit 23\n',after=0))
+    def test_tasklist_failure_with_free_lock_admits(self):
+        self.admitted(self.run_case(tasklist='printf "enumeration failed\\n" >&2; exit 23\n',after=0))
 
-    def test_tasklist_failure_empty_stdout_after_patience_is_unknown(self):
-        self.blocked(self.run_case(tasklist='printf "enumeration failed\\n" >&2; exit 23\n'))
+    def test_tasklist_failure_cannot_steal_stale_lock(self):
+        self.blocked(self.run_case(tasklist='printf "enumeration failed\\n" >&2; exit 23\n',foreign=100000))
 
-    def test_successful_tasklist_no_matches_is_legitimate_zero(self):
-        self.admitted(self.run_case(tasklist='printf "Image Name PID\\nSystem 4\\n"; exit 0\n'))
+    def test_successful_tasklist_no_matches_recovers_stale_lock(self):
+        # 0 compiladores vivos + cerrojo vencido: huérfano legítimo, se libera.
+        self.admitted(self.run_case(tasklist='printf "Image Name PID\\nSystem 4\\n"; exit 0\n',foreign=100000))
 
-    def test_successful_tasklist_numeric_count_retains_lg25b_patience(self):
+    def test_numeric_count_with_free_lock_admits_immediately(self):
+        # RÉGIMEN 2026-11-06: builds ajenos vivos ya no bloquean el turno.
         r=self.run_case(tasklist='printf "cargo.exe 11\\nrustc.exe 12\\n"; exit 0\n')
         self.admitted(r)
-        self.assertIn("turno por paciencia: 2 procesos",self.log.read_text(encoding="utf-8"))
+        self.assertNotIn("turno por paciencia",self.log.read_text(encoding="utf-8"))
 
-    def test_known_numeric_count_still_blocks_before_patience(self):
-        self.blocked(self.run_case(processes="2",after=0))
+    def test_numeric_count_never_steals_live_compilers_lock(self):
+        # Cerrojo vencido pero con 2 cargo/rustc vivos: el dueño compila, no
+        # se le roba el turno.
+        self.blocked(self.run_case(tasklist='printf "cargo.exe 11\\nrustc.exe 12\\n"; exit 0\n',foreign=100000))
 
-    def test_known_numeric_patience_still_requires_extra_ram(self):
-        self.blocked(self.run_case(processes="2",ram="5"))
-
-    def test_known_numeric_patience_never_bypasses_fresh_foreign_lock(self):
+    def test_fresh_foreign_lock_blocks_even_with_busy_machine(self):
         self.blocked(self.run_case(processes="2",foreign=108400))
 
-    def test_no_enumerator_after_patience_remains_unknown(self):
-        self.blocked(self.run_case())
+    def test_no_enumerator_cannot_steal_stale_lock(self):
+        # Sin ningún enumerador disponible la cuenta es «?» y un cerrojo
+        # vencido NO se roba.
+        self.blocked(self.run_case(foreign=100000))
 
 if __name__=="__main__":unittest.main()
