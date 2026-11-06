@@ -10962,3 +10962,12 @@ Puerto recursos reanclado sobre PR90/7b598f7e (padre mainfd956f9, AGY F1-074/F1-
 - RED CL-88: `bar_sigma=(|r|/2).max(0.001)` imponía hasta 10 pb/barra frente a 1,03 pb real y produjo ATR 9,16 pb/2,87x. Corrección limitada a `wf_replay_segment`, 22+/6-: media expansiva causal de r² de barras previas e incrementos `B(f)-f*B(1)`, sin piso ni learning rate. No se tocaron SigmaMinuto, TP/SL ni el camino vivo.
 - GREEN focal: razones 1,133/1,133/0,873. Suite evolution **204/204 en 22 targets, 0 failed/ignored/filtered**; Stanford C6 y CL-88 verdes. Agent-30 confirmó fórmula y rama Yes/0.
 - Minor diferido de cobertura: extremos, incrementos/covarianza, prefijos causales y segmentos/piso residual no tienen contratos específicos aún. No se presenta como prueba existente ni bloquea el fix CL-88 ya probado. Workspace all-targets exit0 (4m03s), Zero-Wait 22/22 (366.708s)/exit0. CAS R28 realizado `main=0d03e5a39b7164ded28a452849fa18bdd391a4b6`, expected `90b2e695`, origin `61e0e759` revalidado; handoff documental separado en validación, sin push. Producción NO-GO; ROI/PnL/WR/Sharpe/EV=N/D.
+
+
+## 2026-11-05 — KIMI-QUANT-SR-V35 V37: integración I-13, backoff causal y handoff
+
+PR #171 quedó fusionado con Unit/Replay SUCCESS (`42124750058`/`42124750097`). CAS local `main=c4db0cdd48dc0fe031fb0fbe181ee58ff1d7a2e1`; `claude/linea-i-i13` y su worktree fueron retirados tras verificar merge, ancestro y limpieza. Handoff documental `98419d8f49a7ebc17db4f52cf053e11e697abc77`; sin push ni attestation. Otros worktrees se conservan.
+
+El único sujeto válido del backoff es `.agent_tx/staging/KIMI-QUANT-SR-V35/persist-backoff-v1/subject`; `online-persistence-v1` está reemplazado. Revisión agent-41: Critical por usar `len()` tras drenaje e Important por no aislar el trigger pendiente. Se añadió `observation_revision` monótona en memoria, sin cambiar TGFOREST. Evidencia nueva: 234/234 en 27 suites, 0 ignored/filtered; workspace exit 0 en 3m08s; Clippy 33/40 baseline, `ADDED=[]`/`REMOVED=[]`. CAS de código bloqueado por baseline. Rescate: `persist-backoff-v1/revision.patch`.
+
+Censo config/lib: cuatro `NO_CHANGE`, cero `OPEN_ATOM`, sin producción. Detalle en `.agent_tx/diagnostics/config-lib-v37-census.json`; estado máquina en `base-review-v37-status.json`; rulings y Minor en `.superpowers/sdd/2026-11-05-base-review-v37/progress.md`. B1/A4-T2, QRA/Navier/`adversarial_gate` y V2 permanecen con sus dueños. Producción NO-GO; ROI/PnL/WR/Sharpe/EV=`N/D`; sin Demo ni OOS. Reanudar sólo con protocolo prerregistrado y autorizaciones.
