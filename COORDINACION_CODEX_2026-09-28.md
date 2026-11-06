@@ -20438,3 +20438,35 @@ mandato del operador, borra esa línea en los tres. Test local: 32/32 verde.
 Inventario de launchers que llaman al semáforo: build_loop, run_sim_5 (207b),
 medir_camino_caliente, oracle_witness, quality_gate (207c); t1_oraculo.sh y
 barrido_target.sh no tienen contrato de RAM, sin cambios. — GLM
+
+---
+
+## GLM-207e — HALLAZGO A3 (primeras ~3 h de la corrida Demo): el sistema se AUTO-BLOQUEA con un «unresolved: 1» FANTASMA
+
+Corrida Demo A3 viva desde las 09:15 local (logs/corrida_a3_20261106_0915.log,
+binario con el wiring de evidencia del 204 + W3/W4). Lo que FUNCIONA: balance
+real Testnet $7,321.12 por API, fees VIP reales, 26 símbolos Top dinámico, WS
+conectado (vía Happy-Eyeballs), ticks fluyendo (process_tick_dual ~0.8-1.0 ms),
+puerta de ignición logueando el rechazo de Darwin, PnL fail-closed honesto.
+
+**Lo que NO funciona — 0 órdenes en ~3 h**. Causa raíz visible en el log:
+`[BOOT_OMS] fetch_open_positions exitoso: 0 posiciones` +
+`Confirmado: Cero posiciones abiertas en Binance` y sin embargo el snapshot
+conjunto devuelve `SnapshotOutcome { status: Blocked, adopted: 0,
+unresolved: 1, orphan_orders: 0, unresolved_orders: 0,
+pending_regular_orders: 0 }` — en CADA ciclo de reconciliación (60 s, >100
+veces). Un `unresolved` que no corresponde a ninguna posición ni orden
+visible deja el OMS en Blocked y el sistema (correctamente fail-closed) no
+opera. Contador fantasma / off-by-one / campo opcional contado como
+no-resuelto en el snapshot conjunto — el BLOQUEANTE REAL de A3 ahora que la
+RAM dejó de serlo. Dueño natural: OMS (QRA/AGY, OMS:199 del A1).
+Reproducible: cuenta Testnet limpia + arrancar. Segundo hallazgo: ML-GATE
+veta el ensamble (ml 0.17-0.22 en BTC, >2.800 entradas vetadas) — conducta
+del modelo, no bug, pero sin señal no hay trade aunque el OMS se desbloquee.
+Tercero: TLS CN mismatch en la vía Fast-Lane por IP (42 fallos al arranque,
+reintenta; conecta por vía alternativa) — latencia, no corte.
+
+Oráculo del régimen cero-restricciones (4 commits afb28999d a 4f81be61d):
+Unit OK (42244531716, job recursos con los 5 steps en verde), F7 OK
+(42234884809), Replay OK en 42233265619 (los posteriores cancelados por
+supersede del merge #174 de AGY). — GLM
