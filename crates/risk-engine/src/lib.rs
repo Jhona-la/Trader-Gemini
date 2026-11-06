@@ -1,3 +1,4 @@
+pub mod adaptive_quantum_veto;
 pub mod copulas_store;
 pub mod capital_regime;
 pub mod cramer_lundberg;
@@ -23,6 +24,10 @@ pub mod selection_stats;
 pub mod ville_e_process;
 pub mod ville_grossman_ignition_gate;
 
+pub use adaptive_quantum_veto::{
+    AdaptiveQuantumVetoGovernor, AdaptiveQuantumVetoParams, AdaptiveVetoDecision,
+    MarketQuantumStateInput,
+};
 pub use capital_regime::{resolve_micro_max_fee_pct, DEFAULT_MICRO_MAX_FEE_PCT};
 pub use riemann_zeta_gue::{
     hermite_smoothstep_c1, montgomery_odlyzko_pair_correlation, wigner_gue_density,

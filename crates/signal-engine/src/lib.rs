@@ -3,6 +3,7 @@ pub use strategy_core::stat_arb;
 
 // Re-export specific structs that other crates expect from signal_engine
 pub mod coaxial_breakout;
+pub mod continuous_volatility_operator;
 // U-ERR-1: `micro_scalp_trigger`, `swing_conformal_filter` y `turbo_scalper`
 // nombraban BANDAS DE HORIZONTE («micro-scalp», «swing», «turbo») que ninguno
 // de los tres motores decide: los tres declaraban `TradeHorizon::Continuous`
@@ -23,6 +24,7 @@ pub mod quantum_behavioral_field;
 pub mod quantum_oscillator;
 pub mod quantum_slot_orchestrator;
 pub mod renyi_tsallis_entropy;
+pub mod riemann_burgers_shockwave;
 pub mod skill_motores;
 pub mod soliton_wave;
 pub mod stochastic_resonance;
@@ -30,6 +32,10 @@ pub mod supersonic_shockwave;
 pub mod trend_runner;
 pub mod voto_espectral;
 
+pub use continuous_volatility_operator::{
+    ContinuousVolatilityOperatorEngine, ContinuousVolatilityParams, ContinuousVolatilityState,
+    VOL_SPECTRUM_SCALES,
+};
 pub use feynman_propagator::{FeynmanPropagatorEngine, FeynmanPropagatorParams};
 pub use hawkes_bessel::{HawkesBesselEngine, HawkesBesselParams};
 pub use maker::{MakerEngine, MakerQuote};
@@ -51,6 +57,9 @@ pub use quantum_slot_orchestrator::{
     QuantumSlotOrchestrator, QuantumSlotOrchestratorParams, SlotOrderProposal, SpectralSlot,
 };
 pub use renyi_tsallis_entropy::{RenyiTsallisEntropyEngine, RenyiTsallisEntropyParams};
+pub use riemann_burgers_shockwave::{
+    BurgersShockwaveReport, RiemannBurgersParams, RiemannBurgersShockwaveEngine,
+};
 pub use soliton_wave::{SolitonWaveEngine, SolitonWaveParams};
 pub use stochastic_resonance::{StochasticResonanceEngine, StochasticResonanceParams};
 pub use strategy_core::{SignalIntent, SignalType};
