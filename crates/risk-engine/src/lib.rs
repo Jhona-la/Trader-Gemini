@@ -21,6 +21,7 @@ pub mod tp_sl;
 pub mod veto_registry;
 pub mod selection_stats;
 pub mod ville_e_process;
+pub mod ville_grossman_ignition_gate;
 
 pub use capital_regime::{resolve_micro_max_fee_pct, DEFAULT_MICRO_MAX_FEE_PCT};
 pub use riemann_zeta_gue::{
@@ -42,6 +43,10 @@ pub use tp_sl::{
     roundtrip_friction, roundtrip_friction_hurst, try_compute_tp_sl, TpSl, TpSlInputs,
 };
 pub use ville_e_process::VilleEProcess;
+pub use ville_grossman_ignition_gate::{
+    IgnitionCertificationReport, IgnitionViolationBits, VilleGrossmanIgnitionGate,
+    VilleGrossmanParams,
+};
 
 use quantum_arena::GlobalArena;
 

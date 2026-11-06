@@ -1127,6 +1127,7 @@ pub struct GodEngineCore {
     /// dispersión, por moneda (`vecm_zscore` con spot).
     pub base_z: Vec<base_z::BaseZ>,
     pub tensor_orchestrator: signal_engine::orchestrator::TensorVoteOrchestrator,
+    pub quantum_slot_orchestrator: signal_engine::quantum_slot_orchestrator::QuantumSlotOrchestrator,
     /// #592 — ancla de la deriva de régimen por moneda: (bits de ln(τ*),
     /// ts_ms de la observación anclada). El crash_flux necesita la deriva de
     /// la escala dominante ENTRE observaciones del régimen (cadencia de una
@@ -1570,6 +1571,7 @@ impl GodEngineCore {
                 })
                 .collect(),
             tensor_orchestrator,
+            quantum_slot_orchestrator: signal_engine::quantum_slot_orchestrator::QuantumSlotOrchestrator::default(),
             swing_nn,
             ensemble: crate::ensemble::ModelEnsemble::new(),
             ensembles: (0..n_coins)
@@ -10460,6 +10462,150 @@ impl GodEngineCore {
             omni_features,
             false, // CERT-M2-H01: wrapper legacy — siempre actualiza macro
             true,  // allow_entries: por defecto permitido en wrapper legacy
+        )
+    }
+
+    /// FASE 28 (§28): Evaluación continua multi-slot del estado de mercado sobre los tres slots espectrales
+    /// (MicroScalp, MesoTactical, MacroSwing) sin anulación ni canibalización de órdenes.
+    pub fn evaluate_quantum_multi_slot(
+        &mut self,
+        coin_id: usize,
+        bid: f64,
+        ask: f64,
+        bid_qty: f64,
+        ask_qty: f64,
+        event_time_ms: u64,
+    ) -> signal_engine::MultiSlotEvaluationReport {
+        if coin_id >= self.arena.coins.len() {
+            return signal_engine::MultiSlotEvaluationReport {
+                decisions: [
+                    signal_engine::QuantumSlotDecision::flat(
+                        signal_engine::SpectralSlot::MicroScalp,
+                        signal_engine::SpectralSlot::MicroScalp.typical_tau_ms(),
+                        0.0,
+                    ),
+                    signal_engine::QuantumSlotDecision::flat(
+                        signal_engine::SpectralSlot::MesoTactical,
+                        signal_engine::SpectralSlot::MesoTactical.typical_tau_ms(),
+                        0.0,
+                    ),
+                    signal_engine::QuantumSlotDecision::flat(
+                        signal_engine::SpectralSlot::MacroSwing,
+                        signal_engine::SpectralSlot::MacroSwing.typical_tau_ms(),
+                        0.0,
+                    ),
+                ],
+                active_slots_count: 0,
+                coherent_superposition: false,
+                ricci_curvature_scalar: 0.0,
+                liquidity_pareto_mu: 1.0,
+                stoikov_microprice: 0.0,
+                dynamic_recv_window_ms: 1000,
+            };
+        }
+
+        let mid_price = if bid > 0.0 && ask > 0.0 {
+            (bid + ask) * 0.5
+        } else {
+            1.0
+        };
+
+        let ofi = if coin_id < self.feature_engines.len() {
+            self.feature_engines[coin_id].ofi_model.ema_ofi
+        } else {
+            0.0
+        };
+
+        let obi = if (bid_qty + ask_qty) > 0.0 {
+            (bid_qty - ask_qty) / (bid_qty + ask_qty)
+        } else {
+            0.0
+        };
+
+        let cvd = if coin_id < self.feature_engines.len() {
+            self.feature_engines[coin_id].order_flow.cumulative_buy_vol
+                - self.feature_engines[coin_id].order_flow.cumulative_sell_vol
+        } else {
+            0.0
+        };
+
+        let atr_pct = if coin_id < self.feature_engines.len() {
+            self.feature_engines[coin_id].get_atr_pct()
+        } else {
+            0.01
+        };
+
+        let dominant_tau_ms = self
+            .temporal_spectrum
+            .get(coin_id)
+            .map(|s| s.dominant_tau_ms)
+            .unwrap_or(30_000.0);
+
+        let coin = &self.arena.coins[coin_id];
+        let slots = coin.positions.slots();
+        let open_positions_slots = [slots[0].is_open(), slots[1].is_open(), slots[2].is_open()];
+        let open_positions_taus = [
+            slots[0].entry_tau_ms.load(std::sync::atomic::Ordering::Relaxed) as f64,
+            slots[1].entry_tau_ms.load(std::sync::atomic::Ordering::Relaxed) as f64,
+            slots[2].entry_tau_ms.load(std::sync::atomic::Ordering::Relaxed) as f64,
+        ];
+        let open_positions_is_long = [
+            slots[0].is_long.load(std::sync::atomic::Ordering::Relaxed),
+            slots[1].is_long.load(std::sync::atomic::Ordering::Relaxed),
+            slots[2].is_long.load(std::sync::atomic::Ordering::Relaxed),
+        ];
+
+        let report = self.quantum_slot_orchestrator.evaluate_multi_slot_signals(
+            mid_price,
+            bid,
+            ask,
+            bid_qty,
+            ask_qty,
+            event_time_ms,
+            ofi,
+            obi,
+            cvd,
+            atr_pct,
+            dominant_tau_ms,
+            &open_positions_slots,
+            &open_positions_taus,
+            &open_positions_is_long,
+        );
+
+        // Registro de observabilidad omnisciente
+        self.arena
+            .registry
+            .set_for_coin(coin_id, "stoikov_microprice", report.stoikov_microprice);
+        self.arena.registry.set_for_coin(
+            coin_id,
+            "dynamic_recv_window_ms",
+            report.dynamic_recv_window_ms as f64,
+        );
+        self.arena
+            .registry
+            .set_for_coin(coin_id, "bouchaud_pareto_mu", report.liquidity_pareto_mu);
+        self.arena.registry.set_for_coin(
+            coin_id,
+            "perelman_ricci_scalar",
+            report.ricci_curvature_scalar,
+        );
+
+        report
+    }
+
+    /// FASE 28 (§28): Síntesis de propuestas de órdenes concurrentes multi-slot sin colisión de cartera.
+    pub fn synthesize_quantum_multi_slot_emissions(
+        &self,
+        report: &signal_engine::MultiSlotEvaluationReport,
+        capital_available_usd: f64,
+        max_leverage: f64,
+        risk_fraction: f64,
+    ) -> signal_engine::MultiSlotOrderEmission {
+        self.quantum_slot_orchestrator.synthesize_order_emissions(
+            report,
+            capital_available_usd,
+            max_leverage,
+            risk_fraction,
         )
     }
 }
