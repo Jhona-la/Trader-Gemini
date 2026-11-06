@@ -10971,3 +10971,8 @@ PR #171 quedó fusionado con Unit/Replay SUCCESS (`42124750058`/`42124750097`). 
 El único sujeto válido del backoff es `.agent_tx/staging/KIMI-QUANT-SR-V35/persist-backoff-v1/subject`; `online-persistence-v1` está reemplazado. Revisión agent-41: Critical por usar `len()` tras drenaje e Important por no aislar el trigger pendiente. Se añadió `observation_revision` monótona en memoria, sin cambiar TGFOREST. Evidencia nueva: 234/234 en 27 suites, 0 ignored/filtered; workspace exit 0 en 3m08s; Clippy 33/40 baseline, `ADDED=[]`/`REMOVED=[]`. CAS de código bloqueado por baseline. Rescate: `persist-backoff-v1/revision.patch`.
 
 Censo config/lib: cuatro `NO_CHANGE`, cero `OPEN_ATOM`, sin producción. Detalle en `.agent_tx/diagnostics/config-lib-v37-census.json`; estado máquina en `base-review-v37-status.json`; rulings y Minor en `.superpowers/sdd/2026-11-05-base-review-v37/progress.md`. B1/A4-T2, QRA/Navier/`adversarial_gate` y V2 permanecen con sus dueños. Producción NO-GO; ROI/PnL/WR/Sharpe/EV=`N/D`; sin Demo ni OOS. Reanudar sólo con protocolo prerregistrado y autorizaciones.
+
+
+## 2026-11-05 — KIMI-QUANT-SR-V35 V37: reconciliación upstream
+
+`main=5cae61c459a74b27711760eef7e7c356176d309e`, padres `de720347` y `6f211252`. GLM-203/A-A2 y V37 se conservaron por unión; no se editó B1/A4-T2. CI upstream `81fb45db` Unit+Replay SUCCESS. Árbol fusionado: `EvidenciaIgnicion` 5/5 y workspace `--all-targets` exit 0 en 3m33s. Backoff permanece en `persist-backoff-v1`, sin CAS por Clippy baseline. Sin push, attestation, Demo ni OOS; métricas económicas `N/D`.

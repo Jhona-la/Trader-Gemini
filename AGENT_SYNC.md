@@ -422,3 +422,9 @@ QRA recibo: quant_scope escribe SOLO docs/audit/QRA_REVISIONES_2026-10-22.tsv en
 | KIMI-QUANT-SR-V35 | HANDOFF; sin reserva de código | PR #171 con Unit+Replay SUCCESS; CAS local `main=c4db0cdd48dc0fe031fb0fbe181ee58ff1d7a2e1`; rama/worktree I-13 retirados con guardas. Backoff: agent-41 encontró Critical de drenaje e Important de trigger; corregidos RED→GREEN con revisión monótona, sin cambiar TGFOREST. Final 234/234, workspace exit 0, Clippy baseline 33/40 con `ADDED=[]`/`REMOVED=[]`. Config/lib: 4 `NO_CHANGE`, 0 `OPEN_ATOM`. | `main=c4db0cdd` para integración; backoff únicamente `.agent_tx/staging/KIMI-QUANT-SR-V35/persist-backoff-v1/subject` y `revision.patch` | No CAS de código por Clippy rojo. Reanudar desde el parche y nueva evidencia, nunca desde `online-persistence-v1` ni de la versión basada en `len()`. B1/A4-T2, QRA/Navier/adversarial_gate y V2 siguen con dueños. |
 
 Estado máquina: `.agent_tx/diagnostics/base-review-v37-status.json`. Censo: `.agent_tx/diagnostics/config-lib-v37-census.json`. Ledger/rulings: `.superpowers/sdd/2026-11-05-base-review-v37/progress.md`. Producción NO-GO; ROI/PnL/WR/Sharpe/EV=`N/D`; sin push de main, attestation, Demo ni operación financiera. OOS requiere protocolo prerregistrado y autorizaciones vigentes.
+
+
+<!-- KIMI-V37-UPSTREAM-RECONCILE-20261105 -->
+## KIMI-QUANT-SR-V35 — reconciliación upstream V37
+
+`main=5cae61c459a74b27711760eef7e7c356176d309e`, padres `de720347` y `6f211252`. Se preservaron GLM-203/A-A2 y el handoff V37 por unión documental, sin editar B1/A4-T2. CI upstream `81fb45db`: Unit+Replay SUCCESS. Árbol fusionado: `EvidenciaIgnicion` 5/5 y workspace `--all-targets` exit 0 en 3m33s. Backoff sigue sólo en `persist-backoff-v1`, sin CAS por Clippy baseline. Sin push, attestation, Demo ni OOS; métricas económicas `N/D`.

@@ -20579,3 +20579,9 @@ Siguiente agente: no repetir el átomo ni transferir PASS a otro SHA. B1/A4-T2, 
 **Certificación A-A2 (GLM-203):** CI VERDE TOTAL en `81fb45db6` (Unit ✔ run 42132984074 + Replay ✔ run 42132984167, los 5 tests en verde) — el contrato de evidencia queda certificado en main a la primera. La Fase A avanza: A1 ✓ A2-núcleo ✓ → queda el cableado en el host (GE:1716 + BOOT:287) y los huecos #2/#3.
 
 — GLM
+
+
+<!-- KIMI-V37-UPSTREAM-RECONCILE-20261105 -->
+## KIMI-QUANT-SR-V35 — reconciliación upstream V37
+
+`main=5cae61c459a74b27711760eef7e7c356176d309e`, padres `de720347` y `6f211252`. Se preservaron GLM-203/A-A2 y el handoff V37 por unión documental, sin editar B1/A4-T2. CI upstream `81fb45db`: Unit `42132984074` y Replay `42132984167` SUCCESS. Árbol `4cb5e486`: `EvidenciaIgnicion` 5/5 y workspace `--all-targets` exit 0 en 3m33s. La comparación contra cada padre y `diff --check` quedó registrada. Backoff sigue sólo en `persist-backoff-v1`, sin CAS por Clippy baseline. Sin push, attestation, Demo ni OOS; métricas económicas `N/D`.
