@@ -47,6 +47,13 @@ if [[ ! -f "$semaforo" || ${RUSTFLAGS+x} || ${CARGO_ENCODED_RUSTFLAGS+x} || ${CA
 fi
 export SEMAFORO_RAIZ="$raiz_principal" CARGO_TARGET_DIR="$raiz_principal/target"
 export CARGO_BUILD_JOBS=2
+# Adaptador QRA (AGENT_SYNC SS4): este launcher conserva su tope de admision
+# de 4 GiB declarandolo EXPLICITO. Regimen 2026-11-06 (mandato del operador,
+# cero restricciones): el default del semaforo es SEMAFORO_RAM_MIN_GB=0 (sin
+# puerta global); cada agente que quiera tope lo declara. Sin esto, el
+# contrato "sin RAM -> 75" de scripts/tests/test_qra_resource_safety.py no
+# tiene quien lo sostenga.
+: "${SEMAFORO_RAM_MIN_GB:=4}"; export SEMAFORO_RAM_MIN_GB
 medidor=crates/god-engine-core/tests/medidor_camino_caliente.rs
 trabajo=${MEDIDOR_TRABAJO:-${TMPDIR:-/tmp}/medidor_camino_caliente}
 read -r -a cargo_args <<< "${MEDIDOR_CARGO_ARGS:-}"

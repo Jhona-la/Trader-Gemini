@@ -44,6 +44,13 @@ done
 cd -- "$REPO" || exit 2
 export SEMAFORO_RAIZ="$RAIZ_PRINCIPAL" CARGO_TARGET_DIR="$RAIZ_PRINCIPAL/target"
 export CARGO_BUILD_JOBS=2
+# Adaptador QRA (AGENT_SYNC SS4): este launcher conserva su tope de admision
+# de 4 GiB declarandolo EXPLICITO. Regimen 2026-11-06 (mandato del operador,
+# cero restricciones): el default del semaforo es SEMAFORO_RAM_MIN_GB=0 (sin
+# puerta global); cada agente que quiera tope lo declara. Sin esto, el
+# contrato "sin RAM -> 75" de scripts/tests/test_qra_resource_safety.py no
+# tiene quien lo sostenga.
+: "${SEMAFORO_RAM_MIN_GB:=4}"; export SEMAFORO_RAM_MIN_GB
 PKG="backtest-engine"
 PKG_DIR="crates/backtest-engine"
 TEST_NAME="t1_cobertura_genetica"

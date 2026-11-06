@@ -35,6 +35,10 @@ function Invoke-CargoStep {
     $accionAnterior = $ErrorActionPreference
     try {
         $ErrorActionPreference = 'Continue'
+        # Adaptador QRA (AGENT_SYNC SS4): tope de admision de 4 GiB EXPLICITO.
+        # Regimen 2026-11-06: el default del semaforo es 0 (sin puerta global);
+        # cada agente que quiera tope lo declara (contrato test_qra_resource_safety).
+        if (-not $env:SEMAFORO_RAM_MIN_GB) { $env:SEMAFORO_RAM_MIN_GB = '4' }
         & $bashExe --noprofile --norc 'scripts/cargo_semaforo.sh' @CargoArgs 2>&1 | ForEach-Object {
             $linea = [string]$_
             if ($linea -match '^warning.*generated') { $script:totalWarnings++ }
