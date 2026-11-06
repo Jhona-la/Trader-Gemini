@@ -95,11 +95,11 @@ fn test_c1_holistic_living_graph_end_to_end_synthesis() {
 
     // 6. Entropía SRB Kolmogorov-Sinai y Lyapunov (Fase 41)
     assert!(report.srb_entropy_report.kolmogorov_sinai_entropy >= 0.0);
-    assert!(report.srb_entropy_report.lyapunov_predictability_horizon_ms > 0.0);
+    assert!(report.srb_entropy_report.predictability_modulator > 0.0);
 
     // 7. Red Tensorial MPS y Optimización Variacional DMRG (Fase 42)
     assert!(report.mps_dmrg_report.entanglement_entropy >= 0.0);
-    let sum_weights: f64 = report.mps_dmrg_report.optimal_weights.iter().sum();
+    let sum_weights: f64 = report.mps_dmrg_report.asset_weights.iter().sum();
     assert!((sum_weights - 1.0).abs() < 1e-3);
 
     // 8. Hidrodinámica 2D Navier-Stokes Kraichnan (Fase 43)
