@@ -257,9 +257,7 @@ impl AdaptiveQuantumVetoGovernor {
         }
 
         let mut sorted = [0.0; 32];
-        for i in 0..self.history_count {
-            sorted[i] = self.loss_history[i];
-        }
+        sorted[..self.history_count].copy_from_slice(&self.loss_history[..self.history_count]);
 
         // Ordenamiento por inserción en stack (32 elementos en $< 10$ ns)
         for i in 1..self.history_count {

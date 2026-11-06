@@ -166,7 +166,7 @@ impl ContinuousVolatilityOperatorEngine {
         let mut macro_energy = 0.0;
 
         // Evaluación de convolución CWT Morlet en stack
-        for k in 0..VOL_SPECTRUM_SCALES {
+        for (k, target_energy) in spectral_energies.iter_mut().enumerate() {
             let mut sum_re = 0.0;
             let mut sum_im = 0.0;
 
@@ -186,7 +186,7 @@ impl ContinuousVolatilityOperatorEngine {
                 0.0
             };
 
-            spectral_energies[k] = safe_energy;
+            *target_energy = safe_energy;
             total_trace += safe_energy;
 
             if safe_energy > max_energy {
@@ -240,8 +240,7 @@ impl ContinuousVolatilityOperatorEngine {
         let mut sum_xy = 0.0;
         let mut n = 0.0;
 
-        for k in 0..VOL_SPECTRUM_SCALES {
-            let e = energies[k];
+        for (k, &e) in energies.iter().enumerate() {
             if e > 1e-15 {
                 let x = (self.scales_ms[k]).ln();
                 let y = e.ln();
