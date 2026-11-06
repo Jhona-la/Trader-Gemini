@@ -75,6 +75,7 @@ fn c2_entanglement_entropy_and_systemic_contagion_damping() {
 
     // Correlación moderada / normal
     let rep_normal = engine.optimize_portfolio(&cov_diag, 0.20, &drifts);
+    assert!(rep_normal.entanglement_entropy >= 0.0);
 
     // Correlación sistémica extrema (shock de pánico coordinado)
     let rep_shock = engine.optimize_portfolio(&cov_diag, 0.95, &drifts);

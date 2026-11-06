@@ -82,6 +82,7 @@ pub struct MongeKantorovichWassersteinEngine {
 
 impl MongeKantorovichWassersteinEngine {
     /// Construye una nueva instancia del motor con parámetros dados y distribuciones de soporte.
+    #[allow(clippy::needless_range_loop)]
     pub fn new(params: WassersteinParams) -> Self {
         let mut grid_coords = [0.0; WASSERSTEIN_NODES];
         let n = WASSERSTEIN_NODES;
@@ -135,6 +136,7 @@ impl MongeKantorovichWassersteinEngine {
     /// - `empirical_weights`: Masa de probabilidad normalizada o pesos de volumen empírico sobre los $N$ nodos.
     /// - `current_tau_ms`: Escala temporal dominante en ms para ponderación temporal del coste.
     /// - `ts_ms`: Marca temporal del tick en milisegundos.
+    #[allow(clippy::needless_range_loop)]
     pub fn update_and_evaluate(
         &mut self,
         empirical_weights: &[f64; WASSERSTEIN_NODES],

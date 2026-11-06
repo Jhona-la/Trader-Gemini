@@ -77,6 +77,7 @@ pub struct SrbKolmogorovEntropyEngine {
 
 impl SrbKolmogorovEntropyEngine {
     /// Construye una nueva instancia del motor con parámetros dados y base identidad ortonormal.
+    #[allow(clippy::needless_range_loop)]
     pub fn new(params: SrbEntropyParams) -> Self {
         let mut tangent_basis = [[0.0; CHAOS_EMBEDDING_DIM]; CHAOS_EMBEDDING_DIM];
         for i in 0..CHAOS_EMBEDDING_DIM {
@@ -101,6 +102,7 @@ impl SrbKolmogorovEntropyEngine {
     /// - `volatility_cwt`: Amplitud espectral de volatilidad CWT continua.
     /// - `spread_bps`: Spread relativo normalizado en bps.
     /// - `ts_ms`: Marca temporal en milisegundos.
+    #[allow(clippy::needless_range_loop)]
     pub fn update_and_evaluate(
         &mut self,
         mid_price: f64,

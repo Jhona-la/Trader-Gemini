@@ -73,6 +73,7 @@ pub struct MpsSiteTensor {
 }
 
 impl MpsSiteTensor {
+    #[allow(clippy::needless_range_loop)]
     pub fn new_normalized() -> Self {
         let mut t = [[[0.0; MPS_BOND_DIM]; PHYSICAL_DIM]; MPS_BOND_DIM];
         let val = 1.0 / ((PHYSICAL_DIM * MPS_BOND_DIM) as f64).sqrt();
@@ -126,6 +127,7 @@ impl TensorNetworkMpsDmrgEngine {
     /// - `cov_diag`: Varianza diagonal esperada de cada activo en el canal.
     /// - `cross_corr_proxy`: Estimador agregado de correlación cruzada inter-activo $\in [-1.0, 1.0]$.
     /// - `expected_drifts`: Retorno o deriva esperada de cada canal (señal direccional continua).
+    #[allow(clippy::needless_range_loop)]
     pub fn optimize_portfolio(
         &mut self,
         cov_diag: &[f64; MPS_ASSET_CHANNELS],
