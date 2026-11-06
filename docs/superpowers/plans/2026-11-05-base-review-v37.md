@@ -225,6 +225,6 @@ Expected: PR/ancestría, cero commits exclusivos, worktree libre, archivos resca
 - Task 1 completo como handoff documental: diseño/spec, plan, estado máquina y buzones preparados para CAS sin código, push ni attestation.
 - Task 2 completo sin CAS de código: revisión agent-41 `With fixes`; Critical de drenaje corregido con `capacity-red.log`→`capacity-green.log`; Important de aislamiento corregido. Resultado final 234/234, workspace exit 0 y Clippy sin diagnósticos nuevos pero baseline roja.
 - Task 3 completo: cuatro `NO_CHANGE`, cero `OPEN_ATOM`, sin producción. Detalle en `config-lib-v37-census.json`.
-- Task 4: revisión y handoff registrados. Minor diferidos: validación explícita del contenido del snapshot/contabilidad extraíble y coste del próximo límite periódico (hasta 20 iteraciones). No se ejecutó OOS; su protocolo queda prerregistrado, no medido ni certificado.
+- Task 4: revisión y handoff registrados. Un Minor diferido: validación explícita del contenido del snapshot/contabilidad extraíble. El Minor documental del coste periódico fue corregido en el ledger (hasta 20 iteraciones). No se ejecutó OOS; su protocolo queda prerregistrado, no medido ni certificado.
 
 El reemplazo canónico del átomo es `persist-backoff-v1/revision.patch`. Ningún agente debe reanudar desde `online-persistence-v1` ni aplicar la versión que comparaba `observations.len()`. Producción NO-GO; métricas económicas `N/D`.
