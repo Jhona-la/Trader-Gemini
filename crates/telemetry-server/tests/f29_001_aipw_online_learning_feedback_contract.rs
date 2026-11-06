@@ -173,3 +173,16 @@ fn c5_zero_allocation_and_atomic_thread_safety() {
     let dec = engine.evaluate_optimal_routing(2000, 2000);
     assert_eq!(dec.thermal_state, SiliconThermalState::Nominal);
 }
+
+#[test]
+fn c6_negative_taker_path_does_not_increase_size() {
+    let mut engine = OnlineCausalFeedbackEngine::new(75.0, 85.0);
+
+    for _ in 0..20 {
+        engine.record_closed_trade(true, -5.0, 0.50, -5.0, -3.9);
+    }
+
+    let decision = engine.evaluate_optimal_routing(1000, 1000);
+    assert!(!decision.prefer_maker);
+    assert!(decision.edge_size_multiplier <= 1.0);
+}

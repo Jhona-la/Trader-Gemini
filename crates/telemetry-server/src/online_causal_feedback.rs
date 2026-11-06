@@ -194,7 +194,7 @@ impl OnlineCausalFeedbackEngine {
         let edge_mult = if prefer_maker && report.ci_lower_95 > 1.0 {
             (1.0 + 0.05 * report.average_treatment_effect.min(10.0)).clamp(1.0, 1.50)
         } else if !prefer_maker && report.ci_upper_95 < -1.0 {
-            (1.0 + 0.05 * (-report.average_treatment_effect).min(10.0)).clamp(1.0, 1.30)
+            1.0
         } else {
             1.0
         };
