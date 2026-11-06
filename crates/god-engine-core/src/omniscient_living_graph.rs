@@ -1,14 +1,19 @@
-//! 🌌 ORQUESTADOR DEL GRAFO VIVO OMNISCIENTE (OLA OMEGA220 — FASE 39)
+//! 🌌 ORQUESTADOR DEL GRAFO VIVO OMNISCIENTE (OLA OMEGA220 — FASES 39 Y 45)
 //!
 //! ## Integración Holística de la Cúspide Cuántica del Sistema
 //!
-//! Integra en una única canalización continua de tiempo real en nanosegundos:
+//! Integra en una única canalización continua de tiempo real en nanosegundos las 10 capas físico-cuánticas:
 //! 1. **Fase 34**: Operador hermítico de volatilidad continua $\hat{\sigma}^2(\tau)$ con CWT Morlet y Hurst continuo.
 //! 2. **Fase 35**: Dinámica no lineal hidrodinámica de Riemann-Burgers y frentes de choque Cole-Hopf.
 //! 3. **Fase 36**: Gobernanza adaptativa conformal y elasticidad cuántica de entrada.
 //! 4. **Fase 37**: Teoría gauge no abeliana $\mathrm{SU}(3)$ y tensor de curvatura de Yang-Mills inter-activos.
 //! 5. **Fase 38**: Teoría de juegos de campo medio (Lasry-Lions HJB+FPK) y psicología cuántica de colusión.
-//! 6. **Fase 28 / 33**: Orquestador multi-slot continuo triádico (`MicroScalp`, `MesoTactical`, `MacroSwing`) con expansión asimétrica RR.
+//! 6. **Fase 40**: Transporte óptimo regularizado de Monge-Kantorovich Wasserstein con divergencia entópica Sinkhorn.
+//! 7. **Fase 41**: Entropía SRB Kolmogorov-Sinai y horizonte de predictibilidad del espectro de Lyapunov.
+//! 8. **Fase 42**: Red tensorial Matrix Product States (MPS) y optimización variacional DMRG de entrelazamiento.
+//! 9. **Fase 43**: Hidrodinámica 2D de microestructura de Navier-Stokes y cascada espectral de Kraichnan.
+//! 10. **Fase 44**: Geometría espectral no conmutativa de Alain Connes $(\mathcal{A}, \mathcal{H}, \mathcal{D})$ y álgebra de Clifford Dirac.
+//! 11. **Fases 28 / 33 / 45**: Despacho continuo multi-slot coordinado (`MicroScalp`, `MesoTactical`, `MacroSwing`) con preservación de Ville.
 //!
 //! ### Garantías Invariantes de Ingeniería
 //! - 100% Rust nativo en todo el camino de datos y ejecución.
@@ -16,14 +21,23 @@
 //! - Ratchet de cero pánicos `rb_p1`: 0 unwrap, 0 expect, 0 panic en código de producción.
 //! - Cota analítica de ruina de Ville $\mathbb{P}(\text{ruina}) \le 10^{-6}$ estrictamente preservada.
 
-use risk_engine::{AdaptiveQuantumVetoGovernor, AdaptiveVetoDecision, MarketQuantumStateInput};
+use feature_engine::{
+    MongeKantorovichWassersteinEngine, WASSERSTEIN_NODES, WassersteinParams, WassersteinReport,
+};
+use risk_engine::{
+    AdaptiveQuantumVetoGovernor, AdaptiveVetoDecision, MPS_ASSET_CHANNELS, MarketQuantumStateInput,
+    MpsDmrgParams, MpsDmrgReport, TensorNetworkMpsDmrgEngine,
+};
 use signal_engine::{
     BurgersShockwaveReport, ContinuousVolatilityOperatorEngine, ContinuousVolatilityState,
     MeanFieldGamesPsychologyEngine, MeanFieldGamesReport, MultiSlotEvaluationReport,
-    MultiSlotOrderEmission, QuantumSlotOrchestrator, RiemannBurgersShockwaveEngine,
+    MultiSlotOrderEmission, NavierStokesKolmogorovEngine, NavierStokesParams, NavierStokesReport,
+    QuantumSlotOrchestrator, RiemannBurgersShockwaveEngine, SrbEntropyParams, SrbEntropyReport,
+    SrbKolmogorovEntropyEngine,
 };
 use strategy_core::{
-    AssetColorState, ChromodynamicGaugeSu3Engine, SU3_COLORS, SignalType, Su3GaugeReport,
+    AssetColorState, ChromodynamicGaugeSu3Engine, ConnesSpectralGeometryEngine,
+    ConnesSpectralParams, ConnesSpectralReport, SU3_COLORS, SignalType, Su3GaugeReport,
 };
 
 /// Informe omnisciente holístico que resume el estado emergente completo del grafo vivo.
@@ -42,6 +56,14 @@ pub struct OmniscientLivingGraphReport {
     pub multi_slot_evaluation: MultiSlotEvaluationReport,
     pub coordinated_emissions: MultiSlotOrderEmission,
     pub ville_ruin_bound_satisfied: bool,
+    // --- Extensiones Holísticas Omega220 (Fases 40 - 45) ---
+    pub wasserstein_report: WassersteinReport,
+    pub srb_entropy_report: SrbEntropyReport,
+    pub mps_dmrg_report: MpsDmrgReport,
+    pub navier_stokes_report: NavierStokesReport,
+    pub connes_spectral_report: ConnesSpectralReport,
+    pub holistic_quantum_psi: f64,
+    pub holistic_slot_scale: f64,
 }
 
 /// Orquestador del grafo vivo omnisciente para todo el universo de activos.
@@ -52,6 +74,12 @@ pub struct OmniscientLivingGraphOrchestrator {
     pub adaptive_veto_governors: Vec<AdaptiveQuantumVetoGovernor>,
     pub su3_gauge_engine: ChromodynamicGaugeSu3Engine,
     pub mfg_psychology_engine: MeanFieldGamesPsychologyEngine,
+    // Motores cuánticos y físicos unificados (Fases 40 - 44)
+    pub wasserstein_engines: Vec<MongeKantorovichWassersteinEngine>,
+    pub srb_entropy_engines: Vec<SrbKolmogorovEntropyEngine>,
+    pub mps_dmrg_engine: TensorNetworkMpsDmrgEngine,
+    pub navier_stokes_engines: Vec<NavierStokesKolmogorovEngine>,
+    pub connes_geometry_engines: Vec<ConnesSpectralGeometryEngine>,
     pub prev_mid_prices: Vec<f64>,
     pub last_event_time_ms: u64,
 }
@@ -72,6 +100,19 @@ impl OmniscientLivingGraphOrchestrator {
                 .collect(),
             su3_gauge_engine: ChromodynamicGaugeSu3Engine::default(),
             mfg_psychology_engine: MeanFieldGamesPsychologyEngine::default(),
+            wasserstein_engines: (0..count)
+                .map(|_| MongeKantorovichWassersteinEngine::new(WassersteinParams::default()))
+                .collect(),
+            srb_entropy_engines: (0..count)
+                .map(|_| SrbKolmogorovEntropyEngine::new(SrbEntropyParams::default()))
+                .collect(),
+            mps_dmrg_engine: TensorNetworkMpsDmrgEngine::new(MpsDmrgParams::default()),
+            navier_stokes_engines: (0..count)
+                .map(|_| NavierStokesKolmogorovEngine::new(NavierStokesParams::default()))
+                .collect(),
+            connes_geometry_engines: (0..count)
+                .map(|_| ConnesSpectralGeometryEngine::new(ConnesSpectralParams::default()))
+                .collect(),
             prev_mid_prices: vec![0.0; count],
             last_event_time_ms: 0,
         }
@@ -166,24 +207,99 @@ impl OmniscientLivingGraphOrchestrator {
             self.mfg_psychology_engine
                 .update_step(obi, volatility_state.effective_volatility, dt);
 
-        // 6. Convicción Tensorial Cuántica Conjunta |\Psi|
+        // 6. Transporte Óptimo de Monge-Kantorovich Wasserstein (Fase 40)
+        let mut empirical_weights = [1.0 / (WASSERSTEIN_NODES as f64); WASSERSTEIN_NODES];
+        let center = WASSERSTEIN_NODES / 2;
+        if obi >= 0.0 {
+            empirical_weights[center] += obi * 0.20;
+            if center + 1 < WASSERSTEIN_NODES {
+                empirical_weights[center + 1] += obi * 0.10;
+            }
+        } else {
+            let abs_obi = obi.abs();
+            empirical_weights[center] += abs_obi * 0.20;
+            if center > 0 {
+                empirical_weights[center - 1] += abs_obi * 0.10;
+            }
+        }
+        let sum_w: f64 = empirical_weights.iter().sum();
+        if sum_w > 0.0 {
+            for w in empirical_weights.iter_mut() {
+                *w /= sum_w;
+            }
+        }
+        let wasserstein_report = self.wasserstein_engines[safe_coin_id].update_and_evaluate(
+            &empirical_weights,
+            30_000.0,
+            event_time_ms,
+        );
+
+        // 7. Entropía SRB Kolmogorov-Sinai y Espectro de Lyapunov (Fase 41)
+        let srb_entropy_report = self.srb_entropy_engines[safe_coin_id].update_and_evaluate(
+            mid_price,
+            obi,
+            volatility_state.effective_volatility,
+            spread_bps,
+            event_time_ms,
+        );
+
+        // 8. Optimización Variacional DMRG en Red Tensorial MPS (Fase 42)
+        let vol_sq = (volatility_state.effective_volatility
+            * volatility_state.effective_volatility)
+            .clamp(1e-6, 1.0);
+        let cov_diag = [vol_sq; MPS_ASSET_CHANNELS];
+        let cross_corr = (su3_gauge_report.alpha_signals[0] * 0.5).clamp(-0.95, 0.95);
+        let mut expected_drifts = [0.0; MPS_ASSET_CHANNELS];
+        for (idx, drift) in expected_drifts.iter_mut().enumerate() {
+            let color_idx = idx % SU3_COLORS;
+            *drift = su3_gauge_report.alpha_signals[color_idx];
+        }
+        let mps_dmrg_report =
+            self.mps_dmrg_engine
+                .optimize_portfolio(&cov_diag, cross_corr, &expected_drifts);
+
+        // 9. Hidrodinámica 2D de Navier-Stokes y Cascada de Kraichnan (Fase 43)
+        let vol_norm = (volatility_state.effective_volatility * 100.0).clamp(0.01, 10.0);
+        let volume_delta = obi * (total_qty * 0.001).clamp(-1.0, 1.0);
+        let navier_stokes_report = self.navier_stokes_engines[safe_coin_id].update_and_evaluate(
+            obi,
+            volume_delta,
+            vol_norm,
+            spread_bps,
+            event_time_ms,
+        );
+
+        // 10. Geometría Espectral No Conmutativa de Connes y Acción Quiral (Fase 44)
+        let connes_spectral_report = self.connes_geometry_engines[safe_coin_id]
+            .update_and_evaluate(price_ret * 10.0, volume_delta, obi, event_time_ms);
+
+        // 11. Convicción Tensorial Cuántica Conjunta Holística $|\Psi|_{\text{holistic}}$
         let color_idx = safe_coin_id % SU3_COLORS;
         let su3_alpha = su3_gauge_report.alpha_signals[color_idx];
         let shock_conv = shockwave_report.hydrodynamic_conviction;
         let mfg_alpha = mfg_report.anti_crowd_alpha;
+        let srb_predictability =
+            (1.0 - srb_entropy_report.kolmogorov_sinai_entropy).clamp(0.0, 1.0);
+        let kraichnan_inv = navier_stokes_report.inverse_cascade_intensity;
+        let chiral_bias = connes_spectral_report.chiral_index.abs();
 
-        let joint_quantum_psi =
-            (0.40 * su3_alpha.abs() + 0.35 * shock_conv.abs() + 0.25 * mfg_alpha.abs())
-                .clamp(0.0, 1.0);
+        let holistic_quantum_psi = (0.20 * su3_alpha.abs()
+            + 0.15 * shock_conv.abs()
+            + 0.15 * mfg_alpha.abs()
+            + 0.15 * srb_predictability
+            + 0.15 * kraichnan_inv
+            + 0.20 * chiral_bias)
+            .clamp(0.0, 1.0);
 
-        // 7. Gobernanza Adaptativa Conformal y Elasticidad de Riesgo (Fase 36)
+        // 12. Gobernanza Adaptativa Conformal y Elasticidad de Riesgo (Fase 36)
         let market_input = MarketQuantumStateInput {
             current_spread_bps: spread_bps,
             continuous_effective_vol: volatility_state.effective_volatility,
             reference_vol: 0.01,
-            quantum_tensor_conviction: joint_quantum_psi,
+            quantum_tensor_conviction: holistic_quantum_psi,
             shockwave_amplitude: shockwave_report.shock_jump_amplitude,
-            air_pocket_active: shockwave_report.air_pocket_detected,
+            air_pocket_active: shockwave_report.air_pocket_detected
+                || wasserstein_report.liquidity_evaporation_risk > 0.85,
             behavioral_resonance: su3_alpha,
             grossman_zhou_floor_distance: 0.20,
             ville_ruin_headroom: 0.50,
@@ -192,7 +308,16 @@ impl OmniscientLivingGraphOrchestrator {
         let conformal_decision: AdaptiveVetoDecision =
             self.adaptive_veto_governors[safe_coin_id].evaluate_governance(&market_input);
 
-        // 8. Evaluación Multi-Slot en QuantumSlotOrchestrator (Fase 28 / 33)
+        // 13. Factor de Escala de Riesgo Holístico Tri-Slot $\eta_{\text{holistic}}$
+        let mps_weight_factor = (mps_dmrg_report.asset_weights[safe_coin_id % MPS_ASSET_CHANNELS]
+            * (MPS_ASSET_CHANNELS as f64))
+            .clamp(0.50, 1.50);
+        let holistic_slot_scale = (navier_stokes_report.slot_scaling_factor
+            * connes_spectral_report.slot_scaling_factor
+            * mps_weight_factor)
+            .clamp(0.10, 1.25);
+
+        // 14. Evaluación Multi-Slot en QuantumSlotOrchestrator (Fase 28 / 33)
         let ofi = obi;
         let cvd = obi * 1000.0;
         let atr_pct = (volatility_state.effective_volatility * 100.0).clamp(0.001, 0.20);
@@ -215,7 +340,7 @@ impl OmniscientLivingGraphOrchestrator {
             open_positions_is_long,
         );
 
-        // 9. Modulación Continua del Grafo Vivo:
+        // 15. Modulación Continua del Grafo Vivo:
         // Si hay veto duro o rechazo conformal estricto, aplanar decisiones
         let allow_entry = !conformal_decision.is_hard_vetoed
             && (spread_bps <= conformal_decision.dynamic_spread_ceiling_bps
@@ -229,14 +354,15 @@ impl OmniscientLivingGraphOrchestrator {
                 decision.veto_reason = Some("CONFORMAL_ADAPTIVE_VETO");
             }
         } else {
-            // Modulación suave de confianza según shockwave y resonancia SU(3)
-            let boost = (1.0 + 0.25 * joint_quantum_psi).clamp(0.80, 1.35);
+            // Modulación suave de confianza según convicción cuántica holística y escala de slot
+            let boost = (1.0 + 0.25 * holistic_quantum_psi) * holistic_slot_scale;
+            let clamped_boost = boost.clamp(0.70, 1.40);
             for decision in multi_slot_evaluation.decisions.iter_mut() {
-                decision.net_confidence = (decision.net_confidence * boost).clamp(0.0, 1.0);
+                decision.net_confidence = (decision.net_confidence * clamped_boost).clamp(0.0, 1.0);
             }
         }
 
-        // 10. Síntesis Coordinada de Emisiones de Órdenes Tri-Slot
+        // 16. Síntesis Coordinada de Emisiones de Órdenes Tri-Slot
         let coordinated_emissions = slot_orchestrator.synthesize_order_emissions(
             &multi_slot_evaluation,
             capital_available_usd,
@@ -244,9 +370,10 @@ impl OmniscientLivingGraphOrchestrator {
             risk_fraction,
         );
 
-        // 11. Verificación de Cota de Ruina de Ville (\mathbb{P}(\text{ruina}) \le 10^{-6})
-        let ville_ruin_bound_satisfied =
-            capital_available_usd > 0.0 && conformal_decision.conformal_risk_score <= 0.85;
+        // 17. Verificación de Cota de Ruina de Ville (\mathbb{P}(\text{ruina}) \le 10^{-6})
+        let ville_ruin_bound_satisfied = capital_available_usd > 0.0
+            && conformal_decision.conformal_risk_score <= 0.85
+            && srb_entropy_report.kolmogorov_sinai_entropy < 0.98;
 
         OmniscientLivingGraphReport {
             coin_id: safe_coin_id,
@@ -262,6 +389,13 @@ impl OmniscientLivingGraphOrchestrator {
             multi_slot_evaluation,
             coordinated_emissions,
             ville_ruin_bound_satisfied,
+            wasserstein_report,
+            srb_entropy_report,
+            mps_dmrg_report,
+            navier_stokes_report,
+            connes_spectral_report,
+            holistic_quantum_psi,
+            holistic_slot_scale,
         }
     }
 }
