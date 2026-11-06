@@ -20557,3 +20557,15 @@ Base `5317fc3aabb7803fb3db4d4f54e41937614d7906`; upstream `fcbe8bf9c1e001a2228bc
 **Minor diferido:** si el almacenamiento falla de forma persistente, el daemon puede reentrenar cada 500 ms. Una mejora posterior debe distinguir `RetrainFailed` de `PersistFailed` y reintentar sólo guardado con backoff. No se declara corregido aquí.
 
 Diff final: diez archivos, 1559 inserciones/45 eliminaciones. Hashes: `.agent_tx/diagnostics/online-persistence-v1-fixes-status.json` y `online-persistence-v1-fixes-sha256.json`. **No hay CAS de código, instalación compartida, push, attestation, Demo/Mainnet ni certificación económica.** Producción NO-GO; ROI/PnL/WR/Sharpe/EV=N/D. B1 permanece bajo A4-T2 y V2 14/144 bajo QRA.
+
+
+<!-- KIMI-V37-HANDOFF-20261105T193709-0500 -->
+## 2026-11-05T19:37:09-05:00 — KIMI-QUANT-SR-V35: revisión V37 y relevo recuperable
+
+PR #171 quedó `MERGED` y sus dos runs de merge terminaron SUCCESS (`42124750058`, `42124750097`). Se verificaron padres/tree/ancestría y worktree limpio; CAS local `main=c4db0cdd48dc0fe031fb0fbe181ee58ff1d7a2e1`; `claude/linea-i-i13` fue eliminada local/remotamente y su worktree retirado sin force. No se hizo push de main ni attestation. Las demás ramas y worktrees se conservan.
+
+El átomo de persistencia vive únicamente en `.agent_tx/staging/KIMI-QUANT-SR-V35/persist-backoff-v1/subject`; el overlay inicial `online-persistence-v1` está reemplazado. Revisión agent-41: Critical porque `len()` perdía observaciones tras drenar el buffer e Important porque el test no aislaba `pending_new_obs`. Se implementó `observation_revision` monótona sólo en memoria, sin modificar TGFOREST; ambos hallazgos pasaron RED→GREEN. Evidencia final: 234/234 en 27 suites, 0 ignored/filtered; workspace exit 0 en 3m08s; Clippy 33 lib/40 lib-test, `ADDED=[]`/`REMOVED=[]` frente a baseline. El CAS de código sigue BLOQUEADO por esa baseline. Rescate: `persist-backoff-v1/revision.patch`. Dos Minor diferidos en el ledger: verificación explícita del contenido del snapshot/contabilidad extraíble y el próximo límite periódico, que puede quedar a 20 iteraciones.
+
+Censo config/lib: `.agent_tx/diagnostics/config-lib-v37-census.json`, cuatro `NO_CHANGE`, cero `OPEN_ATOM`, sin cambios de producción. `CANONICAL_COUNCIL_MAX_DRAWDOWN` conserva su fórmula actuarial y contrato; los escalares VIP0 conservan su escenario explícito y la precedencia/fail-closed de evidencia por símbolo. Estado máquina: `.agent_tx/diagnostics/base-review-v37-status.json`; ledger: `.superpowers/sdd/2026-11-05-base-review-v37/progress.md`.
+
+Siguiente agente: no repetir el átomo ni transferir PASS a otro SHA. B1/A4-T2, QRA/Navier/`adversarial_gate` y V2 permanecen con sus dueños. Producción NO-GO; ROI/PnL/WR/Sharpe/EV=`N/D`. No hubo Demo, operación financiera ni OOS. Antes de medir se preregistran dataset/periodo, commit incumbente, fees/funding/slippage reales, walk-forward, multiplicidad y regla de decisión. Demo exige `DEMO_MAINNET_AUTHORIZATION.json`; Producción exige autorización separada y OOS favorable.
