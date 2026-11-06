@@ -226,15 +226,24 @@ impl JitCodePage {
                 self.is_executable = true;
                 return Ok(());
             }
-            // En caso de fallo de VirtualProtect (por ejemplo en sandbox restringido), marcamos como lista
-            self.is_executable = true;
-            Ok(())
+            Err(JitRuntimeError::ProtectionFailed)
         }
 
         #[cfg(not(windows))]
         {
-            self.is_executable = true;
-            Ok(())
+            unsafe extern "C" {
+                fn mprotect(addr: *mut c_void, len: usize, prot: i32) -> i32;
+            }
+            const PROT_READ: i32 = 1;
+            const PROT_EXEC: i32 = 4;
+
+            let result = unsafe { mprotect(self.ptr as *mut c_void, self.size, PROT_READ | PROT_EXEC) };
+            if result == 0 {
+                self.is_executable = true;
+                Ok(())
+            } else {
+                Err(JitRuntimeError::ProtectionFailed)
+            }
         }
     }
 
