@@ -21,15 +21,21 @@
 //! - Ratchet de cero pánicos `rb_p1`: 0 unwrap, 0 expect, 0 panic en código de producción.
 //! - Cota analítica de ruina de Ville $\mathbb{P}(\text{ruina}) \le 10^{-6}$ estrictamente preservada.
 
+use crate::topological_metamorphosis::{
+    TopologicalMetamorphosisEngine, TopologicalMetamorphosisParams, TopologicalMetamorphosisReport,
+    METAMORPHOSIS_NODES,
+};
 use feature_engine::{
-    MongeKantorovichWassersteinEngine, WASSERSTEIN_NODES, WassersteinParams, WassersteinReport,
+    HyperbolicPoincareHodgeEngine, HyperbolicPoincareHodgeParams, HyperbolicPoincareHodgeReport,
+    MongeKantorovichWassersteinEngine, WassersteinParams, WassersteinReport, WASSERSTEIN_NODES,
 };
 use risk_engine::{
-    AdaptiveQuantumVetoGovernor, AdaptiveVetoDecision, MPS_ASSET_CHANNELS, MarketQuantumStateInput,
-    MpsDmrgParams, MpsDmrgReport, TensorNetworkMpsDmrgEngine,
+    AdaptiveQuantumVetoGovernor, AdaptiveVetoDecision, MarketQuantumStateInput, MpsDmrgParams,
+    MpsDmrgReport, TensorNetworkMpsDmrgEngine, MPS_ASSET_CHANNELS,
 };
 use signal_engine::{
     BurgersShockwaveReport, ContinuousVolatilityOperatorEngine, ContinuousVolatilityState,
+    FeynmanPathIntegralRoutingEngine, FeynmanRoutingParams, FeynmanRoutingReport,
     MeanFieldGamesPsychologyEngine, MeanFieldGamesReport, MultiSlotEvaluationReport,
     MultiSlotOrderEmission, NavierStokesKolmogorovEngine, NavierStokesParams, NavierStokesReport,
     QuantumSlotOrchestrator, RiemannBurgersShockwaveEngine, SrbEntropyParams, SrbEntropyReport,
@@ -37,7 +43,7 @@ use signal_engine::{
 };
 use strategy_core::{
     AssetColorState, ChromodynamicGaugeSu3Engine, ConnesSpectralGeometryEngine,
-    ConnesSpectralParams, ConnesSpectralReport, SU3_COLORS, SignalType, Su3GaugeReport,
+    ConnesSpectralParams, ConnesSpectralReport, SignalType, Su3GaugeReport, SU3_COLORS,
 };
 
 /// Informe omnisciente holístico que resume el estado emergente completo del grafo vivo.
@@ -64,6 +70,10 @@ pub struct OmniscientLivingGraphReport {
     pub connes_spectral_report: ConnesSpectralReport,
     pub holistic_quantum_psi: f64,
     pub holistic_slot_scale: f64,
+    // --- Extensiones Holísticas Omega220 (Fases 46 - 48) ---
+    pub poincare_hodge_report: HyperbolicPoincareHodgeReport,
+    pub feynman_routing_report: FeynmanRoutingReport,
+    pub metamorphosis_report: TopologicalMetamorphosisReport,
 }
 
 /// Orquestador del grafo vivo omnisciente para todo el universo de activos.
@@ -80,6 +90,10 @@ pub struct OmniscientLivingGraphOrchestrator {
     pub mps_dmrg_engine: TensorNetworkMpsDmrgEngine,
     pub navier_stokes_engines: Vec<NavierStokesKolmogorovEngine>,
     pub connes_geometry_engines: Vec<ConnesSpectralGeometryEngine>,
+    // Motores cuánticos y físicos unificados (Fases 46 - 48)
+    pub poincare_hodge_engines: Vec<HyperbolicPoincareHodgeEngine>,
+    pub feynman_routing_engines: Vec<FeynmanPathIntegralRoutingEngine>,
+    pub metamorphosis_engine: TopologicalMetamorphosisEngine,
     pub prev_mid_prices: Vec<f64>,
     pub last_event_time_ms: u64,
 }
@@ -113,6 +127,17 @@ impl OmniscientLivingGraphOrchestrator {
             connes_geometry_engines: (0..count)
                 .map(|_| ConnesSpectralGeometryEngine::new(ConnesSpectralParams::default()))
                 .collect(),
+            poincare_hodge_engines: (0..count)
+                .map(|_| {
+                    HyperbolicPoincareHodgeEngine::new(HyperbolicPoincareHodgeParams::default())
+                })
+                .collect(),
+            feynman_routing_engines: (0..count)
+                .map(|_| FeynmanPathIntegralRoutingEngine::new(FeynmanRoutingParams::default()))
+                .collect(),
+            metamorphosis_engine: TopologicalMetamorphosisEngine::new(
+                TopologicalMetamorphosisParams::default(),
+            ),
             prev_mid_prices: vec![0.0; count],
             last_event_time_ms: 0,
         }
@@ -308,17 +333,53 @@ impl OmniscientLivingGraphOrchestrator {
         let conformal_decision: AdaptiveVetoDecision =
             self.adaptive_veto_governors[safe_coin_id].evaluate_governance(&market_input);
 
-        // 13. Factor de Escala de Riesgo Holístico Tri-Slot $\eta_{\text{holistic}}$
+        // 13. Colector Hiperbólico de Poincaré-Hodge (Fase 46)
+        let ofi = obi;
+        let poincare_hodge_report = self.poincare_hodge_engines[safe_coin_id].update_and_evaluate(
+            mid_price,
+            ofi,
+            spread_bps,
+            event_time_ms,
+        );
+
+        // 14. Enrutamiento Cuántico por Integral de Caminos de Feynman (Fase 47)
+        let effective_depth = (bid_qty + ask_qty).max(0.01);
+        let feynman_routing_report = self.feynman_routing_engines[safe_coin_id].evaluate(
+            effective_depth,
+            ofi,
+            volatility_state.effective_volatility,
+        );
+
+        // 15. Metamorfosis Topológica Adaptativa del Grafo Vivo (Fase 48)
+        let activations = [
+            poincare_hodge_report.area_vorticity.clamp(-1.0, 1.0),
+            navier_stokes_report.vorticity_flux.clamp(-1.0, 1.0),
+            su3_alpha.clamp(-1.0, 1.0),
+            (1.0 - 2.0 * conformal_decision.conformal_risk_score).clamp(-1.0, 1.0),
+            (2.0 * feynman_routing_report.optimal_slice_fraction - 1.0).clamp(-1.0, 1.0),
+            mfg_alpha.clamp(-1.0, 1.0),
+            connes_spectral_report.chiral_index.clamp(-1.0, 1.0),
+            (mps_dmrg_report.von_neumann_entanglement_entropy - 0.5).clamp(-1.0, 1.0),
+            (1.0 - 2.0 * srb_entropy_report.kolmogorov_sinai_entropy).clamp(-1.0, 1.0),
+            shockwave_report.hydrodynamic_conviction.clamp(-1.0, 1.0),
+            (wasserstein_report.wasserstein_divergence * 0.1).clamp(-1.0, 1.0),
+            (price_ret * 50.0).clamp(-1.0, 1.0),
+        ];
+        let metamorphosis_report = self.metamorphosis_engine.update(&activations, 1.0);
+
+        // 16. Factor de Escala de Riesgo Holístico Tri-Slot $\eta_{\text{holistic}}$
         let mps_weight_factor = (mps_dmrg_report.asset_weights[safe_coin_id % MPS_ASSET_CHANNELS]
             * (MPS_ASSET_CHANNELS as f64))
             .clamp(0.50, 1.50);
         let holistic_slot_scale = (navier_stokes_report.slot_scaling_factor
             * connes_spectral_report.slot_scaling_factor
+            * poincare_hodge_report.slot_scaling_factor
+            * feynman_routing_report.routing_urgency_modulator
+            * metamorphosis_report.plasticity_modulator
             * mps_weight_factor)
             .clamp(0.10, 1.25);
 
-        // 14. Evaluación Multi-Slot en QuantumSlotOrchestrator (Fase 28 / 33)
-        let ofi = obi;
+        // 17. Evaluación Multi-Slot en QuantumSlotOrchestrator (Fase 28 / 33)
         let cvd = obi * 1000.0;
         let atr_pct = (volatility_state.effective_volatility * 100.0).clamp(0.001, 0.20);
         let dominant_tau_ms = 30_000.0;
@@ -396,6 +457,9 @@ impl OmniscientLivingGraphOrchestrator {
             connes_spectral_report,
             holistic_quantum_psi,
             holistic_slot_scale,
+            poincare_hodge_report,
+            feynman_routing_report,
+            metamorphosis_report,
         }
     }
 }

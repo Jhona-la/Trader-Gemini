@@ -60,7 +60,13 @@ pub mod reexport_storage {
 pub mod sigma_minuto;
 pub mod slippage_predictor;
 pub mod stateful_engine;
+pub mod topological_metamorphosis;
 pub mod trailing;
+
+pub use topological_metamorphosis::{
+    TopologicalMetamorphosisEngine, TopologicalMetamorphosisParams, TopologicalMetamorphosisReport,
+    METAMORPHOSIS_NODES, NODE_NAMES,
+};
 
 /// D-752 — TASA DE ACIERTO MEDIDA, CON SU INCERTIDUMBRE (intervalo de Wilson).
 ///

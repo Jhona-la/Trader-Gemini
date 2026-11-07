@@ -120,6 +120,18 @@ fn test_c1_holistic_living_graph_end_to_end_synthesis() {
         report.holistic_slot_scale
     );
     assert!(report.ville_ruin_bound_satisfied);
+
+    // 11. Colector Hiperbólico de Poincaré-Hodge (Fase 46)
+    assert!(report.poincare_hodge_report.distance >= 0.0);
+    assert!(report.poincare_hodge_report.area_vorticity.is_finite());
+
+    // 12. Enrutamiento Cuántico por Integral de Caminos de Feynman (Fase 47)
+    assert!(report.feynman_routing_report.optimal_slice_fraction > 0.0);
+    assert!((0.0..=1.0).contains(&report.feynman_routing_report.constructive_coherence));
+
+    // 13. Metamorfosis Topológica del Grafo Vivo Autónomo (Fase 48)
+    assert!(report.metamorphosis_report.active_edge_count > 0);
+    assert!(report.metamorphosis_report.spectral_radius_bound <= 1.0);
 }
 
 #[test]
