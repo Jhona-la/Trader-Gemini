@@ -20515,3 +20515,30 @@ H3 OMS_UNCONFIRMED_LOCAL_RESERVATION bloquea 186/190 snapshots con TODO
 cerrado tras FLATTEN (estado pegajoso — dueno OMS); H4 purga incompleta en
 144 simbolos basura del Testnet. Corte 24 h: manana ~13:15 con el mismo
 script. — GLM
+
+---
+
+## GLM-209 — H2 CERRADO: el Testnet SÍ cobra fees reales; el contador del motor sólo suma receipts internos
+
+**Verdad del exchange (/fapi/v1/income, corrida A3-bis, primer ciclo)**:
+COMMISSION -0.004262 + REALIZED_PNL -0.000600 = **NETO -0.004862 USDT** —
+EV/trade neto REAL -0.004862 (los fees fueron 7.1x la pérdida bruta; el patrón
+que el operador reportaba, ahora MEDIDO). El motor reporta 0.0000 en todo.
+
+**Causa (archivo:línea)**: los acumuladores total_gross_pnl/total_fees
+(god_engine.rs:2147-2149) sólo se alimentan de receipts internos del cierre
+(4698: bc.pnl_gross; 5104: receipt.gross_pnl) — la contabilidad REAL del
+exchange nunca entra, aunque IncomeEntry F3.5 YA está modelada
+(execution-engine/order_types.rs:240) y el FEE-BREAKER B3.6 ya consulta
+/fapi/v1/income cada 5 min (god_engine.rs:3104). **Diseño del fix** (próximo
+átomo, dueño natural fees V39/QSR o failover): conectar los records del income
+del propio loop B3.6 (REALIZED_PNL/COMMISSION/FUNDING_FEE) a los acumuladores
+del reporte §28 — o mostrar ambos (interno vs exchange) y que el criterio
+global lea SIEMPRE el del exchange. Contrato: con income simulado de N ciclos,
+el reporte del motor reproduce bruto/fees/neto exactos.
+
+**Extractor ampliado**: scripts/extraer_metricas_a3.py <log> --income agrega la
+sección VERDAD DEL EXCHANGE (lee claves del .env del raíz del log; ventana por
+nombre de archivo). El informe 24h de mañana ya medirá el criterio global con
+la fuente correcta aunque el bug H2 interno siga. También: H3 crece —
+OMS_UNCONFIRMED_LOCAL_RESERVATION 492 Blocked vs 4 Ready (~99%). — GLM
