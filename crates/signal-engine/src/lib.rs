@@ -11,6 +11,7 @@ pub mod continuous_volatility_operator;
 // Ahora se llaman por la magnitud que miden.
 pub mod conformal_reversion_filter;
 pub mod contagion_modulator;
+pub mod feynman_path_integral_routing;
 pub mod feynman_propagator;
 pub mod flow_excitation_confluence;
 pub mod flow_impulse;
@@ -38,6 +39,10 @@ pub mod voto_espectral;
 pub use continuous_volatility_operator::{
     ContinuousVolatilityOperatorEngine, ContinuousVolatilityParams, ContinuousVolatilityState,
     VOL_SPECTRUM_SCALES,
+};
+pub use feynman_path_integral_routing::{
+    Complex64, FeynmanPathIntegralRoutingEngine, FeynmanRoutingParams, FeynmanRoutingReport,
+    ROUTING_PATH_CANDIDATES, ROUTING_PATH_SLICES,
 };
 pub use feynman_propagator::{FeynmanPropagatorEngine, FeynmanPropagatorParams};
 pub use hawkes_bessel::{HawkesBesselEngine, HawkesBesselParams};
