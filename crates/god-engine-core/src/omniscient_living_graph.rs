@@ -26,13 +26,13 @@ use crate::topological_metamorphosis::{
     METAMORPHOSIS_NODES,
 };
 use feature_engine::{
-    CalabiYauParams, CalabiYauSeibergWittenEngine, CalabiYauSeibergWittenReport,
-    GeodesicPhaseSpaceParams, GeodesicPhaseSpaceReport, HyperbolicPoincareHodgeEngine,
-    HyperbolicPoincareHodgeParams, HyperbolicPoincareHodgeReport,
-    MongeKantorovichWassersteinEngine, PenroseSpinNetworkEngine, PenroseSpinNetworkParams,
-    PenroseSpinNetworkReport, QuantumGeodesicPhaseSpaceEngine, VietorisRipsParams,
-    VietorisRipsReport, VietorisRipsTopologicalEngine, WassersteinParams, WassersteinReport,
-    WASSERSTEIN_NODES,
+    BergmanFockParams, BergmanFockReport, BergmanFockReproducingEngine, CalabiYauParams,
+    CalabiYauSeibergWittenEngine, CalabiYauSeibergWittenReport, GeodesicPhaseSpaceParams,
+    GeodesicPhaseSpaceReport, HyperbolicPoincareHodgeEngine, HyperbolicPoincareHodgeParams,
+    HyperbolicPoincareHodgeReport, MongeKantorovichWassersteinEngine, PenroseSpinNetworkEngine,
+    PenroseSpinNetworkParams, PenroseSpinNetworkReport, QuantumGeodesicPhaseSpaceEngine,
+    VietorisRipsParams, VietorisRipsReport, VietorisRipsTopologicalEngine, WassersteinParams,
+    WassersteinReport, WASSERSTEIN_NODES,
 };
 use risk_engine::{
     AdaptiveQuantumVetoGovernor, AdaptiveVetoDecision, ChernSimonsBerryParams,
@@ -40,10 +40,12 @@ use risk_engine::{
     GromovSymplecticParams, GromovSymplecticReport, MarketQuantumStateInput, MpsDmrgParams,
     MpsDmrgReport, QuantumNoArbitrageConformalEngine, QuantumNoArbitrageConformalParams,
     QuantumNoArbitrageConformalReport, ReebContactParams, ReebContactReport,
-    ReebContactVortexEngine, TensorNetworkMpsDmrgEngine, MPS_ASSET_CHANNELS,
+    ReebContactVortexEngine, TensorNetworkMpsDmrgEngine, UmegakiEntropyParams,
+    UmegakiEntropyReport, UmegakiRelativeEntropyEngine, MPS_ASSET_CHANNELS,
 };
 use signal_engine::{
     BurgersShockwaveReport, ContinuousVolatilityOperatorEngine, ContinuousVolatilityState,
+    DeRhamHodgeCurrentsEngine, DeRhamHodgeParams, DeRhamHodgeReport,
     FeynmanPathIntegralRoutingEngine, FeynmanRoutingParams, FeynmanRoutingReport,
     FractionalRoughVolatilityEngine, FractionalRoughVolatilityParams,
     FractionalRoughVolatilityReport, JarzynskiCrooksParams, JarzynskiCrooksReport,
@@ -103,6 +105,10 @@ pub struct OmniscientLivingGraphReport {
     pub penrose_spin_report: PenroseSpinNetworkReport,
     pub ruelle_frobenius_report: RuelleFrobeniusReport,
     pub reeb_contact_report: ReebContactReport,
+    // --- Extensiones Holísticas Omega220 (Fases 61 - 63) ---
+    pub bergman_fock_report: BergmanFockReport,
+    pub derham_hodge_report: DeRhamHodgeReport,
+    pub umegaki_relative_entropy_report: UmegakiEntropyReport,
 }
 
 /// Orquestador del grafo vivo omnisciente para todo el universo de activos.
@@ -139,6 +145,10 @@ pub struct OmniscientLivingGraphOrchestrator {
     pub penrose_spin_engines: Vec<PenroseSpinNetworkEngine>,
     pub ruelle_frobenius_engines: Vec<RuelleFrobeniusTransferEngine>,
     pub reeb_contact_engines: Vec<ReebContactVortexEngine>,
+    // Motores cuánticos y físicos unificados (Fases 61 - 63)
+    pub bergman_fock_engines: Vec<BergmanFockReproducingEngine>,
+    pub derham_hodge_engines: Vec<DeRhamHodgeCurrentsEngine>,
+    pub umegaki_entropy_engines: Vec<UmegakiRelativeEntropyEngine>,
     pub prev_mid_prices: Vec<f64>,
     pub last_event_time_ms: u64,
 }
@@ -224,6 +234,15 @@ impl OmniscientLivingGraphOrchestrator {
                 .collect(),
             reeb_contact_engines: (0..count)
                 .map(|_| ReebContactVortexEngine::new(ReebContactParams::default()))
+                .collect(),
+            bergman_fock_engines: (0..count)
+                .map(|_| BergmanFockReproducingEngine::new(BergmanFockParams::default()))
+                .collect(),
+            derham_hodge_engines: (0..count)
+                .map(|_| DeRhamHodgeCurrentsEngine::new(DeRhamHodgeParams::default()))
+                .collect(),
+            umegaki_entropy_engines: (0..count)
+                .map(|_| UmegakiRelativeEntropyEngine::new(UmegakiEntropyParams::default()))
                 .collect(),
             prev_mid_prices: vec![0.0; count],
             last_event_time_ms: 0,
@@ -568,10 +587,40 @@ impl OmniscientLivingGraphOrchestrator {
             price_ret,
         );
 
-        // 28. Factor de Escala de Riesgo Holístico Tri-Slot $\eta_{\text{holistic}}$
+        // 28. Cuantización por Espacios de Hilbert Reproducentes de Bergman-Fock (Fase 61)
+        let bergman_fock_report = self.bergman_fock_engines[safe_coin_id].update(
+            mid_price,
+            spread_bps,
+            ofi,
+            depth_imbalance,
+            volatility_state.effective_volatility,
+        );
+
+        // 29. Cohomología de De Rham y Corrientes de Hodge (Fase 62)
+        let derham_hodge_report = self.derham_hodge_engines[safe_coin_id].update(
+            price_ret,
+            ofi,
+            spread_bps,
+            volatility_state.effective_volatility,
+        );
+
+        // 30. Entropía Relativa de Umegaki Cuántica y Veto No-Conmutativo (Fase 63)
+        let umegaki_relative_entropy_report = self.umegaki_entropy_engines[safe_coin_id].evaluate(
+            ofi,
+            depth_imbalance,
+            spread_bps,
+            volatility_state.effective_volatility,
+        );
+
+        // 31. Factor de Escala de Riesgo Holístico Tri-Slot $\eta_{\text{holistic}}$
         let mps_weight_factor = (mps_dmrg_report.asset_weights[safe_coin_id % MPS_ASSET_CHANNELS]
             * (MPS_ASSET_CHANNELS as f64))
             .clamp(0.50, 1.50);
+        let derham_turbulent_scale = if derham_hodge_report.turbulent_vorticity_alert {
+            0.10
+        } else {
+            1.0
+        };
         let holistic_slot_scale = (navier_stokes_report.slot_scaling_factor
             * connes_spectral_report.slot_scaling_factor
             * poincare_hodge_report.slot_scaling_factor
@@ -589,10 +638,13 @@ impl OmniscientLivingGraphOrchestrator {
             * penrose_spin_report.slot_scaling_factor
             * ruelle_frobenius_report.signal_conviction_modulator
             * reeb_contact_report.slot_scaling_factor
+            * bergman_fock_report.slot_scale_factor
+            * derham_turbulent_scale
+            * umegaki_relative_entropy_report.slot_scale_factor
             * mps_weight_factor)
             .clamp(0.10, 1.25);
 
-        // 29. Evaluación Multi-Slot en QuantumSlotOrchestrator (Fase 28 / 33)
+        // 32. Evaluación Multi-Slot en QuantumSlotOrchestrator (Fase 28 / 33)
         let cvd = obi * 1000.0;
         let atr_pct = (volatility_state.effective_volatility * 100.0).clamp(0.001, 0.20);
         let dominant_tau_ms = 30_000.0;
@@ -614,8 +666,8 @@ impl OmniscientLivingGraphOrchestrator {
             open_positions_is_long,
         );
 
-        // 30. Modulación Continua del Grafo Vivo:
-        // Si hay veto duro, rechazo conformal estricto, air pocket, veto simpléctico de Gromov o veto de Reeb, aplanar decisiones
+        // 33. Modulación Continua del Grafo Vivo:
+        // Si hay veto duro, rechazo conformal estricto, air pocket, veto simpléctico de Gromov, veto de Reeb o veto de Umegaki, aplanar decisiones
         let allow_entry = !conformal_decision.is_hard_vetoed
             && !quantum_no_arbitrage_report.hard_veto_induced
             && !chern_simons_report.topological_veto_induced
@@ -626,6 +678,9 @@ impl OmniscientLivingGraphOrchestrator {
             && !penrose_spin_report.holographic_decoherence_detected
             && !ruelle_frobenius_report.ergodic_chaotic_collapse
             && !reeb_contact_report.reeb_contact_veto_induced
+            && !bergman_fock_report.critical_saturation_detected
+            && !derham_hodge_report.turbulent_vorticity_alert
+            && !umegaki_relative_entropy_report.hard_veto_induced
             && (spread_bps <= conformal_decision.dynamic_spread_ceiling_bps
                 || conformal_decision.elastic_entry_granted);
 
@@ -634,7 +689,13 @@ impl OmniscientLivingGraphOrchestrator {
                 decision.signal = SignalType::Flat;
                 decision.net_confidence = 0.0;
                 decision.vetoed = true;
-                decision.veto_reason = if reeb_contact_report.reeb_contact_veto_induced {
+                decision.veto_reason = if umegaki_relative_entropy_report.hard_veto_induced {
+                    Some("UMEGAKI_RELATIVE_ENTROPY_VETO")
+                } else if bergman_fock_report.critical_saturation_detected {
+                    Some("BERGMAN_FOCK_SHILOV_SATURATION_VETO")
+                } else if derham_hodge_report.turbulent_vorticity_alert {
+                    Some("DERHAM_TURBULENT_VORTICITY_VETO")
+                } else if reeb_contact_report.reeb_contact_veto_induced {
                     Some("REEB_CONTACT_TOPOLOGICAL_VETO")
                 } else if gromov_symplectic_report.gromov_symplectic_veto {
                     Some("GROMOV_SYMPLECTIC_VETO")
@@ -666,7 +727,7 @@ impl OmniscientLivingGraphOrchestrator {
             }
         }
 
-        // 31. Síntesis Coordinada de Emisiones de Órdenes Tri-Slot
+        // 34. Síntesis Coordinada de Emisiones de Órdenes Tri-Slot
         let coordinated_emissions = slot_orchestrator.synthesize_order_emissions(
             &multi_slot_evaluation,
             capital_available_usd,
@@ -674,7 +735,7 @@ impl OmniscientLivingGraphOrchestrator {
             risk_fraction,
         );
 
-        // 32. Verificación de Cota de Ruina de Ville (\mathbb{P}(\text{ruina}) \le 10^{-6})
+        // 35. Verificación de Cota de Ruina de Ville (\mathbb{P}(\text{ruina}) \le 10^{-6})
         let ville_ruin_bound_satisfied = capital_available_usd > 0.0
             && !quantum_no_arbitrage_report.hard_veto_induced
             && !chern_simons_report.topological_veto_induced
@@ -684,6 +745,8 @@ impl OmniscientLivingGraphOrchestrator {
             && !penrose_spin_report.holographic_decoherence_detected
             && !ruelle_frobenius_report.ergodic_chaotic_collapse
             && !reeb_contact_report.reeb_contact_veto_induced
+            && !bergman_fock_report.critical_saturation_detected
+            && !umegaki_relative_entropy_report.hard_veto_induced
             && conformal_decision.conformal_risk_score <= 0.85
             && srb_entropy_report.kolmogorov_sinai_entropy < 0.98;
 
@@ -723,6 +786,9 @@ impl OmniscientLivingGraphOrchestrator {
             penrose_spin_report,
             ruelle_frobenius_report,
             reeb_contact_report,
+            bergman_fock_report,
+            derham_hodge_report,
+            umegaki_relative_entropy_report,
         }
     }
 }

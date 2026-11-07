@@ -214,6 +214,33 @@ fn test_c1_holistic_living_graph_end_to_end_synthesis() {
     assert!(report.reeb_contact_report.contact_torsion_intensity >= 0.0);
     assert!(!report.reeb_contact_report.reeb_contact_veto_induced);
     assert!(report.reeb_contact_report.slot_scaling_factor >= 0.10);
+
+    // 26. Cuantización por Espacios de Hilbert de Bergman-Fock (Fase 61)
+    assert!(report.bergman_fock_report.bergman_kernel_density > 0.0);
+    assert!(report.bergman_fock_report.kahler_potential.is_finite());
+    assert!(!report.bergman_fock_report.critical_saturation_detected);
+    assert!(report.bergman_fock_report.slot_scale_factor >= 0.15);
+
+    // 27. Cohomología de De Rham y Corrientes de Hodge (Fase 62)
+    assert!(report.derham_hodge_report.exact_energy_ratio >= 0.0);
+    assert!(report.derham_hodge_report.coexact_energy_ratio >= 0.0);
+    assert!(!report.derham_hodge_report.turbulent_vorticity_alert);
+
+    // 28. Entropía Relativa Cuántica de Umegaki (Fase 63)
+    assert!(
+        report
+            .umegaki_relative_entropy_report
+            .umegaki_relative_entropy
+            >= 0.0
+    );
+    assert!(
+        report
+            .umegaki_relative_entropy_report
+            .von_neumann_entropy_state
+            >= 0.0
+    );
+    assert!(!report.umegaki_relative_entropy_report.hard_veto_induced);
+    assert!(report.umegaki_relative_entropy_report.slot_scale_factor >= 0.0);
 }
 
 #[test]

@@ -4,6 +4,7 @@ pub use strategy_core::stat_arb;
 // Re-export specific structs that other crates expect from signal_engine
 pub mod coaxial_breakout;
 pub mod continuous_volatility_operator;
+pub mod derham_hodge_currents;
 // U-ERR-1: `micro_scalp_trigger`, `swing_conformal_filter` y `turbo_scalper`
 // nombraban BANDAS DE HORIZONTE («micro-scalp», «swing», «turbo») que ninguno
 // de los tres motores decide: los tres declaraban `TradeHorizon::Continuous`
@@ -43,6 +44,9 @@ pub mod wilson_exact_renormalization;
 pub use continuous_volatility_operator::{
     ContinuousVolatilityOperatorEngine, ContinuousVolatilityParams, ContinuousVolatilityState,
     VOL_SPECTRUM_SCALES,
+};
+pub use derham_hodge_currents::{
+    DeRhamHodgeCurrentsEngine, DeRhamHodgeParams, DeRhamHodgeReport, DERHAM_SIMPLICIAL_NODES,
 };
 pub use feynman_path_integral_routing::{
     Complex64, FeynmanPathIntegralRoutingEngine, FeynmanRoutingParams, FeynmanRoutingReport,
