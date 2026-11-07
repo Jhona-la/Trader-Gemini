@@ -1081,5 +1081,130 @@ En cada tick de decisión en el bucle principal de `god_engine`.
 - Rol 7 Silicio Latencia & Rol 8 Físico Manifolds.
 - Rol 9 Bio-Informático & Rol 10 Auditor Forense Causal.
 
+---
+
+## 🚀 PARTE XI — ESPECIFICACIÓN ARQUITECTÓNICA DE LA OLA 10 (FASES 46, 47 Y 48)
+
+La **Ola 10** expande la cúspide geométrica y adaptativa del sistema mediante la proyección en variedades hiperbólicas de curvatura negativa, el enrutamiento cuántico de órdenes por integral de caminos de Feynman y la metamorfosis topológica auto-evolutiva de las sinapsis del Grafo Vivo:
+
+---
+
+### 🌌 FASE 46 (§46) — COLECTOR HIPERBÓLICO DE POINCARÉ-HODGE Y FLUJO SIMPLÉCTICO CONTINUO
+
+#### 1. QUÉ
+Diseño e implementación de un colector y motor de geometría hiperbólica en el disco conforme de Poincaré $\mathbb{D} = \{ (x, y) \in \mathbb{R}^2 : x^2 + y^2 < 1 \}$ (`HyperbolicPoincareHodgeEngine`) equipado con la métrica riemanniana hiperbólica:
+$$ds^2 = \frac{4(dx^2 + dy^2)}{(1 - \|z\|^2)^2}$$
+con cálculo exacto de distancias geodésicas hiperbólicas $d_{\mathbb{H}}(u, v) = \operatorname{arcosh}(1 + \delta)$ donde:
+$$\delta = 2 \frac{\|u - v\|^2}{(1 - \|u\|^2)(1 - \|v\|^2)}$$
+descomposición Hodge del 1-form de flujo $\omega = P dx + Q dy$ con su dual estelar de Hodge $\star \omega = -Q dx + P dy$, cálculo de vorticidad del área simpléctica 2-form $d\omega$, y estimación continua de la constante de Lipschitz del flujo de precios y libro de órdenes en $O(1)$ stack determinista sin asignaciones en heap.
+
+#### 2. POR QUÉ
+El espacio euclídeo tradicional $\mathbb{R}^n$ es incapaz de albergar árboles de decisión y estructuras de liquidez jerárquicas sin distorsión exponencial. En el disco de Poincaré con curvatura negativa constante $K = -1$, la circunferencia y el área crecen exponencialmente con el radio ($\sinh r$ y $\cosh r - 1$), permitiendo incrustar jerarquías complejas del libro de órdenes L2/L3 y dinámicas multiactivo sin comprimir distancias críticas ni introducir artefactos de frontera euclídea.
+
+#### 3. PARA QUÉ
+Para cuantificar la verdadera deformación topológica de la microestructura bajo flujo no conservativo, identificando puntos de estrangulamiento de liquidez mediante la constante de Lipschitz hiperbólica, y modulando dinámicamente la escala del slot con un factor de escalado de riesgo hiperbólico $\eta_{\text{poincare}} \in [0.10, 1.25]$.
+
+#### 4. CÓMO (Mecanismo Matemático y Algorítmico Paso a Paso)
+1. **Proyección al Disco de Poincaré:**
+   Cada estado $(p_t, \text{OFI}_t)$ se proyecta dentro del disco unidad $\mathbb{D}$ mediante transformación conforme normalizada:
+   $$z = \tanh\left(\frac{\|v\|}{2}\right) \frac{v}{\|v\|}$$
+2. **Distancia Geodésica Hiperbólica:**
+   Evaluación de la distancia geodésica exacta en la métrica conforme de Lobachevsky-Poincaré.
+3. **Flujo de Hodge y Área Simpléctica:**
+   Diferenciación exterior de la 1-forma diferencial y evaluación de la vorticidad $d\omega$ y el flujo armónico.
+4. **Constante de Lipschitz Finita:**
+   $$L_t = \sup_{\Delta t > 0} \frac{d_{\mathbb{H}}(z_t, z_{t-\Delta t})}{\Delta t}$$
+   acotada para garantizar inmunidad numérica y rechazo a singularidades.
+
+#### 5. CUÁNDO
+En cada pulso de microestructura y actualización de flujo de órdenes.
+
+#### 6. DÓNDE
+- Módulo: `crates/feature-engine/src/hyperbolic_poincare_hodge.rs`.
+- Re-exportado en: `crates/feature-engine/src/lib.rs`.
+- Contrato formal: `crates/feature-engine/tests/f46_001_hyperbolic_poincare_hodge_contract.rs`.
+
+#### 7. QUIÉN
+- Rol 8 Físico-Matemático de Manifolds & Geometría Hiperbólica.
+- Rol 2 Quant Developer de Microestructura.
+
+---
+
+### ⚛️ FASE 47 (§47) — ENRUTAMIENTO CUÁNTICO POR INTEGRAL DE CAMINOS DE FEYNMAN
+
+#### 1. QUÉ
+Diseño e implementación de un motor de enrutamiento y partición de micro-órdenes en el continuo temporal (`FeynmanPathIntegralRoutingEngine`) basado en la integral de caminos de Feynman en mecánica cuántica sobre el espacio de configuración de trayectorias de inventario y ejecución.
+
+#### 2. POR QUÉ
+Las técnicas clásicas de ejecución (TWAP, VWAP, Almgren-Chriss estático) asumen trayectorias deterministas unívocas que sufren de impacto de mercado predecible y son explotadas por algoritmos predadores HFT. En mercados hiper-líquidos estocásticos, múltiples trayectorias interfieren constructiva y destructivamente en función de la profundidad del libro y del Order Flow Imbalance (OFI).
+
+#### 3. PARA QUÉ
+Minimizar el deslizamiento cuadrático (slippage), maximizar la captura de liquidez pasiva/activa, y sincronizar la tasa de emisión de órdenes con interferencia cuántica constructiva, acelerando el crecimiento compuesto de capital y protegiendo el drawdown con $O(1)$ stack determinista y cero asignaciones en heap.
+
+#### 4. CÓMO (Mecanismo Matemático y Algorítmico Paso a Paso)
+1. **Espacio de Configuración en $K = 8$ Slices Temporales:**
+   Evaluación de un haz de $M = 8$ trayectorias cuánticas base $\gamma^{(m)} = \{q_0, q_1, \dots, q_{K-1}\}$.
+2. **Funcional de Acción Clásica $S[\gamma^{(m)}]$:**
+   $$S[\gamma] = \sum_{k=0}^{K-2} \left[ \frac{1}{2} m \left(\frac{q_{k+1} - q_k}{\Delta t}\right)^2 + \frac{1}{2} \gamma_{\text{slip}} (q_{k+1} - q_k)^2 \frac{1}{\text{depth}_k + \epsilon} - \lambda_{\text{ofi}} (q_{k+1} - q_k) \cdot \text{OFI}_k \right] \Delta t$$
+3. **Amplitud Compleja de Probabilidad $\Psi_m$:**
+   $$\Psi_m = \exp(i S[\gamma^{(m)}] / \hbar)$$
+4. **Superposición Coherente y Densidad de Probabilidad:**
+   $$\Psi_{\text{total}} = \sum_{m=0}^{M-1} w_m \Psi_m, \quad P(\gamma^{(m)}) = \frac{|\Psi_m|^2}{\sum_j |\Psi_j|^2}, \quad C_{\text{coh}} = \frac{|\Psi_{\text{total}}|^2}{\sum_m |\Psi_m|^2 + \epsilon}$$
+5. **Fracción Óptima Inmediata y Modulador de Urgencia:**
+   $$\Delta q^* = \sum_m P(\gamma^{(m)}) \Delta q^{(m)}_0, \quad \chi_{\text{routing}} \in [0.10, 1.50]$$
+
+#### 5. CUÁNDO
+En cada pulso de emisión de órdenes y ajuste de micro-lotes en `god-engine-core`.
+
+#### 6. DÓNDE
+- Módulo: `crates/signal-engine/src/feynman_path_integral_routing.rs`.
+- Re-exportado en: `crates/signal-engine/src/lib.rs`.
+- Contrato formal: `crates/signal-engine/tests/f47_001_feynman_path_integral_routing_contract.rs`.
+
+#### 7. QUIÉN
+- Rol 7 Arquitecto de Silicio & Latencia Cuántica.
+- Rol 2 Quant Developer de Ejecución.
+
+---
+
+### 🧬 FASE 48 (§48) — METAMORFOSIS TOPOLÓGICA DEL GRAFO VIVO AUTÓNOMO Y ESTABILIDAD DE LYAPUNOV
+
+#### 1. QUÉ
+Diseño e implementación de un motor de plasticidad neuronal y reorganización topológica continua (`TopologicalMetamorphosisEngine`) para la matriz de adyacencia $\mathbf{A} \in \mathbb{R}^{12 \times 12}$ del Grafo Omnisciente Vivo.
+
+#### 2. POR QUÉ
+Las influencias relativas e interdependencias dinámicas entre los 12 subsistemas principales del motor no son estáticas. En condiciones cambiantes de mercado, ciertas aristas sinápticas amplifican o atenúan su acoplamiento causal. Si el grafo mantuviera una topología rígida o fija, no sería verdaderamente auto-adaptativo ni auto-evolutivo.
+
+#### 3. PARA QUÉ
+Permitir la auto-evolución continua de las sinapsis del Grafo Vivo, podando aristas ruidosas ($|A_{ij}| < \theta_{\text{prune}} \implies 0$) y reforzando las conexiones que producen convergencia predictiva superior, preservando la estabilidad asintótica de Lyapunov vía normalización de Gershgorin ($\|A\|_{\infty} \le 1.0$), en $O(1)$ stack sin heap allocations.
+
+#### 4. CÓMO (Mecanismo Matemático y Algorítmico Paso a Paso)
+1. **Matriz de Adyacencia $\mathbf{A} \in \mathbb{R}^{12 \times 12}$ en Pila:**
+   Conecta los 12 subsistemas canónicos: Hodge-Poincaré, Navier-Stokes Reynolds, Yang-Mills Instantones, Ville Supermartingale, Feynman Routing, Mean Field Games Psychology, Dirac-Clifford Spinor, MPS DMRG Entanglement, SRB Chaos Entropy, Riemann-Burgers Shockwave, Hawkes-Bessel Point Process, Conformal Reversion Filter.
+2. **Regla de Plasticidad Hebbiana-Lyapunov:**
+   $$\Delta A_{ij} = \eta \cdot \left( s_i s_j - \lambda_{\text{decay}} A_{ij} \right) \cdot \Phi(\text{perf})$$
+   donde $\Phi(\text{perf}) = \operatorname{sigmoid}(\text{perf}) \in [0, 1]$.
+3. **Poda Dura de Ruido (Noise Pruning):**
+   Si $|A_{ij}| < \theta_{\text{prune}} \implies A_{ij} = 0$.
+4. **Normalización Espectral de Gershgorin:**
+   Garantiza que la suma por filas $\sum_{j} |A_{ij}| \le \text{stability\_margin} \le 1.0$, asegurando que todos los autovalores $|\lambda_k| \le 1.0$, previniendo divergencias asintóticas o explosiones numéricas.
+5. **Modulador de Plasticidad Global:**
+   $$\mu_{\text{plasticity}} \in [0.10, 1.50]$$
+
+#### 5. CUÁNDO
+En cada iteración del Grafo Omnisciente (`OmniscientLivingGraphOrchestrator`).
+
+#### 6. DÓNDE
+- Módulo: `crates/god-engine-core/src/topological_metamorphosis.rs`.
+- Re-exportado en: `crates/god-engine-core/src/lib.rs`.
+- Integrado en: `crates/god-engine-core/src/omniscient_living_graph.rs`.
+- Contrato formal: `crates/god-engine-core/tests/f48_001_topological_metamorphosis_contract.rs`.
+
+#### 7. QUIÉN
+- Rol 1 Arquitecto Senior Core.
+- Rol 9 Bio-Informático & Sistemas Complejos.
+- Rol 3 Risk Manager Teórico & Cota de Ruina.
+
+
 
 
