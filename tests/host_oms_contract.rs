@@ -1132,7 +1132,7 @@ fn glm210_reserva_no_confirmada_se_cura_con_fila_flat_y_bloquea_sin_evidencia() 
     // el primer trade). Con el gate DESPUÉS de reconciliar: la fila flat
     // cura la reserva (Ready); sin evidencia remota el gate sigue
     // bloqueando (fail-closed intacto).
-    let _guard = UNIVERSE.lock().unwrap_or_else(|p| p.into_inner());
+    let _guard = universe();
     let arena = GlobalArena::build_in_own_stack(100.0);
     let (session, ready) = session(true, false);
     let token = session.snapshot_token();
