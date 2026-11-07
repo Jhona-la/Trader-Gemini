@@ -34,6 +34,7 @@ pub mod normalizer;
 pub mod omni_strategies;
 pub mod path_signatures;
 pub mod perelman_ricci_surgery;
+pub mod quantum_geodesic_phase_space;
 pub mod random_matrix_wilson;
 pub mod ricci_empirica;
 pub mod rough_ergodic;
@@ -128,6 +129,10 @@ pub use normalizer::{GarmanKlassVolatilityEstimator, StatisticalNormalizer};
 pub use omni_strategies::OmniStrategyEngine;
 pub use perelman_ricci_surgery::{
     PerelmanRicciParams, PerelmanRicciSurgeryEngine, PerelmanSurgeryReport, MAX_MANIFOLD_DIM,
+};
+pub use quantum_geodesic_phase_space::{
+    GeodesicPhaseSpaceParams, GeodesicPhaseSpaceReport, PhaseSpacePoint,
+    QuantumGeodesicPhaseSpaceEngine, PHASE_SPACE_HISTORY_LEN,
 };
 pub use random_matrix_wilson::{
     jacobi_eigensolver_symmetric, ContinuousLyapunovEstimator, DenoisedCorrelationResult,

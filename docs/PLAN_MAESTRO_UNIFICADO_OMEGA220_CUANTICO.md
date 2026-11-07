@@ -1205,6 +1205,134 @@ En cada iteración del Grafo Omnisciente (`OmniscientLivingGraphOrchestrator`).
 - Rol 9 Bio-Informático & Sistemas Complejos.
 - Rol 3 Risk Manager Teórico & Cota de Ruina.
 
+---
+
+## 🚀 PARTE XII — ESPECIFICACIÓN ARQUITECTÓNICA DE LA OLA 11 (FASES 49, 50 Y 51)
+
+La **Ola 11** eleva la síntesis físico-matemática del sistema hacia la integración geodésica simpléctica con purificación BRST de microestructura, la modelización no markoviana de volatilidad rugosa con núcleos de Riemann-Liouville y la gobernanza conformal de orden superior con barrera de no-arbitraje cuántico (FTAP):
+
+---
+
+### 🌌 FASE 49 (§49) — FLUJO GEODÉSICO CUÁNTICO Y CUANTIZACIÓN BRST EN ESPACIO DE FASES SIMPLÉCTICO
+
+#### 1. QUÉ
+Diseño e implementación de un motor de dinámica geodésica simpléctica en el espacio de fases canónico $(q, p)$ (`QuantumGeodesicPhaseSpaceEngine`) acoplado con cuantización BRST (Becchi-Rouet-Stora-Tyutin) para la eliminación sistemática de modos fantasma generados por spoofing, cancelaciones y quote stuffing de microestructura.
+- Coordenada canónica $q$: desviación logarítmica relativa de precio.
+- Momento canónico conjugado $p = m \dot{q} + \lambda_{\text{ofi}} \text{OFI}$.
+- Variables fantasma de Faddeev-Popov $(c, \bar{c})$.
+- Integrador simpléctico de Verlet de 2º orden que preserva el volumen de Liouville en el espacio de fases:
+  $$p_{t+1/2} = p_t - \frac{\Delta t}{2} \nabla V(q_t), \quad q_{t+1} = q_t + \Delta t \frac{p_{t+1/2}}{m}, \quad p_{t+1} = p_{t+1/2} - \frac{\Delta t}{2} \nabla V(q_{t+1})$$
+- Carga nilpotente $Q_{\text{BRST}}^2 = 0$ y proyección sobre la cohomología física $H^*(Q_{\text{BRST}}) = \operatorname{Ker}(Q) / \operatorname{Im}(Q)$.
+
+#### 2. POR QUÉ
+En los libros de órdenes L2/L3 de alta frecuencia, más del 90% de los mensajes son cancelaciones o posturas de spoofing sin intención de ejecución. Los modelos tradicionales que calculan trayectorias euclídeas sufren distorsión severa por estos modos no físicos. La cuantización BRST es la única herramienta matemática rigurosa de la física teórica para aislar los verdaderos grados de libertad físicos y purificar el flujo geodésico de microestructura.
+
+#### 3. PARA QUÉ
+Determinar la geodésica de mínima resistencia energética en el espacio de fases, medir la tasa de curvatura simpléctica $\Omega = dq \wedge dp$, evaporar la liquidez fantasma y suministrar un factor de escalado geodésico $\eta_{\text{geodesic}} \in [0.10, 1.30]$ determinista en $O(1)$ stack sin heap allocations.
+
+#### 4. CÓMO (Mecanismo Matemático y Algorítmico Paso a Paso)
+1. **Construcción del Estado Canónico:**
+   Normaliza $q = \ln(p_t / p_{t-1})$ y $p = m (q / \Delta t) + \lambda_{\text{ofi}} \text{OFI}$.
+2. **Campos Fantasma de Faddeev-Popov:**
+   $c = \text{cancellation\_rate} \cdot |\text{OFI}|$, $\bar{c} = \text{cancellation\_rate} \cdot (1 - |\text{OFI}|)$.
+3. **Integración Simpléctica de Verlet:**
+   Aplica medios pasos de momento y paso completo de posición bajo potencial restaurador $V(q) = \frac{1}{2} k q^2$.
+4. **Cálculo de Curvatura Simpléctica:**
+   Evalúa el producto exterior $\Omega(\Delta z_1, \Delta z_2) = q_1 p_2 - q_2 p_1$ sobre ventana estática en stack.
+5. **Purificación BRST:**
+   Evalúa la carga nilpotente $Q_{\text{BRST}} = c \cdot \phi(p)$ y calcula el ratio de evaporación $\rho_{\text{ghost}} \in [0, 1]$, proyectando el momento físico depurado $p_{\text{phys}} = p \cdot (1 - \rho_{\text{ghost}})$.
+
+#### 5. CUÁNDO
+En cada pulso de microestructura y tick de libro L2.
+
+#### 6. DÓNDE
+- Módulo: `crates/feature-engine/src/quantum_geodesic_phase_space.rs`.
+- Re-exportado en: `crates/feature-engine/src/lib.rs`.
+- Contrato formal: `crates/feature-engine/tests/f49_001_quantum_geodesic_phase_space_contract.rs`.
+
+#### 7. QUIÉN
+- Rol 8 Físico-Matemático de Manifolds & Geometría Simpléctica.
+- Rol 2 Quant Developer de Microestructura.
+
+---
+
+### 📈 FASE 50 (§50) — VOLATILIDAD RUGOSA FRACCIONARIA CON NÚCLEOS DE RIEMANN-LIOUVILLE
+
+#### 1. QUÉ
+Diseño e implementación de un motor de volatilidad rugosa fraccionaria en tiempo continuo (`FractionalRoughVolatilityEngine`) basado en convolución de núcleos singulares de Riemann-Liouville y estimación multifractal en línea del exponente de Hurst $H \in (0.01, 0.49)$.
+
+#### 2. POR QUÉ
+Los modelos estándar (Black-Scholes, GARCH, Heston estándar) suponen que la volatilidad es browniana estándar ($H = 0.50$). Sin embargo, la microestructura cripto demuestra de manera incontrovertible que la volatilidad es "rough" ($H \approx 0.10 - 0.15$), con dinámica subdifusiva de memoria en ley de potencia. Asumir $H = 0.50$ subestima severamente las agrupaciones de volatilidad y la probabilidad de colas pesadas.
+
+#### 3. PARA QUÉ
+Anticipar expansiones y compresiones fractales de la superficie de volatilidad, detectar regímenes de ultra-rugosidad y proveer un modulador de resonancia fraccionaria $\psi_{\text{rough}} \in [0.10, 1.40]$ en $O(1)$ stack sin heap allocations.
+
+#### 4. CÓMO (Mecanismo Matemático y Algorítmico Paso a Paso)
+1. **Búfer Circular en Stack ($N = 32$):**
+   Almacena retornos logarítmicos cuadráticos recientes.
+2. **Núcleo Discretizado de Riemann-Liouville:**
+   $$K_H(k) = \frac{((k+1)\Delta t)^\alpha - (k \Delta t)^\alpha}{\alpha}, \quad \alpha = H + \frac{1}{2}$$
+3. **Convolución Fraccionaria:**
+   $\mathcal{I}^\alpha[\Delta X](t) = \sum_{k=0}^{N-1} K_H(k) \Delta X_{t-k}^2$.
+4. **Estimación Espectral Diádica de Hurst en Línea:**
+   Regresión lineal en stack a través de 4 escalas diádicas $\tau \in \{1, 2, 4, 8\}$:
+   $$\ln \operatorname{Var}(\Delta_\tau X) = 2 H \ln(\tau) + C$$
+5. **Índice de Régimen de Rugosidad y Modulador:**
+   $\text{roughness\_index} = (0.50 - H) / 0.50 \in [0, 1]$, modulando $\psi_{\text{rough}} \in [0.10, 1.40]$.
+
+#### 5. CUÁNDO
+En cada tick de señal y evaluación de expectativas en `crates/signal-engine`.
+
+#### 6. DÓNDE
+- Módulo: `crates/signal-engine/src/fractional_rough_volatility.rs`.
+- Re-exportado en: `crates/signal-engine/src/lib.rs`.
+- Contrato formal: `crates/signal-engine/tests/f50_001_fractional_rough_volatility_contract.rs`.
+
+#### 7. QUIÉN
+- Rol 2 Quant Developer.
+- Rol 5 Estadístico Cuántico.
+
+---
+
+### 🛡️ FASE 51 (§51) — GOBERNANZA CONFORMAL DE ORDEN SUPERIOR Y BARRERA DE NO-ARBITRAJE CUÁNTICO
+
+#### 1. QUÉ
+Diseño e implementación de un motor de gobernanza conformal y barrera de no-arbitraje (`QuantumNoArbitrageConformalEngine`) fundamentado en el Teorema Fundamental de Valoración de Activos (FTAP), inferencia conformal no paramétrica de cobertura garantizada $1 - \alpha = 99.9\%$, y contrastes secuenciales de hipótesis mediante el e-proceso supermartingala de Ville.
+
+#### 2. POR QUÉ
+Los umbrales heurísticos fijos no poseen garantías estadísticas ante cambios distributivos. Asimismo, discrepancias de cotización desproporcionadas a menudo constituyen "ilusiones de arbitraje" provocadas por desincronización de WebSocket o spoofing de feed. Sin verificación rigurosa de fricción y cota de Ville, operar sobre estas anomalías destruye capital.
+
+#### 3. PARA QUÉ
+Garantizar cobertura conformal en muestra finita, discriminar arbitrajes legítimos de ilusiones de latencia, inducir vetos defensivos incondicionales ante divergencias de Ville ($\mathbb{P}(\text{ruina}) \le 10^{-6}$), y modular continuamente el multiplicador de riesgo $\kappa_{\text{conformal}} \in [0.0, 1.0]$ en $O(1)$ stack sin heap allocations.
+
+#### 4. CÓMO (Mecanismo Matemático y Algorítmico Paso a Paso)
+1. **Búfer de Residuos Conformal ($N = 32$):**
+   Mantiene los residuos normalizados de predicción $|p_{\text{actual}} - p_{\text{predicted}}| / p_{\text{actual}}$.
+2. **Cuantil Conformal en Stack:**
+   Ordenamiento por inserción en stack de $N=32$ (<100 ns en L1 cache) para obtener $\hat{q}_{1-\alpha}$.
+3. **Barrera FTAP de No-Arbitraje:**
+   Calcula la discrepancia neta tras comisiones, spread y slippage por latencia. Si la discrepancia excede anormalmente el spread ($> 15 \times$), la clasifica como `QUANTUM_ARBITRAGE_ILLUSION` e induce veto duro.
+4. **E-Proceso Supermartingala de Ville:**
+   Actualiza $E_t$; si $E_t \ge 10^6$, activa veto duro incondicional con cota de confianza $1 - 10^{-6}$.
+5. **Multiplicador de Riesgo Conformal:**
+   Calcula $\kappa_{\text{conformal}} \in [0.0, 1.0]$.
+
+#### 5. CUÁNDO
+En cada pulso de validación de riesgo previo a la emisión de órdenes en `crates/risk-engine` e integrado en el Grafo Omnisciente de `god-engine-core`.
+
+#### 6. DÓNDE
+- Módulo: `crates/risk-engine/src/quantum_no_arbitrage_conformal.rs`.
+- Re-exportado en: `crates/risk-engine/src/lib.rs`.
+- Integrado en: `crates/god-engine-core/src/omniscient_living_graph.rs`.
+- Contrato formal: `crates/risk-engine/tests/f51_001_quantum_no_arbitrage_conformal_contract.rs`.
+- Contrato de síntesis: `crates/god-engine-core/tests/f51_002_wave11_living_graph_synthesis_contract.rs`.
+
+#### 7. QUIÉN
+- Rol 3 Risk Manager Teórico & Cota de Ruina.
+- Rol 5 Estadístico Cuántico.
+- Rol 10 Auditor Forense Causal.
+
+
 
 
 
