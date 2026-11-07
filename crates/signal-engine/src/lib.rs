@@ -30,6 +30,7 @@ pub mod quantum_oscillator;
 pub mod quantum_slot_orchestrator;
 pub mod renyi_tsallis_entropy;
 pub mod riemann_burgers_shockwave;
+pub mod ruelle_frobenius_transfer;
 pub mod skill_motores;
 pub mod soliton_wave;
 pub mod srb_kolmogorov_entropy;
@@ -85,6 +86,10 @@ pub use quantum_slot_orchestrator::{
 pub use renyi_tsallis_entropy::{RenyiTsallisEntropyEngine, RenyiTsallisEntropyParams};
 pub use riemann_burgers_shockwave::{
     BurgersShockwaveReport, RiemannBurgersParams, RiemannBurgersShockwaveEngine,
+};
+pub use ruelle_frobenius_transfer::{
+    RuelleFrobeniusParams, RuelleFrobeniusReport, RuelleFrobeniusTransferEngine, RUELLE_GRID_SIZE,
+    RUELLE_HISTORY_CAPACITY,
 };
 pub use soliton_wave::{SolitonWaveEngine, SolitonWaveParams};
 pub use srb_kolmogorov_entropy::{

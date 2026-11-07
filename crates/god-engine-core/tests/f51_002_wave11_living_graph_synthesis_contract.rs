@@ -19,19 +19,19 @@ fn test_c1_wave11_triad_holistic_orchestration() {
 
     let triad = [
         AssetColorState {
-            price_return: 0.001,
-            spread_bps: 2.0,
-            depth_ratio: 1.2,
+            normalized_return: 0.001,
+            order_flow_imbalance: 0.2,
+            relative_weight: 1.2,
         },
         AssetColorState {
-            price_return: -0.0005,
-            spread_bps: 1.8,
-            depth_ratio: 0.9,
+            normalized_return: -0.0005,
+            order_flow_imbalance: -0.1,
+            relative_weight: 0.9,
         },
         AssetColorState {
-            price_return: 0.0002,
-            spread_bps: 2.5,
-            depth_ratio: 1.0,
+            normalized_return: 0.0002,
+            order_flow_imbalance: 0.05,
+            relative_weight: 1.0,
         },
     ];
 
@@ -106,9 +106,9 @@ fn test_c2_wave11_arbitrage_illusion_defensive_veto() {
         QuantumSlotOrchestrator::new(QuantumSlotOrchestratorParams::default());
 
     let triad = [AssetColorState {
-        price_return: 0.0,
-        spread_bps: 1.0,
-        depth_ratio: 1.0,
+        normalized_return: 0.0,
+        order_flow_imbalance: 0.0,
+        relative_weight: 1.0,
     }; SU3_COLORS];
 
     let open_slots = [false; 3];

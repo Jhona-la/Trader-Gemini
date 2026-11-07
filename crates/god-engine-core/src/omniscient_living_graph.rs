@@ -29,7 +29,8 @@ use feature_engine::{
     CalabiYauParams, CalabiYauSeibergWittenEngine, CalabiYauSeibergWittenReport,
     GeodesicPhaseSpaceParams, GeodesicPhaseSpaceReport, HyperbolicPoincareHodgeEngine,
     HyperbolicPoincareHodgeParams, HyperbolicPoincareHodgeReport,
-    MongeKantorovichWassersteinEngine, QuantumGeodesicPhaseSpaceEngine, VietorisRipsParams,
+    MongeKantorovichWassersteinEngine, PenroseSpinNetworkEngine, PenroseSpinNetworkParams,
+    PenroseSpinNetworkReport, QuantumGeodesicPhaseSpaceEngine, VietorisRipsParams,
     VietorisRipsReport, VietorisRipsTopologicalEngine, WassersteinParams, WassersteinReport,
     WASSERSTEIN_NODES,
 };
@@ -38,7 +39,8 @@ use risk_engine::{
     ChernSimonsBerryPhaseEngine, ChernSimonsBerryReport, GromovSymplecticBarrierEngine,
     GromovSymplecticParams, GromovSymplecticReport, MarketQuantumStateInput, MpsDmrgParams,
     MpsDmrgReport, QuantumNoArbitrageConformalEngine, QuantumNoArbitrageConformalParams,
-    QuantumNoArbitrageConformalReport, TensorNetworkMpsDmrgEngine, MPS_ASSET_CHANNELS,
+    QuantumNoArbitrageConformalReport, ReebContactParams, ReebContactReport,
+    ReebContactVortexEngine, TensorNetworkMpsDmrgEngine, MPS_ASSET_CHANNELS,
 };
 use signal_engine::{
     BurgersShockwaveReport, ContinuousVolatilityOperatorEngine, ContinuousVolatilityState,
@@ -48,8 +50,9 @@ use signal_engine::{
     JarzynskiCrooksThermodynamicsEngine, MeanFieldGamesPsychologyEngine, MeanFieldGamesReport,
     MultiSlotEvaluationReport, MultiSlotOrderEmission, NavierStokesKolmogorovEngine,
     NavierStokesParams, NavierStokesReport, QuantumSlotOrchestrator, RiemannBurgersShockwaveEngine,
-    SrbEntropyParams, SrbEntropyReport, SrbKolmogorovEntropyEngine,
-    WilsonExactRenormalizationEngine, WilsonExactRgParams, WilsonExactRgReport,
+    RuelleFrobeniusParams, RuelleFrobeniusReport, RuelleFrobeniusTransferEngine, SrbEntropyParams,
+    SrbEntropyReport, SrbKolmogorovEntropyEngine, WilsonExactRenormalizationEngine,
+    WilsonExactRgParams, WilsonExactRgReport,
 };
 use strategy_core::{
     AssetColorState, ChromodynamicGaugeSu3Engine, ConnesSpectralGeometryEngine,
@@ -96,6 +99,10 @@ pub struct OmniscientLivingGraphReport {
     pub calabi_yau_report: CalabiYauSeibergWittenReport,
     pub jarzynski_crooks_report: JarzynskiCrooksReport,
     pub gromov_symplectic_report: GromovSymplecticReport,
+    // --- Extensiones Holísticas Omega220 (Fases 58 - 60) ---
+    pub penrose_spin_report: PenroseSpinNetworkReport,
+    pub ruelle_frobenius_report: RuelleFrobeniusReport,
+    pub reeb_contact_report: ReebContactReport,
 }
 
 /// Orquestador del grafo vivo omnisciente para todo el universo de activos.
@@ -128,6 +135,10 @@ pub struct OmniscientLivingGraphOrchestrator {
     pub calabi_yau_engines: Vec<CalabiYauSeibergWittenEngine>,
     pub jarzynski_crooks_engines: Vec<JarzynskiCrooksThermodynamicsEngine>,
     pub gromov_symplectic_engines: Vec<GromovSymplecticBarrierEngine>,
+    // Motores cuánticos y físicos unificados (Fases 58 - 60)
+    pub penrose_spin_engines: Vec<PenroseSpinNetworkEngine>,
+    pub ruelle_frobenius_engines: Vec<RuelleFrobeniusTransferEngine>,
+    pub reeb_contact_engines: Vec<ReebContactVortexEngine>,
     pub prev_mid_prices: Vec<f64>,
     pub last_event_time_ms: u64,
 }
@@ -204,6 +215,15 @@ impl OmniscientLivingGraphOrchestrator {
                 .collect(),
             gromov_symplectic_engines: (0..count)
                 .map(|_| GromovSymplecticBarrierEngine::new(GromovSymplecticParams::default()))
+                .collect(),
+            penrose_spin_engines: (0..count)
+                .map(|_| PenroseSpinNetworkEngine::new(PenroseSpinNetworkParams::default()))
+                .collect(),
+            ruelle_frobenius_engines: (0..count)
+                .map(|_| RuelleFrobeniusTransferEngine::new(RuelleFrobeniusParams::default()))
+                .collect(),
+            reeb_contact_engines: (0..count)
+                .map(|_| ReebContactVortexEngine::new(ReebContactParams::default()))
                 .collect(),
             prev_mid_prices: vec![0.0; count],
             last_event_time_ms: 0,
@@ -517,7 +537,38 @@ impl OmniscientLivingGraphOrchestrator {
             volatility_state.effective_volatility,
         );
 
-        // 25. Factor de Escala de Riesgo Holístico Tri-Slot $\eta_{\text{holistic}}$
+        // 25. Grafo de Espín Cuántico de Penrose y Entropía Holográfica Ryu-Takayanagi (Fase 58)
+        let penrose_spin_report = self.penrose_spin_engines[safe_coin_id].update_and_evaluate(
+            price_ret,
+            volatility_state.effective_volatility,
+            ofi,
+            obi,
+            spread_bps,
+            depth_imbalance,
+            event_time_ms,
+        );
+
+        // 26. Operador de Transferencia de Ruelle-Frobenius y Resonancias Pollicott-Ruelle (Fase 59)
+        let ruelle_frobenius_report = self.ruelle_frobenius_engines[safe_coin_id]
+            .update_and_evaluate(
+                price_ret,
+                ofi,
+                spread_bps,
+                volatility_state.effective_volatility,
+                event_time_ms,
+            );
+
+        // 27. Geometría Simpléctica de Contacto de Reeb y Dinámica de Vórtices (Fase 60)
+        let reeb_contact_report = self.reeb_contact_engines[safe_coin_id].evaluate(
+            capital_available_usd * risk_fraction,
+            capital_available_usd,
+            spread_bps,
+            volatility_state.effective_volatility,
+            ofi,
+            price_ret,
+        );
+
+        // 28. Factor de Escala de Riesgo Holístico Tri-Slot $\eta_{\text{holistic}}$
         let mps_weight_factor = (mps_dmrg_report.asset_weights[safe_coin_id % MPS_ASSET_CHANNELS]
             * (MPS_ASSET_CHANNELS as f64))
             .clamp(0.50, 1.50);
@@ -535,10 +586,13 @@ impl OmniscientLivingGraphOrchestrator {
             * calabi_yau_report.slot_scaling_factor
             * jarzynski_crooks_report.signal_conviction_modulator
             * gromov_symplectic_report.slot_scaling_factor
+            * penrose_spin_report.slot_scaling_factor
+            * ruelle_frobenius_report.signal_conviction_modulator
+            * reeb_contact_report.slot_scaling_factor
             * mps_weight_factor)
             .clamp(0.10, 1.25);
 
-        // 26. Evaluación Multi-Slot en QuantumSlotOrchestrator (Fase 28 / 33)
+        // 29. Evaluación Multi-Slot en QuantumSlotOrchestrator (Fase 28 / 33)
         let cvd = obi * 1000.0;
         let atr_pct = (volatility_state.effective_volatility * 100.0).clamp(0.001, 0.20);
         let dominant_tau_ms = 30_000.0;
@@ -560,8 +614,8 @@ impl OmniscientLivingGraphOrchestrator {
             open_positions_is_long,
         );
 
-        // 27. Modulación Continua del Grafo Vivo:
-        // Si hay veto duro, rechazo conformal estricto, air pocket, o veto simpléctico de Gromov, aplanar decisiones
+        // 30. Modulación Continua del Grafo Vivo:
+        // Si hay veto duro, rechazo conformal estricto, air pocket, veto simpléctico de Gromov o veto de Reeb, aplanar decisiones
         let allow_entry = !conformal_decision.is_hard_vetoed
             && !quantum_no_arbitrage_report.hard_veto_induced
             && !chern_simons_report.topological_veto_induced
@@ -569,6 +623,9 @@ impl OmniscientLivingGraphOrchestrator {
             && !calabi_yau_report.conifold_singularity_detected
             && !jarzynski_crooks_report.irreversible_entropy_collapse
             && !gromov_symplectic_report.gromov_symplectic_veto
+            && !penrose_spin_report.holographic_decoherence_detected
+            && !ruelle_frobenius_report.ergodic_chaotic_collapse
+            && !reeb_contact_report.reeb_contact_veto_induced
             && (spread_bps <= conformal_decision.dynamic_spread_ceiling_bps
                 || conformal_decision.elastic_entry_granted);
 
@@ -577,8 +634,14 @@ impl OmniscientLivingGraphOrchestrator {
                 decision.signal = SignalType::Flat;
                 decision.net_confidence = 0.0;
                 decision.vetoed = true;
-                decision.veto_reason = if gromov_symplectic_report.gromov_symplectic_veto {
+                decision.veto_reason = if reeb_contact_report.reeb_contact_veto_induced {
+                    Some("REEB_CONTACT_TOPOLOGICAL_VETO")
+                } else if gromov_symplectic_report.gromov_symplectic_veto {
                     Some("GROMOV_SYMPLECTIC_VETO")
+                } else if penrose_spin_report.holographic_decoherence_detected {
+                    Some("PENROSE_DECOHERENCE_VETO")
+                } else if ruelle_frobenius_report.ergodic_chaotic_collapse {
+                    Some("RUELLE_CHAOTIC_COLLAPSE_VETO")
                 } else if calabi_yau_report.conifold_singularity_detected {
                     Some("CALABI_YAU_CONIFOLD_VETO")
                 } else if jarzynski_crooks_report.irreversible_entropy_collapse {
@@ -603,7 +666,7 @@ impl OmniscientLivingGraphOrchestrator {
             }
         }
 
-        // 28. Síntesis Coordinada de Emisiones de Órdenes Tri-Slot
+        // 31. Síntesis Coordinada de Emisiones de Órdenes Tri-Slot
         let coordinated_emissions = slot_orchestrator.synthesize_order_emissions(
             &multi_slot_evaluation,
             capital_available_usd,
@@ -611,13 +674,16 @@ impl OmniscientLivingGraphOrchestrator {
             risk_fraction,
         );
 
-        // 29. Verificación de Cota de Ruina de Ville (\mathbb{P}(\text{ruina}) \le 10^{-6})
+        // 32. Verificación de Cota de Ruina de Ville (\mathbb{P}(\text{ruina}) \le 10^{-6})
         let ville_ruin_bound_satisfied = capital_available_usd > 0.0
             && !quantum_no_arbitrage_report.hard_veto_induced
             && !chern_simons_report.topological_veto_induced
             && !calabi_yau_report.conifold_singularity_detected
             && !jarzynski_crooks_report.irreversible_entropy_collapse
             && !gromov_symplectic_report.gromov_symplectic_veto
+            && !penrose_spin_report.holographic_decoherence_detected
+            && !ruelle_frobenius_report.ergodic_chaotic_collapse
+            && !reeb_contact_report.reeb_contact_veto_induced
             && conformal_decision.conformal_risk_score <= 0.85
             && srb_entropy_report.kolmogorov_sinai_entropy < 0.98;
 
@@ -654,6 +720,9 @@ impl OmniscientLivingGraphOrchestrator {
             calabi_yau_report,
             jarzynski_crooks_report,
             gromov_symplectic_report,
+            penrose_spin_report,
+            ruelle_frobenius_report,
+            reeb_contact_report,
         }
     }
 }
