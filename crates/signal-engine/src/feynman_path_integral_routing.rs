@@ -164,6 +164,7 @@ impl Default for FeynmanPathIntegralRoutingEngine {
 
 impl FeynmanPathIntegralRoutingEngine {
     /// Crea una nueva instancia del motor con los parámetros especificados.
+    #[allow(clippy::needless_range_loop)]
     pub fn new(params: FeynmanRoutingParams) -> Self {
         let valid_params = if params.validate().is_ok() {
             params
@@ -218,6 +219,7 @@ impl FeynmanPathIntegralRoutingEngine {
     /// - `ofi`: Order Flow Imbalance normalizado $\in [-1.0, 1.0]$.
     /// - `volatility_scale`: Escala de volatilidad local $\sigma \ge 0.0$.
     #[inline]
+    #[allow(clippy::needless_range_loop)]
     pub fn evaluate(&self, depth: f64, ofi: f64, volatility_scale: f64) -> FeynmanRoutingReport {
         let safe_depth = if depth.is_finite() && depth > 1e-6 {
             depth
