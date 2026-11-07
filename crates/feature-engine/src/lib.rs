@@ -16,6 +16,7 @@ pub mod hawkes;
 pub mod hawkes_cross;
 pub mod hodge_flow;
 pub mod hurst_dfa;
+pub mod hyperbolic_poincare_hodge;
 pub mod kalman;
 pub mod kam_eth_tur_stein;
 pub mod koopman_dmd;
@@ -90,6 +91,10 @@ pub use hawkes::HawkesProcessEngine;
 pub use hodge_flow::{
     CrossMarketHodgeReport, HelmholtzHodgeFlowEngine, HelmholtzHodgeParams,
     HodgeDecompositionResult, HodgeRegime, MAX_HODGE_ASSETS,
+};
+pub use hyperbolic_poincare_hodge::{
+    HyperbolicPoincareHodgeEngine, HyperbolicPoincareHodgeParams, HyperbolicPoincareHodgeReport,
+    PoincarePoint, POINCARE_HISTORY_LEN,
 };
 pub use kalman::KalmanFilter1D;
 pub use kam_eth_tur_stein::{
