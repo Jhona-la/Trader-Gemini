@@ -1122,3 +1122,66 @@ fn lg32_la_inexistencia_exige_el_codigo_y_el_horizonte_documentados() {
     assert!(!inexistencia_probada(1, 1 + HORIZONTE_CONSULTA_ORDEN_MS));
     assert!(!inexistencia_probada(10_000, 5_000), "reloj hacia atrás");
 }
+#[test]
+fn glm210_reserva_no_confirmada_se_cura_con_fila_flat_y_bloquea_sin_evidencia() {
+    // Deadlock de la corrida A3 (2026-11-06): la entrada reserva el slot
+    // (abierto sin confirmar), el FLATTEN cierra en el exchange SIN tocar el
+    // slot del arena, y el gate de reserva se evaluaba ANTES de la
+    // reconciliación que cierra esa reserva con la fila flat remota →
+    // OMS_UNCONFIRMED_LOCAL_RESERVATION eterno (574 snapshots seguidos tras
+    // el primer trade). Con el gate DESPUÉS de reconciliar: la fila flat
+    // cura la reserva (Ready); sin evidencia remota el gate sigue
+    // bloqueando (fail-closed intacto).
+    let _guard = UNIVERSE.lock().unwrap_or_else(|p| p.into_inner());
+    let arena = GlobalArena::build_in_own_stack(100.0);
+    let (session, ready) = session(true, false);
+    let token = session.snapshot_token();
+    // Reserva local sin confirmar (como la deja la entrada antes del fill).
+    let coin = &arena.coins[0];
+    assert!(coin.positions.get_slot(2).open_with_horizon(
+        true,
+        100.0,
+        1.0,
+        10.0,
+        1,
+        110.0,
+        90.0,
+        PositionHorizon::Continuous
+    ));
+    assert!(!coin
+        .positions
+        .get_slot(2)
+        .exchange_confirmed
+        .load(Ordering::Acquire));
+    // Sin evidencia remota: Blocked por reserva no confirmada (sin tocar el
+    // estado local).
+    let sin_fila = session.apply_snapshot(
+        &token,
+        Ok(Vec::new()),
+        Ok(Vec::new()),
+        fees(&token),
+        &arena,
+        1_000,
+    );
+    assert_eq!(sin_fila.status, SnapshotStatus::Blocked);
+    assert_eq!(
+        sin_fila.error.as_deref(),
+        Some("OMS_UNCONFIRMED_LOCAL_RESERVATION")
+    );
+    assert!(coin.positions.get_slot(2).is_open());
+    assert!(!ready.load(Ordering::Acquire));
+    // Con la fila flat del universo (el exchange ya cerró): la reconciliación
+    // cierra la reserva ANTES del gate y el snapshot sale Ready. Este es el
+    // caso que quedó en deadlock eterno en la corrida A3.
+    let curada = session.apply_snapshot(
+        &token,
+        Ok(flat_positions()),
+        Ok(Vec::new()),
+        fees(&token),
+        &arena,
+        2_000,
+    );
+    assert_eq!(curada.status, SnapshotStatus::Ready, "{:?}", curada.error);
+    assert!(!arena.coins[0].positions.slot_2.is_open());
+    assert!(ready.load(Ordering::Acquire));
+}

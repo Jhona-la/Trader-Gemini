@@ -597,28 +597,39 @@ impl OmsSession {
             outcome.pending_regular_orders = orders.len();
             return outcome;
         }
-        if arena.coins.iter().any(|coin| {
-            coin.positions
-                .slots()
-                .iter()
-                .any(|p| p.is_open() && !p.exchange_confirmed.load(Ordering::Acquire))
-        }) {
-            let mut outcome = SnapshotOutcome::empty(SnapshotStatus::Blocked);
-            outcome.error = Some("OMS_UNCONFIRMED_LOCAL_RESERVATION".into());
-            return outcome;
-        }
         let adopted = report.apply_to_registry_with_rates(&registry, |symbol| {
             quantum_arena::symbols::get_coin_id(symbol)
                 .and_then(|ci| arena.config.fee_rates_for(ci))
                 .map(|(_, taker)| taker)
         });
         let arena_report = reconciliation::reconcile_arena_checked(&positions, arena, now_ms);
+        // GLM-210 (A3, 2026-11-06): el gate de reserva no confirmada se
+        // evalúa DESPUÉS de la reconciliación. Antes corría antes y creaba un
+        // deadlock auto-sostenido: la entrada reserva el slot (abierto sin
+        // confirmar), el FLATTEN cierra en el exchange sin tocar el slot del
+        // arena, y el gate bloqueaba el snapshot ANTES de que
+        // reconcile_arena_checked pudiera cerrar esa reserva con la fila flat
+        // remota — la corrida A3 quedó en Blocked eterno desde su primer
+        // trade (574 snapshots OMS_UNCONFIRMED_LOCAL_RESERVATION seguidos).
+        // Reconciliar primero es seguro respecto de la intención original
+        // («no cerrar reservas con órdenes resting vivas»): el gate de arriba
+        // ya salió si había órdenes. La adopción marca exchange_confirmed y el
+        // cierre por fila flat baja el slot, así que el gate sólo dispara con
+        // un slot que SIGUE abierto y sin confirmar tras la evidencia remota
+        // — ese sí es un estado que debe bloquear la admisión.
+        let reserva_no_confirmada = arena.coins.iter().any(|coin| {
+            coin.positions
+                .slots()
+                .iter()
+                .any(|p| p.is_open() && !p.exchange_confirmed.load(Ordering::Acquire))
+        });
         // Do not manufacture CANCELED acknowledgements merely because no position exists:
         // a regular resting order can be live before it creates a position.
         let pruned = registry.prune_terminated(now_ms.saturating_sub(600_000));
         let ready = arena_report.unresolved.is_empty()
             && report.orphan_remote_orders.is_empty()
-            && unresolved_orders == 0;
+            && unresolved_orders == 0
+            && !reserva_no_confirmada;
         if ready {
             state.approved_universe = Some(universe);
         }
@@ -640,7 +651,11 @@ impl OmsSession {
             unresolved_orders,
             pending_regular_orders: orders.len(),
             pruned,
-            error: None,
+            error: if reserva_no_confirmada {
+                Some("OMS_UNCONFIRMED_LOCAL_RESERVATION".into())
+            } else {
+                None
+            },
         }
     }
 

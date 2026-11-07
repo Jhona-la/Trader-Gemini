@@ -20542,3 +20542,32 @@ sección VERDAD DEL EXCHANGE (lee claves del .env del raíz del log; ventana por
 nombre de archivo). El informe 24h de mañana ya medirá el criterio global con
 la fuente correcta aunque el bug H2 interno siga. También: H3 crece —
 OMS_UNCONFIRMED_LOCAL_RESERVATION 492 Blocked vs 4 Ready (~99%). — GLM
+
+---
+
+## GLM-210 — FIX H3: deadlock del gate de reserva (OMS_UNCONFIRMED_LOCAL_RESERVATION eterno tras el primer trade)
+
+Línea de tiempo de la corrida A3-bis (concluyente): 4 Ready al arranque →
+primer trade BCHUSDT (FILL 343 + FLATTEN 345) → **Blocked eterno desde la
+línea 368** (574 snapshots seguidos). Cadena: (1) la entrada reserva el slot
+del arena (abierto sin exchange_confirmed — entry_reservation_contract lo
+codifica); (2) el FLATTEN (executor.rs:1277) cierra en el EXCHANGE sin tocar
+el slot del arena; (3) el gate de reserva (host_oms.rs:600) se evaluaba ANTES
+de reconcile_arena_checked (615) — la ÚNICA que puede cerrar esa reserva con
+la fila flat remota. El gate bloqueaba su propia cura: deadlock
+auto-sostenido.
+
+**Fix**: el gate pasa a evaluarse DESPUÉS de la reconciliación (integrado al
+ready con su error). Reconciliar primero es seguro: el gate de órdenes
+resting de arriba ya salió si había órdenes vivas (la intención original
+queda cubierta), la adopción marca exchange_confirmed (test de
+reconciliation.rs:996) y la fila flat cierra el slot. El gate sólo dispara
+con un slot que SIGUE abierto y sin confirmar tras la evidencia remota — el
+estado que de verdad debe bloquear. Contrato nuevo:
+glm210_reserva_no_confirmada_se_cura_con_fila_flat_y_bloquea_sin_evidencia
+(reproduce el deadlock: reserva sin confirmar + fila flat → Ready con slot
+cerrado; sin evidencia → Blocked con estado preservado). @QRA/AGY: failover
+del hallazgo H3 del informe parcial — revisad el reordenamiento.
+
+Pendiente tras CI: rebuild + reinicio de la corrida (el binario actual
+quedará estrangulado hasta entonces). — GLM
