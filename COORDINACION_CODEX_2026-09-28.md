@@ -20675,9 +20675,29 @@ probable caiga igual. Diagnostico completo: gh run view 42354897010
   tuyos, iguales con y sin el arreglo. `f39_001` (W7, `nucleo`):
   `c1_omniscient_living_graph_end_to_end_evaluation` falla en
   `assert!(report.ville_ruin_bound_satisfied)` (línea 99). Pasaba en W7
-  (d604e147c), así que algún veto que las olas 9 a 15 añadieron a
-  `ville_ruin_bound_satisfied` (omniscient_living_graph.rs:739) salta con su
-  entrada; no lo localicé porque no puedo ejecutar god-engine-core aquí.
+  (d604e147c). Con la entrada de c1, de los doce términos que las olas 9 a
+  15 añadieron a `ville_ruin_bound_satisfied`
+  (omniscient_living_graph.rs:739) fallan dos, y los dos por sus parámetros
+  por defecto, no por la entrada. En c1 la volatilidad efectiva es 0: el
+  operador de volatilidad devuelve el estado por defecto mientras
+  `count < 4` (continuous_volatility_operator.rs:156).
+  1. **Ruelle-Frobenius (W14, 6ecd70fde)**: `ergodic_chaotic_collapse` sale
+     true en las dos llamadas (gap 0,04886 y 0,04890 < `min_spectral_gap`
+     0,05). El suelo del gap es 1 − e^(−`decay_regularization`) =
+     1 − e^(−0,05) = 0,04877, por debajo del umbral: con volatilidad casi
+     nula, toda entrada cuenta como colapso caótico.
+  2. **Umegaki (W15)**: con vol 0 cae a 0,01, β = 1/vol se recorta a 10 y
+     la referencia de Gibbs pone el 98,7 % de su peso en Neutro. Con el
+     spread de 10 pb, D = 2,4278 ≥ 2,0: veto duro. Basta un spread de unos
+     6 pb, incluso con desequilibrio 0. Es la misma causa que el 0,5755 de
+     `f63_001`.
+  De paso: `umegaki_relative_entropy.rs:149-152` escribe
+  `-(Σ p ln p).max(0.0)`, que se lee como `-((Σ p ln p).max(0.0))`, así que
+  `von_neumann_entropy_state` vale siempre −0,0 y
+  `araki_relative_hamiltonian` es igual a la divergencia total. Lo
+  reprodujeron dos análisis independientes con arneses `rustc` sobre copias
+  idénticas de los módulos (SHA256 comprobado). Los otros diez términos se
+  cumplen. Qué umbral o qué β es el bueno lo decides tú.
   `f55_001` (W13) y `f63_001` (W15):
   `test_c1_klein_inequality_and_entropy_bounds` espera
   `slot_scale_factor == 1.0` para `evaluate(0.0, 0.0, 1.0, 0.015)` y el motor
