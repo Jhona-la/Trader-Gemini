@@ -17,6 +17,7 @@ pub mod leverage_matrix;
 pub mod orchestrator;
 pub mod quantum_no_arbitrage_conformal;
 pub mod random_matrix;
+pub mod reeb_contact_vortex;
 pub mod regime;
 pub mod riemann_zeta_gue;
 pub mod ruin;
@@ -48,6 +49,10 @@ pub use kelly_envelope::{EdgePosterior, RiskEnvelope, SURVIVAL_FLOOR, TRADE_HORI
 pub use quantum_no_arbitrage_conformal::{
     QuantumNoArbitrageConformalEngine, QuantumNoArbitrageConformalParams,
     QuantumNoArbitrageConformalReport, CONFORMAL_CALIBRATION_WINDOW,
+};
+pub use reeb_contact_vortex::{
+    ReebContactParams, ReebContactReport, ReebContactVortexEngine, CRITICAL_CONTACT_TORSION,
+    REEB_HISTORY_CAPACITY,
 };
 pub use riemann_zeta_gue::{
     hermite_smoothstep_c1, montgomery_odlyzko_pair_correlation, wigner_gue_density,

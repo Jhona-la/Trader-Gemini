@@ -1568,6 +1568,126 @@ En cada evaluación de riesgo previa al enrutamiento de órdenes en `crates/risk
 - Rol 8 Físico-Matemático de Geometría Simpléctica.
 - Rol 10 Auditor Forense Causal.
 
+---
+
+## PARTE XV — OLA 14: FASES 58, 59 Y 60 (REDES DE ESPÍN DE PENROSE, TRANSFERENCIA DE RUELLE-FROBENIUS Y VÓRTICES DE REEB)
+
+---
+
+### 🕸️ FASE 58 (§58) — GRAFO DE ESPÍN CUÁNTICO DE PENROSE Y ENTROPÍA HOLOGRÁFICA RYU-TAKAYANAGI
+
+#### 1. QUÉ
+Diseño e implementación del motor cuántico de microestructura basado en redes de espín de Penrose y gravedad cuántica de lazos (`PenroseSpinNetworkEngine`), complementado con el cómputo de la entropía holográfica de Ryu-Takayanagi $S_{\text{RT}} = \frac{\text{Area}(\gamma_A)}{4 G_N}$.
+
+#### 2. POR QUÉ
+Los flujos de liquidez de alta frecuencia no responden a geometrías continuas euclidianas suaves en escalas microscópicas. Presentan una estructura discreta de espín $j_e \in \{1/2, 1, 3/2, 2\}$ asociada a la cuantización del área del libro de órdenes. La desconexión o evaporación súbita de aristas en la red de Penrose precede rupturas de liquidez y vacíos de volatilidad extrema.
+
+#### 3. PARA QUÉ
+Extraer invariantes topológicos de espín, cuantizar el área efectiva del libro $A = 8\pi \gamma \ell_P^2 \sum \sqrt{j(j+1)}$, calcular la superficie minimal extremal $\gamma_A$ que biseca el espacio de órdenes, y evaluar la entropía holográfica Ryu-Takayanagi $S_{\text{RT}} \in [0.0, 1.0]$ para modular la asignación de capital y vetar transiciones de fase de desintegración cuántica.
+
+#### 4. CÓMO (Mecanismo Matemático y Algorítmico Paso a Paso)
+1. **Red de Espín de 6 Vértices:**
+   Grafo $G = (V, E)$ con $|V| = 6$ vértices representando niveles de profundidad (Ask2, Ask1, Mid, Bid1, Bid2, Flow).
+2. **Asignación Cuántica de Espines:**
+   Mapeo de micro-desequilibrio de flujo y profundidad a números cuánticos de momento angular $j \in \{1/2, 1, 3/2, 2\}$.
+3. **Invariante de Lazo de Wilson:**
+   Evaluación de la traza de holonomías de conexión gauge SU(2) sobre lazos cerrados del libro.
+4. **Cómputo Holográfico de Ryu-Takayanagi:**
+   Búsqueda de la superficie extremal $\gamma_A$ con área mínima que separa subsistemas de liquidez:
+   $$S_{\text{RT}} = \frac{\text{Area}(\gamma_A)}{4 G_N} \in [0.0, 1.0]$$
+5. **Detección de Ruptura de Red:**
+   Emisión de alerta de desintegración cuántica de liquidez si $S_{\text{RT}} \le 0.05$ con entropía divergente.
+
+#### 5. CUÁNDO
+En cada tick de libro y actualización de microestructura en `crates/feature-engine`.
+
+#### 6. DÓNDE
+- Módulo: `crates/feature-engine/src/penrose_spin_network.rs`.
+- Re-exportado en: `crates/feature-engine/src/lib.rs`.
+- Contrato formal: `crates/feature-engine/tests/f58_001_penrose_spin_network_contract.rs`.
+
+#### 7. QUIÉN
+- Rol 1 Arquitecto Senior Cuántico.
+- Rol 8 Físico-Matemático de Gravedad Cuántica y Holografía.
+
+---
+
+### 🌊 FASE 59 (§59) — OPERADORES DE TRANSFERENCIA DE RUELLE-PERRON-FROBENIUS Y RESONANCIAS POLLICOTT-RUELLE
+
+#### 1. QUÉ
+Diseño e implementación del operador dinámico estocástico de transferencia de Ruelle-Perron-Frobenius (`RuelleFrobeniusTransferEngine`) $\mathcal{L}_\phi f(x) = \sum_{y \in \Phi^{-1}(x)} e^{\phi(y)} f(y)$ y análisis espectral de resonancias de Pollicott-Ruelle $z_k = e^{-\gamma_k + i \omega_k}$ sobre el espacio de estados continuos.
+
+#### 2. POR QUÉ
+Los mercados financieros operan en regímenes caóticos hiperbólicos donde las medidas físicas de equilibrio (medidas Sinai-Ruelle-Bowen o SRB) evolucionan bajo el operador de transferencia. Las resonancias de Pollicott-Ruelle determinan la tasa intrínseca de decaimiento de correlaciones del sistema. Cuando la brecha espectral $\Delta_{\text{gap}} = 1 - |\lambda_2/\lambda_1| \to 0$, el mezclado ergódico desaparece, detonando atrapamiento en resonancias no lineales destructivas.
+
+#### 3. PARA QUÉ
+Calcular con precisión de sub-nanosegundos la tasa de decaimiento de correlaciones $\gamma_{\text{decay}} = -\ln |\lambda_2|$, cuantificar la brecha espectral continua $\Delta_{\text{gap}} \in [0.0, 1.0]$, y activar el veto dinámico `RUELLE_TRANSFER_COLLAPSE_VETO` reduciendo la escala a cero ante pérdidas de hiperbolicidad.
+
+#### 4. CÓMO (Mecanismo Matemático y Algorítmico Paso a Paso)
+1. **Aproximación de Ulam sobre Partición de Markov:**
+   Discretización hermética en $M=8$ estados del espacio de fases continuo $(\Delta p, \sigma, \text{ofi})$.
+2. **Matriz Estocástica de Perron-Frobenius:**
+   Construcción de matriz no-negativa $P_{ij}$ normalizada por filas cumpliendo el teorema de Frobenius.
+3. **Iteración de Potencias / Arnoldi en Stack $O(1)$:**
+   Extracción de los dos autovalores dominantes $\lambda_1 = 1.0$ y $\lambda_2 \in \mathbb{C}$.
+4. **Cálculo de Brecha y Decaimiento:**
+   $$\Delta_{\text{gap}} = 1.0 - |\lambda_2|, \quad \gamma_{\text{decay}} = -\ln(\max(|\lambda_2|, 10^{-6}))$$
+5. **Veto Espectral:**
+   Si $\Delta_{\text{gap}} < 0.05$, el flujo entra en resonancia colapsante: activación de veto y reducción de convicción.
+
+#### 5. CUÁNDO
+En cada ciclo de generación y síntesis de señales de alta frecuencia en `crates/signal-engine`.
+
+#### 6. DÓNDE
+- Módulo: `crates/signal-engine/src/ruelle_frobenius_transfer.rs`.
+- Re-exportado en: `crates/signal-engine/src/lib.rs`.
+- Contrato formal: `crates/signal-engine/tests/f59_001_ruelle_frobenius_transfer_contract.rs`.
+
+#### 7. QUIÉN
+- Rol 2 Quant Developer Senior.
+- Rol 7 Experto en Dinámica Caótica y Resonancias Espectrales.
+
+---
+
+### 🌀 FASE 60 (§60) — GEOMETRÍA SIMPLÉCTICA DE CONTACTO DE REEB Y DINÁMICA DE VÓRTICES HAMILTONIANOS
+
+#### 1. QUÉ
+Diseño e implementación del motor de seguridad y confinamiento mediante geometría de contacto y dinámica de campos de Reeb (`ReebContactVortexEngine`), con cálculo de órbitas de Weinstein, helicidad de contacto $\mathcal{H} = \int \alpha \wedge d\alpha$ y vorticidad hidrodinámica de Onsager.
+
+#### 2. POR QUÉ
+La hipersuperficie de energía del portfolio y el mercado posee una estructura natural de contacto dada por una 1-forma $\alpha$ que satisface $\alpha \wedge d\alpha \neq 0$. El campo vectorial de Reeb $R_\alpha$ caracteriza las trayectorias estacionarias libres de disipación de capital. Cuando el flujo de órdenes entra en un vórtice turbulento con alta circulación $\Gamma = \oint \alpha > \Gamma_{\text{crit}}$, las órdenes son atrapadas en bucles de fricción severa y deslizamiento explosivo.
+
+#### 3. PARA QUÉ
+Estimar el campo de Reeb $R_\alpha$, medir la circulación del vórtice $\Gamma_{\text{circ}} \in [0.0, 1.0]$, evaluar la helicidad de contacto $\mathcal{H}_{\text{reeb}}$, y activar de manera determinista el veto absoluto `REEB_VORTEX_CONFINEMENT_VETO` (escala 0.0), blindando al `OmniscientLivingGraphOrchestrator` contra trampas de vórtice.
+
+#### 4. CÓMO (Mecanismo Matemático y Algorítmico Paso a Paso)
+1. **1-Forma de Contacto en 3D:**
+   $\alpha = dt + p \cdot dq - \text{spread} \cdot d(\text{depth})$.
+2. **Condición de Contacto no Degenerada:**
+   Verificación de que $\alpha \wedge d\alpha \neq 0$ en cada paso temporal continuo.
+3. **Dirección de Reeb:**
+   Cálculo del vector de Reeb unitario $R_\alpha = (R_t, R_p, R_\sigma)$ tal que $\alpha(R_\alpha) = 1$ y $d\alpha(R_\alpha, \cdot) = 0$.
+4. **Circulación del Vórtice de Weinstein:**
+   Integración discreta de la circulación de vórtice a lo largo de la órbita de liquidez.
+5. **Activación de Veto de Confinamiento:**
+   Si $\Gamma_{\text{circ}} \ge 0.85$, activación de veto duro y reducción a 0.0 de todos los multiplicadores de asignación.
+
+#### 5. CUÁNDO
+En cada evaluación de riesgo holístico en `crates/risk-engine` e integrado en `crates/god-engine-core`.
+
+#### 6. DÓNDE
+- Módulo: `crates/risk-engine/src/reeb_contact_vortex.rs`.
+- Re-exportado en: `crates/risk-engine/src/lib.rs`.
+- Integrado en: `crates/god-engine-core/src/omniscient_living_graph.rs`.
+- Contrato formal: `crates/risk-engine/tests/f60_001_reeb_contact_vortex_contract.rs`.
+- Contrato de síntesis holística: `crates/god-engine-core/tests/f60_002_wave14_living_graph_synthesis_contract.rs`.
+
+#### 7. QUIÉN
+- Rol 3 Risk Manager Senior.
+- Rol 8 Geómetra Simpléctico y Topólogo de Contacto.
+- Rol 10 Auditor Forense Causal.
+
+
 
 
 

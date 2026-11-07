@@ -196,6 +196,24 @@ fn test_c1_holistic_living_graph_end_to_end_synthesis() {
     assert!(report.gromov_symplectic_report.hole_capacity_radius > 0.0);
     assert!(!report.gromov_symplectic_report.gromov_symplectic_veto);
     assert!(report.gromov_symplectic_report.slot_scaling_factor >= 0.10);
+
+    // 23. Grafo de Espín Cuántico de Penrose y Entropía Ryu-Takayanagi (Fase 58)
+    assert!(report.penrose_spin_report.ryu_takayanagi_entropy >= 0.0);
+    assert!((0.0..=1.0).contains(&report.penrose_spin_report.intertwiner_norm));
+    assert!(!report.penrose_spin_report.holographic_decoherence_detected);
+    assert!(report.penrose_spin_report.slot_scaling_factor >= 0.10);
+
+    // 24. Operador de Transferencia de Ruelle-Frobenius (Fase 59)
+    assert!(report.ruelle_frobenius_report.leading_decay_rate_gamma > 0.0);
+    assert!((0.0..=1.0).contains(&report.ruelle_frobenius_report.spectral_gap));
+    assert!(!report.ruelle_frobenius_report.ergodic_chaotic_collapse);
+    assert!(report.ruelle_frobenius_report.signal_conviction_modulator >= 0.05);
+
+    // 25. Geometría Simpléctica de Contacto de Reeb (Fase 60)
+    assert!(report.reeb_contact_report.reeb_vector_norm >= 0.9);
+    assert!(report.reeb_contact_report.contact_torsion_intensity >= 0.0);
+    assert!(!report.reeb_contact_report.reeb_contact_veto_induced);
+    assert!(report.reeb_contact_report.slot_scaling_factor >= 0.10);
 }
 
 #[test]
