@@ -192,60 +192,27 @@ impl MongeKantorovichWassersteinEngine {
             log_nu[i] = (nu[i].max(1e-15)).ln();
         }
 
+        // Los dos medios pasos de cada iteración van en `medio_paso_sinkhorn`.
+        // Escritos aquí, en línea, LLVM (rustc nightly-2026-06-30) no terminaba
+        // de optimizar esta función con opt-level=3: el crate no compilaba y el
+        // CI caía por tiempo. El medio paso de g recorre la matriz transpuesta:
+        // los mismos valores en el mismo orden, así que el resultado es el
+        // mismo bit a bit (tests/sinkhorn_sin_cuelgue_contract.rs).
+        let mut cost_t = [[0.0; WASSERSTEIN_NODES]; WASSERSTEIN_NODES];
+        for i in 0..n {
+            for j in 0..n {
+                cost_t[j][i] = cost[i][j];
+            }
+        }
+
         let mut iters_done = 0;
         for iter in 0..self.params.max_iterations {
             iters_done = iter + 1;
-            let mut max_err = 0.0;
-
-            // Actualización de f_i: f_i = eps * log_mu_i - eps * logsumexp_j((g_j - C_{ij})/eps)
-            for i in 0..n {
-                let mut max_val = f64::NEG_INFINITY;
-                for j in 0..n {
-                    let v = (g[j] - cost[i][j]) / eps;
-                    if v > max_val {
-                        max_val = v;
-                    }
-                }
-
-                let mut sum_exp = 0.0;
-                for j in 0..n {
-                    let v = (g[j] - cost[i][j]) / eps;
-                    sum_exp += (v - max_val).exp();
-                }
-
-                let lse = max_val + sum_exp.max(1e-15).ln();
-                let next_f = eps * (log_mu[i] - lse);
-                let diff = (next_f - f[i]).abs();
-                if diff > max_err {
-                    max_err = diff;
-                }
-                f[i] = next_f;
-            }
-
-            // Actualización de g_j: g_j = eps * log_nu_j - eps * logsumexp_i((f_i - C_{ij})/eps)
-            for j in 0..n {
-                let mut max_val = f64::NEG_INFINITY;
-                for i in 0..n {
-                    let v = (f[i] - cost[i][j]) / eps;
-                    if v > max_val {
-                        max_val = v;
-                    }
-                }
-
-                let mut sum_exp = 0.0;
-                for i in 0..n {
-                    let v = (f[i] - cost[i][j]) / eps;
-                    sum_exp += (v - max_val).exp();
-                }
-
-                let lse = max_val + sum_exp.max(1e-15).ln();
-                let next_g = eps * (log_nu[j] - lse);
-                let diff = (next_g - g[j]).abs();
-                if diff > max_err {
-                    max_err = diff;
-                }
-                g[j] = next_g;
-            }
+            // f_i = eps * log_mu_i - eps * logsumexp_j((g_j - C_{ij})/eps)
+            let err_f = medio_paso_sinkhorn(&mut f, &g, &cost, &log_mu, eps);
+            // g_j = eps * log_nu_j - eps * logsumexp_i((f_i - C_{ij})/eps)
+            let err_g = medio_paso_sinkhorn(&mut g, &f, &cost_t, &log_nu, eps);
+            let max_err = if err_g > err_f { err_g } else { err_f };
 
             if max_err < self.params.tolerance {
                 break;
@@ -320,4 +287,48 @@ impl MongeKantorovichWassersteinEngine {
     pub fn reference_distribution(&self) -> &[f64; WASSERSTEIN_NODES] {
         &self.reference_distribution
     }
+}
+
+/// Medio paso de Sinkhorn en el dominio log: para cada fila `a` de `coste`,
+/// `destino[a] = eps * (log_marginal[a] - logsumexp_b((otro[b] - coste[a][b]) / eps))`.
+/// Devuelve el mayor cambio de `destino`.
+///
+/// `#[inline(never)]` es lo que evita el cuelgue de LLVM, no el rendimiento:
+/// sin él, LLVM decide si la inlinea según la CPU y las comprobaciones (con
+/// `overflow-checks` o `debug-assertions` la inlinea en `update_and_evaluate`
+/// y el cuelgue vuelve). Con él, el módulo compila en un segundo con
+/// opt-level=3 en cada CPU y número de unidades de código probados.
+#[inline(never)]
+fn medio_paso_sinkhorn(
+    destino: &mut [f64; WASSERSTEIN_NODES],
+    otro: &[f64; WASSERSTEIN_NODES],
+    coste: &[[f64; WASSERSTEIN_NODES]; WASSERSTEIN_NODES],
+    log_marginal: &[f64; WASSERSTEIN_NODES],
+    eps: f64,
+) -> f64 {
+    let mut max_err = 0.0;
+    for (a, fila) in coste.iter().enumerate() {
+        let mut max_val = f64::NEG_INFINITY;
+        for (b, &c) in fila.iter().enumerate() {
+            let v = (otro[b] - c) / eps;
+            if v > max_val {
+                max_val = v;
+            }
+        }
+
+        let mut sum_exp = 0.0;
+        for (b, &c) in fila.iter().enumerate() {
+            let v = (otro[b] - c) / eps;
+            sum_exp += (v - max_val).exp();
+        }
+
+        let lse = max_val + sum_exp.max(1e-15).ln();
+        let siguiente = eps * (log_marginal[a] - lse);
+        let diff = (siguiente - destino[a]).abs();
+        if diff > max_err {
+            max_err = diff;
+        }
+        destino[a] = siguiente;
+    }
+    max_err
 }
