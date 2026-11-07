@@ -336,9 +336,8 @@ impl OmniscientLivingGraphOrchestrator {
         // 13. Colector Hiperbólico de Poincaré-Hodge (Fase 46)
         let ofi = obi;
         let poincare_hodge_report = self.poincare_hodge_engines[safe_coin_id].update_and_evaluate(
-            mid_price,
+            price_ret,
             ofi,
-            spread_bps,
             event_time_ms,
         );
 
@@ -351,18 +350,20 @@ impl OmniscientLivingGraphOrchestrator {
         );
 
         // 15. Metamorfosis Topológica Adaptativa del Grafo Vivo (Fase 48)
-        let activations = [
-            poincare_hodge_report.area_vorticity.clamp(-1.0, 1.0),
-            navier_stokes_report.vorticity_flux.clamp(-1.0, 1.0),
+        let activations: [f64; METAMORPHOSIS_NODES] = [
+            poincare_hodge_report
+                .symplectic_area_vorticity
+                .clamp(-1.0, 1.0),
+            navier_stokes_report.max_vorticity.clamp(-1.0, 1.0),
             su3_alpha.clamp(-1.0, 1.0),
             (1.0 - 2.0 * conformal_decision.conformal_risk_score).clamp(-1.0, 1.0),
             (2.0 * feynman_routing_report.optimal_slice_fraction - 1.0).clamp(-1.0, 1.0),
             mfg_alpha.clamp(-1.0, 1.0),
             connes_spectral_report.chiral_index.clamp(-1.0, 1.0),
-            (mps_dmrg_report.von_neumann_entanglement_entropy - 0.5).clamp(-1.0, 1.0),
+            (mps_dmrg_report.entanglement_entropy - 0.5).clamp(-1.0, 1.0),
             (1.0 - 2.0 * srb_entropy_report.kolmogorov_sinai_entropy).clamp(-1.0, 1.0),
             shockwave_report.hydrodynamic_conviction.clamp(-1.0, 1.0),
-            (wasserstein_report.wasserstein_divergence * 0.1).clamp(-1.0, 1.0),
+            (wasserstein_report.w1_distance * 0.1).clamp(-1.0, 1.0),
             (price_ret * 50.0).clamp(-1.0, 1.0),
         ];
         let metamorphosis_report = self.metamorphosis_engine.update(&activations, 1.0);

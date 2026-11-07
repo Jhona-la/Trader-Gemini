@@ -122,8 +122,11 @@ fn test_c1_holistic_living_graph_end_to_end_synthesis() {
     assert!(report.ville_ruin_bound_satisfied);
 
     // 11. Colector Hiperbólico de Poincaré-Hodge (Fase 46)
-    assert!(report.poincare_hodge_report.distance >= 0.0);
-    assert!(report.poincare_hodge_report.area_vorticity.is_finite());
+    assert!(report.poincare_hodge_report.geodesic_distance_to_center >= 0.0);
+    assert!(report
+        .poincare_hodge_report
+        .symplectic_area_vorticity
+        .is_finite());
 
     // 12. Enrutamiento Cuántico por Integral de Caminos de Feynman (Fase 47)
     assert!(report.feynman_routing_report.optimal_slice_fraction > 0.0);
