@@ -1,3 +1,4 @@
+pub mod bergman_fock_reproducing;
 pub mod bouchaud_mezard_ewl;
 pub mod calabi_yau_seiberg_witten;
 pub mod caputo_fraccional;
@@ -58,6 +59,9 @@ pub mod welford;
 pub mod zakai_doob_amplituhedron;
 
 // Re-exportar primitivas matemáticas O(1)
+pub use bergman_fock_reproducing::{
+    BergmanFockParams, BergmanFockReport, BergmanFockReproducingEngine, BERGMAN_COMPLEX_DIM,
+};
 pub use bouchaud_mezard_ewl::{
     BouchaudMezardEngine, BouchaudMezardParams, BouchaudMezardReport, EwlQuantumGameEngine,
     EwlQuantumGameReport, LiquidityCondensationRegime, QuantumStrategySU2, MAX_BM_LEVELS,

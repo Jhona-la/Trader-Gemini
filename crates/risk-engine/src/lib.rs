@@ -25,6 +25,7 @@ pub mod selection_stats;
 pub mod sonda;
 pub mod tensor_network_mps_dmrg;
 pub mod tp_sl;
+pub mod umegaki_relative_entropy;
 pub mod veto_registry;
 pub mod ville_e_process;
 pub mod ville_grossman_ignition_gate;
@@ -65,6 +66,10 @@ pub use sonda::{
 };
 pub use tensor_network_mps_dmrg::{
     MpsDmrgParams, MpsDmrgReport, TensorNetworkMpsDmrgEngine, MPS_ASSET_CHANNELS, MPS_BOND_DIM,
+};
+pub use umegaki_relative_entropy::{
+    UmegakiEntropyParams, UmegakiEntropyReport, UmegakiRelativeEntropyEngine,
+    UMEGAKI_CRITICAL_ENTROPY_THRESHOLD, UMEGAKI_HILBERT_DIM,
 };
 pub use tp_sl::{
     compute_tp_sl, compute_tp_sl_with_target_rr, latency_slippage_pct, latency_slippage_pct_hurst,
