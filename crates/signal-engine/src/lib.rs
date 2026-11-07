@@ -15,6 +15,7 @@ pub mod feynman_path_integral_routing;
 pub mod feynman_propagator;
 pub mod flow_excitation_confluence;
 pub mod flow_impulse;
+pub mod fractional_rough_volatility;
 pub mod game_theoretic_nash;
 pub mod hawkes_bessel;
 pub mod mean_field_games_psychology;
@@ -45,6 +46,10 @@ pub use feynman_path_integral_routing::{
     ROUTING_PATH_CANDIDATES, ROUTING_PATH_SLICES,
 };
 pub use feynman_propagator::{FeynmanPropagatorEngine, FeynmanPropagatorParams};
+pub use fractional_rough_volatility::{
+    FractionalRoughVolatilityEngine, FractionalRoughVolatilityParams,
+    FractionalRoughVolatilityReport, ROUGH_VOL_WINDOW,
+};
 pub use hawkes_bessel::{HawkesBesselEngine, HawkesBesselParams};
 pub use maker::{MakerEngine, MakerQuote};
 pub use mean_field_games_psychology::{

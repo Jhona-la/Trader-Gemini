@@ -135,6 +135,31 @@ fn test_c1_holistic_living_graph_end_to_end_synthesis() {
     // 13. Metamorfosis Topológica del Grafo Vivo Autónomo (Fase 48)
     assert!(report.metamorphosis_report.active_edge_count > 0);
     assert!(report.metamorphosis_report.spectral_radius_bound <= 1.0);
+
+    // 14. Flujo Geodésico Cuántico y Cuantización BRST (Fase 49)
+    assert!(report.geodesic_phase_space_report.hamiltonian_energy >= 0.0);
+    assert!((0.0..=1.0).contains(&report.geodesic_phase_space_report.ghost_evaporation_ratio));
+    assert!(report.geodesic_phase_space_report.slot_scaling_factor >= 0.10);
+
+    // 15. Volatilidad Rugosa Fraccionaria de Riemann-Liouville (Fase 50)
+    assert!(report.fractional_rough_vol_report.instantaneous_vol >= 0.0);
+    assert!((0.02..=0.48).contains(&report.fractional_rough_vol_report.adaptive_hurst_estimate));
+    assert!(
+        report
+            .fractional_rough_vol_report
+            .signal_resonance_modulator
+            >= 0.10
+    );
+
+    // 16. Gobernanza Conformal y Barrera FTAP de No-Arbitraje Cuántico (Fase 51)
+    assert!(
+        report
+            .quantum_no_arbitrage_report
+            .conformal_quantile_threshold
+            > 0.0
+    );
+    assert!((0.0..=1.0).contains(&report.quantum_no_arbitrage_report.conformal_risk_multiplier));
+    assert!(!report.quantum_no_arbitrage_report.hard_veto_induced);
 }
 
 #[test]

@@ -1,8 +1,10 @@
 pub mod adaptive_quantum_veto;
-pub mod copulas_store;
 pub mod capital_regime;
-pub mod cramer_lundberg;
+pub mod copulas_store;
 pub mod correlation_guard;
+pub mod cramer_lundberg;
+pub mod drawdown;
+pub mod envio;
 pub mod evidence;
 pub mod freno_estrategia;
 pub mod guard;
@@ -11,17 +13,16 @@ pub mod kelly;
 pub mod kelly_envelope;
 pub mod leverage_matrix;
 pub mod orchestrator;
+pub mod quantum_no_arbitrage_conformal;
 pub mod random_matrix;
 pub mod regime;
 pub mod riemann_zeta_gue;
-pub mod drawdown;
-pub mod envio;
 pub mod ruin;
+pub mod selection_stats;
 pub mod sonda;
 pub mod tensor_network_mps_dmrg;
 pub mod tp_sl;
 pub mod veto_registry;
-pub mod selection_stats;
 pub mod ville_e_process;
 pub mod ville_grossman_ignition_gate;
 
@@ -30,16 +31,20 @@ pub use adaptive_quantum_veto::{
     MarketQuantumStateInput,
 };
 pub use capital_regime::{resolve_micro_max_fee_pct, DEFAULT_MICRO_MAX_FEE_PCT};
-pub use riemann_zeta_gue::{
-    hermite_smoothstep_c1, montgomery_odlyzko_pair_correlation, wigner_gue_density,
-    RiemannZetaGueEngine, RiemannZetaGueState, GUE_RIEMANN_GAP_RATIO_MEAN,
-    MAX_RIEMANN_GUE_LEVELS, POISSON_GAP_RATIO_MEAN,
-};
 pub use evidence::{
     profit_factor_lcb, resolve_bayes_prior, win_rate_hierarchical_lcb, win_rate_lcb,
     DEFAULT_BAYES_PRIOR_MASS, DEFAULT_BAYES_PRIOR_WIN_RATE,
 };
 pub use kelly_envelope::{EdgePosterior, RiskEnvelope, SURVIVAL_FLOOR, TRADE_HORIZON};
+pub use quantum_no_arbitrage_conformal::{
+    QuantumNoArbitrageConformalEngine, QuantumNoArbitrageConformalParams,
+    QuantumNoArbitrageConformalReport, CONFORMAL_CALIBRATION_WINDOW,
+};
+pub use riemann_zeta_gue::{
+    hermite_smoothstep_c1, montgomery_odlyzko_pair_correlation, wigner_gue_density,
+    RiemannZetaGueEngine, RiemannZetaGueState, GUE_RIEMANN_GAP_RATIO_MEAN, MAX_RIEMANN_GUE_LEVELS,
+    POISSON_GAP_RATIO_MEAN,
+};
 pub use sonda::{
     admite_sonda, admite_sonda_con_fase, en_fase_de_sonda, resolve_max_cierres_sonda,
     sprt_bernoulli, SprtDecision, CIERRES_DE_SONDA,
@@ -437,9 +442,21 @@ impl RiskEngine {
             return;
         }
         let reglas = [
-            ("sombra_kelly_logw_lh04", "sombra_kelly_ruina_lh04", m.f_lh04),
-            ("sombra_kelly_logw_legado", "sombra_kelly_ruina_legado", m.f_legado),
-            ("sombra_kelly_logw_min", "sombra_kelly_ruina_min", m.f_lh04.min(m.f_legado)),
+            (
+                "sombra_kelly_logw_lh04",
+                "sombra_kelly_ruina_lh04",
+                m.f_lh04,
+            ),
+            (
+                "sombra_kelly_logw_legado",
+                "sombra_kelly_ruina_legado",
+                m.f_legado,
+            ),
+            (
+                "sombra_kelly_logw_min",
+                "sombra_kelly_ruina_min",
+                m.f_lh04.min(m.f_legado),
+            ),
         ];
         for (clave_logw, clave_ruina, f) in reglas {
             if arena
@@ -530,7 +547,9 @@ impl RiskEngine {
                 "null".to_string()
             }
         };
-        let n = arena.registry.get_for_coin_strict(coin_id, "sombra_kelly_n")?;
+        let n = arena
+            .registry
+            .get_for_coin_strict(coin_id, "sombra_kelly_n")?;
         let n_valido = Self::contador_sombra_valido(n);
         let media = |clave: &str| {
             if n_valido {
@@ -542,7 +561,11 @@ impl RiskEngine {
         let mut linea = format!(
             "{{\"coin\":{},\"n\":{},\"r_media\":{},\"r2_media\":{}",
             coin_id,
-            if n_valido { n.to_string() } else { "null".to_string() },
+            if n_valido {
+                n.to_string()
+            } else {
+                "null".to_string()
+            },
             media("sombra_kelly_suma_r"),
             media("sombra_kelly_suma_r2")
         );
@@ -712,10 +735,7 @@ impl RiskEngine {
         // D-749: la segunda lectura de `profit_factor` —idéntica a la de arriba,
         // que la sombreaba sin cambiarla— se elimina: el PF de esta evaluación
         // es UNO y es la cota inferior calculada más arriba.
-        let kelly_cold_raw = arena
-            .config
-            .kelly_bootstrap_cold
-            .load(Ordering::Relaxed);
+        let kelly_cold_raw = arena.config.kelly_bootstrap_cold.load(Ordering::Relaxed);
         let kelly_cold = if pf <= 1.0 {
             // Sin edge probado: exploración ultra-conservadora (¼ del piso)
             (clamp_min.max(0.0) * 0.25).clamp(0.0, 0.05)
@@ -892,9 +912,8 @@ impl RiskEngine {
         } else {
             intent.confidence
         };
-        let conviccion = 1.0
-            + (signal_prob - arena.config.min_confidence_btc.load(Ordering::Relaxed))
-                .max(0.0);
+        let conviccion =
+            1.0 + (signal_prob - arena.config.min_confidence_btc.load(Ordering::Relaxed)).max(0.0);
         let micro_kelly_input = kelly_adjusted * conviccion;
         // A zero returned for invalid size must not be blended with the
         // positive standard candidate, which would reopen this rejected input.
@@ -940,8 +959,7 @@ impl RiskEngine {
         // F1-087 (Ola Ω191): Asimetría anti-hot-hand unificada con la doctrina canónica de LH-04 (:1503-1505).
         // Racha perdedora (bias < 1.0) encoge confianza y tamaño (información honesta de quiebre de régimen).
         // Racha ganadora (bias > 1.0) NO infla (techo 1.00): la cota de vida ya es el techo honesto (anti-hot-hand).
-        let effective_confidence =
-            (signal_prob * epi_bias.clamp(0.50, 1.00)).clamp(0.05, 0.98);
+        let effective_confidence = (signal_prob * epi_bias.clamp(0.50, 1.00)).clamp(0.05, 0.98);
         let raw_exposure = dir * effective_confidence * kelly_for_scale * allocated_capital;
         if !raw_exposure.is_finite() {
             return rej(REJ_INVALID_INPUT);
@@ -968,12 +986,9 @@ impl RiskEngine {
         // usando su ρ efectiva medida del grupo (XLVI·D) con la forma
         // equicorrelada de Grinold-Kahn: N_eff = k/(1+(k−1)·ρ̄).
         // Telemetría de diagnóstico, NO gate.
-        let Some(dependence) = correlation_guard::dependency_exposure(
-            arena,
-            coin_id,
-            is_long,
-            corr_thresh,
-        ) else {
+        let Some(dependence) =
+            correlation_guard::dependency_exposure(arena, coin_id, is_long, corr_thresh)
+        else {
             return rej(REJ_INVALID_INPUT);
         };
         {
@@ -1053,8 +1068,7 @@ impl RiskEngine {
         let f_exposure = (riesgo_candidata / continuous_sl.max(1e-4))
             .min(f_techo)
             .max(f_suelo);
-        let r_lundberg = (r_raw.is_finite() && r_raw > 0.0)
-            .then(|| r_raw / f_exposure);
+        let r_lundberg = (r_raw.is_finite() && r_raw > 0.0).then(|| r_raw / f_exposure);
         // #613 (Ola 35): el ρ̄ del grupo se APRIETA con la coherencia
         // espectral a la escala de τ* (`qo_613_rho_tau`, publicado por el
         // core desde el módulo multiactivo #607). Solo TIGHTEN: si el IC
@@ -1087,11 +1101,7 @@ impl RiskEngine {
             None => rho_escalar,
         };
         if correlation_guard::veto_por_riesgo_cramer_lundberg(
-            riesgos,
-            rho_final,
-            tope,
-            r_lundberg,
-            0.05,
+            riesgos, rho_final, tope, r_lundberg, 0.05,
         ) {
             // Contable para el consejo: el veto disparó CON la cota
             // disponible (la misma función pura decide — paridad #586).
@@ -1342,7 +1352,9 @@ impl RiskEngine {
         // cuya persistencia decorrelaciona con el horizonte tau (Hurst / half-life).
         // Se escala dimensionalmente con (30s / tau)^{1/2} para evitar que horizontes extendidos
         // sobre-acumulen deriva constante un-física y veten señales válidas con desacuerdos mínimos.
-        let spectral_tide = arena.coins[coin_id].spectral_coherence.load(Ordering::Relaxed);
+        let spectral_tide = arena.coins[coin_id]
+            .spectral_coherence
+            .load(Ordering::Relaxed);
         // CL-83 (F3.2-03): sin suelo. El recorte a 0,15 se activaba con
         // τ > 30 s/0,15² = 1 333 s y por encima la deriva volvía a acumularse
         // ∝ √τ: con brackets brownianos (∝ √τ) R-15 vetaba las τ largas que
@@ -1370,11 +1382,17 @@ impl RiskEngine {
         // por el ATR de 1 min, un modelo sin validar (LC-F4-04). Queda como
         // telemetría por moneda: la probabilidad y si habría vetado con el
         // umbral de antes, para medir el veto antes de devolverle poder.
-        arena.registry.set_for_coin(coin_id, "p_hit_sl_first", p_hit_sl_first);
+        arena
+            .registry
+            .set_for_coin(coin_id, "p_hit_sl_first", p_hit_sl_first);
         arena.registry.set_for_coin(
             coin_id,
             "r15_vetaria",
-            if p_hit_sl_first > UMBRAL_R15_SOMBRA { 1.0 } else { 0.0 },
+            if p_hit_sl_first > UMBRAL_R15_SOMBRA {
+                1.0
+            } else {
+                0.0
+            },
         );
 
         // CL-2 — EL APALANCAMIENTO SE DECIDE CON LA GEOMETRÍA YA RESUELTA.
@@ -1442,7 +1460,6 @@ impl RiskEngine {
             .min(max_safe_lev_liq)
             .floor();
 
-
         // D-642 (DÉCIMA OLA): la confianza entra tal cual. El suelo `.max(0.51)`
         // falseaba la probabilidad que alimenta a Kelly y al EV, inflando el
         // tamaño de posición precisamente en las señales más débiles.
@@ -1495,14 +1512,24 @@ impl RiskEngine {
             1.0
         };
         // Transición suave C^1 Hermite cúbico (smoothstep) erradicando la discontinuidad discreta.
-        let spec_coh_scale = arena.registry.get_for_coin_or(coin_id, "spec_coh_scale", 0.10).max(1e-4);
-        let spec_ent_scale = arena.registry.get_for_coin_or(coin_id, "spec_ent_scale", 0.30).max(1e-4);
+        let spec_coh_scale = arena
+            .registry
+            .get_for_coin_or(coin_id, "spec_coh_scale", 0.10)
+            .max(1e-4);
+        let spec_ent_scale = arena
+            .registry
+            .get_for_coin_or(coin_id, "spec_ent_scale", 0.30)
+            .max(1e-4);
         let u_coh = (spec_coh / spec_coh_scale).clamp(0.0, 1.0);
         let s_coh = u_coh * u_coh * (3.0 - 2.0 * u_coh);
         let u_ent = ((1.0 - spec_ent) / spec_ent_scale).clamp(0.0, 1.0);
         let s_ent = u_ent * u_ent * (3.0 - 2.0 * u_ent);
-        let coh_benefit = (spec_coh.max(0.0) * (1.0 - spec_ent * 0.5) * s_coh * s_ent).clamp(0.0, 0.80);
-        let base_micro_ratio = arena.registry.get_for_coin_or(coin_id, "base_micro_ratio", 0.66 / 0.62);
+        let coh_benefit =
+            (spec_coh.max(0.0) * (1.0 - spec_ent * 0.5) * s_coh * s_ent).clamp(0.0, 0.80);
+        let base_micro_ratio =
+            arena
+                .registry
+                .get_for_coin_or(coin_id, "base_micro_ratio", 0.66 / 0.62);
         let effective_micro_ratio = base_micro_ratio - (base_micro_ratio - 1.0) * coh_benefit;
 
         let now_ts = if coin_id < arena.coins.len() {
@@ -1643,8 +1670,7 @@ impl RiskEngine {
         // Cost per notional times L is cost per unit of allocated margin.
         // Preserve the existing micro policy, but enforce it on every final
         // order, not just branches that rescue a minimum notional (FMT-217).
-        let micro_fee_ceiling =
-            crate::capital_regime::resolve_micro_max_fee_pct(arena, coin_id);
+        let micro_fee_ceiling = crate::capital_regime::resolve_micro_max_fee_pct(arena, coin_id);
         let max_fee_limit =
             crate::capital_regime::lerp(max_acceptable_fee_pct, micro_fee_ceiling, micro_w_alloc);
         let dynamic_min_notional = crate::capital_regime::effective_min_notional(spec.min_notional);
@@ -1773,8 +1799,8 @@ impl RiskEngine {
             let z2 = z_lcb_lh04 * z_lcb_lh04;
             let denom = 1.0 + z2 / n;
             let centro = (lh04_wr + z2 / (2.0 * n)) / denom;
-            let radio = z_lcb_lh04
-                * ((lh04_wr * (1.0 - lh04_wr) / n + z2 / (4.0 * n * n)).sqrt() / denom);
+            let radio =
+                z_lcb_lh04 * ((lh04_wr * (1.0 - lh04_wr) / n + z2 / (4.0 * n * n)).sqrt() / denom);
             let p_lcb = (centro - radio).clamp(0.0, 1.0);
             let b = lh04_pf * (1.0 - lh04_wr) / lh04_wr;
             let f_raw = half_kelly_lh04 * (p_lcb - (1.0 - p_lcb) / b).max(0.0);
@@ -1812,8 +1838,8 @@ impl RiskEngine {
             && (0.0..=1.0).contains(&lh04_wr)
             && lh04_n >= muestras_min_lh04
             && lh04_pf.is_finite();
-        let lh04_sin_edge = lh04_tiene_evidencia
-            && (lh04_f == 0.0 || lh04_pf <= 1.0 || lh04_wr <= 0.0);
+        let lh04_sin_edge =
+            lh04_tiene_evidencia && (lh04_f == 0.0 || lh04_pf <= 1.0 || lh04_wr <= 0.0);
         // Streak-adaptación (GLM 118): la síntesis bias×LH-04. El bias
         // epigenético (racha, OU-relajado Ω109, rango [0.5, 2.0], leído
         // al RELOJ CAUSAL del último tick — mismo acceso que el camino de
@@ -1993,20 +2019,34 @@ impl RiskEngine {
         // punto medio natural entre 5× y 50× es ~16×, no 27,5×.
         // CL-6: se calcula una vez y lo respetan LOS DOS rescates del nocional
         // mínimo (el segundo usaba el literal 50).
-        let lev_base = arena.registry.get_for_coin_or(coin_id, "micro_lev_base", 5.0);
-        let lev_bonus = arena.registry.get_for_coin_or(coin_id, "micro_lev_bonus", 1.5);
-        let conf_center = arena.registry.get_for_coin_or(coin_id, "micro_lev_conf_center", 0.65);
-        let conf_width = arena.registry.get_for_coin_or(coin_id, "micro_lev_conf_width", 0.10).max(1e-4);
-        let macro_cap = arena.registry.get_for_coin_or(coin_id, "macro_lev_cap", 50.0);
+        let lev_base = arena
+            .registry
+            .get_for_coin_or(coin_id, "micro_lev_base", 5.0);
+        let lev_bonus = arena
+            .registry
+            .get_for_coin_or(coin_id, "micro_lev_bonus", 1.5);
+        let conf_center = arena
+            .registry
+            .get_for_coin_or(coin_id, "micro_lev_conf_center", 0.65);
+        let conf_width = arena
+            .registry
+            .get_for_coin_or(coin_id, "micro_lev_conf_width", 0.10)
+            .max(1e-4);
+        let macro_cap = arena
+            .registry
+            .get_for_coin_or(coin_id, "macro_lev_cap", 50.0);
 
         let conf_t = ((intent.confidence - conf_center) / conf_width).clamp(0.0, 1.0);
         let micro_lev_cap = lev_base + lev_bonus * conf_t * conf_t * (3.0 - 2.0 * conf_t);
-        let mut max_lev_cap = crate::capital_regime::log_lerp(macro_cap, micro_lev_cap, micro_w_alloc);
+        let mut max_lev_cap =
+            crate::capital_regime::log_lerp(macro_cap, micro_lev_cap, micro_w_alloc);
 
         // F1-037: Acotación actuarial por cota de ruina de Cramér-Lundberg ψ ≤ e^{-R_capital · m} ≤ ε (ε = 0.05).
         // Si la moneda posee estimación madura de R_nocional > 0, el apalancamiento máximo seguro
         // no excede L_lundberg = (R_nocional · cushion) / ln(1/ε).
-        let r_nocional = arena.registry.get_for_coin_or(coin_id, "lundberg_r_nocional", 0.0);
+        let r_nocional = arena
+            .registry
+            .get_for_coin_or(coin_id, "lundberg_r_nocional", 0.0);
         if r_nocional.is_finite() && r_nocional > 0.0 {
             let ln_inv_eps = 2.995732273553991; // ln(1 / 0.05)
             let lundberg_lev_bound = (r_nocional * safe_cushion / ln_inv_eps).clamp(1.0, macro_cap);
@@ -2065,7 +2105,9 @@ impl RiskEngine {
         let (meets_min_notional, _) =
             guard::enforce_minimum_notional(final_margin, safe_min_notional, dynamic_leverage);
         if !meets_min_notional {
-            if REJECT_COUNTERS[REJ_MIN_NOTIONAL].load(std::sync::atomic::Ordering::Relaxed) % 200 == 0 {
+            if REJECT_COUNTERS[REJ_MIN_NOTIONAL].load(std::sync::atomic::Ordering::Relaxed) % 200
+                == 0
+            {
                 println!(
                     "🔍 [REJ6] margin={:.4} lev={:.4} min_notional={:.4} allocated={:.4} kelly={:.4}",
                     final_margin, dynamic_leverage, safe_min_notional, allocated_capital, kelly_fraction
@@ -2082,8 +2124,8 @@ impl RiskEngine {
         // la cuenta (interés compuesto), el límite escala proporcionalmente sin
         // estrangular el crecimiento.
         let orchestrator = orchestrator::PortfolioOrchestrator::new(arena);
-        let portfolio_headroom = orchestrator
-            .available_margin_headroom(bounded_exposure > 0.0, dynamic_min_notional);
+        let portfolio_headroom =
+            orchestrator.available_margin_headroom(bounded_exposure > 0.0, dynamic_min_notional);
         if !portfolio_headroom.is_finite() || portfolio_headroom <= 0.0 {
             return rej(REJ_ORCHESTRATOR);
         }
@@ -2380,8 +2422,7 @@ mod reject_direction_tests {
         let m_nocional =
             crate::cramer_lundberg::EstimadorSiniestros::margen_de_cota(0.02, 0.05).unwrap();
         let m_capital_l10 =
-            crate::cramer_lundberg::EstimadorSiniestros::margen_de_cota(0.02 / 10.0, 0.05)
-                .unwrap();
+            crate::cramer_lundberg::EstimadorSiniestros::margen_de_cota(0.02 / 10.0, 0.05).unwrap();
         assert!(
             (m_capital_l10 / m_nocional - 10.0).abs() < 1e-9,
             "margen capital = L x margen nocional: {} vs {}",
@@ -2390,8 +2431,7 @@ mod reject_direction_tests {
         );
         // Sin apalancamiento (L=1) la conversión es identidad.
         let m_l1 =
-            crate::cramer_lundberg::EstimadorSiniestros::margen_de_cota(0.02 / 1.0, 0.05)
-                .unwrap();
+            crate::cramer_lundberg::EstimadorSiniestros::margen_de_cota(0.02 / 1.0, 0.05).unwrap();
         assert!((m_l1 - m_nocional).abs() < 1e-12);
     }
     /// #653 — el lerp micro compone con la cota MEDIDA (D-641 × D-744b):

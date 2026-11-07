@@ -26,20 +26,24 @@ use crate::topological_metamorphosis::{
     METAMORPHOSIS_NODES,
 };
 use feature_engine::{
-    HyperbolicPoincareHodgeEngine, HyperbolicPoincareHodgeParams, HyperbolicPoincareHodgeReport,
-    MongeKantorovichWassersteinEngine, WassersteinParams, WassersteinReport, WASSERSTEIN_NODES,
+    GeodesicPhaseSpaceParams, GeodesicPhaseSpaceReport, HyperbolicPoincareHodgeEngine,
+    HyperbolicPoincareHodgeParams, HyperbolicPoincareHodgeReport,
+    MongeKantorovichWassersteinEngine, QuantumGeodesicPhaseSpaceEngine, WassersteinParams,
+    WassersteinReport, WASSERSTEIN_NODES,
 };
 use risk_engine::{
     AdaptiveQuantumVetoGovernor, AdaptiveVetoDecision, MarketQuantumStateInput, MpsDmrgParams,
-    MpsDmrgReport, TensorNetworkMpsDmrgEngine, MPS_ASSET_CHANNELS,
+    MpsDmrgReport, QuantumNoArbitrageConformalEngine, QuantumNoArbitrageConformalParams,
+    QuantumNoArbitrageConformalReport, TensorNetworkMpsDmrgEngine, MPS_ASSET_CHANNELS,
 };
 use signal_engine::{
     BurgersShockwaveReport, ContinuousVolatilityOperatorEngine, ContinuousVolatilityState,
     FeynmanPathIntegralRoutingEngine, FeynmanRoutingParams, FeynmanRoutingReport,
-    MeanFieldGamesPsychologyEngine, MeanFieldGamesReport, MultiSlotEvaluationReport,
-    MultiSlotOrderEmission, NavierStokesKolmogorovEngine, NavierStokesParams, NavierStokesReport,
-    QuantumSlotOrchestrator, RiemannBurgersShockwaveEngine, SrbEntropyParams, SrbEntropyReport,
-    SrbKolmogorovEntropyEngine,
+    FractionalRoughVolatilityEngine, FractionalRoughVolatilityParams,
+    FractionalRoughVolatilityReport, MeanFieldGamesPsychologyEngine, MeanFieldGamesReport,
+    MultiSlotEvaluationReport, MultiSlotOrderEmission, NavierStokesKolmogorovEngine,
+    NavierStokesParams, NavierStokesReport, QuantumSlotOrchestrator, RiemannBurgersShockwaveEngine,
+    SrbEntropyParams, SrbEntropyReport, SrbKolmogorovEntropyEngine,
 };
 use strategy_core::{
     AssetColorState, ChromodynamicGaugeSu3Engine, ConnesSpectralGeometryEngine,
@@ -74,6 +78,10 @@ pub struct OmniscientLivingGraphReport {
     pub poincare_hodge_report: HyperbolicPoincareHodgeReport,
     pub feynman_routing_report: FeynmanRoutingReport,
     pub metamorphosis_report: TopologicalMetamorphosisReport,
+    // --- Extensiones Holísticas Omega220 (Fases 49 - 51) ---
+    pub geodesic_phase_space_report: GeodesicPhaseSpaceReport,
+    pub fractional_rough_vol_report: FractionalRoughVolatilityReport,
+    pub quantum_no_arbitrage_report: QuantumNoArbitrageConformalReport,
 }
 
 /// Orquestador del grafo vivo omnisciente para todo el universo de activos.
@@ -94,6 +102,10 @@ pub struct OmniscientLivingGraphOrchestrator {
     pub poincare_hodge_engines: Vec<HyperbolicPoincareHodgeEngine>,
     pub feynman_routing_engines: Vec<FeynmanPathIntegralRoutingEngine>,
     pub metamorphosis_engine: TopologicalMetamorphosisEngine,
+    // Motores cuánticos y físicos unificados (Fases 49 - 51)
+    pub geodesic_phase_space_engines: Vec<QuantumGeodesicPhaseSpaceEngine>,
+    pub fractional_rough_vol_engines: Vec<FractionalRoughVolatilityEngine>,
+    pub quantum_no_arbitrage_engines: Vec<QuantumNoArbitrageConformalEngine>,
     pub prev_mid_prices: Vec<f64>,
     pub last_event_time_ms: u64,
 }
@@ -138,6 +150,21 @@ impl OmniscientLivingGraphOrchestrator {
             metamorphosis_engine: TopologicalMetamorphosisEngine::new(
                 TopologicalMetamorphosisParams::default(),
             ),
+            geodesic_phase_space_engines: (0..count)
+                .map(|_| QuantumGeodesicPhaseSpaceEngine::new(GeodesicPhaseSpaceParams::default()))
+                .collect(),
+            fractional_rough_vol_engines: (0..count)
+                .map(|_| {
+                    FractionalRoughVolatilityEngine::new(FractionalRoughVolatilityParams::default())
+                })
+                .collect(),
+            quantum_no_arbitrage_engines: (0..count)
+                .map(|_| {
+                    QuantumNoArbitrageConformalEngine::new(
+                        QuantumNoArbitrageConformalParams::default(),
+                    )
+                })
+                .collect(),
             prev_mid_prices: vec![0.0; count],
             last_event_time_ms: 0,
         }
@@ -368,7 +395,31 @@ impl OmniscientLivingGraphOrchestrator {
         ];
         let metamorphosis_report = self.metamorphosis_engine.update(&activations, 1.0);
 
-        // 16. Factor de Escala de Riesgo Holístico Tri-Slot $\eta_{\text{holistic}}$
+        // 16. Flujo Geodésico Cuántico y Cuantización BRST (Fase 49)
+        let cancellation_estimate = (1.0 - depth_ratio.min(1.0)).max(0.0) * 0.5;
+        let geodesic_phase_space_report = self.geodesic_phase_space_engines[safe_coin_id]
+            .update_and_evaluate(mid_price, ofi, cancellation_estimate, event_time_ms);
+
+        // 17. Volatilidad Rugosa Fraccionaria de Riemann-Liouville (Fase 50)
+        let fractional_rough_vol_report = self.fractional_rough_vol_engines[safe_coin_id]
+            .update_and_evaluate(
+                price_ret,
+                volatility_state.effective_volatility,
+                event_time_ms,
+            );
+
+        // 18. Gobernanza Conformal y Barrera FTAP de No-Arbitraje Cuántico (Fase 51)
+        let predicted_mid = mid_price * (1.0 + price_ret);
+        let execution_latency_ms = dt * 1000.0;
+        let quantum_no_arbitrage_report = self.quantum_no_arbitrage_engines[safe_coin_id].evaluate(
+            predicted_mid,
+            mid_price,
+            spread_bps,
+            execution_latency_ms,
+            capital_available_usd,
+        );
+
+        // 19. Factor de Escala de Riesgo Holístico Tri-Slot $\eta_{\text{holistic}}$
         let mps_weight_factor = (mps_dmrg_report.asset_weights[safe_coin_id % MPS_ASSET_CHANNELS]
             * (MPS_ASSET_CHANNELS as f64))
             .clamp(0.50, 1.50);
@@ -377,10 +428,13 @@ impl OmniscientLivingGraphOrchestrator {
             * poincare_hodge_report.slot_scaling_factor
             * feynman_routing_report.routing_urgency_modulator
             * metamorphosis_report.plasticity_modulator
+            * geodesic_phase_space_report.slot_scaling_factor
+            * fractional_rough_vol_report.signal_resonance_modulator
+            * quantum_no_arbitrage_report.conformal_risk_multiplier
             * mps_weight_factor)
             .clamp(0.10, 1.25);
 
-        // 17. Evaluación Multi-Slot en QuantumSlotOrchestrator (Fase 28 / 33)
+        // 20. Evaluación Multi-Slot en QuantumSlotOrchestrator (Fase 28 / 33)
         let cvd = obi * 1000.0;
         let atr_pct = (volatility_state.effective_volatility * 100.0).clamp(0.001, 0.20);
         let dominant_tau_ms = 30_000.0;
@@ -402,9 +456,10 @@ impl OmniscientLivingGraphOrchestrator {
             open_positions_is_long,
         );
 
-        // 15. Modulación Continua del Grafo Vivo:
+        // 21. Modulación Continua del Grafo Vivo:
         // Si hay veto duro o rechazo conformal estricto, aplanar decisiones
         let allow_entry = !conformal_decision.is_hard_vetoed
+            && !quantum_no_arbitrage_report.hard_veto_induced
             && (spread_bps <= conformal_decision.dynamic_spread_ceiling_bps
                 || conformal_decision.elastic_entry_granted);
 
@@ -413,7 +468,9 @@ impl OmniscientLivingGraphOrchestrator {
                 decision.signal = SignalType::Flat;
                 decision.net_confidence = 0.0;
                 decision.vetoed = true;
-                decision.veto_reason = Some("CONFORMAL_ADAPTIVE_VETO");
+                decision.veto_reason = quantum_no_arbitrage_report
+                    .veto_reason
+                    .or(Some("CONFORMAL_ADAPTIVE_VETO"));
             }
         } else {
             // Modulación suave de confianza según convicción cuántica holística y escala de slot
@@ -424,7 +481,7 @@ impl OmniscientLivingGraphOrchestrator {
             }
         }
 
-        // 16. Síntesis Coordinada de Emisiones de Órdenes Tri-Slot
+        // 22. Síntesis Coordinada de Emisiones de Órdenes Tri-Slot
         let coordinated_emissions = slot_orchestrator.synthesize_order_emissions(
             &multi_slot_evaluation,
             capital_available_usd,
@@ -432,8 +489,9 @@ impl OmniscientLivingGraphOrchestrator {
             risk_fraction,
         );
 
-        // 17. Verificación de Cota de Ruina de Ville (\mathbb{P}(\text{ruina}) \le 10^{-6})
+        // 23. Verificación de Cota de Ruina de Ville (\mathbb{P}(\text{ruina}) \le 10^{-6})
         let ville_ruin_bound_satisfied = capital_available_usd > 0.0
+            && !quantum_no_arbitrage_report.hard_veto_induced
             && conformal_decision.conformal_risk_score <= 0.85
             && srb_entropy_report.kolmogorov_sinai_entropy < 0.98;
 
@@ -461,6 +519,9 @@ impl OmniscientLivingGraphOrchestrator {
             poincare_hodge_report,
             feynman_routing_report,
             metamorphosis_report,
+            geodesic_phase_space_report,
+            fractional_rough_vol_report,
+            quantum_no_arbitrage_report,
         }
     }
 }
