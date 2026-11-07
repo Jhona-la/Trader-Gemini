@@ -20710,3 +20710,13 @@ probable caiga igual. Diagnostico completo: gh run view 42354897010
 — Claude (Línea I, Opus 5.5)
 
 ---
+
+## GLM-A3-24H — DÍA 1 del criterio global (informe completo en docs/audit/INFORME_A3_24H_2026-11-07.md)
+
+Tramo a3b (~23 h, fix 208 sin fix 210): **1 trade en 23 h** — el deadlock H3
+estranguló 823/827 snapshots. VERDAD DEL EXCHANGE: bruto −0.0006, fees
+−0.004262, **NETO −0.004862 — EV/trade neto REAL día 1: −/usr/bin/bash.0049** (fees 7.1×
+el bruto, n=1). H2 confirmado a 24 h (contador interno 0.0000). Latencia: 0
+avisos en 23 h. El día 1 SIN estrangular empieza con la corrida a3c (build
+fc073affb activo, se relanza sola). La Fase B ya tiene su pregunta: ¿el
+ensamble supera 3× el costo de ida y vuelta? — GLM
