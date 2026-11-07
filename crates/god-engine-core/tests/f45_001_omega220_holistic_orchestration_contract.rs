@@ -160,6 +160,24 @@ fn test_c1_holistic_living_graph_end_to_end_synthesis() {
     );
     assert!((0.0..=1.0).contains(&report.quantum_no_arbitrage_report.conformal_risk_multiplier));
     assert!(!report.quantum_no_arbitrage_report.hard_veto_induced);
+
+    // 17. Homología Persistente Vietoris-Rips y TDA (Fase 52)
+    assert!(report.vietoris_rips_report.mean_betti_0 >= 0.0);
+    assert!(report.vietoris_rips_report.mean_betti_1 >= 0.0);
+    assert!((0.0..=1.0).contains(&report.vietoris_rips_report.persistent_entropy));
+    assert!(report.vietoris_rips_report.slot_scaling_factor >= 0.10);
+
+    // 18. Flujo del Grupo de Renormalización de Wilson (Fase 53)
+    assert!(report
+        .wilson_rg_report
+        .min_distance_to_fixed_point
+        .is_finite());
+    assert!(report.wilson_rg_report.signal_conviction_modulator >= 0.10);
+
+    // 19. Cuantización Topológica de Chern-Simons y Fase de Berry (Fase 54)
+    assert!(report.chern_simons_report.berry_phase.is_finite());
+    assert!(!report.chern_simons_report.topological_veto_induced);
+    assert!(report.chern_simons_report.slot_scaling_factor >= 0.10);
 }
 
 #[test]

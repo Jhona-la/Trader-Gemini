@@ -28,11 +28,13 @@ use crate::topological_metamorphosis::{
 use feature_engine::{
     GeodesicPhaseSpaceParams, GeodesicPhaseSpaceReport, HyperbolicPoincareHodgeEngine,
     HyperbolicPoincareHodgeParams, HyperbolicPoincareHodgeReport,
-    MongeKantorovichWassersteinEngine, QuantumGeodesicPhaseSpaceEngine, WassersteinParams,
-    WassersteinReport, WASSERSTEIN_NODES,
+    MongeKantorovichWassersteinEngine, QuantumGeodesicPhaseSpaceEngine, VietorisRipsParams,
+    VietorisRipsReport, VietorisRipsTopologicalEngine, WassersteinParams, WassersteinReport,
+    WASSERSTEIN_NODES,
 };
 use risk_engine::{
-    AdaptiveQuantumVetoGovernor, AdaptiveVetoDecision, MarketQuantumStateInput, MpsDmrgParams,
+    AdaptiveQuantumVetoGovernor, AdaptiveVetoDecision, ChernSimonsBerryParams,
+    ChernSimonsBerryPhaseEngine, ChernSimonsBerryReport, MarketQuantumStateInput, MpsDmrgParams,
     MpsDmrgReport, QuantumNoArbitrageConformalEngine, QuantumNoArbitrageConformalParams,
     QuantumNoArbitrageConformalReport, TensorNetworkMpsDmrgEngine, MPS_ASSET_CHANNELS,
 };
@@ -44,6 +46,7 @@ use signal_engine::{
     MultiSlotEvaluationReport, MultiSlotOrderEmission, NavierStokesKolmogorovEngine,
     NavierStokesParams, NavierStokesReport, QuantumSlotOrchestrator, RiemannBurgersShockwaveEngine,
     SrbEntropyParams, SrbEntropyReport, SrbKolmogorovEntropyEngine,
+    WilsonExactRenormalizationEngine, WilsonExactRgParams, WilsonExactRgReport,
 };
 use strategy_core::{
     AssetColorState, ChromodynamicGaugeSu3Engine, ConnesSpectralGeometryEngine,
@@ -82,6 +85,10 @@ pub struct OmniscientLivingGraphReport {
     pub geodesic_phase_space_report: GeodesicPhaseSpaceReport,
     pub fractional_rough_vol_report: FractionalRoughVolatilityReport,
     pub quantum_no_arbitrage_report: QuantumNoArbitrageConformalReport,
+    // --- Extensiones Holísticas Omega220 (Fases 52 - 54) ---
+    pub vietoris_rips_report: VietorisRipsReport,
+    pub wilson_rg_report: WilsonExactRgReport,
+    pub chern_simons_report: ChernSimonsBerryReport,
 }
 
 /// Orquestador del grafo vivo omnisciente para todo el universo de activos.
@@ -106,6 +113,10 @@ pub struct OmniscientLivingGraphOrchestrator {
     pub geodesic_phase_space_engines: Vec<QuantumGeodesicPhaseSpaceEngine>,
     pub fractional_rough_vol_engines: Vec<FractionalRoughVolatilityEngine>,
     pub quantum_no_arbitrage_engines: Vec<QuantumNoArbitrageConformalEngine>,
+    // Motores cuánticos y físicos unificados (Fases 52 - 54)
+    pub vietoris_rips_engines: Vec<VietorisRipsTopologicalEngine>,
+    pub wilson_rg_engines: Vec<WilsonExactRenormalizationEngine>,
+    pub chern_simons_engines: Vec<ChernSimonsBerryPhaseEngine>,
     pub prev_mid_prices: Vec<f64>,
     pub last_event_time_ms: u64,
 }
@@ -164,6 +175,15 @@ impl OmniscientLivingGraphOrchestrator {
                         QuantumNoArbitrageConformalParams::default(),
                     )
                 })
+                .collect(),
+            vietoris_rips_engines: (0..count)
+                .map(|_| VietorisRipsTopologicalEngine::new(VietorisRipsParams::default()))
+                .collect(),
+            wilson_rg_engines: (0..count)
+                .map(|_| WilsonExactRenormalizationEngine::new(WilsonExactRgParams::default()))
+                .collect(),
+            chern_simons_engines: (0..count)
+                .map(|_| ChernSimonsBerryPhaseEngine::new(ChernSimonsBerryParams::default()))
                 .collect(),
             prev_mid_prices: vec![0.0; count],
             last_event_time_ms: 0,
@@ -419,7 +439,33 @@ impl OmniscientLivingGraphOrchestrator {
             capital_available_usd,
         );
 
-        // 19. Factor de Escala de Riesgo Holístico Tri-Slot $\eta_{\text{holistic}}$
+        // 19. Homología Persistente Vietoris-Rips y TDA (Fase 52)
+        let vietoris_rips_report = self.vietoris_rips_engines[safe_coin_id].update_and_evaluate(
+            price_ret,
+            ofi,
+            depth_ratio,
+            spread_bps,
+            event_time_ms,
+        );
+
+        // 20. Flujo del Grupo de Renormalización de Wilson (Fase 53)
+        let wilson_rg_report = self.wilson_rg_engines[safe_coin_id].update_and_evaluate(
+            price_ret,
+            ofi,
+            volatility_state.effective_volatility,
+            event_time_ms,
+        );
+
+        // 21. Cuantización Topológica de Chern-Simons y Fase de Berry (Fase 54)
+        let chern_simons_report = self.chern_simons_engines[safe_coin_id].update_and_evaluate(
+            volatility_state.effective_volatility,
+            su3_alpha,
+            spread_bps,
+            capital_available_usd,
+            event_time_ms,
+        );
+
+        // 22. Factor de Escala de Riesgo Holístico Tri-Slot $\eta_{\text{holistic}}$
         let mps_weight_factor = (mps_dmrg_report.asset_weights[safe_coin_id % MPS_ASSET_CHANNELS]
             * (MPS_ASSET_CHANNELS as f64))
             .clamp(0.50, 1.50);
@@ -431,10 +477,13 @@ impl OmniscientLivingGraphOrchestrator {
             * geodesic_phase_space_report.slot_scaling_factor
             * fractional_rough_vol_report.signal_resonance_modulator
             * quantum_no_arbitrage_report.conformal_risk_multiplier
+            * vietoris_rips_report.slot_scaling_factor
+            * wilson_rg_report.signal_conviction_modulator
+            * chern_simons_report.slot_scaling_factor
             * mps_weight_factor)
             .clamp(0.10, 1.25);
 
-        // 20. Evaluación Multi-Slot en QuantumSlotOrchestrator (Fase 28 / 33)
+        // 23. Evaluación Multi-Slot en QuantumSlotOrchestrator (Fase 28 / 33)
         let cvd = obi * 1000.0;
         let atr_pct = (volatility_state.effective_volatility * 100.0).clamp(0.001, 0.20);
         let dominant_tau_ms = 30_000.0;
@@ -456,10 +505,12 @@ impl OmniscientLivingGraphOrchestrator {
             open_positions_is_long,
         );
 
-        // 21. Modulación Continua del Grafo Vivo:
-        // Si hay veto duro o rechazo conformal estricto, aplanar decisiones
+        // 24. Modulación Continua del Grafo Vivo:
+        // Si hay veto duro, rechazo conformal estricto o air pocket, aplanar decisiones
         let allow_entry = !conformal_decision.is_hard_vetoed
             && !quantum_no_arbitrage_report.hard_veto_induced
+            && !chern_simons_report.topological_veto_induced
+            && !vietoris_rips_report.air_pocket_detected
             && (spread_bps <= conformal_decision.dynamic_spread_ceiling_bps
                 || conformal_decision.elastic_entry_granted);
 
@@ -468,9 +519,14 @@ impl OmniscientLivingGraphOrchestrator {
                 decision.signal = SignalType::Flat;
                 decision.net_confidence = 0.0;
                 decision.vetoed = true;
-                decision.veto_reason = quantum_no_arbitrage_report
+                decision.veto_reason = chern_simons_report
                     .veto_reason
-                    .or(Some("CONFORMAL_ADAPTIVE_VETO"));
+                    .or(quantum_no_arbitrage_report.veto_reason)
+                    .or(if vietoris_rips_report.air_pocket_detected {
+                        Some("TDA_AIR_POCKET_VETO")
+                    } else {
+                        Some("CONFORMAL_ADAPTIVE_VETO")
+                    });
             }
         } else {
             // Modulación suave de confianza según convicción cuántica holística y escala de slot
@@ -481,7 +537,7 @@ impl OmniscientLivingGraphOrchestrator {
             }
         }
 
-        // 22. Síntesis Coordinada de Emisiones de Órdenes Tri-Slot
+        // 25. Síntesis Coordinada de Emisiones de Órdenes Tri-Slot
         let coordinated_emissions = slot_orchestrator.synthesize_order_emissions(
             &multi_slot_evaluation,
             capital_available_usd,
@@ -489,9 +545,10 @@ impl OmniscientLivingGraphOrchestrator {
             risk_fraction,
         );
 
-        // 23. Verificación de Cota de Ruina de Ville (\mathbb{P}(\text{ruina}) \le 10^{-6})
+        // 26. Verificación de Cota de Ruina de Ville (\mathbb{P}(\text{ruina}) \le 10^{-6})
         let ville_ruin_bound_satisfied = capital_available_usd > 0.0
             && !quantum_no_arbitrage_report.hard_veto_induced
+            && !chern_simons_report.topological_veto_induced
             && conformal_decision.conformal_risk_score <= 0.85
             && srb_entropy_report.kolmogorov_sinai_entropy < 0.98;
 
@@ -522,6 +579,9 @@ impl OmniscientLivingGraphOrchestrator {
             geodesic_phase_space_report,
             fractional_rough_vol_report,
             quantum_no_arbitrage_report,
+            vietoris_rips_report,
+            wilson_rg_report,
+            chern_simons_report,
         }
     }
 }

@@ -1,5 +1,6 @@
 pub mod adaptive_quantum_veto;
 pub mod capital_regime;
+pub mod chern_simons_berry_phase;
 pub mod copulas_store;
 pub mod correlation_guard;
 pub mod cramer_lundberg;
@@ -31,6 +32,10 @@ pub use adaptive_quantum_veto::{
     MarketQuantumStateInput,
 };
 pub use capital_regime::{resolve_micro_max_fee_pct, DEFAULT_MICRO_MAX_FEE_PCT};
+pub use chern_simons_berry_phase::{
+    ChernSimonsBerryParams, ChernSimonsBerryPhaseEngine, ChernSimonsBerryReport, ParameterState3D,
+    BERRY_PATH_LEN,
+};
 pub use evidence::{
     profit_factor_lcb, resolve_bayes_prior, win_rate_hierarchical_lcb, win_rate_lcb,
     DEFAULT_BAYES_PRIOR_MASS, DEFAULT_BAYES_PRIOR_WIN_RATE,
