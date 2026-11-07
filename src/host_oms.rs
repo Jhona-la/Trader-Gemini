@@ -597,26 +597,37 @@ impl OmsSession {
             outcome.pending_regular_orders = orders.len();
             return outcome;
         }
+        // I-15: una reserva que espera su llenado bloquea ANTES de reconciliar.
+        // Tras una IOC llenada, positionRisk puede tardar en mostrar la
+        // posición: con una fila plana, reconcile_arena_checked cerraría la
+        // reserva como fantasma, liberaría su margen y el núcleo podría abrir
+        // otra entrada encima de la posición real. GLM-210 movió este gate
+        // detrás de la reconciliación para curar el bloqueo de la corrida A3,
+        // pero aquella ranura no esperaba ningún llenado: el aplanado del
+        // sistema inmune le había consumido la confirmación (CL-44b) y ya la
+        // había cerrado en el exchange. Esas ranuras (`confirmacion_consumida`)
+        // sí pasan a la reconciliación, que las cierra con la fila plana.
+        if arena
+            .coins
+            .iter()
+            .any(|coin| coin.positions.slots().iter().any(|p| p.espera_llenado()))
+        {
+            let mut outcome = SnapshotOutcome::empty(SnapshotStatus::Blocked);
+            outcome.error = Some("OMS_UNCONFIRMED_LOCAL_RESERVATION".into());
+            return outcome;
+        }
         let adopted = report.apply_to_registry_with_rates(&registry, |symbol| {
             quantum_arena::symbols::get_coin_id(symbol)
                 .and_then(|ci| arena.config.fee_rates_for(ci))
                 .map(|(_, taker)| taker)
         });
         let arena_report = reconciliation::reconcile_arena_checked(&positions, arena, now_ms);
-        // GLM-210 (A3, 2026-11-06): el gate de reserva no confirmada se
-        // evalúa DESPUÉS de la reconciliación. Antes corría antes y creaba un
-        // deadlock auto-sostenido: la entrada reserva el slot (abierto sin
-        // confirmar), el FLATTEN cierra en el exchange sin tocar el slot del
-        // arena, y el gate bloqueaba el snapshot ANTES de que
-        // reconcile_arena_checked pudiera cerrar esa reserva con la fila flat
-        // remota — la corrida A3 quedó en Blocked eterno desde su primer
-        // trade (574 snapshots OMS_UNCONFIRMED_LOCAL_RESERVATION seguidos).
-        // Reconciliar primero es seguro respecto de la intención original
-        // («no cerrar reservas con órdenes resting vivas»): el gate de arriba
-        // ya salió si había órdenes. La adopción marca exchange_confirmed y el
-        // cierre por fila flat baja el slot, así que el gate sólo dispara con
-        // un slot que SIGUE abierto y sin confirmar tras la evidencia remota
-        // — ese sí es un estado que debe bloquear la admisión.
+        // GLM-210 (A3, 2026-11-06): tras reconciliar, una ranura que SIGUE
+        // abierta y sin confirmar bloquea la admisión. Con I-15 sólo puede
+        // ser una cuya confirmación consumió el aplanado total y que la fila
+        // remota no permitió cerrar (sin fila, o el exchange aún no plano).
+        // Su cierre por fila plana es el que curó el bloqueo de la corrida A3
+        // (574 snapshots OMS_UNCONFIRMED_LOCAL_RESERVATION seguidos).
         let reserva_no_confirmada = arena.coins.iter().any(|coin| {
             coin.positions
                 .slots()
