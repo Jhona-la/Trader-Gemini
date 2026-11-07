@@ -107,7 +107,7 @@ mod tests {
 
     /// RET-51b: las macros dan el texto que daba la cola binaria, con el
     /// prefijo de error, y siguen valiendo como expresión de un brazo de
-    /// `match` (así las usa el host en purge_orphan_legs). Es la única
+    /// `match` (así las usa el host en cerrar_lecturas_del_vigilante). Es la única
     /// prueba que conecta el destino global.
     #[test]
     fn ret51b_las_macros_conservan_texto_prefijo_y_forma() {

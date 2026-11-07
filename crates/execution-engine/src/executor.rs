@@ -2260,6 +2260,13 @@ impl OrderExecutor {
         // 3. Descarga de exchangeInfo y actualización de caché positiva
         let descarga = self.fetch_all_symbol_filters().await;
         let frenada = matches!(&descarga, Err(e) if Self::descarga_frenada(e));
+        // I-14: el error del paso 5 empieza por el del freno 429/418 o de la
+        // cuota que paró esta descarga. Sin él, el vigilante tomaba una
+        // descarga frenada por un fallo de lectura y doblaba su espera.
+        let freno = match &descarga {
+            Err(e) if crate::freno_temporal::es_freno_temporal(e) => Some(e.clone()),
+            _ => None,
+        };
         if let Ok(filters) = descarga {
             let res = filters.get(symbol).copied();
             self.symbol_filters.store(Arc::new(filters));
@@ -2305,10 +2312,14 @@ impl OrderExecutor {
             }
         }
 
-        Err(format!(
+        let desconocido = format!(
             "filtro de precisión desconocido para {symbol}: ni exchangeInfo ni el \
              registro de símbolos lo aportan; no se opera con los pasos de otro símbolo"
-        ))
+        );
+        match freno {
+            Some(e) => Err(format!("{e}; {desconocido}")),
+            None => Err(desconocido),
+        }
     }
 
     /// N20 (CL-195): la descarga de exchangeInfo de esta llamada la paró el
@@ -6669,6 +6680,37 @@ pub(crate) mod tests_n20 {
         let r = ex.get_symbol_filter("CL195SINSPECUSDT").now_or_never();
         assert!(matches!(r, Some(Err(_))), "{r:?}");
         assert_eq!(ex.negative_symbol_cache_len(), 1, "el mapa guardado prueba la ausencia");
+    }
+
+    /// RED antes de I-14 (cuarta revisión): sin spec en el registro y sin
+    /// exchangeInfo guardado, la descarga que para el freno daba el texto
+    /// genérico del paso 5, y el vigilante lo contaba como un fallo de
+    /// lectura (espera doblada) y no como el freno que se libera solo. El
+    /// error empieza ahora por el del freno, también tras un 429 respondido.
+    #[tokio::test]
+    async fn i14_el_filtro_frenado_conserva_el_texto_del_freno() {
+        for error in [
+            "HTTP_418_IP_BANNED retry_after=300",
+            "HTTP_429_RATE_LIMITED retry_after=30",
+        ] {
+            let ex = ex();
+            ex.handle_rate_limit_error(error);
+            let r = ex.get_symbol_filter("I14SINSPECUSDT").now_or_never();
+            assert!(
+                matches!(&r, Some(Err(e)) if crate::freno_temporal::es_freno_temporal(e)
+                    && e.contains("filtro de precisión desconocido para I14SINSPECUSDT")),
+                "{error}: {r:?}"
+            );
+            let Some(Err(e)) = r else { return };
+            let mut lecturas = crate::vigilante::Lecturas::new();
+            lecturas.error("I14SINSPECUSDT", &e);
+            let mut reintento = crate::vigilante::ReintentoLectura::new();
+            assert_eq!(
+                reintento.cerrar(1, 0, &lecturas),
+                crate::vigilante::Cierre::Frenada { seguidas: 1 },
+                "{e}"
+            );
+        }
     }
 
     /// CL-195: los prefijos que `descarga_frenada` reconoce (el freno, la

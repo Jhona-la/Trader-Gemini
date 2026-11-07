@@ -99,7 +99,7 @@ fn i9_toda_purga_fallida_tras_un_cierre_queda_pendiente() {
 #[test]
 fn i9_el_vigilante_reintenta_antes_de_la_purga_de_huerfanas() {
     let vigilante = tramo(
-        "let Ok(positions) = executor.fetch_position_risk().await else {",
+        "let positions = match executor.fetch_position_risk().await {",
         "ensure_position_protected(",
     );
     let reintento = vigilante

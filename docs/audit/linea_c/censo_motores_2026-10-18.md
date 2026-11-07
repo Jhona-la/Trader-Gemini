@@ -1596,6 +1596,27 @@ un escéptico por lote listo):
   (:3495). Durante un 429/418 la auditoría para antes (:3251), así que
   CL-190 es seguro. Pregunta abierta de N5: ¿openAlgoOrders sin símbolo es
   lectura aunque la purga sea protectora?
+  Ejecutada en Línea I (I-14): `purge_orphan_legs` devuelve Err si no
+  pudo leer el listado, y el vigilante no limpia la marca de sucio con una
+  lectura fallida, sin cuota o frenada (`execution_engine::vigilante::Lecturas`).
+  La relectura la decide `ReintentoLectura`: tras un fallo o sin la cuota
+  del tramo de lectura (`RATE_LIMIT_HEADROOM_`, con las lecturas críticas
+  ya enviadas) espera 5, 10, 20, 40 y 60 s; si una lectura crítica volvió
+  con el 429/418 que arma el freno, o el ejecutor no la envió (ese freno o
+  la cuota crítica agotada, `RATE_LIMIT_EXHAUSTED_`), relee en el ciclo
+  siguiente: mientras dura, la relectura no sale ni gasta peso. Un
+  evento terminal ajeno la adelanta aunque llegue durante la auditoría; las
+  marcas de la propia auditoría (sus purgas pendientes nuevas) no. El
+  vigilante no vuelve a marcar la bandera al cerrar una auditoría
+  incompleta: `mark_dirty` cuenta un evento terminal y adelantaba su propia
+  relectura cada 5 s (lo encontró la revisión adversarial de I-14; la
+  tercera, que la cuota crítica agotada no debe doblar la espera, porque
+  en main se releía cada 5 s y no se envía nada). Una
+  huérfana cuya cancelación falla pasa a las purgas pendientes de I-9 y,
+  mientras el proceso siga, el símbolo no admite entradas hasta purgarla;
+  sólo despierta al vigilante la primera vez. La pregunta de N5 sigue
+  abierta: el listado sin símbolo es lectura (peso 40), así que por encima
+  del 80 % de la cuota no sale y la auditoría queda sin cuota.
 - N35 (de la tanda 14): el `.expect` de `record_query_resolution`. Hecha en
   CL-191.
 - N36 (de la tanda 14, Línea I): el comentario D-702 (god_engine.rs:1916-1921)
@@ -1704,6 +1725,14 @@ un escéptico por lote listo):
   el primer hueco de stop siguiente la foto es 0 (:3326-3327) y todo
   rechazo antiguo cuenta como nuevo: un paso de racha sin evidencia en cada
   episodio. Candidato: guardar `rejections_of` en vez de borrar la foto.
+  Ejecutada en Línea I (I-14): la base de rechazos
+  (`execution_engine::vigilante::BaseDeRechazos`) ya no se borra; al quedar
+  el símbolo cubierto o sin posición se fija al acumulado de ese momento, y
+  el hueco siguiente sólo cuenta los rechazos posteriores. Con el acumulado
+  real de `protection_health`, dos rechazos en un hueco ya no dan un paso
+  de racha en el siguiente (`i14_n42_dos_huecos_de_stop_con_el_acumulado_real`).
+  La base guarda una entrada por símbolo que tuvo posición (como mucho el
+  universo de contratos del exchange).
 - N43 (de la tanda 16, Línea C con la documentación): un -1000 en un 4xx.
   `protection_health` lo trata como ejecución desconocida (no cuenta como
   rechazo) y la clasificación de los envíos de orden
@@ -1727,6 +1756,22 @@ un escéptico por lote listo):
   esa vía; si se quiere acotar la desnudez ante fallos sin rechazo, la
   regla es del host y por la duración del hueco. Los comentarios de
   god_engine.rs:481 y :542 deben decir que un 5xx no es rechazo.
+  Ejecutada en Línea I (I-14): `ensure_position_protected` devuelve Err si
+  no pudo leer las piernas, antes de colocar nada
+  (`vigilante::cobertura_leida`, con el mismo recuento de cobertura de
+  antes). El vigilante salta esa posición sin tocar su racha ni su base de
+  rechazos y la relee; la adopción del arranque lo avisa y deja la marca de
+  sucio en vez de descartar el resultado con `let _ =`. Sin el filtro del
+  símbolo tampoco coloca nada, pero los huecos leídos cuentan para la
+  escalada como antes y la auditoría no se da por completa. Si el freno
+  paró la descarga de exchangeInfo, el error de `get_symbol_filter` empieza
+  ya por el texto del freno y la auditoría se relee en el ciclo siguiente
+  (antes contaba como un fallo de lectura; lo encontró la cuarta revisión
+  adversarial de I-14). Los dos
+  comentarios dicen ya que sólo cuenta un código del exchange. Queda
+  abierto (N44b): una posición cuyas piernas no se pueden leer durante
+  mucho tiempo no escala; si se quiere acotar ese tiempo, la regla es del
+  host y por la duración del hueco sin lectura.
 - N45 (de la tanda 16, Sol): data-pipeline `api_client.rs` copia la URL
   firmada al texto de sus errores de red («HTTP Error: …», :119 y :212),
   como hacía el ejecutor antes de CL-202. Ningún lector busca en ese texto:

@@ -20,6 +20,7 @@ pub mod router;
 pub mod simulator;
 pub mod trade_accounting;
 pub mod user_data_stream;
+pub mod vigilante;
 pub mod ws_executor;
 
 pub use adversarial_gate::{
