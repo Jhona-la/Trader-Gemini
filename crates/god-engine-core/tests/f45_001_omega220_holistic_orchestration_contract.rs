@@ -178,6 +178,24 @@ fn test_c1_holistic_living_graph_end_to_end_synthesis() {
     assert!(report.chern_simons_report.berry_phase.is_finite());
     assert!(!report.chern_simons_report.topological_veto_induced);
     assert!(report.chern_simons_report.slot_scaling_factor >= 0.10);
+
+    // 20. Auto-Regulación Cuántica por Invariantes de Calabi-Yau y Seiberg-Witten (Fase 55)
+    assert!(report.calabi_yau_report.kaehler_volume > 0.0);
+    assert!((0.0..=1.0).contains(&report.calabi_yau_report.ricci_flatness_deviation));
+    assert!(!report.calabi_yau_report.conifold_singularity_detected);
+    assert!(report.calabi_yau_report.slot_scaling_factor >= 0.10);
+
+    // 21. Termodinámica Estocástica de Jarzynski-Crooks y Producción de Entropía (Fase 56)
+    assert!(report.jarzynski_crooks_report.dissipated_work >= 0.0);
+    assert!(report.jarzynski_crooks_report.entropy_production >= 0.0);
+    assert!((0.0..=1.0).contains(&report.jarzynski_crooks_report.reversibility_index));
+    assert!(report.jarzynski_crooks_report.signal_conviction_modulator >= 0.05);
+
+    // 22. Barrera Conformal de No-Ruina de Gromov y Cuantización Cuaterniónica (Fase 57)
+    assert!(report.gromov_symplectic_report.portfolio_phase_radius > 0.0);
+    assert!(report.gromov_symplectic_report.hole_capacity_radius > 0.0);
+    assert!(!report.gromov_symplectic_report.gromov_symplectic_veto);
+    assert!(report.gromov_symplectic_report.slot_scaling_factor >= 0.10);
 }
 
 #[test]

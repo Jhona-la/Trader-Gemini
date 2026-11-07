@@ -1454,6 +1454,121 @@ En cada evaluación de riesgo en `crates/risk-engine` e integrado en el Grafo Om
 - Rol 8 Físico-Matemático de Topología Cuántica.
 - Rol 10 Auditor Forense Causal.
 
+---
+
+## 🏛️ PARTE XIV — OLA 13: VARIABILIDAD DE CALABI-YAU, TERMODINÁMICA DE JARZYNSKI-CROOKS Y NO-APLASTAMIENTO SIMPLÉCTICO DE GROMOV (FASES 55, 56, 57)
+
+### 🔮 FASE 55 (§55) — AUTO-REGULACIÓN CUÁNTICA POR INVARIANTES DE CALABI-YAU Y FIBRACIONES DE SEIBERG-WITTEN
+
+#### 1. QUÉ
+Diseño e implementación de un motor de compactificación y análisis geométrico de Calabi-Yau en 6 dimensiones reales (3 complejas, $CY_3 \implies \mathbb{C}^3 \cong \mathbb{R}^6$) acoplado a monopolos de Seiberg-Witten (`CalabiYauSeibergWittenEngine`).
+
+#### 2. POR QUÉ
+El estado instantáneo del libro de órdenes no es una colección unidimensional de escalares inconexos; habita en un fibrado de microestructura donde el retorno, la volatilidad, los desbalances de flujo (OFI/OBI) y la profundidad interactúan holomórficamente. Una deformación métrica severa induce singularidades de conifold donde los ciclos compactos colapsan, precediendo quiebres catastróficos de liquidez.
+
+#### 3. PARA QUÉ
+Evaluar el volumen de Kähler $V_{CY} = \det(g_{j\bar{k}})$, cuantificar la desviación de planitud de Ricci $\Delta_{CY} \in [0.0, 1.0]$, calcular el invariante normalizado de Seiberg-Witten $SW_{\text{inv}} \in [-1.0, 1.0]$, y modular la convicción con $\omega_{CY} \in [0.10, 1.40]$ en $O(1)$ stack sin heap allocations.
+
+#### 4. CÓMO (Mecanismo Matemático y Algorítmico Paso a Paso)
+1. **Coordenadas Complejas $\mathbb{C}^3$:**
+   $z_1 = \Delta p + i \sigma_{\text{vol}}$, $z_2 = \text{OBI} + i \text{OFI}$, $z_3 = \Delta_{\text{spread}} + i \Delta_{\text{depth}}$.
+2. **Potencial y Métrica de Kähler:**
+   $K = R^2 + \frac{\kappa}{2} R^4 \implies \det(g) = (1 + \kappa R^2)^2 (1 + 2\kappa R^2)$.
+3. **Desviación de Calabi-Yau (Ricci-Flatness):**
+   $\Delta_{CY} = \frac{\kappa R^2}{1 + 2\kappa R^2} \in [0.0, 1.0]$.
+4. **Monopolos de Seiberg-Witten:**
+   $F_A^+ = \sigma(\psi, \psi)$, derivando la densidad del monopolo $\rho_{SW} \ge 0$ y el invariante topológico acotado.
+5. **Detección de Singularidad de Conifold:**
+   Si $\Delta_{CY} \ge 0.85$ o hay dispersión de fase extrema, se activa `CALABI_YAU_CONIFOLD_VETO` y comprime la escala a 0.10.
+
+#### 5. CUÁNDO
+En cada tick de libro L2 y pulso de microestructura en `crates/feature-engine`.
+
+#### 6. DÓNDE
+- Módulo: `crates/feature-engine/src/calabi_yau_seiberg_witten.rs`.
+- Re-exportado en: `crates/feature-engine/src/lib.rs`.
+- Contrato formal: `crates/feature-engine/tests/f55_001_calabi_yau_seiberg_witten_contract.rs`.
+
+#### 7. QUIÉN
+- Rol 8 Físico-Matemático de Topología & Manifolds.
+- Rol 7 Arquitecto de Silicio & Geometría Compleja.
+
+---
+
+### ⚡ FASE 56 (§56) — TERMODINÁMICA ESTOCÁSTICA DE JARZYNSKI-CROOKS Y PRODUCCIÓN DE ENTROPÍA EN ALTA FRECUENCIA
+
+#### 1. QUÉ
+Diseño e implementación de un motor de termodinámica estocástica fuera del equilibrio (`JarzynskiCrooksThermodynamicsEngine`) basado en la Igualdad de Jarzynski $\langle e^{-\beta W} \rangle = e^{-\beta \Delta F}$ y el Teorema de Fluctuación de Crooks $P_F(W) / P_R(-W) = \exp(\beta(W - \Delta F))$.
+
+#### 2. POR QUÉ
+A escalas microscópicas (< 10 ms), el flujo de órdenes está intrínsecamente fuera del equilibrio estacionario. El trabajo inyectado por operadores agresivos disipa energía en forma de fricción y slippage. Ignorar la irreversibilidad temporal y la producción de entropía expone al sistema a ser devorado por cascadas de liquidación forzada unidireccionales.
+
+#### 3. PARA QUÉ
+Determinar el trabajo disipado irreversible $W_{\text{diss}} = \langle W \rangle - \Delta F \ge 0$, computar la producción de entropía microscópica $\Sigma_{\text{entropy}} = \beta W_{\text{diss}} \ge 0$, estimar el índice de reversibilidad $\mathcal{R}_{\text{rev}} \in [0.0, 1.0]$ y modular la convicción $\lambda_{\text{jc}} \in [0.05, 1.35]$ en $O(1)$ stack.
+
+#### 4. CÓMO (Mecanismo Matemático y Algorítmico Paso a Paso)
+1. **Temperatura Efectiva del Libro:**
+   $T_{\text{eff}} = T_0 \sqrt{\text{spread}} (1 + 10\sigma) \implies \beta = 1 / (k_B T_{\text{eff}})$.
+2. **Trabajo Mecánico de Inyección y Reverso:**
+   $W = \text{OFI} \cdot \Delta p + \frac{1}{2} \text{spread} \cdot |\text{OFI}|$, y simulación bajo inversión temporal P-T.
+3. **Igualdad de Jarzynski:**
+   $\Delta F = -\frac{1}{\beta} \ln \langle e^{-\beta W} \rangle$.
+4. **Producción de Entropía:**
+   $\Sigma_{\text{entropy}} = \beta (\langle W \rangle - \Delta F) \ge 0$.
+5. **Alerta de Colapso Irreversible:**
+   Si $\Sigma_{\text{entropy}} \ge 2.50$, activa `JARZYNSKI_ENTROPY_COLLAPSE_VETO` y reduce la convicción a 0.05.
+
+#### 5. CUÁNDO
+En cada síntesis de señales continuas en `crates/signal-engine`.
+
+#### 6. DÓNDE
+- Módulo: `crates/signal-engine/src/jarzynski_crooks_thermodynamics.rs`.
+- Re-exportado en: `crates/signal-engine/src/lib.rs`.
+- Contrato formal: `crates/signal-engine/tests/f56_001_jarzynski_crooks_thermodynamics_contract.rs`.
+
+#### 7. QUIÉN
+- Rol 2 Quant Developer.
+- Rol 9 Físico Teórico de No-Equilibrio.
+
+---
+
+### 🛡️ FASE 57 (§57) — BARRERA CONFORMAL DE NO-RUINA DE GROMOV Y CUANTIZACIÓN CUATERNIÓNICA SIMPLÉCTICA
+
+#### 1. QUÉ
+Diseño e implementación de la barrera de rigidez simpléctica de Gromov (`GromovSymplecticBarrierEngine`) fundamentada en el Teorema del Camello Simpléctico y proyecciones cuaterniónicas $\mathbb{H}$ en 4 dimensiones.
+
+#### 2. POR QUÉ
+El teorema de Gromov demuestra que una bola de fase $B^{2n}(R)$ no puede ser aplastada por ningún difeomorfismo canónico a través de una garganta $Z^{2n}(r)$ con radio $r < R$. Intentar forzar una posición cuyo volumen de incertidumbre de riesgo excede la capacidad de absorción simpléctica del libro garantiza una pérdida cuadrática irreparable por colapso de fase.
+
+#### 3. PARA QUÉ
+Calcular las capacidades simplécticas $c_{\text{portfolio}} = \pi R_{\text{portfolio}}^2$ y $c_{\text{hole}} = \pi r_{\text{hole}}^2$, evaluar el margen de compresión $\Delta_{\text{gromov}} \in [-1.0, 1.0]$, y activar el veto absoluto `GROMOV_SYMPLECTIC_VETO` (escala 0.0) cuando $R > r$, blindando la cota de ruina de Ville $\mathbb{P}(\text{ruina}) \le 10^{-6}$.
+
+#### 4. CÓMO (Mecanismo Matemático y Algorítmico Paso a Paso)
+1. **Radio de Fase del Capital:**
+   $R_{\text{portfolio}} = \sqrt{C_{\text{risk}} / C_{\text{total}}} (1 + L \cdot \sigma)$.
+2. **Radio de la Garganta del Libro:**
+   $r_{\text{hole}} = \sqrt{\text{Depth} / C_{\text{risk}}} / (1 + \text{spread} \cdot \kappa)$.
+3. **Proyección Cuaterniónica $\mathbb{H}$:**
+   Rotación unitaria sin gimbal lock en $(\Delta p, \text{Depth}, \text{spread}, \sigma)$ para medir la divergencia de fase.
+4. **Veto Simpléctico Estricto:**
+   Si $R_{\text{portfolio}} > r_{\text{hole}} (1 - \delta)$, emisión instantánea de veto y bloqueo de la orden.
+
+#### 5. CUÁNDO
+En cada evaluación de riesgo previa al enrutamiento de órdenes en `crates/risk-engine` e integrado en `god-engine-core`.
+
+#### 6. DÓNDE
+- Módulo: `crates/risk-engine/src/gromov_symplectic_barrier.rs`.
+- Re-exportado en: `crates/risk-engine/src/lib.rs`.
+- Integrado en: `crates/god-engine-core/src/omniscient_living_graph.rs`.
+- Contrato formal: `crates/risk-engine/tests/f57_001_gromov_symplectic_barrier_contract.rs`.
+- Contrato de síntesis: `crates/god-engine-core/tests/f57_002_wave13_living_graph_synthesis_contract.rs`.
+
+#### 7. QUIÉN
+- Rol 3 Risk Manager Teórico.
+- Rol 8 Físico-Matemático de Geometría Simpléctica.
+- Rol 10 Auditor Forense Causal.
+
+
 
 
 

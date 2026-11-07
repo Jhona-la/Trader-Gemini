@@ -18,6 +18,7 @@ pub mod flow_impulse;
 pub mod fractional_rough_volatility;
 pub mod game_theoretic_nash;
 pub mod hawkes_bessel;
+pub mod jarzynski_crooks_thermodynamics;
 pub mod mean_field_games_psychology;
 pub mod navier_stokes_kolmogorov;
 pub mod navier_stokes_manifold;
@@ -52,6 +53,11 @@ pub use fractional_rough_volatility::{
     FractionalRoughVolatilityReport, ROUGH_VOL_WINDOW,
 };
 pub use hawkes_bessel::{HawkesBesselEngine, HawkesBesselParams};
+pub use jarzynski_crooks_thermodynamics::{
+    JarzynskiCrooksParams, JarzynskiCrooksReport, JarzynskiCrooksThermodynamicsEngine,
+    JarzynskiTrajectorySample, CRITICAL_ENTROPY_PRODUCTION, DEFAULT_KB_BOLTZMANN,
+    JARZYNSKI_WINDOW_CAPACITY,
+};
 pub use maker::{MakerEngine, MakerQuote};
 pub use mean_field_games_psychology::{
     MeanFieldGamesParams, MeanFieldGamesPsychologyEngine, MeanFieldGamesReport, MFG_SPATIAL_NODES,

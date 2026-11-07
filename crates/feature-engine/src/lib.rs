@@ -1,4 +1,5 @@
 pub mod bouchaud_mezard_ewl;
+pub mod calabi_yau_seiberg_witten;
 pub mod caputo_fraccional;
 pub mod connes_clifford_kan;
 pub mod copulas;
@@ -59,6 +60,10 @@ pub mod zakai_doob_amplituhedron;
 pub use bouchaud_mezard_ewl::{
     BouchaudMezardEngine, BouchaudMezardParams, BouchaudMezardReport, EwlQuantumGameEngine,
     EwlQuantumGameReport, LiquidityCondensationRegime, QuantumStrategySU2, MAX_BM_LEVELS,
+};
+pub use calabi_yau_seiberg_witten::{
+    CalabiYauParams, CalabiYauSeibergWittenEngine, CalabiYauSeibergWittenReport, ComplexCoord,
+    CY_COMPLEX_DIM, CY_HISTORY_LEN,
 };
 pub use connes_clifford_kan::{
     CliffordMultivector3D, ConnesCliffordKanEngine, ConnesCliffordKanReport, ConnesSpectralReport,

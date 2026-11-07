@@ -26,6 +26,7 @@ use crate::topological_metamorphosis::{
     METAMORPHOSIS_NODES,
 };
 use feature_engine::{
+    CalabiYauParams, CalabiYauSeibergWittenEngine, CalabiYauSeibergWittenReport,
     GeodesicPhaseSpaceParams, GeodesicPhaseSpaceReport, HyperbolicPoincareHodgeEngine,
     HyperbolicPoincareHodgeParams, HyperbolicPoincareHodgeReport,
     MongeKantorovichWassersteinEngine, QuantumGeodesicPhaseSpaceEngine, VietorisRipsParams,
@@ -34,7 +35,8 @@ use feature_engine::{
 };
 use risk_engine::{
     AdaptiveQuantumVetoGovernor, AdaptiveVetoDecision, ChernSimonsBerryParams,
-    ChernSimonsBerryPhaseEngine, ChernSimonsBerryReport, MarketQuantumStateInput, MpsDmrgParams,
+    ChernSimonsBerryPhaseEngine, ChernSimonsBerryReport, GromovSymplecticBarrierEngine,
+    GromovSymplecticParams, GromovSymplecticReport, MarketQuantumStateInput, MpsDmrgParams,
     MpsDmrgReport, QuantumNoArbitrageConformalEngine, QuantumNoArbitrageConformalParams,
     QuantumNoArbitrageConformalReport, TensorNetworkMpsDmrgEngine, MPS_ASSET_CHANNELS,
 };
@@ -42,7 +44,8 @@ use signal_engine::{
     BurgersShockwaveReport, ContinuousVolatilityOperatorEngine, ContinuousVolatilityState,
     FeynmanPathIntegralRoutingEngine, FeynmanRoutingParams, FeynmanRoutingReport,
     FractionalRoughVolatilityEngine, FractionalRoughVolatilityParams,
-    FractionalRoughVolatilityReport, MeanFieldGamesPsychologyEngine, MeanFieldGamesReport,
+    FractionalRoughVolatilityReport, JarzynskiCrooksParams, JarzynskiCrooksReport,
+    JarzynskiCrooksThermodynamicsEngine, MeanFieldGamesPsychologyEngine, MeanFieldGamesReport,
     MultiSlotEvaluationReport, MultiSlotOrderEmission, NavierStokesKolmogorovEngine,
     NavierStokesParams, NavierStokesReport, QuantumSlotOrchestrator, RiemannBurgersShockwaveEngine,
     SrbEntropyParams, SrbEntropyReport, SrbKolmogorovEntropyEngine,
@@ -89,6 +92,10 @@ pub struct OmniscientLivingGraphReport {
     pub vietoris_rips_report: VietorisRipsReport,
     pub wilson_rg_report: WilsonExactRgReport,
     pub chern_simons_report: ChernSimonsBerryReport,
+    // --- Extensiones Holísticas Omega220 (Fases 55 - 57) ---
+    pub calabi_yau_report: CalabiYauSeibergWittenReport,
+    pub jarzynski_crooks_report: JarzynskiCrooksReport,
+    pub gromov_symplectic_report: GromovSymplecticReport,
 }
 
 /// Orquestador del grafo vivo omnisciente para todo el universo de activos.
@@ -117,6 +124,10 @@ pub struct OmniscientLivingGraphOrchestrator {
     pub vietoris_rips_engines: Vec<VietorisRipsTopologicalEngine>,
     pub wilson_rg_engines: Vec<WilsonExactRenormalizationEngine>,
     pub chern_simons_engines: Vec<ChernSimonsBerryPhaseEngine>,
+    // Motores cuánticos y físicos unificados (Fases 55 - 57)
+    pub calabi_yau_engines: Vec<CalabiYauSeibergWittenEngine>,
+    pub jarzynski_crooks_engines: Vec<JarzynskiCrooksThermodynamicsEngine>,
+    pub gromov_symplectic_engines: Vec<GromovSymplecticBarrierEngine>,
     pub prev_mid_prices: Vec<f64>,
     pub last_event_time_ms: u64,
 }
@@ -184,6 +195,15 @@ impl OmniscientLivingGraphOrchestrator {
                 .collect(),
             chern_simons_engines: (0..count)
                 .map(|_| ChernSimonsBerryPhaseEngine::new(ChernSimonsBerryParams::default()))
+                .collect(),
+            calabi_yau_engines: (0..count)
+                .map(|_| CalabiYauSeibergWittenEngine::new(CalabiYauParams::default()))
+                .collect(),
+            jarzynski_crooks_engines: (0..count)
+                .map(|_| JarzynskiCrooksThermodynamicsEngine::new(JarzynskiCrooksParams::default()))
+                .collect(),
+            gromov_symplectic_engines: (0..count)
+                .map(|_| GromovSymplecticBarrierEngine::new(GromovSymplecticParams::default()))
                 .collect(),
             prev_mid_prices: vec![0.0; count],
             last_event_time_ms: 0,
@@ -465,7 +485,39 @@ impl OmniscientLivingGraphOrchestrator {
             event_time_ms,
         );
 
-        // 22. Factor de Escala de Riesgo Holístico Tri-Slot $\eta_{\text{holistic}}$
+        // 22. Auto-Regulación Cuántica por Invariantes de Calabi-Yau y Seiberg-Witten (Fase 55)
+        let depth_imbalance = (bid_qty - ask_qty) / (bid_qty + ask_qty).max(0.001);
+        let calabi_yau_report = self.calabi_yau_engines[safe_coin_id].update_and_evaluate(
+            price_ret,
+            volatility_state.effective_volatility,
+            obi,
+            ofi,
+            spread_bps,
+            depth_imbalance,
+            event_time_ms,
+        );
+
+        // 23. Termodinámica Estocástica de Jarzynski-Crooks y Producción de Entropía (Fase 56)
+        let jarzynski_crooks_report = self.jarzynski_crooks_engines[safe_coin_id]
+            .update_and_evaluate(
+                price_ret,
+                ofi,
+                spread_bps,
+                volatility_state.effective_volatility,
+                event_time_ms,
+            );
+
+        // 24. Barrera Conformal de No-Ruina de Gromov y Cuantización Cuaterniónica (Fase 57)
+        let effective_depth_usd = (bid_qty + ask_qty) * mid_price * 0.5;
+        let gromov_symplectic_report = self.gromov_symplectic_engines[safe_coin_id].evaluate(
+            capital_available_usd * risk_fraction,
+            capital_available_usd,
+            effective_depth_usd,
+            spread_bps,
+            volatility_state.effective_volatility,
+        );
+
+        // 25. Factor de Escala de Riesgo Holístico Tri-Slot $\eta_{\text{holistic}}$
         let mps_weight_factor = (mps_dmrg_report.asset_weights[safe_coin_id % MPS_ASSET_CHANNELS]
             * (MPS_ASSET_CHANNELS as f64))
             .clamp(0.50, 1.50);
@@ -480,10 +532,13 @@ impl OmniscientLivingGraphOrchestrator {
             * vietoris_rips_report.slot_scaling_factor
             * wilson_rg_report.signal_conviction_modulator
             * chern_simons_report.slot_scaling_factor
+            * calabi_yau_report.slot_scaling_factor
+            * jarzynski_crooks_report.signal_conviction_modulator
+            * gromov_symplectic_report.slot_scaling_factor
             * mps_weight_factor)
             .clamp(0.10, 1.25);
 
-        // 23. Evaluación Multi-Slot en QuantumSlotOrchestrator (Fase 28 / 33)
+        // 26. Evaluación Multi-Slot en QuantumSlotOrchestrator (Fase 28 / 33)
         let cvd = obi * 1000.0;
         let atr_pct = (volatility_state.effective_volatility * 100.0).clamp(0.001, 0.20);
         let dominant_tau_ms = 30_000.0;
@@ -505,12 +560,15 @@ impl OmniscientLivingGraphOrchestrator {
             open_positions_is_long,
         );
 
-        // 24. Modulación Continua del Grafo Vivo:
-        // Si hay veto duro, rechazo conformal estricto o air pocket, aplanar decisiones
+        // 27. Modulación Continua del Grafo Vivo:
+        // Si hay veto duro, rechazo conformal estricto, air pocket, o veto simpléctico de Gromov, aplanar decisiones
         let allow_entry = !conformal_decision.is_hard_vetoed
             && !quantum_no_arbitrage_report.hard_veto_induced
             && !chern_simons_report.topological_veto_induced
             && !vietoris_rips_report.air_pocket_detected
+            && !calabi_yau_report.conifold_singularity_detected
+            && !jarzynski_crooks_report.irreversible_entropy_collapse
+            && !gromov_symplectic_report.gromov_symplectic_veto
             && (spread_bps <= conformal_decision.dynamic_spread_ceiling_bps
                 || conformal_decision.elastic_entry_granted);
 
@@ -519,14 +577,22 @@ impl OmniscientLivingGraphOrchestrator {
                 decision.signal = SignalType::Flat;
                 decision.net_confidence = 0.0;
                 decision.vetoed = true;
-                decision.veto_reason = chern_simons_report
-                    .veto_reason
-                    .or(quantum_no_arbitrage_report.veto_reason)
-                    .or(if vietoris_rips_report.air_pocket_detected {
-                        Some("TDA_AIR_POCKET_VETO")
-                    } else {
-                        Some("CONFORMAL_ADAPTIVE_VETO")
-                    });
+                decision.veto_reason = if gromov_symplectic_report.gromov_symplectic_veto {
+                    Some("GROMOV_SYMPLECTIC_VETO")
+                } else if calabi_yau_report.conifold_singularity_detected {
+                    Some("CALABI_YAU_CONIFOLD_VETO")
+                } else if jarzynski_crooks_report.irreversible_entropy_collapse {
+                    Some("JARZYNSKI_ENTROPY_COLLAPSE_VETO")
+                } else {
+                    chern_simons_report
+                        .veto_reason
+                        .or(quantum_no_arbitrage_report.veto_reason)
+                        .or(if vietoris_rips_report.air_pocket_detected {
+                            Some("TDA_AIR_POCKET_VETO")
+                        } else {
+                            Some("CONFORMAL_ADAPTIVE_VETO")
+                        })
+                };
             }
         } else {
             // Modulación suave de confianza según convicción cuántica holística y escala de slot
@@ -537,7 +603,7 @@ impl OmniscientLivingGraphOrchestrator {
             }
         }
 
-        // 25. Síntesis Coordinada de Emisiones de Órdenes Tri-Slot
+        // 28. Síntesis Coordinada de Emisiones de Órdenes Tri-Slot
         let coordinated_emissions = slot_orchestrator.synthesize_order_emissions(
             &multi_slot_evaluation,
             capital_available_usd,
@@ -545,10 +611,13 @@ impl OmniscientLivingGraphOrchestrator {
             risk_fraction,
         );
 
-        // 26. Verificación de Cota de Ruina de Ville (\mathbb{P}(\text{ruina}) \le 10^{-6})
+        // 29. Verificación de Cota de Ruina de Ville (\mathbb{P}(\text{ruina}) \le 10^{-6})
         let ville_ruin_bound_satisfied = capital_available_usd > 0.0
             && !quantum_no_arbitrage_report.hard_veto_induced
             && !chern_simons_report.topological_veto_induced
+            && !calabi_yau_report.conifold_singularity_detected
+            && !jarzynski_crooks_report.irreversible_entropy_collapse
+            && !gromov_symplectic_report.gromov_symplectic_veto
             && conformal_decision.conformal_risk_score <= 0.85
             && srb_entropy_report.kolmogorov_sinai_entropy < 0.98;
 
@@ -582,6 +651,9 @@ impl OmniscientLivingGraphOrchestrator {
             vietoris_rips_report,
             wilson_rg_report,
             chern_simons_report,
+            calabi_yau_report,
+            jarzynski_crooks_report,
+            gromov_symplectic_report,
         }
     }
 }

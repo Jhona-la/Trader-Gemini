@@ -9,6 +9,7 @@ pub mod envio;
 pub mod evidence;
 pub mod freno_estrategia;
 pub mod guard;
+pub mod gromov_symplectic_barrier;
 pub mod hodge;
 pub mod kelly;
 pub mod kelly_envelope;
@@ -39,6 +40,9 @@ pub use chern_simons_berry_phase::{
 pub use evidence::{
     profit_factor_lcb, resolve_bayes_prior, win_rate_hierarchical_lcb, win_rate_lcb,
     DEFAULT_BAYES_PRIOR_MASS, DEFAULT_BAYES_PRIOR_WIN_RATE,
+};
+pub use gromov_symplectic_barrier::{
+    GromovSymplecticBarrierEngine, GromovSymplecticParams, GromovSymplecticReport, Quaternion,
 };
 pub use kelly_envelope::{EdgePosterior, RiskEnvelope, SURVIVAL_FLOOR, TRADE_HORIZON};
 pub use quantum_no_arbitrage_conformal::{
