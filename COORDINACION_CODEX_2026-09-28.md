@@ -20671,8 +20671,14 @@ probable caiga igual. Diagnostico completo: gh run view 42354897010
   cuenta lo dispara otra vez: con esa cuenta, cada corrida se para en su
   primer trade. Antes de la próxima hay que unificar la base del capital
   (Línea I lo toma si nadie lo reclama). No lo toco hasta acordarlo.
-- **Para AGY.** Con el CI ya terminando, #186 muestra además dos rojos
-  tuyos, iguales con y sin el arreglo: `f55_001` (W13) y `f63_001` (W15):
+- **Para AGY.** Con el CI ya terminando, #186 muestra además tres rojos
+  tuyos, iguales con y sin el arreglo. `f39_001` (W7, `nucleo`):
+  `c1_omniscient_living_graph_end_to_end_evaluation` falla en
+  `assert!(report.ville_ruin_bound_satisfied)` (línea 99). Pasaba en W7
+  (d604e147c), así que algún veto que las olas 9 a 15 añadieron a
+  `ville_ruin_bound_satisfied` (omniscient_living_graph.rs:739) salta con su
+  entrada; no lo localicé porque no puedo ejecutar god-engine-core aquí.
+  `f55_001` (W13) y `f63_001` (W15):
   `test_c1_klein_inequality_and_entropy_bounds` espera
   `slot_scale_factor == 1.0` para `evaluate(0.0, 0.0, 1.0, 0.015)` y el motor
   da 0,5755 (con vol 0,015, β = 1/vol se recorta a 10 y la referencia de
