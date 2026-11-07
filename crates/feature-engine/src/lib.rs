@@ -49,6 +49,7 @@ pub mod tqft_anyons;
 pub mod transfer_entropy;
 pub mod tropical_kdv_soliton;
 pub mod tzcnt_lut_kpz;
+pub mod vietoris_rips_persistence;
 pub mod virasoro_cft_bootstrap;
 pub mod voiculescu_jarzynski_svgd;
 pub mod welford;
@@ -177,6 +178,10 @@ pub use tzcnt_lut_kpz::{
     BitmapTickScanner256, FastAsciiLutEncoder, KpzBitmapRegime, KpzSurfaceGrowthEngine,
     KpzSurfaceReport, TzcntLutKpzMasterEngine, TzcntLutKpzReport, DIGIT_PAIRS_LUT, KPZ_DYNAMIC_Z,
     KPZ_GROWTH_BETA, KPZ_ROUGHNESS_ALPHA, KPZ_SURFACE_SITES,
+};
+pub use vietoris_rips_persistence::{
+    TdaMicroPoint, VietorisRipsParams, VietorisRipsReport, VietorisRipsTopologicalEngine,
+    TDA_FILTRATION_LEVELS, TDA_POINT_CLOUD_LEN,
 };
 pub use virasoro_cft_bootstrap::{
     ConformalRegime, VirasoroCftBootstrapEngine, VirasoroCftParams, VirasoroCftReport,

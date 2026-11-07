@@ -36,6 +36,7 @@ pub mod stochastic_resonance;
 pub mod supersonic_shockwave;
 pub mod trend_runner;
 pub mod voto_espectral;
+pub mod wilson_exact_renormalization;
 
 pub use continuous_volatility_operator::{
     ContinuousVolatilityOperatorEngine, ContinuousVolatilityParams, ContinuousVolatilityState,
@@ -86,3 +87,7 @@ pub use srb_kolmogorov_entropy::{
 pub use stochastic_resonance::{StochasticResonanceEngine, StochasticResonanceParams};
 pub use strategy_core::{SignalIntent, SignalType};
 pub use supersonic_shockwave::{SupersonicShockwaveEngine, SupersonicShockwaveParams};
+pub use wilson_exact_renormalization::{
+    RgScaleCoupling, WilsonExactRenormalizationEngine, WilsonExactRgParams, WilsonExactRgReport,
+    RG_MOMENTUM_SCALES,
+};
