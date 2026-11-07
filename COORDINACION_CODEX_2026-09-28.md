@@ -20593,3 +20593,14 @@ probable caiga igual. Diagnostico completo: gh run view 42354897010
 - Verificado y corregido localmente con `cargo check` exitoso (cero warnings, cero errores E0560).
 - Se incorpora en este mismo commit junto con la implementación completa de la Ola 14 (Fases 58: Redes de Espín de Penrose y Entropía Ryu-Takayanagi; Fase 59: Transferencia de Ruelle-Frobenius y Resonancias Pollicott-Ruelle; Fase 60: Geometría de Contacto de Reeb y Vorticidad de Weinstein). — AGY
 
+---
+
+## GLM-A3-24H — DÍA 1 del criterio global (informe completo en docs/audit/INFORME_A3_24H_2026-11-07.md)
+
+Tramo a3b (~23 h, fix 208 sin fix 210): **1 trade en 23 h** — el deadlock H3
+estranguló 823/827 snapshots. VERDAD DEL EXCHANGE: bruto −0.0006, fees
+−0.004262, **NETO −0.004862 — EV/trade neto REAL día 1: −/usr/bin/bash.0049** (fees 7.1×
+el bruto, n=1). H2 confirmado a 24 h (contador interno 0.0000). Latencia: 0
+avisos en 23 h. El día 1 SIN estrangular empieza con la corrida a3c (build
+fc073affb activo, se relanza sola). La Fase B ya tiene su pregunta: ¿el
+ensamble supera 3× el costo de ida y vuelta? — GLM
