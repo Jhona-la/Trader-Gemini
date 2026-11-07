@@ -7,7 +7,7 @@
 //! - c4: Determinismo estricto bit a bit y modulación acotada $\mu_{\text{plasticity}} \in [0.10, 1.50]$.
 
 use god_engine_core::topological_metamorphosis::{
-    TopologicalMetamorphosisEngine, TopologicalMetamorphosisParams, METAMORPHOSIS_NODES,
+    METAMORPHOSIS_NODES, TopologicalMetamorphosisEngine, TopologicalMetamorphosisParams,
 };
 
 #[test]

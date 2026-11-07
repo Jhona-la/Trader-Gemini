@@ -22,16 +22,16 @@
 //! - Cota analítica de ruina de Ville $\mathbb{P}(\text{ruina}) \le 10^{-6}$ estrictamente preservada.
 
 use crate::topological_metamorphosis::{
-    TopologicalMetamorphosisEngine, TopologicalMetamorphosisParams, TopologicalMetamorphosisReport,
-    METAMORPHOSIS_NODES,
+    METAMORPHOSIS_NODES, TopologicalMetamorphosisEngine, TopologicalMetamorphosisParams,
+    TopologicalMetamorphosisReport,
 };
 use feature_engine::{
     HyperbolicPoincareHodgeEngine, HyperbolicPoincareHodgeParams, HyperbolicPoincareHodgeReport,
-    MongeKantorovichWassersteinEngine, WassersteinParams, WassersteinReport, WASSERSTEIN_NODES,
+    MongeKantorovichWassersteinEngine, WASSERSTEIN_NODES, WassersteinParams, WassersteinReport,
 };
 use risk_engine::{
-    AdaptiveQuantumVetoGovernor, AdaptiveVetoDecision, MarketQuantumStateInput, MpsDmrgParams,
-    MpsDmrgReport, TensorNetworkMpsDmrgEngine, MPS_ASSET_CHANNELS,
+    AdaptiveQuantumVetoGovernor, AdaptiveVetoDecision, MarketQuantumStateInput, MPS_ASSET_CHANNELS,
+    MpsDmrgParams, MpsDmrgReport, TensorNetworkMpsDmrgEngine,
 };
 use signal_engine::{
     BurgersShockwaveReport, ContinuousVolatilityOperatorEngine, ContinuousVolatilityState,
@@ -43,7 +43,7 @@ use signal_engine::{
 };
 use strategy_core::{
     AssetColorState, ChromodynamicGaugeSu3Engine, ConnesSpectralGeometryEngine,
-    ConnesSpectralParams, ConnesSpectralReport, SignalType, Su3GaugeReport, SU3_COLORS,
+    ConnesSpectralParams, ConnesSpectralReport, SU3_COLORS, SignalType, Su3GaugeReport,
 };
 
 /// Informe omnisciente holístico que resume el estado emergente completo del grafo vivo.
