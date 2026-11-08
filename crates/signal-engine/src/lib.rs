@@ -24,6 +24,7 @@ pub mod kdv_soliton_dispersion;
 pub mod mean_field_games_psychology;
 pub mod navier_stokes_kolmogorov;
 pub mod navier_stokes_manifold;
+pub mod nls_peregrine_soliton;
 pub mod orchestrator;
 pub mod perceptron_gate;
 pub mod proyeccion_espectral;
@@ -75,6 +76,9 @@ pub use navier_stokes_kolmogorov::{
     NavierStokesKolmogorovEngine, NavierStokesParams, NavierStokesReport, NS_GRID_DIM,
 };
 pub use navier_stokes_manifold::{NavierStokesManifoldEngine, NavierStokesManifoldParams};
+pub use nls_peregrine_soliton::{
+    NlsPeregrineParams, NlsPeregrineReport, NlsPeregrineSolitonEngine, NLS_GRID_POINTS,
+};
 pub use orchestrator::{
     compute_ensemble_boost, compute_ensemble_boost_effective,
     compute_rmt_voter_effective_bets_ratio, RMT_MAX_SOURCES, RMT_MIN_SAMPLES, RMT_SAMPLE_STRIDE,

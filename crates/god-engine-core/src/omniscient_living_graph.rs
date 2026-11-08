@@ -26,23 +26,24 @@ use crate::topological_metamorphosis::{
     METAMORPHOSIS_NODES,
 };
 use feature_engine::{
-    BergmanFockParams, BergmanFockReport, BergmanFockReproducingEngine, CalabiYauParams,
-    CalabiYauSeibergWittenEngine, CalabiYauSeibergWittenReport, GeodesicPhaseSpaceParams,
-    GeodesicPhaseSpaceReport, HyperbolicPoincareHodgeEngine, HyperbolicPoincareHodgeParams,
-    HyperbolicPoincareHodgeReport, MongeKantorovichWassersteinEngine, PenroseSpinNetworkEngine,
-    PenroseSpinNetworkParams, PenroseSpinNetworkReport, PepsHypergraphRicciEngine,
-    PepsHypergraphRicciReport, PepsRicciParams, QuantumGeodesicPhaseSpaceEngine, VietorisRipsParams,
-    VietorisRipsReport, VietorisRipsTopologicalEngine, WassersteinParams, WassersteinReport,
-    WASSERSTEIN_NODES,
+    AshtekarLqgAreaEngine, AshtekarLqgParams, AshtekarLqgReport, BergmanFockParams,
+    BergmanFockReport, BergmanFockReproducingEngine, CalabiYauParams, CalabiYauSeibergWittenEngine,
+    CalabiYauSeibergWittenReport, GeodesicPhaseSpaceParams, GeodesicPhaseSpaceReport,
+    HyperbolicPoincareHodgeEngine, HyperbolicPoincareHodgeParams, HyperbolicPoincareHodgeReport,
+    MongeKantorovichWassersteinEngine, PenroseSpinNetworkEngine, PenroseSpinNetworkParams,
+    PenroseSpinNetworkReport, PepsHypergraphRicciEngine, PepsHypergraphRicciReport,
+    PepsRicciParams, QuantumGeodesicPhaseSpaceEngine, VietorisRipsParams, VietorisRipsReport,
+    VietorisRipsTopologicalEngine, WassersteinParams, WassersteinReport, WASSERSTEIN_NODES,
 };
 use risk_engine::{
     AdaptiveQuantumVetoGovernor, AdaptiveVetoDecision, ChernSimonsBerryParams,
     ChernSimonsBerryPhaseEngine, ChernSimonsBerryReport, DiracMonopoleChernBundleEngine,
-    DiracMonopoleParams, DiracMonopoleReport, GromovSymplecticBarrierEngine, GromovSymplecticParams,
-    GromovSymplecticReport, MarketQuantumStateInput, MpsDmrgParams, MpsDmrgReport,
-    QuantumNoArbitrageConformalEngine, QuantumNoArbitrageConformalParams,
-    QuantumNoArbitrageConformalReport, ReebContactParams, ReebContactReport,
-    ReebContactVortexEngine, TensorNetworkMpsDmrgEngine, UmegakiEntropyParams,
+    DiracMonopoleParams, DiracMonopoleReport, GromovSymplecticBarrierEngine,
+    GromovSymplecticParams, GromovSymplecticReport, MarketQuantumStateInput, MpsDmrgParams,
+    MpsDmrgReport, PolyakovSchwarzschildHorizonEngine, PolyakovSchwarzschildParams,
+    PolyakovSchwarzschildReport, QuantumNoArbitrageConformalEngine,
+    QuantumNoArbitrageConformalParams, QuantumNoArbitrageConformalReport, ReebContactParams,
+    ReebContactReport, ReebContactVortexEngine, TensorNetworkMpsDmrgEngine, UmegakiEntropyParams,
     UmegakiEntropyReport, UmegakiRelativeEntropyEngine, MPS_ASSET_CHANNELS,
 };
 use signal_engine::{
@@ -54,7 +55,8 @@ use signal_engine::{
     JarzynskiCrooksThermodynamicsEngine, KdvSolitonDispersionEngine, KdvSolitonParams,
     KdvSolitonReport, MeanFieldGamesPsychologyEngine, MeanFieldGamesReport,
     MultiSlotEvaluationReport, MultiSlotOrderEmission, NavierStokesKolmogorovEngine,
-    NavierStokesParams, NavierStokesReport, QuantumSlotOrchestrator, RiemannBurgersShockwaveEngine,
+    NavierStokesParams, NavierStokesReport, NlsPeregrineParams, NlsPeregrineReport,
+    NlsPeregrineSolitonEngine, QuantumSlotOrchestrator, RiemannBurgersShockwaveEngine,
     RuelleFrobeniusParams, RuelleFrobeniusReport, RuelleFrobeniusTransferEngine, SrbEntropyParams,
     SrbEntropyReport, SrbKolmogorovEntropyEngine, WilsonExactRenormalizationEngine,
     WilsonExactRgParams, WilsonExactRgReport,
@@ -116,6 +118,10 @@ pub struct OmniscientLivingGraphReport {
     pub peps_hypergraph_report: PepsHypergraphRicciReport,
     pub kdv_soliton_report: KdvSolitonReport,
     pub dirac_monopole_report: DiracMonopoleReport,
+    // --- Extensiones Holísticas Omega220 (Fases 67 - 69) ---
+    pub ashtekar_lqg_report: AshtekarLqgReport,
+    pub nls_peregrine_report: NlsPeregrineReport,
+    pub polyakov_schwarzschild_report: PolyakovSchwarzschildReport,
 }
 
 /// Orquestador del grafo vivo omnisciente para todo el universo de activos.
@@ -160,6 +166,10 @@ pub struct OmniscientLivingGraphOrchestrator {
     pub peps_ricci_engines: Vec<PepsHypergraphRicciEngine>,
     pub kdv_soliton_engines: Vec<KdvSolitonDispersionEngine>,
     pub dirac_monopole_engines: Vec<DiracMonopoleChernBundleEngine>,
+    // Motores cuánticos y físicos unificados (Fases 67 - 69)
+    pub ashtekar_lqg_engines: Vec<AshtekarLqgAreaEngine>,
+    pub nls_peregrine_engines: Vec<NlsPeregrineSolitonEngine>,
+    pub polyakov_schwarzschild_engines: Vec<PolyakovSchwarzschildHorizonEngine>,
     pub prev_mid_prices: Vec<f64>,
     pub last_event_time_ms: u64,
 }
@@ -263,6 +273,17 @@ impl OmniscientLivingGraphOrchestrator {
                 .collect(),
             dirac_monopole_engines: (0..count)
                 .map(|_| DiracMonopoleChernBundleEngine::new(DiracMonopoleParams::default()))
+                .collect(),
+            ashtekar_lqg_engines: (0..count)
+                .map(|_| AshtekarLqgAreaEngine::new(AshtekarLqgParams::default()))
+                .collect(),
+            nls_peregrine_engines: (0..count)
+                .map(|_| NlsPeregrineSolitonEngine::new(NlsPeregrineParams::default()))
+                .collect(),
+            polyakov_schwarzschild_engines: (0..count)
+                .map(|_| {
+                    PolyakovSchwarzschildHorizonEngine::new(PolyakovSchwarzschildParams::default())
+                })
                 .collect(),
             prev_mid_prices: vec![0.0; count],
             last_event_time_ms: 0,
@@ -650,7 +671,9 @@ impl OmniscientLivingGraphOrchestrator {
         );
 
         // 33. Geometría de Fibrados Principales de Yang-Mills y Monopolos de Dirac (Fase 66)
-        let effective_leverage = (capital_available_usd * max_leverage / capital_available_usd.max(1.0)).clamp(1.0, 50.0);
+        let effective_leverage = (capital_available_usd * max_leverage
+            / capital_available_usd.max(1.0))
+        .clamp(1.0, 50.0);
         let dirac_monopole_report = self.dirac_monopole_engines[safe_coin_id].evaluate(
             ofi,
             spread_bps,
@@ -658,7 +681,34 @@ impl OmniscientLivingGraphOrchestrator {
             effective_leverage,
         );
 
-        // 34. Factor de Escala de Riesgo Holístico Tri-Slot $\eta_{\text{holistic}}$
+        // 34. Gravitación Cuántica de Lazos (LQG) y Espectro de Área de Ashtekar-Barbero (Fase 67)
+        let ashtekar_lqg_report = self.ashtekar_lqg_engines[safe_coin_id].update(
+            price_ret,
+            ofi,
+            obi,
+            spread_bps,
+            volatility_state.effective_volatility,
+        );
+
+        // 35. Ecuación de Schrödinger No Lineal (NLS) y Solitones Envolventes de Peregrine (Fase 68)
+        let nls_peregrine_report = self.nls_peregrine_engines[safe_coin_id].update(
+            price_ret,
+            ofi,
+            spread_bps,
+            volatility_state.effective_volatility,
+        );
+
+        // 36. Acción Efectiva Cuántica de Polyakov y Veto de Horizontes de Agujero Negro de Schwarzschild (Fase 69)
+        let polyakov_schwarzschild_report = self.polyakov_schwarzschild_engines[safe_coin_id]
+            .evaluate(
+                capital_available_usd,
+                effective_leverage,
+                spread_bps,
+                volatility_state.effective_volatility,
+                ofi,
+            );
+
+        // 37. Factor de Escala de Riesgo Holístico Tri-Slot $\eta_{\text{holistic}}$
         let mps_weight_factor = (mps_dmrg_report.asset_weights[safe_coin_id % MPS_ASSET_CHANNELS]
             * (MPS_ASSET_CHANNELS as f64))
             .clamp(0.50, 1.50);
@@ -668,6 +718,11 @@ impl OmniscientLivingGraphOrchestrator {
             1.0
         };
         let kdv_soliton_boost = if kdv_soliton_report.coherent_soliton_detected {
+            1.10
+        } else {
+            1.0
+        };
+        let peregrine_rogue_boost = if nls_peregrine_report.peregrine_rogue_wave_detected {
             1.10
         } else {
             1.0
@@ -695,10 +750,13 @@ impl OmniscientLivingGraphOrchestrator {
             * peps_hypergraph_report.slot_scale_factor
             * kdv_soliton_boost
             * dirac_monopole_report.slot_scale_factor
+            * ashtekar_lqg_report.slot_scale_factor
+            * peregrine_rogue_boost
+            * polyakov_schwarzschild_report.slot_scale_factor
             * mps_weight_factor)
             .clamp(0.10, 1.25);
 
-        // 35. Evaluación Multi-Slot en QuantumSlotOrchestrator (Fase 28 / 33)
+        // 38. Evaluación Multi-Slot en QuantumSlotOrchestrator (Fase 28 / 33)
         let cvd = obi * 1000.0;
         let atr_pct = (volatility_state.effective_volatility * 100.0).clamp(0.001, 0.20);
         let dominant_tau_ms = 30_000.0;
@@ -720,8 +778,8 @@ impl OmniscientLivingGraphOrchestrator {
             open_positions_is_long,
         );
 
-        // 36. Modulación Continua del Grafo Vivo:
-        // Si hay veto duro, rechazo conformal estricto, air pocket, veto de Dirac, veto simpléctico de Gromov o veto de Umegaki, aplanar decisiones
+        // 39. Modulación Continua del Grafo Vivo:
+        // Si hay veto duro, rechazo conformal estricto, air pocket, veto de Dirac, veto de Schwarzschild o singularidad de Ashtekar, aplanar decisiones
         let allow_entry = !conformal_decision.is_hard_vetoed
             && !quantum_no_arbitrage_report.hard_veto_induced
             && !chern_simons_report.topological_veto_induced
@@ -737,6 +795,8 @@ impl OmniscientLivingGraphOrchestrator {
             && !umegaki_relative_entropy_report.hard_veto_induced
             && !peps_hypergraph_report.hyperbolic_dispersion_detected
             && !dirac_monopole_report.monopole_veto_induced
+            && !ashtekar_lqg_report.ashtekar_area_singularity_detected
+            && !polyakov_schwarzschild_report.event_horizon_veto_induced
             && (spread_bps <= conformal_decision.dynamic_spread_ceiling_bps
                 || conformal_decision.elastic_entry_granted);
 
@@ -745,7 +805,11 @@ impl OmniscientLivingGraphOrchestrator {
                 decision.signal = SignalType::Flat;
                 decision.net_confidence = 0.0;
                 decision.vetoed = true;
-                decision.veto_reason = if dirac_monopole_report.monopole_veto_induced {
+                decision.veto_reason = if polyakov_schwarzschild_report.event_horizon_veto_induced {
+                    Some("POLYAKOV_SCHWARZSCHILD_EVENT_HORIZON_VETO")
+                } else if ashtekar_lqg_report.ashtekar_area_singularity_detected {
+                    Some("ASHTEKAR_AREA_SINGULARITY_VETO")
+                } else if dirac_monopole_report.monopole_veto_induced {
                     Some("YANG_MILLS_DIRAC_MONOPOLE_VETO")
                 } else if peps_hypergraph_report.hyperbolic_dispersion_detected {
                     Some("PEPS_HYPERBOLIC_DISPERSION_VETO")
@@ -787,7 +851,7 @@ impl OmniscientLivingGraphOrchestrator {
             }
         }
 
-        // 37. Síntesis Coordinada de Emisiones de Órdenes Tri-Slot
+        // 40. Síntesis Coordinada de Emisiones de Órdenes Tri-Slot
         let coordinated_emissions = slot_orchestrator.synthesize_order_emissions(
             &multi_slot_evaluation,
             capital_available_usd,
@@ -795,7 +859,7 @@ impl OmniscientLivingGraphOrchestrator {
             risk_fraction,
         );
 
-        // 38. Verificación de Cota de Ruina de Ville (\mathbb{P}(\text{ruina}) \le 10^{-6})
+        // 41. Verificación de Cota de Ruina de Ville (\mathbb{P}(\text{ruina}) \le 10^{-6})
         let ville_ruin_bound_satisfied = capital_available_usd > 0.0
             && !quantum_no_arbitrage_report.hard_veto_induced
             && !chern_simons_report.topological_veto_induced
@@ -809,6 +873,8 @@ impl OmniscientLivingGraphOrchestrator {
             && !umegaki_relative_entropy_report.hard_veto_induced
             && !peps_hypergraph_report.hyperbolic_dispersion_detected
             && !dirac_monopole_report.monopole_veto_induced
+            && !ashtekar_lqg_report.ashtekar_area_singularity_detected
+            && !polyakov_schwarzschild_report.event_horizon_veto_induced
             && conformal_decision.conformal_risk_score <= 0.85
             && srb_entropy_report.kolmogorov_sinai_entropy < 0.98;
 
@@ -854,6 +920,9 @@ impl OmniscientLivingGraphOrchestrator {
             peps_hypergraph_report,
             kdv_soliton_report,
             dirac_monopole_report,
+            ashtekar_lqg_report,
+            nls_peregrine_report,
+            polyakov_schwarzschild_report,
         }
     }
 }
