@@ -215,7 +215,13 @@ fn both_queries_and_complete_arena_reconciliation_are_required_and_errors_revoke
     assert_eq!(success.status, SnapshotStatus::Ready);
     assert!(session.check_entry(&token, &arena).is_ok());
 
-    let missing = session.apply_snapshot(
+    // GLM-208: positionRisk NO garantiza fila para símbolos nunca operados
+    // por la cuenta. Sin filas y SIN posición local abierta, el snapshot está
+    // Ready (plano en ambos lados); la fila ausente sólo bloquea cuando hay
+    // una posición local abierta sin evidencia remota (fail-closed real).
+    // Antes, la fila ausente de un símbolo plano dejaba el OMS en Blocked
+    // eterno con la cuenta limpia (corrida A3: 0 órdenes en horas).
+    let no_filas_plano = session.apply_snapshot(
         &token,
         Ok(Vec::new()),
         Ok(Vec::new()),
@@ -223,8 +229,37 @@ fn both_queries_and_complete_arena_reconciliation_are_required_and_errors_revoke
         &arena,
         3_000,
     );
-    assert_eq!(missing.status, SnapshotStatus::Blocked);
-    assert!(missing.unresolved > 0);
+    assert_eq!(no_filas_plano.status, SnapshotStatus::Ready);
+    assert_eq!(no_filas_plano.unresolved, 0);
+    assert!(ready.load(Ordering::Acquire));
+
+    let coin = &arena.coins[0];
+    assert!(coin.positions.get_slot(2).open_with_horizon(
+        true,
+        100.0,
+        1.0,
+        10.0,
+        1,
+        110.0,
+        90.0,
+        PositionHorizon::Continuous
+    ));
+    // Confirmada por el exchange para que el Blocked venga de la fila remota
+    // ausente (MissingRemoteEvidence), no del gate de reserva no confirmada.
+    coin.positions
+        .get_slot(2)
+        .exchange_confirmed
+        .store(true, Ordering::Release);
+    let sin_evidencia = session.apply_snapshot(
+        &token,
+        Ok(Vec::new()),
+        Ok(Vec::new()),
+        fees(&token),
+        &arena,
+        3_500,
+    );
+    assert_eq!(sin_evidencia.status, SnapshotStatus::Blocked);
+    assert!(sin_evidencia.unresolved > 0);
     assert!(!ready.load(Ordering::Acquire));
 
     session.apply_snapshot(
@@ -1086,4 +1121,105 @@ fn lg32_la_inexistencia_exige_el_codigo_y_el_horizonte_documentados() {
     assert!(!inexistencia_probada(1, EDAD_MINIMA_INEXISTENCIA_MS));
     assert!(!inexistencia_probada(1, 1 + HORIZONTE_CONSULTA_ORDEN_MS));
     assert!(!inexistencia_probada(10_000, 5_000), "reloj hacia atrás");
+}
+#[test]
+fn glm210_ranura_aplanada_por_el_inmune_se_cura_con_fila_flat_y_bloquea_sin_evidencia() {
+    // Deadlock de la corrida A3 (2026-11-06): la entrada se llenó y se
+    // confirmó; el sistema inmune aplanó la cuenta, que retira la
+    // confirmación de la ranura sin cerrarla (CL-44b), y el gate de reserva
+    // bloqueaba ANTES de la reconciliación que cierra esa ranura con la fila
+    // flat remota → OMS_UNCONFIRMED_LOCAL_RESERVATION eterno (574 snapshots
+    // seguidos tras el primer trade). Ahora la fila flat la cierra (Ready);
+    // sin evidencia remota sigue bloqueando (fail-closed intacto). I-15: la
+    // versión anterior de este contrato usaba una reserva que nunca se llenó,
+    // y esa reserva NO debe cerrarse con una fila plana (último bloque).
+    let _guard = universe();
+    let arena = GlobalArena::build_in_own_stack(100.0);
+    let (session, ready) = session(true, false);
+    let token = session.snapshot_token();
+    let coin = &arena.coins[0];
+    let slot = coin.positions.get_slot(2);
+    assert!(slot.open_with_horizon(
+        true,
+        100.0,
+        1.0,
+        10.0,
+        1,
+        110.0,
+        90.0,
+        PositionHorizon::Continuous
+    ));
+    arena.used_margin.store(10.0, Ordering::Relaxed);
+    // El llenado confirma la entrada; el aplanado total le retira la
+    // confirmación (god_engine.rs, aplanado_inmune).
+    let llenada = slot.generation.load(Ordering::Acquire);
+    assert!(slot.confirm_generation(llenada).is_ok());
+    assert_eq!(arena.consume_exchange_confirmations(), 1);
+    assert!(slot.is_open());
+    assert!(!slot.exchange_confirmed.load(Ordering::Acquire));
+    assert!(!slot.espera_llenado());
+    // Sin evidencia remota: Blocked por reserva no confirmada (sin tocar el
+    // estado local).
+    let sin_fila = session.apply_snapshot(
+        &token,
+        Ok(Vec::new()),
+        Ok(Vec::new()),
+        fees(&token),
+        &arena,
+        1_000,
+    );
+    assert_eq!(sin_fila.status, SnapshotStatus::Blocked);
+    assert_eq!(
+        sin_fila.error.as_deref(),
+        Some("OMS_UNCONFIRMED_LOCAL_RESERVATION")
+    );
+    assert!(slot.is_open());
+    assert_eq!(arena.used_margin.load(Ordering::Relaxed), 10.0);
+    assert!(!ready.load(Ordering::Acquire));
+    // Con la fila flat del universo (el exchange ya cerró): la reconciliación
+    // cierra la ranura aplanada, libera su margen y el snapshot sale Ready.
+    // Este es el caso que quedó en deadlock eterno en la corrida A3.
+    let curada = session.apply_snapshot(
+        &token,
+        Ok(flat_positions()),
+        Ok(Vec::new()),
+        fees(&token),
+        &arena,
+        2_000,
+    );
+    assert_eq!(curada.status, SnapshotStatus::Ready, "{:?}", curada.error);
+    assert!(!slot.is_open());
+    assert_eq!(arena.used_margin.load(Ordering::Relaxed), 0.0);
+    assert!(ready.load(Ordering::Acquire));
+    // I-15: una entrada nueva cuyo llenado aún no se ve en positionRisk.
+    // La misma fila plana no la cierra: la posición puede existir ya en el
+    // exchange, y liberar su margen dejaría abrir otra entrada encima.
+    assert!(slot.open_with_horizon(
+        true,
+        100.0,
+        1.0,
+        10.0,
+        2_500,
+        110.0,
+        90.0,
+        PositionHorizon::Continuous
+    ));
+    arena.used_margin.store(10.0, Ordering::Relaxed);
+    assert!(slot.espera_llenado());
+    let sin_llenar = session.apply_snapshot(
+        &token,
+        Ok(flat_positions()),
+        Ok(Vec::new()),
+        fees(&token),
+        &arena,
+        3_000,
+    );
+    assert_eq!(sin_llenar.status, SnapshotStatus::Blocked);
+    assert_eq!(
+        sin_llenar.error.as_deref(),
+        Some("OMS_UNCONFIRMED_LOCAL_RESERVATION")
+    );
+    assert!(slot.is_open());
+    assert_eq!(arena.used_margin.load(Ordering::Relaxed), 10.0);
+    assert!(!ready.load(Ordering::Acquire));
 }

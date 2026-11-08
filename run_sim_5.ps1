@@ -24,6 +24,13 @@ try {
     }
     $env:PATH = [IO.Path]::GetDirectoryName($bashExe) + [IO.Path]::PathSeparator + $pathAnterior
     $env:CARGO_BUILD_JOBS = '1'
+    # Adaptador V3 (AGENT_SYNC SS4): este launcher conserva su tope de
+    # admision de 4 GiB declarandolo EXPLICITO. En el regimen 2026-11-06
+    # (mandato del operador: cero restricciones de recursos) el default del
+    # semaforo es SEMAFORO_RAM_MIN_GB=0 (sin puerta global) y cada agente que
+    # quiera tope lo declara; sin esto, el contrato
+    # test_denied_memory_returns_75_without_cargo no tiene quien lo sostenga.
+    if (-not $env:SEMAFORO_RAM_MIN_GB) { $env:SEMAFORO_RAM_MIN_GB = '4' }
     $env:CARGO_INCREMENTAL = '0'
 
     & $bashExe --noprofile --norc 'scripts/cargo_semaforo.sh' run --bin multi_coin_simulator -j 1

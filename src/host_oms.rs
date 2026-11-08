@@ -597,12 +597,21 @@ impl OmsSession {
             outcome.pending_regular_orders = orders.len();
             return outcome;
         }
-        if arena.coins.iter().any(|coin| {
-            coin.positions
-                .slots()
-                .iter()
-                .any(|p| p.is_open() && !p.exchange_confirmed.load(Ordering::Acquire))
-        }) {
+        // I-15: una reserva que espera su llenado bloquea ANTES de reconciliar.
+        // Tras una IOC llenada, positionRisk puede tardar en mostrar la
+        // posición: con una fila plana, reconcile_arena_checked cerraría la
+        // reserva como fantasma, liberaría su margen y el núcleo podría abrir
+        // otra entrada encima de la posición real. GLM-210 movió este gate
+        // detrás de la reconciliación para curar el bloqueo de la corrida A3,
+        // pero aquella ranura no esperaba ningún llenado: el aplanado del
+        // sistema inmune le había consumido la confirmación (CL-44b) y ya la
+        // había cerrado en el exchange. Esas ranuras (`confirmacion_consumida`)
+        // sí pasan a la reconciliación, que las cierra con la fila plana.
+        if arena
+            .coins
+            .iter()
+            .any(|coin| coin.positions.slots().iter().any(|p| p.espera_llenado()))
+        {
             let mut outcome = SnapshotOutcome::empty(SnapshotStatus::Blocked);
             outcome.error = Some("OMS_UNCONFIRMED_LOCAL_RESERVATION".into());
             return outcome;
@@ -613,12 +622,25 @@ impl OmsSession {
                 .map(|(_, taker)| taker)
         });
         let arena_report = reconciliation::reconcile_arena_checked(&positions, arena, now_ms);
+        // GLM-210 (A3, 2026-11-06): tras reconciliar, una ranura que SIGUE
+        // abierta y sin confirmar bloquea la admisión. Con I-15 sólo puede
+        // ser una cuya confirmación consumió el aplanado total y que la fila
+        // remota no permitió cerrar (sin fila, o el exchange aún no plano).
+        // Su cierre por fila plana es el que curó el bloqueo de la corrida A3
+        // (574 snapshots OMS_UNCONFIRMED_LOCAL_RESERVATION seguidos).
+        let reserva_no_confirmada = arena.coins.iter().any(|coin| {
+            coin.positions
+                .slots()
+                .iter()
+                .any(|p| p.is_open() && !p.exchange_confirmed.load(Ordering::Acquire))
+        });
         // Do not manufacture CANCELED acknowledgements merely because no position exists:
         // a regular resting order can be live before it creates a position.
         let pruned = registry.prune_terminated(now_ms.saturating_sub(600_000));
         let ready = arena_report.unresolved.is_empty()
             && report.orphan_remote_orders.is_empty()
-            && unresolved_orders == 0;
+            && unresolved_orders == 0
+            && !reserva_no_confirmada;
         if ready {
             state.approved_universe = Some(universe);
         }
@@ -640,7 +662,11 @@ impl OmsSession {
             unresolved_orders,
             pending_regular_orders: orders.len(),
             pruned,
-            error: None,
+            error: if reserva_no_confirmada {
+                Some("OMS_UNCONFIRMED_LOCAL_RESERVATION".into())
+            } else {
+                None
+            },
         }
     }
 

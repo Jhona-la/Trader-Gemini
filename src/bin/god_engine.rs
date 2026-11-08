@@ -1787,20 +1787,80 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let global_learning_rate = 0.001 * (1.0 + initial_genome.quantum_mutation_rate);
     let training_epochs = (10.0 * (1.0 + initial_genome.quantum_mutation_rate)).max(5.0) as usize;
 
-    let _swing_nn = god_engine_core::bootloader::SystemDiagnostics::execute_phase_4_training(
-        &symbols,
-        &historical_klines,
-        global_learning_rate,
-        training_epochs,
-    )
-    .await;
+    let training_produjo_modelo =
+        god_engine_core::bootloader::SystemDiagnostics::execute_phase_4_training(
+            &symbols,
+            &historical_klines,
+            global_learning_rate,
+            training_epochs,
+        )
+        .await;
 
     // F1-067 (Ω173): El sniffer perpetuo a Hyperliquid DEX WS operaba como arista muerta
     // sin consumidor decisorio y generaba reconexiones espurias en runtime Tokio.
     // La telemetría de liquidaciones se deriva causalmente del feed de Binance (!forceOrder@arr).
 
-    // El genoma inicial fue validado. Aprobamos la transición al Orchestrator.
-    darwin_approved.store(true, Ordering::Relaxed);
+    // FASE A-A2 (GLM-204, PLAN MAESTRO DE EVIDENCIA): la aprobación de
+    // Darwin deja de ser incondicional (BLOQUEANTE #1 de la auditoría A1:
+    // un training NO-OP bastaba). Ahora es FUNCIÓN de evidencia medida:
+    // el contrato EvidenciaIgnicion (god-engine-core) decide, con la
+    // coherencia venue/OMS (el papel local NUNCA reconcilia) y el
+    // entrenamiento REAL (no-op ⇒ Rechazado). Puerta de escape explícita
+    // y auditable para la corrida A3 mientras el entrenamiento real no
+    // exista: TG_IGNICION_SIN_DARWIN=1 (decisión del consejo, nunca un
+    // default silencioso) — se registra en el log del arranque.
+    let klines_por_simbolo: u32 = historical_klines
+        .values()
+        .map(|v| v.len())
+        .min()
+        .unwrap_or(0) as u32;
+    let venue_evidencia = if is_testnet || !is_demo_mode {
+        god_engine_core::evidencia_ignicion::Venue::CuentaViva
+    } else {
+        god_engine_core::evidencia_ignicion::Venue::PapelLocal
+    };
+    let evidencia = god_engine_core::evidencia_ignicion::EvidenciaIgnicion {
+        klines_warmup_por_simbolo: klines_por_simbolo,
+        // A1 midió BOOT:255 con limit=1000; el mínimo 500 es la mitad —
+        // holgura configurable del host, no un literal de aprobación.
+        minimo_klines_por_simbolo: 500,
+        venue: venue_evidencia,
+        // El training NO-OP de BOOT:292-293 aún no produce epochs ni
+        // métrica: la evidencia lo declara HONESTO (epochs=0) y el
+        // contrato lo rechaza — hasta que BOOT cuente de verdad.
+        epochs_entrenamiento_efectivas: if training_produjo_modelo.is_some() {
+            training_epochs as u32
+        } else {
+            0
+        },
+        metrica_entrenamiento: None, // BOOT aún no produce métrica; None = honesto
+        oms_reconciled: oms_reconciled.load(Ordering::Relaxed),
+    };
+    match evidencia.aprueba_darwin() {
+        god_engine_core::evidencia_ignicion::VeredictoDarwin::Aprobado => {
+            telemetry_server::telemetry_log!(
+                "✅ [IGNICIÓN] Darwin APROBADO por evidencia: warmup_min={} klines/símb, venue={:?}, epochs={}",
+                klines_por_simbolo,
+                venue_evidencia,
+                evidencia.epochs_entrenamiento_efectivas
+            );
+            darwin_approved.store(true, Ordering::Relaxed);
+        }
+        god_engine_core::evidencia_ignicion::VeredictoDarwin::Rechazado(razon) => {
+            if std::env::var("TG_IGNICION_SIN_DARWIN").as_deref() == Ok("1") {
+                telemetry_server::telemetry_log!(
+                    "⚠️ [IGNICIÓN] Darwin RECHAZADO ({}) — habilitado SOLO por TG_IGNICION_SIN_DARWIN=1 (auditable; decisión del consejo)",
+                    razon
+                );
+                darwin_approved.store(true, Ordering::Relaxed);
+            } else {
+                telemetry_server::telemetry_log!(
+                    "🛑 [IGNICIÓN] Darwin RECHAZADO ({}) — el Orchestrator NO recibirá el permiso (FASE A-A2; puerta auditable TG_IGNICION_SIN_DARWIN=1 si el consejo lo decide)",
+                    razon
+                );
+            }
+        }
+    }
 
     let mut forest_reload = god_engine_core::model_reload::ModelReloadTracker::default();
     refresh_ml_models(&mut forest_reload);
@@ -4880,15 +4940,24 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                     (mainnet_key.clone(), mainnet_secret.clone(), false)
                                 };
 
-                                // R3.2 / K-06: Hot-swap preservando el registry y la arena viva
-                                let old_registry = exec.load().registry();
-                                let mut mainnet_executor = execution_engine::executor::OrderExecutor::new_with_shared(
+                                // R3.2 / K-06: Hot-swap preservando el registry y la arena viva.
+                                // I-13 (Línea I, N26): el sucesor hereda del ejecutor vigente el
+                                // freno 429/418, su reloj y el uso del exchange, que miden la IP y
+                                // la cuenta: con uno nuevo volvía a enviar dentro del Retry-After
+                                // de un 429 o del ban de un 418. Aquí la URL y la arena son las del
+                                // arranque, así que no compartir es una anomalía. El kill-switch del
+                                // vigente cruza siempre (N58): el latch dura hasta reiniciar.
+                                let previo = exec.load_full();
+                                let (mut mainnet_executor, herencia) = execution_engine::executor::OrderExecutor::sucesor_de(
+                                    &previo,
                                     target_key,
                                     target_secret,
                                     target_is_testnet,
-                                    old_registry,
-                                    Some(Arc::clone(&arena_real)),
+                                    Arc::clone(&arena_real),
                                 );
+                                if let Some(motivo) = herencia.motivo_sin_herencia() {
+                                    telemetry_engine::telemetry_err!("[OMS TRANSITION] el ejecutor nuevo estrena freno 429/418 y uso del exchange ({}): puede enviar dentro del Retry-After o del ban del anterior", motivo);
+                                }
                                 if is_env_testnet {
                                     mainnet_executor.set_paper_trading(false);
                                 } else {

@@ -324,7 +324,10 @@ pub struct OrderExecutor {
     last_reset_timestamp: AtomicU64,
     /// N5 (CL-177): uso que reportan las cabeceras del exchange, por contador y
     /// con su propio sello (LG-3: cada uno vale dentro de su ventana).
-    uso_exchange: std::sync::Mutex<UsoExchange>,
+    /// N26 (I-13): Arc porque el sucesor de una transición en caliente comparte
+    /// el del anterior (`sucesor_de`): el uso es de la IP y de la cuenta, y los
+    /// cupos del anterior se sueltan en este mismo candado.
+    uso_exchange: Arc<std::sync::Mutex<UsoExchange>>,
     max_weight_1m: AtomicUsize,
     max_orders_10s: AtomicUsize,
     max_orders_1m: AtomicUsize,
@@ -343,7 +346,8 @@ pub struct OrderExecutor {
     espera_exchange_info: std::sync::Mutex<Option<std::time::Instant>>,
     /// N20 (CL-188): el MISMO Arc que el reloj del freno 429/418 de `client`
     /// (`FrenoExchange`), para que el ejecutor y los clones de su cliente
-    /// decidan con una sola hora sincronizada.
+    /// decidan con una sola hora sincronizada. El sucesor de una transición en
+    /// caliente comparte este mismo Arc con el anterior (`sucesor_de`, N26).
     pub arena: Arc<ArcSwapOption<quantum_arena::GlobalArena>>,
     pub ws: std::sync::Arc<crate::ws_executor::WsExecutor>,
     pub is_hedge_mode: AtomicBool,
@@ -365,6 +369,36 @@ pub enum OrderResolution {
     /// Sin verificación concluyente (red caída en ambos planos). El llamador
     /// conserva el estado local; posición agregada no acredita la intención.
     Timeout,
+}
+
+/// N26 (I-13): qué hereda el sucesor de una transición en caliente
+/// (`OrderExecutor::sucesor_de`).
+#[must_use = "dice si el sucesor estrenó freno 429/418 y uso del exchange"]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum HerenciaDeCuota {
+    /// Comparte con el anterior el freno 429/418, su reloj y el uso del exchange.
+    Compartida,
+    /// Otra URL base (otro entorno, otro exchange): estrena freno y uso.
+    OtraUrl,
+    /// El anterior no tiene arena, o tiene otra: estrena freno y uso.
+    OtraArena,
+    /// El freno del anterior decide con otro reloj que su campo `arena` (alguien
+    /// reemplazó ese Arc tras construirlo): estrena freno y uso.
+    RelojAjeno,
+}
+
+impl HerenciaDeCuota {
+    /// Por qué el sucesor estrena freno y uso, o `None` si los comparte.
+    pub fn motivo_sin_herencia(self) -> Option<&'static str> {
+        match self {
+            Self::Compartida => None,
+            Self::OtraUrl => Some("otra URL base"),
+            Self::OtraArena => Some("el ejecutor anterior no tiene esta arena"),
+            Self::RelojAjeno => {
+                Some("el freno del ejecutor anterior decide con otro reloj que su arena")
+            }
+        }
+    }
 }
 
 /// LG-32: ventana de validez por defecto de Binance para una petición firmada
@@ -425,7 +459,7 @@ impl OrderExecutor {
             client: BinanceClient::new(api_key.clone(), is_testnet).con_reloj(Arc::clone(&reloj)),
             rate_limit_counter: AtomicUsize::new(0),
             last_reset_timestamp: AtomicU64::new(0),
-            uso_exchange: std::sync::Mutex::new(UsoExchange::default()),
+            uso_exchange: Arc::new(std::sync::Mutex::new(UsoExchange::default())),
             // LG-12: los límites documentados del exchange.
             max_weight_1m: AtomicUsize::new(crate::binance_api::LIMITE_PESO_1M),
             max_orders_10s: AtomicUsize::new(crate::binance_api::LIMITE_ORDENES_10S),
@@ -447,7 +481,8 @@ impl OrderExecutor {
 
     /// R3.2 / K-06: Constructor para hot-swap de executor (e.g. transición a mainnet).
     /// Preserva el OrderRegistry existente (para no romper la sincronización con el
-    /// UserDataStreamer), la arena viva y los componentes compartidos.
+    /// UserDataStreamer), la arena viva y los componentes compartidos. Estrena freno
+    /// 429/418 y uso del exchange: para sustituir un ejecutor vivo, `sucesor_de` (N26).
     pub fn new_with_shared(
         api_key: String,
         api_secret: String,
@@ -461,7 +496,7 @@ impl OrderExecutor {
             client: BinanceClient::new(api_key.clone(), is_testnet).con_reloj(Arc::clone(&reloj)),
             rate_limit_counter: AtomicUsize::new(0),
             last_reset_timestamp: AtomicU64::new(0),
-            uso_exchange: std::sync::Mutex::new(UsoExchange::default()),
+            uso_exchange: Arc::new(std::sync::Mutex::new(UsoExchange::default())),
             // LG-12: los límites documentados del exchange.
             max_weight_1m: AtomicUsize::new(crate::binance_api::LIMITE_PESO_1M),
             max_orders_10s: AtomicUsize::new(crate::binance_api::LIMITE_ORDENES_10S),
@@ -479,6 +514,83 @@ impl OrderExecutor {
             )),
             is_hedge_mode: AtomicBool::new(true),
         }
+    }
+
+    /// N26 (I-13, fila del censo C-F7b): el ejecutor que sustituye a `previo` en
+    /// caliente (la transición del host al terminar el calentamiento).
+    ///
+    /// Con la misma URL base y la misma arena, el sucesor comparte con `previo`
+    /// lo que mide el exchange y no el ejecutor:
+    /// - el freno 429/418 (`FrenoExchange`: cooldown, racha de 429 y RATE_BRAKE)
+    ///   y, con él, su reloj: el campo `arena` es el mismo Arc (CL-188, un solo
+    ///   reloj);
+    /// - el uso de las cabeceras y las peticiones críticas en vuelo
+    ///   (`UsoExchange`): los cupos del anterior que siguen abiertos se sueltan
+    ///   en este mismo candado, y los 429/418 de sus rezagados, o de los clones
+    ///   de su cliente (el user-data stream, el NTP), frenan también al sucesor.
+    ///
+    /// Antes (`new_with_shared`) el sucesor estrenaba un freno y un uso a cero
+    /// mientras el exchange seguía frenando la IP: durante el Retry-After de un
+    /// 429 o el ban de un 418 volvía a enviar, y por encima del 80 % de la cuota
+    /// seguía admitiendo lecturas.
+    ///
+    /// La clave no decide: desde este proceso y con la misma URL, otra clave sale
+    /// de la misma IP, y el peso y el 418 son de la IP («The limits on the API
+    /// are based on the IPs, not the API keys», Binance, «General Info»). Las
+    /// órdenes son de la cuenta: con otra clave las de la otra cuenta se
+    /// sobreestiman, lo que frena antes y nunca después.
+    ///
+    /// Las tres cosas o ninguna. Nunca comparte el limitador local de entradas
+    /// ni las cachés (filtros, caché negativa, apalancamiento): son decisiones de
+    /// este ejecutor. Conserva siempre el registro de órdenes de `previo`.
+    ///
+    /// N58: el kill-switch es un latch hasta reiniciar y cruza el cambio en todos
+    /// los casos, compartan o no el freno. El sucesor nace armado si lo está
+    /// `previo` (su latch propio o el de su arena). Además, como todo ejecutor,
+    /// lee en cada entrada el de la arena que recibe (`latch_armado`), así que un
+    /// latch que el sistema inmune arme durante el cambio, o el núcleo después,
+    /// también lo frena. Sólo frena entradas (`check_rate_limits`); las salidas
+    /// siguen pasando (ADR-0015). Antes nacía apagado, y el aviso del sistema
+    /// inmune («sigue armado hasta reiniciar») dejaba de ser cierto.
+    ///
+    /// No toma ningún candado: sólo clona Arcs y lee atómicos. Si la URL o la
+    /// arena difieren, o el freno de `previo` no decide con su arena, devuelve lo
+    /// mismo que `new_with_shared`, con el kill-switch heredado, y el motivo
+    /// (`HerenciaDeCuota`).
+    #[must_use = "la herencia dice si el sucesor estrenó freno y uso; el host la registra"]
+    pub fn sucesor_de(
+        previo: &OrderExecutor,
+        api_key: String,
+        api_secret: String,
+        is_testnet: bool,
+        arena: std::sync::Arc<quantum_arena::GlobalArena>,
+    ) -> (Self, HerenciaDeCuota) {
+        let mut nuevo = Self::new_with_shared(
+            api_key,
+            api_secret,
+            is_testnet,
+            previo.registry(),
+            Some(Arc::clone(&arena)),
+        );
+        if previo.is_kill_switch_active() {
+            nuevo.kill_switch.store(true, Ordering::SeqCst);
+        }
+        if nuevo.client.get_base_url() != previo.client.get_base_url() {
+            return (nuevo, HerenciaDeCuota::OtraUrl);
+        }
+        if !previo
+            .arena
+            .load_full()
+            .is_some_and(|propia| Arc::ptr_eq(&propia, &arena))
+        {
+            return (nuevo, HerenciaDeCuota::OtraArena);
+        }
+        if !nuevo.client.adoptar_freno_de(&previo.client, &previo.arena) {
+            return (nuevo, HerenciaDeCuota::RelojAjeno);
+        }
+        nuevo.arena = Arc::clone(&previo.arena);
+        nuevo.uso_exchange = Arc::clone(&previo.uso_exchange);
+        (nuevo, HerenciaDeCuota::Compartida)
     }
 
     /// Registro de órdenes (F1.5) — para spawn del user-data stream y queries.
@@ -1576,16 +1688,32 @@ impl OrderExecutor {
         self.handle_rate_limit_error(e)
     }
 
-    /// B1.3: lector público del kill-switch para el watchdog de protección
-    /// (no colocar brackets nuevos cuando el freno total está activo).
+    /// Lector público del kill-switch (B1.3). Hoy sólo lo lee el fee breaker
+    /// del host. El vigilante de protección ya no lo mira (CL-44), y el latch
+    /// nunca frena salidas ni protección (ADR-0015). Ver `latch_armado`.
     #[inline(always)]
     pub fn is_kill_switch_active(&self) -> bool {
+        self.latch_armado()
+    }
+
+    /// N58: el latch que frena las entradas. Es el de este ejecutor o el de su
+    /// arena (`GlobalArena::kill_switch_active`), leído en cada consulta. Así un
+    /// latch que la arena recibe después de construir el ejecutor también lo
+    /// frena: el sistema inmune durante un cambio en caliente, el núcleo con el
+    /// capital agotado o la degradación del demonio de evolución. Ninguno se
+    /// desarma hasta reiniciar.
+    #[inline(always)]
+    fn latch_armado(&self) -> bool {
         self.kill_switch.load(Ordering::Relaxed)
+            || self
+                .arena
+                .load_full()
+                .is_some_and(|arena| arena.kill_switch_active.load(Ordering::Acquire))
     }
 
     #[inline(always)]
     fn check_rate_limits(&self, timestamp_ms: u64) -> Result<(), String> {
-        if self.kill_switch.load(Ordering::Relaxed) {
+        if self.latch_armado() {
             return Err("KILL SWITCH ACTIVE. Execution blocked.".to_string());
         }
         let _cupo = self.check_exit_rate_limits(timestamp_ms, Tramo::Lectura)?;
@@ -6519,7 +6647,9 @@ pub(crate) mod tests_n20 {
 
     /// CL-188 (refactor sin cambio de conducta): el freno 429/418 es uno por
     /// ejecutor y lo comparten los clones de su cliente (stream y NTP), con
-    /// el reloj sincronizado del ejecutor. Cada ejecutor nuevo empieza sin él.
+    /// el reloj sincronizado del ejecutor. Cada ejecutor nuevo (`new`,
+    /// `new_with_shared`) empieza sin él; el sucesor de una transición en
+    /// caliente lo comparte con el anterior (`sucesor_de`, N26).
     #[test]
     fn cl188_los_clones_del_cliente_comparten_el_freno_y_el_reloj() {
         let ex = ex();
@@ -6549,8 +6679,9 @@ pub(crate) mod tests_n20 {
         let solo = crate::client::BinanceClient::new("k".into(), true);
         assert!(solo.freno().comprobar(ahora).is_ok(), "un cliente suelto empieza sin freno");
 
-        // RV16-T: el ejecutor de la transición (new_with_shared) comparte
-        // también su reloj con el freno, y lo sigue si el host cambia la arena.
+        // RV16-T: `new_with_shared` (también lo que devuelve `sucesor_de` cuando
+        // no comparte) comparte su reloj con el freno, y lo sigue si el host
+        // cambia la arena.
         let arena = quantum_arena::GlobalArena::build_in_own_stack(100.0);
         arena.server_time_offset_ms.store(-2_000_000, Ordering::Relaxed);
         let ex = OrderExecutor::new_with_shared(
@@ -8792,5 +8923,556 @@ mod tests_lote19 {
             "{linea}"
         );
         assert!(r.as_ref().is_some_and(|x| x.is_ok()), "{r:?}");
+    }
+}
+
+/// N26 (I-13, Línea I): el sucesor de una transición en caliente comparte con el
+/// ejecutor anterior el freno 429/418, su reloj y el uso del exchange
+/// (`OrderExecutor::sucesor_de`). RED antes de I-13: el sucesor se construía con
+/// `new_with_shared`, que estrena un freno y un uso a cero. El mutante que dice
+/// `Compartida` sin compartir nada falla `check_backoff`, la franja del 80 % y el
+/// libro de las críticas en vuelo.
+#[cfg(test)]
+mod tests_n26 {
+    use super::tests_lg3::limites;
+    use super::tests_lote18::servidor;
+    use super::tests_n20::respuesta;
+    use super::*;
+    use crate::binance_api::COSTE_POSITION_RISK;
+    use crate::client::ErrorRest;
+
+    const T0: u64 = 1_700_000_000_000;
+
+    /// El ejecutor del arranque, con la arena que le inyecta el host
+    /// (god_engine.rs: `exec.load().arena.store(Some(Arc::clone(&arena_real)))`).
+    fn previo_con(arena: &Arc<quantum_arena::GlobalArena>) -> OrderExecutor {
+        let ex = OrderExecutor::new("k".into(), "s".into(), true);
+        ex.arena.store(Some(Arc::clone(arena)));
+        ex
+    }
+
+    fn arena() -> Arc<quantum_arena::GlobalArena> {
+        quantum_arena::GlobalArena::build_in_own_stack(100.0)
+    }
+
+    /// El sucesor con la misma URL, la misma clave y la misma arena. Sólo mira
+    /// lo que dice: la identidad de los Arc la comprueba
+    /// `n26_comparte_las_tres_cosas_o_ninguna`, para que el mutante falle por la
+    /// conducta y no aquí.
+    fn sucesor(previo: &OrderExecutor, arena: &Arc<quantum_arena::GlobalArena>) -> OrderExecutor {
+        let (nuevo, herencia) =
+            OrderExecutor::sucesor_de(previo, "k".into(), "s2".into(), true, Arc::clone(arena));
+        assert_eq!(herencia, HerenciaDeCuota::Compartida);
+        assert_eq!(herencia.motivo_sin_herencia(), None);
+        nuevo
+    }
+
+    fn en_vuelo(ex: &OrderExecutor) -> [usize; 3] {
+        ex.uso_exchange_bloqueado().en_vuelo
+    }
+
+    fn frenado(ex: &OrderExecutor, prefijo: &str) -> bool {
+        matches!(ex.check_backoff(ex.get_synced_timestamp()), Err(ref e) if e.starts_with(prefijo))
+    }
+
+    #[test]
+    fn n26_el_sucesor_hereda_el_freno_del_anterior() {
+        for (armado, prefijo) in [
+            ("HTTP_418_IP_BANNED retry_after=300", "RATE_BRAKE"),
+            (
+                "HTTP_429_RATE_LIMITED retry_after=30",
+                "RATE_LIMIT_COOLDOWN",
+            ),
+        ] {
+            let arena = arena();
+            let previo = previo_con(&arena);
+            previo.handle_rate_limit_error(armado);
+            let nuevo = sucesor(&previo, &arena);
+            assert!(
+                frenado(&nuevo, prefijo),
+                "{armado}: el exchange sigue frenando la IP"
+            );
+            let t = nuevo.get_synced_timestamp();
+            assert!(
+                matches!(nuevo.check_rate_limits(t), Err(ref e) if e.starts_with(prefijo)),
+                "{armado}: tampoco entra"
+            );
+            let critica = nuevo
+                .check_exit_rate_limits(t, Tramo::Critica(COSTE_POSITION_RISK))
+                .map(|_cupo| ());
+            assert!(
+                matches!(&critica, Err(e) if e.starts_with(prefijo)),
+                "{armado}: ni sale una crítica: {critica:?}"
+            );
+        }
+
+        // La racha de 429 es de la IP: dos del anterior y uno del sucesor
+        // escalan al freno (M4-C02), como tres del mismo ejecutor.
+        let arena = arena();
+        let previo = previo_con(&arena);
+        previo.handle_rate_limit_error("HTTP_429_RATE_LIMITED retry_after=30");
+        previo.handle_rate_limit_error("HTTP_429_RATE_LIMITED retry_after=30");
+        let nuevo = sucesor(&previo, &arena);
+        nuevo.handle_rate_limit_error("HTTP_429_RATE_LIMITED retry_after=30");
+        assert!(frenado(&nuevo, "RATE_BRAKE"));
+    }
+
+    /// Los clones del cliente anterior (el user-data stream y el NTP los toman
+    /// con `client().clone()` antes del cambio) siguen vivos tras él. Un 418 que
+    /// recibe uno de ellos por su ruta real (la hora del NTP: `freno_de_respuesta`)
+    /// frena también al sucesor, y el del sucesor los frena a ellos.
+    #[tokio::test]
+    async fn n26_un_418_de_un_clon_del_anterior_frena_al_sucesor() {
+        let servido = servidor(vec![respuesta(
+            "418 I'm a teapot",
+            "Retry-After: 300\r\n",
+            "",
+        )])
+        .await;
+        assert!(servido.is_some(), "servidor local");
+        let Some((base, bitacora, h)) = servido else {
+            return;
+        };
+        let arena = arena();
+        let previo = previo_con(&arena);
+        let clon = previo.client().clone().con_base_de_prueba(&base);
+        let nuevo = sucesor(&previo, &arena);
+        drop(previo);
+        assert!(
+            nuevo.check_backoff(nuevo.get_synced_timestamp()).is_ok(),
+            "sin freno armado sale"
+        );
+        let r = tokio::time::timeout(std::time::Duration::from_secs(10), clon.fetch_server_time())
+            .await;
+        h.abort();
+        assert!(
+            matches!(&r, Ok(Err(e)) if e.starts_with("FRENO_ARMADO: HTTP_418_IP_BANNED retry_after=300")),
+            "{r:?}"
+        );
+        assert!(
+            frenado(&nuevo, "RATE_BRAKE"),
+            "el 418 del clon frena al sucesor"
+        );
+        // El NTP del sucesor sale de un clon de su cliente (god_engine.rs): ese
+        // clon tampoco sale, y lo decide antes de tocar la red.
+        let propio = futures_util::FutureExt::now_or_never(
+            nuevo
+                .client()
+                .clone()
+                .con_base_de_prueba(&base)
+                .fetch_server_time(),
+        );
+        assert!(
+            matches!(&propio, Some(Err(e)) if e.starts_with("RATE_BRAKE")),
+            "{propio:?}"
+        );
+        let lineas = bitacora.lock().map(|v| v.clone());
+        assert!(
+            matches!(&lineas, Ok(v) if v.len() == 1 && v[0].starts_with("GET /fapi/v1/time")),
+            "una sola petición, la del clon del anterior: {lineas:?}"
+        );
+
+        let arena = self::arena();
+        let previo = previo_con(&arena);
+        let clon = previo.client().clone();
+        let nuevo = sucesor(&previo, &arena);
+        nuevo.handle_rate_limit_error("HTTP_418_IP_BANNED retry_after=300");
+        assert!(
+            matches!(clon.freno().comprobar_ahora(), Err(ref e) if e.starts_with("RATE_BRAKE"))
+        );
+    }
+
+    /// El uso de las cabeceras es de la IP y de la cuenta: por encima del 80 %
+    /// el sucesor tampoco admite lecturas, y lo que observa uno lo ve el otro.
+    #[test]
+    fn n26_el_sucesor_hereda_el_uso_del_exchange() {
+        let arena = arena();
+        let previo = previo_con(&arena);
+        previo.observar_limites(&limites(Some(2_100), None, None), T0); // > 0,8·2400
+        let nuevo = sucesor(&previo, &arena);
+        let r = nuevo
+            .check_exit_rate_limits(T0 + 1_000, Tramo::Lectura)
+            .map(|_cupo| ());
+        assert!(
+            matches!(&r, Err(e) if e.starts_with("RATE_LIMIT_HEADROOM_WEIGHT: 2100/2400")),
+            "{r:?}"
+        );
+        assert!(
+            nuevo
+                .check_exit_rate_limits(T0 + 60_000, Tramo::Lectura)
+                .is_ok(),
+            "pasada la ventana libera"
+        );
+
+        let arena = self::arena();
+        let previo = previo_con(&arena);
+        let nuevo = sucesor(&previo, &arena);
+        nuevo.observar_limites(&limites(None, Some(250), None), T0); // > 0,8·300
+        assert!(previo
+            .check_exit_rate_limits(T0 + 5_000, Tramo::Lectura)
+            .is_err());
+    }
+
+    /// Una crítica del anterior que sigue en vuelo durante el cambio cuenta en
+    /// el sucesor hasta que llega su respuesta (su cupo se suelta en el mismo
+    /// candado), y no deja una plaza fantasma después. Lo que una crítica del
+    /// anterior perdió sin respuesta (N24, CL-201) también cuenta en el sucesor.
+    #[test]
+    fn n26_una_plaza_critica_del_anterior_cuenta_en_el_sucesor_hasta_soltarse() {
+        let arena = arena();
+        let previo = previo_con(&arena);
+        previo.observar_limites(&limites(Some(2_390), None, None), T0);
+        let cupo_previo =
+            previo.check_exit_rate_limits(T0 + 1, Tramo::Critica(COSTE_POSITION_RISK));
+        assert!(cupo_previo.is_ok());
+        let nuevo = sucesor(&previo, &arena);
+        assert_eq!(
+            en_vuelo(&nuevo),
+            [5, 0, 0],
+            "la plaza del anterior está en el libro"
+        );
+        let propia = nuevo.check_exit_rate_limits(T0 + 1, Tramo::Critica(COSTE_POSITION_RISK));
+        assert!(propia.is_ok(), "2390 + 5 + 5 = 2400");
+        let r = nuevo
+            .check_exit_rate_limits(T0 + 1, Tramo::Critica(COSTE_POSITION_RISK))
+            .map(|_cupo| ());
+        assert!(
+            matches!(&r, Err(e) if e.starts_with("RATE_LIMIT_EXHAUSTED_WEIGHT: 2390 usado + 10 en vuelo + 5 > 2400")),
+            "{r:?}"
+        );
+        drop(cupo_previo);
+        assert_eq!(
+            en_vuelo(&nuevo),
+            [5, 0, 0],
+            "la respuesta del anterior soltó su plaza"
+        );
+        drop(propia);
+        assert_eq!(en_vuelo(&nuevo), [0, 0, 0]);
+        assert_eq!(en_vuelo(&previo), [0, 0, 0], "sin plazas fantasma");
+
+        let arena = self::arena();
+        let previo = previo_con(&arena);
+        let nuevo = sucesor(&previo, &arena);
+        let cupo = previo.check_exit_rate_limits(
+            previo.get_synced_timestamp(),
+            Tramo::Critica(COSTE_POSITION_RISK),
+        );
+        let Ok(cupo) = cupo else {
+            panic!("la crítica del anterior se admite: {cupo:?}");
+        };
+        let texto = cupo.registrar_fallo(&ErrorRest::de_red(
+            "AMBIGUOUS: Network Error: x".into(),
+            true,
+        ));
+        assert_eq!(texto, "AMBIGUOUS: Network Error: x");
+        drop(cupo);
+        let ahora = nuevo.get_synced_timestamp();
+        assert_eq!(
+            nuevo.uso_exchange_bloqueado().sin_respuesta.vigente(ahora),
+            [5, 0, 0]
+        );
+    }
+
+    /// Las tres cosas o ninguna: con la misma URL y la misma arena, el mismo Arc
+    /// del freno, del reloj y del uso, también con otra clave (la misma IP); con
+    /// otra URL, otra arena, o un freno del anterior que decide con otro reloj que
+    /// su arena, ninguna, y lo dice. El registro de órdenes se conserva siempre, y
+    /// el kill-switch del anterior cruza en todos los casos (N58).
+    #[test]
+    fn n26_comparte_las_tres_cosas_o_ninguna() {
+        let arena = arena();
+        let previo = previo_con(&arena);
+        let nuevo = sucesor(&previo, &arena);
+        assert!(nuevo.client().mismo_freno(previo.client()));
+        assert!(Arc::ptr_eq(&nuevo.arena, &previo.arena));
+        assert!(Arc::ptr_eq(&nuevo.uso_exchange, &previo.uso_exchange));
+        assert!(Arc::ptr_eq(&nuevo.registry(), &previo.registry()));
+        // El sucesor del sucesor vuelve a compartir: el invariante sobrevive.
+        let tercero = sucesor(&nuevo, &arena);
+        assert!(tercero.client().mismo_freno(previo.client()));
+        // Otra clave con la misma URL sale de la misma IP: el peso y el 418 son de
+        // la IP (Binance, «General Info»), así que comparte freno y uso. Las
+        // órdenes son de la cuenta: las de la otra se sobreestiman, lo conservador.
+        let (otra_clave, herencia) = OrderExecutor::sucesor_de(
+            &previo,
+            "otra".into(),
+            "s2".into(),
+            true,
+            Arc::clone(&arena),
+        );
+        assert_eq!(herencia, HerenciaDeCuota::Compartida);
+        assert!(otra_clave.client().mismo_freno(previo.client()));
+        assert!(Arc::ptr_eq(&otra_clave.arena, &previo.arena));
+        assert!(Arc::ptr_eq(&otra_clave.uso_exchange, &previo.uso_exchange));
+        // Desde aquí la arena pedida va adelantada: el sucesor que no comparte
+        // decide con ella, no con el reloj del anterior ni con el de pared.
+        arena
+            .server_time_offset_ms
+            .store(4_000_000, Ordering::Relaxed);
+
+        let mut previos: Vec<(OrderExecutor, &str, bool, HerenciaDeCuota)> = Vec::new();
+        for (clave, testnet, arena_previo, esperado) in [
+            (
+                "k",
+                false,
+                Some(Arc::clone(&arena)),
+                HerenciaDeCuota::OtraUrl,
+            ),
+            ("k", true, Some(self::arena()), HerenciaDeCuota::OtraArena),
+            ("k", true, None, HerenciaDeCuota::OtraArena),
+        ] {
+            let previo = OrderExecutor::new("k".into(), "s".into(), true);
+            previo.arena.store(arena_previo);
+            previos.push((previo, clave, testnet, esperado));
+        }
+        // El campo público `arena` reemplazado tras construir: su freno decide con
+        // otro reloj, y adoptarlo daría dos relojes.
+        let mut ajeno = OrderExecutor::new("k".into(), "s".into(), true);
+        ajeno.arena = Arc::new(ArcSwapOption::new(Some(Arc::clone(&arena))));
+        previos.push((ajeno, "k", true, HerenciaDeCuota::RelojAjeno));
+        for (previo, clave, testnet, esperado) in previos {
+            // Un baneo de 10 h: dura más que el adelanto de 4 000 s de la arena
+            // pedida, así que un sucesor que compartiera el freno seguiría frenado
+            // con el reloj de esa arena.
+            previo.handle_rate_limit_error("HTTP_418_IP_BANNED retry_after=36000");
+            previo.observar_limites(&limites(Some(2_100), None, None), T0);
+            previo.trigger_kill_switch();
+            let (nuevo, herencia) = OrderExecutor::sucesor_de(
+                &previo,
+                clave.into(),
+                "s2".into(),
+                testnet,
+                Arc::clone(&arena),
+            );
+            assert_eq!(herencia, esperado);
+            assert!(herencia.motivo_sin_herencia().is_some(), "{esperado:?}");
+            assert!(
+                nuevo.is_kill_switch_active(),
+                "{esperado:?}: el kill-switch cruza aunque no comparta el freno"
+            );
+            assert!(!nuevo.client().mismo_freno(previo.client()), "{esperado:?}");
+            assert!(!Arc::ptr_eq(&nuevo.arena, &previo.arena), "{esperado:?}");
+            assert!(
+                !Arc::ptr_eq(&nuevo.uso_exchange, &previo.uso_exchange),
+                "{esperado:?}"
+            );
+            let t_sucesor = nuevo.get_synced_timestamp();
+            assert!(
+                previo.check_backoff(t_sucesor).is_err(),
+                "{esperado:?}: con el reloj del sucesor el anterior sigue frenado"
+            );
+            assert!(nuevo.check_backoff(t_sucesor).is_ok(), "{esperado:?}");
+            assert!(
+                nuevo
+                    .check_exit_rate_limits(T0 + 1_000, Tramo::Lectura)
+                    .is_ok(),
+                "{esperado:?}"
+            );
+            assert!(
+                nuevo
+                    .arena
+                    .load_full()
+                    .is_some_and(|propia| Arc::ptr_eq(&propia, &arena)),
+                "{esperado:?}: el sucesor lleva la arena pedida"
+            );
+            let reloj = current_timestamp_ms().saturating_add(4_000_000);
+            for (quien, ms) in [
+                ("sucesor", nuevo.get_synced_timestamp()),
+                ("freno del sucesor", nuevo.client().freno().ahora_ms()),
+            ] {
+                assert!(
+                    ms.abs_diff(reloj) < 1_000,
+                    "{esperado:?}: {quien} decide con la arena pedida"
+                );
+            }
+            assert!(
+                Arc::ptr_eq(&nuevo.registry(), &previo.registry()),
+                "el registro siempre se conserva"
+            );
+        }
+    }
+
+    /// N58: el kill-switch es un latch hasta reiniciar (el aviso del sistema
+    /// inmune lo promete: «sigue armado hasta reiniciar»). Cruza el cambio en
+    /// caliente, del anterior o de la arena que recibe el sucesor. Sólo frena las
+    /// entradas: las salidas siguen pasando (ADR-0015). Antes el sucesor nacía con
+    /// el suyo apagado y su `check_rate_limits` volvía a dejar entrar.
+    #[test]
+    fn n26_el_kill_switch_cruza_el_cambio() {
+        let t = T0 + 1;
+        let arena = arena();
+        let previo = previo_con(&arena);
+        previo.trigger_kill_switch();
+        let nuevo = sucesor(&previo, &arena);
+        assert!(nuevo.is_kill_switch_active(), "el del anterior");
+        assert!(matches!(nuevo.check_rate_limits(t), Err(ref e) if e.starts_with("KILL SWITCH")));
+        let salida = nuevo
+            .check_exit_rate_limits(t, Tramo::Critica(COSTE_POSITION_RISK))
+            .map(|_cupo| ());
+        assert!(salida.is_ok(), "las salidas siguen: {salida:?}");
+
+        // El núcleo arma sólo el de la arena con el capital agotado (lib.rs): el
+        // latch propio del anterior está apagado, y el sucesor sigue frenado.
+        let arena = self::arena();
+        arena.kill_switch_active.store(true, Ordering::SeqCst);
+        let previo = previo_con(&arena);
+        assert!(!previo.kill_switch.load(Ordering::SeqCst));
+        let nuevo = sucesor(&previo, &arena);
+        assert!(nuevo.is_kill_switch_active(), "el de la arena");
+        assert!(matches!(nuevo.check_rate_limits(t), Err(ref e) if e.starts_with("KILL SWITCH")));
+
+        // Lo mismo en una rama que no comparte (otra URL), con un anterior sin
+        // arena: el sucesor lee la que recibe.
+        let previo = OrderExecutor::new("k".into(), "s".into(), true);
+        let (nuevo, herencia) =
+            OrderExecutor::sucesor_de(&previo, "k".into(), "s2".into(), false, Arc::clone(&arena));
+        assert_eq!(herencia, HerenciaDeCuota::OtraUrl);
+        assert!(
+            nuevo.is_kill_switch_active(),
+            "el de la arena, sin compartir"
+        );
+        assert!(matches!(nuevo.check_rate_limits(t), Err(ref e) if e.starts_with("KILL SWITCH")));
+
+        // Sin ninguno armado, el sucesor nace libre.
+        let arena = self::arena();
+        let previo = previo_con(&arena);
+        let nuevo = sucesor(&previo, &arena);
+        assert!(!nuevo.is_kill_switch_active());
+        assert!(nuevo.check_rate_limits(t).is_ok());
+    }
+
+    /// N58 (de la revisión): el sistema inmune corre en otra tarea y puede
+    /// dispararse entre `sucesor_de` y la publicación. Arma la arena y el
+    /// ejecutor que aún ve publicado, el anterior. El sucesor ya construido
+    /// también queda frenado, porque lee el latch de su arena en cada entrada.
+    /// Antes, con la copia sólo al construir, se publicaba sin latch.
+    #[test]
+    fn n26_un_latch_de_la_arena_posterior_al_cambio_frena_al_sucesor() {
+        let t = T0 + 1;
+        let arena = arena();
+        let previo = previo_con(&arena);
+        let nuevo = sucesor(&previo, &arena);
+        assert!(nuevo.check_rate_limits(t).is_ok(), "libre al construirse");
+        // El inmune (god_engine.rs): primero la arena, luego el ejecutor publicado.
+        arena.kill_switch_active.store(true, Ordering::Relaxed);
+        previo.trigger_kill_switch();
+        assert!(nuevo.is_kill_switch_active());
+        assert!(matches!(nuevo.check_rate_limits(t), Err(ref e) if e.starts_with("KILL SWITCH")));
+        let salida = nuevo
+            .check_exit_rate_limits(t, Tramo::Critica(COSTE_POSITION_RISK))
+            .map(|_cupo| ());
+        assert!(salida.is_ok(), "las salidas siguen: {salida:?}");
+        // Cualquier ejecutor con esa arena, no sólo el sucesor.
+        let otro = previo_con(&arena);
+        assert!(otro.is_kill_switch_active());
+    }
+
+    /// El limitador local de entradas y las cachés son de cada ejecutor: el
+    /// sucesor nunca los hereda.
+    #[test]
+    fn n26_no_hereda_limitador_ni_caches() {
+        let t = T0 + 1;
+        let arena = self::arena();
+        let previo = previo_con(&arena);
+        let agotado = (0..100).any(|_| {
+            matches!(previo.check_rate_limits(t), Err(ref e) if e.starts_with("LOCAL RATE LIMIT"))
+        });
+        assert!(agotado, "el limitador local del anterior se agota");
+        let ahora = std::time::Instant::now();
+        previo
+            .symbol_filters
+            .store(Arc::new(std::collections::HashMap::from([(
+                "BTCUSDT".to_string(),
+                SymbolFilter::default(),
+            )])));
+        previo
+            .active_leverage
+            .store(Arc::new(std::collections::HashMap::from([(
+                "BTCUSDT".to_string(),
+                5_u32,
+            )])));
+        if let Ok(mut cache) = previo.negative_symbol_cache.write() {
+            cache.insert("N26USDT".to_string(), ahora);
+        }
+        *previo.espera_exchange_info_bloqueada() = Some(ahora);
+        assert_eq!(previo.negative_symbol_cache_len(), 1, "cachés llenas");
+        let nuevo = sucesor(&previo, &arena);
+        assert!(
+            nuevo.check_rate_limits(t).is_ok(),
+            "el sucesor estrena su limitador"
+        );
+        assert!(nuevo.symbol_filters.load().is_empty());
+        assert!(nuevo.active_leverage.load().is_empty());
+        assert_eq!(nuevo.negative_symbol_cache_len(), 0);
+        assert!(nuevo.espera_exchange_info_bloqueada().is_none());
+    }
+
+    /// Un solo reloj (CL-188, RV16-T): el freno compartido sigue a la arena del
+    /// sucesor, que es el mismo Arc que la del anterior.
+    #[test]
+    fn n26_el_freno_compartido_sigue_el_reloj_del_sucesor() {
+        let arena = arena();
+        let previo = previo_con(&arena);
+        let clon = previo.client().clone();
+        let nuevo = sucesor(&previo, &arena);
+        let otra = self::arena();
+        otra.server_time_offset_ms
+            .store(5_000_000, Ordering::Relaxed);
+        nuevo.arena.store(Some(otra));
+        let esperado = current_timestamp_ms().saturating_add(5_000_000);
+        for (quien, ms) in [
+            ("sucesor", nuevo.get_synced_timestamp()),
+            ("freno del sucesor", nuevo.client().freno().ahora_ms()),
+            ("rezagados del anterior", previo.get_synced_timestamp()),
+            ("clones del anterior", clon.freno().ahora_ms()),
+        ] {
+            assert!(ms.abs_diff(esperado) < 1_000, "{quien}");
+        }
+    }
+
+    /// Guarda de fuente: `sucesor_de` no toma ningún candado (se llama entre el
+    /// `ocupada` y el `replace_executor` de `paso_transicion`, que toman la sesión
+    /// y la puerta de publicación), hereda el kill-switch antes de cualquier
+    /// salida (N58) y adopta las tres cosas sólo tras sus tres comprobaciones.
+    #[test]
+    fn n26_sucesor_de_no_toma_candados_y_comprueba_antes_de_compartir() {
+        let produccion = include_str!("executor.rs")
+            .split("#[cfg(test)]")
+            .next()
+            .unwrap_or("");
+        let inicio = produccion.find("    pub fn sucesor_de(");
+        assert!(inicio.is_some(), "corte de producción");
+        let resto = &produccion[inicio.unwrap_or(0)..];
+        let fin = resto.find("\n    }\n").map_or(resto.len(), |i| i + 6);
+        let cuerpo = &resto[..fin];
+        for prohibido in [".lock(", "_bloqueado(", ".write(", ".read("] {
+            assert!(
+                !cuerpo.contains(prohibido),
+                "sucesor_de no toma candados: {prohibido}"
+            );
+        }
+        let adopta = cuerpo.find("adoptar_freno_de(").unwrap_or(0);
+        let latch = cuerpo.find("nuevo.kill_switch.store(true");
+        let primera_salida = cuerpo.find("return (");
+        assert!(
+            latch.is_some_and(|l| primera_salida.is_some_and(|r| l < r)),
+            "el kill-switch cruza en todas las ramas"
+        );
+        assert!(
+            !cuerpo.contains("api_key.load()"),
+            "la clave no decide: la cuota del peso y el 418 son de la IP"
+        );
+        for comprobacion in ["get_base_url()", "load_full()"] {
+            let i = cuerpo.find(comprobacion);
+            assert!(
+                i.is_some_and(|i| i < adopta),
+                "{comprobacion} antes de adoptar"
+            );
+        }
+        let uso = cuerpo.find("nuevo.uso_exchange = Arc::clone(&previo.uso_exchange);");
+        assert!(
+            uso.is_some_and(|i| i > adopta),
+            "el uso sólo tras adoptar el freno"
+        );
     }
 }

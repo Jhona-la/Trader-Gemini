@@ -261,7 +261,9 @@ use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 /// todos los clones de su cliente (el user-data stream y el NTP los toman con
 /// `client().clone()`): el límite es de la IP, no de quien envía. Antes vivía
 /// en `OrderExecutor` y los clones no lo veían. Cada ejecutor crea el suyo
-/// (`new` y `new_with_shared`), como antes.
+/// (`new` y `new_with_shared`), salvo el sucesor de una transición en caliente
+/// con la misma URL y la misma arena (`sucesor_de`, N26), que adopta el del
+/// anterior: el exchange sigue frenando la misma IP, también con otra clave.
 pub(crate) struct FrenoExchange {
     /// F1.8: no enviar hasta este timestamp (cooldown post-429).
     pub(crate) cooldown_until_ms: AtomicU64,
@@ -440,7 +442,8 @@ pub struct BinanceClient {
     http: Client,
     /// Arc: ArcSwap no es Clone por diseño; los clones (la réplica del stream,
     /// F1.6) comparten la misma clave. RET-31: ya nada la cambia en caliente;
-    /// el host cambia de entorno construyendo otro cliente (new_with_shared).
+    /// el host cambia de ejecutor construyendo otro cliente (`sucesor_de`, que
+    /// con la misma URL y arena adopta el freno del anterior, N26).
     pub api_key: std::sync::Arc<ArcSwap<HeaderValue>>,
     /// Arc interno: los clones comparten el mismo entorno (F1.6).
     pub is_testnet: std::sync::Arc<AtomicBool>,
@@ -494,6 +497,23 @@ impl BinanceClient {
     ) -> Self {
         self.freno = std::sync::Arc::new(FrenoExchange::new(reloj));
         self
+    }
+
+    /// N26 (I-13): adopta el freno de `otro`, el mismo Arc y con él su reloj,
+    /// sólo si ese freno decide con `reloj` (el campo `arena` del ejecutor
+    /// dueño de `otro`, CL-188). Si no, no toca nada y devuelve false. Lo usa
+    /// sólo `OrderExecutor::sucesor_de`, tras comprobar la misma URL base y la
+    /// misma arena.
+    pub(crate) fn adoptar_freno_de(
+        &mut self,
+        otro: &BinanceClient,
+        reloj: &std::sync::Arc<arc_swap::ArcSwapOption<quantum_arena::GlobalArena>>,
+    ) -> bool {
+        if !std::sync::Arc::ptr_eq(&otro.freno.reloj, reloj) {
+            return false;
+        }
+        self.freno = std::sync::Arc::clone(&otro.freno);
+        true
     }
 
     /// N20 (CL-188): el freno 429/418 de este cliente y sus clones.
@@ -994,6 +1014,11 @@ impl BinanceClient {
     pub(crate) fn con_base_de_prueba(mut self, base: &str) -> Self {
         self.base_prueba = Some(std::sync::Arc::from(base));
         self
+    }
+
+    /// N26 (I-13): ¿comparten este cliente y `otro` el mismo freno 429/418?
+    pub(crate) fn mismo_freno(&self, otro: &BinanceClient) -> bool {
+        std::sync::Arc::ptr_eq(&self.freno, &otro.freno)
     }
 }
 
