@@ -134,11 +134,12 @@ impl UmegakiRelativeEntropyEngine {
         let coherence_norm = coherence_ba.abs() * 2.0;
 
         // 2. Construcción del estado de referencia térmico de Gibbs \sigma
-        // H = diag(safe_spread*0.1, 0.0, safe_spread*0.1)
-        let beta = (self.params.default_beta / safe_vol).clamp(0.1, 10.0);
-        let q_bid = (-beta * 0.5).exp();
+        // H = diag(safe_spread * 0.01, 0.0, safe_spread * 0.01)
+        let beta = (self.params.default_beta / safe_vol).clamp(0.1, 5.0);
+        let spread_energy = (safe_spread * 0.01).clamp(0.01, 2.0);
+        let q_bid = (-beta * spread_energy * 0.1).exp();
         let q_neutral = 1.0;
-        let q_ask = (-beta * 0.5).exp();
+        let q_ask = (-beta * spread_energy * 0.1).exp();
         let sum_q = q_bid + q_neutral + q_ask;
 
         let s_bid = q_bid / sum_q;

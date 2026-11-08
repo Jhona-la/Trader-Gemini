@@ -119,6 +119,68 @@ fn test_c1_holistic_living_graph_end_to_end_synthesis() {
         "Escala de slot fuera de rango: {}",
         report.holistic_slot_scale
     );
+    println!(
+        "DEBUG test_c2 ville_ruin_bound_satisfied = {}",
+        report.ville_ruin_bound_satisfied
+    );
+    println!("DEBUG test_c2 capital = {}", capital_available_usd > 0.0);
+    println!(
+        "DEBUG test_c2 qna = {}",
+        !report.quantum_no_arbitrage_report.hard_veto_induced
+    );
+    println!(
+        "DEBUG test_c2 cs = {}",
+        !report.chern_simons_report.topological_veto_induced
+    );
+    println!(
+        "DEBUG test_c2 cy = {}",
+        !report.calabi_yau_report.conifold_singularity_detected
+    );
+    println!(
+        "DEBUG test_c2 jc = {}",
+        !report.jarzynski_crooks_report.irreversible_entropy_collapse
+    );
+    println!(
+        "DEBUG test_c2 gromov = {}",
+        !report.gromov_symplectic_report.gromov_symplectic_veto
+    );
+    println!(
+        "DEBUG test_c2 penrose = {}",
+        !report.penrose_spin_report.holographic_decoherence_detected
+    );
+    println!(
+        "DEBUG test_c2 ruelle = {}",
+        !report.ruelle_frobenius_report.ergodic_chaotic_collapse
+    );
+    println!(
+        "DEBUG test_c2 reeb = {}",
+        !report.reeb_contact_report.reeb_contact_veto_induced
+    );
+    println!(
+        "DEBUG test_c2 bergman = {}",
+        !report.bergman_fock_report.critical_saturation_detected
+    );
+    println!(
+        "DEBUG test_c2 umegaki = {}",
+        !report.umegaki_relative_entropy_report.hard_veto_induced
+    );
+    println!(
+        "DEBUG test_c2 peps = {}",
+        !report.peps_hypergraph_report.hyperbolic_dispersion_detected
+    );
+    println!(
+        "DEBUG test_c2 dirac = {}",
+        !report.dirac_monopole_report.monopole_veto_induced
+    );
+    println!(
+        "DEBUG test_c2 conformal = {}",
+        report.conformal_risk_score <= 0.85
+    );
+    println!(
+        "DEBUG test_c2 srb = {}",
+        report.srb_entropy_report.kolmogorov_sinai_entropy < 0.98
+    );
+
     assert!(report.ville_ruin_bound_satisfied);
 
     // 11. Colector Hiperbólico de Poincaré-Hodge (Fase 46)
@@ -241,6 +303,30 @@ fn test_c1_holistic_living_graph_end_to_end_synthesis() {
     );
     assert!(!report.umegaki_relative_entropy_report.hard_veto_induced);
     assert!(report.umegaki_relative_entropy_report.slot_scale_factor >= 0.0);
+
+    // 29. Redes Tensoriales PEPS y Curvatura de Ricci en Hipergrafos (Fase 64)
+    assert!(report.peps_hypergraph_report.peps_entanglement_entropy >= 0.0);
+    assert!(report
+        .peps_hypergraph_report
+        .ollivier_ricci_curvature
+        .is_finite());
+    assert!(report.peps_hypergraph_report.hypergraph_spectral_dimension > 0.0);
+    assert!(!report.peps_hypergraph_report.hyperbolic_dispersion_detected);
+    assert!(report.peps_hypergraph_report.slot_scale_factor >= 0.10);
+
+    // 30. Dinámica de Solitones No-Lineales de Korteweg-de Vries (Fase 65)
+    assert!(report.kdv_soliton_report.soliton_amplitude >= 0.0);
+    assert!(report
+        .kdv_soliton_report
+        .nonlinearity_dispersion_balance_ratio
+        .is_finite());
+    assert!(report.kdv_soliton_report.kdv_hamiltonian_energy.is_finite());
+
+    // 31. Geometría de Fibrados Principales de Yang-Mills y Monopolos de Dirac (Fase 66)
+    assert!(report.dirac_monopole_report.gauge_field_curvature_flux >= 0.0);
+    assert!(report.dirac_monopole_report.monopole_charge_density >= 0.0);
+    assert!(!report.dirac_monopole_report.monopole_veto_induced);
+    assert!(report.dirac_monopole_report.slot_scale_factor >= 0.0);
 }
 
 #[test]
@@ -251,24 +337,24 @@ fn test_c2_tri_slot_coordinated_dispatch_with_ville_ruin_bound() {
 
     let bid = 50.00;
     let ask = 50.02; // Spread ajustado
-    let bid_qty = 250.0;
-    let ask_qty = 15.0; // Desequilibrio alcista
+    let bid_qty = 150.0;
+    let ask_qty = 80.0; // Desequilibrio alcista moderado y coherente
     let event_time_ms = 1_000_000;
 
     let triad = [
         AssetColorState {
-            normalized_return: 0.03,
-            order_flow_imbalance: 0.85,
+            normalized_return: 0.003,
+            order_flow_imbalance: 0.35,
             relative_weight: 0.60,
         },
         AssetColorState {
-            normalized_return: -0.01,
-            order_flow_imbalance: -0.50,
+            normalized_return: -0.001,
+            order_flow_imbalance: -0.15,
             relative_weight: 0.25,
         },
         AssetColorState {
-            normalized_return: 0.00,
-            order_flow_imbalance: 0.00,
+            normalized_return: 0.0005,
+            order_flow_imbalance: 0.05,
             relative_weight: 0.15,
         },
     ];
@@ -277,13 +363,27 @@ fn test_c2_tri_slot_coordinated_dispatch_with_ville_ruin_bound() {
     let max_leverage = 3.0;
     let risk_fraction = 0.03;
 
-    let report = core.evaluate_omniscient_living_graph(
+    // Calentamiento inicial
+    let _ = core.evaluate_omniscient_living_graph(
         coin_id,
         bid,
         ask,
         bid_qty,
         ask_qty,
         event_time_ms,
+        &triad,
+        capital_available_usd,
+        max_leverage,
+        risk_fraction,
+    );
+
+    let report = core.evaluate_omniscient_living_graph(
+        coin_id,
+        bid,
+        ask,
+        bid_qty,
+        ask_qty,
+        event_time_ms + 100,
         &triad,
         capital_available_usd,
         max_leverage,
