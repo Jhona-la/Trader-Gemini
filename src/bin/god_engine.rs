@@ -1408,6 +1408,37 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         Arc::clone(&darwin_approved),
         Arc::clone(&oms_reconciled),
     )));
+    // GLM-216 (bloqueante #2 del A1): en modo Producción, cargar el
+    // certificado demo persistido (lo escribe la corrida demo desde el
+    // agregado del income). Sin él — o con EV ≤ 0 / cierres insuficientes —
+    // la puerta DemoVerify→ProductionMainnet permanece CERRADA (fail-closed):
+    // nunca más transición inmediata sin métrica.
+    if !is_demo_mode {
+        let ruta = quantum_arena::paths::env_data_path_for(true, "evidencia_demo.json");
+        let evidencia = std::fs::read_to_string(&ruta).ok().and_then(|txt| {
+            serde_json::from_str::<god_engine_core::orchestrator::EvidenciaDemo>(&txt).ok()
+        });
+        match evidencia {
+            Some(ev) => {
+                telemetry_server::telemetry_log!(
+                    "📋 [ORCHESTRATOR] certificado demo cargado: {} cierres, EV neto {:+.6} USDT/trade (mínimo {} cierres y EV > 0 para Producción)",
+                    ev.cierres,
+                    ev.ev_neto_por_trade,
+                    god_engine_core::orchestrator::MIN_CIERRES_PARA_PROD
+                );
+                orchestrator
+                    .write()
+                    .unwrap_or_else(|e| e.into_inner())
+                    .set_evidencia_demo(Some(ev));
+            }
+            None => {
+                telemetry_server::telemetry_log!(
+                    "🔒 [ORCHESTRATOR] SIN certificado demo ({}): la puerta a Producción permanecerá cerrada — correr Demo primero",
+                    ruta
+                );
+            }
+        }
+    }
 
     if is_demo_mode {
         telemetry_server::telemetry_log!(
@@ -3460,6 +3491,32 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         telemetry_server::profiler::record_exchange_income(
                             x_gross, x_fees, x_closes, x_wins,
                         );
+                        // GLM-216 (bloqueante #2): en demo, persistir el
+                        // certificado de rentabilidad que la puerta a
+                        // Producción exige (cierres ≥ 30 y EV neto > 0).
+                        if x_closes > 0 && x_gross.is_finite() && x_fees.is_finite() {
+                            let ev = god_engine_core::orchestrator::EvidenciaDemo {
+                                cierres: x_closes,
+                                ev_neto_por_trade: (x_gross + x_fees) / x_closes as f64,
+                                wins: x_wins,
+                            };
+                            let ruta =
+                                quantum_arena::paths::env_data_path_for(true, "evidencia_demo.json");
+                            match serde_json::to_string_pretty(&ev) {
+                                Ok(txt) => {
+                                    if std::fs::write(&ruta, txt).is_err() {
+                                        telemetry_server::telemetry_log!(
+                                            "⚠️ [ORCHESTRATOR] certificado demo no persistido ({ruta:?}): la puerta a Producción no abrirá tras un reinicio"
+                                        );
+                                    }
+                                }
+                                Err(e) => {
+                                    telemetry_server::telemetry_log!(
+                                        "⚠️ [ORCHESTRATOR] certificado demo no serializable: {e}"
+                                    );
+                                }
+                            }
+                        }
                     }
                     // LG-8: p* de la geometría del genoma a la τ de la ventana.
                     let tp_brk = arena_brk.config.tp_at_tau(tau_scale);
