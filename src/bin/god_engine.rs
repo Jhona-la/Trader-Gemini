@@ -1260,7 +1260,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             None => {
                 telemetry_server::telemetry_log!(
                     "🔒 [ORCHESTRATOR] SIN certificado demo ({}): la puerta a Producción permanecerá cerrada — correr Demo primero",
-                    ruta.display()
+                    ruta
                 );
             }
         }
