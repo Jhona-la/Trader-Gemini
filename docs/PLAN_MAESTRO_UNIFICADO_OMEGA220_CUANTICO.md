@@ -1933,6 +1933,137 @@ En cada evaluación de riesgo holístico en `crates/risk-engine` e integrado en 
 - Rol 8 Geómetra Diferencial y Teórico de Cuerdas.
 - Rol 10 Auditor Forense Causal.
 
+---
+
+## 🌌 PARTE XVIII — OLA 17: DE LA GRAVITACIÓN CUÁNTICA DE LAZOS AL HORIZONTE DE SCHWARZSCHILD Y ROGUE WAVES DE PEREGRINE (FASES 67, 68, 69)
+
+### ⚛️ FASE 67 (§67) — GRAVITACIÓN CUÁNTICA DE LAZOS (LQG) Y ESPECTRO DISCRETO DE ÁREA DE ASHTEKAR-BARBERO
+
+#### 1. QUÉ
+Diseño e implementación del motor de geometría cuántica canónica discreta (`AshtekarLqgAreaEngine`) en `crates/feature-engine`, formulando la cuantización no perturbativa del espaciotiempo de mercado en el álgebra de gauge $\mathfrak{su}(2)$ mediante variables de conexión de Ashtekar $A_a^i$ y tríadas densitizadas conjugadas $E_i^a$, evaluando el espectro discreto del operador de área de Rovelli-Smolin:
+$$\hat{\mathbf{A}} = 8\pi \gamma \ell_P^2 \sum_{k} \sqrt{j_k (j_k + 1)}$$
+donde $\gamma \approx 0.23753296$ es el parámetro de Barbero-Immirzi universal y $j_k \in \frac{1}{2}\mathbb{N}$ son los espines asociados a los enlaces del flujo de órdenes institucional.
+
+#### 2. POR QUÉ
+Los modelos continuos tradicionales asumen una métrica euclídea suave y divisible infinitamente, lo que ignora la naturaleza granular del ordenamiento discreto en libros de órdenes. Cuando la liquidez se drena súbitamente, el espacio físico del mercado experimenta una transición de fase hacia una singularidad cuántica donde el área discreta colapsa por debajo de la brecha cuántica elemental $\Delta A_{\text{gap}} = 4\pi \gamma \sqrt{3} \ell_P^2$, provocando fracturas de liquidez y saltos de precio catastróficos.
+
+#### 3. PARA QUÉ
+Determinar con precisión analítica el espectro de cuantos de área disponibles en el microespaciotiempo, computar el operador de volumen cuántico $\mathbf{V}_{\text{quantum}} = \sqrt{|\det E|}$, verificar la holonomía de lazo de Wilson $\text{Tr}(h_\gamma) \in [-2.0, 2.0]$, detectar la emergencia de singularidades de colapso de área discreta (`ashtekar_area_singularity_detected`), y modular la asignación de capital entre $0.15$ y $1.25$ para proteger la cota de ruina de Ville $\mathbb{P}(\text{ruina}) \le 10^{-6}$.
+
+#### 4. CÓMO (Mecanismo Matemático y Algorítmico Paso a Paso)
+1. **Asignación de Espines Discretos $j_k$:**
+   Mapeo de las variables fundamentales de microestructura (retorno normalizado, OFI, desbalance L2 de profundidad, spread) a espines cuánticos $j \in \{1/2, 1, 3/2, \dots, 5\}$.
+2. **Evaluación del Operador de Área de Rovelli-Smolin:**
+   Cálculo de los autovalores discretos $A_k = 8\pi \gamma \ell_P^2 \sqrt{j_k(j_k + 1)}$ y agregación del área total $\mathbf{A}_{\text{total}}$.
+3. **Brecha Mínima de Planck de Barbero-Immirzi:**
+   Verificación estricta de la cota inferior $\Delta A_{\text{gap}} = 4\pi \gamma \sqrt{3} \ell_P^2 \approx 5.17 \ell_P^2$.
+4. **Holonomía de Lazo de Wilson de Conexión de Ashtekar:**
+   Evaluación de la traza de holonomía $\text{Tr}(h_\gamma) = 2 \cos(\theta / 2)$ para monitorear curvatura intrínseca sin singularidades.
+5. **Detección Determinista de Singularidad y Veto Cuántico:**
+   Si $\mathbf{A}_{\text{total}} < A_{\text{crit}}$ o el área se colapsa en presencia de ensanchamiento de spread, disparo inmediato del veto `ASHTEKAR_AREA_SINGULARITY_VETO` que reduce a 0 la asignación de órdenes.
+
+#### 5. CUÁNDO
+En cada evento de actualización de microestructura en `crates/feature-engine` e integrado en `OmniscientLivingGraphOrchestrator`.
+
+#### 6. DÓNDE
+- Módulo: `crates/feature-engine/src/ashtekar_lqg_area.rs`.
+- Re-exportado en: `crates/feature-engine/src/lib.rs`.
+- Integrado en: `crates/god-engine-core/src/omniscient_living_graph.rs`.
+- Contrato formal: `crates/feature-engine/tests/f67_001_ashtekar_lqg_area_contract.rs`.
+
+#### 7. QUIÉN
+- Rol 2 Quant Developer de Microestructura.
+- Rol 8 Físico-Matemático de Gravedad Cuántica y Geometría No Conmutativa.
+- Rol 7 Ingeniero de Silicio y Cero Alocaciones.
+
+---
+
+### 🌊 FASE 68 (§68) — ECUACIÓN DE SCHRÖDINGER NO LINEAL CÚBICA (NLS) Y SOLITONES ENVOLVENTES DE PEREGRINE
+
+#### 1. QUÉ
+Diseño e implementación del motor analítico de ondas gigantes (`NlsPeregrineSolitonEngine`) en `crates/signal-engine`, resolviendo la ecuación de Schrödinger no lineal 1D focalizante (NLS):
+$$i \partial_t \psi + \frac{1}{2} \partial_{xx} \psi + |\psi|^2 \psi = 0$$
+para computar la solución exacta del solitón envolvente de Peregrine:
+$$\psi_P(x, t) = \left( 1 - \frac{4 (1 + 2 i t)}{1 + 4 x^2 + 4 t^2} \right) e^{i t}$$
+identificando ondas rebeldes (rogue waves) institucionales de máxima concentración energética.
+
+#### 2. POR QUÉ
+Las soluciones lineales estándar y los indicadores tradicionales fallan al modelar la auto-focalización no lineal en flujos de órdenes de alta densidad. El solitón de Peregrine emerge de un fondo plano de liquidez sin previo aviso y triplica la amplitud del fondo ($|\psi_P(0, 0)| = 3.0$), concentrando la energía antes de disiparse de nuevo en el continuo. Ignorar esta solución conduce a ejecuciones contracorriente suicidas durante ondas gigantes de barrido de liquidez.
+
+#### 3. PARA QUÉ
+Monitorear el Índice de Inestabilidad Modulacional de Benjamin-Feir ($\text{BFI} = \sqrt{2} a_0 k_0 / \Delta k$), calcular la velocidad hidrodinámica de grupo de Madelung $u = \partial_x \arg(\psi_P)$, detectar la presencia de una onda rebelde activa (`peregrine_rogue_wave_detected`), y otorgar un boost constructivo de convicción direccional (hasta $+25\%$) alineado con el impulso solitónico.
+
+#### 4. CÓMO (Mecanismo Matemático y Algorítmico Paso a Paso)
+1. **Mapeo Espaciotemporal Normalizado $(x, t)$:**
+   Transformación del desbalance de flujo (OFI) y retorno a coordenada espacial $x$, y del spread y volatilidad a tiempo de dispersión $t$.
+2. **Evaluación Analítica de Peregrine en Stack $O(1)$:**
+   Cálculo directo de partes real e imaginaria de $\psi_P(x, t)$ sin aproximaciones numéricas lentas ni iteraciones.
+3. **Cálculo de Amplitud Envolvente y Fase Cuántica:**
+   $|\psi_P| = \sqrt{\text{Re}^2 + \text{Im}^2}$ y $\phi = \text{atan2}(\text{Im}, \text{Re})$.
+4. **Índice de Benjamin-Feir (BFI):**
+   Determinación de inestabilidad modulacional cuando $\text{BFI} \ge 0.90$.
+5. **Detección de Rogue Wave y Modulación de Convicción:**
+   Si $|\psi_P| \ge 2.20$ y $\text{BFI} \ge 0.90$, activación de `peregrine_rogue_wave_detected` con aceleración constructiva de slot hasta $1.35$.
+
+#### 5. CUÁNDO
+En cada evaluación de señales de microestructura y dinámica de paquetes de onda en `crates/signal-engine`.
+
+#### 6. DÓNDE
+- Módulo: `crates/signal-engine/src/nls_peregrine_soliton.rs`.
+- Re-exportado en: `crates/signal-engine/src/lib.rs`.
+- Integrado en: `crates/god-engine-core/src/omniscient_living_graph.rs`.
+- Contrato formal: `crates/signal-engine/tests/f68_001_nls_peregrine_soliton_contract.rs`.
+
+#### 7. QUIÉN
+- Rol 2 Quant Developer Senior.
+- Rol 8 Físico Teórico de Óptica No Lineal e Hidrodinámica Cuántica.
+
+---
+
+### 🛡️ FASE 69 (§69) — ACCIÓN EFECTIVA CUÁNTICA DE POLYAKOV Y VETO DE HORIZONTES DE AGUJERO NEGRO DE SCHWARZSCHILD
+
+#### 1. QUÉ
+Diseño e implementación del motor relativista y conforme de gobernanza de riesgo terminal (`PolyakovSchwarzschildHorizonEngine`) en `crates/risk-engine`, estructurando el espacio de fase de capital bajo la acción de cuerdas bosónicas 2D de Polyakov con anomalía conforme de Weyl:
+$$\mathcal{S}_{\text{Polyakov}} = -\frac{1}{4\pi \alpha'} \int d^2\sigma \sqrt{-h} h^{ab} \partial_a X^\mu \partial_b X_\mu, \quad \mathcal{A}_{\text{Weyl}} = \frac{c - 26}{96\pi} R$$
+y mapeando la masa nocional gravitatoria del portfolio al radio de Schwarzschild relativista:
+$$r_s = \frac{2 G_{\text{eff}} M_{\text{notional}}}{c_{\text{liquidity}}^2}$$
+
+#### 2. POR QUÉ
+El apalancamiento excesivo en condiciones de baja liquidez deforma la geometría del espacio de fase financiero de forma idéntica a una masa compacta que colapsa gravitacionalmente. Si el radio de fase de capital $r$ cae por debajo del radio de Schwarzschild $r_s$ ($\Delta r = r - r_s \le 0$), el sistema cruza el horizonte de sucesos: ningún flujo de capital o compensación de spread puede revertir la cascada de liquidaciones, destruyendo la garantía de ruina de Ville.
+
+#### 3. PARA QUÉ
+Monitorear en tiempo real la distancia radial al horizonte de sucesos $\Delta r$, calcular la relación adimensional de proximidad $\xi = r_s / r$, evaluar la densidad de anomalía de Weyl $\mathcal{A}_{\text{Weyl}}$, inducir descompresión progresiva en la ergósfera ($r_s / r > 0.85$), y ejecutar el veto terminal irreversible `POLYAKOV_SCHWARZSCHILD_EVENT_HORIZON_VETO` si $r \le r_s$ o $\xi \ge 1.0$, aplanando inmediatamente todas las órdenes y preservando la wallet.
+
+#### 4. CÓMO (Mecanismo Matemático y Algorítmico Paso a Paso)
+1. **Masa Nocional Gravitatoria Efectiva:**
+   $M = \text{Capital} \cdot \text{Apalancamiento} \cdot (1 + |\text{OFI}| \cdot 0.5)$.
+2. **Radio de Schwarzschild de Capital $r_s$:**
+   $r_s = 2 G_{\text{eff}} (M / \text{Capital}) / c_{\text{liquidity}}^2$.
+3. **Coordenada Radial de Fase $r$:**
+   Capacidad de absorción del mercado ante fricción y volatilidad: $r = 50.0 / (\text{spread} \cdot 0.05 + \text{vol} \cdot 20.0)$.
+4. **Cálculo de Distancia $\Delta r$ y Proximidad $\xi$:**
+   $\Delta r = r - r_s$, $\xi = r_s / r$.
+5. **Anomalía Conforme de Weyl:**
+   $\mathcal{A}_{\text{Weyl}} = \frac{3 - 26}{96\pi} \cdot \frac{r_s}{r^2}$.
+6. **Veto Terminal Absoluto:**
+   Si $\Delta r \le 0$ o $\xi \ge 1.0 \implies$ emisión de `POLYAKOV_SCHWARZSCHILD_EVENT_HORIZON_VETO`, reduciendo a $0.0$ la asignación y anulando la satisfacción de la cota de ruina de Ville.
+
+#### 5. CUÁNDO
+En cada evaluación de riesgo holístico en `crates/risk-engine` e integrado en `crates/god-engine-core`.
+
+#### 6. DÓNDE
+- Módulo: `crates/risk-engine/src/polyakov_schwarzschild_horizon.rs`.
+- Re-exportado en: `crates/risk-engine/src/lib.rs`.
+- Integrado en: `crates/god-engine-core/src/omniscient_living_graph.rs`.
+- Contrato formal: `crates/risk-engine/tests/f69_001_polyakov_schwarzschild_horizon_contract.rs`.
+- Contrato de síntesis holística: `crates/god-engine-core/tests/f69_002_wave17_living_graph_synthesis_contract.rs`.
+
+#### 7. QUIÉN
+- Rol 3 Risk Manager Senior.
+- Rol 8 Físico Relativista y Teórico de Cuerdas.
+- Rol 10 Auditor Forense Causal.
+
+
 
 
 

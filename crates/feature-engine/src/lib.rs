@@ -1,3 +1,4 @@
+pub mod ashtekar_lqg_area;
 pub mod bergman_fock_reproducing;
 pub mod bouchaud_mezard_ewl;
 pub mod calabi_yau_seiberg_witten;
@@ -60,6 +61,10 @@ pub mod welford;
 pub mod zakai_doob_amplituhedron;
 
 // Re-exportar primitivas matemáticas O(1)
+pub use ashtekar_lqg_area::{
+    AshtekarLqgAreaEngine, AshtekarLqgParams, AshtekarLqgReport, ASHTEKAR_SPIN_CHANNELS,
+    BARBERO_IMMIRZI_GAMMA, PLANCK_AREA_SCALE,
+};
 pub use bergman_fock_reproducing::{
     BergmanFockParams, BergmanFockReport, BergmanFockReproducingEngine, BERGMAN_COMPLEX_DIM,
 };

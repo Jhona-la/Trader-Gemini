@@ -173,6 +173,18 @@ fn test_c1_holistic_living_graph_end_to_end_synthesis() {
         !report.dirac_monopole_report.monopole_veto_induced
     );
     println!(
+        "DEBUG test_c2 ashtekar = {}",
+        !report
+            .ashtekar_lqg_report
+            .ashtekar_area_singularity_detected
+    );
+    println!(
+        "DEBUG test_c2 polyakov = {}",
+        !report
+            .polyakov_schwarzschild_report
+            .event_horizon_veto_induced
+    );
+    println!(
         "DEBUG test_c2 conformal = {}",
         report.conformal_risk_score <= 0.85
     );
@@ -327,6 +339,33 @@ fn test_c1_holistic_living_graph_end_to_end_synthesis() {
     assert!(report.dirac_monopole_report.monopole_charge_density >= 0.0);
     assert!(!report.dirac_monopole_report.monopole_veto_induced);
     assert!(report.dirac_monopole_report.slot_scale_factor >= 0.0);
+
+    // 32. Gravitación Cuántica de Lazos (LQG) y Espectro de Área de Ashtekar-Barbero (Fase 67)
+    assert!(report.ashtekar_lqg_report.total_quantized_area >= 0.0);
+    assert!(report.ashtekar_lqg_report.minimum_area_gap > 0.0);
+    assert!(report.ashtekar_lqg_report.quantum_volume_density >= 0.0);
+    assert!(
+        !report
+            .ashtekar_lqg_report
+            .ashtekar_area_singularity_detected
+    );
+    assert!(report.ashtekar_lqg_report.slot_scale_factor >= 0.15);
+
+    // 33. Ecuación de Schrödinger No Lineal (NLS) y Solitones Envolventes de Peregrine (Fase 68)
+    assert!(report.nls_peregrine_report.envelope_amplitude >= 0.0);
+    assert!(report.nls_peregrine_report.quantum_phase.is_finite());
+    assert!(report.nls_peregrine_report.benjamin_feir_index >= 0.0);
+    assert!(report.nls_peregrine_report.signal_conviction_modulator >= 0.20);
+
+    // 34. Acción Efectiva Cuántica de Polyakov y Veto de Horizontes de Agujero Negro de Schwarzschild (Fase 69)
+    assert!(report.polyakov_schwarzschild_report.schwarzschild_radius >= 0.0);
+    assert!(report.polyakov_schwarzschild_report.phase_space_radius > 0.0);
+    assert!(
+        !report
+            .polyakov_schwarzschild_report
+            .event_horizon_veto_induced
+    );
+    assert!(report.polyakov_schwarzschild_report.slot_scale_factor > 0.0);
 }
 
 #[test]

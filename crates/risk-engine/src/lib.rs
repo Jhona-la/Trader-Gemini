@@ -16,6 +16,7 @@ pub mod kelly;
 pub mod kelly_envelope;
 pub mod leverage_matrix;
 pub mod orchestrator;
+pub mod polyakov_schwarzschild_horizon;
 pub mod quantum_no_arbitrage_conformal;
 pub mod random_matrix;
 pub mod reeb_contact_vortex;
@@ -47,6 +48,10 @@ pub use evidence::{
 pub use dirac_monopole_chern_bundle::{
     DiracMonopoleChernBundleEngine, DiracMonopoleParams, DiracMonopoleReport,
     DIRAC_CRITICAL_CURVATURE_FLUX,
+};
+pub use polyakov_schwarzschild_horizon::{
+    PolyakovSchwarzschildHorizonEngine, PolyakovSchwarzschildParams, PolyakovSchwarzschildReport,
+    CENTRAL_CHARGE_C, C_LIQUIDITY, NEWTON_G_EFF,
 };
 pub use gromov_symplectic_barrier::{
     GromovSymplecticBarrierEngine, GromovSymplecticParams, GromovSymplecticReport, Quaternion,
