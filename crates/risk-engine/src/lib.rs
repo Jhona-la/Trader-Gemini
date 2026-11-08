@@ -4,6 +4,7 @@ pub mod chern_simons_berry_phase;
 pub mod copulas_store;
 pub mod correlation_guard;
 pub mod cramer_lundberg;
+pub mod dirac_monopole_chern_bundle;
 pub mod drawdown;
 pub mod envio;
 pub mod evidence;
@@ -42,6 +43,10 @@ pub use chern_simons_berry_phase::{
 pub use evidence::{
     profit_factor_lcb, resolve_bayes_prior, win_rate_hierarchical_lcb, win_rate_lcb,
     DEFAULT_BAYES_PRIOR_MASS, DEFAULT_BAYES_PRIOR_WIN_RATE,
+};
+pub use dirac_monopole_chern_bundle::{
+    DiracMonopoleChernBundleEngine, DiracMonopoleParams, DiracMonopoleReport,
+    DIRAC_CRITICAL_CURVATURE_FLUX,
 };
 pub use gromov_symplectic_barrier::{
     GromovSymplecticBarrierEngine, GromovSymplecticParams, GromovSymplecticReport, Quaternion,

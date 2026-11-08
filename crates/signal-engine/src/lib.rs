@@ -20,6 +20,7 @@ pub mod fractional_rough_volatility;
 pub mod game_theoretic_nash;
 pub mod hawkes_bessel;
 pub mod jarzynski_crooks_thermodynamics;
+pub mod kdv_soliton_dispersion;
 pub mod mean_field_games_psychology;
 pub mod navier_stokes_kolmogorov;
 pub mod navier_stokes_manifold;
@@ -62,6 +63,9 @@ pub use jarzynski_crooks_thermodynamics::{
     JarzynskiCrooksParams, JarzynskiCrooksReport, JarzynskiCrooksThermodynamicsEngine,
     JarzynskiTrajectorySample, CRITICAL_ENTROPY_PRODUCTION, DEFAULT_KB_BOLTZMANN,
     JARZYNSKI_WINDOW_CAPACITY,
+};
+pub use kdv_soliton_dispersion::{
+    KdvSolitonDispersionEngine, KdvSolitonParams, KdvSolitonReport, KDV_GRID_POINTS,
 };
 pub use maker::{MakerEngine, MakerQuote};
 pub use mean_field_games_psychology::{

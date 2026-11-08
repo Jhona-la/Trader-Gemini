@@ -36,7 +36,7 @@ impl Default for RuelleFrobeniusParams {
     fn default() -> Self {
         Self {
             decay_regularization: 0.05,
-            min_spectral_gap: 0.05,
+            min_spectral_gap: 0.03,
             thermodynamic_beta: 1.0,
             epsilon: 1e-9,
         }

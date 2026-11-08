@@ -36,6 +36,7 @@ pub mod normalizer;
 pub mod omni_strategies;
 pub mod path_signatures;
 pub mod penrose_spin_network;
+pub mod peps_hypergraph_ricci;
 pub mod perelman_ricci_surgery;
 pub mod quantum_geodesic_phase_space;
 pub mod random_matrix_wilson;
@@ -141,6 +142,10 @@ pub use omni_strategies::OmniStrategyEngine;
 pub use penrose_spin_network::{
     PenroseSpinNetworkEngine, PenroseSpinNetworkParams, PenroseSpinNetworkReport, SpinNode,
     MAX_SPIN_NODES, SPIN_HISTORY_CAPACITY,
+};
+pub use peps_hypergraph_ricci::{
+    PepsHypergraphRicciEngine, PepsHypergraphRicciReport, PepsRicciParams, PEPS_BOND_DIM,
+    PEPS_COLS, PEPS_ROWS,
 };
 pub use perelman_ricci_surgery::{
     PerelmanRicciParams, PerelmanRicciSurgeryEngine, PerelmanSurgeryReport, MAX_MANIFOLD_DIM,
