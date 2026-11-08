@@ -115,3 +115,38 @@ fn finite_values_are_reported_exactly() {
         200_000_000.0
     );
 }
+
+/// GLM-214 (H2, corrida A3): la verdad del exchange (/fapi/v1/income)
+/// publicada por el FEE-BREAKER debe llegar exacta al display financiero, y
+/// sin evidencia (`closes == 0`) el lector conserva su fuente interna — el
+/// cero del exchange jamás se fabrica (mismo contrato F1-099). Con los
+/// números REALES del día 1: bruto −0.00072, fees −0.00411 ⇒ neto −0.00483,
+/// 0/1 cierres = WR 0%.
+#[test]
+fn glm214_exchange_income_feeds_display_only_with_closes() {
+    use telemetry_server::profiler::{read_exchange_income, record_exchange_income};
+
+    // Sin evidencia publicada: closes 0 (y NaN en los campos) — el llamador
+    // del bin usa esta señal para conservar sus receipts internos.
+    record_exchange_income(f64::NAN, f64::NAN, 0, 0);
+    let (g, f, c, w) = read_exchange_income();
+    assert_eq!((c, w), (0, 0));
+    assert!(g.is_nan() && f.is_nan());
+
+    // Evidencia del día 1 real (a3c): exacta en ida y vuelta.
+    record_exchange_income(-0.000_720, -0.004_105, 1, 0);
+    let (g, f, c, w) = read_exchange_income();
+    assert_eq!((c, w), (1, 0));
+    assert_eq!(g, -0.000_720);
+    assert_eq!(f, -0.004_105);
+    // La regla del display (neto = gross + fees firmados) reproduce el
+    // informe del income del exchange.
+    assert!((g + f - (-0.004_825)).abs() < 1e-9);
+
+    // Con dos cierres (uno ganador) el WR del exchange es 50%, no el interno.
+    record_exchange_income(1.5, -0.008_4, 2, 1);
+    let (g, f, c, w) = read_exchange_income();
+    assert_eq!((c, w), (2, 1));
+    assert_eq!(g + f, 1.491_6);
+    assert_eq!(w as f64 / c as f64, 0.5);
+}

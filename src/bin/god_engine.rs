@@ -3238,6 +3238,31 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             _ => {}
                         }
                     }
+                    // GLM-214 (H2): publicar la VERDAD DEL EXCHANGE de la
+                    // ventana para el display financiero (seqlock del
+                    // profiler). El contador interno sólo suma receipts de
+                    // cierres internos y la corrida A3 lo mostró en 0.0000
+                    // con el exchange cobrando de verdad; con closes > 0 el
+                    // único escritor del seqlock prefiere estos valores.
+                    {
+                        let mut x_gross = 0.0;
+                        let mut x_fees = 0.0;
+                        let mut x_closes: u64 = 0;
+                        let mut x_wins: u64 = 0;
+                        for a in per.values() {
+                            x_fees += a.fees + a.funding;
+                            for (_, pnl) in &a.registros {
+                                x_closes += 1;
+                                if *pnl > 0.0 {
+                                    x_wins += 1;
+                                }
+                                x_gross += pnl;
+                            }
+                        }
+                        telemetry_server::profiler::record_exchange_income(
+                            x_gross, x_fees, x_closes, x_wins,
+                        );
+                    }
                     // LG-8: p* de la geometría del genoma a la τ de la ventana.
                     let tp_brk = arena_brk.config.tp_at_tau(tau_scale);
                     let sl_brk = arena_brk.config.sl_at_tau(tau_scale);
@@ -6098,11 +6123,33 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
                 let win_rate = if total_trades > 0 { (total_wins as f64 / total_trades as f64) * 100.0 } else { 0.0 };
 
+                // GLM-214 (H2): cuando el FEE-BREAKER ya publicó la VERDAD DEL
+                // EXCHANGE (/fapi/v1/income), el display financiero la prefiere
+                // sobre los receipts internos — el interno quedó en 0.0000 con
+                // el exchange cobrando de verdad (corrida A3). Sin closes
+                // todavía se conserva la fuente interna: no se fabrican ceros
+                // (contrato F1-099). Este sigue siendo el ÚNICO escritor del
+                // seqlock.
+                let (x_gross, x_fees, x_closes, x_wins) =
+                    telemetry_server::profiler::read_exchange_income();
+                let (gross_display, net_display, wr_display) = if x_closes > 0
+                    && x_gross.is_finite()
+                    && x_fees.is_finite()
+                {
+                    (
+                        x_gross,
+                        x_gross + x_fees,
+                        (x_wins as f64 / x_closes as f64) * 100.0,
+                    )
+                } else {
+                    (total_gross_pnl, total_net_pnl, win_rate)
+                };
+
                 // Update Central Profiler for Financial Dashboarding (Zero-Allocation Atomic)
                 telemetry_server::profiler::update_financials_atomic(
-                    total_gross_pnl,
-                    total_net_pnl,
-                    win_rate,
+                    gross_display,
+                    net_display,
+                    wr_display,
                     f64::from_bits(unified_capital.load(std::sync::atomic::Ordering::Relaxed))
                 );
 

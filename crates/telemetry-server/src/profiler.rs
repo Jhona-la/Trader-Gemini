@@ -55,6 +55,43 @@ lazy_static! {
     pub static ref TOTAL_FEES: AtomicU64 = AtomicU64::new(f64::NAN.to_bits());
     pub static ref WIN_RATE: AtomicU64 = AtomicU64::new(f64::NAN.to_bits());
     pub static ref ROI_NET: AtomicU64 = AtomicU64::new(f64::NAN.to_bits());
+
+    // GLM-214 (H2, 2026-11-07): VERDAD DEL EXCHANGE desde /fapi/v1/income.
+    // El contador interno del motor sólo suma receipts de cierres internos y
+    // quedó en 0.0000 mientras el exchange cobraba de verdad (corrida A3:
+    // 2 trades con COMMISSION −0.0084 y el display en cero). El loop del
+    // FEE-BREAKER (único lector del income, cada 5 min) publica aquí su
+    // agregado de ventana; el ÚNICO escritor del seqlock financiero prefiera
+    // estos valores cuando hay cierres (closes > 0). Bruto/fees firmados en
+    // USDT; fees = costes de comisión + funding (negativo = gasto).
+    pub static ref EXCHANGE_GROSS_PNL: AtomicU64 = AtomicU64::new(f64::NAN.to_bits());
+    pub static ref EXCHANGE_FEES: AtomicU64 = AtomicU64::new(f64::NAN.to_bits());
+    pub static ref EXCHANGE_CLOSES: AtomicU64 = AtomicU64::new(0);
+    pub static ref EXCHANGE_WINS: AtomicU64 = AtomicU64::new(0);
+}
+
+/// Publica el agregado de la ventana del income del exchange (verdad
+/// contable). Escritor: el loop del FEE-BREAKER. `fees` llega firmado
+/// (negativo = coste) para que `net = gross + fees` sea directo.
+pub fn record_exchange_income(gross: f64, fees: f64, closes: u64, wins: u64) {
+    use std::sync::atomic::Ordering;
+    EXCHANGE_GROSS_PNL.store(gross.to_bits(), Ordering::Relaxed);
+    EXCHANGE_FEES.store(fees.to_bits(), Ordering::Relaxed);
+    EXCHANGE_CLOSES.store(closes, Ordering::Relaxed);
+    EXCHANGE_WINS.store(wins, Ordering::Relaxed);
+}
+
+/// Lee el agregado del exchange: `(gross, fees, closes, wins)`. `closes == 0`
+/// significa «sin evidencia del exchange aún» y el llamador debe conservar su
+/// fuente interna en vez de fabricar ceros (mismo contrato F1-099).
+pub fn read_exchange_income() -> (f64, f64, u64, u64) {
+    use std::sync::atomic::Ordering;
+    (
+        f64::from_bits(EXCHANGE_GROSS_PNL.load(Ordering::Relaxed)),
+        f64::from_bits(EXCHANGE_FEES.load(Ordering::Relaxed)),
+        EXCHANGE_CLOSES.load(Ordering::Relaxed),
+        EXCHANGE_WINS.load(Ordering::Relaxed),
+    )
 }
 
 fn count_rejected_sample(counter: &AtomicU64) {
