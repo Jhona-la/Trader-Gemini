@@ -1599,14 +1599,35 @@ mod tests_n23 {
                 assert!(e.is_some(), "{estado} {codigo}");
                 let Some(e) = e else { continue };
                 let simbolo = format!("CL199_{}_{}_USDT", &estado[..3], -codigo);
-                let antes = quantum_arena::protection_health::rejections_of(&simbolo);
-                assert!(!quantum_arena::protection_health::note_rejection(&simbolo, &e), "{estado} {codigo}: «{e}»");
-                assert_eq!(quantum_arena::protection_health::rejections_of(&simbolo), antes);
-                assert!(!crate::ioc_evidence::error_cierra_la_intencion(&e), "{estado} {codigo}: «{e}»");
+                let antes = quantum_arena::protection_health::rejections_of(&simbolo, true);
+                assert!(
+                    !quantum_arena::protection_health::note_rejection(&simbolo, true, &e),
+                    "{estado} {codigo}: «{e}»"
+                );
+                assert_eq!(
+                    quantum_arena::protection_health::rejections_of(&simbolo, true),
+                    antes
+                );
+                assert!(
+                    !crate::ioc_evidence::error_cierra_la_intencion(&e),
+                    "{estado} {codigo}: «{e}»"
+                );
             }
         }
-        let e = error_ante(0, respuesta("400 Bad Request", "", r#"{"code":-4164,"msg":"x"}"#)).await;
-        assert!(e.as_ref().is_some_and(|e| quantum_arena::protection_health::note_rejection("CL199_FIRME_USDT", e)), "{e:?}");
+        let e = error_ante(
+            0,
+            respuesta("400 Bad Request", "", r#"{"code":-4164,"msg":"x"}"#),
+        )
+        .await;
+        assert!(
+            e.as_ref()
+                .is_some_and(|e| quantum_arena::protection_health::note_rejection(
+                    "CL199_FIRME_USDT",
+                    true,
+                    e
+                )),
+            "{e:?}"
+        );
         assert!(e.is_some_and(|e| crate::ioc_evidence::error_cierra_la_intencion(&e)));
     }
 

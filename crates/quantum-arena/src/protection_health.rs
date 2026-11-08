@@ -89,31 +89,45 @@ fn anchored_code(text: &str, delimiter: &str) -> Option<i64> {
     code.parse().ok()
 }
 
-/// B3.5b — RECHAZOS DE BRACKET por símbolo (evidencia para el escalado).
+/// B3.5b — RECHAZOS DE BRACKET por (símbolo, lado) (evidencia para el
+/// escalado).
+///
+/// I-14 (N42): por lado, no por símbolo. En hedge el largo y el corto de un
+/// símbolo son dos posiciones con sus propias piernas, y el rechazo de una
+/// (el TP del largo, por ejemplo) no dice nada de la otra: con un contador
+/// por símbolo, un corto cuyo SL fallaba sin rechazo sumaba pasos de racha
+/// hacia su cierre de emergencia con los rechazos del largo.
 static BRACKET_REJECTIONS: std::sync::LazyLock<
-    std::sync::Mutex<std::collections::HashMap<String, u64>>,
+    std::sync::Mutex<std::collections::HashMap<String, [u64; 2]>>,
 > = std::sync::LazyLock::new(|| std::sync::Mutex::new(std::collections::HashMap::new()));
 
 /// Anota un intento de colocación de bracket RECHAZADO por el exchange
-/// (los fallos de transporte se ignoran). Devuelve true si anotó.
-pub fn note_rejection(symbol: &str, err: &str) -> bool {
+/// para la posición de lado `is_long` (los fallos de transporte se
+/// ignoran). Devuelve true si anotó.
+pub fn note_rejection(symbol: &str, is_long: bool, err: &str) -> bool {
     if !is_exchange_rejection(err) {
         return false;
     }
-    if let Ok(mut m) = BRACKET_REJECTIONS.lock() {
-        *m.entry(symbol.to_string()).or_insert(0) += 1;
-        return true;
-    }
-    false
+    rechazos().entry(symbol.to_string()).or_insert([0; 2])[usize::from(is_long)] += 1;
+    true
 }
 
-/// Rechazos acumulados del símbolo (para comparar entre auditorías).
-pub fn rejections_of(symbol: &str) -> u64 {
+/// Rechazos acumulados de la posición de lado `is_long` del símbolo (para
+/// comparar entre auditorías).
+pub fn rejections_of(symbol: &str, is_long: bool) -> u64 {
+    // Sin entrada, ningún rechazo anotado: 0 es el recuento, no un error.
+    rechazos()
+        .get(symbol)
+        .map_or(0, |lados| lados[usize::from(is_long)])
+}
+
+/// El mapa sigue siendo válido aunque otro hilo haya entrado en pánico con
+/// el cerrojo tomado: cada operación lo deja completo. Antes un cerrojo
+/// envenenado dejaba de anotar rechazos y los leía como 0.
+fn rechazos() -> std::sync::MutexGuard<'static, std::collections::HashMap<String, [u64; 2]>> {
     BRACKET_REJECTIONS
         .lock()
-        .ok()
-        .and_then(|m| m.get(symbol).copied())
-        .unwrap_or(0)
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
 }
 
 /// CL-44b (ADR-0015) — APLANADO Y AUDITORÍA NO SE SOLAPAN.
@@ -223,10 +237,43 @@ mod tests {
     /// B3.5b — el diario de evidencia sólo anota rechazos del exchange.
     #[test]
     fn b3_5b_note_rejection_filtra_transporte() {
-        assert!(!note_rejection("TESTUSDT", "error sending request"));
-        assert_eq!(rejections_of("TESTUSDT"), 0);
-        assert!(note_rejection("TESTUSDT", "-2019: rejected"));
-        assert_eq!(rejections_of("TESTUSDT"), 1);
+        assert!(!note_rejection("TESTUSDT", true, "error sending request"));
+        assert_eq!(rejections_of("TESTUSDT", true), 0);
+        assert!(note_rejection("TESTUSDT", true, "-2019: rejected"));
+        assert_eq!(rejections_of("TESTUSDT", true), 1);
+    }
+
+    /// RED antes de I-14 (N42): el contador era por símbolo, y en hedge el
+    /// rechazo de un lado contaba como evidencia del otro.
+    #[test]
+    fn i14_n42_los_rechazos_son_de_cada_lado() {
+        const S: &str = "I14LADOSUSDT";
+        assert!(note_rejection(S, true, "-4164: Notional too small"));
+        assert!(note_rejection(S, true, "-4164: Notional too small"));
+        assert_eq!(rejections_of(S, true), 2);
+        assert_eq!(rejections_of(S, false), 0, "el corto no ve los del largo");
+        assert!(note_rejection(
+            S,
+            false,
+            "-2021: Order would immediately trigger."
+        ));
+        assert_eq!(rejections_of(S, false), 1);
+        assert_eq!(rejections_of(S, true), 2);
+        assert_eq!(rejections_of("I14OTROUSDT", false), 0);
+    }
+
+    /// Un pánico con el cerrojo tomado no apaga el contador.
+    #[test]
+    fn i14_n42_un_cerrojo_envenenado_sigue_contando() {
+        const S: &str = "I14VENENOUSDT";
+        let envenena = std::thread::spawn(|| {
+            let _m = rechazos();
+            panic!("pánico con el cerrojo tomado");
+        });
+        assert!(envenena.join().is_err());
+        assert!(BRACKET_REJECTIONS.is_poisoned());
+        assert!(note_rejection(S, true, "-2019: Margin is insufficient."));
+        assert_eq!(rejections_of(S, true), 1);
     }
 
     /// CL-44b — el aplanado y la auditoría se excluyen: con un aplanado

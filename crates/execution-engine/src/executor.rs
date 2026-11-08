@@ -2388,9 +2388,11 @@ impl OrderExecutor {
         // 3. Descarga de exchangeInfo y actualización de caché positiva
         let descarga = self.fetch_all_symbol_filters().await;
         let frenada = matches!(&descarga, Err(e) if Self::descarga_frenada(e));
-        // I-14: el error del paso 5 empieza por el del freno 429/418 o de la
-        // cuota que paró esta descarga. Sin él, el vigilante tomaba una
-        // descarga frenada por un fallo de lectura y doblaba su espera.
+        // I-14: el error del paso 5 empieza por el del freno que paró esta
+        // descarga: su rechazo local (RATE_BRAKE, RATE_LIMIT_COOLDOWN) o el
+        // 429/418 de la propia respuesta. La cuota no la para (CL-184). Sin
+        // él, el vigilante tomaba una descarga frenada por un fallo de
+        // lectura y doblaba su espera.
         let freno = match &descarga {
             Err(e) if crate::freno_temporal::es_freno_temporal(e) => Some(e.clone()),
             _ => None,
@@ -4467,7 +4469,6 @@ impl ExecutionProvider for OrderExecutor {
         symbol: &str,
         is_long: bool,
     ) -> Result<usize, String> {
-        let pos_side = if is_long { "LONG" } else { "SHORT" };
         let open_algo = self.fetch_open_algo_orders(symbol).await?;
         let hedge = self.is_hedge_mode.load(Ordering::SeqCst);
         let mut canceled = 0;
@@ -4477,9 +4478,9 @@ impl ExecutionProvider for OrderExecutor {
             // exchange no lo informa y sólo existe una posición por símbolo, así
             // que la pierna es nuestra; en modo hedge un vacío es DESCONOCIDO y
             // cancelarlo podía dejar desnuda la posición del lado contrario.
-            let matches_side = a.position_side == pos_side
-                || a.position_side == "BOTH"
-                || (a.position_side.is_empty() && !hedge);
+            // I-14 (N34): el vigilante usa el mismo predicado para saber qué
+            // piernas canceló una purga pendiente.
+            let matches_side = crate::vigilante::pierna_del_lado(&a.position_side, is_long, hedge);
             if a.position_side.is_empty() && hedge {
                 fallidas.push(format!(
                     "{} sin positionSide en modo hedge (algoId {}) — no se cancela a ciegas",
@@ -6838,7 +6839,10 @@ pub(crate) mod tests_n20 {
             let mut reintento = crate::vigilante::ReintentoLectura::new();
             assert_eq!(
                 reintento.cerrar(1, 0, &lecturas),
-                crate::vigilante::Cierre::Frenada { seguidas: 1 },
+                crate::vigilante::Cierre::Frenada {
+                    seguidas: 1,
+                    fallo: None
+                },
                 "{e}"
             );
         }

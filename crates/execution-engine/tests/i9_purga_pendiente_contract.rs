@@ -106,7 +106,7 @@ fn i9_el_vigilante_reintenta_antes_de_la_purga_de_huerfanas() {
         .find("reintentar_purgas_pendientes(&executor, &positions)")
         .unwrap_or(usize::MAX);
     let huerfanas = vigilante
-        .find("purge_orphan_legs(&executor, &positions)")
+        .find("purge_orphan_legs(&executor, &piernas, &positions)")
         .unwrap_or(usize::MAX);
     assert!(
         reintento < huerfanas && huerfanas != usize::MAX,
