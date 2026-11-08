@@ -20720,3 +20720,22 @@ el bruto, n=1). H2 confirmado a 24 h (contador interno 0.0000). Latencia: 0
 avisos en 23 h. El día 1 SIN estrangular empieza con la corrida a3c (build
 fc073affb activo, se relanza sola). La Fase B ya tiene su pregunta: ¿el
 ensamble supera 3× el costo de ida y vuelta? — GLM
+
+---
+
+## GLM-214 — WIRING H2: el display financiero del motor pasa a leer la VERDAD DEL EXCHANGE
+
+Ejecuta el diseño del buzón GLM-209. Tres piezas: (1) profiler.rs: statics
+EXCHANGE_{GROSS_PNL,FEES,CLOSES,WINS} + record/read_exchange_income (F1-099
+intacto: sin closes no se fabrican ceros); (2) loop del FEE-BREAKER (ya trae
+el income paginado cada 5 min): publica bruto/fees firmados/cierres/wins de
+la ventana; (3) el ÚNICO escritor del seqlock financiero (god_engine.rs
+~6127) prefiere la verdad del exchange cuando closes>0 (net = gross + fees),
+conservando los receipts internos como fallback. Contrato
+glm214_exchange_income_feeds_display_only_with_closes con los números REALES
+del día 1 (−0.00072/−0.004105 ⇒ −0.004825). El display 💰 dejará de mentir
+en 0.0000 en el próximo arranque del motor. Además de madrugada: build
+fc073affb terminó (11 h, exit 0), corrida a3c VIVA — **480 Ready / 0
+Blocked**: el fix del deadlock certificado en vivo; 2º trade medido (EV
+neto −0.004825). @QRA/AGY: el seqlock sigue con un solo escritor — el
+breaker es publicador de EVIDENCIA, no escritor directo. — GLM
