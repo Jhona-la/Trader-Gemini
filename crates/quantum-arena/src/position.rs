@@ -66,6 +66,13 @@ pub struct Position {
     /// WR 1.0 jamás operados, 2026-09-15). La confirma el host tras el
     /// fill real; la adopción FASE 5 también la setea.
     pub exchange_confirmed: AtomicBool,
+    /// I-15 — la ocupante actual estaba confirmada y un aplanado total
+    /// (CL-44b) le retiró la confirmación antes de cerrarla en el exchange.
+    /// Así el OMS distingue esa ranura de una reserva que todavía espera su
+    /// llenado: las dos están abiertas y sin confirmar, pero sólo la primera
+    /// puede cerrarse con una fila plana de positionRisk. Cada apertura la
+    /// limpia; sólo dice algo mientras `exchange_confirmed` es false.
+    pub confirmacion_consumida: AtomicBool,
     /// B3.14 — resultado del último cierre, leído por el host para su
     /// contabilidad/Kelly: true = la posición cerrada tenía entrada real.
     pub last_close_confirmed: AtomicBool,
@@ -113,6 +120,7 @@ impl Default for Position {
             entry_fee: AtomicF64::new(0.0),
             entry_tau_ms: AtomicU64::new(0),
             exchange_confirmed: AtomicBool::new(false),
+            confirmacion_consumida: AtomicBool::new(false),
             last_close_confirmed: AtomicBool::new(false),
         }
     }
@@ -314,6 +322,8 @@ impl Position {
         // B3.14: toda apertura nace SIN confirmación de exchange — el host
         // la setea sólo tras el fill real (o la adopción FASE 5).
         self.exchange_confirmed.store(false, Ordering::Relaxed);
+        // I-15: la confirmación consumida era de la ocupante anterior.
+        self.confirmacion_consumida.store(false, Ordering::Relaxed);
         // R7-R4-C-1: toda apertura nueva limpia cualquier bandera de cierre previo
         // para que una ranura reutilizada no retenga last_close_confirmed añejo.
         self.last_close_confirmed.store(false, Ordering::Relaxed);
@@ -551,8 +561,22 @@ impl Position {
         self.lock_transition();
         let consumida = self.is_open.load(Ordering::Acquire)
             && self.exchange_confirmed.swap(false, Ordering::AcqRel);
+        if consumida {
+            self.confirmacion_consumida.store(true, Ordering::Release);
+        }
         self.unlock_transition();
         consumida
+    }
+
+    /// I-15: reserva abierta que espera su llenado. La entrada ya puede estar
+    /// en el exchange aunque positionRisk aún no la muestre, así que una fila
+    /// plana no prueba que sea un fantasma. Una ranura cuya confirmación
+    /// consumió un aplanado total no cuenta: el aplanado la cierra en el
+    /// exchange, y la reconciliación la cierra aquí cuando su fila sale plana.
+    pub fn espera_llenado(&self) -> bool {
+        self.is_open.load(Ordering::Acquire)
+            && !self.exchange_confirmed.load(Ordering::Acquire)
+            && !self.confirmacion_consumida.load(Ordering::Acquire)
     }
 
     /// A confirmation for an old occupant must not confirm a reused slot.
@@ -1238,6 +1262,48 @@ mod tests {
         assert!(pos.is_open());
         assert!(!pos.exchange_confirmed.load(Ordering::Relaxed));
         assert_eq!(pos.entry_tau_ms.load(Ordering::Relaxed), 0);
+    }
+
+    /// I-15 — sólo una reserva nunca confirmada espera su llenado. La que
+    /// confirmó el fill y cuya confirmación consumió el aplanado total no
+    /// espera nada, y la ocupante siguiente de la ranura vuelve a esperar.
+    #[test]
+    fn i15_la_confirmacion_consumida_no_es_una_reserva_que_espera_llenado() {
+        let pos = Position::default();
+        assert!(!pos.espera_llenado(), "cerrada no espera nada");
+        assert!(pos.open_with_horizon(
+            true,
+            100.0,
+            1.0,
+            10.0,
+            1_000,
+            110.0,
+            90.0,
+            PositionHorizon::Continuous,
+        ));
+        assert!(pos.espera_llenado());
+        // Sin confirmación no hay nada que consumir.
+        assert!(!pos.consume_exchange_confirmation());
+        assert!(pos.espera_llenado());
+        let generacion = pos.generation.load(Ordering::Acquire);
+        assert!(pos.confirm_generation(generacion).is_ok());
+        assert!(!pos.espera_llenado());
+        assert!(pos.consume_exchange_confirmation());
+        assert!(!pos.exchange_confirmed.load(Ordering::Acquire));
+        assert!(!pos.espera_llenado());
+        assert_eq!(pos.close().2, 1.0, "cierra la ocupante entera");
+        assert!(!pos.espera_llenado());
+        assert!(pos.open_with_horizon(
+            false,
+            100.0,
+            1.0,
+            10.0,
+            2_000,
+            90.0,
+            110.0,
+            PositionHorizon::Continuous,
+        ));
+        assert!(pos.espera_llenado(), "la ocupante nueva no hereda la marca");
     }
 
     #[test]

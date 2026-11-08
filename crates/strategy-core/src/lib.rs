@@ -1,4 +1,6 @@
 pub mod birch_swinnerton_dyer;
+pub mod chromodynamic_gauge_su3;
+pub mod connes_spectral_geometry;
 pub mod kahler_hodge;
 pub mod maker;
 pub mod momentum_booster;
@@ -13,13 +15,21 @@ pub use birch_swinnerton_dyer::{
     bsd_hermite_c1, frobenius_trace_mod_p, legendre_symbol, BirchSwinnertonDyerEngine,
     BirchSwinnertonDyerMetrics, BSD_NUM_PRIMES, BSD_ODD_PRIMES,
 };
+pub use chromodynamic_gauge_su3::{
+    AssetColorState, ChromodynamicGaugeSu3Engine, Su3GaugeParams, Su3GaugeReport, SU3_COLORS,
+    SU3_GENERATORS,
+};
+pub use connes_spectral_geometry::{
+    mat4_add, mat4_mul, mat4_trace, ConnesSpectralGeometryEngine, ConnesSpectralParams,
+    ConnesSpectralReport, DiracGammaAlgebra, Matrix4c, C64, DIRAC_DIM,
+};
 pub use kahler_hodge::{KahlerHodgeEngine, KahlerHodgeMetrics, KahlerHodgeParams};
 pub use multivariate_coint::MultivariateCointegrationEngine;
-pub use vecm_arbitrage::{ContinuousOrnsteinUhlenbeckSde, JohansenVecmEngine, VecmArbitrageParams};
-pub use yang_mills_gauge::{YangMillsGaugeEngine, YangMillsParams};
 use omniscient_registry::OmniscientRegistry;
 use std::sync::Arc;
 pub use types::*;
+pub use vecm_arbitrage::{ContinuousOrnsteinUhlenbeckSde, JohansenVecmEngine, VecmArbitrageParams};
+pub use yang_mills_gauge::{YangMillsGaugeEngine, YangMillsParams};
 
 pub trait QuantumStrategy: Send + Sync {
     fn name(&self) -> &str;
