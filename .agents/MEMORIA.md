@@ -1,5 +1,104 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
 
+## 2026-11-08 — Claude (Línea I, Opus 5.5): I-14 = N44, N34 y N42, el vigilante de protección sólo actúa sobre lo que leyó
+
+En la rama `claude/linea-i-i14` (PR por abrir), con main integrado hasta
+6f710cbc6 (GLM-214).
+
+- N44: `ensure_position_protected` leía las piernas TP/SL con
+  `unwrap_or_default()`. Un error (red, 5xx, cuerpo ilegible, cuota) era
+  «ninguna pierna» y el vigilante colocaba TP y SL encima de las que quizá
+  seguían vivas. Ahora devuelve `Result`: sin las piernas no coloca nada y
+  el vigilante salta la posición sin tocar su racha B3.5b (su base de
+  rechazos sólo se siembra si no la había visto). Con TP y SL cubiertos no lee el filtro; con un hueco y sin
+  filtro no coloca nada, pero los huecos leídos cuentan para la escalada
+  (`ProtectionAudit::sin_filtro`). Una colocación frenada
+  (`ProtectionAudit::colocacion_frenada`) se relee en el ciclo siguiente.
+  La adopción del arranque avisa y deja la marca de sucio en vez de `let _ =`.
+- N34: `purge_orphan_legs` se tragaba el error del listado (`if let Ok`) y
+  la auditoría limpiaba la marca de sucio igual. Ahora el listado se lee
+  antes que positionRisk y se pasa a la purga, sin las piernas que el
+  reintento de purgas pendientes acaba de cancelar (en hedge, sólo las de
+  su lado y las BOTH: las del otro lado se siguen juzgando). La marca sólo
+  se limpia si
+  positionRisk, el listado y las piernas y el filtro de cada posición se
+  leyeron (el re-fetch de la escalada B3.5 no cuenta, como en main). Una
+  huérfana cuya cancelación falla y que sigue abierta al releer su
+  símbolo (`vigilante::sigue_abierta`) pasa a las purgas pendientes de I-9
+  (bloquea entradas en el símbolo hasta purgarla; despierta al vigilante
+  sólo la primera vez). OCO-SKIP marca la bandera sucia.
+- Relectura (`execution_engine::vigilante::ReintentoLectura`): tras un fallo
+  o sin la cuota del tramo de lectura (`RATE_LIMIT_HEADROOM_`: las críticas
+  sí salieron) se relee 1, 2, 4, 8 y 12 disparos de 5 s después del
+  disparo en que empezó la auditoría, como mucho 5, 10, 20, 40 y 60 s tras
+  acabarla; tras un
+  429/418, el propio freno (RATE_BRAKE, RATE_LIMIT_COOLDOWN) o la cuota
+  crítica agotada (`RATE_LIMIT_EXHAUSTED_`), en el ciclo siguiente, sin
+  doblar y con un aviso por minuto. Con un fallo y un freno en la misma
+  auditoría manda el freno, y el fallo o la cuota de lectura cuentan para
+  la espera siguiente. Con `MissedTickBehavior::Skip`, desde el inicio de
+  una auditoría de más de 5 s la espera dura más. Un evento terminal
+  ajeno adelanta la relectura aunque llegue durante la auditoría (el cierre
+  recibe los eventos del inicio más las marcas propias); las marcas de la
+  propia auditoría no.
+- N42: la base de rechazos de la escalada ya no se borra al quedar el
+  símbolo cubierto o cerrado; se fija al acumulado de ese momento
+  (`BaseDeRechazos`), y el hueco siguiente sólo cuenta rechazos nuevos. La
+  racha, la base y `protection_health::{note_rejection, rejections_of}` son
+  por símbolo y lado (en hedge el lado cubierto borraba la racha del
+  desnudo, que ahora sí escala); la base se siembra al ver la posición (un
+  rechazo de RESTORE posterior a esa mirada cuenta como nuevo, N44c), y un
+  cerrojo envenenado ya no apaga el contador.
+- Seis revisiones adversariales antes del PR. La primera: volver a marcar la
+  bandera al cerrar una auditoría incompleta adelantaba su propia relectura
+  cada 5 s (`mark_dirty` cuenta un evento). La segunda (13 confirmados):
+  tomar los eventos al cerrar se comía los ajenos; un 429/418 no debe
+  esperar como la cuota; un filtro que falla no debe borrar los huecos.
+  La tercera (4 confirmados): la cuota crítica agotada doblaba la espera
+  como la de lectura aunque `positionRisk` rechazado no envía nada (en main,
+  con la bandera sucia, se releía cada 5 s); ahora relee en el ciclo
+  siguiente. La cuarta (5 confirmados): el filtro frenado contaba como
+  fallo. La quinta (27: 9 confirmados, 15 plausibles, 3 refutados): hedge
+  por símbolo, foto de positionRisk anterior al listado, colocación frenada,
+  precedencia del freno en el caso mixto, filtro leído con todo cubierto.
+  La sexta (21 confirmados, 2 de conducta MED): en hedge el reintento de
+  purgas sacaba del listado las huérfanas del otro lado; una pierna que
+  disparó tras el listado quedaba como purga pendiente falsa; el aviso al
+  volver a completas perdía las frenadas; y los textos de las esperas
+  («cotas desde el inicio») eran falsos con `Skip`.
+- Pruebas: `vigilante` (unidad), `protection_health` (unidad) e
+  `i14_vigilante_lecturas_contract.rs`.
+- Abierto: N44b (una posición cuyas piernas no se pueden leer durante mucho
+  tiempo no escala), N44c (RESTORE coloca sin la exclusión de la auditoría
+  ni del aplanado), N34b (una huérfana que no viene de una cancelación
+  fallida del vigilante no bloquea entradas), N34c (con positionRisk
+  atrasado, OCO-SKIP no garantiza la auditoría de la posición y su bracket
+  puede salir huérfano) y la pregunta de N5 sobre el peso del listado de
+  huérfanas.
+- Lección: un mutante que comenta la segunda llamada de un contador
+  (`marcas_propias += 1`) sólo lo caza una guarda por recuento exacto; la
+  conducta del vigilante entero no es testeable sin exchange.
+- Lección de build: un rustc ajeno colgado en LLVM retiene `target/debug`
+  sin fin; el perfil release del mismo target compartido no comparte ese
+  cerrojo.
+
+## 2026-11-07 — Claude (Línea I, Opus 5.5): I-15 y el cuelgue de Sinkhorn, en main desde el 2026-11-08
+
+- Sinkhorn (PR #186, 87f00f2a5): desde la Ola 8 rustc no terminaba de
+  compilar `feature-engine` con opt-level=3 y todos los trabajos Rust del
+  CI caían por tiempo. Lo disparaba el bucle de
+  `MongeKantorovichWassersteinEngine::update_and_evaluate`; cada medio paso
+  pasa a `medio_paso_sinkhorn` con `#[inline(never)]` (sin él LLVM la
+  vuelve a inlinear y el cuelgue vuelve), con el mismo resultado bit a bit
+  (`sinkhorn_sin_cuelgue_contract.rs`). Lección: `cargo check` y Clippy no
+  generan código y no ven un cuelgue de LLVM.
+- I-15 (PR #187, fc7f9f8d7): GLM-210 había movido el gate de la reserva sin
+  confirmar detrás de la reconciliación; una reserva recién llenada cuya
+  posición positionRisk aún no muestra se cerraba como fantasma.
+  `Position::confirmacion_consumida` marca la confirmación que consumió el
+  aplanado del inmune y `espera_llenado()` reconoce la reserva nunca
+  confirmada; el gate vuelve antes de la reconciliación sólo para ésas.
+
 ## 2026-11-05 — Claude (Línea I, Opus 5.5): I-13 = N26, el sucesor de la transición comparte freno, reloj y uso
 
 En la rama `claude/linea-i-i13`, por failover: la fila es de Línea C (método) y de Línea I o AGY (host), y Línea C lleva más de 48 h sin actividad.

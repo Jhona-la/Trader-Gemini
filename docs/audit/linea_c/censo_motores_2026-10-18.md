@@ -1622,12 +1622,16 @@ un escéptico por lote listo):
   (:3495). Durante un 429/418 la auditoría para antes (:3251), así que
   CL-190 es seguro. Pregunta abierta de N5: ¿openAlgoOrders sin símbolo es
   lectura aunque la purga sea protectora?
-  Ejecutada en Línea I (I-14): `purge_orphan_legs` devuelve Err si no
-  pudo leer el listado, y el vigilante no limpia la marca de sucio con una
-  lectura fallida, sin cuota o frenada (`execution_engine::vigilante::Lecturas`).
+  Ejecutada en Línea I (I-14): el vigilante lee el listado
+  (`fetch_all_open_algo_orders`) antes que positionRisk; si falla, lo anota
+  en `execution_engine::vigilante::Lecturas` y no limpia la marca de sucio
+  (tampoco con una lectura sin cuota o frenada). `purge_orphan_legs` recibe
+  el listado ya leído y devuelve sus marcas (purgas pendientes nuevas).
   La relectura la decide `ReintentoLectura`: tras un fallo o sin la cuota
   del tramo de lectura (`RATE_LIMIT_HEADROOM_`, con las lecturas críticas
-  ya enviadas) espera 5, 10, 20, 40 y 60 s; si una lectura crítica volvió
+  ya enviadas) relee 1, 2, 4, 8 y luego 12 disparos del intervalo después
+  del disparo en que empezó la auditoría, como mucho 5, 10, 20, 40 y 60 s
+  tras acabarla; si una lectura crítica volvió
   con el 429/418 que arma el freno, o el ejecutor no la envió (ese freno o
   la cuota crítica agotada, `RATE_LIMIT_EXHAUSTED_`), relee en el ciclo
   siguiente: mientras dura, la relectura no sale ni gasta peso. Un
@@ -1637,10 +1641,49 @@ un escéptico por lote listo):
   incompleta: `mark_dirty` cuenta un evento terminal y adelantaba su propia
   relectura cada 5 s (lo encontró la revisión adversarial de I-14; la
   tercera, que la cuota crítica agotada no debe doblar la espera, porque
-  en main se releía cada 5 s y no se envía nada). Una
-  huérfana cuya cancelación falla pasa a las purgas pendientes de I-9 y,
-  mientras el proceso siga, el símbolo no admite entradas hasta purgarla;
-  sólo despierta al vigilante la primera vez. La pregunta de N5 sigue
+  en main, con la bandera sucia, se releía cada 5 s y no se envía nada). Una
+  huérfana cuya cancelación falla, si sigue abierta al releer las piernas
+  de su símbolo, pasa a las purgas pendientes de I-9 y, mientras el
+  proceso siga, el símbolo no admite entradas hasta purgarla; sólo
+  despierta al vigilante la primera vez. La quinta revisión adversarial
+  encontró que la purga decidía con una foto de positionRisk anterior al
+  listado: ahora el listado se lee antes que positionRisk, así que cada
+  pierna listada es anterior a la foto, y las piernas que el reintento de
+  purgas pendientes acaba de cancelar salen del listado. La sexta encontró
+  que salía todo el símbolo, y en hedge la purga de un lado se llevaba las
+  huérfanas del otro justo cuando el símbolo vuelve a admitir entradas:
+  ahora salen sólo las que su purga cancela (las de su lado y las BOTH, y
+  en one-way las sin lado). También encontró que una pierna que disparó o
+  se canceló entre el listado y positionRisk quedaba como purga pendiente
+  falsa: por eso se relee antes de anotarla. Para
+  dar la auditoría por completa cuentan cuatro lecturas: positionRisk, el
+  listado, las piernas de cada posición y su filtro. El re-fetch de la
+  escalada B3.5 y las lecturas del reintento de purgas pendientes no
+  cuentan: como en main, la escalada conserva su racha y se reintenta en
+  la auditoría siguiente. Con un fallo y un freno en la misma auditoría
+  manda el freno (se relee en el ciclo siguiente) y el fallo o la cuota
+  de lectura cuentan para la espera de la siguiente; una colocación frenada
+  (429/418, su freno o la cuota crítica agotada) también se relee en el
+  ciclo siguiente. Las esperas se cuentan en disparos del intervalo
+  (`MissedTickBehavior::Skip`) desde el disparo en que empezó la auditoría:
+  medidas desde que acaba son como mucho 5, 10, 20, 40 y 60 s, y desde su
+  inicio duran más si la auditoría pasó de 5 s. Queda abierto
+  (N34b): una huérfana que no viene de una cancelación fallida del
+  vigilante no bloquea entradas (la hermana que el stream no encuentra o
+  no consigue cancelar tras el llenado de una pierna, o la que el apagado
+  anterior no canceló: las purgas pendientes no se guardan entre
+  reinicios); con el listado sin leer, una reentrada del mismo lado la
+  cuenta como protección de la posición nueva. Arreglo posible: que el
+  stream anote la purga pendiente cuando no cancela la hermana. Queda
+  abierto (N34c, de la sexta revisión): OCO-SKIP marca la bandera, pero si
+  positionRisk sigue sin mostrar la posición cuando llega la auditoría,
+  ésta cierra completa y la protección espera a la nominal; y un bracket
+  que una entrada coloca sin ver la posición (`still_open` vale `true` si
+  positionRisk falla) sale huérfano si positionRisk va con retraso.
+  Arreglo posible: no limpiar la bandera ni purgar las piernas de un
+  (símbolo, lado) con una ranura abierta y confirmada en el arena que
+  positionRisk aún no muestra.
+  La pregunta de N5 sigue
   abierta: el listado sin símbolo es lectura (peso 40), así que por encima
   del 80 % de la cuota no sale y la auditoría queda sin cuota.
 - N35 (de la tanda 14): el `.expect` de `record_query_resolution`. Hecha en
@@ -1757,8 +1800,17 @@ un escéptico por lote listo):
   el hueco siguiente sólo cuenta los rechazos posteriores. Con el acumulado
   real de `protection_health`, dos rechazos en un hueco ya no dan un paso
   de racha en el siguiente (`i14_n42_dos_huecos_de_stop_con_el_acumulado_real`).
-  La base guarda una entrada por símbolo que tuvo posición (como mucho el
-  universo de contratos del exchange).
+  La quinta revisión adversarial encontró que, en hedge, la racha, la base
+  y el recuento de `protection_health` eran por símbolo: el lado cubierto
+  borraba en cada auditoría la racha del lado desnudo, que nunca llegaba
+  a 3 (preexistente). Los tres son ahora por símbolo y lado, así que el
+  lado desnudo de un hedge ya escala al cierre de emergencia aunque el
+  otro esté cubierto. La base se siembra al ver la posición con el
+  acumulado de ese momento, así que un rechazo anterior a que el vigilante
+  la registre (el de un RESTORE que ya terminó, por ejemplo) no da un paso
+  de racha; el de un RESTORE que termina después sí (N44c). La base guarda
+  una entrada por símbolo y lado que tuvo posición (como mucho dos por
+  contrato del exchange).
 - N43 (de la tanda 16, Línea C con la documentación): un -1000 en un 4xx.
   `protection_health` lo trata como ejecución desconocida (no cuenta como
   rechazo) y la clasificación de los envíos de orden
@@ -1785,8 +1837,9 @@ un escéptico por lote listo):
   Ejecutada en Línea I (I-14): `ensure_position_protected` devuelve Err si
   no pudo leer las piernas, antes de colocar nada
   (`vigilante::cobertura_leida`, con el mismo recuento de cobertura de
-  antes). El vigilante salta esa posición sin tocar su racha ni su base de
-  rechazos y la relee; la adopción del arranque lo avisa y deja la marca de
+  antes). El vigilante salta esa posición sin tocar su racha (su base de
+  rechazos sólo se siembra si no la había visto) y la relee; la adopción
+  del arranque lo avisa y deja la marca de
   sucio en vez de descartar el resultado con `let _ =`. Sin el filtro del
   símbolo tampoco coloca nada, pero los huecos leídos cuentan para la
   escalada como antes y la auditoría no se da por completa. Si el freno
@@ -1794,10 +1847,25 @@ un escéptico por lote listo):
   ya por el texto del freno y la auditoría se relee en el ciclo siguiente
   (antes contaba como un fallo de lectura; lo encontró la cuarta revisión
   adversarial de I-14). Los dos
-  comentarios dicen ya que sólo cuenta un código del exchange. Queda
-  abierto (N44b): una posición cuyas piernas no se pueden leer durante
-  mucho tiempo no escala; si se quiere acotar ese tiempo, la regla es del
-  host y por la duración del hueco sin lectura.
+  comentarios dicen ya que sólo cuenta un código del exchange. Con TP y SL
+  cubiertos ya no lee el filtro: un símbolo bien cubierto cuyo filtro no
+  se puede leer no deja la auditoría incompleta (quinta revisión). Una
+  colocación frenada se relee en el ciclo siguiente, y la adopción del
+  arranque también deja la marca de sucio con ella. Una entrada que se
+  salta el bracket porque positionRisk no muestra su posición (OCO-SKIP:
+  cerrada o aún sin mostrar) marca la bandera sucia para que la audite el
+  vigilante en su disparo siguiente (si positionRisk sigue sin mostrarla,
+  N34c).
+  Queda abierto (N44b): una posición cuyas piernas no se pueden leer
+  durante mucho tiempo no escala; si se quiere acotar ese tiempo, la regla
+  es del host y por la duración del hueco sin lectura. Queda abierto
+  (N44c): RESTORE coloca piernas en tareas sueltas, sin la exclusión de la
+  auditoría (`try_begin_audit`) ni la del aplanado; si RESTORE y el
+  vigilante leen «sin piernas» antes de que el otro coloque, los dos
+  colocan el hueco (clientAlgoId distintos, el exchange no los
+  deduplica). Y un rechazo de RESTORE posterior a la primera mirada del
+  vigilante cuenta como nuevo: puede dar un paso de racha, como mucho uno
+  por posición en el arranque.
 - N45 (de la tanda 16, Sol): data-pipeline `api_client.rs` copia la URL
   firmada al texto de sus errores de red («HTTP Error: …», :119 y :212),
   como hacía el ejecutor antes de CL-202. Ningún lector busca en ese texto:
