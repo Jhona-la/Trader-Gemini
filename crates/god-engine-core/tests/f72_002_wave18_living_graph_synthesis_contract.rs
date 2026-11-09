@@ -185,6 +185,14 @@ fn test_c3_wave18_gross_pitaevskii_vortex_cavitation_veto() {
             ..Default::default()
         },
     );
+    // Lo mismo con la cota de Lloyd (W23): la caída de profundidad del libro de 95 a 10 en 100 ms
+    // satura su ritmo de complejidad y su veto va el primero de la cadena. Tiene su propio
+    // contrato en f87_002 C4.
+    orchestrator.holographic_lloyd_engines[0] =
+        risk_engine::HolographicLloydComplexityEngine::new(risk_engine::HolographicLloydConfig {
+            critical_saturation_ratio: 1.0e6,
+            ..Default::default()
+        });
 
     let triad = [
         AssetColorState {
