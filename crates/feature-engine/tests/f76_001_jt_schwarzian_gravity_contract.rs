@@ -20,6 +20,7 @@ fn test_c1_jt_schwarzian_steady_flow_equilibrium() {
         lyapunov_exponent: 0.0,
         schwarzian_singularity_detected: false,
         slot_scale_factor: 1.0,
+        derivatives_measured: false,
     };
 
     for _ in 0..10 {
@@ -94,4 +95,32 @@ fn test_c4_jt_schwarzian_stack_safety_and_boundedness() {
     assert!(report.density_of_states_rho.is_finite());
     assert!(report.lyapunov_exponent.is_finite());
     assert!(report.slot_scale_factor >= 0.15 && report.slot_scale_factor <= 1.25);
+}
+
+/// C5: f''' necesita tres tasas observadas. Un cambio de tasa en la segunda muestra no es una
+/// singularidad (antes se calculaba f''' con una f'' anterior nunca medida, igual a 0, y salía
+/// f''' = Δf'/dt²); el mismo cambio sí se ve en la tercera muestra, con la f'' ya medida.
+#[test]
+fn test_c5_jt_schwarzian_needs_three_rates_before_measuring() {
+    let config = JtSchwarzianConfig::default();
+    let mut engine = JtSchwarzianEngine::new(config);
+
+    // Tasas de un movimiento tranquilo a 50 ms: f' = 1 + 2|obi| con obi 5/95 y 13/97.
+    let first = engine.evaluate(1.10526, 0.05);
+    assert!(!first.derivatives_measured);
+    assert!(!first.schwarzian_singularity_detected);
+
+    let second = engine.evaluate(1.26804, 0.05);
+    assert!(!second.derivatives_measured);
+    assert!(!second.schwarzian_singularity_detected);
+    assert_eq!(second.slot_scale_factor, 1.0);
+
+    // Tercera muestra con f' fija: f'' = 0 y f''' = −f''₂/dt, así que |{f, τ}| = |f''₂|/(dt·f').
+    let third = engine.evaluate(1.26804, 0.05);
+    let f2 = (1.26804 - 1.10526) / 0.05;
+    let expected = f2 / (0.05 * 1.26804);
+    assert!(third.derivatives_measured);
+    assert!((third.schwarzian_derivative.abs() - expected).abs() < 1e-9);
+    assert!(third.schwarzian_singularity_detected);
+    assert_eq!(third.slot_scale_factor, 0.15);
 }
