@@ -58,18 +58,24 @@ fn test_c1_wave24_triad_holistic_orchestration() {
     );
 
     // 1. Verificación Fase 88: Kostant-Souriau
-    assert!(report
-        .kostant_souriau_report
-        .prequantum_observable_val
-        .is_finite());
-    assert!(report
-        .kostant_souriau_report
-        .symplectic_curvature_norm
-        .is_finite());
-    assert!(report
-        .kostant_souriau_report
-        .reeb_contact_holonomy
-        .is_finite());
+    assert!(
+        report
+            .kostant_souriau_report
+            .prequantum_observable_val
+            .is_finite()
+    );
+    assert!(
+        report
+            .kostant_souriau_report
+            .symplectic_curvature_norm
+            .is_finite()
+    );
+    assert!(
+        report
+            .kostant_souriau_report
+            .reeb_contact_holonomy
+            .is_finite()
+    );
     assert!(!report.kostant_souriau_report.prequantum_collapse_veto);
     assert!(report.kostant_souriau_report.slot_scale_factor >= 0.10);
 
