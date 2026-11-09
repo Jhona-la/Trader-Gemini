@@ -58,14 +58,18 @@ fn test_c1_wave23_triad_holistic_orchestration() {
     );
 
     // 1. Verificación Fase 85: Invariante Chern-Simons-Witten
-    assert!(report
-        .chern_simons_knot_report
-        .jones_polynomial_val
-        .is_finite());
-    assert!(report
-        .chern_simons_knot_report
-        .khovanov_quantum_degree
-        .is_finite());
+    assert!(
+        report
+            .chern_simons_knot_report
+            .jones_polynomial_val
+            .is_finite()
+    );
+    assert!(
+        report
+            .chern_simons_knot_report
+            .khovanov_quantum_degree
+            .is_finite()
+    );
     assert!(!report.chern_simons_knot_report.knot_collapse_veto);
     assert!(report.chern_simons_knot_report.slot_scale_factor >= 0.10);
 
@@ -79,10 +83,12 @@ fn test_c1_wave23_triad_holistic_orchestration() {
 
     // 3. Verificación Fase 87: Complejidad Holográfica WDW & Cota de Lloyd
     assert!(report.holographic_lloyd_report.holographic_complexity > 0.0);
-    assert!(report
-        .holographic_lloyd_report
-        .lloyd_computation_bound
-        .is_finite());
+    assert!(
+        report
+            .holographic_lloyd_report
+            .lloyd_computation_bound
+            .is_finite()
+    );
     assert!(!report.holographic_lloyd_report.lloyd_bound_exhaustion_veto);
     assert!(report.holographic_lloyd_report.slot_scale_factor >= 0.10);
 
