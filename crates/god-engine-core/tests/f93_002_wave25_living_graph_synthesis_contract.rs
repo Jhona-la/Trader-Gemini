@@ -8,10 +8,10 @@
 use feature_engine::AmplituhedronOrderFlowConfig;
 use god_engine_core::omniscient_living_graph::OmniscientLivingGraphOrchestrator;
 use risk_engine::FisherRaoAmariConfig;
+use signal_engine::StarobinskyConfig;
 use signal_engine::quantum_slot_orchestrator::{
     QuantumSlotOrchestrator, QuantumSlotOrchestratorParams,
 };
-use signal_engine::StarobinskyConfig;
 use strategy_core::{AssetColorState, SignalType};
 
 #[test]
@@ -62,10 +62,12 @@ fn test_c1_wave25_triad_holistic_orchestration() {
 
     // 1. Verificación Fase 91: Amplituhedro & Amplitudes Parke-Taylor MHV
     assert!(report.amplituhedron_order_flow_report.polytope_volume > 0.0);
-    assert!(report
-        .amplituhedron_order_flow_report
-        .parke_taylor_amplitude
-        .is_finite());
+    assert!(
+        report
+            .amplituhedron_order_flow_report
+            .parke_taylor_amplitude
+            .is_finite()
+    );
     assert!(
         !report
             .amplituhedron_order_flow_report
@@ -75,10 +77,12 @@ fn test_c1_wave25_triad_holistic_orchestration() {
 
     // 2. Verificación Fase 92: Cosmología Inflacionaria de Starobinsky
     assert!(report.starobinsky_inflationary_report.effective_potential >= 0.0);
-    assert!(report
-        .starobinsky_inflationary_report
-        .epsilon_slow_roll
-        .is_finite());
+    assert!(
+        report
+            .starobinsky_inflationary_report
+            .epsilon_slow_roll
+            .is_finite()
+    );
     assert!(
         !report
             .starobinsky_inflationary_report
@@ -354,17 +358,23 @@ fn test_c5_wave25_nan_infinity_immunity_and_zero_panic_guarantee() {
         &open_is_long,
     );
 
-    assert!(report
-        .amplituhedron_order_flow_report
-        .polytope_volume
-        .is_finite());
-    assert!(report
-        .starobinsky_inflationary_report
-        .effective_potential
-        .is_finite());
-    assert!(report
-        .fisher_rao_amari_report
-        .fisher_rao_geodesic_distance
-        .is_finite());
+    assert!(
+        report
+            .amplituhedron_order_flow_report
+            .polytope_volume
+            .is_finite()
+    );
+    assert!(
+        report
+            .starobinsky_inflationary_report
+            .effective_potential
+            .is_finite()
+    );
+    assert!(
+        report
+            .fisher_rao_amari_report
+            .fisher_rao_geodesic_distance
+            .is_finite()
+    );
     assert!(report.holistic_slot_scale.is_finite());
 }
