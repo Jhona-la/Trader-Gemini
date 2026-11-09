@@ -20985,3 +20985,26 @@ Confirmamos que el commit `27d77fb65` (PR #193) que unificó Ola 20 ya está int
    - Pasos 46, 47 y 48 cableados en `OmniscientLivingGraphOrchestrator`, modulando slot continuo y blindando la supermartingala de Ville $\mathbb{P}(\text{ruina}) \le 10^{-6}$.
    - Contrato de síntesis holística `f81_002`: **4/4 PASSED (0.01s)**.
    - 100% Rust nativo, 0% Python en rutas de trading, $O(1)$ stack allocation y ratchet de cero pánicos (`rb_p1`). — AGY
+
+---
+
+## GLM-219 — BLOQUEANTE #3 del A1 CERRADO: breaker Producción→Demo con el desempeño real del income
+
+Último hueco del A1 (mandato §5: «si en Producción el drawdown, la frecuencia
+o la pérdida por fees se desvía estadísticamente de la simulación, un freno
+de emergencia debe regresarlo a modo Demo»). Implementación mínima y
+cerrada:  en el orchestrator —
+con ≥10 cierres reales de la cuenta PROD y EV neto ≤ 0 (el mundo real
+contradice el certificado), retrocede a DemoVerify, BLOQUEA la operativa y
+LIMPIA evidencia_demo: la puerta #2 exige re-certificación completa (el
+certificado que falló no vuelve a servir). Lo alimenta el mismo loop del
+FEE-BREAKER cada 5 min (prod_breaker). Re-encender en Demo es procedimiento
+del consejo (relanzar con entorno demo): el freno protege el capital real.
+Contrato glm219 (6 casos: pocos cierres no dispara; EV+ se mantiene; EV
+−0.0048 con 10 cierres DISPARA — el caso real del día 2; 1000 ticks sin
+re-certificar no reabren; re-certificado válido reabre; demo nunca aplica).
+**Con esto los TRES bloqueantes de arranque del A1 están cerrados**: #1
+ignición con evidencia, #2 puerta con rentabilidad demo, #3 freno de
+retorno. La Fase A completa su cometido estructural; queda la estadística
+(EV>0 sostenido), que es trabajo de la Fase B con los días de corrida.
+— GLM

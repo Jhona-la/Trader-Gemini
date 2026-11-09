@@ -84,6 +84,40 @@ impl PhaseOrchestrator {
         self.evidencia_demo = evidencia;
     }
 
+    /// Cierres reales mínimos en Producción antes de que el breaker decida:
+    /// detectar pronto sin volverse loco con los primeros trades.
+    pub const MIN_CIERRES_BREAKER_PROD: u64 = 10;
+
+    /// GLM-219 (BLOQUEANTE #3 del A1): breaker Producción→Demo. Si el
+    /// desempeño REAL de Producción (income del exchange) con cierres
+    /// suficientes muestra EV neto ≤ 0 — el mundo real contradice el
+    /// certificado demo que autorizó la entrada — el sistema RETROCEDE a
+    /// DemoVerify y BLOQUEA la operativa (fail-closed: is_trading_allowed
+    /// sólo autoriza en Paper/Prod). Además LIMPIA evidencia_demo: la puerta
+    /// #2 exigirá una re-certificación demo completa antes de reabrir — el
+    /// certificado que falló no vuelve a servir. Re-encender en Demo es
+    /// procedimiento del operador/agentes (relanzar con entorno demo): el
+    /// freno protege el capital real, la recalibración es del consejo.
+    /// Devuelve `true` si disparó.
+    pub fn registrar_desempeno_prod(&mut self, cierres: u64, ev_neto_por_trade: f64) -> bool {
+        if self.current_phase != SystemPhase::ProductionMainnet {
+            return false;
+        }
+        if cierres < Self::MIN_CIERRES_BREAKER_PROD || !ev_neto_por_trade.is_finite() {
+            return false;
+        }
+        if ev_neto_por_trade > 0.0 {
+            return false;
+        }
+        println!(
+            "🛑 [ORCHESTRATOR] BREAKER Prod→Demo: EV neto real {:+.6} USDT/trade con {} cierres contradice el certificado demo — operativa bloqueada y evidencia limpiada (re-certificar en Demo)",
+            ev_neto_por_trade, cierres
+        );
+        self.current_phase = SystemPhase::DemoVerify;
+        self.evidencia_demo = None;
+        true
+    }
+
     /// Llamado en cada tick del Market Data. Mueve la máquina de estados.
     pub fn on_tick(&mut self) -> SystemPhase {
         // Readiness is revocable. Elapsed ticks cannot replace authorization or OMS reconciliation.

@@ -3146,6 +3146,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         {
             let exec_brk = Arc::clone(&exec);
             let arena_brk = Arc::clone(&arena_real);
+            // GLM-219 (bloqueante #3): el breaker Prod→Demo se alimenta aquí,
+            // con el desempeño REAL del income de la cuenta de Producción.
+            let orch_brk = Arc::clone(&orchestrator);
+            let prod_breaker = !is_demo_mode;
             rt_handle.spawn(async move {
                 let now0 = std::time::SystemTime::now()
                     .duration_since(std::time::UNIX_EPOCH)
@@ -3293,6 +3297,23 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         telemetry_server::profiler::record_exchange_income(
                             x_gross, x_fees, x_closes, x_wins,
                         );
+                        // GLM-219 (bloqueante #3 del A1): en Producción, el
+                        // freno evalúa el desempeño real de la cuenta con
+                        // cada refresh del income — EV neto ≤ 0 con cierres
+                        // suficientes devuelve el sistema a DemoVerify y
+                        // exige re-certificación (evidencia limpiada).
+                        if prod_breaker && x_closes > 0 && x_gross.is_finite() && x_fees.is_finite() {
+                            let ev_prod = (x_gross + x_fees) / x_closes as f64;
+                            let disparo = orch_brk
+                                .write()
+                                .unwrap_or_else(|e| e.into_inner())
+                                .registrar_desempeno_prod(x_closes, ev_prod);
+                            if disparo {
+                                telemetry_server::telemetry_log!(
+                                    "🛑 [BREAKER Prod→Demo] disparado por income real: EV {ev_prod:+.6} con {x_closes} cierres — operativa bloqueada, re-certificar en Demo"
+                                );
+                            }
+                        }
                         // GLM-216 (bloqueante #2): en demo, persistir el
                         // certificado de rentabilidad que la puerta a
                         // Producción exige (cierres ≥ 30 y EV neto > 0).
