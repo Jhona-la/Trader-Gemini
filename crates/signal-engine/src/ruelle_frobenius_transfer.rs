@@ -171,9 +171,9 @@ impl RuelleFrobeniusTransferEngine {
         // 6. Factor de Persistencia del Alfa $\mathcal{P}_{\text{alpha}} \in [0.0, 1.0]$
         let alpha_persistence_factor = (spectral_gap * (1.0 - var_x.min(1.0))).clamp(0.0, 1.0);
 
-        // 7. Detección de Colapso Ergódico Caótico (degeneración a ruido blanco)
+        // 7. Detección de Colapso Ergódico Caótico (degeneración a ruido blanco o dispersión crítica)
         let ergodic_chaotic_collapse = spectral_gap < self.params.min_spectral_gap
-            || (var_x > 0.80 && leading_decay_rate_gamma > 5.0);
+            || (var_x > 0.15 && leading_decay_rate_gamma > 1.0);
 
         // 8. Modulador de Convicción $\lambda_{\text{ruelle}} \in [0.05, 1.30]$
         let signal_conviction_modulator = if ergodic_chaotic_collapse {

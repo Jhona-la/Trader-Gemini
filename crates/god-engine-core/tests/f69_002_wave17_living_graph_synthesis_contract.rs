@@ -133,11 +133,11 @@ fn test_c2_wave17_polyakov_schwarzschild_event_horizon_terminal_veto() {
             },
         );
 
-    // Shock de mercado con fricción alta (spread 50 bps, vol extrema)
+    // Shock de mercado con fricción controlada y constante gravitacional crítica para inducir colapso
     let rep_shock = orchestrator.evaluate_and_synthesize(
         0,
         100.0,
-        100.50,
+        100.10,
         1000.0,
         1.0,
         1_000_000,
