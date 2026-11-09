@@ -129,6 +129,16 @@ fn test_c2_wave18_lindblad_decoherence_hard_veto() {
     let open_taus = [0.0; 3];
     let open_is_long = [false; 3];
 
+    // Aísla el veto de recalentamiento de Starobinsky (W25): la deriva de 10 pb cada 100 ms de
+    // este escenario rompe su slow-roll, y su etiqueta, que va antes en la cadena, taparía la de
+    // Lindblad que verifica este contrato.
+    orchestrator.starobinsky_engines[0] =
+        signal_engine::StarobinskyInflationaryEngine::new(signal_engine::StarobinskyConfig {
+            max_epsilon_slow_roll: f64::INFINITY,
+            max_tensor_to_scalar_ratio: f64::INFINITY,
+            ..Default::default()
+        });
+
     // Forzar desfasamiento severo con spread controlado (10 bps) y ticks disipativos
     let mut rep = orchestrator.evaluate_and_synthesize(
         0,

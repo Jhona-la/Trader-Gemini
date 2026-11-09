@@ -126,6 +126,17 @@ fn test_c2_wave16_dirac_monopole_hard_veto() {
             ..Default::default()
         });
 
+    // Aísla el veto colineal del Amplituhedro (W25): con un libro 1000:1 (|OFI| ≈ 0.998) la
+    // amplitud Parke-Taylor explota, el volumen del politopo cae bajo su mínimo y su etiqueta, que
+    // va antes en la cadena, taparía la que verifica este contrato.
+    orchestrator.amplituhedron_engines[0] = feature_engine::AmplituhedronOrderFlowEngine::new(
+        feature_engine::AmplituhedronOrderFlowConfig {
+            min_spinor_bracket_threshold: 0.0,
+            min_polytope_volume: -1.0,
+            ..Default::default()
+        },
+    );
+
     let rep_shock = orchestrator.evaluate_and_synthesize(
         0,
         99.99,
@@ -174,6 +185,17 @@ fn test_c3_wave16_peps_hyperbolic_dispersion_veto() {
             critical_negative_ricci: 0.80,
             ..Default::default()
         });
+
+    // Aísla el veto colineal del Amplituhedro (W25): con un libro 1000:1 (|OFI| ≈ 0.998) la
+    // amplitud Parke-Taylor explota, el volumen del politopo cae bajo su mínimo y su etiqueta, que
+    // va antes en la cadena, taparía la que verifica este contrato.
+    orchestrator.amplituhedron_engines[0] = feature_engine::AmplituhedronOrderFlowEngine::new(
+        feature_engine::AmplituhedronOrderFlowConfig {
+            min_spinor_bracket_threshold: 0.0,
+            min_polytope_volume: -1.0,
+            ..Default::default()
+        },
+    );
 
     let rep_shock = orchestrator.evaluate_and_synthesize(
         0,
