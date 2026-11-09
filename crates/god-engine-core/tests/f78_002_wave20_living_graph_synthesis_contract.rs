@@ -19,17 +19,17 @@ fn test_c1_wave20_triad_holistic_orchestration() {
         AssetColorState {
             normalized_return: 0.0005,
             order_flow_imbalance: 0.10,
-            relative_weight: 1.05,
+            relative_weight: 0.60,
         },
         AssetColorState {
             normalized_return: -0.0002,
             order_flow_imbalance: -0.05,
-            relative_weight: 0.98,
+            relative_weight: 0.50,
         },
         AssetColorState {
             normalized_return: 0.0003,
             order_flow_imbalance: 0.02,
-            relative_weight: 1.0,
+            relative_weight: 0.50,
         },
     ];
 
@@ -56,7 +56,10 @@ fn test_c1_wave20_triad_holistic_orchestration() {
     );
 
     // 1. Verificación Fase 76: Gravedad JT 2D & Schwarzian
-    assert!(report.jt_schwarzian_report.schwarzian_derivative.is_finite());
+    assert!(report
+        .jt_schwarzian_report
+        .schwarzian_derivative
+        .is_finite());
     assert!(report.jt_schwarzian_report.schwarzian_energy.is_finite());
     assert!(report.jt_schwarzian_report.density_of_states_rho > 0.0);
     assert!(!report.jt_schwarzian_report.schwarzian_singularity_detected);
@@ -84,6 +87,13 @@ fn test_c2_wave20_toric_code_braiding_hard_veto() {
     let mut orchestrator = OmniscientLivingGraphOrchestrator::new(3);
     let mut slot_orchestrator =
         QuantumSlotOrchestrator::new(QuantumSlotOrchestratorParams::default());
+
+    // Aislar la prueba de Toric Code asegurando que Page Curve no anticipe el veto ante correlación extrema
+    orchestrator.page_curve_island_engines[0] =
+        risk_engine::PageCurveIslandRiskEngine::new(risk_engine::PageCurveIslandConfig {
+            min_island_area: -1.0,
+            ..Default::default()
+        });
 
     let triad = [
         AssetColorState {
@@ -147,17 +157,17 @@ fn test_c3_wave20_schwarzian_singularity_veto() {
         AssetColorState {
             normalized_return: 0.0005,
             order_flow_imbalance: 0.10,
-            relative_weight: 1.05,
+            relative_weight: 0.60,
         },
         AssetColorState {
             normalized_return: -0.0002,
             order_flow_imbalance: -0.05,
-            relative_weight: 0.98,
+            relative_weight: 0.50,
         },
         AssetColorState {
             normalized_return: 0.0003,
             order_flow_imbalance: 0.02,
-            relative_weight: 1.0,
+            relative_weight: 0.50,
         },
     ];
 
@@ -167,24 +177,60 @@ fn test_c3_wave20_schwarzian_singularity_veto() {
 
     // Inicializar estado estable
     orchestrator.evaluate_and_synthesize(
-        0, 99.99, 100.01, 10.0, 10.0, 1_700_000_000_000,
-        &triad, 13.0, 20.0, 0.02, &mut slot_orchestrator,
-        &open_slots, &open_taus, &open_is_long,
+        0,
+        99.99,
+        100.01,
+        10.0,
+        10.0,
+        1_700_000_000_000,
+        &triad,
+        13.0,
+        20.0,
+        0.02,
+        &mut slot_orchestrator,
+        &open_slots,
+        &open_taus,
+        &open_is_long,
     );
     orchestrator.evaluate_and_synthesize(
-        0, 99.99, 100.01, 10.0, 10.0, 1_700_000_000_010,
-        &triad, 13.0, 20.0, 0.02, &mut slot_orchestrator,
-        &open_slots, &open_taus, &open_is_long,
+        0,
+        99.99,
+        100.01,
+        10.0,
+        10.0,
+        1_700_000_000_010,
+        &triad,
+        13.0,
+        20.0,
+        0.02,
+        &mut slot_orchestrator,
+        &open_slots,
+        &open_taus,
+        &open_is_long,
     );
 
     // Shock abrupto en tiempo hiper-reducido (dt = 1 ms) y desbalance OFI violento que dispara aceleración
     let report_shock = orchestrator.evaluate_and_synthesize(
-        0, 99.99, 100.01, 1000.0, 0.1, 1_700_000_000_011,
-        &triad, 13.0, 20.0, 0.02, &mut slot_orchestrator,
-        &open_slots, &open_taus, &open_is_long,
+        0,
+        99.99,
+        100.01,
+        1000.0,
+        0.1,
+        1_700_000_000_011,
+        &triad,
+        13.0,
+        20.0,
+        0.02,
+        &mut slot_orchestrator,
+        &open_slots,
+        &open_taus,
+        &open_is_long,
     );
 
-    assert!(report_shock.jt_schwarzian_report.schwarzian_derivative.is_finite());
+    assert!(report_shock
+        .jt_schwarzian_report
+        .schwarzian_derivative
+        .is_finite());
     assert!(report_shock.jt_schwarzian_report.schwarzian_energy > 0.0);
 }
 
@@ -198,17 +244,17 @@ fn test_c4_wave20_berry_phase_topological_conviction() {
         AssetColorState {
             normalized_return: 0.0005,
             order_flow_imbalance: 0.10,
-            relative_weight: 1.05,
+            relative_weight: 0.60,
         },
         AssetColorState {
             normalized_return: -0.0002,
             order_flow_imbalance: -0.05,
-            relative_weight: 0.98,
+            relative_weight: 0.50,
         },
         AssetColorState {
             normalized_return: 0.0003,
             order_flow_imbalance: 0.02,
-            relative_weight: 1.0,
+            relative_weight: 0.50,
         },
     ];
 
@@ -218,19 +264,52 @@ fn test_c4_wave20_berry_phase_topological_conviction() {
 
     // Secuencia que describe un ciclo en el espacio de parámetros (spread, vol, ofi)
     let p1 = orchestrator.evaluate_and_synthesize(
-        0, 99.99, 100.01, 10.0, 10.0, 1_700_000_000_000,
-        &triad, 13.0, 20.0, 0.02, &mut slot_orchestrator,
-        &open_slots, &open_taus, &open_is_long,
+        0,
+        99.99,
+        100.01,
+        10.0,
+        10.0,
+        1_700_000_000_000,
+        &triad,
+        13.0,
+        20.0,
+        0.02,
+        &mut slot_orchestrator,
+        &open_slots,
+        &open_taus,
+        &open_is_long,
     );
     let p2 = orchestrator.evaluate_and_synthesize(
-        0, 99.98, 100.02, 20.0, 5.0, 1_700_000_000_100,
-        &triad, 13.0, 20.0, 0.02, &mut slot_orchestrator,
-        &open_slots, &open_taus, &open_is_long,
+        0,
+        99.98,
+        100.02,
+        20.0,
+        5.0,
+        1_700_000_000_100,
+        &triad,
+        13.0,
+        20.0,
+        0.02,
+        &mut slot_orchestrator,
+        &open_slots,
+        &open_taus,
+        &open_is_long,
     );
     let p3 = orchestrator.evaluate_and_synthesize(
-        0, 99.99, 100.01, 5.0, 20.0, 1_700_000_000_200,
-        &triad, 13.0, 20.0, 0.02, &mut slot_orchestrator,
-        &open_slots, &open_taus, &open_is_long,
+        0,
+        99.99,
+        100.01,
+        5.0,
+        20.0,
+        1_700_000_000_200,
+        &triad,
+        13.0,
+        20.0,
+        0.02,
+        &mut slot_orchestrator,
+        &open_slots,
+        &open_taus,
+        &open_is_long,
     );
 
     assert!(p1.berry_phase_report.holographic_conviction_modulator >= 0.45);
