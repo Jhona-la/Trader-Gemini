@@ -3,6 +3,7 @@ pub use strategy_core::stat_arb;
 
 // Re-export specific structs that other crates expect from signal_engine
 pub mod ads_cft_holographic;
+pub mod berry_phase_holonomy;
 pub mod coaxial_breakout;
 pub mod continuous_volatility_operator;
 pub mod derham_hodge_currents;
@@ -47,6 +48,9 @@ pub mod wilson_exact_renormalization;
 
 pub use ads_cft_holographic::{
     AdSCftHolographicEngine, AdSCftHolographicReport, AdSCftParams,
+};
+pub use berry_phase_holonomy::{
+    BerryPhaseConfig, BerryPhaseEngine, BerryPhaseReport,
 };
 pub use continuous_volatility_operator::{
     ContinuousVolatilityOperatorEngine, ContinuousVolatilityParams, ContinuousVolatilityState,

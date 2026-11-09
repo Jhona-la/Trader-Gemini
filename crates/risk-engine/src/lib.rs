@@ -28,6 +28,7 @@ pub mod ryu_takayanagi_entanglement;
 pub mod selection_stats;
 pub mod sonda;
 pub mod tensor_network_mps_dmrg;
+pub mod toric_code_stabilizer;
 pub mod tp_sl;
 pub mod umegaki_relative_entropy;
 pub mod veto_registry;
@@ -85,6 +86,10 @@ pub use sonda::{
 };
 pub use tensor_network_mps_dmrg::{
     MpsDmrgParams, MpsDmrgReport, TensorNetworkMpsDmrgEngine, MPS_ASSET_CHANNELS, MPS_BOND_DIM,
+};
+pub use toric_code_stabilizer::{
+    ToricCodeConfig, ToricCodeEngine, ToricCodeReport, TORIC_EDGES, TORIC_GRID_SIZE,
+    TORIC_VERTICES,
 };
 pub use umegaki_relative_entropy::{
     UmegakiEntropyParams, UmegakiEntropyReport, UmegakiRelativeEntropyEngine,

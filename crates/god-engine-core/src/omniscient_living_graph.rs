@@ -31,6 +31,7 @@ use feature_engine::{
     CalabiYauSeibergWittenReport, GeodesicPhaseSpaceParams, GeodesicPhaseSpaceReport,
     GrossPitaevskiiBecEngine, GrossPitaevskiiBecReport, GrossPitaevskiiParams,
     HyperbolicPoincareHodgeEngine, HyperbolicPoincareHodgeParams, HyperbolicPoincareHodgeReport,
+    JtSchwarzianConfig, JtSchwarzianEngine, JtSchwarzianReport,
     LiouvilleCft2dQuantumGravityEngine, LiouvilleCftParams, LiouvilleQuantumGravityReport,
     MongeKantorovichWassersteinEngine, PenroseSpinNetworkEngine, PenroseSpinNetworkParams,
     PenroseSpinNetworkReport, PepsHypergraphRicciEngine, PepsHypergraphRicciReport,
@@ -47,11 +48,13 @@ use risk_engine::{
     PolyakovSchwarzschildReport, QuantumNoArbitrageConformalEngine,
     QuantumNoArbitrageConformalParams, QuantumNoArbitrageConformalReport, ReebContactParams,
     ReebContactReport, ReebContactVortexEngine, RyuTakayanagiEntanglementEngine,
-    RyuTakayanagiParams, RyuTakayanagiReport, TensorNetworkMpsDmrgEngine, UmegakiEntropyParams,
+    RyuTakayanagiParams, RyuTakayanagiReport, TensorNetworkMpsDmrgEngine,
+    ToricCodeConfig, ToricCodeEngine, ToricCodeReport, TORIC_EDGES, UmegakiEntropyParams,
     UmegakiEntropyReport, UmegakiRelativeEntropyEngine, MPS_ASSET_CHANNELS,
 };
 use signal_engine::{
     AdSCftHolographicEngine, AdSCftHolographicReport, AdSCftParams,
+    BerryPhaseConfig, BerryPhaseEngine, BerryPhaseReport,
     BurgersShockwaveReport, ContinuousVolatilityOperatorEngine, ContinuousVolatilityState,
     DeRhamHodgeCurrentsEngine, DeRhamHodgeParams, DeRhamHodgeReport,
     FeynmanPathIntegralRoutingEngine, FeynmanRoutingParams, FeynmanRoutingReport,
@@ -136,6 +139,10 @@ pub struct OmniscientLivingGraphReport {
     pub liouville_report: LiouvilleQuantumGravityReport,
     pub ads_cft_report: AdSCftHolographicReport,
     pub ryu_takayanagi_report: RyuTakayanagiReport,
+    // --- Extensiones Holísticas Omega220 (Fases 76 - 78) ---
+    pub jt_schwarzian_report: JtSchwarzianReport,
+    pub berry_phase_report: BerryPhaseReport,
+    pub toric_code_report: ToricCodeReport,
 }
 
 /// Orquestador del grafo vivo omnisciente para todo el universo de activos.
@@ -192,6 +199,10 @@ pub struct OmniscientLivingGraphOrchestrator {
     pub liouville_engines: Vec<LiouvilleCft2dQuantumGravityEngine>,
     pub ads_cft_engines: Vec<AdSCftHolographicEngine>,
     pub ryu_takayanagi_engines: Vec<RyuTakayanagiEntanglementEngine>,
+    // Motores cuánticos y físicos unificados (Fases 76 - 78)
+    pub jt_schwarzian_engines: Vec<JtSchwarzianEngine>,
+    pub berry_phase_engines: Vec<BerryPhaseEngine>,
+    pub toric_code_engines: Vec<ToricCodeEngine>,
     pub prev_mid_prices: Vec<f64>,
     pub last_event_time_ms: u64,
 }
@@ -326,6 +337,15 @@ impl OmniscientLivingGraphOrchestrator {
                 .collect(),
             ryu_takayanagi_engines: (0..count)
                 .map(|_| RyuTakayanagiEntanglementEngine::new(RyuTakayanagiParams::default()))
+                .collect(),
+            jt_schwarzian_engines: (0..count)
+                .map(|_| JtSchwarzianEngine::new(JtSchwarzianConfig::default()))
+                .collect(),
+            berry_phase_engines: (0..count)
+                .map(|_| BerryPhaseEngine::new(BerryPhaseConfig::default()))
+                .collect(),
+            toric_code_engines: (0..count)
+                .map(|_| ToricCodeEngine::new(ToricCodeConfig::default()))
                 .collect(),
             prev_mid_prices: vec![0.0; count],
             last_event_time_ms: 0,
@@ -802,7 +822,33 @@ impl OmniscientLivingGraphOrchestrator {
             spread_bps,
         );
 
-        // 43. Factor de Escala de Riesgo Holístico Tri-Slot $\eta_{\text{holistic}}$
+        // 43. Gravedad JT 2D y Dinámica Cuántica de Schwarzian (Fase 76)
+        let market_time_rate = (1.0 + ofi.abs() * 2.0).clamp(0.1, 10.0);
+        let jt_schwarzian_report = self.jt_schwarzian_engines[safe_coin_id].evaluate(
+            market_time_rate,
+            dt,
+        );
+
+        // 44. Fase Geométrica de Berry y Holonomía Cuántica de Fubini-Study (Fase 77)
+        let spread_norm = spread_bps / 5.0;
+        let vol_norm = (volatility_state.effective_volatility * 100.0).max(0.01);
+        let berry_phase_report = self.berry_phase_engines[safe_coin_id].evaluate(
+            spread_norm,
+            vol_norm,
+            ofi,
+        );
+
+        // 45. Estabilizador Topológico de Toric Code y Compuerta de Anyones (Fase 78)
+        let mut toric_edges = [1.0f64; TORIC_EDGES];
+        for i in 0..16 {
+            toric_edges[i] = if i % 2 == 0 { 1.0 } else { cross_corr.signum().max(-1.0) };
+        }
+        for i in 16..TORIC_EDGES {
+            toric_edges[i] = if spread_bps > 15.0 { -1.0 } else { 1.0 };
+        }
+        let toric_code_report = self.toric_code_engines[safe_coin_id].evaluate(&toric_edges);
+
+        // 46. Factor de Escala de Riesgo Holístico Tri-Slot $\eta_{\text{holistic}}$
         let mps_weight_factor = (mps_dmrg_report.asset_weights[safe_coin_id % MPS_ASSET_CHANNELS]
             * (MPS_ASSET_CHANNELS as f64))
             .clamp(0.50, 1.50);
@@ -853,6 +899,9 @@ impl OmniscientLivingGraphOrchestrator {
             * liouville_report.slot_scale_factor
             * ads_cft_report.holographic_conviction_modulator
             * ryu_takayanagi_report.slot_scale_factor
+            * jt_schwarzian_report.slot_scale_factor
+            * berry_phase_report.holographic_conviction_modulator
+            * toric_code_report.slot_scale_factor
             * mps_weight_factor)
             .clamp(0.10, 1.25);
 
@@ -901,6 +950,8 @@ impl OmniscientLivingGraphOrchestrator {
             && !lindblad_report.hard_veto_induced
             && !liouville_report.curvature_singularity_detected
             && !ryu_takayanagi_report.hard_veto_induced
+            && !jt_schwarzian_report.schwarzian_singularity_detected
+            && !toric_code_report.hard_veto_induced
             && (spread_bps <= conformal_decision.dynamic_spread_ceiling_bps
                 || conformal_decision.elastic_entry_granted);
 
@@ -909,7 +960,11 @@ impl OmniscientLivingGraphOrchestrator {
                 decision.signal = SignalType::Flat;
                 decision.net_confidence = 0.0;
                 decision.vetoed = true;
-                decision.veto_reason = if ryu_takayanagi_report.hard_veto_induced {
+                decision.veto_reason = if toric_code_report.hard_veto_induced {
+                    Some("TORIC_CODE_BRAIDING_VETO")
+                } else if jt_schwarzian_report.schwarzian_singularity_detected {
+                    Some("SCHWARZIAN_SINGULARITY_VETO")
+                } else if ryu_takayanagi_report.hard_veto_induced {
                     Some("RYU_TAKAYANAGI_ENTANGLEMENT_VETO")
                 } else if liouville_report.curvature_singularity_detected {
                     Some("LIOUVILLE_SINGULARITY_VETO")
@@ -991,6 +1046,8 @@ impl OmniscientLivingGraphOrchestrator {
             && !lindblad_report.hard_veto_induced
             && !liouville_report.curvature_singularity_detected
             && !ryu_takayanagi_report.hard_veto_induced
+            && !jt_schwarzian_report.schwarzian_singularity_detected
+            && !toric_code_report.hard_veto_induced
             && conformal_decision.conformal_risk_score <= 0.85
             && srb_entropy_report.kolmogorov_sinai_entropy < 0.98;
 
@@ -1045,6 +1102,9 @@ impl OmniscientLivingGraphOrchestrator {
             liouville_report,
             ads_cft_report,
             ryu_takayanagi_report,
+            jt_schwarzian_report,
+            berry_phase_report,
+            toric_code_report,
         }
     }
 }

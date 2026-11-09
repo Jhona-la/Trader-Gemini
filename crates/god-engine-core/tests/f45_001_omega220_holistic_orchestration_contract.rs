@@ -332,6 +332,23 @@ fn test_c1_holistic_living_graph_end_to_end_synthesis() {
     assert!(report.ryu_takayanagi_report.extremal_surface_connected);
     assert!(!report.ryu_takayanagi_report.hard_veto_induced);
     assert!(report.ryu_takayanagi_report.slot_scale_factor > 0.0);
+
+    // 41. Gravedad JT 2D y Dinámica Cuántica de Schwarzian (Fase 76)
+    assert!(report.jt_schwarzian_report.schwarzian_derivative.is_finite());
+    assert!(report.jt_schwarzian_report.density_of_states_rho > 0.0);
+    assert!(!report.jt_schwarzian_report.schwarzian_singularity_detected);
+    assert!(report.jt_schwarzian_report.slot_scale_factor >= 0.15);
+
+    // 42. Fase Geométrica de Berry y Holonomía Cuántica de Fubini-Study (Fase 77)
+    assert!(report.berry_phase_report.fubini_study_distance.is_finite());
+    assert!(report.berry_phase_report.berry_curvature_magnitude > 0.0);
+    assert!(!report.berry_phase_report.adiabatic_breakdown);
+    assert!(report.berry_phase_report.holographic_conviction_modulator >= 0.45);
+
+    // 43. Estabilizador Topológico de Toric Code y Compuerta de Anyones (Fase 78)
+    assert!(report.toric_code_report.anyon_defect_density.is_finite());
+    assert!(!report.toric_code_report.hard_veto_induced);
+    assert!(report.toric_code_report.slot_scale_factor >= 0.10);
 }
 
 #[test]
