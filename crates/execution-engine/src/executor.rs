@@ -808,6 +808,12 @@ impl OrderExecutor {
         &self.client
     }
 
+    #[cfg(any(test, feature = "loopback-contract"))]
+    pub fn con_base_de_prueba(mut self, base: &str) -> Self {
+        self.client = self.client.clone().con_base_de_prueba(base);
+        self
+    }
+
     pub fn api_secret(&self) -> String {
         self.api_secret.load().to_string()
     }

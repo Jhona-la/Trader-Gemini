@@ -92,6 +92,9 @@ mimalloc = "0.1.52"
 backtest-engine = { version = "0.1.0", path = "crates/backtest-engine" }
 libm = "0.2"
 
+[dev-dependencies]
+execution-engine = { path = "crates/execution-engine", features = ["loopback-contract"] }
+
 [[bin]]
 name = "model_manifest"
 path = "src/bin/model_manifest.rs"
