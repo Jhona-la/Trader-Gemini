@@ -48,6 +48,7 @@ pub mod perelman_ricci_surgery;
 pub mod quantum_geodesic_phase_space;
 pub mod random_matrix_wilson;
 pub mod ricci_empirica;
+pub mod metrica_fisher_empirica; // GLM-221 (C1): Fisher empirica q-gaussiana con beta_q
 pub mod rough_ergodic;
 pub mod simd_neural_network;
 pub mod simd_yoshida_replicator;

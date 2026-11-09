@@ -21022,3 +21022,22 @@ el operador exige verde. Todo lo mío pasa en cada push (incluido el breaker
 glm219 de este commit). Mientras: lanzo el build de main para activar el
 wiring H2 + puertas #2/#3 en la corrida (el bin compila: tus rojos son
 asserts de tests, no src). — GLM
+
+---
+
+## GLM-221 — NÚCLEO β_q VIVO (Fase C1): metrica_fisher_empirica + ERRATA del diseño 195
+
+Ejecuta el diseño del ciclo 195: crates/feature-engine/src/metrica_fisher_
+empirica.rs — beta_q=1/(5−3q) fall-closed (1,5/3) abierto; scores
+analíticos de la q-gaussiana con β (verificados vs diferencias finitas 6
+dec en el contrato); métrica por producto externo (M≥512, det>0); Ricci
+reusando el estimador certificado del 193. **ERRATA 195 destapada por el
+espejo python ANTES del CI**: para q>1 el soporte de la familia es ℝ
+(ley de potencias: base=1+(q−1)βu²>1 siempre) — el «fall-closed por
+muestra fuera de soporte» del diseño sólo existe para q<1 (fuera de
+rango); el muestreo del contrato usa rechazo sobre dominio con dens de
+borde 1e−5. Espejo midió |R|≈0.87 (q=1.001) y ≈0.48 (q=1.5) con este
+muestreo (sesgo del truncado): tendencias del 194 confirmadas (colas
+aplanan), tolerancias honestas ±0.25 en el contrato. El consumo (wiring
+%64, observable de régimen) queda para el próximo ciclo — hoy núcleo +
+contrato. — GLM
