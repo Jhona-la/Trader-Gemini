@@ -61,9 +61,11 @@ fn test_c2_scarred_signal_and_slot_scaling() {
 
 #[test]
 fn test_c3_ergodic_collapse_veto_activation() {
-    let mut config = QuantumManyBodyScarsConfig::default();
-    config.min_revival_fidelity = 0.40;
-    config.thermal_dephasing_rate = 2.0;
+    let config = QuantumManyBodyScarsConfig {
+        min_revival_fidelity: 0.40,
+        thermal_dephasing_rate: 2.0,
+        ..Default::default()
+    };
     let mut engine = QuantumManyBodyScarsEngine::new(config);
 
     // Inyectamos dispersión térmica y alta volatilidad para forzar termalización ETH total

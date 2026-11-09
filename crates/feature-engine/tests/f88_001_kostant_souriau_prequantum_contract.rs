@@ -60,9 +60,11 @@ fn test_c2_polarization_coherence_and_slot_scaling() {
 
 #[test]
 fn test_c3_prequantum_collapse_veto_activation() {
-    let mut config = KostantSouriauConfig::default();
-    config.min_polarization_coherence = 0.50;
-    config.max_symplectic_curvature_drift = 1.00;
+    let config = KostantSouriauConfig {
+        min_polarization_coherence: 0.50,
+        max_symplectic_curvature_drift: 1.00,
+        ..Default::default()
+    };
     let mut engine = KostantSouriauPrequantumEngine::new(config);
 
     // Inyectamos choques anarmónicos severos para forzar colapso de la polarización
