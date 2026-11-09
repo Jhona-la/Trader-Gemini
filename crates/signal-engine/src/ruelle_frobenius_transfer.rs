@@ -9,8 +9,13 @@
 //! Computa las Resonancias de Pollicott-Ruelle (1985-1986) $\lambda_k = e^{-\gamma_k + i \omega_k}$ en $O(1)$ stack,
 //! donde $\gamma_0$ determina la vida media del alfa cuántico $\tau = 1 / \gamma_0$ y $\Delta_{\text{gap}} = 1 - |\lambda_1|$
 //! mide la brecha espectral frente al caos puro.
-//! Si el tiempo transcurrido excede el horizonte de decaimiento o si $\Delta_{\text{gap}} < 0.05$ (colapso ergódico a
-//! ruido blanco), modula la convicción direccional a escala mínima defensiva para preservar el crecimiento compuesto.
+//! Si el horizonte de decaimiento $\tau = 1 / \gamma_0$ del modelo es más corto que una aplicación del operador
+//! ($\gamma_0 > 1$, es decir $|\lambda_1| = e^{-\gamma_0} < e^{-1}$) o si $\Delta_{\text{gap}}$ cae bajo
+//! `min_spectral_gap`, modula la convicción direccional a escala mínima defensiva para preservar el
+//! crecimiento compuesto. En este modelo $\gamma_0 = \gamma_{\text{base}} + \mathrm{Var}(x) \cdot D$ crece con la
+//! difusión inyectada $D$: la primera condición es un veto de horizonte de correlación corto en unidades del
+//! operador (dispara con difusión alta, sea tendencia o alternancia), no una estimación de la autocorrelación
+//! de los datos.
 //! -------------------------------------------------------------------------------------------------
 
 /// Dimensión de la discretización del operador de transferencia sobre el soporte de densidades (16 nodos en stack).
@@ -18,6 +23,15 @@ pub const RUELLE_GRID_SIZE: usize = 16;
 
 /// Capacidad del buffer circular de estados de micro-flujo.
 pub const RUELLE_HISTORY_CAPACITY: usize = 16;
+
+/// Tasa de decaimiento por aplicación del operador a partir de la cual el modo subdominante del modelo
+/// pierde la memoria en un solo paso: $\gamma_0 > 1 \iff |\lambda_1| = e^{-\gamma_0} < e^{-1}$, es decir, el
+/// tiempo de correlación $\tau = 1/\gamma_0$ queda por debajo de una aplicación. Como
+/// $\gamma_0 = \gamma_{\text{base}} + \mathrm{Var}(x) \cdot D$ con $D \le 5$, superarla exige además
+/// $\mathrm{Var}(x) > (1 - \gamma_{\text{base}}) / 5$ (0.19 con el $\gamma_{\text{base}} = 0.05$ por defecto).
+/// Mide la difusión inyectada, no la autocorrelación de los datos: una tendencia con la misma difusión
+/// también la supera.
+const RUELLE_SHORT_HORIZON_DECAY_RATE: f64 = 1.0;
 
 /// Parámetros de configuración del motor de transferencia de Ruelle-Perron-Frobenius.
 #[derive(Debug, Clone, Copy)]
@@ -56,7 +70,11 @@ pub struct RuelleFrobeniusReport {
     pub lyapunov_decay_time_ms: f64,
     /// Factor de persistencia y coherencia temporal del alfa $\mathcal{P}_{\text{alpha}} \in [0.0, 1.0]$.
     pub alpha_persistence_factor: f64,
-    /// Alerta de régimen ergódico degenerado (ruido puro sin memoria, $\Delta_{\text{gap}} < 0.05$).
+    /// Alerta de colapso: horizonte de correlación del modelo más corto que una aplicación del
+    /// operador ($\gamma_0 > 1$, difusión alta) o brecha espectral bajo `min_spectral_gap`. La
+    /// segunda condición equivale a $\gamma_0 < -\ln(1 - \text{min\_spectral\_gap})$, un horizonte
+    /// largo (decaimiento lento), no la ausencia de memoria; con el umbral por defecto (0.03) no se
+    /// alcanza, porque $\gamma_0 \ge \gamma_{\text{base}} = 0.05$ da una brecha de al menos 0.0488.
     pub ergodic_chaotic_collapse: bool,
     /// Modulador de convicción de señal derivado $\lambda_{\text{ruelle}} \in [0.05, 1.30]$.
     pub signal_conviction_modulator: f64,
@@ -153,7 +171,8 @@ impl RuelleFrobeniusTransferEngine {
             var_x += diff * diff * self.density_state[j];
         }
 
-        // Tasa intrínseca de decaimiento de Ruelle: $\gamma_0 = \gamma_{\text{base}} + \frac{\text{var}}{1 + \text{var}} \cdot \text{vol}$
+        // Tasa intrínseca de decaimiento de Ruelle por aplicación del operador:
+        // $\gamma_0 = \gamma_{\text{base}} + \text{Var}(x) \cdot D$, con $D = \text{clamp}(10\sigma, 0.01, 5)$
         let leading_decay_rate_gamma =
             (self.params.decay_regularization + var_x * vol_diffusion).clamp(0.001, 10.0);
 
@@ -171,9 +190,11 @@ impl RuelleFrobeniusTransferEngine {
         // 6. Factor de Persistencia del Alfa $\mathcal{P}_{\text{alpha}} \in [0.0, 1.0]$
         let alpha_persistence_factor = (spectral_gap * (1.0 - var_x.min(1.0))).clamp(0.0, 1.0);
 
-        // 7. Detección de Colapso Ergódico Caótico (degeneración a ruido blanco)
+        // 7. Detección de Colapso Ergódico (pérdida de memoria en un paso del operador).
+        // Con Var(x) <= 1 en [-1, 1] y D <= 5, gamma_0 <= gamma_base + 5 (5.05 por defecto): la condición
+        // anterior (Var > 0.80 y gamma_0 > 5) exigía Var > 0.99, toda la masa en ±1, y nunca se alcanzaba.
         let ergodic_chaotic_collapse = spectral_gap < self.params.min_spectral_gap
-            || (var_x > 0.80 && leading_decay_rate_gamma > 5.0);
+            || leading_decay_rate_gamma > RUELLE_SHORT_HORIZON_DECAY_RATE;
 
         // 8. Modulador de Convicción $\lambda_{\text{ruelle}} \in [0.05, 1.30]$
         let signal_conviction_modulator = if ergodic_chaotic_collapse {
