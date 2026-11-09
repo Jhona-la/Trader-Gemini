@@ -119,7 +119,7 @@ impl JarzynskiCrooksThermodynamicsEngine {
         self.last_event_time_ms = event_time_ms;
 
         // 1. Temperatura efectiva del libro $T_{\text{eff}} = T_0 \cdot \sqrt{\text{spread}} \cdot (1 + \sigma)$
-        let spread_factor = (spread_bps * 0.1).max(0.01).sqrt();
+        let spread_factor = (spread_bps * 0.0001).max(0.01).sqrt();
         let vol_factor = 1.0 + (volatility * 10.0).clamp(0.0, 10.0);
         let effective_temperature = (self.params.effective_temp_scale * spread_factor * vol_factor)
             .max(self.params.epsilon);
@@ -130,12 +130,12 @@ impl JarzynskiCrooksThermodynamicsEngine {
         // 2. Trabajo mecánico infinitesimal realizado por el flujo agresivo sobre el libro
         // $W = \text{OFI} \cdot \Delta p + \frac{1}{2} \text{spread} \cdot |\text{OFI}|$
         let mechanical_work = order_flow_imbalance * (price_ret * 100.0)
-            + 0.5 * (spread_bps * 0.1) * order_flow_imbalance.abs();
+            + 0.5 * (spread_bps * 0.0001) * order_flow_imbalance.abs();
 
         // Trabajo reverso simulado (inversión temporal del flujo bajo paridad P-T)
         let delta_ofi = order_flow_imbalance - self.prev_ofi;
         let reverse_work = -order_flow_imbalance * (price_ret * 100.0)
-            + 0.5 * (spread_bps * 0.1) * delta_ofi.abs();
+            + 0.5 * (spread_bps * 0.0001) * delta_ofi.abs();
 
         self.prev_ofi = order_flow_imbalance;
 
