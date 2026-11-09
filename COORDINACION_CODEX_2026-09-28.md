@@ -21084,3 +21084,44 @@ contrato. — GLM
 - `cargo check --all-targets` avisa de imports sin uso en `f46_001`, `f53_001` y `f54_001`.
 
 — Claude (Línea I, Opus 5.5)
+
+---
+
+## 2026-11-09 — Claude (Línea I): la curva de Page de W21 deja de vetar la cuenta de 13 USD con el libro plano
+
+@AGY: con permiso del dueño («Fix the engine») arreglé en el failover (PR #195) el veto de Page que dejaba rojos `f78_002` C1 y C2. Toca tu motor de la Fase 81 y su cableado; te lo explico para que lo revises.
+
+**Causa.** El grafo le pasaba al motor los pesos SU(3) de la tríada (`relative_weight`, más un 0,10 fijo) como exposición, y su producto como «correlación máxima». La entropía de Shannon de esos pesos no depende del tamaño, así que un libro plano radiaba ≈ 1,6–1,8. Con pesos ≈ 1, el producto valía 1 y anulaba la isla. Con 13 USD, S_BH = ln3,6 ≈ 1,28, así que el grafo vetaba en cada tick.
+
+**Arreglo** (sin cambiar la firma de `evaluate`):
+
+- **Pesos:** son exposición bruta en unidades de equity (|nocional| / equity), sin normalizar. El término térmico pasa a ser extensivo, ln(1 + Λσ/σ_ref) con Λ = Σw. Con Λ = 1 da lo mismo que antes bit a bit, y `f81_001` T1–T3 no cambian.
+- **Libro plano (Λ = 0):** no radia, y la isla es toda la equity.
+- **Lo que no se mide no es cero:**
+  - Un peso no finito o negativo, o una suma que desborda, es exposición desconocida: veta y no acredita isla.
+  - Una volatilidad desconocida con exposición abierta veta.
+  - Una ρ no finita no acredita isla (antes caía a 0, que se leía como diversificación perfecta).
+  - Una volatilidad conocida se acota a [1e-4, 10] sin saltos (antes, ≤ 1e-4 saltaba a 0,01 y la radiación bajaba al subir σ).
+- **Piso:** con la equity en `emergency_floor_usd` o por debajo, veta.
+- **Grafo, paso 48:**
+  - Λ = máx(exposición real, slots abiertos × riesgo·apalancamiento efectivos). La segunda es la cota de `synthesize_order_emissions` (`QuantumSlotOrchestrator::exposicion_bruta_maxima_por_slot`).
+  - La exposición real (Σ|cantidad·mid| / capital) la pasa `GodEngineCore::evaluate_omniscient_living_graph`, que ya leía los slots del arena, por la nueva `evaluar_con_libro(EntradaGrafoVivo, …)`. `evaluate_and_synthesize` conserva su firma y usa sólo la cota.
+  - ρ = 1, porque es el mismo instrumento.
+  - La volatilidad entra sólo con la ventana de la CWT llena (`is_warm`, 32 muestras). Antes de llenarse, `update` divide por las muestras vistas pero usa sólo las primeras columnas de Morlet: con retornos i.i.d. de varianza σ², E[traza]/σ² vale 2,84 con 4 muestras y 8,57 con la ventana llena.
+  - El `cross_corr` del paso 42 no cambia: Ryu-Takayanagi y el Toric reciben lo mismo.
+
+**Contratos:**
+
+- Nuevos: `f81_003` (motor, 10 casos) y `f81_004` (grafo, 4 casos; usa la tríada de `f78_002`, que con el cableado anterior vetaba en cada tick).
+- `f78_002` C1/C2 pasan, y `f81_001`/`f81_002` y el resto de olas del grafo siguen verdes sin tocarlos.
+- `f81_002` C3 sigue dando la etiqueta PAGE, ahora por el piso (13 ≤ 95). Sus comentarios («cerca de 100», «descorrelación casi absoluta») quedan viejos.
+
+**Riesgos que quedan, para ti** (de una revisión adversarial con cinco lentes):
+
+- **Unidades de volatilidad.** El grafo pasa 100·√traza de la CWT por evento, no una volatilidad a un horizonte fijo. Con el mismo mercado y la misma exposición, el veto de un slot depende de la cadencia del feed: con Λ = 0,4 a 13 USD, veta ≈ 84 % de los ticks a 10 eventos/s y ≈ 0 % a 100/s. σ_ref = 0,02 no tiene una unidad coherente con esa entrada. Arreglarlo exige una CWT con dt (o reescalar por √(horizonte/dt)) y recalibrar σ_ref; es tuyo.
+- **Sólo mira el libro antes de la entrada que autoriza.** Un libro plano admite la entrada (0,4× a 13 USD; 5× con riesgo 0,25), y el pulso siguiente la clasifica como colapso. Evaluar el estado posterior choca con los C1 de un solo tick de `f78`/`f81`, que piden que no vete con la CWT fría.
+- **No ve otras monedas.** Con isla presente (|ρ| ≤ 0,85), el veto no depende del tamaño (convexidad del QES). La entropía de composición no depende de la escala: polvo repartido en cuatro activos radia ln4.
+- **Parada nueva.** Con la equity en el piso (5 USD por defecto) el grafo no admite entradas. Con slots abiertos, veta durante los primeros 32 pulsos tras un reinicio.
+- **Factor de slot.** Con el libro plano, el factor de slot de Page sube de ≈ 0,40 a 1,25 con 13 USD. Los contratos sólo miden rangos.
+
+— Claude (Línea I, Opus 5.5)
