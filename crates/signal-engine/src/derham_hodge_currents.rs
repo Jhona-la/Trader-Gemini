@@ -128,8 +128,8 @@ impl DeRhamHodgeCurrentsEngine {
             0.01
         };
 
-        // 1. Ingreso del observable a la cadena simplicial circular
-        let input_potential = safe_ret + 0.1 * safe_ofi;
+        // 1. Ingreso del observable a la cadena simplicial circular (escalamiento dimensional coherente)
+        let input_potential = safe_ret * 500.0 + safe_ofi;
         let input_current = safe_ofi / (safe_spread * 0.1 + safe_vol);
 
         self.simplicial_potentials[self.cursor] = input_potential;
@@ -144,8 +144,7 @@ impl DeRhamHodgeCurrentsEngine {
             return DeRhamHodgeReport::default();
         }
 
-        // 2. Operador Exterior Discreto d y Codiferencial delta
-        // Componente Exacta (Gradiente d \alpha): Diferencias hacia adelante de potencial
+        // 2. Operador Exterior Discreto d y Codiferencial delta sobre el Complejo de Cartan
         let mut energy_exact = 0.0;
         let mut energy_coexact = 0.0;
         let mut energy_harmonic = 0.0;
@@ -157,21 +156,37 @@ impl DeRhamHodgeCurrentsEngine {
         }
         harmonic_mean /= n as f64;
 
-        for i in 0..n {
-            let next_idx = (i + 1) % n;
-            let prev_idx = (i + n - 1) % n;
+        let get_node = |k: usize| -> usize {
+            if self.count < DERHAM_SIMPLICIAL_NODES {
+                k
+            } else {
+                (self.cursor + k) % DERHAM_SIMPLICIAL_NODES
+            }
+        };
 
-            // Gradiente d\alpha_i = \alpha_{i+1} - \alpha_i
-            let grad = self.simplicial_potentials[next_idx] - self.simplicial_potentials[i];
-            energy_exact += grad * grad;
+        for k in 0..n {
+            let idx_k = get_node(k);
 
-            // Rotacional / Vorticidad coexacta \delta\beta_i = j_{i+1} - 2*j_i + j_{i-1}
-            let curl = self.simplicial_currents[next_idx] - 2.0 * self.simplicial_currents[i]
-                + self.simplicial_currents[prev_idx];
+            // Gradiente d\alpha_k: forward difference a lo largo de la cadena temporal
+            if k + 1 < n {
+                let idx_next = get_node(k + 1);
+                let grad = self.simplicial_potentials[idx_next] - self.simplicial_potentials[idx_k];
+                energy_exact += grad * grad;
+            }
+
+            // Vorticidad / Curvatura coexacta \delta\beta_k: segunda diferencia finita interior
+            let curl = if k > 0 && k + 1 < n {
+                let idx_next = get_node(k + 1);
+                let idx_prev = get_node(k - 1);
+                self.simplicial_currents[idx_next] - 2.0 * self.simplicial_currents[idx_k]
+                    + self.simplicial_currents[idx_prev]
+            } else {
+                0.0
+            };
             energy_coexact += curl * curl;
 
             // Componente armónica: desviación respecto a la media global
-            let harm = self.simplicial_potentials[i] - harmonic_mean;
+            let harm = self.simplicial_potentials[idx_k] - harmonic_mean;
             energy_harmonic += harm * harm;
         }
 
@@ -194,7 +209,7 @@ impl DeRhamHodgeCurrentsEngine {
         let damping = (1.0 - ratio_coexact).max(0.05);
         let synthesized = (raw_signal * damping * 10.0).clamp(-1.0, 1.0);
 
-        let turbulent = ratio_coexact >= self.params.coexact_turbulent_threshold;
+        let turbulent = self.count >= 4 && ratio_coexact >= self.params.coexact_turbulent_threshold;
 
         DeRhamHodgeReport {
             exact_energy_ratio: ratio_exact,
