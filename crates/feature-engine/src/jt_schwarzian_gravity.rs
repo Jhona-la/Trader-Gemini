@@ -170,9 +170,11 @@ impl JtSchwarzianEngine {
         // rho(E) = (C / 2 pi^2) * [1.0 + sinh(2 pi sqrt(2 C E))]
         let argument = 2.0 * std::f64::consts::PI * (2.0 * c * energy.max(0.0)).sqrt();
         let safe_arg = argument.min(20.0); // Evitar overflow numérico en sinh
-        let rho = (c / (2.0 * std::f64::consts::PI * std::f64::consts::PI)) * (1.0 + safe_arg.sinh());
+        let rho =
+            (c / (2.0 * std::f64::consts::PI * std::f64::consts::PI)) * (1.0 + safe_arg.sinh());
 
-        let lyapunov = (2.0 * std::f64::consts::PI) / self.config.inverse_temperature_beta.max(1e-4);
+        let lyapunov =
+            (2.0 * std::f64::consts::PI) / self.config.inverse_temperature_beta.max(1e-4);
         let singularity = abs_schwarzian >= self.config.critical_schwarzian_threshold;
 
         // Modulación de slot continuo

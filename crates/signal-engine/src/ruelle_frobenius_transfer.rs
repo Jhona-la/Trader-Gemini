@@ -33,6 +33,9 @@ pub const RUELLE_HISTORY_CAPACITY: usize = 16;
 /// también la supera.
 const RUELLE_SHORT_HORIZON_DECAY_RATE: f64 = 1.0;
 
+/// Varianza mínima de la densidad en [-1, 1] para declarar colapso ergódico por horizonte corto.
+const RUELLE_DISPERSION_CRITICA: f64 = 0.15;
+
 /// Parámetros de configuración del motor de transferencia de Ruelle-Perron-Frobenius.
 #[derive(Debug, Clone, Copy)]
 pub struct RuelleFrobeniusParams {
@@ -190,11 +193,15 @@ impl RuelleFrobeniusTransferEngine {
         // 6. Factor de Persistencia del Alfa $\mathcal{P}_{\text{alpha}} \in [0.0, 1.0]$
         let alpha_persistence_factor = (spectral_gap * (1.0 - var_x.min(1.0))).clamp(0.0, 1.0);
 
-        // 7. Detección de Colapso Ergódico (pérdida de memoria en un paso del operador).
-        // Con Var(x) <= 1 en [-1, 1] y D <= 5, gamma_0 <= gamma_base + 5 (5.05 por defecto): la condición
-        // anterior (Var > 0.80 y gamma_0 > 5) exigía Var > 0.99, toda la masa en ±1, y nunca se alcanzaba.
+        // 7. Detección de Colapso Ergódico (pérdida de memoria en un paso del operador, con
+        // dispersión crítica). Con Var(x) <= 1 en [-1, 1] y D <= 5, gamma_0 <= gamma_base + 5 (5.05
+        // por defecto): la condición anterior (Var > 0.80 y gamma_0 > 5) exigía Var > 0.99, toda la
+        // masa en ±1, y nunca se alcanzaba. Con el gamma_base por defecto, gamma_0 > 1 ya implica
+        // Var > 0.19; la cota de dispersión importa si se configura un gamma_base >= 1, que haría
+        // gamma_0 > 1 con cualquier densidad.
         let ergodic_chaotic_collapse = spectral_gap < self.params.min_spectral_gap
-            || leading_decay_rate_gamma > RUELLE_SHORT_HORIZON_DECAY_RATE;
+            || (var_x > RUELLE_DISPERSION_CRITICA
+                && leading_decay_rate_gamma > RUELLE_SHORT_HORIZON_DECAY_RATE);
 
         // 8. Modulador de Convicción $\lambda_{\text{ruelle}} \in [0.05, 1.30]$
         let signal_conviction_modulator = if ergodic_chaotic_collapse {

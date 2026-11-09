@@ -132,8 +132,8 @@ impl DeRhamHodgeCurrentsEngine {
             0.01
         };
 
-        // 1. Ingreso del observable a la cadena simplicial circular
-        let input_potential = safe_ret + 0.1 * safe_ofi;
+        // 1. Ingreso del observable a la cadena simplicial circular (escalamiento dimensional coherente)
+        let input_potential = safe_ret * 500.0 + safe_ofi;
         let input_current = safe_ofi / (safe_spread * 0.1 + safe_vol);
 
         self.simplicial_potentials[self.cursor] = input_potential;
@@ -148,8 +148,7 @@ impl DeRhamHodgeCurrentsEngine {
             return DeRhamHodgeReport::default();
         }
 
-        // 2. Operador Exterior Discreto d y Codiferencial delta
-        // Componente Exacta (Gradiente d \alpha): Diferencias hacia adelante de potencial
+        // 2. Operador Exterior Discreto d y Codiferencial delta sobre el Complejo de Cartan
         let mut energy_exact = 0.0;
         let mut energy_coexact = 0.0;
         let mut energy_harmonic = 0.0;
@@ -164,36 +163,53 @@ impl DeRhamHodgeCurrentsEngine {
         // Energía propia (no centrada) de la corriente: escala de referencia de la parte coexacta.
         let mut current_energy = 0.0;
 
-        for i in 0..n {
-            let next_idx = (i + 1) % n;
-            let prev_idx = (i + n - 1) % n;
+        let get_node = |k: usize| -> usize {
+            if self.count < DERHAM_SIMPLICIAL_NODES {
+                k
+            } else {
+                (self.cursor + k) % DERHAM_SIMPLICIAL_NODES
+            }
+        };
 
-            // Gradiente d\alpha_i = \alpha_{i+1} - \alpha_i
-            let grad = self.simplicial_potentials[next_idx] - self.simplicial_potentials[i];
-            energy_exact += grad * grad;
+        for k in 0..n {
+            let idx_k = get_node(k);
 
-            // Rotacional / Vorticidad coexacta \delta\beta_i = j_{i+1} - 2*j_i + j_{i-1}
-            let curl = self.simplicial_currents[next_idx] - 2.0 * self.simplicial_currents[i]
-                + self.simplicial_currents[prev_idx];
+            // Gradiente d\alpha_k: forward difference a lo largo de la cadena temporal
+            if k + 1 < n {
+                let idx_next = get_node(k + 1);
+                let grad = self.simplicial_potentials[idx_next] - self.simplicial_potentials[idx_k];
+                energy_exact += grad * grad;
+            }
+
+            // Vorticidad / Curvatura coexacta \delta\beta_k: segunda diferencia finita interior
+            let curl = if k > 0 && k + 1 < n {
+                let idx_next = get_node(k + 1);
+                let idx_prev = get_node(k - 1);
+                self.simplicial_currents[idx_next] - 2.0 * self.simplicial_currents[idx_k]
+                    + self.simplicial_currents[idx_prev]
+            } else {
+                0.0
+            };
             energy_coexact += curl * curl;
 
             // Componente armónica: desviación respecto a la media global
-            let harm = self.simplicial_potentials[i] - harmonic_mean;
+            let harm = self.simplicial_potentials[idx_k] - harmonic_mean;
             energy_harmonic += harm * harm;
 
-            current_energy += self.simplicial_currents[i] * self.simplicial_currents[i];
+            current_energy += self.simplicial_currents[idx_k] * self.simplicial_currents[idx_k];
         }
 
-        // 3. Adimensionalización. El potencial (retorno + 0.1·OFI) y la corriente
-        // (OFI / (0.1·spread + σ)) tienen unidades distintas: la corriente es 10²–10³ veces mayor en
-        // amplitud, así que sumar sus energías crudas le daba a la parte coexacta ≈100 % de la energía
-        // con cualquier OFI no constante. Cada parte se mide como cociente de Rayleigh respecto a la
-        // energía de su propio campo: la exacta respecto a ‖α − ᾱ‖² (queda en [0, 4] en el ciclo) y la
+        // 3. Adimensionalización. El potencial (500·retorno + OFI) y la corriente
+        // (OFI / (0.1·spread + σ)) tienen unidades distintas, así que sumar sus energías crudas hace
+        // depender la partición de la escala que se elija para cada campo (con el potencial anterior,
+        // retorno + 0.1·OFI, la corriente era 10²–10³ veces mayor y la parte coexacta se llevaba
+        // ≈100 % de la energía). Cada parte se mide como cociente de Rayleigh respecto a la energía de
+        // su propio campo: la exacta respecto a ‖α − ᾱ‖² (queda en [0, 4] en la cadena) y la
         // coexacta respecto a ‖j‖² sin centrar (queda en [0, 16]), de modo que una corriente
         // estacionaria no cuenta como vorticidad y el vórtice alternado sí. La armónica pasa a ser la
         // unidad (vale 1 si α no es constante). Las tres fracciones son una partición adimensional que
         // suma 1, no una descomposición ortogonal: la identidad de Hodge del encabezado no se cumple
-        // con dos campos distintos, ni antes ni ahora.
+        // con dos campos distintos.
         let potential_scale = energy_harmonic.max(self.params.epsilon);
         let current_scale = current_energy.max(self.params.epsilon);
         let energy_exact = energy_exact / potential_scale;
@@ -219,7 +235,7 @@ impl DeRhamHodgeCurrentsEngine {
         let damping = (1.0 - ratio_coexact).max(0.05);
         let synthesized = (raw_signal * damping * 10.0).clamp(-1.0, 1.0);
 
-        let turbulent = ratio_coexact >= self.params.coexact_turbulent_threshold;
+        let turbulent = self.count >= 4 && ratio_coexact >= self.params.coexact_turbulent_threshold;
 
         DeRhamHodgeReport {
             exact_energy_ratio: ratio_exact,

@@ -468,6 +468,34 @@ fn test_c1_holistic_living_graph_end_to_end_synthesis() {
     );
     assert!(!report.holographic_lloyd_report.lloyd_bound_exhaustion_veto);
     assert!(report.holographic_lloyd_report.slot_scale_factor >= 0.10);
+
+    // 53. Cuantización Geométrica de Kostant-Souriau (Fase 88)
+    assert!(
+        report
+            .kostant_souriau_report
+            .prequantum_observable_val
+            .is_finite()
+    );
+    assert!(
+        report
+            .kostant_souriau_report
+            .symplectic_curvature_norm
+            .is_finite()
+    );
+    assert!(!report.kostant_souriau_report.prequantum_collapse_veto);
+    assert!(report.kostant_souriau_report.slot_scale_factor >= 0.10);
+
+    // 54. Cicatrices Cuánticas Many-Body (QMBS) (Fase 89)
+    assert!(report.qmbs_report.revival_fidelity >= 0.0);
+    assert!(report.qmbs_report.spectral_form_factor.is_finite());
+    assert!(!report.qmbs_report.ergodic_collapse_veto);
+    assert!(report.qmbs_report.slot_scale_factor >= 0.15);
+
+    // 55. Superficies Cuánticas Extremales (QES) (Fase 90)
+    assert!(report.qes_report.generalized_entropy_min > 0.0);
+    assert!(report.qes_report.qes_radius.is_finite());
+    assert!(!report.qes_report.extremal_surface_collapse_veto);
+    assert!(report.qes_report.slot_scale_factor >= 0.10);
 }
 
 #[test]

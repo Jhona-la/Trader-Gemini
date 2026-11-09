@@ -133,14 +133,14 @@ fn test_c2_wave17_polyakov_schwarzschild_event_horizon_terminal_veto() {
             },
         );
 
-    // Shock de mercado con fricción alta (spread ≈ 12 bps, desbalance de libro 1000:1). El spread
-    // queda bajo los vetos de spread fijo de W19 (Liouville > 15 bps, Ryu-Takayanagi > 25 bps),
-    // que van antes en la cadena de etiquetas y taparían la de Schwarzschild. Con g_eff = 5 el
-    // horizonte se cruza igual.
+    // Shock de mercado con fricción controlada (spread ≈ 10 bps, desbalance de libro 1000:1) y
+    // constante gravitacional crítica para inducir colapso. El spread queda bajo los vetos de spread
+    // fijo de W19 (Liouville > 15 bps, Ryu-Takayanagi > 25 bps), que van antes en la cadena de
+    // etiquetas y taparían la de Schwarzschild.
     let rep_shock = orchestrator.evaluate_and_synthesize(
         0,
         100.0,
-        100.12,
+        100.10,
         1000.0,
         1.0,
         1_000_000,

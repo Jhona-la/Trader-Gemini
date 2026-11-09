@@ -34,6 +34,7 @@ pub mod orchestrator;
 pub mod perceptron_gate;
 pub mod proyeccion_espectral;
 pub mod quantum_behavioral_field;
+pub mod quantum_many_body_scars;
 pub mod quantum_oscillator;
 pub mod quantum_slot_orchestrator;
 pub mod renyi_tsallis_entropy;
@@ -109,6 +110,10 @@ pub use proyeccion_espectral::{ProyeccionEspectralEngine, ProyeccionEspectralPar
 pub use quantum_behavioral_field::{
     BehavioralMarketInput, BehavioralStateReport, QuantumBehavioralFieldEngine,
     QuantumBehavioralParams,
+};
+pub use quantum_many_body_scars::{
+    QuantumManyBodyScarsConfig, QuantumManyBodyScarsEngine, QuantumManyBodyScarsReport,
+    SCARS_HILBERT_DIM,
 };
 pub use quantum_oscillator::{QuantumOscillatorEngine, QuantumOscillatorParams};
 pub use quantum_slot_orchestrator::{
