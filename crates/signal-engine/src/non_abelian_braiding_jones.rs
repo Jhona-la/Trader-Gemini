@@ -155,15 +155,20 @@ impl Matrix2x2 {
 
     #[inline(always)]
     fn mul(self, other: Self) -> Self {
-        let row00 = self.m[0][0].mul(other.m[0][0]).add(self.m[0][1].mul(other.m[1][0]));
-        let row01 = self.m[0][0].mul(other.m[0][1]).add(self.m[0][1].mul(other.m[1][1]));
-        let row10 = self.m[1][0].mul(other.m[0][0]).add(self.m[1][1].mul(other.m[1][0]));
-        let row11 = self.m[1][0].mul(other.m[0][1]).add(self.m[1][1].mul(other.m[1][1]));
+        let row00 = self.m[0][0]
+            .mul(other.m[0][0])
+            .add(self.m[0][1].mul(other.m[1][0]));
+        let row01 = self.m[0][0]
+            .mul(other.m[0][1])
+            .add(self.m[0][1].mul(other.m[1][1]));
+        let row10 = self.m[1][0]
+            .mul(other.m[0][0])
+            .add(self.m[1][1].mul(other.m[1][0]));
+        let row11 = self.m[1][0]
+            .mul(other.m[0][1])
+            .add(self.m[1][1].mul(other.m[1][1]));
         Self {
-            m: [
-                [row00, row01],
-                [row10, row11],
-            ],
+            m: [[row00, row01], [row10, row11]],
         }
     }
 

@@ -9,8 +9,8 @@ pub mod drawdown;
 pub mod envio;
 pub mod evidence;
 pub mod freno_estrategia;
-pub mod guard;
 pub mod gromov_symplectic_barrier;
+pub mod guard;
 pub mod hodge;
 pub mod kelly;
 pub mod kelly_envelope;
@@ -45,20 +45,13 @@ pub use chern_simons_berry_phase::{
     ChernSimonsBerryParams, ChernSimonsBerryPhaseEngine, ChernSimonsBerryReport, ParameterState3D,
     BERRY_PATH_LEN,
 };
-pub use evidence::{
-    profit_factor_lcb, resolve_bayes_prior, win_rate_hierarchical_lcb, win_rate_lcb,
-    DEFAULT_BAYES_PRIOR_MASS, DEFAULT_BAYES_PRIOR_WIN_RATE,
-};
 pub use dirac_monopole_chern_bundle::{
     DiracMonopoleChernBundleEngine, DiracMonopoleParams, DiracMonopoleReport,
     DIRAC_CRITICAL_CURVATURE_FLUX,
 };
-pub use polyakov_schwarzschild_horizon::{
-    PolyakovSchwarzschildHorizonEngine, PolyakovSchwarzschildParams, PolyakovSchwarzschildReport,
-    CENTRAL_CHARGE_C, C_LIQUIDITY, NEWTON_G_EFF,
-};
-pub use page_curve_island_risk::{
-    MAX_PORTFOLIO_ASSETS, PageCurveIslandConfig, PageCurveIslandReport, PageCurveIslandRiskEngine,
+pub use evidence::{
+    profit_factor_lcb, resolve_bayes_prior, win_rate_hierarchical_lcb, win_rate_lcb,
+    DEFAULT_BAYES_PRIOR_MASS, DEFAULT_BAYES_PRIOR_WIN_RATE,
 };
 pub use gromov_symplectic_barrier::{
     GromovSymplecticBarrierEngine, GromovSymplecticParams, GromovSymplecticReport, Quaternion,
@@ -67,6 +60,13 @@ pub use kelly_envelope::{EdgePosterior, RiskEnvelope, SURVIVAL_FLOOR, TRADE_HORI
 pub use lindblad_master_decoherence::{
     LindbladDecoherenceReport, LindbladMasterDecoherenceEngine, LindbladMasterParams,
     LINDBLAD_TRIAD_DIM,
+};
+pub use page_curve_island_risk::{
+    PageCurveIslandConfig, PageCurveIslandReport, PageCurveIslandRiskEngine, MAX_PORTFOLIO_ASSETS,
+};
+pub use polyakov_schwarzschild_horizon::{
+    PolyakovSchwarzschildHorizonEngine, PolyakovSchwarzschildParams, PolyakovSchwarzschildReport,
+    CENTRAL_CHARGE_C, C_LIQUIDITY, NEWTON_G_EFF,
 };
 pub use quantum_no_arbitrage_conformal::{
     QuantumNoArbitrageConformalEngine, QuantumNoArbitrageConformalParams,
@@ -92,16 +92,15 @@ pub use tensor_network_mps_dmrg::{
     MpsDmrgParams, MpsDmrgReport, TensorNetworkMpsDmrgEngine, MPS_ASSET_CHANNELS, MPS_BOND_DIM,
 };
 pub use toric_code_stabilizer::{
-    ToricCodeConfig, ToricCodeEngine, ToricCodeReport, TORIC_EDGES, TORIC_GRID_SIZE,
-    TORIC_VERTICES,
-};
-pub use umegaki_relative_entropy::{
-    UmegakiEntropyParams, UmegakiEntropyReport, UmegakiRelativeEntropyEngine,
-    UMEGAKI_CRITICAL_ENTROPY_THRESHOLD, UMEGAKI_HILBERT_DIM,
+    ToricCodeConfig, ToricCodeEngine, ToricCodeReport, TORIC_EDGES, TORIC_GRID_SIZE, TORIC_VERTICES,
 };
 pub use tp_sl::{
     compute_tp_sl, compute_tp_sl_with_target_rr, latency_slippage_pct, latency_slippage_pct_hurst,
     roundtrip_friction, roundtrip_friction_hurst, try_compute_tp_sl, TpSl, TpSlInputs,
+};
+pub use umegaki_relative_entropy::{
+    UmegakiEntropyParams, UmegakiEntropyReport, UmegakiRelativeEntropyEngine,
+    UMEGAKI_CRITICAL_ENTROPY_THRESHOLD, UMEGAKI_HILBERT_DIM,
 };
 pub use ville_e_process::VilleEProcess;
 pub use ville_grossman_ignition_gate::{
