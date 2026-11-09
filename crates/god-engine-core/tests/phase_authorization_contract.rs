@@ -210,3 +210,68 @@ fn qra_boot_01_oms_reconciliation_required_for_demo_testnet_mode_when_configured
     assert_eq!(phase.current_phase, SystemPhase::GenomicAudit);
     assert!(!phase.is_trading_allowed());
 }
+
+/// GLM-219 (bloqueante #3 del A1): breaker Producción→Demo. Si el
+/// desempeño REAL de la cuenta de Producción (income del exchange) con
+/// cierres suficientes muestra EV neto ≤ 0, el sistema retrocede a
+/// DemoVerify, bloquea la operativa y LIMPIA el certificado — la puerta #2
+/// exigirá re-certificación completa. Con los números reales de la corrida
+/// A3 (EV −0.0048), una cuenta así en Prod habría sido frenada.
+#[test]
+fn glm219_breaker_prod_a_demo_con_ev_real_negativo() {
+    use god_engine_core::orchestrator::EvidenciaDemo;
+
+    let approval = Arc::new(AtomicBool::new(true));
+    let mut p = PhaseOrchestrator::new(1, false, approval.clone());
+    p.set_evidencia_demo(Some(EvidenciaDemo {
+        cierres: 30,
+        ev_neto_por_trade: 0.001,
+        wins: 20,
+    }));
+    for _ in 0..4 {
+        p.on_tick();
+    }
+    assert_eq!(p.current_phase, SystemPhase::ProductionMainnet);
+    assert!(p.is_trading_allowed());
+
+    // Con pocos cierres el breaker aún no dispara (evita locura inicial).
+    assert!(!p.registrar_desempeno_prod(3, -0.004_825));
+    assert_eq!(p.current_phase, SystemPhase::ProductionMainnet);
+
+    // Con EV positivo se mantiene en Producción.
+    assert!(!p.registrar_desempeno_prod(50, 0.000_9));
+    assert_eq!(p.current_phase, SystemPhase::ProductionMainnet);
+
+    // EV ≤ 0 con cierres suficientes (el caso real del día 2): DISPARA.
+    // Retrocede a DemoVerify, bloquea operativa y limpia el certificado.
+    assert!(p.registrar_desempeno_prod(10, -0.004_825));
+    assert_eq!(p.current_phase, SystemPhase::DemoVerify);
+    assert!(!p.is_trading_allowed());
+    assert!(p.evidencia_demo.is_none());
+
+    // Sin re-certificación no vuelve a Producción (ningún tick basta).
+    for _ in 0..1_000 {
+        p.on_tick();
+    }
+    assert_eq!(p.current_phase, SystemPhase::DemoVerify);
+    assert!(!p.is_trading_allowed());
+
+    // Re-certificado nuevo y válido: la puerta vuelve a abrir.
+    p.set_evidencia_demo(Some(EvidenciaDemo {
+        cierres: 30,
+        ev_neto_por_trade: 0.001_1,
+        wins: 19,
+    }));
+    p.on_tick();
+    assert_eq!(p.current_phase, SystemPhase::ProductionMainnet);
+    assert!(p.is_trading_allowed());
+
+    // Fuera de Producción el breaker no hace nada (en demo nunca aplica).
+    let mut d = PhaseOrchestrator::new(1, true, approval.clone());
+    for _ in 0..4 {
+        d.on_tick();
+    }
+    assert_eq!(d.current_phase, SystemPhase::PaperTrading);
+    assert!(!d.registrar_desempeno_prod(10, -0.01));
+    assert_eq!(d.current_phase, SystemPhase::PaperTrading);
+}

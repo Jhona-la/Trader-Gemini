@@ -1,4 +1,6 @@
 pub mod adaptive_quantum_veto;
+pub mod asymptotic_safety_reuter;
+pub mod bekenstein_mukhanov_quantization;
 pub mod capital_regime;
 pub mod chern_simons_berry_phase;
 pub mod copulas_store;
@@ -8,25 +10,32 @@ pub mod dirac_monopole_chern_bundle;
 pub mod drawdown;
 pub mod envio;
 pub mod evidence;
+pub mod fisher_rao_amari_manifold;
 pub mod freno_estrategia;
-pub mod guard;
 pub mod gromov_symplectic_barrier;
+pub mod guard;
 pub mod hodge;
+pub mod holographic_lloyd_complexity;
 pub mod kelly;
 pub mod kelly_envelope;
 pub mod leverage_matrix;
 pub mod lindblad_master_decoherence;
 pub mod orchestrator;
+pub mod page_curve_island_risk;
 pub mod polyakov_schwarzschild_horizon;
+pub mod quantum_extremal_surface;
 pub mod quantum_no_arbitrage_conformal;
+pub mod quaternionic_hyperkahler_manifold;
 pub mod random_matrix;
 pub mod reeb_contact_vortex;
 pub mod regime;
 pub mod riemann_zeta_gue;
 pub mod ruin;
+pub mod ryu_takayanagi_entanglement;
 pub mod selection_stats;
 pub mod sonda;
 pub mod tensor_network_mps_dmrg;
+pub mod toric_code_stabilizer;
 pub mod tp_sl;
 pub mod umegaki_relative_entropy;
 pub mod veto_registry;
@@ -37,34 +46,57 @@ pub use adaptive_quantum_veto::{
     AdaptiveQuantumVetoGovernor, AdaptiveQuantumVetoParams, AdaptiveVetoDecision,
     MarketQuantumStateInput,
 };
+pub use asymptotic_safety_reuter::{
+    AsymptoticSafetyConfig, AsymptoticSafetyReport, AsymptoticSafetyReuterEngine,
+    REUTER_NGFP_G_STAR, REUTER_NGFP_LAMBDA_STAR,
+};
+pub use bekenstein_mukhanov_quantization::{
+    BekensteinMukhanovConfig, BekensteinMukhanovQuantizationEngine, BekensteinMukhanovReport,
+    BEKENSTEIN_ALPHA_QUANTUM,
+};
 pub use capital_regime::{resolve_micro_max_fee_pct, DEFAULT_MICRO_MAX_FEE_PCT};
 pub use chern_simons_berry_phase::{
     ChernSimonsBerryParams, ChernSimonsBerryPhaseEngine, ChernSimonsBerryReport, ParameterState3D,
     BERRY_PATH_LEN,
 };
-pub use evidence::{
-    profit_factor_lcb, resolve_bayes_prior, win_rate_hierarchical_lcb, win_rate_lcb,
-    DEFAULT_BAYES_PRIOR_MASS, DEFAULT_BAYES_PRIOR_WIN_RATE,
-};
 pub use dirac_monopole_chern_bundle::{
     DiracMonopoleChernBundleEngine, DiracMonopoleParams, DiracMonopoleReport,
     DIRAC_CRITICAL_CURVATURE_FLUX,
 };
-pub use polyakov_schwarzschild_horizon::{
-    PolyakovSchwarzschildHorizonEngine, PolyakovSchwarzschildParams, PolyakovSchwarzschildReport,
-    CENTRAL_CHARGE_C, C_LIQUIDITY, NEWTON_G_EFF,
+pub use evidence::{
+    profit_factor_lcb, resolve_bayes_prior, win_rate_hierarchical_lcb, win_rate_lcb,
+    DEFAULT_BAYES_PRIOR_MASS, DEFAULT_BAYES_PRIOR_WIN_RATE,
+};
+pub use fisher_rao_amari_manifold::{
+    FisherRaoAmariConfig, FisherRaoAmariManifoldEngine, FisherRaoAmariReport,
 };
 pub use gromov_symplectic_barrier::{
     GromovSymplecticBarrierEngine, GromovSymplecticParams, GromovSymplecticReport, Quaternion,
+};
+pub use holographic_lloyd_complexity::{
+    HolographicLloydComplexityEngine, HolographicLloydConfig, HolographicLloydReport,
 };
 pub use kelly_envelope::{EdgePosterior, RiskEnvelope, SURVIVAL_FLOOR, TRADE_HORIZON};
 pub use lindblad_master_decoherence::{
     LindbladDecoherenceReport, LindbladMasterDecoherenceEngine, LindbladMasterParams,
     LINDBLAD_TRIAD_DIM,
 };
+pub use page_curve_island_risk::{
+    PageCurveIslandConfig, PageCurveIslandReport, PageCurveIslandRiskEngine, MAX_PORTFOLIO_ASSETS,
+};
+pub use polyakov_schwarzschild_horizon::{
+    PolyakovSchwarzschildHorizonEngine, PolyakovSchwarzschildParams, PolyakovSchwarzschildReport,
+    CENTRAL_CHARGE_C, C_LIQUIDITY, NEWTON_G_EFF,
+};
+pub use quantum_extremal_surface::{
+    QuantumExtremalSurfaceConfig, QuantumExtremalSurfaceEngine, QuantumExtremalSurfaceReport,
+};
 pub use quantum_no_arbitrage_conformal::{
     QuantumNoArbitrageConformalEngine, QuantumNoArbitrageConformalParams,
     QuantumNoArbitrageConformalReport, CONFORMAL_CALIBRATION_WINDOW,
+};
+pub use quaternionic_hyperkahler_manifold::{
+    QuaternionicHyperkahlerConfig, QuaternionicHyperkahlerEngine, QuaternionicHyperkahlerReport,
 };
 pub use reeb_contact_vortex::{
     ReebContactParams, ReebContactReport, ReebContactVortexEngine, CRITICAL_CONTACT_TORSION,
@@ -75,6 +107,9 @@ pub use riemann_zeta_gue::{
     RiemannZetaGueEngine, RiemannZetaGueState, GUE_RIEMANN_GAP_RATIO_MEAN, MAX_RIEMANN_GUE_LEVELS,
     POISSON_GAP_RATIO_MEAN,
 };
+pub use ryu_takayanagi_entanglement::{
+    RyuTakayanagiEntanglementEngine, RyuTakayanagiParams, RyuTakayanagiReport,
+};
 pub use sonda::{
     admite_sonda, admite_sonda_con_fase, en_fase_de_sonda, resolve_max_cierres_sonda,
     sprt_bernoulli, SprtDecision, CIERRES_DE_SONDA,
@@ -82,13 +117,16 @@ pub use sonda::{
 pub use tensor_network_mps_dmrg::{
     MpsDmrgParams, MpsDmrgReport, TensorNetworkMpsDmrgEngine, MPS_ASSET_CHANNELS, MPS_BOND_DIM,
 };
-pub use umegaki_relative_entropy::{
-    UmegakiEntropyParams, UmegakiEntropyReport, UmegakiRelativeEntropyEngine,
-    UMEGAKI_CRITICAL_ENTROPY_THRESHOLD, UMEGAKI_HILBERT_DIM,
+pub use toric_code_stabilizer::{
+    ToricCodeConfig, ToricCodeEngine, ToricCodeReport, TORIC_EDGES, TORIC_GRID_SIZE, TORIC_VERTICES,
 };
 pub use tp_sl::{
     compute_tp_sl, compute_tp_sl_with_target_rr, latency_slippage_pct, latency_slippage_pct_hurst,
     roundtrip_friction, roundtrip_friction_hurst, try_compute_tp_sl, TpSl, TpSlInputs,
+};
+pub use umegaki_relative_entropy::{
+    UmegakiEntropyParams, UmegakiEntropyReport, UmegakiRelativeEntropyEngine,
+    UMEGAKI_CRITICAL_ENTROPY_THRESHOLD, UMEGAKI_HILBERT_DIM,
 };
 pub use ville_e_process::VilleEProcess;
 pub use ville_grossman_ignition_gate::{
@@ -2144,7 +2182,11 @@ impl RiskEngine {
             {
                 println!(
                     "🔍 [REJ6] margin={:.4} lev={:.4} min_notional={:.4} allocated={:.4} kelly={:.4}",
-                    final_margin, dynamic_leverage, safe_min_notional, allocated_capital, kelly_fraction
+                    final_margin,
+                    dynamic_leverage,
+                    safe_min_notional,
+                    allocated_capital,
+                    kelly_fraction
                 );
             }
             return rej(REJ_MIN_NOTIONAL);

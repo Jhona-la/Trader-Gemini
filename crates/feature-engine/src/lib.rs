@@ -1,9 +1,12 @@
+pub mod amplituhedron_order_flow;
 pub mod ashtekar_lqg_area;
 pub mod bergman_fock_reproducing;
 pub mod bouchaud_mezard_ewl;
 pub mod calabi_yau_seiberg_witten;
 pub mod caputo_fraccional;
+pub mod chern_simons_witten_knot;
 pub mod connes_clifford_kan;
+pub mod connes_kreimer_hopf_algebra;
 pub mod copulas;
 pub mod correlation;
 pub mod cover_orabona_wfr_ville;
@@ -21,13 +24,19 @@ pub mod hawkes_cross;
 pub mod hodge_flow;
 pub mod hurst_dfa;
 pub mod hyperbolic_poincare_hodge;
+pub mod jt_schwarzian_gravity;
 pub mod kalman;
 pub mod kam_eth_tur_stein;
 pub mod koopman_dmd;
+pub mod kostant_souriau_prequantum;
 pub mod landauer_bec_hopfield;
+pub mod lattice_qcd_wilson_polyakov;
 pub mod lead_lag;
+pub mod liouville_quantum_gravity;
 pub mod lppls_sornette;
+pub mod matrix_model_kp_hierarchy;
 pub mod matriz_rmt;
+pub mod metrica_fisher_empirica; // GLM-221 (C1): Fisher empirica q-gaussiana con beta_q
 pub mod microstructure;
 pub mod monge_kantorovich_wasserstein;
 pub mod mps;
@@ -50,6 +59,7 @@ pub mod soa_shadow_otoc;
 pub mod spectral;
 pub mod spot_futures_abl_iceberg;
 pub mod stoikov_microprice;
+pub mod symplectic_floer_cohomology;
 pub mod tensor_ring;
 pub mod tqft_anyons;
 pub mod transfer_entropy;
@@ -62,6 +72,9 @@ pub mod welford;
 pub mod zakai_doob_amplituhedron;
 
 // Re-exportar primitivas matemáticas O(1)
+pub use amplituhedron_order_flow::{
+    AmplituhedronOrderFlowConfig, AmplituhedronOrderFlowEngine, AmplituhedronOrderFlowReport,
+};
 pub use ashtekar_lqg_area::{
     AshtekarLqgAreaEngine, AshtekarLqgParams, AshtekarLqgReport, ASHTEKAR_SPIN_CHANNELS,
     BARBERO_IMMIRZI_GAMMA, PLANCK_AREA_SCALE,
@@ -77,10 +90,17 @@ pub use calabi_yau_seiberg_witten::{
     CalabiYauParams, CalabiYauSeibergWittenEngine, CalabiYauSeibergWittenReport, ComplexCoord,
     CY_COMPLEX_DIM, CY_HISTORY_LEN,
 };
+pub use chern_simons_witten_knot::{
+    ChernSimonsWittenConfig, ChernSimonsWittenKnotEngine, ChernSimonsWittenReport, Crossing,
+    KNOT_BRAID_STRANDS, KNOT_CROSSING_HISTORY,
+};
 pub use connes_clifford_kan::{
     CliffordMultivector3D, ConnesCliffordKanEngine, ConnesCliffordKanReport, ConnesSpectralReport,
     ConnesSpectralTripleEngine, CubicBSplineKanEdge, HudsonParthasarathyEvolutor,
     HudsonParthasarathyState, NonCommutativeRegime, CONNES_HILBERT_DIM, KAN_SPLINE_BASIS_COUNT,
+};
+pub use connes_kreimer_hopf_algebra::{
+    ConnesKreimerConfig, ConnesKreimerHopfEngine, ConnesKreimerReport,
 };
 pub use correlation::MarketCorrelationHeatmap;
 pub use cover_orabona_wfr_ville::{
@@ -119,6 +139,7 @@ pub use hyperbolic_poincare_hodge::{
     HyperbolicPoincareHodgeEngine, HyperbolicPoincareHodgeParams, HyperbolicPoincareHodgeReport,
     PoincarePoint, POINCARE_HISTORY_LEN,
 };
+pub use jt_schwarzian_gravity::{JtSchwarzianConfig, JtSchwarzianEngine, JtSchwarzianReport};
 pub use kalman::KalmanFilter1D;
 pub use kam_eth_tur_stein::{
     BaratoSeifertTurEngine, EthMblOrderbookEngine, EthMblRegime, EthMblReport,
@@ -127,6 +148,9 @@ pub use kam_eth_tur_stein::{
     KamEthTurSteinReport, LatticeBoltzmannD1Q3Engine, LatticeBoltzmannReport, TurReport,
     ETH_MAX_LEVELS, JS_DIM, LATTICE_D1Q3_NODES,
 };
+pub use kostant_souriau_prequantum::{
+    KostantSouriauConfig, KostantSouriauPrequantumEngine, KostantSouriauReport,
+};
 pub use landauer_bec_hopfield::{
     BecOrderbookReport, BecPhaseRegime, BoseEinsteinOrderbookEngine, KbnCompensatedAccumulator,
     LandauerBecHopfieldMasterEngine, LandauerBecHopfieldReport, LandauerDissipationRegime,
@@ -134,7 +158,18 @@ pub use landauer_bec_hopfield::{
     ModernHopfieldReport, BEC_ENERGY_LEVELS, BOLTZMANN_K_MKT, HOPFIELD_FEATURE_DIM,
     HOPFIELD_PROTOTYPE_COUNT, LN_2,
 };
+pub use lattice_qcd_wilson_polyakov::{
+    LatticeQcdConfig, LatticeQcdReport, LatticeQcdWilsonPolyakovEngine, Su2Matrix,
+    LATTICE_DIM_SPATIAL, LATTICE_DIM_TEMPORAL, LATTICE_PLAQUETTE_COUNT,
+};
 pub use lead_lag::LeadLagAlphaEngine;
+pub use liouville_quantum_gravity::{
+    LiouvilleCft2dQuantumGravityEngine, LiouvilleCftParams, LiouvilleQuantumGravityReport,
+};
+pub use matrix_model_kp_hierarchy::{
+    MatrixModelKpConfig, MatrixModelKpHierarchyEngine, MatrixModelKpReport, KP_MATRIX_DIM,
+    KP_MOMENTS_COUNT,
+};
 pub use microstructure::{
     obi_acceleration, order_book_imbalance, AdaptiveResonanceClustering,
     InstitutionalVolumeTracker, OFIModel, OrderFlowTracker, SpoofingDetector,
@@ -193,6 +228,9 @@ pub use spot_futures_abl_iceberg::{
 pub use stoikov_microprice::{
     StoikovMicropriceEngine, StoikovMicropriceParams, StoikovMicropriceReport, IMBALANCE_STATES,
     RTT_WINDOW_SIZE,
+};
+pub use symplectic_floer_cohomology::{
+    SymplecticFloerCohomologyEngine, SymplecticFloerConfig, SymplecticFloerReport,
 };
 pub use tensor_ring::TensorRing;
 pub use tqft_anyons::{

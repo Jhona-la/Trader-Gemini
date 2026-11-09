@@ -2,9 +2,12 @@ pub use strategy_core::maker;
 pub use strategy_core::stat_arb;
 
 // Re-export specific structs that other crates expect from signal_engine
+pub mod ads_cft_holographic;
+pub mod berry_phase_holonomy;
 pub mod coaxial_breakout;
 pub mod continuous_volatility_operator;
 pub mod derham_hodge_currents;
+pub mod donaldson_thomas_quantum;
 // U-ERR-1: `micro_scalp_trigger`, `swing_conformal_filter` y `turbo_scalper`
 // nombraban BANDAS DE HORIZONTE («micro-scalp», «swing», «turbo») que ninguno
 // de los tres motores decide: los tres declaraban `TradeHorizon::Continuous`
@@ -23,13 +26,16 @@ pub mod jarzynski_crooks_thermodynamics;
 pub mod kdv_soliton_dispersion;
 pub mod mean_field_games_psychology;
 pub mod mfdfa_multifractal_hurst;
+pub mod mpdo_dissipative_dmrg;
 pub mod navier_stokes_kolmogorov;
 pub mod navier_stokes_manifold;
 pub mod nls_peregrine_soliton;
+pub mod non_abelian_braiding_jones;
 pub mod orchestrator;
 pub mod perceptron_gate;
 pub mod proyeccion_espectral;
 pub mod quantum_behavioral_field;
+pub mod quantum_many_body_scars;
 pub mod quantum_oscillator;
 pub mod quantum_slot_orchestrator;
 pub mod renyi_tsallis_entropy;
@@ -38,18 +44,26 @@ pub mod ruelle_frobenius_transfer;
 pub mod skill_motores;
 pub mod soliton_wave;
 pub mod srb_kolmogorov_entropy;
+pub mod starobinsky_inflationary_attractor;
 pub mod stochastic_resonance;
 pub mod supersonic_shockwave;
+pub mod supersymmetry_nicolai_map;
 pub mod trend_runner;
 pub mod voto_espectral;
+pub mod wheeler_dewitt_minisuperspace;
 pub mod wilson_exact_renormalization;
 
+pub use ads_cft_holographic::{AdSCftHolographicEngine, AdSCftHolographicReport, AdSCftParams};
+pub use berry_phase_holonomy::{BerryPhaseConfig, BerryPhaseEngine, BerryPhaseReport};
 pub use continuous_volatility_operator::{
     ContinuousVolatilityOperatorEngine, ContinuousVolatilityParams, ContinuousVolatilityState,
     VOL_SPECTRUM_SCALES,
 };
 pub use derham_hodge_currents::{
     DeRhamHodgeCurrentsEngine, DeRhamHodgeParams, DeRhamHodgeReport, DERHAM_SIMPLICIAL_NODES,
+};
+pub use donaldson_thomas_quantum::{
+    DonaldsonThomasConfig, DonaldsonThomasQuantumEngine, DonaldsonThomasReport,
 };
 pub use feynman_path_integral_routing::{
     Complex64, FeynmanPathIntegralRoutingEngine, FeynmanRoutingParams, FeynmanRoutingReport,
@@ -77,12 +91,20 @@ pub use mfdfa_multifractal_hurst::{
     MfDfaHurstReport, MfDfaMultifractalHurstEngine, MfDfaParams, MFDFA_ORDERS, MFDFA_SCALES,
     MFDFA_WINDOW_CAPACITY,
 };
+pub use mpdo_dissipative_dmrg::{
+    LocalDensityMatrix, MpdoDissipativeConfig, MpdoDissipativeDmrgEngine, MpdoDissipativeReport,
+    MPDO_CHANNELS,
+};
 pub use navier_stokes_kolmogorov::{
     NavierStokesKolmogorovEngine, NavierStokesParams, NavierStokesReport, NS_GRID_DIM,
 };
 pub use navier_stokes_manifold::{NavierStokesManifoldEngine, NavierStokesManifoldParams};
 pub use nls_peregrine_soliton::{
     NlsPeregrineParams, NlsPeregrineReport, NlsPeregrineSolitonEngine, NLS_GRID_POINTS,
+};
+pub use non_abelian_braiding_jones::{
+    NonAbelianBraidingConfig, NonAbelianBraidingJonesEngine, NonAbelianBraidingReport,
+    BRAID_HISTORY_LEN, BRAID_STRANDS,
 };
 pub use orchestrator::{
     compute_ensemble_boost, compute_ensemble_boost_effective,
@@ -94,6 +116,10 @@ pub use proyeccion_espectral::{ProyeccionEspectralEngine, ProyeccionEspectralPar
 pub use quantum_behavioral_field::{
     BehavioralMarketInput, BehavioralStateReport, QuantumBehavioralFieldEngine,
     QuantumBehavioralParams,
+};
+pub use quantum_many_body_scars::{
+    QuantumManyBodyScarsConfig, QuantumManyBodyScarsEngine, QuantumManyBodyScarsReport,
+    SCARS_HILBERT_DIM,
 };
 pub use quantum_oscillator::{QuantumOscillatorEngine, QuantumOscillatorParams};
 pub use quantum_slot_orchestrator::{
@@ -112,9 +138,18 @@ pub use soliton_wave::{SolitonWaveEngine, SolitonWaveParams};
 pub use srb_kolmogorov_entropy::{
     SrbEntropyParams, SrbEntropyReport, SrbKolmogorovEntropyEngine, CHAOS_EMBEDDING_DIM,
 };
+pub use starobinsky_inflationary_attractor::{
+    StarobinskyConfig, StarobinskyInflationaryEngine, StarobinskyReport,
+};
 pub use stochastic_resonance::{StochasticResonanceEngine, StochasticResonanceParams};
 pub use strategy_core::{SignalIntent, SignalType};
 pub use supersonic_shockwave::{SupersonicShockwaveEngine, SupersonicShockwaveParams};
+pub use supersymmetry_nicolai_map::{
+    SupersymmetryNicolaiConfig, SupersymmetryNicolaiEngine, SupersymmetryNicolaiReport,
+};
+pub use wheeler_dewitt_minisuperspace::{
+    WheelerDeWittConfig, WheelerDeWittMinisuperspaceEngine, WheelerDeWittReport,
+};
 pub use wilson_exact_renormalization::{
     RgScaleCoupling, WilsonExactRenormalizationEngine, WilsonExactRgParams, WilsonExactRgReport,
     RG_MOMENTUM_SCALES,
