@@ -3,6 +3,7 @@ pub mod bergman_fock_reproducing;
 pub mod bouchaud_mezard_ewl;
 pub mod calabi_yau_seiberg_witten;
 pub mod caputo_fraccional;
+pub mod chern_simons_witten_knot;
 pub mod connes_clifford_kan;
 pub mod copulas;
 pub mod correlation;
@@ -80,6 +81,10 @@ pub use bouchaud_mezard_ewl::{
 pub use calabi_yau_seiberg_witten::{
     CalabiYauParams, CalabiYauSeibergWittenEngine, CalabiYauSeibergWittenReport, ComplexCoord,
     CY_COMPLEX_DIM, CY_HISTORY_LEN,
+};
+pub use chern_simons_witten_knot::{
+    ChernSimonsWittenConfig, ChernSimonsWittenKnotEngine, ChernSimonsWittenReport, Crossing,
+    KNOT_BRAID_STRANDS, KNOT_CROSSING_HISTORY,
 };
 pub use connes_clifford_kan::{
     CliffordMultivector3D, ConnesCliffordKanEngine, ConnesCliffordKanReport, ConnesSpectralReport,
