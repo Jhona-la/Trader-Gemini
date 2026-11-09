@@ -1,10 +1,9 @@
 //! Contrato Formal de Síntesis Holística: Ola 22 (Fases 82, 83, 84) — Grafo Vivo Omnisciente
 //!
-//! Verifica la integración sinérgica de:
+//! Verifica la integración sinérgica en `OmniscientLivingGraphOrchestrator`:
 //! - Cromodinámica Cuántica en Red & Holonomía Wilson-Polyakov (Fase 82)
 //! - Cosmología Cuántica de Wheeler-DeWitt & Restricción Mini-Superespacio (Fase 83)
 //! - Cuantización de Área de Bekenstein-Mukhanov & Espectro Discreto (Fase 84)
-//! en `OmniscientLivingGraphOrchestrator`.
 
 use god_engine_core::omniscient_living_graph::OmniscientLivingGraphOrchestrator;
 use signal_engine::quantum_slot_orchestrator::{
