@@ -28,6 +28,7 @@ pub mod mfdfa_multifractal_hurst;
 pub mod navier_stokes_kolmogorov;
 pub mod navier_stokes_manifold;
 pub mod nls_peregrine_soliton;
+pub mod non_abelian_braiding_jones;
 pub mod orchestrator;
 pub mod perceptron_gate;
 pub mod proyeccion_espectral;
@@ -91,6 +92,10 @@ pub use navier_stokes_kolmogorov::{
 pub use navier_stokes_manifold::{NavierStokesManifoldEngine, NavierStokesManifoldParams};
 pub use nls_peregrine_soliton::{
     NlsPeregrineParams, NlsPeregrineReport, NlsPeregrineSolitonEngine, NLS_GRID_POINTS,
+};
+pub use non_abelian_braiding_jones::{
+    NonAbelianBraidingConfig, NonAbelianBraidingJonesEngine, NonAbelianBraidingReport,
+    BRAID_HISTORY_LEN, BRAID_STRANDS,
 };
 pub use orchestrator::{
     compute_ensemble_boost, compute_ensemble_boost_effective,
