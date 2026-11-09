@@ -119,79 +119,6 @@ fn test_c1_holistic_living_graph_end_to_end_synthesis() {
         "Escala de slot fuera de rango: {}",
         report.holistic_slot_scale
     );
-    println!(
-        "DEBUG test_c2 ville_ruin_bound_satisfied = {}",
-        report.ville_ruin_bound_satisfied
-    );
-    println!("DEBUG test_c2 capital = {}", capital_available_usd > 0.0);
-    println!(
-        "DEBUG test_c2 qna = {}",
-        !report.quantum_no_arbitrage_report.hard_veto_induced
-    );
-    println!(
-        "DEBUG test_c2 cs = {}",
-        !report.chern_simons_report.topological_veto_induced
-    );
-    println!(
-        "DEBUG test_c2 cy = {}",
-        !report.calabi_yau_report.conifold_singularity_detected
-    );
-    println!(
-        "DEBUG test_c2 jc = {}",
-        !report.jarzynski_crooks_report.irreversible_entropy_collapse
-    );
-    println!(
-        "DEBUG test_c2 gromov = {}",
-        !report.gromov_symplectic_report.gromov_symplectic_veto
-    );
-    println!(
-        "DEBUG test_c2 penrose = {}",
-        !report.penrose_spin_report.holographic_decoherence_detected
-    );
-    println!(
-        "DEBUG test_c2 ruelle = {}",
-        !report.ruelle_frobenius_report.ergodic_chaotic_collapse
-    );
-    println!(
-        "DEBUG test_c2 reeb = {}",
-        !report.reeb_contact_report.reeb_contact_veto_induced
-    );
-    println!(
-        "DEBUG test_c2 bergman = {}",
-        !report.bergman_fock_report.critical_saturation_detected
-    );
-    println!(
-        "DEBUG test_c2 umegaki = {}",
-        !report.umegaki_relative_entropy_report.hard_veto_induced
-    );
-    println!(
-        "DEBUG test_c2 peps = {}",
-        !report.peps_hypergraph_report.hyperbolic_dispersion_detected
-    );
-    println!(
-        "DEBUG test_c2 dirac = {}",
-        !report.dirac_monopole_report.monopole_veto_induced
-    );
-    println!(
-        "DEBUG test_c2 ashtekar = {}",
-        !report
-            .ashtekar_lqg_report
-            .ashtekar_area_singularity_detected
-    );
-    println!(
-        "DEBUG test_c2 polyakov = {}",
-        !report
-            .polyakov_schwarzschild_report
-            .event_horizon_veto_induced
-    );
-    println!(
-        "DEBUG test_c2 conformal = {}",
-        report.conformal_risk_score <= 0.85
-    );
-    println!(
-        "DEBUG test_c2 srb = {}",
-        report.srb_entropy_report.kolmogorov_sinai_entropy < 0.98
-    );
 
     assert!(report.ville_ruin_bound_satisfied);
 
@@ -366,6 +293,24 @@ fn test_c1_holistic_living_graph_end_to_end_synthesis() {
             .event_horizon_veto_induced
     );
     assert!(report.polyakov_schwarzschild_report.slot_scale_factor > 0.0);
+
+    // 35. Condensados de Bose-Einstein (BEC) y Vórtices Cuantizados de Gross-Pitaevskii (Fase 70)
+    assert!(report.bec_report.condensate_fraction >= 0.0 && report.bec_report.condensate_fraction <= 1.0);
+    assert!(report.bec_report.bogoliubov_sound_speed > 0.0);
+    assert!(report.bec_report.healing_length > 0.0);
+    assert!(!report.bec_report.quantum_vortex_shedding_detected);
+    assert!(report.bec_report.slot_scale_factor >= 0.15);
+
+    // 36. Exponentes de Hurst Multifractales y MF-DFA (Fase 71)
+    assert!(report.mfdfa_report.generalized_hurst_h2 >= 0.01);
+    assert!(report.mfdfa_report.multifractal_spectrum_width >= 0.0);
+    assert!(report.mfdfa_report.signal_conviction_modulator >= 0.50);
+
+    // 37. Ecuación de Master de Lindblad y Decoherencia Cuántica (Fase 72)
+    assert!(report.lindblad_report.purity >= 0.333 && report.lindblad_report.purity <= 1.0001);
+    assert!(report.lindblad_report.von_neumann_entropy >= 0.0);
+    assert!(!report.lindblad_report.hard_veto_induced);
+    assert!(report.lindblad_report.slot_scale_factor > 0.0);
 }
 
 #[test]
