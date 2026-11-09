@@ -28,7 +28,8 @@ use crate::topological_metamorphosis::{
 use feature_engine::{
     AshtekarLqgAreaEngine, AshtekarLqgParams, AshtekarLqgReport, BergmanFockParams,
     BergmanFockReport, BergmanFockReproducingEngine, CalabiYauParams, CalabiYauSeibergWittenEngine,
-    CalabiYauSeibergWittenReport, GeodesicPhaseSpaceParams, GeodesicPhaseSpaceReport,
+    CalabiYauSeibergWittenReport, ChernSimonsWittenConfig, ChernSimonsWittenKnotEngine,
+    ChernSimonsWittenReport, GeodesicPhaseSpaceParams, GeodesicPhaseSpaceReport,
     GrossPitaevskiiBecEngine, GrossPitaevskiiBecReport, GrossPitaevskiiParams,
     HyperbolicPoincareHodgeEngine, HyperbolicPoincareHodgeParams, HyperbolicPoincareHodgeReport,
     JtSchwarzianConfig, JtSchwarzianEngine, JtSchwarzianReport, KP_MATRIX_DIM, LatticeQcdConfig,
@@ -45,7 +46,8 @@ use risk_engine::{
     BekensteinMukhanovQuantizationEngine, BekensteinMukhanovReport, ChernSimonsBerryParams,
     ChernSimonsBerryPhaseEngine, ChernSimonsBerryReport, DiracMonopoleChernBundleEngine,
     DiracMonopoleParams, DiracMonopoleReport, GromovSymplecticBarrierEngine,
-    GromovSymplecticParams, GromovSymplecticReport, LindbladDecoherenceReport,
+    GromovSymplecticParams, GromovSymplecticReport, HolographicLloydComplexityEngine,
+    HolographicLloydConfig, HolographicLloydReport, LindbladDecoherenceReport,
     LindbladMasterDecoherenceEngine, LindbladMasterParams, MPS_ASSET_CHANNELS,
     MarketQuantumStateInput, MpsDmrgParams, MpsDmrgReport, PageCurveIslandConfig,
     PageCurveIslandReport, PageCurveIslandRiskEngine, PolyakovSchwarzschildHorizonEngine,
@@ -65,7 +67,8 @@ use signal_engine::{
     FractionalRoughVolatilityReport, JarzynskiCrooksParams, JarzynskiCrooksReport,
     JarzynskiCrooksThermodynamicsEngine, KdvSolitonDispersionEngine, KdvSolitonParams,
     KdvSolitonReport, MeanFieldGamesPsychologyEngine, MeanFieldGamesReport, MfDfaHurstReport,
-    MfDfaMultifractalHurstEngine, MfDfaParams, MultiSlotEvaluationReport, MultiSlotOrderEmission,
+    MfDfaMultifractalHurstEngine, MfDfaParams, MpdoDissipativeConfig, MpdoDissipativeDmrgEngine,
+    MpdoDissipativeReport, MultiSlotEvaluationReport, MultiSlotOrderEmission,
     NavierStokesKolmogorovEngine, NavierStokesParams, NavierStokesReport, NlsPeregrineParams,
     NlsPeregrineReport, NlsPeregrineSolitonEngine, NonAbelianBraidingConfig,
     NonAbelianBraidingJonesEngine, NonAbelianBraidingReport, QuantumSlotOrchestrator,
@@ -155,6 +158,10 @@ pub struct OmniscientLivingGraphReport {
     pub lattice_qcd_report: LatticeQcdReport,
     pub wheeler_dewitt_report: WheelerDeWittReport,
     pub bekenstein_mukhanov_report: BekensteinMukhanovReport,
+    // --- Extensiones Holísticas Omega220 (Fases 85 - 87) ---
+    pub chern_simons_knot_report: ChernSimonsWittenReport,
+    pub mpdo_report: MpdoDissipativeReport,
+    pub holographic_lloyd_report: HolographicLloydReport,
 }
 
 /// Orquestador del grafo vivo omnisciente para todo el universo de activos.
@@ -223,6 +230,10 @@ pub struct OmniscientLivingGraphOrchestrator {
     pub lattice_qcd_engines: Vec<LatticeQcdWilsonPolyakovEngine>,
     pub wheeler_dewitt_engines: Vec<WheelerDeWittMinisuperspaceEngine>,
     pub bekenstein_mukhanov_engines: Vec<BekensteinMukhanovQuantizationEngine>,
+    // Motores cuánticos y físicos unificados (Fases 85 - 87)
+    pub chern_simons_knot_engines: Vec<ChernSimonsWittenKnotEngine>,
+    pub mpdo_engines: Vec<MpdoDissipativeDmrgEngine>,
+    pub holographic_lloyd_engines: Vec<HolographicLloydComplexityEngine>,
     pub prev_mid_prices: Vec<f64>,
     pub last_event_time_ms: u64,
 }
@@ -384,6 +395,15 @@ impl OmniscientLivingGraphOrchestrator {
                 .map(|_| {
                     BekensteinMukhanovQuantizationEngine::new(BekensteinMukhanovConfig::default())
                 })
+                .collect(),
+            chern_simons_knot_engines: (0..count)
+                .map(|_| ChernSimonsWittenKnotEngine::new(ChernSimonsWittenConfig::default()))
+                .collect(),
+            mpdo_engines: (0..count)
+                .map(|_| MpdoDissipativeDmrgEngine::new(MpdoDissipativeConfig::default()))
+                .collect(),
+            holographic_lloyd_engines: (0..count)
+                .map(|_| HolographicLloydComplexityEngine::new(HolographicLloydConfig::default()))
                 .collect(),
             prev_mid_prices: vec![0.0; count],
             last_event_time_ms: 0,
@@ -942,7 +962,31 @@ impl OmniscientLivingGraphOrchestrator {
             0.05,
         );
 
-        // 52. Factor de Escala de Riesgo Holístico Tri-Slot $\eta_{\text{holistic}}$
+        // 52. Invariante de Chern-Simons-Witten & Homología de Nudos Khovanov-Floer (Fase 85)
+        let chern_simons_knot_report = self.chern_simons_knot_engines[safe_coin_id].update(
+            mid_price - prev_price,
+            ofi,
+            vol_norm,
+            spread_bps,
+        );
+
+        // 53. Operadores de Densidad de Producto Matricial (MPDO) & Ecuación Maestra de Lindblad (Fase 86)
+        let mpdo_report = self.mpdo_engines[safe_coin_id].evaluate(
+            ofi,
+            (bid_qty + ask_qty).max(0.01),
+            vol_norm,
+            dt,
+        );
+
+        // 54. Complejidad Holográfica WDW & Cota de Lloyd de Capacidad de Procesamiento (Fase 87)
+        let holographic_lloyd_report = self.holographic_lloyd_engines[safe_coin_id].evaluate(
+            conformal_decision.conformal_risk_score,
+            vol_norm,
+            (bid_qty + ask_qty).max(0.01),
+            dt,
+        );
+
+        // 55. Factor de Escala de Riesgo Holístico Tri-Slot $\eta_{\text{holistic}}$
         let mps_weight_factor = (mps_dmrg_report.asset_weights[safe_coin_id % MPS_ASSET_CHANNELS]
             * (MPS_ASSET_CHANNELS as f64))
             .clamp(0.50, 1.50);
@@ -1002,6 +1046,9 @@ impl OmniscientLivingGraphOrchestrator {
             * lattice_qcd_report.slot_scale_factor
             * wheeler_dewitt_report.slot_scale_factor
             * bekenstein_mukhanov_report.slot_scale_factor
+            * chern_simons_knot_report.slot_scale_factor
+            * mpdo_report.slot_scale_factor
+            * holographic_lloyd_report.slot_scale_factor
             * mps_weight_factor)
             .clamp(0.10, 1.25);
 
@@ -1057,6 +1104,9 @@ impl OmniscientLivingGraphOrchestrator {
             && !lattice_qcd_report.lattice_confinement_collapse_veto
             && !wheeler_dewitt_report.big_crunch_veto
             && !bekenstein_mukhanov_report.bekenstein_evaporation_veto
+            && !chern_simons_knot_report.knot_collapse_veto
+            && !mpdo_report.dissipative_decoherence_veto
+            && !holographic_lloyd_report.lloyd_bound_exhaustion_veto
             && (spread_bps <= conformal_decision.dynamic_spread_ceiling_bps
                 || conformal_decision.elastic_entry_granted);
 
@@ -1065,7 +1115,13 @@ impl OmniscientLivingGraphOrchestrator {
                 decision.signal = SignalType::Flat;
                 decision.net_confidence = 0.0;
                 decision.vetoed = true;
-                decision.veto_reason = if bekenstein_mukhanov_report.bekenstein_evaporation_veto {
+                decision.veto_reason = if holographic_lloyd_report.lloyd_bound_exhaustion_veto {
+                    Some("HOLOGRAPHIC_LLOYD_BOUND_EXHAUSTION_VETO")
+                } else if mpdo_report.dissipative_decoherence_veto {
+                    Some("MPDO_DISSIPATIVE_DECOHERENCE_VETO")
+                } else if chern_simons_knot_report.knot_collapse_veto {
+                    Some("CHERN_SIMONS_WITTEN_KNOT_COLLAPSE_VETO")
+                } else if bekenstein_mukhanov_report.bekenstein_evaporation_veto {
                     Some("BEKENSTEIN_MUKHANOV_AREA_EVAPORATION_VETO")
                 } else if wheeler_dewitt_report.big_crunch_veto {
                     Some("WHEELER_DEWITT_BIG_CRUNCH_VETO")
@@ -1168,6 +1224,9 @@ impl OmniscientLivingGraphOrchestrator {
             && !lattice_qcd_report.lattice_confinement_collapse_veto
             && !wheeler_dewitt_report.big_crunch_veto
             && !bekenstein_mukhanov_report.bekenstein_evaporation_veto
+            && !chern_simons_knot_report.knot_collapse_veto
+            && !mpdo_report.dissipative_decoherence_veto
+            && !holographic_lloyd_report.lloyd_bound_exhaustion_veto
             && conformal_decision.conformal_risk_score <= 0.85
             && srb_entropy_report.kolmogorov_sinai_entropy < 0.98;
 
@@ -1231,6 +1290,9 @@ impl OmniscientLivingGraphOrchestrator {
             lattice_qcd_report,
             wheeler_dewitt_report,
             bekenstein_mukhanov_report,
+            chern_simons_knot_report,
+            mpdo_report,
+            holographic_lloyd_report,
         }
     }
 }

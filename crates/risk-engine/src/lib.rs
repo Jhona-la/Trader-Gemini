@@ -13,6 +13,7 @@ pub mod freno_estrategia;
 pub mod gromov_symplectic_barrier;
 pub mod guard;
 pub mod hodge;
+pub mod holographic_lloyd_complexity;
 pub mod kelly;
 pub mod kelly_envelope;
 pub mod leverage_matrix;
@@ -60,6 +61,9 @@ pub use evidence::{
 };
 pub use gromov_symplectic_barrier::{
     GromovSymplecticBarrierEngine, GromovSymplecticParams, GromovSymplecticReport, Quaternion,
+};
+pub use holographic_lloyd_complexity::{
+    HolographicLloydComplexityEngine, HolographicLloydConfig, HolographicLloydReport,
 };
 pub use kelly_envelope::{EdgePosterior, RiskEnvelope, SURVIVAL_FLOOR, TRADE_HORIZON};
 pub use lindblad_master_decoherence::{
