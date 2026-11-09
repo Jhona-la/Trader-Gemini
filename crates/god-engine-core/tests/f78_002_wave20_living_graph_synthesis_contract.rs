@@ -56,10 +56,7 @@ fn test_c1_wave20_triad_holistic_orchestration() {
     );
 
     // 1. Verificación Fase 76: Gravedad JT 2D & Schwarzian
-    assert!(report
-        .jt_schwarzian_report
-        .schwarzian_derivative
-        .is_finite());
+    assert!(report.jt_schwarzian_report.schwarzian_derivative.is_finite());
     assert!(report.jt_schwarzian_report.schwarzian_energy.is_finite());
     assert!(report.jt_schwarzian_report.density_of_states_rho > 0.0);
     assert!(!report.jt_schwarzian_report.schwarzian_singularity_detected);
@@ -227,10 +224,7 @@ fn test_c3_wave20_schwarzian_singularity_veto() {
         &open_is_long,
     );
 
-    assert!(report_shock
-        .jt_schwarzian_report
-        .schwarzian_derivative
-        .is_finite());
+    assert!(report_shock.jt_schwarzian_report.schwarzian_derivative.is_finite());
     assert!(report_shock.jt_schwarzian_report.schwarzian_energy > 0.0);
 }
 
