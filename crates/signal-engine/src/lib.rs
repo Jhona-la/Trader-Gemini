@@ -43,6 +43,7 @@ pub mod ruelle_frobenius_transfer;
 pub mod skill_motores;
 pub mod soliton_wave;
 pub mod srb_kolmogorov_entropy;
+pub mod starobinsky_inflationary_attractor;
 pub mod stochastic_resonance;
 pub mod supersonic_shockwave;
 pub mod trend_runner;
@@ -131,6 +132,9 @@ pub use ruelle_frobenius_transfer::{
 pub use soliton_wave::{SolitonWaveEngine, SolitonWaveParams};
 pub use srb_kolmogorov_entropy::{
     SrbEntropyParams, SrbEntropyReport, SrbKolmogorovEntropyEngine, CHAOS_EMBEDDING_DIM,
+};
+pub use starobinsky_inflationary_attractor::{
+    StarobinskyConfig, StarobinskyInflationaryEngine, StarobinskyReport,
 };
 pub use stochastic_resonance::{StochasticResonanceEngine, StochasticResonanceParams};
 pub use strategy_core::{SignalIntent, SignalType};
