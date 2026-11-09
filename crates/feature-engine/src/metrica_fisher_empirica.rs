@@ -48,7 +48,7 @@ pub fn beta_q(q: f64) -> Option<f64> {
 
 /// Score (∇ log p) de la q-gaussiana en (μ, σ) para una observación z:
 ///   s_μ     = 2βu / (σ·(1−(1−q)βu²))
-///   s_σ     = 2βu² / (σ·(1−(1−q)βu²))
+///   s_σ     = (2βu² / (1−(1−q)βu²) − 1) / σ
 /// `None` = fuera de soporte (1−(1−q)βu² ≤ 0), σ ≤ 0, q inválido o
 /// no-finito: el llamador decide, aquí no se fabrica nada.
 pub fn score_q_gaussiana(q: f64, mu: f64, sigma: f64, z: f64) -> Option<[f64; 2]> {
@@ -62,7 +62,7 @@ pub fn score_q_gaussiana(q: f64, mu: f64, sigma: f64, z: f64) -> Option<[f64; 2]
         return None;
     }
     let s_mu = 2.0 * beta * u / (sigma * base);
-    let s_sigma = 2.0 * beta * u * u / (sigma * base);
+    let s_sigma = (2.0 * beta * u * u / base - 1.0) / sigma;
     if !(s_mu.is_finite() && s_sigma.is_finite()) {
         return None;
     }
@@ -126,11 +126,22 @@ pub fn ricci_q_gaussiana(
         return Err("q fuera del rango (1, 5/3)");
     }
     // Falla temprana en el punto central (mensaje propio, no el genérico).
-    metrica_fisher_empirica(q, mu, sigma, muestras)
+    let g0 = metrica_fisher_empirica(q, mu, sigma, muestras)
         .ok_or("metrica indefinida en el punto (soporte/muestras/degenerada)")?;
-    let metrica = |t1: f64, t2: f64| -> [[f64; 2]; 2] {
-        metrica_fisher_empirica(q, t1, t2, muestras)
-            .unwrap_or([[f64::NAN; 2]; 2])
+    let metrica = move |_t1: f64, t2: f64| -> [[f64; 2]; 2] {
+        if t2 <= 0.0 || !t2.is_finite() {
+            return [[f64::NAN; 2]; 2];
+        }
+        let escala = (sigma / t2).powi(2);
+        [
+            [g0[0][0] * escala, g0[0][1] * escala],
+            [g0[1][0] * escala, g0[1][1] * escala],
+        ]
     };
-    crate::ricci_empirica::curvatura_ricci_2d(metrica, mu, sigma, crate::ricci_empirica::H_POR_DEFECTO)
+    crate::ricci_empirica::curvatura_ricci_2d(
+        metrica,
+        mu,
+        sigma,
+        crate::ricci_empirica::H_POR_DEFECTO,
+    )
 }
