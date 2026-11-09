@@ -119,11 +119,14 @@ fn test_c2_wave18_lindblad_decoherence_hard_veto() {
     let open_taus = [0.0; 3];
     let open_is_long = [false; 3];
 
-    // Forzar desfasamiento severo con spread amplio y ticks disipativos
+    // Forzar desfasamiento severo con spread ancho (≈ 12 bps) y ticks disipativos. El spread queda
+    // bajo los vetos de spread fijo de W19 (Liouville > 15 bps, Ryu-Takayanagi > 25 bps), que van
+    // antes en la cadena de etiquetas y taparían la de Lindblad; con pureza mínima 0,95 la
+    // decoherencia se dispara igual (de 4,5 a 50 bps).
     let mut rep = orchestrator.evaluate_and_synthesize(
         0,
         100.0,
-        100.50,
+        100.12,
         10.0,
         10.0,
         1_000_000,
@@ -141,7 +144,7 @@ fn test_c2_wave18_lindblad_decoherence_hard_veto() {
         rep = orchestrator.evaluate_and_synthesize(
             0,
             100.0 + (i as f64) * 0.1,
-            100.50 + (i as f64) * 0.1,
+            100.12 + (i as f64) * 0.1,
             10.0,
             10.0,
             1_000_000 + i * 100,
@@ -175,6 +178,15 @@ fn test_c3_wave18_gross_pitaevskii_vortex_cavitation_veto() {
     orchestrator.bec_engines[0] = feature_engine::gross_pitaevskii_bec::GrossPitaevskiiBecEngine::new(
         feature_engine::gross_pitaevskii_bec::GrossPitaevskiiParams {
             min_condensate_fraction_threshold: 0.90,
+            ..Default::default()
+        },
+    );
+    // El salto de +8 % también cruza la curvatura de singularidad de Liouville (W19), que va antes en
+    // la cadena de etiquetas y taparía la de Gross-Pitaevskii. Este contrato fija la etiqueta del
+    // vórtice, así que sube ese umbral; el veto de Liouville tiene su propio contrato en f75.
+    orchestrator.liouville_engines[0] = feature_engine::LiouvilleCft2dQuantumGravityEngine::new(
+        feature_engine::LiouvilleCftParams {
+            singularity_curvature_threshold: 1.0e6,
             ..Default::default()
         },
     );
@@ -219,11 +231,13 @@ fn test_c3_wave18_gross_pitaevskii_vortex_cavitation_veto() {
         &open_is_long,
     );
 
-    // Shock violento de precio (+8.5%) y spread extremo (>90 bps) que colapsa la fracción de condensado y nuclea vórtice
+    // Shock violento de precio (+8 %) que nuclea un vórtice cuantizado. El spread (≈ 12 bps) queda bajo
+    // los vetos de spread fijo de W19 (Liouville > 15 bps, Ryu-Takayanagi > 25 bps), que no se pueden
+    // aislar por parámetro y taparían la etiqueta.
     let rep = orchestrator.evaluate_and_synthesize(
         0,
         108.0,
-        109.00,
+        108.13,
         5.0,
         5.0,
         1_000_100,
