@@ -1,4 +1,5 @@
 pub mod adaptive_quantum_veto;
+pub mod bekenstein_mukhanov_quantization;
 pub mod capital_regime;
 pub mod chern_simons_berry_phase;
 pub mod copulas_store;
@@ -39,6 +40,10 @@ pub mod ville_grossman_ignition_gate;
 pub use adaptive_quantum_veto::{
     AdaptiveQuantumVetoGovernor, AdaptiveQuantumVetoParams, AdaptiveVetoDecision,
     MarketQuantumStateInput,
+};
+pub use bekenstein_mukhanov_quantization::{
+    BekensteinMukhanovConfig, BekensteinMukhanovQuantizationEngine, BekensteinMukhanovReport,
+    BEKENSTEIN_ALPHA_QUANTUM,
 };
 pub use capital_regime::{resolve_micro_max_fee_pct, DEFAULT_MICRO_MAX_FEE_PCT};
 pub use chern_simons_berry_phase::{
