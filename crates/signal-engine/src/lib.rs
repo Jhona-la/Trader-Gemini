@@ -25,6 +25,7 @@ pub mod jarzynski_crooks_thermodynamics;
 pub mod kdv_soliton_dispersion;
 pub mod mean_field_games_psychology;
 pub mod mfdfa_multifractal_hurst;
+pub mod mpdo_dissipative_dmrg;
 pub mod navier_stokes_kolmogorov;
 pub mod navier_stokes_manifold;
 pub mod nls_peregrine_soliton;
@@ -82,6 +83,10 @@ pub use mean_field_games_psychology::{
 pub use mfdfa_multifractal_hurst::{
     MfDfaHurstReport, MfDfaMultifractalHurstEngine, MfDfaParams, MFDFA_ORDERS, MFDFA_SCALES,
     MFDFA_WINDOW_CAPACITY,
+};
+pub use mpdo_dissipative_dmrg::{
+    LocalDensityMatrix, MpdoDissipativeConfig, MpdoDissipativeDmrgEngine, MpdoDissipativeReport,
+    MPDO_CHANNELS,
 };
 pub use navier_stokes_kolmogorov::{
     NavierStokesKolmogorovEngine, NavierStokesParams, NavierStokesReport, NS_GRID_DIM,

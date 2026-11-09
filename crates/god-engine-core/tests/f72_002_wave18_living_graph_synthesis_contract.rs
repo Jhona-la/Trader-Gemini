@@ -59,7 +59,9 @@ fn test_c1_wave18_triad_holistic_orchestration() {
     );
 
     // Verificaciones Fase 70 (Gross-Pitaevskii BEC)
-    assert!(rep1.bec_report.condensate_fraction >= 0.0 && rep1.bec_report.condensate_fraction <= 1.0);
+    assert!(
+        rep1.bec_report.condensate_fraction >= 0.0 && rep1.bec_report.condensate_fraction <= 1.0
+    );
     assert!(rep1.bec_report.central_density > 0.0);
     assert!(rep1.bec_report.bogoliubov_sound_speed > 0.0);
     assert!(rep1.bec_report.healing_length > 0.0);
@@ -89,13 +91,14 @@ fn test_c2_wave18_lindblad_decoherence_hard_veto() {
         QuantumSlotOrchestrator::new(QuantumSlotOrchestratorParams::default());
 
     // Configurar parámetros de Lindblad para inducir veto estricto ante perturbación térmica
-    orchestrator.lindblad_engines[0] = risk_engine::lindblad_master_decoherence::LindbladMasterDecoherenceEngine::new(
-        risk_engine::lindblad_master_decoherence::LindbladMasterParams {
-            min_purity_threshold: 0.95, // Exigir pureza casi perfecta
-            dt: 0.1,
-            ..Default::default()
-        },
-    );
+    orchestrator.lindblad_engines[0] =
+        risk_engine::lindblad_master_decoherence::LindbladMasterDecoherenceEngine::new(
+            risk_engine::lindblad_master_decoherence::LindbladMasterParams {
+                min_purity_threshold: 0.95, // Exigir pureza casi perfecta
+                dt: 0.1,
+                ..Default::default()
+            },
+        );
 
     let triad = [
         AssetColorState {
@@ -159,9 +162,18 @@ fn test_c2_wave18_lindblad_decoherence_hard_veto() {
         );
     }
 
-    assert!(rep.lindblad_report.hard_veto_induced, "Debe activarse veto de decoherencia de Lindblad");
-    assert!(!rep.ville_ruin_bound_satisfied, "Cota de Ville debe invalidarse bajo colapso de coherencia");
-    assert_eq!(rep.multi_slot_evaluation.decisions[0].signal, SignalType::Flat);
+    assert!(
+        rep.lindblad_report.hard_veto_induced,
+        "Debe activarse veto de decoherencia de Lindblad"
+    );
+    assert!(
+        !rep.ville_ruin_bound_satisfied,
+        "Cota de Ville debe invalidarse bajo colapso de coherencia"
+    );
+    assert_eq!(
+        rep.multi_slot_evaluation.decisions[0].signal,
+        SignalType::Flat
+    );
     assert_eq!(
         rep.multi_slot_evaluation.decisions[0].veto_reason,
         Some("LINDBLAD_DECOHERENCE_VETO")
@@ -228,14 +240,16 @@ fn test_c3_wave18_gross_pitaevskii_vortex_cavitation_veto() {
 
     // Shock violento de precio (+8 %) que nuclea un vórtice cuantizado. El spread (≈ 12 bps) queda
     // bajo los vetos de spread fijo de W19 (Liouville > 15 bps, Ryu-Takayanagi > 25 bps), que no se
-    // pueden aislar por parámetro y taparían la etiqueta.
+    // pueden aislar por parámetro y taparían la etiqueta. Con dt=0,1 s, Lloyd también se activa
+    // (rho≈0,999893>=0,95) y tiene precedencia; dt=0,2 s deja rho≈0,499946<0,95 sin cambiar su
+    // umbral, mientras el vórtice conserva carga -3. Lloyd conserva su cobertura positiva en F87.
     let rep = orchestrator.evaluate_and_synthesize(
         0,
         108.0,
         108.13,
         5.0,
         5.0,
-        1_000_100,
+        1_000_200,
         &triad,
         1000.0,
         5.0,
@@ -246,13 +260,19 @@ fn test_c3_wave18_gross_pitaevskii_vortex_cavitation_veto() {
         &open_is_long,
     );
 
-    assert!(rep.bec_report.quantum_vortex_shedding_detected, "Debe detectarse vórtice/cavitación en BEC");
+    assert!(
+        rep.bec_report.quantum_vortex_shedding_detected,
+        "Debe detectarse vórtice/cavitación en BEC"
+    );
     assert_ne!(
         rep.bec_report.quantized_vortex_charge, 0,
         "El veto lo dispara el vórtice cuantizado"
     );
     assert!(!rep.ville_ruin_bound_satisfied);
-    assert_eq!(rep.multi_slot_evaluation.decisions[0].signal, SignalType::Flat);
+    assert_eq!(
+        rep.multi_slot_evaluation.decisions[0].signal,
+        SignalType::Flat
+    );
     assert_eq!(
         rep.multi_slot_evaluation.decisions[0].veto_reason,
         Some("GROSS_PITAEVSKII_VORTEX_VETO")

@@ -435,6 +435,39 @@ fn test_c1_holistic_living_graph_end_to_end_synthesis() {
             .bekenstein_evaporation_veto
     );
     assert!(report.bekenstein_mukhanov_report.slot_scale_factor >= 0.10);
+
+    // 50. Invariante de Chern-Simons-Witten & Homología Khovanov-Floer (Fase 85)
+    assert!(
+        report
+            .chern_simons_knot_report
+            .jones_polynomial_val
+            .is_finite()
+    );
+    assert!(
+        report
+            .chern_simons_knot_report
+            .khovanov_quantum_degree
+            .is_finite()
+    );
+    assert!(!report.chern_simons_knot_report.knot_collapse_veto);
+    assert!(report.chern_simons_knot_report.slot_scale_factor >= 0.10);
+
+    // 51. Operadores de Densidad de Producto Matricial (MPDO) & Lindblad DMRG (Fase 86)
+    assert!(report.mpdo_report.quantum_purity >= 0.50);
+    assert!(report.mpdo_report.von_neumann_entropy.is_finite());
+    assert!(!report.mpdo_report.dissipative_decoherence_veto);
+    assert!(report.mpdo_report.slot_scale_factor >= 0.15);
+
+    // 52. Complejidad Holográfica WDW & Cota de Lloyd (Fase 87)
+    assert!(report.holographic_lloyd_report.holographic_complexity > 0.0);
+    assert!(
+        report
+            .holographic_lloyd_report
+            .lloyd_computation_bound
+            .is_finite()
+    );
+    assert!(!report.holographic_lloyd_report.lloyd_bound_exhaustion_veto);
+    assert!(report.holographic_lloyd_report.slot_scale_factor >= 0.10);
 }
 
 #[test]
