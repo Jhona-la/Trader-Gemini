@@ -24,6 +24,7 @@ pub mod reeb_contact_vortex;
 pub mod regime;
 pub mod riemann_zeta_gue;
 pub mod ruin;
+pub mod ryu_takayanagi_entanglement;
 pub mod selection_stats;
 pub mod sonda;
 pub mod tensor_network_mps_dmrg;
@@ -74,6 +75,9 @@ pub use riemann_zeta_gue::{
     hermite_smoothstep_c1, montgomery_odlyzko_pair_correlation, wigner_gue_density,
     RiemannZetaGueEngine, RiemannZetaGueState, GUE_RIEMANN_GAP_RATIO_MEAN, MAX_RIEMANN_GUE_LEVELS,
     POISSON_GAP_RATIO_MEAN,
+};
+pub use ryu_takayanagi_entanglement::{
+    RyuTakayanagiEntanglementEngine, RyuTakayanagiParams, RyuTakayanagiReport,
 };
 pub use sonda::{
     admite_sonda, admite_sonda_con_fase, en_fase_de_sonda, resolve_max_cierres_sonda,

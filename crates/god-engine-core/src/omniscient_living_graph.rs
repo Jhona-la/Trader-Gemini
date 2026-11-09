@@ -31,6 +31,7 @@ use feature_engine::{
     CalabiYauSeibergWittenReport, GeodesicPhaseSpaceParams, GeodesicPhaseSpaceReport,
     GrossPitaevskiiBecEngine, GrossPitaevskiiBecReport, GrossPitaevskiiParams,
     HyperbolicPoincareHodgeEngine, HyperbolicPoincareHodgeParams, HyperbolicPoincareHodgeReport,
+    LiouvilleCft2dQuantumGravityEngine, LiouvilleCftParams, LiouvilleQuantumGravityReport,
     MongeKantorovichWassersteinEngine, PenroseSpinNetworkEngine, PenroseSpinNetworkParams,
     PenroseSpinNetworkReport, PepsHypergraphRicciEngine, PepsHypergraphRicciReport,
     PepsRicciParams, QuantumGeodesicPhaseSpaceEngine, VietorisRipsParams, VietorisRipsReport,
@@ -45,10 +46,12 @@ use risk_engine::{
     MpsDmrgReport, PolyakovSchwarzschildHorizonEngine, PolyakovSchwarzschildParams,
     PolyakovSchwarzschildReport, QuantumNoArbitrageConformalEngine,
     QuantumNoArbitrageConformalParams, QuantumNoArbitrageConformalReport, ReebContactParams,
-    ReebContactReport, ReebContactVortexEngine, TensorNetworkMpsDmrgEngine, UmegakiEntropyParams,
+    ReebContactReport, ReebContactVortexEngine, RyuTakayanagiEntanglementEngine,
+    RyuTakayanagiParams, RyuTakayanagiReport, TensorNetworkMpsDmrgEngine, UmegakiEntropyParams,
     UmegakiEntropyReport, UmegakiRelativeEntropyEngine, MPS_ASSET_CHANNELS,
 };
 use signal_engine::{
+    AdSCftHolographicEngine, AdSCftHolographicReport, AdSCftParams,
     BurgersShockwaveReport, ContinuousVolatilityOperatorEngine, ContinuousVolatilityState,
     DeRhamHodgeCurrentsEngine, DeRhamHodgeParams, DeRhamHodgeReport,
     FeynmanPathIntegralRoutingEngine, FeynmanRoutingParams, FeynmanRoutingReport,
@@ -129,6 +132,10 @@ pub struct OmniscientLivingGraphReport {
     pub bec_report: GrossPitaevskiiBecReport,
     pub mfdfa_report: MfDfaHurstReport,
     pub lindblad_report: LindbladDecoherenceReport,
+    // --- Extensiones Holísticas Omega220 (Fases 73 - 75) ---
+    pub liouville_report: LiouvilleQuantumGravityReport,
+    pub ads_cft_report: AdSCftHolographicReport,
+    pub ryu_takayanagi_report: RyuTakayanagiReport,
 }
 
 /// Orquestador del grafo vivo omnisciente para todo el universo de activos.
@@ -181,6 +188,10 @@ pub struct OmniscientLivingGraphOrchestrator {
     pub bec_engines: Vec<GrossPitaevskiiBecEngine>,
     pub mfdfa_engines: Vec<MfDfaMultifractalHurstEngine>,
     pub lindblad_engines: Vec<LindbladMasterDecoherenceEngine>,
+    // Motores cuánticos y físicos unificados (Fases 73 - 75)
+    pub liouville_engines: Vec<LiouvilleCft2dQuantumGravityEngine>,
+    pub ads_cft_engines: Vec<AdSCftHolographicEngine>,
+    pub ryu_takayanagi_engines: Vec<RyuTakayanagiEntanglementEngine>,
     pub prev_mid_prices: Vec<f64>,
     pub last_event_time_ms: u64,
 }
@@ -306,6 +317,15 @@ impl OmniscientLivingGraphOrchestrator {
                 .map(|_| {
                     LindbladMasterDecoherenceEngine::new(LindbladMasterParams::default())
                 })
+                .collect(),
+            liouville_engines: (0..count)
+                .map(|_| LiouvilleCft2dQuantumGravityEngine::new(LiouvilleCftParams::default()))
+                .collect(),
+            ads_cft_engines: (0..count)
+                .map(|_| AdSCftHolographicEngine::new(AdSCftParams::default()))
+                .collect(),
+            ryu_takayanagi_engines: (0..count)
+                .map(|_| RyuTakayanagiEntanglementEngine::new(RyuTakayanagiParams::default()))
                 .collect(),
             prev_mid_prices: vec![0.0; count],
             last_event_time_ms: 0,
@@ -754,7 +774,35 @@ impl OmniscientLivingGraphOrchestrator {
             spread_bps,
         );
 
-        // 40. Factor de Escala de Riesgo Holístico Tri-Slot $\eta_{\text{holistic}}$
+        // 40. Teoría Conforme de Campos (CFT) de Liouville y Gravedad Cuántica 2D (Fase 73)
+        let liouville_report = self.liouville_engines[safe_coin_id].update(
+            price_ret,
+            ofi,
+            volatility_state.effective_volatility,
+            spread_bps,
+        );
+
+        // 41. Dualidad AdS/CFT Holográfica de Maldacena y Tensión de Cuerda Cuántica (Fase 74)
+        let ads_cft_report = self.ads_cft_engines[safe_coin_id].update(
+            price_ret,
+            volatility_state.effective_volatility,
+            volatility_state.continuous_hurst,
+            spread_bps,
+        );
+
+        // 42. Entropía de Ryu-Takayanagi y Superficies Extremales de Entrelazamiento Holográfico (Fase 75)
+        let btc_disp = volatility_state.effective_volatility;
+        let alt_disp = triad_assets[1 % SU3_COLORS].normalized_return.abs().max(0.001);
+        let cross_corr = (triad_assets[0].relative_weight * triad_assets[1].relative_weight)
+            .clamp(-1.0, 1.0);
+        let ryu_takayanagi_report = self.ryu_takayanagi_engines[safe_coin_id].update(
+            btc_disp,
+            alt_disp,
+            cross_corr,
+            spread_bps,
+        );
+
+        // 43. Factor de Escala de Riesgo Holístico Tri-Slot $\eta_{\text{holistic}}$
         let mps_weight_factor = (mps_dmrg_report.asset_weights[safe_coin_id % MPS_ASSET_CHANNELS]
             * (MPS_ASSET_CHANNELS as f64))
             .clamp(0.50, 1.50);
@@ -802,6 +850,9 @@ impl OmniscientLivingGraphOrchestrator {
             * bec_report.slot_scale_factor
             * mfdfa_report.signal_conviction_modulator
             * lindblad_report.slot_scale_factor
+            * liouville_report.slot_scale_factor
+            * ads_cft_report.holographic_conviction_modulator
+            * ryu_takayanagi_report.slot_scale_factor
             * mps_weight_factor)
             .clamp(0.10, 1.25);
 
@@ -848,6 +899,8 @@ impl OmniscientLivingGraphOrchestrator {
             && !polyakov_schwarzschild_report.event_horizon_veto_induced
             && !bec_report.quantum_vortex_shedding_detected
             && !lindblad_report.hard_veto_induced
+            && !liouville_report.curvature_singularity_detected
+            && !ryu_takayanagi_report.hard_veto_induced
             && (spread_bps <= conformal_decision.dynamic_spread_ceiling_bps
                 || conformal_decision.elastic_entry_granted);
 
@@ -856,7 +909,11 @@ impl OmniscientLivingGraphOrchestrator {
                 decision.signal = SignalType::Flat;
                 decision.net_confidence = 0.0;
                 decision.vetoed = true;
-                decision.veto_reason = if bec_report.quantum_vortex_shedding_detected {
+                decision.veto_reason = if ryu_takayanagi_report.hard_veto_induced {
+                    Some("RYU_TAKAYANAGI_ENTANGLEMENT_VETO")
+                } else if liouville_report.curvature_singularity_detected {
+                    Some("LIOUVILLE_SINGULARITY_VETO")
+                } else if bec_report.quantum_vortex_shedding_detected {
                     Some("GROSS_PITAEVSKII_VORTEX_VETO")
                 } else if lindblad_report.hard_veto_induced {
                     Some("LINDBLAD_DECOHERENCE_VETO")
@@ -932,6 +989,8 @@ impl OmniscientLivingGraphOrchestrator {
             && !polyakov_schwarzschild_report.event_horizon_veto_induced
             && !bec_report.quantum_vortex_shedding_detected
             && !lindblad_report.hard_veto_induced
+            && !liouville_report.curvature_singularity_detected
+            && !ryu_takayanagi_report.hard_veto_induced
             && conformal_decision.conformal_risk_score <= 0.85
             && srb_entropy_report.kolmogorov_sinai_entropy < 0.98;
 
@@ -983,6 +1042,9 @@ impl OmniscientLivingGraphOrchestrator {
             bec_report,
             mfdfa_report,
             lindblad_report,
+            liouville_report,
+            ads_cft_report,
+            ryu_takayanagi_report,
         }
     }
 }
