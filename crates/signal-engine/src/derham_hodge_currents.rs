@@ -152,11 +152,15 @@ impl DeRhamHodgeCurrentsEngine {
 
         let n = self.count;
         let mut harmonic_mean = 0.0;
+        let mut current_mean = 0.0;
         for i in 0..n {
             harmonic_mean += self.simplicial_potentials[i];
+            current_mean += self.simplicial_currents[i];
         }
         harmonic_mean /= n as f64;
+        current_mean /= n as f64;
 
+        let mut current_centered_energy = 0.0;
         for i in 0..n {
             let next_idx = (i + 1) % n;
             let prev_idx = (i + n - 1) % n;
@@ -173,7 +177,13 @@ impl DeRhamHodgeCurrentsEngine {
             // Componente armónica: desviación respecto a la media global
             let harm = self.simplicial_potentials[i] - harmonic_mean;
             energy_harmonic += harm * harm;
+
+            let current_deviation = self.simplicial_currents[i] - current_mean;
+            current_centered_energy += current_deviation * current_deviation;
         }
+
+        energy_coexact *= (energy_harmonic + self.params.epsilon)
+            / (current_centered_energy + self.params.epsilon);
 
         // 3. Normalización ortogonal de energías de Hodge
         let total_energy =
