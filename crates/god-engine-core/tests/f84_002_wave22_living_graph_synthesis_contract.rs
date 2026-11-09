@@ -60,10 +60,12 @@ fn test_c1_wave22_triad_holistic_orchestration() {
 
     // 1. Verificación Fase 82: Cromodinámica Cuántica en Red (Lattice QCD)
     assert!(report.lattice_qcd_report.string_tension_sigma >= 0.0);
-    assert!(report
-        .lattice_qcd_report
-        .polyakov_loop_expectation
-        .is_finite());
+    assert!(
+        report
+            .lattice_qcd_report
+            .polyakov_loop_expectation
+            .is_finite()
+    );
     assert!(report.lattice_qcd_report.average_plaquette.is_finite());
     assert!(!report.lattice_qcd_report.lattice_confinement_collapse_veto);
     assert!(report.lattice_qcd_report.slot_scale_factor >= 0.10);
@@ -71,10 +73,12 @@ fn test_c1_wave22_triad_holistic_orchestration() {
     // 2. Verificación Fase 83: Cosmología Cuántica de Wheeler-DeWitt
     assert!(report.wheeler_dewitt_report.wave_amplitude > 0.0);
     assert!(report.wheeler_dewitt_report.potential_v.is_finite());
-    assert!(report
-        .wheeler_dewitt_report
-        .probability_current_j_phi
-        .is_finite());
+    assert!(
+        report
+            .wheeler_dewitt_report
+            .probability_current_j_phi
+            .is_finite()
+    );
     assert!(report.wheeler_dewitt_report.directional_signal.is_finite());
     assert!(!report.wheeler_dewitt_report.big_crunch_veto);
     assert!(report.wheeler_dewitt_report.slot_scale_factor >= 0.15);
