@@ -40,8 +40,9 @@ use feature_engine::{
     MatrixModelKpHierarchyEngine, MatrixModelKpReport, MongeKantorovichWassersteinEngine,
     PenroseSpinNetworkEngine, PenroseSpinNetworkParams, PenroseSpinNetworkReport,
     PepsHypergraphRicciEngine, PepsHypergraphRicciReport, PepsRicciParams,
-    QuantumGeodesicPhaseSpaceEngine, VietorisRipsParams, VietorisRipsReport,
-    VietorisRipsTopologicalEngine, WASSERSTEIN_NODES, WassersteinParams, WassersteinReport,
+    QuantumGeodesicPhaseSpaceEngine, SymplecticFloerCohomologyEngine, SymplecticFloerConfig,
+    SymplecticFloerReport, VietorisRipsParams, VietorisRipsReport, VietorisRipsTopologicalEngine,
+    WASSERSTEIN_NODES, WassersteinParams, WassersteinReport,
 };
 use risk_engine::{
     AdaptiveQuantumVetoGovernor, AdaptiveVetoDecision, BekensteinMukhanovConfig,
@@ -56,10 +57,12 @@ use risk_engine::{
     PolyakovSchwarzschildHorizonEngine, PolyakovSchwarzschildParams, PolyakovSchwarzschildReport,
     QuantumExtremalSurfaceConfig, QuantumExtremalSurfaceEngine, QuantumExtremalSurfaceReport,
     QuantumNoArbitrageConformalEngine, QuantumNoArbitrageConformalParams,
-    QuantumNoArbitrageConformalReport, ReebContactParams, ReebContactReport,
-    ReebContactVortexEngine, RyuTakayanagiEntanglementEngine, RyuTakayanagiParams,
-    RyuTakayanagiReport, TORIC_EDGES, TensorNetworkMpsDmrgEngine, ToricCodeConfig, ToricCodeEngine,
-    ToricCodeReport, UmegakiEntropyParams, UmegakiEntropyReport, UmegakiRelativeEntropyEngine,
+    QuantumNoArbitrageConformalReport, QuaternionicHyperkahlerConfig,
+    QuaternionicHyperkahlerEngine, QuaternionicHyperkahlerReport, ReebContactParams,
+    ReebContactReport, ReebContactVortexEngine, RyuTakayanagiEntanglementEngine,
+    RyuTakayanagiParams, RyuTakayanagiReport, TORIC_EDGES, TensorNetworkMpsDmrgEngine,
+    ToricCodeConfig, ToricCodeEngine, ToricCodeReport, UmegakiEntropyParams, UmegakiEntropyReport,
+    UmegakiRelativeEntropyEngine,
 };
 use signal_engine::{
     AdSCftHolographicEngine, AdSCftHolographicReport, AdSCftParams, BRAID_STRANDS,
@@ -78,9 +81,10 @@ use signal_engine::{
     QuantumManyBodyScarsEngine, QuantumManyBodyScarsReport, QuantumSlotOrchestrator,
     RiemannBurgersShockwaveEngine, RuelleFrobeniusParams, RuelleFrobeniusReport,
     RuelleFrobeniusTransferEngine, SrbEntropyParams, SrbEntropyReport, SrbKolmogorovEntropyEngine,
-    StarobinskyConfig, StarobinskyInflationaryEngine, StarobinskyReport, WheelerDeWittConfig,
-    WheelerDeWittMinisuperspaceEngine, WheelerDeWittReport, WilsonExactRenormalizationEngine,
-    WilsonExactRgParams, WilsonExactRgReport,
+    StarobinskyConfig, StarobinskyInflationaryEngine, StarobinskyReport,
+    SupersymmetryNicolaiConfig, SupersymmetryNicolaiEngine, SupersymmetryNicolaiReport,
+    WheelerDeWittConfig, WheelerDeWittMinisuperspaceEngine, WheelerDeWittReport,
+    WilsonExactRenormalizationEngine, WilsonExactRgParams, WilsonExactRgReport,
 };
 use strategy_core::{
     AssetColorState, ChromodynamicGaugeSu3Engine, ConnesSpectralGeometryEngine,
@@ -175,6 +179,10 @@ pub struct OmniscientLivingGraphReport {
     pub amplituhedron_order_flow_report: AmplituhedronOrderFlowReport,
     pub starobinsky_inflationary_report: StarobinskyReport,
     pub fisher_rao_amari_report: FisherRaoAmariReport,
+    // --- Extensiones Holísticas Omega220 (Fases 94 - 96) ---
+    pub symplectic_floer_report: SymplecticFloerReport,
+    pub supersymmetry_nicolai_report: SupersymmetryNicolaiReport,
+    pub quaternionic_hyperkahler_report: QuaternionicHyperkahlerReport,
 }
 
 /// Orquestador del grafo vivo omnisciente para todo el universo de activos.
@@ -255,6 +263,10 @@ pub struct OmniscientLivingGraphOrchestrator {
     pub amplituhedron_engines: Vec<AmplituhedronOrderFlowEngine>,
     pub starobinsky_engines: Vec<StarobinskyInflationaryEngine>,
     pub fisher_rao_amari_engines: Vec<FisherRaoAmariManifoldEngine>,
+    // Motores cuánticos y físicos unificados (Fases 94 - 96)
+    pub floer_engines: Vec<SymplecticFloerCohomologyEngine>,
+    pub susy_engines: Vec<SupersymmetryNicolaiEngine>,
+    pub hyperkahler_engines: Vec<QuaternionicHyperkahlerEngine>,
     pub prev_mid_prices: Vec<f64>,
     pub last_event_time_ms: u64,
 }
@@ -443,6 +455,17 @@ impl OmniscientLivingGraphOrchestrator {
                 .collect(),
             fisher_rao_amari_engines: (0..count)
                 .map(|_| FisherRaoAmariManifoldEngine::new(FisherRaoAmariConfig::default()))
+                .collect(),
+            floer_engines: (0..count)
+                .map(|_| SymplecticFloerCohomologyEngine::new(SymplecticFloerConfig::default()))
+                .collect(),
+            susy_engines: (0..count)
+                .map(|_| SupersymmetryNicolaiEngine::new(SupersymmetryNicolaiConfig::default()))
+                .collect(),
+            hyperkahler_engines: (0..count)
+                .map(|_| {
+                    QuaternionicHyperkahlerEngine::new(QuaternionicHyperkahlerConfig::default())
+                })
                 .collect(),
             prev_mid_prices: vec![0.0; count],
             last_event_time_ms: 0,
@@ -1060,7 +1083,25 @@ impl OmniscientLivingGraphOrchestrator {
             vol_norm,
         );
 
-        // 61. Factor de Escala de Riesgo Holístico Tri-Slot $\eta_{\text{holistic}}$
+        // 61. Geometría Simpléctica Infinita & Cohomología de Floer Cuántica (Fase 94)
+        let floer_report =
+            self.floer_engines[safe_coin_id].evaluate(price_ret, ofi, spread_bps, vol_norm);
+
+        // 62. Supersimetría N=1 & Ecuación de Nicolai (Fase 95)
+        let susy_report =
+            self.susy_engines[safe_coin_id].evaluate(price_ret, ofi, spread_bps, vol_norm, dt);
+
+        // 63. Geometría de Calabi-Yau Cuaterniónica & Hiperkähler (Fase 96)
+        let margin_buffer_pct =
+            (capital_available_usd / capital_available_usd.max(13.0)).clamp(0.0, 1.0);
+        let hyperkahler_report = self.hyperkahler_engines[safe_coin_id].evaluate(
+            capital_available_usd,
+            price_ret,
+            vol_norm,
+            margin_buffer_pct,
+        );
+
+        // 64. Factor de Escala de Riesgo Holístico Tri-Slot $\eta_{\text{holistic}}$
         let mps_weight_factor = (mps_dmrg_report.asset_weights[safe_coin_id % MPS_ASSET_CHANNELS]
             * (MPS_ASSET_CHANNELS as f64))
             .clamp(0.50, 1.50);
@@ -1129,6 +1170,9 @@ impl OmniscientLivingGraphOrchestrator {
             * amplituhedron_report.slot_scaling_factor
             * starobinsky_report.slot_scaling_factor
             * fisher_rao_report.slot_scaling_factor
+            * floer_report.slot_scaling_factor
+            * susy_report.slot_scaling_factor
+            * hyperkahler_report.slot_scaling_factor
             * mps_weight_factor)
             .clamp(0.10, 1.25);
 
@@ -1193,6 +1237,9 @@ impl OmniscientLivingGraphOrchestrator {
             && !amplituhedron_report.collinear_singularity_veto
             && !starobinsky_report.reheating_collapse_veto
             && !fisher_rao_report.information_collapse_veto
+            && !floer_report.floer_homology_obstruction_veto
+            && !susy_report.susy_spontaneous_breaking_veto
+            && !hyperkahler_report.moment_map_singularity_veto
             && (spread_bps <= conformal_decision.dynamic_spread_ceiling_bps
                 || conformal_decision.elastic_entry_granted);
 
@@ -1201,7 +1248,13 @@ impl OmniscientLivingGraphOrchestrator {
                 decision.signal = SignalType::Flat;
                 decision.net_confidence = 0.0;
                 decision.vetoed = true;
-                decision.veto_reason = if fisher_rao_report.information_collapse_veto {
+                decision.veto_reason = if hyperkahler_report.moment_map_singularity_veto {
+                    Some("HYPERKAHLER_MOMENT_MAP_SINGULARITY_VETO")
+                } else if susy_report.susy_spontaneous_breaking_veto {
+                    Some("SUSY_SPONTANEOUS_BREAKING_VETO")
+                } else if floer_report.floer_homology_obstruction_veto {
+                    Some("FLOER_HOMOLOGY_OBSTRUCTION_VETO")
+                } else if fisher_rao_report.information_collapse_veto {
                     Some("FISHER_RAO_INFORMATION_COLLAPSE_VETO")
                 } else if starobinsky_report.reheating_collapse_veto {
                     Some("STAROBINSKY_REHEATING_COLLAPSE_VETO")
@@ -1331,6 +1384,9 @@ impl OmniscientLivingGraphOrchestrator {
             && !amplituhedron_report.collinear_singularity_veto
             && !starobinsky_report.reheating_collapse_veto
             && !fisher_rao_report.information_collapse_veto
+            && !floer_report.floer_homology_obstruction_veto
+            && !susy_report.susy_spontaneous_breaking_veto
+            && !hyperkahler_report.moment_map_singularity_veto
             && conformal_decision.conformal_risk_score <= 0.85
             && srb_entropy_report.kolmogorov_sinai_entropy < 0.98;
 
@@ -1403,6 +1459,9 @@ impl OmniscientLivingGraphOrchestrator {
             amplituhedron_order_flow_report: amplituhedron_report,
             starobinsky_inflationary_report: starobinsky_report,
             fisher_rao_amari_report: fisher_rao_report,
+            symplectic_floer_report: floer_report,
+            supersymmetry_nicolai_report: susy_report,
+            quaternionic_hyperkahler_report: hyperkahler_report,
         }
     }
 }
