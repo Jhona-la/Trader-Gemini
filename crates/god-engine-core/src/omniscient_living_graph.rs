@@ -856,7 +856,11 @@ impl OmniscientLivingGraphOrchestrator {
                 decision.signal = SignalType::Flat;
                 decision.net_confidence = 0.0;
                 decision.vetoed = true;
-                decision.veto_reason = if bec_report.quantum_vortex_shedding_detected {
+                decision.veto_reason = if dirac_monopole_report.monopole_veto_induced {
+                    Some("YANG_MILLS_DIRAC_MONOPOLE_VETO")
+                } else if peps_hypergraph_report.hyperbolic_dispersion_detected {
+                    Some("PEPS_HYPERBOLIC_DISPERSION_VETO")
+                } else if bec_report.quantum_vortex_shedding_detected {
                     Some("GROSS_PITAEVSKII_VORTEX_VETO")
                 } else if lindblad_report.hard_veto_induced {
                     Some("LINDBLAD_DECOHERENCE_VETO")
@@ -864,10 +868,6 @@ impl OmniscientLivingGraphOrchestrator {
                     Some("POLYAKOV_SCHWARZSCHILD_EVENT_HORIZON_VETO")
                 } else if ashtekar_lqg_report.ashtekar_area_singularity_detected {
                     Some("ASHTEKAR_AREA_SINGULARITY_VETO")
-                } else if dirac_monopole_report.monopole_veto_induced {
-                    Some("YANG_MILLS_DIRAC_MONOPOLE_VETO")
-                } else if peps_hypergraph_report.hyperbolic_dispersion_detected {
-                    Some("PEPS_HYPERBOLIC_DISPERSION_VETO")
                 } else if umegaki_relative_entropy_report.hard_veto_induced {
                     Some("UMEGAKI_RELATIVE_ENTROPY_VETO")
                 } else if bergman_fock_report.critical_saturation_detected {
