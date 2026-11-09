@@ -82,6 +82,33 @@ use strategy_core::{
     ConnesSpectralParams, ConnesSpectralReport, SU3_COLORS, SignalType, Su3GaugeReport,
 };
 
+/// Los slots de una moneda y su entrada candidata son el mismo instrumento: ρ = 1 exacto
+/// (precedente: `correlation_guard`, donde `asset_id == candidate_id` da `Some(1.0)`).
+const RHO_MISMO_INSTRUMENTO: f64 = 1.0;
+
+/// Entrada de un pulso del grafo vivo para una moneda.
+#[derive(Debug, Clone, Copy)]
+pub struct EntradaGrafoVivo<'a> {
+    pub coin_id: usize,
+    pub bid: f64,
+    pub ask: f64,
+    pub bid_qty: f64,
+    pub ask_qty: f64,
+    pub event_time_ms: u64,
+    pub triad_assets: &'a [AssetColorState; SU3_COLORS],
+    pub capital_available_usd: f64,
+    pub max_leverage: f64,
+    pub risk_fraction: f64,
+    pub open_positions_slots: &'a [bool; 3],
+    pub open_positions_taus: &'a [f64; 3],
+    pub open_positions_is_long: &'a [bool; 3],
+    /// Exposición bruta real de los slots abiertos de la moneda, en unidades de equity
+    /// (Σ|cantidad·marca| / capital). `None` si el llamador no tiene el libro: la curva de Page
+    /// usa entonces la cota por slot del dimensionado. Un valor no finito o negativo es
+    /// exposición desconocida y veta.
+    pub exposicion_real_moneda: Option<f64>,
+}
+
 /// Informe omnisciente holístico que resume el estado emergente completo del grafo vivo.
 #[derive(Debug, Clone)]
 pub struct OmniscientLivingGraphReport {
@@ -413,6 +440,9 @@ impl OmniscientLivingGraphOrchestrator {
     /// Evalúa holísticamente el grafo vivo continuo y sintetiza órdenes coordinadas multi-slot.
     ///
     /// Preserva la cota de ruina $\mathbb{P}(\text{ruina}) \le 10^{-6}$ y opera sin asignaciones de heap.
+    ///
+    /// Sin el tamaño real de los slots abiertos: la curva de Page estima su exposición con la cota
+    /// por slot del dimensionado. Con el libro real, usar `evaluar_con_libro`.
     #[allow(clippy::too_many_arguments)]
     pub fn evaluate_and_synthesize(
         &mut self,
@@ -431,6 +461,50 @@ impl OmniscientLivingGraphOrchestrator {
         open_positions_taus: &[f64; 3],
         open_positions_is_long: &[bool; 3],
     ) -> OmniscientLivingGraphReport {
+        self.evaluar_con_libro(
+            EntradaGrafoVivo {
+                coin_id,
+                bid,
+                ask,
+                bid_qty,
+                ask_qty,
+                event_time_ms,
+                triad_assets,
+                capital_available_usd,
+                max_leverage,
+                risk_fraction,
+                open_positions_slots,
+                open_positions_taus,
+                open_positions_is_long,
+                exposicion_real_moneda: None,
+            },
+            slot_orchestrator,
+        )
+    }
+
+    /// Como `evaluate_and_synthesize`, con la exposición real de la moneda si el llamador la
+    /// tiene (`EntradaGrafoVivo::exposicion_real_moneda`).
+    pub fn evaluar_con_libro(
+        &mut self,
+        entrada: EntradaGrafoVivo<'_>,
+        slot_orchestrator: &mut QuantumSlotOrchestrator,
+    ) -> OmniscientLivingGraphReport {
+        let EntradaGrafoVivo {
+            coin_id,
+            bid,
+            ask,
+            bid_qty,
+            ask_qty,
+            event_time_ms,
+            triad_assets,
+            capital_available_usd,
+            max_leverage,
+            risk_fraction,
+            open_positions_slots,
+            open_positions_taus,
+            open_positions_is_long,
+            exposicion_real_moneda,
+        } = entrada;
         let safe_coin_id = if coin_id < self.volatility_operators.len() {
             coin_id
         } else {
@@ -925,18 +999,50 @@ impl OmniscientLivingGraphOrchestrator {
         let non_abelian_braiding_report =
             self.non_abelian_braiding_engines[safe_coin_id].evaluate(&strands);
 
-        // 48. Curva de Page & Fórmula de Isla Holográfica de Riesgo (Fase 81)
-        let asset_weights = [
-            triad_assets[0].relative_weight.abs().max(0.01),
-            triad_assets[1].relative_weight.abs().max(0.01),
-            triad_assets[2].relative_weight.abs().max(0.01),
-            0.10,
-        ];
+        // 48. Curva de Page & Fórmula de Isla Holográfica de Riesgo (Fase 81).
+        // El motor mide la exposición de `coin_id` en el libro, no los pesos SU(3) de la tríada
+        // (`relative_weight`) ni su producto (que no es una correlación): con ellos un libro
+        // plano radiaba entropía y, con pesos ≈ 1, no tenía isla, y la cuenta de 13 USD se
+        // vetaba en cada tick.
+        // - Λ (bruta, en unidades de equity): la cota por slot del dimensionado de
+        //   `synthesize_order_emissions` × slots abiertos, o la exposición real del libro si el
+        //   llamador la pasa y es mayor. La cota no acota los slots que abrió otra ruta ni sigue
+        //   a la equity si cayó después de abrir; por eso el real manda cuando existe.
+        //   Bruta: netear tamaños estimados inventaría cobertura.
+        // - Volatilidad: hasta llenar la ventana de la CWT su estimación es sesgada a la baja o
+        //   «sin estimar» (0.0) ⇒ NaN ⇒ el motor veta si Λ > 0.
+        // - Este motor no ve la exposición en otras monedas, y el grafo vivo no consulta
+        //   `correlation_guard`.
+        // - Sólo mira el libro antes de la entrada que autoriza este pulso.
+        let slots_abiertos = open_positions_slots
+            .iter()
+            .filter(|&&abierto| abierto)
+            .count();
+        let exposicion_estimada = if slots_abiertos == 0 {
+            0.0
+        } else {
+            slots_abiertos as f64
+                * QuantumSlotOrchestrator::exposicion_bruta_maxima_por_slot(
+                    max_leverage,
+                    risk_fraction,
+                )
+        };
+        let exposicion_moneda = match exposicion_real_moneda {
+            None => exposicion_estimada,
+            Some(real) if real.is_finite() && real >= 0.0 => real.max(exposicion_estimada),
+            Some(_) => f64::NAN,
+        };
+        let page_exposicion = [exposicion_moneda, 0.0, 0.0, 0.0];
+        let page_vol = if self.volatility_operators[safe_coin_id].is_warm() {
+            vol_norm
+        } else {
+            f64::NAN
+        };
         let page_curve_island_report = self.page_curve_island_engines[safe_coin_id].evaluate(
             capital_available_usd,
-            &asset_weights,
-            vol_norm,
-            cross_corr,
+            &page_exposicion,
+            page_vol,
+            RHO_MISMO_INSTRUMENTO,
         );
 
         // 49. Teoría de Campos de Gauge en Retículo & Lazos Wilson-Polyakov (Fase 82)

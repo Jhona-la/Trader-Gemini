@@ -10650,6 +10650,29 @@ impl GodEngineCore {
         max_leverage: f64,
         risk_fraction: f64,
     ) -> omniscient_living_graph::OmniscientLivingGraphReport {
+        // Exposición bruta real de los slots abiertos en unidades de equity, valorada al mid
+        // (o al precio de entrada si el libro no da mid). La curva de Page la usa en lugar de la
+        // cota del dimensionado cuando es mayor.
+        let mid = (bid + ask) * 0.5;
+        let marca_valida = bid > 0.0 && ask > 0.0 && mid.is_finite();
+        let exposicion_real_moneda = if coin_id < self.arena.coins.len() {
+            let mut nocional = 0.0;
+            for slot in self.arena.coins[coin_id].positions.slots().iter() {
+                if slot.is_open() {
+                    let marca = if marca_valida {
+                        mid
+                    } else {
+                        slot.entry_price.load(std::sync::atomic::Ordering::Relaxed)
+                    };
+                    nocional +=
+                        (slot.quantity.load(std::sync::atomic::Ordering::Relaxed) * marca).abs();
+                }
+            }
+            Some(nocional / capital_available_usd)
+        } else {
+            None
+        };
+
         let (open_slots, open_taus, open_is_long) = if coin_id < self.arena.coins.len() {
             let coin = &self.arena.coins[coin_id];
             let slots = coin.positions.slots();
@@ -10680,21 +10703,24 @@ impl GodEngineCore {
             )
         };
 
-        self.living_graph_orchestrator.evaluate_and_synthesize(
-            coin_id,
-            bid,
-            ask,
-            bid_qty,
-            ask_qty,
-            event_time_ms,
-            triad_assets,
-            capital_available_usd,
-            max_leverage,
-            risk_fraction,
+        self.living_graph_orchestrator.evaluar_con_libro(
+            omniscient_living_graph::EntradaGrafoVivo {
+                coin_id,
+                bid,
+                ask,
+                bid_qty,
+                ask_qty,
+                event_time_ms,
+                triad_assets,
+                capital_available_usd,
+                max_leverage,
+                risk_fraction,
+                open_positions_slots: &open_slots,
+                open_positions_taus: &open_taus,
+                open_positions_is_long: &open_is_long,
+                exposicion_real_moneda,
+            },
             &mut self.quantum_slot_orchestrator,
-            &open_slots,
-            &open_taus,
-            &open_is_long,
         )
     }
 }
