@@ -496,6 +496,42 @@ fn test_c1_holistic_living_graph_end_to_end_synthesis() {
     assert!(report.qes_report.qes_radius.is_finite());
     assert!(!report.qes_report.extremal_surface_collapse_veto);
     assert!(report.qes_report.slot_scale_factor >= 0.10);
+
+    // 56. Geometría del Amplituhedro & Amplitudes Parke-Taylor MHV (Fase 91)
+    assert!(report.amplituhedron_order_flow_report.polytope_volume > 0.0);
+    assert!(
+        report
+            .amplituhedron_order_flow_report
+            .parke_taylor_amplitude
+            .is_finite()
+    );
+    assert!(
+        !report
+            .amplituhedron_order_flow_report
+            .collinear_singularity_veto
+    );
+    assert!(report.amplituhedron_order_flow_report.slot_scaling_factor >= 0.10);
+
+    // 57. Cosmología Inflacionaria de Starobinsky (Fase 92)
+    assert!(report.starobinsky_inflationary_report.effective_potential >= 0.0);
+    assert!(
+        report
+            .starobinsky_inflationary_report
+            .epsilon_slow_roll
+            .is_finite()
+    );
+    assert!(
+        !report
+            .starobinsky_inflationary_report
+            .reheating_collapse_veto
+    );
+    assert!(report.starobinsky_inflationary_report.slot_scaling_factor >= 0.15);
+
+    // 58. Geometría de Información de Fisher-Rao & Amari (Fase 93)
+    assert!(report.fisher_rao_amari_report.fisher_rao_geodesic_distance >= 0.0);
+    assert!(report.fisher_rao_amari_report.amari_alpha_divergence >= 0.0);
+    assert!(!report.fisher_rao_amari_report.information_collapse_veto);
+    assert!(report.fisher_rao_amari_report.slot_scaling_factor >= 0.10);
 }
 
 #[test]
