@@ -183,3 +183,46 @@ fn cl98_con_historial_el_tamano_no_se_reduce_al_minimo() {
     println!("observado: nocional con historial {nocional:.4} USD");
     assert!(nocional > (NOCIONAL_MINIMO + 0.1) * 1.01, "nocional {nocional}");
 }
+
+
+#[test]
+fn f28_mature_currency_is_not_vetoed_by_another_currency_probe() {
+    let a = arena();
+    con_historial(&a, 0);
+    abrir(&a, 1, 0);
+    assert!(risk_engine::sonda::hay_sonda_abierta(&a));
+    let order = RiskEngine::new(CAPITAL).evaluate_quantum_order_with_probe_snapshot(
+        0,
+        &larga(),
+        &a,
+        true,
+    );
+    assert_ne!(
+        order.signal,
+        SignalType::Flat,
+        "una moneda madura no puede ser vetada por la sonda de otra moneda"
+    );
+}
+
+#[test]
+fn f28_a_probe_already_admitted_in_the_batch_blocks_cold_siblings() {
+    let a = arena();
+    let first = RiskEngine::new(CAPITAL).evaluate_quantum_order_with_probe_snapshot(
+        0,
+        &larga(),
+        &a,
+        false,
+    );
+    assert_ne!(first.signal, SignalType::Flat);
+    let sibling = RiskEngine::new(CAPITAL).evaluate_quantum_order_with_probe_snapshot(
+        0,
+        &larga(),
+        &a,
+        true,
+    );
+    assert_eq!(sibling.signal, SignalType::Flat);
+    assert_eq!(
+        risk_engine::ultimo_rechazo().map(|i| REJECT_NAMES[i]),
+        Some("sonda_ocupada")
+    );
+}

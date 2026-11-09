@@ -502,6 +502,7 @@ mod tests {
 
     #[test]
     fn test_nano_forest_global_cache_and_clone() {
+        let _model_guard = crate::GlobalModelTestGuard::new();
         let data = NanoForestData {
             children_left: vec![1, -1, -1],
             children_right: vec![2, -1, -1],

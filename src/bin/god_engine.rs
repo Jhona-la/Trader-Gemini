@@ -3565,6 +3565,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             continue;
                         }
                         let (g_tp, g_sl) = (prot.tp_gap, prot.sl_gap);
+                        quantum_engine::host_oms::release_confirmed_side(
+                            &arena_wd,
+                            &p.symbol,
+                            is_long,
+                            g_tp <= 0.0 && g_sl <= 0.0,
+                        );
                         // CL-17 — sólo un gap de STOP deja la posición
                         // desnuda. Un TP ausente con el SL completo no es
                         // riesgo: se re-intenta en cada auditoría, pero nunca
@@ -4565,15 +4571,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 // CL-140c: generación de cada ranura abierta antes del evento;
                 // la traza de una ranura que el núcleo cierre en él da su TCE.
                 let ranuras_antes = ranuras_abiertas(&engine_real.arena, coin_id);
-                let (mut new_order, closed_order) = engine_real.process_event(
+                let emissions = engine_real.process_event_multi(
                     coin_id, is_trade, is_kline_closed, is_depth,
                     current_price, qty, dbp, dap, eff_dbq, eff_daq,
                     depth_obi, depth_micro_div, event_time as u64, latency_panic, &omni_features_hot,
                     is_buyer_maker,
                 );
-
-                // Capture identity before later ticks/async work can reuse the slot.
-                let entry_reservation = new_order.and_then(|_| engine_real.entry_reservation(coin_id));
+                let mut entry_orders = emissions.entries;
+                let closed_order = emissions.closed_order;
 
                 // L-0 + X-018 (REHAB-6): los 10 universos sombra con omni real
                 // (D100) pero MUESTREADOS 1-in-10 — antes: 11 evaluaciones
@@ -4752,13 +4757,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 if !is_trading_allowed {
                     // Readiness revocation applies to new exposure. Refund only the exact
                     // unsent reservation; confirmed/reducing closes below remain dispatchable.
-                    if let Some(ref reservation) = entry_reservation {
-                        if let Err(reason) = reservation.cancel(&engine_real.arena) {
+                    for reserved in &entry_orders {
+                        if let Err(reason) = reserved.reservation.cancel(&engine_real.arena) {
                             quantum_arena::protection_health::mark_dirty();
                             telemetry_engine::telemetry_err!("[ENTRY OMS VETO] reserva no cancelable: {:?}", reason);
                         }
                     }
-                    new_order = None;
+                    entry_orders.clear();
                 }
                 if !is_trading_allowed && closed_order.is_none() {
                     if msg_count > 0 && msg_count.is_multiple_of(5000) {
@@ -4775,14 +4780,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         // ejecutor: con ella `replace_executor` rehusaba siempre, y la transición
                         // se aplazaba mientras el núcleo siguiera proponiendo entradas. Mientras
                         // tanto, cada mensaje construía otro ejecutor y encolaba otro refresco.
-                        if new_order.is_some() && entry_reservation.is_none() {
-                            quantum_arena::protection_health::mark_dirty();
-                            telemetry_engine::telemetry_err!("[OMS TRANSITION] entrada sin identidad de reserva en el tick de la transición: no se envía; reconciliar el estado local");
+                        for reserved in &entry_orders {
+                            if let Err(reason) = reserved.reservation.cancel(&engine_real.arena) {
+                                quantum_arena::protection_health::mark_dirty();
+                                telemetry_engine::telemetry_err!("[OMS TRANSITION] reserva no cancelable: {:?}", reason);
+                            }
                         }
-                        new_order = None;
+                        entry_orders.clear();
                         let paso = oms_session.paso_transicion(
                             &arena_real,
-                            entry_reservation.as_ref(),
+                            None,
                             &reintento_transicion,
                             || {
                                 let is_env_testnet = std::env::var("USE_TESTNET").unwrap_or_default().trim().to_lowercase() == "true";
@@ -5217,33 +5224,30 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
                     // BUG-617: Veto de nuevas entradas por pánico de memoria RAM (>85% en OS-Guardian)
                     let is_mem_panic = engine_real.arena.panic_memory_dump.load(Ordering::Relaxed);
-                    if (is_mem_panic || engine_real.drift_entry_veto()) && new_order.is_some() {
-                        // XXXVII: late veto cancels only this captured reservation.
-                        if let Some(reservation) = &entry_reservation {
-                            if let Err(reason) = reservation.cancel(&engine_real.arena) {
+                    if (is_mem_panic || engine_real.drift_entry_veto()) && !entry_orders.is_empty() {
+                        for reserved in &entry_orders {
+                            if let Err(reason) = reserved.reservation.cancel(&engine_real.arena) {
                                 quantum_arena::protection_health::mark_dirty();
                                 telemetry_engine::telemetry_err!("[ENTRY VETO] cancellation requires reconciliation: {:?}", reason);
                             }
-                        } else {
-                            quantum_arena::protection_health::mark_dirty();
-                            telemetry_engine::telemetry_err!("[ENTRY VETO] missing reservation identity; no asset-wide rollback");
                         }
-                        new_order = None;
+                        entry_orders.clear();
                     }
-
-                    let mut order_tp_price = 0.0;
-                    let mut order_sl_price = 0.0;
-                    let mut is_high_confidence = false;
-                    let mut exec_leverage = 1;
-                    let mut tesis_de_trayectoria: Option<(bool, f64, f64, f64, u64)> = None;
 
                     // F5.1 & BUG-598: Margen libre real = equity - margen total retenido en posiciones vivas
                     let total_margin_used: f64 = engine_real.arena.coins.iter().map(|c| {
                         c.positions.total_margin_used()
                     }).sum();
                     let cap_now = (engine_real.arena.unified_capital.load(Ordering::Relaxed) - total_margin_used).max(0.0);
+                    let mut prepared_entries = Vec::with_capacity(entry_orders.len());
 
-                    if let Some((is_long, entry_price, _qty, core_tp, core_sl)) = new_order {
+                    for reserved_entry in &entry_orders {
+                        let (is_long, entry_price, _qty, core_tp, core_sl) = reserved_entry.order;
+                        let entry_reservation = &reserved_entry.reservation;
+                        let mut order_tp_price = 0.0;
+                        let mut order_sl_price = 0.0;
+                        let mut is_high_confidence = false;
+                        let exec_leverage;
                         // D-442: Usar la distancia de stop real de la orden (core_sl) para dimensionar la envolvente de riesgo
                         let stop_pct = if core_sl > 0.0 && entry_price > 0.0 {
                             ((entry_price - core_sl).abs() / entry_price).max(0.0015)
@@ -5292,15 +5296,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         // Sin esto: deadlock (0 trades → 0 evidencia → 0 trades).
                         // Es epsilon-greedy estándar: exploración forzada inicial.
                         let envelope_n = risk_envelope.posterior.n();
-                        let apalancamiento_validado = if let Some(r) = &entry_reservation {
-                            let ranura = engine_real.arena.coins[coin_id].positions.get_slot(r.slot);
-                            let margen = ranura.margin_used.load(Ordering::Relaxed);
-                            let nocional = ranura.quantity.load(Ordering::Relaxed).abs()
-                                * ranura.entry_price.load(Ordering::Relaxed);
-                            risk_engine::envio::apalancamiento_validado(nocional, margen)
-                        } else {
-                            None
-                        };
+                        let ranura = engine_real.arena.coins[coin_id]
+                            .positions
+                            .get_slot(entry_reservation.slot);
+                        let margen = ranura.margin_used.load(Ordering::Relaxed);
+                        let nocional = ranura.quantity.load(Ordering::Relaxed).abs()
+                            * ranura.entry_price.load(Ordering::Relaxed);
+                        let apalancamiento_validado =
+                            risk_engine::envio::apalancamiento_validado(nocional, margen);
 
                         if envelope_n < 30.0 {
                             // F4-H2 / R5-H3 (BOOTSTRAP MICRO): acumular evidencia con el apalancamiento
@@ -5381,11 +5384,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 .filter(|a| a.is_finite() && *a > 0.0)
                                 .unwrap_or(0.0);
                             let Some((_, taker_fee_entry)) = engine_real.arena.config.fee_rates_for(coin_id) else {
-                                if let Some(ref reservation) = entry_reservation {
-                                    if let Err(reason) = reservation.cancel(&engine_real.arena) {
-                                        quantum_arena::protection_health::mark_dirty();
-                                        telemetry_engine::telemetry_err!("[ENTRY] fee desconocida, reserva no cancelable: {:?}", reason);
-                                    }
+                                if let Err(reason) = entry_reservation.cancel(&engine_real.arena) {
+                                    quantum_arena::protection_health::mark_dirty();
+                                    telemetry_engine::telemetry_err!("[ENTRY] fee desconocida, reserva no cancelable: {:?}", reason);
                                 }
                                 telemetry_engine::telemetry_err!("[ENTRY] {} sin fee observada para su símbolo/sesión: entrada retenida", parsed_sym);
                                 continue;
@@ -5412,21 +5413,33 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             .base_duration_ms
                             .load(Ordering::Relaxed)
                             .max(1.0) as u64;
-                        tesis_de_trayectoria = Some((
+                        let tesis_de_trayectoria = Some((
                             is_long,
                             entry_price,
                             ((core_tp - entry_price) / entry_price).abs(),
                             _qty.abs() * entry_price,
                             dur_ms,
                         ));
+                        prepared_entries.push((
+                            reserved_entry.clone(),
+                            order_tp_price,
+                            order_sl_price,
+                            is_high_confidence,
+                            exec_leverage,
+                            tesis_de_trayectoria,
+                        ));
                     }
 
-                    if let Some((final_is_long, _entry_price, final_qty, _, _)) = new_order {
-                        let Some(reservation) = entry_reservation else {
-                            quantum_arena::protection_health::mark_dirty();
-                            telemetry_engine::telemetry_err!("[ENTRY] missing reservation identity: submission withheld; reconcile local state");
-                            continue;
-                        };
+                    for (
+                        reserved_entry,
+                        order_tp_price,
+                        order_sl_price,
+                        is_high_confidence,
+                        exec_leverage,
+                        tesis_de_trayectoria,
+                    ) in prepared_entries {
+                        let (final_is_long, _entry_price, final_qty, _, _) = reserved_entry.order;
+                        let reservation = reserved_entry.reservation;
                         let parsed_sym_str = parsed_sym.to_string();
                         let entry_oms = Arc::clone(&oms_session);
                         let entry_session = entry_oms.snapshot_token();
@@ -5509,9 +5522,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         };
                         let rejected_reservation = reservation.clone();
                         let rollback_positions = move |arena: &Arc<quantum_arena::GlobalArena>| {
-                            if let Err(reason) = rejected_reservation.cancel(arena) {
-                                quantum_arena::protection_health::mark_dirty();
-                                telemetry_engine::telemetry_err!("[ENTRY ROLLBACK] exact reservation not cancellable: {:?}; other slots untouched", reason);
+                            match rejected_reservation.cancel(arena) {
+                                Ok(()) => true,
+                                Err(reason) => {
+                                    quantum_arena::protection_health::mark_dirty();
+                                    telemetry_engine::telemetry_err!("[ENTRY ROLLBACK] exact reservation not cancellable: {:?}; other slots untouched", reason);
+                                    false
+                                }
                             }
                         };
 
@@ -5633,10 +5650,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             let Some(effective_leverage) = decision_envio else {
                                 return;
                             };
+                            let _settlement = quantum_engine::host_oms::EntrySettlement::acquire(
+                                reservation.clone(),
+                                final_is_long,
+                            )
+                            .await;
 
                             if let Err(reason) = entry_oms.check_entry(&entry_session, &arena_clone) {
                                 telemetry_engine::telemetry_err!("[ENTRY] {}: {}", parsed_sym_str, reason);
-                                rollback_positions(&arena_clone);
+                                if rollback_positions(&arena_clone) {
+                                    quantum_engine::host_oms::EntrySettlement::release_for(&reservation);
+                                }
                                 return;
                             }
                             let entry_executor = Arc::clone(entry_session.executor());
@@ -5649,7 +5673,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                         "❌ [ENTRY] {} abortada: {} — Rollback de posición local.",
                                         parsed_sym_str, e
                                     );
-                                    rollback_positions(&arena_clone);
+                                    if rollback_positions(&arena_clone) {
+                                        quantum_engine::host_oms::EntrySettlement::release_for(&reservation);
+                                    }
                                     return;
                                 }
                             };
@@ -5703,9 +5729,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                     EntryRoute::Market
                                 }
                             };
-                            // CL-45: sólo la IOC responde con su estado terminal
-                            // (RESULT); MARKET responde ACK, sin la ejecución.
-                            let ruta_ioc = matches!(route, EntryRoute::Ioc { .. });
                             let entry_request = EntryRequest {
                                 symbol: &parsed_sym_str,
                                 is_long: final_is_long,
@@ -5733,8 +5756,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                     // read. This is containment, not an exactly-once
                                     // recovery ledger or a completed protection plan.
                                     quantum_arena::protection_health::mark_dirty();
-                                    let observation = entry_executor
-                                        .resolve_via_rest(&parsed_sym_str, &client_id).await;
                                     // CL-46: la consulta decide la reserva. Antes sólo
                                     // se registraba: un terminal sin ejecución dejaba
                                     // una posición que sólo existía en el arena, y uno
@@ -5743,20 +5764,28 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                     // intención (generación); un terminal del padre no
                                     // resuelve hijos maker, y Accepted con la orden
                                     // aún NEW no es un llenado: ambos se conservan.
-                                    use execution_engine::ioc_evidence::{destino_tras_consulta, DestinoReserva};
-                                    let orden = entry_executor.registry().get(&client_id);
-                                    match destino_tras_consulta(&e, observation, orden.as_ref()) {
+                                    use execution_engine::ioc_evidence::DestinoReserva;
+                                    let destino = resolve_entry_for_host(
+                                        &entry_executor,
+                                        &parsed_sym_str,
+                                        &client_id,
+                                        &e,
+                                    )
+                                    .await;
+                                    match destino {
                                         DestinoReserva::Revertir => {
                                             telemetry_engine::telemetry!(
-                                                "❌ [ENTRY] {} id={} envío={} consulta={:?}: terminal sin ejecución — Rollback de la reserva.",
-                                                parsed_sym_str, client_id, e, observation
+                                                "❌ [ENTRY] {} id={} envío={} destino={:?}: terminal sin ejecución — Rollback de la reserva.",
+                                                parsed_sym_str, client_id, e, destino
                                             );
-                                            rollback_positions(&arena_clone);
+                                            if rollback_positions(&arena_clone) {
+                                                quantum_engine::host_oms::EntrySettlement::release_for(&reservation);
+                                            }
                                         }
                                         DestinoReserva::Confirmar { ejecutada } => {
                                             telemetry_engine::telemetry!(
-                                                "✅ [ENTRY] {} id={} envío={} consulta={:?}: ejecutada {:.8} — reserva confirmada; protección por el vigilante.",
-                                                parsed_sym_str, client_id, e, observation, ejecutada
+                                                "✅ [ENTRY] {} id={} envío={} destino={:?}: ejecutada {:.8} — reserva confirmada; protección por el vigilante.",
+                                                parsed_sym_str, client_id, e, destino, ejecutada
                                             );
                                             if let Err(reason) = reservation.confirmar_llenado(&arena_clone, Some(ejecutada)) {
                                                 telemetry_engine::telemetry_err!("[ENTRY CONFIRM] stale/mismatched reservation: {:?}; reconcile fill, do not confirm another slot", reason);
@@ -5772,13 +5801,28 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                                     ejecutada.min(final_qty.abs()),
                                                     _entry_price,
                                                 );
+                                                if order_tp_price <= 0.0 || order_sl_price <= 0.0 {
+                                                    quantum_engine::host_oms::EntrySettlement::release_for(&reservation);
+                                                }
                                             }
                                             quantum_arena::protection_health::mark_dirty();
                                         }
+                                        DestinoReserva::CancelarPorDeadline => {
+                                            telemetry_engine::telemetry_err!(
+                                                "⏰ [ENTRY RECOVERY DEADLINE] {} id={}: admisión revocada; cancelación local sin certificar fill ni OCO",
+                                                parsed_sym_str, client_id
+                                            );
+                                            let _ = quantum_engine::host_oms::cancel_entry_after_deadline(
+                                                &entry_oms,
+                                                &entry_session,
+                                                &arena_clone,
+                                                &reservation,
+                                            );
+                                        }
                                         DestinoReserva::Conservar => {
                                             telemetry_engine::telemetry_err!(
-                                                "⏳ [ENTRY PENDING RECONCILIATION] {} id={} envío={} consulta={:?}. Reserva conservada; NO se certifica fill ni se hace rollback. Resolver atribución de orden/fills/protección.",
-                                                parsed_sym_str, client_id, e, observation
+                                                "⏳ [ENTRY PENDING RECONCILIATION] {} id={} envío={} destino={:?}. Reserva conservada; NO se certifica fill ni se hace rollback. Resolver atribución de orden/fills/protección.",
+                                                parsed_sym_str, client_id, e, destino
                                             );
                                         }
                                     }
@@ -5788,32 +5832,73 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                         "❌ [ENTRY] {} rechazada: {} — Ejecutando Rollback de posición local.",
                                         parsed_sym_str, e
                                     );
-                                    rollback_positions(&arena_clone);
+                                    if rollback_positions(&arena_clone) {
+                                        quantum_engine::host_oms::EntrySettlement::release_for(&reservation);
+                                    }
                                 }
                                 Ok(()) => {
-                                    // B3.14 — la entrada EXISTE en el exchange:
-                                    // los cierres de esta posición contabilizan
-                                    // (los vetados/rechazados son papel).
-                                    // CL-45: con lo EJECUTADO. Una IOC parcial
-                                    // confirmaba antes la cantidad, el margen y la
-                                    // comisión de la orden completa.
-                                    let ejecutada = if ruta_ioc {
-                                        execution_engine::ioc_evidence::cantidad_ejecutada_terminal(
-                                            entry_executor.registry().get(&client_id).as_ref(),
-                                        )
-                                    } else {
-                                        None
+                                    // Paper es una simulación explícita; fuera de paper sólo una
+                                    // orden terminal aporta cantidad ejecutada. Un parcial activo
+                                    // conserva reserva y settlement, sin fill total ni OCO teórico.
+                                    let ejecutada = quantum_engine::host_oms::entry_execution_for_host(
+                                        entry_executor.registry().get(&client_id).as_ref(),
+                                        entry_executor.is_paper_trading(),
+                                        final_qty.abs(),
+                                    );
+                                    let ejecutada = match ejecutada {
+                                        Some(ejecutada) => ejecutada,
+                                        None => {
+                                            quantum_arena::protection_health::mark_dirty();
+                                            telemetry_engine::telemetry_err!(
+                                                "⏳ [ENTRY PENDING FILL] {} id={}: consultando la misma orden hasta evidencia terminal",
+                                                parsed_sym_str, client_id
+                                            );
+                                            use execution_engine::ioc_evidence::DestinoReserva;
+                                            match resolve_entry_for_host(
+                                                &entry_executor,
+                                                &parsed_sym_str,
+                                                &client_id,
+                                                "AMBIGUOUS: ENTRY_TERMINAL_PENDING",
+                                            )
+                                            .await
+                                            {
+                                                DestinoReserva::Confirmar { ejecutada } => ejecutada,
+                                                DestinoReserva::Revertir => {
+                                                    if rollback_positions(&arena_clone) {
+                                                        quantum_engine::host_oms::EntrySettlement::release_for(&reservation);
+                                                    }
+                                                    return;
+                                                }
+                                                DestinoReserva::CancelarPorDeadline => {
+                                                    telemetry_engine::telemetry_err!(
+                                                        "⏰ [ENTRY RECOVERY DEADLINE] {} id={}: admisión revocada; cancelación local sin certificar fill ni OCO",
+                                                        parsed_sym_str, client_id
+                                                    );
+                                                    let _ = quantum_engine::host_oms::cancel_entry_after_deadline(
+                                                        &entry_oms,
+                                                        &entry_session,
+                                                        &arena_clone,
+                                                        &reservation,
+                                                    );
+                                                    return;
+                                                }
+                                                DestinoReserva::Conservar => {
+                                                    quantum_arena::protection_health::mark_dirty();
+                                                    return;
+                                                }
+                                            }
+                                        }
                                     };
-                                    if let Err(reason) = reservation.confirmar_llenado(&arena_clone, ejecutada) {
+                                    if let Err(reason) = reservation.confirmar_llenado(&arena_clone, Some(ejecutada)) {
                                         quantum_arena::protection_health::mark_dirty();
                                         telemetry_engine::telemetry_err!("[ENTRY CONFIRM] stale/mismatched reservation: {:?}; reconcile fill, do not confirm another slot", reason);
+                                        return;
                                     }
                                     // CL-45b: lo llenado (≤ lo pedido) dimensiona el
                                     // bracket y el diario. Con la cantidad pedida, un
                                     // parcial apilado sobre otra ranura del mismo lado
                                     // ponía TP/SL de esta ranura sobre la ajena.
-                                    let cantidad_llenada =
-                                        ejecutada.map_or(final_qty.abs(), |q| q.min(final_qty.abs()));
+                                    let cantidad_llenada = ejecutada.min(final_qty.abs());
                                     if order_tp_price > 0.0 && order_sl_price > 0.0 {
                                         let tag = if is_high_confidence { "🎯 [OCO TENSOR]" } else { "🛡️ [OCO GUARD]" };
                                         telemetry_engine::telemetry!(
@@ -6047,6 +6132,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                                     // Keep accounting until execution/reconciliation resolves
                                                     // the exit; never refund entry fees as a rejected order.
                                                     quantum_arena::protection_health::mark_dirty();
+                                                    quantum_engine::host_oms::EntrySettlement::release_for(&reservation);
                                                 }
                                                 Err(es) => {
                                                     // ESCALADA X-009: posición viva en el
@@ -6070,6 +6156,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                             }
                                             }
                                         }
+                                        if oco_success {
+                                            quantum_engine::host_oms::EntrySettlement::release_for(&reservation);
+                                        }
+                                    } else {
+                                        quantum_engine::host_oms::EntrySettlement::release_for(&reservation);
                                     }
                                 }
                             }
@@ -6711,6 +6802,22 @@ fn format_tau(tau_ms: f64) -> String {
     } else {
         format!("{:.1}d", tau_ms / 86_400_000.0)
     }
+}
+
+async fn resolve_entry_for_host(
+    executor: &execution_engine::executor::OrderExecutor,
+    symbol: &str,
+    client_order_id: &str,
+    dispatch_error: &str,
+) -> execution_engine::ioc_evidence::DestinoReserva {
+    execution_engine::entry_dispatch::resolve_terminal_entry_until(
+        executor,
+        symbol,
+        client_order_id,
+        dispatch_error,
+        execution_engine::entry_dispatch::ENTRY_RECOVERY_DEADLINE,
+    )
+    .await
 }
 
 #[cfg(test)]

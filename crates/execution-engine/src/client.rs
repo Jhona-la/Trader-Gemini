@@ -451,10 +451,10 @@ pub struct BinanceClient {
     freno: std::sync::Arc<FrenoExchange>,
     /// CL-209 (costura del lote 18, N46/N49/N50): la base de las rutas en las
     /// pruebas del crate, para montar el aplanado contra un servidor local.
-    /// Sólo la escribe `con_base_de_prueba`, que existe únicamente bajo
-    /// `cfg(test)` (tras el corte de producción del archivo): fuera de las
-    /// pruebas es siempre `None` y la base es la del entorno. Coste: una rama
-    /// predecible por petición, frente a la red de milisegundos.
+    /// Sólo la escribe `con_base_de_prueba`, disponible en tests o con la
+    /// feature `loopback-contract`: fuera de esa configuración es siempre
+    /// `None` y la base es la del entorno. Coste: una rama predecible por
+    /// petición, frente a la red de milisegundos.
     base_prueba: Option<std::sync::Arc<str>>,
 }
 
@@ -1007,11 +1007,11 @@ fn cuerpo_ilegible(estado: reqwest::StatusCode, limites: BinanceRateLimits) -> E
     )
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "loopback-contract"))]
 impl BinanceClient {
     /// CL-209: este cliente con sus rutas sobre `base` (un servidor local de
-    /// las pruebas del crate). Sólo existe bajo `cfg(test)`.
-    pub(crate) fn con_base_de_prueba(mut self, base: &str) -> Self {
+    /// las pruebas del crate). Disponible en tests o con `loopback-contract`.
+    pub fn con_base_de_prueba(mut self, base: &str) -> Self {
         self.base_prueba = Some(std::sync::Arc::from(base));
         self
     }
