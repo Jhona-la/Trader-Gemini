@@ -532,6 +532,36 @@ fn test_c1_holistic_living_graph_end_to_end_synthesis() {
     assert!(report.fisher_rao_amari_report.amari_alpha_divergence >= 0.0);
     assert!(!report.fisher_rao_amari_report.information_collapse_veto);
     assert!(report.fisher_rao_amari_report.slot_scaling_factor >= 0.10);
+
+    // 59. Geometría Simpléctica Infinita & Cohomología de Floer Cuántica (Fase 94)
+    assert!(report.symplectic_floer_report.symplectic_action.is_finite());
+    assert!(report.symplectic_floer_report.floer_energy >= 0.0);
+    assert!(
+        !report
+            .symplectic_floer_report
+            .floer_homology_obstruction_veto
+    );
+    assert!(report.symplectic_floer_report.slot_scaling_factor >= 0.10);
+
+    // 60. Supersimetría N=1 & Ecuación de Nicolai (Fase 95)
+    assert!(report.supersymmetry_nicolai_report.vacuum_energy >= 0.0);
+    assert!(report.supersymmetry_nicolai_report.witten_index.is_finite());
+    assert!(
+        !report
+            .supersymmetry_nicolai_report
+            .susy_spontaneous_breaking_veto
+    );
+    assert!(report.supersymmetry_nicolai_report.slot_scaling_factor >= 0.15);
+
+    // 61. Geometría de Calabi-Yau Cuaterniónica & Hiperkähler (Fase 96)
+    assert!(report.quaternionic_hyperkahler_report.quaternion_norm > 0.0);
+    assert!(report.quaternionic_hyperkahler_report.moment_map_norm >= 0.0);
+    assert!(
+        !report
+            .quaternionic_hyperkahler_report
+            .moment_map_singularity_veto
+    );
+    assert!(report.quaternionic_hyperkahler_report.slot_scaling_factor >= 0.10);
 }
 
 #[test]
