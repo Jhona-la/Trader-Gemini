@@ -26,6 +26,7 @@ pub mod kam_eth_tur_stein;
 pub mod koopman_dmd;
 pub mod landauer_bec_hopfield;
 pub mod lead_lag;
+pub mod liouville_quantum_gravity;
 pub mod lppls_sornette;
 pub mod matriz_rmt;
 pub mod microstructure;
@@ -135,6 +136,9 @@ pub use landauer_bec_hopfield::{
     HOPFIELD_PROTOTYPE_COUNT, LN_2,
 };
 pub use lead_lag::LeadLagAlphaEngine;
+pub use liouville_quantum_gravity::{
+    LiouvilleCft2dQuantumGravityEngine, LiouvilleCftParams, LiouvilleQuantumGravityReport,
+};
 pub use microstructure::{
     obi_acceleration, order_book_imbalance, AdaptiveResonanceClustering,
     InstitutionalVolumeTracker, OFIModel, OrderFlowTracker, SpoofingDetector,

@@ -2,6 +2,7 @@ pub use strategy_core::maker;
 pub use strategy_core::stat_arb;
 
 // Re-export specific structs that other crates expect from signal_engine
+pub mod ads_cft_holographic;
 pub mod coaxial_breakout;
 pub mod continuous_volatility_operator;
 pub mod derham_hodge_currents;
@@ -44,6 +45,9 @@ pub mod trend_runner;
 pub mod voto_espectral;
 pub mod wilson_exact_renormalization;
 
+pub use ads_cft_holographic::{
+    AdSCftHolographicEngine, AdSCftHolographicReport, AdSCftParams,
+};
 pub use continuous_volatility_operator::{
     ContinuousVolatilityOperatorEngine, ContinuousVolatilityParams, ContinuousVolatilityState,
     VOL_SPECTRUM_SCALES,

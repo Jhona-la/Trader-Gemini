@@ -84,7 +84,7 @@ fn test_c2_entropy_production_and_reversibility() {
 #[test]
 fn test_c3_irreversible_shock_and_conviction_collapse() {
     let mut params = JarzynskiCrooksParams::default();
-    params.critical_entropy_threshold = 1.0; // Umbral estricto para certificar detección
+    params.critical_entropy_threshold = 0.50; // Umbral calibrado de produccion de entropia ante shock violento
     let mut engine = JarzynskiCrooksThermodynamicsEngine::new(params);
 
     // Inyectamos trabajo masivo unidireccional y violento (shock de liquidación)

@@ -311,6 +311,27 @@ fn test_c1_holistic_living_graph_end_to_end_synthesis() {
     assert!(report.lindblad_report.von_neumann_entropy >= 0.0);
     assert!(!report.lindblad_report.hard_veto_induced);
     assert!(report.lindblad_report.slot_scale_factor > 0.0);
+
+    // 38. Teoría Conforme de Campos (CFT) de Liouville y Gravedad Cuántica 2D (Fase 73)
+    assert!(report.liouville_report.central_charge_cl >= 1.0);
+    assert!(report.liouville_report.conformal_factor > 0.0);
+    assert!(report.liouville_report.hausdorff_dimension >= 2.0);
+    assert!(report.liouville_report.liouville_scalar_curvature.is_finite());
+    assert!(!report.liouville_report.curvature_singularity_detected);
+    assert!(report.liouville_report.slot_scale_factor >= 0.15);
+
+    // 39. Dualidad AdS/CFT Holográfica de Maldacena (Fase 74)
+    assert!(report.ads_cft_report.string_tension > 0.0);
+    assert!(report.ads_cft_report.conformal_dimension_delta > 0.0);
+    assert!(report.ads_cft_report.radial_depth_z > 0.0);
+    assert!(report.ads_cft_report.holographic_conviction_modulator >= 0.50);
+
+    // 40. Entropía de Ryu-Takayanagi y Superficies Extremales Holográficas (Fase 75)
+    assert!(report.ryu_takayanagi_report.entanglement_entropy_sa > 0.0);
+    assert!(report.ryu_takayanagi_report.entanglement_entropy_sb > 0.0);
+    assert!(report.ryu_takayanagi_report.extremal_surface_connected);
+    assert!(!report.ryu_takayanagi_report.hard_veto_induced);
+    assert!(report.ryu_takayanagi_report.slot_scale_factor > 0.0);
 }
 
 #[test]
