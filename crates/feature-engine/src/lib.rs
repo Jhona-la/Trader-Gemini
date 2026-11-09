@@ -35,6 +35,7 @@ pub mod liouville_quantum_gravity;
 pub mod lppls_sornette;
 pub mod matrix_model_kp_hierarchy;
 pub mod matriz_rmt;
+pub mod metrica_fisher_empirica; // GLM-221 (C1): Fisher empirica q-gaussiana con beta_q
 pub mod microstructure;
 pub mod monge_kantorovich_wasserstein;
 pub mod mps;
@@ -50,7 +51,6 @@ pub mod perelman_ricci_surgery;
 pub mod quantum_geodesic_phase_space;
 pub mod random_matrix_wilson;
 pub mod ricci_empirica;
-pub mod metrica_fisher_empirica; // GLM-221 (C1): Fisher empirica q-gaussiana con beta_q
 pub mod rough_ergodic;
 pub mod simd_neural_network;
 pub mod simd_yoshida_replicator;
@@ -58,6 +58,7 @@ pub mod soa_shadow_otoc;
 pub mod spectral;
 pub mod spot_futures_abl_iceberg;
 pub mod stoikov_microprice;
+pub mod symplectic_floer_cohomology;
 pub mod tensor_ring;
 pub mod tqft_anyons;
 pub mod transfer_entropy;
@@ -74,37 +75,38 @@ pub use amplituhedron_order_flow::{
     AmplituhedronOrderFlowConfig, AmplituhedronOrderFlowEngine, AmplituhedronOrderFlowReport,
 };
 pub use ashtekar_lqg_area::{
-    AshtekarLqgAreaEngine, AshtekarLqgParams, AshtekarLqgReport, ASHTEKAR_SPIN_CHANNELS,
+    ASHTEKAR_SPIN_CHANNELS, AshtekarLqgAreaEngine, AshtekarLqgParams, AshtekarLqgReport,
     BARBERO_IMMIRZI_GAMMA, PLANCK_AREA_SCALE,
 };
 pub use bergman_fock_reproducing::{
-    BergmanFockParams, BergmanFockReport, BergmanFockReproducingEngine, BERGMAN_COMPLEX_DIM,
+    BERGMAN_COMPLEX_DIM, BergmanFockParams, BergmanFockReport, BergmanFockReproducingEngine,
 };
 pub use bouchaud_mezard_ewl::{
     BouchaudMezardEngine, BouchaudMezardParams, BouchaudMezardReport, EwlQuantumGameEngine,
-    EwlQuantumGameReport, LiquidityCondensationRegime, QuantumStrategySU2, MAX_BM_LEVELS,
+    EwlQuantumGameReport, LiquidityCondensationRegime, MAX_BM_LEVELS, QuantumStrategySU2,
 };
 pub use calabi_yau_seiberg_witten::{
-    CalabiYauParams, CalabiYauSeibergWittenEngine, CalabiYauSeibergWittenReport, ComplexCoord,
-    CY_COMPLEX_DIM, CY_HISTORY_LEN,
+    CY_COMPLEX_DIM, CY_HISTORY_LEN, CalabiYauParams, CalabiYauSeibergWittenEngine,
+    CalabiYauSeibergWittenReport, ComplexCoord,
 };
 pub use chern_simons_witten_knot::{
     ChernSimonsWittenConfig, ChernSimonsWittenKnotEngine, ChernSimonsWittenReport, Crossing,
     KNOT_BRAID_STRANDS, KNOT_CROSSING_HISTORY,
 };
 pub use connes_clifford_kan::{
-    CliffordMultivector3D, ConnesCliffordKanEngine, ConnesCliffordKanReport, ConnesSpectralReport,
-    ConnesSpectralTripleEngine, CubicBSplineKanEdge, HudsonParthasarathyEvolutor,
-    HudsonParthasarathyState, NonCommutativeRegime, CONNES_HILBERT_DIM, KAN_SPLINE_BASIS_COUNT,
+    CONNES_HILBERT_DIM, CliffordMultivector3D, ConnesCliffordKanEngine, ConnesCliffordKanReport,
+    ConnesSpectralReport, ConnesSpectralTripleEngine, CubicBSplineKanEdge,
+    HudsonParthasarathyEvolutor, HudsonParthasarathyState, KAN_SPLINE_BASIS_COUNT,
+    NonCommutativeRegime,
 };
 pub use correlation::MarketCorrelationHeatmap;
 pub use cover_orabona_wfr_ville::{
-    CoverOrabonaWfrVilleMasterEngine, CoverOrabonaWfrVilleReport, CoverVovkReport,
-    CoverVovkUniversalPortfolioEngine, FilocheMayborodaLocalizationEngine, FilocheMayborodaReport,
+    ASSET_UNIVERSE, COVER_SIMPLEX_POINTS, CoverOrabonaWfrVilleMasterEngine,
+    CoverOrabonaWfrVilleReport, CoverVovkReport, CoverVovkUniversalPortfolioEngine,
+    FILOCHE_GRID_SIZE, FilocheMayborodaLocalizationEngine, FilocheMayborodaReport,
     GrossmanZhouKyleFloorEngine, GrossmanZhouKyleReport, OrabonaCoinBettingEngine,
     OrabonaCoinBettingReport, VilleMaximalSupermartingaleEngine, VilleSupermartingaleReport,
-    WassersteinFisherRaoEngine, WfrReport, ASSET_UNIVERSE, COVER_SIMPLEX_POINTS, FILOCHE_GRID_SIZE,
-    WFR_BINS,
+    WFR_BINS, WassersteinFisherRaoEngine, WfrReport,
 };
 pub use ewma::Ewma;
 pub use feynman_path_instanton::{
@@ -112,18 +114,18 @@ pub use feynman_path_instanton::{
     MAX_PATH_POINTS,
 };
 pub use gross_pitaevskii_bec::{
-    GrossPitaevskiiBecEngine, GrossPitaevskiiBecReport, GrossPitaevskiiParams, BEC_ANGULAR_SECTORS,
+    BEC_ANGULAR_SECTORS, GrossPitaevskiiBecEngine, GrossPitaevskiiBecReport, GrossPitaevskiiParams,
     HBAR_EFF, PARTICLE_MASS_M,
 };
 pub use grothendieck_sheaves::{
     AtiyahSingerIndexReport, CellularSheafEngine, CellularSheafReport, GrothendieckSheafParams,
-    SheafLaplacianWorkspace, SheafRestrictionEdge, SheafTopologicalRegime, MAX_SHEAF_EDGES,
-    MAX_SHEAF_VERTICES,
+    MAX_SHEAF_EDGES, MAX_SHEAF_VERTICES, SheafLaplacianWorkspace, SheafRestrictionEdge,
+    SheafTopologicalRegime,
 };
 pub use hairer_landauer_anderson::{
     AndersonLocalizationEngine, AndersonLocalizationReport, HairerLandauerAndersonMasterEngine,
     HairerLandauerAndersonReport, HairerRegularityEngine, HairerRegularityReport,
-    LandauerButtikerEngine, LandauerButtikerReport, MesoscopicTransportRegime, MESOSCOPIC_CHANNELS,
+    LandauerButtikerEngine, LandauerButtikerReport, MESOSCOPIC_CHANNELS, MesoscopicTransportRegime,
 };
 pub use hawkes::HawkesProcessEngine;
 pub use hodge_flow::{
@@ -132,131 +134,135 @@ pub use hodge_flow::{
 };
 pub use hyperbolic_poincare_hodge::{
     HyperbolicPoincareHodgeEngine, HyperbolicPoincareHodgeParams, HyperbolicPoincareHodgeReport,
-    PoincarePoint, POINCARE_HISTORY_LEN,
+    POINCARE_HISTORY_LEN, PoincarePoint,
 };
 pub use jt_schwarzian_gravity::{JtSchwarzianConfig, JtSchwarzianEngine, JtSchwarzianReport};
 pub use kalman::KalmanFilter1D;
 pub use kam_eth_tur_stein::{
-    BaratoSeifertTurEngine, EthMblOrderbookEngine, EthMblRegime, EthMblReport,
-    JamesSteinTweedieReport, JamesSteinTweedieShrinkageEngine, KamChirikovRegime,
+    BaratoSeifertTurEngine, ETH_MAX_LEVELS, EthMblOrderbookEngine, EthMblRegime, EthMblReport,
+    JS_DIM, JamesSteinTweedieReport, JamesSteinTweedieShrinkageEngine, KamChirikovRegime,
     KamChirikovReport, KamChirikovResonanceEngine, KamEthTurSteinMasterEngine,
-    KamEthTurSteinReport, LatticeBoltzmannD1Q3Engine, LatticeBoltzmannReport, TurReport,
-    ETH_MAX_LEVELS, JS_DIM, LATTICE_D1Q3_NODES,
+    KamEthTurSteinReport, LATTICE_D1Q3_NODES, LatticeBoltzmannD1Q3Engine, LatticeBoltzmannReport,
+    TurReport,
 };
 pub use kostant_souriau_prequantum::{
     KostantSouriauConfig, KostantSouriauPrequantumEngine, KostantSouriauReport,
 };
 pub use landauer_bec_hopfield::{
-    BecOrderbookReport, BecPhaseRegime, BoseEinsteinOrderbookEngine, KbnCompensatedAccumulator,
-    LandauerBecHopfieldMasterEngine, LandauerBecHopfieldReport, LandauerDissipationRegime,
-    LandauerThermodynamicEngine, LandauerThermodynamicReport, ModernContinuousHopfieldEngine,
-    ModernHopfieldReport, BEC_ENERGY_LEVELS, BOLTZMANN_K_MKT, HOPFIELD_FEATURE_DIM,
-    HOPFIELD_PROTOTYPE_COUNT, LN_2,
+    BEC_ENERGY_LEVELS, BOLTZMANN_K_MKT, BecOrderbookReport, BecPhaseRegime,
+    BoseEinsteinOrderbookEngine, HOPFIELD_FEATURE_DIM, HOPFIELD_PROTOTYPE_COUNT,
+    KbnCompensatedAccumulator, LN_2, LandauerBecHopfieldMasterEngine, LandauerBecHopfieldReport,
+    LandauerDissipationRegime, LandauerThermodynamicEngine, LandauerThermodynamicReport,
+    ModernContinuousHopfieldEngine, ModernHopfieldReport,
 };
 pub use lattice_qcd_wilson_polyakov::{
-    LatticeQcdConfig, LatticeQcdReport, LatticeQcdWilsonPolyakovEngine, Su2Matrix,
-    LATTICE_DIM_SPATIAL, LATTICE_DIM_TEMPORAL, LATTICE_PLAQUETTE_COUNT,
+    LATTICE_DIM_SPATIAL, LATTICE_DIM_TEMPORAL, LATTICE_PLAQUETTE_COUNT, LatticeQcdConfig,
+    LatticeQcdReport, LatticeQcdWilsonPolyakovEngine, Su2Matrix,
 };
 pub use lead_lag::LeadLagAlphaEngine;
 pub use liouville_quantum_gravity::{
     LiouvilleCft2dQuantumGravityEngine, LiouvilleCftParams, LiouvilleQuantumGravityReport,
 };
 pub use matrix_model_kp_hierarchy::{
-    MatrixModelKpConfig, MatrixModelKpHierarchyEngine, MatrixModelKpReport, KP_MATRIX_DIM,
-    KP_MOMENTS_COUNT,
+    KP_MATRIX_DIM, KP_MOMENTS_COUNT, MatrixModelKpConfig, MatrixModelKpHierarchyEngine,
+    MatrixModelKpReport,
 };
 pub use microstructure::{
-    obi_acceleration, order_book_imbalance, AdaptiveResonanceClustering,
-    InstitutionalVolumeTracker, OFIModel, OrderFlowTracker, SpoofingDetector,
+    AdaptiveResonanceClustering, InstitutionalVolumeTracker, OFIModel, OrderFlowTracker,
+    SpoofingDetector, obi_acceleration, order_book_imbalance,
 };
 pub use monge_kantorovich_wasserstein::{
-    MongeKantorovichWassersteinEngine, WassersteinParams, WassersteinReport, WASSERSTEIN_NODES,
+    MongeKantorovichWassersteinEngine, WASSERSTEIN_NODES, WassersteinParams, WassersteinReport,
 };
 pub use multifractal::{
-    smooth_persistence_degree, MultiScaleHurstConfluence, MultifractalParams,
-    MultifractalSpectrumEngine,
+    MultiScaleHurstConfluence, MultifractalParams, MultifractalSpectrumEngine,
+    smooth_persistence_degree,
 };
 pub use navier_stokes::{HydrodynamicRegime, NavierStokesParams, NavierStokesReynoldsEngine};
 pub use normalizer::{GarmanKlassVolatilityEstimator, StatisticalNormalizer};
 pub use omni_strategies::OmniStrategyEngine;
 pub use penrose_spin_network::{
-    PenroseSpinNetworkEngine, PenroseSpinNetworkParams, PenroseSpinNetworkReport, SpinNode,
-    MAX_SPIN_NODES, SPIN_HISTORY_CAPACITY,
+    MAX_SPIN_NODES, PenroseSpinNetworkEngine, PenroseSpinNetworkParams, PenroseSpinNetworkReport,
+    SPIN_HISTORY_CAPACITY, SpinNode,
 };
 pub use peps_hypergraph_ricci::{
-    PepsHypergraphRicciEngine, PepsHypergraphRicciReport, PepsRicciParams, PEPS_BOND_DIM,
-    PEPS_COLS, PEPS_ROWS,
+    PEPS_BOND_DIM, PEPS_COLS, PEPS_ROWS, PepsHypergraphRicciEngine, PepsHypergraphRicciReport,
+    PepsRicciParams,
 };
 pub use perelman_ricci_surgery::{
-    PerelmanRicciParams, PerelmanRicciSurgeryEngine, PerelmanSurgeryReport, MAX_MANIFOLD_DIM,
+    MAX_MANIFOLD_DIM, PerelmanRicciParams, PerelmanRicciSurgeryEngine, PerelmanSurgeryReport,
 };
 pub use quantum_geodesic_phase_space::{
-    GeodesicPhaseSpaceParams, GeodesicPhaseSpaceReport, PhaseSpacePoint,
-    QuantumGeodesicPhaseSpaceEngine, PHASE_SPACE_HISTORY_LEN,
+    GeodesicPhaseSpaceParams, GeodesicPhaseSpaceReport, PHASE_SPACE_HISTORY_LEN, PhaseSpacePoint,
+    QuantumGeodesicPhaseSpaceEngine,
 };
 pub use random_matrix_wilson::{
-    jacobi_eigensolver_symmetric, ContinuousLyapunovEstimator, DenoisedCorrelationResult,
-    LyapunovDiagnostic, MarchenkoPasturBounds, MarchenkoPasturFilter, RandomMatrixWilsonEngine,
-    WilsonOperatorClass, WilsonRGEngine, WilsonRGScaleReport, MAX_ASSETS, MAX_DYADIC_SCALES,
+    ContinuousLyapunovEstimator, DenoisedCorrelationResult, LyapunovDiagnostic, MAX_ASSETS,
+    MAX_DYADIC_SCALES, MarchenkoPasturBounds, MarchenkoPasturFilter, RandomMatrixWilsonEngine,
+    WilsonOperatorClass, WilsonRGEngine, WilsonRGScaleReport, jacobi_eigensolver_symmetric,
 };
 pub use rough_ergodic::{
     ErgodicGrowthEngine, ErgodicGrowthResult, MalliavinEvaluator, MalliavinRoughGreeks,
-    RoughBergomiPredictor, ROUGH_FACTORS_COUNT,
+    ROUGH_FACTORS_COUNT, RoughBergomiPredictor,
 };
 pub use simd_neural_network::SimdNeuralNet;
 pub use simd_yoshida_replicator::{
     Avx512Lane8F64, EvolutionaryReplicatorSimplex, HamiltonianPhaseState, ReplicatorSimplexReport,
-    SimdYoshidaReplicatorEngine, SimdYoshidaReplicatorReport, SymplecticEvolutionRegime,
-    SymplecticOrbitReport, Yoshida4SymplecticIntegrator, SIMD_F64_LANES, YOSHIDA_C, YOSHIDA_D,
-    YOSHIDA_W0, YOSHIDA_W1,
+    SIMD_F64_LANES, SimdYoshidaReplicatorEngine, SimdYoshidaReplicatorReport,
+    SymplecticEvolutionRegime, SymplecticOrbitReport, YOSHIDA_C, YOSHIDA_D, YOSHIDA_W0, YOSHIDA_W1,
+    Yoshida4SymplecticIntegrator,
 };
 pub use soa_shadow_otoc::{
-    InFlightMarginEntry, InFlightShadowLedger, OtocShadowRegime, QuantumOtocEngine,
-    QuantumOtocReport, SoaOrderBookL2, SoaShadowOtocMasterEngine, SoaShadowOtocReport, OTOC_OP_DIM,
+    InFlightMarginEntry, InFlightShadowLedger, OTOC_OP_DIM, OtocShadowRegime, QuantumOtocEngine,
+    QuantumOtocReport, SoaOrderBookL2, SoaShadowOtocMasterEngine, SoaShadowOtocReport,
 };
 pub use spectral::SpectralCycleEngine;
 pub use spot_futures_abl_iceberg::{
-    AblWeakValueReport, AharonovBergmannLebowitzEngine, IcebergHunterL3Engine, IcebergL3Report,
-    SpotFuturesAblIcebergMasterEngine, SpotFuturesAblIcebergReport, SpotFuturesAblRegime,
-    SpotFuturesLeadLagEngine, SpotFuturesLeadLagReport, ABL_STATE_DIM, LEAD_LAG_WINDOW,
+    ABL_STATE_DIM, AblWeakValueReport, AharonovBergmannLebowitzEngine, IcebergHunterL3Engine,
+    IcebergL3Report, LEAD_LAG_WINDOW, SpotFuturesAblIcebergMasterEngine,
+    SpotFuturesAblIcebergReport, SpotFuturesAblRegime, SpotFuturesLeadLagEngine,
+    SpotFuturesLeadLagReport,
 };
 pub use stoikov_microprice::{
-    StoikovMicropriceEngine, StoikovMicropriceParams, StoikovMicropriceReport, IMBALANCE_STATES,
-    RTT_WINDOW_SIZE,
+    IMBALANCE_STATES, RTT_WINDOW_SIZE, StoikovMicropriceEngine, StoikovMicropriceParams,
+    StoikovMicropriceReport,
+};
+pub use symplectic_floer_cohomology::{
+    SymplecticFloerCohomologyEngine, SymplecticFloerConfig, SymplecticFloerReport,
 };
 pub use tensor_ring::TensorRing;
 pub use tqft_anyons::{
-    AnyonFusionState2D, Complex64, TqftAnyonReport, TqftFibonacciAnyonEngine, PHI_GOLDEN,
+    AnyonFusionState2D, Complex64, PHI_GOLDEN, TqftAnyonReport, TqftFibonacciAnyonEngine,
 };
 pub use tropical_kdv_soliton::{
-    tropical_add, tropical_mul, KdvSolitonIstAnalyzer, KdvSolitonReport, TropicalKdvCycleReport,
-    TropicalKdvEngine, TropicalMaxPlusMatrix, TropicalSolitonRegime, TropicalSpectralReport,
-    KDV_GRID_DIM, TROPICAL_ONE, TROPICAL_ZERO,
+    KDV_GRID_DIM, KdvSolitonIstAnalyzer, KdvSolitonReport, TROPICAL_ONE, TROPICAL_ZERO,
+    TropicalKdvCycleReport, TropicalKdvEngine, TropicalMaxPlusMatrix, TropicalSolitonRegime,
+    TropicalSpectralReport, tropical_add, tropical_mul,
 };
 pub use tzcnt_lut_kpz::{
-    BitmapTickScanner256, FastAsciiLutEncoder, KpzBitmapRegime, KpzSurfaceGrowthEngine,
-    KpzSurfaceReport, TzcntLutKpzMasterEngine, TzcntLutKpzReport, DIGIT_PAIRS_LUT, KPZ_DYNAMIC_Z,
-    KPZ_GROWTH_BETA, KPZ_ROUGHNESS_ALPHA, KPZ_SURFACE_SITES,
+    BitmapTickScanner256, DIGIT_PAIRS_LUT, FastAsciiLutEncoder, KPZ_DYNAMIC_Z, KPZ_GROWTH_BETA,
+    KPZ_ROUGHNESS_ALPHA, KPZ_SURFACE_SITES, KpzBitmapRegime, KpzSurfaceGrowthEngine,
+    KpzSurfaceReport, TzcntLutKpzMasterEngine, TzcntLutKpzReport,
 };
 pub use vietoris_rips_persistence::{
-    TdaMicroPoint, VietorisRipsParams, VietorisRipsReport, VietorisRipsTopologicalEngine,
-    TDA_FILTRATION_LEVELS, TDA_POINT_CLOUD_LEN,
+    TDA_FILTRATION_LEVELS, TDA_POINT_CLOUD_LEN, TdaMicroPoint, VietorisRipsParams,
+    VietorisRipsReport, VietorisRipsTopologicalEngine,
 };
 pub use virasoro_cft_bootstrap::{
-    ConformalRegime, VirasoroCftBootstrapEngine, VirasoroCftParams, VirasoroCftReport,
-    CFT_WINDOW_CAPACITY,
+    CFT_WINDOW_CAPACITY, ConformalRegime, VirasoroCftBootstrapEngine, VirasoroCftParams,
+    VirasoroCftReport,
 };
 pub use voiculescu_jarzynski_svgd::{
-    JarzynskiCrooksEngine, JarzynskiRegime, JarzynskiReport, SteinVariationalGradientDescentEngine,
+    JarzynskiCrooksEngine, JarzynskiRegime, JarzynskiReport, MAX_FREE_EIGENVALUES,
+    MAX_JARZYNSKI_SAMPLES, MAX_SVGD_PARTICLES, SVGD_DIM, SteinVariationalGradientDescentEngine,
     SvgdReport, VoiculescuFreeProbabilityEngine, VoiculescuFreeSpectrumReport,
-    VoiculescuJarzynskiSvgdMasterEngine, VoiculescuJarzynskiSvgdReport, MAX_FREE_EIGENVALUES,
-    MAX_JARZYNSKI_SAMPLES, MAX_SVGD_PARTICLES, SVGD_DIM,
+    VoiculescuJarzynskiSvgdMasterEngine, VoiculescuJarzynskiSvgdReport,
 };
 pub use welford::WelfordOnline;
 pub use zakai_doob_amplituhedron::{
-    AmplituhedronReport, DoobMeyerCompensatorEngine, DoobMeyerReport, DoobMeyerToxicityRegime,
-    KramersKronigDispersionEngine, KramersKronigReport, PositiveGrassmannianAmplituhedronEngine,
-    ZakaiDoobAmplituhedronMasterEngine, ZakaiDoobAmplituhedronReport, ZakaiFilterEngine,
-    ZakaiFilterReport, AMPLITUHEDRON_K, AMPLITUHEDRON_N, DISPERSION_FREQS, PLUCKER_COORDS_COUNT,
-    ZAKAI_GRID_SIZE,
+    AMPLITUHEDRON_K, AMPLITUHEDRON_N, AmplituhedronReport, DISPERSION_FREQS,
+    DoobMeyerCompensatorEngine, DoobMeyerReport, DoobMeyerToxicityRegime,
+    KramersKronigDispersionEngine, KramersKronigReport, PLUCKER_COORDS_COUNT,
+    PositiveGrassmannianAmplituhedronEngine, ZAKAI_GRID_SIZE, ZakaiDoobAmplituhedronMasterEngine,
+    ZakaiDoobAmplituhedronReport, ZakaiFilterEngine, ZakaiFilterReport,
 };
