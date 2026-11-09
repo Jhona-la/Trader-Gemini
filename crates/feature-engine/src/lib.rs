@@ -21,6 +21,7 @@ pub mod hawkes_cross;
 pub mod hodge_flow;
 pub mod hurst_dfa;
 pub mod hyperbolic_poincare_hodge;
+pub mod jt_schwarzian_gravity;
 pub mod kalman;
 pub mod kam_eth_tur_stein;
 pub mod koopman_dmd;
@@ -136,6 +137,7 @@ pub use landauer_bec_hopfield::{
     HOPFIELD_PROTOTYPE_COUNT, LN_2,
 };
 pub use lead_lag::LeadLagAlphaEngine;
+pub use jt_schwarzian_gravity::{JtSchwarzianConfig, JtSchwarzianEngine, JtSchwarzianReport};
 pub use liouville_quantum_gravity::{
     LiouvilleCft2dQuantumGravityEngine, LiouvilleCftParams, LiouvilleQuantumGravityReport,
 };
