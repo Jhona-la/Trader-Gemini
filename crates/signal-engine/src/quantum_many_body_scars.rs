@@ -174,8 +174,9 @@ impl QuantumManyBodyScarsEngine {
         let spectral_form_factor = ((1.0 + sff_osc * revival_fidelity) / (1.0 + vol)).max(0.0);
 
         // 4. Grado de Violación de ETH (no ergodicidad) $\xi_{\text{eth}} \in [0.0, 1.0]$:
-        // Cuanto mayor es el revival y menor es la entropía térmica, mayor es la persistencia cuántica
-        let eth_violation_degree = (revival_fidelity * (1.0 - 0.20 * vol.min(1.0))).clamp(0.0, 1.0);
+        // En QMBS, la no-ergodicidad persiste a lo largo de toda la órbita periódica en el subespacio cicatrizado.
+        // La termalización (violación de ETH) está gobernada por la atenuación ambiental (damping/dephasing) y la entropía térmica.
+        let eth_violation_degree = (damping * (1.0 - 0.20 * vol.min(1.0))).clamp(0.0, 1.0);
 
         // 5. Señal direccional purificada en el subespacio cicatrizado $\kappa_{\text{qmbs}}$:
         // Pondera el OFI y el retorno proyectándolos a lo largo del autovector cicatrizado
