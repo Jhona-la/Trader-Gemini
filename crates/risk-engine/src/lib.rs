@@ -9,6 +9,7 @@ pub mod dirac_monopole_chern_bundle;
 pub mod drawdown;
 pub mod envio;
 pub mod evidence;
+pub mod fisher_rao_amari_manifold;
 pub mod freno_estrategia;
 pub mod gromov_symplectic_barrier;
 pub mod guard;
@@ -59,6 +60,9 @@ pub use dirac_monopole_chern_bundle::{
 pub use evidence::{
     profit_factor_lcb, resolve_bayes_prior, win_rate_hierarchical_lcb, win_rate_lcb,
     DEFAULT_BAYES_PRIOR_MASS, DEFAULT_BAYES_PRIOR_WIN_RATE,
+};
+pub use fisher_rao_amari_manifold::{
+    FisherRaoAmariConfig, FisherRaoAmariManifoldEngine, FisherRaoAmariReport,
 };
 pub use gromov_symplectic_barrier::{
     GromovSymplecticBarrierEngine, GromovSymplecticParams, GromovSymplecticReport, Quaternion,

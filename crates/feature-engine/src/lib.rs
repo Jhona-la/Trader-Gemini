@@ -1,3 +1,4 @@
+pub mod amplituhedron_order_flow;
 pub mod ashtekar_lqg_area;
 pub mod bergman_fock_reproducing;
 pub mod bouchaud_mezard_ewl;
@@ -69,6 +70,9 @@ pub mod welford;
 pub mod zakai_doob_amplituhedron;
 
 // Re-exportar primitivas matemáticas O(1)
+pub use amplituhedron_order_flow::{
+    AmplituhedronOrderFlowConfig, AmplituhedronOrderFlowEngine, AmplituhedronOrderFlowReport,
+};
 pub use ashtekar_lqg_area::{
     AshtekarLqgAreaEngine, AshtekarLqgParams, AshtekarLqgReport, ASHTEKAR_SPIN_CHANNELS,
     BARBERO_IMMIRZI_GAMMA, PLANCK_AREA_SCALE,
