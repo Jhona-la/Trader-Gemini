@@ -130,7 +130,7 @@ fn test_f1_049_council_drawdown_unified_and_fail_closed_slippage() {
     );
 
     // 2. Verificación de paridad de cálculo de drawdown con capital_del_freno
-    let arena = quantum_arena::GlobalArena::new(13.0);
+    let arena = quantum_arena::GlobalArena::build_in_own_stack(13.0);
     arena.unified_capital.store(15.0, std::sync::atomic::Ordering::Relaxed);
     // Simular que el exchange real reporta un saldo menor (12.0 USD)
     arena.capital_exchange.store(12.0, std::sync::atomic::Ordering::Relaxed);

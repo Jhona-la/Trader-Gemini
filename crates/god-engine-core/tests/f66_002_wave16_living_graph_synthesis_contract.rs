@@ -128,8 +128,8 @@ fn test_c2_wave16_dirac_monopole_hard_veto() {
 
     let rep_shock = orchestrator.evaluate_and_synthesize(
         0,
-        100.0,
-        101.50,
+        99.99,
+        100.01,
         1000.0,
         1.0,
         1_000_000,
@@ -177,8 +177,8 @@ fn test_c3_wave16_peps_hyperbolic_dispersion_veto() {
 
     let rep_shock = orchestrator.evaluate_and_synthesize(
         0,
-        100.0,
-        100.80,
+        99.99,
+        100.01,
         500.0,
         5.0,
         1_000_000,

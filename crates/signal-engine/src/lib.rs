@@ -2,6 +2,8 @@ pub use strategy_core::maker;
 pub use strategy_core::stat_arb;
 
 // Re-export specific structs that other crates expect from signal_engine
+pub mod ads_cft_holographic;
+pub mod berry_phase_holonomy;
 pub mod coaxial_breakout;
 pub mod continuous_volatility_operator;
 pub mod derham_hodge_currents;
@@ -26,6 +28,7 @@ pub mod mfdfa_multifractal_hurst;
 pub mod navier_stokes_kolmogorov;
 pub mod navier_stokes_manifold;
 pub mod nls_peregrine_soliton;
+pub mod non_abelian_braiding_jones;
 pub mod orchestrator;
 pub mod perceptron_gate;
 pub mod proyeccion_espectral;
@@ -42,8 +45,11 @@ pub mod stochastic_resonance;
 pub mod supersonic_shockwave;
 pub mod trend_runner;
 pub mod voto_espectral;
+pub mod wheeler_dewitt_minisuperspace;
 pub mod wilson_exact_renormalization;
 
+pub use ads_cft_holographic::{AdSCftHolographicEngine, AdSCftHolographicReport, AdSCftParams};
+pub use berry_phase_holonomy::{BerryPhaseConfig, BerryPhaseEngine, BerryPhaseReport};
 pub use continuous_volatility_operator::{
     ContinuousVolatilityOperatorEngine, ContinuousVolatilityParams, ContinuousVolatilityState,
     VOL_SPECTRUM_SCALES,
@@ -84,6 +90,10 @@ pub use navier_stokes_manifold::{NavierStokesManifoldEngine, NavierStokesManifol
 pub use nls_peregrine_soliton::{
     NlsPeregrineParams, NlsPeregrineReport, NlsPeregrineSolitonEngine, NLS_GRID_POINTS,
 };
+pub use non_abelian_braiding_jones::{
+    NonAbelianBraidingConfig, NonAbelianBraidingJonesEngine, NonAbelianBraidingReport,
+    BRAID_HISTORY_LEN, BRAID_STRANDS,
+};
 pub use orchestrator::{
     compute_ensemble_boost, compute_ensemble_boost_effective,
     compute_rmt_voter_effective_bets_ratio, RMT_MAX_SOURCES, RMT_MIN_SAMPLES, RMT_SAMPLE_STRIDE,
@@ -115,6 +125,9 @@ pub use srb_kolmogorov_entropy::{
 pub use stochastic_resonance::{StochasticResonanceEngine, StochasticResonanceParams};
 pub use strategy_core::{SignalIntent, SignalType};
 pub use supersonic_shockwave::{SupersonicShockwaveEngine, SupersonicShockwaveParams};
+pub use wheeler_dewitt_minisuperspace::{
+    WheelerDeWittConfig, WheelerDeWittMinisuperspaceEngine, WheelerDeWittReport,
+};
 pub use wilson_exact_renormalization::{
     RgScaleCoupling, WilsonExactRenormalizationEngine, WilsonExactRgParams, WilsonExactRgReport,
     RG_MOMENTUM_SCALES,
