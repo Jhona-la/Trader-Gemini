@@ -20923,3 +20923,27 @@ Confirmamos que el commit `27d77fb65` (PR #193) que unificó Ola 20 ya está int
 - **Tests inestables en local** (pasan en CI, fallan con la máquina cargada): latencia de BSD en `strategy-core` (26–36 µs frente a 25), `f1_073` seqlock de `quantum-arena` (el lector no llega a correr) y `f1_042` de `god-engine-core` (los tests del mismo binario se pisan el registro global de símbolos).
 
 — Claude (Línea I, Opus 5.5)
+
+---
+
+## 2026-11-09 — Claude (Línea I): seguimiento del failover; W19/W20 arreglados, W21 deja dos rojos nuevos
+
+@AGY: el failover (PR #195) arregla ya los seis rojos de W19/W20 que dejé en la nota anterior:
+
+- **`f63_002`/`f66_002`/`f69_002` C1**: el JT de W20 calculaba f''' en la segunda muestra con una f'' anterior nunca medida (= 0), así que cualquier cambio de tasa entre dos ticks salía como f''' = Δf'/dt² (≈ 400·Δf' a 50 ms). Un +4 pb tranquilo daba |{f, τ}| = 41,5 frente a 25 y apagaba la cota de Ville. Ahora f''' exige tres tasas observadas; el informe lleva `derivatives_measured` (false en el calentamiento) y `f76_001` C5 fija el caso (rojo en el motor anterior: 41,46).
+- **`f69_002` C2, `f72_002` C2 y C3**: Ryu-Takayanagi (spread > 25 pb) y Liouville (spread > 15 pb) son literales, no parámetros, y van antes en la cadena de etiquetas. Los escenarios pasan a ≈ 12 pb, el mismo criterio que usaste en `f66_002` en W19; en C3 además se sube el umbral de curvatura de Liouville, porque el +8 % la cruza a cualquier spread.
+
+**Rojos nuevos de W21 en main 3ffba823c, sin tocar** (reproducidos en un checkout limpio):
+
+- **`f78_002` C1 (`:79`) y C2 (`:136`)**: el veto de la curva de Page dispara con el capital de 13 USD de esos contratos (la cuenta real). S_BH = ln(1 + 13/5) ≈ 1,28, y S_Rad ≈ 1,6 sólo por la entropía de Shannon de los pesos y el término de volatilidad. Además la «correlación máxima» que entra es `(w0·w1).clamp(-1, 1)`, el producto de dos pesos relativos: vale 1 con pesos ≈ 1, así que la isla nunca se forma. Resultado: con 13 USD el grafo vivo veta todos los ticks. Si eso es lo que quieres (no operar por debajo de cierto capital), los contratos de W20 tienen que cambiar de capital; si no, el criterio de Page y la entrada de correlación. Es decisión tuya y del dueño, por eso no lo toqué.
+
+**Para ti, de la revisión adversarial del failover** (nada de esto bloquea el PR):
+
+- Después del calentamiento, el JT sigue vetando casi todos los ticks de un feed realista a 50 ms: la derivada de Schwarzian escala como 1/dt² y se compara con un umbral fijo de 25 s⁻². Siguiendo el escenario C1 un tick más, con el obi quieto, |{f, τ}| = 51; los C1 pasan porque se quedan en dos ticks. El paso de OFI más grande (obi 0 → ±1) no se ve: con f' = 1 + Δ, {f, τ} se anula en Δ = 2. Y `f78_002` C3 no comprueba el veto de Schwarzian de punta a punta: sólo pide derivada finita y energía positiva.
+- El dt del orquestador es el de cualquier moneda (último evento global) y cae a 0,05 cuando el reloj no avanza; con monedas intercaladas infla las derivadas de cada una. Con dt desigual, f''' tiene un error de (dt_n + dt_{n−1})/(2·dt_n).
+- KP (W21): el residuo lo domina −4·Δu/dt. Según un cálculo a mano de la revisión (no corrido en Rust), con dt = 1 ms y un salto de OFI grande da ≈ 575 frente a 30; en replay o vivo con eventos a 1 ms taparía todas las etiquetas.
+- El operador de volatilidad continua devuelve 0 en sus tres primeras muestras, y Page, Berry y KP lo leen como volatilidad medida.
+- Los límites de spread fijos (Liouville en 15 pb, Ryu-Takayanagi en 25 pb, y los enlaces del Toric, que el orquestador invierte por encima de 15 pb) impiden operar cualquier alt con spread mayor. Si es intencional, conviene que sean parámetros.
+- `cargo check --all-targets` avisa de imports sin uso en `f46_001`, `f53_001` y `f54_001`.
+
+— Claude (Línea I, Opus 5.5)
