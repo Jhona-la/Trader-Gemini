@@ -22,8 +22,8 @@
 //! - Cota analítica de ruina de Ville $\mathbb{P}(\text{ruina}) \le 10^{-6}$ estrictamente preservada.
 
 use crate::topological_metamorphosis::{
-    TopologicalMetamorphosisEngine, TopologicalMetamorphosisParams, TopologicalMetamorphosisReport,
-    METAMORPHOSIS_NODES,
+    METAMORPHOSIS_NODES, TopologicalMetamorphosisEngine, TopologicalMetamorphosisParams,
+    TopologicalMetamorphosisReport,
 };
 use feature_engine::{
     AshtekarLqgAreaEngine, AshtekarLqgParams, AshtekarLqgReport, BergmanFockParams,
@@ -31,14 +31,14 @@ use feature_engine::{
     CalabiYauSeibergWittenReport, GeodesicPhaseSpaceParams, GeodesicPhaseSpaceReport,
     GrossPitaevskiiBecEngine, GrossPitaevskiiBecReport, GrossPitaevskiiParams,
     HyperbolicPoincareHodgeEngine, HyperbolicPoincareHodgeParams, HyperbolicPoincareHodgeReport,
-    JtSchwarzianConfig, JtSchwarzianEngine, JtSchwarzianReport, LatticeQcdConfig, LatticeQcdReport,
-    LatticeQcdWilsonPolyakovEngine, LiouvilleCft2dQuantumGravityEngine, LiouvilleCftParams,
-    LiouvilleQuantumGravityReport, MatrixModelKpConfig, MatrixModelKpHierarchyEngine,
-    MatrixModelKpReport, MongeKantorovichWassersteinEngine, PenroseSpinNetworkEngine,
-    PenroseSpinNetworkParams, PenroseSpinNetworkReport, PepsHypergraphRicciEngine,
-    PepsHypergraphRicciReport, PepsRicciParams, QuantumGeodesicPhaseSpaceEngine,
-    VietorisRipsParams, VietorisRipsReport, VietorisRipsTopologicalEngine, WassersteinParams,
-    WassersteinReport, KP_MATRIX_DIM, WASSERSTEIN_NODES,
+    JtSchwarzianConfig, JtSchwarzianEngine, JtSchwarzianReport, KP_MATRIX_DIM, LatticeQcdConfig,
+    LatticeQcdReport, LatticeQcdWilsonPolyakovEngine, LiouvilleCft2dQuantumGravityEngine,
+    LiouvilleCftParams, LiouvilleQuantumGravityReport, MatrixModelKpConfig,
+    MatrixModelKpHierarchyEngine, MatrixModelKpReport, MongeKantorovichWassersteinEngine,
+    PenroseSpinNetworkEngine, PenroseSpinNetworkParams, PenroseSpinNetworkReport,
+    PepsHypergraphRicciEngine, PepsHypergraphRicciReport, PepsRicciParams,
+    QuantumGeodesicPhaseSpaceEngine, VietorisRipsParams, VietorisRipsReport,
+    VietorisRipsTopologicalEngine, WASSERSTEIN_NODES, WassersteinParams, WassersteinReport,
 };
 use risk_engine::{
     AdaptiveQuantumVetoGovernor, AdaptiveVetoDecision, BekensteinMukhanovConfig,
@@ -46,22 +46,22 @@ use risk_engine::{
     ChernSimonsBerryPhaseEngine, ChernSimonsBerryReport, DiracMonopoleChernBundleEngine,
     DiracMonopoleParams, DiracMonopoleReport, GromovSymplecticBarrierEngine,
     GromovSymplecticParams, GromovSymplecticReport, LindbladDecoherenceReport,
-    LindbladMasterDecoherenceEngine, LindbladMasterParams, MarketQuantumStateInput, MpsDmrgParams,
-    MpsDmrgReport, PageCurveIslandConfig, PageCurveIslandReport, PageCurveIslandRiskEngine,
-    PolyakovSchwarzschildHorizonEngine, PolyakovSchwarzschildParams, PolyakovSchwarzschildReport,
-    QuantumNoArbitrageConformalEngine, QuantumNoArbitrageConformalParams,
-    QuantumNoArbitrageConformalReport, ReebContactParams, ReebContactReport,
-    ReebContactVortexEngine, RyuTakayanagiEntanglementEngine, RyuTakayanagiParams,
-    RyuTakayanagiReport, TensorNetworkMpsDmrgEngine, ToricCodeConfig, ToricCodeEngine,
-    ToricCodeReport, UmegakiEntropyParams, UmegakiEntropyReport, UmegakiRelativeEntropyEngine,
-    MPS_ASSET_CHANNELS, TORIC_EDGES,
+    LindbladMasterDecoherenceEngine, LindbladMasterParams, MPS_ASSET_CHANNELS,
+    MarketQuantumStateInput, MpsDmrgParams, MpsDmrgReport, PageCurveIslandConfig,
+    PageCurveIslandReport, PageCurveIslandRiskEngine, PolyakovSchwarzschildHorizonEngine,
+    PolyakovSchwarzschildParams, PolyakovSchwarzschildReport, QuantumNoArbitrageConformalEngine,
+    QuantumNoArbitrageConformalParams, QuantumNoArbitrageConformalReport, ReebContactParams,
+    ReebContactReport, ReebContactVortexEngine, RyuTakayanagiEntanglementEngine,
+    RyuTakayanagiParams, RyuTakayanagiReport, TORIC_EDGES, TensorNetworkMpsDmrgEngine,
+    ToricCodeConfig, ToricCodeEngine, ToricCodeReport, UmegakiEntropyParams, UmegakiEntropyReport,
+    UmegakiRelativeEntropyEngine,
 };
 use signal_engine::{
-    AdSCftHolographicEngine, AdSCftHolographicReport, AdSCftParams, BerryPhaseConfig,
-    BerryPhaseEngine, BerryPhaseReport, BurgersShockwaveReport, ContinuousVolatilityOperatorEngine,
-    ContinuousVolatilityState, DeRhamHodgeCurrentsEngine, DeRhamHodgeParams, DeRhamHodgeReport,
-    FeynmanPathIntegralRoutingEngine, FeynmanRoutingParams, FeynmanRoutingReport,
-    FractionalRoughVolatilityEngine, FractionalRoughVolatilityParams,
+    AdSCftHolographicEngine, AdSCftHolographicReport, AdSCftParams, BRAID_STRANDS,
+    BerryPhaseConfig, BerryPhaseEngine, BerryPhaseReport, BurgersShockwaveReport,
+    ContinuousVolatilityOperatorEngine, ContinuousVolatilityState, DeRhamHodgeCurrentsEngine,
+    DeRhamHodgeParams, DeRhamHodgeReport, FeynmanPathIntegralRoutingEngine, FeynmanRoutingParams,
+    FeynmanRoutingReport, FractionalRoughVolatilityEngine, FractionalRoughVolatilityParams,
     FractionalRoughVolatilityReport, JarzynskiCrooksParams, JarzynskiCrooksReport,
     JarzynskiCrooksThermodynamicsEngine, KdvSolitonDispersionEngine, KdvSolitonParams,
     KdvSolitonReport, MeanFieldGamesPsychologyEngine, MeanFieldGamesReport, MfDfaHurstReport,
@@ -72,11 +72,11 @@ use signal_engine::{
     RiemannBurgersShockwaveEngine, RuelleFrobeniusParams, RuelleFrobeniusReport,
     RuelleFrobeniusTransferEngine, SrbEntropyParams, SrbEntropyReport, SrbKolmogorovEntropyEngine,
     WheelerDeWittConfig, WheelerDeWittMinisuperspaceEngine, WheelerDeWittReport,
-    WilsonExactRenormalizationEngine, WilsonExactRgParams, WilsonExactRgReport, BRAID_STRANDS,
+    WilsonExactRenormalizationEngine, WilsonExactRgParams, WilsonExactRgReport,
 };
 use strategy_core::{
     AssetColorState, ChromodynamicGaugeSu3Engine, ConnesSpectralGeometryEngine,
-    ConnesSpectralParams, ConnesSpectralReport, SignalType, Su3GaugeReport, SU3_COLORS,
+    ConnesSpectralParams, ConnesSpectralReport, SU3_COLORS, SignalType, Su3GaugeReport,
 };
 
 /// Informe omnisciente holístico que resume el estado emergente completo del grafo vivo.
