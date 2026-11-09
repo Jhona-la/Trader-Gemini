@@ -225,6 +225,14 @@ mod tests {
     fn test_phase_orchestrator_production_flow_with_darwin_approval() {
         let darwin = Arc::new(AtomicBool::new(false));
         let mut orch = PhaseOrchestrator::new(1, false, darwin.clone());
+        // GLM-216: certificado demo válido — este contrato prueba el flujo
+        // Darwin, no la puerta de Producción (ésta tiene su contrato propio
+        // en tests/phase_authorization_contract.rs).
+        orch.set_evidencia_demo(Some(EvidenciaDemo {
+            cierres: 30,
+            ev_neto_por_trade: 0.001,
+            wins: 20,
+        }));
 
         orch.on_tick(); // Init -> DataWarmup
         orch.on_tick(); // DataWarmup -> GenomicAudit
@@ -246,6 +254,12 @@ mod tests {
         let darwin = Arc::new(AtomicBool::new(true));
         let oms_reconciled = Arc::new(AtomicBool::new(false));
         let mut orch = PhaseOrchestrator::new_with_oms(1, false, darwin.clone(), oms_reconciled.clone());
+        // GLM-216: ídem — el foco de este contrato es la reconciliación OMS.
+        orch.set_evidencia_demo(Some(EvidenciaDemo {
+            cierres: 30,
+            ev_neto_por_trade: 0.001,
+            wins: 20,
+        }));
 
         orch.on_tick(); // Init -> DataWarmup
         orch.on_tick(); // DataWarmup -> GenomicAudit
