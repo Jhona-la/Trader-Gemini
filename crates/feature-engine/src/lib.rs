@@ -26,6 +26,7 @@ pub mod jt_schwarzian_gravity;
 pub mod kalman;
 pub mod kam_eth_tur_stein;
 pub mod koopman_dmd;
+pub mod kostant_souriau_prequantum;
 pub mod landauer_bec_hopfield;
 pub mod lattice_qcd_wilson_polyakov;
 pub mod lead_lag;
@@ -136,6 +137,9 @@ pub use kam_eth_tur_stein::{
     KamChirikovReport, KamChirikovResonanceEngine, KamEthTurSteinMasterEngine,
     KamEthTurSteinReport, LatticeBoltzmannD1Q3Engine, LatticeBoltzmannReport, TurReport,
     ETH_MAX_LEVELS, JS_DIM, LATTICE_D1Q3_NODES,
+};
+pub use kostant_souriau_prequantum::{
+    KostantSouriauConfig, KostantSouriauPrequantumEngine, KostantSouriauReport,
 };
 pub use landauer_bec_hopfield::{
     BecOrderbookReport, BecPhaseRegime, BoseEinsteinOrderbookEngine, KbnCompensatedAccumulator,
