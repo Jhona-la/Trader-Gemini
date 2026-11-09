@@ -15,6 +15,7 @@ pub mod hodge;
 pub mod kelly;
 pub mod kelly_envelope;
 pub mod leverage_matrix;
+pub mod lindblad_master_decoherence;
 pub mod orchestrator;
 pub mod polyakov_schwarzschild_horizon;
 pub mod quantum_no_arbitrage_conformal;
@@ -57,6 +58,10 @@ pub use gromov_symplectic_barrier::{
     GromovSymplecticBarrierEngine, GromovSymplecticParams, GromovSymplecticReport, Quaternion,
 };
 pub use kelly_envelope::{EdgePosterior, RiskEnvelope, SURVIVAL_FLOOR, TRADE_HORIZON};
+pub use lindblad_master_decoherence::{
+    LindbladDecoherenceReport, LindbladMasterDecoherenceEngine, LindbladMasterParams,
+    LINDBLAD_TRIAD_DIM,
+};
 pub use quantum_no_arbitrage_conformal::{
     QuantumNoArbitrageConformalEngine, QuantumNoArbitrageConformalParams,
     QuantumNoArbitrageConformalReport, CONFORMAL_CALIBRATION_WINDOW,

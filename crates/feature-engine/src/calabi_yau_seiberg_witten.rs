@@ -199,8 +199,11 @@ impl CalabiYauSeibergWittenEngine {
 
         // 5. Desviación de Ricci-Flatness de Calabi-Yau $\Delta_{CY}$
         // En una variedad Calabi-Yau perfecta, $\mathcal{R}_{j\bar{k}} = 0$.
-        // La deformación métrica induce una curvatura escalar proporcional a $\frac{\kappa R^2}{1 + 2\kappa R^2}$.
-        let ricci_flatness_deviation = ((kappa * r_sq) / factor2).clamp(0.0, 1.0);
+        // La deformación métrica induce una curvatura escalar proporcional a $\frac{2\kappa R^2}{1 + 2\kappa R^2}$.
+        // GLM-217 / AGY: la forma anterior (kR^2)/(1+2kR^2) estaba acotada por 1/2 ASINTÓTICAMENTE —
+        // los umbrales del propio diseño (default 0.85, stress 0.50) eran inalcanzables.
+        // Re-escalado normalizado 2kR^2/(1+2kR^2): la desviación cubre ahora [0,1) como el clamp y los umbrales declaran.
+        let ricci_flatness_deviation = ((2.0 * kappa * r_sq) / factor2).clamp(0.0, 1.0);
 
         // 6. Monopolos de Seiberg-Witten sobre el fibrado espinorial
         // El espinor de Weyl $\psi = (\psi_1, \psi_2)$ se construye acoplando $z_1$ y $z_2$
