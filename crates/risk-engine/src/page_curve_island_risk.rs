@@ -203,7 +203,11 @@ impl PageCurveIslandRiskEngine {
             0.0
         } else {
             let margin_ratio = ((s_bh - s_page) / (s_bh + 0.1)).clamp(0.0, 1.0);
-            let island_boost = if island_present { 0.15 * island_fraction } else { 0.0 };
+            let island_boost = if island_present {
+                0.15 * island_fraction
+            } else {
+                0.0
+            };
             (self.config.slot_scale_base * margin_ratio + island_boost).clamp(0.15, 1.25)
         };
 

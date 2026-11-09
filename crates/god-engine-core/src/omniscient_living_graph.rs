@@ -31,13 +31,14 @@ use feature_engine::{
     CalabiYauSeibergWittenReport, GeodesicPhaseSpaceParams, GeodesicPhaseSpaceReport,
     GrossPitaevskiiBecEngine, GrossPitaevskiiBecReport, GrossPitaevskiiParams,
     HyperbolicPoincareHodgeEngine, HyperbolicPoincareHodgeParams, HyperbolicPoincareHodgeReport,
-    JtSchwarzianConfig, JtSchwarzianEngine, JtSchwarzianReport,
-    LiouvilleCft2dQuantumGravityEngine, LiouvilleCftParams, LiouvilleQuantumGravityReport,
-    MatrixModelKpConfig, MatrixModelKpHierarchyEngine, MatrixModelKpReport, KP_MATRIX_DIM,
-    MongeKantorovichWassersteinEngine, PenroseSpinNetworkEngine, PenroseSpinNetworkParams,
-    PenroseSpinNetworkReport, PepsHypergraphRicciEngine, PepsHypergraphRicciReport,
-    PepsRicciParams, QuantumGeodesicPhaseSpaceEngine, VietorisRipsParams, VietorisRipsReport,
-    VietorisRipsTopologicalEngine, WassersteinParams, WassersteinReport, WASSERSTEIN_NODES,
+    JtSchwarzianConfig, JtSchwarzianEngine, JtSchwarzianReport, LiouvilleCft2dQuantumGravityEngine,
+    LiouvilleCftParams, LiouvilleQuantumGravityReport, MatrixModelKpConfig,
+    MatrixModelKpHierarchyEngine, MatrixModelKpReport, MongeKantorovichWassersteinEngine,
+    PenroseSpinNetworkEngine, PenroseSpinNetworkParams, PenroseSpinNetworkReport,
+    PepsHypergraphRicciEngine, PepsHypergraphRicciReport, PepsRicciParams,
+    QuantumGeodesicPhaseSpaceEngine, VietorisRipsParams, VietorisRipsReport,
+    VietorisRipsTopologicalEngine, WassersteinParams, WassersteinReport, KP_MATRIX_DIM,
+    WASSERSTEIN_NODES,
 };
 use risk_engine::{
     AdaptiveQuantumVetoGovernor, AdaptiveVetoDecision, ChernSimonsBerryParams,
@@ -46,32 +47,30 @@ use risk_engine::{
     GromovSymplecticParams, GromovSymplecticReport, LindbladDecoherenceReport,
     LindbladMasterDecoherenceEngine, LindbladMasterParams, MarketQuantumStateInput, MpsDmrgParams,
     MpsDmrgReport, PageCurveIslandConfig, PageCurveIslandReport, PageCurveIslandRiskEngine,
-    PolyakovSchwarzschildHorizonEngine, PolyakovSchwarzschildParams,
-    PolyakovSchwarzschildReport, QuantumNoArbitrageConformalEngine,
-    QuantumNoArbitrageConformalParams, QuantumNoArbitrageConformalReport, ReebContactParams,
-    ReebContactReport, ReebContactVortexEngine, RyuTakayanagiEntanglementEngine,
-    RyuTakayanagiParams, RyuTakayanagiReport, TensorNetworkMpsDmrgEngine,
-    ToricCodeConfig, ToricCodeEngine, ToricCodeReport, TORIC_EDGES, UmegakiEntropyParams,
-    UmegakiEntropyReport, UmegakiRelativeEntropyEngine, MPS_ASSET_CHANNELS,
+    PolyakovSchwarzschildHorizonEngine, PolyakovSchwarzschildParams, PolyakovSchwarzschildReport,
+    QuantumNoArbitrageConformalEngine, QuantumNoArbitrageConformalParams,
+    QuantumNoArbitrageConformalReport, ReebContactParams, ReebContactReport,
+    ReebContactVortexEngine, RyuTakayanagiEntanglementEngine, RyuTakayanagiParams,
+    RyuTakayanagiReport, TensorNetworkMpsDmrgEngine, ToricCodeConfig, ToricCodeEngine,
+    ToricCodeReport, UmegakiEntropyParams, UmegakiEntropyReport, UmegakiRelativeEntropyEngine,
+    MPS_ASSET_CHANNELS, TORIC_EDGES,
 };
 use signal_engine::{
-    AdSCftHolographicEngine, AdSCftHolographicReport, AdSCftParams,
-    BerryPhaseConfig, BerryPhaseEngine, BerryPhaseReport, BRAID_STRANDS,
-    BurgersShockwaveReport, ContinuousVolatilityOperatorEngine, ContinuousVolatilityState,
-    DeRhamHodgeCurrentsEngine, DeRhamHodgeParams, DeRhamHodgeReport,
+    AdSCftHolographicEngine, AdSCftHolographicReport, AdSCftParams, BerryPhaseConfig,
+    BerryPhaseEngine, BerryPhaseReport, BurgersShockwaveReport, ContinuousVolatilityOperatorEngine,
+    ContinuousVolatilityState, DeRhamHodgeCurrentsEngine, DeRhamHodgeParams, DeRhamHodgeReport,
     FeynmanPathIntegralRoutingEngine, FeynmanRoutingParams, FeynmanRoutingReport,
     FractionalRoughVolatilityEngine, FractionalRoughVolatilityParams,
     FractionalRoughVolatilityReport, JarzynskiCrooksParams, JarzynskiCrooksReport,
     JarzynskiCrooksThermodynamicsEngine, KdvSolitonDispersionEngine, KdvSolitonParams,
-    KdvSolitonReport, MeanFieldGamesPsychologyEngine, MeanFieldGamesReport,
-    MfDfaHurstReport, MfDfaMultifractalHurstEngine, MfDfaParams,
-    MultiSlotEvaluationReport, MultiSlotOrderEmission, NavierStokesKolmogorovEngine,
-    NavierStokesParams, NavierStokesReport, NlsPeregrineParams, NlsPeregrineReport,
-    NlsPeregrineSolitonEngine, NonAbelianBraidingConfig, NonAbelianBraidingJonesEngine,
-    NonAbelianBraidingReport, QuantumSlotOrchestrator, RiemannBurgersShockwaveEngine,
-    RuelleFrobeniusParams, RuelleFrobeniusReport, RuelleFrobeniusTransferEngine, SrbEntropyParams,
-    SrbEntropyReport, SrbKolmogorovEntropyEngine, WilsonExactRenormalizationEngine,
-    WilsonExactRgParams, WilsonExactRgReport,
+    KdvSolitonReport, MeanFieldGamesPsychologyEngine, MeanFieldGamesReport, MfDfaHurstReport,
+    MfDfaMultifractalHurstEngine, MfDfaParams, MultiSlotEvaluationReport, MultiSlotOrderEmission,
+    NavierStokesKolmogorovEngine, NavierStokesParams, NavierStokesReport, NlsPeregrineParams,
+    NlsPeregrineReport, NlsPeregrineSolitonEngine, NonAbelianBraidingConfig,
+    NonAbelianBraidingJonesEngine, NonAbelianBraidingReport, QuantumSlotOrchestrator,
+    RiemannBurgersShockwaveEngine, RuelleFrobeniusParams, RuelleFrobeniusReport,
+    RuelleFrobeniusTransferEngine, SrbEntropyParams, SrbEntropyReport, SrbKolmogorovEntropyEngine,
+    WilsonExactRenormalizationEngine, WilsonExactRgParams, WilsonExactRgReport, BRAID_STRANDS,
 };
 use strategy_core::{
     AssetColorState, ChromodynamicGaugeSu3Engine, ConnesSpectralGeometryEngine,
@@ -336,9 +335,7 @@ impl OmniscientLivingGraphOrchestrator {
                 .map(|_| MfDfaMultifractalHurstEngine::new(MfDfaParams::default()))
                 .collect(),
             lindblad_engines: (0..count)
-                .map(|_| {
-                    LindbladMasterDecoherenceEngine::new(LindbladMasterParams::default())
-                })
+                .map(|_| LindbladMasterDecoherenceEngine::new(LindbladMasterParams::default()))
                 .collect(),
             liouville_engines: (0..count)
                 .map(|_| LiouvilleCft2dQuantumGravityEngine::new(LiouvilleCftParams::default()))
@@ -832,36 +829,34 @@ impl OmniscientLivingGraphOrchestrator {
 
         // 42. Entropía de Ryu-Takayanagi y Superficies Extremales de Entrelazamiento Holográfico (Fase 75)
         let btc_disp = volatility_state.effective_volatility;
-        let alt_disp = triad_assets[1 % SU3_COLORS].normalized_return.abs().max(0.001);
-        let cross_corr = (triad_assets[0].relative_weight * triad_assets[1].relative_weight)
-            .clamp(-1.0, 1.0);
-        let ryu_takayanagi_report = self.ryu_takayanagi_engines[safe_coin_id].update(
-            btc_disp,
-            alt_disp,
-            cross_corr,
-            spread_bps,
-        );
+        let alt_disp = triad_assets[1 % SU3_COLORS]
+            .normalized_return
+            .abs()
+            .max(0.001);
+        let cross_corr =
+            (triad_assets[0].relative_weight * triad_assets[1].relative_weight).clamp(-1.0, 1.0);
+        let ryu_takayanagi_report = self.ryu_takayanagi_engines[safe_coin_id]
+            .update(btc_disp, alt_disp, cross_corr, spread_bps);
 
         // 43. Gravedad JT 2D y Dinámica Cuántica de Schwarzian (Fase 76)
         let market_time_rate = (1.0 + ofi.abs() * 2.0).clamp(0.1, 10.0);
-        let jt_schwarzian_report = self.jt_schwarzian_engines[safe_coin_id].evaluate(
-            market_time_rate,
-            dt,
-        );
+        let jt_schwarzian_report =
+            self.jt_schwarzian_engines[safe_coin_id].evaluate(market_time_rate, dt);
 
         // 44. Fase Geométrica de Berry y Holonomía Cuántica de Fubini-Study (Fase 77)
         let spread_norm = spread_bps / 5.0;
         let vol_norm = (volatility_state.effective_volatility * 100.0).max(0.01);
-        let berry_phase_report = self.berry_phase_engines[safe_coin_id].evaluate(
-            spread_norm,
-            vol_norm,
-            ofi,
-        );
+        let berry_phase_report =
+            self.berry_phase_engines[safe_coin_id].evaluate(spread_norm, vol_norm, ofi);
 
         // 45. Estabilizador Topológico de Toric Code y Compuerta de Anyones (Fase 78)
         let mut toric_edges = [1.0f64; TORIC_EDGES];
         for i in 0..16 {
-            toric_edges[i] = if i % 2 == 0 { 1.0 } else { cross_corr.signum().max(-1.0) };
+            toric_edges[i] = if i % 2 == 0 {
+                1.0
+            } else {
+                cross_corr.signum().max(-1.0)
+            };
         }
         for i in 16..TORIC_EDGES {
             toric_edges[i] = if spread_bps > 15.0 { -1.0 } else { 1.0 };
@@ -876,12 +871,8 @@ impl OmniscientLivingGraphOrchestrator {
         matrix_m[1][1] = 1.0 + ofi.abs().min(2.0);
         matrix_m[2][2] = 1.0 + vol_norm.min(3.0);
         matrix_m[3][3] = 1.0 + (spread_bps * 0.1).min(3.0);
-        let matrix_model_kp_report = self.matrix_model_kp_engines[safe_coin_id].evaluate(
-            &matrix_m,
-            dt,
-            ofi,
-            vol_norm,
-        );
+        let matrix_model_kp_report =
+            self.matrix_model_kp_engines[safe_coin_id].evaluate(&matrix_m, dt, ofi, vol_norm);
 
         // 47. Trenzado de Anyones No Abelianos & Invariante de Jones (Fase 80)
         let strands: [f64; BRAID_STRANDS] = [

@@ -1,6 +1,4 @@
-use signal_engine::{
-    NonAbelianBraidingConfig, NonAbelianBraidingJonesEngine, BRAID_STRANDS,
-};
+use signal_engine::{NonAbelianBraidingConfig, NonAbelianBraidingJonesEngine, BRAID_STRANDS};
 
 #[test]
 fn test_non_abelian_braiding_initial_state_unbraided() {
@@ -33,14 +31,20 @@ fn test_non_abelian_braiding_crossing_and_writhe_accumulation() {
     assert_ne!(rep2.cumulative_writhe, 0);
     assert!(rep2.jones_polynomial_norm > 1.0);
     assert!(rep2.braid_holonomy_phase.is_finite());
-    assert!(rep2.holographic_conviction_modulator >= 0.40 && rep2.holographic_conviction_modulator <= 1.45);
+    assert!(
+        rep2.holographic_conviction_modulator >= 0.40
+            && rep2.holographic_conviction_modulator <= 1.45
+    );
 
     // Paso 3: Segundo cruce entre strand 1 y 2
     let s3 = [2.5, 3.5, 0.5, 4.0];
     let rep3 = engine.evaluate(&s3);
 
     assert!(rep3.jones_polynomial_norm.is_finite());
-    assert!(rep3.holographic_conviction_modulator >= 0.40 && rep3.holographic_conviction_modulator <= 1.45);
+    assert!(
+        rep3.holographic_conviction_modulator >= 0.40
+            && rep3.holographic_conviction_modulator <= 1.45
+    );
 }
 
 #[test]
@@ -53,12 +57,18 @@ fn test_non_abelian_braiding_stability_under_nan_and_extremes() {
 
     assert!(rep_nan.jones_polynomial_norm.is_finite());
     assert!(rep_nan.braid_holonomy_phase.is_finite());
-    assert!(rep_nan.holographic_conviction_modulator >= 0.40 && rep_nan.holographic_conviction_modulator <= 1.45);
+    assert!(
+        rep_nan.holographic_conviction_modulator >= 0.40
+            && rep_nan.holographic_conviction_modulator <= 1.45
+    );
 
     let strands_zeros = [0.0; BRAID_STRANDS];
     let rep_zeros = engine.evaluate(&strands_zeros);
     assert!(rep_zeros.jones_polynomial_norm.is_finite());
-    assert!(rep_zeros.holographic_conviction_modulator >= 0.40 && rep_zeros.holographic_conviction_modulator <= 1.45);
+    assert!(
+        rep_zeros.holographic_conviction_modulator >= 0.40
+            && rep_zeros.holographic_conviction_modulator <= 1.45
+    );
 }
 
 #[test]
@@ -83,5 +93,8 @@ fn test_non_abelian_braiding_deterministic_replay() {
     assert_eq!(rep_a2.jones_polynomial_norm, rep_b2.jones_polynomial_norm);
     assert_eq!(rep_a3.cumulative_writhe, rep_b3.cumulative_writhe);
     assert_eq!(rep_a3.jones_polynomial_norm, rep_b3.jones_polynomial_norm);
-    assert_eq!(rep_a3.holographic_conviction_modulator, rep_b3.holographic_conviction_modulator);
+    assert_eq!(
+        rep_a3.holographic_conviction_modulator,
+        rep_b3.holographic_conviction_modulator
+    );
 }

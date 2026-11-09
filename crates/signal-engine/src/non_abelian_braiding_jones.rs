@@ -335,10 +335,7 @@ impl NonAbelianBraidingJonesEngine {
                     phase_fac.mul(Complex2::new(0.0, -1.0))
                 };
                 Matrix2x2 {
-                    m: [
-                        [d00, Complex2::zero()],
-                        [Complex2::zero(), d11],
-                    ],
+                    m: [[d00, Complex2::zero()], [Complex2::zero(), d11]],
                 }
             }
             2 => {
@@ -403,6 +400,10 @@ impl NonAbelianBraidingJonesEngine {
             }
         }
 
-        if entropy.is_finite() { entropy } else { 0.0 }
+        if entropy.is_finite() {
+            entropy
+        } else {
+            0.0
+        }
     }
 }

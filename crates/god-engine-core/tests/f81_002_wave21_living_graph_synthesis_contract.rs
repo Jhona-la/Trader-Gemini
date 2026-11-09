@@ -58,16 +58,31 @@ fn test_c1_wave21_triad_holistic_orchestration() {
 
     // 1. Verificación Fase 79: Modelos Matriciales & Jerarquía KP
     assert!(report.matrix_model_kp_report.tau_function_val > 0.0);
-    assert!(report.matrix_model_kp_report.soliton_potential_u.is_finite());
+    assert!(report
+        .matrix_model_kp_report
+        .soliton_potential_u
+        .is_finite());
     assert!(report.matrix_model_kp_report.kp_curvature_uxx.is_finite());
     assert!(!report.matrix_model_kp_report.kp_soliton_shock_detected);
     assert!(report.matrix_model_kp_report.slot_scale_factor >= 0.20);
 
     // 2. Verificación Fase 80: Trenzado de Anyones No Abelianos & Polinomio de Jones
     assert!(report.non_abelian_braiding_report.jones_polynomial_norm >= 0.5);
-    assert!(report.non_abelian_braiding_report.braid_holonomy_phase.is_finite());
-    assert!(!report.non_abelian_braiding_report.braid_decoherence_detected);
-    assert!(report.non_abelian_braiding_report.holographic_conviction_modulator >= 0.40);
+    assert!(report
+        .non_abelian_braiding_report
+        .braid_holonomy_phase
+        .is_finite());
+    assert!(
+        !report
+            .non_abelian_braiding_report
+            .braid_decoherence_detected
+    );
+    assert!(
+        report
+            .non_abelian_braiding_report
+            .holographic_conviction_modulator
+            >= 0.40
+    );
 
     // 3. Verificación Fase 81: Curva de Page & Fórmula de Isla Holográfica
     assert!(report.page_curve_island_report.bekenstein_hawking_entropy > 0.0);
@@ -88,12 +103,11 @@ fn test_c2_wave21_kp_soliton_shock_hard_veto() {
         QuantumSlotOrchestrator::new(QuantumSlotOrchestratorParams::default());
 
     // Configurar el motor KP con umbral estricto para forzar shock
-    orchestrator.matrix_model_kp_engines[0] = feature_engine::MatrixModelKpHierarchyEngine::new(
-        feature_engine::MatrixModelKpConfig {
+    orchestrator.matrix_model_kp_engines[0] =
+        feature_engine::MatrixModelKpHierarchyEngine::new(feature_engine::MatrixModelKpConfig {
             critical_residual_threshold: 0.01,
             ..Default::default()
-        },
-    );
+        });
 
     let triad = [
         AssetColorState {
@@ -168,13 +182,12 @@ fn test_c3_wave21_page_curve_island_collapse_hard_veto() {
         QuantumSlotOrchestrator::new(QuantumSlotOrchestratorParams::default());
 
     // Configurar motor de isla con piso alto y min_area alta para inducir colapso
-    orchestrator.page_curve_island_engines[0] = risk_engine::PageCurveIslandRiskEngine::new(
-        risk_engine::PageCurveIslandConfig {
+    orchestrator.page_curve_island_engines[0] =
+        risk_engine::PageCurveIslandRiskEngine::new(risk_engine::PageCurveIslandConfig {
             emergency_floor_usd: 95.0, // Cerca del equity de $100
-            min_island_area: 0.99,      // Exige descorrelación casi absoluta
+            min_island_area: 0.99,     // Exige descorrelación casi absoluta
             ..Default::default()
-        },
-    );
+        });
 
     let triad = [
         AssetColorState {
@@ -223,7 +236,10 @@ fn test_c3_wave21_page_curve_island_collapse_hard_veto() {
     for decision in report.multi_slot_evaluation.decisions.iter() {
         assert_eq!(decision.signal, SignalType::Flat);
         assert!(decision.vetoed);
-        assert_eq!(decision.veto_reason, Some("PAGE_CURVE_INFORMATION_COLLAPSE_VETO"));
+        assert_eq!(
+            decision.veto_reason,
+            Some("PAGE_CURVE_INFORMATION_COLLAPSE_VETO")
+        );
     }
 }
 
@@ -303,5 +319,8 @@ fn test_c4_wave21_deterministic_replay_and_ruin_bound() {
         rep_b.page_curve_island_report.page_entropy
     );
     assert_eq!(rep_a.holistic_slot_scale, rep_b.holistic_slot_scale);
-    assert_eq!(rep_a.ville_ruin_bound_satisfied, rep_b.ville_ruin_bound_satisfied);
+    assert_eq!(
+        rep_a.ville_ruin_bound_satisfied,
+        rep_b.ville_ruin_bound_satisfied
+    );
 }

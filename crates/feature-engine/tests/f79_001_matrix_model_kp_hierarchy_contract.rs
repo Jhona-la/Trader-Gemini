@@ -1,6 +1,4 @@
-use feature_engine::{
-    MatrixModelKpConfig, MatrixModelKpHierarchyEngine, KP_MATRIX_DIM,
-};
+use feature_engine::{MatrixModelKpConfig, MatrixModelKpHierarchyEngine, KP_MATRIX_DIM};
 
 #[test]
 fn test_matrix_model_kp_hierarchy_basic_flow_and_moments() {
@@ -56,7 +54,10 @@ fn test_matrix_model_kp_hierarchy_shock_detection() {
         }
     }
 
-    assert!(shock_detected, "El choque KP solitónico debe detectarse ante fuertes gradientes y curvatura");
+    assert!(
+        shock_detected,
+        "El choque KP solitónico debe detectarse ante fuertes gradientes y curvatura"
+    );
 }
 
 #[test]

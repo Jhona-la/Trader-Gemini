@@ -1,6 +1,4 @@
-use risk_engine::{
-    PageCurveIslandConfig, PageCurveIslandRiskEngine, MAX_PORTFOLIO_ASSETS,
-};
+use risk_engine::{PageCurveIslandConfig, PageCurveIslandRiskEngine, MAX_PORTFOLIO_ASSETS};
 
 #[test]
 fn test_page_curve_island_risk_pre_page_regime() {
@@ -28,9 +26,18 @@ fn test_page_curve_island_risk_post_page_with_active_island_recovery() {
     let weights = [0.25, 0.25, 0.25, 0.25];
     let report = engine.evaluate(60.0, &weights, 0.50, 0.10);
 
-    assert!(report.post_page_transition, "Debe superar el tiempo de Page ante alta radiación de volatilidad");
-    assert!(report.quantum_island_present, "La baja correlación debe permitir la formación de la isla cuántica");
-    assert!(!report.island_veto_induced, "La isla cuántica debe evitar el veto al purificar la radiación unitariamente");
+    assert!(
+        report.post_page_transition,
+        "Debe superar el tiempo de Page ante alta radiación de volatilidad"
+    );
+    assert!(
+        report.quantum_island_present,
+        "La baja correlación debe permitir la formación de la isla cuántica"
+    );
+    assert!(
+        !report.island_veto_induced,
+        "La isla cuántica debe evitar el veto al purificar la radiación unitariamente"
+    );
     assert!(report.slot_scale_factor > 0.0);
 }
 
@@ -45,8 +52,14 @@ fn test_page_curve_island_risk_hard_veto_on_information_collapse() {
     let report = engine.evaluate(51.0, &weights, 1.50, 0.99);
 
     assert!(report.post_page_transition);
-    assert!(!report.quantum_island_present, "Correlación de 0.99 debe destruir el área de la isla cuántica");
-    assert!(report.island_veto_induced, "Debe inducir veto absoluto por colapso de información no unitario");
+    assert!(
+        !report.quantum_island_present,
+        "Correlación de 0.99 debe destruir el área de la isla cuántica"
+    );
+    assert!(
+        report.island_veto_induced,
+        "Debe inducir veto absoluto por colapso de información no unitario"
+    );
     assert_eq!(report.slot_scale_factor, 0.0);
 }
 
@@ -78,7 +91,10 @@ fn test_page_curve_island_risk_deterministic_replay() {
     let rep_a = engine_a.evaluate(250.0, &weights, 0.15, 0.35);
     let rep_b = engine_b.evaluate(250.0, &weights, 0.15, 0.35);
 
-    assert_eq!(rep_a.bekenstein_hawking_entropy, rep_b.bekenstein_hawking_entropy);
+    assert_eq!(
+        rep_a.bekenstein_hawking_entropy,
+        rep_b.bekenstein_hawking_entropy
+    );
     assert_eq!(rep_a.radiation_entropy, rep_b.radiation_entropy);
     assert_eq!(rep_a.page_entropy, rep_b.page_entropy);
     assert_eq!(rep_a.quantum_island_present, rep_b.quantum_island_present);

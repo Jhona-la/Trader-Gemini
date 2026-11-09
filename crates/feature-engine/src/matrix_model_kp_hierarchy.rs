@@ -200,12 +200,28 @@ impl MatrixModelKpHierarchyEngine {
         let tau_y_minus = self.eval_hirota_tau(x, y - hy, t, k1, l1, omega1, k2, l2, omega2, a12);
         let ln_y_plus = tau_y_plus.max(1e-12).ln();
         let ln_y_minus = tau_y_minus.max(1e-12).ln();
-        let u_y_plus = 2.0 * ((self.eval_hirota_tau(x + h, y + hy, t, k1, l1, omega1, k2, l2, omega2, a12).max(1e-12).ln()
-            - 2.0 * ln_y_plus
-            + self.eval_hirota_tau(x - h, y + hy, t, k1, l1, omega1, k2, l2, omega2, a12).max(1e-12).ln()) / (h * h));
-        let u_y_minus = 2.0 * ((self.eval_hirota_tau(x + h, y - hy, t, k1, l1, omega1, k2, l2, omega2, a12).max(1e-12).ln()
-            - 2.0 * ln_y_minus
-            + self.eval_hirota_tau(x - h, y - hy, t, k1, l1, omega1, k2, l2, omega2, a12).max(1e-12).ln()) / (h * h));
+        let u_y_plus = 2.0
+            * ((self
+                .eval_hirota_tau(x + h, y + hy, t, k1, l1, omega1, k2, l2, omega2, a12)
+                .max(1e-12)
+                .ln()
+                - 2.0 * ln_y_plus
+                + self
+                    .eval_hirota_tau(x - h, y + hy, t, k1, l1, omega1, k2, l2, omega2, a12)
+                    .max(1e-12)
+                    .ln())
+                / (h * h));
+        let u_y_minus = 2.0
+            * ((self
+                .eval_hirota_tau(x + h, y - hy, t, k1, l1, omega1, k2, l2, omega2, a12)
+                .max(1e-12)
+                .ln()
+                - 2.0 * ln_y_minus
+                + self
+                    .eval_hirota_tau(x - h, y - hy, t, k1, l1, omega1, k2, l2, omega2, a12)
+                    .max(1e-12)
+                    .ln())
+                / (h * h));
         let uyy = (u_y_plus - 2.0 * safe_u + u_y_minus) / (hy * hy);
         let safe_uyy = if uyy.is_finite() { uyy } else { 0.0 };
 
@@ -225,7 +241,8 @@ impl MatrixModelKpHierarchyEngine {
         // Para evitar calcular derivadas numéricas de orden 4 propensas a ruido discreto,
         // aproximamos el residual evaluando el balance dinámico del solitón:
         let balance_bracket = -4.0 * safe_ut + 6.0 * safe_u * safe_ux + safe_uxx;
-        let residual = (balance_bracket.abs() + 3.0 * safe_uyy.abs() * self.config.dispersion_alpha).abs();
+        let residual =
+            (balance_bracket.abs() + 3.0 * safe_uyy.abs() * self.config.dispersion_alpha).abs();
         let safe_residual = if residual.is_finite() { residual } else { 0.0 };
 
         // 4. Detección de choque solitónico KP
@@ -276,7 +293,10 @@ impl MatrixModelKpHierarchyEngine {
     }
 
     /// Computa los momentos de Miwa t_k = (1/k) Tr(M^k) de forma $O(1)$ sin asignaciones en heap.
-    fn compute_miwa_moments(&self, m: &[[f64; KP_MATRIX_DIM]; KP_MATRIX_DIM]) -> [f64; KP_MOMENTS_COUNT] {
+    fn compute_miwa_moments(
+        &self,
+        m: &[[f64; KP_MATRIX_DIM]; KP_MATRIX_DIM],
+    ) -> [f64; KP_MOMENTS_COUNT] {
         // M^1
         let tr_m1 = m[0][0] + m[1][1] + m[2][2] + m[3][3];
         let t1 = tr_m1;
