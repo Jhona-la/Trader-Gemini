@@ -48,7 +48,7 @@ fn triada() -> [AssetColorState; 3] {
 
 /// Libro de un tick: mid que oscila unos pocos pb para que la CWT vea retornos no nulos.
 fn libro(i: usize) -> (f64, f64) {
-    let desplazamiento = if i % 2 == 0 { 0.0 } else { 0.02 };
+    let desplazamiento = if i.is_multiple_of(2) { 0.0 } else { 0.02 };
     (99.99 + desplazamiento, 100.01 + desplazamiento)
 }
 
