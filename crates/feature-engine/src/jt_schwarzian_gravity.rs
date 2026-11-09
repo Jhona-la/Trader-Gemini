@@ -82,7 +82,7 @@ pub struct JtSchwarzianEngine {
     config: JtSchwarzianConfig,
     prev_f_prime: f64,
     prev_f_double_prime: Option<f64>,
-    initialized: bool,
+    step_count: usize,
 }
 
 impl JtSchwarzianEngine {
@@ -91,7 +91,7 @@ impl JtSchwarzianEngine {
             config,
             prev_f_prime: 1.0,
             prev_f_double_prime: None,
-            initialized: false,
+            step_count: 0,
         }
     }
 
@@ -108,13 +108,14 @@ impl JtSchwarzianEngine {
             market_time_rate
         };
 
-        if !self.initialized {
+        let lyapunov =
+            (2.0 * std::f64::consts::PI) / self.config.inverse_temperature_beta.max(1e-4);
+
+        if self.step_count == 0 {
             self.prev_f_prime = f_prime;
             self.prev_f_double_prime = None;
-            self.initialized = true;
+            self.step_count = 1;
 
-            let lyapunov =
-                (2.0 * std::f64::consts::PI) / self.config.inverse_temperature_beta.max(1e-4);
             return JtSchwarzianReport {
                 schwarzian_derivative: 0.0,
                 schwarzian_energy: 0.0,
@@ -126,7 +127,24 @@ impl JtSchwarzianEngine {
             };
         }
 
-        // Derivadas numéricas de segundo y tercer orden
+        if self.step_count == 1 {
+            let f_double_prime = (f_prime - self.prev_f_prime) / safe_dt;
+            self.prev_f_prime = f_prime;
+            self.prev_f_double_prime = Some(f_double_prime);
+            self.step_count = 2;
+
+            return JtSchwarzianReport {
+                schwarzian_derivative: 0.0,
+                schwarzian_energy: 0.0,
+                density_of_states_rho: self.config.schwarzian_coupling_c
+                    / (2.0 * std::f64::consts::PI * std::f64::consts::PI),
+                lyapunov_exponent: lyapunov,
+                schwarzian_singularity_detected: false,
+                slot_scale_factor: 1.0,
+            };
+        }
+
+        // Derivadas numéricas de segundo y tercer orden sobre soporte temporal válido
         let f_double_prime = (f_prime - self.prev_f_prime) / safe_dt;
         let Some(prev_f_double_prime) = self.prev_f_double_prime else {
             self.prev_f_prime = f_prime;

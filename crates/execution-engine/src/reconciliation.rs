@@ -840,6 +840,14 @@ pub fn reconcile_arena_checked(
 mod tests {
     use super::*;
 
+    static UNIVERSE_TEST_MUTEX: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+    fn universe_guard() -> std::sync::MutexGuard<'static, ()> {
+        UNIVERSE_TEST_MUTEX
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+    }
+
     fn entry(symbol: &str, amt: f64) -> PositionRiskEntry {
         PositionRiskEntry {
             symbol: symbol.into(),
@@ -948,6 +956,7 @@ mod tests {
     fn test_reconcile_arena_phantom_and_adoption() {
         use quantum_arena::symbol_registry::SymbolSpec;
 
+        let _universe = universe_guard();
         let specs = vec![
             SymbolSpec {
                 symbol: "BTCUSDT".into(),
@@ -1050,6 +1059,7 @@ mod tests {
 
     #[test]
     fn f4_h1_drift_reconciliation_zero_or_nan_leverage_immunity() {
+        let _universe = universe_guard();
         quantum_arena::symbols::update_dynamic_universe(vec!["BTCUSDT".into()]);
         let arena = quantum_arena::GlobalArena::build_in_own_stack(13.0);
         arena.coins[0]
@@ -1107,6 +1117,7 @@ mod tests {
     #[test]
     fn reconciliation_leverage_canonical_micro_leverage() {
         assert_eq!(CANONICAL_MICRO_LEVERAGE, 5.0);
+        let _universe = universe_guard();
         quantum_arena::symbols::update_dynamic_universe(vec!["BTCUSDT".into()]);
         let arena = quantum_arena::GlobalArena::build_in_own_stack(13.0);
         arena.coins[0]

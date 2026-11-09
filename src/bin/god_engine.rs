@@ -26,13 +26,16 @@ use telemetry_engine::telemetry;
 /// Loading is not statistical promotion; errors must remain visible and retryable.
 fn refresh_ml_models(tracker: &mut god_engine_core::model_reload::ModelReloadTracker) {
     let scan = tracker.scan(std::path::Path::new("models"), |key, path| {
-        let source = path.to_str().ok_or_else(|| "model path is not UTF-8".to_string())?;
+        let source = path
+            .to_str()
+            .ok_or_else(|| "model path is not UTF-8".to_string())?;
         god_engine_core::ml_inference::NanoForest::load_global_from_source(key, source)
             .map_err(|error| error.to_string())
     });
     match scan {
-        Ok(events) => for event in events {
-            match event.result {
+        Ok(events) => {
+            for event in events {
+                match event.result {
                 Ok(()) => telemetry_server::telemetry_log!(
                     "🧠 [ML-RELOAD] Loaded {} (requested path: {})", event.key, event.path.display()),
                 // CL-141: el reintento sigue cada 10 s; el aviso sólo cuando
@@ -42,7 +45,8 @@ fn refresh_ml_models(tracker: &mut god_engine_core::model_reload::ModelReloadTra
                     "⚠️ [ML-RELOAD] Rejected {} (requested path: {}): {} (will retry; no se repite mientras no cambie)",
                     event.key, event.path.display(), error),
             }
-        },
+            }
+        }
         Err(error) => {
             let error = error.to_string();
             if tracker.error_de_escaneo_nuevo(&error) {
@@ -156,7 +160,11 @@ fn decision_fee_breaker(
         return None;
     }
     let bruto: f64 = cierres.iter().map(|c| c.bruto).sum();
-    let bruto_ganador: f64 = cierres.iter().filter(|c| c.bruto > 0.0).map(|c| c.bruto).sum();
+    let bruto_ganador: f64 = cierres
+        .iter()
+        .filter(|c| c.bruto > 0.0)
+        .map(|c| c.bruto)
+        .sum();
     let ganadoras = cierres.iter().filter(|c| c.bruto > 0.0).count();
     let neto = bruto + if funding.is_finite() { funding } else { 0.0 } - fees;
     if !(neto < 0.0 && fees > bruto_ganador) {
@@ -531,13 +539,9 @@ async fn ensure_position_protected(
     let mut tp_covered = 0.0f64;
     let mut sl_covered = 0.0f64;
     for a in &legs {
-        let side_ok = a.position_side == want_side
-            || a.position_side == "BOTH"
-            || a.position_side.is_empty();
-        let live = matches!(
-            a.algo_status.as_str(),
-            "NEW" | "TRIGGERING" | "TRIGGERED"
-        );
+        let side_ok =
+            a.position_side == want_side || a.position_side == "BOTH" || a.position_side.is_empty();
+        let live = matches!(a.algo_status.as_str(), "NEW" | "TRIGGERING" | "TRIGGERED");
         if !side_ok || !live {
             continue;
         }
@@ -624,40 +628,50 @@ async fn ensure_position_protected(
                 Ok(()) => {
                     telemetry_server::telemetry_log!(
                         "🛡️ [{}] TP re-armado para {} ({:.6} @ {:.4}) — cobertura era {:.6}/{:.6}",
-                        tag, symbol, tp_gap, trig, tp_covered, pos_qty
+                        tag,
+                        symbol,
+                        tp_gap,
+                        trig,
+                        tp_covered,
+                        pos_qty
                     );
                     audit.tp_gap = 0.0;
                     break;
                 }
-                Err(e) if intent == 0 && e.contains("-2021") => {
-                    match live_price {
-                        Some(cur) => {
-                            trig = if is_long {
-                                cur * (1.0 + frac_tp)
-                            } else {
-                                cur * (1.0 - frac_tp)
-                            };
-                            telemetry_server::telemetry_log!(
-                                "↪️ [{}] TP de {} reposicionado al precio vivo ({:.4} → {:.4})",
-                                tag, symbol, tp_price, trig
-                            );
-                        }
-                        None => {
-                            telemetry_server::telemetry_log!(
-                                "⚠️ [{}] top-up TP {} falló (-2021 sin precio vivo): {}",
-                                tag, symbol, e
-                            );
-                            break;
-                        }
+                Err(e) if intent == 0 && e.contains("-2021") => match live_price {
+                    Some(cur) => {
+                        trig = if is_long {
+                            cur * (1.0 + frac_tp)
+                        } else {
+                            cur * (1.0 - frac_tp)
+                        };
+                        telemetry_server::telemetry_log!(
+                            "↪️ [{}] TP de {} reposicionado al precio vivo ({:.4} → {:.4})",
+                            tag,
+                            symbol,
+                            tp_price,
+                            trig
+                        );
                     }
-                }
+                    None => {
+                        telemetry_server::telemetry_log!(
+                            "⚠️ [{}] top-up TP {} falló (-2021 sin precio vivo): {}",
+                            tag,
+                            symbol,
+                            e
+                        );
+                        break;
+                    }
+                },
                 Err(e) => {
                     // B3.5b: evidencia positiva de rechazo para el
                     // escalado (los fallos de red no cuentan).
                     let _ = quantum_arena::protection_health::note_rejection(symbol, &e);
                     telemetry_server::telemetry_log!(
                         "⚠️ [{}] top-up TP {} falló: {}",
-                        tag, symbol, e
+                        tag,
+                        symbol,
+                        e
                     );
                     break;
                 }
@@ -685,40 +699,50 @@ async fn ensure_position_protected(
                 Ok(()) => {
                     telemetry_server::telemetry_log!(
                         "🛡️ [{}] SL re-armado para {} ({:.6} @ {:.4}) — cobertura era {:.6}/{:.6}",
-                        tag, symbol, sl_gap, trig, sl_covered, pos_qty
+                        tag,
+                        symbol,
+                        sl_gap,
+                        trig,
+                        sl_covered,
+                        pos_qty
                     );
                     audit.sl_gap = 0.0;
                     break;
                 }
-                Err(e) if intent == 0 && e.contains("-2021") => {
-                    match live_price {
-                        Some(cur) => {
-                            trig = if is_long {
-                                cur * (1.0 - frac_sl)
-                            } else {
-                                cur * (1.0 + frac_sl)
-                            };
-                            telemetry_server::telemetry_log!(
-                                "↪️ [{}] SL de {} reposicionado al precio vivo ({:.4} → {:.4})",
-                                tag, symbol, sl_price, trig
-                            );
-                        }
-                        None => {
-                            telemetry_server::telemetry_log!(
-                                "⚠️ [{}] top-up SL {} falló (-2021 sin precio vivo): {}",
-                                tag, symbol, e
-                            );
-                            break;
-                        }
+                Err(e) if intent == 0 && e.contains("-2021") => match live_price {
+                    Some(cur) => {
+                        trig = if is_long {
+                            cur * (1.0 - frac_sl)
+                        } else {
+                            cur * (1.0 + frac_sl)
+                        };
+                        telemetry_server::telemetry_log!(
+                            "↪️ [{}] SL de {} reposicionado al precio vivo ({:.4} → {:.4})",
+                            tag,
+                            symbol,
+                            sl_price,
+                            trig
+                        );
                     }
-                }
+                    None => {
+                        telemetry_server::telemetry_log!(
+                            "⚠️ [{}] top-up SL {} falló (-2021 sin precio vivo): {}",
+                            tag,
+                            symbol,
+                            e
+                        );
+                        break;
+                    }
+                },
                 Err(e) => {
                     // B3.5b: evidencia positiva de rechazo para el
                     // escalado (los fallos de red no cuentan).
                     let _ = quantum_arena::protection_health::note_rejection(symbol, &e);
                     telemetry_server::telemetry_log!(
                         "⚠️ [{}] top-up SL {} falló: {}",
-                        tag, symbol, e
+                        tag,
+                        symbol,
+                        e
                     );
                     break;
                 }
@@ -946,6 +970,27 @@ fn anotar_diario_de_posicion(
     qty: f64,
     px: f64,
 ) {
+    let ruta = quantum_arena::paths::env_data_path("position_journal.jsonl");
+    anotar_diario_de_posicion_en(
+        std::path::Path::new(&ruta),
+        arena,
+        reserva,
+        symbol,
+        is_long,
+        qty,
+        px,
+    );
+}
+
+fn anotar_diario_de_posicion_en(
+    ruta: &std::path::Path,
+    arena: &quantum_arena::GlobalArena,
+    reserva: &god_engine_core::entry_reservation::EntryReservation,
+    symbol: &str,
+    is_long: bool,
+    qty: f64,
+    px: f64,
+) {
     let tau_ms = arena
         .coins
         .get(reserva.coin_id)
@@ -969,7 +1014,7 @@ fn anotar_diario_de_posicion(
     let _ = std::fs::OpenOptions::new()
         .create(true)
         .append(true)
-        .open(quantum_arena::paths::env_data_path("position_journal.jsonl"))
+        .open(ruta)
         .and_then(|mut f| std::io::Write::write_all(&mut f, jr.as_bytes()));
 }
 
@@ -978,9 +1023,10 @@ fn anotar_diario_de_posicion(
 /// entrada. Tolerante a diario ausente/corrupto (None ⇒ el llamador usa el
 /// piso espectral conservador).
 fn recover_position_context(symbol: &str, is_long: bool) -> Option<RecoveredContext> {
-    let content =
-        std::fs::read_to_string(quantum_arena::paths::env_data_path("position_journal.jsonl"))
-            .ok()?;
+    let content = std::fs::read_to_string(quantum_arena::paths::env_data_path(
+        "position_journal.jsonl",
+    ))
+    .ok()?;
     let now_ms = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap_or_default()
@@ -1052,12 +1098,18 @@ fn record_emergency_close(
     // Shared direction convention: a long gains when exit > entry.
     // This remains a local estimate, NOT fill-confirmed accounting evidence.
     let pnl_gross = match execution_engine::trade_accounting::checked_gross_pnl(
-        was_long, entry_price, exit_price, qty,
+        was_long,
+        entry_price,
+        exit_price,
+        qty,
     ) {
         Ok(pnl) => pnl,
         Err(reason) => {
             quantum_arena::protection_health::mark_dirty();
-            telemetry_engine::telemetry_err!("[EMERGENCY ACCOUNTING] numeric evidence unavailable: {:?}; no fabricated outcome", reason);
+            telemetry_engine::telemetry_err!(
+                "[EMERGENCY ACCOUNTING] numeric evidence unavailable: {:?}; no fabricated outcome",
+                reason
+            );
             return;
         }
     };
@@ -1100,7 +1152,10 @@ fn compact_position_journal() {
             continue;
         };
         let key = (
-            v.get("sym").and_then(|x| x.as_str()).unwrap_or("").to_string(),
+            v.get("sym")
+                .and_then(|x| x.as_str())
+                .unwrap_or("")
+                .to_string(),
             v.get("long").and_then(|x| x.as_bool()).unwrap_or(false),
         );
         let ts = v.get("ts").and_then(|x| x.as_u64()).unwrap_or(0);
@@ -1368,7 +1423,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     });
     */
 
-
     // I-1b (Línea I): los streams del feed y sus URLs salen de
     // `data_ingest::rutas_feed` (fuente única): por símbolo `@trade` y
     // `@depth5` (categoría pública) y `@kline_1m` (mercado), más
@@ -1540,7 +1594,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         "🛑 [SHUTDOWN] ^C recibido — drenando posiciones y estado..."
                     );
                     // despierta el event loop
-                    let _ = wake.try_send(data_ingest::cola_ws::MensajeWs::recibido_ahora(vec![0xFF]));
+                    let _ =
+                        wake.try_send(data_ingest::cola_ws::MensajeWs::recibido_ahora(vec![0xFF]));
                 }
             }
         });
@@ -1576,7 +1631,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
         });
         if let Err(e) = lanzado {
-            telemetry_server::telemetry_log!("⚠️ [COLA-WS] monitor de contrapresión no lanzado: {}", e);
+            telemetry_server::telemetry_log!(
+                "⚠️ [COLA-WS] monitor de contrapresión no lanzado: {}",
+                e
+            );
         }
     }
 
@@ -1744,8 +1802,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // CL-156 (G021): el calentamiento REST usa el venue del ejecutor, no el modo demo.
     let historical_klines = god_engine_core::bootloader::SystemDiagnostics::execute_phase_3_warmup(
-        is_testnet,
-        &symbols,
+        is_testnet, &symbols,
     )
     .await;
 
@@ -1864,7 +1921,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         let count = std::fs::read_to_string(&dynamic_config_json_path)
                             .ok()
                             .and_then(|s| serde_json::from_str::<serde_json::Value>(&s).ok())
-                            .and_then(|v| v.get("symbols").and_then(|arr| arr.as_array().map(|a| a.len())))
+                            .and_then(|v| {
+                                v.get("symbols")
+                                    .and_then(|arr| arr.as_array().map(|a| a.len()))
+                            })
                             .unwrap_or(0);
                         telemetry_server::telemetry_log!("👀 [HOT-RELOAD] dynamic_config.json changed on disk ({} proposed symbols). Changes will apply on next restart.", count);
                     }
@@ -1964,14 +2024,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut restored_positions = Vec::new();
 
     if exec.load().is_paper_trading() {
-        telemetry_server::telemetry_log!("⚠️ [PAPER LOCAL] Ignorando posiciones REST — no hay cuenta viva que reconciliar.");
+        telemetry_server::telemetry_log!(
+            "⚠️ [PAPER LOCAL] Ignorando posiciones REST — no hay cuenta viva que reconciliar."
+        );
         positions_snapshot_ok = true;
     } else {
         match exec.load().fetch_open_positions().await {
             Ok(pos) => {
                 restored_positions = pos;
                 positions_snapshot_ok = true;
-                telemetry_server::telemetry_log!("🔍 [BOOT_OMS] fetch_open_positions exitoso: {} posiciones recibidas.", restored_positions.len());
+                telemetry_server::telemetry_log!(
+                    "🔍 [BOOT_OMS] fetch_open_positions exitoso: {} posiciones recibidas.",
+                    restored_positions.len()
+                );
             }
             Err(e) => {
                 telemetry_server::telemetry_log!(
@@ -1988,7 +2053,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // 2-5× (falsa escasez ⇒ vetos de entrada contra capital que sí
     // existe). El leverage vivo por símbolo vive en positionRisk. Fallback
     // conservador 10× (comportamiento anterior) si el fetch falla.
-    let restore_lev_map: std::collections::HashMap<String, f64> = if exec.load().is_paper_trading() {
+    let restore_lev_map: std::collections::HashMap<String, f64> = if exec.load().is_paper_trading()
+    {
         std::collections::HashMap::new()
     } else {
         exec.load()
@@ -2716,7 +2782,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         arena_real.config.live_maker_fee.store(live_maker, Ordering::Relaxed);
         arena_real.config.live_taker_fee.store(live_taker, Ordering::Relaxed);
         arena_real.server_time_offset_ms.store(ntp_offset_ms, Ordering::Relaxed);
-        
+
         // Inject arena into OrderExecutor
         exec.load().arena.store(Some(Arc::clone(&arena_real)));
 
@@ -3320,15 +3386,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         );
                         // GLM-219 (bloqueante #3 del A1): en Producción, el
                         // freno evalúa el desempeño real de la cuenta con
-                        // cada refresh del income — EV neto ≤ 0 con cierres
-                        // suficientes devuelve el sistema a DemoVerify y
-                        // exige re-certificación (evidencia limpiada).
-                        if prod_breaker && x_closes > 0 && x_gross.is_finite() && x_fees.is_finite() {
+                        // cada refresh del income — EV neto ≤ 0 o no finito
+                        // con cierres suficientes devuelve el sistema a DemoVerify
+                        // y exige re-certificación (evidencia limpiada).
+                        if prod_breaker && x_closes > 0 {
                             let ev_prod = (x_gross + x_fees) / x_closes as f64;
-                            let disparo = orch_brk
-                                .write()
-                                .unwrap_or_else(|e| e.into_inner())
-                                .registrar_desempeno_prod(x_closes, ev_prod);
+                            let disparo = {
+                                let mut orch = orch_brk.write().unwrap_or_else(|e| e.into_inner());
+                                registrar_breaker_ingreso(&mut *orch, x_closes, x_gross, x_fees)
+                            };
                             if disparo {
                                 telemetry_server::telemetry_log!(
                                     "🛑 [BREAKER Prod→Demo] disparado por income real: EV {ev_prod:+.6} con {x_closes} cierres — operativa bloqueada, re-certificar en Demo"
@@ -3338,28 +3404,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         // GLM-216 (bloqueante #2): en demo, persistir el
                         // certificado de rentabilidad que la puerta a
                         // Producción exige (cierres ≥ 30 y EV neto > 0).
-                        if x_closes > 0 && x_gross.is_finite() && x_fees.is_finite() {
-                            let ev = god_engine_core::orchestrator::EvidenciaDemo {
-                                cierres: x_closes,
-                                ev_neto_por_trade: (x_gross + x_fees) / x_closes as f64,
-                                wins: x_wins,
-                            };
-                            let ruta =
-                                quantum_arena::paths::env_data_path_for(true, "evidencia_demo.json");
-                            match serde_json::to_string_pretty(&ev) {
-                                Ok(txt) => {
-                                    if std::fs::write(&ruta, txt).is_err() {
-                                        telemetry_server::telemetry_log!(
-                                            "⚠️ [ORCHESTRATOR] certificado demo no persistido ({ruta:?}): la puerta a Producción no abrirá tras un reinicio"
-                                        );
-                                    }
-                                }
-                                Err(e) => {
-                                    telemetry_server::telemetry_log!(
-                                        "⚠️ [ORCHESTRATOR] certificado demo no serializable: {e}"
-                                    );
-                                }
-                            }
+                        let ruta = quantum_arena::paths::env_data_path_for(true, "evidencia_demo.json");
+                        if let Err(e) = persistir_evidencia_demo_en_modo(
+                            is_demo_mode,
+                            std::path::Path::new(&ruta),
+                            x_closes,
+                            x_gross,
+                            x_fees,
+                            x_wins,
+                        ) {
+                            telemetry_server::telemetry_log!(
+                                "⚠️ [ORCHESTRATOR] certificado demo no persistido ({ruta:?}): {e}"
+                            );
                         }
                     }
                     // LG-8: p* de la geometría del genoma a la τ de la ventana.
@@ -6549,29 +6605,40 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         let rx_events_dropper = rx_events_dropper.clone();
         let estado_cola = Arc::clone(&estado_cola);
         let consumidor_listo_rx = consumidor_listo_rx.clone();
-        let lanzado = std::thread::Builder::new().name("ws-reader".to_string()).spawn(move || {
-            if let Some(core_ids) = core_affinity::get_core_ids() {
-                if core_ids.len() > 2 {
-                    core_affinity::set_for_current(core_ids[2]);
-                    telemetry_server::telemetry_log!("🔒 [CPU PINNING] WS Reader pinned to CPU Core {}", core_ids[2].id);
+        let lanzado = std::thread::Builder::new()
+            .name("ws-reader".to_string())
+            .spawn(move || {
+                if let Some(core_ids) = core_affinity::get_core_ids() {
+                    if core_ids.len() > 2 {
+                        core_affinity::set_for_current(core_ids[2]);
+                        telemetry_server::telemetry_log!(
+                            "🔒 [CPU PINNING] WS Reader pinned to CPU Core {}",
+                            core_ids[2].id
+                        );
+                    }
                 }
-            }
-            os_guardian::set_current_thread_time_critical();
-            esperar_consumidor(&consumidor_listo_rx);
-            match tokio::runtime::Builder::new_current_thread().enable_all().build() {
-                Ok(rt) => rt.block_on(bucle_lector_ws(
-                    lector_publico,
-                    tx_events,
-                    rx_events_dropper,
-                    estado_cola,
-                    Some(rx_ws_control),
-                )),
-                Err(e) => {
-                    telemetry_server::telemetry_log!("❌ [WS:publico] runtime no disponible: {}; feed de decisión caído", e);
-                    quantum_arena::feed_health::stall();
+                os_guardian::set_current_thread_time_critical();
+                esperar_consumidor(&consumidor_listo_rx);
+                match tokio::runtime::Builder::new_current_thread()
+                    .enable_all()
+                    .build()
+                {
+                    Ok(rt) => rt.block_on(bucle_lector_ws(
+                        lector_publico,
+                        tx_events,
+                        rx_events_dropper,
+                        estado_cola,
+                        Some(rx_ws_control),
+                    )),
+                    Err(e) => {
+                        telemetry_server::telemetry_log!(
+                            "❌ [WS:publico] runtime no disponible: {}; feed de decisión caído",
+                            e
+                        );
+                        quantum_arena::feed_health::stall();
+                    }
                 }
-            }
-        });
+            });
         if let Err(e) = lanzado {
             telemetry_server::telemetry_log!("❌ [WS:publico] no se pudo lanzar el lector: {}. Sin feed no se opera: salida ordenada.", e);
             telemetry_server::macros::vaciar_telemetria();
@@ -6579,22 +6646,27 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     }
     {
-        let lanzado = std::thread::Builder::new().name("ws-reader-mercado".to_string()).spawn(move || {
-            esperar_consumidor(&consumidor_listo_rx);
-            match tokio::runtime::Builder::new_current_thread().enable_all().build() {
-                Ok(rt) => rt.block_on(bucle_lector_ws(
-                    lector_mercado,
-                    tx_events,
-                    rx_events_dropper,
-                    estado_cola,
-                    None,
-                )),
-                Err(e) => telemetry_server::telemetry_log!(
+        let lanzado = std::thread::Builder::new()
+            .name("ws-reader-mercado".to_string())
+            .spawn(move || {
+                esperar_consumidor(&consumidor_listo_rx);
+                match tokio::runtime::Builder::new_current_thread()
+                    .enable_all()
+                    .build()
+                {
+                    Ok(rt) => rt.block_on(bucle_lector_ws(
+                        lector_mercado,
+                        tx_events,
+                        rx_events_dropper,
+                        estado_cola,
+                        None,
+                    )),
+                    Err(e) => telemetry_server::telemetry_log!(
                     "❌ [WS:mercado] runtime no disponible: {}; sin velas ni liquidaciones en vivo",
                     e
                 ),
-            }
-        });
+                }
+            });
         if let Err(e) = lanzado {
             telemetry_server::telemetry_log!(
                 "❌ [WS:mercado] no se pudo lanzar el lector: {}; sin velas ni liquidaciones en vivo",
@@ -6660,7 +6732,11 @@ async fn bucle_lector_ws(
     // `client_async_tls` no tenían timeout: un handshake TLS colgado (TCP
     // aceptado, servidor mudo) dejaba el feed mudo para siempre SIN
     // disparar el stall, porque el watchdog sólo vigilaba tras conectar.
-    let is_testnet_cfg = std::env::var("USE_TESTNET").unwrap_or_default().trim().to_lowercase() == "true";
+    let is_testnet_cfg = std::env::var("USE_TESTNET")
+        .unwrap_or_default()
+        .trim()
+        .to_lowercase()
+        == "true";
     let watchdog_secs: u64 = std::env::var("BINANCE_WS_TIMEOUT_SECS")
         .ok()
         .and_then(|s| s.parse().ok())
@@ -6681,7 +6757,11 @@ async fn bucle_lector_ws(
         let url = match url::Url::parse(&current_url) {
             Ok(url) => url,
             Err(e) => {
-                telemetry_server::telemetry_log!("❌ [WS] URL inválida «{}»: {}; reintento", current_url, e);
+                telemetry_server::telemetry_log!(
+                    "❌ [WS] URL inválida «{}»: {}; reintento",
+                    current_url,
+                    e
+                );
                 tokio::time::sleep(std::time::Duration::from_millis(5_000)).await;
                 continue;
             }
@@ -6695,17 +6775,26 @@ async fn bucle_lector_ws(
         // I-6b: DNS acotado por la misma política de espera (timeout =
         // vec vacío → sigue la ruta de IPs por ENV/fallback, como un fallo
         // de resolución).
-        let mut resolved_addrs = match tokio::time::timeout(to_conexion, tokio::net::lookup_host(&host_port)).await {
-            Ok(Ok(addrs)) => addrs.collect::<Vec<std::net::SocketAddr>>(),
-            Ok(Err(e)) => {
-                telemetry_server::telemetry_log!("⚠️ [WS] DNS Resolution failed for {}: {}", host_port, e);
-                vec![]
-            }
-            Err(_) => {
-                telemetry_server::telemetry_log!("⚠️ [WS:{}] DNS sin responder en {}s (I-6b): reintento", cfg.nombre, watchdog_secs);
-                vec![]
-            }
-        };
+        let mut resolved_addrs =
+            match tokio::time::timeout(to_conexion, tokio::net::lookup_host(&host_port)).await {
+                Ok(Ok(addrs)) => addrs.collect::<Vec<std::net::SocketAddr>>(),
+                Ok(Err(e)) => {
+                    telemetry_server::telemetry_log!(
+                        "⚠️ [WS] DNS Resolution failed for {}: {}",
+                        host_port,
+                        e
+                    );
+                    vec![]
+                }
+                Err(_) => {
+                    telemetry_server::telemetry_log!(
+                        "⚠️ [WS:{}] DNS sin responder en {}s (I-6b): reintento",
+                        cfg.nombre,
+                        watchdog_secs
+                    );
+                    vec![]
+                }
+            };
 
         // Allow manual IP injection via ENV to bypass DNS if desired
         if let Ok(env_ips) = std::env::var("BINANCE_WS_IPS") {
@@ -6723,13 +6812,18 @@ async fn bucle_lector_ws(
             if let Ok(fallback) = format!("{}:{}", host, port).parse::<std::net::SocketAddr>() {
                 resolved_addrs.push(fallback);
             } else {
-                telemetry_server::telemetry_log!("❌ [WS] No IPs could be resolved or parsed. Retrying...");
+                telemetry_server::telemetry_log!(
+                    "❌ [WS] No IPs could be resolved or parsed. Retrying..."
+                );
                 tokio::time::sleep(espera.fallo(None)).await;
                 continue;
             }
         }
 
-        telemetry_server::telemetry_log!("🔄 [WS] Parallel TCP Connection Race (Happy Eyeballs) to {} endpoints...", resolved_addrs.len());
+        telemetry_server::telemetry_log!(
+            "🔄 [WS] Parallel TCP Connection Race (Happy Eyeballs) to {} endpoints...",
+            resolved_addrs.len()
+        );
 
         let mut tasks = Vec::new();
         for addr in resolved_addrs.iter() {
@@ -6768,25 +6862,44 @@ async fn bucle_lector_ws(
         let target_addr = match tcp_stream.peer_addr() {
             Ok(addr) => addr,
             Err(e) => {
-                telemetry_server::telemetry_log!("⚠️ [WS] conexión cortada antes de usarla: {}; reconecto", e);
+                telemetry_server::telemetry_log!(
+                    "⚠️ [WS] conexión cortada antes de usarla: {}; reconecto",
+                    e
+                );
                 tokio::time::sleep(espera.fallo(None)).await;
                 continue;
             }
         };
-        telemetry_server::telemetry_log!("✅ [WS] Fast-Lane TCP Connection established to {}...", target_addr);
+        telemetry_server::telemetry_log!(
+            "✅ [WS] Fast-Lane TCP Connection established to {}...",
+            target_addr
+        );
 
         // FASE 22: Conexión directa TCP con Zero-Nagle para latencia nula.
         // I-1b: un fallo se registra (antes `let _ =` lo descartaba).
         if let Err(e) = tcp_stream.set_nodelay(true) {
-            telemetry_server::telemetry_log!("⚠️ [WS:{}] TCP_NODELAY no aplicado: {}", cfg.nombre, e);
+            telemetry_server::telemetry_log!(
+                "⚠️ [WS:{}] TCP_NODELAY no aplicado: {}",
+                cfg.nombre,
+                e
+            );
         }
 
         // I-6b: timeout de HANDSHAKE — un TLS colgado (TCP aceptado pero
         // servidor mudo) ya no deja el feed mudo sin stall: se abandona el
         // intento tras watchdog_secs y se reintenta.
-        match tokio::time::timeout(to_conexion, tokio_tungstenite::client_async_tls(url, tcp_stream)).await {
+        match tokio::time::timeout(
+            to_conexion,
+            tokio_tungstenite::client_async_tls(url, tcp_stream),
+        )
+        .await
+        {
             Err(_) => {
-                telemetry_server::telemetry_log!("⚠️ [WS:{}] handshake TLS sin completar en {}s (I-6b): reintento", cfg.nombre, watchdog_secs);
+                telemetry_server::telemetry_log!(
+                    "⚠️ [WS:{}] handshake TLS sin completar en {}s (I-6b): reintento",
+                    cfg.nombre,
+                    watchdog_secs
+                );
                 tokio::time::sleep(espera.fallo(None)).await;
                 continue;
             }
@@ -6804,7 +6917,10 @@ async fn bucle_lector_ws(
                 continue;
             }
             Ok(Ok((ws_stream, _))) => {
-                telemetry_server::telemetry_log!("✅ [WS] WebSocket TLS Connected with TCP_NODELAY. ({})", cfg.nombre);
+                telemetry_server::telemetry_log!(
+                    "✅ [WS] WebSocket TLS Connected with TCP_NODELAY. ({})",
+                    cfg.nombre
+                );
                 if conexiones.establecida() {
                     data_ingest::cola_ws::encolar(
                         &tx_events,
@@ -6895,7 +7011,10 @@ fn ranuras_abiertas(
     coin_id: usize,
 ) -> [Option<u64>; audit_engine::trajectory_auditor::RANURAS] {
     match arena.coins.get(coin_id) {
-        Some(coin) => coin.positions.slots().map(|p| p.snapshot().map(|s| s.generation)),
+        Some(coin) => coin
+            .positions
+            .slots()
+            .map(|p| p.snapshot().map(|s| s.generation)),
         None => [None; audit_engine::trajectory_auditor::RANURAS],
     }
 }
@@ -6945,11 +7064,309 @@ async fn resolve_entry_for_host(
     .await
 }
 
+fn registrar_breaker_ingreso(
+    orch: &mut god_engine_core::orchestrator::PhaseOrchestrator,
+    cierres: u64,
+    bruto: f64,
+    fees: f64,
+) -> bool {
+    if cierres == 0 {
+        return false;
+    }
+    orch.registrar_desempeno_prod(cierres, (bruto + fees) / cierres as f64)
+}
+
+fn persistir_evidencia_demo_en_modo(
+    is_demo_mode: bool,
+    ruta: &std::path::Path,
+    cierres: u64,
+    bruto: f64,
+    fees: f64,
+    wins: u64,
+) -> Result<bool, String> {
+    if !is_demo_mode {
+        return Ok(false);
+    }
+    if cierres == 0 || !bruto.is_finite() || !fees.is_finite() {
+        return Ok(false);
+    }
+    let ev_neto_por_trade = (bruto + fees) / cierres as f64;
+    if !ev_neto_por_trade.is_finite() {
+        return Ok(false);
+    }
+    let evidencia = god_engine_core::orchestrator::EvidenciaDemo {
+        cierres,
+        ev_neto_por_trade,
+        wins,
+    };
+    let texto = serde_json::to_string_pretty(&evidencia).map_err(|e| e.to_string())?;
+    std::fs::write(ruta, texto).map_err(|e| e.to_string())?;
+    Ok(true)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use quantum_arena::temporal_spectrum::{TAU_ANCHOR_FAST_MS, TAU_ANCHOR_SLOW_MS};
     use std::sync::atomic::Ordering;
+
+    static UNIVERSE_TEST_MUTEX: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+    struct UniverseGuard {
+        previous: Vec<String>,
+        _lock: std::sync::MutexGuard<'static, ()>,
+    }
+
+    impl Drop for UniverseGuard {
+        fn drop(&mut self) {
+            quantum_arena::symbols::update_dynamic_universe(std::mem::take(&mut self.previous));
+        }
+    }
+
+    fn universe_guard() -> UniverseGuard {
+        let lock = UNIVERSE_TEST_MUTEX
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        let previous = quantum_arena::symbols::get_active_universe();
+        UniverseGuard {
+            previous,
+            _lock: lock,
+        }
+    }
+
+    struct DirectorioCertificado {
+        raiz: std::path::PathBuf,
+    }
+
+    impl DirectorioCertificado {
+        fn nuevo(etiqueta: &str) -> Self {
+            let nanos = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .expect("reloj del fixture")
+                .as_nanos();
+            let raiz = std::env::temp_dir().join(format!(
+                "god-engine-certificado-{etiqueta}-{}-{nanos}",
+                std::process::id()
+            ));
+            std::fs::create_dir_all(&raiz).expect("directorio temporal del certificado");
+            Self { raiz }
+        }
+
+        fn ruta(&self) -> std::path::PathBuf {
+            self.raiz.join("evidencia_demo.json")
+        }
+    }
+
+    impl Drop for DirectorioCertificado {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.raiz);
+        }
+    }
+
+    #[test]
+    fn evidencia_demo_produccion_no_toca_bytes_ni_timestamp() {
+        let fixture = DirectorioCertificado::nuevo("produccion");
+        let ruta = fixture.ruta();
+        let originales = b"certificado-demo-independiente";
+        std::fs::write(&ruta, originales).expect("fixture del certificado");
+        let timestamp = std::fs::metadata(&ruta)
+            .and_then(|m| m.modified())
+            .expect("timestamp inicial");
+
+        let escribio = persistir_evidencia_demo_en_modo(false, &ruta, 10, 12.0, -1.0, 7)
+            .expect("ruta Producción sin error de E/S");
+        let bytes = std::fs::read(&ruta).expect("bytes posteriores");
+        let timestamp_despues = std::fs::metadata(&ruta)
+            .and_then(|m| m.modified())
+            .expect("timestamp posterior");
+
+        assert_eq!(
+            bytes, originales,
+            "Producción sobrescribió el certificado: escribio={escribio}"
+        );
+        assert_eq!(timestamp_despues, timestamp);
+        assert!(!escribio);
+    }
+
+    #[test]
+    fn evidencia_demo_demo_si_escribe_segun_politica() {
+        let fixture = DirectorioCertificado::nuevo("demo");
+        let ruta = fixture.ruta();
+        assert!(persistir_evidencia_demo_en_modo(true, &ruta, 30, 10.0, -1.0, 20).unwrap());
+
+        let evidencia: god_engine_core::orchestrator::EvidenciaDemo = serde_json::from_str(
+            &std::fs::read_to_string(&ruta).expect("certificado Demo escrito"),
+        )
+        .expect("certificado Demo válido");
+        assert_eq!(evidencia.cierres, 30);
+        assert_eq!(evidencia.wins, 20);
+        assert!((evidencia.ev_neto_por_trade - 0.3).abs() < 1e-12);
+    }
+
+    #[test]
+    fn evidencia_demo_no_finita_no_escribe() {
+        let fixture = DirectorioCertificado::nuevo("no-finita");
+        let ruta = fixture.ruta();
+        let originales = b"certificado-independiente";
+        for (bruto, fees) in [
+            (f64::NAN, 0.0),
+            (f64::INFINITY, 0.0),
+            (f64::NEG_INFINITY, 0.0),
+            (0.0, f64::NAN),
+            (0.0, f64::INFINITY),
+            (0.0, f64::NEG_INFINITY),
+            (f64::MAX, f64::MAX),
+        ] {
+            std::fs::write(&ruta, originales).expect("fixture por caso");
+            let timestamp = std::fs::metadata(&ruta)
+                .and_then(|m| m.modified())
+                .expect("timestamp por caso");
+            assert!(!persistir_evidencia_demo_en_modo(true, &ruta, 10, bruto, fees, 5).unwrap());
+            assert_eq!(std::fs::read(&ruta).unwrap(), originales);
+            let despues = std::fs::metadata(&ruta)
+                .and_then(|m| m.modified())
+                .expect("timestamp posterior por caso");
+            assert_eq!(despues, timestamp);
+        }
+
+        let inexistente = fixture.raiz.join("inexistente.json");
+        assert!(
+            !persistir_evidencia_demo_en_modo(true, &inexistente, 10, f64::NAN, 0.0, 0).unwrap()
+        );
+        assert!(!inexistente.exists());
+    }
+
+    #[test]
+    fn cl45_cl46_diario_usa_llenado_y_tau_de_esta_reserva() {
+        let previous = quantum_arena::symbols::get_active_universe();
+        let failed = std::panic::catch_unwind(|| {
+            let _universe = universe_guard();
+            quantum_arena::symbols::update_dynamic_universe(vec!["RESFUSDT".into()]);
+            panic!("fallo deliberado: la guarda debe restaurar el universo");
+        });
+        assert!(failed.is_err());
+        assert_eq!(quantum_arena::symbols::get_active_universe(), previous);
+
+        let _universe = universe_guard();
+        quantum_arena::symbols::update_dynamic_universe(vec!["RESFUSDT".into()]);
+        let fixture = DirectorioCertificado::nuevo("diario-posicion");
+        let ruta = fixture.raiz.join("position_journal.jsonl");
+        quantum_arena::symbol_registry::update_registry(vec![
+            quantum_arena::symbol_registry::get_official_binance_spec("BTCUSDT"),
+        ]);
+        let arena = quantum_arena::GlobalArena::build_in_own_stack(100.0);
+        for (slot, tau_ms) in [(0, 30_000), (2, 90_000)] {
+            assert!(arena.coins[0]
+                .positions
+                .get_slot(slot)
+                .open_with_tau_and_fee(
+                    true,
+                    100.0,
+                    1.0,
+                    10.0,
+                    1_000,
+                    101.0,
+                    99.0,
+                    quantum_arena::position::PositionHorizon::Continuous,
+                    0.6,
+                    0.7,
+                    0.25,
+                    tau_ms,
+                ));
+        }
+        arena.used_margin.store(20.0, Ordering::Relaxed);
+        arena.unified_capital.store(99.5, Ordering::Relaxed);
+        let symbol = quantum_arena::symbol_registry::try_symbol(0)
+            .expect("el slot de la reserva tiene símbolo");
+        let reserva = god_engine_core::entry_reservation::EntryReservation {
+            coin_id: 0,
+            slot: 0,
+            generation: arena.coins[0]
+                .positions
+                .slot_0
+                .generation
+                .load(Ordering::Acquire),
+            symbol: symbol.clone(),
+        };
+        reserva
+            .confirmar_llenado(&arena, Some(0.4))
+            .expect("la reserva propia confirma su llenado parcial");
+
+        anotar_diario_de_posicion_en(&ruta, &arena, &reserva, &symbol, true, 0.4, 100.0);
+
+        let contenido = std::fs::read_to_string(&ruta).expect("diario escrito");
+        let registro: serde_json::Value =
+            serde_json::from_str(contenido.lines().next().expect("una línea de diario"))
+                .expect("diario JSON válido");
+        assert_eq!(registro["qty"].as_f64(), Some(0.4));
+        assert_eq!(registro["tau_ms"].as_u64(), Some(30_000));
+        assert_ne!(registro["tau_ms"].as_u64(), Some(90_000));
+    }
+
+    fn fase_produccion_para_breaker() -> god_engine_core::orchestrator::PhaseOrchestrator {
+        let approval = Arc::new(std::sync::atomic::AtomicBool::new(true));
+        let oms = Arc::new(std::sync::atomic::AtomicBool::new(true));
+        let mut p =
+            god_engine_core::orchestrator::PhaseOrchestrator::new_with_oms(1, false, approval, oms);
+        p.set_evidencia_demo(Some(god_engine_core::orchestrator::EvidenciaDemo {
+            cierres: 30,
+            ev_neto_por_trade: 0.001,
+            wins: 20,
+        }));
+        for _ in 0..4 {
+            p.on_tick();
+        }
+        assert_eq!(
+            p.current_phase,
+            god_engine_core::orchestrator::SystemPhase::ProductionMainnet
+        );
+        assert!(p.is_trading_allowed());
+        p
+    }
+
+    #[test]
+    fn breaker_ingreso_no_finito_cierra_trading() {
+        let mut fallos = Vec::new();
+        for (bruto, fees) in [
+            (f64::NAN, 0.0),
+            (f64::INFINITY, 0.0),
+            (f64::NEG_INFINITY, 0.0),
+            (0.0, f64::NAN),
+            (0.0, f64::INFINITY),
+            (0.0, f64::NEG_INFINITY),
+            (f64::MAX, f64::MAX),
+            (f64::MIN, f64::MIN),
+        ] {
+            let mut p = fase_produccion_para_breaker();
+            if !registrar_breaker_ingreso(&mut p, 10, bruto, fees) {
+                fallos.push(format!("bruto={bruto}, fees={fees}: no disparó"));
+            }
+            if p.current_phase != god_engine_core::orchestrator::SystemPhase::DemoVerify {
+                fallos.push(format!("bruto={bruto}, fees={fees}: fase insegura"));
+            }
+            if p.is_trading_allowed() {
+                fallos.push(format!("bruto={bruto}, fees={fees}: trading autorizado"));
+            }
+            if p.evidencia_demo.is_some() {
+                fallos.push(format!("bruto={bruto}, fees={fees}: evidencia favorable"));
+            }
+
+            p.set_evidencia_demo(Some(god_engine_core::orchestrator::EvidenciaDemo {
+                cierres: 30,
+                ev_neto_por_trade: 0.002,
+                wins: 21,
+            }));
+            p.on_tick();
+            if p.current_phase != god_engine_core::orchestrator::SystemPhase::ProductionMainnet
+                || !p.is_trading_allowed()
+            {
+                fallos.push(format!(
+                    "bruto={bruto}, fees={fees}: no recuperó con evidencia válida"
+                ));
+            }
+        }
+        assert!(fallos.is_empty(), "{fallos:?}");
+    }
 
     /// I-11 (N56): un servidor que acepta el WS y corta sin enviar datos no
     /// se reintenta cada 100 ms: la espera crece (0; 0,1; 0,3; 0,7; 1,5;
@@ -7008,7 +7425,11 @@ mod tests {
         use execution_engine::entry_dispatch::admite_iceberg;
         assert!(!execution_engine::binance_api::SUPPORTS_NATIVE_ICEBERG);
         for nocional in [5.1, 600.0, 10_001.0, 1e9] {
-            assert!(!admite_iceberg(execution_engine::binance_api::SUPPORTS_NATIVE_ICEBERG, nocional, 500.0));
+            assert!(!admite_iceberg(
+                execution_engine::binance_api::SUPPORTS_NATIVE_ICEBERG,
+                nocional,
+                500.0
+            ));
         }
         assert!(admite_iceberg(true, 600.0, 500.0));
         assert!(!admite_iceberg(true, 400.0, 500.0));
@@ -7020,18 +7441,35 @@ mod tests {
     /// 0,27 > α) y la falsa suspensión con esperanza positiva queda ≤ α.
     #[test]
     fn lg8_el_fee_breaker_exige_evidencia_y_cuenta_operaciones() {
-        let c = agrupar_cierres(vec![(1_000, -0.4), (1_300, -0.3), (1_900, -0.2), (60_000, 0.5)], 1_000);
+        let c = agrupar_cierres(
+            vec![(1_000, -0.4), (1_300, -0.3), (1_900, -0.2), (60_000, 0.5)],
+            1_000,
+        );
         assert_eq!(c.len(), 2, "tres llenados a ≤ 1 s son un cierre: {c:?}");
         assert!((c[0].bruto + 0.9).abs() < 1e-12);
         // Antes bastaban 3 cierres perdedores: ahora no hay evidencia.
-        let perdedores: Vec<CierreAgregado> =
-            (0..3).map(|i| CierreAgregado { t_ms: 1_000 + i * 60_000, bruto: -0.5 }).collect();
-        assert_eq!(decision_fee_breaker(&perdedores, 0.0, 0.3, 0.35, 0.05, 3_600_000), None);
+        let perdedores: Vec<CierreAgregado> = (0..3)
+            .map(|i| CierreAgregado {
+                t_ms: 1_000 + i * 60_000,
+                bruto: -0.5,
+            })
+            .collect();
+        assert_eq!(
+            decision_fee_breaker(&perdedores, 0.0, 0.3, 0.35, 0.05, 3_600_000),
+            None
+        );
         // Con 8 perdedores la cola es 0,65⁸ ≈ 0,032 ≤ α: suspende hasta que el
         // más antiguo sale de la ventana.
-        let ocho: Vec<CierreAgregado> =
-            (0..8).map(|i| CierreAgregado { t_ms: 1_000 + i * 60_000, bruto: -0.5 }).collect();
-        assert_eq!(decision_fee_breaker(&ocho, 0.0, 0.3, 0.35, 0.05, 3_600_000), Some(1_000 + 3_600_000));
+        let ocho: Vec<CierreAgregado> = (0..8)
+            .map(|i| CierreAgregado {
+                t_ms: 1_000 + i * 60_000,
+                bruto: -0.5,
+            })
+            .collect();
+        assert_eq!(
+            decision_fee_breaker(&ocho, 0.0, 0.3, 0.35, 0.05, 3_600_000),
+            Some(1_000 + 3_600_000)
+        );
         // Monte Carlo: p = 0,40 > p* = 0,35 (esperanza positiva), ventanas de 3 a
         // 12 cierres. La tasa de falsas suspensiones queda ≤ α.
         let mut estado = 0x2545_f491_4f6c_dd1du64;
@@ -7049,7 +7487,10 @@ mod tests {
                 estado ^= estado << 17;
                 let u = (estado >> 11) as f64 / (1u64 << 53) as f64;
                 let bruto = if u < 0.40 { 2.25 } else { -1.0 };
-                cierres.push(CierreAgregado { t_ms: 1 + j * 1_000, bruto });
+                cierres.push(CierreAgregado {
+                    t_ms: 1 + j * 1_000,
+                    bruto,
+                });
             }
             let fees = 0.12 * n as f64;
             if decision_fee_breaker(&cierres, 0.0, fees, 0.35, 0.05, 3_600_000).is_some() {
@@ -7100,20 +7541,32 @@ mod tests {
     #[test]
     fn omega14_g0_5_genome_protection_prices_usa_fuente_unica_curva() {
         let arena = quantum_arena::GlobalArena::build_in_own_stack(13.0);
-        
+
         // Mutamos las curvas continuas en caliente para verificar que genome_protection_prices
         // responde a la curva activa y no a las anclas fijas obsoletas.
         // Curva TP: a = ln(0.04), b = 0.0 (plana en 4%)
         // Curva SL: a = ln(0.02), b = 0.0 (plana en 2%)
-        arena.config.tp_curve_a.store(0.04f64.ln(), Ordering::Relaxed);
+        arena
+            .config
+            .tp_curve_a
+            .store(0.04f64.ln(), Ordering::Relaxed);
         arena.config.tp_curve_b.store(0.0, Ordering::Relaxed);
-        arena.config.sl_curve_a.store(0.02f64.ln(), Ordering::Relaxed);
+        arena
+            .config
+            .sl_curve_a
+            .store(0.02f64.ln(), Ordering::Relaxed);
         arena.config.sl_curve_b.store(0.0, Ordering::Relaxed);
 
         // Sin fricción artificial para aislar la paridad geométrica
         arena.config.live_taker_fee.store(0.0001, Ordering::Relaxed);
-        arena.config.base_slippage_floor.store(0.00001, Ordering::Relaxed);
-        arena.config.latency_penalty_ms.store(0.0, Ordering::Relaxed);
+        arena
+            .config
+            .base_slippage_floor
+            .store(0.00001, Ordering::Relaxed);
+        arena
+            .config
+            .latency_penalty_ms
+            .store(0.0, Ordering::Relaxed);
 
         let entry_price = 50_000.0;
         let tau_test_ms = 120_000; // 2 minutos
@@ -7124,17 +7577,33 @@ mod tests {
         let expected_sl_frac = arena.config.sl_at_tau(tau_test_ms as f64);
 
         // Verificamos que las curvas entreguen exactamente los valores mutados
-        assert!((expected_tp_frac - 0.04).abs() < 1e-6, "expected_tp_frac debe ser 0.04");
-        assert!((expected_sl_frac - 0.02).abs() < 1e-6, "expected_sl_frac debe ser 0.02");
+        assert!(
+            (expected_tp_frac - 0.04).abs() < 1e-6,
+            "expected_tp_frac debe ser 0.04"
+        );
+        assert!(
+            (expected_sl_frac - 0.02).abs() < 1e-6,
+            "expected_sl_frac debe ser 0.02"
+        );
 
         // Verificamos que TP > entry_price y SL < entry_price para long
-        assert!(tp > entry_price, "TP debe ser superior al precio de entrada");
-        assert!(sl < entry_price, "SL debe ser inferior al precio de entrada");
+        assert!(
+            tp > entry_price,
+            "TP debe ser superior al precio de entrada"
+        );
+        assert!(
+            sl < entry_price,
+            "SL debe ser inferior al precio de entrada"
+        );
 
         // Calculamos paridad esperada considerando posibles friction_floors
         let fee_rt = risk_engine::tp_sl::roundtrip_friction(0.0001, 0.00001, 0.0, 0.0);
         let (expected_sl_floor, expected_tp_floor) =
-            quantum_arena::genome::SuperGenotype::friction_floors(fee_rt, expected_sl_frac, expected_tp_frac);
+            quantum_arena::genome::SuperGenotype::friction_floors(
+                fee_rt,
+                expected_sl_frac,
+                expected_tp_frac,
+            );
 
         let expected_tp = entry_price * (1.0 + expected_tp_floor);
         let expected_sl = entry_price * (1.0 - expected_sl_floor);
@@ -7160,15 +7629,39 @@ mod tests {
 
         // Caso tau degenerada / no inicializada (0 ms) -> debe clamar a TAU_ANCHOR_FAST_MS
         let (tp_fast, sl_fast) = genome_protection_prices(&arena, "ETHUSDT", true, entry_price, 0);
-        let (tp_anchor_fast, sl_anchor_fast) = genome_protection_prices(&arena, "ETHUSDT", true, entry_price, TAU_ANCHOR_FAST_MS as u64);
-        assert_eq!(tp_fast, tp_anchor_fast, "Tau = 0 debe colapsar a ancla rápida");
-        assert_eq!(sl_fast, sl_anchor_fast, "Tau = 0 debe colapsar a ancla rápida");
+        let (tp_anchor_fast, sl_anchor_fast) = genome_protection_prices(
+            &arena,
+            "ETHUSDT",
+            true,
+            entry_price,
+            TAU_ANCHOR_FAST_MS as u64,
+        );
+        assert_eq!(
+            tp_fast, tp_anchor_fast,
+            "Tau = 0 debe colapsar a ancla rápida"
+        );
+        assert_eq!(
+            sl_fast, sl_anchor_fast,
+            "Tau = 0 debe colapsar a ancla rápida"
+        );
 
         // Caso tau degenerada cósmica (146 años) -> debe clamar a TAU_ANCHOR_SLOW_MS
-        let (tp_slow, sl_slow) = genome_protection_prices(&arena, "ETHUSDT", true, entry_price, 4_611_686_018_427);
-        let (tp_anchor_slow, sl_anchor_slow) = genome_protection_prices(&arena, "ETHUSDT", true, entry_price, TAU_ANCHOR_SLOW_MS as u64);
-        assert_eq!(tp_slow, tp_anchor_slow, "Tau cósmica debe colapsar a ancla lenta");
-        assert_eq!(sl_slow, sl_anchor_slow, "Tau cósmica debe colapsar a ancla lenta");
+        let (tp_slow, sl_slow) =
+            genome_protection_prices(&arena, "ETHUSDT", true, entry_price, 4_611_686_018_427);
+        let (tp_anchor_slow, sl_anchor_slow) = genome_protection_prices(
+            &arena,
+            "ETHUSDT",
+            true,
+            entry_price,
+            TAU_ANCHOR_SLOW_MS as u64,
+        );
+        assert_eq!(
+            tp_slow, tp_anchor_slow,
+            "Tau cósmica debe colapsar a ancla lenta"
+        );
+        assert_eq!(
+            sl_slow, sl_anchor_slow,
+            "Tau cósmica debe colapsar a ancla lenta"
+        );
     }
 }
-

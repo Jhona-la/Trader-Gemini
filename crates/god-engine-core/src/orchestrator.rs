@@ -1,5 +1,5 @@
-use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SystemPhase {
@@ -90,8 +90,8 @@ impl PhaseOrchestrator {
 
     /// GLM-219 (BLOQUEANTE #3 del A1): breaker Producción→Demo. Si el
     /// desempeño REAL de Producción (income del exchange) con cierres
-    /// suficientes muestra EV neto ≤ 0 — el mundo real contradice el
-    /// certificado demo que autorizó la entrada — el sistema RETROCEDE a
+    /// suficientes muestra EV neto ≤ 0 o no finito — el mundo real contradice
+    /// el certificado demo que autorizó la entrada — el sistema RETROCEDE a
     /// DemoVerify y BLOQUEA la operativa (fail-closed: is_trading_allowed
     /// sólo autoriza en Paper/Prod). Además LIMPIA evidencia_demo: la puerta
     /// #2 exigirá una re-certificación demo completa antes de reabrir — el
@@ -103,10 +103,10 @@ impl PhaseOrchestrator {
         if self.current_phase != SystemPhase::ProductionMainnet {
             return false;
         }
-        if cierres < Self::MIN_CIERRES_BREAKER_PROD || !ev_neto_por_trade.is_finite() {
+        if cierres < Self::MIN_CIERRES_BREAKER_PROD {
             return false;
         }
-        if ev_neto_por_trade > 0.0 {
+        if ev_neto_por_trade.is_finite() && ev_neto_por_trade > 0.0 {
             return false;
         }
         println!(
@@ -287,7 +287,8 @@ mod tests {
     fn test_phase_orchestrator_production_blocks_when_oms_not_reconciled() {
         let darwin = Arc::new(AtomicBool::new(true));
         let oms_reconciled = Arc::new(AtomicBool::new(false));
-        let mut orch = PhaseOrchestrator::new_with_oms(1, false, darwin.clone(), oms_reconciled.clone());
+        let mut orch =
+            PhaseOrchestrator::new_with_oms(1, false, darwin.clone(), oms_reconciled.clone());
         // GLM-216: ídem — el foco de este contrato es la reconciliación OMS.
         orch.set_evidencia_demo(Some(EvidenciaDemo {
             cierres: 30,

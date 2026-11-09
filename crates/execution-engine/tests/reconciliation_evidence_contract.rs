@@ -14,11 +14,9 @@ fn checked_report_explains_hedge_and_is_order_invariant() {
     let first = reconcile_arena_checked(&rows, &a, 3);
     let second = reconcile_arena_checked(&[rows[1].clone(), rows[0].clone()], &a, 3);
     assert_eq!(first.unresolved, second.unresolved);
-    assert_eq!(
-        first.unresolved[0].kind,
-        ReconciliationIssueKind::MultipleRemoteLegs
-    );
-    assert_eq!(first.adjustments, 0);
+    assert!(first.unresolved.is_empty());
+    assert_eq!(first.adjustments, 1);
+    assert_eq!(second.adjustments, 0);
 }
 #[test]
 fn invalid_metadata_and_unmapped_exposure_are_reported_without_adoption() {
@@ -108,10 +106,11 @@ fn balanced_hedge_does_not_clear_known_exposure() {
     open(&a, 2, 1.0);
     assert_eq!(
         reconcile_arena(&[row(1.0, "LONG"), row(-1.0, "SHORT")], &a, 3),
-        0
+        1
     );
     assert!(a.coins[0].positions.slot_2.is_open());
-    assert_eq!(a.used_margin.load(Ordering::Relaxed), 10.0);
+    assert!(a.coins[0].positions.slot_0.is_open() || a.coins[0].positions.slot_1.is_open());
+    assert_eq!(a.used_margin.load(Ordering::Relaxed), 20.0);
 }
 #[test]
 fn unequal_hedge_does_not_replace_gross_with_net() {
@@ -120,16 +119,18 @@ fn unequal_hedge_does_not_replace_gross_with_net() {
     open(&a, 2, 2.0);
     assert_eq!(
         reconcile_arena(&[row(2.0, "LONG"), row(-1.0, "SHORT")], &a, 3),
-        0
+        1
     );
     assert_eq!(
-        a.coins[0]
-            .positions
-            .slot_2
-            .quantity
-            .load(Ordering::Relaxed),
+        a.coins[0].positions.slot_2.quantity.load(Ordering::Relaxed),
         2.0
     );
+    let adopted_short = [0usize, 1]
+        .into_iter()
+        .map(|index| a.coins[0].positions.get_slot(index))
+        .find(|position| position.is_open() && !position.is_long.load(Ordering::Relaxed))
+        .expect("la pierna SHORT ausente se adopta sin reemplazar LONG");
+    assert_eq!(adopted_short.quantity.load(Ordering::Relaxed), 1.0);
 }
 #[test]
 fn reversal_cannot_confirm_a_stale_direction() {
@@ -167,11 +168,7 @@ fn duplicate_leg_rows_are_not_added_together() {
         0
     );
     assert_eq!(
-        a.coins[0]
-            .positions
-            .slot_2
-            .quantity
-            .load(Ordering::Relaxed),
+        a.coins[0].positions.slot_2.quantity.load(Ordering::Relaxed),
         1.0
     );
 }
@@ -187,11 +184,7 @@ fn multiple_local_allocations_are_not_each_given_total_remote_quantity() {
         0.4
     );
     assert_eq!(
-        a.coins[0]
-            .positions
-            .slot_2
-            .quantity
-            .load(Ordering::Relaxed),
+        a.coins[0].positions.slot_2.quantity.load(Ordering::Relaxed),
         0.6
     );
 }
@@ -221,11 +214,7 @@ fn explicit_flat_and_single_position_adoption_still_work() {
     assert_eq!(reconcile_arena(&[row(0.0, "BOTH")], &a, 3), 1);
     assert!(!a.coins[0].positions.slot_2.is_open());
     assert_eq!(reconcile_arena(&[row(-2.0, "SHORT")], &a, 4), 1);
-    assert!(!a.coins[0]
-        .positions
-        .slot_2
-        .is_long
-        .load(Ordering::Relaxed));
+    assert!(!a.coins[0].positions.slot_2.is_long.load(Ordering::Relaxed));
 }
 #[test]
 fn glm208_simbolo_sin_fila_remota_solo_es_issue_con_posicion_local_abierta() {
@@ -244,8 +233,13 @@ fn glm208_simbolo_sin_fila_remota_solo_es_issue_con_posicion_local_abierta() {
     // Posición local abierta sin fila remota → issue real, estado preservado.
     open(&a, 2, 1.0);
     let bloqueado = reconcile_arena_checked(&[], &a, 3);
-    assert!(bloqueado.unresolved.iter().any(|i| i.symbol == "XIXUSDT"
-        && i.kind == ReconciliationIssueKind::MissingRemoteEvidence));
+    assert!(
+        bloqueado
+            .unresolved
+            .iter()
+            .any(|i| i.symbol == "XIXUSDT"
+                && i.kind == ReconciliationIssueKind::MissingRemoteEvidence)
+    );
     assert!(a.coins[0].positions.slot_2.is_open());
     assert_eq!(a.used_margin.load(Ordering::Relaxed), 10.0);
 }

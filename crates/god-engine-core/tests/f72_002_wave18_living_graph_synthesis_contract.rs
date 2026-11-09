@@ -99,6 +99,13 @@ fn test_c2_wave18_lindblad_decoherence_hard_veto() {
                 ..Default::default()
             },
         );
+    // Aislar la prueba de Lindblad asegurando que Ryu-Takayanagi no anticipe el veto por dispersión
+    orchestrator.ryu_takayanagi_engines[0] =
+        risk_engine::RyuTakayanagiEntanglementEngine::new(risk_engine::RyuTakayanagiParams {
+            max_entanglement_entropy_threshold: 100.0,
+            min_mutual_information_threshold: -1.0,
+            ..Default::default()
+        });
 
     let triad = [
         AssetColorState {
@@ -191,12 +198,26 @@ fn test_c3_wave18_gross_pitaevskii_vortex_cavitation_veto() {
     // Gross-Pitaevskii. Este contrato fija la etiqueta del vórtice, así que sube ese umbral; el
     // veto de Liouville tiene su propio contrato en f75_002 C3. La rama de cavitación del BEC
     // (fracción de condensado bajo el umbral) tiene el suyo en f70_001 C3.
+    orchestrator.bec_engines[0] =
+        feature_engine::gross_pitaevskii_bec::GrossPitaevskiiBecEngine::new(
+            feature_engine::gross_pitaevskii_bec::GrossPitaevskiiParams {
+                min_condensate_fraction_threshold: 0.90,
+                ..Default::default()
+            },
+        );
+    // Aislar la prueba de BEC asegurando que Liouville y Ryu-Takayanagi no anticipen el veto ante el shock
     orchestrator.liouville_engines[0] = feature_engine::LiouvilleCft2dQuantumGravityEngine::new(
         feature_engine::LiouvilleCftParams {
             singularity_curvature_threshold: 1.0e6,
             ..Default::default()
         },
     );
+    orchestrator.ryu_takayanagi_engines[0] =
+        risk_engine::RyuTakayanagiEntanglementEngine::new(risk_engine::RyuTakayanagiParams {
+            max_entanglement_entropy_threshold: 100.0,
+            min_mutual_information_threshold: -1.0,
+            ..Default::default()
+        });
 
     let triad = [
         AssetColorState {

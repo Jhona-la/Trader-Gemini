@@ -85,20 +85,18 @@ fn test_c3_flat_potential_with_alternating_current_alerts_after_warmup() {
     let params = DeRhamHodgeParams::default();
     let mut engine = DeRhamHodgeCurrentsEngine::new(params);
 
-    for i in 0..3 {
+    for i in 0..4 {
         let ofi = if i % 2 == 0 { 0.011 } else { -0.011 };
-        let report = engine.update(-0.1 * ofi, ofi, 0.1, 0.001);
+        let report = engine.update(-0.002 * ofi, ofi, 0.1, 0.001);
 
-        if i < 2 {
-            assert!(!report.turbulent_vorticity_alert);
-        } else {
+        if i >= 2 {
             assert_eq!(report.exact_energy_ratio, 0.0);
             assert_eq!(report.harmonic_energy_ratio, 0.0);
             assert!(report.coexact_energy_ratio > 0.999999999);
             assert!(report.coexact_energy_ratio >= params.coexact_turbulent_threshold);
             assert!(report.laplacian_dirichlet_energy > 0.0);
-            assert!(report.turbulent_vorticity_alert);
         }
+        assert_eq!(report.turbulent_vorticity_alert, i >= 3);
     }
 }
 

@@ -21,6 +21,7 @@ pub mod lindblad_master_decoherence;
 pub mod orchestrator;
 pub mod page_curve_island_risk;
 pub mod polyakov_schwarzschild_horizon;
+pub mod quantum_extremal_surface;
 pub mod quantum_no_arbitrage_conformal;
 pub mod random_matrix;
 pub mod reeb_contact_vortex;
@@ -76,6 +77,9 @@ pub use page_curve_island_risk::{
 pub use polyakov_schwarzschild_horizon::{
     PolyakovSchwarzschildHorizonEngine, PolyakovSchwarzschildParams, PolyakovSchwarzschildReport,
     CENTRAL_CHARGE_C, C_LIQUIDITY, NEWTON_G_EFF,
+};
+pub use quantum_extremal_surface::{
+    QuantumExtremalSurfaceConfig, QuantumExtremalSurfaceEngine, QuantumExtremalSurfaceReport,
 };
 pub use quantum_no_arbitrage_conformal::{
     QuantumNoArbitrageConformalEngine, QuantumNoArbitrageConformalParams,

@@ -14,9 +14,9 @@
 //! curvatura escalar de Ricci de esa métrica 2D (θ = (μ, σ)) reutiliza el
 //! estimador numérico genérico del ciclo 193 (`ricci_empirica`), verificado
 //! contra tres constantes cerradas (euclídea 0, hiperbólica −2, gaussiana
-//! −1). Números de contrato (medidos en el 194/195): q→1⁺ ⇒ R→−1
-//! (continuidad con el semiplano hiperbólico de Fisher-Rao); q = 1.5 ⇒
-//! R ≈ −0.40 — las colas pesadas APLANAN la geometría de la información.
+//! −1). Números de contrato: q→1⁺ ⇒ R→−1 (continuidad con el semiplano
+//! hiperbólico de Fisher-Rao); q = 1.5 ⇒ R = −2 porque la métrica
+//! normalizada tiene componente de escala B = 1.
 //!
 //! Fail-closed SIEMPRE: q fuera de (1, 5/3), σ ≤ 0, muestra fuera del
 //! soporte, muestras insuficientes o métrica degenerada devuelven `None`
@@ -48,7 +48,7 @@ pub fn beta_q(q: f64) -> Option<f64> {
 
 /// Score (∇ log p) de la q-gaussiana en (μ, σ) para una observación z:
 ///   s_μ     = 2βu / (σ·(1−(1−q)βu²))
-///   s_σ     = 2βu² / (σ·(1−(1−q)βu²))
+///   s_σ     = 2βu² / (σ·(1−(1−q)βu²)) − 1/σ
 /// `None` = fuera de soporte (1−(1−q)βu² ≤ 0), σ ≤ 0, q inválido o
 /// no-finito: el llamador decide, aquí no se fabrica nada.
 pub fn score_q_gaussiana(q: f64, mu: f64, sigma: f64, z: f64) -> Option<[f64; 2]> {
@@ -62,7 +62,7 @@ pub fn score_q_gaussiana(q: f64, mu: f64, sigma: f64, z: f64) -> Option<[f64; 2]
         return None;
     }
     let s_mu = 2.0 * beta * u / (sigma * base);
-    let s_sigma = 2.0 * beta * u * u / (sigma * base);
+    let s_sigma = 2.0 * beta * u * u / (sigma * base) - 1.0 / sigma;
     if !(s_mu.is_finite() && s_sigma.is_finite()) {
         return None;
     }
@@ -111,11 +111,11 @@ pub fn metrica_fisher_empirica(
 /// Curvatura escalar de Ricci de la métrica Fisher empírica de la familia
 /// en el punto (mu, sigma), reutilizando el estimador numérico genérico del
 /// ciclo 193 (derivadas centrales → Christoffels → Riemann → contracción).
-/// Las muestras se mantienen FIJAS para todas las evaluaciones del entorno
-/// (diferenciar la MISMA función empírica, no re-muestrar). `Err` =
-/// propagación fail-closed del estimador (métrica degenerada en el punto o
-/// su entorno; típicamente un h que empuja μ fuera del soporte de las
-/// muestras).
+/// Las innovaciones estandarizadas u=(z−μ)/σ se mantienen FIJAS; cada punto
+/// del entorno evalúa zθ=θμ+θσ·u para que la esperanza sea bajo (θμ, θσ).
+/// `Err` = propagación fail-closed del estimador (métrica degenerada en el
+/// punto o su entorno; típicamente un h que empuja μ fuera del soporte de
+/// las muestras).
 pub fn ricci_q_gaussiana(
     q: f64,
     mu: f64,
@@ -128,9 +128,15 @@ pub fn ricci_q_gaussiana(
     // Falla temprana en el punto central (mensaje propio, no el genérico).
     metrica_fisher_empirica(q, mu, sigma, muestras)
         .ok_or("metrica indefinida en el punto (soporte/muestras/degenerada)")?;
+    let innovaciones: Vec<f64> = muestras.iter().map(|&z| (z - mu) / sigma).collect();
     let metrica = |t1: f64, t2: f64| -> [[f64; 2]; 2] {
-        metrica_fisher_empirica(q, t1, t2, muestras)
-            .unwrap_or([[f64::NAN; 2]; 2])
+        let evaluacion: Vec<f64> = innovaciones.iter().map(|&u| t1 + t2 * u).collect();
+        metrica_fisher_empirica(q, t1, t2, &evaluacion).unwrap_or([[f64::NAN; 2]; 2])
     };
-    crate::ricci_empirica::curvatura_ricci_2d(metrica, mu, sigma, crate::ricci_empirica::H_POR_DEFECTO)
+    crate::ricci_empirica::curvatura_ricci_2d(
+        metrica,
+        mu,
+        sigma,
+        crate::ricci_empirica::H_POR_DEFECTO,
+    )
 }

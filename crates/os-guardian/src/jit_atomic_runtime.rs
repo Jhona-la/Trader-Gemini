@@ -115,11 +115,18 @@ impl<const D: usize> DimensionedVector<D> {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum JitAllocationOrigin {
+    VirtualAlloc,
+    Heap,
+}
+
 /// Página de código ejecutable asignada en RAM con estricta semántica W^X.
 pub struct JitCodePage {
     ptr: *mut u8,
     size: usize,
     is_executable: bool,
+    allocation_origin: JitAllocationOrigin,
 }
 
 // Seguridad de concurrencia: la página sólo se lee una vez sellada.
@@ -160,6 +167,7 @@ impl JitCodePage {
                     ptr: heap_raw,
                     size: aligned_size,
                     is_executable: false,
+                    allocation_origin: JitAllocationOrigin::Heap,
                 });
             }
 
@@ -167,6 +175,7 @@ impl JitCodePage {
                 ptr: raw as *mut u8,
                 size: aligned_size,
                 is_executable: false,
+                allocation_origin: JitAllocationOrigin::VirtualAlloc,
             })
         }
 
@@ -182,6 +191,7 @@ impl JitCodePage {
                 ptr: raw,
                 size: aligned_size,
                 is_executable: false,
+                allocation_origin: JitAllocationOrigin::Heap,
             })
         }
     }
@@ -237,7 +247,8 @@ impl JitCodePage {
             const PROT_READ: i32 = 1;
             const PROT_EXEC: i32 = 4;
 
-            let result = unsafe { mprotect(self.ptr as *mut c_void, self.size, PROT_READ | PROT_EXEC) };
+            let result =
+                unsafe { mprotect(self.ptr as *mut c_void, self.size, PROT_READ | PROT_EXEC) };
             if result == 0 {
                 self.is_executable = true;
                 Ok(())
@@ -264,26 +275,41 @@ impl JitCodePage {
     pub fn is_executable(&self) -> bool {
         self.is_executable
     }
+
+    #[inline(always)]
+    pub fn allocation_origin(&self) -> JitAllocationOrigin {
+        self.allocation_origin
+    }
 }
 
 impl Drop for JitCodePage {
     fn drop(&mut self) {
-        if !self.ptr.is_null() {
-            #[cfg(windows)]
-            {
-                use windows::Win32::System::Memory::{VirtualFree, MEM_RELEASE};
-                let res = unsafe { VirtualFree(self.ptr as *mut c_void, 0, MEM_RELEASE) };
-                if res.is_err() {
-                    // Si era asignación de respaldo heap
-                    if let Ok(layout) = core::alloc::Layout::from_size_align(self.size, 64) {
-                        unsafe { std::alloc::dealloc(self.ptr, layout) };
-                    }
+        if self.ptr.is_null() {
+            return;
+        }
+        match self.allocation_origin {
+            JitAllocationOrigin::VirtualAlloc => {
+                #[cfg(windows)]
+                {
+                    use windows::Win32::System::Memory::{VirtualFree, MEM_RELEASE};
+                    #[cfg(test)]
+                    VIRTUAL_FREE_CALLS.fetch_add(1, Ordering::SeqCst);
+                    let _ = unsafe { VirtualFree(self.ptr as *mut c_void, 0, MEM_RELEASE) };
                 }
+                #[cfg(not(windows))]
+                debug_assert!(false, "VirtualAlloc sólo existe en Windows");
             }
-
-            #[cfg(not(windows))]
-            {
+            JitAllocationOrigin::Heap => {
+                #[cfg(windows)]
+                if let Ok(layout) = core::alloc::Layout::from_size_align(self.size, 64) {
+                    #[cfg(test)]
+                    HEAP_DEALLOC_CALLS.fetch_add(1, Ordering::SeqCst);
+                    unsafe { std::alloc::dealloc(self.ptr, layout) };
+                }
+                #[cfg(not(windows))]
                 if let Ok(layout) = core::alloc::Layout::from_size_align(self.size, 4096) {
+                    #[cfg(test)]
+                    HEAP_DEALLOC_CALLS.fetch_add(1, Ordering::SeqCst);
                     unsafe { std::alloc::dealloc(self.ptr, layout) };
                 }
             }
@@ -368,5 +394,94 @@ impl AtomicJitPredicator {
     #[inline(always)]
     pub fn total_evaluations(&self) -> u64 {
         self.evaluation_counter.load(Ordering::Relaxed)
+    }
+}
+
+#[cfg(test)]
+static VIRTUAL_FREE_CALLS: AtomicU64 = AtomicU64::new(0);
+#[cfg(test)]
+static HEAP_DEALLOC_CALLS: AtomicU64 = AtomicU64::new(0);
+#[cfg(test)]
+static RELEASE_TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+#[cfg(test)]
+mod allocation_origin_tests {
+    use super::*;
+
+    fn reset_counters() {
+        VIRTUAL_FREE_CALLS.store(0, Ordering::SeqCst);
+        HEAP_DEALLOC_CALLS.store(0, Ordering::SeqCst);
+    }
+
+    fn counters() -> (u64, u64) {
+        (
+            VIRTUAL_FREE_CALLS.load(Ordering::SeqCst),
+            HEAP_DEALLOC_CALLS.load(Ordering::SeqCst),
+        )
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn virtual_alloc_drop_only_calls_virtual_free() {
+        let _guard = RELEASE_TEST_LOCK.lock().unwrap();
+        reset_counters();
+        {
+            let page = JitCodePage::allocate(64).expect("VirtualAlloc disponible");
+            assert_eq!(page.allocation_origin(), JitAllocationOrigin::VirtualAlloc);
+        }
+        assert_eq!(
+            counters(),
+            (1, 0),
+            "una sola liberación VirtualAlloc, ninguna dealloc"
+        );
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn heap_drop_only_calls_dealloc() {
+        let _guard = RELEASE_TEST_LOCK.lock().unwrap();
+        reset_counters();
+        {
+            let layout = core::alloc::Layout::from_size_align(4096, 64).unwrap();
+            let ptr = unsafe { std::alloc::alloc_zeroed(layout) };
+            assert!(!ptr.is_null());
+            let page = JitCodePage {
+                ptr,
+                size: layout.size(),
+                is_executable: false,
+                allocation_origin: JitAllocationOrigin::Heap,
+            };
+            assert_eq!(page.allocation_origin(), JitAllocationOrigin::Heap);
+        }
+        assert_eq!(
+            counters(),
+            (0, 1),
+            "una sola liberación heap, ninguna VirtualFree"
+        );
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn protection_failed_is_not_executable_and_does_not_cross_free() {
+        let _guard = RELEASE_TEST_LOCK.lock().unwrap();
+        reset_counters();
+        let mut page = JitCodePage::allocate(64).expect("VirtualAlloc disponible");
+        assert_eq!(page.allocation_origin(), JitAllocationOrigin::VirtualAlloc);
+        let raw = page.as_ptr() as *mut c_void;
+        unsafe {
+            use windows::Win32::System::Memory::{VirtualFree, MEM_RELEASE};
+            VirtualFree(raw, 0, MEM_RELEASE)
+                .expect("invalidar la página para forzar ProtectionFailed");
+        }
+
+        let result = page.make_executable();
+        assert_eq!(result, Err(JitRuntimeError::ProtectionFailed));
+        assert!(!page.is_executable());
+        drop(page);
+        assert_eq!(
+            counters(),
+            (1, 0),
+            "Drop no puede convertir VirtualAlloc en dealloc"
+        );
     }
 }
