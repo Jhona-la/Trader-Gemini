@@ -408,6 +408,33 @@ fn test_c1_holistic_living_graph_end_to_end_synthesis() {
     assert!(!report.page_curve_island_report.island_veto_induced);
     assert!(report.page_curve_island_report.quantum_island_present);
     assert!(report.page_curve_island_report.slot_scale_factor >= 0.15);
+
+    // 47. Cromodinámica Cuántica en Red & Holonomía de Lazo de Wilson-Polyakov (Fase 82)
+    assert!(report.lattice_qcd_report.string_tension_sigma >= 0.0);
+    assert!(
+        report
+            .lattice_qcd_report
+            .polyakov_loop_expectation
+            .is_finite()
+    );
+    assert!(!report.lattice_qcd_report.lattice_confinement_collapse_veto);
+    assert!(report.lattice_qcd_report.slot_scale_factor >= 0.10);
+
+    // 48. Cosmología Cuántica de Wheeler-DeWitt & Restricción Mini-Superespacio (Fase 83)
+    assert!(report.wheeler_dewitt_report.wave_amplitude > 0.0);
+    assert!(report.wheeler_dewitt_report.potential_v.is_finite());
+    assert!(!report.wheeler_dewitt_report.big_crunch_veto);
+    assert!(report.wheeler_dewitt_report.slot_scale_factor >= 0.15);
+
+    // 49. Cuantización de Área de Bekenstein-Mukhanov & Espectro Discreto (Fase 84)
+    assert!(report.bekenstein_mukhanov_report.quantized_area_an > 0.0);
+    assert!(report.bekenstein_mukhanov_report.bekenstein_entropy_sn > 0.0);
+    assert!(
+        !report
+            .bekenstein_mukhanov_report
+            .bekenstein_evaporation_veto
+    );
+    assert!(report.bekenstein_mukhanov_report.slot_scale_factor >= 0.10);
 }
 
 #[test]

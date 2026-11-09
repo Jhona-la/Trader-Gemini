@@ -45,14 +45,11 @@ pub mod stochastic_resonance;
 pub mod supersonic_shockwave;
 pub mod trend_runner;
 pub mod voto_espectral;
+pub mod wheeler_dewitt_minisuperspace;
 pub mod wilson_exact_renormalization;
 
-pub use ads_cft_holographic::{
-    AdSCftHolographicEngine, AdSCftHolographicReport, AdSCftParams,
-};
-pub use berry_phase_holonomy::{
-    BerryPhaseConfig, BerryPhaseEngine, BerryPhaseReport,
-};
+pub use ads_cft_holographic::{AdSCftHolographicEngine, AdSCftHolographicReport, AdSCftParams};
+pub use berry_phase_holonomy::{BerryPhaseConfig, BerryPhaseEngine, BerryPhaseReport};
 pub use continuous_volatility_operator::{
     ContinuousVolatilityOperatorEngine, ContinuousVolatilityParams, ContinuousVolatilityState,
     VOL_SPECTRUM_SCALES,
@@ -128,6 +125,9 @@ pub use srb_kolmogorov_entropy::{
 pub use stochastic_resonance::{StochasticResonanceEngine, StochasticResonanceParams};
 pub use strategy_core::{SignalIntent, SignalType};
 pub use supersonic_shockwave::{SupersonicShockwaveEngine, SupersonicShockwaveParams};
+pub use wheeler_dewitt_minisuperspace::{
+    WheelerDeWittConfig, WheelerDeWittMinisuperspaceEngine, WheelerDeWittReport,
+};
 pub use wilson_exact_renormalization::{
     RgScaleCoupling, WilsonExactRenormalizationEngine, WilsonExactRgParams, WilsonExactRgReport,
     RG_MOMENTUM_SCALES,
