@@ -13,6 +13,7 @@ pub mod feynman_path_instanton;
 pub mod firma_maxent;
 pub mod fisher_rao;
 pub mod flujo_rg;
+pub mod gross_pitaevskii_bec;
 pub mod grothendieck_sheaves;
 pub mod hairer_landauer_anderson;
 pub mod hawkes;
@@ -94,6 +95,10 @@ pub use ewma::Ewma;
 pub use feynman_path_instanton::{
     FeynmanInstantonEngine, InstantonParams, InstantonRegime, InstantonTunnelingReport,
     MAX_PATH_POINTS,
+};
+pub use gross_pitaevskii_bec::{
+    GrossPitaevskiiBecEngine, GrossPitaevskiiBecReport, GrossPitaevskiiParams, BEC_ANGULAR_SECTORS,
+    HBAR_EFF, PARTICLE_MASS_M,
 };
 pub use grothendieck_sheaves::{
     AtiyahSingerIndexReport, CellularSheafEngine, CellularSheafReport, GrothendieckSheafParams,

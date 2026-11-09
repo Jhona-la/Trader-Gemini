@@ -11,6 +11,28 @@ pub enum SystemPhase {
     ProductionMainnet,
 }
 
+/// GLM-216 (BLOQUEANTE #2 del A1): evidencia de rentabilidad demo persistida.
+/// La transición DemoVerify→ProductionMainnet deja de ser inmediata: exige
+/// cierres reales suficientes y EV neto post-fees > 0 medido del income del
+/// exchange (criterio global; mandato §23: «sólo tras certificar
+/// automáticamente la rentabilidad neta en Demo, el sistema conmuta a
+/// Producción»). El bin la persiste en data/demo/evidencia_demo.json desde
+/// el agregado del FEE-BREAKER (GLM-214) y la inyecta al orchestrator.
+#[derive(Debug, Clone, Copy, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct EvidenciaDemo {
+    /// Cierres reales (REALIZED_PNL) de la ventana demo.
+    pub cierres: u64,
+    /// EV neto post-fees por trade del income REAL (gross + fees firmados).
+    pub ev_neto_por_trade: f64,
+    /// Wins de la ventana (para el WR de la evidencia).
+    pub wins: u64,
+}
+
+/// Cierres mínimos para autorizar Producción. 30: suficiente para que el EV
+/// neto empiece a significar algo sin exigir la serie completa del criterio
+/// global (7 d) — el breaker Prod→Demo (bloqueante #3) acota el resto.
+pub const MIN_CIERRES_PARA_PROD: u64 = 30;
+
 pub struct PhaseOrchestrator {
     pub current_phase: SystemPhase,
     pub darwin_approved: Arc<AtomicBool>,
@@ -18,6 +40,8 @@ pub struct PhaseOrchestrator {
     pub warmup_ticks_required: u64,
     pub current_ticks: u64,
     pub is_demo_mode: bool,
+    pub evidencia_demo: Option<EvidenciaDemo>,
+    pub min_cierres_para_prod: u64,
 }
 
 impl PhaseOrchestrator {
@@ -47,7 +71,17 @@ impl PhaseOrchestrator {
             warmup_ticks_required: warmup_ticks_required.max(1),
             current_ticks: 0,
             is_demo_mode,
+            evidencia_demo: None,
+            min_cierres_para_prod: MIN_CIERRES_PARA_PROD,
         }
+    }
+
+    /// Inyecta la evidencia demo persistida (el bin la lee de
+    /// data/demo/evidencia_demo.json al arrancar en modo Producción, o la
+    /// actualiza en vivo en modo demo). `None` = sin certificado: la puerta
+    /// a Producción permanece cerrada (fail-closed).
+    pub fn set_evidencia_demo(&mut self, evidencia: Option<EvidenciaDemo>) {
+        self.evidencia_demo = evidencia;
     }
 
     /// Llamado en cada tick del Market Data. Mueve la máquina de estados.
@@ -93,13 +127,42 @@ impl PhaseOrchestrator {
                 }
             }
             SystemPhase::DemoVerify => {
-                // En DemoVerify hacemos los últimos chequeos de paridad (o simplemente transicionamos inmediatamente si ya todo está ok).
                 if self.is_demo_mode {
+                    // En demo el fin del flujo es PaperTrading: generar la
+                    // evidencia que la puerta de Producción exige.
                     println!("🚀 [ORCHESTRATOR] Fase: DemoVerify -> PaperTrading");
                     self.current_phase = SystemPhase::PaperTrading;
                 } else {
-                    println!("🚀 [ORCHESTRATOR] Fase: DemoVerify -> ProductionMainnet");
-                    self.current_phase = SystemPhase::ProductionMainnet;
+                    // GLM-216 (BLOQUEANTE #2 del A1): la transición a
+                    // Producción EXIGE certificado demo persistido — cierres
+                    // ≥ mínimo y EV neto post-fees > 0 del income REAL.
+                    // Antes transicionaba inmediatamente sin métrica alguna.
+                    // Fail-closed: sin evidencia o con EV ≤ 0, PERMANECE en
+                    // DemoVerify (sin operar) — ningún timer aprueba solo.
+                    match self.evidencia_demo {
+                        Some(ev)
+                            if ev.cierres >= self.min_cierres_para_prod
+                                && ev.ev_neto_por_trade > 0.0
+                                && ev.ev_neto_por_trade.is_finite() =>
+                        {
+                            println!(
+                                "🚀 [ORCHESTRATOR] DemoVerify -> ProductionMainnet (certificado demo: {} cierres, EV neto {:+.6} USDT/trade)",
+                                ev.cierres, ev.ev_neto_por_trade
+                            );
+                            self.current_phase = SystemPhase::ProductionMainnet;
+                        }
+                        Some(ev) => {
+                            println!(
+                                "⏸️ [ORCHESTRATOR] DemoVerify RETENIDO: certificado demo insuficiente ({} cierres < {}, EV {:+.6}) — sin rentabilidad neta demo no hay Producción",
+                                ev.cierres, self.min_cierres_para_prod, ev.ev_neto_por_trade
+                            );
+                        }
+                        None => {
+                            println!(
+                                "⏸️ [ORCHESTRATOR] DemoVerify RETENIDO: sin certificado demo persistido (data/demo/evidencia_demo.json) — fail-closed"
+                            );
+                        }
+                    }
                 }
             }
             SystemPhase::PaperTrading => {
@@ -162,6 +225,14 @@ mod tests {
     fn test_phase_orchestrator_production_flow_with_darwin_approval() {
         let darwin = Arc::new(AtomicBool::new(false));
         let mut orch = PhaseOrchestrator::new(1, false, darwin.clone());
+        // GLM-216: certificado demo válido — este contrato prueba el flujo
+        // Darwin, no la puerta de Producción (ésta tiene su contrato propio
+        // en tests/phase_authorization_contract.rs).
+        orch.set_evidencia_demo(Some(EvidenciaDemo {
+            cierres: 30,
+            ev_neto_por_trade: 0.001,
+            wins: 20,
+        }));
 
         orch.on_tick(); // Init -> DataWarmup
         orch.on_tick(); // DataWarmup -> GenomicAudit
@@ -183,6 +254,12 @@ mod tests {
         let darwin = Arc::new(AtomicBool::new(true));
         let oms_reconciled = Arc::new(AtomicBool::new(false));
         let mut orch = PhaseOrchestrator::new_with_oms(1, false, darwin.clone(), oms_reconciled.clone());
+        // GLM-216: ídem — el foco de este contrato es la reconciliación OMS.
+        orch.set_evidencia_demo(Some(EvidenciaDemo {
+            cierres: 30,
+            ev_neto_por_trade: 0.001,
+            wins: 20,
+        }));
 
         orch.on_tick(); // Init -> DataWarmup
         orch.on_tick(); // DataWarmup -> GenomicAudit

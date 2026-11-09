@@ -1255,6 +1255,37 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         Arc::clone(&darwin_approved),
         Arc::clone(&oms_reconciled),
     )));
+    // GLM-216 (bloqueante #2 del A1): en modo Producción, cargar el
+    // certificado demo persistido (lo escribe la corrida demo desde el
+    // agregado del income). Sin él — o con EV ≤ 0 / cierres insuficientes —
+    // la puerta DemoVerify→ProductionMainnet permanece CERRADA (fail-closed):
+    // nunca más transición inmediata sin métrica.
+    if !is_demo_mode {
+        let ruta = quantum_arena::paths::env_data_path_for(true, "evidencia_demo.json");
+        let evidencia = std::fs::read_to_string(&ruta).ok().and_then(|txt| {
+            serde_json::from_str::<god_engine_core::orchestrator::EvidenciaDemo>(&txt).ok()
+        });
+        match evidencia {
+            Some(ev) => {
+                telemetry_server::telemetry_log!(
+                    "📋 [ORCHESTRATOR] certificado demo cargado: {} cierres, EV neto {:+.6} USDT/trade (mínimo {} cierres y EV > 0 para Producción)",
+                    ev.cierres,
+                    ev.ev_neto_por_trade,
+                    god_engine_core::orchestrator::MIN_CIERRES_PARA_PROD
+                );
+                orchestrator
+                    .write()
+                    .unwrap_or_else(|e| e.into_inner())
+                    .set_evidencia_demo(Some(ev));
+            }
+            None => {
+                telemetry_server::telemetry_log!(
+                    "🔒 [ORCHESTRATOR] SIN certificado demo ({}): la puerta a Producción permanecerá cerrada — correr Demo primero",
+                    ruta
+                );
+            }
+        }
+    }
 
     if is_demo_mode {
         telemetry_server::telemetry_log!(
@@ -3257,6 +3288,57 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 }
                             }
                             _ => {}
+                        }
+                    }
+                    // GLM-214 (H2): publicar la VERDAD DEL EXCHANGE de la
+                    // ventana para el display financiero (seqlock del
+                    // profiler). El contador interno sólo suma receipts de
+                    // cierres internos y la corrida A3 lo mostró en 0.0000
+                    // con el exchange cobrando de verdad; con closes > 0 el
+                    // único escritor del seqlock prefiere estos valores.
+                    {
+                        let mut x_gross = 0.0;
+                        let mut x_fees = 0.0;
+                        let mut x_closes: u64 = 0;
+                        let mut x_wins: u64 = 0;
+                        for a in per.values() {
+                            x_fees += a.fees + a.funding;
+                            for (_, pnl) in &a.registros {
+                                x_closes += 1;
+                                if *pnl > 0.0 {
+                                    x_wins += 1;
+                                }
+                                x_gross += pnl;
+                            }
+                        }
+                        telemetry_server::profiler::record_exchange_income(
+                            x_gross, x_fees, x_closes, x_wins,
+                        );
+                        // GLM-216 (bloqueante #2): en demo, persistir el
+                        // certificado de rentabilidad que la puerta a
+                        // Producción exige (cierres ≥ 30 y EV neto > 0).
+                        if x_closes > 0 && x_gross.is_finite() && x_fees.is_finite() {
+                            let ev = god_engine_core::orchestrator::EvidenciaDemo {
+                                cierres: x_closes,
+                                ev_neto_por_trade: (x_gross + x_fees) / x_closes as f64,
+                                wins: x_wins,
+                            };
+                            let ruta =
+                                quantum_arena::paths::env_data_path_for(true, "evidencia_demo.json");
+                            match serde_json::to_string_pretty(&ev) {
+                                Ok(txt) => {
+                                    if std::fs::write(&ruta, txt).is_err() {
+                                        telemetry_server::telemetry_log!(
+                                            "⚠️ [ORCHESTRATOR] certificado demo no persistido ({ruta:?}): la puerta a Producción no abrirá tras un reinicio"
+                                        );
+                                    }
+                                }
+                                Err(e) => {
+                                    telemetry_server::telemetry_log!(
+                                        "⚠️ [ORCHESTRATOR] certificado demo no serializable: {e}"
+                                    );
+                                }
+                            }
                         }
                     }
                     // LG-8: p* de la geometría del genoma a la τ de la ventana.
@@ -6142,11 +6224,33 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
                 let win_rate = if total_trades > 0 { (total_wins as f64 / total_trades as f64) * 100.0 } else { 0.0 };
 
+                // GLM-214 (H2): cuando el FEE-BREAKER ya publicó la VERDAD DEL
+                // EXCHANGE (/fapi/v1/income), el display financiero la prefiere
+                // sobre los receipts internos — el interno quedó en 0.0000 con
+                // el exchange cobrando de verdad (corrida A3). Sin closes
+                // todavía se conserva la fuente interna: no se fabrican ceros
+                // (contrato F1-099). Este sigue siendo el ÚNICO escritor del
+                // seqlock.
+                let (x_gross, x_fees, x_closes, x_wins) =
+                    telemetry_server::profiler::read_exchange_income();
+                let (gross_display, net_display, wr_display) = if x_closes > 0
+                    && x_gross.is_finite()
+                    && x_fees.is_finite()
+                {
+                    (
+                        x_gross,
+                        x_gross + x_fees,
+                        (x_wins as f64 / x_closes as f64) * 100.0,
+                    )
+                } else {
+                    (total_gross_pnl, total_net_pnl, win_rate)
+                };
+
                 // Update Central Profiler for Financial Dashboarding (Zero-Allocation Atomic)
                 telemetry_server::profiler::update_financials_atomic(
-                    total_gross_pnl,
-                    total_net_pnl,
-                    win_rate,
+                    gross_display,
+                    net_display,
+                    wr_display,
                     f64::from_bits(unified_capital.load(std::sync::atomic::Ordering::Relaxed))
                 );
 
