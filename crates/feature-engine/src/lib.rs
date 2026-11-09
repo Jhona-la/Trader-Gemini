@@ -29,6 +29,7 @@ pub mod landauer_bec_hopfield;
 pub mod lead_lag;
 pub mod liouville_quantum_gravity;
 pub mod lppls_sornette;
+pub mod matrix_model_kp_hierarchy;
 pub mod matriz_rmt;
 pub mod microstructure;
 pub mod monge_kantorovich_wasserstein;
@@ -140,6 +141,10 @@ pub use lead_lag::LeadLagAlphaEngine;
 pub use jt_schwarzian_gravity::{JtSchwarzianConfig, JtSchwarzianEngine, JtSchwarzianReport};
 pub use liouville_quantum_gravity::{
     LiouvilleCft2dQuantumGravityEngine, LiouvilleCftParams, LiouvilleQuantumGravityReport,
+};
+pub use matrix_model_kp_hierarchy::{
+    MatrixModelKpConfig, MatrixModelKpHierarchyEngine, MatrixModelKpReport, KP_MATRIX_DIM,
+    KP_MOMENTS_COUNT,
 };
 pub use microstructure::{
     obi_acceleration, order_book_imbalance, AdaptiveResonanceClustering,
