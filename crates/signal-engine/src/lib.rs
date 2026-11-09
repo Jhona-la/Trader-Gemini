@@ -7,6 +7,7 @@ pub mod berry_phase_holonomy;
 pub mod coaxial_breakout;
 pub mod continuous_volatility_operator;
 pub mod derham_hodge_currents;
+pub mod donaldson_thomas_quantum;
 // U-ERR-1: `micro_scalp_trigger`, `swing_conformal_filter` y `turbo_scalper`
 // nombraban BANDAS DE HORIZONTE («micro-scalp», «swing», «turbo») que ninguno
 // de los tres motores decide: los tres declaraban `TradeHorizon::Continuous`
@@ -59,7 +60,10 @@ pub use continuous_volatility_operator::{
     VOL_SPECTRUM_SCALES,
 };
 pub use derham_hodge_currents::{
-    DERHAM_SIMPLICIAL_NODES, DeRhamHodgeCurrentsEngine, DeRhamHodgeParams, DeRhamHodgeReport,
+    DeRhamHodgeCurrentsEngine, DeRhamHodgeParams, DeRhamHodgeReport, DERHAM_SIMPLICIAL_NODES,
+};
+pub use donaldson_thomas_quantum::{
+    DonaldsonThomasConfig, DonaldsonThomasQuantumEngine, DonaldsonThomasReport,
 };
 pub use feynman_path_integral_routing::{
     Complex64, FeynmanPathIntegralRoutingEngine, FeynmanRoutingParams, FeynmanRoutingReport,
@@ -72,40 +76,40 @@ pub use fractional_rough_volatility::{
 };
 pub use hawkes_bessel::{HawkesBesselEngine, HawkesBesselParams};
 pub use jarzynski_crooks_thermodynamics::{
-    CRITICAL_ENTROPY_PRODUCTION, DEFAULT_KB_BOLTZMANN, JARZYNSKI_WINDOW_CAPACITY,
     JarzynskiCrooksParams, JarzynskiCrooksReport, JarzynskiCrooksThermodynamicsEngine,
-    JarzynskiTrajectorySample,
+    JarzynskiTrajectorySample, CRITICAL_ENTROPY_PRODUCTION, DEFAULT_KB_BOLTZMANN,
+    JARZYNSKI_WINDOW_CAPACITY,
 };
 pub use kdv_soliton_dispersion::{
-    KDV_GRID_POINTS, KdvSolitonDispersionEngine, KdvSolitonParams, KdvSolitonReport,
+    KdvSolitonDispersionEngine, KdvSolitonParams, KdvSolitonReport, KDV_GRID_POINTS,
 };
 pub use maker::{MakerEngine, MakerQuote};
 pub use mean_field_games_psychology::{
-    MFG_SPATIAL_NODES, MeanFieldGamesParams, MeanFieldGamesPsychologyEngine, MeanFieldGamesReport,
+    MeanFieldGamesParams, MeanFieldGamesPsychologyEngine, MeanFieldGamesReport, MFG_SPATIAL_NODES,
 };
 pub use mfdfa_multifractal_hurst::{
-    MFDFA_ORDERS, MFDFA_SCALES, MFDFA_WINDOW_CAPACITY, MfDfaHurstReport,
-    MfDfaMultifractalHurstEngine, MfDfaParams,
+    MfDfaHurstReport, MfDfaMultifractalHurstEngine, MfDfaParams, MFDFA_ORDERS, MFDFA_SCALES,
+    MFDFA_WINDOW_CAPACITY,
 };
 pub use mpdo_dissipative_dmrg::{
-    LocalDensityMatrix, MPDO_CHANNELS, MpdoDissipativeConfig, MpdoDissipativeDmrgEngine,
-    MpdoDissipativeReport,
+    LocalDensityMatrix, MpdoDissipativeConfig, MpdoDissipativeDmrgEngine, MpdoDissipativeReport,
+    MPDO_CHANNELS,
 };
 pub use navier_stokes_kolmogorov::{
-    NS_GRID_DIM, NavierStokesKolmogorovEngine, NavierStokesParams, NavierStokesReport,
+    NavierStokesKolmogorovEngine, NavierStokesParams, NavierStokesReport, NS_GRID_DIM,
 };
 pub use navier_stokes_manifold::{NavierStokesManifoldEngine, NavierStokesManifoldParams};
 pub use nls_peregrine_soliton::{
-    NLS_GRID_POINTS, NlsPeregrineParams, NlsPeregrineReport, NlsPeregrineSolitonEngine,
+    NlsPeregrineParams, NlsPeregrineReport, NlsPeregrineSolitonEngine, NLS_GRID_POINTS,
 };
 pub use non_abelian_braiding_jones::{
-    BRAID_HISTORY_LEN, BRAID_STRANDS, NonAbelianBraidingConfig, NonAbelianBraidingJonesEngine,
-    NonAbelianBraidingReport,
+    NonAbelianBraidingConfig, NonAbelianBraidingJonesEngine, NonAbelianBraidingReport,
+    BRAID_HISTORY_LEN, BRAID_STRANDS,
 };
 pub use orchestrator::{
-    RMT_MAX_SOURCES, RMT_MIN_SAMPLES, RMT_SAMPLE_STRIDE, RMT_WINDOW_SAMPLES,
     compute_ensemble_boost, compute_ensemble_boost_effective,
-    compute_rmt_voter_effective_bets_ratio,
+    compute_rmt_voter_effective_bets_ratio, RMT_MAX_SOURCES, RMT_MIN_SAMPLES, RMT_SAMPLE_STRIDE,
+    RMT_WINDOW_SAMPLES,
 };
 pub use perceptron_gate::{PerceptronGateEngine, PerceptronGateParams};
 pub use proyeccion_espectral::{ProyeccionEspectralEngine, ProyeccionEspectralParams};
@@ -127,12 +131,12 @@ pub use riemann_burgers_shockwave::{
     BurgersShockwaveReport, RiemannBurgersParams, RiemannBurgersShockwaveEngine,
 };
 pub use ruelle_frobenius_transfer::{
-    RUELLE_GRID_SIZE, RUELLE_HISTORY_CAPACITY, RuelleFrobeniusParams, RuelleFrobeniusReport,
-    RuelleFrobeniusTransferEngine,
+    RuelleFrobeniusParams, RuelleFrobeniusReport, RuelleFrobeniusTransferEngine, RUELLE_GRID_SIZE,
+    RUELLE_HISTORY_CAPACITY,
 };
 pub use soliton_wave::{SolitonWaveEngine, SolitonWaveParams};
 pub use srb_kolmogorov_entropy::{
-    CHAOS_EMBEDDING_DIM, SrbEntropyParams, SrbEntropyReport, SrbKolmogorovEntropyEngine,
+    SrbEntropyParams, SrbEntropyReport, SrbKolmogorovEntropyEngine, CHAOS_EMBEDDING_DIM,
 };
 pub use starobinsky_inflationary_attractor::{
     StarobinskyConfig, StarobinskyInflationaryEngine, StarobinskyReport,
@@ -147,6 +151,6 @@ pub use wheeler_dewitt_minisuperspace::{
     WheelerDeWittConfig, WheelerDeWittMinisuperspaceEngine, WheelerDeWittReport,
 };
 pub use wilson_exact_renormalization::{
-    RG_MOMENTUM_SCALES, RgScaleCoupling, WilsonExactRenormalizationEngine, WilsonExactRgParams,
-    WilsonExactRgReport,
+    RgScaleCoupling, WilsonExactRenormalizationEngine, WilsonExactRgParams, WilsonExactRgReport,
+    RG_MOMENTUM_SCALES,
 };

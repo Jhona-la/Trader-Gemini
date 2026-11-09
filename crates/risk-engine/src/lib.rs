@@ -1,4 +1,5 @@
 pub mod adaptive_quantum_veto;
+pub mod asymptotic_safety_reuter;
 pub mod bekenstein_mukhanov_quantization;
 pub mod capital_regime;
 pub mod chern_simons_berry_phase;
@@ -45,22 +46,26 @@ pub use adaptive_quantum_veto::{
     AdaptiveQuantumVetoGovernor, AdaptiveQuantumVetoParams, AdaptiveVetoDecision,
     MarketQuantumStateInput,
 };
-pub use bekenstein_mukhanov_quantization::{
-    BEKENSTEIN_ALPHA_QUANTUM, BekensteinMukhanovConfig, BekensteinMukhanovQuantizationEngine,
-    BekensteinMukhanovReport,
+pub use asymptotic_safety_reuter::{
+    AsymptoticSafetyConfig, AsymptoticSafetyReport, AsymptoticSafetyReuterEngine,
+    REUTER_NGFP_G_STAR, REUTER_NGFP_LAMBDA_STAR,
 };
-pub use capital_regime::{DEFAULT_MICRO_MAX_FEE_PCT, resolve_micro_max_fee_pct};
+pub use bekenstein_mukhanov_quantization::{
+    BekensteinMukhanovConfig, BekensteinMukhanovQuantizationEngine, BekensteinMukhanovReport,
+    BEKENSTEIN_ALPHA_QUANTUM,
+};
+pub use capital_regime::{resolve_micro_max_fee_pct, DEFAULT_MICRO_MAX_FEE_PCT};
 pub use chern_simons_berry_phase::{
-    BERRY_PATH_LEN, ChernSimonsBerryParams, ChernSimonsBerryPhaseEngine, ChernSimonsBerryReport,
-    ParameterState3D,
+    ChernSimonsBerryParams, ChernSimonsBerryPhaseEngine, ChernSimonsBerryReport, ParameterState3D,
+    BERRY_PATH_LEN,
 };
 pub use dirac_monopole_chern_bundle::{
-    DIRAC_CRITICAL_CURVATURE_FLUX, DiracMonopoleChernBundleEngine, DiracMonopoleParams,
-    DiracMonopoleReport,
+    DiracMonopoleChernBundleEngine, DiracMonopoleParams, DiracMonopoleReport,
+    DIRAC_CRITICAL_CURVATURE_FLUX,
 };
 pub use evidence::{
-    DEFAULT_BAYES_PRIOR_MASS, DEFAULT_BAYES_PRIOR_WIN_RATE, profit_factor_lcb, resolve_bayes_prior,
-    win_rate_hierarchical_lcb, win_rate_lcb,
+    profit_factor_lcb, resolve_bayes_prior, win_rate_hierarchical_lcb, win_rate_lcb,
+    DEFAULT_BAYES_PRIOR_MASS, DEFAULT_BAYES_PRIOR_WIN_RATE,
 };
 pub use fisher_rao_amari_manifold::{
     FisherRaoAmariConfig, FisherRaoAmariManifoldEngine, FisherRaoAmariReport,
@@ -73,55 +78,55 @@ pub use holographic_lloyd_complexity::{
 };
 pub use kelly_envelope::{EdgePosterior, RiskEnvelope, SURVIVAL_FLOOR, TRADE_HORIZON};
 pub use lindblad_master_decoherence::{
-    LINDBLAD_TRIAD_DIM, LindbladDecoherenceReport, LindbladMasterDecoherenceEngine,
-    LindbladMasterParams,
+    LindbladDecoherenceReport, LindbladMasterDecoherenceEngine, LindbladMasterParams,
+    LINDBLAD_TRIAD_DIM,
 };
 pub use page_curve_island_risk::{
-    MAX_PORTFOLIO_ASSETS, PageCurveIslandConfig, PageCurveIslandReport, PageCurveIslandRiskEngine,
+    PageCurveIslandConfig, PageCurveIslandReport, PageCurveIslandRiskEngine, MAX_PORTFOLIO_ASSETS,
 };
 pub use polyakov_schwarzschild_horizon::{
-    C_LIQUIDITY, CENTRAL_CHARGE_C, NEWTON_G_EFF, PolyakovSchwarzschildHorizonEngine,
-    PolyakovSchwarzschildParams, PolyakovSchwarzschildReport,
+    PolyakovSchwarzschildHorizonEngine, PolyakovSchwarzschildParams, PolyakovSchwarzschildReport,
+    CENTRAL_CHARGE_C, C_LIQUIDITY, NEWTON_G_EFF,
 };
 pub use quantum_extremal_surface::{
     QuantumExtremalSurfaceConfig, QuantumExtremalSurfaceEngine, QuantumExtremalSurfaceReport,
 };
 pub use quantum_no_arbitrage_conformal::{
-    CONFORMAL_CALIBRATION_WINDOW, QuantumNoArbitrageConformalEngine,
-    QuantumNoArbitrageConformalParams, QuantumNoArbitrageConformalReport,
+    QuantumNoArbitrageConformalEngine, QuantumNoArbitrageConformalParams,
+    QuantumNoArbitrageConformalReport, CONFORMAL_CALIBRATION_WINDOW,
 };
 pub use quaternionic_hyperkahler_manifold::{
     QuaternionicHyperkahlerConfig, QuaternionicHyperkahlerEngine, QuaternionicHyperkahlerReport,
 };
 pub use reeb_contact_vortex::{
-    CRITICAL_CONTACT_TORSION, REEB_HISTORY_CAPACITY, ReebContactParams, ReebContactReport,
-    ReebContactVortexEngine,
+    ReebContactParams, ReebContactReport, ReebContactVortexEngine, CRITICAL_CONTACT_TORSION,
+    REEB_HISTORY_CAPACITY,
 };
 pub use riemann_zeta_gue::{
-    GUE_RIEMANN_GAP_RATIO_MEAN, MAX_RIEMANN_GUE_LEVELS, POISSON_GAP_RATIO_MEAN,
-    RiemannZetaGueEngine, RiemannZetaGueState, hermite_smoothstep_c1,
-    montgomery_odlyzko_pair_correlation, wigner_gue_density,
+    hermite_smoothstep_c1, montgomery_odlyzko_pair_correlation, wigner_gue_density,
+    RiemannZetaGueEngine, RiemannZetaGueState, GUE_RIEMANN_GAP_RATIO_MEAN, MAX_RIEMANN_GUE_LEVELS,
+    POISSON_GAP_RATIO_MEAN,
 };
 pub use ryu_takayanagi_entanglement::{
     RyuTakayanagiEntanglementEngine, RyuTakayanagiParams, RyuTakayanagiReport,
 };
 pub use sonda::{
-    CIERRES_DE_SONDA, SprtDecision, admite_sonda, admite_sonda_con_fase, en_fase_de_sonda,
-    resolve_max_cierres_sonda, sprt_bernoulli,
+    admite_sonda, admite_sonda_con_fase, en_fase_de_sonda, resolve_max_cierres_sonda,
+    sprt_bernoulli, SprtDecision, CIERRES_DE_SONDA,
 };
 pub use tensor_network_mps_dmrg::{
-    MPS_ASSET_CHANNELS, MPS_BOND_DIM, MpsDmrgParams, MpsDmrgReport, TensorNetworkMpsDmrgEngine,
+    MpsDmrgParams, MpsDmrgReport, TensorNetworkMpsDmrgEngine, MPS_ASSET_CHANNELS, MPS_BOND_DIM,
 };
 pub use toric_code_stabilizer::{
-    TORIC_EDGES, TORIC_GRID_SIZE, TORIC_VERTICES, ToricCodeConfig, ToricCodeEngine, ToricCodeReport,
+    ToricCodeConfig, ToricCodeEngine, ToricCodeReport, TORIC_EDGES, TORIC_GRID_SIZE, TORIC_VERTICES,
 };
 pub use tp_sl::{
-    TpSl, TpSlInputs, compute_tp_sl, compute_tp_sl_with_target_rr, latency_slippage_pct,
-    latency_slippage_pct_hurst, roundtrip_friction, roundtrip_friction_hurst, try_compute_tp_sl,
+    compute_tp_sl, compute_tp_sl_with_target_rr, latency_slippage_pct, latency_slippage_pct_hurst,
+    roundtrip_friction, roundtrip_friction_hurst, try_compute_tp_sl, TpSl, TpSlInputs,
 };
 pub use umegaki_relative_entropy::{
-    UMEGAKI_CRITICAL_ENTROPY_THRESHOLD, UMEGAKI_HILBERT_DIM, UmegakiEntropyParams,
-    UmegakiEntropyReport, UmegakiRelativeEntropyEngine,
+    UmegakiEntropyParams, UmegakiEntropyReport, UmegakiRelativeEntropyEngine,
+    UMEGAKI_CRITICAL_ENTROPY_THRESHOLD, UMEGAKI_HILBERT_DIM,
 };
 pub use ville_e_process::VilleEProcess;
 pub use ville_grossman_ignition_gate::{
