@@ -18,8 +18,10 @@ fn test_page_curve_island_risk_pre_page_regime() {
 
 #[test]
 fn test_page_curve_island_risk_post_page_with_active_island_recovery() {
-    let mut config = PageCurveIslandConfig::default();
-    config.emergency_floor_usd = 50.0;
+    let config = PageCurveIslandConfig {
+        emergency_floor_usd: 50.0,
+        ..Default::default()
+    };
     let engine = PageCurveIslandRiskEngine::new(config);
 
     // Capital bajo de $60 (cerca del piso de $50), alta volatilidad, pero excelente diversificación (baja correlación)
@@ -43,8 +45,10 @@ fn test_page_curve_island_risk_post_page_with_active_island_recovery() {
 
 #[test]
 fn test_page_curve_island_risk_hard_veto_on_information_collapse() {
-    let mut config = PageCurveIslandConfig::default();
-    config.emergency_floor_usd = 50.0;
+    let config = PageCurveIslandConfig {
+        emergency_floor_usd: 50.0,
+        ..Default::default()
+    };
     let engine = PageCurveIslandRiskEngine::new(config);
 
     // Capital colapsado ($51, piso $50), altísima volatilidad, y correlación extrema (isla colapsada)

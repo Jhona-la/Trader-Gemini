@@ -155,15 +155,16 @@ impl Matrix2x2 {
 
     #[inline(always)]
     fn mul(self, other: Self) -> Self {
-        let mut res = [[Complex2::zero(); 2]; 2];
-        for i in 0..2 {
-            for j in 0..2 {
-                let term0 = self.m[i][0].mul(other.m[0][j]);
-                let term1 = self.m[i][1].mul(other.m[1][j]);
-                res[i][j] = term0.add(term1);
-            }
+        let row00 = self.m[0][0].mul(other.m[0][0]).add(self.m[0][1].mul(other.m[1][0]));
+        let row01 = self.m[0][0].mul(other.m[0][1]).add(self.m[0][1].mul(other.m[1][1]));
+        let row10 = self.m[1][0].mul(other.m[0][0]).add(self.m[1][1].mul(other.m[1][0]));
+        let row11 = self.m[1][0].mul(other.m[0][1]).add(self.m[1][1].mul(other.m[1][1]));
+        Self {
+            m: [
+                [row00, row01],
+                [row10, row11],
+            ],
         }
-        Self { m: res }
     }
 
     #[inline(always)]
@@ -266,7 +267,7 @@ impl NonAbelianBraidingJonesEngine {
             let sign = if detected_crossing > 0 { 1 } else { -1 };
             self.cumulative_writhe += sign;
 
-            let generator_idx = detected_crossing.abs() as usize; // 1, 2, or 3
+            let generator_idx = detected_crossing.unsigned_abs() as usize; // 1, 2, or 3
             let r_matrix = self.generator_matrix(generator_idx, sign > 0);
             self.u_braid = self.u_braid.mul(r_matrix);
         }

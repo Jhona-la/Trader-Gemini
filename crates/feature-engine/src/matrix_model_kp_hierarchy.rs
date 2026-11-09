@@ -44,6 +44,14 @@
 pub const KP_MATRIX_DIM: usize = 4;
 pub const KP_MOMENTS_COUNT: usize = 4;
 
+/// Parámetros de número de onda y frecuencia para solitones KP.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct SolitonWavenumber {
+    pub k: f64,
+    pub l: f64,
+    pub omega: f64,
+}
+
 /// Configuración para el motor de Modelos Matriciales y Jerarquía KP.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct MatrixModelKpConfig {
@@ -162,10 +170,20 @@ impl MatrixModelKpHierarchyEngine {
         };
 
         // 3. Evaluación de tau(x, y, t) y cálculo de derivadas espaciales
+        let s1 = SolitonWavenumber {
+            k: k1,
+            l: l1,
+            omega: omega1,
+        };
+        let s2 = SolitonWavenumber {
+            k: k2,
+            l: l2,
+            omega: omega2,
+        };
         let h = 0.05;
-        let tau_center = self.eval_hirota_tau(x, y, t, k1, l1, omega1, k2, l2, omega2, a12);
-        let tau_x_plus = self.eval_hirota_tau(x + h, y, t, k1, l1, omega1, k2, l2, omega2, a12);
-        let tau_x_minus = self.eval_hirota_tau(x - h, y, t, k1, l1, omega1, k2, l2, omega2, a12);
+        let tau_center = self.eval_hirota_tau(x, y, t, s1, s2, a12);
+        let tau_x_plus = self.eval_hirota_tau(x + h, y, t, s1, s2, a12);
+        let tau_x_minus = self.eval_hirota_tau(x - h, y, t, s1, s2, a12);
 
         let ln_tau_0 = tau_center.max(1e-12).ln();
         let ln_tau_plus = tau_x_plus.max(1e-12).ln();
@@ -177,12 +195,12 @@ impl MatrixModelKpHierarchyEngine {
 
         // Derivada primera u_x
         let u_plus = {
-            let t_p2 = self.eval_hirota_tau(x + 2.0 * h, y, t, k1, l1, omega1, k2, l2, omega2, a12);
+            let t_p2 = self.eval_hirota_tau(x + 2.0 * h, y, t, s1, s2, a12);
             let ln_p2 = t_p2.max(1e-12).ln();
             2.0 * ((ln_p2 - 2.0 * ln_tau_plus + ln_tau_0) / (h * h))
         };
         let u_minus = {
-            let t_m2 = self.eval_hirota_tau(x - 2.0 * h, y, t, k1, l1, omega1, k2, l2, omega2, a12);
+            let t_m2 = self.eval_hirota_tau(x - 2.0 * h, y, t, s1, s2, a12);
             let ln_m2 = t_m2.max(1e-12).ln();
             2.0 * ((ln_tau_0 - 2.0 * ln_tau_minus + ln_m2) / (h * h))
         };
@@ -196,29 +214,29 @@ impl MatrixModelKpHierarchyEngine {
 
         // Derivadas en y (dispersión transversal)
         let hy = 0.05;
-        let tau_y_plus = self.eval_hirota_tau(x, y + hy, t, k1, l1, omega1, k2, l2, omega2, a12);
-        let tau_y_minus = self.eval_hirota_tau(x, y - hy, t, k1, l1, omega1, k2, l2, omega2, a12);
+        let tau_y_plus = self.eval_hirota_tau(x, y + hy, t, s1, s2, a12);
+        let tau_y_minus = self.eval_hirota_tau(x, y - hy, t, s1, s2, a12);
         let ln_y_plus = tau_y_plus.max(1e-12).ln();
         let ln_y_minus = tau_y_minus.max(1e-12).ln();
         let u_y_plus = 2.0
             * ((self
-                .eval_hirota_tau(x + h, y + hy, t, k1, l1, omega1, k2, l2, omega2, a12)
+                .eval_hirota_tau(x + h, y + hy, t, s1, s2, a12)
                 .max(1e-12)
                 .ln()
                 - 2.0 * ln_y_plus
                 + self
-                    .eval_hirota_tau(x - h, y + hy, t, k1, l1, omega1, k2, l2, omega2, a12)
+                    .eval_hirota_tau(x - h, y + hy, t, s1, s2, a12)
                     .max(1e-12)
                     .ln())
                 / (h * h));
         let u_y_minus = 2.0
             * ((self
-                .eval_hirota_tau(x + h, y - hy, t, k1, l1, omega1, k2, l2, omega2, a12)
+                .eval_hirota_tau(x + h, y - hy, t, s1, s2, a12)
                 .max(1e-12)
                 .ln()
                 - 2.0 * ln_y_minus
                 + self
-                    .eval_hirota_tau(x - h, y - hy, t, k1, l1, omega1, k2, l2, omega2, a12)
+                    .eval_hirota_tau(x - h, y - hy, t, s1, s2, a12)
                     .max(1e-12)
                     .ln())
                 / (h * h));
@@ -274,16 +292,12 @@ impl MatrixModelKpHierarchyEngine {
         x: f64,
         y: f64,
         t: f64,
-        k1: f64,
-        l1: f64,
-        omega1: f64,
-        k2: f64,
-        l2: f64,
-        omega2: f64,
+        s1: SolitonWavenumber,
+        s2: SolitonWavenumber,
         a12: f64,
     ) -> f64 {
-        let theta1 = (k1 * x + l1 * y - omega1 * t).clamp(-20.0, 20.0);
-        let theta2 = (k2 * x + l2 * y - omega2 * t).clamp(-20.0, 20.0);
+        let theta1 = (s1.k * x + s1.l * y - s1.omega * t).clamp(-20.0, 20.0);
+        let theta2 = (s2.k * x + s2.l * y - s2.omega * t).clamp(-20.0, 20.0);
 
         let exp1 = theta1.exp();
         let exp2 = theta2.exp();
@@ -293,6 +307,7 @@ impl MatrixModelKpHierarchyEngine {
     }
 
     /// Computa los momentos de Miwa t_k = (1/k) Tr(M^k) de forma $O(1)$ sin asignaciones en heap.
+    #[allow(clippy::needless_range_loop)]
     fn compute_miwa_moments(
         &self,
         m: &[[f64; KP_MATRIX_DIM]; KP_MATRIX_DIM],

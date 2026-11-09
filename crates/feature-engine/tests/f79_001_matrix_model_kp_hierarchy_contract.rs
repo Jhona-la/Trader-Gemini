@@ -6,10 +6,12 @@ fn test_matrix_model_kp_hierarchy_basic_flow_and_moments() {
     let mut engine = MatrixModelKpHierarchyEngine::new(config);
 
     // Matriz de identidad escalada 4x4
-    let mut m = [[0.0; KP_MATRIX_DIM]; KP_MATRIX_DIM];
-    for i in 0..KP_MATRIX_DIM {
-        m[i][i] = 1.0;
-    }
+    let m = [
+        [1.0, 0.0, 0.0, 0.0],
+        [0.0, 1.0, 0.0, 0.0],
+        [0.0, 0.0, 1.0, 0.0],
+        [0.0, 0.0, 0.0, 1.0],
+    ];
 
     let report = engine.evaluate(&m, 0.1, 0.0, 0.0);
 
@@ -32,8 +34,10 @@ fn test_matrix_model_kp_hierarchy_basic_flow_and_moments() {
 
 #[test]
 fn test_matrix_model_kp_hierarchy_shock_detection() {
-    let mut config = MatrixModelKpConfig::default();
-    config.critical_residual_threshold = 5.0; // Umbral estricto para forzar detección de shock
+    let config = MatrixModelKpConfig {
+        critical_residual_threshold: 5.0, // Umbral estricto para forzar detección de shock
+        ..Default::default()
+    };
     let mut engine = MatrixModelKpHierarchyEngine::new(config);
 
     // Matriz con correlaciones asimétricas extremas para generar gran dispersión

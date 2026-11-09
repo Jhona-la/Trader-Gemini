@@ -58,7 +58,7 @@ pub use polyakov_schwarzschild_horizon::{
     CENTRAL_CHARGE_C, C_LIQUIDITY, NEWTON_G_EFF,
 };
 pub use page_curve_island_risk::{
-    PageCurveIslandConfig, PageCurveIslandReport, PageCurveIslandRiskEngine, MAX_PORTFOLIO_ASSETS,
+    MAX_PORTFOLIO_ASSETS, PageCurveIslandConfig, PageCurveIslandReport, PageCurveIslandRiskEngine,
 };
 pub use gromov_symplectic_barrier::{
     GromovSymplecticBarrierEngine, GromovSymplecticParams, GromovSymplecticReport, Quaternion,
