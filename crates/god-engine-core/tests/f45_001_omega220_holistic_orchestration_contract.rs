@@ -124,10 +124,12 @@ fn test_c1_holistic_living_graph_end_to_end_synthesis() {
 
     // 11. Colector Hiperbólico de Poincaré-Hodge (Fase 46)
     assert!(report.poincare_hodge_report.geodesic_distance_to_center >= 0.0);
-    assert!(report
-        .poincare_hodge_report
-        .symplectic_area_vorticity
-        .is_finite());
+    assert!(
+        report
+            .poincare_hodge_report
+            .symplectic_area_vorticity
+            .is_finite()
+    );
 
     // 12. Enrutamiento Cuántico por Integral de Caminos de Feynman (Fase 47)
     assert!(report.feynman_routing_report.optimal_slice_fraction > 0.0);
@@ -169,10 +171,12 @@ fn test_c1_holistic_living_graph_end_to_end_synthesis() {
     assert!(report.vietoris_rips_report.slot_scaling_factor >= 0.10);
 
     // 18. Flujo del Grupo de Renormalización de Wilson (Fase 53)
-    assert!(report
-        .wilson_rg_report
-        .min_distance_to_fixed_point
-        .is_finite());
+    assert!(
+        report
+            .wilson_rg_report
+            .min_distance_to_fixed_point
+            .is_finite()
+    );
     assert!(report.wilson_rg_report.signal_conviction_modulator >= 0.10);
 
     // 19. Cuantización Topológica de Chern-Simons y Fase de Berry (Fase 54)
@@ -245,20 +249,24 @@ fn test_c1_holistic_living_graph_end_to_end_synthesis() {
 
     // 29. Redes Tensoriales PEPS y Curvatura de Ricci en Hipergrafos (Fase 64)
     assert!(report.peps_hypergraph_report.peps_entanglement_entropy >= 0.0);
-    assert!(report
-        .peps_hypergraph_report
-        .ollivier_ricci_curvature
-        .is_finite());
+    assert!(
+        report
+            .peps_hypergraph_report
+            .ollivier_ricci_curvature
+            .is_finite()
+    );
     assert!(report.peps_hypergraph_report.hypergraph_spectral_dimension > 0.0);
     assert!(!report.peps_hypergraph_report.hyperbolic_dispersion_detected);
     assert!(report.peps_hypergraph_report.slot_scale_factor >= 0.10);
 
     // 30. Dinámica de Solitones No-Lineales de Korteweg-de Vries (Fase 65)
     assert!(report.kdv_soliton_report.soliton_amplitude >= 0.0);
-    assert!(report
-        .kdv_soliton_report
-        .nonlinearity_dispersion_balance_ratio
-        .is_finite());
+    assert!(
+        report
+            .kdv_soliton_report
+            .nonlinearity_dispersion_balance_ratio
+            .is_finite()
+    );
     assert!(report.kdv_soliton_report.kdv_hamiltonian_energy.is_finite());
 
     // 31. Geometría de Fibrados Principales de Yang-Mills y Monopolos de Dirac (Fase 66)
@@ -319,10 +327,12 @@ fn test_c1_holistic_living_graph_end_to_end_synthesis() {
     assert!(report.liouville_report.central_charge_cl >= 1.0);
     assert!(report.liouville_report.conformal_factor > 0.0);
     assert!(report.liouville_report.hausdorff_dimension >= 2.0);
-    assert!(report
-        .liouville_report
-        .liouville_scalar_curvature
-        .is_finite());
+    assert!(
+        report
+            .liouville_report
+            .liouville_scalar_curvature
+            .is_finite()
+    );
     assert!(!report.liouville_report.curvature_singularity_detected);
     assert!(report.liouville_report.slot_scale_factor >= 0.15);
 
@@ -340,10 +350,12 @@ fn test_c1_holistic_living_graph_end_to_end_synthesis() {
     assert!(report.ryu_takayanagi_report.slot_scale_factor > 0.0);
 
     // 41. Gravedad JT 2D y Dinámica Cuántica de Schwarzian (Fase 76)
-    assert!(report
-        .jt_schwarzian_report
-        .schwarzian_derivative
-        .is_finite());
+    assert!(
+        report
+            .jt_schwarzian_report
+            .schwarzian_derivative
+            .is_finite()
+    );
     assert!(report.jt_schwarzian_report.density_of_states_rho > 0.0);
     assert!(!report.jt_schwarzian_report.schwarzian_singularity_detected);
     assert!(report.jt_schwarzian_report.slot_scale_factor >= 0.15);
@@ -361,19 +373,23 @@ fn test_c1_holistic_living_graph_end_to_end_synthesis() {
 
     // 44. Modelos Matriciales Hermíticos & Jerarquía KP (Fase 79)
     assert!(report.matrix_model_kp_report.tau_function_val > 0.0);
-    assert!(report
-        .matrix_model_kp_report
-        .soliton_potential_u
-        .is_finite());
+    assert!(
+        report
+            .matrix_model_kp_report
+            .soliton_potential_u
+            .is_finite()
+    );
     assert!(!report.matrix_model_kp_report.kp_soliton_shock_detected);
     assert!(report.matrix_model_kp_report.slot_scale_factor >= 0.20);
 
     // 45. Trenzado de Anyones No Abelianos & Invariante de Jones (Fase 80)
     assert!(report.non_abelian_braiding_report.jones_polynomial_norm >= 0.5);
-    assert!(report
-        .non_abelian_braiding_report
-        .braid_holonomy_phase
-        .is_finite());
+    assert!(
+        report
+            .non_abelian_braiding_report
+            .braid_holonomy_phase
+            .is_finite()
+    );
     assert!(
         !report
             .non_abelian_braiding_report

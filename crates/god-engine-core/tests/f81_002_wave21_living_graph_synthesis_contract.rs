@@ -58,20 +58,24 @@ fn test_c1_wave21_triad_holistic_orchestration() {
 
     // 1. Verificación Fase 79: Modelos Matriciales & Jerarquía KP
     assert!(report.matrix_model_kp_report.tau_function_val > 0.0);
-    assert!(report
-        .matrix_model_kp_report
-        .soliton_potential_u
-        .is_finite());
+    assert!(
+        report
+            .matrix_model_kp_report
+            .soliton_potential_u
+            .is_finite()
+    );
     assert!(report.matrix_model_kp_report.kp_curvature_uxx.is_finite());
     assert!(!report.matrix_model_kp_report.kp_soliton_shock_detected);
     assert!(report.matrix_model_kp_report.slot_scale_factor >= 0.20);
 
     // 2. Verificación Fase 80: Trenzado de Anyones No Abelianos & Polinomio de Jones
     assert!(report.non_abelian_braiding_report.jones_polynomial_norm >= 0.5);
-    assert!(report
-        .non_abelian_braiding_report
-        .braid_holonomy_phase
-        .is_finite());
+    assert!(
+        report
+            .non_abelian_braiding_report
+            .braid_holonomy_phase
+            .is_finite()
+    );
     assert!(
         !report
             .non_abelian_braiding_report
