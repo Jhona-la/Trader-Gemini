@@ -138,32 +138,36 @@ impl StarobinskyInflationaryEngine {
         vol_norm: f64,
         dt: f64,
     ) -> StarobinskyReport {
-        // 1. Sanitización de entradas
-        let p_ret = if price_ret.is_finite() {
-            price_ret
-        } else {
-            0.0
-        };
-        let ofi_val = if ofi.is_finite() {
-            ofi.clamp(-1.0, 1.0)
-        } else {
-            0.0
-        };
-        let _spread = if spread_bps.is_finite() && spread_bps > 0.0 {
-            spread_bps
-        } else {
-            1.0
-        };
-        let vol = if vol_norm.is_finite() && vol_norm >= 0.0 {
-            vol_norm
-        } else {
-            0.01
-        };
-        let delta_t = if dt.is_finite() && dt > 0.0 {
-            dt.min(1.0)
-        } else {
-            0.01
-        };
+        // 1. Validación fail-closed de entradas
+        let inputs_valid = price_ret.is_finite()
+            && ofi.is_finite()
+            && spread_bps.is_finite()
+            && spread_bps > 0.0
+            && vol_norm.is_finite()
+            && vol_norm >= 0.0
+            && dt.is_finite()
+            && dt > 0.0;
+        if !inputs_valid {
+            return StarobinskyReport {
+                inflaton_field: self.phi_state,
+                inflaton_velocity: 0.0,
+                effective_potential: 0.0,
+                epsilon_slow_roll: 0.0,
+                eta_slow_roll: 0.0,
+                spectral_index: 0.0,
+                tensor_to_scalar_ratio: 0.0,
+                e_folding_estimate: 0.0,
+                directional_bias: 0.0,
+                slot_scaling_factor: 0.15,
+                reheating_collapse_veto: true,
+            };
+        }
+
+        let p_ret = price_ret;
+        let ofi_val = ofi.clamp(-1.0, 1.0);
+        let _spread = spread_bps;
+        let vol = vol_norm;
+        let delta_t = dt.min(1.0);
 
         let eps = self.config.epsilon;
         let m_pl = self.config.m_pl.max(eps);

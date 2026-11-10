@@ -107,3 +107,80 @@ fn test_c4_nan_infinity_immunity_and_stack_determinism() {
     assert!(report.amari_skewness_tensor.is_finite());
     assert!(report.slot_scaling_factor.is_finite());
 }
+
+#[test]
+fn test_c5_invalid_inputs_veto_without_state_mutation() {
+    let nominal = (0.001, 0.02, 1.5, 0.02);
+    let mut engine = FisherRaoAmariManifoldEngine::default();
+    let mut control = FisherRaoAmariManifoldEngine::default();
+
+    let initial = engine.evaluate(nominal.0, nominal.1, nominal.2, nominal.3);
+    control.evaluate(nominal.0, nominal.1, nominal.2, nominal.3);
+    assert!(!initial.information_collapse_veto);
+
+    let mut assert_invalid = |inputs: (f64, f64, f64, f64)| {
+        let report = engine.evaluate(inputs.0, inputs.1, inputs.2, inputs.3);
+        assert!(
+            report.information_collapse_veto,
+            "Entrada inválida {:?} debe activar el veto",
+            inputs
+        );
+        assert_eq!(report.slot_scaling_factor, 0.10);
+        for value in [
+            report.fisher_rao_geodesic_distance,
+            report.amari_alpha_divergence,
+            report.riemannian_curvature,
+            report.metric_component_g_mu,
+            report.metric_component_g_sigma,
+            report.amari_skewness_tensor,
+            report.slot_scaling_factor,
+        ] {
+            assert!(value.is_finite());
+        }
+
+        let expected = control.evaluate(nominal.0, nominal.1, nominal.2, nominal.3);
+        let actual = engine.evaluate(nominal.0, nominal.1, nominal.2, nominal.3);
+        assert_eq!(
+            actual.fisher_rao_geodesic_distance.to_bits(),
+            expected.fisher_rao_geodesic_distance.to_bits(),
+            "La entrada inválida {:?} mutó rolling_mean/rolling_var",
+            inputs
+        );
+        assert_eq!(
+            actual.metric_component_g_mu.to_bits(),
+            expected.metric_component_g_mu.to_bits(),
+            "La entrada inválida {:?} mutó rolling_var",
+            inputs
+        );
+        assert_eq!(
+            actual.amari_skewness_tensor.to_bits(),
+            expected.amari_skewness_tensor.to_bits(),
+            "La entrada inválida {:?} mutó rolling_skew",
+            inputs
+        );
+    };
+
+    for invalid in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+        for inputs in [
+            (invalid, 0.02, 1.5, 0.02),
+            (0.001, invalid, 1.5, 0.02),
+            (0.001, 0.02, invalid, 0.02),
+            (0.001, 0.02, 1.5, invalid),
+        ] {
+            assert_invalid(inputs);
+        }
+    }
+
+    for inputs in [
+        (0.001, -0.01, 1.5, 0.02),
+        (0.001, 0.02, 0.0, 0.02),
+        (0.001, 0.02, -1.0, 0.02),
+        (0.001, 0.02, 1.5, -0.01),
+    ] {
+        assert_invalid(inputs);
+    }
+
+    let mut zero_engine = FisherRaoAmariManifoldEngine::default();
+    let zero_report = zero_engine.evaluate(0.001, 0.0, 1.5, 0.0);
+    assert!(!zero_report.information_collapse_veto);
+}

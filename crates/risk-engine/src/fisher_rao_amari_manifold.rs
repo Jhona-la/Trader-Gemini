@@ -133,27 +133,31 @@ impl FisherRaoAmariManifoldEngine {
         spread_bps: f64,
         vol_norm: f64,
     ) -> FisherRaoAmariReport {
-        // 1. Sanitización de entradas
-        let ret = if price_ret.is_finite() {
-            price_ret
-        } else {
-            0.0
-        };
-        let dd = if drawdown_pct.is_finite() && drawdown_pct >= 0.0 {
-            drawdown_pct.min(1.0)
-        } else {
-            0.0
-        };
-        let _spread = if spread_bps.is_finite() && spread_bps > 0.0 {
-            spread_bps
-        } else {
-            1.0
-        };
-        let vol = if vol_norm.is_finite() && vol_norm >= 0.0 {
-            vol_norm
-        } else {
-            0.01
-        };
+        // 1. Validación fail-closed de entradas
+        let inputs_valid = price_ret.is_finite()
+            && drawdown_pct.is_finite()
+            && drawdown_pct >= 0.0
+            && spread_bps.is_finite()
+            && spread_bps > 0.0
+            && vol_norm.is_finite()
+            && vol_norm >= 0.0;
+        if !inputs_valid {
+            return FisherRaoAmariReport {
+                fisher_rao_geodesic_distance: 0.0,
+                amari_alpha_divergence: 0.0,
+                riemannian_curvature: -0.50,
+                metric_component_g_mu: 0.0,
+                metric_component_g_sigma: 0.0,
+                amari_skewness_tensor: 0.0,
+                slot_scaling_factor: 0.10,
+                information_collapse_veto: true,
+            };
+        }
+
+        let ret = price_ret;
+        let dd = drawdown_pct.min(1.0);
+        let _spread = spread_bps;
+        let vol = vol_norm;
 
         let eps = self.config.epsilon;
         let mu_0 = self.config.baseline_mean;

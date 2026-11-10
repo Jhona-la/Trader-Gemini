@@ -378,3 +378,133 @@ fn test_c5_wave25_nan_infinity_immunity_and_zero_panic_guarantee() {
     );
     assert!(report.holistic_slot_scale.is_finite());
 }
+
+#[test]
+fn test_c6_wave25_starobinsky_non_finite_veto_propagation_and_priority_label() {
+    for invalid in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+        let mut orchestrator = OmniscientLivingGraphOrchestrator::new(1);
+        let mut slot_orchestrator =
+            QuantumSlotOrchestrator::new(QuantumSlotOrchestratorParams::default());
+        let triad = [
+            AssetColorState {
+                normalized_return: 0.0005,
+                order_flow_imbalance: 0.10,
+                relative_weight: 0.60,
+            },
+            AssetColorState {
+                normalized_return: 0.0,
+                order_flow_imbalance: 0.0,
+                relative_weight: 0.50,
+            },
+            AssetColorState {
+                normalized_return: 0.0,
+                order_flow_imbalance: 0.0,
+                relative_weight: 0.50,
+            },
+        ];
+        let report = orchestrator.evaluate_and_synthesize(
+            0,
+            invalid,
+            invalid,
+            10.0,
+            10.0,
+            1_700_000_000_000,
+            &triad,
+            20.0,
+            20.0,
+            0.02,
+            &mut slot_orchestrator,
+            &[false; 3],
+            &[0.0; 3],
+            &[false; 3],
+        );
+
+        assert!(
+            report
+                .starobinsky_inflationary_report
+                .reheating_collapse_veto,
+            "Starobinsky debe vetar bid=ask={}",
+            invalid
+        );
+        assert!(!report.ville_ruin_bound_satisfied);
+        assert!(!report.multi_slot_evaluation.decisions.is_empty());
+        if invalid.is_infinite() {
+            assert!(report.penrose_spin_report.holographic_decoherence_detected);
+        }
+        let expected_label = if invalid.is_nan() {
+            "FISHER_RAO_INFORMATION_COLLAPSE_VETO"
+        } else {
+            "QUANTUM_SCARS_ERGODIC_COLLAPSE_VETO"
+        };
+        for decision in &report.multi_slot_evaluation.decisions {
+            assert_eq!(decision.signal, SignalType::Flat);
+            assert!(decision.vetoed);
+            assert_eq!(
+                decision.veto_reason,
+                Some(expected_label),
+                "Etiqueta inesperada para bid=ask={}",
+                invalid
+            );
+        }
+    }
+}
+
+#[test]
+fn test_c7_wave25_fisher_rao_non_finite_veto_propagation_and_priority_label() {
+    for invalid in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+        let mut orchestrator = OmniscientLivingGraphOrchestrator::new(1);
+        let mut slot_orchestrator =
+            QuantumSlotOrchestrator::new(QuantumSlotOrchestratorParams::default());
+        let triad = [
+            AssetColorState {
+                normalized_return: 0.0005,
+                order_flow_imbalance: 0.10,
+                relative_weight: 0.60,
+            },
+            AssetColorState {
+                normalized_return: 0.0,
+                order_flow_imbalance: 0.0,
+                relative_weight: 0.50,
+            },
+            AssetColorState {
+                normalized_return: 0.0,
+                order_flow_imbalance: 0.0,
+                relative_weight: 0.50,
+            },
+        ];
+        let report = orchestrator.evaluate_and_synthesize(
+            0,
+            invalid,
+            invalid,
+            10.0,
+            10.0,
+            1_700_000_000_000,
+            &triad,
+            20.0,
+            20.0,
+            0.02,
+            &mut slot_orchestrator,
+            &[false; 3],
+            &[0.0; 3],
+            &[false; 3],
+        );
+
+        assert!(
+            report.fisher_rao_amari_report.information_collapse_veto,
+            "Fisher-Rao debe vetar bid=ask={}",
+            invalid
+        );
+        assert!(!report.ville_ruin_bound_satisfied);
+        assert!(!report.multi_slot_evaluation.decisions.is_empty());
+        let expected_label = if invalid.is_nan() {
+            "FISHER_RAO_INFORMATION_COLLAPSE_VETO"
+        } else {
+            "QUANTUM_SCARS_ERGODIC_COLLAPSE_VETO"
+        };
+        for decision in &report.multi_slot_evaluation.decisions {
+            assert_eq!(decision.signal, SignalType::Flat);
+            assert!(decision.vetoed);
+            assert_eq!(decision.veto_reason, Some(expected_label));
+        }
+    }
+}
