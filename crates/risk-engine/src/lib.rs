@@ -7,6 +7,7 @@ pub mod copulas_store;
 pub mod correlation_guard;
 pub mod cramer_lundberg;
 pub mod dirac_monopole_chern_bundle;
+pub mod drgt_massive_gravity;
 pub mod drawdown;
 pub mod envio;
 pub mod evidence;
@@ -62,6 +63,9 @@ pub use chern_simons_berry_phase::{
 pub use dirac_monopole_chern_bundle::{
     DiracMonopoleChernBundleEngine, DiracMonopoleParams, DiracMonopoleReport,
     DIRAC_CRITICAL_CURVATURE_FLUX,
+};
+pub use drgt_massive_gravity::{
+    DrgtMassiveGravityConfig, DrgtMassiveGravityEngine, DrgtMassiveGravityReport,
 };
 pub use evidence::{
     profit_factor_lcb, resolve_bayes_prior, win_rate_hierarchical_lcb, win_rate_lcb,

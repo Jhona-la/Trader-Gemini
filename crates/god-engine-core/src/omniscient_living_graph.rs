@@ -33,24 +33,25 @@ use feature_engine::{
     ChernSimonsWittenReport, ConnesKreimerConfig, ConnesKreimerHopfEngine, ConnesKreimerReport,
     GeodesicPhaseSpaceParams, GeodesicPhaseSpaceReport, GrossPitaevskiiBecEngine,
     GrossPitaevskiiBecReport, GrossPitaevskiiParams, HyperbolicPoincareHodgeEngine,
-    HyperbolicPoincareHodgeParams, HyperbolicPoincareHodgeReport, JtSchwarzianConfig,
-    JtSchwarzianEngine, JtSchwarzianReport, KostantSouriauConfig, KostantSouriauPrequantumEngine,
-    KostantSouriauReport, LatticeQcdConfig, LatticeQcdReport, LatticeQcdWilsonPolyakovEngine,
-    LiouvilleCft2dQuantumGravityEngine, LiouvilleCftParams, LiouvilleQuantumGravityReport,
-    MatrixModelKpConfig, MatrixModelKpHierarchyEngine, MatrixModelKpReport,
-    MongeKantorovichWassersteinEngine, PenroseSpinNetworkEngine, PenroseSpinNetworkParams,
-    PenroseSpinNetworkReport, PepsHypergraphRicciEngine, PepsHypergraphRicciReport,
-    PepsRicciParams, QuantumGeodesicPhaseSpaceEngine, SymplecticFloerCohomologyEngine,
-    SymplecticFloerConfig, SymplecticFloerReport, VietorisRipsParams, VietorisRipsReport,
-    VietorisRipsTopologicalEngine, WassersteinParams, WassersteinReport, KP_MATRIX_DIM,
-    WASSERSTEIN_NODES,
+    HyperbolicPoincareHodgeParams, HyperbolicPoincareHodgeReport, JoyceG2Config, JoyceG2Report,
+    JtSchwarzianConfig, JtSchwarzianEngine, JtSchwarzianReport, KostantSouriauConfig,
+    KostantSouriauPrequantumEngine, KostantSouriauReport, LatticeQcdConfig, LatticeQcdReport,
+    LatticeQcdWilsonPolyakovEngine, LiouvilleCft2dQuantumGravityEngine, LiouvilleCftParams,
+    LiouvilleQuantumGravityReport, MTheoryJoyceG2Engine, MatrixModelKpConfig,
+    MatrixModelKpHierarchyEngine, MatrixModelKpReport, MongeKantorovichWassersteinEngine,
+    PenroseSpinNetworkEngine, PenroseSpinNetworkParams, PenroseSpinNetworkReport,
+    PepsHypergraphRicciEngine, PepsHypergraphRicciReport, PepsRicciParams,
+    QuantumGeodesicPhaseSpaceEngine, SymplecticFloerCohomologyEngine, SymplecticFloerConfig,
+    SymplecticFloerReport, VietorisRipsParams, VietorisRipsReport, VietorisRipsTopologicalEngine,
+    WassersteinParams, WassersteinReport, KP_MATRIX_DIM, WASSERSTEIN_NODES,
 };
 use risk_engine::{
     AdaptiveQuantumVetoGovernor, AdaptiveVetoDecision, AsymptoticSafetyConfig,
     AsymptoticSafetyReport, AsymptoticSafetyReuterEngine, BekensteinMukhanovConfig,
     BekensteinMukhanovQuantizationEngine, BekensteinMukhanovReport, ChernSimonsBerryParams,
     ChernSimonsBerryPhaseEngine, ChernSimonsBerryReport, DiracMonopoleChernBundleEngine,
-    DiracMonopoleParams, DiracMonopoleReport, FisherRaoAmariConfig, FisherRaoAmariManifoldEngine,
+    DiracMonopoleParams, DiracMonopoleReport, DrgtMassiveGravityConfig, DrgtMassiveGravityEngine,
+    DrgtMassiveGravityReport, FisherRaoAmariConfig, FisherRaoAmariManifoldEngine,
     FisherRaoAmariReport, GromovSymplecticBarrierEngine, GromovSymplecticParams,
     GromovSymplecticReport, HolographicLloydComplexityEngine, HolographicLloydConfig,
     HolographicLloydReport, LindbladDecoherenceReport, LindbladMasterDecoherenceEngine,
@@ -72,6 +73,7 @@ use signal_engine::{
     ContinuousVolatilityState, DeRhamHodgeCurrentsEngine, DeRhamHodgeParams, DeRhamHodgeReport,
     DonaldsonThomasConfig, DonaldsonThomasQuantumEngine, DonaldsonThomasReport,
     FeynmanPathIntegralRoutingEngine, FeynmanRoutingParams, FeynmanRoutingReport,
+    FqheChernSimonsConfig, FqheChernSimonsEngine, FqheChernSimonsReport,
     FractionalRoughVolatilityEngine, FractionalRoughVolatilityParams,
     FractionalRoughVolatilityReport, JarzynskiCrooksParams, JarzynskiCrooksReport,
     JarzynskiCrooksThermodynamicsEngine, KdvSolitonDispersionEngine, KdvSolitonParams,
@@ -217,6 +219,10 @@ pub struct OmniscientLivingGraphReport {
     pub connes_kreimer_report: ConnesKreimerReport,
     pub donaldson_thomas_report: DonaldsonThomasReport,
     pub asymptotic_safety_report: AsymptoticSafetyReport,
+    // --- Extensiones Holísticas Omega220 (Fases 100 - 102) ---
+    pub joyce_g2_report: JoyceG2Report,
+    pub fqhe_chern_simons_report: FqheChernSimonsReport,
+    pub drgt_massive_gravity_report: DrgtMassiveGravityReport,
 }
 
 /// Orquestador del grafo vivo omnisciente para todo el universo de activos.
@@ -305,6 +311,10 @@ pub struct OmniscientLivingGraphOrchestrator {
     pub connes_kreimer_engines: Vec<ConnesKreimerHopfEngine>,
     pub donaldson_thomas_engines: Vec<DonaldsonThomasQuantumEngine>,
     pub asymptotic_safety_engines: Vec<AsymptoticSafetyReuterEngine>,
+    // Motores cuánticos y físicos unificados (Fases 100 - 102)
+    pub joyce_g2_engines: Vec<MTheoryJoyceG2Engine>,
+    pub fqhe_engines: Vec<FqheChernSimonsEngine>,
+    pub drgt_gravity_engines: Vec<DrgtMassiveGravityEngine>,
     pub prev_mid_prices: Vec<f64>,
     pub last_event_time_ms: u64,
 }
@@ -513,6 +523,15 @@ impl OmniscientLivingGraphOrchestrator {
                 .collect(),
             asymptotic_safety_engines: (0..count)
                 .map(|_| AsymptoticSafetyReuterEngine::new(AsymptoticSafetyConfig::default()))
+                .collect(),
+            joyce_g2_engines: (0..count)
+                .map(|_| MTheoryJoyceG2Engine::new(JoyceG2Config::default()))
+                .collect(),
+            fqhe_engines: (0..count)
+                .map(|_| FqheChernSimonsEngine::new(FqheChernSimonsConfig::default()))
+                .collect(),
+            drgt_gravity_engines: (0..count)
+                .map(|_| DrgtMassiveGravityEngine::new(DrgtMassiveGravityConfig::default()))
                 .collect(),
             prev_mid_prices: vec![0.0; count],
             last_event_time_ms: 0,
@@ -1243,7 +1262,36 @@ impl OmniscientLivingGraphOrchestrator {
             drawdown_pct * 100.0,
         );
 
-        // 67. Factor de Escala de Riesgo Holístico Tri-Slot $\eta_{\text{holistic}}$
+        // 67. Teoría M en 11D & Compactificación en Manifolds Joyce G2 (Fase 100)
+        let joyce_state = [
+            price_ret,
+            obi,
+            vol_norm,
+            ofi,
+            spread_bps / 10.0,
+            (bid_qty - ask_qty) / (bid_qty + ask_qty + 1e-6),
+            drawdown_pct,
+        ];
+        let joyce_g2_report = self.joyce_g2_engines[safe_coin_id].update(joyce_state);
+
+        // 68. Efecto Hall Cuántico Fraccionario (FQHE) & Anyons de Chern-Simons U(1) (Fase 101)
+        let fqhe_chern_simons_report = self.fqhe_engines[safe_coin_id].update(
+            bid_qty * 100.0,
+            ask_qty * 100.0,
+            bid_qty * 1000.0,
+            ask_qty * 1000.0,
+            price_ret * 10000.0,
+        );
+
+        // 69. Gravedad Masiva dRGT & Apantallamiento de Vainshtein (Fase 102)
+        let drgt_massive_gravity_report = self.drgt_gravity_engines[safe_coin_id].evaluate(
+            drawdown_pct,
+            vol_norm,
+            volatility_state.effective_volatility,
+            conformal_decision.conformal_risk_score,
+        );
+
+        // 70. Factor de Escala de Riesgo Holístico Tri-Slot $\eta_{\text{holistic}}$
         let mps_weight_factor = (mps_dmrg_report.asset_weights[safe_coin_id % MPS_ASSET_CHANNELS]
             * (MPS_ASSET_CHANNELS as f64))
             .clamp(0.50, 1.50);
@@ -1262,7 +1310,7 @@ impl OmniscientLivingGraphOrchestrator {
         } else {
             1.0
         };
-        let holistic_slot_scale = (navier_stokes_report.slot_scaling_factor
+        let raw_holistic_slot_scale = navier_stokes_report.slot_scaling_factor
             * connes_spectral_report.slot_scaling_factor
             * poincare_hodge_report.slot_scaling_factor
             * feynman_routing_report.routing_urgency_modulator
@@ -1318,8 +1366,15 @@ impl OmniscientLivingGraphOrchestrator {
             * connes_kreimer_report.slot_scaling_factor
             * donaldson_thomas_report.slot_scaling_factor
             * asymptotic_safety_report.slot_scaling_factor
-            * mps_weight_factor)
-            .clamp(0.10, 1.25);
+            * joyce_g2_report.slot_scaling_factor
+            * fqhe_chern_simons_report.slot_scaling_factor
+            * drgt_massive_gravity_report.slot_scaling_factor
+            * mps_weight_factor;
+        let holistic_slot_scale = if raw_holistic_slot_scale.is_finite() {
+            raw_holistic_slot_scale.clamp(0.10, 1.25)
+        } else {
+            0.10
+        };
 
         // 38. Evaluación Multi-Slot en QuantumSlotOrchestrator (Fase 28 / 33)
         let cvd = obi * 1000.0;
@@ -1388,6 +1443,9 @@ impl OmniscientLivingGraphOrchestrator {
             && !connes_kreimer_report.connes_kreimer_divergence_veto
             && !donaldson_thomas_report.donaldson_thomas_wall_crossing_veto
             && !asymptotic_safety_report.asymptotic_safety_singularity_veto
+            && !joyce_g2_report.joyce_g2_singularity_veto
+            && !fqhe_chern_simons_report.fqhe_gap_collapse_veto
+            && !drgt_massive_gravity_report.drgt_higuchi_ghost_veto
             && (spread_bps <= conformal_decision.dynamic_spread_ceiling_bps
                 || conformal_decision.elastic_entry_granted);
 
@@ -1396,95 +1454,100 @@ impl OmniscientLivingGraphOrchestrator {
                 decision.signal = SignalType::Flat;
                 decision.net_confidence = 0.0;
                 decision.vetoed = true;
-                decision.veto_reason =
-                    if asymptotic_safety_report.asymptotic_safety_singularity_veto {
-                        Some("ASYMPTOTIC_SAFETY_SINGULARITY_VETO")
-                    } else if donaldson_thomas_report.donaldson_thomas_wall_crossing_veto {
-                        Some("DONALDSON_THOMAS_WALL_CROSSING_VETO")
-                    } else if connes_kreimer_report.connes_kreimer_divergence_veto {
-                        Some("CONNES_KREIMER_DIVERGENCE_VETO")
-                    } else if hyperkahler_report.moment_map_singularity_veto {
-                        Some("HYPERKAHLER_MOMENT_MAP_SINGULARITY_VETO")
-                    } else if susy_report.susy_spontaneous_breaking_veto {
-                        Some("SUSY_SPONTANEOUS_BREAKING_VETO")
-                    } else if floer_report.floer_homology_obstruction_veto {
-                        Some("FLOER_HOMOLOGY_OBSTRUCTION_VETO")
-                    } else if fisher_rao_report.information_collapse_veto {
-                        Some("FISHER_RAO_INFORMATION_COLLAPSE_VETO")
-                    } else if starobinsky_report.reheating_collapse_veto {
-                        Some("STAROBINSKY_REHEATING_COLLAPSE_VETO")
-                    } else if amplituhedron_report.collinear_singularity_veto {
-                        Some("AMPLITUHEDRON_COLLINEAR_SINGULARITY_VETO")
-                    } else if qes_report.extremal_surface_collapse_veto {
-                        Some("QUANTUM_EXTREMAL_SURFACE_COLLAPSE_VETO")
-                    } else if qmbs_report.ergodic_collapse_veto {
-                        Some("QUANTUM_SCARS_ERGODIC_COLLAPSE_VETO")
-                    } else if ks_report.prequantum_collapse_veto {
-                        Some("KOSTANT_SOURIAU_PREQUANTUM_COLLAPSE_VETO")
-                    } else if holographic_lloyd_report.lloyd_bound_exhaustion_veto {
-                        Some("HOLOGRAPHIC_LLOYD_BOUND_EXHAUSTION_VETO")
-                    } else if mpdo_report.dissipative_decoherence_veto {
-                        Some("MPDO_DISSIPATIVE_DECOHERENCE_VETO")
-                    } else if chern_simons_knot_report.knot_collapse_veto {
-                        Some("CHERN_SIMONS_WITTEN_KNOT_COLLAPSE_VETO")
-                    } else if bekenstein_mukhanov_report.bekenstein_evaporation_veto {
-                        Some("BEKENSTEIN_MUKHANOV_AREA_EVAPORATION_VETO")
-                    } else if wheeler_dewitt_report.big_crunch_veto {
-                        Some("WHEELER_DEWITT_BIG_CRUNCH_VETO")
-                    } else if lattice_qcd_report.lattice_confinement_collapse_veto {
-                        Some("LATTICE_GAUGE_CONFINEMENT_COLLAPSE_VETO")
-                    } else if page_curve_island_report.island_veto_induced {
-                        Some("PAGE_CURVE_INFORMATION_COLLAPSE_VETO")
-                    } else if matrix_model_kp_report.kp_soliton_shock_detected {
-                        Some("KP_SOLITON_SHOCK_VETO")
-                    } else if toric_code_report.hard_veto_induced {
-                        Some("TORIC_CODE_BRAIDING_VETO")
-                    } else if jt_schwarzian_report.schwarzian_singularity_detected {
-                        Some("SCHWARZIAN_SINGULARITY_VETO")
-                    } else if ryu_takayanagi_report.hard_veto_induced {
-                        Some("RYU_TAKAYANAGI_ENTANGLEMENT_VETO")
-                    } else if liouville_report.curvature_singularity_detected {
-                        Some("LIOUVILLE_SINGULARITY_VETO")
-                    } else if bec_report.quantum_vortex_shedding_detected {
-                        Some("GROSS_PITAEVSKII_VORTEX_VETO")
-                    } else if lindblad_report.hard_veto_induced {
-                        Some("LINDBLAD_DECOHERENCE_VETO")
-                    } else if polyakov_schwarzschild_report.event_horizon_veto_induced {
-                        Some("POLYAKOV_SCHWARZSCHILD_EVENT_HORIZON_VETO")
-                    } else if ashtekar_lqg_report.ashtekar_area_singularity_detected {
-                        Some("ASHTEKAR_AREA_SINGULARITY_VETO")
-                    } else if dirac_monopole_report.monopole_veto_induced {
-                        Some("YANG_MILLS_DIRAC_MONOPOLE_VETO")
-                    } else if peps_hypergraph_report.hyperbolic_dispersion_detected {
-                        Some("PEPS_HYPERBOLIC_DISPERSION_VETO")
-                    } else if umegaki_relative_entropy_report.hard_veto_induced {
-                        Some("UMEGAKI_RELATIVE_ENTROPY_VETO")
-                    } else if bergman_fock_report.critical_saturation_detected {
-                        Some("BERGMAN_FOCK_SHILOV_SATURATION_VETO")
-                    } else if derham_hodge_report.turbulent_vorticity_alert {
-                        Some("DERHAM_TURBULENT_VORTICITY_VETO")
-                    } else if reeb_contact_report.reeb_contact_veto_induced {
-                        Some("REEB_CONTACT_TOPOLOGICAL_VETO")
-                    } else if gromov_symplectic_report.gromov_symplectic_veto {
-                        Some("GROMOV_SYMPLECTIC_VETO")
-                    } else if penrose_spin_report.holographic_decoherence_detected {
-                        Some("PENROSE_DECOHERENCE_VETO")
-                    } else if ruelle_frobenius_report.ergodic_chaotic_collapse {
-                        Some("RUELLE_CHAOTIC_COLLAPSE_VETO")
-                    } else if calabi_yau_report.conifold_singularity_detected {
-                        Some("CALABI_YAU_CONIFOLD_VETO")
-                    } else if jarzynski_crooks_report.irreversible_entropy_collapse {
-                        Some("JARZYNSKI_ENTROPY_COLLAPSE_VETO")
-                    } else {
-                        chern_simons_report
-                            .veto_reason
-                            .or(quantum_no_arbitrage_report.veto_reason)
-                            .or(if vietoris_rips_report.air_pocket_detected {
-                                Some("TDA_AIR_POCKET_VETO")
-                            } else {
-                                Some("CONFORMAL_ADAPTIVE_VETO")
-                            })
-                    };
+                decision.veto_reason = if drgt_massive_gravity_report.drgt_higuchi_ghost_veto {
+                    Some("DRGT_HIGUCHI_GHOST_VETO")
+                } else if fqhe_chern_simons_report.fqhe_gap_collapse_veto {
+                    Some("FQHE_GAP_COLLAPSE_VETO")
+                } else if joyce_g2_report.joyce_g2_singularity_veto {
+                    Some("JOYCE_G2_SINGULARITY_VETO")
+                } else if asymptotic_safety_report.asymptotic_safety_singularity_veto {
+                    Some("ASYMPTOTIC_SAFETY_SINGULARITY_VETO")
+                } else if donaldson_thomas_report.donaldson_thomas_wall_crossing_veto {
+                    Some("DONALDSON_THOMAS_WALL_CROSSING_VETO")
+                } else if connes_kreimer_report.connes_kreimer_divergence_veto {
+                    Some("CONNES_KREIMER_DIVERGENCE_VETO")
+                } else if hyperkahler_report.moment_map_singularity_veto {
+                    Some("HYPERKAHLER_MOMENT_MAP_SINGULARITY_VETO")
+                } else if susy_report.susy_spontaneous_breaking_veto {
+                    Some("SUSY_SPONTANEOUS_BREAKING_VETO")
+                } else if floer_report.floer_homology_obstruction_veto {
+                    Some("FLOER_HOMOLOGY_OBSTRUCTION_VETO")
+                } else if fisher_rao_report.information_collapse_veto {
+                    Some("FISHER_RAO_INFORMATION_COLLAPSE_VETO")
+                } else if starobinsky_report.reheating_collapse_veto {
+                    Some("STAROBINSKY_REHEATING_COLLAPSE_VETO")
+                } else if amplituhedron_report.collinear_singularity_veto {
+                    Some("AMPLITUHEDRON_COLLINEAR_SINGULARITY_VETO")
+                } else if qes_report.extremal_surface_collapse_veto {
+                    Some("QUANTUM_EXTREMAL_SURFACE_COLLAPSE_VETO")
+                } else if qmbs_report.ergodic_collapse_veto {
+                    Some("QUANTUM_SCARS_ERGODIC_COLLAPSE_VETO")
+                } else if ks_report.prequantum_collapse_veto {
+                    Some("KOSTANT_SOURIAU_PREQUANTUM_COLLAPSE_VETO")
+                } else if holographic_lloyd_report.lloyd_bound_exhaustion_veto {
+                    Some("HOLOGRAPHIC_LLOYD_BOUND_EXHAUSTION_VETO")
+                } else if mpdo_report.dissipative_decoherence_veto {
+                    Some("MPDO_DISSIPATIVE_DECOHERENCE_VETO")
+                } else if chern_simons_knot_report.knot_collapse_veto {
+                    Some("CHERN_SIMONS_WITTEN_KNOT_COLLAPSE_VETO")
+                } else if bekenstein_mukhanov_report.bekenstein_evaporation_veto {
+                    Some("BEKENSTEIN_MUKHANOV_AREA_EVAPORATION_VETO")
+                } else if wheeler_dewitt_report.big_crunch_veto {
+                    Some("WHEELER_DEWITT_BIG_CRUNCH_VETO")
+                } else if lattice_qcd_report.lattice_confinement_collapse_veto {
+                    Some("LATTICE_GAUGE_CONFINEMENT_COLLAPSE_VETO")
+                } else if page_curve_island_report.island_veto_induced {
+                    Some("PAGE_CURVE_INFORMATION_COLLAPSE_VETO")
+                } else if matrix_model_kp_report.kp_soliton_shock_detected {
+                    Some("KP_SOLITON_SHOCK_VETO")
+                } else if toric_code_report.hard_veto_induced {
+                    Some("TORIC_CODE_BRAIDING_VETO")
+                } else if jt_schwarzian_report.schwarzian_singularity_detected {
+                    Some("SCHWARZIAN_SINGULARITY_VETO")
+                } else if ryu_takayanagi_report.hard_veto_induced {
+                    Some("RYU_TAKAYANAGI_ENTANGLEMENT_VETO")
+                } else if liouville_report.curvature_singularity_detected {
+                    Some("LIOUVILLE_SINGULARITY_VETO")
+                } else if bec_report.quantum_vortex_shedding_detected {
+                    Some("GROSS_PITAEVSKII_VORTEX_VETO")
+                } else if lindblad_report.hard_veto_induced {
+                    Some("LINDBLAD_DECOHERENCE_VETO")
+                } else if polyakov_schwarzschild_report.event_horizon_veto_induced {
+                    Some("POLYAKOV_SCHWARZSCHILD_EVENT_HORIZON_VETO")
+                } else if ashtekar_lqg_report.ashtekar_area_singularity_detected {
+                    Some("ASHTEKAR_AREA_SINGULARITY_VETO")
+                } else if dirac_monopole_report.monopole_veto_induced {
+                    Some("YANG_MILLS_DIRAC_MONOPOLE_VETO")
+                } else if peps_hypergraph_report.hyperbolic_dispersion_detected {
+                    Some("PEPS_HYPERBOLIC_DISPERSION_VETO")
+                } else if umegaki_relative_entropy_report.hard_veto_induced {
+                    Some("UMEGAKI_RELATIVE_ENTROPY_VETO")
+                } else if bergman_fock_report.critical_saturation_detected {
+                    Some("BERGMAN_FOCK_SHILOV_SATURATION_VETO")
+                } else if derham_hodge_report.turbulent_vorticity_alert {
+                    Some("DERHAM_TURBULENT_VORTICITY_VETO")
+                } else if reeb_contact_report.reeb_contact_veto_induced {
+                    Some("REEB_CONTACT_TOPOLOGICAL_VETO")
+                } else if gromov_symplectic_report.gromov_symplectic_veto {
+                    Some("GROMOV_SYMPLECTIC_VETO")
+                } else if penrose_spin_report.holographic_decoherence_detected {
+                    Some("PENROSE_DECOHERENCE_VETO")
+                } else if ruelle_frobenius_report.ergodic_chaotic_collapse {
+                    Some("RUELLE_CHAOTIC_COLLAPSE_VETO")
+                } else if calabi_yau_report.conifold_singularity_detected {
+                    Some("CALABI_YAU_CONIFOLD_VETO")
+                } else if jarzynski_crooks_report.irreversible_entropy_collapse {
+                    Some("JARZYNSKI_ENTROPY_COLLAPSE_VETO")
+                } else {
+                    chern_simons_report
+                        .veto_reason
+                        .or(quantum_no_arbitrage_report.veto_reason)
+                        .or(if vietoris_rips_report.air_pocket_detected {
+                            Some("TDA_AIR_POCKET_VETO")
+                        } else {
+                            Some("CONFORMAL_ADAPTIVE_VETO")
+                        })
+                };
             }
         } else {
             // Modulación suave de confianza según convicción cuántica holística y escala de slot
@@ -1545,6 +1608,9 @@ impl OmniscientLivingGraphOrchestrator {
             && !connes_kreimer_report.connes_kreimer_divergence_veto
             && !donaldson_thomas_report.donaldson_thomas_wall_crossing_veto
             && !asymptotic_safety_report.asymptotic_safety_singularity_veto
+            && !joyce_g2_report.joyce_g2_singularity_veto
+            && !fqhe_chern_simons_report.fqhe_gap_collapse_veto
+            && !drgt_massive_gravity_report.drgt_higuchi_ghost_veto
             && conformal_decision.conformal_risk_score <= 0.85
             && srb_entropy_report.kolmogorov_sinai_entropy < 0.98;
 
@@ -1623,6 +1689,9 @@ impl OmniscientLivingGraphOrchestrator {
             connes_kreimer_report,
             donaldson_thomas_report,
             asymptotic_safety_report,
+            joyce_g2_report,
+            fqhe_chern_simons_report,
+            drgt_massive_gravity_report,
         }
     }
 }
