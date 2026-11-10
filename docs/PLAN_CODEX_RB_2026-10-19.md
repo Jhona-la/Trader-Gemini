@@ -34,7 +34,7 @@
 | RB-H2 | **Frescura por contenido en el `target/` compartido**: dos worktrees producen los mismos nombres de artefacto (hash de la ruta relativa al workspace) y cargo decide la frescura por mtime ⇒ un agente puede ejecutar el código de otro worktree sin saberlo (sonda mínima: por mtime el árbol 2 imprime «ARBOL-1»; con `-Zchecksum-freshness`, «ARBOL-2»). `[unstable] checksum-freshness = true` en `.cargo/config.toml` + contrato | 5 | **Listo en su rama** (sonda E2E 2/2 con control negativo; se fusiona justo después de este merge; coste único: recompilar los crates del workspace una vez) |
 | RB-A1 | **Meta-analítica del impacto histórico de cada cambio** (mandato del operador): libro por commit de `main` con átomo, agente y métricas de cómputo (clausura de dependencias, coste de build del semáforo, tamaño por crate), de salud del código (pánicos de producción, tests) y financieras (T-1, replays) con deltas por átomo | 5 | **RB-A1a entregado** (dac445628: `scripts/meta_analitica.py`, 11 contratos sobre repos git reales; libro de 1.076 commits en `docs/audit/meta_analitica/`); A1b/A1c en §9 |
 | RB-R2 | **polars fuera del paquete raíz**: el paquete raíz (lib `quantum_engine` + 40 bins) depende de polars sólo por 4 herramientas (`download_history`, `feature_validator`, `multi_coin_simulator`, `parquet_to_bin`); cualquier `cargo test -p trader-gemini-v5` compila la pila polars (medido el 19-10: 99 min a −j1 con opt-level=3). Mudarlas a un crate de herramientas del workspace | 5 | Pendiente (después de RB-V1; tocar sólo bins sin dueño activo) |
-| RB-V1 | **LibroSombra** (censo §3 prioridad 2: F250/F272/F400, sin dueño): qué vetos destruyen valor | 2 | **RB-V1a entregado 2026-11-10** (§11): consejo y ML-GATE en sombra con la geometría de la orden validada y veredicto de Hoeffding. **RB-V1b** pendiente: rechazos del riesgo posteriores a la geometría (§8.1) |
+| RB-V1 | **LibroSombra** (censo §3 prioridad 2: F250/F272/F400, sin dueño): qué vetos destruyen valor | 2 | **RB-V1a entregado** (§11): consejo y ML-GATE en sombra. **RB-V1b entregado 2026-11-10** (§12): 8 puertas del riesgo posteriores a la geometría en sombra, más un veredicto siempre válido (Ville) que corrige la parada opcional de RB-V1a. Siguiente: veredictos vivos de la Demo |
 | RB-S1 | Antifragilidad: cuarentena en caliente por motor votante | 4 | Pendiente (coordinar con dueños del orquestador) |
 | RB-N1 | **El reloj del host vuelve a vivir**: la guardia HOST-016 cancelaba el sincronizador NTP/Kalman antes de su primera muestra (off-by-one, desde 97996eba0 del 2026-09-17) ⇒ la deriva del reloj entraba entera en la edad del dato que bloquea entradas | 2 | **Entregado 2026-11-10** (§10) |
 | RB-N2 | **Puerta de latencia con fundamento**: el umbral de pánico es un gen sin señal en backtest (semilla `1000·π`, hoy 6 945 ms); Kalman de 2 estados (offset + deriva) con R adaptativa y puerta de RTT relativa al mínimo observado | 2 | Propuesto (§10.5); coordinar con Línea I (I-2b/I-5) |
@@ -534,3 +534,111 @@ Límites declarados:
   intención rechazada (thread-local `ULTIMA_GEOMETRIA`, §8.1).
 - Leer el veredicto vivo en la Demo (GLM): `grep "\[SOMBRA\]"` en el log de la
   corrida.
+
+## 12. RB-V1b — los rechazos del riesgo en sombra y un veredicto siempre válido (2026-11-10)
+
+**Qué cambia** (nada lo lee ninguna decisión):
+- `risk_engine::medida_sombra`:
+  - `RiskEngine::geometria_evaluada(coin)` publica TP, SL, fricción de ida y
+    vuelta y τ de la evaluación en curso, etiquetados con su moneda. Se borra
+    al empezar cada `evaluate_quantum_order` y se fija dos veces dentro de
+    `evaluate_single_intent`:
+    - con la geometría del horizonte, que es la que juzga el suelo TP/SL;
+    - con la geometría final de la orden, tras la validación de objetivos.
+  - En producción las intenciones no llevan objetivos explícitos
+    (`tp_price_target`/`sl_price_target` sólo aparecen declarados), así que las
+    dos geometrías coinciden.
+  - Sustituye la derivación de RB-V1a desde `MedidaOrden`: es exacta en origen
+    y sirve también a los rechazos, que no dejan medida.
+- `god_engine_core::sombra_vetos`:
+  - 8 fuentes nuevas con su índice `REJ_*`: EV, fee_impact, min_notional,
+    orchestrator, suelo_tp_sl, confianza, viabilidad y sin_evidencia.
+  - `fuente_juzgable(rechazo)` decide cuáles se juzgan. Quedan fuera los
+    rechazos anteriores a la geometría (spec, exposición, correlación, entradas
+    inválidas, sonda ocupada, estrategia falsada), porque no traen operación
+    que juzgar, y el riesgo duro (drawdown).
+  - El núcleo registra justo tras la única `evaluate_quantum_order` del tick y
+    antes de deliberar; el registro de RB-V1a usa la misma geometría.
+- `audit_engine::shadow_ledger`: el veredicto de Ville sustituye al de Hoeffding.
+
+**Defecto corregido en RB-V1a: mirar en cada resolución.**
+- Hoeffding da una cota válida para un n FIJADO de antemano. El núcleo vuelve
+  a evaluar el veredicto en cada resolución y lo anuncia en cuanto cruza: es
+  parada opcional. Por la ley del logaritmo iterado, un radio √(c/n) acaba
+  cruzándose con probabilidad 1.
+- Medido con un juego justo (E[r] = 0 en cada intención, geometrías distintas),
+  δ = 0,05/6 por cola y mirando en cada n hasta 4 000: Hoeffding se equivoca en
+  el **3,10 % ± 0,27 %**, frente a un nominal del 1,67 % (5,3σ).
+- El veredicto nuevo, mirando en cada resolución con el libro real (1 500
+  réplicas × 1 000 miradas): **0,33 %** (cota 1,67 %). En la configuración de
+  producción (α = 0,05/22 por cola): **0,07 %** (cota 0,45 %).
+
+**Matemática del veredicto.**
+- `x = r/ancho` vive en un intervalo de ancho 1, con `ancho = (tp+sl)/sl`
+  fijado al registrar. Por el lema de Hoeffding, si `E[x | pasado] ≤ 0`,
+  entonces `E[exp(u·x − u²/8) | pasado] ≤ 1` para toda u ≥ 0.
+- El e-proceso es `M⁺_n = (1/J)·Σ_j Π_i exp(u_j·x_i − u_j²/8)`, con
+  `u_j = 4·2^(−j)`, j = 0..8. `M⁻` es lo mismo con `−x`.
+- Bajo cada hipótesis nula («lo vetado no paga» o «no pierde»), M es una
+  supermartingala no negativa con M₀ = 1. La desigualdad maximal de Ville da
+  `P(∃n: M_n ≥ 1/α) ≤ α`.
+- La rejilla cubre todas las medias normalizadas posibles (u* = 4·x̄ y |x̄| < 1)
+  hasta x̄ ≈ 1/128. Su mejor apuesta conserva al menos el 83 % del crecimiento
+  óptimo `2·x̄²`, a cambio de ln 8 = 2,08 nats de mezcla.
+- Ejemplo: un veto que sólo bloquea perdedoras se certifica en **n = 26** con
+  α = 0,05/22, el valor exacto de la forma cerrada. Con el radio inválido de
+  Hoeffding, y el mismo α, habría sido n = 20.
+- El log muestra la evidencia en logaritmos: `paga e^…, pierde e^… (umbral
+  e^6,1)`.
+
+**Certificación.**
+- **Contratos:**
+  - audit: QS-R4 9/9 y Ville 5/5 (forma cerrada, poblaciones conocidas,
+    potencia en el n exacto, validez mirando en cada resolución e inflación
+    medida de Hoeffding);
+  - riesgo: 2/2 unitarias y 3/3 de integración. Cubren tres casos: la orden
+    validada publica su geometría exacta (τ y fricción iguales a los que mide
+    la cuenta); un rechazo por confianza la conserva; un rechazo anterior a la
+    geometría no publica ninguna y borra la anterior. C-F5c 2/2.
+  - núcleo: 5/5 unitarias y 5/5 de contrato (cableado de los dos registros,
+    pureza, conducta del `process_tick_dual` real).
+- **Mutaciones:** 5/5 detectadas:
+  - M1 (castigo con el signo cambiado en «pierde»): 4 pruebas;
+  - M2 (castigo u²/16: deja de ser supermartingala): 3;
+  - M3 (no se borra la geometría al empezar): 1;
+  - M4 (`fuente_juzgable` acepta fuentes del núcleo): 1;
+  - M5 (la geometría final es la del horizonte): 2.
+- **Estilo:** clippy y rustfmt limpios en mis archivos y en las regiones tocadas del núcleo y del riesgo.
+- **Replays de cinta real:** las mismas 8 ventanas de 100 000 ticks que RB-V1a (BTC 31-08-2026
+  13:39→23:59 UTC; ETH 17:42→23:59 UTC), con el núcleo de producción. Detalle
+  en `docs/audit/rb_v1b_certificacion_sombra_2026-11-10.txt`.
+  - **Embudo:**
+    - vetos: 2 508 del ML-GATE y 2 042 del consejo;
+    - rechazos del riesgo: 689 por confianza (posteriores a la geometría, se
+      juzgan) y 1 300 por sonda ocupada (anteriores, no se juzgan).
+  - **Sombra, fuente nueva `riesgo:confianza`:** 11 resueltas, todas por τ,
+    con R neto medio ≈ −0,60.
+  - **Sombra, fuentes de RB-V1a:** ML-GATE sin modelo 10 resueltas (≈ −0,71) y
+    consejo 2 (−0,31).
+  - **Evidencia:** ninguna fuente pasa de e^0,1 frente al umbral e^6,1, así
+    que no hay veredicto todavía.
+  - **Operaciones:** 8, todas la sonda de arranque en frío, y las 8 pierden
+    (neto de −0,08 a −0,30 USDT por operación).
+  - **Lectura:** lo que rechaza la confianza, lo que vetan el consejo y el
+    ML-GATE, y lo que se opera sale por tiempo y no cubre la fricción del
+    0,1 %. La pregunta abierta no es qué puerta relajar, sino qué horizonte y
+    qué geometría pagan la fricción.
+- **Pureza A/B:** huella idéntica bit a bit entre `main` 206256e2b (con RB-V1a y sin RB-V1b) y
+  la rama, en BTC v6, donde la rama registró y resolvió 8 intenciones de tres
+  fuentes:
+  - las dos dan 1 operación, `net_pnl` 0xbfd35817b2277730 y `final_capital`
+    0x408f3d94fd09bb11;
+  - tardan 412,8 s frente a 412,6 s.
+
+**Siguiente.**
+- Leer los veredictos vivos en la Demo (GLM: `grep "\[SOMBRA\]"`).
+- El SL se cobra en la barrera aunque el mid salte más allá: ligeramente
+  optimista para «bloquea ganadoras». Es despreciable en monedas líquidas, pero
+  queda declarado.
+- RB-V1c: una ablación contrafactual de verdad (AIPW), para cuando haya
+  operaciones reales con las que compararla.
