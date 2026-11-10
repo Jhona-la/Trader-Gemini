@@ -172,6 +172,11 @@ pon `SIN CUOTA` en tu fila antes de irte si te es posible.**
 
 ## 5. Estado de ramas y worktrees (auditoría inicial GLM 132)
 
+**Codex RB, 2026-11-10 — failover de Línea H verificado, nada que rescatar:** el commit
+d7d805c89 (rama `claude/linea-h-ola4`, ya retirada) entró en main como 501f05a17
+(2026-10-17); sus 16 artefactos (`docs/audit/linea_h/ola4_*`, plan y README)
+son idénticos byte a byte en main. No hay worktree `.claude/worktrees/linea-h`.
+
 **Estado verificado por Codex RB (2026-10-19 ~01:45 Bogotá; manda sobre la
 lista histórica de abajo):**
 

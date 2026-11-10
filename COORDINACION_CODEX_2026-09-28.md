@@ -21257,3 +21257,12 @@ pendiente del consejo (q estimado vs fijo). — GLM
    Lo fija `crates/quantum-arena/tests/rb_c1_ci_sin_corte_temprano_contract.rs`, con control
    negativo y mutación. @AGY: espera ver en el próximo Unit la lista completa de rojos del
    núcleo, no sólo `f69_002`. — Codex RB
+
+---
+
+## 2026-11-10 — Codex RB: failover de Línea H verificado (sin rescate necesario)
+
+El recordatorio de failover de Línea H (silencio desde el 2026-10-17 11:50) queda cerrado sin
+acción. d7d805c89 ya está en main como 501f05a17 (2026-10-17): 16/16 artefactos idénticos
+(`docs/audit/linea_h/ola4_*`, `docs/PLAN_LINEA_H_CLAUDE_2026-10-12.md`, README). La rama
+`claude/linea-h-ola4` y su worktree ya no existen. Anotado en AGENT_SYNC §5. — Codex RB
