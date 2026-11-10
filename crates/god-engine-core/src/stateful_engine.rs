@@ -52,6 +52,13 @@ pub enum MarketRegime {
 /// `cf4_atr_sigma_minuto::cl71_cuantil_99_del_rango_browniano`.
 pub const CUANTIL_99_RANGO: f64 = 3.04;
 
+/// GLM 223 (§3.4): q fijo del observable Ricci-q (núcleo del ciclo 221).
+/// PERILLA documentada: 1.2 está dentro del rango certificado (1, 5/3) y
+/// a medio camino entre el límite gaussiano y el aplastado del 1.5. Si el
+/// consejo decide estimar q de los datos en vivo (Tsallis fitting), este
+/// valor pasa a ser semilla — decisión de consumo, no hardcode ciego.
+pub const RICCI_Q_FIJO: f64 = 1.2;
+
 /// Internal recursive state using strictly f64 (Double Precision)
 #[repr(C, align(64))]
 pub struct StatefulEngine {
@@ -248,6 +255,31 @@ pub struct StatefulEngine {
     /// Máximo corredor de la deformación dentro de la época en curso
     /// (interno; 0.0 = época vacía).
     pico_epoca_actual: f32,
+    /// GLM 223 (C1→wiring, §3.4): Ricci de la métrica Fisher EMPÍRICA de
+    /// la q-gaussiana (núcleo del ciclo 221) evaluada en la frontera %64
+    /// sobre el anillo de retornos (600) con (μ̂, σ̂) muestrales. Métrica
+    /// model-relative: g = E[s·s] con la población REAL de retornos.
+    /// R≈−1 = población casi-gaussiana; |R| menor = colas efectivas que
+    /// APLANAN la geometría (régimen de extremos). NaN en warmup (<600
+    /// retornos), σ̂ degenerada o propagación fail-closed del estimador —
+    /// jamás cero fabricado. q fijo = [`RICCI_Q_FIJO`] (perilla: el
+    /// consumo — q estimado vs fijo — es decisión del consejo).
+    pub ricci_q: f32,
+    /// MÍNIMO de R de la época %64 completada (el extremo de este
+    /// observable es la MÁXIMA curvatura = población más gaussiana,
+    /// frente al régimen de colas que aplana). Patrón pico-de-época del
+    /// 192. NaN hasta la primera época con dato.
+    pub ricci_q_min_epoca: f32,
+    /// Mínimo corredor de R en la época en curso (interno; +∞ = vacía).
+    ricci_q_corredor: f32,
+    /// Anillo de retornos simples por tick (Δp/p, mismo alimento que el
+    /// FR) para la métrica empírica del 221. 600 ≥ M_MIN_MUESTRAS(512)
+    /// del núcleo con margen.
+    ret_ring: [f64; 600],
+    /// Cabeza de escritura del anillo de retornos.
+    ret_cabeza: usize,
+    /// Retornos válidos en el anillo (satura en 600).
+    ret_llenos: usize,
     pub hurst_micro: f32,
     pub hurst_meso: f32,
     pub hurst_macro: f32,
@@ -405,6 +437,12 @@ impl StatefulEngine {
             fr_deformacion: f32::NAN,
             fr_deformacion_pico_epoca: f32::NAN,
             pico_epoca_actual: 0.0,
+            ricci_q: f32::NAN,
+            ricci_q_min_epoca: f32::NAN,
+            ricci_q_corredor: f32::INFINITY,
+            ret_ring: [0.0; 600],
+            ret_cabeza: 0,
+            ret_llenos: 0,
             multifractal: feature_engine::MultiScaleHurstConfluence::new(),
             regime: MarketRegime::Neutral,
             kline_start_ms: 0,
@@ -1038,6 +1076,65 @@ impl StatefulEngine {
                 } else {
                     self.pico_epoca_actual.max(d32)
                 };
+            }
+            // GLM 223 (§3.4, wiring del núcleo 221): anillo de retornos
+            // crudos — alimento de la métrica Fisher empírica. Un push
+            // por tick, O(1), sin asignaciones.
+            self.ret_ring[self.ret_cabeza] = norm_return;
+            self.ret_cabeza = (self.ret_cabeza + 1) % 600;
+            if self.ret_llenos < 600 {
+                self.ret_llenos += 1;
+            }
+            // Ricci-q en la frontera %64 con el anillo LLENO: (μ̂, σ̂)
+            // muestrales y las MISMAS muestras como población (métrica
+            // model-relative — el R mide la geometría del modelo
+            // q-gaussiano evaluada en la población REAL de retornos).
+            // ~17 evals × 600 scores cada 64 ticks: despreciable en
+            // frontera. Fail-closed propagado: Err o σ̂ degenerada ⇒ NaN
+            // (ausencia honesta, sin ceros).
+            if self.tick_count % 64 == 0 && self.ret_llenos == 600 {
+                let mut media = 0.0;
+                for &r in &self.ret_ring {
+                    media += r;
+                }
+                media /= 600.0;
+                let mut var = 0.0;
+                for &r in &self.ret_ring {
+                    let d = r - media;
+                    var += d * d;
+                }
+                var /= 599.0;
+                let sigma = var.sqrt();
+                if sigma.is_finite() && sigma > 0.0 && media.is_finite() {
+                    let mut ventana: [f64; 600] = [0.0; 600];
+                    for (i, slot) in ventana.iter_mut().enumerate() {
+                        let rezago = 599 - i; // i=0 ⇒ la muestra más vieja
+                        *slot = self.ret_ring[(self.ret_cabeza + rezago) % 600];
+                    }
+                    match feature_engine::metrica_fisher_empirica::ricci_q_gaussiana(
+                        RICCI_Q_FIJO,
+                        media,
+                        sigma,
+                        &ventana,
+                    ) {
+                        Ok(r) => {
+                            let r32 = r as f32;
+                            self.ricci_q = r32;
+                            self.ricci_q_corredor = self.ricci_q_corredor.min(r32);
+                        }
+                        Err(_) => {
+                            self.ricci_q = f32::NAN;
+                        }
+                    }
+                } else {
+                    self.ricci_q = f32::NAN;
+                }
+                // Promoción del mínimo de época (patrón 192): la época que
+                // termina publica su extremo y la siguiente arranca vacía.
+                if self.ricci_q_corredor.is_finite() {
+                    self.ricci_q_min_epoca = self.ricci_q_corredor;
+                    self.ricci_q_corredor = f32::INFINITY;
+                }
             }
             if self.tick_count % 64 == 0 {
                 // Instantánea de frontera (sin promedio — el contrato
