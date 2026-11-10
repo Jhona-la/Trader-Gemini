@@ -15,6 +15,7 @@ pub mod fisher_rao_amari_manifold;
 pub mod freno_estrategia;
 pub mod gromov_symplectic_barrier;
 pub mod guard;
+pub mod hayden_preskill_scrambling;
 pub mod hodge;
 pub mod holographic_lloyd_complexity;
 pub mod kelly;
@@ -77,6 +78,9 @@ pub use fisher_rao_amari_manifold::{
 };
 pub use gromov_symplectic_barrier::{
     GromovSymplecticBarrierEngine, GromovSymplecticParams, GromovSymplecticReport, Quaternion,
+};
+pub use hayden_preskill_scrambling::{
+    HaydenPreskillConfig, HaydenPreskillEngine, HaydenPreskillReport, HP_HISTORY_CAPACITY,
 };
 pub use holographic_lloyd_complexity::{
     HolographicLloydComplexityEngine, HolographicLloydConfig, HolographicLloydReport,

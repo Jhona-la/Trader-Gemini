@@ -16,6 +16,7 @@ pub mod feynman_path_instanton;
 pub mod firma_maxent;
 pub mod fisher_rao;
 pub mod flujo_rg;
+pub mod geometric_langlands_hecke;
 pub mod gross_pitaevskii_bec;
 pub mod grothendieck_sheaves;
 pub mod hairer_landauer_anderson;
@@ -117,6 +118,10 @@ pub use ewma::Ewma;
 pub use feynman_path_instanton::{
     FeynmanInstantonEngine, InstantonParams, InstantonRegime, InstantonTunnelingReport,
     MAX_PATH_POINTS,
+};
+pub use geometric_langlands_hecke::{
+    GeometricLanglandsHeckeConfig, GeometricLanglandsHeckeEngine, GeometricLanglandsHeckeReport,
+    DEFAULT_PRIME_SCALES, HE_BUFFER_CAPACITY, NUM_PRIME_SCALES,
 };
 pub use gross_pitaevskii_bec::{
     GrossPitaevskiiBecEngine, GrossPitaevskiiBecReport, GrossPitaevskiiParams, BEC_ANGULAR_SECTORS,
