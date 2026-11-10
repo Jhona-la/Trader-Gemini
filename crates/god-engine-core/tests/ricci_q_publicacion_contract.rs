@@ -53,7 +53,7 @@ fn feed_colas(engine: &mut StatefulEngine, n: usize, semilla: u64) {
 fn glm223_warmup_nan_y_publicacion_en_frontera() {
     // Warmup: sin 600 retornos, el observable es NaN (ausencia honesta).
     let mut e1 = StatefulEngine::new();
-    let p = feed_gaussiano_desde(&mut e1, 599, 0x5EED_11, 100.0);
+    let p = feed_gaussiano_desde(&mut e1, 599, 0x5EED11, 100.0);
     assert!(e1.ricci_q.is_nan(), "warmup: NaN, no cero");
 
     // Con el anillo lleno, la primera frontera %64 publica un valor finito
@@ -63,7 +63,7 @@ fn glm223_warmup_nan_y_publicacion_en_frontera() {
     // poco más: R → −1.476 con N → ∞ (−1.455 para una gaussiana exacta) y
     // dispersión ≈ 0.057 con 600 muestras. La banda (−1.75, −1.20) es ±5 SE
     // alrededor de ese valor.
-    let p = feed_gaussiano_desde(&mut e1, 64, 0x5EED_12, p); // cruza fronteras con anillo lleno
+    let p = feed_gaussiano_desde(&mut e1, 64, 0x5EED12, p); // cruza fronteras con anillo lleno
     assert!(
         e1.ricci_q.is_finite(),
         "con datos suficientes el observable se publica, no queda colgado en NaN"
@@ -74,7 +74,7 @@ fn glm223_warmup_nan_y_publicacion_en_frontera() {
         e1.ricci_q
     );
     // El mínimo de época sólo existe tras una época COMPLETA con datos.
-    feed_gaussiano_desde(&mut e1, 128, 0x5EED_13, p);
+    feed_gaussiano_desde(&mut e1, 128, 0x5EED13, p);
     if e1.ricci_q_min_epoca.is_finite() {
         assert!(e1.ricci_q_min_epoca <= e1.ricci_q || e1.ricci_q.is_nan());
     }
@@ -99,9 +99,9 @@ fn glm223_colas_efectivas_aplanan_la_geometria() {
     // Si este contrato falla, la hipótesis del observable queda REFUTADA y
     // el wiring se replantea (honestidad antes que señal decorativa).
     let mut g = StatefulEngine::new();
-    feed_gaussiano(&mut g, 1200, 0x5EED_21);
+    feed_gaussiano(&mut g, 1200, 0x5EED21);
     let mut c = StatefulEngine::new();
-    feed_colas(&mut c, 1200, 0x5EED_22);
+    feed_colas(&mut c, 1200, 0x5EED22);
     assert!(
         g.ricci_q.is_finite() && c.ricci_q.is_finite(),
         "ambos regímenes publican (g={}, c={})",
