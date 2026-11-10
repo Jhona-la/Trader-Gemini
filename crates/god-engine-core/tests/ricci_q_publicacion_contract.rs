@@ -19,12 +19,21 @@ fn normal(estado: &mut u64) -> f64 {
 }
 
 fn feed_gaussiano(engine: &mut StatefulEngine, n: usize, semilla: u64) {
+    feed_gaussiano_desde(engine, n, semilla, 100.0);
+}
+
+/// Sigue el paseo desde `p0` y devuelve el último precio. Llamar dos veces a
+/// `feed_gaussiano` reinicia el precio en 100: ese salto (≈ −4,7 % con estas
+/// semillas, unas 46σ) entra en el anillo como un solo outlier y lleva R a
+/// ≈ −2,6. Así, la población deja de ser casi gaussiana.
+fn feed_gaussiano_desde(engine: &mut StatefulEngine, n: usize, semilla: u64, p0: f64) -> f64 {
     let mut e = semilla;
-    let mut p = 100.0_f64;
+    let mut p = p0;
     for _ in 0..n {
         p *= 1.0 + 0.001 * normal(&mut e);
         engine.process_tick(p, 1.0, 0);
     }
+    p
 }
 
 fn feed_colas(engine: &mut StatefulEngine, n: usize, semilla: u64) {
@@ -44,27 +53,28 @@ fn feed_colas(engine: &mut StatefulEngine, n: usize, semilla: u64) {
 fn glm223_warmup_nan_y_publicacion_en_frontera() {
     // Warmup: sin 600 retornos, el observable es NaN (ausencia honesta).
     let mut e1 = StatefulEngine::new();
-    feed_gaussiano(&mut e1, 599, 0x5EED_11);
+    let p = feed_gaussiano_desde(&mut e1, 599, 0x5EED_11, 100.0);
     assert!(e1.ricci_q.is_nan(), "warmup: NaN, no cero");
 
     // Con el anillo lleno, la primera frontera %64 publica un valor finito
-    // NEGATIVO (curvatura del modelo en población compatible): el rango
-    // esperado del diseño 221 con q=1.2 es (−1.3, −0.1) — tolerancia ancha
-    // y honesta: la población es «casi gaussiana», no q-gaussiana exacta.
-    feed_gaussiano(&mut e1, 64, 0x5EED_12); // cruza fronteras con anillo lleno
+    // NEGATIVO. Con q = 1.2 (ν = 9) la propia familia da R = −(ν+3)/ν = −4/3;
+    // la métrica es model-relative y esta población (suma de 12 uniformes,
+    // casi gaussiana y con colas algo más finas que el modelo) la curva un
+    // poco más: R → −1.476 con N → ∞ (−1.455 para una gaussiana exacta) y
+    // dispersión ≈ 0.057 con 600 muestras. La banda (−1.75, −1.20) es ±5 SE
+    // alrededor de ese valor.
+    let p = feed_gaussiano_desde(&mut e1, 64, 0x5EED_12, p); // cruza fronteras con anillo lleno
     assert!(
         e1.ricci_q.is_finite(),
-        "con datos suficientes el observable se publica (o NaN por fail-closed si el estimador lo decide), no colgado"
+        "con datos suficientes el observable se publica, no queda colgado en NaN"
     );
-    if e1.ricci_q.is_finite() {
-        assert!(
-            e1.ricci_q < 0.0 && e1.ricci_q > -1.4,
-            "R de población casi gaussiana: negativo y de módulo gaussiano-ish, obtenido {}",
-            e1.ricci_q
-        );
-    }
+    assert!(
+        e1.ricci_q < -1.20 && e1.ricci_q > -1.75,
+        "R de población casi gaussiana con q = 1.2: ≈ −1.48, obtenido {}",
+        e1.ricci_q
+    );
     // El mínimo de época sólo existe tras una época COMPLETA con datos.
-    feed_gaussiano(&mut e1, 128, 0x5EED_13);
+    feed_gaussiano_desde(&mut e1, 128, 0x5EED_13, p);
     if e1.ricci_q_min_epoca.is_finite() {
         assert!(e1.ricci_q_min_epoca <= e1.ricci_q || e1.ricci_q.is_nan());
     }
