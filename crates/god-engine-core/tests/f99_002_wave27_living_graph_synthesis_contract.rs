@@ -107,6 +107,12 @@ fn test_c2_wave27_connes_kreimer_divergence_veto_propagation() {
 
     // Configuramos el motor de Connes-Kreimer con umbral ultra sensible para forzar el veto
     orchestrator.prev_mid_prices[0] = 80.0;
+    orchestrator.fracton_topological_engines[0] =
+        signal_engine::FractonTopologicalOrderEngine::new(signal_engine::FractonTopologicalConfig {
+            topological_entropy_threshold: 0.0,
+            fracton_mobility_threshold: 100.0,
+            ..Default::default()
+        });
     orchestrator.connes_kreimer_engines[0] =
         feature_engine::ConnesKreimerHopfEngine::new(ConnesKreimerConfig {
             max_divergence_residue: 0.0001,
@@ -171,7 +177,13 @@ fn test_c3_wave27_donaldson_thomas_wall_crossing_veto_propagation() {
         QuantumSlotOrchestrator::new(QuantumSlotOrchestratorParams::default());
 
     // Configuramos el motor de Donaldson-Thomas con umbral ultra sensible para forzar el veto
-    orchestrator.prev_mid_prices[0] = 80.0;
+    orchestrator.prev_mid_prices[0] = 99.98;
+    orchestrator.fracton_topological_engines[0] =
+        signal_engine::FractonTopologicalOrderEngine::new(signal_engine::FractonTopologicalConfig {
+            topological_entropy_threshold: 0.0,
+            fracton_mobility_threshold: 100.0,
+            ..Default::default()
+        });
     orchestrator.donaldson_thomas_engines[0] =
         signal_engine::DonaldsonThomasQuantumEngine::new(DonaldsonThomasConfig {
             wall_crossing_threshold: 0.0001,
@@ -241,7 +253,13 @@ fn test_c4_wave27_asymptotic_safety_singularity_veto_propagation() {
         QuantumSlotOrchestrator::new(QuantumSlotOrchestratorParams::default());
 
     // Configuramos el motor de Asymptotic Safety con umbral ultra sensible para forzar el veto
-    orchestrator.prev_mid_prices[0] = 80.0;
+    orchestrator.prev_mid_prices[0] = 99.98;
+    orchestrator.fracton_topological_engines[0] =
+        signal_engine::FractonTopologicalOrderEngine::new(signal_engine::FractonTopologicalConfig {
+            topological_entropy_threshold: 0.0,
+            fracton_mobility_threshold: 100.0,
+            ..Default::default()
+        });
     orchestrator.asymptotic_safety_engines[0] =
         risk_engine::AsymptoticSafetyReuterEngine::new(AsymptoticSafetyConfig {
             max_ngfp_distance: 0.0001,

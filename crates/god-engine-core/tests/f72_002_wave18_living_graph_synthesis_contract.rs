@@ -99,13 +99,21 @@ fn test_c2_wave18_lindblad_decoherence_hard_veto() {
                 ..Default::default()
             },
         );
-    // Aislar la prueba de Lindblad asegurando que Ryu-Takayanagi no anticipe el veto por dispersión
+    // Aislar la prueba de Lindblad asegurando que Ryu-Takayanagi y Starobinsky no anticipen el veto por precedencia
     orchestrator.ryu_takayanagi_engines[0] =
         risk_engine::RyuTakayanagiEntanglementEngine::new(risk_engine::RyuTakayanagiParams {
             max_entanglement_entropy_threshold: 100.0,
             min_mutual_information_threshold: -1.0,
             ..Default::default()
         });
+    orchestrator.starobinsky_engines[0] =
+        signal_engine::starobinsky_inflationary_attractor::StarobinskyInflationaryEngine::new(
+            signal_engine::starobinsky_inflationary_attractor::StarobinskyConfig {
+                max_epsilon_slow_roll: 100.0,
+                max_tensor_to_scalar_ratio: 100.0,
+                ..Default::default()
+            },
+        );
 
     let triad = [
         AssetColorState {
@@ -150,8 +158,8 @@ fn test_c2_wave18_lindblad_decoherence_hard_veto() {
     for i in 1..10 {
         rep = orchestrator.evaluate_and_synthesize(
             0,
-            100.0 + (i as f64) * 0.1,
-            100.10 + (i as f64) * 0.1,
+            100.0 + (i as f64) * 0.001,
+            100.10 + (i as f64) * 0.001,
             10.0,
             10.0,
             1_000_000 + i * 100,
