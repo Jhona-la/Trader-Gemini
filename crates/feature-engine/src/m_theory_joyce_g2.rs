@@ -273,8 +273,8 @@ impl MTheoryJoyceG2Engine {
         }
 
         let mut metric_det = 1.0;
-        for i in 0..JOYCE_DIM {
-            metric_det *= metric_diag[i];
+        for &val in &metric_diag {
+            metric_det *= val;
         }
         if !metric_det.is_finite() || metric_det < self.config.metric_det_floor {
             metric_det = self.config.metric_det_floor;

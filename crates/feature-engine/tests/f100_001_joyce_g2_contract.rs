@@ -35,8 +35,8 @@ fn test_c1_joyce_g2_initialization_and_purity() {
 fn test_c2_fano_plane_associative_3form_properties() {
     // Base canónica e_0, e_1, ..., e_6 en R^7
     let mut e = [[0.0; JOYCE_DIM]; JOYCE_DIM];
-    for i in 0..JOYCE_DIM {
-        e[i][i] = 1.0;
+    for (i, row) in e.iter_mut().enumerate() {
+        row[i] = 1.0;
     }
 
     // 1. Triple positiva del plano de Fano: (0, 1, 2)
@@ -71,8 +71,8 @@ fn test_c2_fano_plane_associative_3form_properties() {
 #[test]
 fn test_c3_coassociative_4form_properties() {
     let mut e = [[0.0; JOYCE_DIM]; JOYCE_DIM];
-    for i in 0..JOYCE_DIM {
-        e[i][i] = 1.0;
+    for (i, row) in e.iter_mut().enumerate() {
+        row[i] = 1.0;
     }
 
     // Cuadrupla complementaria canónica (3, 4, 5, 6)
