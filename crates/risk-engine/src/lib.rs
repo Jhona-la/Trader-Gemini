@@ -45,6 +45,7 @@ pub mod umegaki_relative_entropy;
 pub mod veto_registry;
 pub mod ville_e_process;
 pub mod ville_grossman_ignition_gate;
+pub mod wheeler_feynman_absorber;
 
 pub use adaptive_quantum_veto::{
     AdaptiveQuantumVetoGovernor, AdaptiveQuantumVetoParams, AdaptiveVetoDecision,
@@ -143,6 +144,10 @@ pub use ville_e_process::VilleEProcess;
 pub use ville_grossman_ignition_gate::{
     IgnitionCertificationReport, IgnitionViolationBits, VilleGrossmanIgnitionGate,
     VilleGrossmanParams,
+};
+pub use wheeler_feynman_absorber::{
+    WheelerFeynmanAbsorberConfig, WheelerFeynmanAbsorberEngine, WheelerFeynmanAbsorberReport,
+    WFA_HISTORY_CAPACITY,
 };
 
 use quantum_arena::GlobalArena;
