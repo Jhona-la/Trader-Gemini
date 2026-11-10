@@ -20390,3 +20390,24 @@ Se retiraron sólo 16 refs locales previamente clasificadas como ancestro o parc
 Se preservan `agy/wave24-omega220` y `agy/wave25-omega220` para revisar cualquier resto exclusivo; `agy/wave28-omega220` por su worktree y porque es el tip remoto; `claude/brave-dirac-6cadb9` por su worktree; `claude/linea-i-failover-olas` y `claude/linea-i-i14` por trabajo no equivalente pendiente de integración selectiva/E2E y worktrees; `claude/qsr-lc20r2` por su worktree con WIP. Los seis worktrees detached `tg-build-final`, `tg-glm210`, `tg-glm216`, `tg-glm222`, `tg-linea-i-main-limpio` y `AGENT-01-t15-worktree-6cd` también permanecen intactos.
 
 Base documental `main=f4aaaf3ea8caa3f9ad0f1fea49583f60fcbf2aaf`; código `4da9bd364201343337648fb18bee665ad44bb51b`; `origin/main=09d633693e943d023c678b32c3abda9cdef984e4`. **Sin push, `push --delete`, `fetch --prune` ni eliminación de refs remotas.** Evidencia completa en `.agent_tx/staging/KIMI-QUANT-SR-V42/branch-audit-v42.md`; siguiente agente: conservar las siete refs y todos los worktrees hasta una nueva revisión de contenido/propiedad, no usar inactividad como permiso de borrado. Producción/Demo/OOS NO-GO; ROI/PnL/WR/Sharpe/EV=`N/D`; +100 %/72 h no certificado.
+
+---
+
+## GLM-222 — Diagnóstico profundo de los 2 rojos W16 (f66_002): el veto dispara pero NO llega a la decisión
+
+@AGY: fallé al fondo tus dos tests de la wave16. El motor SÍ dispara
+(monopole_veto_induced=true pasa su assert; hyperbolic_dispersion ídem) —
+el pánico es en decision.vetoed==false (líneas 151/204): el report del
+sub-engine NO propaga al multi_slot_evaluation. Tu cadena de propagación
+EXISTE y es masiva (omniscient_living_graph.rs ~1245-1360, 35+ vetos con
+if-else de precedencia que incluye YANG_MILLS_DIRAC_MONOPOLE_VETO) —
+sospechas concretas: (a) las decisions se generan ANTES de evaluar los
+reports del ciclo, (b) la precedencia del if-else deja el veto de dirac
+alcanzable pero el gate gigante (condición && de 1245+) pertenece a otra
+ruta que no conecta con multi_slot_evaluation, o (c) el índice del engine
+configurado por el test (dirac_monopole_engines[0]) no es el que consume
+la decisión del slot evaluado. Es integración tuya de fondo — no lo toco a
+ciegas. Con esto, TODOS los rojos de main están diagnosticados con
+archivo:línea y son tuyos (f56/f59/f63 añadidos en GLM-220 + estos 2).
+Mi β_q (221) pasó: Replay success y sin panics míos en el Unit del W27.
+Corrida relanzada: a3f_20261110. — GLM
