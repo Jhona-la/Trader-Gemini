@@ -34,7 +34,8 @@ use feature_engine::{
     GeodesicPhaseSpaceParams, GeodesicPhaseSpaceReport, GeometricLanglandsHeckeConfig,
     GeometricLanglandsHeckeEngine, GeometricLanglandsHeckeReport, GrossPitaevskiiBecEngine,
     GrossPitaevskiiBecReport, GrossPitaevskiiParams, HeteroticE8CalabiYauConfig,
-    HeteroticE8CalabiYauEngine, HeteroticE8CalabiYauReport, HyperbolicPoincareHodgeEngine,
+    HeteroticE8CalabiYauEngine, HeteroticE8CalabiYauReport, HomologicalMirrorSymmetryConfig,
+    HomologicalMirrorSymmetryEngine, HomologicalMirrorSymmetryReport, HyperbolicPoincareHodgeEngine,
     HyperbolicPoincareHodgeParams, HyperbolicPoincareHodgeReport, JoyceG2Config, JoyceG2Report,
     JtSchwarzianConfig, JtSchwarzianEngine, JtSchwarzianReport, KostantSouriauConfig,
     KostantSouriauPrequantumEngine, KostantSouriauReport, LatticeQcdConfig, LatticeQcdReport,
@@ -68,7 +69,8 @@ use risk_engine::{
     ReebContactReport, ReebContactVortexEngine, RyuTakayanagiEntanglementEngine,
     RyuTakayanagiParams, RyuTakayanagiReport, TensorNetworkMpsDmrgEngine, ToricCodeConfig,
     ToricCodeEngine, ToricCodeReport, UmegakiEntropyParams, UmegakiEntropyReport,
-    UmegakiRelativeEntropyEngine, MPS_ASSET_CHANNELS, TORIC_EDGES,
+    UmegakiRelativeEntropyEngine, WheelerFeynmanAbsorberConfig, WheelerFeynmanAbsorberEngine,
+    WheelerFeynmanAbsorberReport, MPS_ASSET_CHANNELS, TORIC_EDGES,
 };
 use signal_engine::{
     AdSCftHolographicEngine, AdSCftHolographicReport, AdSCftParams, BerryPhaseConfig,
@@ -81,7 +83,8 @@ use signal_engine::{
     FractionalRoughVolatilityReport, FractonTopologicalConfig, FractonTopologicalOrderEngine,
     FractonTopologicalReport, JarzynskiCrooksParams, JarzynskiCrooksReport,
     JarzynskiCrooksThermodynamicsEngine, KdvSolitonDispersionEngine, KdvSolitonParams,
-    KdvSolitonReport, MeanFieldGamesPsychologyEngine, MeanFieldGamesReport, MfDfaHurstReport,
+    KdvSolitonReport, KitaevQuantumDoubleConfig, KitaevQuantumDoubleEngine, KitaevQuantumDoubleReport,
+    MeanFieldGamesPsychologyEngine, MeanFieldGamesReport, MfDfaHurstReport,
     MfDfaMultifractalHurstEngine, MfDfaParams, MpdoDissipativeConfig, MpdoDissipativeDmrgEngine,
     MpdoDissipativeReport, MultiSlotEvaluationReport, MultiSlotOrderEmission,
     NavierStokesKolmogorovEngine, NavierStokesParams, NavierStokesReport, NlsPeregrineParams,
@@ -237,6 +240,10 @@ pub struct OmniscientLivingGraphReport {
     pub geometric_langlands_report: GeometricLanglandsHeckeReport,
     pub topological_braiding_report: TopologicalQuantumBraidingReport,
     pub hayden_preskill_report: HaydenPreskillReport,
+    // --- Extensiones Holísticas Omega220 (Fases 109 - 111) ---
+    pub homological_mirror_report: HomologicalMirrorSymmetryReport,
+    pub kitaev_quantum_double_report: KitaevQuantumDoubleReport,
+    pub wheeler_feynman_report: WheelerFeynmanAbsorberReport,
 }
 
 /// Orquestador del grafo vivo omnisciente para todo el universo de activos.
@@ -337,6 +344,10 @@ pub struct OmniscientLivingGraphOrchestrator {
     pub geometric_langlands_engines: Vec<GeometricLanglandsHeckeEngine>,
     pub topological_braiding_engines: Vec<TopologicalQuantumBraidingEngine>,
     pub hayden_preskill_engines: Vec<HaydenPreskillEngine>,
+    // Motores cuánticos y físicos unificados (Fases 109 - 111)
+    pub homological_mirror_engines: Vec<HomologicalMirrorSymmetryEngine>,
+    pub kitaev_quantum_double_engines: Vec<KitaevQuantumDoubleEngine>,
+    pub wheeler_feynman_engines: Vec<WheelerFeynmanAbsorberEngine>,
     pub prev_mid_prices: Vec<f64>,
     pub last_event_time_ms: u64,
 }
@@ -578,6 +589,23 @@ impl OmniscientLivingGraphOrchestrator {
                 .collect(),
             hayden_preskill_engines: (0..count)
                 .map(|_| HaydenPreskillEngine::new(HaydenPreskillConfig::default()))
+                .collect(),
+            homological_mirror_engines: (0..count)
+                .map(|_| {
+                    HomologicalMirrorSymmetryEngine::new(
+                        HomologicalMirrorSymmetryConfig::default(),
+                    )
+                })
+                .collect(),
+            kitaev_quantum_double_engines: (0..count)
+                .map(|_| {
+                    KitaevQuantumDoubleEngine::new(KitaevQuantumDoubleConfig::default())
+                })
+                .collect(),
+            wheeler_feynman_engines: (0..count)
+                .map(|_| {
+                    WheelerFeynmanAbsorberEngine::new(WheelerFeynmanAbsorberConfig::default())
+                })
                 .collect(),
             prev_mid_prices: vec![0.0; count],
             last_event_time_ms: 0,
@@ -1381,7 +1409,19 @@ impl OmniscientLivingGraphOrchestrator {
             spread_bps,
         );
 
-        // 76. Factor de Escala de Riesgo Holístico Tri-Slot $\eta_{\text{holistic}}$
+        // 76. Simetría Espejo Homológica de Kontsevich en Calabi-Yau 3-Folds (Fase 109)
+        let homological_mirror_report = self.homological_mirror_engines[safe_coin_id]
+            .update(price_ret, ofi, vol_norm, spread_bps);
+
+        // 77. Modelos Quantum Double de Kitaev D(S3) & Anyones No-Abelianos (Fase 110)
+        let kitaev_quantum_double_report = self.kitaev_quantum_double_engines[safe_coin_id]
+            .update(price_ret, ofi, vol_norm, spread_bps);
+
+        // 78. Teoría de Absorbedor Wheeler-Feynman & Amortiguamiento Dirac de Radiación (Fase 111)
+        let wheeler_feynman_report = self.wheeler_feynman_engines[safe_coin_id]
+            .update(mid_price, ofi, vol_norm, spread_bps);
+
+        // 79. Factor de Escala de Riesgo Holístico Tri-Slot $\eta_{\text{holistic}}$
         let mps_weight_factor = (mps_dmrg_report.asset_weights[safe_coin_id % MPS_ASSET_CHANNELS]
             * (MPS_ASSET_CHANNELS as f64))
             .clamp(0.50, 1.50);
@@ -1465,6 +1505,9 @@ impl OmniscientLivingGraphOrchestrator {
             * geometric_langlands_report.slot_scale
             * topological_braiding_report.slot_scale
             * hayden_preskill_report.slot_scale
+            * homological_mirror_report.slot_scale
+            * kitaev_quantum_double_report.slot_scale
+            * wheeler_feynman_report.slot_scale
             * mps_weight_factor;
         let holistic_slot_scale = if raw_holistic_slot_scale.is_finite() {
             raw_holistic_slot_scale.clamp(0.10, 1.25)
@@ -1550,6 +1593,10 @@ impl OmniscientLivingGraphOrchestrator {
             && !topological_braiding_report.topological_braid_veto
             && !hayden_preskill_report.hayden_preskill_veto
             && !hayden_preskill_report.mss_chaos_veto
+            && !homological_mirror_report.mirror_symmetry_collapse_veto
+            && !kitaev_quantum_double_report.deconfinement_veto
+            && !wheeler_feynman_report.wheeler_feynman_absorber_veto
+            && !wheeler_feynman_report.dirac_radiation_runaway_veto
             && (spread_bps <= conformal_decision.dynamic_spread_ceiling_bps
                 || conformal_decision.elastic_entry_granted);
 
@@ -1558,7 +1605,15 @@ impl OmniscientLivingGraphOrchestrator {
                 decision.signal = SignalType::Flat;
                 decision.net_confidence = 0.0;
                 decision.vetoed = true;
-                decision.veto_reason = if hayden_preskill_report.hayden_preskill_veto {
+                decision.veto_reason = if wheeler_feynman_report.dirac_radiation_runaway_veto {
+                    Some("DIRAC_RADIATION_RUNAWAY_VETO")
+                } else if wheeler_feynman_report.wheeler_feynman_absorber_veto {
+                    Some("WHEELER_FEYNMAN_ABSORBER_COLLAPSE_VETO")
+                } else if kitaev_quantum_double_report.deconfinement_veto {
+                    Some("KITAEV_QUANTUM_DOUBLE_DECONFINEMENT_VETO")
+                } else if homological_mirror_report.mirror_symmetry_collapse_veto {
+                    Some("HOMOLOGICAL_MIRROR_SYMMETRY_COLLAPSE_VETO")
+                } else if hayden_preskill_report.hayden_preskill_veto {
                     Some("HAYDEN_PRESKILL_FAST_SCRAMBLING_VETO")
                 } else if hayden_preskill_report.mss_chaos_veto {
                     Some("MSS_CHAOS_BOUND_VIOLATION_VETO")
@@ -1739,6 +1794,10 @@ impl OmniscientLivingGraphOrchestrator {
             && !topological_braiding_report.topological_braid_veto
             && !hayden_preskill_report.hayden_preskill_veto
             && !hayden_preskill_report.mss_chaos_veto
+            && !homological_mirror_report.mirror_symmetry_collapse_veto
+            && !kitaev_quantum_double_report.deconfinement_veto
+            && !wheeler_feynman_report.wheeler_feynman_absorber_veto
+            && !wheeler_feynman_report.dirac_radiation_runaway_veto
             && conformal_decision.conformal_risk_score <= 0.85
             && srb_entropy_report.kolmogorov_sinai_entropy < 0.98;
 
@@ -1826,6 +1885,9 @@ impl OmniscientLivingGraphOrchestrator {
             geometric_langlands_report,
             topological_braiding_report,
             hayden_preskill_report,
+            homological_mirror_report,
+            kitaev_quantum_double_report,
+            wheeler_feynman_report,
         }
     }
 }

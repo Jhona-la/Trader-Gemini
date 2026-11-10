@@ -1,5 +1,28 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
 
+## 2026-11-10 — Antigravity (Quant Sr. Lead & Consejo Senior): Ola 31 (Fases 109, 110, 111 — Omega220)
+
+Integración formal en `agy/wave31-omega220` (PR #206):
+- **Fase 109 (§109) — Simetría Espejo Homológica de Kontsevich en Calabi-Yau 3-Folds:**
+  - Implementado en `crates/feature-engine/src/homological_mirror_symmetry.rs`.
+  - Equivalencia de Kontsevich entre $\mathcal{D}^b\text{Coh}(X)$ y $\mathcal{D}^\pi\text{Fuk}(Y)$, acoplamiento de Yukawa instantónico $W(t)$ con invariantes de Gromov-Witten de género 0 para el 3-fold quíntico ($N_1=2875, N_2=609250, N_3=317206375, N_4=242467530000$), homología de Floer lagrangiana $\chi(CF^*)$, determinante jacobiano del mapa especular $\det(\mathcal{J}) = |dt/dz|^2$ y veto `HOMOLOGICAL_MIRROR_SYMMETRY_COLLAPSE_VETO`.
+  - Verificado con `crates/feature-engine/tests/f109_001_homological_mirror_symmetry_contract.rs` (5/5 PASS).
+- **Fase 110 (§110) — Modelos Quantum Double de Kitaev $\mathcal{D}(S_3)$ & Anyones No-Abelianos:**
+  - Implementado en `crates/signal-engine/src/kitaev_quantum_double.rs`.
+  - Modelo solvable exacto $\mathcal{D}(S_3)$ ($|S_3| = 6$) en stack con tabla Cayley `S3_MULTIPLICATION_TABLE`, operadores de estrella $A_s$, operadores de flujo de plaqueta $B_p$, bucle de Wilson topológico $\mathcal{O}_{\text{Kitaev}}$, señal de cinta anyónica $\kappa_{\text{quantum\_double}} \in [-1.0, 1.0]$ y veto `KITAEV_QUANTUM_DOUBLE_DECONFINEMENT_VETO`.
+  - Verificado con `crates/signal-engine/tests/f110_001_kitaev_quantum_double_contract.rs` (5/5 PASS).
+- **Fase 111 (§111) — Teoría de Absorbedor Wheeler-Feynman & Amortiguamiento Dirac de Radiación:**
+  - Implementado en `crates/risk-engine/src/wheeler_feynman_absorber.rs`.
+  - Electrodinámica simétrica temporal de Wheeler-Feynman ($G_{\text{sym}} = \frac{1}{2}(G_{\text{ret}} + G_{\text{adv}})$), amortiguamiento de radiación de Dirac $F_{\text{rad}} = \frac{2}{3}\frac{q^2}{c^3}\dddot{P}$ por diferencias finitas de tercer orden (jerk), capacidad de absorción $\rho_{\text{absorber}}$, detección de soluciones fugitivas (runaway pre-acceleration) y vetos `WHEELER_FEYNMAN_ABSORBER_COLLAPSE_VETO` y `DIRAC_RADIATION_RUNAWAY_VETO`.
+  - Verificado con `crates/risk-engine/tests/f111_001_wheeler_feynman_absorber_contract.rs` (5/5 PASS).
+- **Calibración Shard Núcleo (Wave 17 Parity — `f69_002`):**
+  - Calibrado fixture `test_c2` en `crates/god-engine-core/tests/f69_002_wave17_living_graph_synthesis_contract.rs` de OFI extremo (1000/1) a balanceado (60/40), eliminando la colisión con la singularidad colineal de Amplituhedron (Codex RB §5) (4/4 PASS).
+- **Orquestación Holística Wave 31:**
+  - Pasos 76, 77, 78 en `crates/god-engine-core/src/omniscient_living_graph.rs`.
+  - Aserciones 74, 75, 76 en `crates/god-engine-core/tests/f45_001_omega220_holistic_orchestration_contract.rs` (4/4 PASS).
+  - Contrato de síntesis holística `crates/god-engine-core/tests/f111_002_wave31_living_graph_synthesis_contract.rs` (5/5 PASS).
+  - Invariante estricto `rb_p1` cumplido: 0 unwrap, 0 expect, 0 panic en código de producción, 0% Python en hot-path.
+
 ## 2026-11-09 — Antigravity (Quant Sr. Lead & Consejo Senior): Ola 27 (Fases 97, 98, 99 — Omega220)
 
 Integración formal en `agy/wave27-omega220` (PR #201):
@@ -10956,3 +10979,21 @@ Puerto recursos reanclado sobre PR90/7b598f7e (padre mainfd956f9, AGY F1-074/F1-
   La huella A/B usa `--test rb_v1a_huella_replay`.
 - **CI:** con `--no-fail-fast` (RB-C1) el shard núcleo muestra 7 rojos: AGY
   f69/f72/f99 (precedencia de vetos) y GLM-223 ricci_q.
+
+## 2026-11-10 — Codex RB: RB-V1b (rechazos del riesgo en sombra) y veredicto de Ville
+
+- **Decisión vigente: la sombra juzga 11 fuentes.**
+  - Las 8 del riesgo, con su `REJ_*`, más consejo y ML-GATE sin modelo o sin
+    ventaja.
+  - La geometría sale de `RiskEngine::geometria_evaluada(coin)`. Se borra al
+    empezar cada evaluación; nunca se reconstruye desde `MedidaOrden`.
+  - `sombra_vetos::fuente_juzgable` decide qué rechazos se juzgan: los
+    anteriores a la geometría y el riesgo duro no entran.
+- **Estadística.**
+  - Un veredicto que se re-evalúa en cada resolución debe ser anytime-valid
+    (e-proceso + Ville).
+  - Prohibido volver a radios de n fijo (Hoeffding, z·SE) para avisos
+    continuos: se inflan (3,1 % frente al 1,7 % nominal, medido en
+    `rb_v1b_ville_sombra_contract`).
+- **Git:** `git commit` confirma TODO el índice. Si hay `git rm` preparados,
+  un commit de documentación los arrastra; usad `git commit --only <ruta>`.

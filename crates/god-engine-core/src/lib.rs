@@ -9693,6 +9693,22 @@ impl GodEngineCore {
                     calibrated_intent.confidence,
                     order.signal != SignalType::Flat,
                 );
+                // RB-V1b: lo que el riesgo rechaza DESPUÉS de calcular la
+                // geometría (confianza, EV, viabilidad, nocional, fee…) se
+                // juzga en sombra con esa misma geometría. Sólo se escribe.
+                if let Some(fuente) = risk_engine::ultimo_rechazo()
+                    .filter(|_| order.signal == SignalType::Flat)
+                    .and_then(sombra_vetos::fuente_juzgable)
+                {
+                    self.sombra_vetos.registrar(sombra_vetos::Veto {
+                        fuente,
+                        moneda: coin_id,
+                        es_largo: calibrated_intent.signal == SignalType::Long,
+                        entrada: coin.current_price.load(Ordering::Relaxed),
+                        geometria: self.risk_engine.geometria_evaluada(coin_id),
+                        t0_ms: event_time_ms,
+                    });
+                }
                 if order.signal != SignalType::Flat {
                     // F1-049: Unificar definición de drawdown con risk_engine::drawdown::capital_del_freno
                     // y arena.pico_capital. Erradica la discordancia donde SeniorRiesgo medía DD con
@@ -10062,11 +10078,7 @@ impl GodEngineCore {
                             moneda: coin_id,
                             es_largo: order.signal == SignalType::Long,
                             entrada: coin.current_price.load(Ordering::Relaxed),
-                            geometria: self
-                                .risk_engine
-                                .medida_validada(coin_id)
-                                .and_then(|m| m.geometria_sombra()),
-                            tau_ms: order.tau_ms,
+                            geometria: self.risk_engine.geometria_evaluada(coin_id),
                             t0_ms: event_time_ms,
                         });
                     }

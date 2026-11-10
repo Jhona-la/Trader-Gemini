@@ -21,9 +21,19 @@
 //! - gana con confianza ⇒ el veto bloquea operaciones que pagan;
 //! - si no, no hay evidencia todavía.
 //!
-//! RB-V1a añade `veredicto_hoeffding`: el mismo juicio con el radio de
-//! Hoeffding sobre el ancho conocido de cada resultado, válido para todo n
-//! (el de z·SE es asintótico y necesita un `n_min`).
+//! RB-V1b sustituye el veredicto de Hoeffding de RB-V1a por `veredicto_ville`.
+//! Hoeffding vale para un n FIJADO de antemano, pero el núcleo vuelve a
+//! evaluar el veredicto en cada resolución y lo anuncia en cuanto cruza. Con
+//! esa mirada repetida, la probabilidad de un veredicto falso supera la
+//! nominal (por la ley del logaritmo iterado, acaba cruzando con probabilidad
+//! uno). El contrato `rb_v1b_ville_sombra_contract` lo mide con un juego justo:
+//! con δ = 0,05/6 por cola y mirando en cada n hasta 4 000, Hoeffding se
+//! equivoca en el 3,1 % ± 0,3 % frente al 1,7 % nominal, y el veredicto de
+//! Ville en el 0,3 %. `veredicto_ville` apuesta contra cada hipótesis
+//! nula con un e-proceso (supermartingala no negativa) y, por la desigualdad
+//! maximal de Ville, P(∃n: M_n ≥ 1/α) ≤ α: el veredicto es válido en
+//! CUALQUIER momento, se mire cuantas veces se mire (ver `log_evidencia`).
+//! El de z·SE (QS-R4) es asintótico y necesita un `n_min`.
 //!
 //! Límites conocidos (deliberados):
 //! - Resolución al ritmo de los precios observados: un toque entre dos
@@ -96,6 +106,29 @@ pub enum Resolucion {
     Vencida(f64),
 }
 
+/// Apuestas de la rejilla del e-proceso de Ville (ver `log_evidencia`).
+pub const APUESTAS: usize = 8;
+/// Apuesta mayor de la rejilla. Con `x = r/ancho` en un intervalo de ancho 1,
+/// la apuesta de crecimiento óptimo para una media x̄ es `u* = 4·x̄` (máximo de
+/// `u·x̄ − u²/8`), y |x̄| < 1: ninguna apuesta útil supera 4.
+pub const APUESTA_MAX: f64 = 4.0;
+
+/// `u_j = 4·2^(−j)`, j = 0..8: cubre las medias normalizadas desde su máximo
+/// hasta x̄ ≈ 1/128, por debajo de la cual certificar exigiría más de 10⁴
+/// resoluciones. Con un paso de factor 2, la mejor apuesta de la rejilla
+/// conserva al menos el 83 % del crecimiento óptimo `2·x̄²` por resolución.
+pub const REJILLA_APUESTAS: [f64; APUESTAS] = {
+    let mut u = [0.0; APUESTAS];
+    let mut j = 0;
+    let mut v = APUESTA_MAX;
+    while j < APUESTAS {
+        u[j] = v;
+        v *= 0.5;
+        j += 1;
+    }
+    u
+};
+
 /// Acumulados de una fuente de veto.
 #[derive(Debug, Clone, Copy, Default, PartialEq)]
 pub struct EstadisticaFuente {
@@ -105,10 +138,22 @@ pub struct EstadisticaFuente {
     pub vencidas: u64,
     pub suma_r: f64,
     pub suma_r2: f64,
-    /// RB-V1a — suma de los cuadrados del ANCHO de cada resultado posible:
-    /// r vive en `[−(sl+f)/sl, (tp−f)/sl]`, de ancho `(tp+sl)/sl`, fijado al
-    /// registrar la intención (no depende de cómo se resuelva).
-    pub suma_ancho2: f64,
+    /// RB-V1b — `ln` de la riqueza de cada apuesta `u_j` contra H0⁺ («lo
+    /// vetado no paga»: E[r] ≤ 0): `Σ_i (u_j·x_i − u_j²/8)`.
+    pub log_riqueza_paga: [f64; APUESTAS],
+    /// RB-V1b — lo mismo contra H0⁻ («lo vetado no pierde»: E[r] ≥ 0):
+    /// `Σ_i (−u_j·x_i − u_j²/8)`.
+    pub log_riqueza_pierde: [f64; APUESTAS],
+}
+
+/// `ln((1/J)·Σ_j e^(l_j))` sin desbordamiento (se resta el máximo).
+fn log_media_exp(l: &[f64; APUESTAS]) -> f64 {
+    let max = l.iter().copied().fold(f64::NEG_INFINITY, f64::max);
+    if !max.is_finite() {
+        return f64::NAN;
+    }
+    let suma: f64 = l.iter().map(|&v| (v - max).exp()).sum();
+    max + (suma / APUESTAS as f64).ln()
 }
 
 /// Qué dice la evidencia acumulada de una fuente.
@@ -162,43 +207,59 @@ impl EstadisticaFuente {
         }
     }
 
-    /// RB-V1a — radio de confianza de Hoeffding para la media de R, con el
-    /// ancho CONOCIDO de cada resultado (desigualdad de Hoeffding para
-    /// variables acotadas no idénticas): con probabilidad ≥ 1 − `delta_cola`,
-    /// `media − E[r] ≤ √(ln(1/δ)·Σ ancho²/2) / n` (y lo mismo en la otra cola).
-    /// Vale para TODO n, sin aproximación normal ni varianza estimada.
-    /// Supone resultados independientes: el libro admite una intención
-    /// abierta por (fuente, moneda, lado), pero monedas correlacionadas siguen
-    /// sin ser independientes (límite declarado).
-    pub fn radio_hoeffding(&self, delta_cola: f64) -> Option<f64> {
-        if self.n == 0
-            || !delta_cola.is_finite()
-            || delta_cola <= 0.0
-            || delta_cola >= 1.0
-            || !self.suma_ancho2.is_finite()
-            || self.suma_ancho2 <= 0.0
-        {
-            return None;
+    /// RB-V1b — apuesta de una resolución: `x = r/ancho`, con `r` en
+    /// `[−(sl+f)/sl, (tp−f)/sl]` y `ancho = (tp+sl)/sl` fijado al registrar
+    /// (no depende de cómo se resuelva), así que `x` vive en un intervalo de
+    /// ancho 1 y la apuesta es predecible.
+    fn apostar(&mut self, x: f64) {
+        let riquezas = self
+            .log_riqueza_paga
+            .iter_mut()
+            .zip(self.log_riqueza_pierde.iter_mut());
+        for ((paga, pierde), u) in riquezas.zip(REJILLA_APUESTAS) {
+            let castigo = u * u / 8.0;
+            *paga += u * x - castigo;
+            *pierde -= u * x + castigo;
         }
-        let radio = ((1.0 / delta_cola).ln() * self.suma_ancho2 / 2.0).sqrt() / self.n as f64;
-        radio.is_finite().then_some(radio)
     }
 
-    /// RB-V1a — veredicto distribución-libre con el radio de Hoeffding: la
-    /// fuente ahorra dinero si TODO el intervalo queda bajo 0 y bloquea
-    /// ganadoras si queda sobre 0. Cada cola se contrasta con `delta_cola`.
-    pub fn veredicto_hoeffding(&self, delta_cola: f64) -> Veredicto {
-        let (Some(m), Some(radio)) = (self.media_r(), self.radio_hoeffding(delta_cola)) else {
+    /// RB-V1b — `(ln M⁺, ln M⁻)`: el logaritmo de la evidencia (e-valor)
+    /// acumulada contra «lo vetado no paga» y contra «lo vetado no pierde».
+    ///
+    /// `M⁺_n = (1/J)·Σ_j Π_i exp(u_j·x_i − u_j²/8)`, y `M⁻` con `−x_i`. Por el
+    /// lema de Hoeffding, una variable de ancho 1 con media condicional
+    /// `E[x_i | pasado] ≤ 0` cumple `E[exp(u·x_i − u²/8) | pasado] ≤ 1` para
+    /// toda `u ≥ 0`; la apuesta `u_j` se fija antes de ver el resultado, y el
+    /// ancho, al registrar. Así `M⁺` es una supermartingala no negativa con
+    /// `M⁺_0 = 1` bajo H0⁺, y la mezcla de apuestas conserva la propiedad. La
+    /// desigualdad maximal de Ville da `P(∃n: M⁺_n ≥ 1/α) ≤ α`, válida mirando
+    /// en cada resolución. Supone que los resultados de distintas intenciones
+    /// son condicionalmente independientes (límite declarado: monedas
+    /// correlacionadas no lo son).
+    pub fn log_evidencia(&self) -> (f64, f64) {
+        (
+            log_media_exp(&self.log_riqueza_paga),
+            log_media_exp(&self.log_riqueza_pierde),
+        )
+    }
+
+    /// RB-V1b — veredicto siempre válido: la fuente bloquea ganadoras si la
+    /// evidencia contra «no paga» alcanza `1/alfa_cola`, ahorra dinero si la
+    /// alcanza la de «no pierde», y no hay veredicto si ninguna (o las dos,
+    /// que sería contradictorio). Cada cola se contrasta con `alfa_cola`.
+    pub fn veredicto_ville(&self, alfa_cola: f64) -> Veredicto {
+        if !alfa_cola.is_finite() || alfa_cola <= 0.0 || alfa_cola >= 1.0 {
             return Veredicto::SinEvidencia;
-        };
-        if !m.is_finite() {
-            Veredicto::SinEvidencia
-        } else if m + radio < 0.0 {
-            Veredicto::AhorraDinero
-        } else if m - radio > 0.0 {
-            Veredicto::BloqueaGanadoras
-        } else {
-            Veredicto::SinEvidencia
+        }
+        let umbral = (1.0 / alfa_cola).ln();
+        let (paga, pierde) = self.log_evidencia();
+        if !paga.is_finite() || !pierde.is_finite() {
+            return Veredicto::SinEvidencia;
+        }
+        match (paga >= umbral, pierde >= umbral) {
+            (true, false) => Veredicto::BloqueaGanadoras,
+            (false, true) => Veredicto::AhorraDinero,
+            _ => Veredicto::SinEvidencia,
         }
     }
 }
@@ -310,7 +371,7 @@ impl LibroSombra {
                 s.suma_r += r;
                 s.suma_r2 += r * r;
                 let ancho = (i.tp_pct + i.sl_pct) / i.sl_pct;
-                s.suma_ancho2 += ancho * ancho;
+                s.apostar(r / ancho);
             }
             // La última abierta ocupa el hueco; `k` no avanza porque esa
             // casilla trae ahora una intención todavía sin revisar.

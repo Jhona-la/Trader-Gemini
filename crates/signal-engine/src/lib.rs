@@ -26,6 +26,7 @@ pub mod game_theoretic_nash;
 pub mod hawkes_bessel;
 pub mod jarzynski_crooks_thermodynamics;
 pub mod kdv_soliton_dispersion;
+pub mod kitaev_quantum_double;
 pub mod mean_field_games_psychology;
 pub mod mfdfa_multifractal_hurst;
 pub mod mpdo_dissipative_dmrg;
@@ -92,6 +93,10 @@ pub use jarzynski_crooks_thermodynamics::{
 };
 pub use kdv_soliton_dispersion::{
     KdvSolitonDispersionEngine, KdvSolitonParams, KdvSolitonReport, KDV_GRID_POINTS,
+};
+pub use kitaev_quantum_double::{
+    KitaevQuantumDoubleConfig, KitaevQuantumDoubleEngine, KitaevQuantumDoubleReport, S3_INVERSES,
+    S3_MULTIPLICATION_TABLE, S3_ORDER,
 };
 pub use maker::{MakerEngine, MakerQuote};
 pub use mean_field_games_psychology::{

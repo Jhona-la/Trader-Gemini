@@ -1,12 +1,14 @@
-//! CERTIFICACIÓN RB-V1a (local, `#[ignore]`): los vetos posteriores al riesgo,
-//! juzgados en sombra sobre una cinta real con el núcleo de producción.
+//! CERTIFICACIÓN RB-V1a/RB-V1b (local, `#[ignore]`): los vetos posteriores al
+//! riesgo y los rechazos del riesgo posteriores a la geometría, juzgados en
+//! sombra sobre una cinta real con el núcleo de producción.
 //!
 //! QUÉ: reproduce la cinta con `run_booktick_replay_with_observer` (el mismo
 //! camino de entrada que el vivo) y lee, antes de cada evento, el libro
-//! `sombra_vetos` del núcleo. Al final escribe, por fuente (consejo, ML-GATE sin
-//! modelo, ML-GATE sin ventaja), las intenciones resueltas, el R neto de
-//! fricción, el radio de Hoeffding y el veredicto; y el resultado financiero
-//! del replay con ROI, PnL y WR antes y después de comisiones y el periodo.
+//! `sombra_vetos` del núcleo. Al final escribe, por fuente (las ocho puertas
+//! juzgables del riesgo, el consejo y el ML-GATE sin modelo o sin ventaja), las
+//! intenciones resueltas, el R neto de fricción, la evidencia de Ville contra
+//! «no paga» y «no pierde» y el veredicto; y el resultado financiero del
+//! replay con ROI, PnL y WR antes y después de comisiones y el periodo.
 //! POR QUÉ: el mandato prohíbe dar por terminado lo que sólo compila. Esta es
 //! la prueba de conducta del libro sobre microestructura real: registra, avanza
 //! y resuelve intenciones de verdad.
@@ -19,7 +21,7 @@
 mod cinta_real;
 
 use backtest_engine::booktick_replay::run_booktick_replay_with_observer;
-use god_engine_core::sombra_vetos::{DELTA_COLA, FUENTES};
+use god_engine_core::sombra_vetos::{ALFA_COLA, FUENTES};
 
 #[test]
 #[ignore = "certificación local: necesita RB_V1A_CINTA con una cinta real de data/ (no versionada)"]
@@ -101,14 +103,15 @@ fn rb_v1a_sombra_de_los_vetos_sobre_cinta_real() {
             e.n,
             "{nombre}: toda resolución tiene un motivo"
         );
+        let (paga, pierde) = e.log_evidencia();
         println!(
-            "  sombra {nombre}: {} resueltas (TP {} · SL {} · τ {}) · R neto medio {} ± {} (Hoeffding, δ {DELTA_COLA:.4}/cola) → {veredicto:?}",
+            "  sombra {nombre}: {} resueltas (TP {} · SL {} · τ {}) · R neto medio {} · evidencia de Ville: paga e^{paga:.2}, pierde e^{pierde:.2} (umbral e^{:.2}, α {ALFA_COLA:.5}/cola) → {veredicto:?}",
             e.n,
             e.tp,
             e.sl,
             e.vencidas,
             e.media_r().map_or("—".to_string(), |m| format!("{m:+.3}")),
-            e.radio_hoeffding(DELTA_COLA).map_or("—".to_string(), |r| format!("{r:.3}")),
+            (1.0 / ALFA_COLA).ln(),
         );
         if e.n > 0 {
             assert!(

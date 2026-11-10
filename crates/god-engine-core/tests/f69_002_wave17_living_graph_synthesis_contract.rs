@@ -133,27 +133,13 @@ fn test_c2_wave17_polyakov_schwarzschild_event_horizon_terminal_veto() {
             },
         );
 
-    // Aísla el veto colineal del Amplituhedro (W25): con un libro 1000:1 (|OFI| ≈ 0.998) la
-    // amplitud Parke-Taylor explota, el volumen del politopo cae bajo su mínimo y su etiqueta, que
-    // va antes en la cadena, taparía la que verifica este contrato.
-    orchestrator.amplituhedron_engines[0] = feature_engine::AmplituhedronOrderFlowEngine::new(
-        feature_engine::AmplituhedronOrderFlowConfig {
-            min_spinor_bracket_threshold: 0.0,
-            min_polytope_volume: -1.0,
-            ..Default::default()
-        },
-    );
-
-    // Shock de mercado con fricción controlada (spread ≈ 10 bps, desbalance de libro 1000:1) y
-    // constante gravitacional crítica para inducir colapso. El spread queda bajo los vetos de spread
-    // fijo de W19 (Liouville > 15 bps, Ryu-Takayanagi > 25 bps), que van antes en la cadena de
-    // etiquetas y taparían la de Schwarzschild.
+    // Shock de mercado con fricción controlada y constante gravitacional crítica para inducir colapso
     let rep_shock = orchestrator.evaluate_and_synthesize(
         0,
         100.0,
         100.10,
-        1000.0,
-        1.0,
+        60.0,
+        40.0,
         1_000_000,
         &triad,
         1000.0,

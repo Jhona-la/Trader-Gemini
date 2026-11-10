@@ -24,6 +24,7 @@ pub mod hawkes;
 pub mod hawkes_cross;
 pub mod heterotic_e8_calabi_yau;
 pub mod hodge_flow;
+pub mod homological_mirror_symmetry;
 pub mod hurst_dfa;
 pub mod hyperbolic_poincare_hodge;
 pub mod jt_schwarzian_gravity;
@@ -145,6 +146,10 @@ pub use heterotic_e8_calabi_yau::{
 pub use hodge_flow::{
     CrossMarketHodgeReport, HelmholtzHodgeFlowEngine, HelmholtzHodgeParams,
     HodgeDecompositionResult, HodgeRegime, MAX_HODGE_ASSETS,
+};
+pub use homological_mirror_symmetry::{
+    HomologicalMirrorSymmetryConfig, HomologicalMirrorSymmetryEngine,
+    HomologicalMirrorSymmetryReport, GW_QUINTIC_INVARIANTS, HMS_MODULI_HISTORY,
 };
 pub use hyperbolic_poincare_hodge::{
     HyperbolicPoincareHodgeEngine, HyperbolicPoincareHodgeParams, HyperbolicPoincareHodgeReport,
