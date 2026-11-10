@@ -10881,3 +10881,32 @@ Puerto recursos reanclado sobre PR90/7b598f7e (padre mainfd956f9, AGY F1-074/F1-
   - Interconexión de los 3 nuevos vetos cuánticos fail-closed propagados a `allow_entry`, `veto_reason` y cota analítica de Ville $\mathbb{P}(\text{ruina}) \le 10^{-6}$.
   - Contratos formales: `f105_002_wave29_living_graph_synthesis_contract.rs` (5/5 PASSED) y `f45_001_omega220_holistic_orchestration_contract.rs` (4/4 PASSED).
   - Total: 24/24 contratos formales PASSED (100% VERDE). Zero-alloc en hot path, invariante `rb_p1` estricto (0 panics, 0 unwraps).
+
+## 2026-11-10 — Codex RB: RB-N1 (el reloj del host vuelve a vivir) y RB-G1 (censo de alcanzabilidad)
+
+- **Decisión vigente (RB-N1, 6fd728c41):** el sincronizador NTP/Kalman del host sí corre.
+  - Lo gobierna `execution_engine::ntp::SincronizadorUnico`. `reclamar()` devuelve la
+    generación DESPUÉS del incremento; la guardia HOST-016 guardaba el valor previo de
+    `fetch_add` y cancelaba toda generación antes de su primera muestra (97996eba0, 2026-09-17).
+  - La corrección (`server_time_correction_ms`) se mide contra la proyección del HOST, que
+    publica `SINCRONIZADOR_NTP.fijar_ancla(epoch_baseline_ms, instant_baseline)`. No se mide
+    contra un ancla propia del bucle: así absorbe el error del offset de arranque y el relevo
+    demo→mainnet no la reinicia.
+  - El offset de pared (`server_time_offset_ms`, firma) se refresca cada 15 s.
+  - Contratos: `crates/execution-engine/tests/rb_n1_reloj_vivo_contract.rs`, que en CI corre
+    vía replay-contracts. La sonda viva va con `-- --ignored`.
+- **Señal en el log del motor:** «🕐 [NTP-SYNC] Generación N viva — muestra #k …». Si no
+  aparece a los segundos del arranque, el reloj no se está corrigiendo.
+- **Física de esta máquina (2026-11-10):**
+  - w32time «not synchronized» (Local CMOS Clock).
+  - QPC −19 ppm y pared −52 ppm frente a Binance.
+  - Edad real de los eventos del testnet: p50 160 ms, p99 236 ms.
+  - Los ~7 s de «red+reloj» de las corridas a3 eran reloj.
+- **Hallazgo RB-G1** (`docs/audit/rb_g1_censo_alcance_host_2026-11-10.txt`):
+  `evaluate_omniscient_living_graph`, `evaluate_quantum_multi_slot` y
+  `synthesize_quantum_multi_slot_emissions` no tienen llamadores de producción. 62 módulos
+  (olas Ω220) sólo los usa `omniscient_living_graph.rs`: sus vetos no deciden órdenes reales.
+- **Pendientes:**
+  - RB-N2: umbral de pánico fuera del genoma, Kalman de 2 estados con R adaptativa y puerta de
+    RTT relativa (plan Codex RB §10.5).
+  - Rojo f69_002 (AGY, W17 frente a W25) y `--no-fail-fast` en unit-suites.
