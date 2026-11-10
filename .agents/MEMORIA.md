@@ -1,113 +1,214 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
 
-## 2026-11-09 — Antigravity (Quant Sr. Lead & Consejo Senior): Ola 27 (Fases 97, 98, 99 — Omega220)
+## 2026-11-10 — KIMI-QUANT-SR-V42: remediación integrada en main local, sin certificación económica
 
-Integración formal en `agy/wave27-omega220` (PR #201):
-- **Fase 97 (§97) — Geometría No Conmutativa de Connes-Kreimer & Renormalización Hopf de Microestructura:**
-  - Implementado en `crates/feature-engine/src/connes_kreimer_hopf_algebra.rs`.
-  - Coproducto de Connes-Kreimer $\Delta(\Gamma)$, antípoda recursiva de Zimmermann $S(\Gamma)$ y convolución de Birkhoff para sustracción exacta de divergencias ultravioletas por spoofing y wash-trading.
-  - Veto estricto `CONNES_KREIMER_DIVERGENCE_VETO` con contracción de slot a 0.10.
-  - Verificado con `crates/feature-engine/tests/f97_001_connes_kreimer_contract.rs` (4/4 PASS).
-- **Fase 98 (§98) — Correspondencia de Donaldson-Thomas Cuántica & Invariantes de Vértice MacMahon:**
-  - Implementado en `crates/signal-engine/src/donaldson_thomas_quantum.rs`.
-  - Función generatriz de particiones tridimensionales de MacMahon $M(q)$, acoplamiento de cuerda $q = e^{-g_s}$, cargas de D-branas $\gamma = (d_0, d_1, d_2)$ y saltos de estabilidad de Kontsevich-Soibelman $|\Delta \Omega|$.
-  - Veto estricto `DONALDSON_THOMAS_WALL_CROSSING_VETO` con contracción de slot a 0.10.
-  - Verificado con `crates/signal-engine/tests/f98_001_donaldson_thomas_contract.rs` (4/4 PASS).
-- **Fase 99 (§99) — Gravitación 4D Cuántica Asintóticamente Segura de Weinberg & Punto Fijo Reuter:**
-  - Implementado en `crates/risk-engine/src/asymptotic_safety_reuter.rs`.
-  - Ecuación de flujo de Wetterich-Reuter en truncamiento de Einstein-Hilbert, convergencia al NGFP $(g_*, \lambda_*) \approx (0.707, 0.193)$ y dimensión anómala de gravitón $\eta_N$.
-  - Veto estricto `ASYMPTOTIC_SAFETY_SINGULARITY_VETO` con contracción de slot a 0.10.
-  - Verificado con `crates/risk-engine/tests/f99_001_asymptotic_safety_contract.rs` (4/4 PASS).
-- **Orquestación Holística Wave 27:**
-  - Pasos 64, 65, 66 en `crates/god-engine-core/src/omniscient_living_graph.rs`.
-  - Aserciones 62, 63, 64 en `crates/god-engine-core/tests/f45_001_omega220_holistic_orchestration_contract.rs` (4/4 PASS).
-  - Contrato de síntesis holística `crates/god-engine-core/tests/f99_002_wave27_living_graph_synthesis_contract.rs` (5/5 PASS).
-  - Invariante estricto `rb_p1` cumplido: 0 unwrap, 0 expect, 0 panic en código de producción, 0% Python en hot-path.
+CAS local de código completado: `main=4da9bd364201343337648fb18bee665ad44bb51b`, tree `8e2dc1c6123d824ca7156c8698b7431dc7ac4a9c`, padres `0ffa6d7624268bc7b03323e26f868fe6b1e3565b` y `09d633693e943d023c678b32c3abda9cdef984e4`; expected HEAD anterior `02c456265f3bcffa2adad70cbb392862e3bc69ec`, que era ancestro del candidato. Ambos diffs pasaron `--check`; working tree/WIP preservados y **sin push**.
 
-## 2026-11-05 — Claude (Línea I, Opus 5.5): I-13 = N26, el sucesor de la transición comparte freno, reloj y uso
+Correcciones integradas: Starobinsky y Fisher–Amari devuelven veto, `Flat` y Ville falso para NaN/±Inf y valores fuera de dominio, sin mutar estado; propagación W25 7/7; Penrose evita pánico/historia/timestamp falso. También se conservan Fisher normalizado y límite gaussiano, certificado Demo separado por entorno, JIT por origen VirtualAlloc/heap con exactamente una liberación, breaker NaN/Inf, F28 multi-entry/OCO/deadline, Page `1-safe_corr`, JT sin tercera derivada fabricada, W17/W18 y prioridad QES→QMBS→KS. Los cuatro Important anteriores y los dos W24/JIT quedan cerrados, y F92/F93 concluyen la revisión estática `agent-60` **Ready=Yes** sin Critical/Important. Manifiesto `CLOSURE_SHA256SUMS` pasa **56/56**.
 
-En la rama `claude/linea-i-i13`, por failover: la fila es de Línea C (método) y de Línea I o AGY (host), y Línea C lleva más de 48 h sin actividad.
+Evidencia final: host/execution/signal/feature/trainer/workspace exit 0; Risk sólo Fase3 baseline 87140.73 ns; núcleo completo sólo F1-108 temporal 325 µs, con candidato y baseline `bash-yo2zzgpf` exit 0 usando el mismo ejecutable `108ae192ac5844ac`. Kähler y Yang-Mills permanecen como latencias baseline documentadas, sin subir límites. `fixed_filter` 9/9 bajo 500 ns, pero el valor medio exacto es N/D: no se presenta como medición de producción. La revisión estática no sustituye la evidencia ejecutable y ésta no prueba rentabilidad.
 
-- **Defecto:** al terminar el calentamiento el host construía el ejecutor nuevo con `new_with_shared`, que estrena freno 429/418, reloj y `UsoExchange` a cero. El freno y la cuota son de la IP y de la cuenta: dentro del Retry-After de un 429 o del baneo de un 418 el sucesor volvía a enviar, y por encima del 80 % de la cuota seguía admitiendo lecturas.
-- **Arreglo:** `OrderExecutor::sucesor_de` comparte el `Arc<FrenoExchange>` (`BinanceClient::adoptar_freno_de`), el Arc de `arena` (un solo reloj, CL-188) y `uso_exchange`, ahora `Arc<Mutex<UsoExchange>>`. Sólo con la misma URL y arena (la clave no decide, ver abajo) y un freno del anterior que decide con esa arena; si no, nada, y `HerenciaDeCuota` dice por qué (el host lo manda a `telemetry_err!`). Sin candados; sin heredar limitador local ni cachés. El kill-switch sí cruza (N58): el sucesor copia el del anterior, y todo ejecutor lee además el de su arena en cada entrada (`latch_armado`).
-- **Por qué compartir y no copiar:** los `Cupo` del anterior en vuelo se sueltan en el mismo candado (su `Drop`); una copia dejaría plazas fantasma o perdería las tomadas entre la construcción y la publicación. Los clones del cliente anterior (user-data stream, NTP) siguen armando el mismo freno.
-- **Pruebas:** `tests_n26` (10) en executor.rs y `tests/i13_sucesor_cuota_contract.rs` (4, con la guarda de fuente del host, roja con el host de main). Mutantes detectados: no comparte, sin comprobar el reloj, sin compartir el uso, sin copiar el latch, sin leer el de la arena, vuelve a cortar por la clave, latch sólo si comparte.
-- **Cerrado en el mismo PR (#171), a petición del operador:** N58, el kill-switch del vigente cruza el cambio en todos los casos, todo ejecutor lee además el de su arena (cubre la carrera con el sistema inmune durante el cambio) y sólo frena entradas. Y la clave ya no decide: con la misma URL, otra clave sale de la misma IP, y Binance cuenta el peso y el 418 por IP («based on the IPs, not the API keys»); las órdenes, que son de la cuenta, se sobreestiman con otra clave, lo conservador. Se retira `OtraClave`.
-- **Lección:** antes de decidir un ámbito de cuota, leer la documentación oficial: el peso y el 418 son de la IP, las órdenes de la cuenta, y un 429 sale por cualquiera de los dos.
+Task 4 admisión conserva recibo de desarrollo `data/DEV_V41_2026-06_08/admission-v4.json`, SHA `94aede1bd01fcfe435dc3890c0334ffd1078ae6ed5fc3c452d53d167bbeb26ed`, 67.011.806 filas, `INSUFICIENTE`, componentes externos `unverified`; no es reserva OOS final. Producción y Demo siguen NO-GO; ROI/PnL/WR/Sharpe/EV=`N/D`. No existe certificación +100 %/72 h, no se ejecutó Mainnet ni credenciales ni attestation. La integración documental se realiza por separado.
 
-## 2026-11-04 — Claude (Línea I, Opus 5.5): I-12 = N48, la transición del ejecutor no se aplaza por la entrada del propio tick
+## 2026-11-09 — KIMI-QUANT-SR-V42: candidato histórico bloqueado por pila y recomposición upstream
 
-En main por el [PR #169](https://github.com/Jhona-la/Trader-Gemini/pull/169) (e3b3481a2), con la CI 12/12 en verde al fusionar.
+`98833b325f441fe7bfcc2f090a0149a50fa91da0` conserva Ready estático de `agent-60` y evidencia host 32/32, execution 240/240, core lib 227/227, F28 14/14 targets y 77/77, feature/trainer/workspace exit 0. La ejecución completa `bash-o1ar1he8` terminó `FINAL_CORE_EXIT=101` con STATUS_STACK_OVERFLOW en F1-049 y F1-053; no hay GREEN ejecutable ni CAS. `agent-65` investiga causa exacta, baseline y RED→GREEN en `stack-v42/subject`, sin ampliar pila ni cambiar aserciones.
 
-- La reserva de entrada que el núcleo deja en el tick es una ranura abierta
-  sin confirmar, y `OmsSession::replace_executor` rehúsa con cualquier ranura
-  así (`OMS_EXECUTOR_BUSY`). El host de main cancelaba la reserva tras el
-  rechazo y reintentaba: con una señal que persiste, la transición del
-  calentamiento no llegaba y cada intento construía otro `OrderExecutor`
-  (cliente reqwest nuevo), revocaba la sesión y encolaba otro `refresh`. En
-  papel (demo en mainnet sin MAINNET_ARMED, el modo por defecto de la cuenta
-  micro) el refresco no hace REST y vuelve a Ready en el acto, así que el
-  intento llegaba casi en cada mensaje WS; en una sesión real, en cada ciclo
-  de refresco REST.
-- `OmsSession::paso_transicion` (src/host_oms.rs) suelta antes la reserva del
-  tick; con la sesión ocupada por otra causa no construye ni revoca (avisa una
-  vez); tras un rechazo entrega un solo testigo de refresco
-  (`ReintentoTransicion`, `RefrescoDeReintento`) y no construye otro ejecutor
-  hasta que se suelta. El host (sólo el bloque de la transición) lo usa.
-- Medido con la sesión OMS real (tests/i12_transicion_oms_contract.rs), en el
-  caso de papel: 100 mensajes con entrada daban 100 ejecutores, 100
-  refrescos y ninguna transición; ahora 1 ejecutor, 0 refrescos, transición
-  al primer mensaje. RED con el host de main: 5/1 (falla la guarda del host);
-  con I-12, 6/6. Revisión adversarial (4 lentes, 2 escépticos por
-  hallazgo): 0 defectos; de ella, la prueba 5 comprueba ya que la reserva no
-  cancelable deja la protección sucia (antes borrar `mark_dirty` no la hacía
-  fallar).
-- Residuales: N48b (mientras espera, el mensaje sigue sin despachar cierres
-  del núcleo, como antes) y N26 (el sucesor estrena freno y uso; toca
-  `executor.rs`, coordinar con Línea C).
-- Lección: un `heredoc` de bash con ciertos textos rompe el analizador de la
-  herramienta; escribir los scripts de edición a un archivo. `cargo fmt` da
-  error 206 en Windows: usar `rustfmt --edition 2021` sobre los archivos.
+`origin/main=9662bc1907a0faf25f56f08601bfd338ca8ef26d` (Waves 19–22). Preview `4f41273e33e1b02a3c53f11370a3d418e236b942`, conflicto único en `crates/god-engine-core/src/omniscient_living_graph.rs`; `agent-66` reconcilia y revisa ambos padres. Unit upstream `42605702180` falla baseline en F63/Ville y F59. Fase3/Kähler/Yang conservan fallos baseline de latencia documentados, sin subir límites. Wave 23 local `28fd60877482db56f20a4426ab82052444896372`, limpio y sin push, toca el mismo grafo y exige nueva recomposición o exclusión explícita con evidencia del dueño.
 
-## 2026-11-04 — KIMI-QUANT-SR-V35 F1: baseline matemática y recomposición local
+Task 4 admisión cerró técnicamente 15/15 + 1/1; recibo real `data/DEV_V41_2026-06_08/admission-v4.json`, SHA `94aede1bd01fcfe435dc3890c0334ffd1078ae6ed5fc3c452d53d167bbeb26ed`, 67.011.806 filas, `INSUFICIENTE` y componentes externos `unverified`: desarrollo, no OOS final. `agent-67` compara failover/F59/F62/JT y `agent-68` I-14/OMS en read-only. AGENT-01 conserva 2349 filas WIP, QSR tres rutas; todos los worktrees/ramas se preservan, sin cherry-pick ni borrado. Detalle: `.agent_tx/staging/KIMI-QUANT-SR-V42/branch-audit-v42.md`, `base-review-v42-status.json`, AGENT_SYNC y SDD V42.
 
-Candidato final `e4e47d95bf51b8b1f388f17f63311fb8b4bc418e`, padres `2ab90d3a` y `e041cb0b`; CAS local `main=e4e47d95`, sin push ni CI nueva. Catorce archivos de `feature-engine` corregidos sin supresiones ni cambios intencionales de comportamiento. Jacobi recuperó su exclusión `r != p && r != q` tras RED real (λ₀=4.954309500007513 frente a 5.6180339887) y multifractal rechaza `count>50` tras devolver antes un espectro parcial; ambos quedaron GREEN. Revisión independiente agent-25 `With fixes`, sin Critical/Important restantes.
+Siguiente gate: único sujeto inmutable, núcleo completo, F63/F59, Waves 19–22, host/execution/risk/signal/feature/trainer/workspace, revisión independiente y upstream fresco. Sólo después CAS con expected HEAD, código/documentos separados. Sin push/Demo/Mainnet/credenciales/attestation. Producción y OOS NO-GO; ROI/PnL/WR/Sharpe/EV=`N/D`; +100%/72h no certificado.
 
-Evidencia: 403/403 tests en 57 suites (20 ignored, 0 filtered), LPPLS 4/4, workspace `check --all-targets` exit0, Zero-Wait 22/22 y compiler bus 20/20. Clippy bajó de 57 a 1: `navier_stokes::update`, cuyo llamador está bajo QRA y no se tocó. El formatter cubrió 632 targets en 5 lotes y conserva deuda baseline (`auditor_interno.rs:92` primera causa). `test_pre_push_gate.py` no existe en el snapshot; no se ejecutó la familia legacy. Attestation y publicación permanecen bloqueados. Producción NO-GO; ROI/PnL/WR/Sharpe/EV=`N/D`. Estado máquina: `.agent_tx/staging/KIMI-QUANT-SR-V35/F1_FEATURE_BASELINE_STATUS.json`.
+## 2026-11-04 — KIMI-QUANT-SR-V35 F2A: cierre fail-closed y protección de remanentes
 
-## 2026-11-04 — KIMI-QUANT-SR-V35 F1R2: lint complementario, SBE y persistencia
+Commit final `5702a4d1e852af9f5d75427af5735aede0f7bc21`, padre `d1d7f730`, ref `refs/agent/v35/f2a/close-settlement-failclosed`. CAS local `main=5702a4d1`; `origin/main` permanece `031a8ddc`, sin push ni CI nueva.
 
-Candidato `79e6fbc0455a9a327158a5bc8ad4bbaac5bae2b7`, con handoff `1fd5adf0` y upstream documental `91bd085f`; no hay CAS de este candidato todavía. Se integraron `omniscient-registry` (`if false` y `io::Error::other`), `flight-recorder` (rustdoc), SBE (iteradores bid/ask) y raw zone (`as_chunks::<40>`), sin cambios de layout ni recuperación.
+`CloseSettlement::{Closed, Residual, Unknown}` y `classify_close_ack_for_intent` exigen identidad COID, símbolo, lado y cantidad antes de `apply_ack`; mismatch devuelve `CLOSE_UNKNOWN` y marca protección sucia. Sólo un fill completo permite declarar posición plana. WS `EXPIRED`/`CANCELED` parciales no marcan `position_closed` ni purgan brackets; entran en X-026 antes de cualquier despacho REST. Reduce-only residual/desconocido exige `positionRisk`, sólo reintenta con remanente finito positivo y nunca purga con snapshot fallido. `cancel_position_oco_orders` quedó condicionado a cierre completo o posición plana probada.
 
-Evidencia nueva: nativas 914/914 (25 ignored), DAZ 17/17, átomos 19/19, SBE 6/6 y storage 50/50. Workspace Clippy deja sólo `navier_stokes::update` (QRA). Formatter 632 targets/5 lotes conserva deuda baseline; `test_pre_push_gate.py` sigue ausente. Attestation y publicación permanecen bloqueados. Producción NO-GO; ROI/PnL/WR/Sharpe/EV=`N/D`. Estado máquina: `.agent_tx/staging/KIMI-QUANT-SR-V35/F1_FEATURE_BASELINE_STATUS.json`.
+Los fallos de `openAlgoOrders` devuelven evidencia desconocida y no crean TP/SL; los fallos de `positionRisk` antes de OCO/emergencia ya no usan `still_open=true`, `qty_intent` ni `final_qty.abs()`, y no envían OCO, cierre ni purga con cantidad teórica. `flatten_all_positions` ya no acepta `FILLED` con cantidad cero. La revisión independiente encontró las tres rutas y confirmó corrección: SPEC/QUALITY GO.
 
-## 2026-11-03 — Claude (Línea I, Opus 5.5): I-11 = N56, las reconexiones WS caben en el límite de Binance
+Evidencia: RED inicial y final, 5/5 regresiones f2a (identidades ajenas, WS parcial, snapshot 500, remanente 0.006, posición plana), 30/30 requeridos, 503/503 ejecución (5 ignored Testnet), 31/31 close_outcome, workspace check all-targets, rustfmt y Clippy 0 delta. Publicación sigue pendiente attestation global. Producción NO-GO; ROI/PnL/WR/Sharpe/EV=N/D. Estado: `.agent_tx/staging/KIMI-QUANT-SR-V35/F2A_CLOSE_SETTLEMENT_STATUS.json`.
 
-Rama `claude/linea-i-i11`, [PR #168](https://github.com/Jhona-la/Trader-Gemini/pull/168).
+## 2026-11-04 — KIMI-QUANT-SR-V35 F3: visualización con ausencia explícita y ruta por entorno
 
-Binance admite 300 conexiones WS cada 5 min por IP en futuros (el spot,
-otras 300). Antes de I-11:
+Commit final `462383f5a07e0bdcf13aafac90e553c4ad20b9da`, padre `cdb77be3`, ref `refs/agent/v35/f3/viz-evidence-integrity`. CAS local `main=462383f5`; `origin/main` permanece `031a8ddc`, sin push ni CI nueva.
 
-- El lector del host esperaba 1 s fijo tras cada fallo de conexión. Su único
-  `retry_count += 1` estaba en un brazo inalcanzable: es el aviso
-  «unreachable pattern» de cada build. El contador volvía a cero con el
-  handshake.
-- El user-data stream volvía a 500 ms al obtener el listenKey.
-- El spot reconectaba sin esperar tras un corte.
+Se erradicó telemetría fabricada: capital 100, bruto 1,15×, actividad/ciclos/misses literales, timestamp 0 silencioso, flush ignorado y nodos COIN/entropías por defecto. `read_snapshot` exige dos lecturas idénticas, campos requeridos finitos y capital/leverage positivos; `tensor_drift` admite NaN como ausencia y rechaza ±∞. `build_unified_packet`, lattice, ridge, hypergraph y causal_report son opcionales; el render muestra `N/D`. El productor real usa `GlobalArena` y `read_financials_snapshot`, escribe cada 200 ms con flush explícito. `telemetry_viz_path()` unifica productor y consumidor con `env_data_path("telemetry_mmap.bin")`, eliminando rutas legacy que podían elegir demo/obsoleto.
 
-Ahora los tres usan `quantum_arena::reconexion_ws::EsperaReconexion`:
+Dashboard JS valida null/undefined/arrays antes de acceder a hypergraph/causalidad, mostrando `N/D` sin TypeError. Evidencia: 11/11 contratos evidencia, 87/87 suite, Node 4 escenarios null/no-array/vacíos, workspace check all-targets, rustfmt y puerta Clippy 0 delta. Revisión independiente inicial detectó las tres fronteras y la final las confirma ADDRESSED: SPEC/QUALITY GO. Publicación sigue pendiente attestation global. Producción NO-GO; ROI/PnL/WR/Sharpe/EV=N/D. Estado: `.agent_tx/staging/KIMI-QUANT-SR-V35/F3_VIZ_EVIDENCE_STATUS.json`.
 
-- Una escalera por cliente. Vuelve a cero con el primer mensaje recibido,
-  no con el handshake ni con el listenKey.
-- Respeta el `Retry-After` de un 429/418 del handshake.
-- Peor caso en 5 min: 145 conexiones de futuros y 34 del spot.
+## 2026-11-04 — KIMI-QUANT-SR-V35 F4: raw archive recuperable, concurrente y por entorno
 
-RED contra main dfc07271: contrato 0/7 y 30 conexiones del lector en 3 s; con la rama, 7/7 y a lo sumo 6. Contrato `i11_reconexion_ws_contract.rs` (7) y prueba de
-conducta con un servidor WS local que acepta y corta.
+Base recombinada `5e4a1d1f78bd9720b6e52e9b18821ebd1e4ecbd9` (origin 031a8ddc + 814598b3). Implementación `f5a4bf96ec26dc722cdf60730e1a27f0e77c8a60` y cierre `5ec8fbeabf3c09d980c1a7baca2b349c1b895409`, ref `refs/agent/v35/f4/raw-archive-recovery`. CAS local `main=5ec8fbea`; `origin/main` permanece `031a8ddc`, sin push ni CI nueva.
 
-Regla para quien toque un bucle WS: toda salida de la fase de conexión pasa
-por `espera.fallo(…)`. El contrato cuenta esas llamadas. Siguen abiertos:
-N18b, N15c, N19b, N19c y el jitter de los lectores.
+`raw_zone` ya no borra el activo al reabrir: recupera ticks/count/FNV, publica footer válido, rechaza sufijo parcial sin alterar evidencia, escribe flush+sync_all antes de rename único, restaura estados cerrados ante errores y separa activos por writer con sidecar locks compatibles con Windows. Recovery conserva el candidato sin renombrarlo para impedir duplicados; dos writers vivos publican segmentos independientes. `ws_client` consume `quantum_arena::paths::env_data_path("raw_ticks")` para aislar Demo/Prod.
+
+Evidencia: 7/7 contratos recovery, 50/50 storage, 2/2 entorno, workspace check all-targets, rustfmt, `git diff --check` y puerta Clippy 0 diagnósticos delta/0 errores build. La revisión independiente detectó y confirmó corregidos footer duplicado tras rename fallido, writers compartiendo activo, recovery duplicada, OS33 por lock de datos y append/flush tras fallo. Veredicto SPEC/QUALITY GO. Historial os206/fmt baseline/Clippy 790 y publicación bloqueada por attestation se conserva. Producción NO-GO; ROI/PnL/WR/Sharpe/EV=N/D. Estado: `.agent_tx/staging/KIMI-QUANT-SR-V35/F4_RAW_ARCHIVE_STATUS.json`.
+
+## 2026-11-04 — KIMI-QUANT-SR-V35: rescate y F1 validados; publicación bloqueada por evidencia
+
+F0 cerró con revisión independiente GO: snapshots staged `56e9ddaa08b7f87dc1eccc81894862db5a2eb8bd`, full `78b1b89c3e961cf92b36000ff0142dd60ff4f2c9`, QSR `f7a3c65d76060c30d797c4caaa5bae312d435ca3`; bundle `.agent_tx/staging/KIMI-QUANT-SR-V35/F0_RESCUE_20261103T2211Z.bundle` SHA-256 `ad3cf10c65e1f5fb37fbe623f92265cc537037943e773abb9984e3f8f87a375a`, con refs/stash y objeto AGENT-01. Inventario V35: 2311 rutas/13 columnas, 1550 idénticas, 102 triangulares; revisión limpia. No se perdió WIP ni se modificaron procesos/credenciales.
+
+F1 recombinó sobre `origin/main=5ee8be2cc4a8eab0b06aee6045342da79c3f4765` el candidato `814598b32cdcb25512ad829a33734f11e4b12d19` (dos padres: 5ee8be2c y 196f325c). Restauró A4 completo en AGENT_SYNC y API map, conservó pesos oficiales y añadió seis helpers Windows byte-exactos del rescate. Revisión final SPEC/QUALITY GO. Evidencia real: workspace `check --all-targets --locked` exit0; Caputo publicación 4/4 y fraccional 5/5; income 1/1; Zero-Wait 22/22; puerta líneas cambiadas 0 diagnósticos en delta, 790 diagnósticos baseline en 256 archivos (no Clippy global verde). Fallos os206, fmt baseline y Clippy baseline se conservaron, no se maquillaron.
+
+CAS local realizado: `main=814598b3`; `origin/main` permanece `5ee8be2c`. `git push --atomic origin main` fue rechazado por hook: `[pre-push] refused: Missing evidence/input`. La puerta exige seis fases vinculadas al mismo sujeto y attestation válida; no existe sobre completo para este candidato. No se usó `--no-verify`, no se transfirieron recibos históricos ni se publicó CI. Producción sigue NO-GO; ROI/PnL/WR/Sharpe/EV=N/D. Próximo paso: completar la cobertura global requerida o revisar explícitamente la puerta sin debilitarla, después revalidar el SHA y reintentar publicación sólo si remoto sigue en 5ee8be2c. Estado máquina: `.agent_tx/staging/KIMI-QUANT-SR-V35/F1_PUBLICATION_STATUS.json`; ledger: `.superpowers/sdd/multiple-man-iron-fist-atom-smasher/progress.md`.
+
+## 2026-11-02 — Codex: nuevo corte común; T1 incompleto, Source22 en preparación
+
+Native20 Root76732 y monitor de caché22051 terminaron realmente1 sin stdout (Tools bd4115/c44648). También terminó1 la copia metadata21 del delegado63936/f125f0. Root no canceló, detuvo ni reinició esos procesos ni escribió marcador de cierre. Faltan RESULT global20/caché, PHASE semántica y RESULT del runner T1; la copia21 carece de RESULT y native-slot. Son cierres ausentes UNKNOWN, sin normalizadores ni recuperación automática. Los cuatro PASS de fases20 y los dos FAIL reales Clippy/tests se conservan: execution-engine215PASS/1FAIL de216,0ignorados/filtrados. El diagnóstico T1 individual pasó; la matriz no tiene resultado completo ni sensibilidad nueva certificada.
+
+La observación Root THREE.NEW.ABRUPT.EXITS.OBSERVED.json9de7c241 conserva finales auténticos8c905a/b835 y fragmentos7b223a/8e397c. La revisión forense common-cut-20261102-0510-readonly/REVIEW.CLOSED.json8d2aece8 registra gateway33804 con heartbeat05:07:16UTC, bootstrap fallido y nuevo41448 a05:10:48, más previous_unclean. Windows conserva arranque29Oct; no hay ApplicationError/WER/ResourceExhaustion coincidentes en los canales inspeccionados. Las consultas MarkerOp reclaim y la simultaneidad no prueban una orden de terminación ni causa/autor. El humano negó cerrar o detener en la ventana anterior1Nov19:10–19:20Bogotá; su sospecha de otro agente no es prueba. Ambos cortes siguen con causa indeterminada.
+
+Source21 API metadata sí cerró realmente0, Tool305685 y tupla cf26b089:2252 archivos/872Rust/135overrides, consumer21 y dos correcciones revisadas. Su copia interrumpida no acredita preparación ni ciencia; ciencia21=0. GitHub avanzó técnicamente a d70450b751a1b7aca90cb26478d0fa1a82bbb080, padre2c914: ocho rutas y dos altas congeladas. Se prepara composición privada Source22 sobre API21, preservando WIP y todo resultado previo. Los conteos2254/874 previstos deben derivarse del mapa final; no son pruebas de compilación.
+
+Se detectó además un defecto de observabilidad del ejecutor: siete contextos de fase y uno Python72 no serializan sus estados locales READ; un cleanup durante error primario puede perder su detalle, y el estado PASS se asigna antes de salir del contexto. Root20/ROOT.UNSERIALIZED.LOCAL.PINS.DECISION.json2a5a407b exige conservar ausencias20 sin reconstrucción retrospectiva y corregir controles22: estados externos, recibos finally, PASS sólo tras cierre verificado, fallo explícito de custodia y verificación independiente en consumidor/colector22. Core/harness24 y consumidor37 están en CODE/revisión, sin aprobación científica. Se diseña transporte durable propio y prueba inerte antes de cualquier ejecución larga; ningún servicio, tarea programada, proceso ajeno o recurso del sistema fue modificado para ello.
+
+El primer ensayo completo de transporte propio R6 cerró realmente0: Tool747efd,6.94s,stdout vacío auténtico y PROOF.CLOSED9c5838da. Verificó residente fuera de cualquier Job y del fixture, salida real del fixture tras cerrar su Job propio, cuatro latidos posteriores a la barrera, actor73, observador nuevo con el mismo resultado, ACK y residente0 con handles/pins cerrados. La imagen de salida se identifica como observación previa viva; PID real/FILETIME/wait/código se consultan con handles. R5R2 conserva su FAIL31 de QueryFullProcessImageNameW sobre el fixture ya terminado; R2–R4 también permanecen fallidos. El aprobado R6 es sólo inerte: no ejecutó Native/Cargo ni acredita SID/token/sesión/integridad/entorno productivo o ciencia.
+
+Las formas persistentes R2 (72e/6e08/06a) siguen congeladas. Estado 2026-11-04T18:22:15.941503+00:00: QRA/T1 e integración final pendientes. Avanzó main local a711317a (F1/persistencia/SBE/lints) y remoto91bd085 (GLM190LPPLS), remoto ya ancestro de local; revalidar padres finales y no duplicarlos. Decisión PRE_API64 actualc4d126c7 (R1b320 y63e3e8 intactas) conserva namespace33 nunca generado, NO Source34. Unión:64selected16ADD48MOD/56Rust8non=5MD2TOML1Python;raw2319Rust937/246over85modes881ParentRustRAW y15RustADD. Son33delta técnicos30Rust3MD más dependenciaRanker1Rust existenteGit5702/711 pero ausenteParent30/Source45; auditaron todos929RustGit, dos faltantes(ranker+lpplscontract)incluidos y8Rustprotegidos extraGit preservados. R2c4d sólo corrige listing heredado63 de18a19 nuevosselected; paths/counts/payloads ya correctos enR1. Parent30genuino96f sigue técnico. Core31 reconcilia34 en11x3+1 con Source45/Parent30/Gitbase5702/local711/remote91; conserva Caputo/FFT/F2A/I11/OmniEpoch/privacidad contra reversiones; agrega GLM190+reset()real ycontratooffline(warmup256), reset_on_reconnect selectivo intacto. Core33peers parciales auténticos, nunca full34/64PASS. Core32 checkpoint64_7896/blueprintb109 mantienenCommon45/actorfe211RAW yglobals históricos; no candidato antespacket34/peer/Root. Helper64 CODE2cd/body8d50 enpeerAPI, operaciones64exactas/9orígenes/IOresolverdecoderRAW. Before45archivado32dd:12metadata+9controlescohortes<=3, sinactualizarautoridades45todavía. Historia45:Coreeda/CPP391/Helperb35/Meta059+a194/SourceDATAeef; compoTool90fe/peer1a3 RootDATA29fe; claseToolb99c/peeredd derivó714changes38renew676RAWclass897RAWmaps. Actual9modelos45 FAIL1:8OK1regex/1648.339s Tool87ad, colecciónFAIL8a009/555f; rechazoCrossedSIX correctoadapter1e34line897 anterioraexpectativalate816. CODE45R3 corrige sóloexpectativa+attempt003,peer4c62, NUNCAoperado porampliación64. Postpass45 A3peerb6ebstatic0;B3R2blockedee88porRustADD11vs13: conservarhistoria,64exigirá15. TodosSDKRoot cerrados(36499FAIL1,51332/57036metadata0); no Source33Gen/API/SIX/P33/claims/material/graphs/ledger/EXEC/Native niSourceinstall/Rootcommit/CAS/push/CIfinal. Mínimos .110/ABI144/16/441/3fijos/pool16,Risk100/10000/alloc0/<10000ns,BSD24/2000/<25000ns,siete fases/17paquetes/Python72+16/G9/8READ/16CPU/lld/target/debug0/strip/54229/PLANcontracts2/censo44+17/cuatroF2Aexactok intactos. Coordinación: anunciar nuevos Rust/heads en este documento antes publicación para preservar y validar trabajo; no semáforo ni detener otros. Sinpurga/reboot/WIP/índices/locks/refs/procesosajenos. CP 3a658c0be73ee60e83507600ca8f0588092c1261e1896d3e703bd87e79a67cbf.
+
+Permanecen T1 mínimo0.110/ABI144/16distintas/441replays/tres contextos fijos/pool16, Risk100warmup/10000timed/estricto<10000ns/sonda originalalloc0 y BSD24/2000/estricto<25000ns, todos16CPUs/lld/target canónico/debug0/strip. No hubo Root instalación técnica,commit,CAS,push ni CI final. Postpass20 está bloqueado y postpass21 nunca se ejecutó. Las dos llamadas T2, WIP/índices/locks/procesos ajenos se preservan; sin purga ni reinicio. El objetivo QRA/T1 e integración local/GitHub sigue abierto.
+
+## 2026-10-30 — Codex: T1 histórico 17/144 y contraste QRA/A4 completo
+
+T1 H + V3r2 terminó aprobado con 17 de 144 coordenadas sensibles (11,81 %), 441 evaluaciones y mínimo 0,110 / 16 distintas intacto. El contexto local C0 conserva 13; las filas fijas aportan 13/15/13. La revisión independiente e574e6e5 y los recibos de cierre están conservados. No se trasladan esos resultados históricos al perfil Native ni se rehabilitan los cuatro intentos incompletos.
+
+QRA padre177 cerró ambos mutantes previstos y GREEN 43 + 9 + 157. La composición A4 nueva06047 cerró después su propio RED: un fallo host y cuatro internos en los puntos congelados, con ambas bibliotecas completas aprobadas. Su GREEN terminó con 44 contratos de integración, 17 internos, 157 de quantum-arena y 199 de execution-engine aprobados: 417 casos. Los 49 casos restantes de la biblioteca raíz quedaron filtrados y sin crédito. No hubo ignorados ni filtros en whole host/QA/EE. Se recogió Tool8534 con exit0; 11412/11412 pins y todos los grupos cerraron. Runtime `logs/qra-A4-R3-incremental-green-runtime-FDEV-20261030/RESULT.json`, SHA2866ef9a71be49e41798e921496dae9195e293eac58692086c444cdb04dd0d99; colección Root2bc4fb87237d53f46753c6cf48cac0e373588e38400af10bb42c3e211d3a5005. Es evidencia FDEV del sujeto06047, sin crédito Native, rendimiento, Source instalado o CI.
+
+GitHub main avanzó a59f1989ccf360a18a2a341fbd9f8e1bc0ce84259 con I6/I6b. Se compuso privadamente ese delta sobre A4, preservando P1/LG32/B1, y se retiró sólo el brazo TLS inalcanzable. El preview R2, manifiesto4579f399, pasó parser completo; no pruebas de tipos/runtime del sujeto compuesto. Native R4 sigue propuesto con632 obligaciones y un schema honesto de composición. La puerta Source3eb rechaza cfg2cc y no consume esos recibos privados; se prepara una ingestión mínima revisable antes de fijar el Native final. No se permite bypass ni inventar attestation. La prueba real de transporte Windows list-only bb5c9b83 confirmó 14 nombres/0 métodos, mismos bytes y cierres; no es Native.
+
+Source QRA/A4/LG32 permanece sin promoción por Root, dueño A4-T2 preservado, purga NO-GO. Sin Root commit, CAS, push, daemon, borrados, procesos ajenos, reinicio ni operaciones de cuenta. Estado actual y recibos: CURRENT_AUTHORIZED_CONTINUATION360.json, latest_confirmed_recovery_progress_20261029; los checkpoints previos son historia.
+
+## 2026-10-30 — Codex: T1 V3r2 completo,17/144; QRA con ambos RED auténticos
+
+La recuperación única por cierre humano confirmado terminó con salida0 y ambos casos T1 aprobados. La colección independiente reconstruyó441estadísticas finitas,432sondas,9vectores y145diagnósticos, ABI144 y pool16. La unión fija C0/Cminus/Cplus contiene17coordenadas (11,8056%), supera el mínimo0.110 y16distintas; las filas contienen13/15/13. C0local conserva13, sin rehabilitarlo como aprobado local. No se eligieron contextos después de medir ni se rebajaron mínimos. Es evidencia del snapshot históricoH+V3r2, no del árbol actual/Native/CI ni de causalidad económica aislada. Los cuatro intentos441 incompletos se conservan.
+
+Recibos: runtime `logs/historical-H-matrix-v3r2-T1whole-confirmed-stop-recovery-20261029/RESULT.json` SHAe73dcae1293be13124ceda5d95e6a16a9e33a4b81596e505408ae61c986d9c73; revisión científica `.agent_tx/staging/t1-confirmed-stop-recovery-20261029/closed-independent-collection/REVIEW.json` SHAc388cf6502cd074e04a47636fa8f5ce42857082274581c4aa148faaea422b622. Root recogió sesiones5320y13458 con salida0,81/81pins externos y102/102de colección, todos los grupos cerrados. RegistroRoot `T1.ROOT.COLLECTED.json` SHAd60474f0a319a9b9f0a8bcdaff532556c626ee554ae9172772c1e597183259ed bajo root-confirmed-stop-recovery-20261029.
+
+QRA177a: RED_P1 produjo exactamente5falloshost+2internos y RED_LG32 exactamente3falloshost+0internos; quantum-arena completo157PASS en ambos. Son contrastes causales esperados, no tests verdes ni solución terminada. GREENcompileRoot67047 está activo, ligado a los dos resultados auténticos. La composición nueva A4R3 conservaP1/LG32/B1 y las correcciones concurrentes;44host/17internos están revisados estáticamente, sin tipos/runtime todavía. A4-T2 continúa sin handoff, Source se preserva y la purga sigue NO-GO. Native privado en preparación; no Root commit,push,servicio,limpieza,operación de cuenta ni certificado de rendimiento.
+
+## 2026-10-29 — Codex QRA: cierre/detención confirmado; recuperación acotada en ejecución
+
+El humano respondió «Sí, cerré o detuve algo» a la pregunta sobre18:34–18:37Bogotá. Se conserva el reporte exacto en `.agent_tx/staging/root-confirmed-stop-recovery-20261029/HUMAN_CONFIRMATION.json`, SHA7bea17c8ef8073ecc0ce0970fb56ddecba7ebc7a3d4d7b9b348681fc0de030c8. Confirma una acción externa reportada, sin identificar app/PID ni demostrar el mecanismo Hermes o su relación causal con cada job. No se borra ni rehabilita ningún recibo ausente.
+
+Se revisó y aceptó por separado una única observación T1 nueva: mismo EXEba65,SPECdfd4,runtimebb8,441evaluaciones/432sondas/9vectores/145diagnósticos,ABI144,mínimo0.110/16genes y pool16. El launcher59f es byteexacto; las adaptaciones de colección sólo cambian identidades y admisión. Root5320 está activo; el diagnóstico individual ok no certifica la matriz. Se conservan los cuatro intentos441 incompletos y protocolos consumidos. El primer resultado completo, incluido FAIL o invalidez, se acepta sin repetir por color. Aceptación T1c8a89653459a4b0324335500bc673f7288162108e10f458a4b6a85108e94e526.
+
+QRA reutiliza descriptor177a y actores8068/common da23, con6702hashes privados revalidados, nueve SourceBefore/config2cc intactos y tres rutas de archives aún ausentes. Root57958 recompila RED_P1 mediante el actor completo, incluidos los dos grafos y check de workspace; el anterior check0 se conserva como evidencia histórica. Quedan un compile/runtime por fase,43host/9internos/quantum-arena completo y ambos RED auténticos antes de GREEN. No hay veredictos nuevos ni código QRA/A4/LG32 instalado. Aceptación QRA72bf060cdac6f80fcd79b37f3801374ab0b0d2858ec6ce2ca757e1373485926f; INTENT exclusivo55d36774e8560553bc81625abb2e848803c5a424580a3226ab15042c50cd506e.
+
+La purga sigue NO-GO y las reservas A4-T2 se preservan. Continúa sólo preparación privada Native; no se transfieren sus propuestas ni FDEV a Source/Native/CI/rendimiento. No Root commit,push,servicio,reinicio,limpieza,proceso ajeno ni operación de cuenta. Control autoritativo: CURRENT_AUTHORIZED_CONTINUATION360.json, latest_confirmed_recovery_running_20261029.
+
+## 2026-10-29 — Codex QRA: segunda interrupción; tipos RED cerrados, T1 aún abierto
+
+Root87566 y15273 volvieron a terminar con salida externa1, sin RESULT de compilación/runtime ni ROOT_OUTER_EXIT T1. La comprobación `check --workspace --all-targets --locked` del snapshot protegido RED_P1 sí había terminado con código0 y grupo cerrado; no equivale a los ejecutables/contratos, GREEN, Native o CI. El compile dirigido dejó su último log a23:33:58UTC. T1 dejó el diagnóstico individual ok, cero registros de matriz y ningún resumen whole2. El protocolo de un intento por interrupción quedó consumido; se conservan cuatro observaciones441 incompletas: dos abortos por asignación y dos finales abruptos. Mínimos0.110/ABI144/441/pool16 y Risk100/10000/estricto10000ns/sonda original no cambian.
+
+La segunda observación independiente está en `.agent_tx/staging/root-second-execution-interruption-20261029/OBSERVATIONS.json`, SHA16efa46d062a2bc8bb44a76f4d7cddaf032f5af0308c5a3b8594aaec489e32f7. Faltan recibos de cierre/pins; no se inventan a partir de la ausencia posterior de procesos. El registro local de Hermes muestra el gateway8040 terminado sin salida limpia, nuevo gateway5920 iniciado23:34:40UTC y registro previous_unclean a23:34:55UTC. La coincidencia temporal no demuestra causalidad, autor ni que ese gateway gestionara los jobs Root. Windows mantuvo el mismo arranque. Extractos acotados y límites: `GATEWAY.EXCERPTS.json`, SHA8988ff47f20acc438f0ac21d5e8555817819e0942b4aec75f8470b280f094ac8. Se pidió al humano aclaración factual sobre18:34–18:37Bogotá; no se pidió permiso nuevo ni se relanzó otro oráculo.
+
+La revisión dirigida de45helpers/planes no encontró un comando de cierre global ni un recibo de purga en esa ventana; es una búsqueda acotada, no exoneración universal. Source del bus520e conserva carreras WT/lease y carece del veto privado; la purga sigue NO-GO según las revisiones, sin ejecución real por Root. Revisión: `.agent_tx/staging/qra-second-interruption-helper-review-20261029/REVIEW.json`, SHA5165605a285be30ee82283252ef182afef1e1c03fd133eeb98205851d4d26129. El nuevo cotejo `PROTECTED_INPUTS.json`, SHA200f3c858100d74030b0ae30fb6ba5a553cb2adf190806ec1b5450486353d8ab, mantiene17rutas y4referencias T1 coincidentes. Git fsck de conectividad cerró0, sin borrar los objetos dangling. No se afirma integridad de todos los archivos ni ausencia histórica de pérdidas.
+
+La clasificación privada final9 y su peer conservan630filas/622objetos del padre/8renovaciones; sigue PROPOSED, sin Native. Se detectaron72Python actuales frente a66históricos, y faltan cierres explícitos de configuración2cc/sccache/pwsh/Gitbash antes de Native. El driver sucesor y el diseño Native se preparan privadamente, sin pruebas reales nuevas ni reducción de inventario. P1+A4+LG32 permanecen privados; A4-T2 sin handoff preservado. CL88 mantiene su deuda física, sin cambiar modelo/fixtures/bounds. No Root commit,push,daemon,purga,procesos ajenos,Demo/OOS ni operación de cuenta. Estado autoritativo: CURRENT_AUTHORIZED_CONTINUATION360.json, latest_second_interruption_checkpoint_20261029.
+
+## 2026-10-29 — Codex QRA: revisión de purga, reservas y preservación
+
+El operador recuerda que pudo cerrar o detener Codex durante las ejecuciones incompletas; es una explicación posible, no una causa demostrada. Se preservan los recibos ausentes como ausentes. La comparación registrada en `.agent_tx/staging/root-execution-interruption-20261029/PROTECTED_INPUTS.json` verificó 17 rutas de código/configuración y cuatro referencias archivadas T1 con sus hashes esperados. No acredita ausencia universal de pérdidas ni excluye ABA. Línea I y su worktree siguen presentes. Otro agente creó el commit local F0 278c4268f1bdad51e6b5bd9847b46fda495e8029; Root no hizo commit ni borrados.
+
+Se revisó el bus de purga instalado por Kimi. La versión inicial52e falló cinco contratos reales en repositorios Temp: admisión de merge, avance remoto, worktree tardío y dos reservas tardías. El candidato privado corrigió cuatro, pero una reserva adquirida después del último guard siguió permitiendo el borrado. Ese FAIL se conserva; no hay seguridad atómica universal. El candidato privado incorpora un veto antes de fetch. Source520e ya corrigió conteo y lease remoto, pero al corte conserva inventario WT antiguo, update-ref local y carece de veto. La purga sigue NO-GO y congelada según §0 de AGENT_SYNC; no se ejecutó por Root. El dry-run de nombres ambiguos rechazó el shorthand; se retiró la inferencia de que ese ejemplo borraba main. No se atribuye a la purga la interrupción de T1/QRA.
+
+Entrega real: `.agent_tx/staging/qra-purge-private-fix-20261029/DELIVERY.REVIEW.json`, SHA5e2ce7ebf446664e5b1fdf945f833b3cd62b8fc01b19d40e188b8148f556d729. Se publicaron diagnósticos v2 y corrección v3 para el dueño activo sin sobrescribir sus Source/tests. No se detuvieron procesos ajenos, tocaron índices/locks ajenos, retiraron worktrees ni borraron refs. La prueba temporal no autoriza una purga real.
+
+Root aceptó la captura protegida del contraste QRA final de nueve rutas: red_p1,red_lg32 y green,43 integraciones,9 internos y quantum-arena completo. Registro `.agent_tx/staging/root-qra-final9-execution-20261029/REVIEW_RECORD.ACCEPTED.json`, SHAa065fa7e1ca4ba1b719f74f7318922304db53c97a88dcf05e6f088f8afa54637. La aceptación no instala código ni acredita tests; FDEV conserva16 CPUs,lld,target canónico y no aporta crédito Native/rendimiento/T1. La captura está en curso al corte. T1 sigue abierto; se prepara un protocolo nuevo revisado por la interrupción externa probable, conservando todos los intentos anteriores y mínimos0.110/144/441/16. Sin daemon,push,Demo/OOS ni operaciones de cuenta.
+
+## 2026-10-29 — Codex QRA: interrupción sin recibo; candidato P1+A4+LG32 revisado
+
+Las sesiones Root62512 y39199 terminaron con salida externa1 sin guardar los RESULT de sus actores; también falta el recibo externo del wrapper T1. La observación posterior no encontró sus procesos, pero no sustituye el cierre de grupos/handles/pins perdido. No hubo reinicio de Windows durante las ejecuciones. La causa sigue sin determinar: no se atribuye a RAM, caché, código, usuario u otro agente sin evidencia. Recibo independiente: `.agent_tx/staging/root-execution-interruption-20261029/OBSERVATIONS.json`, SHA3621df53f576681b073d8ededa638e7f052340e7d7346aec041b64c8b012bb2d.
+
+T1 dejó el diagnóstico individual `ok` en un log incompleto, cero registros de matriz y ningún resumen ni sensibilidad nueva. El único intento postpaginación quedó consumido; no se relanza por cambio de nombre ni para buscar un aprobado. Se conservan ese intento y los dos abortos anteriores. Mínimo0.110,ABI144,441evaluaciones y pool16 siguen intactos. En QRA05 sí cerró la captura4509pins y los tres cierres de dependencias; el check esperaba el bloqueo nativo de Cargo y no tiene resultado final. No hubo contratos Rust P1 ejecutados ni tipos completos acreditados.
+
+La composición privada nueva conserva P1, incorpora la última A4 y corrige LG32: una respuesta -2013 más11s no fabrica un rechazo local ni autoriza Ready; la documentación del exchange no aporta la cota de procesamiento que suponía esa inferencia. El contrato nuevo recorre dispatcher real, envío ambiguo, drenaje del permiso, consulta negativa, ACK NEW tardío y terminal válido. Dos contratos anteriores se reconcilian con esa evidencia, preservando sus Before. Nueve rutas,43integraciones y9internos están revisados estáticamente y pasaron parser18/18; aún faltan tipos y pruebas reales. Candidato: `.agent_tx/staging/qra-LG32-unknown-order-private-20261029/DELIVERY.PROPOSED.json`. No se instaló código QRA/A4/LG32 en Source.
+
+El protocolo funcional nuevo prepara tres variantes del mismo sujeto: mutante P1, mutante LG32 y corrección conjunta; GREEN exigirá ambos RED auténticos. También debe ejecutar la biblioteca completa quantum-arena para el cambio de evidencia parcial. FDEV conserva16CPUs,lld,target canónico y no acredita rendimiento,Native,T1 ni producción. La preparación no equivale a ejecución. GitHubmain se observó en9b2cde7c15eba058c67046317c22c1cfbc3f36c2; PR65 continúa cerrado con merged=false y HEADcff; no se transfieren verdes por esta observación. Continúan P1 completo,CL88,Native,CI y T1 pendientes. Sin commit,push,daemon,Demo/OOS u operaciones de cuenta.
+
+## 2026-10-29 — Codex QRA: paginación automática confirmada; pruebas en continuación
+
+El operador autorizó activar la gestión automática de paginación de Windows y reservó para sí la decisión de reinicio. La acción cambió `AutomaticManagedPagefile=false` a `true`, confirmó la configuración y no reinició ni detuvo procesos. El recibo `logs/windows-paging-auto-20261029/RESULT.json` no acredita capacidad efectiva ni pruebas aprobadas. Se conservan los fallos reales de compilación por asignación y Windows 1455; no se modificaron mínimos, hilos, cachés ni target canónico.
+
+Los dos intentos anteriores de T1 V3r2 abortaron por asignación de 39 363 840 bytes, antes de completar las 441 observaciones. Ambos están cerrados y conservados, sin conteo nuevo de sensibilidad. El protocolo de recuperación anterior quedó agotado. Tras el cambio real de Windows se revisó y congeló un protocolo distinto de un solo intento completo: mismo EXE histórico H, fixtures, 441 evaluaciones, pool16, ABI144 y mínimo0.110. Su resultado, incluido FAIL o invalidez, se acepta sin repetir para buscar verde. Está en curso al corte; no hay veredicto. Plan: `.agent_tx/staging/root-T1-post-paging-20261029/FROZEN.json`; logs: `logs/historical-H-matrix-v3r2-T1whole-post-paging-20261029`.
+
+QRA-P1 rev05 conserva los cambios A4 presentes en Source y añade evidencia REST `totalWalletBalance` ligada a sesión/revisión/consulta. Los deltas UDS son diagnósticos y revocan la evidencia; un saldo desconocido exige pausa explícita y no se usa NaN como veto suficiente. El consumidor real de DB revalida y encola bajo sesión→publication gate; el contrato observa contención real `WouldBlock`. Parser y revisiones estáticas cerrados sin bloqueos concretos; aún no acreditan tipos ni ejecución. Están fijados antes de medir 41 nombres de integración y 9 internos OMS, con RED combinado esperado de cinco y dos fallos concretos. Ese mutante no aísla cada predicado individual. La captura protegida cerró con código0,4509pins liberados y sin cambios detectados en los cuatro Before. La compilación RED está en curso; FDEV sólo podrá acreditar funcionalidad/tipos, sin crédito de rendimiento, Native, T1 o producción.
+
+La revisión privada A4 más reciente de Kimi sigue preservada y debe reconciliarse antes de una composición final; no se sobrescribe con rev05. Risk H180 y la serie histórica G-H-H-G permanecen aprobados sólo para su sujeto/perfil. P1 completo, CL88, árbol actual, Native y CI siguen pendientes. No hay commit, CAS, push, daemon, operaciones de cuenta, Demo/OOS ni rentabilidad certificada. Control: `.agent_tx/codex-continuacion-20261024/CURRENT_AUTHORIZED_CONTINUATION360.json`.
+
+## 2026-10-28 — Codex QRA: primera matriz abortada por asignación; T1 sin resultado
+
+La primera ejecución V3r2 terminó por un fallo de asignación de 39 363 840 bytes. Root recogió la sesión 84269 con código 1; el hijo salió con 3221226505, ambos grupos cerraron sin procesos activos y se liberaron los siete pins. El diagnóstico individual aparece aprobado, pero no hay resumen de suite ni 441 observaciones completas: no existe un conteo de sensibilidad nuevo ni veredicto sobre el mínimo 0.110. El mensaje genérico del actor dice proceso sin cerrar por el código de salida inesperado; sus recibos sí prueban el cierre. Se conserva el RESULT original. La compilación histórica y los 14 contratos de medición continúan válidos en su alcance; no acreditan la matriz incompleta ni el árbol actual. No se repitió el oráculo ni se recortaron hilos. Continúa la preparación aislada RED/GREEN de QRA-P1 T3, respetando el lease A4. Recibo: logs/historical-H-matrix-v3r2-T1whole-20261028/RESULT.json; colección Root en .agent_tx/staging/root-matrix-runtime-cut-20261028/closed-first441/ROOT_COLLECTION.json.
+
+## 2026-10-28 — Codex QRA: compilación V3r2 cerrada; medición14 PASS; primera matriz en curso
+
+La compilación final H+V3r2 cerró con código 0, tres grupos sin descendientes activos y 2271/2271 pins liberados. El peer recalculó 2+14 cierres y verificó los dos ejecutables archivados. Los 14 contratos completos de medición aprobaron sin ignorados ni filtros. La primera ejecución completa T1 está activa en sesión 84269: 441 evaluaciones fijas, tres contextos, mínimo 0.110 y ABI 144 intactos. Todavía no hay resultado ni crédito de sensibilidad. Nunca se ejecutó el instrumento viejo 3621; su compilador fue recogido tras cancelar sólo su Cargo propio obsoleto. El resultado será histórico H; no valida el árbol actual, Native ni CI. P1 y CL88 siguen abiertos. Recibos: logs/historical-H-matrix-v3r2-compile-20261028/RESULT.json y logs/historical-H-matrix-v3r2-measurement14-20261028/RESULT.json.
+
+## 2026-10-28 — Codex QRA: V3r2 fijada antes de medir; builds actuales fallidos conservados
+
+La revisión matemática independiente anterior a cualquier evaluación441 corrigió el criterio de validez del borradorV3: el contraste es F(v)=eval(from_vector(v)); control y sonda reciben la misma proyección una vez. No exige idempotencia de la representación ni actividad en todas las filas. V3r2 repite los tres controles canónicos y compara sus ocho bits; mantiene actividad positiva sólo en C0raw/canonical como ancla, y registra Cminus/Cplus inactivos/no-fijos sin descartarlos. Conserva3contextos fijos,441evaluaciones,432sondas,ABI144,mínimo0.110,comparador original,finitud,inventario y control de peticiones borradas. No se usaron resultados para elegir la revisión: siguen0/441. Specdfd48750 y mainSource df780f79 están fijados;910b/3621 quedan archivados como preparación nunca medida. El corte anterior de esta memoria describe ese borrador, no la validez vigente.
+
+Las compilaciones actualesV4/V5 se cerraron con errores reales de asignación de rustc/LLVM; desactivar incremental no los resolvió. No hubo ejecutables T1 ni runtime nuevo, recortes de hilos, auditorías de recursos o limpieza de cachés. Se reconstruyóH2232 porSHAexacto y sólo3instrumentos en Slot propio para aislar la matriz del WIP/perfil posterior; su evidencia seguirá siendo histórica, sin PASS actual/Native. El compilador42947 del instrumento anterior sólo precalienta y se recogerá antes de aplicarV3r2 alSlot; ese instrumento viejo nunca ejecutará441. Rootconserva Source/WIP ajeno. P1/CL88 yvalidaciónNative/CI siguen OPEN.
+
+
+## 2026-10-28 — Codex QRA: H180 y serie completa aprobados; matriz T1 instalada, aún sin medir
+
+La copia histórica H82f1 pasó180 contratos completos, cero fallos/ignorados/filtrados. La única serie fijada Gcontrol1–H1–H2–Gcontrol2 dio36PASS por brazo:5553.45,8345.75,6000.25,5807.85ns, con100warmup/10000iteraciones/presupuesto estricto10000ns y la sonda original de cero asignaciones. Ambos controles aprobaron: no se atribuye una mejora causal exclusiva aH ni estabilidad entre días. La revisión independiente verificó154archivos,14cierres H y13G/H. El runner temporal perdido se repuso desde tres copias persistentes byteexactas, sin tocar runs; los fallos de preflight permanecen. Estos resultados no certifican las fuentes actuales de4d8db9a34 ni Native/CI.
+
+El operador autorizó ampliar T1: se instaló la matriz genética V3 de tres contextos fijos (baseline y pasos¼hacia cada bound),441evaluaciones y controles canónicos/repetición; mínimo0.110 y ABI144 intactos. La unión cuenta cada coordenada una sola vez y excluye proyección común/FNV como crédito; conserva el C0local y los fallos13/144 y14/144 históricos. Parser/formato reales y peerestático cerrados, sin resultados runtime nuevos.
+
+La preparación actual reconcilia un archivo duplicado retirado por otra sesión y tres inputs nuevos sólo en un índice diagnóstico propio. El primer compile protegido se detuvo ANTES de Cargo porque la configuración actual con sccache/targetflags requiere un cierre explícito; no se restaura la configuración ajena ni se transforma ese preflight en PASS. P1capital/snapshot/sessionepoch/readiness yCL88 siguen OPEN. No hay commit/CAS/push/CI nuevo, daemon, Demo/OOS ni rentabilidad certificada. Recibos:logs/risk-key-H-20261028-series/SERIES.json y .agent_tx/codex-continuacion-20261024/CURRENT_RUNTIME_STATUS360.json.
+
+
+## CORTE 2026-10-28 17:28 UTC — Kimi V34: A1+A2 config/lib cerrados localmente
+
+A1 elimina el campo inerte `QuantumConfig.min_notional`; las rutas vivas ya consumen especificaciones del exchange. A2 endurece `data-pipeline::dynamic_ranker`: filtros completos, finitos y positivos, sin defaults ni `unwrap_or`; los campos `tickSize`, `stepSize` y `minQty` son opcionales en deserialización para que un filtro incompleto no aborte todo `exchangeInfo`. El constructor omite sólo el símbolo inválido. Revisión agent-30 detectó 1 Important en la deserialización, corregido con RED→GREEN.
+
+Evidencia real: A1 3/3 y `quantum-arena` all-targets; data-pipeline 40 lib +45 integración; symbol_manager 8/8; `god_engine` check; `cargo check --workspace --all-targets --locked` exit 0; Clippy `data-pipeline -D warnings`, formato 2021 y staging idéntico. Deuda explícita: maker/taker VIP0 y max_leverage por símbolo permanecen sin nueva evidencia en este átomo; no se declara resuelta la totalidad de config/lib. `god-engine-core/src/lib.rs` sigue bajo lease QRA. No hay commit, push, CI, merge, daemon, Demo/OOS ni certificación económica; ROI/PnL/WR/Sharpe/EV=`N/D`.
+
+## CORTE 2026-10-28 07:23 UTC — Kimi V34: candidato local validado; publicación bloqueada por aduana
+
+La revisión integral agent-29 emitió NO-GO por 3 Important, todos corregidos con pruebas conductuales. B1: `refresh_ml_models` devuelve éxito real y `darwin_approved` sólo se arma con `warmup_ready && models_reloaded`; contratos ingesta 10/10, model_reload 16/16 y fases 5/5. O1: el GBDT se entrena como candidato clonado y publica todos sus campos sólo después del último chequeo; el RED real `mixed model after 50ms` quedó verde, y outcomes completados se descartan con shutdown. Lifecycle 7/7, suite evolution completa, `check --workspace --all-targets --locked` exit 0, Clippy acotado y formato/staging verdes. E1 no recibió hallazgos.
+
+La aduana QRA conserva `native_full_pass=false`, T1/Risk/P1 abiertos y Clippy baseline no queda maquillado. Por ello no hubo commit, push, CI, merge ni daemon. Producción permanece bloqueada; no hay Demo/OOS ni `CERTIFICATION_REPORT.json`; ROI/PnL/WR/Sharpe/EV=`N/D`.
+
+## CORTE 2026-10-28 06:26 UTC — Kimi V34: F5 red/motores/recursos auditado; evidencia económica ausente
+
+F5 queda como auditoría acotada, sin cambio de código. Evidencia fresca: data-ingest 58/58, execution-engine lib 194/194, censo de activación 4/4 y XCV 2/2. Se conservan latencia descompuesta, cuotas, reintentos y firma; el viejo reporte de 142 eventos no prueba latencia de producción ni se compara con la sonda RTT p50 ≈231 ms. Las nueve dimensiones cross-exchange permanecen intencionalmente en cero por contrato: reactivarlas exige reentrenar y OOS, no simplemente conectar sus pollers.
+
+`live_certifier` no tiene llamador en `god_engine`; no hay `CERTIFICATION_REPORT.json` ni evidencia Demo/OOS continua. ROI/PnL/WR/Sharpe/EV = `N/D`. Recursos medidos tras builds: target 65 GiB, data 24 GiB, logs 1.5 GiB, graphify-out 817 MiB, .agent_tx 2.9 GiB y .git 3.5 GiB; no se limpia por categoría ni se tocan data/models. Remoto verificado con `ls-remote`: sólo main en d27590739; HEAD local 4d8db9a34; ramas G/I preservadas. Línea I y QRA mantienen sus bloqueos. Validación workspace en curso; publicación condicionada a aduana del mismo árbol, sin daemon.
+
+## CORTE 2026-10-28 06:16 UTC — Kimi V34: O1 lifecycle online cerrado localmente
+
+O1 conecta el mismo `shutdown_requested` al único worker online, cancela el reentrenamiento por etapas sin publicar modelos parciales, propaga shutdown a la evaluación shadow, la drena al salir descartando su resultado y espera `online_worker` antes de flatten. La revisión agent-28 encontró 2 Important (retrain ocupado y `spawn_blocking` sin drenar); se añadieron contratos RED→GREEN para ambos. No se abandonan tareas mediante timeout ni se aplica una promoción durante el cierre.
+
+Evidencia fresca: lifecycle 5/5 en 2.15 s (reposo, retrain con 5.000 observaciones, no duplicación de eval_task, cancelación sin publicación parcial y drenaje de evaluación real); suite evolution-engine completa verde (83 lib + integraciones); Clippy acotado `-D warnings`; `god_engine` check exitoso; formato 2024/2021 correcto; staging y workspace idénticos para los cuatro archivos. Las primitivas externas de entrenamiento no son preemptibles internamente, así que no se afirma una cota universal de 2 s. Clippy del binario conserva 9 diagnósticos baseline ajenos después de retirar 3 propios de B1. `EvolutionLedger` sólo persiste pesos promote/rollback: persistencia/restauración del forest completo sigue NO acreditada. Sin commit/push/CI/daemon, Demo ni evidencia económica.
+
+## CORTE 2026-10-28 05:27 UTC — Kimi V34: B1+B3 con GO local; O1 en curso
+
+B1+B3 queda cerrado sólo localmente: una lectura de `USE_TESTNET` gobierna bootloader, warmup, ejecutor, gestor, OI y transición; el universo dinámico exige venue coincidente y fallback canónico de exactamente 10 símbolos. Warmup devuelve `Result`, exige 1000 velas OHLCV válidas por símbolo y no publica historia parcial. La fase ficticia de entrenamiento fue retirada; la aprobación Darwin exige warmup y recarga reales. El gestor reconcilia BIN/JSON, propaga errores y reintenta sin re-suscripción ni inyección de BTC/ETH; el ranker duplicado fue eliminado.
+
+Evidencia fresca del snapshot actual: warmup 8/8; `universe_identity_diagnostics` 2/2; Clippy `trader-gemini-v5 --lib --locked -- -D warnings` exit 0. También constan symbol_manager 8/8, cf5 2/2, universo 4/4, ingesta 10/10, recarga 16/16, autorización 5/5, `cargo check` de `god_engine` y formato con ediciones correctas. Revisión final agent-27: GO local sin Critical/Important. No hay commit/push/CI/daemon, Demo ni evidencia económica.
+
+O1 empieza con un contrato RED para que `run_online_learning_loop` comparta `shutdown_requested` y termine en menos de 2 s; se conservará una única evaluación shadow y se esperará el worker al cierre. No se afirma persistencia/restauración del modelo entero hasta auditar `EvolutionLedger`.
+
+## CORTE 2026-10-28 03:50 UTC — Kimi V34: E1 fees/capital con GO local; publicación pendiente
+
+E1 comparte un parser estricto de comisiones entre quantum-arena, execution-engine y data-pipeline: exige objeto completo, campos finitos y símbolo exacto; conserva ceros y rebates; elimina el fallback VIP0. El ranker veta evidencia ausente, conserva fallback escalar sólo en offline explícito con libro parcial y descarta fees/scores derivados no finitos. Los rebates eliminan penalización sin invertir el ranking. Se retiró `get_real_wallet_balance`, sin consumidores; el capital vivo queda en `OrderExecutor::fetch_account_balance` y `totalWalletBalance`.
+
+Evidencia local real: quantum-arena 159/159; fee_schedule 10/10; comisiones ejecución 10/10; evidencia ejecución 13/13; datos 12/12; check de los tres crates con all-targets exitoso y Clippy acotado E1 con `-D warnings` exitoso. La selección real contra HTTP local cubrió evidencia mezclada, offline parcial, rebates y overflow. El caso de fixture inválido reprodujo bloqueo con timeout externo 124 y quedó acotado: GREEN en 2.03 s. Revisión independiente inicial: 3 Important corregidos; segunda: 1 Important de fixture corregido; veredicto final GO local sin Critical/Important.
+
+Clippy global de quantum-arena sigue ROJO en fuentes baseline ajenas (`temporal_spectrum`, `adaptive_quantiles`, `position` y contratos ajenos); no se apropió ni se ocultó. No hay commit/push/CI de E1, daemon, evidencia económica, Demo, `ready_for_mainnet` ni certificación +100 %/72 h. B1+B3 queda en curso: venue persistente, warmup real y un único universo Top 10; no se ha promovido.
+
+## CORTE 2026-10-27 23:37 UTC — Kimi V34: Zero-Wait verificado localmente; candidato bloqueado por formato baseline
+
+`AGENT-01` completó el bus especulativo y el certificador Windows-only sin borrar WIP, locks, ramas activas ni índices ajenos. El recibo del bus vincula base/árbol/rutas/SHA256/blobs; CommitAndMerge sólo usa ese candidato, revalida merges y no reconcilia el índice canónico. Se vetan runners/wrappers no revisados del candidato y del `CARGO_HOME`, se fija el toolchain y se exige ejecución real de tests. CI calcula diff remoto→local y workflows YAML/JSON; no se activa el daemon sin attestation.
+
+Evidencia local real: certificador 11/11 con `sccache` (tolerancia dimensional, concurrencia local, lock Windows y recuperación huérfana); Clippy propio `--no-deps` exit 0; `cargo check --workspace --all-targets --locked` exit 0; gates Python 17/17 y 30/30; PowerShell AST PASS. Fixtures probaron merge de dos padres, índice canónico byte-idéntico, subconjunto/CratePath/runner externos vetados, test real `tests_passed=1`, workflow JSON y diff multi-commit. Revisiones independientes agent-22/agent-23 cierran sin Critical/Important. `sccache` registra 86,64 % hits y cero errores de caché en el corte.
+
+La purga segura no eliminó ramas: remoto permanece sólo `main` en `d27590739`; `claude/linea-g-ola10` y `claude/linea-i-i6` se preservaron por trabajo no fusionado. El candidato selectivo contiene únicamente `.cargo/config.toml`, `AGENT_SYNC.md`, `scripts/zero_wait_bus.ps1`, `src/live_certifier.rs`, `src/lib.rs` y `docs/PLAN_MAESTRO_FASES_2026-10-22.md`; FALLÓ `cargo fmt --check` en fuentes baseline ajenas (`continuous_evolution_backtest.rs`, `god_engine.rs`, etc.), por lo que no se ejecutaron Clippy/tests del candidato, CommitAndMerge, push, CI ni daemon. Las correcciones locales de gates OID y sus suites se conservan fuera del candidato por WIP compartido, sin apropiación ni publicación. Clippy con dependencias mantiene cuatro `expect()` ajenos en feature-engine y no se declara baseline verde. No hay evidencia económica, Demo, `ready_for_mainnet` ni `P(ruina)=0`.
 
 ## CORTE 2026-10-27 17:31 UTC — Kimi V34: income corregido localmente; aduana bloquea publicación
 
@@ -117,6 +218,387 @@ Evidencia local real: contrato nuevo RED antes del cambio y GREEN después (1/1)
 
 `origin/main` sigue en `d27590739`; no hubo push ni CI del commit. La aduana rechazó primero la ausencia de attestation y la revisión posterior demostró que el HEAD base no satisface las fases obligatorias de Clippy/formato. El WIP que corrige esa baseline pertenece a QRA y no se incorporó en el átomo selectivo. Publicación queda BLOQUEADA hasta disponer de una baseline válida y del sobre real para el mismo árbol; no se usó `--no-verify` ni se transfirieron resultados de otro sujeto. Evidencia y ledger en `.agent_tx/staging/kimi-quant-sr-20261027/`.
 
+## CORTE 2026-10-27 10:21 UTC — Codex: PPO frío probado; Risk E/F y T1 siguen abiertos
+
+PPO frío adopta cinco priors genómicos; el aprendizaje caliente se conserva. RED real:6FAIL/1PASS; GREEN:7PASS, sin crédito T1. Scope E:3PASS; Risklib F:151PASS con sus dos contratos ampliados. Son verificaciones locales, no Native.
+
+Las series E y F cerraron cuatro fallos de latencia cada una. F midió Econtrol1=10501.57, F1=10741.49, F2=10282.28 y Econtrol2=12591.42ns/eval; cada brazo35PASS/1FAIL,0ignore/filter. Los buffers exclusivos no resolvieron10000ns. Se preservan todos los brazos A/B/C/D/E, incluido D1PASS local y D2FAIL.
+
+T1 E/PPO cerró13/144,145 vectores de ocho estadísticas finitas,1PASS/1FAIL y liberación cierta. ABI144 y fixture/comparador siguen intactos; el mínimo0.110(11%) sigue incumplido; aclarar prueba local frente a matriz contextual sigue pendiente de decisión humana, sin waiver. Native7/Python66/Golden9 del sujeto nuevo:PENDIENTES; V6 es histórico y no transfiere PASS. Sin CAS/push/CI. P1 y calibración CL88:OPEN. El perfilado por etapas es sólo diseño privado. Véase [auditoría PPO/Risk](../docs/audit/PPO_RISK_CORRECCIONES_2026-10-27.md) y [control actual](../.agent_tx/codex-continuacion-20261024/CURRENT_AUTHORIZED_CONTINUATION360.json).
+
+
+## CORTE 2026-10-27 06:28 UTC — Codex: ABBA cerrado; T1 V2 instalado
+
+Risk ABBA cerró A1=11894.06, B1=10864.07, B2=10493.26 y A2=12229.04 ns/eval. Las medias A=12061.55 y B=10678.665 reflejan una mejora observada del 11.465 %; ambos B fallan todavía el presupuesto de 10000 ns. Cada brazo terminó con 35 PASS/1 FAIL, sin ignorados ni filtrados. Es comparación local, no certificación de latencia estable.
+
+T1 V2, las guardas de ocho estadísticas finitas y baseline con trades positivos (Source 9d31) y el documento de ley 9116 están instalados. Mínimo 0.110, ABI144, predictor, extremos, stats8 y comparador se mantienen; V1 sigue 14/144 fallido y archivado. V2 no tiene resultado runtime en este corte.
+
+ROOT recogió 43559 con cierre cierto de su grupo propio. El control registraba ausencia de carga propia activa; se prepara la observación T1 protegida. No hay Native PASS, servicios nuevos, CAS, push o CI de esta continuación. P1 y calibración CL88 siguen abiertos. El estado posterior lo determinan [control actual](../.agent_tx/codex-continuacion-20261024/CURRENT_AUTHORIZED_CONTINUATION360.json) y recibos terminales, no este apunte. [Serie ABBA y recibos](../.agent_tx/staging/risk-paired-series-review-private/closed-series/SERIES.json), SHA 3bd5f92b, conserva los cuatro brazos.
+
+## 2026-10-27 — Codex: auditoría cerrada; T1 y latencia Risk pendientes
+
+El sujeto protegido `f9f10926` (2225 RAW, árbol `c33435a5061d3c24f41f19325e13144d3c7d065f`) cerró sus siete fases y 66 contratos Python. Aprobaron formato, check de todos los targets, Clippy OS/workspace, ejecución/Feature (730 PASS, 25 ignorados) y OS (18 PASS). Golden9 pasó completo, sin ignorados ni filtrados. Semántica ejecutó 500 suites: 3304 PASS, 2 FAIL, 87 ignorados y cero filtrados; de 12 fallos anteriores, 10 pasaron. BSD y sus dos oráculos pasaron con presupuesto intacto de 25000 ns. Python 30/16/20 pasó sin fallos ni skips, incluidos los hooks legacy con PATH corregido.
+
+T1 volvió a 14/144 con el mínimo 0.110 (11 %) y la ABI 144 intactos. Risk midió 12002.62 ns/eval sobre 10000 iteraciones frente al presupuesto de 10000 ns. Native queda FAILED, sin envelope, CAS, push ni CI nuevo. P1 capital/snapshot/época y calibración CL88 continúan abiertos. La revisión T1 no invalida el mínimo ni excluye un bug compartido.
+
+Esta nota documental es posterior al sujeto auditado; no transfiere sus PASS al árbol posterior. [Cierre real](../logs/prepush/zero-wait-root-20261027-post-corrections/audit-result.json) y [control actual](../.agent_tx/codex-continuacion-20261024/CURRENT_AUTHORIZED_CONTINUATION360.json).
+
+## 2026-10-27 — Codex QRA: contratos focales cerrados; Native V6 pendiente
+
+La auditoría semántica anterior registró 500 suites: 3287 PASS, 12 FAIL, 87 ignoradas y cero filtradas. Python legado dio 25 OK/5 FAIL por PATH sin Python en hooks temporales; Gate16/Bus20 pasaron. No hay nuevo Native PASS, CAS, push ni CI.
+
+El diagnóstico local de 20 casos pasó sin ignorados ni filtrados: árbol `34198872`, resultado `46a11c2c`, 2251 pins liberados y cinco grupos propios cerrados. Su grafo de dos paquetes no acredita T1. Source14, `now_ms` y cuatro fixtures AppPath están instalados. CheckALL/Clippy `24a57` dieron cero con Source/mapa iguales; son feedback sin exclusión ABA. El fallo CL40 de `9dfd` se conserva. El cierre `acb135` dio cuatro fases cero y 25 PASS sin ignorados/filtrados. BSD pasó el presupuesto de 25000 ns sin media registrada ni SLA; Risk 10000 ns sigue pendiente.
+
+T1 mantiene 0.110/144 y el resultado 14/144: deuda de reconciliación con el ratchet incumplido, sin invalidar el mínimo ni excluir un bug compartido. P1 y calibración CL88 siguen abiertos. La clasificación ROOT614 está revisada; Native V6 protegido con GateD1/PYPATH sigue pendiente. Main local: D275.
+
+[Informe](../docs/audit/T1_RECONCILIACION_CONTRATOS_2026-10-27.md) y [control actual](../.agent_tx/codex-continuacion-20261024/CURRENT_AUTHORIZED_CONTINUATION360.json).
+
+## 2026-10-26 — Codex: T1 reproducido en D275; auditoría completa pendiente
+
+La copia protegida `zero-wait-root-20261026-2013` pasó formato, check de todos los targets, Clippy de OS y workspace, Execution/Feature (730 aprobadas,25 ignoradas fuera de Golden9) y OS (18/18). Los nueve contratos requeridos de PR65 pasaron sin ignoradas ni filtradas. La fase semántica compiló17paquetes y se detuvo en T1:250 aprobadas,1fallida,10ignoradas,40suites ejecutadas. No hubo envelope final, Python30/16/20, commit/CAS, push ni CI nuevo. Son observaciones de ese sujeto histórico, no una certificación del sujeto posterior con helpers/documentación renovados.
+
+El control de GitD275 completo (2208blobs,11herramientas fijadas,16CPUs disponibles,rust-lld y target canónico) compiló esos17paquetes con --no-run y ejecutó las dos pruebas T1 bajo el mismo runner/fixture. Dio14/144 (9,7%) frente al mínimo0,110, igual que Native2013:145huellas FNV64,144probes realizados,roundtrip y conjunto de14sensibles coinciden. Se cerraron2228pins y todos los procesos propios observados; sin errores de limpieza. El flag diagnóstico --show-output y T1_THREADS=16 explícito se documentan. Es evidencia de la misma observación fallida en esa fixture/perfil, sin equivalencia matemática global, inercia global de genes ni resultado económico certificado.
+
+[Informe y límites del contraste](../docs/audit/T1_COBERTURA_D275_VS_NATIVE_2026-10-26.md). El mínimo11% permanece intacto. Se instala únicamente --no-fail-fast en semantic-tests y su expectativa existente: permite recoger los contratos restantes sin admitir fallos como PASS. Preparada una continuación de auditoría que debe recoger los demás contratos y Python30/16/20; su ejecución y cierre están PENDIENTES EN ESTE CORTE. QRA capital/snapshot/época/readiness sigue OPEN. No se cambia sizing, riesgo, clamps ni política genética para satisfacer el trinquete.
+
+La autoridad posterior se toma de recibos, `CURRENT_AUTHORIZED_CONTINUATION360.json` y CI por SHA, no de esta nota. Source27 y la conservación autorizada del index.lock original ya están cerradas y no se repiten.
+
+
+## 2026-10-26 — Codex: target compartido2021/2024; tercer intento protegido pendiente
+
+El intento1954 terminó FAIL1 en fmt antes de ejecutar formatter: continuous_evolution_backtest.rs es target de backtest-engine2024 y trader-gemini-v5 2021. El adaptador rechazaba esa duplicidad. Se conserva edealog/recibo y la liberación cierta de todos los handles; no hubo otras fases/Python. El helper y Gate ahora usan pares(path,edition), manteniendo ambos checks. Es cobertura de ediciones más estricta que el dedupe histórico de cargo-fmt por ruta; el conjunto de archivos no se reduce. El caso de metadata con ../ legal se normaliza lexicalmente dentro del Slot/RAW declarado, sin consultar fuentes vivas en la verificación.
+
+El target compartido sólo recibió una línea en blanco para separar comentarios: tokens de código idénticos y checks privados del formatter fijado2021/2024 ambos0. Se renueva exactamente esa tupla en la clasificación ROOT; las otras611 y sus pruebas requeridas permanecen. Pruebas Temp actuales Gate16+bus20,0skips, incluyen ambas ediciones y rechazo de omisiones. Son evidencia privada de contratos, no PASS NativeRoot. Nuevo driverV4 tiene código byteidéntico aV3, con plan/pins nuevos. El intento protegido posterior, Python30/16/20, Golden9, commit/CAS main, push normal yCI exacto están pendientes EN ESTE CORTE; recibos y control actual posteriores determinan su cierre. QRA P1 sigue OPEN.
+
+
+## 2026-10-26 — Codex: formato Windows completo tras OS206; nuevo Native pendiente
+
+El primer intento protegido (`logs/prepush/zero-wait-root-20261026-1923`, bus cec6aa2e) terminó FAIL1 en fmt: Windows206 por la longitud del argv de cargo fmt --all. Digest antes/después idéntico y todos los handles liberados ciertamente, cleanup sin errores. No corrieron las demás fases ni Python30 en ese intento. El fallo original se conserva; no se transforma en PASS.
+
+Se instala un adaptador de formato con el mismo conjunto de entradas de cargo-fmt --all: metadata --locked --no-deps recursiva por toda dependencia local declarada, incluso opcional/cfg/dev/build, y todos los targets/extensiones/ediciones. Usa rustfmt fijado, configuración vacía y recorrido de módulos; divide sólo para respetar el límite real de CreateProcessW32767unidadesUTF16, sin límite de RAM/SSD/CPU/workers. Gate reconstruye de forma independiente el inventario y cada argv/exit/RAW; el recibo muestra el Python real, sin fingir una invocación Cargo. Siguen exactamente11herramientas y el mismo target/perfil.
+
+Contratos privados reales: Gate16 y bus20 PASS,0skips; prueba independiente Temp con12targets de dependencias profundas/inactivas, workspace virtual,221targets largos en2rustfmt reales (32749/12243unidades), y rechazo de sintaxis inválida sin mutar fuentes. Estos resultados Temp no acreditan NativeRoot. Se replanifica driverV3 con helper pinneado y Python30/16/20; las612tuplasRust revisadas permanecen exactas. CheckALL y Clippy global5dc siguen siendo feedback previo, sin transferirlo a la copia final.
+
+El nuevo intento protegido, Golden9, la cadena de commits/CAS main, push normal y CI exacto siguen pendientes EN ESTE CORTE. QRA P1 continúa OPEN y el informe publicado mantiene las9fuentes/50ventanas anteriores. Los recibos posteriores y CURRENT_AUTHORIZED_CONTINUATION360.json contienen el cierre real; ninguna nota histórica sustituye esas observaciones.
+
+
+## 2026-10-26 — Codex: corte anterior a la validación final protegida
+
+PR65 y QRA siguen siendo la prioridad autorizada. Source27 ya fue recuperada: no repetir el actor ni la conservación del index.lock original, cuyo consentimiento se cumplió. Rige el mandato9bdf; ROOT usa índice privado, candidatos con Before y reemplazo atómico, target canónico, rust-lld y CPUs disponibles, sin topes RAM/SSD/hilos ni semáforo de compilación. No se crearon ramas o worktrees ni se retiró trabajo ajeno.
+
+El corte real `logs/unrestricted-feedback/5dc83bf89684437db12247d987d5991f` pasó `cargo check --workspace --all-targets --locked` y `cargo clippy --workspace --lib --locked -- -D warnings`, con mapa/RAW/HEAD iguales antes/después. Es feedback del árbol vivo, no prueba de copia protegida ni exclusión de ABA. Incluye ejecución, God, backtest, evolución y la corrección de las dos referencias del binario nano. El contrato CF6 posterior verifica el bloque condicional verdadero del log y añade negativos; su ejecución actual queda pendiente del paquete final.
+
+Las APIs agrupan observaciones explícitas y referencias prestadas; no se incorporaron Defaults a esos grupos ni supresiones para ocultar diagnósticos. Se revisaron NaN, límites de prefijos, orden FP/PRNG, cuerpos y los llamadores completos, incluidas las composiciones contra cada padre. La vista prestada de SymbolSpec elimina la clonación de String en riesgo: un RED causal de admisión midió1asignación y el probe posterior midió0. Los tres contratos del canario y el contrato de publicación concurrente de la vista pasaron en feedback; el canario observó9069.07ns de media sobre10000iteraciones, con presupuesto10000ns intacto. Se conservaron los fallos anteriores y su dispersión; no se acredita latencia estable, ausencia de destrucción concurrente de snapshots, cero asignaciones globales ni SLA de producción.
+
+Gate14 y bus19 instalados pasaron realmente después de ampliar semantic-tests a17paquetes y adaptar el formatter nativo para CI. Se conservan los30contratos legacy, cuyo último PASS fue feedback previo; deben ejecutarse de nuevo sobre las copias finales protegidas. Unit/Replay dejan de imponer tres topes de compilación; sus suites, shards, debug0 y serialización justificada de tests permanecen. El nuevo CI Windows cubre14+19contratos de infraestructura. El workflow privado histórico LG22 y su runner sellado conservan su alcance histórico; no se ejecutan como perfil Native vigente.
+
+[Auditoría QRA P1](../docs/audit/QRA_P1_CAPITAL_EPOCH_2026-10-26.md): nueve fuentes,50ventanas y66enlaces reanclados;31casos existentes identificados por inspección, sin convertirlos en evidencia causal nueva. P1 permanece OPEN: falta unir completitud del snapshot, época de sesión, capital y autorización de entrada. Se documentan cuatro escenarios causales pendientes; no se modificaron clamp, epsilon, sizing ni umbrales financieros, ni se operaron cuentas. La duplicación del capital cada72h es una meta sujeta a evidencia OOS neta de fees/funding/slippage, no un resultado certificado.
+
+PR65 está cerrada sin merge directo; su headcff8886 no es ancestro deD275 y la composición1284f6 sí lo es. Golden9 debe pasar sin ignoradas sobre el candidato nuevo. El ejecutor ROOT revisado produce recibos reales por fase sobre una copia protegida, luego Python30/14/19 y Golden9; sus artefactos, clasificación por ruta y estado final están en `.agent_tx/codex-continuacion-20261024/CURRENT_AUTHORIZED_CONTINUATION360.json` y logs/prepush. En ESTE corte todavía están pendientes esas fases, commit/CAS main, push normal y CI del SHA final. La autoridad de cierre se toma de sus recibos posteriores y del CI del commit, no de los cortes históricos de esta memoria.
+
+
+## 2026-10-26 — Codex: corte de promoción Zero-Wait y validación pendiente
+
+RecuperaciónSource27 completada y no repetible. Feedback real posterior: storage3, SBE6, quantum152+5+4 y metacortex6+5 PASS, sin ignoradas y con fuentes/índice iguales durante cada serie. La pasada global avanzó de34Quantum a43strategy/os/audit/data y48signal/metacortex/telemetry; son diagnósticos sucesivos, no una auditoría científica integral. Consejo usa su MarketSnapshotPayload canónico y pares de límites, sin fórmulas nuevas ni defaults en la ruta viva.
+
+Formato actual contraD275 reprodujo528tuplas PURE de582Rust cambiados en ese corte; las54restantes requieren revisión individual. Las filas sólo se aceptan si sus tuplas siguen exactas tras las nuevas correcciones. El God actual pasó rustfmtcheck0; el fallo de su baseline no se convierte en una excepción automática.
+
+Se promueven los candidatos revisados del bus y la aduana nueva, con herramientas11, copias de fuentes protegidas, índice privado y target canónico. Registro/autoridad y recibos reales de publicación todavía deben producirse; pruebas Temp no son Native. Sus fuentes y tests deben volver a verificarse instalados. Sin topes RAM/SSD/hilos, semáforos ni Jobcap; hilos según CPU disponible. Las seis fases, tests semánticos agregados, Python, Golden9, publicación del mismo árbol y CI del SHA final siguen pendientes en este corte. P1 capital/snapshot/epoch/readiness permanece OPEN, sin resultado económico certificado. Consultar control actual en .agent_tx/codex-continuacion-20261024/CURRENT_AUTHORIZED_CONTINUATION360.json y recibos de logs; este párrafo conserva el corte previo a la ejecución.
+
+
+## 2026-10-26 — Codex: diagnósticos actuales y política de recursos sustituida
+
+Se incorpora la política9bdf en .agents/AGENTS.md: índices/staging privados, AST y reemplazo atómico; CPUs disponibles/rust-lld/target único, sin topes RAM/SSD/hilos ni semáforos o auditorías de admisión. La retirada de worktrees y procesos exige identidad/procedencia y preservar el trabajo. El bus y la aduana Zero-Wait siguen como candidatos privados bajo revisión y pruebas, todavía no instalados.
+
+Feedback Cargo real sin restricciones: storage3 y SBE6 PASS; quantum-arena152lib+5warm-start+4hotpath PASS, cero ignoradas, fuente/índice iguales antes/después. Se corrigieron34lints quantum en9fuentes más el llamador del warm-start; sus momentos se agrupan en [E(ra²),E(rb²),E(ra·rb)]. GlobalClippy se detuvo primero en un comentario de flight-recorder ya corregido y después reportó43diagnósticos en16archivos strategy-core/os-guardian/audit-engine/data-pipeline. Estos recibos son feedback del árbol vivo, no prueba inmutable de publicación ni CI. No reutilizar Expected585/Source27 estático después de estos cambios.
+
+GitHub main sigueD275. PR65 yPR66 están cerradas sin merge directo; composición1284f6 es ancestro actual, el headcff dePR65 no. La incorporación por composición exige validar los contratos originales Golden9 sobre el sujeto nuevo; no se afirma mergePR65. QRA P1 snapshot/epoch/capital/readiness permanece OPEN, sin rentabilidad ni latencia certificadas.
+
+
+## 2026-10-26 — Codex: Source27 recuperada; mandato Zero-Wait vigente
+
+La recuperación D275 terminó: completion63822616d3ab74e4e801ae747ed8ee95e9d151f9b226a674f3bc43090f70f3f2, framea763f41b0dc3a151ecba300c613dfe4793c9689bd681ce7ecf14e6afa0a41c96,590 cambios propios/585 de código/27 fuentes y dos leases cerrados sin errores. Esto no es PASS Native ni CI.
+
+El mandato posterior del operador9bdf8a6de04ae0d986e4f8ffa3f8ca7724ec74d6689ae14fc6009ce2f313201a (§§2,11,22,32) sustituye los topes16GB/300GB y los límites de hilos anteriores: sin esperas por RAM/SSD ni semáforos bloqueantes; Cargo usa los CPU disponibles, rust-lld y el target compartido. Los bloques anteriores conservan su alcance histórico; no ejecutar el productor6dd/Job16 como si cumpliera el perfil nuevo. Cada agente trabaja con índice Git privado y buffer .agent_tx/staging; los resultados de un sujeto que cambió quedan obsoletos.
+
+ROOT usa .git/index_codex_root_qra_20261026; su copia inicial reprodujo el mapa completo y RAW del frame real. Diagnóstico Cargo sin Jobcap/semáforo terminó101 con fuentes iguales antes/después: superó los59 lints Feature y encontró chunks_exact_to_as_chunks en storage/raw_zone. Se prepara corrección local con AST antes de publicar; tests, aduana nueva y CI del SHA final siguen pendientes. QRA P1 capital/snapshot/epoch permanece OPEN, sin certificación económica.
+
+
+## 2026-10-26 (UTC) — Codex: corte D275, mandato449c y Source27 sólo en preparación
+
+Target fijo `d2759073937585474a14d2f688687c9ba5746e7e`, un commit documental desde `0fc932957dd40766416e93f6e83fe4c74e5750c2`; no seguimiento automático de refs. Esta Doc3 es DATA_ONLY/PREPARATION_ONLY: no instala Source27, no acredita reconciliación D275 ni PASS Source/Native/CI. El Before conserva las copias privadas de los bytes ACTUALES CAB ya aplicados (MEM f7394cdf, AGENT89ec5bde, COORD07972f33); los candidatos e90 daa7a473/dfa64c67/3fb0ee66 son ours de composición, no un nuevo Before físico.
+
+Se incorpora el [mandato del operador](<C:/Users/jhona/.codex/attachments/cc230a5d-2db5-401e-a321-e1e020d9e2cc/Pasted text.txt>) SHA256 `449c21791e579debf179ada3258ec5c94a7140c223d4dd7fbbfc71e920d99a91` respetando el orden: prioridad actual fases0–1 y PR65/QRA, preservar trabajo ajeno y comprobar procedencia antes de cualquier rescate o limpieza. Las fases2–4 quedan como backlog verificable: cuenta/OMS/idempotencia y latencia medida; shadow/OOS después de costes y supuestos matemáticos explícitos; invariantes analíticos, mutaciones y Demo con caos antes de producción. No se certifican fill propio por datos públicos, cero duplicados A/B, FIFO exacta, latencia RTT/2 exacta, descuento BNB permanente ni rentabilidad. Jobs2 solicitado se registra para planificación; Native6dd/jobs1 sigue congelado y sus recibos no se transfieren a otra configuración.
+
+La prueba original [temp](<C:/Users/jhona/Documents/Proyectos/Trader Gemini/.agent_tx/codex-continuacion-20261024/reconcile-0fc932-source27-temp/results.json>) SHA256 `4880383d8d86fe9e8907cac0a0a0f6595e56de10706f0df9450eb3ffc76d3013` conserva `API completed=true`, pero `record.passed=false` y runner RED/exit1 por la aserción que esperaba flags sin su campo sha256. No fue un 2/2 PASS original y no se reescribe ese resultado.
+
+El [supplement](<C:/Users/jhona/Documents/Proyectos/Trader Gemini/.agent_tx/codex-continuacion-20261024/reconcile-0fc932-source27-positive-supplement-v2-draft/actual-positive-posthoc/SUPPLEMENT.json>) SHA256 `f9059d81388b6150c89d311e238806e6ff3437fe0c5712858ef032efa7fd312c` verifica posthoc el caso positivo: mapa/RAW/IDs actuales y metadatos, con las referencias originales de pins23, writer denegado32 y dos leases cerrados. La lectura posterior no recrea las observaciones originales de handles; el RED original permanece intacto. El [negative](<C:/Users/jhona/Documents/Proyectos/Trader Gemini/.agent_tx/codex-continuacion-20261024/reconcile-0fc932-source27-negative-only-root/RESULT.json>) SHA256 `e4bfe1b7635859178273cd1df9dacf70e93f17aa8faaecb1d9d2b8f44d216eee` es el negativo REAL ROOT en Temp: `record.passed=true`, `completed=false` ante writer32, dos leases cerrados y cleanup_errors=[]. Son evidencias de API/Temp con alcances distintos; ninguna es Root Native PASS.
+
+Se preservan la historia MEM y el corte CAB previo, incluida la distinción Native3359 FAIL101 frente a formato494/Python30 históricos. Se integran byteexact la fila GLM165 y las16 líneas de coordinación de GitD275. Sus afirmaciones de main-only, rescate LG y ownership se conservan atribuidas a GLM, sin convertirlas en nuevas mediciones ni autorización de failover o retiro. El censo code585/Source27 sigue siendo prospectivo; la documentación entrante no valida los candidatos de código.
+
+P1 QRA permanece OPEN: faltan el anclaje físico del sujeto final y la evidencia causal snapshot/epoch/readiness/capital. No hay RED causal P1 nuevo ni resultado económico medido. Quedan la admisión/Runtime propios del target y los gates del mismo sujeto antes de publicación; esta Doc3 no genera aprobación humana/ROOT ni reutiliza PASS de otra base.
+
+Corte documental preparado 2026-10-26T06:26:38.652Z. Los bloques anteriores mantienen su fecha y alcance históricos.
+
+## 2026-10-26 (UTC) — Codex: recuperación CAB cerrada; 0fc y Clippy59 en preparación
+
+La recuperación CAB terminó realmente: main local `cab14e4c0cea796217bd3c881a0831eb610cba4c`, completion317166d9, Frame62f543c8, RAW2213/Own586/code581 y Source12; hook755, flags0 y sus dos bloqueos liberados. No repetir el actor, Source1/Source8 ni la conservación del index.lock original ya autorizada y cumplida.
+
+El turno Native3359 se recogió con FAIL101: check, Execution/Feature (720 aprobadas,0 fallos,25 ignoradas) y F8 pasaron; DAZ-Clippy encontró59 diagnósticos en13 archivos Feature. Job0 y exclusión/leases liberados; Clippy global y fmt no se ejecutaron. La reproducción de formato494 y Python30 sí terminaron0 sobre el sujeto CAB78dd65b8. [Evidencia cerrada](<C:/Users/jhona/Documents/Proyectos/Trader Gemini/.agent_tx/codex-continuacion-20261024/actual-failed-native3359-p30pass/prior-evidence.json>) SHA3db71b7f; esto no constituye PASS Native6 ni valida otra base.
+
+Origen avanzó a `0fc932957dd40766416e93f6e83fe4c74e5750c2`:11 commits/10 rutas, con N32 nuevo y cambios reales client/executor/oco_probe. Hay datos privados de integración y13 candidatos para los59 lints, sin instalar ni compilar. Se preservan bits de constantes, orden de operaciones y la API pública; su aceptación final exige revisión y ejecución. El censo prospectivo es Own590/code585/RAW2214/Rust852/Cargo22 y Source27 (doce fuentes previas, dos filas FMT y trece de lint; no27 cambios semánticos).
+
+El siguiente paso fijo es integrar0fc+las correcciones revisadas con Runtime propio, probar primero Clippy y completar después las seis fases/Python30/Golden9 sobre el nuevo sujeto antes de commits/push/CI SHA exacto. Los planes CAB y los datos0fc anteriores a Clippy59 son historia, no autorización de ejecución. P1 QRA permanece abierto: falta acreditar snapshot/epoch completo de posiciones y su vínculo con publicación de capital/readiness; no hay RED causal nuevo ni medición de sizing/ROI/pérdida.
+
+Este bloque documenta el corte 2026-10-26T04:44:59.398354+00:00, no una ejecución futura. El [control dinámico ROOT](<C:/Users/jhona/Documents/Proyectos/Trader Gemini/logs/pr65-pr66-merge-20261020/pr65-published-validation.json>) y sus recibos distinguen los estados reales de los paquetes privados. Se mantienen activos los trabajos ajenos; no reset, stash, add-A, force-push, toma de locks ajenos ni limpieza de sus worktrees.
+
+## 2026-10-25 — Codex: preparación fija4578, D54 parcial y cierre pendiente
+
+Target fijo `4578ccd7bd9b6049e0e5b1a61b0c74e4ca32c35f`, sin seguir refs.
+Este bloque es PREPARATION_ONLY: no acredita reconciliación4578, Source8,
+Native, CI ni publicación. Preserva los cortes360/6f9/67ee como historia,
+incluidas propuestas que nunca se instalaron. Doc5_67ee no es Before físico.
+
+El [snapshot privado D54](<C:/Users/jhona/Documents/Proyectos/Trader Gemini/.agent_tx/codex-continuacion-20261024/d54-after-stage.READ_ONLY/snapshot.READ_ONLY.json>)
+(SHA63cd4f5ed971c03280196418458a7550232471efa027e9f32fa999916b598565)
+observó a21:36:19UTC HEAD6f9, origin_before=origin_after4578,2213RAW e índice
+2213 con mapaTree6f9+Own586, flags0 y hook100644. Conserva WB2, settings,
+atributos y controles según su propio alcance. Es una lectura NOatómica,
+sin exclusión ni admisión; no describe continuamente la primaria ni constituye
+PASS Native. Las cifras históricas562+6+18 de otros cortes no se reciclan
+como censo actual4578 ni como pérdida de los archivos propios.
+
+El [completion D54](<C:/Users/jhona/Documents/Proyectos/Trader Gemini/.agent_tx/codex-continuacion-20261024/recovery-6f9-all-base-logical-draft/attempt-entry6f9-d54bffa91ec244aabdf9b963ae370bfd/completion.json>)
+(SHA4a70576ee06ebbf1c84fdf86b5c099693ccd34a2dd764b682d540cc61814f27a)
+registra completed=false, `Origin changed during verified observation`,
+cleanup_errors=[],2leases adquiridos/cerrados y own_leases_released=true.
+El [receipt D54](<C:/Users/jhona/Documents/Proyectos/Trader Gemini/.agent_tx/codex-continuacion-20261024/recovery-6f9-all-base-logical-draft/attempt-entry6f9-d54bffa91ec244aabdf9b963ae370bfd/receipt.json>)
+(SHAb3b02a2aaa89394240e995474f7da5630927ecc8554cf0b97a00ee7b68d1477f)
+conserva18publicaciones de candidatos: no fue done0 ni completado. En el
+corte del snapshot faltaba terminar hook755 y captura con leases/guard
+reales, sin repetir18CAS/FF/stage. Su resultado posterior debe venir del
+control vigente; esta propuesta no simula un finisher ni firma su éxito.
+
+Doc3_4578 fusiona Git6f9 con incomingGit4578 usando como ours EXACTO el
+Doc3_6f9 histórico68806b59 instalado porD54 según el encargo ROOT. MEM y COORD
+fusionaron default0 en Temp; AGENT conserva todas las filas entrantes ajenas
+y sólo reemplaza Codex bajo condición exacta. Los Before3Doc5 son esos nuevos
+Doc3 esperados tras la reconciliación; los Before2audits siguen RAW086a/96dc,
+sin Source8 anterior aplicado. Se conserva326CRLF en MANDATO. El siguiente
+alcance propuesto tiene6restauraciones (3Docs+3Rust) y4remotas Git exactas;
+no son operaciones autorizadas por este texto.
+
+Los [datos de formato4](<C:/Users/jhona/Documents/Proyectos/Trader Gemini/.agent_tx/codex-continuacion-20261024/prerebase-4578-package/format4-proof.json>)
+(SHAa3b379df5ce581ba792ff6f97ea53529ea89baaab96f8c5a9455a8730693cfa3)
+registran rustfmt25a/edition2021/configvacío+skip_children, format/check0 sólo
+en4copias y4controlesGit6f9. Los3OWN_FMT siguenDirty: clientcb0e095b…,
+executor6dd4531e… e ioc_fill_contractbee642bb…. Los controlesbase reproducen
+sus3tuplas del Expected832a histórico. exchange_response_contract no era
+OWN y el nuevo4578 queda limpio ca8b2076…: no añade FMT ninoop propio.
+
+El conteo propuesto mantieneOwn586=581code+5Docs=572Rust+9infra+5Docs,
+565FMT,851Rust,22Cargo y Spec494paths (Execution cubierto fuera de la receta).
+Esto no es un nuevo fmt global851 ni PASS compilado. Los [datos Expected5814578](<C:/Users/jhona/Documents/Proyectos/Trader Gemini/.agent_tx/codex-continuacion-20261024/composition-main4578-expected581.PREPARATION_ONLY/ExpectedData581.PREPARATION_ONLY.json>)
+(SHA85609664ff60ed3dd089f475ab61a4f4e60da8120a7ebab893bc3e95da325a98)
+renuevan exactamente las3tuplas propias. El [template4944578](<C:/Users/jhona/Documents/Proyectos/Trader Gemini/.agent_tx/codex-continuacion-20261024/composition-main4578-expected581.PREPARATION_ONLY/FormatData494.PREPARATION_ONLY.json>)
+(SHAe5fa6763fa7009b5ec213a9bfa4f1864efd27db1a4d8df977e597626f307c2ac)
+conserva filas y formatter; el [manifiesto DATA](<C:/Users/jhona/Documents/Proyectos/Trader Gemini/.agent_tx/codex-continuacion-20261024/composition-main4578-expected581.PREPARATION_ONLY/manifest.json>)
+(SHAbb3b5907cba206509c38f1993edd2a7160cd17e4e8f315f52f6727760ae8bb46)
+no es admisión ni nueva revisión ROOT. Expected832a y800168 anteriores NO
+representan esos3hashes. Aún deben fijarse HEAD/frame/TwoJSON y witness
+reales del sujeto reconciliado, además de sus controles y gates.
+Goddd3 y gate9a conservan susbytes directos; las revisiones de otros targets
+no equivalen a una nueva revisión ROOT4578 ni a permiso Runtime. Source8
+sigue limitado a5Docs+2fixtures+1tupledelgate, sin ruta nueva por la etiqueta.
+
+P1 capital/snapshot/sesión sigue abierto. El [checkpoint c123](<C:/Users/jhona/Documents/Proyectos/Trader Gemini/.agent_tx/codex-continuacion-20261024/qra-p1-candidate360-checkpoint/CHECKPOINT.md>)
+y la [nota f89](<C:/Users/jhona/Documents/Proyectos/Trader Gemini/.agent_tx/codex-continuacion-20261024/qra-cierre-alcance-360/NOTA_CIERRE.md>)
+conservan sus límites: falta anclaje físico del sujeto final. No se auditó aquí
+el efecto indirecto nuevo de client/executor/IOC4578 en P1; no se añade RED,
+sizing ni resultado económico. Tampoco Golden9 reemplaza el contrato causal
+reconnect→delta/snapshot/época/readiness: acredita sólo sus predicados cuando
+se ejecute sobre el sujeto real.
+
+ROOT exige reconciliar latest autorizado ANTES de Native, sin auto-retarget
+ni SourceMismatch ignorado. Quedan finisher/captura y reconciliación según sus
+recibos reales, Source8, frame/Expected/TwoJSON/witness y sujeto final,
+Python30, Native6 y Golden9 noignoradas, publicación y CI del SHA pertinente.
+No se heredan check0/Native101 ni CI de bases previas. Bench/portable y
+all-features siguen sin certificar. Consultar el [control dinámico ROOT](<C:/Users/jhona/Documents/Proyectos/Trader Gemini/logs/pr65-pr66-merge-20261020/pr65-published-validation.json>)
+y sus campos actuales: este texto no ejecuta ni genera aprobación humana/ROOT.
+
+
+## 2026-10-25 — Codex: preparación fija67ee y reconciliación pendiente
+
+Target fijo `67ee5ee28741eb1f3957f9b19df3fefc92401b73`, sin seguir refs.
+Este corte es PREPARATION_ONLY: no acredita FF/reconciliación67ee, Source8,
+staging, sujeto Native ni publicación. El encargo ROOT fija PR147 como
+23commits y8rutas:2código (client/executor) y6metadata. Los [payloads Git guardados](<C:/Users/jhona/Documents/Proyectos/Trader Gemini/.agent_tx/codex-continuacion-20261024/prerebase-67ee-package/payloads.READ_ONLY.json>)
+(SHAdf75d7cfb46d47e7700fec20f5431f86bee375bd780721ff1e84400fd2229dd5)
+fijan base6f9/incoming67ee con SHA1Git/SHA256/tamaño. No hay solape directo
+con Source4, God o gate; esta nota no certifica semántica indirecta nueva.
+
+Doc3_67ee usa Git6f9 como base y Doc3_6f9 como ours, SIN Doc5_6f9 porque
+ROOT ordenó no aplicar Source8_6f9. MEM/COORD fusionaron por merge-file
+default0 en Temp; AGENT conserva theirs67ee y sólo reemplaza la filaCodex
+única bajo igualdad de esa fila entre base/incoming. Así se preservan GLM164,
+Claude67ee y los bloques propios; las otras3metadata remotas quedan Git
+exactas fuera de OwnDoc3/5. Los before3 son candidatos esperados después de
+FF/composición, no una admisión física. Los before2audits siguen siendo los
+RAW históricos086a/96dc: sus oldpost6f9 candidatos son composition_before,
+no documentos instalados. Se conservan326CRLF de MANDATO y la historia360/6f9.
+Los estados562tracked+6ownnew+18BASE y cad6a de los bloques anteriores son
+cortes históricos con sus fuentes, no un nuevo censo67ee.
+
+Los [resultados de formato2 privados](<C:/Users/jhona/Documents/Proyectos/Trader Gemini/.agent_tx/codex-continuacion-20261024/prerebase-67ee-package/format2-proof.json>)
+(SHA37059c255ce0a0f44619731b5552d27cd927e6d6481ec98a55fd3fb0acd63c4c)
+usan rustfmt25a/edition2021/configvacío+skip_children y cierran format/check0
+sólo para esos2archivos copiados; los controlesGit6f9 reproducen los viejos
+candidatos. Ambos67ee siguen dirty: clientcandidato aaab2a8a… y executor
+b687a972… difieren de sus raw22dcedff…/9058df26…. No es fmt global de851Rust
+ni PASS Rust. El censo propuesto confirmado por el productor mantiene
+OwnDirty586=581code+5Docs=572Rust+9infra+5Docs,565FMT sin bajas; universo851Rust,
+22Cargo y Spec494paths iguales, con Execution cubierto fuera de esa receta.
+
+El viejo ExpectedCode832a… YA NO representa los nuevos2hashes: hay que renovar
+ambas tuplas, el anclajeHEAD67ee y el frame/TwoJSON/witness reales antes de
+validar. No basta con que los nombres y cardinalidades sean iguales. Goddd3
+(archivo privado) y gate9a conservan susbytes directos; no se transfiere una
+revisión ROOT6f9 como aprobación67ee ni se inventa una nueva. Source8 sigue
+siendo5Docs+2fixtures+1tupledelgate, todas rutas propias ya delimitadas.
+
+QRA P1 permanece abierto. El [checkpoint candidato c123](<C:/Users/jhona/Documents/Proyectos/Trader Gemini/.agent_tx/codex-continuacion-20261024/qra-p1-candidate360-checkpoint/CHECKPOINT.md>)
+y la [nota de entrega f89](<C:/Users/jhona/Documents/Proyectos/Trader Gemini/.agent_tx/codex-continuacion-20261024/qra-cierre-alcance-360/NOTA_CIERRE.md>)
+conservan su alcance estático histórico. No se ha auditado aquí el efecto
+indirecto de client/executor67ee en capital/snapshot/sesión; su identidad y
+las tres fuentes físicas requieren nuevo anclaje tras integración. No se
+añade RED P1 ni resultado de sizing, Demo o rentabilidad.
+
+ROOT exige reconciliar latest autorizado ANTES de Native: sin auto-retarget,
+sin ignorar SourceMismatch y sin heredar Native101/check0/CI de otras bases.
+Faltan recibos de reconciliación/Source8, frame/Expectednuevo/TwoJSON/witness,
+sujeto final, Python30 y Native6 reales con Golden9 no ignoradas, más CI del
+SHA publicado pertinente. Bench/portable/all-features siguen sin certificar.
+Consultar el [control dinámico ROOT](<C:/Users/jhona/Documents/Proyectos/Trader Gemini/logs/pr65-pr66-merge-20261020/pr65-published-validation.json>)
+y sus campos vigentes; este candidato no afirma resultados de la Entry6f9
+que estaba activa al recibir el encargo ni genera autoridad de ejecución.
+
+
+## 2026-10-25 — Codex: preparación fija6f9 tras avance documental, sin integración
+
+Target fijo `6f9fd8781c32138fed7835f3001062ab533666b8`. Este corte es
+PREPARATION_ONLY: no autoriza FF, publicación Source8, staging ni Native.
+El [proof6f9 de bytes ya guardados](<C:/Users/jhona/Documents/Proyectos/Trader Gemini/.agent_tx/codex-continuacion-20261024/prerebase-6f9-readonly-proof/proof.READ_ONLY.json>)
+(SHA0a0c40d2b7945f6d5d010c13e34f651b3acff644eaaf7a2c956a1e8ea64e36a2)
+fija360→6f9 como un commit documental de dos rutas: AGENT_SYNC y COORD.
+Los851Rust,22Cargo y entradas Git de scripts/hooks/workflows permanecen
+idénticos en ese proof. Eso no demuestra equivalencia universal del build.
+
+El [completion de cad6a](<C:/Users/jhona/Documents/Proyectos/Trader Gemini/.agent_tx/codex-continuacion-20261024/recovery-360-all-base-logical-handoff-draft/attempt-entry360-cad6a4c3d0614864baa2956d358cef5d/completion.json>)
+(SHAdf01ee2d0c391da1cecff34bb7f45c57f01023859e49c8ef3d2014fb3e5830ab)
+fija completed=false, `RuntimeError: Origin360 drift`, cleanup_errors=[] y
+own_leases_released=true. El [receipt correspondiente](<C:/Users/jhona/Documents/Proyectos/Trader Gemini/.agent_tx/codex-continuacion-20261024/recovery-360-all-base-logical-handoff-draft/attempt-entry360-cad6a4c3d0614864baa2956d358cef5d/receipt.json>)
+(SHA9878d585a5c9bbd5c4a44ba6b853e14c7e8effdd052ee96a2c9f82fb276faa04)
+registra own_publications=[]: ningún archivo propio publicado. ROOT informa
+salida75, ambos leases cerrados y562modificaciones tracked más6own nuevos:
+568WIP presentes; otras18rutas propias están BASE.
+568+18=586OwnOriginal conservados, no descartados. Son estados informados,
+no una nueva captura física ni una prueba de admisión de este paquete.
+Los expected-before Doc3 son BASE1b archivados; los ours históricos se
+conservan por separado. Las frases históricas posteriores sobre360 siguen
+siendo historia y no describen por sí solas el estado físico actual.
+
+La composición propuesta mantiene581code+5Docs=586, universo851Rust,
+22Cargo y Spec494. God candidato dd3b770e… y gate9a569baf… conservan susbytes;
+los [datos de procedencia del gate](<C:/Users/jhona/Documents/Proyectos/Trader Gemini/.agent_tx/codex-continuacion-20261024/prepush-god360-draft/manifest.json>)
+no son instalación ni permiso Runtime. Source8 sigue siendo las mismas
+5Docs+2fixtures+1tupledelgate. No se heredan Native101, check0 antiguo ni CI
+de1b/360/4352 como resultados6f9. No hay nuevo PASS Native, Demo, ROI o sizing.
+
+QRA mantiene P1 abierto. El [checkpoint candidato360 c123](<C:/Users/jhona/Documents/Proyectos/Trader Gemini/.agent_tx/codex-continuacion-20261024/qra-p1-candidate360-checkpoint/CHECKPOINT.md>)
+(SHAc1230b1cbdb902bbf78094332dd4f9e6be34048b8af83d07216a42376955ae02)
+es lectura estática de un candidato; el anclaje físico del árbol finalmente
+integrado sigue pendiente. No se añade RED P1 nuevo. Faltan integración con
+recibos, frame/TwoJSON/witness y ejecución del árbol final: Python30 y Native6
+(check workspace/all-targets, tests Execution/Feature tras fixtures, F8,
+dos Clippy y fmt); bench, portable y all-features siguen sin certificar.
+
+El [análisis ROOT de origin](<C:/Users/jhona/Documents/Proyectos/Trader Gemini/.agent_tx/codex-continuacion-20261024/origin-ref-policy-readonly-20261025/ANALISIS_READ_ONLY.md>)
+(SHAa0f015dd9efe4daa2eff50845014805c865597c68cce2d94d824ceb485daf48a)
+es DRAFT de política, no implementación. El target6f9 de este paquete es
+una elección fija explícita ROOT; este corte no auto-retargetea ni ignora
+SourceMismatch y no convierte la nota en permiso Runtime.
+Antes de Native hay que reconciliar el último estado autorizado y fijar sus
+inputs reales. Consultar el [control dinámico ROOT](<C:/Users/jhona/Documents/Proyectos/Trader Gemini/logs/pr65-pr66-merge-20261020/pr65-published-validation.json>)
+y sus recibos actuales, distinguiéndolos de campos y resultados legados.
+Este texto no crea revisión ROOT, autorización humana ni autoridad primaria.
+
+
+
+## 2026-10-25 — Codex: preparación360 fija y validación pendiente
+
+Target fijo `360badc0944505fd9b9d9ebf48ad782668330c1f`; no se siguen refs.
+Este bloque es candidato privado: no demuestra FF, publicación de ocho rutas,
+staging ni nuevo turno Native. verification_complete=false. Los paquetes600
+y4352 quedan como historia, sin admisión, revisión o PASS transferidos a360.
+
+El Native da999 anterior sobre1b156 terminó con código101. El check workspace
+con all-targets terminó0 en66m03 sobre ESOS inputs antiguos; tests registró
+156PASS/1FAIL/0ignorados entre10EXEs completados, con CL48 textual como fallo.
+F8, los dos Clippy y fmt global no se ejecutaron en ese turno. El Job quedó0
+y se liberaron InputExclusion y leases con fuentes/índice estables. Ese check0
+no valida los nuevos candidatos ni cierra PR65.
+
+CL48 tiene RED Native; F1_027 tiene RED estático porque no fue alcanzado por
+ese turno. Los dos fixtures privados conservan nombres y predicados de las
+seis pruebas; el texto no es recibo de instalación ni Rust GREEN. Revisión
+histórica de fixtures: `.agent_tx/codex-continuacion-20261024/ROOT_TEST_FIXES_REVIEW.json`,
+SHA b56c7e58ae5d7c9fec5e24db45e7f853c928f4d357398acd92519cd6f2dd8959.
+
+El universo candidato es851Rust (847más4pruebas nuevas). El Own586 original
+se conserva porbytes; la nueva composición también propone586Dirty,
+pero con PATHSET NUEVO:581codeWIP+5Docs=572Rust+9infra+5Docs.
+Grupo:565FMT+2fixtures+4F8+1UDS+6sem+3gate+5Docs=586. Se añaden alFMT propio
+binance_api y el contratoN9, y salen los dos noops koopman_dmd/path_signature.
+La igualdad numérica no permite heredar el OldExpected581 ni su mapa: ambos
+JSON deben derivarse otra vez desde el frame360 real. La receta nueva fuera
+de Execution/Feature/OS tiene494filas:493históricas másN9; binance_api
+queda cubierto enExecution. El número494 no sustituye el frame ni su witness.
+
+Los veinte Rust entrantes tuvieron15cambios de formato y5ya limpios en copias
+privadas; esto no es fmt global sobre fuentes instaladas. God sí cambió en
+upstream360, aunque UDS/F8source4 no cambien allí. Su nueva [propuesta de excepción](<C:/Users/jhona/Documents/Proyectos/Trader Gemini/.agent_tx/codex-continuacion-20261024/prerebase-360-package/god/exception.PREPARATION_ONLY.json>)
+fija before818850a4…, effective91ea8806… y candidato dd3b770e…: el fmt por
+defecto falló y quitar8espacios exactos enoffset117906 permitió fmt/check0
+privados. ROOT cerró su [revisiónCODE/DATA360 específica](<C:/Users/jhona/Documents/Proyectos/Trader Gemini/.agent_tx/codex-continuacion-20261024/composition-main360-root/ROOT_GOD_EIGHT_SPACES.json>)
+(SHAd1d5ed136ceed2085f799c75cd0d75b5db75529be65420be12947b8bf6d68446)
+con reproducción independiente fmt/check0 y contexto propio fijado. Es sólo
+CODE/DATA, no autoridadRuntime ni PASS Rust; no hereda la excepciónGod4352.
+
+El post-step previsto reúne8rutas propias:5Docs+2fixtures+1tupledelgate.
+No añade una ruta nueva alOwn por ese tuple: cambia susbytes paraGod360.
+Faltan integración/post-step con recibos reales, frame/TwoJSON/witness,
+captura del subject360, Python30 y Native6 (check workspace/all-targets,
+tests Execution/Feature tras fixtures, F8, dos Clippy y fmt). Benchmarks
+medidos, validación portable y variantes all-features siguen sin certificar;
+no se inventan comandos ni resultados de esos carriles. La infraestructura
+32/46/16 histórica no sustituye los gates del nuevo árbol.
+
+Este bloque no declara un resultado CI360 ni hereda CI4352 o de otras
+bases. Un CI del árbol publicado360, cuando ROOT lo fije, sólo certificará
+esa BASE y nunca por sí solo OwnDirty586 ni el WIP físico.
+
+QRA mantiene P1 de snapshot, sesión y capital. El [checkpoint5c92 histórico](<C:/Users/jhona/Documents/Proyectos/Trader Gemini/.agent_tx/codex-continuacion-20261024/qra-p1-postfmt-checkpoint/CHECKPOINT.md>)
+es evidencia estática anterior: suGod no acredita porhuella elGod entrante360.
+Hay que reanclar esa lectura; no se declara completitud del caché por el fence
+REST o el shutdownUDS. No se añade RED nativo nuevo, impacto de sizing,
+rentabilidad ni operación Demo/Producción.
+
+Consultar el [control dinámico ROOT](<C:/Users/jhona/Documents/Proyectos/Trader Gemini/logs/pr65-pr66-merge-20261020/pr65-published-validation.json>)
+y sus recibos actuales, distinguiendo current_continuation de campos legados
+source_commit/CI/turnos de otras bases. El entry, Source8 y closure360 deben
+cerrarse por susbytes y recibos reales; este paquete no inventa su ruta de
+control ni crea revisión, autoridad humana o permiso de ejecución primaria.
 ## 2026-10-26 — Claude (cloud, Línea C): decimoséptima tanda del censo C-F7b (filas N40, N41 b y N32)
 
 Tanda del PR #150. Cambia la conducta sólo en ejecución real y en la sonda
@@ -425,6 +907,99 @@ cambio de conducta con entradas válidas).
   promoción entre entornos (load_generation JSON y promote_across_env
   promueven el genoma crudo y validate lo rechaza).
 
+## 2026-10-25T00:09:17-05:00 — Codex QRA: turno main1b156 y resultado por recibos
+
+Base de composición: `1b15641f1d220b5b15993993887ec409d57c6ba6`.
+FF local verificado por `049e99c8`: cuatro rutas incorporadas, cuatro WIP
+DAZ/UDS y la unión de tres documentos preservados, sin autostash. Los dos
+workflows CI de esa base terminaron success; no certifican este relevo.
+
+Alcance del turno: formato de 847 fuentes (568 candidatos), semáforo y helper,
+gate pre-push con 30 contratos separados y tres ajustes de fixtures que
+conservan los 32 contratos anteriores y los 16 de enumeración. La reserva
+efectiva existe sólo mientras permanezcan los locks/Job propios: no editar
+los inputs durante ese turno. No se añade admisión por RAM; se mantienen un
+Cargo y el target canónico. El staging se limita al manifiesto cerrado propio.
+
+El resultado terminal vigente se consulta en
+`logs/pr65-pr66-merge-20261020/pr65-published-validation.json` y en sus recibos
+de `logs/codex-reviewed-controller-20261024/`: check workspace/all-targets,
+tests Execution/Feature, F8, dos Clippy y fmt, con fuentes/índice/main fijados.
+Los contratos Python se registran por separado. Este texto fija alcance y
+procedencia antes de la captura; no anticipa el PASS de ninguna fase.
+
+QRA: el P1 de snapshot/sesión sigue abierto. ROOT releyó UDS/host/OMS actuales
+(hashes6cc/bcd/c357); un delta vacío tras reconexión no demuestra ausencia de
+posiciones. Evidencia estática y alcance en
+`.agent_tx/codex-continuacion-20261024/qra-current-three-paths-20261025/REVIEW.md`
+(SHA5e9c816c). No se ha ejecutado el nuevo RED de ese P1 ni se certifica
+rendimiento, sizing o una operación Demo/Producción por este relevo.
+
+## 2026-10-24T23:32:55-05:00 — Codex QRA: composición actual y preservación de contratos
+
+Base actual: `3eaa8f105f640d4763a9baa64c93988f486c4369`, con PR140/PR141
+integrados. Los cuatro cambios propios DAZ/UDS conservan sus hashes. Se prepara
+formato de 847 fuentes (567 cambios), semáforo revisado y gate pre-push, sin
+certificar todavía esta composición. Los 32 contratos previos de
+`scripts/tests/test_qra_resource_safety.py` se conservan íntegros; los 30 nuevos
+del gate van a `scripts/tests/test_pre_push_gate.py`.
+
+El turno siguiente exige staging explícito y seis fases: check workspace con
+all-targets, tests Execution/Feature, F8, dos Clippy y fmt. Se fijan las fuentes,
+el índice y main durante el turno. No se añade admisión por RAM; se mantiene
+un Cargo, target canónico y el Job revisado. Los resultados terminales por
+composición se registran en
+`logs/pr65-pr66-merge-20261020/pr65-published-validation.json` y en los recibos
+de `logs/codex-reviewed-controller-20261024/`, sin heredar PASS de la base.
+
+QRA sigue con un P1 abierto: un delta de posiciones tras reconexión no demuestra
+un snapshot completo de capital. No se certifica rendimiento ni se activa
+operación Demo/Producción con estos cambios.
+
+## 2026-10-24T22:41:45-05:00 — Codex QRA: PR141 integrado; siguiente composición
+
+FF4851 a1b8382d2059fa47ce4e50dcef2f397e2add0c502 verificado por recibo
+7bc1c30f en integration-pr141-installer:9rutas presentes,0borradas,
+4WIP6cc/6cb/957/81f intactos y3docs UNION con respaldos. Cola24405
+prepara sólo formato privadoPR141; aún no invoca CargoROOT. Base1b tiene
+10/10checksCI; ese resultado no certifica WIP local ni formato/cambios nuevos.
+
+InstaladorV2f91 revisado:12contratosTemp; controlador físico6dd6/53contratos
+y semáforo ownerexit46 listos. Gateb429 sólo actualiza tuplaGod aPR141:
+bcd3→5cef→1610 por8espacios de línea vacía, con focal1yformat/check0.
+Las8+3pruebas previas del gate no son28integrados; esos28 y seis fasesRust
+siguen pendientes. No usar manifiesto de formato4851 después dePR141.
+
+Próximo turno requiere staging completo e inputs fijados; informes originales
+y recibos rechazados conservados. Estado dinámico: controlPR65 en logs,
+verification_complete=false hasta gates propios y CI del commit publicado.
+QRA capital/sesión sigueP1; nuevoRED aún no ejecutado. Sin Demo/Prod/fondos.
+
+
+## 2026-10-24 21:24 -05:00 — Codex: check nativo0 sin certificación; barrera física en preparación
+
+Cargo169080 completó check workspace/all-targets con código0 en59m46. No se
+certifica: durante el turno4ed main avanzó con Rust (GLM161/PR139) y trabajo de
+capital; la captura final encontró índice unmerged. Controlador/worker salieron1,
+Job salió75 y quedó0procesos; no hay recibo de fase ni tests execution/feature.
+Recibos originales8ac4c205/ff578993/2ee19139 intactos. La tentativa de detener
+Cargo encontró que ya había terminado; no se mató proceso. Semáforo liberado;
+único global propio residual se retiró tras2censos vacíos, dueño muerto yJob0,
+auditoría global-only-recovery-4ed0.json. Los conflictos compartidos se resolvieron
+por otro flujo; cuatro fuentes propias siguen6cc/6cb/957/81f. Cola72381 terminada.
+
+SourceFreeze privado53/53 impide Gitcommit/merge enprimary con sentinelas
+index/main y pins de todos tracked/índice/refs/config; otrosworktrees siguen
+operables. Continúa DRAFT/RO, no instalado. Cleanupowner46/46 añade Wait0 frente
+al objeto proceso terminado retenido; nativeprepush20iniciales+3finales queda
+privado; instalador de manifiesto cerrado aúnDRAFT. Ninguno es PASS Rust.
+Formatoe359 sobreac4 NO se aplica enbloque tras PR139: rebase privado nuevo
+fmt-rebased-main4ee está preparado:846fuentes/566candidatos/189lotes≤3,
+revisiónindependiente96d4 sin discrepancias. Sigue sin instalar. No tocar stagingajenoV33 ni restaurar
+snapshotsantiguos. El próximo turno exige fuente/índice coherentes y exclusión
+física; verification_complete siguefalse. ROOT no mantiene Cargo ni lock propio.
+
+
 ## 2026-10-25 — Claude (cloud, Línea C): séptima tanda del censo C-F7b (genes de Kelly, fila N13)
 
 Tanda del PR #139. Un commit por bloque; T-1 por los cambios de tamaño.
@@ -455,6 +1030,67 @@ Tanda del PR #139. Un commit por bloque; T-1 por los cambios de tamaño.
   esos genes al TAMAÑO en el fixture del T-1, no su único lector.
 - Detalle en §9 del censo (N13); avisos en el buzón.
 
+## 2026-10-24T20:40:32-05:00 — Kimi V33: main 10/10 verde y titularidad N8
+
+- `main` quedó integrado en `5e3557c17` por fast-forward. El autostash temporal requirió unión; se verificó contenido completo contra respaldo: cinco archivos byte-idénticos, `AGENT_SYNC` con Codex nuevo+GLM-161 y buzón upstream+Codex. El stash histórico se preservó; no se perdió trabajo local.
+- CI del SHA: **10/10 checks SUCCESS**. `Replay contracts` `40149004089` terminó con salida 0 y `replay-contracts` en 29m23s; la verdad económica de N8 sigue sin certificarse por esa suite general.
+- N8 confirmado estáticamente: riesgo garantiza mínimo al mid/entrada modelada, pero el IOC final usa otro precio y termina `qty=4.1`, `price=1.219`, `notional=4.9979<5`. Corrección responsable antes de reservar y al precio límite; no aumentar cantidad después de reservar. RED debe exigir `qty=4.2`, `notional=5.1198` y veto si la mínima no cabe en riesgo aprobado.
+- Titularidad propuesta y registrada: **AGY implementa; Kimi V33 revisa RED/GREEN; Línea C consulta**. La rama remota de Línea C tiene cuatro commits exclusivos CL-161..164 y se preserva; no hay PR abierto al corte.
+- RAM 0,82 GiB con Cargo/Rustc ajenos: no se editó Rust, no hubo build/test local, censo SSD, Demo ni operación financiera. ROI/PnL/WR/Sharpe/EV: `N/D`.
+
+## 2026-10-24 20:10 -05:00 — Codex: PR138 incorporado; check PR65 activo
+
+Primary `ac4e150ff9ee20cc404d3bbed262469801432364`, PR138 ya incorporado por
+fast-forward auditado. Recibo b4d78f4d en integration-pr138-v2-installer:
+31 rutas presentes, 2 borradas, índice completo y cuatro WIP DAZ/UDS intactos;
+tres documentos unidos con todas sus adiciones. Primer intento a5dbb290 no
+cambió fuentes porque otro Cargo apareció antes de adquirir el turno.
+
+Cola actual sesión72381, script queue_ff_pr138_then_pr65.py SHA83fa27c9.
+Invocó el ejecutor sellado5b336 sobre ac4: turno4ed0b72b bajo
+logs/codex-single-turn-20261024. Cargo169080 ejecuta check workspace/all-targets
+desde19:55; después siguen tests Execution/Feature y Clippy/fmt. Sin piso de
+RAM, jobs1, target canónico, runner aislado y un Job general16GiB. No modificar
+fuentes/índice/config/helpers durante este turno. Aún sin recibo de check/test.
+
+Formato privado reanclado: manifest e3593573 en fmt-rebased-pr138; 841 fuentes,
+561 candidatos distintos y187 patches de hasta3rutas aplicados correctamente.
+23 format/check nuevos,545 candidatos idénticos y273 inputs clean reutilizados.
+Revisión independiente3591fdda verifica los hashes,4DAZ/UDS, ausencia de2rutas
+retiradas, mínimo GodEngine de8espacios y CPUID sin4unsafe. Registro posterior
+complementa PREVIEW/configs; no demuestra ABA. No instalado ni cargo fmt PASS.
+
+Controlador6fases con identidad/manifiesto cerrado:25 contratos herméticos,
+todavía DRAFT/revisión; semáforo cleanup no recursivo sigue privado. Histórico
+F8:18 tests sin fallos, recibo global rechazado; UDS:108/108 con recibo aprobado.
+El control PR65 compartido ya apunta al turno actual y mantiene
+verification_complete=false. Pendientes gates completos, pre-push, integración
+de candidatos, commit/push/CI y P1 capital por snapshot/sesión tras reconexión.
+
+## 2026-10-24 19:35 -05:00 — Codex: UDS validado; PR65 en cola sin piso de RAM
+
+UDS actual 6ccde2d2 pasó Execution lib 108/108, incluidos 23 tests UDS, con
+recibo 018f5126 aprobado, inputs estables, aislamiento por EXE y locks liberados.
+No equivale a la suite completa PR65. Se reproducía RED la doble clave de PnL
+por `ps` ausente; ahora se exige identidad válida antes de mutar el cache.
+
+Fuentes DAZ actuales: subnormal95717319, lib6cb8f5f8, F8test81f33e4b.
+F8 ejecutó 12+6 pruebas sin fallos; recibo ef1a9d8c rechazado porque el semáforo
+legacy fue reclamado durante la captura final. Cargo0, Job0 e inputs estables
+no convierten ese recibo en PASS. Recuperación global-only auditada; no hay
+lock ROOT residual. GLM conserva Cargo143188 y su turno, sin interrupción.
+
+Cola sellada activa sesión49087, queue_pr65_single_turn.py SHA69f5f8c2,
+ejecutor single-turn-pr65-first SHA5b33609b. Un turno protegido para check,
+tests execution/feature, Clippy F8, Clippy lib y fmt, con abort al primer fallo.
+Sin admisión por RAM, jobs1, target canónico, Job general16GiB y sensores reales.
+No modificar código encolado. queue.json.native_started=false es sólo estado
+inicial: para decidir reintentos comprobar plan/worker/Job/CIM y lanzamiento.
+
+Semáforo corregido, pre-push y formato global están privados, SIN instalar.
+QRA capital sigue P1: reconexión/cache vacío/P=[] no prueba cuenta completa;
+snapshot, sesión y readiness requieren cierre conjunto. Ver relevo PR65/QRA
+actualizado. Faltan comandos PR65 completos, fmt/Clippy y commit/push/CI propios.
 ## 2026-10-24 — Claude (cloud, Línea C): sexta tanda del censo C-F7b (K12, lote 48, resto de F325 y lote 51)
 
 Tanda del PR #138. Un commit por bloque; T-1 sólo por CL-159.
@@ -496,14 +1132,6 @@ Tanda del PR #138. Un commit por bloque; T-1 sólo por CL-159.
   evento (pasa, 1,515 asignaciones en ambos); CI de GitHub 10/10.
 - Detalle y restos en §9 del censo; avisos en el buzón.
 
-## 2026-10-24T20:40:32-05:00 — Kimi V33: main 10/10 verde y titularidad N8
-
-- `main` quedó integrado en `5e3557c17` por fast-forward. El autostash temporal requirió unión; se verificó contenido completo contra respaldo: cinco archivos byte-idénticos, `AGENT_SYNC` con Codex nuevo+GLM-161 y buzón upstream+Codex. El stash histórico se preservó; no se perdió trabajo local.
-- CI del SHA: **10/10 checks SUCCESS**. `Replay contracts` `40149004089` terminó con salida 0 y `replay-contracts` en 29m23s; la verdad económica de N8 sigue sin certificarse por esa suite general.
-- N8 confirmado estáticamente: riesgo garantiza mínimo al mid/entrada modelada, pero el IOC final usa otro precio y termina `qty=4.1`, `price=1.219`, `notional=4.9979<5`. Corrección responsable antes de reservar y al precio límite; no aumentar cantidad después de reservar. RED debe exigir `qty=4.2`, `notional=5.1198` y veto si la mínima no cabe en riesgo aprobado.
-- Titularidad propuesta y registrada: **AGY implementa; Kimi V33 revisa RED/GREEN; Línea C consulta**. La rama remota de Línea C tiene cuatro commits exclusivos CL-161..164 y se preserva; no hay PR abierto al corte.
-- RAM 0,82 GiB con Cargo/Rustc ajenos: no se editó Rust, no hubo build/test local, censo SSD, Demo ni operación financiera. ROI/PnL/WR/Sharpe/EV: `N/D`.
-
 ## 2026-10-24T18:01:57-05:00 — Kimi V33: revalidación publicada; capital bloqueado por recursos
 
 - Base revalidada: `main=60981662e`; el merge de Fase 11 `58f90ced6` tiene 10/10 checks SUCCESS. El cierre documental `19d6ec254706cea311d10817e245a2507d20b9bc` coincide con `origin/main` y no tiene checks por `paths-ignore`; no se certificó Rust nuevo.
@@ -511,6 +1139,64 @@ Tanda del PR #138. Un commit por bloque; T-1 sólo por CL-159.
 - Inventario validado mecánicamente contra `git ls-files`: **2.193 rutas = 26 REVISADO_ESTATICO + 1 RED + 2.166 INVENTORIADO**, 838 archivos Rust; no hubo bajas. Esto no equivale a revisión semántica completa.
 - Capital/ROI sigue RED y sin cambio de código. Revisión independiente: validar como primera sentencia de `main` (`continuous_evolution_backtest.rs:78`), antes de `set_var` (`:82`), eliminar el shadowing de 13 (`:228`) y conectar informe (`:983/:992`). El contrato debe aislar cwd, `TGM_CONFIG_DIR` y `TG_CONFIG_ROOT`, cubrir CSV presente/ausente y `config_dir`; `20→30=50 %` será prueba aritmética pura, no ROI ni E2E financiero.
 - Dos decisiones del semáforo devolvieron 75; última lectura **0,97 GiB disponibles** con Cargo/Rustc ajenos. No hubo edición Rust, censo SSD, Demo ni operación financiera. ROI/PnL/WR/Sharpe/EV: `N/D`. Reanudar solo cuando RAM y semáforo admitan toda la puerta local.
+
+## 2026-10-24 17:37 -05:00 — Codex: identidad UDS RED→GREEN real, Execution lib108/108
+
+Supera el estado RED de17:09: el test focal reprodujo exactamente la clave
+fantasma BTCUSDT/"" junto a BTCUSDT/BOTH (0passed/1failed,0ignored), Cargo101,
+inputs idénticos y locks liberados. Recibo42bb3f9b bajo logs/codex-relevo-20261024.
+GREEN se instaló17:33:50 sobre main60981662, SHA UDS
+6ccde2d229228c97c52e83231a88ea32585772de412675b24b1bc6edc398100f.
+Exige ps y rechaza símbolo vacío o lado fuera de BOTH/LONG/SHORT antes del
+cache/callbacks. Conserva resultado del fixture10675 y añade140→rechazos→145.
+
+Ejecución real posterior: **108/108,0failed,0ignored** en Execution lib. Incluye
+23 tests UDS. Recibo `Codex-Relevo-PR65-018f512668ae4e96b69db7bfc1fe164a/receipt.json`:
+pass=true, build_inputs_unchanged=true, isolation_runtime_verified=true,
+1recibo por EXE, Job drenado0procesos y ambos locks liberados. Diario/config
+en sandbox privado por runner; no se usaron journals/tapes/modelos reales.
+No equivale a los tests completos execution/feature de PR65.
+
+Ejecutor actual `pr65_guard_isolated_v2.py` SHA4f4bbbcc98f906c14db669184be5d27791df1a224e40458829ff2b67297f0989,
+driver `run_isolated_v2.ps1`. Job16GiB, sin admisiónRAM, target único/jobs1,
+runner+fixtures fijados y comprobados antes/después. Transporte propio temporal
+`C:/Users/jhona/AppData/Local/Temp/tg-isolated-tests-rsibz3zk`; no eliminar durante
+los gates. F8 sigue en sesión39291/turno0a8f24bf, aún sin PASS. Después faltan
+fmt/Clippy, checkworkspace/all-targets y testsPR65 del mismo check. Sin commit/push.
+
+## 2026-10-24 17:09 -05:00 — Codex: continuación sin admisión RAM; RED de identidad UDS en curso
+
+Orden humana directa «Sigue sin pensar en la ram». UDS/cache y formato DAZ
+aplicados mediante transacciones3+1 sobre1e42; ahora main60981662 incluye F11.
+F8 inició Cargo real122832 con guard1bb, pero falló antes de tests al compilar
+windows: allocation failed bajo el Job privado2GiB. Ese intento NO es PASS;
+además cambió main durante el build y el guard rechazó sus inputs. Se continúa
+con el límite general16GiB del Job y sin piso de admisión, no con sensores falsos.
+Job original1c3e39... sigue intacto. Worker reportó0procesos; ROOT verificó dos
+censos vacíos y propiedad de ambos locks, retirándolos en recuperación auditada
+`.agent_tx/codex-continuacion-20261024/recovery-12ea4331.json`. Recibos históricos
+intactos, sin Cargo propio activo a17:09.
+
+**WIP UDS actual es RED no publicado**, SHA8edd683936266d1e26791b3a84dde88d94873a1d3d8e9fd282bed8f8feb9b459:
+añade test causal de identidad pero mantiene aún el manejo anterior. Base con
+BTC/BOTH+40 y wallet100: ps ausente/vacío/desconocido o símbolo vacío duplica
+PnL y daría185. GREEN sellado SHA6ccde2d229228c97c52e83231a88ea32585772de412675b24b1bc6edc398100f
+exige ps y rechaza identidad inválida; control sano vuelve a145. Instaladores
+red/green y candidatos en `.agent_tx/codex-continuacion-20261024`. No desplegar
+ni commitear el estado RED. DAZ3 conserva957173/1f9a78/81f33e.
+
+Antes de tests se prepara runner Cargo aislado: GlobalArena puede reconstruir
+active.bin/config al cargar fallback JSON y accounting escribe journals relativos.
+Snapshot mínimo4JSON/26.690bytes, sin copiar rootdata/modelos; cwd y config/data
+privados, argv exactos, target canónico. Los tests con operaciones Binance reales
+y lecturas absolutas de tapes están ignored; no se van a activar.
+
+Gate pre-push: implementación privada3rutas,12/12 contratos0skips con push/borrado
+a bare temporal, revisión independiente; todavía SIN instalar y sin adaptador
+de recibos reales. Entrega `prepush/ENTREGA.md`, manifest86c6084a... bajo el mismo
+namespace. Otro P1 persiste: reconexión vacía cache y P=[] puede publicar wallet
+sin snapshot completo ni revocar Ready; auditoría `sesion/AUDITORIA.md`.
+No hay PASS Rust, commit/push/CI propios de la composición ni resultados económicos.
 
 ## 2026-10-24T15:51:51-05:00 — Kimi V33: CI 10/10, Fase 9 retirada y Línea I integrada
 
@@ -10859,12 +11545,14 @@ Puerto recursos reanclado sobre PR90/7b598f7e (padre mainfd956f9, AGY F1-074/F1-
 - Evidencia del SHA: Fisher-Rao 4/4, workspace `check --workspace --all-targets --locked` exit 0, Zero-Wait 22/22; backtest 43/43 +2 ignored. Revisión independiente agent-25: **Yes**, sin Critical/Important. El workspace conserva warnings MXCSR y errores no fatales de checksum dep-info; no se presentan como Clippy verde.
 - Attestation/publicación siguen bloqueados por Navier/adversarial/legacy bajo QRA, formatter baseline y seis fases + Python/Golden9 del mismo SHA. Handoff publicado en `COORDINACION_CODEX_2026-09-28.md`. Producción NO-GO; ROI/PnL/WR/Sharpe/EV=N/D. La meta +100 %/72 h sigue siendo hipótesis OOS neta, no certificado.
 
+
 ## 2026-11-04T19:42:25Z — KIMI-QUANT-SR-V35: R4+R5 cierran formato de audit-engine y CAS local
 
 - R4 `950882897da3b54d7a151ecdd24b21e781688b9d` y R5 `dbdd79f7bb255347fc5a45a3fbbd1a08e8c45729` quedaron integrados en `main` local por CAS desde `b8529f40`. `origin/main=f1ca374a` no cambió; no hubo push. Local queda 36 ahead/0 behind.
 - R4 formatea `drift_recovery_contract.rs`; R5 formatea los otros siete contratos pendientes. Todo `audit-engine` pasa `rustfmt --check`. Cada suite terminó 90/90 en 14 targets, 0 failed/ignored/filtered. No se alteraron condiciones, umbrales, mensajes, contabilidad, OOS o APIs; QSR/QRA y WIP de raíz no fueron adoptados.
 - Candidato R5: workspace all-targets exit 0 (4m13s) y Zero-Wait 22/22 (286.401s). Revisión independiente agent-25 R4+R5: **Yes**, Critical/Important/Minor=0. Warnings MXCSR y errores no fatales de checksum dep-info permanecen declarados.
 - Attestation/publicación siguen bloqueados por QRA Navier/adversarial/legacy, formatter de otros crates y seis fases + Python legacy/Golden9 de un SHA final. Producción NO-GO; ROI/PnL/WR/Sharpe/EV=N/D.
+
 
 ## 2026-11-04T20:42:02Z — KIMI-QUANT-SR-V35: R6A evidencia de fees/funding y CAS local
 
@@ -10874,118 +11562,76 @@ Puerto recursos reanclado sobre PR90/7b598f7e (padre mainfd956f9, AGY F1-074/F1-
 - `82812ec` y `b37c79b` fueron descartados por blob truncado y nunca promovidos. La cadena limpia `51f9f162` restauró el contrato con blob `37f7b3a7`; identidad archivo/commit verificada. Recomposición conserva A4, Kimi V34, GLM-191 y todas las entradas propias.
 - Attestation/publicación siguen bloqueados por QRA Navier/adversarial/legacy, formatter restante y seis fases + Python legacy/Golden9. Producción NO-GO; ROI/PnL/WR/Sharpe/EV=N/D.
 
-## 2026-11-04T22:02:00Z — KIMI-QUANT-SR-V35: R7B evidencia finita de señal y CAS local
 
-- `main` local avanzó por CAS desde `5e021ebb9d17cf5db586b023f3d414cba12be306` a `6f95120f0cafefc0c857e062f6d1141411f6a836` (tree `f7966b523fa2d09cb96d77e1b840c7a5fb78988d`), con padres `ead6d683579c2f2f497ee6d3ac897a28e2649cf2` y `9bbb0b9986d556d9eaaef49b201ef93d1181cd62`. `origin/main=ead6d683` fue revalidado; no hubo push.
-- `route_order` rechaza `REJ_INVALID_SIGNAL_EVIDENCE` cuando confianza no finita/fuera de [0,1], volatilidad o spread no finitos/negativos, o producto de edge desbordado. La guarda queda después del retorno Flat y antes de fee/IOC/Market; el producto validado se reutiliza en `evaluate_viability`. R6A queda intacto.
-- R7A `e693f57d` cerró contrato 4/4, workspace exit 0 (3m25s), Zero-Wait 22/22 (199.709s) y revisión Yes, pero no se promovió porque upstream avanzó a GLM-192. Se adopta su corrección `is_nan()` y se descarta el `to_bits()` duplicado.
-- Evidencia terminal R7B: execution-engine 517/517 en 49 suites, 5 ignored/0 filtered/exit 0; Fisher 4/4; workspace all-targets exit 0 (4m07s); Zero-Wait 22/22 (189.610s); revisión agent-25 **Yes**, Critical/Important/Minor=0. Warnings MXCSR y errores no fatales de checksum dep-info permanecen declarados.
-- Handoff documental se valida como commit separado antes de su CAS. Attestation/publicación siguen bloqueados por QRA Navier/adversarial/legacy, formatter restante, productor ROOT registrado, seis fases + Python legacy/Zero-Wait/bus y Golden9 del SHA final. Producción NO-GO; ROI/PnL/WR/Sharpe/EV=N/D.
+## 2026-11-04T22:16:36Z — KIMI-QUANT-SR-V35: R7B y handoff integrados localmente
 
-
-## 2026-11-04T22:34:38Z — KIMI-QUANT-SR-V35: R8 formato dark-alpha y CAS local
-
-- `main` local avanzó por CAS desde `13b3cc0d8b3682669ddd59904bcf8cd330db6b69` a `92950e1b832ea562675620151fcd4cff1714c099` (tree `44a2810df058d6eca24dd55ebd79f4808d73fc40`). `origin/main=ead6d683` revalidado; no hubo push.
-- Nueve rutas `dark-alpha-engine`, 105+/83- exclusivamente rustfmt. Cada blob del tree escrito coincide con el WIP censo (`f653b151`, `c74bde5c`, `84a7b932`, `4431df8c`, `771cf0d8`, `1163832e`, `b2232f4a`, `fde16235`, `b2171304`). No cambian condiciones, fórmulas, umbrales, mensajes, contabilidad ni APIs.
-- Evidencia: 66/66 en 6 targets, 0 failed/ignored/filtered/exit0; workspace all-targets exit0 (4m12s); Zero-Wait 22/22 (267.253s)/exit0; revisión agent-25 **Yes**, Critical/Important/Minor=0. `core.fsmonitor=true` ocultó la fila propia; se desactivó únicamente en los índices privados y se verificó su blob `562678a3` en el commit.
-- Handoff documental separado pendiente de workspace, Zero-Wait y CAS. Attestation/publicación siguen bloqueados por QRA Navier/adversarial/legacy, formatter restante, productor ROOT, seis fases + Python y Golden9. Producción NO-GO; ROI/PnL/WR/Sharpe/EV=N/D.
+- CAS de código `6f95120f0cafefc0c857e062f6d1141411f6a836` (22:02Z, tree `f7966b52`) y CAS documental `13b3cc0d8b3682669ddd59904bcf8cd330db6b69` (22:16Z, tree `cbe7fc3b`). `origin/main=ead6d683` permanece intacto; no hubo push.
+- `route_order` exige evidencia finita de confianza [0,1], volatilidad/spread no negativos y producto edge finito antes de fee/IOC/Market con `REJ_INVALID_SIGNAL_EVIDENCE`; Flat y R6A quedan preservados. GLM-192 `is_nan()` sustituye el parche R7A/`to_bits()` no integrado.
+- Evidencia código: ejecución 517/517 en 49 suites/5 ignored/0 filtered, Fisher 4/4, workspace exit 0 (4m07s), Zero-Wait 22/22 (189.610s), revisión Yes. Handoff: sólo cuatro documentos, workspace exit 0 (5m01s), Zero-Wait 22/22 (441.608s), revisión Yes; Critical/Important/Minor=0 en ambas.
+- Attestation/publicación siguen bloqueados por QRA Navier/adversarial/legacy, formatter restante, productor ROOT registrado, seis fases + Python legacy/Zero-Wait/bus y Golden9 del SHA final. Producción NO-GO; ROI/PnL/WR/Sharpe/EV=N/D. +100 %/72 h sigue siendo hipótesis OOS neta.
 
 
-## 2026-11-04T23:16:11Z — KIMI-QUANT-SR-V35: R9C storage, I-12/GLM-192 y CAS local
+## 2026-11-04T22:42:52Z — KIMI-QUANT-SR-V35: R8 y handoff integrados localmente
 
-- `main` local avanzó por CAS desde `9f082c98357e1104df178159e223bf16a9dfb161` a `f643ac28475f25d88c70810e072ea13fb15f7afb` (tree `ead1f7121d20e1d0a7d0d8f65f063ed4943dab81`), padres `206701dc` y `f8b8e05f`. `origin/main=206701dc` permanece intacto; no hubo push.
-- Cuatro rutas `storage-engine`, 51+/21- exclusivamente rustfmt, con blobs `f7e21f22`, `ad456180`, `e46022b6`, `c08ed1bd` exactos al WIP censo. Sin cambios de APIs, fórmulas, umbrales, recuperación o contabilidad.
-- R9B incorporó I-12 en cinco documentos con unión de 9 líneas; R9C incorporó GLM-192 en dos documentos con unión de 18 líneas, incluida `767aac6e3`, preservando R3–R9B. R9B cerró 50/50, workspace y Zero-Wait 22/22 (464.616s), pero no se promovió porque upstream avanzó.
-- Evidencia R9C: 50/50 en 6 targets/0 failed/ignored/filtered/exit0; workspace 4m55s/exit0; Zero-Wait 22/22 (369.920s)/exit0; revisión agent-25 **Yes**, Critical/Important/Minor=0. El fallo inicial R9 de Zero-Wait quedó sin traceback y la reproducción mínima pasó 1/1; no se cambió código por ese evento.
-- Handoff documental separado pendiente de workspace, Zero-Wait y CAS. Attestation/publicación siguen bloqueados por QRA Navier/adversarial/legacy, formatter restante, productor ROOT/inventario Golden9 ausentes, seis fases + Python y Golden9. Producción NO-GO; ROI/PnL/WR/Sharpe/EV=N/D.
-
-
-## 2026-11-04T23:48:13Z — KIMI-QUANT-SR-V35: R10A dos fuentes data-ingest y CAS local
-
-- `main` local avanzó por CAS desde `e77d3ce31c166de15d1cd4b18ac8c82d6a126e92` a `34def09f16b65a9c9ab5c90bd884bb3ed3a9c8c6` (tree `8f02de2120a25d94481bb0d65f18a8cfab367d89`). `origin/main=206701dc` intacto; no hubo push.
-- `cola_ws.rs` y `rutas_feed.rs`, 59+/13- exclusivamente rustfmt, blobs exactos `9e655161` y `a1b7ec93`. Sin cambios de hosts, categorías, límites de streams, mensajes, relojes, APIs o comportamiento de red.
-- Evidencia: 72/72 en 9 targets/0 failed/ignored/filtered/exit0; workspace all-targets exit0 (3m32s); Zero-Wait 22/22 (260.316s)/exit0; revisión agent-25 **Yes**, Critical/Important/Minor=0.
-- `inmune_latencia_contract.rs` y `rutas_feed_contract.rs` contienen cambios semánticos WIP y quedaron restaurados a base; `edad_feed*`/`f10_001` TRIANGULAR_PENDIENTE y `almacen_hot_path_contract`/`arranque_feed_contract` sin referencia WIP permanecen intactos. R10A no declara cerrado todo `data-ingest`.
-- Handoff documental separado pendiente de workspace, Zero-Wait y CAS. Attestation/publicación siguen bloqueados por QRA, formatter restante, productor ROOT/Golden9, seis fases + Python y Golden9. Producción NO-GO; ROI/PnL/WR/Sharpe/EV=N/D.
+- CAS de código `92950e1b832ea562675620151fcd4cff1714c099` (22:34Z, tree `44a2810d`) y CAS documental `9f082c98357e1104df178159e223bf16a9dfb161` (22:42Z, tree `d101bfe3`). `origin/main=ead6d683` intacto; sin push.
+- Nueve rutas `dark-alpha-engine` sólo rustfmt, con los nueve blobs idénticos al WIP censo y sin cambios de APIs, condiciones, umbrales o contabilidad.
+- Código: 66/66 en 6 targets, workspace 4m12s, Zero-Wait 22/22 (267.253s), revisión Yes. Handoff: workspace 3m46s, Zero-Wait 22/22 (261.836s), revisión Yes; ambos exit0 y sin Critical/Important/Minor.
+- `core.fsmonitor=true` ocultó una fila propia; se desactiva sólo en índices privados antes de staging y se verifican nombres/blobs del tree. Configuración global intacta. Handoff contiene cuatro documentos, sin código ni WIP ajeno.
+- Attestation/publicación siguen bloqueados por QRA Navier/adversarial/legacy, formatter restante, productor ROOT, seis fases + Python y Golden9. Producción NO-GO; ROI/PnL/WR/Sharpe/EV=N/D.
 
 
-## 2026-11-05T00:17:17Z — KIMI-QUANT-SR-V35: R11A dos contratos data-pipeline y CAS local
+## 2026-11-04T23:34:31Z — KIMI-QUANT-SR-V35: R9C y handoff integrados localmente
 
-- `main` local avanzó por CAS desde `fc16a4a6f42301309fd06614928e17c8624f8fd8` a `d9fd55c3136d64b1c836f3162c574ae94d67e2ea` (tree `017a2625916ca1bf4a129f37b18d1540bc0ad23f`). `origin/main=206701dc` intacto; no hubo push.
-- `dynamic_ranker_spectral_unification_contract.rs` y `xcv_dims_cross_exchange_muertas_por_contrato.rs`, 12+/3- exclusivamente rustfmt: cuatro `assert!` expandidos, sin cambios de comparaciones, mensajes, fixtures, umbrales, contabilidad o APIs. Blobs exactos `baf87a0a` y `3f48c3f4`.
-- Evidencia: 91/91 en 9 targets/0 failed/ignored/filtered/exit0; workspace all-targets exit0 (3m23s); Zero-Wait 22/22 (181.813s)/exit0; revisión agent-25 **Yes**, Critical/Important/Minor=0.
-- `dynamic_ranker.rs` (cambio semántico 275 líneas), `omni_multiplexer.rs` (orden de claves/API/archivo) y `spot_feed_contract.rs` (argumentos `apply_spot_tick`) permanecen restaurados a base. R11A no declara cerrado todo `data-pipeline`.
-- Handoff documental separado pendiente de workspace, Zero-Wait y CAS. Attestation/publicación siguen bloqueados por QRA, formatter restante, productor ROOT/Golden9, seis fases + Python y Golden9. Producción NO-GO; ROI/PnL/WR/Sharpe/EV=N/D.
-
-
-## 2026-11-05T00:39:07Z — KIMI-QUANT-SR-V35: R12A dos fuentes os-guardian y CAS local
-
-- `main` local avanzó por CAS desde `c5a1f94f9713b36f30fbfe9df96fccb2b19ca0a2` a `25b0d446eecaaad20eeec5240d57d1aa9276704e` (tree `e0b65384e5c4b91987662424698655f958a5ee55`). `origin/main=206701dc` intacto; no hubo push.
-- `memory_audit.rs` y `memory_compaction.rs`, 32+/8- exclusivamente rustfmt: una firma y varios `assert!`/expresiones multilínea, sin cambios de umbrales de memoria, histéresis, working set, compactación, préstamos, alineación, FTZ/DAZ o APIs. Blobs exactos `fb391bba` y `8580f2bb`.
-- Evidencia: 29/29 en 4 targets/0 failed/ignored/filtered/exit0; workspace all-targets exit0 (3m34s); Zero-Wait 22/22 (260.881s)/exit0; revisión agent-25 **Yes**, Critical/Important/Minor=0.
-- `large_pages.rs` (overflow/alineación), `simd_crypto.rs` (préstamos), `f8_001_silicon_physics_contract.rs` (activación FTZ/DAZ) y `silicon_topology.rs` (TRIANGULAR_PENDIENTE) permanecen restaurados/intactos a base. R12A no declara cerrado todo `os-guardian`.
-- Handoff documental separado pendiente de workspace, Zero-Wait y CAS. Attestation/publicación siguen bloqueados por QRA, formatter restante, productor ROOT/Golden9, seis fases + Python y Golden9. Producción NO-GO; ROI/PnL/WR/Sharpe/EV=N/D.
+- CAS de código `f643ac28475f25d88c70810e072ea13fb15f7afb` (23:16Z, tree `ead1f712`) y CAS documental `e77d3ce31c166de15d1cd4b18ac8c82d6a126e92` (23:34Z, tree `cb72be98`). `origin/main=206701dc` intacto; sin push.
+- Cuatro rutas `storage-engine` sólo rustfmt con equivalencia exacta de blobs WIP. R9B incorporó I-12 en cinco documentos (9/0); R9C incorporó GLM-192 en dos (18/0, incluida `767aac6e3`), preservando R3–R9B.
+- Código: 50/50 en 6 targets, workspace 4m55s, Zero-Wait 22/22 (369.920s), revisión Yes. Handoff: workspace 14m10s/exit0 tras espera legítima de build I-13, Zero-Wait 22/22 (576.308s), revisión Yes; sin Critical/Important/Minor.
+- R9B también cerró 50/50 y Zero-Wait 22/22 (464.616s), pero no se promovió por upstream. El fallo R9 inicial sin traceback se investigó con reproducción mínima 1/1 verde y no produjo cambio sintomático.
+- Attestation/publicación siguen bloqueados por QRA Navier/adversarial/legacy, formatter restante, productor ROOT/inventario Golden9 ausentes, seis fases + Python y Golden9. Producción NO-GO; ROI/PnL/WR/Sharpe/EV=N/D.
 
 
-## 2026-11-05T00:56:32Z — KIMI-QUANT-SR-V35: R13A dos archivos omniscient-registry y CAS local
+## 2026-11-04T23:56:42Z — KIMI-QUANT-SR-V35: R10A y handoff integrados localmente
 
-- `main` local avanzó por CAS desde `a50d4d3c5848cfd7741bf2768df1197a008ef887` a `1c00e0c8d05564b3238b8f87ff20ce213ebb3343` (tree `afe418d5ad64b139abe4765c77bfe052f615fb4c`). `origin/main=206701dc` intacto; no hubo push.
-- `src/tests.rs` y `aislamiento_ambito_multiactivo_contract.rs`, 25+/11- exclusivamente rustfmt: orden de imports, espacios y layouts de llamadas/`assert!`, sin cambios de aislamiento, precedencia símbolo/coin_id, comparaciones, fixtures, umbrales o APIs. Blobs exactos `78e92dfe` y `3a7045cd`.
-- Evidencia: 14/14 en 3 targets/0 failed/ignored/filtered/exit0; workspace all-targets exit0 (3m41s); Zero-Wait 22/22 (247.075s)/exit0; revisión agent-25 **Yes**, Critical/Important/Minor=0.
-- `src/lib.rs` permanece restaurado a base: no se adoptó la migración `SkipMap→SkipList` ni el nuevo `unsafe`. R13A no declara cerrado todo `omniscient-registry`.
-- Handoff documental separado pendiente de workspace, Zero-Wait y CAS. Attestation/publicación siguen bloqueados por QRA, formatter restante, productor ROOT/Golden9, seis fases + Python y Golden9. Producción NO-GO; ROI/PnL/WR/Sharpe/EV=N/D.
-
-
-## 2026-11-05T01:18:04Z — KIMI-QUANT-SR-V35: R14A dos fuentes telemetry-server y CAS local
-
-- `main` local avanzó por CAS desde `893f830fc8602e0aace936fdbe9de8d4b3ac1db3` a `54784471c7f268e5a8b724ce53827a9bb5e3ae12` (tree `c295407e0dc6293711685cfa5d09dba0c58463b3`). `origin/main=206701dc` intacto; no hubo push.
-- `causal_attribution.rs` y `estrangulador.rs`, 39+/8- exclusivamente rustfmt: condicionales multilínea, constructor y layouts de `assert!`, sin cambios de safe gross/fees/net, atribución Aumann-Shapley/Owen, supresión de avisos, ventanas temporales o APIs. Blobs exactos `a8df6e5a` y `01f090fc`.
-- Evidencia: 87/87 en 6 targets/0 failed/ignored/filtered/exit0; workspace all-targets exit0 (3m35s); Zero-Wait 22/22 (224.937s)/exit0; revisión agent-25 **Yes**, Critical/Important/Minor=0.
-- `forensic_auditor.rs` (let-chain/import order), `ret51b_una_sola_cola.rs` (import order), `macros.rs` (semántica grande) y `mirofish_lattice.rs` (TRIANGULAR_PENDIENTE) permanecen restaurados/intactos a base. R14A no declara cerrado todo `telemetry-server`.
-- Handoff documental separado pendiente de workspace, Zero-Wait y CAS. Attestation/publicación siguen bloqueados por QRA, formatter restante, productor ROOT/Golden9, seis fases + Python y Golden9. Producción NO-GO; ROI/PnL/WR/Sharpe/EV=N/D.
+- CAS de código `34def09f16b65a9c9ab5c90bd884bb3ed3a9c8c6` (23:48Z, tree `8f02de21`) y CAS documental `fc16a4a6f42301309fd06614928e17c8624f8fd8` (23:56Z, tree `b55d81e2`). `origin/main=206701dc` intacto; sin push.
+- `cola_ws.rs` y `rutas_feed.rs` sólo rustfmt, con blobs exactos `9e655161` y `a1b7ec93`; sin cambios de hosts, límites, relojes, APIs o red.
+- Código: 72/72 en 9 targets, workspace 3m32s, Zero-Wait 22/22 (260.316s), revisión Yes. Handoff: workspace 3m15s, Zero-Wait 22/22 (279.835s), revisión Yes; sin Critical/Important/Minor.
+- Los contratos con cambios semánticos WIP fueron restaurados a base; TRIANGULAR_PENDIENTE y archivos sin referencia permanecen intactos. R10A no declara cerrado todo `data-ingest`.
+- Attestation/publicación siguen bloqueados por QRA, formatter restante, productor ROOT/Golden9, seis fases + Python y Golden9. Producción NO-GO; ROI/PnL/WR/Sharpe/EV=N/D.
 
 
-## 2026-11-05T02:14:26Z — KIMI-QUANT-SR-V35: R15B, R15A2 y R15C integrados localmente
+## 2026-11-05T00:25:51Z — KIMI-QUANT-SR-V35: R11A y handoff integrados localmente
 
-- Cadena CAS: R15B `fed28c787f527b16e8dd67679c3c1c1004d364b1` (tree `0226db51cec916b12837c76f336016306278f030`, padre `5f119337`), R15A2 `369806361c075038d257d80e2168e74b59205a5e` (tree `1280eafcf0422ca35c8755fcdccc8a0b908d01e9`, padre R15B) y R15C `9d59f5dc235f65b2882aead772e8bdd71d5524b8` (tree `138f5a0e96601f1d96fdcb15539a0c0033a345aa`, padre R15A2). `origin/main=206701dc` revalidado; sin push.
-- R15B corrige la latencia BSD base que falló cuatro veces (47.675/43.454/42.013/50.510 ns >25.000 ns) con LUT de caracteres cuadráticos y fallback Euler preservado. Contrato focal 7/7 con oráculos independientes; suite 132/132 en 21 targets/2 ignored/0 filtered, workspace 3m35s, Zero-Wait 22/22 (199.152s), agent-26 Yes. Su Minor documental quedó cerrado por R15C.
-- R15A2 integra 14 rutas exclusivamente rustfmt (378+/90-) con blobs WIP exactos: suite 132/132/21, workspace 3m51s, Zero-Wait 22/22 (237.559s), agent-27 apto sin Critical/Important/Minor.
-- R15C sólo documenta LUT versus fallback Euler (3+/2-), sin cambios ejecutables: suite 132/132/21, workspace 3m45s, Zero-Wait 22/22 (234.452s), agent-26 Yes/0 hallazgos.
-- `partial_cmp`, `TradeHorizon`, nuevas APIs y todas las rutas TRIANGULAR_PENDIENTE permanecen excluidos; R15 no declara cerrado todo `strategy-core`. Los overlays fueron verificados idénticos a sus trees.
-- Handoff documental separado en validación. Attestation/publicación siguen bloqueados por QRA, formatter restante, productor ROOT/Golden9, seis fases + Python y Golden9. Producción NO-GO; ROI/PnL/WR/Sharpe/EV=N/D.
-
-
-## 2026-11-05T02:55:15Z — KIMI-QUANT-SR-V35: R17A y R18A integrados localmente
-
-- R17A `ee87c74ed52df7a4f6542cc4563e172a2bb85f07` (tree `a3914724fff4ae13f536963269002e6ed474ea86`, padre `59b1cfec`) integra ocho rutas exclusivamente rustfmt/238+/104- en `metacortex-engine`: 138/138 en 21 targets/0 ignored/0 filtered, workspace 4m02s, Zero-Wait 22/22 (249.188s), agent-28 Yes/0. `prospect_theory.rs` fue excluido por indentación no-rustfmt y `consejo_seniors.rs` fue restaurado tras la recursión de rustfmt; `skip_children=true` quedó verificado.
-- R18A `f8aaab82861cc3d94f649093c40f9194a7d5fa54` (tree `c7aa8932b1cbf9ffc4b23a0d0480d61f8d73a771`, padre R17A) integra nueve rutas rustfmt/25+/22- en `risk-engine`: 580/580 en 85 targets/10 ignored/0 filtered, workspace 3m50s, Zero-Wait 22/22 (293.916s). El fallo inicial de latencia (12.653 ns >10.000 ns) fue transitorio: tres repeticiones focalizadas pasaron 6.928/8.589/9.095 ns y la suite completa se repitió verde.
-- `origin/main=206701dc` revalidado; sin push. Cambios Default/inline-const/iteradores/payload/API, Kelly/leverage/correlation/vetos y todas las rutas TRIANGULAR_PENDIENTE no se adoptaron. R17A/R18A no declaran cerrados esos crates.
-- Handoff documental separado en validación. Attestation/publicación siguen bloqueados por QRA, formatter restante, productor ROOT/Golden9, seis fases + Python y Golden9. Producción NO-GO; ROI/PnL/WR/Sharpe/EV=N/D.
+- CAS de código `d9fd55c3136d64b1c836f3162c574ae94d67e2ea` (00:17Z, tree `017a2625`) y CAS documental `c5a1f94f9713b36f30fbfe9df96fccb2b19ca0a2` (00:25Z, tree `3761d1a3`). `origin/main=206701dc` intacto; sin push.
+- Dos contratos `data-pipeline` sólo rustfmt, cuatro `assert!` expandidos, blobs exactos `baf87a0a` y `3f48c3f4`; sin cambios de comparaciones, fixtures, umbrales, contabilidad o APIs.
+- Código: 91/91 en 9 targets, workspace 3m23s, Zero-Wait 22/22 (181.813s), revisión Yes. Handoff: workspace 3m15s, Zero-Wait 22/22 (271.943s), revisión Yes; sin Critical/Important/Minor.
+- `dynamic_ranker.rs`, `omni_multiplexer.rs` y `spot_feed_contract.rs` permanecen restaurados a base por diferencias semánticas WIP. R11A no declara cerrado todo `data-pipeline`.
+- Attestation/publicación siguen bloqueados por QRA, formatter restante, productor ROOT/Golden9, seis fases + Python y Golden9. Producción NO-GO; ROI/PnL/WR/Sharpe/EV=N/D.
 
 
-## 2026-11-05T04:34:59Z — KIMI-QUANT-SR-V35: R19A2, R20B y R21B integrados localmente
+## 2026-11-05T00:46:16Z — KIMI-QUANT-SR-V35: R12A y handoff integrados localmente
 
-- Cadena CAS: R19A2 `2c50ce4814846fcac2f6dacd36dd28c9814da914`, R20B `10b303e746ae8e59a709b048ec0ea3d027dd4cde` y R21B `68e20bd6d5abcc5b1b8ac3998ffa8209df06b121`. `origin/main=31eaa6cb88a343dc033d3d7ca76ab6c67981be6c` revalidado; no hubo push.
-- R19A2 integra 32 rutas rustfmt de signal-engine: 332/332 en 49 targets/9 ignored/0 filtered, workspace 3m26s, Zero-Wait 22/22 en 248.310s y revisión agent-29 Yes/0.
-- R20A `81c0d8e4` fue aprobado pero no promovido porque upstream avanzó. R20B lo recompone sobre GLM-193, conserva los anexos de ambos lados y queda en main local: 200/202 en 22 targets, workspace 3m08s, Zero-Wait 101.951s y agent-30 merge Yes/0. Los dos rojos son CL-88 (Ω152) y Stanford C6 (#127), heredados y fuera del diff; evolution-engine no se declara verde y las reparaciones WIP ajenas no se adoptaron.
-- R21B integra ocho rutas rustfmt de feature-engine/117+/45- con blobs WIP exactos: 411/411 en 59 targets/20 ignored/0 filtered, workspace 3m16s, Zero-Wait 133.153s y agent-30 Yes/0. Once rutas no estables quedaron excluidas. Los SHAs documentales previos `6611b102`/`e76965ca` no se usaron; el SHA validado contiene el blob AGENT_SYNC `41d9534b`.
-- Handoff conjunto separado en validación. Attestation/publicación siguen bloqueados por QRA Navier/adversarial/legacy, formatter restante, productor ROOT/Golden9, seis fases + Python y Golden9. Producción NO-GO; ROI/PnL/WR/Sharpe/EV=N/D; +100 %/72 h sigue siendo hipótesis OOS neta.
-
-
-## 2026-11-05 — KIMI-QUANT-SR-V35: R27 Stanford fail-closed integrado; handoff pendiente
-
-- Base merge aislada `b2e278302329e74c708301d60c7ad1a1eb6a34a6` (origin `4f9fca71` GLM-194 + `d7d6907b`). El intento documental `55ff87a1` fue descartado y no forma parte de la cadena. R27 `1b252ad21984fbde07e28669db8fa96bc8bfc1af`, tree `d33f5210d7599c32f0ccc764df6841fe2110d2a5`, padre b2e, ya está integrado en `main` local por CAS; handoff documental separado aún en validación, sin push.
-- TDD: C6 histórico y el nuevo contrato de evidencia no finita fallaron por `clamp(1.0, NaN)`; el contrato de `meta_distill` promovía Sharpe +∞. Sólo después se añadieron tres guardas mínimas: sentinel existente para retornos no finitos, retorno antes de SOL PROPOSE y rechazo de los siete campos no finitos en `meta_distill`, sin filtrar ni imputar datos.
-- Contratos reforzados con 11 retornos y control de RNG (`causal_pillar_importance`) para detectar filtrado/consumo de RNG, y siete variantes no finitas de métricas externas. GREEN focal 3/3; suite evolution 203/204 en 22 targets/0 ignored/filtered, único rojo CL-88 heredado fuera del diff. Agent-30 revisó corrección y rama completa Yes/0.
-- Workspace all-targets exit0 (4m29s), Zero-Wait 22/22 (344.272s)/exit0. CAS R27 realizado `main=1b252ad21984fbde07e28669db8fa96bc8bfc1af`, expected `d7d6907b`, origin `4f9fca71` revalidado; handoff documental separado en validación, sin push. Producción NO-GO; ROI/PnL/WR/Sharpe/EV=N/D; +100 %/72 h no está certificado.
+- CAS de código `25b0d446eecaaad20eeec5240d57d1aa9276704e` (00:39Z, tree `e0b65384`) y CAS documental `a50d4d3c5848cfd7741bf2768df1197a008ef887` (00:46Z, tree `3eb5e4ab`). `origin/main=206701dc` intacto; sin push.
+- `memory_audit.rs` y `memory_compaction.rs` sólo rustfmt, blobs exactos `fb391bba` y `8580f2bb`; sin cambios de umbrales de memoria, histéresis, working set, compactación, préstamos, alineación, FTZ/DAZ o APIs.
+- Código: 29/29 en 4 targets, workspace 3m34s, Zero-Wait 22/22 (260.881s), revisión Yes. Handoff: workspace 3m29s, Zero-Wait 22/22 (227.273s), revisión Yes; sin Critical/Important/Minor.
+- `large_pages.rs`, `simd_crypto.rs`, F8 y `silicon_topology.rs` permanecen restaurados/intactos por diferencias semánticas/TRIANGULAR. R12A no declara cerrado todo `os-guardian`.
+- Attestation/publicación siguen bloqueados por QRA, formatter restante, productor ROOT/Golden9, seis fases + Python y Golden9. Producción NO-GO; ROI/PnL/WR/Sharpe/EV=N/D.
 
 
-## 2026-11-05 — KIMI-QUANT-SR-V35: R28 puente Browniano causal integrado; handoff pendiente
+## 2026-11-05T01:03:34Z — KIMI-QUANT-SR-V35: R13A y handoff integrados localmente
 
-- Base merge `87cccdc17334309c585402b57607d56b89634524` (origin `61e0e759` GLM-195 + `90b2e695`). R28 `0d03e5a39b7164ded28a452849fa18bdd391a4b6`, tree `ce87b3d8b81e23f2572de57c192edeb7e1435529`, padre b2e, ya está integrado en `main` local por CAS; handoff documental separado aún en validación, sin push. La extracción inicial incompleta fue descartada; overlay v2 verificado 2305/2305 archivos.
-- RED CL-88: `bar_sigma=(|r|/2).max(0.001)` imponía hasta 10 pb/barra frente a 1,03 pb real y produjo ATR 9,16 pb/2,87x. Corrección limitada a `wf_replay_segment`, 22+/6-: media expansiva causal de r² de barras previas e incrementos `B(f)-f*B(1)`, sin piso ni learning rate. No se tocaron SigmaMinuto, TP/SL ni el camino vivo.
-- GREEN focal: razones 1,133/1,133/0,873. Suite evolution **204/204 en 22 targets, 0 failed/ignored/filtered**; Stanford C6 y CL-88 verdes. Agent-30 confirmó fórmula y rama Yes/0.
-- Minor diferido de cobertura: extremos, incrementos/covarianza, prefijos causales y segmentos/piso residual no tienen contratos específicos aún. No se presenta como prueba existente ni bloquea el fix CL-88 ya probado. Workspace all-targets exit0 (4m03s), Zero-Wait 22/22 (366.708s)/exit0. CAS R28 realizado `main=0d03e5a39b7164ded28a452849fa18bdd391a4b6`, expected `90b2e695`, origin `61e0e759` revalidado; handoff documental separado en validación, sin push. Producción NO-GO; ROI/PnL/WR/Sharpe/EV=N/D.
+- CAS de código `1c00e0c8d05564b3238b8f87ff20ce213ebb3343` (00:56Z, tree `afe418d5`) y CAS documental `893f830fc8602e0aace936fdbe9de8d4b3ac1db3` (01:03Z, tree `23f69ee9`). `origin/main=206701dc` intacto; sin push.
+- `src/tests.rs` y `aislamiento_ambito_multiactivo_contract.rs` sólo rustfmt, blobs exactos `78e92dfe` y `3a7045cd`; sin cambios de aislamiento, precedencia símbolo/coin_id, comparaciones, fixtures, umbrales o APIs.
+- Código: 14/14 en 3 targets, workspace 3m41s, Zero-Wait 22/22 (247.075s), revisión Yes. Handoff: workspace 3m13s, Zero-Wait 22/22 (214.528s), revisión Yes; sin Critical/Important/Minor.
+- `src/lib.rs` permanece restaurado a base por migración `SkipMap→SkipList` y nuevo `unsafe`. R13A no declara cerrado todo `omniscient-registry`.
+- Attestation/publicación siguen bloqueados por QRA, formatter restante, productor ROOT/Golden9, seis fases + Python y Golden9. Producción NO-GO; ROI/PnL/WR/Sharpe/EV=N/D.
+
+
+## 2026-11-05T01:25:02Z — KIMI-QUANT-SR-V35: R14A y handoff integrados localmente
+
+- CAS de código `54784471c7f268e5a8b724ce53827a9bb5e3ae12` (01:18Z, tree `c295407e0dc6293711685cfa5d09dba0c58463b3`) y CAS documental `5f119337a41578f1e25058bdf6bf19f21a827933` (01:25Z, tree `e93f276fe73a0f9d8b082649b8f8104242ac4882`). `origin/main=206701dc` revalidado intacto; sin push.
+- `causal_attribution.rs` y `estrangulador.rs`, 39+/8- exclusivamente rustfmt, blobs exactos `a8df6e5a56c224e14d8d2cfbb27fcc5905ccd8c6` y `01f090fc70fac8a49418785ab2fca9d5708aa6ba`; sin cambios de contabilidad, atribución, supresión de avisos, ventanas temporales o APIs.
+- Código: 87/87 en 6 targets, workspace 3m35s, Zero-Wait 22/22 (224.937s), revisión Yes. Handoff: cuatro documentos/32+/1-, workspace 3m06s, Zero-Wait 22/22 (205.964s), revisión Yes; ambos exit0 y Critical/Important/Minor=0.
+- `forensic_auditor.rs`, `ret51b_una_sola_cola.rs`, `macros.rs` y `mirofish_lattice.rs` permanecen restaurados/intactos por diferencias semánticas/TRIANGULAR. R14A no declara cerrado todo `telemetry-server`.
+- Siguiente R15: evaluación sólo lectura de `strategy-core`; no crear overlay ni asumir equivalencia WIP antes de inspeccionar diferencias. Attestation/publicación siguen bloqueados por QRA, formatter restante, productor ROOT/Golden9, seis fases + Python y Golden9. Producción NO-GO; ROI/PnL/WR/Sharpe/EV=N/D.
 
 
 ## 2026-11-05 — KIMI-QUANT-SR-V35 V37: integración I-13, backoff causal y handoff
@@ -11007,21 +11653,3 @@ Censo config/lib: cuatro `NO_CHANGE`, cero `OPEN_ATOM`, sin producción. Detalle
 V38 implementó `retrain_failed_revision` para impedir reentrenamiento cada 500ms de una revisión fallida sin observaciones nuevas; una nueva observación vuelve a armar el disparador. RED 5/6→GREEN 6/6; `evolution-engine` 235/235; workspace 3m36s; Clippy baseline 40/40 sin delta. Revisión agent-45 `Ready to merge? Yes`, sin Critical/Important. Un Minor de cobertura de éxito/periodicidad queda diferido. Candidato `.agent_tx/staging/KIMI-QUANT-SR-V38/retrain-revision-v1/retrain-revision.patch`; CAS de código bloqueado por baseline.
 
 Sólo `qsr-lcf020` se retiró con PR #163 MERGED y preservación de blob. Los demás trabajos se conservan, incluido `tg-glm204`. Plan `docs/superpowers/plans/2026-11-05-base-review-v38.md`, estado `.agent_tx/diagnostics/base-review-v38-status.json` e inventario mecánico de 852 rutas Rust. Sin push, attestation, Demo ni OOS. Producción NO-GO; ROI/PnL/WR/Sharpe/EV=`N/D`.
-
-
-## 2026-11-06 — KIMI-QUANT-SR-V39: identidad de moneda en fees walk-forward
-
-V39 corrigió en overlay la pérdida de `source_coin_id` al filtrar y ordenar series del examen. Fees y replay ahora usan el ID real, no posiciones densas. RED con fee e IDs erróneos → GREEN 1/1; vecinos 22/22; `evolution-engine` 236/236 también serial, sin ignored/filtered; workspace exit 0; Clippy baseline 33/40 con `ADDED=[]`/`REMOVED=[]`. Revisión agent-48 `Ready to merge? Yes`, sin Critical/Important.
-
-Candidato y rescate: `.agent_tx/staging/KIMI-QUANT-SR-V39/fee-identity-v1/`, con dos parches y `SHA256SUMS`. CAS de código bloqueado por baseline. Minor para el siguiente átomo: deduplicar la transformación ID-preservante y cubrir directamente series cortas/window/máximo de monedas; comportamiento actual correcto, coste acotado de duplicación y riesgo futuro de divergencia.
-
-El handoff documental excluye WIP ajeno. `origin/main=a968a5e7` (GLM-205 documental) requiere reconciliación separada. Sin push, attestation, Demo ni OOS. Producción NO-GO; ROI/PnL/WR/Sharpe/EV=`N/D`. La meta +100 %/72 h permanece sujeta a protocolo OOS prerregistrado y autorizaciones.
-
-
-## 2026-11-06 — KIMI-QUANT-SR-V40: huecos de mercado sin compresión temporal
-
-V40 reconcilió V39 con GLM-205/206 en `96d27840` y corrigió en overlay `barra_de_mercado`: cualquier `dt >= 2*WF_BAR_MS` reinicia la referencia en vez de emitir una barra comprimida de 16 s. RED específico con retorno 1 % → GREEN exacto 1/1; CL27 5/5; crate 207/207 también en cierre `task-done`; numerario 2/2; workspace exit 0. Baseline y actual Clippy 36/43 con `ADDED=[]`/`REMOVED=[]`.
-
-Revisión agent-51 `Ready to merge? Yes`, sin Critical/Important; el umbral se deriva de la unidad temporal y admite jitter. Minor documental corregido a tres pruebas nuevas/207 total. Rescate: `.agent_tx/staging/KIMI-QUANT-SR-V40/cl27-gap-v1/cl27-gap.patch` y `SHA256SUMS`. CAS de código bloqueado por baseline.
-
-El handoff documental excluye WIP ajeno. `origin/main=fdb8e2f8` ya incluye Wave 3/4 y requiere reconciliación separada. Recursos sin topes ni colas bajo zero-wait, sin purgas ni targets alternativos. Sin push, attestation, Demo ni OOS. Producción NO-GO; ROI/PnL/WR/Sharpe/EV=`N/D`; +100 %/72 h sigue como hipótesis OOS prerregistrada.

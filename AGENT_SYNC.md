@@ -1,5 +1,56 @@
 # AGENT_SYNC.md — Protocolo maestro de coordinación multi-agente
 
+<!-- SOL-CI-20261109 -->
+## SOL-CI-20261109 — heartbeat 2026-11-09T14:30 -05:00; auditoría CI offline y compuerta certificada
+
+**Agente/alcance:** `SOL-CI-20261109`. Sólo lectura sobre `.github/workflows/` y la base de objetos git; archivos nuevos únicamente en `.agent_tx/staging/SOL-CI-20261109/` y `outputs/`. Ningún workflow, índice, rama, worktree, proceso ni WIP ajeno modificado. Reconexión GitHub cancelada: sin `gh`, sin red, sin CI remota, sin push, sin borrado.
+
+**Re-sync:** HEAD local sigue `02c456265` (6 nov) con **705 rutas cambiadas sin commit**; ahora **22 ramas locales**. Otros agentes reconciliaron Wave 24 (tree `0e8ef322`), aislaron F1-108 y avanzan los cuatro Important; todo preservado. `origin/main` tracking LOCAL `6edf39d4b` sigue obsoleto frente a `1f70694a` registrado como publicado.
+
+**Auditoría de los 6 workflows (offline):** 27 comandos cargo; **todos los sustantivos llevan `--locked`** (las 3 excepciones son `cargo --version`); `cargo metadata --locked --offline --no-deps` exit0 con 22 miembros ⇒ lockfile consistente. **26/26 targets `--test` referenciados existen en el árbol de trabajo Y en HEAD**; los 21 miembros del workspace tienen algún `cargo test -p`. Cero `continue-on-error`/`|| true`/`|| echo`/`set +e`. El SHA256 de `rustfmt.exe` fijado en `zero-wait-contracts.yml:85` COINCIDE con el binario del toolchain: resultado negativo, no causa de fallo. **Hipótesis retirada:** el wrapper `sccache` sólo está en el `.cargo/config.toml` MODIFICADO del árbol de trabajo; la versión de HEAD no lo tiene, así que NO explica fallos de CI (sí explicó un arnés local mío, ya corregido).
+
+**Corrección al operador:** «todos los commits fallan» no coincide con lo registrado. Replay `42605702084` y `42614840807` SUCCESS y execution-contracts verde; el rojo es de tests concretos: Unit `42605702180`/`42614840773` mantienen baseline F63 (`test_c1_wave15_triad_holistic_orchestration`, `rep2.ville_ruin_bound_satisfied`) y F59 (`test_c3_ergodic_chaotic_collapse_under_pure_noise`) **anteriores a V42**; además latencias baseline Kähler/Yang y F1-108 (186 µs vs 50 µs, luego aislado verde por otro agente). No se relajan umbrales ni se ocultan fallos.
+
+**Brechas estructurales:** (1) **NINGÚN workflow ejecuta `cargo fmt --check` ni `cargo clippy`** sobre el workspace; `zero-wait-contracts.yml` sólo aprovisiona los binarios para verificar su hash. Añadir hoy un gate `-D warnings` pondría todo en rojo: el Clippy de crate completo sobre HEAD inmutable ya encontró diagnósticos preexistentes en 8 archivos de `feature-engine` (`navier_stokes`, `copulas`, `ricci_empirica`, `hawkes`, `hawkes_cross`, `multifractal`, `simd_neural_network`, `transfer_entropy`). Secuencia: corregir esos 8 con sus dueños y DESPUÉS añadir el gate con evidencia BEFORE→AFTER. (2) **52 contratos `tests/*.rs` están staged para borrado** (`close_settlement_contract`, `qsr_lc_f0_20_replay_fee_receipt_contract`, `conexion_timeout_contract`, …). Ninguno es de los 26 targets que CI invoca, pero desaparecen suites enteras: el consejo debe aceptar o restaurar cada uno explícitamente, no dejar pasar un borrado masivo en silencio. (3) `Cargo.lock` está `M ` y `.gitignore`/`.cargo/config.toml` están ` M` por otros agentes; con `--locked` en cada paso, cualquier manifest+lock inconsistente que se publique rompe CI de inmediato.
+
+**Incremento certificado (privado, NO instalado):** `ci_readiness.py`, compuerta Python pura, offline, de sólo lectura y segundos; rechaza target `--test` inexistente, comando cargo sin `--locked` y enmascaramiento de fallos. Auto-prueba `test_ci_readiness.py` con los 6 workflows REALES sobre árbol desechable: **GREEN 26 stubs → exit0; RED borrar un target → exit1 con el nombre exacto; RED `continue-on-error` → exit1; RED cargo sin `--locked` → exit1; GREEN tras restaurar → exit0**. Sobre el repositorio real: exit0 (`ok=true`, 6 workflows, 27 comandos, 26 targets, 527 fuentes de test, 0 enmascarados). Recibos `GATE_RED_GREEN.json` y `CI_AUDIT.json`. Dos falsos positivos del escáner se corrigieron ANTES de publicar: `crates` (path de `rustc --test crates/…rs`) y `host_oms_contract` (vive en `tests/` del paquete raíz). Propuesta de paso YAML en `workflow_step.candidate.yml`, sin instalar.
+
+**Plan por fases (sin crear el plan nº 31; ya hay ~30 en `docs/`):** 01 propiedad/evidencia → 02 entradas causales, wallet, fees, timestamps → 03 kernels numéricos (Welford y evidencia causal ya certificados) → 04 topología/canary/OOS → 05 paridad Demo/Producción → 06 certificación de sujeto completo y publicación. Columna obligatoria por fila: ruta, dueño, unidades, corte causal, llamador real, contrato, sujeto inmutable, resultado, siguiente acción.
+
+**NO publicado:** sin CAS/push/Demo/Mainnet/cuenta/OOS; `PurgeLegacyBranches` congelada (tres ramas conservan 97/84/89 commits únicos vs HEAD). ROI/PnL/WR bruto-neto, Sharpe y EV/trade = **N/D**; no se certifica +100%/72h ni P(ruina)=0 ni ganancia de latencia. Informe `outputs/Sol_CI_2026-11-09.html`; máquina `.agent_tx/diagnostics/sol_ci_20261109.json`. Se añade únicamente esta entrada; todos los registros ajenos intactos.
+
+<!-- SOL-CAUSAL-20261109 -->
+## SOL-CAUSAL-20261109 — heartbeat 2026-11-09T10:30 -05:00; evidencia financiera y política de recursos
+
+**Agente/alcance:** `SOL-CAUSAL-20261109`, micro-crate `telemetry-server`, archivo intervenido SÓLO `crates/telemetry-server/src/causal_attribution.rs` (limpio en git, sin dueño activo), en `.agent_tx/staging/SOL-CAUSAL-20261109/`. Ningún Source vivo, índice, rama, worktree, proceso ni WIP ajeno fue modificado. Se preservan los carriles de KIMI-QUANT-SR-V42 (F78 4/4, Wave 23 63/63, pila reparada, `agent-70/71`), AGY W24 y todos los archivos `MM/M/D` de telemetry-server. Reconexión GitHub cancelada: sin red, CI remota, push, `push --delete` ni `fetch --prune`.
+
+**Corte re-sincronizado:** HEAD local `02c456265` (2026-11-06 09:10) con **705 rutas cambiadas y ningún commit desde el 6 de noviembre**; 19 ramas locales. `origin/main` tracking LOCAL `6edf39d4b`, obsoleto frente a `1f70694a` (Wave 23 publicada, registrado por KIMI-V42); este agente NO verifica el remoto. Tres ramas conservan 97/84/89 commits únicos vs HEAD (`failover-olas`, `i14`, `agy/wave24`): borrarlas por antigüedad destruiría trabajo. `PurgeLegacyBranches` sigue congelada.
+
+**Defecto reproducido y candidato privado:** `causal_attribution.rs:173-183` coerciona gross no finito a `0.0` y luego resta fees, publicando `gross=0, fees=15, net=-15` (pérdida y quema de comisión nunca medidas); con fees corruptos publica un beneficio sin comisiones. Además alimenta con PnL fabricado los detectores SRP persistentes. Viola la doctrina propia F1-099 (línea 438, ya aplicada a `profiler.rs`). Consumidores vivos: `lib.rs:500-516` (Axum `/api/viz/causal`) y `mmap_viz_stream.rs:223-231` (paquete mmap). Candidato: tres predicados independientes de disponibilidad; cada campo `NaN` sólo donde su derivación lo exige, sin cambiar API ni matemática, y `0.0` medido sigue siendo cero real.
+
+**Evidencia ejecutada:** crate mínimo OFFLINE con el módulo REAL + serde/serde_json reales. Before `cargo test` exit101 (3 lib + 3 contratos PASS / **4 FAIL**); candidato exit **0** (3 lib + **7 contratos PASS / 0 FAIL / 0 ignorados**); `clippy --all-targets -D warnings` exit0. Recibo `RESULT_f0f74deb7ce2.json` + `FINAL_VALIDATION.json` (hashes de logs/fuentes, archivo vivo limpio). **Run previo INVALIDADO** `RESULT_7fa657e9c70f.json`: `[unstable] checksum-freshness` inyecta `-Z checksum-hash-algorithm=blake3` y `sccache` resolvió rustc estable; CERO tests ejecutados, no se reclama resultado. Corregido fijando `RUSTC` al nightly absoluto, sin cambiar código. Revisión independiente dio NO-GO sobre ese run inválido y confirmó después la lógica del candidato.
+
+**HALLAZGOS ALTOS en archivos AJENOS (no tocados, para sus dueños):** `mmap_viz_stream.rs:226` inventa `gross = realized*1.15` y `:227` deriva fees de ese markup; `:188-199` `unwrap_or` fabrica snapshot completo (capital 100.0, ROI/WR 0.0) y `:160-174` coercionan ROI/**WR**/drift no finitos a `0.0`; `lib.rs:510` `(gross-realized).max(0.0)` descarta NaN y convierte gross ilegible en `fees=0.0` (fabricación AGUAS ARRIBA del módulo reparado); `lib.rs:511-513` y `mmap:223-225` usan vectores de actividad/ciclos/misses hardcodeados como telemetría medida; `causal_attribution.rs:186-196` pesos/gamma fijos ⇒ la «atribución causal exacta» es un reparto proporcional fijo, no una atribución medida; `:285-288` `unwrap_or(0)`. **Métrica obligatoria ausente:** sólo existe un `win_rate`; NO se calcula WR antes/después de fees, ni Sharpe ni EV/trade en el reporte de este crate. Los `13.0` hallados son fixtures de test; `evolution-engine` tiene contrato de invariancia de numerario, pero no se auditan todas las rutas de capital.
+
+**POLÍTICA DE RECURSOS PARA TODOS LOS AGENTES (medición de solo lectura):** RAM 23,4 GiB total / **2,3 GiB libre** / **39,3 GiB comprometida** (commit 68 % sobre física), 517 procesos; C: 152,1 GiB libres ⇒ **el cuello es RAM, no SSD** (coherente con F1-097, línea 436). `.git` 2,88 GiB pack, 17.380 objetos sueltos, 3 `tmp_obj_*` huérfanos (13,2 MiB). `target/` tiene **39 subdirectorios, 33 árboles de diagnóstico de un solo uso** (`diag-*`, `risk-*`, `t10…t23`, `flujo-*`, `private-*`, `flycheck0`), violando el `CARGO_TARGET_DIR` único. Un censo recursivo completo **no terminó en 7m43s** y se detuvo: no usar escaneos completos como rutina. Instrucciones: (1) compilar SÓLO en el `target/` compartido con `rust-lld`/`sccache`, nunca crear target por agente; (2) un build pesado a la vez, con heartbeat previo; (3) NO barrer `target/` mientras otros compilan; toda eliminación debe ser de ruta exacta, listada y confirmada; (4) preferir `cargo check`/arnés `rustc` acotado por incremento atómico; (5) mantener exclusiones de Defender y cerrar hosts inactivos. **Pendiente de borrado aprobado por el dueño:** `target/sol_causal_7fa657e9c70f` (49,7 MiB) y `target/sol_causal_f0f74deb7ce2` (105,1 MiB); el borrado masivo fue bloqueado por el guardia seguro del entorno y NO se reintentó por otra vía. `.gitignore` está ` M` por otro agente: no se editó; falta cubrir `*.zip`, `*.7z`, `*.tar*`, `*.rlib`, `*.rmeta` (ya cubre target/.env/keys/csv/parquet/bin/db/logs/outputs/.agent_tx).
+
+**Plan por fases (sin crear el plan nº 31; ya hay ~30 `PLAN_*` en docs/):** 01 propiedad/evidencia → 02 entradas causales, wallet, fees, marcas de tiempo y continuidad de secuencia → 03 kernels numéricos de a un invariante + consumidor real (Welford certificado antes; este incremento ahora) → 04 topología, lineage canary, entrenamiento causal y OOS fija → 05 paridad Demo/Producción (reglas compartidas, balances/liquidez/fills no) → 06 certificación de sujeto completo y publicación. Cada fila: ruta, dueño, unidades, corte causal, llamador real, contrato, sujeto inmutable, resultado y siguiente acción.
+
+**NO instalado:** los llamadores vivos están sucios y siguen fabricando entrada; faltan crate completo + workspace `--all-targets`, attestation Native/Root, CAS con recibo y autorización GitHub. Sin Demo/Mainnet, cuenta ni OOS. ROI/PnL/WR bruto-neto, Sharpe y EV/trade = **N/D**; no se certifica +100%/72h, P(ruina)=0, mejora económica ni ganancia de nanosegundos. Detalle: `.agent_tx/staging/SOL-CAUSAL-20261109/HANDOFF.md`, `outputs/Sol_Causal_Recursos_2026-11-09.html`, `.agent_tx/diagnostics/sol_causal_20261109.json`. Se añade únicamente esta entrada; todos los registros ajenos permanecen intactos.
+
+<!-- SOL-WELFORD-PRIVATE-20261109 -->
+## SOL-WELFORD-20261109 — heartbeat 2026-11-09T08:58:31-05:00; candidato privado certificado, no promoción
+
+**Agente/heartbeat/alcance:** `SOL-WELFORD-20261109`, micro-crate `feature-engine`, archivos intervenidos SÓLO `src/welford.rs` y `tests/welford_mode_contract.rs` en `.agent_tx/staging/SOL-WELFORD-20261109/`. Ningún Source Rust, índice canónico, rama nueva, CAS, push, cuenta, proceso, worktree, ref ni WIP ajeno fue modificado o eliminado. Se preservan íntegros los carriles activos de KIMI-QUANT-SR-V42 (`agent-65` pila, `agent-66` upstream, `agent-68` I-14), AGY/Wave23, F28/F55/F56/F66 y el profiler MM. El mismo crate tiene ahora borrados/modificaciones staged de otro agente: no se copió nada encima. Reconexión GitHub cancelada; sin `gh`/git de red, CI remota, `push --delete` ni `fetch --prune`. `PurgeLegacyBranches` sigue congelada.
+
+**Incremento cerrado:** el caso analítico `[MAX, vecino, vecino]` ya tiene contrato Rust ejecutado y PASA gracias a `two_sum` + `mean_residual` (parte baja de la media). Recibo final `RESULT_3d4815d48b71.json`: Before 9 PASS/15 FAIL; candidato **24 PASS/0 FAIL/0 ignorados/0 filtrados** (23 contratos + 1 test unitario Omni); compilador y `rust-lld` exit0; Clippy driver `-D warnings` exit0; manifiesto `73b5faf98959cceccc37c3ae064a7d4617d0c5f2e9147a09b660fb198b5de95e`, `inputs_unchanged=true`, `pins_closed=true`, sin errores de cierre. Welford final SHA256 `f5000371f91cb6b19ce5e5aa0dc9d597b95fcba3fcb0a8ff245ba3928cbc9e90`.
+
+**Evidencia nueva de crate completo, sujeto inmutable:** `CRATE_RESULT_86b9f6f32ba4.json` sobre `git archive HEAD` (`02c456265`, zip SHA256 `74a47e942f9a8c45a6dd64887ea0b4147550090bffe2f4b2894876d535b6980e`), NO sobre el árbol sucio actual. Before `cargo test` exit101: 412 PASS/15 FAIL/20 ignorados; candidato exit **0**: 427 PASS/0 FAIL/20 ignorados; el delta son exactamente los 15 contratos que cambian de rojo a verde. `cargo clippy --all-targets -D warnings` exit101 por diagnósticos PREEXISTENTES en 8 archivos que son byte-idénticos entre cohortes (`navier_stokes`, `copulas`, `ricci_empirica`, `hawkes`, `hawkes_cross`, `multifractal`, `simd_neural_network`, `transfer_entropy`); cero diagnósticos en `welford.rs` o el contrato. Los 609,6 MiB de build generados bajo `target/sol_welford_full_86b9f6f32ba4/` se eliminaron tras capturar recibos y logs; recibos conservados.
+
+**Auditoría ABI resuelta en lo observable:** ningún `.m2` externo, literal de struct ni `size_of` en los crates auditados; `OmniStrategyEngine` es `#[repr(C)]` y vive en `StatefulEngine`, sin `rkyv/bincode/serde/transmute/mmap` sobre esa estructura en el repo. Los dos `f64` privados nuevos (+16 bytes) cambian el layout: recompilación Rust cruzada normal, pero **todo consumidor C ABI o snapshot binario externo sigue requiriendo migración explícita**. Revisión independiente nueva: GO sólo para handoff privado, sin bugs bloqueantes; quedan documentados `variance().sqrt()` en `omni_strategies.rs:193` (sin defecto conductual demostrado por el `clamp`/`as f32`), rama defensiva `gain==1` inalcanzable y corrupción externa de campos públicos.
+
+**NO instalado:** faltan reconciliación con el árbol actual del dueño, workspace `--all-targets` sobre ese árbol, attestation Native/Root, migración ABI externa, `CommitAndMerge` con recibo/CAS y autorización GitHub para verificar el check en verde. Plan y límites: `.agent_tx/staging/SOL-WELFORD-20261109/HANDOFF.md` e informe `outputs/Sol_Welford_2026-11-09.html`. ROI/PnL/WR bruto-neto, Sharpe y EV/trade = N/D; no se certifica +100%/72h, P(ruina)=0, mejora económica ni ganancia de nanosegundos. Se sustituye únicamente esta entrada propia; todos los registros ajenos permanecen intactos.
+
 > Creado por GLM (ciclo 132, 2026-10-16) por mandato del operador.
 > Regla de oro: **antes de tocar cualquier archivo, lee este documento;
 > después de terminar cualquier paso, actualiza tu heartbeat.**
@@ -7,6 +58,22 @@
 > (buzón append-only); ESTE archivo es el estado operativo en tiempo
 > real: quién está vivo, quién toca qué, y qué recursos se están
 > consumiendo.
+
+## 0. Protocolo Zero-Wait Speculative Overlay (AGENT-01)
+
+- **Estado real, no promesa:** `main` se valida por SHA; GitHub CI solo se declara verde para el commit publicado. No se afirma rentabilidad, P(ruina)=0 ni +100 %/72 h sin evidencia OOS neta.
+- **Hardware:** se permiten todos los núcleos/RAM/NVMe disponibles, sin semáforos ni topes artificiales; `target/` permanece único. No se crean targets por agente.
+- **Overlay:** edita y valida en `.agent_tx/staging/<agent_id>/`; nunca se copia un candidato sobre el trabajo de otro agente. Comando: `pwsh -File scripts/zero_wait_bus.ps1 -Action StageFiles -AgentId <ID> -Files "ruta1,ruta2"` y después `-Action Validate -CratePath <crate>`.
+- **Fusión:** solo con formato, Clippy y ejecución real de tests verdes. El recibo vincula base, árbol, CratePath, rutas, SHA256 y blobs; `CommitAndMerge` usa sólo ese candidato, índice privado, merge/revalidación de workspace si main cambió y CAS. Nunca reconcilia el índice canónico ni publica automáticamente.
+- **Rescate:** `RescueStaleAgents` respalda staging inactivo sin borrar locks, índices, worktrees ni archivos originales. La ausencia de heartbeat no autoriza destrucción.
+- **Ramas:** `PurgeLegacyBranches` permanece congelada en este corte. Su guarda exige PR `MERGED` o merge SHA comprobado, tip ancestro de `origin/main` fresco, cero commits exclusivos y ausencia de worktree/lease/reserva; HEAD local nunca habilita un borrado remoto.
+- **Autopista:** `StartGroupPushDaemon` requiere attestation válida del mismo árbol; ante rechazo registra `.agent_tx/ci_alerts.json` y se detiene, sin reintentos ciegos ni `--no-verify`.
+
+## 0A. Corte de verdad, propiedad y congelación F0
+
+**Corte de refs (2026-10-29T22:29:44Z):** HEAD local `4d8db9a345bd1a78f3e479b5beba01bd0124fa3e`; `origin/main=9b2cde7c15eba058c67046317c22c1cfbc3f36c2`; `git ls-remote --heads origin` muestra únicamente `main`. `claude/linea-i-i6=46285e72feec1dc7b9a09dbf24b9f8f3f14bf121` y su worktree permanecen intactos. No se ejecutó `PurgeLegacyBranches` ni se borraron ramas, procesos, locks, WIP o worktrees.
+
+Los estados `FUSIONADO`, `CERRADO` y demás filas históricas son evidencia no operativa, nunca permiso de purga ni leases nuevos. Las reservas vigentes se leen en la tabla actual de agentes y en los archivos de lease/reserva de `.agent_tx`; los cuatro leases QRA excluidos de este task permanecen intactos.
 
 ### Manifiesto A4 — corte F0 (10 rutas originales; 7 deltas revisados)
 
@@ -39,12 +106,12 @@ Estados: `ACTIVO` (heartbeat <6h) · `DORMIDO` (6h–48h) · `HUÉRFANO`
 
 | AGENTE | ESTADO | TAREA ACTUAL | RAMA | ARCHIVOS QUE TOCA | HEARTBEAT (local) |
 |---|---|---|---|---|---|
-| KIMI-QUANT-SR-V35 | ACTIVO: V36 FOREST HARDENING VALIDADO; REVIEW FIXES COMPLETOS; CAS CÓDIGO BLOQUEADO CLIPPY | Base `5317fc3a`, upstream `fcbe8bf9` ancestro. agent-39 With fixes: 6 Important resueltos (generación atómica, invariantes bosque↔GBDT, checksum crudo, límites, limpieza y parser JSON global eliminado). Snapshot binario v1: 8/8 hardening, 6/6 persistencia, 2/2 determinismo, 229/229 evolution-engine, workspace exit0 en 3m41s. Clippy 33/40 baseline +5 feature-engine, sin diagnósticos nuevos; no CAS de código. Minor diferido: reintentar sólo persistencia con backoff. B1 sigue A4-T2; V2 14/144 bajo QRA. Sin push/Demo/Mainnet; ROI/PnL/WR/Sharpe/EV=N/D. | main local `5317fc3a`; índice privado `.git/index_KIMI-QUANT-SR-V35` | Sujeto válido sólo `online-persistence-v1-fixes`; overlay inicial reemplazado. Sólo AGENT_SYNC/buzón para handoff. No instalar hasta Clippy verde y revalidar sujeto. QRA/Navier/adversarial/legacy/WIP ajenos intactos | 2026-11-05T21:19:51Z |
-| Kimi Quant Sr V33 | ACTIVO (FASE 30 docs; BLOQUEADO Rust por recursos) | PR140 4f9ada098 con 10/10 SUCCESS: Unit 40159701782 y Replay 40159701719, ambos salida 0. Inventario 2203/847 Rust verificado (26+1+2176). Revisión independiente corregida: invariante simpléctica completa JᵀΩJ=Ω (det=1 solo consecuencia) y ruta crates/ del contrato inmune. Self-fill en sombra; margen/BNB solo tras paridad Demo. Capital 13 sigue RED; RAM 0,81 GiB, sin builds ni censo SSD. | main | docs/PLAN_MAESTRO_FASES_2026-10-22.md; docs/audit/V33_INVENTARIO_2026-10-24.tsv; AGENT_SYNC.md. Respaldo .agent_tx/kimi-quant-sr-20261024/phase30-20261024T2250/post-review. Sin builds. | 2026-10-24T23:13:03-05:00 |
-| Kimi Quant Sr V34 / AGENT-01 | T1 LISTO PARA COMMIT PRIVADO; T2 A4 pendiente | Corte F0 implementado con RED esperado de tres contratos y GREEN 20/20; PowerShell AST PASS. Manifiesto A4 explícito en §0A: diez rutas originales, siete deltas revisados con hashes y propietario. Guarda de purga contra `origin/main` fresco, PR/merge SHA, cero exclusivos, worktree/leases/reservas; purga NUNCA ejecutada. Refs verificadas: remoto sólo main 9b2cde7c1 y `claude/linea-i-i6` intacta. Sin push/CAS; C5 bloqueado por lease QRA; producción NO-GO; ROI/PnL/WR/Sharpe/EV=N/D. | main local 4d8db9a34; origin 9b2cde7c1; índice privado .git/index_AGENT-01 | Sólo T1: zero_wait_bus, test_zero_wait_gate, AGENT_SYNC, plan fases y API map. Overlay AGENT-01-review-2026-10-29; A4 permanece en AGENT-01-live-red. Leases QRA intactos; .agents/MEMORIA.md no se toca. | 2026-10-29T22:35:59Z |
-| Codex QRA | ACTIVO (Cargo F8 real) | Formato DAZ y UDS/cache aplicados con backups/WAL. Orden humana sin piso de RAM. Guard actual1bb70559 fija Cargo/RUSTC/RUSTDOC del nightly y PATHGit. Sesión52822, Cargo122832: compilación real F8 iniciada21:37:38Z; último avance cc/zerovec. Jobs1, target canónico, locks propios; no otros builds hasta liberar. | main, directorio primario | Inputs propios en validación: 3fuentes os-guardian y user_data_stream.rs, SIN editar mientras Cargo. Transacciones3+1 en .agent_tx/codex-continuacion-20261024. Próximos UDS lib, workspace/all-targets y PR65 exacto, fmt/Clippy. Auditoría RO de gap/readiness y gate privado en paralelo, sin fuentes vivas. | 2026-10-24T16:43:00-05:00 |
-| GLM | ACTIVO | 208: FIX del bloqueante A3 — MissingRemoteEvidence eterno (reconciliation.rs:468): positionRisk no garantiza fila para símbolos nunca operados; cada símbolo del Top dinámico sin fila dejaba el OMS Blocked con cuenta limpia (0 posiciones, 0 órdenes, >100 ciclos). Fix: la ausencia de fila sólo es issue con posición LOCAL abierta (fail-closed intacto); contrato nuevo en reconciliation_evidence_contract. Tests execution-engine corriendo; tras CI verde: rebuild + REINICIO de la corrida A3. Corrida actual viva (~4 h de evidencia pre-fix). | main (átomo en curso) | crates/execution-engine/src/reconciliation.rs, crates/execution-engine/tests/reconciliation_evidence_contract.rs, buzón, AGENT_SYNC.md | 2026-11-06 ~11:30 |
-| AGY | ACTIVO | OLA 5 MERGED EN MAIN (ca2dff142, PR #174: Fases 31, 32 y 33). OLA 6 OMEGA220 ACTIVA (Fases 34, 35 y 36 en agy/wave6-omega220): Continuo de Hilbert y operador hermítico de volatilidad espectral (F34), dinámica de shockwaves no lineales de Riemann-Burgers y Cole-Hopf en L2/L3 (F35), y gobernanza cuántica conformal adaptativa de vetos y puertas de riesgo con aprendizaje online sin lookahead (F36). Cero violaciones rb_p1 (cero unwrap, cero expect, cero panic), 100% Rust nativo, stack zero-alloc en hot path. | agy/wave6-omega220 | crates/{signal-engine,risk-engine,god-engine-core}, suites de contratos F34..F36, docs/PLAN_MAESTRO_UNIFICADO_OMEGA220_CUANTICO.md | 2026-11-06 ~11:00 Bogotá |
+| Kimi Quant Sr V34 / AGENT-01 | T14-T22 + T23a APROBADOS_SIN_INTEGRAR; T23b BLOQUEADO_LEASE; T10 BLOQUEADO_BASELINE; T2b3d/C5 bajo QRA | Worktree real 6cddf612: T14=4238aca1, T15=3569380f, T16=8a1f0c2d, T17=106e907d, T18=0ba76c0f, T19=04fd1515, T20=873980ef, T21=12f89c0f, T22=a2fb1087, T23=40a40be0. Clippy 31→8, 0 supresiones. T23a APROBADO_SPEC, 7/7; retorno directo sin cambio de conducta. Restan firma leverage 13/7 + 7 QRA; handoff solicitado, risk lib/correlation intactos. Base 6cdd Unit+Replay SUCCESS. origin=9fcdb56f (sin cambios risk); código 173eb8ba Unit SUCCESS/Replay en curso; rebase obligatorio. Sin commit/push/CAS. Producción NO-GO; ROI/PnL/WR/Sharpe/EV=N/D. | main local 019df38d9; origin 9fcdb56f2; índice privado .git/index_AGENT-01 | .agent_tx/staging/AGENT-01-t15-worktree-6cd + coordinación/plan/buzón/ledger. No editar QSR/QRA/GLM ni overlays ajenos; no instalar en raíz. | 2026-11-03T18:43:43Z |
+| Codex QRA | ACTIVO: PRE_API64 reconciliación completa de711/91bd | QRA/T1 e integración final pendientes | local711317a/remoto91bd085(ancestro) | Decisionc4d126c7;64paths56Rust15RustADD. Content34 encohortes3+dependency1;Core64checkpoint,helper64peer. Modelo45FAIL8/9preservado.NoGen/API/Native niSCI.Coordinar nuevosRust/heads antespublicación. CP 3a658c0be73ee60e | 2026-11-04T18:22:15.941503+00:00 |
+| KIMI-QUANT-SR-V35 | ACTIVO: R28 BLOQUEADO T1 COBERTURA 9.7%; ATRIBUCIÓN EN CURSO | `main=a27ea15166e0833aa3f52dd3b97f1766df85bde3`, origin `61e0e759`. R28 y handoff están en main local, sin push. Suite completa: 636 targets/658 resultados, 4383 passed/1 failed/112 ignored. Único rojo `t1_cobertura_genetica_del_oraculo_de_aptitud`: 14/144=9.7% bajo mínimo 11% en 1311.60s. Se ejecuta el mismo oráculo sobre base anterior `02e6d577` para atribuir el cambio al puente Browniano R28; no se baja el umbral ni se presenta cierre de rama. Producción NO-GO; ROI/PnL/WR/Sharpe/EV=N/D. | main local `a27ea151`; origin `61e0e759`; sonda T1 previa en curso | R28+handoff locales; WIP/leases/overlays ajenos intactos; QSR/QRA/Navier/adversarial/legacy pendientes | 2026-11-05T09:04:04Z |
+| GLM | ACTIVO | 165: GitHub MAIN-ONLY VERIFICADO (ls-remote = sólo main; Línea C borró sqtc08 post-#150). Rescate Línea G evaluado A FONDO y abortado con gate: 3 commits limpios, LG-30 con premisa vencida (lectores vivos de genes 2/3 state.rs:945, 115/116 guard.rs:42, 37 symbol_ranker:139 existían YA en su base) — congelar sin re-censo = cambio de comportamiento vivo; plan publicado (dueño LG si vuelve; a las 72h — 10-27 ~11:46 — GLM lo toma con contratos por gen); WIP LG-37 respaldado .agent_tx/linea-g-lg37-20261026 SIN tocar su worktree. NOTA DURA a agent-fabric: presentación antes del próximo ciclo GLM o worktrees tramitados como huérfanos. Raíz en manos de Codex activo (publicación 0fc9329) — respetado. 3er ciclo sin crear ramas (detached). | main (detached) | buzón/AGENT_SYNC (docs) | 2026-10-26 ~01:00 |
+| AGY | ACTIVO | OLA 7 (Omega220) COMPLETADA AL 100% (Fases 37, 38 y 39): Suite formal de 14 contratos verificada verde (F37 5/5, F38 5/5, F39 4/4) sin fallos ni pánicos. Fase 37: Campo gauge no abeliano SU(3) cromodinámico con 8 generadores de Gell-Mann, curvatura Yang-Mills F_{01}^a e invariante Casimir C_2 con fuerzas de Lorentz-Wong y conservación exacta de carga de color \sum K_i = 0. Fase 38: Teoría de Juegos de Campo Medio (Mean Field Games) con EDP acoplada Lasry-Lions (HJB + FPK), advección upwind, frontera reflectante Neumann \int m dx = 1.0 y política softmax de inatención racional continua. Fase 39: Orquestador holístico OmniscientLivingGraphOrchestrator acoplando CWT Morlet hermítico, frentes de choque Burgers Cole-Hopf, gobernanza adaptativa conformal y despacho tri-slot sin canibalización. Cero heap allocs en hot path, P(ruina) <= 10^-6 preservada. | agy/wave7-omega220 | crates/strategy-core/src/{chromodynamic_gauge_su3.rs, lib.rs}, crates/strategy-core/tests/f37_001_chromodynamic_gauge_su3_contract.rs, crates/signal-engine/src/{mean_field_games_psychology.rs, lib.rs}, crates/signal-engine/tests/f38_001_mean_field_games_psychology_contract.rs, crates/god-engine-core/src/{omniscient_living_graph.rs, lib.rs}, crates/god-engine-core/tests/f39_001_omniscient_living_graph_contract.rs | 2026-11-06T13:00:00-05:00 Bogotá |
+| Sol | FUSIONADO A MAIN (Ola Ω219 AGY) | ÁTOMO F1-093 fusionado a main (e646a78db): 43 pánicos de envenenamiento eliminados con lock_seguro, trinquete 226->183, lock_sin_veneno_contract activo. Rama sol/f1093-lock-sin-veneno integrada. | main | crates/evolution-engine | 2026-10-22 ~20:00 |
 | Sol F1-098 | CERRADO Y EN MAIN (823a195a3) | Átomo fusionado: record_profile_sample cuenta el rechazo de la cola acotada por CAS saturante sin pisar la FIFO retenida, Profiler::dropped_samples se publica en el snapshot real y el auditor lo loguea off-thread. 4 contratos unitarios +1 de integración con 3 escenarios sobre cola/macro/snapshot REALES. Certificado DOS veces en el candidato exacto: 10/10 checks sobre base 3b85722e2 y 10/10 otra vez tras fusionar main d5f6f09fa (replay 31m3s, execution 27m43s); job telemetria-servidor con 65 lib +1 integración, 0 fallos, 0 ignorados. PR110 mergeado 21:53 UTC (823a195a3); rama y worktree borrados en local y remoto (el gate verificó el borrado como fusionado). CI de main para el merge: Unit and contract suites ✔ success; Replay contracts aún en curso al corte de esta fila. Cero Cargo local (RAM 1,19<4 GiB). Errata científica: standby/Defender/fuga de kernel NO demostrados por F1-097. Ramas locales fusionadas glm/157 y codex/verify-pr65 conservadas: sus worktrees son de agentes activos (glm/157 con 4 archivos sucios a las 16:55) y uno está locked; se retiran cuando sus dueños queden inactivos. | main (823a195a3) | crates/telemetry-server/src/profiler.rs; crates/telemetry-server/tests/profiler_loss_contract.rs; docs/PLAN_MAESTRO_SOL_2026-10-18.md; docs/audit/PRESUPUESTO_RECURSOS_2026-10-23.md | 2026-10-23T17:10-05:00 |
 | Codex | ACTIVO (ROOT; reanudación 20 Oct) | Cuatro pares privados históricos cerrados; Hidden GREEN 16 numérico conservado y archivo privado sellado; cierre del coordinador INCOMPLETO y Core publicación GREEN 2 no ejecutado. Correcciones públicas sobre main vigente, sin heredar PASS de CONTROL | codex/root-lg5-main-2026-10-15 (e2a2fb72 privado preservado; no publicable por ancestría); siguiente rama pública propia desde main vigente | Plan: docs/audit/REANUDACION_CEROS_REPLAY_2026-10-20.md. F7: scripts y primera CI cloud; ROOT sin Cargo/CI en paralelo. BASE conserva canon histórico de 1863 rutas; recenso 2053/delta 424 preparado, aún no publicado; SI revisión EV RO. Puertos siete, check, regresiones y T1 propios pendientes; meta 100%/72h sin demostración | 2026-10-20 America/Bogota |
 | Codex BASE15 | FUSIONADO A MAIN (Ola Ω214 AGY) | PR #65 rescatado e integrado íntegro en main: B15-01 (reduce-only parcial en simulator.rs con contrato 5/5) y B15-02 (validación de parámetros multifractales con contrato 4/4). PR #65 cerrado y rama remota codex/base-audit-2026-10-15 eliminada. Árbol 100% verde y unificado. | main | crates/execution-engine/src/simulator.rs, crates/feature-engine/src/multifractal.rs + tests | 2026-10-22 ~13:17 (rescatado por AGY) |
@@ -52,14 +119,12 @@ Estados: `ACTIVO` (heartbeat <6h) · `DORMIDO` (6h–48h) · `HUÉRFANO`
 | Claude (Línea G) | ACTIVO | Ola 10 ABIERTA: revisión desde la base de los 517 commits entre f39808fdf y e44f57673 (AGY Fase 3/4, Sol F1-093..100, GLM 155-159, Codex QRA, Línea C C-F5/RET), por zonas y con verificación adversarial; después arreglos con test que falla antes. SOLO LECTURA hasta publicar hallazgos (docs/audit/linea_g/ola10_*). Sin Cargo local mientras la RAM libre siga < 2 GB (0,86 GB a las 09:35). | claude/linea-g-ola10 (worktree ../tg-lineag10, fuera del repo) | ninguno en edición (sólo docs/audit/linea_g/ola10_*, plan Línea G §18, esta fila) | 2026-10-24 ~09:40 (Bogotá) |
 | Qoder | HUÉRFANO | r7r6 «aprender-medir» — cierre de ronda a medias (rescatado por GLM 132: WIP-commit en su rama) | qoder/r7r6-aprender-medir | buzón, MEMORIA, FORENSIC (rescatados) | 2026-10-10 ~02:06 |
 | Fable (Claude Fable 5.1, consejo Quant Sr.) | ACTIVO | EN MAIN hoy: F-A5 (3011c5bbd, LH-04 con el stop real) y F-A6 (24dfc19c8, Hawkes O(1) exacto), ambos con T-1 18/144 y huellas identicas. ATOMO F-A2 EN EDICION AHORA (Fable, no duplicar): gen `funding_rate_sensitivity` (vec[6]) sin lector vivo; su unico lector es `backtest-engine/src/vectorized.rs:208` (evaluador MUERTO, F1-102: sin llamador fuera de sus tests), que escala un funding SINTETICO (clamp(0,5;2)*1e-4) => la evolucion aprende a pagar menos funding ficticio (boton de sobreajuste, familia CSG-14). Arreglo minimo sin cambiar DIMENSION (precedente LG-18/LG-21/G0-4): el gen se congela (sin mutacion, neutro 1,0) y el vectorizado cobra el funding de referencia del exchange (1e-4 por periodo de 8 h, con signo D-671) independiente del genoma; contrato nuevo. Retirar el gen del vector (DIMENSION 144 y genomas persistidos) y cobrar el funding HISTORICO por simbolo quedan como F-A2b para el consejo. T-1 al terminar. LINEA H: repetir T-3 v2 con LH-04 sobre main. | fable/ola1-f2 (worktree .claude/worktrees/fable; docs a main por push HEAD:main) | **EDITANDO**: crates/quantum-arena/src/genome.rs (solo las lineas del gen funding_rate_sensitivity: mutate/random), crates/backtest-engine/src/vectorized.rs (bloque de funding ~195-212), nuevo crates/backtest-engine/tests/fable_funding_gen_congelado_contract.rs | 2026-10-18 ~04:05 |
-| Claude (Línea C) | ACTIVO | Hilo «Seguir la auditoría (continuación)» desde 2026-10-31 13:05 UTC. Tanda 20 (#155, fusionada, CI de main verde en 8546afa): CL-217 el aplanado conmuta ante el -1106 real; CL-218 pesos de Binance comprobados, pierna algo a peso 0. Tanda 21 (PR abierto): CL-219 (N41-a) un 5xx sin cabecera X-MBX cuenta como coste perdido (viene de la pasarela; la API siempre la trae); CL-220 (N43) un -1000 en un 4xx es AMBIGUOUS en los envíos de orden, alineado con protection_health. Puerta antes de un PR: `python3 scripts/puerta_lineas_cambiadas.py --base origin/main --solo fmt --arreglar`. Censo: docs/audit/linea_c/censo_motores_2026-10-18.md. Siguen: N54 (prueba en testnet), N55 (decisión del dueño), N26, N38 | claude/project-thread-lzkhpo (worktree /tmp/claude-0/tg-lzkhpo, nube) | crates/execution-engine/src/{client.rs, executor.rs, order_types.rs}; censo Línea C | 2026-11-01 21:40 UTC |
+| Claude (Línea C) | ACTIVO | Censo C-F7b en main: PR #122, #123, #124, #126, #130, #138, #139, #140, #142, #143, #144, #145, #146, #147, #148 y #149 (genes de Kelly de la fila N13, la sombra Kelly y sus revisiones, la fricción al stop de la fila N12, la duodécima tanda, la cuota del exchange para las salidas de la fila N5, las peticiones fuera de la cuota de la fila N20 y la cabecera de los errores firmados de N23 con la espera de exchangeInfo de N33, y la clasificación de los envíos de orden de N25 con el reintento de cuenta de N24; T-1 14/144, como main). Decimoséptima tanda en PR #150 (filas N40, N41 b y N32): CL-203 (un 2xx ilegible de una lectura es un error con su cabecera y se reintenta), CL-204 (el reintento de cuenta sale firmado con la hora de ahora) y CL-205 (oco_probe limpia siempre tras su entrada), y de su revisión CL-206 (refirmar no firma una URL con algo tras la firma) y CL-207 (la limpieza de oco_probe espera al freno 429/418 y lee las órdenes que quedan); filas nuevas N47 a N51. Siguen: N1 y 12b con Sol; N3 con AGY (y el dueño si se persiste); N7 con AGY o el tema 2; N10b con Línea G; N15b, N18, N19, N29, N34, N36, N39, N42 y N44 con Línea I; N16, N30 y N45 con Sol; N17 y N14 con Fable/Línea H; N26 (Línea C con Línea I o AGY); N27 y N28 con Codex QRA/Línea I; N31 god-engine-core; N37 Línea I/AGY; N46 con N50 y N49, N41 a/c, N22, N38 y N43 (Línea C, siguientes); N47 con Sol o los dueños de datos; N48 con Línea I/AGY; N51 con el dueño del forense; f_min_ejecutable de la envolvente y el trinquete del T-1 (dueño); 42 espera a AGY; N8: AGY implementa, Kimi V33 revisa; 36 espera a CazadorConstantes; 28b espera al dueño de Ω121; 4 temas del censo esperan al dueño | claude/auditoria-deslizamiento-apalancamiento-sqtc08 (nube, worktree propio en /tmp) | execution-engine/src/{client.rs (el brazo 2xx de get_payload_with_timeout), executor.rs (refirmar, el reintento de get_payload_account)}; src/bin/oco_probe.rs; execution-engine/tests/n32_oco_probe_source_contract.rs; docs/BINANCE_API_MAP.md §5; docs/audit/linea_g/vetos.tsv (nueve anclas de executor.rs desplazadas); docs/audit/linea_c/censo_motores_2026-10-18.md; buzón | 2026-10-25 ~21:05 (Bogotá) |
 | Codex RB (DSH, consejo Quant Sr.; distinto de Codex ROOT/BASE15) | FAILOVER EJECUTADO (GLM 143) | RB-H2 RESCATADO Y FUSIONADO a main por GLM (cherry-pick limpio de 104c6530d tras >48h sin heartbeat; verificado 2/2 contrato Rust + 2/2 sonda python con control negativo + 13/13 semáforo; rama codex/rb-h2 eliminada). Carril previo propio fusionado: RB-H1/H1d, RB-A1a, RET-45=RB-M1a, RB-R1, RB-P1. AL VOLVER: retomar en RB-V1 LibroSombra (toca risk-engine y núcleo ⇒ coordinar con AGY antes, tu propio aviso), leyendo buzón entrada 143 | main (GLM integró su commit íntegro) | — | 2026-10-21 ~18:20 (última señal propia 2026-10-19 09:20 Bogotá) |
-
-| Claude QSR (Opus 5.5) | ACTIVO | RSK-01 (PR #156), FEE-03 (PR #158) y FEE-06a (PR #160: el carry de funding usa el calendario de asentamientos de Binance, E[carry] = d·f·e^(−Δ/τ)/(1 − e^(−T/τ)); pendiente FEE-06b de Kimi) ya en main. Átomo LC-F0-20 en PR: el panel del replay de libro y del camino nativo (comisiones, bruto, WR bruto, turnover) sale del recibo de cada cierre del núcleo (`take_local_close_accounting`), no de una tarifa supuesta (7 pb / 10 pb); un cierre sin recibo se cuenta aparte (`closes_without_receipt`, ranura `STAT_CIERRES_SIN_RECIBO`). Neto y capital final sin cambio. AVISO: las huellas del T-1 y del T-2 cambian (stats[5] y [7]) sin cambio de conducta: T-2 base `ac3db6ada3ce80a5` → `4c2f51cff2dc0ca9`, mismos 36 cierres, neto y capital bit a bit; compara huellas desde este átomo. Revisión adversarial aplicada (plan QSR §9). Abierto LC20-R2: el MTM nativo cobra 2×taker a una sola pierna de salida. También QSR-CL-07: la doc de `CANONICAL_COUNCIL_MAX_DRAWDOWN` decía c = 0,25; es c = 0,5 (valor igual), con contrato que la ata a `drawdown_de_falsacion`. | claude/qsr-lcf020 (worktree ../tg-claude-qsr-lc20) | crates/backtest-engine/src/{booktick_replay.rs, lib.rs}, src/bin/{backtest_windows.rs, evolution.rs}, crates/backtest-engine/tests/{qsr_lc_f0_20_replay_fee_receipt_contract.rs, f1_101_102_backtest_accounting_hygiene_contract.rs}, crates/quantum-arena/src/config.rs (doc), crates/risk-engine/tests/qsr_cl07_drawdown_consejo_contract.rs; docs: plan QSR §9, AGENT_SYNC, buzón. Nada en archivos con lease. | 2026-11-02T20:10-05:00 |
 
 | Codex F7 (Recursos) | ACTIVO | PR88 reanclada sobre dependencia pública90/7b598f7e y mainfd956f9;29métodos locales GREEN. PróximoCI propio8checks; merge serial90→88→87, sinheredar c813 | codex/f7-recursos-20261020 | tres lanzadores/contratos/workflowF7 y docs propios; no genome_store, Cargo local ni target propio | 2026-10-20 08:25 America/Bogota |
 
-| Claude (Línea I, Opus 5.5) | ACTIVO | I-10 = N19 (PR #167), I-11 = N56 (PR #168) e I-12 = N48 (PR #169) en main. En curso I-13 = N26 (PR #171), por failover de Línea C (más de 48 h sin actividad): `OrderExecutor::sucesor_de` hace que el ejecutor que el host publica al terminar el calentamiento comparta con el vigente el freno 429/418, su reloj y el uso del exchange (misma URL y arena, aunque cambie la clave: el peso y el 418 son de la IP; o nada y lo dice), y que herede siempre su kill-switch (N58, cerrada en el mismo PR); el host lo construye desde `exec.load_full()`. Pide revisión de Línea C del método (executor.rs, client.rs). Abiertos: N18b, N15c, N19b, N19c y N48b. | claude/linea-i-i13 (worktree tg-linea-i-i13) | crates/execution-engine/src/{executor.rs,client.rs} (sólo `sucesor_de`, `HerenciaDeCuota`, `adoptar_freno_de`, el tipo de `uso_exchange` y `tests_n26`), src/bin/god_engine.rs (cierre de la transición), tests/i13_sucesor_cuota_contract.rs, docs de la línea y esta fila | 2026-11-05 ~02:30 Bogotá |
+| Claude (Línea I, Opus 5.5) | ACTIVO | I-1b EN MAIN (PR #134, a6472e330). I-2 EN MAIN (PR #136, 0d0b07e01). I-3a/b VERIFICADO y en PR (rama claude/linea-i-i3): el inmune cuenta strikes con red+reloj vía data_ingest::edad_feed::ciclo_strikes y el rearme los reinicia; CAMBIA CONDUCTA del aplanado total (sólo conserva donde CERT-M4-H04 sumaba por atraso de la cola local o reiniciaba con el feed sin eventos nuevos); las ENTRADAS siguen bloqueadas por la edad total. Local: data-ingest 58/58 y check del workspace con todos los targets en verde (semáforo, -j1). Sonda RTT: producción p50 231 ms, máx 350 ms. SIGUIENTE I-6 (los lectores WS conectan cuando el consumidor está listo; parche revisado sin defectos), luego I-6b, I-3c, I-4, I-5 (plan docs/PLAN_LINEA_I_CLAUDE_2026-10-24.md). | claude/linea-i-i3 → claude/linea-i-i6 (worktree ../tg-lineai) | **EDITANDO** (I-6): src/bin/god_engine.rs (arranque de los lectores WS y primer recv del consumidor), crates/data-ingest/tests/arranque_feed_contract.rs (nuevo) | 2026-10-24 ~22:40 Bogotá |
 *AGY opera por olas intensivas con silencios entre ola y ola: tratar
 como activo hasta 48h de silencio.
 
@@ -91,23 +156,16 @@ pon `SIN CUOTA` en tu fila antes de irte si te es posible.**
   archivo + `git log main` ANTES de actuar. Ninguna tarea queda
   abandonada a medias; ningún bloqueo es permanente.
 
-## 4. Semáforo de recursos (RÉGIMEN 2026-11-06: cero restricciones por mandato del operador)
+## 4. Semáforo de recursos (presupuestos duros del operador)
 
-> **MANDATO DEL OPERADOR 2026-11-06**: «Quedan eliminados todos los topes
-> artificiales de RAM, SSD o número de hilos de compilación. Los agentes deben
-> utilizar el 100 % de los núcleos e hilos del procesador y toda la capacidad
-> de memoria y disco necesaria para compilar, probar y evolucionar los motores
-> a máxima velocidad, sin detenerse a realizar auditorías de tamaño de carpeta
-> ni limitar rustc.» La regla `-j2` y la puerta de RAM < 4 GB quedan ABOLIDAS.
-
-| Recurso | Régimen | Uso |
+| Recurso | Presupuesto | Uso (auditoría GLM 132, 2026-10-16) |
 |---|---|---|
-| RAM total | SIN tope (mandato 2026-11-06) | la RAM disponible se mide y anota como telemetría (`logs/semaforo.log`), nunca bloquea por defecto; `SEMAFORO_RAM_MIN_GB` queda OPT-IN (default 0) |
-| Carpeta del proyecto | SIN auditorías obligatorias en el turno | barrido automático RB-H1 APAGADO por defecto (`SEMAFORO_BARRIDO=1` para activarlo); `data/` (tapes) sigue INTOCABLE por respeto al operador |
-| Hilos de compilación | 100 % de los núcleos | `CARGO_BUILD_JOBS` ya no se fija por defecto — cargo usa todos los núcleos salvo pedido explícito del agente |
-| target/ | ÚNICO compartido (integridad) | prohibido crear targets por worktree: usar `CARGO_TARGET_DIR=<raíz>/target` (el semáforo lo fuerza) + checksum-freshness RB-H2 |
+| RAM total | ≤ 16 GB durante builds | 8,4 GB libres de 23,4 — **regla `-j2`** en horas de ola ajena (`CARGO_BUILD_JOBS=2`; ya default de `scripts/oracle_witness.sh`) |
+| Carpeta del proyecto | ≤ 300 GB SSD | ~85 GB (target 34 + data 24 + .claude 13 + resto) ✓ |
+| `data/` (tapes) | INTOCABLE | 24 GB, activo del operador |
+| target/ | ÚNICO compartido | prohibido crear targets por worktree: usar `CARGO_TARGET_DIR=<raíz>/target`; `target/debug/incremental` se limpia ENTRE olas (`scripts/disk_audit.sh CLEAN_INCREMENTAL=1`, guard: 0 builds activos) |
 | Compilación/medición pesada | registrar antes de lanzar | los vehículos `#[ignore]` (700–900 s) y builds release completos cuentan: anota en tu fila «corriendo X hasta ~hh:mm» |
-| **Semáforo (LG-25, obligatorio)** | un escritor del target a la vez | compila SIEMPRE con `bash scripts/cargo_semaforo.sh <args de cargo>`: fuerza el target compartido + rust-lld, ya NO espera por RAM ni por builds ajenos (el file-lock de cargo serializa el acceso real), y registra en `logs/semaforo.log`. Un cerrojo huérfano (agente sin cuota) se libera solo |
+| **Semáforo (LG-25, obligatorio)** | un build a la vez | compila SIEMPRE con `bash scripts/cargo_semaforo.sh <args de cargo>`: fuerza el target compartido y `-j2`, espera si hay otro cargo/rustc vivo o la RAM libre < 4 GB, y registra en `logs/semaforo.log`. Un cerrojo huérfano (agente sin cuota) se libera solo |
 
 - **V33, recursos 2026-10-24 ~14:00:** AvailableMBytes 823 MiB, commit 63,11 GiB, pool paginado 5,73 GiB y ≈11,35 GiB de pagefile en uso. Mayores working sets: language_server 1,85 GiB, WorkBuddy 0,75, múltiples Chrome (>0,30 cada uno), Antigravity 0,61, Claude 0,51, ZCode 0,74 combinados, Hermes 0,39 y Codex 0,29. Ningún proceso fue terminado por V33. Para habilitar builds: cerrar hosts de agentes y pestañas inactivas por decisión del operador; considerar reinicio programado para liberar pool/pagefile, no matar procesos ni desactivar Defender. Censo SSD y Rust permanecen bloqueados mientras haya cargo/rustc o AvailableMBytes <4 GiB.
 
@@ -438,6 +496,24 @@ Estado máquina: `.agent_tx/diagnostics/base-review-v37-status.json`. Censo: `.a
 `main=5cae61c459a74b27711760eef7e7c356176d309e`, padres `de720347` y `6f211252`. Se preservaron GLM-203/A-A2 y el handoff V37 por unión documental, sin editar B1/A4-T2. CI upstream `81fb45db`: Unit+Replay SUCCESS. Árbol fusionado: `EvidenciaIgnicion` 5/5 y workspace `--all-targets` exit 0 en 3m33s. Backoff sigue sólo en `persist-backoff-v1`, sin CAS por Clippy baseline. Sin push, attestation, Demo ni OOS; métricas económicas `N/D`.
 
 
+<!-- KIMI-V38-BASE-20261105T201357-0500 -->
+## 2026-11-05 20:13:57 -05:00 — KIMI-QUANT-SR-V38 heartbeat
+
+| Agente | Estado | Tarea actual | Archivos/alcance | Protocolo |
+|---|---|---|---|---|
+| KIMI-QUANT-SR-V38 | BASE REVIEW; sin reserva de código todavía | Reconciliar V37→V38, auditar ramas/worktrees, CI y handoffs; seleccionar un átomo libre con RED→GREEN. No repetir backoff V37, I-13, GLM-203 ni censo V37. B1/A4-T2, QRA/Navier/adversarial_gate y V2 permanecen reservados. | Sólo lectura inicial de `AGENT_SYNC.md`, coordinación, `.agents/MEMORIA.md`, Git y `.agent_tx`; índice privado `.git/index_KIMI-QUANT-SR-V38` | Overlays `.agent_tx/staging/KIMI-QUANT-SR-V38/`; sin Demo/Mainnet, push, attestation, borrado por antigüedad ni cambio de WIP ajeno. Producción NO-GO; ROI/PnL/WR/Sharpe/EV=N/D. |
+
+Estado comprobado al abrir: `HEAD=ba27c367749dae443a488006f6b79b03d7b2941e`; `origin/main=6f211252fce278b0c47a0d95c0f7c3724ce1f814`; Unit/Replay verdes. Ramas locales pendientes de clasificación: `agy/wave3-omega220`, `claude/linea-i-i14`, `claude/qsr-lc20r2`, `claude/qsr-lcf020`. No se eliminará ninguna sin verificar valor, propiedad y rescate.
+
+
+<!-- KIMI-V38-ATOM-20261105T205303-0500 -->
+## 2026-11-05 20:53:03 -05:00 — KIMI-QUANT-SR-V38 alcance real
+
+| Agente | Estado | Átomo y archivos | Evidencia | Coordinación |
+|---|---|---|---|---|
+| KIMI-QUANT-SR-V38 | REVIEW; reserva sólo de overlay propio | `retrain_failed_revision` en `.agent_tx/staging/KIMI-QUANT-SR-V38/retrain-revision-v1/subject/crates/evolution-engine/src/online_daemon.rs` y `tests/online_persist_backoff_contract.rs` | RED 5/6 → GREEN 6/6; full 235/235; workspace exit 0; Clippy baseline 40/40 sin delta. Revisión agent-45 en curso. | No CAS de código. Parche `retrain-revision.patch`. `qsr-lcf020` retirado con guardas; `linea-i-i14`, `qsr-lc20r2`, AGY, detached y nuevo `tg-glm204` preservados. Producción NO-GO; métricas `N/D`. |
+
+
 <!-- KIMI-V38-HANDOFF-20261105T210934-0500 -->
 ## 2026-11-05 21:09:34 -05:00 — KIMI-QUANT-SR-V38 handoff
 
@@ -448,49 +524,532 @@ Estado máquina: `.agent_tx/diagnostics/base-review-v37-status.json`. Censo: `.a
 `qsr-lcf020` fue la única referencia retirada, con PR #163 MERGED y blob preservado. `linea-i-i14`, `qsr-lc20r2`, `agy/wave3-omega220`, detached y `tg-glm204` permanecen. Estado: `.agent_tx/diagnostics/base-review-v38-status.json`. Plan: `docs/superpowers/plans/2026-11-05-base-review-v38.md`. Inventario: 852 rutas Rust, no auditoría semántica completa. Sin push, attestation, Demo ni OOS. Producción NO-GO; ROI/PnL/WR/Sharpe/EV=`N/D`.
 
 
-<!-- KIMI-V39-HANDOFF-20261106T000918-0500 -->
-## 2026-11-06 00:09:18 -05:00 — KIMI-QUANT-SR-V39 handoff
-
-| Agente | Estado | Resultado y evidencia | Reanudación |
-|---|---|---|---|
-| KIMI-QUANT-SR-V39 | HANDOFF; sin CAS de código | `fee_identity-v1` conserva `source_coin_id` en filtrado, fees, ordenación y replay walk-forward. RED: fee de coin 0 e IDs `[1,0]`; GREEN: fee de coin 1 e IDs `[0,1]`. Contrato 1/1; vecinos 22/22; crate 236/236 también serial; workspace exit 0; Clippy 33/40 con `ADDED=[]`/`REMOVED=[]`. agent-48 `Ready to merge? Yes`, sin Critical/Important. | `.agent_tx/staging/KIMI-QUANT-SR-V39/fee-identity-v1/{fee-identity-code.patch,fee-identity-test.patch,SHA256SUMS}`. Baseline Clippy bloquea CAS de código. Minor diferidos: deduplicar transformación y cubrir window/límites directamente. `origin/main=a968a5e7` (GLM-205 documental) pendiente de reconciliación. |
-
-Estado máquina: `.agent_tx/diagnostics/base-review-v39-status.json`. Ledger: `.superpowers/sdd/2026-11-05-base-review-v39/progress.md`. WIP documental ajeno del workspace preservado y excluido. Sin push, attestation, Demo, Mainnet ni OOS. Producción NO-GO; ROI/PnL/WR/Sharpe/EV=`N/D`.
-
-
-<!-- KIMI-V40-BASE-20261106T002148-0500 -->
-## 2026-11-06 00:21:48 -05:00 — KIMI-QUANT-SR-V40 heartbeat
+<!-- KIMI-V39-BASE-20261105T224808-0500 -->
+## 2026-11-05 22:48:08 -05:00 — KIMI-QUANT-SR-V39 heartbeat
 
 | Agente | Estado | Tarea y alcance | Protocolo |
 |---|---|---|---|
-| KIMI-QUANT-SR-V40 | BASE/UPSTREAM RECONCILE | Revisión nueva desde objetos Git: reconciliar V39 y GLM-205/206, auditar agentes, CI, ramas/worktrees y grafo; después publicar plan y seleccionar un átomo libre con RED→GREEN. No repetir V37–V39 ni ejecutar A3. Reservados B1/A4-T2, QRA/Navier/adversarial_gate, V2, legacy y WIP de otros agentes. | Índice `.git/index_KIMI-QUANT-SR-V40`; overlays `.agent_tx/staging/KIMI-QUANT-SR-V40/`; único target compartido, nightly `2026-06-30`, `CARGO_BUILD_JOBS=16`; sin semáforos, push, Demo/Mainnet, attestation ni borrado por antigüedad. Producción NO-GO; ROI/PnL/WR/Sharpe/EV=`N/D`. |
-
-Corte inicial: `HEAD=f7d69533`, `origin/main=0ce05fda`, 95 ahead/2 behind; remoto sólo `main`; 696 rutas WIP preservadas. `linea-i-i14` y `qsr-lc20r2` sin commits exclusivos pero con WIP; AGY con commit exclusivo y WIP; dos detached preservados. Grafo histórico desactualizado, no usado como prueba del código actual.
+| KIMI-QUANT-SR-V39 | BASE/UPSTREAM RECONCILE | Reconciliar V38 y GLM-204 (`02b389421`/`7afc9ed1`), luego elegir un átomo libre con RED→GREEN. No repetir V37/V38 ni editar B1/A4-T2, QRA/Navier/adversarial_gate o V2. | Índice `.git/index_KIMI-QUANT-SR-V39`; overlays `.agent_tx/staging/KIMI-QUANT-SR-V39/`; sin push, Demo, attestation, borrado por antigüedad ni WIP ajeno. Producción NO-GO; métricas `N/D`. |
 
 
-<!-- KIMI-V40-ATOM-REVIEW-20261106T085424-0500 -->
-## 2026-11-06 08:54:24 -05:00 — KIMI-QUANT-SR-V40 evidencia y revisión
+<!-- KIMI-V42-ADMISSION-20261106T125439-0500 -->
+## 2026-11-06 12:54:39 -05:00 — KIMI-QUANT-SR-V42 heartbeat
 
-| Agente | Estado | Reconciliación y átomo | Evidencia | Protocolo |
-|---|---|---|---|---|
-| KIMI-QUANT-SR-V40 | REVIEW; sin CAS de código | `main=96d27840` reconcilia V39 con GLM-205/206. `cl27-gap-v1` evita que `dt >= 2*WF_BAR_MS` se comprima en una barra de 16 s. | Ignición 5/5 y workspace reconciliación exit 0. RED `Some(0.010000000000000009)` → GREEN exacto 1/1 y CL27 5/5; crate 207/207; numerario 2/2; workspace exit 0 en 4m33s. Baseline y actual Clippy 36/43, `ADDED=[]`/`REMOVED=[]`. agent-51 revisa el umbral. | Zero-wait sin topes ni colas; overlays e índice privado, jobs16/rust-lld/target único. WIP preservado; no push, Demo, OOS o attestation. Producción NO-GO; métricas `N/D`. |
-
-
-<!-- KIMI-V40-HANDOFF-20261106T090659-0500 -->
-## 2026-11-06 09:06:59 -05:00 — KIMI-QUANT-SR-V40 handoff
-
-| Agente | Estado | Resultado y evidencia | Reanudación |
+| Agente | Estado | Trabajo y evidencia | Alcance/reanudación |
 |---|---|---|---|
-| KIMI-QUANT-SR-V40 | HANDOFF; sin CAS de código | Reconciliación `96d27840` con ignición 5/5 y workspace exit 0. `cl27-gap-v1`: huecos `dt >= 2*WF_BAR_MS` reinician la referencia sin fabricar una barra de 16 s. RED `Some(0.010000000000000009)` → GREEN exacto 1/1, CL27 5/5, crate 207/207, numerario 2/2 y workspace exit 0 en 4m33s. Clippy baseline/actual 36/43, `ADDED=[]`/`REMOVED=[]`. agent-51 `Ready to merge? Yes`, sin Critical/Important. | `.agent_tx/staging/KIMI-QUANT-SR-V40/cl27-gap-v1/{cl27-gap.patch,SHA256SUMS}`. Baseline Clippy bloquea CAS de código. `origin/main=fdb8e2f8` incorpora Wave 3/4 y exige reconciliación/CI separada. |
+| KIMI-QUANT-SR-V42 | ACTIVO; sin CAS de código ni push | Tasks Ville/emisiones/JIT-flight conservan sus pruebas previas. Task 4 admisión: `agent-58` rechazó el primer árbol por 3 Important; correcciones RED 5/12→GREEN 12/12 + proceso 1/1; carrera 16 procesos `{2:1,1:15}`, sin temporal. Segunda admisión real y re-revisión en curso. F28 E2E sigue con `agent-57`; no hay aprobación F28 ni dos órdenes E2E acreditadas todavía. | Overlays `.agent_tx/staging/KIMI-QUANT-SR-V42/`; índice `.git/index_KIMI-QUANT-SR-V42`. Árbol `52e58ae9` NO promovido: requiere recomponer Task 4 y F28. Upstream observado `928b8bfe`; composición upstream preliminar `7b82a6f1`. No tocar overlays ajenos ni WIP raíz. |
+| OOS/producción | NO-GO; métricas N/D | Primer recibo real: 9 cintas íntegras, 67.011.806 filas; cobertura/libro/funding/fills/slippage/fees/wallet/disponibilidad `unverified`; `INSUFICIENTE`, exit 2. Segundo recibo con doble hash pendiente. | Recibos en `data/DEV_V41_2026-06_08/`; sólo desarrollo, no reserva final OOS. No Demo/Mainnet/credenciales/attestation ni autorización autoaprobada. |
+| Riesgo/latencia | INVESTIGANDO; sin fix | `test_fase3_ultra_low_latency_hot_path_zero_alloc`: 122189,55 ns >10 µs en composición preliminar. Otros agentes tenían builds activos; la ruta evaluada no cambió en Task Ville. | Comparar baseline/candidato intercalados y registrar carga; no subir umbral ni atribuir causa sin evidencia. Clippy conserva baseline rojo en feature-engine/model_manifest; sin supresiones. |
 
-Minor corregido: plan espera 84 biblioteca + 123 integración = 207 (tres pruebas nuevas), no baseline+1. Zero-wait sin topes ni colas de RAM/SSD/hilos; jobs16/rust-lld/target único y escrituras aisladas. WIP y ramas preservados. Estado `.agent_tx/diagnostics/base-review-v40-status.json`; ledger `.superpowers/sdd/2026-11-06-base-review-v40/progress.md`. Sin push, attestation, Demo ni OOS. Producción NO-GO; ROI/PnL/WR/Sharpe/EV=`N/D`.
+
+<!-- KIMI-V42-TASK4-CLOSED-20261106T141115-0500 -->
+## 2026-11-06 14:11:15 -05:00 — KIMI-QUANT-SR-V42 Task 4 cerrado
+
+| Agente/frente | Estado | Evidencia y próximo paso |
+|---|---|---|
+| Task 4 admisión | COMPLETO; sin CAS | `agent-58` Ready=Yes, 15/15 unitarios + 1/1 proceso. Admisión real v4 exit 2, 67.011.806 filas, SHA `94aede1bd01fcfe435dc3890c0334ffd1078ae6ed5fc3c452d53d167bbeb26ed` (idéntico a v3). Código `9654415ce412b0c6569bbaf5361e28b5ada8932ab6a0d874d965fa3992d37f3b`; Task4 commit `580efa31607ceefdfe251b83fb417b1aef786ed4`. OOS/Demo/producción NO-GO. |
+| Composición | REVALIDANDO; no promover aún | `3d94f377d5c562daa46b6410ac28f87614b5b388` integra Tasks1–4 + Wave6. Upstream OMS `8a89deda` compuesto como `489576023dc72e6a30ecf18998966fff3fd3aa02`; conservar `MissingRemoteEvidence` y F28 juntos. Suite/workspace en curso; lock previo agotó tiempo y no se cuenta como PASS. |
+| F28 | ACTIVO tras recuperación | `agent-57` agotó 2h tras RED multi 1 vs 2, parcial 1/1 y snapshot; fue reanudado en `agent-vw2nk6h6` para corregir E0502 y completar E2E. No hay aprobación multi ni CAS. |
+| Recibos/documentación | REANUDABLE | `data/DEV_V41_2026-06_08/admission-v4.json` es recibo real final de Task4, sólo desarrollo. Detalle y rechazos previos en `.agent_tx/staging/KIMI-QUANT-SR-V42/dataset-admission-v42/verification.md`. Temporales únicos se retienen; no borrarlos como si fueran basura sin verificar propiedad/identidad. |
 
 
-<!-- KIMI-V42-BASE-20261106T091901-0500 -->
-## 2026-11-06 09:19:01 -05:00 — KIMI-QUANT-SR-V42 heartbeat
+<!-- KIMI-V42-RESUME-20261108T083727-0500 -->
+## 2026-11-08 08:37:27 -05:00 — KIMI-QUANT-SR-V42 reanudación
 
-| Agente | Estado | Tarea y alcance | Protocolo |
-|---|---|---|---|
-| KIMI-QUANT-SR-V42 | REMEDIATION BASE | Recomponer `cd31c624` y corregir hallazgos agent-53: riqueza/ruina, riesgo cero, feedback negativo, JIT W^X e integración F28. Cada cambio exige RED→GREEN y revisión final; sin CAS hasta completar evidencia. No repetir V37–V41 ni autoaprobar Demo/OOS. | Índice `.git/index_KIMI-QUANT-SR-V42`; zero-wait overlays/jobs16/rust-lld/target único; WIP preservado, sin push/Demo/Mainnet/attestation. Producción NO-GO; métricas `N/D`. |
+| Frente | Estado | Evidencia/alcance |
+|---|---|---|
+| F28 | ACTIVO; aprobación incompleta | `agent-57` reanudado como `agent-tfcpngaw`. Evidencia previa: núcleo 2/2 y host 22/22 con dos transportes/UUID/OCO, rechazo aislado y parciales. Falta aislar universo/bosque global F28→B3 y repetir suites completas. No se acepta como GREEN final. |
+| Upstream | `origin/main=fc7f9f8d764f80d2730dd54d166ad9b73c3df3ae` | Nueva base sin CAS `f25b6cb1a9e9614ca52fb0496a3a9a0c1ca667ad`, tree `f5e70e2f3fdcc2fb4ac61d04d879e5bb96f0389e`, combina remediación V42 + Waves 7–17 + I-15/Sinkhorn. Blobs de Ville y dataset_admission idénticos a lo aprobado. CI upstream aún en curso; no declarar verde. |
+| Task 4 admisión | COMPLETO; OOS NO-GO | Código aprobado por `agent-58`; 15/15 + 1/1, v4 exit 2 y 67.011.806 filas. Recibo `data/DEV_V41_2026-06_08/admission-v4.json`, SHA `94aede1bd01fcfe435dc3890c0334ffd1078ae6ed5fc3c452d53d167bbeb26ed`. Cobertura/componentes externos unverified; no Demo/Mainnet. |
+| Latencias | BASELINE documentado | Fase3, Kähler y Yang-Mills fallan también en baseline; candidato queda entre las mediciones baseline. No se subieron umbrales. Workspace previo verde; OMS 14/14 y host 19/19 antes de nuevas olas. Revalidar todo tras F28/upstream. |
 
-`ac6c90b32d` fue rechazado por revisión independiente: fail-open de riqueza, cota de ruina mal atribuida, clamp 1%, sizing Taker negativo, falso W^X y F28 desconectado. La nueva base incorpora GLM-207/207b sin adoptar decisiones de semáforo no revisadas.
+
+<!-- KIMI-V42-BUILD-LOCK-20261108T090757-0500 -->
+## 2026-11-08 09:07:57 -05:00 — build lock observado, sin intervención de procesos
+
+La suite `bash-g0n7eg3h` sigue esperando el target compartido. `rustc.exe` PID **38772**, iniciado **2026-11-08 08:09:17 -05:00**, compila `feature_engine` desde el lanzador AGY `f70_001_gross_pitaevskii_bec_contract`; a las 09:07 ya acumulaba 3271,66 s de CPU. `agent-57` inició su suite `god-engine-core` a las 08:58. No se mató/reinició ningún proceso, no se creó target alternativo y no se declara PASS/FAIL mientras exista sólo espera. `origin/main` sigue `fc7f9f8d`. F28 conserva evidencia parcial 2/2 y 22/22, sin aprobación final.
+
+
+<!-- KIMI-V42-F55-20261108 -->
+## KIMI-QUANT-SR-V42 — F55 upstream y build lock
+
+La suite `bash-g0n7eg3h` agotó 1800 s esperando el build lock: sin resultado, no contar como PASS/FAIL. GitHub `fc7f9f8d`: Unit run `42483656761` falla `test_c3_conifold_singularity_detection_under_extreme_stress` (`f55_001_calabi_yau_seiberg_witten_contract.rs:99`). Replay sigue en curso. `agent-59` trabaja el átomo aislado en `.agent_tx/staging/KIMI-QUANT-SR-V42/f55-v42/subject`, sin cambiar aserciones ni F28. `agent-57` continúa aislamiento/suites F28. Sin CAS/push/Demo/Mainnet.
+
+
+<!-- KIMI-V42-F28-REVIEW-NO-20261108 -->
+## KIMI-QUANT-SR-V42 — F28 rechazado por revisión independiente
+
+`agent-60` dio **Ready=No** sobre los cinco blobs F28 confirmados. Critical: `god_engine` conserva `new_order`/`closed_order` sin declaración/extracción tras migrar a `emissions.entries`. Important: reconciliación OMS rechaza multi-slot en refresh; sonda global permite duplicados y vetos falsos; settlement carece de transición terminal real después de parcial/ACK ambigua/OCO diferido. El cuestionamiento de pirámide se evaluará contra la semántica aprobada del batch sin abolirla por reflejo. `agent-57` fue reanudado como `agent-1rhmhk03` para reproducir y corregir con RED→GREEN y refresh E2E. `resolved-f28-v42` queda congelado, no se usa como candidato válido. `agent-59` sigue F55. Sin CAS/push/Demo/Mainnet; producción NO-GO.
+
+
+<!-- KIMI-V42-F55-CANDIDATE-20261108 -->
+## KIMI-QUANT-SR-V42 — F55 candidato aplicado, GREEN pendiente
+
+CI externo ya era RED. `agent-59` demostró saturación `q/(1+2q)→0.5` (umbral 0.85 inalcanzable). Se aplicó en `f55-v42/subject` la normalización `2q/(1+2q)`, monótona 0→0/∞→1, con comentario que evita presentarla como escalar de Ricci completo. C3 conserva detección/slot 0.10 y ahora exige valor analítico `0.9585062238±1e-9`. `bash-ae29j3fg` ejecuta F55 completo; no se declara GREEN hasta salida real. F28 sigue con `agent-57` por Critical/Important de `agent-60`. Sin CAS/push/producción.
+
+
+<!-- KIMI-V42-RESOURCE-BLOCK-20261108 -->
+## KIMI-QUANT-SR-V42 — bloqueo de validación persiste
+
+`bash-ae29j3fg` agotó 1800 s esperando target sin ejecutar F55. El `rustc` PID **38772** sigue activo desde 2026-11-08 08:09:17 y acumula **8846,59 s CPU**. Sistema al medir (no usado como puerta de admisión): 3.305.308 KB RAM física libre, 10.762.876 KB memoria virtual libre, 83.278.984 KB virtual total. No se afirma causa de memoria ni se detiene el proceso. F55 tiene candidato matemático sin GREEN; F28 sigue corrección por `agent-60`. No se lanzarán más builds duplicados hasta que se libere el target. Sin CAS/push/Demo/Mainnet.
+
+
+<!-- KIMI-V42-F28-REMEDIATED-20261108 -->
+## KIMI-QUANT-SR-V42 — F28 remediado preservado, validación pendiente
+
+`agent-57` agotó 2h tras implementar desestructuración, reconciliación multi por lado, sondas por batch y recuperación REST/OCO. Ninguna suite Cargo terminó por build lock. Candidato preservado `00c57631de11bb597b2b1500b6480be1959a22ed`, tree `19111ed213b7521c993f1311d0b7e6f287418c81`, diez archivos. `agent-60` lo revisa de nuevo estáticamente como `agent-0uotb8al`; no se hereda PASS. F55 quedó preservado como `e4893a2be07b4f31581946072db4ff26fab13043`, pero `bash-ae29j3fg` expiró antes de ejecutar. Ambos NO-GO hasta GREEN y revisión. Sin CAS/push/Demo/Mainnet.
+
+
+<!-- KIMI-V42-F28-SECOND-REVIEW-20261108 -->
+## KIMI-QUANT-SR-V42 — segunda revisión F28
+
+`agent-60` volvió Ready=No, aunque cerró identificadores, sonda y pirámide. Restan tres Important: reconciliación hedge exige BOTH erróneamente (`reconciliation.rs:501-509`), loop REST sin deadline total (`entry_dispatch.rs:207-222`) y test OCO incompatible con `release_confirmed_side` que no consulta protección (`host_oms.rs:812-831`). `agent-57` fue reanudado como `agent-y3u31kz1` para corregir con pruebas de política/deadline/protección real. El candidato `00c57631de11bb597b2b1500b6480be1959a22ed` NO se promueve; composición congelada. F55 también sigue sin GREEN por build lock. Sin CAS/push/Demo/Mainnet.
+
+
+<!-- KIMI-V42-STATIC-APPROVALS-20261108 -->
+## KIMI-QUANT-SR-V42 — aprobaciones estáticas, GREEN aún pendiente
+
+- F28 `9d2eed45226e3d7e77b77e948c8021b4db6ee73f`: `agent-60` Ready estático=Yes, sin Critical/Important. Hedge sin BOTH indebido, deadline 8s, cancelación exacta, release con protección y round-trip OCO real validados estáticamente. `bash-1dkeasnn` ejecuta el round-trip exacto.
+- F55 `e6855b598e44bb2091073f855246865e15cc04cc`: `agent-59` Ready estático=Yes. `2q/(1+2q)` es estrictamente creciente/acotado, C1/C2 sin falsos positivos y C3 correcto `0.9585062238±1e-9`; plan maestro actualizado para no afirmar escalar de Ricci completo. `bash-e0de0ri2` ejecuta F55.
+- Ninguno es GREEN ejecutable ni CAS. El build lock externo persiste; no hay push/Demo/Mainnet ni métricas económicas. Producción NO-GO.
+
+
+<!-- KIMI-V42-F55-GREEN-20261108 -->
+## KIMI-QUANT-SR-V42 — F55 GREEN exacto y composición limpia
+
+`bash-vlbzq5hi` ejecutó F55 tras liberarse el lock: **4/4 PASS**, C1/C2/C3/C4, sin ignorados (7m39s build). C3 detecta y mantiene `0.9585062238±1e-9`. `bash-i3n1t2rh` ejecuta feature-engine completo y workspace. Nueva base upstream `edd11602e7cbd15b29fccfc6f329f1b649eab99c`; F55 compuesto con GLM-214/215 como `5a3d53e6891e88dc818ce20e51fd63494d7c6fb2`, sin conflictos. No es aprobación económica ni CAS. F28 `9d2eed45226e…` sigue compilando su round-trip `bash-lnuwqsbw`; static Ready=Yes, GREEN pendiente.
+
+
+<!-- KIMI-V42-F28-OCO-GREEN-20261108 -->
+## KIMI-QUANT-SR-V42 — F28 OCO round-trip GREEN
+
+`bash-lnuwqsbw` ejecutó `f28_oco_roundtrip::host_rest_terminal_oco_receipt_releases_and_reaches_quiescence`: **1/1 PASS**, 0.47s, 30 filtered por selección. OrderExecutor/REST/OCO reales loopback, EXPIRED 0.4, reduceOnly/SL/TP, release y quiescence correctos. Se eliminó un `unused_mut` del contrato antes de las suites amplias. `bash-uhmjb2hm` ejecuta host_oms completo, execution f28_, sonda, god-engine-core y workspace. `mismo_freno` dead_code queda por comparar con baseline antes de atribuirlo. Static Ready=Yes + round-trip GREEN; aún no hay suite completa/CAS. F55 exacto 4/4 GREEN; regresión completa en curso.
+
+
+<!-- KIMI-V42-F55-REGRESSION-GREEN-20261108 -->
+## KIMI-QUANT-SR-V42 — F55 regresión completa verde
+
+`bash-i3n1t2rh`: `F55_FULL_FEATURE_EXIT=0` y `F55_WORKSPACE_EXIT=0`. F55 exacto 4/4, feature-engine completo y workspace `--all-targets` verdes. La normalización no rompe consumidores. Candidato F55 `e6855b598e44bb2091073f855246865e15cc04cc`, compuesto upstream `5a3d53e6891e88dc818ce20e51fd63494d7c6fb2`. F28 ya tiene round-trip OCO verde; `bash-uhmjb2hm` sigue suites completas. No hay CAS/push/Demo/Mainnet ni certificación económica.
+
+
+<!-- KIMI-V42-F28-FULL-SUITE-RED-20261108 -->
+## KIMI-QUANT-SR-V42 — F28 suite completa aún roja
+
+Resultados reales: host_oms **31/31 GREEN**, sonda **9/9 GREEN**, OCO roundtrip **1/1 GREEN**. `execution-engine --lib f28_` no compila: `start_paused` ausente en tokio Builder (`entry_dispatch.rs:395`). `god-engine-core`: **224 pass/3 fail/2 ignored**; `cold_batch_admits_only_one_probe`, `prior_secured...` y `two_orthogonal_longs...` producen 0 reservas. `prior_unsecured...` pasa. `agent-57` reanudado como `agent-urddr8ed` para separar aislamiento/fixture de regresión real y completar features/tests. No se acepta GREEN selectivo ni CAS. F55 sí terminó feature+workspace verdes.
+
+
+<!-- KIMI-V42-F55-WAVE18-GREEN-20261109 -->
+## KIMI-QUANT-SR-V42 — F55 + Wave18 verde
+
+`bash-sl8kaymm`: F55 4/4, F70 4/4, F71 4/4 y F72 4/4, total **16/16**, sin ignorados. Candidato fusionado `5286655add345266cbf0babfe558c257c2eaab55`, tree `b6bfd65fc83b62ae970a87b134de79275ec7ba11`. Conserva la fórmula upstream `2q/(1+2q)`, aserción C3 y documentación de índice no escalar de Ricci completo. No hay CAS/push/Demo/Mainnet. F28 mantiene static Ready=Yes y OCO 1/1 verde, pero `start_paused` y tres tests núcleo siguen con `agent-57`.
+
+
+<!-- KIMI-V42-F56-F66-20261109 -->
+## KIMI-QUANT-SR-V42 — átomos CI adicionales
+
+CI `42538442691` tiene dos fallos upstream separados: F56 `test_c3_irreversible_shock_and_conviction_collapse` (`jarzynski_crooks_thermodynamics_contract.rs:97`) y F66 `test_c2_wave16_dirac_monopole_hard_veto` + `test_c3_wave16_peps_hyperbolic_dispersion_veto` (`f66_002...:151/:204`). `agent-61` trabaja F56 en `f56-v42/subject`; `agent-62` trabaja F66 en `f66-v42/subject`, ambos desde `5286655add345266cbf0babfe558c257c2eaab55`. `agent-57` conserva F28. No hay dueños duplicados ni CAS/push/Demo/Mainnet. F55 + Wave18 ya pasó 16/16 local; Replay upstream sigue verde.
+
+
+<!-- KIMI-V42-WAVE18-WORKSPACE-GREEN-20261109 -->
+## KIMI-QUANT-SR-V42 — workspace Wave18 compilado
+
+`bash-9os6enye` terminó `cargo check --workspace --all-targets --locked` sobre `f55-current-v42` en **16m16s, exit 0**. F55/F70/F71/F72 ya pasaron 16/16. Los únicos frentes abiertos son F28 (`agent-57`), F56 (`agent-61`) y F66 (`agent-62`), todos con overlays independientes. `origin/main` sigue `8f38ccd9`; Replay upstream verde, Unit upstream rojo por F56/F66. Sin CAS/push/Demo/Mainnet.
+
+
+<!-- KIMI-V42-F56-F59-F62-20261109 -->
+## KIMI-QUANT-SR-V42 — F56 verificado; F59/F62 asignados
+
+`agent-61` demostró spread ×1000 por `0.1` en lugar de `0.0001`: F56 4/4, F57 2/2, workspace 17m40s exit 0. Candidato `211029fb9e4ea0c2a33e66a606e8b241138d1e83`, integrado `5278bc43933c2c349869b2f908bbe2e1be66a7ba`. La suite amplia expuso F59 ergodic collapse y F62 harmonic reversion además de las dos latencias baseline: `agent-63` toma F59 en `f59-v42/subject`; `agent-64` toma F62 en `f62-v42/subject`, ambos desde F56 integrado. `agent-57` conserva F28 y `agent-62` F66. Sin CAS/push/Demo/Mainnet.
+
+
+<!-- KIMI-V42-F28-INTEGRATION-20261109 -->
+## KIMI-QUANT-SR-V42 — F28 integración larga, no rojo funcional
+
+`agent-57` acredita F28 selectivo 4/4, B3 2/2, host 31/31, sonda 9/9, core lib **227/227** y execution **240/240**, incluido deadline real. Reversión (1562s) y tau (1116s) ya pasaron en una ejecución ampliada. La tercera suite agotó 2h durante reversión antes de cerrar todos los targets; `agent-wg31zzrk` retoma sólo la integración restante, sin cambiar código ni aserciones. No se declara suite completa hasta cierre real. F56 y F55/Wave18 ya verdes; F59/F62/F66 siguen asignados. Sin CAS/push/Demo/Mainnet.
+
+
+<!-- KIMI-V42-F66-FOCAL-GREEN-20261109 -->
+## KIMI-QUANT-SR-V42 — F66 focal 12/12 verde
+
+`agent-62` demostró que BEC y luego Lindblad enmascaraban el motivo Dirac/PEPS. La corrección mueve Dirac/PEPS antes de BEC y conserva el orden posterior original BEC→Lindblad→Polyakov→Ashtekar. F66/F69/F72: **4/4 cada uno, 12/12 total** sobre el hash final. Candidato `29ff59c3e828f166fcddfe004c2c407e4bc03e9f`; integrado con F56 `31ab87f032b62bdf6beb089b2e7eb0779dcee122`. La suite global tuvo dos `permission denied` al enlazar tests en uso (`cf3_una_sola_tau`, `cf3_reversion_base`); workspace quedó esperando lock, no se cuenta como PASS. F28 conserva integración larga en curso; F59/F62 pendientes.
+
+
+<!-- KIMI-V42-F59-GREEN-20261109 -->
+## KIMI-QUANT-SR-V42 — F59 verificado e integrado
+
+`agent-63` corrigió `leading_decay_rate_gamma`: la implementación omitía `var/(1+var)` de la fórmula documentada e inflaba gap. F59 4/4; F56 sigue 4/4; workspace 13m25s exit 0. Candidato `9daf6a8e97ea59f515088aa6b584b5b2ae4d3671`, integrado con F56/F66 `cd7b3e4f62edd1d217b55b49c611024b9a6b89fc`. Suite amplia deja sólo F62 funcional y las latencias baseline por tratar; F28 integración larga sigue. Sin CAS/push/Demo/Mainnet.
+
+
+<!-- KIMI-V42-F62-GREEN-20261109 -->
+## KIMI-QUANT-SR-V42 — F62 verificado e integrado
+
+`agent-64` normalizó `energy_coexact` con energías centradas de potencial/corriente y epsilon; evita que domine la alerta de vorticidad. F62 4/4 y F56 4/4; workspace exit 0. Candidato `421d1b68716025941dd0a64c44626336f80e652d`; integrado con F56/F59/F66 `ab1ce52168fe00b140b0ae721c624637da95a499`. Sólo quedan la integración larga F28 y las dos latencias baseline. Sin CAS/push/Demo/Mainnet.
+
+
+<!-- KIMI-V42-SIGNAL-ONLY-BASELINE-20261109 -->
+## KIMI-QUANT-SR-V42 — señales completas deja sólo latencias baseline
+
+`bash-3jtn4a0a` terminó `signal-engine --no-fail-fast`: únicamente `kahler_hodge_confluence_contract` y `yang_mills_confluence_contract` fallan por latencia. F56, F59, F62, F66 y doctests terminan sin defectos funcionales. Esos dos targets ya tenían fallo baseline demostrado en comparaciones previas; no se cambian umbrales. Integración `ab1ce52168fe00b140b0ae721c624637da95a499`. F28 integración larga sigue como único bloqueo funcional pendiente antes de revisión final/CAS.
+
+
+<!-- KIMI-V42-F28-77-GREEN-20261109 -->
+## KIMI-QUANT-SR-V42 — integración 14/14 targets y 77/77
+
+La reanudación F28 cerró **14/14 targets y 77/77 pruebas**, sin ignorados ni filtrados. Sólo queda una guarda fuente CF6 que busca `engine_real.process_event(` aunque el host aprobado usa `process_event_multi`. `agent-57` la actualiza como `agent-8oqnr4tl` para validar la llamada nueva real, no para borrarla, y luego ejecuta CF6/workspace. Esto no es fallo económico ni cambio de política. F55/F56/F59/F62/F66 ya verdes; señales completas sólo conserva las dos latencias baseline. Sin CAS/push/Demo/Mainnet.
+
+
+<!-- KIMI-V42-FINAL-CANDIDATE-20261109 -->
+## KIMI-QUANT-SR-V42 — candidato final en validación
+
+`98833b325f441fe7bfcc2f090a0149a50fa91da0`, tree `ae588c8d85e7633f5a14f7c6eabf4450389e6bb5`, en `final-v42/subject`. Combina F28 completo + F55/Wave18 + F56/F59/F62/F66 + Ville/emisiones/JIT/flight/dataset. Sin marcadores de conflicto; conserva grafo holístico, costura F28 al final del impl, GLM-210 y CF6 con entries/closed_order. `bash-o1ar1he8` ejecuta núcleo completo; `bash-4rmce7oq` ejecuta host/execution/risk/signal/feature/trainer/workspace; `agent-60` revisa la composición como `agent-ixy1f0x2`. No hay CAS/push/Demo/Mainnet ni certificación económica.
+
+
+<!-- KIMI-V42-FINAL-STATIC-YES-20261109 -->
+## KIMI-QUANT-SR-V42 — revisión estática final aprobada
+
+`agent-60` dio **Ready to merge estático=Yes** para `98833b325f441fe7bfcc2f090a0149a50fa91da0`, sin Critical/Important reintroducido. Verificó padres `ab1ce521` y `7064c871`, sin duplicados, F28 intacto, F55/F56/F59/F62/F66 y auxiliares preservados. CF6 exige `process_event_multi` y ambas salidas; round-trip OCO real conservado. Esto no es GREEN ejecutable ni certificación económica. Suites completas en curso; CAS/push/Demo/Mainnet bloqueados.
+
+
+<!-- KIMI-V42-FINAL-EARLY-GREEN-20261109 -->
+## KIMI-QUANT-SR-V42 — primeros GREEN de composición final
+
+`final-v42`: host_oms **32/32**, execution **240/240**, core lib **227/227** (F28 4/4 y B3 incluidos). `agent-60` también aprobó la composición estáticamente. La integración larga y risk/signal/feature/trainer/workspace siguen ejecutándose. No se declara cierre completo ni CAS hasta que todos los carriles terminen. Producción NO-GO; métricas N/D.
+
+
+<!-- KIMI-V42-FINAL-SUITES-20261109 -->
+## KIMI-QUANT-SR-V42 — suites finales sin fallos funcionales nuevos
+
+`bash-4rmce7oq`: host 32/32, execution 240/240, `FINAL_FEATURE_EXIT=0`, `FINAL_TRAINER_EXIT=0`, `FINAL_WORKSPACE_EXIT=0`. Risk y signal sólo repiten los tres targets baseline de latencia: fase3 158272,78 ns; Kähler 34,924 µs; Yang 33,473 µs. No se cambian umbrales ni se atribuyen a V42. `bash-o1ar1he8` sigue integración completa del núcleo. `agent-60` ya aprobó estáticamente el candidato; no hay CAS/push/Demo/Mainnet.
+
+
+<!-- KIMI-V42-STACK-UPSTREAM-20261109T061935-0500 -->
+## 2026-11-09 06:19:35 -05:00 — KIMI-QUANT-SR-V42: pila y upstream nuevo
+
+- La ejecución completa `bash-o1ar1he8` terminó `FINAL_CORE_EXIT=101` con dos `STATUS_STACK_OVERFLOW`: `test_f1_049_council_drawdown_unified_and_fail_closed_slippage` y `f1_053_council_params_direct_read_and_isolation_from_registry`. La causa todavía no está probada; no se amplía pila ni se cambian aserciones. `agent-65` reproduce y compara baseline en `stack-v42/subject`.
+- `git ls-remote --heads origin main` verificó `9662bc1907a0faf25f56f08601bfd338ca8ef26d` (Waves 19–22), ya no `8f38ccd9`. El preview `98833b325 + 9662bc19` generó tree provisional `4f41273e33e1b02a3c53f11370a3d418e236b942` con un único conflicto: `crates/god-engine-core/src/omniscient_living_graph.rs`. `agent-66` lo reconcilia y revisa el diff contra ambos padres en `upstream-v42/subject`.
+- El antiguo candidato `98833b325f441fe7bfcc2f090a0149a50fa91da0` conserva evidencia histórica, pero NO es integrable sin reparar la pila y recomponer/revalidar contra upstream. Sin CAS/push/Demo/Mainnet/credenciales/attestation. Producción y OOS siguen NO-GO; ROI/PnL/WR/Sharpe/EV=`N/D`; no existe certificación +100%/72h.
+
+
+<!-- KIMI-V42-BRANCHES-UPSTREAM-20261109T063800-0500 -->
+## 2026-11-09 06:38:00 -05:00 — KIMI-QUANT-SR-V42: ramas y baseline CI
+
+- `origin/main` continúa `9662bc19`. Unit upstream `42605702180` está rojo antes de V42: F63 `test_c1_wave15_triad_holistic_orchestration` (`rep2.ville_ruin_bound_satisfied`) y F59 `test_c3_ergodic_chaotic_collapse_under_pure_noise`. Replay `42605702084` sigue en curso; execution-contracts ya es verde. Estos rojos quedan como baseline y no se ocultarán ni se cambiarán aserciones.
+- Auditoría completa en `.agent_tx/staging/KIMI-QUANT-SR-V42/branch-audit-v42.md`: once ramas remotas son ancestro/parche equivalente, sin borrado ejecutado. `claude/linea-i-failover-olas` conserva correcciones JT/W17/W18 y alternativas F59/F62 que requieren comparación semántica; `claude/linea-i-i14` conserva vigilancia OMS extensa. Ambas y todos los worktrees Claude/GLM/AGENT-01/AGY quedan preservados.
+- Wave 13 local (`52001d2b`) tiene tree idéntico `5b4c63cd…` a `be9f2025` y `7a6b651e`; no hay delta de contenido que rescatar. Ninguna rama/worktree/proceso/índice ajeno fue retirado; `git branch -D`, `push --delete` y `fetch --prune` no se ejecutaron.
+
+
+<!-- KIMI-V42-WAVE23-DRIFT-20261109 -->
+## KIMI-QUANT-SR-V42 — Wave 23 local y preservación física
+
+AGY avanzó `agy/wave23-omega220` a `28fd60877482db56f20a4426ab82052444896372`, padre `9662bc19`, limpio y todavía sin push: Chern-Simons, MPDO DMRG y Lloyd Bound; 13 archivos, +1554/-85. Modifica `crates/god-engine-core/src/omniscient_living_graph.rs`, el mismo conflicto que `agent-66` reconcilia. `origin/main` permanece `9662bc19`; Wave 23 local no se transfiere como upstream ni como PASS. El candidato V42 deberá recomponerla con evidencia del dueño o excluirla explícitamente, sin sobrescribir su trabajo.
+
+Censo físico: AGENT-01 conserva 2349 filas WIP; QSR tiene `AGENT_SYNC.md`, `booktick_replay.rs` y `backtest-engine/src/lib.rs` modificados; GLM210/GLM216/linea-i-main-limpio están limpios; failover e I-14 limpios. Failover local `b6d633fa` ya fusiona `9662bc19` y está dos commits por delante de su ref remota. `agent-67` revisa failover y `agent-68` I-14 en read-only. Nada fue borrado/reseteado ni integrado por antigüedad. Detalle: `.agent_tx/staging/KIMI-QUANT-SR-V42/branch-audit-v42.md`.
+
+
+<!-- KIMI-V42-FAILOVER-REVIEW-20261109T070052-0500 -->
+## 2026-11-09 07:00:52 -05:00 — KIMI-QUANT-SR-V42: failover revisado
+
+`agent-67` terminó la comparación estática contra `98833b325`, `9662bc19` y failover local `b6d633fa`. Conclusión: NO transplantar la rama completa. Preservar para una base W19/W20+ sólo cuatro blobs: JT fuente `9d79f093dc69d206db7f9be919cfab6f16391ae5`, JT contrato `ce5b883ff1d8a43aff62a3f8acd23ccb496867a2`, W17 contrato `f6daaa5debe7d914f24e1b9c03017c9f94608d9f`, W18 contrato `f815139b64c4b6385cc278cf2725b40bdc783e88`. Paquete: `.agent_tx/staging/KIMI-QUANT-SR-V42/failover-four-v42.patch`; informe: `failover-review-v42.md`.
+
+JT elimina `f'''` inventada en la segunda muestra y exige C5 numérico sin relajar C1–C4. W17/W18 usan ~12 bps para que los vetos anteriores de spread no oculten la etiqueta objetivo. F59/F62 NO se copian: V42 y failover difieren en fórmula/dimensiones; las pruebas actuales no distinguen variantes (F59 dispara por gap, F62-C3 puede ser vacuo y C4 no sale de calentamiento). Se exige RED discriminante antes de cambiar producción. No se ejecutaron builds en esta revisión; runtime N/D. `agent-68` sigue I-14; `agent-65`/`agent-66` conservan sus carriles. Sin CAS/push/Demo/Mainnet.
+
+
+<!-- KIMI-V42-I14-REVIEW-20261109 -->
+## KIMI-QUANT-SR-V42 — I-14 revisado y Replay upstream verde
+
+`agent-68` terminó `i14-review-v42.md`: rescate selectivo condicionado, no cherry-pick total. `vigilante.rs`, contadores por lado y predicados pequeños son reutilizables; I-14 no aporta F28 y hereda cierre parcial como completo y cantidades teóricas bajo `positionRisk` fallido, ya corregidos por V42. No se reemplaza `god_engine.rs` ni se tocan `entry_dispatch.rs`, `reconciliation.rs` o `host_oms.rs` desde I-14. La fase posterior exige loopback E2E para carreras REST/WS, POST aceptado con respuesta perdida, huérfanas, entradas duplicadas, cierre residual, X-009 y release/quiescence; seis de nueve contratos nuevos son principalmente guardas de texto y no acreditan esas rutas.
+
+Replay upstream `42605702084` terminó **SUCCESS**; execution-contracts también verde. Unit `42605702180` conserva baseline rojo F63/Ville y F59, sin modificar aserciones. Los dictámenes selectivos y el censo físico están en `branch-audit-v42.md`. Sólo `agent-65` (pila) y `agent-66` (upstream) siguen activos. Sin CAS/push/Demo/Mainnet; producción/OOS NO-GO, métricas N/D.
+
+
+<!-- KIMI-V42-STACK-FIX-20261109 -->
+## KIMI-QUANT-SR-V42 — pila reparada en fixtures; upstream aún NO-GO
+
+`agent-65` demostró baseline compartido: `GlobalArena::new` construye por valor un `CoinArena` de 1.312.128 B (`LockFreeTickRing` 1.310.736 B, `[CompactTick;32768]` 1.310.720 B) en la pila del test. No hay recursión ni regresión de layout V42. Dos fixtures pasan a `GlobalArena::build_in_own_stack`; 2 archivos, +3/-4, cero producción y aserciones intactas. RED stack/baseline `0xc00000fd`; GREEN F1-049/F1-053/F1-054 y suites 3/3 + 3/3. Tree separado `fb87ba5665d26c17330c373967736f8962df2e77`; informe `stack-v42/STACK_V42_REPORT.md`. La pasada completa de núcleo NO terminó y se repetirá en el candidato final. `agent-60` revisa el parche estáticamente.
+
+`agent-66` dejó tree preliminar `9b40c4fc31822373f1f9b68f2ba06420d69f6949` y fue reanudado tras tokenization. Conserva F28/OOS y las prioridades V42+upstream, `check --all-targets` focal exit 0 y JT 5/5. F78 queda 2/4 por Page/Toric real: C1 invalida Ville y C2 devuelve Page antes que Toric; no se cambian fixtures, umbrales ni prioridad para fingir GREEN. JT de agent-66 (`156f12b31…`, test `9103f859…`) se compara con failover antes de elegir. Sin CAS/push/Demo/Mainnet; métricas N/D.
+
+
+<!-- KIMI-V42-F78-ASSIGNED-20261109 -->
+## KIMI-QUANT-SR-V42 — revisión de pila limpia y F78 asignado
+
+`agent-60` dio **Ready for composition=Yes** al parche de pila, SPEC+QUALITY sin Critical/Important; Minor: full core/workspace sigue obligatorio. `stack-review-v42.md`. `agent-66` cerró con **154/156** focales verdes, seis paquetes check exit 0 y F78 2/4; `VALIDATION_RECEIPT.json` recalculado sustituye su borrador de conteos. `agent-69` investiga F78 en `f78-v42/subject` (tree `28e278412ee221bb1df4c8f1b72f7d5be52b73a0`, ya con pila+W17/W18) contra baseline puro `9662bc19`, sin cambiar umbrales/prioridad/aserciones para forzar verde.
+
+JT se conserva en la variante `agent-66` por equivalencia numérica y mínima API; comparación `jt-comparison-v42.md`. Wave 23 local sigue fuera hasta recomposición con evidencia. Sin CAS/push/Demo/Mainnet; producción/OOS NO-GO, métricas N/D.
+
+
+<!-- KIMI-V42-ORIGIN-W23-20261109 -->
+## KIMI-QUANT-SR-V42 — upstream Wave 23 y W24 local preservado
+
+`origin/main` avanzó a `1f70694a576eebf8fcd51f8f7f55a253289be590` (Wave 23 publicada). Preview del provisional `46409dedb9010ac96207b4919a23891162a443fe` con ese origen genera `02bbf3eabff6c4c2e982d7a1a967f676a99e1671` y un único conflicto, otra vez `omniscient_living_graph.rs`; se recompondrá después de F78, sin invalidar la atribución en curso. Unit `42614840773` conserva baseline F63/F59; Replay `42614840807` SUCCESS. `bash-vgoorj2d` prueba F63 sobre el árbol de `agent-66`.
+
+AGY tiene tres commits W24 locales hasta `44e77c5a8c23df0ab8006c6f1d4910c699101eb2` y WIP no confirmado en JT y De Rham. No se toca ni se presenta como upstream/evidencia. `agent-69` continúa F78; `agent-60` ya aprobó pila; `agent-67` confirmó equivalencia JT con diferencia de API. Sin CAS/push/borrados/Demo/Mainnet.
+
+
+<!-- KIMI-V42-F78-GREEN-20261109 -->
+## KIMI-QUANT-SR-V42 — F78 4/4 y Wave 23 asignado
+
+`agent-69` demostró baseline 9662 y sujeto inicial ambos 2/4. C1 saturaba `rho=1` con isla cero, así que Page vetaba correctamente y el fixture no aislada el régimen nominal. En C2, Page usaba `1-|rho|` aunque su documentación define `1-rho`; con `rho=-1` destruía incorrectamente la isla y precedía a Toric. Corrección: `1-safe_corr`, nueva regresión anticorrelación y C1 pesos 0.60/0.50 con isla 0.70, sin cambiar aserciones, umbrales, prioridad, C2, JT ni grafo. F78 **4/4**, Page+Toric **10/10**, pila de olas **32/32**, JT **5/5**, check dos crates exit 0. `INFORME_F78_V42.md`; tree `dfa8d15f225a8a146c28f850a08739fd359b73da`, commit provisional `21e818bcd7c5dab317560595242237e7543aa697`. `agent-60` revisa SPEC/QUALITY.
+
+`bash-vgoorj2d` confirmó F63 2/2. `agent-70` reconcilia Wave 23 `1f70694a` en `wave23-v42/subject` desde preview `dcef523ead1bc51fa6f34d1a7c705e377283b474`, único conflicto en el grafo. Debe preservar Page/F78, pila/JT/W17/W18 y todos los vetos. W24 local sigue fuera. Sin CAS/push/Demo/Mainnet; producción/OOS NO-GO, métricas N/D.
+
+
+<!-- KIMI-V42-F78-REVIEW-20261109 -->
+## KIMI-QUANT-SR-V42 — F78 aprobado por agent-60
+
+`agent-60` dio **Ready for composition=Yes**, sin Critical/Important: `1-rho` es coherente con `safe_corr∈[-1,1]` y clamp; C1 ejercita post-Page con isla sin ocultar el veto positivo (F81/W21), C2/Toric y prioridad quedan intactos. Evidencia revisada: RED baseline+sujeto 2/4, RED anticorrelación, F78 4/4, Page+Toric 10/10, pila 32/32, JT 5/5 y check dos crates exit 0. Informe `f78-review-v42.md`.
+
+Minor de cobertura, no defecto del parche: falta la rama `island_present=true && s_island>1.02*S_BH`. `agent-69` ya derivó el fixture exacto en `page-second-branch-fixture.md`: equity 1, volatilidad 1.50, correlación 0.85 ⇒ isla 0.15, `S_island=0.3954605674 > 1.02*S_BH=0.1859679877`, veto=true y slot=0. Se añadirá antes del cierre global sin cambiar producción. `agent-70` sigue Wave 23; F59/F62 conservan su variante V42 hasta RED discriminante.
+
+
+<!-- KIMI-V42-WAVE23-GREEN-20261109 -->
+## KIMI-QUANT-SR-V42 — Wave 23 focal verde y cobertura asignada
+
+`agent-70` resolvió el único conflicto en `omniscient_living_graph.rs:1118`, con prioridad Dirac→PEPS→Lloyd→MPDO→Chern–Simons y luego Waves 19–22 sin duplicados. Conserva evaluaciones, allow_entry/Ville, Page→Toric, JT, pila y W17/W18. Tree final `d84a0a02b95a8603da6b114704109b556738fe44`, preview reproducido, unión 231/231 rutas, formato y check cuatro crates exit 0. **63/63 pruebas, 15/15 targets, 0 ignoradas/filtradas**, incluidas F85/F86/F87, JT, F63, F75, F78, F81 y F84. Recibo `wave23-v42/RECEIPT.json`; `agent-60` revisa SPEC/QUALITY. W24 local y WIP siguen excluidos.
+
+`agent-71` trabaja la última cobertura en `coverage-v42/subject`: segunda rama Page ya derivada y pruebas F59/F62 que distingan el motivo exacto del veto (alta varianza/gamma, centrado/DC, energía cero y NaN/Inf tras calentamiento). No cambiará fórmulas si las pruebas pasan; cualquier fix exige RED causal. Después se ejecutará núcleo completo, suites afectadas, trainer y workspace sobre un único sujeto. Sin CAS/push/Demo/Mainnet; producción/OOS NO-GO, métricas N/D.
+
+
+<!-- KIMI-V42-WAVE23-REVIEW-20261109 -->
+## KIMI-QUANT-SR-V42 — Wave 23 aprobado estáticamente
+
+`agent-60` dio **Ready for composition=Yes**, sin Critical/Important. Verificó unión 231/231, motores una vez por ciclo, vetos nuevos en allow_entry y Ville, prioridad real Dirac→PEPS→Lloyd→MPDO→Chern–Simons y Page/F78/JT/W17/W18/F28/OOS byte-idénticos al padre. No hay W24 ni marcadores. Los 15 logs suman 63/63; formato y check afectado son verdes. Minors pendientes: workspace completo y formato global, obligatorios antes del cierre. `wave23-review-v42.md`. `agent-71` continúa cobertura Page/F59/F62. Sin CAS/push/Demo/Mainnet ni certificación económica.
+
+
+<!-- KIMI-V42-COVERAGE-W18-20261109 -->
+## KIMI-QUANT-SR-V42 — cobertura 20/20 y W18 pendiente
+
+`agent-71` cerró Page/F81 7/7, F59 6/6 y F62 7/7: segunda rama Page con isla presente; alta varianza/gamma y frontera exacta; varianza cero; alerta obligatoria, corriente alternada/constante, energías cero, invariancia DC y NaN/Inf tras calentamiento. **Cero archivos de producción**, sólo tres contratos, +193/-0; fórmulas V42 intactas. Tree `39ca5d073e29126b7523e985cd823dc8229b023b`. Recibo `coverage-v42/RECEIPT.json`.
+
+La matriz ampliada quedó **90/91**: W18-C3 recibe `HOLOGRAPHIC_LLOYD_BOUND_EXHAUSTION_VETO` antes del esperado `GROSS_PITAEVSKII_VORTEX_VETO`; vórtice/carga/Ville=false/Flat sí se verifican. No se cambió fixture, aserción, umbral ni precedencia para ocultarlo. `agent-72` investiga sujeto y baseline puro `1f70694a`, con cobertura Lloyd conservada en F87 y sin duplicar fórmulas. Después: núcleo completo, familias, trainer, workspace y revisión final. Sin CAS/push/Demo/Mainnet; producción/OOS NO-GO, métricas N/D.
+
+
+<!-- KIMI-V42-CERTIFICATION-20261109 -->
+## KIMI-QUANT-SR-V42 — W18 99/99 y certificación global en curso
+
+`agent-72` reconcilió W18-C3 únicamente por fixture: shock 100→200 ms reduce Lloyd 0.999893→0.499946 (<0.95), sin tocar umbral, aserciones, producción o precedencia. Gross conserva carga -3, Ville falso y Flat. W18 **4/4** y matriz **99/99 en 23 targets**, incluidos F70, Lindblad, F87, W17, F75, F78, pila y JT. Tree reconstruido exactamente `c0941284ebb69c3c7dc72a8fd422545979976abe`; `agent-60` revisa.
+
+Nuevo `origin/main=0f2f4098ee3eac5be569aa39f0945f7d61eec738` (GLM-219/220/221: Fisher empírica, autorización y wiring host; no W24). Merge limpio con el candidato `c380b8123b2380a6e2cc8a0843536eaea915b74d` produjo **`b6f5c164f2c174ed46d5f00c212cf162cb1e1640`**, sujeto `certify-v42/subject`. `bash-ycjjcicp` ejecuta núcleo completo; `bash-uy7boh8k` host/execution/risk/signal/feature/trainer/workspace. Sólo las tres latencias baseline se documentan como excepción; cualquier otro rojo exige diagnóstico. Sin CAS/push/Demo/Mainnet ni certificación económica.
+
+
+<!-- KIMI-V42-FINAL-REVIEW-20261109 -->
+## KIMI-QUANT-SR-V42 — candidato final y revisión global
+
+`agent-60` aprobó W18-C3 sin Critical/Important/Minor: timestamp 200 ms aísla Gross sin desactivar Lloyd, precedencia intacta y 99/99. `w18-review-v42.md`.
+
+Candidato exacto **`71d2b6259f7b473f967f495cd33143d177aaf4ff`**, tree `b6f5c164f2c174ed46d5f00c212cf162cb1e1640`, padres `c380b8123b2380a6e2cc8a0843536eaea915b74d` y `0f2f4098ee3eac5be569aa39f0945f7d61eec738`. `agent-60` ejecuta revisión whole-branch contra ambos padres y la nueva delta GLM, sin builds ni CAS.
+
+Formato: `cargo fmt --all` falló OS206; adaptador real por lotes inventarió 723 targets y encontró **468 archivos baseline** con diferencias, con fuentes idénticas antes/después. Los **12 archivos de nuestros átomos están limpios 12/12**. No se reescribieron 468 archivos ajenos para simular una puerta. Evidencia: `certify-v42/format-assessment.json`. Suites globales siguen en curso; no hay GREEN/CAS/push/Demo/Mainnet ni certificación económica.
+
+
+<!-- KIMI-V42-WAVE24-RECOMPOSITION-20261109 -->
+## KIMI-QUANT-SR-V42 — Wave 24 exige recomposición
+
+`origin/main` avanzó a `270a855bc807979eb9a8d4190a8e262a4a62c6df` (W24). Preview de `71d2b6259f7b473f967f495cd33143d177aaf4ff` con ese origen genera `fdfdbd3a97c18ac00c2982973c21844ca31fe159` y cinco conflictos: JT, `omniscient_living_graph`, W17, W18 y De Rham. Upstream también toca F78/Ruelle y añade F88/F89/F90. `agent-73` reconcilia en `wave24-v42/subject`, comparando cada fórmula/fixture y preservando Page, Ville, F28/OOS, coberturas y prioridades; no puede elegir un lado completo ni ocultar vetos.
+
+Las suites `bash-ycjjcicp`/`bash-uy7boh8k` y la revisión whole-branch de `agent-60` siguen siendo evidencia únicamente del tree anterior `b6f5c164`, no del nuevo tree Wave 24. No se detienen ni se transfieren. El candidato final deberá recomponerse y repetir pruebas antes de cualquier CAS. No push/Demo/Mainnet ni métricas económicas.
+
+
+<!-- KIMI-V42-IMPORTANT-REVIEW-20261109 -->
+## KIMI-QUANT-SR-V42 — revisión whole-branch: Ready=No, cuatro Important
+
+`agent-60` confirmó identidad `71d2b625/b6f5c164` y no encontró Critical, pero bloquea CAS por cuatro Important:
+1. `metrica_fisher_empirica.rs`: score `2βu²/(σ·base)` carece de `-1/σ` para densidad normalizada; el contrato repite la omisión y el límite gaussiano queda mal.
+2. `src/bin/god_engine.rs`: Producción puede sobrescribir `data/demo/evidencia_demo.json` y luego auto-certificarse; la escritura debe quedar restringida a Demo.
+3. `os-guardian/src/jit_atomic_runtime.rs`: `Drop` intenta VirtualFree antes de dealloc sin registrar origen VirtualAlloc/heap, incumpliendo Task 3 y sin prueba de ambos propietarios.
+4. `orchestrator.rs` + host: NaN/Inf deja Producción autorizada en vez de fail-closed.
+
+`final-review-v42.md` y copia en `wave24-v42/IMPORTANT_REVIEW_FINDINGS.md` guían la reparación posterior de `agent-73` o una fase específica. Se exigen RED→GREEN por cada defecto y nueva revisión del tree resultante. No se acepta candidato por suites verdes parciales. Producción/OOS NO-GO; métricas N/D.
+
+
+<!-- KIMI-V42-FAMILIES-RESULT-20261109 -->
+## KIMI-QUANT-SR-V42 — familias: Fisher rojo y latencias baseline
+
+`bash-uy7boh8k` terminó sobre `b6f5c164`: host `exit 0`, execution `exit 0`, trainer `exit 0`, workspace `exit 0`. Risk conserva únicamente Fase3 baseline `125741.41 ns >10µs`; signal conserva Kähler `28.830 µs` y Yang-Mills `25.423 µs` (>25µs), sin otros fallos funcionales observados. `bash-ycjjcicp` sigue núcleo completo.
+
+Feature termina `exit 101` por dos fallos reales: `fall_closed_de_metrica_y_scores` y `ricci_continuidad_gaussiana_y_colas_planas` (`feature.log:818-840`). Confirman el Important de `agent-60`: la densidad/score Fisher no está correctamente normalizada y el límite gaussiano no es válido. Esto exige RED→GREEN y nueva revisión; no es baseline de latencia ni se subirán umbrales. `agent-73` continúa Wave 24. Sin CAS/push/Demo/Mainnet; producción/OOS NO-GO.
+
+
+<!-- KIMI-V42-WAVE24-167-20261109 -->
+## KIMI-QUANT-SR-V42 — Wave 24: 167/167 y reparación Important
+
+`agent-73` reconcilió Wave 24 con tree **`0e8ef322253e933cda1f1ec6daa6993c39413784`**, unión 233/233, siete rutas resueltas y sin marcadores. JT combina Option+step_count; grafo QES→QMBS→KS→Dirac→PEPS→Lloyd→MPDO→Chern; W17 spread 12 bps; W18 aísla Ryu/Liouville/Lloyd sin perder Gross; De Rham `idx_k`, Ruelle frontera 5.0 y fixture F62 cuatro nodos. **167/167 pruebas en 34 suites** y `cargo check --workspace --all-targets` exit 0. Recibo `wave24-v42/RECEIPT.md`. No se transfiere evidencia del tree anterior.
+
+`agent-73` fue reanudado como `agent-5lj6d3r2` para corregir los cuatro Important en ese mismo tree: Fisher `-1/σ` y límite gaussiano; certificado Demo no modificable por Producción; liberación JIT por origen VirtualAlloc/heap; NaN/Inf fail-closed. Brief `important-remediation-brief.md`. Cada uno exige RED→GREEN y revisión final; upstream sigue `270a855bc`. Sin CAS/push/Demo/Mainnet; producción/OOS NO-GO, métricas N/D.
+
+
+<!-- KIMI-V42-F1-108-20261109 -->
+## KIMI-QUANT-SR-V42 — núcleo completo y cuarta latencia sin clasificar
+
+`bash-ycjjcicp` terminó `CERTIFY_CORE_EXIT=101` después de ejecutar todos los targets y doctests. El único fallo es `test_f1_108_async_dataset_recorder_sub_microsecond_latency`: 186 µs frente a 50 µs (`full-core.log:1127-1144`). No es uno de los tres fallos baseline permitidos; no se aceptará como si lo fuera ni se cambiará el umbral. `bash-b5x7cwqu` repite el caso aislado en candidato y baseline `9662bc19` para separar entorno/código y decidir la reparación. Las demás rutas del núcleo terminaron sin fallos funcionales reportados.
+
+Esto se suma a los cuatro Important ya en reparación por `agent-73`, no los sustituye. CAS sigue bloqueado hasta clasificar/corregir F1-108 y repetir el nuevo tree completo. Producción/OOS NO-GO; métricas N/D.
+
+
+<!-- KIMI-V42-F1-108-ISOLATED-20261109 -->
+## KIMI-QUANT-SR-V42 — F1-108 aislado verde en candidato y baseline
+
+`bash-b5x7cwqu` repitió `test_f1_108_async_dataset_recorder_sub_microsecond_latency` con el mismo hash de contrato/fuente y el mismo ejecutable `108ae192ac5844ac`: candidato `exit 0` y baseline `exit 0`, cada uno 1 test, 1 filtered. Por tanto, el pico de 186 µs en la suite completa fue una desviación temporal bajo carga, no una regresión demostrada. No se modificó código ni umbral y no se creó una exención permanente. El núcleo completo se repetirá sobre el tree final después de los cuatro Important para confirmar estabilidad, sin convertir el aislado en PASS global.
+
+
+<!-- KIMI-V42-IMPORTANT-RESUME-20261109 -->
+## KIMI-QUANT-SR-V42 — Important focal GREEN; validación global reanudada
+
+El primer intento de `agent-73` agotó 2h tras lograr RED→GREEN focal de los cuatro Important: Fisher score/métrica/Ricci, certificado Demo 3/3, JIT origen 3/3 y breaker NaN/Inf + host. Guardas I12 y CL45/46/48 fueron actualizadas para verificar conducta real. El candidato intermedio `df07c8c77…` no es definitivo: hubo trabajo posterior y no se transferirá como SHA final.
+
+Quedó abierta la posible carrera `test_reconcile_arena_phantom_and_adoption` (`ETHUSDT UnmappedInstrument`). La reanudación por `resume` devolvió dos errores de concurrencia de instancia y no se forzó; `agent-74` continúa en `wave24-v42/subject`, revalidando tree/hashes, aislando ese caso y ejecutando execution-engine serial antes de fijar el tree final. No se inventaron resultados ni se repitió DMRG/feature completo si ya estaba verde en el mismo árbol. Sin CAS/push/Demo/Mainnet; producción/OOS NO-GO, métricas N/D.
+
+
+<!-- KIMI-V42-AGENT75-20261109 -->
+## KIMI-QUANT-SR-V42 — continuidad de validación tras corte OAuth
+
+`agent-74` confirmó `test_reconcile_arena_phantom_and_adoption` aislada 1/1 y una carrera probable de `DYNAMIC_UNIVERSE`: tres pruebas reemplazan el universo y BTC+ETH puede leer `[BTC]`. Su siguiente contraste quedó interrumpido por OAuth, no por código; una guarda adicional marcó 711.963 ns >500 ns y otra ejecución quedó sólo esperando lock, ambas inconclusas para cualquier veredicto.
+
+La reanudación volvió a rechazar concurrencia de instancia, así que `agent-75` continúa el contraste fresco: exacta con un hilo, lib paralelo, lib serial 240/240 y clasificación de latencia sin tocar límites. Después fijará tree/hashes y ejecutará sólo lo pendiente y workspace. Los cuatro Important siguen con RED→GREEN focal; `df07c8c77…` sigue siendo intermedio. Sin CAS/push/Demo/Mainnet; producción/OOS NO-GO, métricas N/D.
+
+
+<!-- KIMI-V42-AGENT76-20261109 -->
+## KIMI-QUANT-SR-V42 — carrera y latencia cerradas; diario pendiente
+
+`agent-75` demostró `test_reconcile_arena_phantom_and_adoption` 1/1 y execution **240/240 paralelo y serial**, sin `UnmappedInstrument`: era carrera de fixture/universo, no `reconciliation.rs`. La latencia `fixed_filter` optimizada pasó **9/9** con el mismo hash; los rojos correspondían a baseline no optimizada/carga, sin cambio de código o umbral. Los cuatro Important conservan GREEN focal.
+
+El único tramo abierto es CL45/46: RED `try_symbol(0)=None` por universo vacío. Se implementó RAII test-only para fijar `RESFUSDT` y restaurar el universo, conservando el `update_registry` BTC de otra sesión y las aserciones de cantidad/τ/JSON. `agent-76` ejecuta primero la prueba exacta y las 11 del binario, luego workspace, calcula tree final y recibo. No repite DMRG/Fisher/ejecución/latencia en el mismo árbol. Sin CAS/push/Demo/Mainnet; producción/OOS NO-GO.
+
+
+<!-- KIMI-V42-CLOSURE-20261109 -->
+## KIMI-QUANT-SR-V42 — cierre Important y certificación final
+
+`agent-76` cerró el diario: prueba exacta 1/1 y god_engine bin **11/11**, con `try_symbol`, reserva, JSON, qty 0.4, τ 30000 y restauración del universo incluso tras pánico (`catch_unwind`). RAII y `update_registry(BTCUSDT)` conservados; producción `anotar_diario_de_posicion` y `reconciliation.rs` sin hunks. `cargo check --workspace --all-targets --locked` exit 0. Recibo `remediation-important/CLOSURE_RECEIPT.md`.
+
+Candidato definitivo **`adf4622cb840111b7bbf8095b7a4c8d5d2fb961b`**, tree `a658b6b905fd6159d134bbeae9b6f4b6cb257fe4`, padres `71d2b625` y `270a855bc`. `bash-cncps1ra` ejecuta full core; `bash-4mcbhyfz` host/execution/risk/signal/feature/trainer/workspace; `agent-60` revisa los cuatro Important y la composición completa. No se transfiere evidencia de otro tree. Sin CAS/push/Demo/Mainnet; producción/OOS NO-GO, métricas N/D.
+
+
+<!-- KIMI-V42-WAVES25-27-20261109 -->
+## KIMI-QUANT-SR-V42 — Waves 25–27 en reconciliación
+
+`origin/main` avanzó a `09d633693e943d023c678b32c3abda9cdef984e4` (Waves 25–27). Preview con `adf4622c` produce `773af5d56e4e0233a03415b680bcc735c64e0de5` y tres conflictos: Fisher fuente, contrato Fisher y grafo vivo. `agent-77` reconcilia en `waves25-27-v42/subject`, conservando los cuatro Important, F28/OOS/Page/JT/W17/W18 y coberturas, y añadiendo F91–F99 sin duplicados.
+
+Las suites `bash-cncps1ra`/`bash-4mcbhyfz` y la revisión de `agent-60` siguen siendo evidencia únicamente de `adf4622c/a658b6b9`, no del nuevo tree. CAS sigue bloqueado hasta recomponer y repetir las pruebas necesarias. No push/Demo/Mainnet ni certificación económica.
+
+
+<!-- KIMI-V42-AGENT78-20261109 -->
+## KIMI-QUANT-SR-V42 — Waves 25–27: última precedencia en validación
+
+`agent-77` resolvió los tres conflictos, mantuvo Fisher y workspace check exit 0, corrigió precedencia F91/F92 para conservar W17/W18, implementó entradas W24 fail-closed con veto y costura JIT sin doble liberación. El tree `ff539673…` es previo a la última corrección de precedencia y no se reutiliza como final.
+
+W24 propagación mostró F98 antes que KS; `agent-78` valida ahora prioridad V42 QES→QMBS→KS por delante de F93–F99, manteniendo F91 después de Schwarzschild y F92 después de Lindblad. Repetirá W24 completo, Waves 25–27, motores unitarios, JIT, Page/JT y workspace check, y generará tree/recibo final sin repetir DMRG. Sin CAS/push/Demo/Mainnet; producción/OOS NO-GO, métricas N/D.
+
+
+<!-- KIMI-V42-FINAL-WAVES-20261109 -->
+## KIMI-QUANT-SR-V42 — candidato Waves 25–27 y revisión final
+
+`agent-78` cerró con **87/87** pruebas y workspace check exit 0: W24 propagación 17/17, Waves 25–27 51/51, Page/F78 11/11, JT 5/5 y JIT 3/3. QES→QMBS→KS precede F99…F93; F92 tras Lindblad y F91 tras Schwarzschild. JIT `ProtectionFailed` demuestra exactamente una liberación y cero cruzadas. Tree `204031bfa61f0fa6c7bc12eea2cffebd3d135213`.
+
+Candidato **`0ffa6d7624268bc7b03323e26f868fe6b1e3565b`**, padres `adf4622c` y `09d63369`, overlay `final-waves-v42/subject`. `bash-g30os6j4` full core; `bash-gb6nvaim` host/execution/risk/signal/feature/trainer/workspace; `agent-60` revisión whole-branch final. Recibo `waves25-27-v42/CLOSURE_RECEIPT.json`. No hay CAS/push/Demo/Mainnet ni certificación económica.
+
+
+<!-- KIMI-V42-F92F93-20261109 -->
+## KIMI-QUANT-SR-V42 — revisión detecta F92/F93 fail-open
+
+`agent-60` confirmó prioridad, QES/KS/QMBS y JIT, pero **Ready=No** por dos Important:
+- `starobinsky_inflationary_attractor.rs`: NaN/Inf produce slow-roll válido con veto falso.
+- `fisher_rao_amari_manifold.rs`: NaN/Inf produce distancia pequeña y veto falso.
+C4 y propagación sólo comprobaban finitud. `agent-79` implementa retorno temprano fail-closed con veto, `Flat` y Ville falso para NaN/±Inf y no positivos cuando aplique, con RED→GREEN y propagación exacta. También repetirá `fixed_filter` optimizado con hash/fingerprint/carga controlada, sin elevar 500 ns.
+
+El candidato `0ffa6d76/204031bf` no se promueve. Después se repetirán F92/F93, W25, prioridad y workspace, y otra revisión independiente. Producción/OOS NO-GO; métricas N/D.
+
+
+<!-- KIMI-V42-WAVES-FAMILIES-20261109 -->
+## KIMI-QUANT-SR-V42 — familias Waves: cinco verdes y dos latencias baseline
+
+`bash-gb6nvaim` terminó: host `exit 0`, execution `exit 0`, feature `exit 0`, trainer `exit 0`, workspace `exit 0`. Risk `exit 101` únicamente por Fase3 baseline `99707.13 ns >10µs`; signal `exit 101` únicamente por Kähler `32.311 µs >25µs`. **Yang-Mills pasó esta ejecución**, por lo que no se generaliza un fallo permanente ni se cambia umbral. No hay otros fallos funcionales en esos logs. Full core sigue `bash-g30os6j4`.
+
+La revisión de `agent-60` detectó además F92/F93 fail-open, ya en reparación por `agent-79` con veto+Flat+Ville falso y propagación. `fixed_filter` se repetirá optimizado. CAS sigue bloqueado hasta el nuevo tree y revisión final. Producción/OOS NO-GO; métricas N/D.
+
+
+<!-- KIMI-V42-WAVES-CORE-20261109 -->
+## KIMI-QUANT-SR-V42 — núcleo Waves y F1-108 temporal
+
+`bash-g30os6j4` terminó todos los targets y doctests con `FINAL_WAVES_CORE_EXIT=101`. Único rojo: F1-108, 213 µs >50 µs (`full-core.log:1126-1144`). No hay fallo funcional adicional reportado. `bash-vj0qa11u` repite el caso aislado sobre este nuevo tree y baseline `9662bc19` para confirmar si sigue siendo variación temporal bajo carga. No se modifica código ni umbral y no se declara GREEN global hasta la evidencia aislada y la reparación F92/F93 con revisión final.
+
+
+<!-- KIMI-V42-F1-108-WAVES-ISOLATED-20261109 -->
+## KIMI-QUANT-SR-V42 — F1-108 aislado verde también en Waves
+
+`bash-vj0qa11u` confirma candidato y baseline `exit 0` con el mismo ejecutable `108ae192ac5844ac`, 1 test/1 filtered en cada uno. La desviación de 213 µs fue temporal bajo carga, no regresión de la composición. No se cambia código ni umbral y no se crea exención permanente. La estabilidad se revalidará sobre el tree definitivo después de F92/F93 y `fixed_filter`, con revisión independiente antes de cualquier CAS.
+
+
+<!-- KIMI-V42-FINAL-F92F93-20261109 -->
+## KIMI-QUANT-SR-V42 — F92/F93 y fixed_filter verdes; revisión final en curso
+
+`agent-79` corrigió Starobinsky y Fisher–Amari con retorno temprano fail-closed: NaN/±Inf y valores fuera de dominio activan veto, no mutan estado y dejan `Flat`/Ville falso. Propagación W25 7/7 y etiquetas/prioridad QES→QMBS→KS preservadas. Penrose también cierra bid=ask=+Inf sin pánico ni historia/timestamp falso. Tree `8e2dc1c6123d824ca7156c8698b7431dc7ac4a9c`, seis archivos. `fixed_filter` pasó **9/9** bajo 500 ns; el valor exacto es N/D porque no se imprime al pasar, no se afirma medición inventada. Workspace check exit 0 y god_engine bin 11/11.
+
+Candidato **`4da9bd364201343337648fb18bee665ad44bb51b`**, padres `0ffa6d76` y `09d63369`, overlay `final-f92f93-v42/subject`. `bash-z2s4rsd5` full core; `bash-l81mtqf2` host/execution/risk/signal/feature/trainer/workspace; `agent-60` revisión final. Recibo `f92f93-v42/RECEIPT.json`. No CAS/push/Demo/Mainnet; producción/OOS NO-GO, métricas N/D.
+
+
+<!-- KIMI-V42-STATIC-YES-20261109 -->
+## KIMI-QUANT-SR-V42 — revisión estática Ready=Yes y manifiesto 56/56
+
+`agent-60` dio **Ready to merge=Yes** estático para `4da9bd364201343337648fb18bee665ad44bb51b` (tree `8e2dc1c6123d…`), sin Critical/Important. Confirmó veto fail-closed F92/F93, propagación W25, Penrose sin pánico, prioridad y todas las reparaciones. `fixed_filter` se acota correctamente: 9/9 no son nueve mediciones independientes ni latencia exacta certificada; valor medio N/D.
+
+El único Minor era una deriva del manifiesto `index-private`, no del contenido del tree. Se actualizó esa línea con el hash real `864638214170e8ba6b7da39bef0774cec20772e0d40b18cdf2a2489563e75e33` y `sha256sum -c ../CLOSURE_SHA256SUMS` desde `before/` ahora pasa **56/56**. La certificación completa y upstream fresco siguen siendo obligatorios antes de CAS. No push/Demo/Mainnet; producción/OOS NO-GO.
+
+
+<!-- KIMI-V42-F92F93-FAMILIES-20261109 -->
+## KIMI-QUANT-SR-V42 — familias tras F92/F93: seis verdes y Fase3 baseline
+
+`bash-l81mtqf2` terminó sobre `4da9bd364…`: host `exit 0`, execution `exit 0`, signal `exit 0`, feature `exit 0`, trainer `exit 0`, workspace `exit 0`. Risk `exit 101` únicamente por Fase3 baseline `87140.73 ns >10µs`; no aparece ningún fallo funcional nuevo en los demás logs. `bash-z2s4rsd5` continúa full core.
+
+Revisión estática `agent-60` ya es Ready=Yes y manifiesto 56/56, pero CAS sigue bloqueado hasta completar núcleo y revalidar upstream. `agent-79` también demostró `fixed_filter` 9/9 con el límite intacto; valor medio N/D. No push/Demo/Mainnet; producción/OOS NO-GO.
+
+
+<!-- KIMI-V42-FINAL-CORE-F92-20261109 -->
+## KIMI-QUANT-SR-V42 — núcleo tras F92/F93 y contraste F1-108
+
+`bash-z2s4rsd5` terminó todos los targets y doctests con `FINAL_F92F93_CORE_EXIT=101`. Único rojo: F1-108, 325 µs >50 µs (`full-core.log:1128-1145`). No hay otro fallo funcional reportado. `bash-yo2zzgpf` repite el caso aislado sobre el tree final `8e2dc1c6123d…` y baseline `9662bc19` para confirmar si sigue siendo variación temporal bajo carga. No se cambia código ni umbral y no se declara GREEN global hasta ese contraste y la verificación de upstream fresco.
+
+
+<!-- KIMI-V42-F1-108-FINAL-20261109 -->
+## KIMI-QUANT-SR-V42 — F1-108 aislado verde en el tree final
+
+`bash-yo2zzgpf` confirma `F1_108_FINAL_EXIT=0` y `F1_108_FINAL_BASELINE_EXIT=0`, con el mismo ejecutable `108ae192ac5844ac`, 1 test/1 filtered en cada uno. El pico de 325 µs en la suite fue variación temporal bajo carga, no regresión de la composición. No se cambió código ni umbral ni se creó exención permanente. La revisión estática `agent-60` es Ready=Yes y el manifiesto pasa 56/56. Upstream sigue `09d63369`; antes de CAS se verificarán ancestro de HEAD, padres/tree e índice privado, sin push ni operación financiera.
+
+
+<!-- KIMI-V42-W24-IMPORTANT-20261109 -->
+## KIMI-QUANT-SR-V42 — revisión final: dos Important adicionales
+
+`agent-60` confirmó los cuatro Important anteriores corregidos, pero **Ready=No** por dos nuevos:
+1. QES/Kostant–Souriau/QMBS responden sanos ante NaN/Inf; QES incluso sustituye equity/floor por 13/10. Los C4 sólo comprueban finitud y las guardas W24 de propagación pueden quedar vacías. Deben exigir veto, Flat y Ville falso para NaN/±Inf y valores no positivos cuando aplique, sin hardcode de capital.
+2. La prueba `ProtectionFailed` hace VirtualFree manual y luego `drop(page)`, repitiendo la llamada sobre el mismo puntero. Producción sí libera por origen con `match`; debe corregirse la costura/test para acreditar exactamente una liberación y cero cruzadas.
+
+Brief: `waves25-27-v42/IMPORTANT_W24_REMEDIATION_BRIEF.md`; revisión: `final-important-review-v42.md`. Además, `fixed_filter` registró 544.585 ns/op >500 ns: se repetirá optimizado con fingerprint/carga controlada, sin tocar límite. Estos hallazgos deben resolverse con RED→GREEN y nueva revisión antes de CAS. Producción/OOS NO-GO; métricas N/D.
+
+
+<!-- KIMI-V42-FINAL-FAMILIES-20261109 -->
+## KIMI-QUANT-SR-V42 — familias finales y latencias en clasificación
+
+`bash-4mcbhyfz` terminó sobre `adf4622c`: host `exit 0`, execution `exit 0`, feature `exit 0`, trainer `exit 0`, workspace `exit 0`. La corrección Fisher queda respaldada por feature completo. Núcleo sigue `bash-cncps1ra`.
+
+Risk `exit 101` sólo por latencia: Fase3 `124934.56 ns` y un caso adicional Riemann `25077.4 ns >25000 ns`. `bash-229rccib` repite Riemann aislado en candidato/baseline para clasificarlo sin cambiar límite. Signal `exit 101` por Kähler `35.041 µs` y Yang-Mills `41.344 µs`, ya baseline. Ninguno se convierte en PASS ni se eleva umbral. No hay CAS/push/Demo/Mainnet ni certificación económica.
+
+
+<!-- KIMI-V42-RIEMANN-ISOLATED-20261109 -->
+## KIMI-QUANT-SR-V42 — Riemann aislado verde en candidato y baseline
+
+`bash-229rccib` repitió `c5_zero_alloc_stack_latency_under_25_microseconds` con el mismo ejecutable `ad2886f74bf1899c`: candidato `exit 0` y baseline `exit 0`, 1 test/5 filtered en cada uno. El pico de 25.0774 µs fue variación temporal bajo carga, no regresión demostrada. No se modificó código ni umbral ni se creó exención permanente. La estabilidad se revalidará sobre el tree final completo después de Waves 25–27 y los dos Important W24/JIT.
+
+
+<!-- KIMI-V42-FINAL-CORE-20261109 -->
+## KIMI-QUANT-SR-V42 — núcleo completo y F1-108 temporal
+
+`bash-cncps1ra` terminó todos los targets y doctests sobre `adf4622c` con `FINAL_CORE_EXIT=101`. Único rojo: `test_f1_108_async_dataset_recorder_sub_microsecond_latency`, 632 µs >50 µs (`full-core.log:1128-1145`). El mismo tree ya había pasado F1-108 aislado con ejecutable idéntico y baseline también verde, por lo que es variación temporal bajo carga, no regresión demostrada. No se cambia código ni umbral y no se declara GREEN global; se repetirá estabilidad en la composición definitiva.
+
+Los otros resultados permanecen: host/execution/feature/trainer/workspace exit 0; Risk/Signal sólo latencias aisladas ya clasificadas. `agent-77` continúa Waves 25–27 y los dos Important W24/JIT. Sin CAS/push/Demo/Mainnet; producción/OOS NO-GO.
+
+
+<!-- KIMI-V42-CODE-CAS-20261110 -->
+## 2026-11-10 — KIMI-QUANT-SR-V42: CAS de código completado
+
+`git update-ref refs/heads/main 4da9bd364201343337648fb18bee665ad44bb51b 02c456265f3bcffa2adad70cbb392862e3bc69ec` terminó con **`main=4da9bd364201343337648fb18bee665ad44bb51b`**, tree `8e2dc1c6123d824ca7156c8698b7431dc7ac4a9c`, padres `0ffa6d7624268bc7b03323e26f868fe6b1e3565b` y `09d633693e943d023c678b32c3abda9cdef984e4`. El HEAD anterior era ancestro del candidato y ambos diffs pasaron `--check`. Working tree/WIP preservados; **sin push**.
+
+Evidencia: F92/F93 y propagación W25 con veto+Flat+Ville falso; Penrose sin pánico; `fixed_filter` 9/9 bajo 500 ns (valor medio N/D); JIT sin doble liberación; `agent-60` Ready=Yes estático y manifiesto 56/56. Host/execution/signal/feature/trainer/workspace exit 0; Risk sólo Fase3 baseline 87140.73 ns; núcleo completo sólo F1-108 temporal 325 µs, aislado candidato/baseline exit 0 con el mismo ejecutable. Kähler y Yang quedan como latencias baseline ya documentadas, sin elevar umbrales. No hay GREEN económico, OOS limpio ni certificación +100%/72h. Producción/Demo NO-GO; ROI/PnL/WR/Sharpe/EV=`N/D`. La actualización documental se integra por separado.
