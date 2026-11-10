@@ -35,6 +35,7 @@ pub mod lead_lag;
 pub mod liouville_quantum_gravity;
 pub mod lppls_sornette;
 pub mod matrix_model_kp_hierarchy;
+pub mod m_theory_joyce_g2;
 pub mod matriz_rmt;
 pub mod metrica_fisher_empirica; // GLM-221 (C1): Fisher empirica q-gaussiana con beta_q
 pub mod microstructure;
@@ -169,6 +170,9 @@ pub use liouville_quantum_gravity::{
 pub use matrix_model_kp_hierarchy::{
     MatrixModelKpConfig, MatrixModelKpHierarchyEngine, MatrixModelKpReport, KP_MATRIX_DIM,
     KP_MOMENTS_COUNT,
+};
+pub use m_theory_joyce_g2::{
+    JoyceG2Config, JoyceG2Report, MTheoryJoyceG2Engine, JOYCE_BUFFER_CAPACITY, JOYCE_DIM,
 };
 pub use microstructure::{
     obi_acceleration, order_book_imbalance, AdaptiveResonanceClustering,

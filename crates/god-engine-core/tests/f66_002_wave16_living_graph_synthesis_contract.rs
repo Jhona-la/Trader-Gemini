@@ -10,7 +10,7 @@ use god_engine_core::omniscient_living_graph::OmniscientLivingGraphOrchestrator;
 use signal_engine::quantum_slot_orchestrator::{
     QuantumSlotOrchestrator, QuantumSlotOrchestratorParams,
 };
-use strategy_core::{AssetColorState, SignalType, SU3_COLORS};
+use strategy_core::{AssetColorState, SignalType};
 
 #[test]
 fn test_c1_wave16_triad_holistic_orchestration() {
@@ -109,15 +109,45 @@ fn test_c2_wave16_dirac_monopole_hard_veto() {
     let mut slot_orchestrator =
         QuantumSlotOrchestrator::new(QuantumSlotOrchestratorParams::default());
 
-    let triad = [AssetColorState {
-        normalized_return: 0.0,
-        order_flow_imbalance: 0.0,
-        relative_weight: 1.0,
-    }; SU3_COLORS];
+    let triad = [
+        AssetColorState {
+            normalized_return: 0.0008,
+            order_flow_imbalance: 0.15,
+            relative_weight: 1.1,
+        },
+        AssetColorState {
+            normalized_return: -0.0004,
+            order_flow_imbalance: -0.08,
+            relative_weight: 0.95,
+        },
+        AssetColorState {
+            normalized_return: 0.0001,
+            order_flow_imbalance: 0.03,
+            relative_weight: 1.0,
+        },
+    ];
 
     let open_slots = [false; 3];
     let open_taus = [0.0; 3];
     let open_is_long = [false; 3];
+
+    // Calentamiento para inicializar prev_mid_price y flujo
+    let _ = orchestrator.evaluate_and_synthesize(
+        0,
+        99.95,
+        99.97,
+        50.0,
+        50.0,
+        999_000,
+        &triad,
+        1000.0,
+        5.0,
+        0.02,
+        &mut slot_orchestrator,
+        &open_slots,
+        &open_taus,
+        &open_is_long,
+    );
 
     // Configurar umbrales hipersensibles para forzar detección de monopolo de Dirac
     orchestrator.dirac_monopole_engines[0] =
@@ -130,8 +160,8 @@ fn test_c2_wave16_dirac_monopole_hard_veto() {
         0,
         99.99,
         100.01,
-        1000.0,
-        1.0,
+        60.0,
+        40.0,
         1_000_000,
         &triad,
         1000.0,
@@ -158,15 +188,45 @@ fn test_c3_wave16_peps_hyperbolic_dispersion_veto() {
     let mut slot_orchestrator =
         QuantumSlotOrchestrator::new(QuantumSlotOrchestratorParams::default());
 
-    let triad = [AssetColorState {
-        normalized_return: 0.0,
-        order_flow_imbalance: 0.0,
-        relative_weight: 1.0,
-    }; SU3_COLORS];
+    let triad = [
+        AssetColorState {
+            normalized_return: 0.0008,
+            order_flow_imbalance: 0.15,
+            relative_weight: 1.1,
+        },
+        AssetColorState {
+            normalized_return: -0.0004,
+            order_flow_imbalance: -0.08,
+            relative_weight: 0.95,
+        },
+        AssetColorState {
+            normalized_return: 0.0001,
+            order_flow_imbalance: 0.03,
+            relative_weight: 1.0,
+        },
+    ];
 
     let open_slots = [false; 3];
     let open_taus = [0.0; 3];
     let open_is_long = [false; 3];
+
+    // Calentamiento para inicializar prev_mid_price y flujo
+    let _ = orchestrator.evaluate_and_synthesize(
+        0,
+        99.95,
+        99.97,
+        50.0,
+        50.0,
+        999_000,
+        &triad,
+        1000.0,
+        5.0,
+        0.02,
+        &mut slot_orchestrator,
+        &open_slots,
+        &open_taus,
+        &open_is_long,
+    );
 
     // Configurar PEPS con umbral hiperbólico restrictivo (Ricci menor que critical activa veto)
     orchestrator.peps_ricci_engines[0] =
@@ -179,8 +239,8 @@ fn test_c3_wave16_peps_hyperbolic_dispersion_veto() {
         0,
         99.99,
         100.01,
-        500.0,
-        5.0,
+        60.0,
+        40.0,
         1_000_000,
         &triad,
         1000.0,
