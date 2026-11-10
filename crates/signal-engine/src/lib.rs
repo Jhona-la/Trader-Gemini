@@ -50,6 +50,7 @@ pub mod starobinsky_inflationary_attractor;
 pub mod stochastic_resonance;
 pub mod supersonic_shockwave;
 pub mod supersymmetry_nicolai_map;
+pub mod topological_quantum_braiding;
 pub mod trend_runner;
 pub mod voto_espectral;
 pub mod wheeler_dewitt_minisuperspace;
@@ -155,6 +156,10 @@ pub use strategy_core::{SignalIntent, SignalType};
 pub use supersonic_shockwave::{SupersonicShockwaveEngine, SupersonicShockwaveParams};
 pub use supersymmetry_nicolai_map::{
     SupersymmetryNicolaiConfig, SupersymmetryNicolaiEngine, SupersymmetryNicolaiReport,
+};
+pub use topological_quantum_braiding::{
+    Complex2D, TopologicalQuantumBraidingConfig, TopologicalQuantumBraidingEngine,
+    TopologicalQuantumBraidingReport, Unitary2x2, PHI, PHI_INV, PHI_INV_SQRT,
 };
 pub use wheeler_dewitt_minisuperspace::{
     WheelerDeWittConfig, WheelerDeWittMinisuperspaceEngine, WheelerDeWittReport,
