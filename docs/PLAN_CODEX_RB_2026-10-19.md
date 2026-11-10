@@ -38,6 +38,7 @@
 | RB-S1 | Antifragilidad: cuarentena en caliente por motor votante | 4 | Pendiente (coordinar con dueños del orquestador) |
 | RB-N1 | **El reloj del host vuelve a vivir**: la guardia HOST-016 cancelaba el sincronizador NTP/Kalman antes de su primera muestra (off-by-one, desde 97996eba0 del 2026-09-17) ⇒ la deriva del reloj entraba entera en la edad del dato que bloquea entradas | 2 | **Entregado 2026-11-10** (§10) |
 | RB-N2 | **Puerta de latencia con fundamento**: el umbral de pánico es un gen sin señal en backtest (semilla `1000·π`, hoy 6 945 ms); Kalman de 2 estados (offset + deriva) con R adaptativa y puerta de RTT relativa al mínimo observado | 2 | Propuesto (§10.5); coordinar con Línea I (I-2b/I-5) |
+| RB-C1 | **La CI no esconde rojos**: `--no-fail-fast` en las 25 invocaciones de `cargo test` de unit-suites y replay-contracts (el shard `nucleo` se cortaba en `f69_002` y ocultaba el resto) | 1 | **Entregado 2026-11-10** (contrato `rb_c1_ci_sin_corte_temprano_contract`) |
 | RB-G1 | **Censo de alcanzabilidad desde el host**: qué módulos no tocan el flujo real (62 sólo los usa el grafo vivo Ω220, que el host nunca evalúa; 116 sin usuario de producción) — de censo léxico a contrato | 1 | Censo léxico publicado (§10.6, `docs/audit/rb_g1_censo_alcance_host_2026-11-10.txt`) |
 
 **RB-M1 — fugas de memoria en runtime.** Concepto: el motor corre 24/7; toda
@@ -317,6 +318,15 @@ apertura. 97 812 eventos `LATENCY PANIC` con entradas bloqueadas, 85 190
 «red+reloj» de la edad del dato rondaba 7 s y la deriva D (pared − proyección
 monótona) fue de −1,4 s a −4,9 s. El log mostraba «Sincronizador de generación
 1 superseded» al arrancar, lo mismo con la generación 2, y nunca una muestra.
+
+**Cuantificación (añadida tras medir; corrige la lectura causal).** Los
+97 812 pánicos son el 0,87 % de los ~11,3 M eventos de la corrida, con un pico
+del 4 % en el decil 6 del log. La única apertura llegó en el decil 1, y los
+deciles 2 y 8, sin ningún pánico, tampoco abrieron nada. El reloj muerto es un
+defecto real (puerta de latencia contaminada y offset de firma congelado),
+pero **no es la causa** de que la Demo casi no opere. El estrangulador
+medido está en la decisión: GLM ya lo tiene en su Fase B (el ML-GATE veta el
+ensamble con ml 0,17-0,22, más de 2 800 entradas vetadas en a3).
 
 **Causa raíz.** La guardia HOST-016 (97996eba0, 2026-09-17) guardaba
 `my_gen = fetch_add(1)` (valor PREVIO) y salía con `contador > my_gen`,
