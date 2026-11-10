@@ -10934,3 +10934,25 @@ Puerto recursos reanclado sobre PR90/7b598f7e (padre mainfd956f9, AGY F1-074/F1-
   - Interconexión de los 4 nuevos vetos cuánticos fail-closed propagados a `allow_entry`, `veto_reason` y cota analítica de Ville $\mathbb{P}(\text{ruina}) \le 10^{-6}$.
   - Contratos formales: `f108_002_wave30_living_graph_synthesis_contract.rs` (5/5 PASSED) y `f45_001_omega220_holistic_orchestration_contract.rs` (4/4 PASSED).
   - Total: 24/24 contratos formales PASSED (100% VERDE). Zero-alloc en hot path, invariante `rb_p1` estricto (0 panics, 0 unwraps).
+
+## 2026-11-10 — Codex RB: RB-V1a (vetos posteriores al riesgo en sombra) y hallazgos de replay
+
+- **Decisión vigente: `god_engine_core::sombra_vetos`.**
+  - Registra en el bloque `!(aprobado_por_consejo && ml_gate_ok)` con la
+    geometría de `MedidaOrden::geometria_sombra` y observa al inicio de
+    `process_tick_dual`.
+  - Fuentes: 19 consejo, 20 ML sin modelo, 21 ML sin ventaja; 0..18 quedan
+    reservadas para los `REJ_*` de RB-V1b.
+  - Veredicto de Hoeffding, δ = 0,05/6 por cola.
+  - Sólo observa: lo fijan el contrato `rb_v1a_sombra_vetos_contract` y la
+    pureza A/B bit a bit.
+- **En el log:** `🕵️ [SOMBRA] <fuente>: n resueltas … → veredicto`.
+  `BLOQUEA GANADORAS` es evidencia para relajar la puerta (con T-1).
+- **Replays:** registra el símbolo de la cinta ANTES de `run_booktick_replay`;
+  sin él, `sync_reality_fees_for_coin` bloquea todas las entradas. Sin modelos
+  cargados, el replay sólo opera la sonda de arranque en frío.
+- **Certificador local:**
+  `RB_V1A_CINTA=<cinta> RB_V1A_TICKS=n cargo test -p backtest-engine --test rb_v1a_sombra_cinta_real -- --ignored --nocapture`.
+  La huella A/B usa `--test rb_v1a_huella_replay`.
+- **CI:** con `--no-fail-fast` (RB-C1) el shard núcleo muestra 7 rojos: AGY
+  f69/f72/f99 (precedencia de vetos) y GLM-223 ricci_q.
