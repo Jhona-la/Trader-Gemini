@@ -7,8 +7,8 @@ pub mod copulas_store;
 pub mod correlation_guard;
 pub mod cramer_lundberg;
 pub mod dirac_monopole_chern_bundle;
-pub mod drgt_massive_gravity;
 pub mod drawdown;
+pub mod drgt_massive_gravity;
 pub mod envio;
 pub mod evidence;
 pub mod fisher_rao_amari_manifold;
@@ -19,6 +19,7 @@ pub mod hodge;
 pub mod holographic_lloyd_complexity;
 pub mod kelly;
 pub mod kelly_envelope;
+pub mod kerr_newman_black_hole;
 pub mod leverage_matrix;
 pub mod lindblad_master_decoherence;
 pub mod orchestrator;
@@ -81,6 +82,7 @@ pub use holographic_lloyd_complexity::{
     HolographicLloydComplexityEngine, HolographicLloydConfig, HolographicLloydReport,
 };
 pub use kelly_envelope::{EdgePosterior, RiskEnvelope, SURVIVAL_FLOOR, TRADE_HORIZON};
+pub use kerr_newman_black_hole::{KerrNewmanBlackHoleEngine, KerrNewmanConfig, KerrNewmanReport};
 pub use lindblad_master_decoherence::{
     LindbladDecoherenceReport, LindbladMasterDecoherenceEngine, LindbladMasterParams,
     LINDBLAD_TRIAD_DIM,
