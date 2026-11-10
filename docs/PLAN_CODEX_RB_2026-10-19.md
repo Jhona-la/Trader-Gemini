@@ -36,6 +36,10 @@
 | RB-R2 | **polars fuera del paquete raíz**: el paquete raíz (lib `quantum_engine` + 40 bins) depende de polars sólo por 4 herramientas (`download_history`, `feature_validator`, `multi_coin_simulator`, `parquet_to_bin`); cualquier `cargo test -p trader-gemini-v5` compila la pila polars (medido el 19-10: 99 min a −j1 con opt-level=3). Mudarlas a un crate de herramientas del workspace | 5 | Pendiente (después de RB-V1; tocar sólo bins sin dueño activo) |
 | RB-V1 | **LibroSombra** (censo §3 prioridad 2: F250/F272/F400, sin dueño): qué vetos destruyen valor | 2 | Después de RB-A1; diseño en §8 (región del núcleo que AGY edita en sus olas: se coordina antes) |
 | RB-S1 | Antifragilidad: cuarentena en caliente por motor votante | 4 | Pendiente (coordinar con dueños del orquestador) |
+| RB-N1 | **El reloj del host vuelve a vivir**: la guardia HOST-016 cancelaba el sincronizador NTP/Kalman antes de su primera muestra (off-by-one, desde 97996eba0 del 2026-09-17) ⇒ la deriva del reloj entraba entera en la edad del dato que bloquea entradas | 2 | **Entregado 2026-11-10** (§10) |
+| RB-N2 | **Puerta de latencia con fundamento**: el umbral de pánico es un gen sin señal en backtest (semilla `1000·π`, hoy 6 945 ms); Kalman de 2 estados (offset + deriva) con R adaptativa y puerta de RTT relativa al mínimo observado | 2 | Propuesto (§10.5); coordinar con Línea I (I-2b/I-5) |
+| RB-C1 | **La CI no esconde rojos**: `--no-fail-fast` en las 25 invocaciones de `cargo test` de unit-suites y replay-contracts (el shard `nucleo` se cortaba en `f69_002` y ocultaba el resto) | 1 | **Entregado 2026-11-10** (contrato `rb_c1_ci_sin_corte_temprano_contract`) |
+| RB-G1 | **Censo de alcanzabilidad desde el host**: qué módulos no tocan el flujo real (62 sólo los usa el grafo vivo Ω220, que el host nunca evalúa; 116 sin usuario de producción) — de censo léxico a contrato | 1 | Censo léxico publicado (§10.6, `docs/audit/rb_g1_censo_alcance_host_2026-11-10.txt`) |
 
 **RB-M1 — fugas de memoria en runtime.** Concepto: el motor corre 24/7; toda
 colección que crece por evento sin cota es una fuga aunque Rust no «pierda»
@@ -305,3 +309,104 @@ real (sin mocks). RB-A1b: el semáforo registra `head` y rama ⇒ coste de build
 por átomo. RB-A1c: métricas financieras estables de los replays y un bisector
 automático (`git bisect run` con el medidor o el replay como juez) para
 atribuir regresiones como la del +31 %.
+
+## 10. RB-N1 — el reloj del host vuelve a vivir (entregado el 2026-11-10)
+
+**Síntoma (corrida demo a3d, desde 2026-11-09 01:03, ~32 h).** Una sola
+apertura. 97 812 eventos `LATENCY PANIC` con entradas bloqueadas, 85 190
+`LATENCY_PANIC` (scalp omitido) y rachas de `KILL_SWITCH`. La componente
+«red+reloj» de la edad del dato rondaba 7 s y la deriva D (pared − proyección
+monótona) fue de −1,4 s a −4,9 s. El log mostraba «Sincronizador de generación
+1 superseded» al arrancar, lo mismo con la generación 2, y nunca una muestra.
+
+**Cuantificación (añadida tras medir; corrige la lectura causal).** Los
+97 812 pánicos son el 0,87 % de los ~11,3 M eventos de la corrida, con un pico
+del 4 % en el decil 6 del log. La única apertura llegó en el decil 1, y los
+deciles 2 y 8, sin ningún pánico, tampoco abrieron nada. El reloj muerto es un
+defecto real (puerta de latencia contaminada y offset de firma congelado),
+pero **no es la causa** de que la Demo casi no opere. El estrangulador
+medido está en la decisión: GLM ya lo tiene en su Fase B (el ML-GATE veta el
+ensamble con ml 0,17-0,22, más de 2 800 entradas vetadas en a3).
+
+**Causa raíz.** La guardia HOST-016 (97996eba0, 2026-09-17) guardaba
+`my_gen = fetch_add(1)` (valor PREVIO) y salía con `contador > my_gen`,
+verdadero desde su primer chequeo. Toda generación, también la única, se daba
+por reemplazada, y el `select!` cancelaba el bucle Kalman antes de su primera
+muestra. `server_time_offset_ms` (firma de órdenes) y
+`server_time_correction_ms` (edad del dato, I-5) quedaron congelados en el
+arranque casi dos meses. Los contratos I-5 eran de funciones puras y pasaban:
+el bucle nunca se ejecutaba en vivo.
+
+**Física medida el 2026-11-10, independiente del motor.**
+
+| Magnitud | Valor |
+|---|---|
+| Windows Time | «not synchronized», fuente «Local CMOS Clock», ninguna sincronización registrada |
+| Edad real de eventos del testnet (offset de servidor medido al momento) | aggTrade p50 162 / p90 186 / p99 236 ms; depth5@100ms p50 157 / p99 193 ms |
+| Deriva del monótono (QPC) frente a Binance, 30 min, 136 muestras | −19,0 ppm (IC95 ±5,2) ⇒ −1,6 s/día, −4,9 s en 72 h |
+| Deriva del reloj de pared frente a Binance | −51,7 ppm (IC95 ±5,9) ⇒ −4,5 s/día; offset servidor−pared de ~290 a ~172 ms en 30 min |
+
+De los ~7 s de «red+reloj» de a3d, la red explica ≈0,2 s; el resto es reloj
+sin corregir. Riesgo derivado: con el offset de firma congelado y la pared a
+52 ppm, el sello de las órdenes cruza +1 000 ms frente al servidor (rechazo
+−1021) en ~5,4 h. Los logs de a3 no lo muestran todavía, pero es estructural.
+
+**Arreglo (`execution_engine::ntp`, host sólo como cliente).**
+1. `SincronizadorUnico`: `reclamar()` devuelve la generación DESPUÉS del
+   incremento; `correr_mientras_vigente()` sólo detiene un relevo real.
+2. `EstadoReloj` común a todas las generaciones y anclado por el HOST
+   (`fijar_ancla(epoch_baseline_ms, instant_baseline)`): la corrección se mide
+   contra la proyección que consume la edad del dato. Absorbe así el error del
+   offset de arranque, y el relevo demo→mainnet no la reinicia. Con un ancla
+   propia por generación, la deriva acumulada volvería de golpe a la edad del
+   dato justo al pasar a Producción: defecto latente del diseño anterior, que
+   el bucle muerto ocultaba.
+3. La proyección se evalúa en el punto medio MONÓTONO del viaje (sin sesgo
+   −RTT/2), y el offset de arranque en el punto medio de pared.
+4. Un observador fuera de la ruta caliente deja en el log «🕐 [NTP-SYNC]
+   Generación N viva — muestra #k» (las 2 primeras y una por hora), más un
+   aviso si la puerta de RTT descarta todo durante un cuarto de hora.
+
+**Certificación.** `crates/execution-engine/tests/rb_n1_reloj_vivo_contract.rs`:
+6/6 en tres repeticiones, más la sonda viva contra el testnet. La sonda corre
+el bucle de producción con la guardia de producción: 4 muestras en 50 s, y
+partiendo de un ancla con el error de un arranque caído a la hora local, la
+corrección convergió a 185 ms frente a 176 ms de un offset medido aparte.
+Mutaciones: A (guardia con valor previo) la detectan 2 contratos, B
+(proyección en la llegada) 2, y C (re-anclar sin reiniciar el filtro) 1. Una
+corrida de B destapó que el test de conducta dependía de la granularidad del
+temporizador de Windows (~15,6 ms); quedó reescrito sin temporizador. I-5 5/5
+y Kalman 3/3. rustfmt y clippy limpios en las líneas cambiadas de
+`execution-engine` y del binario `god_engine`.
+
+**10.5 RB-N2 (propuesto, con Línea I por I-2b/I-5).**
+- El umbral de pánico es un GEN (`latency_ms_panic_threshold`, semilla
+  `1000·π`, hoy ≈6 945 ms). En backtest no hay latencia de red, así que la
+  evolución no lo puede identificar: deriva sin señal. Debe salir del genoma
+  y derivarse de la distribución viva de «red+reloj» (cuantil alto robusto o
+  ajuste de colas EVT), separando el exceso de reloj (que el sincronizador ya
+  corrige) del de red.
+- El Kalman usa R = (RTT/2)² ≈ 14 400 ms², pero la dispersión real del offset
+  ronda 16 ms (R ≈ 256). Resultado: ganancia ≈0,006, constante de ~42 min y
+  ~60 ms de retraso estable ante 19 ppm. La evolución es un modelo de 2
+  estados (offset + deriva, sin retraso ante una rampa) con R adaptativa por
+  innovaciones (Sage–Husa) y filtro de mínimo retardo como el de NTP.
+- La puerta fija `RTT > 350 ms` es un valor duro. Debe ser relativa al RTT
+  mínimo observado del endpoint: `demo-fapi` mide ~790 ms, y un cliente que
+  sincronizara ahí descartaría todas las muestras.
+- Al operador (requiere administrador): activar la sincronización de w32time.
+
+**10.6 RB-G1 — censo de alcanzabilidad desde el host.** En
+`docs/audit/rb_g1_censo_alcance_host_2026-11-10.txt` hay un censo léxico
+(salvedades en su cabecera). `evaluate_omniscient_living_graph`,
+`evaluate_quantum_multi_slot` y `synthesize_quantum_multi_slot_emissions`
+tienen 0 llamadas en código de producción. 62 módulos (casi todos motores de
+las olas Ω220) sólo los usa `omniscient_living_graph.rs`, y 116 no tienen
+usuario de producción. Los 44 vetos del grafo vivo, y sus rojos de CI, viven
+en código que la Demo no ejecuta. Conectarlo tal cual sería dañino: 44 vetos
+encadenados con FPR de 1 % cada uno dejan P(sin veto) ≈ 0,99^44 ≈ 64 %, y
+con 5 % ≈ 10 %. La vía correcta es la puerta anti-cosmética: cada motor
+demuestra valor fuera de muestra neto de fees y entra como evidencia
+ponderada (RB-V1, LibroSombra), no como eslabón de una cadena de precedencia.
+Siguiente paso de RB-G1: pasar del censo léxico a un contrato sobre el grafo
+de llamadas del host.

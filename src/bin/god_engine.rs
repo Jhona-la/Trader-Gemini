@@ -865,42 +865,79 @@ fn restore_kelly_envelope(env: &mut risk_engine::kelly_envelope::RiskEnvelope) -
 /// El spawn de la transición demo→mainnet dejaba DOS loops NTP infinitos
 /// compitiendo por `server_time_offset_ms` (el offset oscilaba cada 15s
 /// según qué loop ganara el fetch). Generación monótona: al lanzar un
-/// sincronizador nuevo, todos los anteriores observan su generación
-/// obsoleta en su guardia y salen — el equivalente al
-/// `if ntp_abort.load() { break; }` del loop, implementado como guardia
-/// en el host porque el loop vive en execution-engine::ntp.
-static NTP_SYNC_GENERATION: AtomicU64 = AtomicU64::new(0);
+/// sincronizador nuevo, los anteriores observan su generación obsoleta en
+/// su guardia y salen.
+///
+/// RB-N1 (Codex RB, 2026-11-10): …y el que queda, CORRE. La guardia
+/// original comparaba el contador con el valor previo de `fetch_add` y toda
+/// generación —también la única— se daba por reemplazada en su primer
+/// chequeo: desde 97996eba0 (2026-09-17) el bucle Kalman no tomó una sola
+/// muestra en producción y la deriva del reloj entró entera en la edad del
+/// dato (a3d: 97 812 LATENCY PANIC con la deriva en −4 863 ms). La guardia
+/// vive ahora en `execution_engine::ntp::SincronizadorUnico`, con contratos
+/// de conducta, y guarda también el estado del reloj (ancla + Kalman) que
+/// comparten todas las generaciones: la de la transición a mainnet sigue
+/// corrigiendo contra la misma ancla en vez de reiniciar la corrección.
+static SINCRONIZADOR_NTP: execution_engine::ntp::SincronizadorUnico =
+    execution_engine::ntp::SincronizadorUnico::new();
 
 fn spawn_ntp_synchronizer(
     handle: &tokio::runtime::Handle,
     client: Arc<execution_engine::client::BinanceClient>,
     arena: Arc<quantum_arena::GlobalArena>,
 ) {
-    let my_gen = NTP_SYNC_GENERATION.fetch_add(1, Ordering::AcqRel);
-    if my_gen > 0 {
+    let generacion = SINCRONIZADOR_NTP.reclamar();
+    if generacion > 1 {
         telemetry_server::telemetry_log!(
             "🔁 [NTP-SYNC] Generación {} — sincronizadores anteriores abortados (HOST-016: un solo loop vivo)",
-            my_gen + 1
+            generacion
         );
     }
     handle.spawn(async move {
-        let sync = execution_engine::ntp::start_ntp_synchronizer(client, arena);
-        let superseded = async {
-            loop {
-                if NTP_SYNC_GENERATION.load(Ordering::Acquire) > my_gen {
-                    break;
-                }
-                tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+        let observador = move |m: execution_engine::ntp::MuestraNtp| {
+            if !execution_engine::ntp::merece_aviso(&m) {
+                return;
             }
-        };
-        tokio::select! {
-            _ = sync => {}
-            _ = superseded => {
+            if m.aceptada {
+                let correccion = match m.correccion_ms {
+                    Some(c) => format!("{} ms", c),
+                    None => "— (ancla fijada)".to_string(),
+                };
                 telemetry_server::telemetry_log!(
-                    "🛑 [NTP-SYNC] Sincronizador de generación {} superseded — loop detenido (HOST-016)",
-                    my_gen + 1
+                    "🕐 [NTP-SYNC] Generación {} viva — muestra #{}: offset de pared {} ms, corrección de la proyección {}, RTT {} ms",
+                    generacion,
+                    m.aceptadas,
+                    m.offset_pared_ms,
+                    correccion,
+                    m.rtt_ms
+                );
+            } else {
+                telemetry_server::telemetry_log!(
+                    "⚠️ [NTP-SYNC] Generación {}: {} mediciones seguidas descartadas por RTT (la última {} ms) — el reloj no se corrige mientras dure",
+                    generacion,
+                    m.rechazadas_seguidas,
+                    m.rtt_ms
                 );
             }
+        };
+        let sync = execution_engine::ntp::start_ntp_synchronizer(
+            client,
+            arena,
+            SINCRONIZADOR_NTP.estado(),
+            observador,
+        );
+        let fin = execution_engine::ntp::correr_mientras_vigente(
+            &SINCRONIZADOR_NTP,
+            generacion,
+            std::time::Duration::from_millis(500),
+            sync,
+        )
+        .await;
+        if fin == execution_engine::ntp::FinSincronizador::Relevado {
+            telemetry_server::telemetry_log!(
+                "🛑 [NTP-SYNC] Sincronizador de generación {} superseded — loop detenido (HOST-016)",
+                generacion
+            );
         }
     });
 }
@@ -2183,29 +2220,37 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let rt_handle = tokio::runtime::Handle::current();
 
+    // RB-N1: la hora que responde el servidor es la del PUNTO MEDIO del
+    // viaje, no la de la llegada. Antes se le restaba la pared tomada al
+    // recibir y el ancla del host (`epoch_baseline_ms`) nacía ~RTT/2 por
+    // detrás del servidor. Si la petición falla, el offset es 0 (la hora
+    // local es la mejor estimación disponible) y el sincronizador lo corrige.
+    let pared_antes_ms = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as i64);
     let server_time_ms = match exec.load().fetch_server_time().await {
         Ok(time) => {
             telemetry_server::telemetry_log!(
                 "⏱️ [NTP SYNC] Binance Server Time retrieved: {}",
                 time
             );
-            time
+            Some(time)
         }
         Err(_) => {
             telemetry_server::telemetry_log!(
                 "⚠️ [NTP SYNC FAILED] Falling back to local SystemTime"
             );
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap_or_default()
-                .as_millis() as i64
+            None
         }
     };
     let local_ms = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap_or_default()
         .as_millis() as i64;
-    let ntp_offset_ms = server_time_ms - local_ms;
+    let ntp_offset_ms = match (server_time_ms, pared_antes_ms) {
+        (Some(servidor), Ok(antes)) => servidor - (antes + (local_ms - antes) / 2),
+        _ => 0,
+    };
     telemetry_server::telemetry_log!(
         "⏱️ [NTP SYNC] Local Time: {}, Offset to Binance: {}ms",
         local_ms,
@@ -4137,6 +4182,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         let instant_baseline = std::time::Instant::now();
         let local_ms_now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_millis() as i64;
         let epoch_baseline_ms = local_ms_now + ntp_offset_ms;
+        // RB-N1: el sincronizador mide su corrección contra ESTA proyección
+        // (la que consume la edad del dato), no contra un ancla propia: así
+        // absorbe también el error del offset de arranque y el relevo de
+        // generación en la transición a mainnet no la reinicia.
+        SINCRONIZADOR_NTP.fijar_ancla(epoch_baseline_ms, instant_baseline);
         // I-2b (Línea I): deriva D del reloj de pared frente a la proyección
         // de arriba; se mide cada 100 mensajes y acompaña a los avisos.
         let mut deriva_reloj_ms: i64 = 0;
