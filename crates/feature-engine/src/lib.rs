@@ -21,6 +21,7 @@ pub mod grothendieck_sheaves;
 pub mod hairer_landauer_anderson;
 pub mod hawkes;
 pub mod hawkes_cross;
+pub mod heterotic_e8_calabi_yau;
 pub mod hodge_flow;
 pub mod hurst_dfa;
 pub mod hyperbolic_poincare_hodge;
@@ -34,8 +35,8 @@ pub mod lattice_qcd_wilson_polyakov;
 pub mod lead_lag;
 pub mod liouville_quantum_gravity;
 pub mod lppls_sornette;
-pub mod matrix_model_kp_hierarchy;
 pub mod m_theory_joyce_g2;
+pub mod matrix_model_kp_hierarchy;
 pub mod matriz_rmt;
 pub mod metrica_fisher_empirica; // GLM-221 (C1): Fisher empirica q-gaussiana con beta_q
 pub mod microstructure;
@@ -132,6 +133,10 @@ pub use hairer_landauer_anderson::{
     LandauerButtikerEngine, LandauerButtikerReport, MesoscopicTransportRegime, MESOSCOPIC_CHANNELS,
 };
 pub use hawkes::HawkesProcessEngine;
+pub use heterotic_e8_calabi_yau::{
+    HeteroticE8CalabiYauConfig, HeteroticE8CalabiYauEngine, HeteroticE8CalabiYauReport,
+    HeteroticE8Config, HeteroticE8Report, CARTAN_E8, E8_DIM, HETEROTIC_BUFFER_CAPACITY,
+};
 pub use hodge_flow::{
     CrossMarketHodgeReport, HelmholtzHodgeFlowEngine, HelmholtzHodgeParams,
     HodgeDecompositionResult, HodgeRegime, MAX_HODGE_ASSETS,
@@ -167,12 +172,12 @@ pub use lead_lag::LeadLagAlphaEngine;
 pub use liouville_quantum_gravity::{
     LiouvilleCft2dQuantumGravityEngine, LiouvilleCftParams, LiouvilleQuantumGravityReport,
 };
+pub use m_theory_joyce_g2::{
+    JoyceG2Config, JoyceG2Report, MTheoryJoyceG2Engine, JOYCE_BUFFER_CAPACITY, JOYCE_DIM,
+};
 pub use matrix_model_kp_hierarchy::{
     MatrixModelKpConfig, MatrixModelKpHierarchyEngine, MatrixModelKpReport, KP_MATRIX_DIM,
     KP_MOMENTS_COUNT,
-};
-pub use m_theory_joyce_g2::{
-    JoyceG2Config, JoyceG2Report, MTheoryJoyceG2Engine, JOYCE_BUFFER_CAPACITY, JOYCE_DIM,
 };
 pub use microstructure::{
     obi_acceleration, order_book_imbalance, AdaptiveResonanceClustering,

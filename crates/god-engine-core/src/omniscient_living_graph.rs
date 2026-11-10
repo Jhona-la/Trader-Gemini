@@ -32,7 +32,8 @@ use feature_engine::{
     CalabiYauSeibergWittenReport, ChernSimonsWittenConfig, ChernSimonsWittenKnotEngine,
     ChernSimonsWittenReport, ConnesKreimerConfig, ConnesKreimerHopfEngine, ConnesKreimerReport,
     GeodesicPhaseSpaceParams, GeodesicPhaseSpaceReport, GrossPitaevskiiBecEngine,
-    GrossPitaevskiiBecReport, GrossPitaevskiiParams, HyperbolicPoincareHodgeEngine,
+    GrossPitaevskiiBecReport, GrossPitaevskiiParams, HeteroticE8CalabiYauConfig,
+    HeteroticE8CalabiYauEngine, HeteroticE8CalabiYauReport, HyperbolicPoincareHodgeEngine,
     HyperbolicPoincareHodgeParams, HyperbolicPoincareHodgeReport, JoyceG2Config, JoyceG2Report,
     JtSchwarzianConfig, JtSchwarzianEngine, JtSchwarzianReport, KostantSouriauConfig,
     KostantSouriauPrequantumEngine, KostantSouriauReport, LatticeQcdConfig, LatticeQcdReport,
@@ -54,15 +55,15 @@ use risk_engine::{
     DrgtMassiveGravityReport, FisherRaoAmariConfig, FisherRaoAmariManifoldEngine,
     FisherRaoAmariReport, GromovSymplecticBarrierEngine, GromovSymplecticParams,
     GromovSymplecticReport, HolographicLloydComplexityEngine, HolographicLloydConfig,
-    HolographicLloydReport, LindbladDecoherenceReport, LindbladMasterDecoherenceEngine,
-    LindbladMasterParams, MarketQuantumStateInput, MpsDmrgParams, MpsDmrgReport,
-    PageCurveIslandConfig, PageCurveIslandReport, PageCurveIslandRiskEngine,
-    PolyakovSchwarzschildHorizonEngine, PolyakovSchwarzschildParams, PolyakovSchwarzschildReport,
-    QuantumExtremalSurfaceConfig, QuantumExtremalSurfaceEngine, QuantumExtremalSurfaceReport,
-    QuantumNoArbitrageConformalEngine, QuantumNoArbitrageConformalParams,
-    QuantumNoArbitrageConformalReport, QuaternionicHyperkahlerConfig,
-    QuaternionicHyperkahlerEngine, QuaternionicHyperkahlerReport, ReebContactParams,
-    ReebContactReport, ReebContactVortexEngine, RyuTakayanagiEntanglementEngine,
+    HolographicLloydReport, KerrNewmanBlackHoleEngine, KerrNewmanConfig, KerrNewmanReport,
+    LindbladDecoherenceReport, LindbladMasterDecoherenceEngine, LindbladMasterParams,
+    MarketQuantumStateInput, MpsDmrgParams, MpsDmrgReport, PageCurveIslandConfig,
+    PageCurveIslandReport, PageCurveIslandRiskEngine, PolyakovSchwarzschildHorizonEngine,
+    PolyakovSchwarzschildParams, PolyakovSchwarzschildReport, QuantumExtremalSurfaceConfig,
+    QuantumExtremalSurfaceEngine, QuantumExtremalSurfaceReport, QuantumNoArbitrageConformalEngine,
+    QuantumNoArbitrageConformalParams, QuantumNoArbitrageConformalReport,
+    QuaternionicHyperkahlerConfig, QuaternionicHyperkahlerEngine, QuaternionicHyperkahlerReport,
+    ReebContactParams, ReebContactReport, ReebContactVortexEngine, RyuTakayanagiEntanglementEngine,
     RyuTakayanagiParams, RyuTakayanagiReport, TensorNetworkMpsDmrgEngine, ToricCodeConfig,
     ToricCodeEngine, ToricCodeReport, UmegakiEntropyParams, UmegakiEntropyReport,
     UmegakiRelativeEntropyEngine, MPS_ASSET_CHANNELS, TORIC_EDGES,
@@ -75,7 +76,8 @@ use signal_engine::{
     FeynmanPathIntegralRoutingEngine, FeynmanRoutingParams, FeynmanRoutingReport,
     FqheChernSimonsConfig, FqheChernSimonsEngine, FqheChernSimonsReport,
     FractionalRoughVolatilityEngine, FractionalRoughVolatilityParams,
-    FractionalRoughVolatilityReport, JarzynskiCrooksParams, JarzynskiCrooksReport,
+    FractionalRoughVolatilityReport, FractonTopologicalConfig, FractonTopologicalOrderEngine,
+    FractonTopologicalReport, JarzynskiCrooksParams, JarzynskiCrooksReport,
     JarzynskiCrooksThermodynamicsEngine, KdvSolitonDispersionEngine, KdvSolitonParams,
     KdvSolitonReport, MeanFieldGamesPsychologyEngine, MeanFieldGamesReport, MfDfaHurstReport,
     MfDfaMultifractalHurstEngine, MfDfaParams, MpdoDissipativeConfig, MpdoDissipativeDmrgEngine,
@@ -223,6 +225,10 @@ pub struct OmniscientLivingGraphReport {
     pub joyce_g2_report: JoyceG2Report,
     pub fqhe_chern_simons_report: FqheChernSimonsReport,
     pub drgt_massive_gravity_report: DrgtMassiveGravityReport,
+    // --- Extensiones Holísticas Omega220 (Fases 103 - 105) ---
+    pub heterotic_e8_report: HeteroticE8CalabiYauReport,
+    pub fracton_topological_report: FractonTopologicalReport,
+    pub kerr_newman_report: KerrNewmanReport,
 }
 
 /// Orquestador del grafo vivo omnisciente para todo el universo de activos.
@@ -315,6 +321,10 @@ pub struct OmniscientLivingGraphOrchestrator {
     pub joyce_g2_engines: Vec<MTheoryJoyceG2Engine>,
     pub fqhe_engines: Vec<FqheChernSimonsEngine>,
     pub drgt_gravity_engines: Vec<DrgtMassiveGravityEngine>,
+    // Motores cuánticos y físicos unificados (Fases 103 - 105)
+    pub heterotic_e8_engines: Vec<HeteroticE8CalabiYauEngine>,
+    pub fracton_topological_engines: Vec<FractonTopologicalOrderEngine>,
+    pub kerr_newman_engines: Vec<KerrNewmanBlackHoleEngine>,
     pub prev_mid_prices: Vec<f64>,
     pub last_event_time_ms: u64,
 }
@@ -532,6 +542,15 @@ impl OmniscientLivingGraphOrchestrator {
                 .collect(),
             drgt_gravity_engines: (0..count)
                 .map(|_| DrgtMassiveGravityEngine::new(DrgtMassiveGravityConfig::default()))
+                .collect(),
+            heterotic_e8_engines: (0..count)
+                .map(|_| HeteroticE8CalabiYauEngine::new(HeteroticE8CalabiYauConfig::default()))
+                .collect(),
+            fracton_topological_engines: (0..count)
+                .map(|_| FractonTopologicalOrderEngine::new(FractonTopologicalConfig::default()))
+                .collect(),
+            kerr_newman_engines: (0..count)
+                .map(|_| KerrNewmanBlackHoleEngine::new(KerrNewmanConfig::default()))
                 .collect(),
             prev_mid_prices: vec![0.0; count],
             last_event_time_ms: 0,
@@ -1291,7 +1310,35 @@ impl OmniscientLivingGraphOrchestrator {
             conformal_decision.conformal_risk_score,
         );
 
-        // 70. Factor de Escala de Riesgo Holístico Tri-Slot $\eta_{\text{holistic}}$
+        // 70. Teoría de Cuerdas Heterótica E8 x E8 & Instantones Calabi-Yau (Fase 103)
+        let e8_state = [
+            price_ret,
+            obi,
+            vol_norm,
+            ofi,
+            spread_bps / 10.0,
+            (bid_qty - ask_qty) / (bid_qty + ask_qty + 1e-6),
+            drawdown_pct,
+            conformal_decision.conformal_risk_score,
+        ];
+        let heterotic_e8_report = self.heterotic_e8_engines[safe_coin_id].update(e8_state);
+
+        // 71. Entrelazamiento Cuántico Topological Entanglement Entropy & Fractones X-Cube (Fase 104)
+        let fracton_topological_report =
+            self.fracton_topological_engines[safe_coin_id].update(price_ret, ofi, spread_bps, obi);
+
+        // 72. Métrica de Agujero Negro Kerr-Newman & Termodinámica de Bardeen-Carter-Hawking (Fase 105)
+        let kn_mass = vol_norm.max(0.05);
+        let kn_spin = (price_ret * 50.0).clamp(-0.80, 0.80) * kn_mass;
+        let kn_charge = (ofi * 0.50).clamp(-0.80, 0.80) * kn_mass;
+        let kerr_newman_report = self.kerr_newman_engines[safe_coin_id].update(
+            kn_mass,
+            kn_spin,
+            kn_charge,
+            core::f64::consts::PI * 0.50,
+        );
+
+        // 73. Factor de Escala de Riesgo Holístico Tri-Slot $\eta_{\text{holistic}}$
         let mps_weight_factor = (mps_dmrg_report.asset_weights[safe_coin_id % MPS_ASSET_CHANNELS]
             * (MPS_ASSET_CHANNELS as f64))
             .clamp(0.50, 1.50);
@@ -1369,6 +1416,9 @@ impl OmniscientLivingGraphOrchestrator {
             * joyce_g2_report.slot_scaling_factor
             * fqhe_chern_simons_report.slot_scaling_factor
             * drgt_massive_gravity_report.slot_scaling_factor
+            * heterotic_e8_report.slot_scaling_factor
+            * fracton_topological_report.slot_scaling_factor
+            * kerr_newman_report.slot_scaling_factor
             * mps_weight_factor;
         let holistic_slot_scale = if raw_holistic_slot_scale.is_finite() {
             raw_holistic_slot_scale.clamp(0.10, 1.25)
@@ -1446,6 +1496,10 @@ impl OmniscientLivingGraphOrchestrator {
             && !joyce_g2_report.joyce_g2_singularity_veto
             && !fqhe_chern_simons_report.fqhe_gap_collapse_veto
             && !drgt_massive_gravity_report.drgt_higuchi_ghost_veto
+            && !heterotic_e8_report.anomaly_cancellation_veto
+            && !fracton_topological_report.fracton_collapse_veto
+            && !kerr_newman_report.naked_singularity_veto
+            && !kerr_newman_report.hawking_thermal_evaporation_veto
             && (spread_bps <= conformal_decision.dynamic_spread_ceiling_bps
                 || conformal_decision.elastic_entry_granted);
 
@@ -1454,7 +1508,15 @@ impl OmniscientLivingGraphOrchestrator {
                 decision.signal = SignalType::Flat;
                 decision.net_confidence = 0.0;
                 decision.vetoed = true;
-                decision.veto_reason = if drgt_massive_gravity_report.drgt_higuchi_ghost_veto {
+                decision.veto_reason = if kerr_newman_report.naked_singularity_veto {
+                    Some("KERR_NEWMAN_NAKED_SINGULARITY_VETO")
+                } else if kerr_newman_report.hawking_thermal_evaporation_veto {
+                    Some("HAWKING_THERMAL_EVAPORATION_VETO")
+                } else if fracton_topological_report.fracton_collapse_veto {
+                    Some("FRACTON_TOPOLOGICAL_COLLAPSE_VETO")
+                } else if heterotic_e8_report.anomaly_cancellation_veto {
+                    Some("HETEROTIC_ANOMALY_CANCELLATION_VETO")
+                } else if drgt_massive_gravity_report.drgt_higuchi_ghost_veto {
                     Some("DRGT_HIGUCHI_GHOST_VETO")
                 } else if fqhe_chern_simons_report.fqhe_gap_collapse_veto {
                     Some("FQHE_GAP_COLLAPSE_VETO")
@@ -1611,6 +1673,10 @@ impl OmniscientLivingGraphOrchestrator {
             && !joyce_g2_report.joyce_g2_singularity_veto
             && !fqhe_chern_simons_report.fqhe_gap_collapse_veto
             && !drgt_massive_gravity_report.drgt_higuchi_ghost_veto
+            && !heterotic_e8_report.anomaly_cancellation_veto
+            && !fracton_topological_report.fracton_collapse_veto
+            && !kerr_newman_report.naked_singularity_veto
+            && !kerr_newman_report.hawking_thermal_evaporation_veto
             && conformal_decision.conformal_risk_score <= 0.85
             && srb_entropy_report.kolmogorov_sinai_entropy < 0.98;
 
@@ -1692,6 +1758,9 @@ impl OmniscientLivingGraphOrchestrator {
             joyce_g2_report,
             fqhe_chern_simons_report,
             drgt_massive_gravity_report,
+            heterotic_e8_report,
+            fracton_topological_report,
+            kerr_newman_report,
         }
     }
 }

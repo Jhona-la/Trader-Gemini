@@ -21,6 +21,7 @@ pub mod flow_excitation_confluence;
 pub mod flow_impulse;
 pub mod fqhe_chern_simons;
 pub mod fractional_rough_volatility;
+pub mod fracton_topological_order;
 pub mod game_theoretic_nash;
 pub mod hawkes_bessel;
 pub mod jarzynski_crooks_thermodynamics;
@@ -71,12 +72,16 @@ pub use feynman_path_integral_routing::{
     ROUTING_PATH_CANDIDATES, ROUTING_PATH_SLICES,
 };
 pub use feynman_propagator::{FeynmanPropagatorEngine, FeynmanPropagatorParams};
+pub use fqhe_chern_simons::{
+    FqheChernSimonsConfig, FqheChernSimonsEngine, FqheChernSimonsReport, FQHE_PLATEAUS,
+};
 pub use fractional_rough_volatility::{
     FractionalRoughVolatilityEngine, FractionalRoughVolatilityParams,
     FractionalRoughVolatilityReport, ROUGH_VOL_WINDOW,
 };
-pub use fqhe_chern_simons::{
-    FqheChernSimonsConfig, FqheChernSimonsEngine, FqheChernSimonsReport, FQHE_PLATEAUS,
+pub use fracton_topological_order::{
+    FractonTopologicalConfig, FractonTopologicalOrderEngine, FractonTopologicalReport,
+    FRACTON_BUFFER_CAPACITY, FRACTON_SITES,
 };
 pub use hawkes_bessel::{HawkesBesselEngine, HawkesBesselParams};
 pub use jarzynski_crooks_thermodynamics::{
