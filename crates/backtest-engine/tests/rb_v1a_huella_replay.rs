@@ -18,13 +18,14 @@ use backtest_engine::booktick_replay::run_booktick_replay;
 #[test]
 #[ignore = "certificación local: necesita RB_V1A_CINTA con una cinta real de data/ (no versionada)"]
 fn rb_v1a_huella_del_replay_sobre_cinta_real() {
+    let simbolo = cinta_real::registrar_simbolo_de_la_cinta();
     let ticks = cinta_real::cargar_desde_entorno();
     let cfg = cinta_real::config_de_referencia();
     let genoma = cinta_real::genoma_de_referencia();
     let t0 = std::time::Instant::now();
     let s = run_booktick_replay(&ticks, &genoma, None, &cfg);
     println!(
-        "HUELLA_REPLAY ticks={} desde_ms={} hasta_ms={} trades={} wins_net={} wins_gross={} net_pnl_bits={:016x} gross_pnl_bits={:016x} fees_bits={:016x} final_capital_bits={:016x} ejecutados={} segundos={:.1}",
+        "HUELLA_REPLAY simbolo={simbolo} ticks={} desde_ms={} hasta_ms={} trades={} wins_net={} wins_gross={} net_pnl_bits={:016x} gross_pnl_bits={:016x} fees_bits={:016x} final_capital_bits={:016x} ejecutados={} segundos={:.1}",
         ticks.len(),
         ticks.first().map_or(0, |t| t.ts_ms),
         ticks.last().map_or(0, |t| t.ts_ms),

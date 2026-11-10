@@ -10,7 +10,7 @@ use backtest_engine::booktick_replay::{ReplayConfig, ReplayTick};
 use quantum_arena::genome::SuperGenotype;
 use std::io::{Read, Seek, SeekFrom};
 
-const REGISTRO: u64 = 40;
+const REGISTRO: usize = 40;
 
 fn f64_en(b: &[u8], desde: usize) -> Option<f64> {
     let bytes: [u8; 8] = b.get(desde..desde + 8)?.try_into().ok()?;
@@ -41,17 +41,20 @@ pub fn cargar_desde_entorno() -> Vec<ReplayTick> {
     } else {
         0
     };
-    let total = (largo - cabecera) / REGISTRO;
+    let registro = REGISTRO as u64;
+    let total = (largo - cabecera) / registro;
     let n = total.min(max);
-    if let Err(e) = archivo.seek(SeekFrom::Start(cabecera + (total - n) * REGISTRO)) {
+    if let Err(e) = archivo.seek(SeekFrom::Start(cabecera + (total - n) * registro)) {
         panic!("no se pudo posicionar la cinta {ruta}: {e}");
     }
-    let mut cuerpo = vec![0u8; (n * REGISTRO) as usize];
+    let mut cuerpo = vec![0u8; (n * registro) as usize];
     if let Err(e) = archivo.read_exact(&mut cuerpo) {
         panic!("no se pudo leer la cola de la cinta {ruta}: {e}");
     }
-    let ticks: Vec<ReplayTick> = cuerpo
-        .chunks_exact(REGISTRO as usize)
+    // Se leyeron n registros completos: la cola sobrante está vacía.
+    let (registros, _cola) = cuerpo.as_chunks::<REGISTRO>();
+    let ticks: Vec<ReplayTick> = registros
+        .iter()
         .filter_map(|r| {
             let ts: [u8; 8] = r.get(0..8)?.try_into().ok()?;
             Some(ReplayTick {
@@ -70,6 +73,31 @@ pub fn cargar_desde_entorno() -> Vec<ReplayTick> {
         ticks.len()
     );
     ticks
+}
+
+/// Registra el símbolo de la cinta (el prefijo del nombre del archivo, como
+/// `backtest_windows`) con su spec de `get_official_binance_spec` y como
+/// universo. Sin símbolo, el núcleo no reconoce las comisiones de la moneda 0
+/// (`sync_reality_fees_for_coin`) y bloquea toda entrada: el replay no
+/// produciría ni una intención.
+pub fn registrar_simbolo_de_la_cinta() -> String {
+    let Ok(ruta) = std::env::var("RB_V1A_CINTA") else {
+        panic!("define RB_V1A_CINTA con la ruta de una cinta *_ticks*.bin");
+    };
+    let Some(nombre) = std::path::Path::new(&ruta)
+        .file_name()
+        .and_then(|n| n.to_str())
+    else {
+        panic!("la ruta {ruta} no tiene nombre de archivo");
+    };
+    let Some(simbolo) = nombre.split('_').next().map(str::to_uppercase) else {
+        panic!("no se deduce el símbolo de {nombre}");
+    };
+    quantum_arena::symbols::update_dynamic_universe(vec![simbolo.clone()]);
+    quantum_arena::symbol_registry::update_registry(vec![
+        quantum_arena::symbol_registry::get_official_binance_spec(&simbolo),
+    ]);
+    simbolo
 }
 
 /// Los parámetros de `backtest_windows`: capital de comparabilidad,

@@ -24,6 +24,7 @@ use god_engine_core::sombra_vetos::{DELTA_COLA, FUENTES};
 #[test]
 #[ignore = "certificación local: necesita RB_V1A_CINTA con una cinta real de data/ (no versionada)"]
 fn rb_v1a_sombra_de_los_vetos_sobre_cinta_real() {
+    let simbolo = cinta_real::registrar_simbolo_de_la_cinta();
     let ticks = cinta_real::cargar_desde_entorno();
     let cfg = cinta_real::config_de_referencia();
     let genoma = cinta_real::genoma_de_referencia();
@@ -73,7 +74,7 @@ fn rb_v1a_sombra_de_los_vetos_sobre_cinta_real() {
         }
     };
     println!(
-        "RB-V1a · periodo {desde} → {hasta} ms epoch ({:.1} h) · {} ticks · {segundos:.0} s de replay",
+        "RB-V1a · {simbolo} · periodo {desde} → {hasta} ms epoch ({:.1} h) · {} ticks · {segundos:.0} s de replay",
         hasta.saturating_sub(desde) as f64 / 3.6e6,
         ticks.len()
     );
