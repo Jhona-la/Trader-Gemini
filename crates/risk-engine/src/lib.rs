@@ -23,6 +23,7 @@ pub mod kelly_envelope;
 pub mod kerr_newman_black_hole;
 pub mod leverage_matrix;
 pub mod lindblad_master_decoherence;
+pub mod medida_sombra;
 pub mod orchestrator;
 pub mod page_curve_island_risk;
 pub mod polyakov_schwarzschild_horizon;
