@@ -100,6 +100,12 @@ fn test_c1_wave24_triad_holistic_orchestration() {
 #[test]
 fn test_c2_wave24_kostant_souriau_prequantum_collapse_veto_propagation() {
     let mut orchestrator = OmniscientLivingGraphOrchestrator::new(1);
+    orchestrator.kostant_souriau_engines[0] =
+        feature_engine::KostantSouriauPrequantumEngine::new(feature_engine::KostantSouriauConfig {
+            min_polarization_coherence: 1.0,
+            max_symplectic_curvature_drift: 0.0,
+            ..Default::default()
+        });
     let mut slot_orchestrator =
         QuantumSlotOrchestrator::new(QuantumSlotOrchestratorParams::default());
 
@@ -164,22 +170,29 @@ fn test_c2_wave24_kostant_souriau_prequantum_collapse_veto_propagation() {
         );
     }
 
-    if report.kostant_souriau_report.prequantum_collapse_veto {
-        assert!(
-            !report.ville_ruin_bound_satisfied,
-            "Colapso precuántico debe invalidar la condición de Ville"
+    assert!(report.kostant_souriau_report.prequantum_collapse_veto);
+    assert!(
+        !report.ville_ruin_bound_satisfied,
+        "Colapso precuántico debe invalidar la condición de Ville"
+    );
+    for decision in &report.multi_slot_evaluation.decisions {
+        assert_eq!(decision.signal, SignalType::Flat);
+        assert!(decision.vetoed);
+        assert_eq!(
+            decision.veto_reason,
+            Some("KOSTANT_SOURIAU_PREQUANTUM_COLLAPSE_VETO")
         );
-        for decision in &report.multi_slot_evaluation.decisions {
-            assert_eq!(decision.signal, SignalType::Flat);
-            assert!(decision.vetoed);
-            assert!(decision.veto_reason.is_some());
-        }
     }
 }
 
 #[test]
 fn test_c3_wave24_qmbs_ergodic_collapse_veto_propagation() {
     let mut orchestrator = OmniscientLivingGraphOrchestrator::new(1);
+    orchestrator.qmbs_engines[0] =
+        signal_engine::QuantumManyBodyScarsEngine::new(signal_engine::QuantumManyBodyScarsConfig {
+            min_revival_fidelity: 1.0,
+            ..Default::default()
+        });
     let mut slot_orchestrator =
         QuantumSlotOrchestrator::new(QuantumSlotOrchestratorParams::default());
 
@@ -242,15 +255,18 @@ fn test_c3_wave24_qmbs_ergodic_collapse_veto_propagation() {
         );
     }
 
-    if report.qmbs_report.ergodic_collapse_veto {
-        assert!(
-            !report.ville_ruin_bound_satisfied,
-            "Colapso ergódico total debe invalidar la condición de Ville"
+    assert!(report.qmbs_report.ergodic_collapse_veto);
+    assert!(
+        !report.ville_ruin_bound_satisfied,
+        "Colapso ergódico total debe invalidar la condición de Ville"
+    );
+    for decision in &report.multi_slot_evaluation.decisions {
+        assert_eq!(decision.signal, SignalType::Flat);
+        assert!(decision.vetoed);
+        assert_eq!(
+            decision.veto_reason,
+            Some("QUANTUM_SCARS_ERGODIC_COLLAPSE_VETO")
         );
-        for decision in &report.multi_slot_evaluation.decisions {
-            assert_eq!(decision.signal, SignalType::Flat);
-            assert!(decision.vetoed);
-        }
     }
 }
 
@@ -300,16 +316,18 @@ fn test_c4_wave24_qes_extremal_surface_collapse_veto_propagation() {
         &open_is_long,
     );
 
-    if report.qes_report.extremal_surface_collapse_veto {
-        assert!(
-            !report.ville_ruin_bound_satisfied,
-            "Colapso de superficie extremal de capital debe invalidar la cota de Ville"
+    assert!(report.qes_report.extremal_surface_collapse_veto);
+    assert!(
+        !report.ville_ruin_bound_satisfied,
+        "Colapso de superficie extremal de capital debe invalidar la cota de Ville"
+    );
+    for decision in &report.multi_slot_evaluation.decisions {
+        assert_eq!(decision.signal, SignalType::Flat);
+        assert!(decision.vetoed);
+        assert_eq!(
+            decision.veto_reason,
+            Some("QUANTUM_EXTREMAL_SURFACE_COLLAPSE_VETO")
         );
-        for decision in &report.multi_slot_evaluation.decisions {
-            assert_eq!(decision.signal, SignalType::Flat);
-            assert!(decision.vetoed);
-            assert!(decision.veto_reason.is_some());
-        }
     }
 }
 

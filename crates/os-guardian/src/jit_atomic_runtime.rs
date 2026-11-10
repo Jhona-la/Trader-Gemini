@@ -467,12 +467,7 @@ mod allocation_origin_tests {
         reset_counters();
         let mut page = JitCodePage::allocate(64).expect("VirtualAlloc disponible");
         assert_eq!(page.allocation_origin(), JitAllocationOrigin::VirtualAlloc);
-        let raw = page.as_ptr() as *mut c_void;
-        unsafe {
-            use windows::Win32::System::Memory::{VirtualFree, MEM_RELEASE};
-            VirtualFree(raw, 0, MEM_RELEASE)
-                .expect("invalidar la página para forzar ProtectionFailed");
-        }
+        page.size = 0;
 
         let result = page.make_executable();
         assert_eq!(result, Err(JitRuntimeError::ProtectionFailed));
@@ -481,7 +476,7 @@ mod allocation_origin_tests {
         assert_eq!(
             counters(),
             (1, 0),
-            "Drop no puede convertir VirtualAlloc en dealloc"
+            "exactamente una liberación VirtualAlloc y ninguna dealloc"
         );
     }
 }

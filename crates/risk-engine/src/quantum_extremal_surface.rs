@@ -120,29 +120,29 @@ impl QuantumExtremalSurfaceEngine {
         max_equity_peak: f64,
         instant_volatility: f64,
     ) -> QuantumExtremalSurfaceReport {
-        let equity = if current_equity.is_finite() && current_equity > 0.0 {
-            current_equity
-        } else {
-            13.0
-        };
+        let inputs_valid = current_equity.is_finite()
+            && current_equity > 0.0
+            && capital_floor.is_finite()
+            && capital_floor > 0.0
+            && max_equity_peak.is_finite()
+            && max_equity_peak > 0.0
+            && instant_volatility.is_finite()
+            && instant_volatility >= 0.0;
+        if !inputs_valid {
+            return QuantumExtremalSurfaceReport {
+                generalized_entropy_min: 0.0,
+                qes_radius: self.config.horizon_radius,
+                island_von_neumann_entropy: 0.0,
+                island_phase_transition_active: false,
+                extremal_surface_collapse_veto: true,
+                slot_scale_factor: 0.10,
+            };
+        }
 
-        let floor = if capital_floor.is_finite() && capital_floor > 0.0 {
-            capital_floor.min(equity)
-        } else {
-            10.0
-        };
-
-        let peak = if max_equity_peak.is_finite() && max_equity_peak >= equity {
-            max_equity_peak
-        } else {
-            equity
-        };
-
-        let vol = if instant_volatility.is_finite() && instant_volatility >= 0.0 {
-            instant_volatility.clamp(0.0001, 10.0)
-        } else {
-            0.02
-        };
+        let equity = current_equity;
+        let floor = capital_floor.min(equity);
+        let peak = max_equity_peak.max(equity);
+        let vol = instant_volatility.clamp(0.0001, 10.0);
 
         // 1. Cálculo del margen de distancia al piso (cushion) y drawdown relativo:
         let cushion = (equity - floor).max(self.config.epsilon);

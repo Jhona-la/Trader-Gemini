@@ -7,6 +7,7 @@ pub mod berry_phase_holonomy;
 pub mod coaxial_breakout;
 pub mod continuous_volatility_operator;
 pub mod derham_hodge_currents;
+pub mod donaldson_thomas_quantum;
 // U-ERR-1: `micro_scalp_trigger`, `swing_conformal_filter` y `turbo_scalper`
 // nombraban BANDAS DE HORIZONTE («micro-scalp», «swing», «turbo») que ninguno
 // de los tres motores decide: los tres declaraban `TradeHorizon::Continuous`
@@ -43,8 +44,10 @@ pub mod ruelle_frobenius_transfer;
 pub mod skill_motores;
 pub mod soliton_wave;
 pub mod srb_kolmogorov_entropy;
+pub mod starobinsky_inflationary_attractor;
 pub mod stochastic_resonance;
 pub mod supersonic_shockwave;
+pub mod supersymmetry_nicolai_map;
 pub mod trend_runner;
 pub mod voto_espectral;
 pub mod wheeler_dewitt_minisuperspace;
@@ -58,6 +61,9 @@ pub use continuous_volatility_operator::{
 };
 pub use derham_hodge_currents::{
     DeRhamHodgeCurrentsEngine, DeRhamHodgeParams, DeRhamHodgeReport, DERHAM_SIMPLICIAL_NODES,
+};
+pub use donaldson_thomas_quantum::{
+    DonaldsonThomasConfig, DonaldsonThomasQuantumEngine, DonaldsonThomasReport,
 };
 pub use feynman_path_integral_routing::{
     Complex64, FeynmanPathIntegralRoutingEngine, FeynmanRoutingParams, FeynmanRoutingReport,
@@ -132,9 +138,15 @@ pub use soliton_wave::{SolitonWaveEngine, SolitonWaveParams};
 pub use srb_kolmogorov_entropy::{
     SrbEntropyParams, SrbEntropyReport, SrbKolmogorovEntropyEngine, CHAOS_EMBEDDING_DIM,
 };
+pub use starobinsky_inflationary_attractor::{
+    StarobinskyConfig, StarobinskyInflationaryEngine, StarobinskyReport,
+};
 pub use stochastic_resonance::{StochasticResonanceEngine, StochasticResonanceParams};
 pub use strategy_core::{SignalIntent, SignalType};
 pub use supersonic_shockwave::{SupersonicShockwaveEngine, SupersonicShockwaveParams};
+pub use supersymmetry_nicolai_map::{
+    SupersymmetryNicolaiConfig, SupersymmetryNicolaiEngine, SupersymmetryNicolaiReport,
+};
 pub use wheeler_dewitt_minisuperspace::{
     WheelerDeWittConfig, WheelerDeWittMinisuperspaceEngine, WheelerDeWittReport,
 };

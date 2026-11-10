@@ -1,4 +1,5 @@
 pub mod adaptive_quantum_veto;
+pub mod asymptotic_safety_reuter;
 pub mod bekenstein_mukhanov_quantization;
 pub mod capital_regime;
 pub mod chern_simons_berry_phase;
@@ -9,6 +10,7 @@ pub mod dirac_monopole_chern_bundle;
 pub mod drawdown;
 pub mod envio;
 pub mod evidence;
+pub mod fisher_rao_amari_manifold;
 pub mod freno_estrategia;
 pub mod gromov_symplectic_barrier;
 pub mod guard;
@@ -23,6 +25,7 @@ pub mod page_curve_island_risk;
 pub mod polyakov_schwarzschild_horizon;
 pub mod quantum_extremal_surface;
 pub mod quantum_no_arbitrage_conformal;
+pub mod quaternionic_hyperkahler_manifold;
 pub mod random_matrix;
 pub mod reeb_contact_vortex;
 pub mod regime;
@@ -43,6 +46,10 @@ pub use adaptive_quantum_veto::{
     AdaptiveQuantumVetoGovernor, AdaptiveQuantumVetoParams, AdaptiveVetoDecision,
     MarketQuantumStateInput,
 };
+pub use asymptotic_safety_reuter::{
+    AsymptoticSafetyConfig, AsymptoticSafetyReport, AsymptoticSafetyReuterEngine,
+    REUTER_NGFP_G_STAR, REUTER_NGFP_LAMBDA_STAR,
+};
 pub use bekenstein_mukhanov_quantization::{
     BekensteinMukhanovConfig, BekensteinMukhanovQuantizationEngine, BekensteinMukhanovReport,
     BEKENSTEIN_ALPHA_QUANTUM,
@@ -59,6 +66,9 @@ pub use dirac_monopole_chern_bundle::{
 pub use evidence::{
     profit_factor_lcb, resolve_bayes_prior, win_rate_hierarchical_lcb, win_rate_lcb,
     DEFAULT_BAYES_PRIOR_MASS, DEFAULT_BAYES_PRIOR_WIN_RATE,
+};
+pub use fisher_rao_amari_manifold::{
+    FisherRaoAmariConfig, FisherRaoAmariManifoldEngine, FisherRaoAmariReport,
 };
 pub use gromov_symplectic_barrier::{
     GromovSymplecticBarrierEngine, GromovSymplecticParams, GromovSymplecticReport, Quaternion,
@@ -84,6 +94,9 @@ pub use quantum_extremal_surface::{
 pub use quantum_no_arbitrage_conformal::{
     QuantumNoArbitrageConformalEngine, QuantumNoArbitrageConformalParams,
     QuantumNoArbitrageConformalReport, CONFORMAL_CALIBRATION_WINDOW,
+};
+pub use quaternionic_hyperkahler_manifold::{
+    QuaternionicHyperkahlerConfig, QuaternionicHyperkahlerEngine, QuaternionicHyperkahlerReport,
 };
 pub use reeb_contact_vortex::{
     ReebContactParams, ReebContactReport, ReebContactVortexEngine, CRITICAL_CONTACT_TORSION,
@@ -2193,7 +2206,11 @@ impl RiskEngine {
             {
                 println!(
                     "🔍 [REJ6] margin={:.4} lev={:.4} min_notional={:.4} allocated={:.4} kelly={:.4}",
-                    final_margin, dynamic_leverage, safe_min_notional, allocated_capital, kelly_fraction
+                    final_margin,
+                    dynamic_leverage,
+                    safe_min_notional,
+                    allocated_capital,
+                    kelly_fraction
                 );
             }
             return rej(REJ_MIN_NOTIONAL);

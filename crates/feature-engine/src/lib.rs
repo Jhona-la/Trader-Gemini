@@ -1,3 +1,4 @@
+pub mod amplituhedron_order_flow;
 pub mod ashtekar_lqg_area;
 pub mod bergman_fock_reproducing;
 pub mod bouchaud_mezard_ewl;
@@ -5,6 +6,7 @@ pub mod calabi_yau_seiberg_witten;
 pub mod caputo_fraccional;
 pub mod chern_simons_witten_knot;
 pub mod connes_clifford_kan;
+pub mod connes_kreimer_hopf_algebra;
 pub mod copulas;
 pub mod correlation;
 pub mod cover_orabona_wfr_ville;
@@ -34,6 +36,7 @@ pub mod liouville_quantum_gravity;
 pub mod lppls_sornette;
 pub mod matrix_model_kp_hierarchy;
 pub mod matriz_rmt;
+pub mod metrica_fisher_empirica; // GLM-221 (C1): Fisher empirica q-gaussiana con beta_q
 pub mod microstructure;
 pub mod monge_kantorovich_wasserstein;
 pub mod mps;
@@ -49,7 +52,6 @@ pub mod perelman_ricci_surgery;
 pub mod quantum_geodesic_phase_space;
 pub mod random_matrix_wilson;
 pub mod ricci_empirica;
-pub mod metrica_fisher_empirica; // GLM-221 (C1): Fisher empirica q-gaussiana con beta_q
 pub mod rough_ergodic;
 pub mod simd_neural_network;
 pub mod simd_yoshida_replicator;
@@ -57,6 +59,7 @@ pub mod soa_shadow_otoc;
 pub mod spectral;
 pub mod spot_futures_abl_iceberg;
 pub mod stoikov_microprice;
+pub mod symplectic_floer_cohomology;
 pub mod tensor_ring;
 pub mod tqft_anyons;
 pub mod transfer_entropy;
@@ -69,6 +72,9 @@ pub mod welford;
 pub mod zakai_doob_amplituhedron;
 
 // Re-exportar primitivas matemáticas O(1)
+pub use amplituhedron_order_flow::{
+    AmplituhedronOrderFlowConfig, AmplituhedronOrderFlowEngine, AmplituhedronOrderFlowReport,
+};
 pub use ashtekar_lqg_area::{
     AshtekarLqgAreaEngine, AshtekarLqgParams, AshtekarLqgReport, ASHTEKAR_SPIN_CHANNELS,
     BARBERO_IMMIRZI_GAMMA, PLANCK_AREA_SCALE,
@@ -92,6 +98,9 @@ pub use connes_clifford_kan::{
     CliffordMultivector3D, ConnesCliffordKanEngine, ConnesCliffordKanReport, ConnesSpectralReport,
     ConnesSpectralTripleEngine, CubicBSplineKanEdge, HudsonParthasarathyEvolutor,
     HudsonParthasarathyState, NonCommutativeRegime, CONNES_HILBERT_DIM, KAN_SPLINE_BASIS_COUNT,
+};
+pub use connes_kreimer_hopf_algebra::{
+    ConnesKreimerConfig, ConnesKreimerHopfEngine, ConnesKreimerReport,
 };
 pub use correlation::MarketCorrelationHeatmap;
 pub use cover_orabona_wfr_ville::{
@@ -219,6 +228,9 @@ pub use spot_futures_abl_iceberg::{
 pub use stoikov_microprice::{
     StoikovMicropriceEngine, StoikovMicropriceParams, StoikovMicropriceReport, IMBALANCE_STATES,
     RTT_WINDOW_SIZE,
+};
+pub use symplectic_floer_cohomology::{
+    SymplecticFloerCohomologyEngine, SymplecticFloerConfig, SymplecticFloerReport,
 };
 pub use tensor_ring::TensorRing;
 pub use tqft_anyons::{

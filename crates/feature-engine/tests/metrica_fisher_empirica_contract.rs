@@ -54,7 +54,7 @@ fn beta_q_rango_y_normalizacion() {
 
 #[test]
 fn scores_verificados_contra_diferencias_finitas() {
-    // Identidad de diseño: s = ∇_θ log p con p ∝ [1−(1−q)βu²]^{1/(1−q)}.
+    // Identidad de diseño: s = ∇_θ log p con p ∝ [1−(1−q)βu²]^{1/(1−q)} / σ.
     // Verificación contra diferencias centrales de log p (6+ decimales).
     fn log_p(q: f64, mu: f64, sigma: f64, z: f64) -> f64 {
         let beta = beta_q(q).unwrap();
@@ -159,5 +159,12 @@ fn ricci_continuidad_gaussiana_y_colas_normalizadas() {
     assert!(
         (r_15 - (-2.0)).abs() < 0.25,
         "q=1.5: esperado R=-2 por la métrica normalizada, obtenido {r_15}"
+    );
+
+    assert!(
+        r_15.abs() > r_casi.abs(),
+        "colas mas pesadas aumentan curvatura hiperbolica: |R(q=1.5)|={} debe ser > |R(q=1.001)|={}",
+        r_15,
+        r_casi
     );
 }

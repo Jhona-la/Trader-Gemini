@@ -22,50 +22,57 @@
 //! - Cota analítica de ruina de Ville $\mathbb{P}(\text{ruina}) \le 10^{-6}$ estrictamente preservada.
 
 use crate::topological_metamorphosis::{
-    TopologicalMetamorphosisEngine, TopologicalMetamorphosisParams, TopologicalMetamorphosisReport,
-    METAMORPHOSIS_NODES,
+    METAMORPHOSIS_NODES, TopologicalMetamorphosisEngine, TopologicalMetamorphosisParams,
+    TopologicalMetamorphosisReport,
 };
 use feature_engine::{
+    AmplituhedronOrderFlowConfig, AmplituhedronOrderFlowEngine, AmplituhedronOrderFlowReport,
     AshtekarLqgAreaEngine, AshtekarLqgParams, AshtekarLqgReport, BergmanFockParams,
     BergmanFockReport, BergmanFockReproducingEngine, CalabiYauParams, CalabiYauSeibergWittenEngine,
     CalabiYauSeibergWittenReport, ChernSimonsWittenConfig, ChernSimonsWittenKnotEngine,
-    ChernSimonsWittenReport, GeodesicPhaseSpaceParams, GeodesicPhaseSpaceReport,
-    GrossPitaevskiiBecEngine, GrossPitaevskiiBecReport, GrossPitaevskiiParams,
-    HyperbolicPoincareHodgeEngine, HyperbolicPoincareHodgeParams, HyperbolicPoincareHodgeReport,
-    JtSchwarzianConfig, JtSchwarzianEngine, JtSchwarzianReport, KostantSouriauConfig,
+    ChernSimonsWittenReport, ConnesKreimerConfig, ConnesKreimerHopfEngine, ConnesKreimerReport,
+    GeodesicPhaseSpaceParams, GeodesicPhaseSpaceReport, GrossPitaevskiiBecEngine,
+    GrossPitaevskiiBecReport, GrossPitaevskiiParams, HyperbolicPoincareHodgeEngine,
+    HyperbolicPoincareHodgeParams, HyperbolicPoincareHodgeReport, JtSchwarzianConfig,
+    JtSchwarzianEngine, JtSchwarzianReport, KP_MATRIX_DIM, KostantSouriauConfig,
     KostantSouriauPrequantumEngine, KostantSouriauReport, LatticeQcdConfig, LatticeQcdReport,
     LatticeQcdWilsonPolyakovEngine, LiouvilleCft2dQuantumGravityEngine, LiouvilleCftParams,
     LiouvilleQuantumGravityReport, MatrixModelKpConfig, MatrixModelKpHierarchyEngine,
     MatrixModelKpReport, MongeKantorovichWassersteinEngine, PenroseSpinNetworkEngine,
     PenroseSpinNetworkParams, PenroseSpinNetworkReport, PepsHypergraphRicciEngine,
     PepsHypergraphRicciReport, PepsRicciParams, QuantumGeodesicPhaseSpaceEngine,
-    VietorisRipsParams, VietorisRipsReport, VietorisRipsTopologicalEngine, WassersteinParams,
-    WassersteinReport, KP_MATRIX_DIM, WASSERSTEIN_NODES,
+    SymplecticFloerCohomologyEngine, SymplecticFloerConfig, SymplecticFloerReport,
+    VietorisRipsParams, VietorisRipsReport, VietorisRipsTopologicalEngine, WASSERSTEIN_NODES,
+    WassersteinParams, WassersteinReport,
 };
 use risk_engine::{
-    AdaptiveQuantumVetoGovernor, AdaptiveVetoDecision, BekensteinMukhanovConfig,
+    AdaptiveQuantumVetoGovernor, AdaptiveVetoDecision, AsymptoticSafetyConfig,
+    AsymptoticSafetyReport, AsymptoticSafetyReuterEngine, BekensteinMukhanovConfig,
     BekensteinMukhanovQuantizationEngine, BekensteinMukhanovReport, ChernSimonsBerryParams,
     ChernSimonsBerryPhaseEngine, ChernSimonsBerryReport, DiracMonopoleChernBundleEngine,
-    DiracMonopoleParams, DiracMonopoleReport, GromovSymplecticBarrierEngine,
-    GromovSymplecticParams, GromovSymplecticReport, HolographicLloydComplexityEngine,
-    HolographicLloydConfig, HolographicLloydReport, LindbladDecoherenceReport,
-    LindbladMasterDecoherenceEngine, LindbladMasterParams, MarketQuantumStateInput, MpsDmrgParams,
+    DiracMonopoleParams, DiracMonopoleReport, FisherRaoAmariConfig, FisherRaoAmariManifoldEngine,
+    FisherRaoAmariReport, GromovSymplecticBarrierEngine, GromovSymplecticParams,
+    GromovSymplecticReport, HolographicLloydComplexityEngine, HolographicLloydConfig,
+    HolographicLloydReport, LindbladDecoherenceReport, LindbladMasterDecoherenceEngine,
+    LindbladMasterParams, MPS_ASSET_CHANNELS, MarketQuantumStateInput, MpsDmrgParams,
     MpsDmrgReport, PageCurveIslandConfig, PageCurveIslandReport, PageCurveIslandRiskEngine,
     PolyakovSchwarzschildHorizonEngine, PolyakovSchwarzschildParams, PolyakovSchwarzschildReport,
     QuantumExtremalSurfaceConfig, QuantumExtremalSurfaceEngine, QuantumExtremalSurfaceReport,
     QuantumNoArbitrageConformalEngine, QuantumNoArbitrageConformalParams,
-    QuantumNoArbitrageConformalReport, ReebContactParams, ReebContactReport,
-    ReebContactVortexEngine, RyuTakayanagiEntanglementEngine, RyuTakayanagiParams,
-    RyuTakayanagiReport, TensorNetworkMpsDmrgEngine, ToricCodeConfig, ToricCodeEngine,
-    ToricCodeReport, UmegakiEntropyParams, UmegakiEntropyReport, UmegakiRelativeEntropyEngine,
-    MPS_ASSET_CHANNELS, TORIC_EDGES,
+    QuantumNoArbitrageConformalReport, QuaternionicHyperkahlerConfig,
+    QuaternionicHyperkahlerEngine, QuaternionicHyperkahlerReport, ReebContactParams,
+    ReebContactReport, ReebContactVortexEngine, RyuTakayanagiEntanglementEngine,
+    RyuTakayanagiParams, RyuTakayanagiReport, TORIC_EDGES, TensorNetworkMpsDmrgEngine,
+    ToricCodeConfig, ToricCodeEngine, ToricCodeReport, UmegakiEntropyParams, UmegakiEntropyReport,
+    UmegakiRelativeEntropyEngine,
 };
 use signal_engine::{
-    AdSCftHolographicEngine, AdSCftHolographicReport, AdSCftParams, BerryPhaseConfig,
-    BerryPhaseEngine, BerryPhaseReport, BurgersShockwaveReport, ContinuousVolatilityOperatorEngine,
-    ContinuousVolatilityState, DeRhamHodgeCurrentsEngine, DeRhamHodgeParams, DeRhamHodgeReport,
-    FeynmanPathIntegralRoutingEngine, FeynmanRoutingParams, FeynmanRoutingReport,
-    FractionalRoughVolatilityEngine, FractionalRoughVolatilityParams,
+    AdSCftHolographicEngine, AdSCftHolographicReport, AdSCftParams, BRAID_STRANDS,
+    BerryPhaseConfig, BerryPhaseEngine, BerryPhaseReport, BurgersShockwaveReport,
+    ContinuousVolatilityOperatorEngine, ContinuousVolatilityState, DeRhamHodgeCurrentsEngine,
+    DeRhamHodgeParams, DeRhamHodgeReport, DonaldsonThomasConfig, DonaldsonThomasQuantumEngine,
+    DonaldsonThomasReport, FeynmanPathIntegralRoutingEngine, FeynmanRoutingParams,
+    FeynmanRoutingReport, FractionalRoughVolatilityEngine, FractionalRoughVolatilityParams,
     FractionalRoughVolatilityReport, JarzynskiCrooksParams, JarzynskiCrooksReport,
     JarzynskiCrooksThermodynamicsEngine, KdvSolitonDispersionEngine, KdvSolitonParams,
     KdvSolitonReport, MeanFieldGamesPsychologyEngine, MeanFieldGamesReport, MfDfaHurstReport,
@@ -77,12 +84,14 @@ use signal_engine::{
     QuantumManyBodyScarsEngine, QuantumManyBodyScarsReport, QuantumSlotOrchestrator,
     RiemannBurgersShockwaveEngine, RuelleFrobeniusParams, RuelleFrobeniusReport,
     RuelleFrobeniusTransferEngine, SrbEntropyParams, SrbEntropyReport, SrbKolmogorovEntropyEngine,
+    StarobinskyConfig, StarobinskyInflationaryEngine, StarobinskyReport,
+    SupersymmetryNicolaiConfig, SupersymmetryNicolaiEngine, SupersymmetryNicolaiReport,
     WheelerDeWittConfig, WheelerDeWittMinisuperspaceEngine, WheelerDeWittReport,
-    WilsonExactRenormalizationEngine, WilsonExactRgParams, WilsonExactRgReport, BRAID_STRANDS,
+    WilsonExactRenormalizationEngine, WilsonExactRgParams, WilsonExactRgReport,
 };
 use strategy_core::{
     AssetColorState, ChromodynamicGaugeSu3Engine, ConnesSpectralGeometryEngine,
-    ConnesSpectralParams, ConnesSpectralReport, SignalType, Su3GaugeReport, SU3_COLORS,
+    ConnesSpectralParams, ConnesSpectralReport, SU3_COLORS, SignalType, Su3GaugeReport,
 };
 
 /// Informe omnisciente holístico que resume el estado emergente completo del grafo vivo.
@@ -169,6 +178,18 @@ pub struct OmniscientLivingGraphReport {
     pub kostant_souriau_report: KostantSouriauReport,
     pub qmbs_report: QuantumManyBodyScarsReport,
     pub qes_report: QuantumExtremalSurfaceReport,
+    // --- Extensiones Holísticas Omega220 (Fases 91 - 93) ---
+    pub amplituhedron_order_flow_report: AmplituhedronOrderFlowReport,
+    pub starobinsky_inflationary_report: StarobinskyReport,
+    pub fisher_rao_amari_report: FisherRaoAmariReport,
+    // --- Extensiones Holísticas Omega220 (Fases 94 - 96) ---
+    pub symplectic_floer_report: SymplecticFloerReport,
+    pub supersymmetry_nicolai_report: SupersymmetryNicolaiReport,
+    pub quaternionic_hyperkahler_report: QuaternionicHyperkahlerReport,
+    // --- Extensiones Holísticas Omega220 (Fases 97 - 99) ---
+    pub connes_kreimer_report: ConnesKreimerReport,
+    pub donaldson_thomas_report: DonaldsonThomasReport,
+    pub asymptotic_safety_report: AsymptoticSafetyReport,
 }
 
 /// Orquestador del grafo vivo omnisciente para todo el universo de activos.
@@ -245,6 +266,18 @@ pub struct OmniscientLivingGraphOrchestrator {
     pub kostant_souriau_engines: Vec<KostantSouriauPrequantumEngine>,
     pub qmbs_engines: Vec<QuantumManyBodyScarsEngine>,
     pub qes_engines: Vec<QuantumExtremalSurfaceEngine>,
+    // Motores cuánticos y físicos unificados (Fases 91 - 93)
+    pub amplituhedron_engines: Vec<AmplituhedronOrderFlowEngine>,
+    pub starobinsky_engines: Vec<StarobinskyInflationaryEngine>,
+    pub fisher_rao_amari_engines: Vec<FisherRaoAmariManifoldEngine>,
+    // Motores cuánticos y físicos unificados (Fases 94 - 96)
+    pub floer_engines: Vec<SymplecticFloerCohomologyEngine>,
+    pub susy_engines: Vec<SupersymmetryNicolaiEngine>,
+    pub hyperkahler_engines: Vec<QuaternionicHyperkahlerEngine>,
+    // Motores cuánticos y físicos unificados (Fases 97 - 99)
+    pub connes_kreimer_engines: Vec<ConnesKreimerHopfEngine>,
+    pub donaldson_thomas_engines: Vec<DonaldsonThomasQuantumEngine>,
+    pub asymptotic_safety_engines: Vec<AsymptoticSafetyReuterEngine>,
     pub prev_mid_prices: Vec<f64>,
     pub last_event_time_ms: u64,
 }
@@ -424,6 +457,35 @@ impl OmniscientLivingGraphOrchestrator {
                 .collect(),
             qes_engines: (0..count)
                 .map(|_| QuantumExtremalSurfaceEngine::new(QuantumExtremalSurfaceConfig::default()))
+                .collect(),
+            amplituhedron_engines: (0..count)
+                .map(|_| AmplituhedronOrderFlowEngine::new(AmplituhedronOrderFlowConfig::default()))
+                .collect(),
+            starobinsky_engines: (0..count)
+                .map(|_| StarobinskyInflationaryEngine::new(StarobinskyConfig::default()))
+                .collect(),
+            fisher_rao_amari_engines: (0..count)
+                .map(|_| FisherRaoAmariManifoldEngine::new(FisherRaoAmariConfig::default()))
+                .collect(),
+            floer_engines: (0..count)
+                .map(|_| SymplecticFloerCohomologyEngine::new(SymplecticFloerConfig::default()))
+                .collect(),
+            susy_engines: (0..count)
+                .map(|_| SupersymmetryNicolaiEngine::new(SupersymmetryNicolaiConfig::default()))
+                .collect(),
+            hyperkahler_engines: (0..count)
+                .map(|_| {
+                    QuaternionicHyperkahlerEngine::new(QuaternionicHyperkahlerConfig::default())
+                })
+                .collect(),
+            connes_kreimer_engines: (0..count)
+                .map(|_| ConnesKreimerHopfEngine::new(ConnesKreimerConfig::default()))
+                .collect(),
+            donaldson_thomas_engines: (0..count)
+                .map(|_| DonaldsonThomasQuantumEngine::new(DonaldsonThomasConfig::default()))
+                .collect(),
+            asymptotic_safety_engines: (0..count)
+                .map(|_| AsymptoticSafetyReuterEngine::new(AsymptoticSafetyConfig::default()))
                 .collect(),
             prev_mid_prices: vec![0.0; count],
             last_event_time_ms: 0,
@@ -1023,7 +1085,59 @@ impl OmniscientLivingGraphOrchestrator {
             vol_norm,
         );
 
-        // 58. Factor de Escala de Riesgo Holístico Tri-Slot $\eta_{\text{holistic}}$
+        // 58. Geometría del Amplituhedro & Amplitudes Parke-Taylor MHV (Fase 91)
+        let amplituhedron_report =
+            self.amplituhedron_engines[safe_coin_id].evaluate(price_ret, ofi, spread_bps, vol_norm);
+
+        // 59. Cosmología Inflacionaria de Starobinsky (R + R^2) & Dinámica de Inflatón (Fase 92)
+        let starobinsky_report = self.starobinsky_engines[safe_coin_id]
+            .evaluate(price_ret, ofi, spread_bps, vol_norm, dt);
+
+        // 60. Geometría de Información de Fisher-Rao & Variedad \alpha-Dual de Amari (Fase 93)
+        let drawdown_pct =
+            (1.0 - capital_available_usd / capital_available_usd.max(13.0)).clamp(0.0, 1.0);
+        let fisher_rao_report = self.fisher_rao_amari_engines[safe_coin_id].evaluate(
+            price_ret,
+            drawdown_pct,
+            spread_bps,
+            vol_norm,
+        );
+
+        // 61. Geometría Simpléctica Infinita & Cohomología de Floer Cuántica (Fase 94)
+        let floer_report =
+            self.floer_engines[safe_coin_id].evaluate(price_ret, ofi, spread_bps, vol_norm);
+
+        // 62. Supersimetría N=1 & Ecuación de Nicolai (Fase 95)
+        let susy_report =
+            self.susy_engines[safe_coin_id].evaluate(price_ret, ofi, spread_bps, vol_norm, dt);
+
+        // 63. Geometría de Calabi-Yau Cuaterniónica & Hiperkähler (Fase 96)
+        let margin_buffer_pct =
+            (capital_available_usd / capital_available_usd.max(13.0)).clamp(0.0, 1.0);
+        let hyperkahler_report = self.hyperkahler_engines[safe_coin_id].evaluate(
+            capital_available_usd,
+            price_ret,
+            vol_norm,
+            margin_buffer_pct,
+        );
+
+        // 64. Geometría No Conmutativa de Connes-Kreimer & Renormalización Hopf (Fase 97)
+        let connes_kreimer_report = self.connes_kreimer_engines[safe_coin_id]
+            .evaluate(price_ret, ofi, spread_bps, vol_norm);
+
+        // 65. Correspondencia de Donaldson-Thomas Cuántica & Vértice MacMahon (Fase 98)
+        let donaldson_thomas_report =
+            self.donaldson_thomas_engines[safe_coin_id].evaluate(price_ret, ofi, obi, spread_bps);
+
+        // 66. Gravitación 4D Cuántica Asintóticamente Segura & Punto Fijo Reuter (Fase 99)
+        let asymptotic_safety_report = self.asymptotic_safety_engines[safe_coin_id].evaluate(
+            conformal_decision.conformal_risk_score,
+            vol_norm,
+            effective_leverage,
+            drawdown_pct * 100.0,
+        );
+
+        // 67. Factor de Escala de Riesgo Holístico Tri-Slot $\eta_{\text{holistic}}$
         let mps_weight_factor = (mps_dmrg_report.asset_weights[safe_coin_id % MPS_ASSET_CHANNELS]
             * (MPS_ASSET_CHANNELS as f64))
             .clamp(0.50, 1.50);
@@ -1089,6 +1203,15 @@ impl OmniscientLivingGraphOrchestrator {
             * ks_report.slot_scale_factor
             * qmbs_report.slot_scale_factor
             * qes_report.slot_scale_factor
+            * amplituhedron_report.slot_scaling_factor
+            * starobinsky_report.slot_scaling_factor
+            * fisher_rao_report.slot_scaling_factor
+            * floer_report.slot_scaling_factor
+            * susy_report.slot_scaling_factor
+            * hyperkahler_report.slot_scaling_factor
+            * connes_kreimer_report.slot_scaling_factor
+            * donaldson_thomas_report.slot_scaling_factor
+            * asymptotic_safety_report.slot_scaling_factor
             * mps_weight_factor)
             .clamp(0.10, 1.25);
 
@@ -1150,6 +1273,15 @@ impl OmniscientLivingGraphOrchestrator {
             && !ks_report.prequantum_collapse_veto
             && !qmbs_report.ergodic_collapse_veto
             && !qes_report.extremal_surface_collapse_veto
+            && !amplituhedron_report.collinear_singularity_veto
+            && !starobinsky_report.reheating_collapse_veto
+            && !fisher_rao_report.information_collapse_veto
+            && !floer_report.floer_homology_obstruction_veto
+            && !susy_report.susy_spontaneous_breaking_veto
+            && !hyperkahler_report.moment_map_singularity_veto
+            && !connes_kreimer_report.connes_kreimer_divergence_veto
+            && !donaldson_thomas_report.donaldson_thomas_wall_crossing_veto
+            && !asymptotic_safety_report.asymptotic_safety_singularity_veto
             && (spread_bps <= conformal_decision.dynamic_spread_ceiling_bps
                 || conformal_decision.elastic_entry_granted);
 
@@ -1164,6 +1296,20 @@ impl OmniscientLivingGraphOrchestrator {
                     Some("QUANTUM_SCARS_ERGODIC_COLLAPSE_VETO")
                 } else if ks_report.prequantum_collapse_veto {
                     Some("KOSTANT_SOURIAU_PREQUANTUM_COLLAPSE_VETO")
+                } else if asymptotic_safety_report.asymptotic_safety_singularity_veto {
+                    Some("ASYMPTOTIC_SAFETY_SINGULARITY_VETO")
+                } else if donaldson_thomas_report.donaldson_thomas_wall_crossing_veto {
+                    Some("DONALDSON_THOMAS_WALL_CROSSING_VETO")
+                } else if connes_kreimer_report.connes_kreimer_divergence_veto {
+                    Some("CONNES_KREIMER_DIVERGENCE_VETO")
+                } else if hyperkahler_report.moment_map_singularity_veto {
+                    Some("HYPERKAHLER_MOMENT_MAP_SINGULARITY_VETO")
+                } else if susy_report.susy_spontaneous_breaking_veto {
+                    Some("SUSY_SPONTANEOUS_BREAKING_VETO")
+                } else if floer_report.floer_homology_obstruction_veto {
+                    Some("FLOER_HOMOLOGY_OBSTRUCTION_VETO")
+                } else if fisher_rao_report.information_collapse_veto {
+                    Some("FISHER_RAO_INFORMATION_COLLAPSE_VETO")
                 } else if dirac_monopole_report.monopole_veto_induced {
                     Some("YANG_MILLS_DIRAC_MONOPOLE_VETO")
                 } else if peps_hypergraph_report.hyperbolic_dispersion_detected {
@@ -1196,8 +1342,12 @@ impl OmniscientLivingGraphOrchestrator {
                     Some("GROSS_PITAEVSKII_VORTEX_VETO")
                 } else if lindblad_report.hard_veto_induced {
                     Some("LINDBLAD_DECOHERENCE_VETO")
+                } else if starobinsky_report.reheating_collapse_veto {
+                    Some("STAROBINSKY_REHEATING_COLLAPSE_VETO")
                 } else if polyakov_schwarzschild_report.event_horizon_veto_induced {
                     Some("POLYAKOV_SCHWARZSCHILD_EVENT_HORIZON_VETO")
+                } else if amplituhedron_report.collinear_singularity_veto {
+                    Some("AMPLITUHEDRON_COLLINEAR_SINGULARITY_VETO")
                 } else if ashtekar_lqg_report.ashtekar_area_singularity_detected {
                     Some("ASHTEKAR_AREA_SINGULARITY_VETO")
                 } else if umegaki_relative_entropy_report.hard_veto_induced {
@@ -1279,6 +1429,15 @@ impl OmniscientLivingGraphOrchestrator {
             && !ks_report.prequantum_collapse_veto
             && !qmbs_report.ergodic_collapse_veto
             && !qes_report.extremal_surface_collapse_veto
+            && !amplituhedron_report.collinear_singularity_veto
+            && !starobinsky_report.reheating_collapse_veto
+            && !fisher_rao_report.information_collapse_veto
+            && !floer_report.floer_homology_obstruction_veto
+            && !susy_report.susy_spontaneous_breaking_veto
+            && !hyperkahler_report.moment_map_singularity_veto
+            && !connes_kreimer_report.connes_kreimer_divergence_veto
+            && !donaldson_thomas_report.donaldson_thomas_wall_crossing_veto
+            && !asymptotic_safety_report.asymptotic_safety_singularity_veto
             && conformal_decision.conformal_risk_score <= 0.85
             && srb_entropy_report.kolmogorov_sinai_entropy < 0.98;
 
@@ -1348,6 +1507,15 @@ impl OmniscientLivingGraphOrchestrator {
             kostant_souriau_report: ks_report,
             qmbs_report,
             qes_report,
+            amplituhedron_order_flow_report: amplituhedron_report,
+            starobinsky_inflationary_report: starobinsky_report,
+            fisher_rao_amari_report: fisher_rao_report,
+            symplectic_floer_report: floer_report,
+            supersymmetry_nicolai_report: susy_report,
+            quaternionic_hyperkahler_report: hyperkahler_report,
+            connes_kreimer_report,
+            donaldson_thomas_report,
+            asymptotic_safety_report,
         }
     }
 }
