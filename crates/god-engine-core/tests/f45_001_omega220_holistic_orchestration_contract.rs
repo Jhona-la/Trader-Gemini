@@ -564,6 +564,22 @@ fn test_c1_holistic_living_graph_end_to_end_synthesis() {
             .asymptotic_safety_singularity_veto
     );
     assert!(report.asymptotic_safety_report.slot_scaling_factor >= 0.10);
+
+    // 65. Teoría M en 11D & Compactificación en Manifolds Joyce G2 (Fase 100)
+    assert!(report.joyce_g2_report.metric_determinant > 0.0);
+    assert!(!report.joyce_g2_report.joyce_g2_singularity_veto);
+    assert!(report.joyce_g2_report.slot_scaling_factor >= 0.10);
+
+    // 66. Efecto Hall Cuántico Fraccionario (FQHE) & Anyons de Chern-Simons U(1) (Fase 101)
+    assert!(report.fqhe_chern_simons_report.energy_gap >= 0.0);
+    assert!(!report.fqhe_chern_simons_report.fqhe_gap_collapse_veto);
+    assert!(report.fqhe_chern_simons_report.slot_scaling_factor >= 0.10);
+
+    // 67. Gravedad Masiva dRGT & Apantallamiento de Vainshtein (Fase 102)
+    assert!(report.drgt_massive_gravity_report.effective_graviton_mass > 0.0);
+    assert!(report.drgt_massive_gravity_report.vainshtein_radius > 0.0);
+    assert!(!report.drgt_massive_gravity_report.drgt_higuchi_ghost_veto);
+    assert!(report.drgt_massive_gravity_report.slot_scaling_factor >= 0.10);
 }
 
 #[test]

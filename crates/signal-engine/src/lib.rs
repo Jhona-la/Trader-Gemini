@@ -19,6 +19,7 @@ pub mod feynman_path_integral_routing;
 pub mod feynman_propagator;
 pub mod flow_excitation_confluence;
 pub mod flow_impulse;
+pub mod fqhe_chern_simons;
 pub mod fractional_rough_volatility;
 pub mod game_theoretic_nash;
 pub mod hawkes_bessel;
@@ -73,6 +74,9 @@ pub use feynman_propagator::{FeynmanPropagatorEngine, FeynmanPropagatorParams};
 pub use fractional_rough_volatility::{
     FractionalRoughVolatilityEngine, FractionalRoughVolatilityParams,
     FractionalRoughVolatilityReport, ROUGH_VOL_WINDOW,
+};
+pub use fqhe_chern_simons::{
+    FqheChernSimonsConfig, FqheChernSimonsEngine, FqheChernSimonsReport, FQHE_PLATEAUS,
 };
 pub use hawkes_bessel::{HawkesBesselEngine, HawkesBesselParams};
 pub use jarzynski_crooks_thermodynamics::{
