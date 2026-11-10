@@ -1,0 +1,100 @@
+# RB-V1a — certificación del libro en sombra sobre cintas reales (Codex RB, 2026-11-10)
+#
+# Núcleo de producción (GodEngineCore vía run_booktick_replay[_with_observer]), rama codex/rb-v1a-sombra-ml-gate
+# sobre main 56423fd52. Genoma de referencia SuperGenotype::new_baseline(0.0002, 0.0005), omni neutro, sin modelos
+# del roster (el núcleo de un replay no los carga, LG-23), capital 1000 USDT, warmup 500, shift_atr_frac 0.10.
+# Cintas: data/BTCUSDT_AUG_REAL.bin y data/ETHUSDT_AUG_REAL.bin (libro real, ~13 ticks/s), ventanas
+# independientes de 100 000 registros desde el final (v1 = la más reciente). Símbolo registrado con
+# get_official_binance_spec (taker 0,05 %, maker 0,02 %). Comisión de ida y vuelta del replay: 0,1 % del nocional.
+# Veredicto: Hoeffding con el ancho conocido de cada resultado, δ = 0,05/6 por cola (Bonferroni: 3 fuentes × 2 colas).
+#
+# A. Ventanas con el símbolo registrado
+RB-V1a · BTCUSDT · periodo 2026-08-31 20:06 UTC → 2026-08-31 23:59 UTC (3.9 h) · 100000 ticks · 252 s de replay
+  replay: 1 operaciones · PnL bruto -0.1224 / neto -0.2013 USDT · comisiones 0.0789 · ROI bruto -0.0122 % / neto -0.0201 % · WR bruto 0.0 % / neto 0.0 % · EV/op neto -0.20134 · Sharpe 0.000 · DD máx 0.0002
+  sombra consejo: 0 resueltas (TP 0 · SL 0 · τ 0) · R neto medio — ± — (Hoeffding, δ 0.0083/cola) → Some(SinEvidencia)
+  sombra ML-GATE sin modelo: 1 resueltas (TP 0 · SL 0 · τ 1) · R neto medio -0.652 ± 4.831 (Hoeffding, δ 0.0083/cola) → Some(SinEvidencia)
+  sombra ML-GATE sin ventaja: 0 resueltas (TP 0 · SL 0 · τ 0) · R neto medio — ± — (Hoeffding, δ 0.0083/cola) → Some(SinEvidencia)
+  libro: abiertas 1 · solapes 55 · llenas 0 · inválidas 0 · sin geometría 0 · avisos 1
+  embudo del núcleo: sin convicción 0 · vetos del consejo 0 · vetos del ML-GATE 57 · sin margen 0 · aperturas 1
+  rechazos del riesgo: sin rechazos · largo: sin rechazos · corto: sin rechazos
+
+RB-V1a · BTCUSDT · periodo 2026-08-31 17:57 UTC → 2026-08-31 20:06 UTC (2.1 h) · 100000 ticks · 258 s de replay
+  replay: 1 operaciones · PnL bruto -0.1224 / neto -0.2014 USDT · comisiones 0.0790 · ROI bruto -0.0122 % / neto -0.0201 % · WR bruto 0.0 % / neto 0.0 % · EV/op neto -0.20137 · Sharpe 0.000 · DD máx 0.0002
+  sombra consejo: 0 resueltas (TP 0 · SL 0 · τ 0) · R neto medio — ± — (Hoeffding, δ 0.0083/cola) → Some(SinEvidencia)
+  sombra ML-GATE sin modelo: 2 resueltas (TP 0 · SL 0 · τ 2) · R neto medio -0.350 ± 3.743 (Hoeffding, δ 0.0083/cola) → Some(SinEvidencia)
+  sombra ML-GATE sin ventaja: 0 resueltas (TP 0 · SL 0 · τ 0) · R neto medio — ± — (Hoeffding, δ 0.0083/cola) → Some(SinEvidencia)
+  libro: abiertas 1 · solapes 28 · llenas 0 · inválidas 0 · sin geometría 0 · avisos 2
+  embudo del núcleo: sin convicción 0 · vetos del consejo 0 · vetos del ML-GATE 31 · sin margen 0 · aperturas 1
+  rechazos del riesgo: sin rechazos · largo: sin rechazos · corto: sin rechazos
+
+RB-V1a · BTCUSDT · periodo 2026-08-31 16:25 UTC → 2026-08-31 17:57 UTC (1.5 h) · 100000 ticks · 248 s de replay
+  replay: 1 operaciones · PnL bruto -0.1224 / neto -0.2009 USDT · comisiones 0.0786 · ROI bruto -0.0122 % / neto -0.0201 % · WR bruto 0.0 % / neto 0.0 % · EV/op neto -0.20093 · Sharpe 0.000 · DD máx 0.0002
+  sombra consejo: 0 resueltas (TP 0 · SL 0 · τ 0) · R neto medio — ± — (Hoeffding, δ 0.0083/cola) → Some(SinEvidencia)
+  sombra ML-GATE sin modelo: 1 resueltas (TP 0 · SL 1 · τ 0) · R neto medio -1.295 ± 5.008 (Hoeffding, δ 0.0083/cola) → Some(SinEvidencia)
+  sombra ML-GATE sin ventaja: 0 resueltas (TP 0 · SL 0 · τ 0) · R neto medio — ± — (Hoeffding, δ 0.0083/cola) → Some(SinEvidencia)
+  libro: abiertas 1 · solapes 104 · llenas 0 · inválidas 0 · sin geometría 0 · avisos 1
+  embudo del núcleo: sin convicción 0 · vetos del consejo 0 · vetos del ML-GATE 106 · sin margen 0 · aperturas 1
+  rechazos del riesgo: sonda_ocupada=196 · largo: sonda_ocupada=31 · corto: sonda_ocupada=165
+
+RB-V1a · BTCUSDT · periodo 2026-08-31 15:09 UTC → 2026-08-31 16:25 UTC (1.3 h) · 100000 ticks · 242 s de replay
+  replay: 1 operaciones · PnL bruto -0.1218 / neto -0.2004 USDT · comisiones 0.0786 · ROI bruto -0.0122 % / neto -0.0200 % · WR bruto 0.0 % / neto 0.0 % · EV/op neto -0.20040 · Sharpe 0.000 · DD máx 0.0002
+  sombra consejo: 0 resueltas (TP 0 · SL 0 · τ 0) · R neto medio — ± — (Hoeffding, δ 0.0083/cola) → Some(SinEvidencia)
+  sombra ML-GATE sin modelo: 3 resueltas (TP 0 · SL 0 · τ 3) · R neto medio -0.975 ± 3.507 (Hoeffding, δ 0.0083/cola) → Some(SinEvidencia)
+  sombra ML-GATE sin ventaja: 0 resueltas (TP 0 · SL 0 · τ 0) · R neto medio — ± — (Hoeffding, δ 0.0083/cola) → Some(SinEvidencia)
+  libro: abiertas 1 · solapes 204 · llenas 0 · inválidas 0 · sin geometría 0 · avisos 2
+  embudo del núcleo: sin convicción 0 · vetos del consejo 0 · vetos del ML-GATE 208 · sin margen 0 · aperturas 1
+  rechazos del riesgo: sonda_ocupada=35 · largo: sonda_ocupada=22 · corto: sonda_ocupada=13
+
+RB-V1a · BTCUSDT · periodo 2026-08-31 14:23 UTC → 2026-08-31 15:09 UTC (0.8 h) · 100000 ticks · 261 s de replay
+  replay: 1 operaciones · PnL bruto -0.2245 / neto -0.3025 USDT · comisiones 0.0780 · ROI bruto -0.0225 % / neto -0.0302 % · WR bruto 0.0 % / neto 0.0 % · EV/op neto -0.30247 · Sharpe 0.000 · DD máx 0.0003
+  sombra consejo: 0 resueltas (TP 0 · SL 0 · τ 0) · R neto medio — ± — (Hoeffding, δ 0.0083/cola) → Some(SinEvidencia)
+  sombra ML-GATE sin modelo: 0 resueltas (TP 0 · SL 0 · τ 0) · R neto medio — ± — (Hoeffding, δ 0.0083/cola) → Some(SinEvidencia)
+  sombra ML-GATE sin ventaja: 0 resueltas (TP 0 · SL 0 · τ 0) · R neto medio — ± — (Hoeffding, δ 0.0083/cola) → Some(SinEvidencia)
+  libro: abiertas 2 · solapes 3432 · llenas 0 · inválidas 0 · sin geometría 0 · avisos 0
+  embudo del núcleo: sin convicción 0 · vetos del consejo 1738 · vetos del ML-GATE 1696 · sin margen 0 · aperturas 1
+  rechazos del riesgo: confianza=575 sonda_ocupada=151 · largo: confianza=575 sonda_ocupada=151 · corto: sin rechazos
+
+RB-V1a · BTCUSDT · periodo 2026-08-31 13:39 UTC → 2026-08-31 14:23 UTC (0.7 h) · 100000 ticks · 250 s de replay
+  replay: 1 operaciones · PnL bruto -0.2243 / neto -0.3023 USDT · comisiones 0.0780 · ROI bruto -0.0224 % / neto -0.0302 % · WR bruto 0.0 % / neto 0.0 % · EV/op neto -0.30225 · Sharpe 0.000 · DD máx 0.0003
+  sombra consejo: 2 resueltas (TP 0 · SL 0 · τ 2) · R neto medio -0.314 ± 4.506 (Hoeffding, δ 0.0083/cola) → Some(SinEvidencia)
+  sombra ML-GATE sin modelo: 3 resueltas (TP 0 · SL 0 · τ 3) · R neto medio -0.515 ± 2.950 (Hoeffding, δ 0.0083/cola) → Some(SinEvidencia)
+  sombra ML-GATE sin ventaja: 0 resueltas (TP 0 · SL 0 · τ 0) · R neto medio — ± — (Hoeffding, δ 0.0083/cola) → Some(SinEvidencia)
+  libro: abiertas 2 · solapes 600 · llenas 0 · inválidas 0 · sin geometría 0 · avisos 4
+  embudo del núcleo: sin convicción 0 · vetos del consejo 304 · vetos del ML-GATE 303 · sin margen 0 · aperturas 1
+  rechazos del riesgo: confianza=114 sonda_ocupada=384 · largo: confianza=44 · corto: confianza=70 sonda_ocupada=384
+
+RB-V1a · ETHUSDT · periodo 2026-08-31 19:56 UTC → 2026-08-31 23:59 UTC (4.1 h) · 100000 ticks · 254 s de replay
+  replay: 1 operaciones · PnL bruto -0.0691 / neto -0.0939 USDT · comisiones 0.0248 · ROI bruto -0.0069 % / neto -0.0094 % · WR bruto 0.0 % / neto 0.0 % · EV/op neto -0.09391 · Sharpe 0.000 · DD máx 0.0001
+  sombra consejo: 0 resueltas (TP 0 · SL 0 · τ 0) · R neto medio — ± — (Hoeffding, δ 0.0083/cola) → Some(SinEvidencia)
+  sombra ML-GATE sin modelo: 0 resueltas (TP 0 · SL 0 · τ 0) · R neto medio — ± — (Hoeffding, δ 0.0083/cola) → Some(SinEvidencia)
+  sombra ML-GATE sin ventaja: 0 resueltas (TP 0 · SL 0 · τ 0) · R neto medio — ± — (Hoeffding, δ 0.0083/cola) → Some(SinEvidencia)
+  libro: abiertas 1 · solapes 1 · llenas 0 · inválidas 0 · sin geometría 0 · avisos 0
+  embudo del núcleo: sin convicción 0 · vetos del consejo 0 · vetos del ML-GATE 2 · sin margen 0 · aperturas 1
+  rechazos del riesgo: sonda_ocupada=281 · largo: sonda_ocupada=281 · corto: sin rechazos
+
+RB-V1a · ETHUSDT · periodo 2026-08-31 17:42 UTC → 2026-08-31 19:56 UTC (2.2 h) · 100000 ticks · 229 s de replay
+  replay: 1 operaciones · PnL bruto -0.0585 / neto -0.0832 USDT · comisiones 0.0247 · ROI bruto -0.0058 % / neto -0.0083 % · WR bruto 0.0 % / neto 0.0 % · EV/op neto -0.08321 · Sharpe 0.000 · DD máx 0.0001
+  sombra consejo: 0 resueltas (TP 0 · SL 0 · τ 0) · R neto medio — ± — (Hoeffding, δ 0.0083/cola) → Some(SinEvidencia)
+  sombra ML-GATE sin modelo: 0 resueltas (TP 0 · SL 0 · τ 0) · R neto medio — ± — (Hoeffding, δ 0.0083/cola) → Some(SinEvidencia)
+  sombra ML-GATE sin ventaja: 0 resueltas (TP 0 · SL 0 · τ 0) · R neto medio — ± — (Hoeffding, δ 0.0083/cola) → Some(SinEvidencia)
+  libro: abiertas 1 · solapes 104 · llenas 0 · inválidas 0 · sin geometría 0 · avisos 0
+  embudo del núcleo: sin convicción 0 · vetos del consejo 0 · vetos del ML-GATE 105 · sin margen 0 · aperturas 1
+  rechazos del riesgo: sonda_ocupada=253 · largo: sonda_ocupada=253 · corto: sin rechazos
+
+# B. Pureza A/B en la ventana BTCUSDT_v6 (la de más actividad de la sombra): main sin el libro frente a la rama
+base: HUELLA_REPLAY simbolo=BTCUSDT ticks=100000 desde_ms=1788183553261 hasta_ms=1788186225450 trades=1 wins_net=0 wins_gross=0 net_pnl_bits=bfd35817b2277730 gross_pnl_bits=bfccb46111b7c751 fees_bits=3fb3f79ca52e4e1e final_capital_bits=408f3d94fd09bb11 ejecutados=100000 segundos=394.0
+rama: HUELLA_REPLAY simbolo=BTCUSDT ticks=100000 desde_ms=1788183553261 hasta_ms=1788186225450 trades=1 wins_net=0 wins_gross=0 net_pnl_bits=bfd35817b2277730 gross_pnl_bits=bfccb46111b7c751 fees_bits=3fb3f79ca52e4e1e final_capital_bits=408f3d94fd09bb11 ejecutados=100000 segundos=397.2
+
+# C. Primeras corridas SIN registrar el símbolo (artefacto del certificador, corregido): 0 intenciones
+zil_jul: RB-V1a · periodo 2026-07-01 00:00 UTC → 2026-07-31 23:59 UTC (744.0 h) · 1022921 ticks · 1353 s de replay
+zil_jul: replay: 0 operaciones · PnL bruto +0.0000 / neto +0.0000 USDT · comisiones 0.0000 · ROI bruto +0.0000 % / neto +0.0000 % · WR bruto NaN % / neto NaN % · EV/op neto NaN · Sharpe 0.000 · DD máx 0.0000
+zil_jul: embudo del núcleo: sin convicción 0 · vetos del consejo 0 · vetos del ML-GATE 0 · sin margen 0 · aperturas 0
+zil_jul: rechazos del riesgo: sin rechazos · largo: sin rechazos · corto: sin rechazos
+btc_ago: RB-V1a · periodo 2026-08-31 06:29 UTC → 2026-08-31 23:59 UTC (17.5 h) · 1000000 ticks · 1261 s de replay
+btc_ago: replay: 0 operaciones · PnL bruto +0.0000 / neto +0.0000 USDT · comisiones 0.0000 · ROI bruto +0.0000 % / neto +0.0000 % · WR bruto NaN % / neto NaN % · EV/op neto NaN · Sharpe 0.000 · DD máx 0.0000
+btc_ago: embudo del núcleo: sin convicción 0 · vetos del consejo 0 · vetos del ML-GATE 0 · sin margen 0 · aperturas 0
+btc_ago: rechazos del riesgo: sin rechazos · largo: sin rechazos · corto: sin rechazos
+eth_ago: RB-V1a · periodo 2026-08-31 03:15 UTC → 2026-08-31 23:59 UTC (20.7 h) · 1000000 ticks · 1282 s de replay
+eth_ago: replay: 0 operaciones · PnL bruto +0.0000 / neto +0.0000 USDT · comisiones 0.0000 · ROI bruto +0.0000 % / neto +0.0000 % · WR bruto NaN % / neto NaN % · EV/op neto NaN · Sharpe 0.000 · DD máx 0.0000
+eth_ago: embudo del núcleo: sin convicción 0 · vetos del consejo 0 · vetos del ML-GATE 0 · sin margen 0 · aperturas 0
+eth_ago: rechazos del riesgo: sin rechazos · largo: sin rechazos · corto: sin rechazos

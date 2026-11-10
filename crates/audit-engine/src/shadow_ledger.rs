@@ -21,6 +21,10 @@
 //! - gana con confianza ⇒ el veto bloquea operaciones que pagan;
 //! - si no, no hay evidencia todavía.
 //!
+//! RB-V1a añade `veredicto_hoeffding`: el mismo juicio con el radio de
+//! Hoeffding sobre el ancho conocido de cada resultado, válido para todo n
+//! (el de z·SE es asintótico y necesita un `n_min`).
+//!
 //! Límites conocidos (deliberados):
 //! - Resolución al ritmo de los precios observados: un toque entre dos
 //!   precios se detecta en el siguiente (igual que la gestión viva).
@@ -101,6 +105,10 @@ pub struct EstadisticaFuente {
     pub vencidas: u64,
     pub suma_r: f64,
     pub suma_r2: f64,
+    /// RB-V1a — suma de los cuadrados del ANCHO de cada resultado posible:
+    /// r vive en `[−(sl+f)/sl, (tp−f)/sl]`, de ancho `(tp+sl)/sl`, fijado al
+    /// registrar la intención (no depende de cómo se resuelva).
+    pub suma_ancho2: f64,
 }
 
 /// Qué dice la evidencia acumulada de una fuente.
@@ -153,11 +161,57 @@ impl EstadisticaFuente {
             Veredicto::SinEvidencia
         }
     }
+
+    /// RB-V1a — radio de confianza de Hoeffding para la media de R, con el
+    /// ancho CONOCIDO de cada resultado (desigualdad de Hoeffding para
+    /// variables acotadas no idénticas): con probabilidad ≥ 1 − `delta_cola`,
+    /// `media − E[r] ≤ √(ln(1/δ)·Σ ancho²/2) / n` (y lo mismo en la otra cola).
+    /// Vale para TODO n, sin aproximación normal ni varianza estimada.
+    /// Supone resultados independientes: el libro admite una intención
+    /// abierta por (fuente, moneda, lado), pero monedas correlacionadas siguen
+    /// sin ser independientes (límite declarado).
+    pub fn radio_hoeffding(&self, delta_cola: f64) -> Option<f64> {
+        if self.n == 0
+            || !delta_cola.is_finite()
+            || delta_cola <= 0.0
+            || delta_cola >= 1.0
+            || !self.suma_ancho2.is_finite()
+            || self.suma_ancho2 <= 0.0
+        {
+            return None;
+        }
+        let radio = ((1.0 / delta_cola).ln() * self.suma_ancho2 / 2.0).sqrt() / self.n as f64;
+        radio.is_finite().then_some(radio)
+    }
+
+    /// RB-V1a — veredicto distribución-libre con el radio de Hoeffding: la
+    /// fuente ahorra dinero si TODO el intervalo queda bajo 0 y bloquea
+    /// ganadoras si queda sobre 0. Cada cola se contrasta con `delta_cola`.
+    pub fn veredicto_hoeffding(&self, delta_cola: f64) -> Veredicto {
+        let (Some(m), Some(radio)) = (self.media_r(), self.radio_hoeffding(delta_cola)) else {
+            return Veredicto::SinEvidencia;
+        };
+        if !m.is_finite() {
+            Veredicto::SinEvidencia
+        } else if m + radio < 0.0 {
+            Veredicto::AhorraDinero
+        } else if m - radio > 0.0 {
+            Veredicto::BloqueaGanadoras
+        } else {
+            Veredicto::SinEvidencia
+        }
+    }
 }
 
-/// El libro. Memoria fija; `observar` no asigna.
+/// El libro. Memoria fija; ni `registrar` ni `observar` asignan.
+///
+/// RB-V1a: las intenciones abiertas ocupan el prefijo denso
+/// `abiertas[..n_abiertas]`, y la que se resuelve deja su hueco a la última
+/// abierta. `registrar` y `observar` recorren sólo las abiertas (antes, las
+/// `CAPACIDAD` casillas, ~29 KB, en cada llamada) y `abiertas()` es O(1).
 pub struct LibroSombra {
     abiertas: Box<[Option<IntencionVetada>; CAPACIDAD]>,
+    n_abiertas: usize,
     stats: [EstadisticaFuente; MAX_FUENTES],
     pub descartadas_llenas: u64,
     pub descartadas_solape: u64,
@@ -174,6 +228,7 @@ impl LibroSombra {
     pub fn new() -> Self {
         Self {
             abiertas: Box::new([None; CAPACIDAD]),
+            n_abiertas: 0,
             stats: [EstadisticaFuente::default(); MAX_FUENTES],
             descartadas_llenas: 0,
             descartadas_solape: 0,
@@ -187,24 +242,20 @@ impl LibroSombra {
             self.descartadas_invalidas += 1;
             return false;
         }
-        let mut libre = None;
-        for (k, slot) in self.abiertas.iter().enumerate() {
-            match slot {
-                Some(a)
-                    if a.fuente == i.fuente
-                        && a.moneda == i.moneda
-                        && a.es_largo == i.es_largo =>
-                {
-                    self.descartadas_solape += 1;
-                    return false;
-                }
-                None if libre.is_none() => libre = Some(k),
-                _ => {}
-            }
+        let solapa = self
+            .abiertas
+            .iter()
+            .take(self.n_abiertas)
+            .flatten()
+            .any(|a| a.fuente == i.fuente && a.moneda == i.moneda && a.es_largo == i.es_largo);
+        if solapa {
+            self.descartadas_solape += 1;
+            return false;
         }
-        match libre {
-            Some(k) => {
-                self.abiertas[k] = Some(i);
+        match self.abiertas.get_mut(self.n_abiertas) {
+            Some(libre) => {
+                *libre = Some(i);
+                self.n_abiertas += 1;
                 true
             }
             None => {
@@ -222,29 +273,34 @@ impl LibroSombra {
             return 0;
         }
         let mut resueltas = 0;
-        for slot in self.abiertas.iter_mut() {
-            let Some(i) = *slot else { continue };
+        let mut k = 0;
+        while k < self.n_abiertas {
+            let Some(i) = self.abiertas.get(k).copied().flatten() else {
+                k += 1;
+                continue;
+            };
             if i.moneda != moneda || t_ms < i.t0_ms {
+                k += 1;
                 continue;
             }
             let x = i.a_favor(p);
             let res = if x >= i.tp_pct {
-                Some(Resolucion::Tp)
+                Resolucion::Tp
             } else if x <= -i.sl_pct {
-                Some(Resolucion::Sl)
+                Resolucion::Sl
             } else if t_ms.saturating_sub(i.t0_ms) >= i.tau_ms {
-                Some(Resolucion::Vencida(x))
+                Resolucion::Vencida(x)
             } else {
-                None
+                k += 1;
+                continue;
             };
-            if let Some(res) = res {
-                let bruto = match res {
-                    Resolucion::Tp => i.tp_pct,
-                    Resolucion::Sl => -i.sl_pct,
-                    Resolucion::Vencida(x) => x,
-                };
+            let bruto = match res {
+                Resolucion::Tp => i.tp_pct,
+                Resolucion::Sl => -i.sl_pct,
+                Resolucion::Vencida(x) => x,
+            };
+            if let Some(s) = self.stats.get_mut(usize::from(i.fuente)) {
                 let r = (bruto - i.friccion_pct) / i.sl_pct;
-                let s = &mut self.stats[i.fuente as usize];
                 s.n += 1;
                 match res {
                     Resolucion::Tp => s.tp += 1,
@@ -253,9 +309,22 @@ impl LibroSombra {
                 }
                 s.suma_r += r;
                 s.suma_r2 += r * r;
-                *slot = None;
-                resueltas += 1;
+                let ancho = (i.tp_pct + i.sl_pct) / i.sl_pct;
+                s.suma_ancho2 += ancho * ancho;
             }
+            // La última abierta ocupa el hueco; `k` no avanza porque esa
+            // casilla trae ahora una intención todavía sin revisar.
+            self.n_abiertas -= 1;
+            let ultima = self
+                .abiertas
+                .get_mut(self.n_abiertas)
+                .and_then(Option::take);
+            if k < self.n_abiertas {
+                if let Some(hueco) = self.abiertas.get_mut(k) {
+                    *hueco = ultima;
+                }
+            }
+            resueltas += 1;
         }
         resueltas
     }
@@ -265,6 +334,6 @@ impl LibroSombra {
     }
 
     pub fn abiertas(&self) -> usize {
-        self.abiertas.iter().filter(|s| s.is_some()).count()
+        self.n_abiertas
     }
 }

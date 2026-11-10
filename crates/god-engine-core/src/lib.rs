@@ -59,6 +59,7 @@ pub mod reexport_storage {
 }
 pub mod sigma_minuto;
 pub mod slippage_predictor;
+pub mod sombra_vetos;
 pub mod stateful_engine;
 pub mod topological_metamorphosis;
 pub mod trailing;
@@ -1283,6 +1284,9 @@ pub struct GodEngineCore {
     /// B3.18 — entradas vetadas por el gate de ensamble (la predicción
     /// decidió NO): diagnóstico de cuánto consume el sistema la predicción.
     pub diag_ml_vetoes: u64,
+    /// RB-V1a: las intenciones que el riesgo validó y vetaron el consejo o el
+    /// ML-GATE, juzgadas en sombra. Sólo se escribe: ninguna decisión lo lee.
+    pub sombra_vetos: sombra_vetos::SombraVetos,
     /// F1-054 (Ola Ω168): órdenes aprobadas por Consejo y ML descartadas por falta de margen libre,
     /// por no alcanzar el notional mínimo o por exceder el colchón de capital.
     pub diag_margin_drops: u64,
@@ -1682,6 +1686,7 @@ impl GodEngineCore {
             diag_sin_conviccion: 0,
             diag_opened: 0,
             diag_ml_vetoes: 0,
+            sombra_vetos: sombra_vetos::SombraVetos::new(n_coins),
             diag_margin_drops: 0,
             diag_close_wins: 0,
             diag_close_total: 0,
@@ -4341,6 +4346,14 @@ impl GodEngineCore {
             // P1: Actualizar reloj causal del registro omnisciente sin syscalls repetidas
             self.arena.registry.update_event_time(event_time_ms as i64);
             self.fijar_piso_resolucion(coin_id);
+            // RB-V1a: las intenciones vetadas en sombra avanzan con el mid de
+            // este evento (O(1) si la moneda no tiene ninguna abierta).
+            self.sombra_vetos.observar(
+                coin_id,
+                (bid + ask) * 0.5,
+                event_time_ms,
+                self.trazas_diagnosticas,
+            );
 
             if let Some(reservation) = self.entry_reservations.get_mut(coin_id) {
                 *reservation = None;
@@ -10035,6 +10048,27 @@ impl GodEngineCore {
                                 ml_now
                             );
                         }
+                    }
+
+                    // RB-V1a: lo que el riesgo validó y vetan el consejo o el
+                    // ML-GATE se juzga en sombra, con la geometría y la
+                    // fricción con que el riesgo lo evaluó. Sólo se escribe.
+                    if !(aprobado_por_consejo && ml_gate_ok) {
+                        self.sombra_vetos.registrar(sombra_vetos::Veto {
+                            fuente: sombra_vetos::fuente_del_veto(
+                                aprobado_por_consejo,
+                                has_roster_model,
+                            ),
+                            moneda: coin_id,
+                            es_largo: order.signal == SignalType::Long,
+                            entrada: coin.current_price.load(Ordering::Relaxed),
+                            geometria: self
+                                .risk_engine
+                                .medida_validada(coin_id)
+                                .and_then(|m| m.geometria_sombra()),
+                            tau_ms: order.tau_ms,
+                            t0_ms: event_time_ms,
+                        });
                     }
 
                     if aprobado_por_consejo && ml_gate_ok {
