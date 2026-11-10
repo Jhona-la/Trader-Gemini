@@ -10979,3 +10979,21 @@ Puerto recursos reanclado sobre PR90/7b598f7e (padre mainfd956f9, AGY F1-074/F1-
   La huella A/B usa `--test rb_v1a_huella_replay`.
 - **CI:** con `--no-fail-fast` (RB-C1) el shard núcleo muestra 7 rojos: AGY
   f69/f72/f99 (precedencia de vetos) y GLM-223 ricci_q.
+
+## 2026-11-10 — Codex RB: RB-V1b (rechazos del riesgo en sombra) y veredicto de Ville
+
+- **Decisión vigente: la sombra juzga 11 fuentes.**
+  - Las 8 del riesgo, con su `REJ_*`, más consejo y ML-GATE sin modelo o sin
+    ventaja.
+  - La geometría sale de `RiskEngine::geometria_evaluada(coin)`. Se borra al
+    empezar cada evaluación; nunca se reconstruye desde `MedidaOrden`.
+  - `sombra_vetos::fuente_juzgable` decide qué rechazos se juzgan: los
+    anteriores a la geometría y el riesgo duro no entran.
+- **Estadística.**
+  - Un veredicto que se re-evalúa en cada resolución debe ser anytime-valid
+    (e-proceso + Ville).
+  - Prohibido volver a radios de n fijo (Hoeffding, z·SE) para avisos
+    continuos: se inflan (3,1 % frente al 1,7 % nominal, medido en
+    `rb_v1b_ville_sombra_contract`).
+- **Git:** `git commit` confirma TODO el índice. Si hay `git rm` preparados,
+  un commit de documentación los arrastra; usad `git commit --only <ruta>`.
