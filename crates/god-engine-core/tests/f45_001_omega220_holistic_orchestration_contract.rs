@@ -580,6 +580,28 @@ fn test_c1_holistic_living_graph_end_to_end_synthesis() {
     assert!(report.drgt_massive_gravity_report.vainshtein_radius > 0.0);
     assert!(!report.drgt_massive_gravity_report.drgt_higuchi_ghost_veto);
     assert!(report.drgt_massive_gravity_report.slot_scaling_factor >= 0.10);
+
+    // 68. Teoría de Cuerdas Heterótica E8 x E8 & Instantones Calabi-Yau (Fase 103)
+    assert!(report.heterotic_e8_report.green_schwarz_anomaly >= 0.0);
+    assert!(!report.heterotic_e8_report.anomaly_cancellation_veto);
+    assert!(report.heterotic_e8_report.slot_scaling_factor >= 0.10);
+
+    // 69. Entrelazamiento Cuántico Topological Entanglement Entropy & Fractones X-Cube (Fase 104)
+    assert!(
+        report
+            .fracton_topological_report
+            .topological_entanglement_entropy
+            >= 0.0
+    );
+    assert!(!report.fracton_topological_report.fracton_collapse_veto);
+    assert!(report.fracton_topological_report.slot_scaling_factor >= 0.10);
+
+    // 70. Métrica de Agujero Negro Kerr-Newman & Termodinámica de Bardeen-Carter-Hawking (Fase 105)
+    assert!(report.kerr_newman_report.event_horizon_r_plus > 0.0);
+    assert!(report.kerr_newman_report.bekenstein_hawking_entropy > 0.0);
+    assert!(!report.kerr_newman_report.naked_singularity_veto);
+    assert!(!report.kerr_newman_report.hawking_thermal_evaporation_veto);
+    assert!(report.kerr_newman_report.slot_scaling_factor >= 0.10);
 }
 
 #[test]
