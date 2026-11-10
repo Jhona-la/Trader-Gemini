@@ -399,6 +399,11 @@ pub struct RiskEngine {
     /// CL-131 — lo medido de la última orden validada, hasta que el núcleo
     /// la tome al abrirla (`tomar_medida_validada`).
     medida_pendiente: Option<MedidaOrden>,
+    /// RB-V1b: moneda y geometría de la evaluación en curso (TP, SL, fricción
+    /// de ida y vuelta y τ) para que el núcleo juzgue en sombra la intención
+    /// que se rechaza o se veta después de calcularla. Se borra al empezar
+    /// cada evaluación; ninguna decisión la lee.
+    geometria_evaluada: Option<(usize, medida_sombra::GeometriaSombra)>,
 }
 
 /// CL-131 (R2 de la revisión del PR #62) — lo que una orden validada aporta
@@ -428,6 +433,7 @@ impl RiskEngine {
             peak_capital: initial_capital,
             freno_estrategia: freno_estrategia::FrenoEstrategia::new(),
             medida_pendiente: None,
+            geometria_evaluada: None,
         }
     }
 
@@ -437,6 +443,7 @@ impl RiskEngine {
         self.peak_capital = initial_capital;
         self.freno_estrategia = freno_estrategia::FrenoEstrategia::new();
         self.medida_pendiente = None;
+        self.geometria_evaluada = None;
     }
 
     /// CL-131/CL-135 — la medida de la última orden validada de `coin_id`,
@@ -689,6 +696,8 @@ impl RiskEngine {
         set_reject_direction(intent.signal);
         // CL-131: la medida pendiente es la de la última orden validada.
         self.medida_pendiente = None;
+        // RB-V1b: la geometría es la de esta evaluación o ninguna.
+        self.geometria_evaluada = None;
         if coin_id >= arena.coins.len() || intent.signal == SignalType::Flat {
             return rej(REJ_FLAT_COIN);
         }
@@ -1395,6 +1404,15 @@ impl RiskEngine {
         // que corresponde es otro τ (la puerta QO-586 del núcleo ya lo filtra
         // antes), no otro stop. QS-D2 retira el atajo micro de Ω47/F4-M1, que
         // admitía esa orden cuando el suelo cabía en 55 pb.
+        // RB-V1b: la geometría que juzgan el suelo y las puertas siguientes,
+        // para la sombra. Sólo se escribe.
+        self.geometria_evaluada = medida_sombra::GeometriaSombra::nueva(
+            tpsl_gate.tp_pct,
+            tpsl_gate.sl_pct,
+            roundtrip_fee,
+            tau_for_sizing,
+        )
+        .map(|g| (coin_id, g));
         if tpsl_gate.below_tradeable_floor {
             return rej(REJ_TP_SL_FLOOR);
         }
@@ -1434,6 +1452,15 @@ impl RiskEngine {
         {
             return rej(REJ_TARGET_GEOMETRY);
         }
+        // RB-V1b: con objetivos explícitos de la intención, la geometría final
+        // difiere de la del horizonte; la sombra juzga la de la orden.
+        self.geometria_evaluada = medida_sombra::GeometriaSombra::nueva(
+            expected_win,
+            expected_loss,
+            roundtrip_fee,
+            tau_for_sizing,
+        )
+        .map(|g| (coin_id, g));
 
         // R7-R2-A-1 / Ola Ω73: Activación analítica de la probabilidad en forma cerrada de primer toque (Ω3 / CL-34)
         // Calibración R-15: La coherencia espectral es una correlación instantánea en [-1, 1],

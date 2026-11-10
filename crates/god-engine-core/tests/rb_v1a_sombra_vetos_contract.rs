@@ -1,16 +1,21 @@
-//! CONTRATO RB-V1a (Codex RB, 2026-11-10): los vetos posteriores al riesgo se
-//! juzgan en sombra, y la sombra NO decide nada.
+//! CONTRATO RB-V1a/RB-V1b (Codex RB, 2026-11-10): los vetos posteriores al
+//! riesgo y los rechazos del riesgo posteriores a la geometría se juzgan en
+//! sombra, y la sombra NO decide nada.
 //!
 //! QUÉ: `GodEngineCore` registra en `sombra_vetos` cada intención que el riesgo
-//! validó y vetan el consejo o el ML-GATE, y avanza el libro con el mid de cada
-//! evento de `process_tick_dual`.
+//! rechaza después de calcular su geometría (RB-V1b) o que valida y vetan el
+//! consejo o el ML-GATE (RB-V1a), con la geometría que el riesgo publicó
+//! (`geometria_evaluada`), y avanza el libro con el mid de cada evento de
+//! `process_tick_dual`.
 //! POR QUÉ: el veto que estrangula la Demo (el ML-GATE) tiene que recibir su
 //! prueba contrafactual; y un observador que influyera en la decisión dejaría
 //! de medir el sistema que observa.
 //! CÓMO:
 //! 1. Cableado (fuente): la observación precede a la evaluación del riesgo en
-//!    `process_tick_dual`; el registro vive en el bloque `!(consejo && ML)`,
-//!    después de calcular `ml_gate_ok` y antes de la rama que abre.
+//!    `process_tick_dual`; el registro de rechazos sigue a la única evaluación
+//!    del riesgo y precede a la deliberación; el de vetos vive en el bloque
+//!    `!(consejo && ML)`, después de calcular `ml_gate_ok` y antes de la rama
+//!    que abre.
 //! 2. Pureza (fuente): el núcleo sólo escribe en la sombra (`observar`,
 //!    `registrar`) y el módulo no importa ni toca estado de decisión.
 //! 3. Conducta: el `process_tick_dual` real resuelve por primer toque (TP) y por
@@ -72,9 +77,7 @@ fn rb_v1a_la_observacion_precede_al_riesgo_y_el_registro_sigue_a_la_decision() {
     for campo in [
         "sombra_vetos::fuente_del_veto(",
         "has_roster_model",
-        "medida_validada(coin_id)",
-        "geometria_sombra()",
-        "tau_ms: order.tau_ms",
+        "geometria: self.risk_engine.geometria_evaluada(coin_id)",
         "t0_ms: event_time_ms",
     ] {
         assert!(bloque.contains(campo), "el registro usa `{campo}`");
@@ -82,14 +85,49 @@ fn rb_v1a_la_observacion_precede_al_riesgo_y_el_registro_sigue_a_la_decision() {
 }
 
 #[test]
-fn rb_v1a_el_nucleo_solo_escribe_en_la_sombra() {
-    let permitidos = [
-        "pub mod sombra_vetos;",
-        "pub sombra_vetos: sombra_vetos::SombraVetos,",
-        "sombra_vetos: sombra_vetos::SombraVetos::new(n_coins),",
-        "self.sombra_vetos.observar(",
+fn rb_v1b_los_rechazos_del_riesgo_se_registran_tras_evaluar_y_antes_de_deliberar() {
+    // Una sola evaluación del riesgo por tick: la geometría que publica es la
+    // de ESTA intención en los dos registros (rechazo y veto).
+    assert_eq!(NUCLEO.matches(".evaluate_quantum_order(").count(), 1);
+    let ptd = posicion(NUCLEO, 0, "pub fn process_tick_dual(");
+    let riesgo = posicion(NUCLEO, ptd, ".evaluate_quantum_order(");
+    let rechazo = posicion(NUCLEO, riesgo, "risk_engine::ultimo_rechazo()");
+    let registra = posicion(
+        NUCLEO,
+        rechazo,
         "self.sombra_vetos.registrar(sombra_vetos::Veto {",
-        "fuente: sombra_vetos::fuente_del_veto(",
+    );
+    let delibera = posicion(NUCLEO, riesgo, "if order.signal != SignalType::Flat {");
+    assert!(
+        rechazo < registra && registra < delibera,
+        "el registro de rechazos sigue a la evaluación y precede a la deliberación"
+    );
+    let bloque = &NUCLEO[rechazo..delibera];
+    for campo in [
+        ".filter(|_| order.signal == SignalType::Flat)",
+        ".and_then(sombra_vetos::fuente_juzgable)",
+        "es_largo: calibrated_intent.signal == SignalType::Long",
+        "geometria: self.risk_engine.geometria_evaluada(coin_id)",
+        "t0_ms: event_time_ms",
+    ] {
+        assert!(
+            bloque.contains(campo),
+            "el registro de rechazos usa `{campo}`"
+        );
+    }
+}
+
+#[test]
+fn rb_v1a_el_nucleo_solo_escribe_en_la_sombra() {
+    // (uso permitido, veces): sólo se escribe en la sombra.
+    let permitidos = [
+        ("pub mod sombra_vetos;", 1),
+        ("pub sombra_vetos: sombra_vetos::SombraVetos,", 1),
+        ("sombra_vetos: sombra_vetos::SombraVetos::new(n_coins),", 1),
+        ("self.sombra_vetos.observar(", 1),
+        ("self.sombra_vetos.registrar(sombra_vetos::Veto {", 2),
+        ("fuente: sombra_vetos::fuente_del_veto(", 1),
+        (".and_then(sombra_vetos::fuente_juzgable)", 1),
     ];
     let usos: Vec<&str> = NUCLEO
         .lines()
@@ -98,15 +136,15 @@ fn rb_v1a_el_nucleo_solo_escribe_en_la_sombra() {
         .collect();
     for uso in &usos {
         assert!(
-            permitidos.iter().any(|p| uso.starts_with(p)),
+            permitidos.iter().any(|(p, _)| uso.starts_with(p)),
             "uso de la sombra no permitido en el núcleo: `{uso}`"
         );
     }
-    for p in permitidos {
+    for (p, veces) in permitidos {
         assert_eq!(
             usos.iter().filter(|u| u.starts_with(p)).count(),
-            1,
-            "`{p}` una sola vez"
+            veces,
+            "`{p}` {veces} vez/veces"
         );
     }
 
@@ -168,6 +206,7 @@ fn rb_v1a_el_nucleo_real_avanza_la_sombra_con_los_mids_de_cada_moneda() {
         tp_pct: 0.010,
         sl_pct: 0.005,
         friccion_pct: 0.001,
+        tau_ms: 60_000.0,
     };
     // Largo vetado por el ML-GATE en la moneda 0 y corto vetado por el consejo
     // en la moneda 1, ambos con τ de un minuto.
@@ -177,7 +216,6 @@ fn rb_v1a_el_nucleo_real_avanza_la_sombra_con_los_mids_de_cada_moneda() {
         es_largo: true,
         entrada: 100.0,
         geometria: Some(g),
-        tau_ms: 60_000.0,
         t0_ms: T0,
     }));
     assert!(core.sombra_vetos.registrar(Veto {
@@ -186,7 +224,6 @@ fn rb_v1a_el_nucleo_real_avanza_la_sombra_con_los_mids_de_cada_moneda() {
         es_largo: false,
         entrada: 50.0,
         geometria: Some(g),
-        tau_ms: 60_000.0,
         t0_ms: T0,
     }));
 
@@ -236,8 +273,8 @@ fn rb_v1a_el_nucleo_real_resuelve_por_vencimiento() {
             tp_pct: 0.010,
             sl_pct: 0.005,
             friccion_pct: 0.001,
+            tau_ms: 60_000.0,
         }),
-        tau_ms: 60_000.0,
         t0_ms: T0,
     }));
     evento(&mut core, 1, 49.95, T0 + 30_000);
