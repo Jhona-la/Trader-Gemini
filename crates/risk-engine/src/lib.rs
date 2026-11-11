@@ -26,6 +26,7 @@ pub mod lindblad_master_decoherence;
 pub mod medida_sombra;
 pub mod orchestrator;
 pub mod page_curve_island_risk;
+pub mod penrose_cosmic_censorship;
 pub mod polyakov_schwarzschild_horizon;
 pub mod quantum_extremal_surface;
 pub mod quantum_no_arbitrage_conformal;
@@ -95,6 +96,10 @@ pub use lindblad_master_decoherence::{
 };
 pub use page_curve_island_risk::{
     PageCurveIslandConfig, PageCurveIslandReport, PageCurveIslandRiskEngine, MAX_PORTFOLIO_ASSETS,
+};
+pub use penrose_cosmic_censorship::{
+    PenroseCosmicCensorshipConfig, PenroseCosmicCensorshipEngine, PenroseCosmicCensorshipReport,
+    PCC_HISTORY_CAPACITY,
 };
 pub use polyakov_schwarzschild_horizon::{
     PolyakovSchwarzschildHorizonEngine, PolyakovSchwarzschildParams, PolyakovSchwarzschildReport,

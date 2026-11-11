@@ -117,8 +117,16 @@ impl KitaevQuantumDoubleEngine {
         vol_norm: f64,
         spread_bps: f64,
     ) -> KitaevQuantumDoubleReport {
-        let ret = if price_ret.is_finite() { price_ret } else { 0.0 };
-        let flow = if ofi.is_finite() { ofi.clamp(-1.0, 1.0) } else { 0.0 };
+        let ret = if price_ret.is_finite() {
+            price_ret
+        } else {
+            0.0
+        };
+        let flow = if ofi.is_finite() {
+            ofi.clamp(-1.0, 1.0)
+        } else {
+            0.0
+        };
         let vol = if vol_norm.is_finite() && vol_norm > 0.0 {
             vol_norm.clamp(0.01, 10.0)
         } else {
@@ -163,9 +171,9 @@ impl KitaevQuantumDoubleEngine {
 
         // Mezcla cuántica continua con memoria previa (decoherencia disipativa suave)
         let alpha_mix = 0.30f64;
-        for i in 0..S3_ORDER {
-            let target = raw_amps[i] * inv_norm;
-            self.gauge_amplitudes[i] = (1.0 - alpha_mix) * self.gauge_amplitudes[i] + alpha_mix * target;
+        for (amp, &raw_amp) in self.gauge_amplitudes.iter_mut().zip(&raw_amps) {
+            let target = raw_amp * inv_norm;
+            *amp = (1.0 - alpha_mix) * *amp + alpha_mix * target;
         }
 
         // Renormalizar estado disipativo
@@ -205,8 +213,8 @@ impl KitaevQuantumDoubleEngine {
         // tr(e) = 2, tr(trans) = 0, tr(ciclo) = -1
         let trace_rep = [2.0, 0.0, 0.0, 0.0, -1.0, -1.0];
         let mut wilson_loop = 0.0f64;
-        for i in 0..S3_ORDER {
-            wilson_loop += trace_rep[i] * self.gauge_amplitudes[i] * self.gauge_amplitudes[i];
+        for (&tr, &amp) in trace_rep.iter().zip(&self.gauge_amplitudes) {
+            wilson_loop += tr * amp * amp;
         }
         let topo_order = ((wilson_loop + 1.0) / 3.0).clamp(0.0, 1.0);
 
@@ -214,8 +222,8 @@ impl KitaevQuantumDoubleEngine {
         // La asimetría entre las transposiciones (12) y (23) acoplada a la vorticidad de ciclos
         let trans_asymmetry = self.gauge_amplitudes[1] - self.gauge_amplitudes[3];
         let cycle_vorticity = self.gauge_amplitudes[4] - self.gauge_amplitudes[5];
-        let directional_signal = ((flow * 0.60) + (trans_asymmetry * 1.50) + (cycle_vorticity * 0.50))
-            .clamp(-1.0, 1.0);
+        let directional_signal =
+            ((flow * 0.60) + (trans_asymmetry * 1.50) + (cycle_vorticity * 0.50)).clamp(-1.0, 1.0);
 
         // 7. Veto fail-closed de des-confinamiento
         let deconfinement_veto = ground_state_fidelity < self.config.min_ground_state_fidelity

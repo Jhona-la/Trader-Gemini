@@ -56,6 +56,7 @@ pub mod trend_runner;
 pub mod voto_espectral;
 pub mod wheeler_dewitt_minisuperspace;
 pub mod wilson_exact_renormalization;
+pub mod witten_modular_invariants;
 
 pub use ads_cft_holographic::{AdSCftHolographicEngine, AdSCftHolographicReport, AdSCftParams};
 pub use berry_phase_holonomy::{BerryPhaseConfig, BerryPhaseEngine, BerryPhaseReport};
@@ -172,4 +173,8 @@ pub use wheeler_dewitt_minisuperspace::{
 pub use wilson_exact_renormalization::{
     RgScaleCoupling, WilsonExactRenormalizationEngine, WilsonExactRgParams, WilsonExactRgReport,
     RG_MOMENTUM_SCALES,
+};
+pub use witten_modular_invariants::{
+    WittenModularConfig, WittenModularInvariantsEngine, WittenModularReport, WITTEN_CS_LEVEL_K,
+    WITTEN_MODULAR_DIM,
 };

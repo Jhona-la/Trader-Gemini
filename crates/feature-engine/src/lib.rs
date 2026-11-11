@@ -1,5 +1,6 @@
 pub mod amplituhedron_order_flow;
 pub mod ashtekar_lqg_area;
+pub mod atiyah_patodi_singer_index;
 pub mod bergman_fock_reproducing;
 pub mod bouchaud_mezard_ewl;
 pub mod calabi_yau_seiberg_witten;
@@ -82,6 +83,10 @@ pub use amplituhedron_order_flow::{
 pub use ashtekar_lqg_area::{
     AshtekarLqgAreaEngine, AshtekarLqgParams, AshtekarLqgReport, ASHTEKAR_SPIN_CHANNELS,
     BARBERO_IMMIRZI_GAMMA, PLANCK_AREA_SCALE,
+};
+pub use atiyah_patodi_singer_index::{
+    AtiyahPatodiSingerConfig, AtiyahPatodiSingerIndexEngine, AtiyahPatodiSingerReport,
+    APS_BUFFER_CAPACITY, APS_PHASE_DIM,
 };
 pub use bergman_fock_reproducing::{
     BergmanFockParams, BergmanFockReport, BergmanFockReproducingEngine, BERGMAN_COMPLEX_DIM,

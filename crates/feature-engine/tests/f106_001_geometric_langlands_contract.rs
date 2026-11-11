@@ -30,14 +30,16 @@ fn test_c1_hecke_eigenvalues_bounded_under_nominal_conditions() {
 
 #[test]
 fn test_c2_ramanujan_violation_triggers_langlands_anomaly_veto() {
-    let mut config = GeometricLanglandsHeckeConfig::default();
-    config.max_anomaly_tolerance = 0.20;
+    let config = GeometricLanglandsHeckeConfig {
+        max_anomaly_tolerance: 0.20,
+        ..Default::default()
+    };
     let mut engine = GeometricLanglandsHeckeEngine::new(config);
 
     // Inject strong resonant manipulation at prime lag 2
     for i in 0..30 {
-        let ret = if i % 2 == 0 { 0.05 } else { -0.05 };
-        let ofi = if i % 2 == 0 { 1.0 } else { -1.0 };
+        let ret = if i & 1 == 0 { 0.05 } else { -0.05 };
+        let ofi = if i & 1 == 0 { 1.0 } else { -1.0 };
         engine.update(ret, ofi, 5.0, 0.5);
     }
 
