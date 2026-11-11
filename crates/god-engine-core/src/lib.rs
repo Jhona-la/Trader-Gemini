@@ -37,6 +37,7 @@ pub mod darwin;
 pub mod dataset_recorder;
 pub mod diffusion;
 pub mod direction_diag;
+pub mod embudo_vivo;
 pub mod ensemble;
 pub mod latency_accelerator;
 pub mod liquidation_feed;
@@ -1301,6 +1302,10 @@ pub struct GodEngineCore {
     pub diag_pnl_sum: f64,
     /// Diagnóstico por dirección del embudo de entrada (sólo telemetría).
     pub diag_dir: direction_diag::DirectionDiag,
+    /// RB-E2: lo que el embudo vivo cuenta y `diag_dir` no (ticks bloqueados
+    /// por causa, intenciones sin ranura, rechazos del riesgo por motivo).
+    /// Sólo telemetría: ninguna decisión lo lee.
+    pub diag_embudo: embudo_vivo::ContadoresNucleo,
     /// CL-142: escribe las trazas de diagnóstico (OPEN/CLOSE TRACE, ML-GATE,
     /// ML-DIAG, ML-HEARTBEAT, DIAG, carga de DarkAlpha). `false` sólo en los
     /// núcleos auxiliares (`new_auxiliar`); no cambia ninguna decisión.
@@ -1694,6 +1699,7 @@ impl GodEngineCore {
             diag_notional_max: 0.0,
             diag_pnl_sum: 0.0,
             diag_dir: direction_diag::DirectionDiag::default(),
+            diag_embudo: embudo_vivo::ContadoresNucleo::default(),
             trazas_diagnosticas,
             avisos: avisos::AvisosDelNucleo::new(n_coins),
             rama_registro: vec![[TasaAcierto::default(); N_RAMAS]; n_coins],
@@ -4210,6 +4216,9 @@ impl GodEngineCore {
             // en memoria (evitando Ghost Positions y desincronización de margen).
             // A la salida, todo new_order generado es legítimo y viaja sin censura.
             let allow_entries = !latency_panic && (!is_depth || is_trade);
+            // RB-E2: por qué el llamador no permite entradas en este evento.
+            self.diag_embudo
+                .registrar_llamada(is_depth && !is_trade, latency_panic);
 
             // (Ola XLV·I) LLAMADA al publicador de contagio Hawkes: cada 4096
             // ticks del arena (~2-15 min en vivo según densidad), computa la
@@ -4338,7 +4347,6 @@ impl GodEngineCore {
             // Unknown fees veto new exposure. Retained finite estimates still
             // allow defensive closes; they are not fresh exchange observations.
             let observed_fees_valid = self.sync_reality_fees_for_coin(coin_id);
-            let allow_entries = allow_entries && observed_fees_valid;
             let entry_fee_book = self.arena.config.live_fee_schedule.load_full();
             if let Some(accounting) = self.local_close_accounting.get_mut(coin_id) {
                 *accounting = None;
@@ -4469,12 +4477,19 @@ impl GodEngineCore {
                 self.liquidation_diagnostics.invalid_as_of += 1;
             }
             let liquidation_severity = liquidation_view.ok().flatten().unwrap_or(0.0);
-            let entries_blocked = !allow_entries
-                || kill_latched
-                || self.drift_entry_veto
-                || quantum_arena::feed_health::is_stalled()
-                || is_latency_panic
-                || liquidation_as_of_invalid;
+            // RB-E2: la misma disyunción de antes (`allow_entries` es el permiso
+            // del llamador; las comisiones sin observar vetan aparte;
+            // `is_stalled` es una lectura atómica sin efectos), contada por su
+            // primera causa activa en el orden de `embudo_vivo::NOMBRES_BLOQUEO`.
+            let entries_blocked = self.diag_embudo.bloqueos.registrar([
+                !allow_entries,
+                !observed_fees_valid,
+                kill_latched,
+                self.drift_entry_veto,
+                quantum_arena::feed_health::is_stalled(),
+                is_latency_panic,
+                liquidation_as_of_invalid,
+            ]);
             if is_latency_panic {
                 if let Some(n) = self.avisos.latencia() {
                     telemetry_server::telemetry_log!(
@@ -9656,6 +9671,11 @@ impl GodEngineCore {
                     .positions
                     .misma_direccion_sin_asegurar(tau_intent_ms, is_long_intent, mid_price);
             let slot_available = raw_slot_available && !same_dir_unsecured;
+            // RB-E2: la intención que muere aquí no llega al riesgo; se cuenta.
+            if unified_intent.signal != SignalType::Flat && !slot_available {
+                self.diag_embudo
+                    .registrar_sin_ranura(!coin.positions.is_any_open(), same_dir_unsecured);
+            }
 
             // --- APERTURA MULTI-HORIZONTE CONTINUA INTEGRAL ---
             if unified_intent.signal != SignalType::Flat && slot_available {
@@ -9692,6 +9712,13 @@ impl GodEngineCore {
                     calibrated_intent.signal == SignalType::Long,
                     calibrated_intent.confidence,
                     order.signal != SignalType::Flat,
+                );
+                // RB-E2: el motivo de ESTE núcleo (lectura local al hilo, justo
+                // tras su evaluación), no el contador global del proceso.
+                self.diag_embudo.registrar_riesgo(
+                    !coin.positions.is_any_open(),
+                    order.signal != SignalType::Flat,
+                    risk_engine::ultimo_rechazo(),
                 );
                 // RB-V1b: lo que el riesgo rechaza DESPUÉS de calcular la
                 // geometría (confianza, EV, viabilidad, nocional, fee…) se
