@@ -88,10 +88,7 @@ fn test_c1_wave31_triad_holistic_orchestration() {
     // Certificaciones Fase 111: Wheeler-Feynman Absorber
     assert!(!report.wheeler_feynman_report.wheeler_feynman_absorber_veto);
     assert!(!report.wheeler_feynman_report.dirac_radiation_runaway_veto);
-    assert!(report
-        .wheeler_feynman_report
-        .dirac_radiation_reaction_force
-        .is_finite());
+    assert!(report.wheeler_feynman_report.dirac_radiation_reaction_force.is_finite());
     assert!(report.wheeler_feynman_report.absorber_absorption_capacity > 0.0);
 
     // Certificación holística
