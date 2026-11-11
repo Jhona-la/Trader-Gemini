@@ -495,7 +495,10 @@ impl UserDataStreamer {
             .duration_since(std::time::UNIX_EPOCH)
             .map(|d| d.as_millis() as u64)
             .unwrap_or(o.trade_time_ms);
-        if update.last_filled_qty > 0.0 {
+        let new_fill = self
+            .registry
+            .apply_trade_update_for_accounting(&update, now);
+        if new_fill {
             // B3.7 (repro demo_v26): el log ahora incluye tipo + id de
             // cliente — sin ellos, un fill de cierre no-matcheado era
             // indiagnosticable desde el log (el caso BNBUSDT).
@@ -511,8 +514,6 @@ impl UserDataStreamer {
                 update.status
             );
         }
-        self.registry.apply_trade_update(&update, now);
-
         // B3.7 — CONTABILIDAD DE CIERRES POR BRACKET: todo fill de pierna de
         // salida (STOP_MARKET/TAKE_PROFIT_MARKET — convención-independiente)
         // produce un registro con PnL, fees pro-rata y slippage adverso vs el
@@ -527,7 +528,7 @@ impl UserDataStreamer {
         // firmado (wdTP_/wdSL_/<base>_TP/_SL/_TPR/_SLR) mantiene la
         // detección. Los reduce-only de emergencia (UUID simple) NO son
         // bracket: esos cierres los contabiliza el core.
-        let close_kind = if update.last_filled_qty > 0.0 {
+        let close_kind = if new_fill {
             if crate::trade_accounting::is_closing_bracket_order(&update.order_type) {
                 Some(crate::trade_accounting::trigger_kind(&update.order_type))
             } else {
@@ -617,7 +618,7 @@ impl UserDataStreamer {
             // (mismo evento, una sola vez por trade_id gracias al dedupe
             // del registry en apply_trade_update).
             self.sink.on_bracket_close(&cierre);
-        } else if update.last_filled_qty > 0.0
+        } else if new_fill
             && (update.client_order_id.starts_with("cL_")
                 || update.client_order_id.starts_with("cS_")
                 || update.client_order_id.starts_with("mc_")
