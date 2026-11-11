@@ -96,19 +96,19 @@ impl WittenModularInvariantsEngine {
         let norm_s = (2.0 / k_plus_2).sqrt();
 
         let mut s_matrix = [[0.0; WITTEN_MODULAR_DIM]; WITTEN_MODULAR_DIM];
-        for i in 0..WITTEN_MODULAR_DIM {
-            for j in 0..WITTEN_MODULAR_DIM {
+        for (i, row) in s_matrix.iter_mut().enumerate() {
+            for (j, cell) in row.iter_mut().enumerate() {
                 let arg = PI * ((i + 1) as f64) * ((j + 1) as f64) / k_plus_2;
-                s_matrix[i][j] = norm_s * arg.sin();
+                *cell = norm_s * arg.sin();
             }
         }
 
         let s_00 = s_matrix[0][0].max(1e-12);
         let mut quantum_dims = [0.0; WITTEN_MODULAR_DIM];
         let mut sum_d2 = 0.0;
-        for j in 0..WITTEN_MODULAR_DIM {
-            quantum_dims[j] = s_matrix[0][j] / s_00;
-            sum_d2 += quantum_dims[j] * quantum_dims[j];
+        for (j, dim) in quantum_dims.iter_mut().enumerate() {
+            *dim = s_matrix[0][j] / s_00;
+            sum_d2 += *dim * *dim;
         }
         let total_q_dim = sum_d2.sqrt();
 
@@ -116,9 +116,9 @@ impl WittenModularInvariantsEngine {
         // y carga central c = 3k / (k+2)
         let central_charge = (3.0 * k) / k_plus_2;
         let mut conformal_weights = [0.0; WITTEN_MODULAR_DIM];
-        for j in 0..WITTEN_MODULAR_DIM {
+        for (j, weight) in conformal_weights.iter_mut().enumerate() {
             let spin = (j as f64) * 0.50;
-            conformal_weights[j] = (spin * (spin + 1.0)) / k_plus_2;
+            *weight = (spin * (spin + 1.0)) / k_plus_2;
         }
 
         Self {
@@ -191,8 +191,8 @@ impl WittenModularInvariantsEngine {
         // 3. Proyección de la matriz modular S ponderada:
         // Tr_eff(S) = \sum_i state_i * S_{ii}
         let mut raw_trace = 0.0;
-        for i in 0..WITTEN_MODULAR_DIM {
-            raw_trace += state_weights[i] * self.s_matrix[i][i].abs();
+        for (i, weight) in state_weights.iter().enumerate() {
+            raw_trace += *weight * self.s_matrix[i][i].abs();
         }
         self.smoothed_trace = (1.0 - self.config.decay_rate) * self.smoothed_trace
             + self.config.decay_rate * raw_trace;
@@ -201,9 +201,9 @@ impl WittenModularInvariantsEngine {
         // 4. Giro de Dehn T y fase topológica \theta_T
         // \theta_T = \sum_j state_j * 2\pi (h_j - c/24)
         let mut instant_phase = 0.0;
-        for j in 0..WITTEN_MODULAR_DIM {
+        for (j, weight) in state_weights.iter().enumerate() {
             let phase_j = 2.0 * PI * (self.conformal_weights[j] - self.central_charge / 24.0);
-            instant_phase += state_weights[j] * phase_j;
+            instant_phase += *weight * phase_j;
         }
         let dehn_twist_phase = instant_phase.clamp(-PI, PI);
 
