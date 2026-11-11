@@ -642,3 +642,88 @@ Límites declarados:
   queda declarado.
 - RB-V1c: una ablación contrafactual de verdad (AIPW), para cuando haya
   operaciones reales con las que compararla.
+
+## 13. RB-V1c — promesa frente a realidad: la puerta de EV del riesgo (2026-11-10)
+
+**Diagnóstico.** Sale de la lectura del código; las cintas lo confirman.
+1. **Suelo del stop.** `MAX_FRICTION_SHARE_OF_RISK = 0.65` (`genome.rs`) fija
+   `sl ≥ f/0,65`, unos 15,4 pb con la fricción de 0,1 %. Su propio comentario
+   dice que «es una política elegida, no una constante física». La fricción
+   puede ser el 65 % del stop, y una operación que vence sin moverse cobra
+   R ≈ −f/sl ≈ −0,65.
+2. **Geometría.** `compute_tp_sl` fija `TP = SL·min_rr_for(0,40, f, sl)`. Con
+   f/sl = 0,65 sale RR = 1,5 + 1,625 = 3,1. El stop es `k·σ(τ)`, con k ≈ 1.
+   Para una difusión sin deriva en el horizonte τ:
+   - P(tocar el SL a 1σ antes de τ) ≈ 2·(1 − Φ(1)) ≈ 32 %;
+   - P(tocar el TP a 3,1σ) ≈ 0,2 %;
+   - el ~68 % restante sale por τ.
+3. **Puerta de EV.** `expected_value_pct = p·TP − (1−p)·SL`, con p la
+   confianza calibrada de DIRECCIÓN (0,5 en la sonda). Tiene dos fallos:
+   - es un modelo binario que ignora las salidas por τ;
+   - confunde «acertar la dirección» con «tocar el TP antes que el SL».
+
+   La probabilidad de primer toque (`probabilidad_tocar_sl_antes_de_tp`) se
+   calcula, pero desde CL-100 sólo es telemetría.
+
+   Ejemplo, la sonda (p = 0,5 y TP = 3,1·SL): promete +0,45 R netos y las
+   cintas dan ≈ −0,6 R.
+
+**Qué cambia** (sólo observa):
+- `RiskEngine::promesa_evaluada(coin)` publica el EV bruto de la puerta.
+  Se borra al empezar cada evaluación y se fija tras calcularlo.
+- `SombraVetos` registra la promesa con cada intención y la convierte a R
+  neto con la misma fricción y el mismo stop con que el libro mide lo
+  realizado.
+- `LibroSombra` acumula por fuente la brecha realizado − prometido y un
+  e-proceso de Ville sobre `x = (r − promesa)/ancho`. La promesa es fija al
+  registrar, así que la brecha conserva el ancho de r.
+  - `veredicto_promesa` dice «PROMETE DE MÁS» o «promete de menos».
+  - Usa el mismo α por cola que los veredictos de lo vetado, como familia
+    aparte: el error total de las dos familias es ≤ 10 %.
+- `EProcesoVille` se extrae como estructura reutilizable. También servirá
+  para la certificación viva Demo → Producción del mandato §31.4.
+
+**Certificación.**
+- **Contratos:**
+  - audit: QS-R4 9/9, Ville 5/5 (mismos valores bit a bit tras el refactor) y
+    promesa 4/4. Cubren la forma cerrada, la promesa optimista certificada en
+    n = 13 exacto, cero falsos con una promesa calibrada mirando en cada
+    resolución, y la validación de entradas;
+  - riesgo: la orden validada promete exactamente 0,9·0,02 − 0,1·0,01 = 0,017;
+    un rechazo por confianza, anterior al EV, no promete nada;
+  - núcleo: conversión a R y aviso al cambiar el veredicto de la promesa.
+- **Mutaciones:** 5/5 detectadas:
+  - M1 (brecha con el signo cambiado): 2 pruebas;
+  - M2 (una intención sin promesa cuenta como promesa 0): 2;
+  - M3 (promesa a R sin descontar la fricción): 1;
+  - M4 (la promesa no se borra al empezar): 1;
+  - M5 (promesa del doble): 1.
+- **Estilo:** clippy y rustfmt limpios en mis archivos y en las regiones tocadas del núcleo y del riesgo.
+- **Replays de cinta real:** las mismas 8 ventanas (BTC 31-08-2026 13:39→23:59 UTC; ETH
+  17:42→23:59 UTC). Detalle en
+  `docs/audit/rb_v1c_certificacion_promesa_2026-11-10.txt`.
+  - **ML-GATE sin modelo** (10 intenciones con promesa): el riesgo prometió de
+    media **+0,89 R** y se realizaron **−0,71 R**, una brecha de ≈ −1,6 R.
+  - **Consejo** (2): promesa +0,37 R frente a −0,31 R realizados.
+  - **Rango:** en las 12 intenciones con promesa, prometió entre +0,37 y +1,05 R
+    y se realizaron entre −0,31 y −1,30 R.
+  - **`riesgo:confianza`:** no lleva promesa, porque se juzga antes del EV.
+  - **Evidencia:** la mayor es e^0,64, lejos del umbral e^6,1. Con una brecha de
+    este tamaño (x ≈ −0,4), el veredicto «PROMETE DE MÁS» llegaría hacia
+    n ≈ 25-30 resoluciones: en la Demo, cuestión de horas.
+- **Pureza A/B:** huella idéntica bit a bit entre `main` 0a365893e (con RB-V1b, sin RB-V1c) y la
+  rama, en BTC v6, donde la rama registró 8 intenciones de tres fuentes (5 con
+  promesa): 1 operación, `net_pnl` 0xbfd35817b2277730 y `final_capital`
+  0x408f3d94fd09bb11 en las dos.
+
+**Propuesta RB-E1** (cambia decisiones: requiere el consejo y la evidencia de
+la Demo).
+- Sustituir la puerta binaria por el EV de triple barrera bajo el modelo:
+  - deriva de la señal (`μ√τ/σ = Φ⁻¹(q)` con q la probabilidad de dirección);
+  - σ de la ley de difusión;
+  - barreras TP y SL, y horizonte τ;
+  - probabilidades de primer toque y salida por τ de la serie de doble
+    barrera.
+- Derivar el suelo de fricción de «EV ≥ umbral», no de una cuota fija de 0,65.
+- Antes de proponerlo: el veredicto «PROMETE DE MÁS» en la Demo y una A/B en
+  las cintas.
