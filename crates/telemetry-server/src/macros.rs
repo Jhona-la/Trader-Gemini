@@ -765,10 +765,165 @@ mod tests_lg11 {
     }
 }
 
+// ─────────────────────────────────────────────────────────────────────────
+// H-06: marca de tiempo por línea en el log de la corrida.
+//
+// Reloj: `std::time::SystemTime` (reloj de pared / CLOCK_REALTIME). Se toma
+// `duration_since(UNIX_EPOCH).as_millis()` → entero `u128` de milisegundos.
+// NO se da formato de fecha (ni strftime ni asignación de cadena): el hot
+// path solo imprime dígitos. Apagado por defecto; se enciende con la variable
+// de entorno `TG_LOG_TS=1`. Con la variable apagada el camino es idéntico byte
+// a byte al de antes del cambio (mismo `write!` / `println!`, sin tocar el
+// reloj ni asignar).
+// ─────────────────────────────────────────────────────────────────────────
+
+/// H-06: milisegundos epoch (u128). Sin formateo de fecha.
+pub fn tg_epoch_ms() -> u128 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis())
+        .unwrap_or(0)
+}
+
+// 0 = sin inicializar, 1 = apagado, 2 = encendido. Se resuelve una sola vez
+// desde la variable de entorno; después es solo una carga atómica Relaxed.
+static TG_LOG_TS_STATE: std::sync::atomic::AtomicU8 = std::sync::atomic::AtomicU8::new(0);
+
+/// H-06: ¿va la marca de tiempo? Apagado por defecto (byte-identidad).
+pub fn tg_log_ts_habilitado() -> bool {
+    match TG_LOG_TS_STATE.load(std::sync::atomic::Ordering::Relaxed) {
+        2 => true,
+        _ => {
+            if TG_LOG_TS_STATE
+                .compare_exchange(0, 1, std::sync::atomic::Ordering::Relaxed, std::sync::atomic::Ordering::Relaxed)
+                .is_ok()
+            {
+                let on = std::env::var("TG_LOG_TS").map(|v| v == "1").unwrap_or(false);
+                TG_LOG_TS_STATE.store(if on { 2 } else { 1 }, std::sync::atomic::Ordering::Relaxed);
+            }
+            TG_LOG_TS_STATE.load(std::sync::atomic::Ordering::Relaxed) == 2
+        }
+    }
+}
+
+#[cfg(test)]
+fn tg_log_ts_state_reset(on: bool) {
+    TG_LOG_TS_STATE.store(if on { 2 } else { 1 }, std::sync::atomic::Ordering::Relaxed);
+}
+
+#[cfg(test)]
+mod tests_h06 {
+    use super::*;
+    use std::sync::{Arc, Mutex};
+    use crossbeam::queue::ArrayQueue;
+
+    // Serializa los tests de este módulo: comparten el estado global
+    // `TG_LOG_TS_STATE` y la cola `LOG_QUEUE`. Sin esto, dos tests podrían
+    // conmutar el reloj a la vez y hacer la aserción no determinista.
+    static H06_LOCK: Mutex<()> = Mutex::new(());
+
+    /// Cola local SIN el hilo GhostLogger: el `pop` del test no compite con
+    /// el drenado, así la prueba es determinista. Se usa con el filtro
+    /// `cargo test --lib tests_h06` (o `--test-threads=1`) para que ningún
+    /// otro módulo arranque el GhostLogger sobre la misma cola.
+    fn cola_limpia() -> &'static Arc<ArrayQueue<FixedLogBuffer>> {
+        let q = LOG_QUEUE.get_or_init(|| Arc::new(ArrayQueue::new(8_192)));
+        while q.pop().is_some() {}
+        q
+    }
+
+    #[test]
+    fn h06_sin_ts_la_salida_es_identica_byte_a_byte() {
+        let _g = H06_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        tg_log_ts_state_reset(false);
+        let q = cola_limpia();
+        crate::telemetry_log!("precio={:.4} sym={}", 12.3456, "BTCUSDT");
+        let msg = q.pop().expect("un mensaje en la cola");
+        assert_eq!(msg.as_str(), "precio=12.3456 sym=BTCUSDT");
+        assert!(!msg.as_str().starts_with("[ts="));
+    }
+
+    #[test]
+    fn h06_con_ts_prefija_epoch_ms() {
+        let _g = H06_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        tg_log_ts_state_reset(true);
+        let q = cola_limpia();
+        crate::telemetry_log!("x={}", 7);
+        let s = q.pop().expect("un mensaje").as_str().to_string();
+        assert!(s.starts_with("[ts="), "debe empezar con [ts=: {s}");
+        let rest = s.strip_prefix("[ts=").unwrap();
+        let (ts_digits, resto) = rest.split_once("] ").expect("formato [ts=NNN] msg");
+        assert!(
+            ts_digits.chars().all(|c| c.is_ascii_digit()),
+            "ts son ms epoch: {ts_digits}"
+        );
+        assert_eq!(resto, "x=7", "el resto es el mensaje original");
+    }
+
+    #[test]
+    fn h06_err_con_ts_prefija_epoch_ms() {
+        let _g = H06_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        tg_log_ts_state_reset(true);
+        let q = cola_limpia();
+        crate::telemetry_err!("fallo {}", "X");
+        let s = q.pop().expect("un mensaje").as_str().to_string();
+        assert!(s.starts_with("[ts="), "err debe llevar ts: {s}");
+        assert!(s.contains("⚠️ ERROR: "), "err conserva su marca: {s}");
+        assert!(s.ends_with("fallo X"), "resto original: {s}");
+    }
+
+    #[test]
+    fn h06_costo_por_linea_medible() {
+        let _g = H06_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        // Sin GhostLogger: las líneas se acumulan en la cola acotada
+        // (force_push descarta lo más antiguo) y no inundan stdout.
+        let q = cola_limpia();
+        // Calienta cachés y predice ramas antes de medir.
+        tg_log_ts_state_reset(false);
+        for i in 0..1_000u32 {
+            crate::telemetry_log!("n={} p={:.3}", i, i as f64 * 0.5);
+        }
+        while q.pop().is_some() {}
+        let t0 = std::time::Instant::now();
+        for i in 0..20_000u32 {
+            crate::telemetry_log!("n={} p={:.3}", i, i as f64 * 0.5);
+        }
+        let off_ns = t0.elapsed().as_nanos() as f64 / 20_000.0;
+        tg_log_ts_state_reset(true);
+        while q.pop().is_some() {}
+        let t1 = std::time::Instant::now();
+        for i in 0..20_000u32 {
+            crate::telemetry_log!("n={} p={:.3}", i, i as f64 * 0.5);
+        }
+        let on_ns = t1.elapsed().as_nanos() as f64 / 20_000.0;
+        eprintln!(
+            "H-06 costo/linea: apagado={:.1} ns, encendido={:.1} ns (reloj SystemTime epoch-ms)",
+            off_ns, on_ns
+        );
+        // Ambos caminos deben quedarse en un orden de magnitud razonable (sin
+        // regresión catastrófica). NO se compara ON>=OFF: el ruido de medición
+        // supera el delta real (~decenas de ns) en builds optimizados.
+        assert!(off_ns < 100_000.0, "apagado sospechosamente lento: {off_ns}");
+        assert!(on_ns < 100_000.0, "encendido sospechosamente lento: {on_ns}");
+    }
+}
+
 #[macro_export]
 macro_rules! telemetry_log {
     ($($arg:tt)*) => {{
-        if let Some(queue) = $crate::macros::LOG_QUEUE.get() {
+        // H-06: con TS apagado (por defecto) el camino es idéntico byte a byte
+        // al original; no se lee el reloj ni se asigna.
+        if $crate::macros::tg_log_ts_habilitado() {
+            if let Some(queue) = $crate::macros::LOG_QUEUE.get() {
+                use std::fmt::Write;
+                let mut buf = $crate::macros::FixedLogBuffer::new();
+                let _ = write!(&mut buf, "[ts={}] ", $crate::macros::tg_epoch_ms());
+                let _ = write!(&mut buf, $($arg)*);
+                let _ = queue.force_push(buf);
+            } else {
+                println!("[ts={}] {}", $crate::macros::tg_epoch_ms(), format!($($arg)*));
+            }
+        } else if let Some(queue) = $crate::macros::LOG_QUEUE.get() {
             use std::fmt::Write;
             let mut buf = $crate::macros::FixedLogBuffer::new();
             let _ = write!(&mut buf, $($arg)*);
@@ -782,7 +937,18 @@ macro_rules! telemetry_log {
 #[macro_export]
 macro_rules! telemetry_err {
     ($($arg:tt)*) => {{
-        if let Some(queue) = $crate::macros::LOG_QUEUE.get() {
+        // H-06: con TS apagado el camino es idéntico al original.
+        if $crate::macros::tg_log_ts_habilitado() {
+            if let Some(queue) = $crate::macros::LOG_QUEUE.get() {
+                use std::fmt::Write;
+                let mut buf = $crate::macros::FixedLogBuffer::new();
+                let _ = write!(&mut buf, "[ts={}] ⚠️ ERROR: ", $crate::macros::tg_epoch_ms());
+                let _ = write!(&mut buf, $($arg)*);
+                let _ = queue.force_push(buf);
+            } else {
+                eprintln!("[ts={}] ⚠️ ERROR: {}", $crate::macros::tg_epoch_ms(), format!($($arg)*));
+            }
+        } else if let Some(queue) = $crate::macros::LOG_QUEUE.get() {
             use std::fmt::Write;
             let mut buf = $crate::macros::FixedLogBuffer::new();
             let _ = write!(&mut buf, "⚠️ ERROR: ");
