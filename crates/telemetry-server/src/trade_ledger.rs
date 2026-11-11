@@ -266,11 +266,19 @@ impl TradeLedger {
 /// Un valor finito (incluido el cero medido) se conserva; `NaN`/`±Inf`
 /// se publica como ausencia explícita.
 fn finite_or_absent(value: f64) -> f64 {
-    if value.is_finite() { value } else { f64::NAN }
+    if value.is_finite() {
+        value
+    } else {
+        f64::NAN
+    }
 }
 
 fn measured_opt(value: f64) -> Option<f64> {
-    if value.is_finite() { Some(value) } else { None }
+    if value.is_finite() {
+        Some(value)
+    } else {
+        None
+    }
 }
 
 // ===========================================================================
@@ -843,4 +851,226 @@ pub fn pnl_panel_from_env() -> PnlPanelLines {
         Err(_) => return PnlPanelLines::unavailable(),
     };
     pnl_panel_from_ledger_jsonl(&text, ReportPeriod::new(start, end), capital, real)
+}
+
+// ===========================================================================
+// M1 F6 — Puente del registro (trade_ledger) desde el income de la Demo.
+//
+// Adaptador de income a ledger + aserto de reconciliación: el bruto
+// (REALIZED_PNL), la comisión (COMMISSION) y el funding (FUNDING_FEE) del
+// registro deben coincidir con los del exchange. Sin filas de un tipo =>
+// bruto/comisión quedan N/D (NaN); funding sin filas FUNDING_FEE => 0.0 medido
+// (no hubo registros en la ventana). Sin cruce de crate: el income entra como
+// `IncomeRow` local; la integración con `execution-engine::IncomeEntry` es un
+// paso posterior. Nada en el hilo crítico.
+// ===========================================================================
+
+/// Fila de income del exchange ya recogida (modelo mínimo, sin dependencia de
+/// `execution-engine`). La integración real convierte `IncomeEntry` en esto.
+#[derive(Debug, Clone, PartialEq)]
+pub struct IncomeRow {
+    pub symbol: String,
+    pub income_type: String,
+    pub income: f64,
+    pub time_ms: u64,
+    pub tran_id: u64,
+    pub trade_id: String,
+    pub asset: String,
+}
+
+/// Clave de operación: (símbolo, trade_id). REALIZED_PNL y COMMISSION de la
+/// misma operación comparten `trade_id` en el exchange; si está vacío se usa
+/// `tran_id`.
+fn operation_key(row: &IncomeRow) -> (String, String) {
+    let op = if row.trade_id.trim().is_empty() {
+        row.tran_id.to_string()
+    } else {
+        row.trade_id.clone()
+    };
+    (row.symbol.clone(), op)
+}
+
+/// Suma finita; el primer valor ausente deja el acumulador en ese valor (NaN si
+/// aún no hubo filas de ese tipo). Desborde => NaN. Un valor no finito se ignora.
+fn add_finite(acc: f64, x: f64) -> f64 {
+    if !x.is_finite() {
+        return acc;
+    }
+    let s = if acc.is_nan() { x } else { acc + x };
+    if s.is_finite() {
+        s
+    } else {
+        f64::NAN
+    }
+}
+
+/// Igual que `add_finite` pero el acumulador arranca en 0.0 (medido) para
+/// funding: sin filas FUNDING_FEE => 0.0, no NaN.
+fn add_finite_from_zero(acc: f64, x: f64) -> f64 {
+    if !x.is_finite() {
+        return acc;
+    }
+    let s = acc + x;
+    if s.is_finite() {
+        s
+    } else {
+        f64::NAN
+    }
+}
+
+/// Une los importes de un grupo de filas de income en los de un asiento.
+/// `slippage` no viaja en el income => `NaN` (N/D); el neto del asiento queda
+/// `NaN` y la reconciliación F6 no lo compara.
+fn group_amounts(rows: &[&IncomeRow]) -> (f64, f64, f64, u64) {
+    let mut gross = f64::NAN;
+    let mut fees = f64::NAN;
+    let mut funding = 0.0f64;
+    let mut time_ms = 0u64;
+    for r in rows {
+        time_ms = time_ms.max(r.time_ms);
+        match r.income_type.as_str() {
+            "REALIZED_PNL" => gross = add_finite(gross, r.income),
+            "COMMISSION" => fees = add_finite(fees, r.income),
+            "FUNDING_FEE" => funding = add_finite_from_zero(funding, r.income),
+            _ => {}
+        }
+    }
+    (gross, fees, funding, time_ms)
+}
+
+/// Adaptador income→ledger: agrupa las filas por operación y construye un
+/// `TradeLedger` con un asiento por operación. Fail-closed por campo: un ciclo
+/// sin REALIZED_PNL deja el bruto de ese asiento en N/D.
+pub fn ledger_from_income(rows: &[IncomeRow]) -> TradeLedger {
+    use std::collections::BTreeMap;
+    let mut groups: BTreeMap<(String, String), Vec<IncomeRow>> = BTreeMap::new();
+    for r in rows {
+        groups.entry(operation_key(r)).or_default().push(r.clone());
+    }
+    let mut ledger = TradeLedger::new();
+    for (key, group) in groups {
+        let refs: Vec<&IncomeRow> = group.iter().collect();
+        let (gross, fees, funding, time_ms) = group_amounts(&refs);
+        let timestamp_ns = time_ms.saturating_mul(1_000_000);
+        ledger.append(TradeLedgerEntry::from_measured(
+            timestamp_ns,
+            key.0,
+            gross,
+            fees,
+            funding,
+            f64::NAN, // slippage no viaja en income => N/D
+        ));
+    }
+    ledger
+}
+
+/// Totales autoritativos del exchange a partir de las mismas filas de income.
+/// `gross = Σ REALIZED_PNL`, `commission = Σ COMMISSION`, `funding = Σ
+/// FUNDING_FEE` (0.0 si no hubo filas; bruto/comisión NaN si faltan).
+pub fn exchange_income_totals(rows: &[IncomeRow]) -> LedgerTotals {
+    let mut gross = f64::NAN;
+    let mut commission = f64::NAN;
+    let mut funding = 0.0f64;
+    for r in rows {
+        match r.income_type.as_str() {
+            "REALIZED_PNL" => gross = add_finite(gross, r.income),
+            "COMMISSION" => commission = add_finite(commission, r.income),
+            "FUNDING_FEE" => funding = add_finite_from_zero(funding, r.income),
+            _ => {}
+        }
+    }
+    LedgerTotals {
+        operations: rows.len(),
+        gross_pnl: gross,
+        fees: commission,
+        funding,
+        slippage: f64::NAN,
+        net_pnl: f64::NAN,
+    }
+}
+
+/// Campo de la reconciliación F6.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ReconcileField {
+    Gross,
+    Commission,
+    Funding,
+}
+
+/// Una discrepancia detectada por `reconcile_ledger_vs_income`.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ReconcileMismatch {
+    pub field: ReconcileField,
+    pub ledger: f64,
+    pub exchange: f64,
+}
+
+/// Aserto F6: bruto / comisión / funding del registro == los del exchange.
+///
+/// Tolerancia `eps` absoluta. Ambos lados NaN (N/D en ambos) => coinciden;
+/// NaN vs finito => discrepancia. Registro vacío (totals ausentes) vs exchange
+/// con datos => 3 discrepancias. Exchange vacío => 0 discrepancias (ambos
+/// ausentes).
+pub fn reconcile_ledger_vs_income(
+    ledger: &TradeLedger,
+    exchange_rows: &[IncomeRow],
+    eps: f64,
+) -> Result<(), Vec<ReconcileMismatch>> {
+    let ledger_t = ledger.totals();
+    let exchange_t = exchange_income_totals(exchange_rows);
+    let mut mismatches = Vec::new();
+    check_field(
+        ReconcileField::Gross,
+        ledger_t.gross_pnl,
+        exchange_t.gross_pnl,
+        eps,
+        &mut mismatches,
+    );
+    check_field(
+        ReconcileField::Commission,
+        ledger_t.fees,
+        exchange_t.fees,
+        eps,
+        &mut mismatches,
+    );
+    check_field(
+        ReconcileField::Funding,
+        ledger_t.funding,
+        exchange_t.funding,
+        eps,
+        &mut mismatches,
+    );
+    if mismatches.is_empty() {
+        Ok(())
+    } else {
+        Err(mismatches)
+    }
+}
+
+fn check_field(
+    field: ReconcileField,
+    ledger: f64,
+    exchange: f64,
+    eps: f64,
+    out: &mut Vec<ReconcileMismatch>,
+) {
+    let both_absent = !ledger.is_finite() && !exchange.is_finite();
+    if both_absent {
+        return;
+    }
+    if !ledger.is_finite() || !exchange.is_finite() {
+        out.push(ReconcileMismatch {
+            field,
+            ledger,
+            exchange,
+        });
+        return;
+    }
+    if (ledger - exchange).abs() > eps {
+        out.push(ReconcileMismatch {
+            field,
+            ledger,
+            exchange,
+        });
+    }
 }
