@@ -12,7 +12,7 @@
 //! - **CÓMO:** Verificación de 5 hipótesis formales (c1 a c5) cubriendo dinámica de cushion,
 //!   desaceleración de riesgo asintótica, convergencia del E-proceso de Ville y certificación OOS.
 //! - **CUÁNDO:** Previo al lanzamiento del bot en producción y en cada ciclo de auditoría forense.
-//! - **DÓNDE:** `crates/risk-engine/tests/f30_001_ville_grossman_ignition_contract.rs`.
+//! - **DÓNDE:** `crates/risk-engine/tests/suite_fisica/f30_001_ville_grossman_ignition_contract.rs`.
 //! - **QUIÉN:** Consejo Colegiado (Roles 1: Arquitecto, 2: Quant Dev, 3: Risk Manager, 5: QA Engineer).
 
 use risk_engine::ville_grossman_ignition_gate::{

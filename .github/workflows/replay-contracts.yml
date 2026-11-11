@@ -89,7 +89,9 @@ jobs:
         run: |
           cargo +nightly-2026-06-30 test -p data-pipeline --locked --test parser_input_contract -- --test-threads=1
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          cargo +nightly-2026-06-30 test -p risk-engine --locked --test nonfinite_admission_contract --test c07_ruin_composition_contract --test observed_zero_capital_contract -- --test-threads=1
+          cargo +nightly-2026-06-30 test -p risk-engine --locked --test suite_admision -- --test-threads=1 nonfinite_admission_contract::
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cargo +nightly-2026-06-30 test -p risk-engine --locked --test c07_ruin_composition_contract --test observed_zero_capital_contract -- --test-threads=1
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           cargo +nightly-2026-06-30 test -p backtest-engine --locked --test oos_context_contract -- --test-threads=1
 

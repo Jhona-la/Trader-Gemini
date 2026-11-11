@@ -54,7 +54,7 @@ const ASIENTOS_CON_VETO: [&str; 6] = [
 fn cf3_v_logic_007_describe_rej_confidence_del_riesgo() {
     let e = buscar("V-LOGIC-007").expect("V-LOGIC-007 existe");
     let test = e.test.expect("V-LOGIC-007 pinea un test");
-    let src = include_str!("veto_logic_contracts.rs");
+    let src = include_str!("../veto_logic_contracts.rs");
     let ini = src
         .find(&format!("fn {test}("))
         .expect("el test pineado está en veto_logic_contracts.rs");

@@ -56,7 +56,7 @@ fn test_all_17_rejection_slots_map_to_named_constants_with_exact_parity() {
 
 #[test]
 fn test_zero_raw_magic_number_rejections_in_risk_engine_source() {
-    let src = include_str!("../src/lib.rs");
+    let src = include_str!("../../src/lib.rs");
     // Verificar que no queden llamadas a return rej(0) .. return rej(16) con números literales
     for i in 0..REJECT_SLOTS {
         let pattern_space = format!("return rej({});", i);
