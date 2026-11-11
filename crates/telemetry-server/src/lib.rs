@@ -9,6 +9,7 @@ use axum::{
 };
 pub mod aipw_causal_governor;
 pub mod causal_attribution;
+pub mod trade_ledger;
 pub mod estrangulador;
 pub mod flight_recorder;
 pub mod forensic_auditor;
