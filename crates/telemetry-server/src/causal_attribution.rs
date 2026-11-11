@@ -170,17 +170,20 @@ impl CausalAttributionEngine {
         total_gross_pnl: f64,
         total_fees: f64,
     ) -> CausalMetaAnalyticsReport {
-        let safe_gross = if total_gross_pnl.is_finite() {
+        // Disponibilidad independiente: un dato invalido queda ausente (NaN) en su campo,
+        // nunca se convierte en 0.0. Un cero medido sigue siendo 0.0.
+        let gross_valid = total_gross_pnl.is_finite();
+        let fees_valid = total_fees.is_finite() && total_fees >= 0.0;
+        let gross = if gross_valid {
             total_gross_pnl
         } else {
-            0.0
+            f64::NAN
         };
-        let safe_fees = if total_fees.is_finite() && total_fees >= 0.0 {
-            total_fees
-        } else {
-            0.0
-        };
-        let safe_net = safe_gross - safe_fees;
+        let fees = if fees_valid { total_fees } else { f64::NAN };
+        let net_candidate = gross - fees;
+        // Si gross o fees faltan, o la resta desborda, el neto queda ausente.
+        let net_valid = gross_valid && fees_valid && net_candidate.is_finite();
+        let net = if net_valid { net_candidate } else { f64::NAN };
 
         // Pesos lineales base w_i de cada pilar en la función de juego continuo
         let base_weights = [0.25, 0.20, 0.15, 0.15, 0.15, 0.10];
@@ -198,28 +201,34 @@ impl CausalAttributionEngine {
         // Cálculo de valor continuo de Aumann-Shapley en forma cerrada:
         // phi_i = x_i * [ w_i + 0.5 * sum_{j != i} gamma_ij * x_j ]
         let mut unnormalized_phi = [0.0; SUBSYSTEM_COUNT];
+        // Actividad no finita cuenta como inactiva (clamp de NaN devuelve NaN).
+        let activity = activity_vector.map(|x| {
+            if x.is_finite() {
+                x.clamp(0.0, 1.0)
+            } else {
+                0.0
+            }
+        });
         for i in 0..SUBSYSTEM_COUNT {
-            let x_i = activity_vector[i].clamp(0.0, 1.0);
+            let x_i = activity[i];
             let mut cross_sum = 0.0;
             for j in 0..SUBSYSTEM_COUNT {
                 if i != j {
-                    cross_sum += gamma[i][j] * activity_vector[j].clamp(0.0, 1.0);
+                    cross_sum += gamma[i][j] * activity[j];
                 }
             }
             unnormalized_phi[i] = x_i * (base_weights[i] + 0.5 * cross_sum);
         }
 
         let sum_raw: f64 = unnormalized_phi.iter().sum();
-        let scale = if sum_raw.abs() > 1e-12 {
-            1.0 / sum_raw
-        } else {
-            1.0 / (SUBSYSTEM_COUNT as f64)
-        };
 
-        // Proporciones normalizadas exactas que suman 1.0
-        let mut shares = [0.0; SUBSYSTEM_COUNT];
-        for i in 0..SUBSYSTEM_COUNT {
-            shares[i] = unnormalized_phi[i] * scale;
+        // Proporciones normalizadas exactas que suman 1.0. Con actividad nula o degenerada
+        // se reparte de forma uniforme para no perder fees ni PnL en la atribucion.
+        let mut shares = [1.0 / (SUBSYSTEM_COUNT as f64); SUBSYSTEM_COUNT];
+        if sum_raw.is_finite() && sum_raw > 1e-12 {
+            for i in 0..SUBSYSTEM_COUNT {
+                shares[i] = unnormalized_phi[i] / sum_raw;
+            }
         }
 
         // Partición de Coaliciones de Owen:
@@ -233,19 +242,19 @@ impl CausalAttributionEngine {
         let mut owen_values = [0.0; SUBSYSTEM_COUNT];
         for i in 0..4 {
             let intra_weight = shares[i] / coalition_1_share.max(1e-12);
-            owen_values[i] = safe_net * coalition_1_share * intra_weight;
+            owen_values[i] = net * coalition_1_share * intra_weight;
         }
-        owen_values[4] = safe_net * coalition_2_share;
-        owen_values[5] = safe_net * coalition_3_share;
+        owen_values[4] = net * coalition_2_share;
+        owen_values[5] = net * coalition_3_share;
 
         let mut attributions = Vec::with_capacity(SUBSYSTEM_COUNT);
         let mut any_alarm = false;
         let mut quarantined_count = 0;
 
         for i in 0..SUBSYSTEM_COUNT {
-            let as_pnl = safe_net * shares[i];
-            let attributed_fee = safe_fees * shares[i];
-            let gross_pnl_i = safe_gross * shares[i];
+            let as_pnl = net * shares[i];
+            let attributed_fee = fees * shares[i];
+            let gross_pnl_i = gross * shares[i];
 
             let c = cycles[i].max(1);
             let m = l1d_misses[i].max(1);
@@ -255,8 +264,15 @@ impl CausalAttributionEngine {
             let delta_ev = as_pnl;
             let silicon_eta = (delta_ev * 1e9) / (c as f64 * m as f64);
 
-            // Actualización del detector SRP con el PnL normalizado atribuido
-            let (srp_val, is_alarm) = self.srp_detectors[i].update(as_pnl);
+            // Actualización del detector SRP con el PnL normalizado atribuido. Sin neto
+            // valido no hay observacion: se lee el estado vigente sin llamar a update().
+            let (srp_val, is_alarm) = if net_valid {
+                self.srp_detectors[i].update(as_pnl)
+            } else {
+                // La cuarentena es un estado: se informa la vigente, sin crear una nueva.
+                let d = &self.srp_detectors[i];
+                (d.r_statistic, d.r_statistic >= d.threshold)
+            };
             if is_alarm {
                 any_alarm = true;
                 quarantined_count += 1;
@@ -267,8 +283,10 @@ impl CausalAttributionEngine {
                 index: i,
                 aumann_shapley_pnl: as_pnl,
                 owen_coalition_pnl: owen_values[i],
-                gross_share_pct: if safe_gross.abs() > 1e-12 {
-                    (gross_pnl_i / safe_gross) * 100.0
+                gross_share_pct: if !gross_valid {
+                    f64::NAN
+                } else if gross.abs() > 1e-12 {
+                    (gross_pnl_i / gross) * 100.0
                 } else {
                     shares[i] * 100.0
                 },
@@ -289,9 +307,9 @@ impl CausalAttributionEngine {
 
         CausalMetaAnalyticsReport {
             timestamp_ns,
-            total_gross_pnl: safe_gross,
-            total_net_pnl: safe_net,
-            total_fees: safe_fees,
+            total_gross_pnl: gross,
+            total_net_pnl: net,
+            total_fees: fees,
             efficiency_sum: attributions.iter().map(|a| a.silicon_efficiency_eta).sum(),
             attributions,
             srp_alarm_active: any_alarm,
@@ -395,5 +413,191 @@ mod tests {
             eta_fast,
             eta_slow
         );
+    }
+
+    // ---- V43 Task 2: ausencia financiera sin contaminar atribucion ni SRP ----
+    // Propuesta CLAUDE-COORD-20261110 sobre el plan V43 de KIMI-QUANT-SR-V43 y los tres
+    // Important de agent-85 (overflow neto, fees perdidos con actividad degenerada y estado SRP).
+
+    const ACT: [f64; SUBSYSTEM_COUNT] = [1.0, 0.8, 0.6, 0.5, 0.9, 0.7];
+    const CYC: [u64; SUBSYSTEM_COUNT] = [5000, 4200, 3100, 2800, 1500, 6000];
+    const MIS: [u64; SUBSYSTEM_COUNT] = [50, 40, 25, 20, 10, 70];
+
+    fn srp_snapshot(engine: &CausalAttributionEngine) -> Vec<(u64, u64)> {
+        engine
+            .srp_detectors
+            .iter()
+            .map(|d| (d.r_statistic.to_bits(), d.sample_count))
+            .collect()
+    }
+
+    #[test]
+    fn non_finite_gross_is_absence_not_a_fee_loss() {
+        for gross in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+            let mut engine = CausalAttributionEngine::new();
+            let r = engine.evaluate(&ACT, &CYC, &MIS, gross, 15.0);
+            assert!(
+                r.total_gross_pnl.is_nan(),
+                "gross {gross} debe quedar ausente"
+            );
+            assert!(
+                r.total_net_pnl.is_nan(),
+                "net con gross {gross} debe quedar ausente"
+            );
+            assert_eq!(r.total_fees, 15.0, "fees medidos se conservan");
+            let fees_sum: f64 = r.attributions.iter().map(|a| a.attributed_fees).sum();
+            assert!(
+                (fees_sum - 15.0).abs() < 1e-9,
+                "fees atribuidos {fees_sum} != 15"
+            );
+            for a in &r.attributions {
+                assert!(a.attributed_fees.is_finite());
+                assert!(a.aumann_shapley_pnl.is_nan());
+                assert!(a.owen_coalition_pnl.is_nan());
+                assert!(a.gross_share_pct.is_nan());
+                assert!(a.silicon_efficiency_eta.is_nan());
+                assert!(!a.is_quarantined);
+            }
+            assert!(r.efficiency_sum.is_nan());
+            assert!(!r.srp_alarm_active);
+            assert_eq!(r.quarantined_count, 0);
+        }
+    }
+
+    #[test]
+    fn invalid_fees_do_not_create_free_profit() {
+        for fees in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY, -1.0] {
+            let mut engine = CausalAttributionEngine::new();
+            let r = engine.evaluate(&ACT, &CYC, &MIS, 150.0, fees);
+            assert_eq!(r.total_gross_pnl, 150.0, "gross medido se conserva");
+            assert!(r.total_fees.is_nan(), "fees {fees} deben quedar ausentes");
+            assert!(
+                r.total_net_pnl.is_nan(),
+                "sin fees validos no hay net (no 150 gratis)"
+            );
+            for a in &r.attributions {
+                assert!(a.attributed_fees.is_nan());
+                assert!(a.aumann_shapley_pnl.is_nan());
+                assert!(a.owen_coalition_pnl.is_nan());
+                assert!(a.gross_share_pct.is_finite());
+                assert!(!a.is_quarantined);
+            }
+            assert_eq!(r.quarantined_count, 0);
+        }
+    }
+
+    #[test]
+    fn measured_zero_gross_and_fees_remain_zero() {
+        let mut engine = CausalAttributionEngine::new();
+        let r = engine.evaluate(&ACT, &CYC, &MIS, 0.0, 0.0);
+        assert_eq!(r.total_gross_pnl, 0.0);
+        assert_eq!(r.total_fees, 0.0);
+        assert_eq!(r.total_net_pnl, 0.0);
+        for a in &r.attributions {
+            assert_eq!(a.attributed_fees, 0.0);
+            assert_eq!(a.aumann_shapley_pnl, 0.0);
+            assert_eq!(a.owen_coalition_pnl, 0.0);
+            assert!(a.gross_share_pct.is_finite());
+        }
+    }
+
+    #[test]
+    fn net_overflow_is_absence_not_infinite_loss() {
+        let mut engine = CausalAttributionEngine::new();
+        let r = engine.evaluate(&ACT, &CYC, &MIS, -f64::MAX, f64::MAX);
+        assert_eq!(r.total_gross_pnl, -f64::MAX, "gross finito se conserva");
+        assert_eq!(r.total_fees, f64::MAX, "fees finitos se conservan");
+        assert!(
+            r.total_net_pnl.is_nan(),
+            "net desbordado debe ser ausencia, no -inf"
+        );
+        for a in &r.attributions {
+            assert!(a.aumann_shapley_pnl.is_nan());
+            assert!(a.owen_coalition_pnl.is_nan());
+            assert!(!a.is_quarantined);
+        }
+        assert_eq!(r.quarantined_count, 0);
+    }
+
+    #[test]
+    fn degenerate_activity_keeps_fee_and_pnl_conservation() {
+        let casos: [[f64; SUBSYSTEM_COUNT]; 4] = [
+            [0.0; SUBSYSTEM_COUNT],
+            [1e-300; SUBSYSTEM_COUNT],
+            [f64::NAN; SUBSYSTEM_COUNT],
+            [f64::NAN, 0.0, f64::INFINITY, -1.0, f64::NEG_INFINITY, 0.0],
+        ];
+        for act in casos {
+            let mut engine = CausalAttributionEngine::new();
+            let r = engine.evaluate(&act, &CYC, &MIS, 150.0, 15.0);
+            let fees_sum: f64 = r.attributions.iter().map(|a| a.attributed_fees).sum();
+            let as_sum: f64 = r.attributions.iter().map(|a| a.aumann_shapley_pnl).sum();
+            let owen_sum: f64 = r.attributions.iter().map(|a| a.owen_coalition_pnl).sum();
+            assert!(
+                (fees_sum - 15.0).abs() < 1e-9,
+                "fees perdidos con actividad {act:?}: {fees_sum}"
+            );
+            assert!(
+                (as_sum - 135.0).abs() < 1e-9,
+                "AS {as_sum} != net con actividad {act:?}"
+            );
+            assert!(
+                (owen_sum - 135.0).abs() < 1e-9,
+                "Owen {owen_sum} != net con actividad {act:?}"
+            );
+            for a in &r.attributions {
+                assert!(a.net_share_pct.is_finite());
+                assert!(a.gross_share_pct.is_finite());
+            }
+        }
+    }
+
+    #[test]
+    fn invalid_net_does_not_mutate_srp_state() {
+        let mut engine = CausalAttributionEngine::new();
+        // Sembrar estado SRP real con perdidas medidas.
+        for _ in 0..5 {
+            engine.evaluate(&ACT, &CYC, &MIS, 10.0, 40.0);
+        }
+        let antes = srp_snapshot(&engine);
+        assert!(
+            antes
+                .iter()
+                .any(|(r, n)| f64::from_bits(*r) > 0.0 && *n == 5),
+            "SRP sembrado"
+        );
+        for (gross, fees) in [
+            (f64::NAN, 15.0),
+            (150.0, f64::NAN),
+            (150.0, -1.0),
+            (-f64::MAX, f64::MAX),
+        ] {
+            let r = engine.evaluate(&ACT, &CYC, &MIS, gross, fees);
+            assert_eq!(
+                srp_snapshot(&engine),
+                antes,
+                "SRP mutado con gross={gross} fees={fees}"
+            );
+            for ((a, (bits, _)), d) in r
+                .attributions
+                .iter()
+                .zip(antes.iter())
+                .zip(engine.srp_detectors.iter())
+            {
+                assert_eq!(
+                    a.srp_statistic.to_bits(),
+                    *bits,
+                    "el informe lee el estado SRP vigente"
+                );
+                assert_eq!(
+                    a.is_quarantined,
+                    d.r_statistic >= d.threshold,
+                    "cuarentena = estado vigente"
+                );
+            }
+        }
+        // Un dato valido posterior si actualiza el detector.
+        engine.evaluate(&ACT, &CYC, &MIS, 10.0, 40.0);
+        assert!(srp_snapshot(&engine).iter().all(|(_, n)| *n == 6));
     }
 }
