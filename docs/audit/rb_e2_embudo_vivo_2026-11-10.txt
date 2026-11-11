@@ -1,0 +1,49 @@
+# RB-E2 — embudo vivo sobre cintas reales (Codex RB, 2026-11-10)
+#
+# Núcleo de producción (GodEngineCore vía run_booktick_replay_with_observer), rama codex/rb-e2-embudo-vivo sobre
+# main 972297bf0. Genoma de referencia, omni neutro, sin modelos del roster (LG-23), capital 1000 USDT, warmup 500
+# registros (= 1000 eventos con entradas suprimidas: «pánico o calentamiento del host»), fricción de ida y vuelta
+# 0,1 %. Cintas data/BTCUSDT_AUG_REAL.bin y data/ETHUSDT_AUG_REAL.bin, ventanas de 100 000 registros desde el
+# final; cada registro produce un evento de libro (sin oportunidad de entrada) y uno de trade.
+# Línea 🔭 [EMBUDO] = acumulado de la ventana. Las intenciones con el libro plano son la población del embudo
+# unificado; las que llegan con la posición de la sonda abierta van aparte («fuera del embudo»).
+#
+# A. Ventanas
+RB-V1a · BTCUSDT · periodo 2026-08-31 20:06 UTC → 2026-08-31 23:59 UTC (3.9 h) · 100000 ticks · 356 s de replay
+  replay: 1 operaciones · PnL bruto -0.1224 / neto -0.2013 USDT · comisiones 0.0789 · ROI bruto -0.0122 % / neto -0.0201 % · WR bruto 0.0 % / neto 0.0 % · EV/op neto -0.20134 · Sharpe 0.000 · DD máx 0.0002
+  🔭 [EMBUDO] 14037 s · ticks 199998 (100499 bloqueados: el llamador no las permite (sólo libro 99499 · pánico o calentamiento del host 1000) 100499) · evaluaciones 99499 · sin convicción 0 · intenciones con el libro plano 76 (L 1 · C 75) → escudos: acondicionamiento espectral (X-016) 18 → sin ranura 0 → riesgo: admite 58, rechaza 0 (ninguno) → consejo 0 → ML-GATE 57 → margen 0 → aperturas 1 · sin permiso de fase 0 · con posición abierta (fuera del embudo): sin ranura 55, riesgo admite 0, rechaza 0 (ninguno) · CUELLO: ML-GATE (57) · acumulado: 199998 ticks (50.3 % bloqueados), 76 intenciones, 1 aperturas, cuello ML-GATE (57)
+
+RB-V1a · BTCUSDT · periodo 2026-08-31 17:57 UTC → 2026-08-31 20:06 UTC (2.1 h) · 100000 ticks · 345 s de replay
+  replay: 1 operaciones · PnL bruto -0.1224 / neto -0.2014 USDT · comisiones 0.0790 · ROI bruto -0.0122 % / neto -0.0201 % · WR bruto 0.0 % / neto 0.0 % · EV/op neto -0.20137 · Sharpe 0.000 · DD máx 0.0002
+  🔭 [EMBUDO] 7699 s · ticks 199998 (100499 bloqueados: el llamador no las permite (sólo libro 99499 · pánico o calentamiento del host 1000) 100499) · evaluaciones 99499 · sin convicción 0 · intenciones con el libro plano 152 (L 136 · C 16) → escudos: acondicionamiento espectral (X-016) 112 · anti-whiplash (D-463) 8 → sin ranura 0 → riesgo: admite 32, rechaza 0 (ninguno) → consejo 0 → ML-GATE 31 → margen 0 → aperturas 1 · sin permiso de fase 0 · con posición abierta (fuera del embudo): sin ranura 7, riesgo admite 0, rechaza 0 (ninguno) · CUELLO: escudo acondicionamiento espectral (X-016) (112) · acumulado: 199998 ticks (50.3 % bloqueados), 152 intenciones, 1 aperturas, cuello escudo acondicionamiento espectral (X-016) (112)
+
+RB-V1a · BTCUSDT · periodo 2026-08-31 16:25 UTC → 2026-08-31 17:57 UTC (1.5 h) · 100000 ticks · 334 s de replay
+  replay: 1 operaciones · PnL bruto -0.1224 / neto -0.2009 USDT · comisiones 0.0786 · ROI bruto -0.0122 % / neto -0.0201 % · WR bruto 0.0 % / neto 0.0 % · EV/op neto -0.20093 · Sharpe 0.000 · DD máx 0.0002
+  🔭 [EMBUDO] 5534 s · ticks 199998 (100499 bloqueados: el llamador no las permite (sólo libro 99499 · pánico o calentamiento del host 1000) 100499) · evaluaciones 99499 · sin convicción 0 · intenciones con el libro plano 312 (L 160 · C 152) → escudos: acondicionamiento espectral (X-016) 205 → sin ranura 0 → riesgo: admite 107, rechaza 0 (ninguno) → consejo 0 → ML-GATE 106 → margen 0 → aperturas 1 · sin permiso de fase 0 · con posición abierta (fuera del embudo): sin ranura 166, riesgo admite 0, rechaza 196 (sonda_ocupada 196) · CUELLO: escudo acondicionamiento espectral (X-016) (205) · acumulado: 199998 ticks (50.3 % bloqueados), 312 intenciones, 1 aperturas, cuello escudo acondicionamiento espectral (X-016) (205)
+
+RB-V1a · BTCUSDT · periodo 2026-08-31 15:09 UTC → 2026-08-31 16:25 UTC (1.3 h) · 100000 ticks · 355 s de replay
+  replay: 1 operaciones · PnL bruto -0.1218 / neto -0.2004 USDT · comisiones 0.0786 · ROI bruto -0.0122 % / neto -0.0200 % · WR bruto 0.0 % / neto 0.0 % · EV/op neto -0.20040 · Sharpe 0.000 · DD máx 0.0002
+  🔭 [EMBUDO] 4556 s · ticks 199998 (100499 bloqueados: el llamador no las permite (sólo libro 99499 · pánico o calentamiento del host 1000) 100499) · evaluaciones 99499 · sin convicción 0 · intenciones con el libro plano 277 (L 276 · C 1) → escudos: acondicionamiento espectral (X-016) 34 · anti-whiplash (D-463) 34 → sin ranura 0 → riesgo: admite 209, rechaza 0 (ninguno) → consejo 0 → ML-GATE 208 → margen 0 → aperturas 1 · sin permiso de fase 0 · con posición abierta (fuera del embudo): sin ranura 544, riesgo admite 0, rechaza 35 (sonda_ocupada 35) · CUELLO: ML-GATE (208) · acumulado: 199998 ticks (50.3 % bloqueados), 277 intenciones, 1 aperturas, cuello ML-GATE (208)
+
+RB-V1a · BTCUSDT · periodo 2026-08-31 14:23 UTC → 2026-08-31 15:09 UTC (0.8 h) · 100000 ticks · 358 s de replay
+  replay: 1 operaciones · PnL bruto -0.2245 / neto -0.3025 USDT · comisiones 0.0780 · ROI bruto -0.0225 % / neto -0.0302 % · WR bruto 0.0 % / neto 0.0 % · EV/op neto -0.30247 · Sharpe 0.000 · DD máx 0.0003
+  🔭 [EMBUDO] 2746 s · ticks 199998 (100499 bloqueados: el llamador no las permite (sólo libro 99499 · pánico o calentamiento del host 1000) 100499) · evaluaciones 99499 · sin convicción 0 · intenciones con el libro plano 4460 (L 4459 · C 1) → escudos: acondicionamiento espectral (X-016) 369 · anti-whiplash (D-463) 80 · escudo de libro L2 (D-475/D-688) 1 → sin ranura 0 → riesgo: admite 3435, rechaza 575 (confianza 575) → consejo 1738 → ML-GATE 1696 → margen 0 → aperturas 1 · sin permiso de fase 0 · con posición abierta (fuera del embudo): sin ranura 485, riesgo admite 0, rechaza 151 (sonda_ocupada 151) · CUELLO: consejo (1738) · acumulado: 199998 ticks (50.3 % bloqueados), 4460 intenciones, 1 aperturas, cuello consejo (1738)
+
+RB-V1a · BTCUSDT · periodo 2026-08-31 13:39 UTC → 2026-08-31 14:23 UTC (0.7 h) · 100000 ticks · 346 s de replay
+  replay: 1 operaciones · PnL bruto -0.2243 / neto -0.3023 USDT · comisiones 0.0780 · ROI bruto -0.0224 % / neto -0.0302 % · WR bruto 0.0 % / neto 0.0 % · EV/op neto -0.30225 · Sharpe 0.000 · DD máx 0.0003
+  🔭 [EMBUDO] 2672 s · ticks 199998 (100499 bloqueados: el llamador no las permite (sólo libro 99499 · pánico o calentamiento del host 1000) 100499) · evaluaciones 99499 · sin convicción 0 · intenciones con el libro plano 892 (L 135 · C 757) → escudos: acondicionamiento espectral (X-016) 162 · anti-whiplash (D-463) 8 → sin ranura 0 → riesgo: admite 608, rechaza 114 (confianza 114) → consejo 304 → ML-GATE 303 → margen 0 → aperturas 1 · sin permiso de fase 0 · con posición abierta (fuera del embudo): sin ranura 2731, riesgo admite 0, rechaza 384 (sonda_ocupada 384) · CUELLO: consejo (304) · acumulado: 199998 ticks (50.3 % bloqueados), 892 intenciones, 1 aperturas, cuello consejo (304)
+
+RB-V1a · ETHUSDT · periodo 2026-08-31 19:56 UTC → 2026-08-31 23:59 UTC (4.1 h) · 100000 ticks · 356 s de replay
+  replay: 1 operaciones · PnL bruto -0.0691 / neto -0.0939 USDT · comisiones 0.0248 · ROI bruto -0.0069 % / neto -0.0094 % · WR bruto 0.0 % / neto 0.0 % · EV/op neto -0.09391 · Sharpe 0.000 · DD máx 0.0001
+  🔭 [EMBUDO] 14637 s · ticks 199998 (100499 bloqueados: el llamador no las permite (sólo libro 99499 · pánico o calentamiento del host 1000) 100499) · evaluaciones 99499 · sin convicción 0 · intenciones con el libro plano 13 (L 0 · C 13) → escudos: acondicionamiento espectral (X-016) 10 → sin ranura 0 → riesgo: admite 3, rechaza 0 (ninguno) → consejo 0 → ML-GATE 2 → margen 0 → aperturas 1 · sin permiso de fase 0 · con posición abierta (fuera del embudo): sin ranura 11, riesgo admite 0, rechaza 281 (sonda_ocupada 281) · CUELLO: escudo acondicionamiento espectral (X-016) (10) · acumulado: 199998 ticks (50.3 % bloqueados), 13 intenciones, 1 aperturas, cuello escudo acondicionamiento espectral (X-016) (10)
+
+RB-V1a · ETHUSDT · periodo 2026-08-31 17:42 UTC → 2026-08-31 19:56 UTC (2.2 h) · 100000 ticks · 340 s de replay
+  replay: 1 operaciones · PnL bruto -0.0585 / neto -0.0832 USDT · comisiones 0.0247 · ROI bruto -0.0058 % / neto -0.0083 % · WR bruto 0.0 % / neto 0.0 % · EV/op neto -0.08321 · Sharpe 0.000 · DD máx 0.0001
+  🔭 [EMBUDO] 8023 s · ticks 199998 (100499 bloqueados: el llamador no las permite (sólo libro 99499 · pánico o calentamiento del host 1000) 100499) · evaluaciones 99499 · sin convicción 0 · intenciones con el libro plano 195 (L 113 · C 82) → escudos: acondicionamiento espectral (X-016) 88 · escudo de libro L2 (D-475/D-688) 1 → sin ranura 0 → riesgo: admite 106, rechaza 0 (ninguno) → consejo 0 → ML-GATE 105 → margen 0 → aperturas 1 · sin permiso de fase 0 · con posición abierta (fuera del embudo): sin ranura 32, riesgo admite 0, rechaza 253 (sonda_ocupada 253) · CUELLO: ML-GATE (105) · acumulado: 199998 ticks (50.3 % bloqueados), 195 intenciones, 1 aperturas, cuello ML-GATE (105)
+
+# B. Conservación con el libro plano (intenciones − vetos de escudos = sin ranura + evaluadas por el riesgo):
+#    exacta en las 8 ventanas; asertada por el certificador y comprobada otra vez en BTCUSDT_v5 y ETHUSDT_v1.
+
+# C. Pureza A/B en BTCUSDT_v6: main 972297bf0 frente a la rama
+base: HUELLA_REPLAY simbolo=BTCUSDT ticks=100000 desde_ms=1788183553261 hasta_ms=1788186225450 trades=1 wins_net=0 wins_gross=0 net_pnl_bits=bfd35817b2277730 gross_pnl_bits=bfccb46111b7c751 fees_bits=3fb3f79ca52e4e1e final_capital_bits=408f3d94fd09bb11 ejecutados=100000 segundos=359.6
+rama: HUELLA_REPLAY simbolo=BTCUSDT ticks=100000 desde_ms=1788183553261 hasta_ms=1788186225450 trades=1 wins_net=0 wins_gross=0 net_pnl_bits=bfd35817b2277730 gross_pnl_bits=bfccb46111b7c751 fees_bits=3fb3f79ca52e4e1e final_capital_bits=408f3d94fd09bb11 ejecutados=100000 segundos=351.6

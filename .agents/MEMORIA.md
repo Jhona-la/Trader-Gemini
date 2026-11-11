@@ -150,6 +150,7 @@ Líneas = líneas del archivo original.
 | 06 | [MEMORIA_06_2026-09-25_a_2026-09-30.md](memoria_archivo/MEMORIA_06_2026-09-25_a_2026-09-30.md) | 9438-10806 | 107.043 | Olas 1-7, integración PR #4 «espectro predictivo» (decisiones D-742…D-757, cómo compilar desde Linux, hallazgos abiertos), Codex 09-28/09-30 |
 | 07 | [MEMORIA_07_2026-10-01_a_2026-10-21.md](memoria_archivo/MEMORIA_07_2026-10-01_a_2026-10-21.md) | 10807-11556 | 112.889 | Olas 8-9, R4, B15, ROOT, AGY Ω178-Ω198, F7 |
 | 08 | [MEMORIA_08_2026-11-04_a_2026-11-05.md](memoria_archivo/MEMORIA_08_2026-11-04_a_2026-11-05.md) | 11557-11671 | 15.838 | Kimi V35 R13A/R14A, V37 I-13 y backoff, V38 |
+| — | [ORIGIN_2026-11-10_codex_rb_y_agy.md](memoria_archivo/ORIGIN_2026-11-10_codex_rb_y_agy.md) | (origin/main) | 13.283 | Codex RB RB-N1, RB-V1a/b/c, RB-E2; AGY olas 30 y 31. Llegó por origin/main después del corte; no entra en la unión de `MEMORIA_0*` |
 
 `COORDINACION_CODEX_2026-09-28.md` (1,76 MB, buzón append-only) sigue en la raíz porque
 se escribió el 2026-11-10 (AGY Ola 32, Kimi V42, GLM-222); se moverá a esta carpeta cuando

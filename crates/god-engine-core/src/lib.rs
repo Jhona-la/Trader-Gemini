@@ -37,6 +37,7 @@ pub mod darwin;
 pub mod dataset_recorder;
 pub mod diffusion;
 pub mod direction_diag;
+pub mod embudo_vivo;
 pub mod ensemble;
 pub mod latency_accelerator;
 pub mod liquidation_feed;
@@ -59,6 +60,7 @@ pub mod reexport_storage {
 }
 pub mod sigma_minuto;
 pub mod slippage_predictor;
+pub mod sombra_vetos;
 pub mod stateful_engine;
 pub mod topological_metamorphosis;
 pub mod trailing;
@@ -1351,6 +1353,9 @@ pub struct GodEngineCore {
     /// B3.18 — entradas vetadas por el gate de ensamble (la predicción
     /// decidió NO): diagnóstico de cuánto consume el sistema la predicción.
     pub diag_ml_vetoes: u64,
+    /// RB-V1a: las intenciones que el riesgo validó y vetaron el consejo o el
+    /// ML-GATE, juzgadas en sombra. Sólo se escribe: ninguna decisión lo lee.
+    pub sombra_vetos: sombra_vetos::SombraVetos,
     /// F1-054 (Ola Ω168): órdenes aprobadas por Consejo y ML descartadas por falta de margen libre,
     /// por no alcanzar el notional mínimo o por exceder el colchón de capital.
     pub diag_margin_drops: u64,
@@ -1365,6 +1370,10 @@ pub struct GodEngineCore {
     pub diag_pnl_sum: f64,
     /// Diagnóstico por dirección del embudo de entrada (sólo telemetría).
     pub diag_dir: direction_diag::DirectionDiag,
+    /// RB-E2: lo que el embudo vivo cuenta y `diag_dir` no (ticks bloqueados
+    /// por causa, intenciones sin ranura, rechazos del riesgo por motivo).
+    /// Sólo telemetría: ninguna decisión lo lee.
+    pub diag_embudo: embudo_vivo::ContadoresNucleo,
     /// CL-142: escribe las trazas de diagnóstico (OPEN/CLOSE TRACE, ML-GATE,
     /// ML-DIAG, ML-HEARTBEAT, DIAG, carga de DarkAlpha). `false` sólo en los
     /// núcleos auxiliares (`new_auxiliar`); no cambia ninguna decisión.
@@ -1750,6 +1759,7 @@ impl GodEngineCore {
             diag_sin_conviccion: 0,
             diag_opened: 0,
             diag_ml_vetoes: 0,
+            sombra_vetos: sombra_vetos::SombraVetos::new(n_coins),
             diag_margin_drops: 0,
             diag_close_wins: 0,
             diag_close_total: 0,
@@ -1757,6 +1767,7 @@ impl GodEngineCore {
             diag_notional_max: 0.0,
             diag_pnl_sum: 0.0,
             diag_dir: direction_diag::DirectionDiag::default(),
+            diag_embudo: embudo_vivo::ContadoresNucleo::default(),
             trazas_diagnosticas,
             avisos: avisos::AvisosDelNucleo::new(n_coins),
             rama_registro: vec![[TasaAcierto::default(); N_RAMAS]; n_coins],
@@ -4359,6 +4370,9 @@ impl GodEngineCore {
             // en memoria (evitando Ghost Positions y desincronización de margen).
             // A la salida, todo new_order generado es legítimo y viaja sin censura.
             let allow_entries = !latency_panic && (!is_depth || is_trade);
+            // RB-E2: por qué el llamador no permite entradas en este evento.
+            self.diag_embudo
+                .registrar_llamada(is_depth && !is_trade, latency_panic);
 
             // (Ola XLV·I) LLAMADA al publicador de contagio Hawkes: cada 4096
             // ticks del arena (~2-15 min en vivo según densidad), computa la
@@ -4528,7 +4542,6 @@ impl GodEngineCore {
             // Unknown fees veto new exposure. Retained finite estimates still
             // allow defensive closes; they are not fresh exchange observations.
             let observed_fees_valid = self.sync_reality_fees_for_coin(coin_id);
-            let allow_entries = allow_entries && observed_fees_valid;
             let entry_fee_book = self.arena.config.live_fee_schedule.load_full();
             if let Some(accounting) = self.local_close_accounting.get_mut(coin_id) {
                 *accounting = None;
@@ -4536,6 +4549,14 @@ impl GodEngineCore {
             // P1: Actualizar reloj causal del registro omnisciente sin syscalls repetidas
             self.arena.registry.update_event_time(event_time_ms as i64);
             self.fijar_piso_resolucion(coin_id);
+            // RB-V1a: las intenciones vetadas en sombra avanzan con el mid de
+            // este evento (O(1) si la moneda no tiene ninguna abierta).
+            self.sombra_vetos.observar(
+                coin_id,
+                (bid + ask) * 0.5,
+                event_time_ms,
+                self.trazas_diagnosticas,
+            );
 
             if let Some(reservation) = self.entry_reservations.get_mut(coin_id) {
                 *reservation = None;
@@ -4651,12 +4672,19 @@ impl GodEngineCore {
                 self.liquidation_diagnostics.invalid_as_of += 1;
             }
             let liquidation_severity = liquidation_view.ok().flatten().unwrap_or(0.0);
-            let entries_blocked = !allow_entries
-                || kill_latched
-                || self.drift_entry_veto
-                || quantum_arena::feed_health::is_stalled()
-                || is_latency_panic
-                || liquidation_as_of_invalid;
+            // RB-E2: la misma disyunción de antes (`allow_entries` es el permiso
+            // del llamador; las comisiones sin observar vetan aparte;
+            // `is_stalled` es una lectura atómica sin efectos), contada por su
+            // primera causa activa en el orden de `embudo_vivo::NOMBRES_BLOQUEO`.
+            let entries_blocked = self.diag_embudo.bloqueos.registrar([
+                !allow_entries,
+                !observed_fees_valid,
+                kill_latched,
+                self.drift_entry_veto,
+                quantum_arena::feed_health::is_stalled(),
+                is_latency_panic,
+                liquidation_as_of_invalid,
+            ]);
             if is_latency_panic {
                 if let Some(n) = self.avisos.latencia() {
                     telemetry_server::telemetry_log!(
@@ -9857,6 +9885,11 @@ impl GodEngineCore {
                         )
                     };
                 let slot_available = raw_slot_available && !same_dir_unsecured;
+            // RB-E2: la intención que muere aquí no llega al riesgo; se cuenta.
+            if unified_intent.signal != SignalType::Flat && !slot_available {
+                self.diag_embudo
+                    .registrar_sin_ranura(!coin.positions.is_any_open(), same_dir_unsecured);
+            }
 
             // --- APERTURA MULTI-HORIZONTE CONTINUA INTEGRAL ---
             if unified_intent.signal != SignalType::Flat && slot_available {
@@ -9906,6 +9939,30 @@ impl GodEngineCore {
                     calibrated_intent.confidence,
                     order.signal != SignalType::Flat,
                 );
+                // RB-E2: el motivo de ESTE núcleo (lectura local al hilo, justo
+                // tras su evaluación), no el contador global del proceso.
+                self.diag_embudo.registrar_riesgo(
+                    !coin.positions.is_any_open(),
+                    order.signal != SignalType::Flat,
+                    risk_engine::ultimo_rechazo(),
+                );
+                // RB-V1b: lo que el riesgo rechaza DESPUÉS de calcular la
+                // geometría (confianza, EV, viabilidad, nocional, fee…) se
+                // juzga en sombra con esa misma geometría. Sólo se escribe.
+                if let Some(fuente) = risk_engine::ultimo_rechazo()
+                    .filter(|_| order.signal == SignalType::Flat)
+                    .and_then(sombra_vetos::fuente_juzgable)
+                {
+                    self.sombra_vetos.registrar(sombra_vetos::Veto {
+                        fuente,
+                        moneda: coin_id,
+                        es_largo: calibrated_intent.signal == SignalType::Long,
+                        entrada: coin.current_price.load(Ordering::Relaxed),
+                        geometria: self.risk_engine.geometria_evaluada(coin_id),
+                        promesa_bruta: self.risk_engine.promesa_evaluada(coin_id),
+                        t0_ms: event_time_ms,
+                    });
+                }
                 if order.signal != SignalType::Flat {
                     // F1-049: Unificar definición de drawdown con risk_engine::drawdown::capital_del_freno
                     // y arena.pico_capital. Erradica la discordancia donde SeniorRiesgo medía DD con
@@ -10261,6 +10318,24 @@ impl GodEngineCore {
                                 ml_now
                             );
                         }
+                    }
+
+                    // RB-V1a: lo que el riesgo validó y vetan el consejo o el
+                    // ML-GATE se juzga en sombra, con la geometría y la
+                    // fricción con que el riesgo lo evaluó. Sólo se escribe.
+                    if !(aprobado_por_consejo && ml_gate_ok) {
+                        self.sombra_vetos.registrar(sombra_vetos::Veto {
+                            fuente: sombra_vetos::fuente_del_veto(
+                                aprobado_por_consejo,
+                                has_roster_model,
+                            ),
+                            moneda: coin_id,
+                            es_largo: order.signal == SignalType::Long,
+                            entrada: coin.current_price.load(Ordering::Relaxed),
+                            geometria: self.risk_engine.geometria_evaluada(coin_id),
+                            promesa_bruta: self.risk_engine.promesa_evaluada(coin_id),
+                            t0_ms: event_time_ms,
+                        });
                     }
 
                     if aprobado_por_consejo && ml_gate_ok {

@@ -34,8 +34,12 @@
 | RB-H2 | **Frescura por contenido en el `target/` compartido**: dos worktrees producen los mismos nombres de artefacto (hash de la ruta relativa al workspace) y cargo decide la frescura por mtime ⇒ un agente puede ejecutar el código de otro worktree sin saberlo (sonda mínima: por mtime el árbol 2 imprime «ARBOL-1»; con `-Zchecksum-freshness`, «ARBOL-2»). `[unstable] checksum-freshness = true` en `.cargo/config.toml` + contrato | 5 | **Listo en su rama** (sonda E2E 2/2 con control negativo; se fusiona justo después de este merge; coste único: recompilar los crates del workspace una vez) |
 | RB-A1 | **Meta-analítica del impacto histórico de cada cambio** (mandato del operador): libro por commit de `main` con átomo, agente y métricas de cómputo (clausura de dependencias, coste de build del semáforo, tamaño por crate), de salud del código (pánicos de producción, tests) y financieras (T-1, replays) con deltas por átomo | 5 | **RB-A1a entregado** (dac445628: `scripts/meta_analitica.py`, 11 contratos sobre repos git reales; libro de 1.076 commits en `docs/audit/meta_analitica/`); A1b/A1c en §9 |
 | RB-R2 | **polars fuera del paquete raíz**: el paquete raíz (lib `quantum_engine` + 40 bins) depende de polars sólo por 4 herramientas (`download_history`, `feature_validator`, `multi_coin_simulator`, `parquet_to_bin`); cualquier `cargo test -p trader-gemini-v5` compila la pila polars (medido el 19-10: 99 min a −j1 con opt-level=3). Mudarlas a un crate de herramientas del workspace | 5 | Pendiente (después de RB-V1; tocar sólo bins sin dueño activo) |
-| RB-V1 | **LibroSombra** (censo §3 prioridad 2: F250/F272/F400, sin dueño): qué vetos destruyen valor | 2 | Después de RB-A1; diseño en §8 (región del núcleo que AGY edita en sus olas: se coordina antes) |
+| RB-V1 | **LibroSombra** (censo §3 prioridad 2: F250/F272/F400, sin dueño): qué vetos destruyen valor | 2 | **RB-V1a entregado** (§11): consejo y ML-GATE en sombra. **RB-V1b entregado 2026-11-10** (§12): 8 puertas del riesgo posteriores a la geometría en sombra, más un veredicto siempre válido (Ville) que corrige la parada opcional de RB-V1a. Siguiente: veredictos vivos de la Demo |
 | RB-S1 | Antifragilidad: cuarentena en caliente por motor votante | 4 | Pendiente (coordinar con dueños del orquestador) |
+| RB-N1 | **El reloj del host vuelve a vivir**: la guardia HOST-016 cancelaba el sincronizador NTP/Kalman antes de su primera muestra (off-by-one, desde 97996eba0 del 2026-09-17) ⇒ la deriva del reloj entraba entera en la edad del dato que bloquea entradas | 2 | **Entregado 2026-11-10** (§10) |
+| RB-N2 | **Puerta de latencia con fundamento**: el umbral de pánico es un gen sin señal en backtest (semilla `1000·π`, hoy 6 945 ms); Kalman de 2 estados (offset + deriva) con R adaptativa y puerta de RTT relativa al mínimo observado | 2 | Propuesto (§10.5); coordinar con Línea I (I-2b/I-5) |
+| RB-C1 | **La CI no esconde rojos**: `--no-fail-fast` en las 25 invocaciones de `cargo test` de unit-suites y replay-contracts (el shard `nucleo` se cortaba en `f69_002` y ocultaba el resto) | 1 | **Entregado 2026-11-10** (contrato `rb_c1_ci_sin_corte_temprano_contract`) |
+| RB-G1 | **Censo de alcanzabilidad desde el host**: qué módulos no tocan el flujo real (62 sólo los usa el grafo vivo Ω220, que el host nunca evalúa; 116 sin usuario de producción) — de censo léxico a contrato | 1 | Censo léxico publicado (§10.6, `docs/audit/rb_g1_censo_alcance_host_2026-11-10.txt`) |
 
 **RB-M1 — fugas de memoria en runtime.** Concepto: el motor corre 24/7; toda
 colección que crece por evento sin cota es una fuga aunque Rust no «pierda»
@@ -305,3 +309,537 @@ real (sin mocks). RB-A1b: el semáforo registra `head` y rama ⇒ coste de build
 por átomo. RB-A1c: métricas financieras estables de los replays y un bisector
 automático (`git bisect run` con el medidor o el replay como juez) para
 atribuir regresiones como la del +31 %.
+
+## 10. RB-N1 — el reloj del host vuelve a vivir (entregado el 2026-11-10)
+
+**Síntoma (corrida demo a3d, desde 2026-11-09 01:03, ~32 h).** Una sola
+apertura. 97 812 eventos `LATENCY PANIC` con entradas bloqueadas, 85 190
+`LATENCY_PANIC` (scalp omitido) y rachas de `KILL_SWITCH`. La componente
+«red+reloj» de la edad del dato rondaba 7 s y la deriva D (pared − proyección
+monótona) fue de −1,4 s a −4,9 s. El log mostraba «Sincronizador de generación
+1 superseded» al arrancar, lo mismo con la generación 2, y nunca una muestra.
+
+**Cuantificación (añadida tras medir; corrige la lectura causal).** Los
+97 812 pánicos son el 0,87 % de los ~11,3 M eventos de la corrida, con un pico
+del 4 % en el decil 6 del log. La única apertura llegó en el decil 1, y los
+deciles 2 y 8, sin ningún pánico, tampoco abrieron nada. El reloj muerto es un
+defecto real (puerta de latencia contaminada y offset de firma congelado),
+pero **no es la causa** de que la Demo casi no opere. El estrangulador
+medido está en la decisión: GLM ya lo tiene en su Fase B (el ML-GATE veta el
+ensamble con ml 0,17-0,22, más de 2 800 entradas vetadas en a3).
+
+**Causa raíz.** La guardia HOST-016 (97996eba0, 2026-09-17) guardaba
+`my_gen = fetch_add(1)` (valor PREVIO) y salía con `contador > my_gen`,
+verdadero desde su primer chequeo. Toda generación, también la única, se daba
+por reemplazada, y el `select!` cancelaba el bucle Kalman antes de su primera
+muestra. `server_time_offset_ms` (firma de órdenes) y
+`server_time_correction_ms` (edad del dato, I-5) quedaron congelados en el
+arranque casi dos meses. Los contratos I-5 eran de funciones puras y pasaban:
+el bucle nunca se ejecutaba en vivo.
+
+**Física medida el 2026-11-10, independiente del motor.**
+
+| Magnitud | Valor |
+|---|---|
+| Windows Time | «not synchronized», fuente «Local CMOS Clock», ninguna sincronización registrada |
+| Edad real de eventos del testnet (offset de servidor medido al momento) | aggTrade p50 162 / p90 186 / p99 236 ms; depth5@100ms p50 157 / p99 193 ms |
+| Deriva del monótono (QPC) frente a Binance, 30 min, 136 muestras | −19,0 ppm (IC95 ±5,2) ⇒ −1,6 s/día, −4,9 s en 72 h |
+| Deriva del reloj de pared frente a Binance | −51,7 ppm (IC95 ±5,9) ⇒ −4,5 s/día; offset servidor−pared de ~290 a ~172 ms en 30 min |
+
+De los ~7 s de «red+reloj» de a3d, la red explica ≈0,2 s; el resto es reloj
+sin corregir. Riesgo derivado: con el offset de firma congelado y la pared a
+52 ppm, el sello de las órdenes cruza +1 000 ms frente al servidor (rechazo
+−1021) en ~5,4 h. Los logs de a3 no lo muestran todavía, pero es estructural.
+
+**Arreglo (`execution_engine::ntp`, host sólo como cliente).**
+1. `SincronizadorUnico`: `reclamar()` devuelve la generación DESPUÉS del
+   incremento; `correr_mientras_vigente()` sólo detiene un relevo real.
+2. `EstadoReloj` común a todas las generaciones y anclado por el HOST
+   (`fijar_ancla(epoch_baseline_ms, instant_baseline)`): la corrección se mide
+   contra la proyección que consume la edad del dato. Absorbe así el error del
+   offset de arranque, y el relevo demo→mainnet no la reinicia. Con un ancla
+   propia por generación, la deriva acumulada volvería de golpe a la edad del
+   dato justo al pasar a Producción: defecto latente del diseño anterior, que
+   el bucle muerto ocultaba.
+3. La proyección se evalúa en el punto medio MONÓTONO del viaje (sin sesgo
+   −RTT/2), y el offset de arranque en el punto medio de pared.
+4. Un observador fuera de la ruta caliente deja en el log «🕐 [NTP-SYNC]
+   Generación N viva — muestra #k» (las 2 primeras y una por hora), más un
+   aviso si la puerta de RTT descarta todo durante un cuarto de hora.
+
+**Certificación.** `crates/execution-engine/tests/rb_n1_reloj_vivo_contract.rs`:
+6/6 en tres repeticiones, más la sonda viva contra el testnet. La sonda corre
+el bucle de producción con la guardia de producción: 4 muestras en 50 s, y
+partiendo de un ancla con el error de un arranque caído a la hora local, la
+corrección convergió a 185 ms frente a 176 ms de un offset medido aparte.
+Mutaciones: A (guardia con valor previo) la detectan 2 contratos, B
+(proyección en la llegada) 2, y C (re-anclar sin reiniciar el filtro) 1. Una
+corrida de B destapó que el test de conducta dependía de la granularidad del
+temporizador de Windows (~15,6 ms); quedó reescrito sin temporizador. I-5 5/5
+y Kalman 3/3. rustfmt y clippy limpios en las líneas cambiadas de
+`execution-engine` y del binario `god_engine`.
+
+**10.5 RB-N2 (propuesto, con Línea I por I-2b/I-5).**
+- El umbral de pánico es un GEN (`latency_ms_panic_threshold`, semilla
+  `1000·π`, hoy ≈6 945 ms). En backtest no hay latencia de red, así que la
+  evolución no lo puede identificar: deriva sin señal. Debe salir del genoma
+  y derivarse de la distribución viva de «red+reloj» (cuantil alto robusto o
+  ajuste de colas EVT), separando el exceso de reloj (que el sincronizador ya
+  corrige) del de red.
+- El Kalman usa R = (RTT/2)² ≈ 14 400 ms², pero la dispersión real del offset
+  ronda 16 ms (R ≈ 256). Resultado: ganancia ≈0,006, constante de ~42 min y
+  ~60 ms de retraso estable ante 19 ppm. La evolución es un modelo de 2
+  estados (offset + deriva, sin retraso ante una rampa) con R adaptativa por
+  innovaciones (Sage–Husa) y filtro de mínimo retardo como el de NTP.
+- La puerta fija `RTT > 350 ms` es un valor duro. Debe ser relativa al RTT
+  mínimo observado del endpoint: `demo-fapi` mide ~790 ms, y un cliente que
+  sincronizara ahí descartaría todas las muestras.
+- Al operador (requiere administrador): activar la sincronización de w32time.
+
+**10.6 RB-G1 — censo de alcanzabilidad desde el host.** En
+`docs/audit/rb_g1_censo_alcance_host_2026-11-10.txt` hay un censo léxico
+(salvedades en su cabecera). `evaluate_omniscient_living_graph`,
+`evaluate_quantum_multi_slot` y `synthesize_quantum_multi_slot_emissions`
+tienen 0 llamadas en código de producción. 62 módulos (casi todos motores de
+las olas Ω220) sólo los usa `omniscient_living_graph.rs`, y 116 no tienen
+usuario de producción. Los 44 vetos del grafo vivo, y sus rojos de CI, viven
+en código que la Demo no ejecuta. Conectarlo tal cual sería dañino: 44 vetos
+encadenados con FPR de 1 % cada uno dejan P(sin veto) ≈ 0,99^44 ≈ 64 %, y
+con 5 % ≈ 10 %. La vía correcta es la puerta anti-cosmética: cada motor
+demuestra valor fuera de muestra neto de fees y entra como evidencia
+ponderada (RB-V1, LibroSombra), no como eslabón de una cadena de precedencia.
+Siguiente paso de RB-G1: pasar del censo léxico a un contrato sobre el grafo
+de llamadas del host.
+
+## 11. RB-V1a — los vetos posteriores al riesgo, juzgados en sombra (2026-11-10)
+
+**Pregunta.** La Demo casi no opera y el estrangulador medido es el ML-GATE
+(más de 2 800 vetos en a3; ml 0,17-0,22 en BTC). ¿Bloquea operaciones que
+pagan o que pierden? Un veto es una predicción («esta intención pierde») que
+hasta hoy no recibía nunca su prueba contrafactual.
+
+**Qué se construyó** (ningún camino de decisión lo lee):
+- `risk_engine::medida_sombra` (nuevo). `MedidaOrden::geometria_sombra()`
+  deriva TP, SL y fricción de ida y vuelta de la medida que el riesgo deja
+  pendiente al validar (D-744, CL-106):
+  - `sl = (sl+f) / ((sl+f)/sl)`;
+  - `f = (sl+f) − sl`, con una tolerancia de redondeo de 4ε;
+  - `tp = w·sl + f`.
+
+  `RiskEngine::medida_validada()` la lee sin consumirla.
+- `audit_engine::shadow_ledger`:
+  - veredicto de Hoeffding con el ancho conocido de cada resultado,
+    `(tp+sl)/sl`, válido para todo n;
+  - prefijo denso con borrado por intercambio: `registrar` y `observar`
+    recorren sólo las abiertas (antes, 512 casillas ≈ 29 KB por llamada) y
+    `abiertas()` es O(1).
+- `god_engine_core::sombra_vetos` (nuevo):
+  - fuentes consejo (19), ML-GATE sin modelo (20) y ML-GATE sin ventaja (21),
+    por encima de las `REJ_*` (0..19, reservadas para RB-V1b); el veto se
+    atribuye al primero de la cadena;
+  - α de familia 0,05 por Bonferroni ⇒ δ = 0,05/6 ≈ 0,0083 por cola;
+  - `observar` es O(1) si la moneda no tiene abiertas y no asigna;
+  - avisos `🕵️ [SOMBRA]` en escala log₂ de las resoluciones y al cambiar el
+    veredicto, por la cola sin bloqueo de la telemetría (búfer fijo de 512 B).
+- Núcleo, 5 puntos: `pub mod`, el campo junto a `diag_ml_vetoes`, su init, la
+  observación al inicio de `process_tick_dual` con el mid del evento, y el
+  registro tras la decisión (`if !(aprobado_por_consejo && ml_gate_ok)`).
+
+**Matemática.** El resultado de cada intención es
+`r = (bruto − f)/sl ∈ [−(sl+f)/sl, (tp−f)/sl]`. Para variables acotadas no
+idénticas, Hoeffding da
+`P(|r̄ − E r| ≥ √(ln(1/δ)·Σaᵢ²/2)/n) ≤ δ` por cola. Un veto que sólo bloquea
+perdedoras (todo SL, R = −1,2, ancho 3) queda certificado «ahorra dinero» en
+n = ⌈4,5·ln(120)/1,44⌉ = 15. Se descarta z·SE porque es asintótico y obliga a
+fijar un n mínimo arbitrario.
+
+Límites declarados:
+- supone independencia, y las monedas correlacionadas no lo son;
+- resuelve con el mid, no con el último precio ni con el mark;
+- no modela el impacto propio ni el rechazo de la orden.
+
+**Certificación.**
+- **Contratos:**
+  - audit: QS-R4 9/9 (el prefijo denso no cambia la conducta) y Hoeffding
+    4/4. Cubren la forma cerrada, poblaciones conocidas, una cobertura Monte
+    Carlo de 2 000 réplicas de un juego justo con veredictos falsos ≤ 2δ, y la
+    certificación en el n exacto;
+  - riesgo: 3/3, más una orden validada REAL 1/1 (TP 0,020, SL 0,010,
+    fricción 0,00082 = 2·0,0004 + 2·0,00001, idéntica a lo que mide la cuenta
+    al abrirla), más C-F5c 2/2;
+  - núcleo: 4/4 unitarias y contrato 4/4 (cableado, pureza por fuente y
+    conducta del `process_tick_dual` real: TP sólo con el mid de su moneda;
+    vencimiento a τ con +0,2 R).
+- **Mutaciones:** M1 (la sombra no avanza) la detectan 2 pruebas; M2 (TP sin
+  fricción) 1; M3 (radio 10× menor) 4; M4 (sin control de solape) 1.
+- **Estilo:** clippy y rustfmt limpios en mis archivos y regiones. En el
+  núcleo, mi bloque tiene la forma de rustfmt con la sangría de sus vecinos:
+  la región de `profile_node!` arrastra una sangría previa.
+- **Replays de cinta real** (`#[ignore]`, `crates/backtest-engine/tests/rb_v1a_*`):
+  8 ventanas independientes de 100 000 ticks reales:
+  - BTC, 31-08-2026, 6 ventanas contiguas, 13:39→23:59 UTC (10,35 h);
+  - ETH, 31-08-2026, 2 ventanas, 17:42→23:59 UTC (6,3 h).
+
+  Corre el núcleo de producción con el genoma de referencia, omni neutro y
+  sin modelos del roster. Detalle en
+  `docs/audit/rb_v1a_certificacion_sombra_2026-11-10.txt`.
+  - **Embudo:** 2 508 vetos del ML-GATE y 2 042 del consejo; el riesgo
+    rechaza por `sonda_ocupada` y `confianza`.
+  - **Operaciones:** 8 en total, todas la sonda de arranque en frío, y las 8
+    pierden. PnL bruto de −0,06 a −0,22 USDT y neto de −0,08 a −0,30 USDT
+    por operación; comisión del 0,1 % de ida y vuelta.
+  - **Sombra:**
+    - ML-GATE sin modelo: 10 resueltas (9 por τ, 1 SL), R neto medio ≈ −0,71;
+    - consejo: 2 resueltas (τ), −0,31 R;
+    - veredicto «sin evidencia»: con n = 10 el radio ronda 1,5 R;
+    - miles de solapes, porque se admite una intención abierta por fuente,
+      moneda y lado.
+
+  Lectura: sin modelos, el ML-GATE sólo deja pasar la sonda (B3.25) y lo que
+  bloquea tampoco paga, de momento. El estrangulador de la Demo, el ML-GATE
+  «sin ventaja» con modelo, se mide en la Demo.
+- **Pureza A/B:** huella del replay idéntica bit a bit entre `main` sin el libro y la rama con
+  él, en la ventana BTC v6 (100 000 ticks, donde la rama registró y resolvió
+  5 vetos):
+  - las dos dan 1 operación, `net_pnl` 0xbfd35817b2277730 y `final_capital`
+    0x408f3d94fd09bb11, y también coinciden el PnL bruto y las comisiones;
+  - tardan 394 s frente a 397 s: el coste del libro no se distingue del ruido.
+
+**Hallazgos de la certificación** (para sus dueños):
+1. **Un replay sin símbolo registrado no produce ni una intención.**
+   `sync_reality_fees_for_coin` devuelve falso, `allow_entries` queda en falso
+   y todo se bloquea antes del riesgo. Mis primeras corridas (31 días de ZIL,
+   17,5 h de BTC y 20,7 h de ETH) dieron 0 operaciones y 0 llamadas al riesgo
+   por eso; el certificador ya registra el símbolo de la cinta. Cualquier
+   herramienta que use `run_booktick_replay` debe hacer lo mismo, o evaluará
+   genomas que nunca operan: fitness sin señal.
+2. **Specs de replay con valores fijos.**
+   - `backtest_windows` registra tick 0,01 y paso 0,001 para CUALQUIER símbolo.
+   - `get_official_binance_spec` es una tabla fija con un fallback (0,01/0,001)
+     absurdo para monedas de céntimos: ZIL cotiza a 0,0029.
+
+   Propuesta: una instantánea de `exchangeInfo` como fuente única de specs
+   para replays.
+3. **Coste por tick del núcleo en debug:** 0,65 ms con las entradas bloqueadas
+   frente a 7,9 ms con entradas (12×). El presupuesto de la ruta caliente se
+   mide en release; la proporción indica dónde mirar.
+4. **CI con `--no-fail-fast` (RB-C1): 7 rojos en el shard núcleo.**
+   - AGY: `f69_002`, `f72_002` y tres de `f99_002`. Son precedencias de veto:
+     el veto Fracton de W29 y el Starobinsky ganan la carrera.
+   - GLM-223: dos de `ricci_q_publicacion_contract` (publica NaN y R = −66,1).
+
+**Siguiente.**
+- RB-V1b: llevar a la sombra los rechazos del riesgo posteriores a la
+  geometría (`suelo_tp_sl`, EV, fee, viabilidad). Requiere la geometría de la
+  intención rechazada (thread-local `ULTIMA_GEOMETRIA`, §8.1).
+- Leer el veredicto vivo en la Demo (GLM): `grep "\[SOMBRA\]"` en el log de la
+  corrida.
+
+## 12. RB-V1b — los rechazos del riesgo en sombra y un veredicto siempre válido (2026-11-10)
+
+**Qué cambia** (nada lo lee ninguna decisión):
+- `risk_engine::medida_sombra`:
+  - `RiskEngine::geometria_evaluada(coin)` publica TP, SL, fricción de ida y
+    vuelta y τ de la evaluación en curso, etiquetados con su moneda. Se borra
+    al empezar cada `evaluate_quantum_order` y se fija dos veces dentro de
+    `evaluate_single_intent`:
+    - con la geometría del horizonte, que es la que juzga el suelo TP/SL;
+    - con la geometría final de la orden, tras la validación de objetivos.
+  - En producción las intenciones no llevan objetivos explícitos
+    (`tp_price_target`/`sl_price_target` sólo aparecen declarados), así que las
+    dos geometrías coinciden.
+  - Sustituye la derivación de RB-V1a desde `MedidaOrden`: es exacta en origen
+    y sirve también a los rechazos, que no dejan medida.
+- `god_engine_core::sombra_vetos`:
+  - 8 fuentes nuevas con su índice `REJ_*`: EV, fee_impact, min_notional,
+    orchestrator, suelo_tp_sl, confianza, viabilidad y sin_evidencia.
+  - `fuente_juzgable(rechazo)` decide cuáles se juzgan. Quedan fuera los
+    rechazos anteriores a la geometría (spec, exposición, correlación, entradas
+    inválidas, sonda ocupada, estrategia falsada), porque no traen operación
+    que juzgar, y el riesgo duro (drawdown).
+  - El núcleo registra justo tras la única `evaluate_quantum_order` del tick y
+    antes de deliberar; el registro de RB-V1a usa la misma geometría.
+- `audit_engine::shadow_ledger`: el veredicto de Ville sustituye al de Hoeffding.
+
+**Defecto corregido en RB-V1a: mirar en cada resolución.**
+- Hoeffding da una cota válida para un n FIJADO de antemano. El núcleo vuelve
+  a evaluar el veredicto en cada resolución y lo anuncia en cuanto cruza: es
+  parada opcional. Por la ley del logaritmo iterado, un radio √(c/n) acaba
+  cruzándose con probabilidad 1.
+- Medido con un juego justo (E[r] = 0 en cada intención, geometrías distintas),
+  δ = 0,05/6 por cola y mirando en cada n hasta 4 000: Hoeffding se equivoca en
+  el **3,10 % ± 0,27 %**, frente a un nominal del 1,67 % (5,3σ).
+- El veredicto nuevo, mirando en cada resolución con el libro real (1 500
+  réplicas × 1 000 miradas): **0,33 %** (cota 1,67 %). En la configuración de
+  producción (α = 0,05/22 por cola): **0,07 %** (cota 0,45 %).
+
+**Matemática del veredicto.**
+- `x = r/ancho` vive en un intervalo de ancho 1, con `ancho = (tp+sl)/sl`
+  fijado al registrar. Por el lema de Hoeffding, si `E[x | pasado] ≤ 0`,
+  entonces `E[exp(u·x − u²/8) | pasado] ≤ 1` para toda u ≥ 0.
+- El e-proceso es `M⁺_n = (1/J)·Σ_j Π_i exp(u_j·x_i − u_j²/8)`, con
+  `u_j = 4·2^(−j)`, j = 0..8. `M⁻` es lo mismo con `−x`.
+- Bajo cada hipótesis nula («lo vetado no paga» o «no pierde»), M es una
+  supermartingala no negativa con M₀ = 1. La desigualdad maximal de Ville da
+  `P(∃n: M_n ≥ 1/α) ≤ α`.
+- La rejilla cubre todas las medias normalizadas posibles (u* = 4·x̄ y |x̄| < 1)
+  hasta x̄ ≈ 1/128. Su mejor apuesta conserva al menos el 83 % del crecimiento
+  óptimo `2·x̄²`, a cambio de ln 8 = 2,08 nats de mezcla.
+- Ejemplo: un veto que sólo bloquea perdedoras se certifica en **n = 26** con
+  α = 0,05/22, el valor exacto de la forma cerrada. Con el radio inválido de
+  Hoeffding, y el mismo α, habría sido n = 20.
+- El log muestra la evidencia en logaritmos: `paga e^…, pierde e^… (umbral
+  e^6,1)`.
+
+**Certificación.**
+- **Contratos:**
+  - audit: QS-R4 9/9 y Ville 5/5 (forma cerrada, poblaciones conocidas,
+    potencia en el n exacto, validez mirando en cada resolución e inflación
+    medida de Hoeffding);
+  - riesgo: 2/2 unitarias y 3/3 de integración. Cubren tres casos: la orden
+    validada publica su geometría exacta (τ y fricción iguales a los que mide
+    la cuenta); un rechazo por confianza la conserva; un rechazo anterior a la
+    geometría no publica ninguna y borra la anterior. C-F5c 2/2.
+  - núcleo: 5/5 unitarias y 5/5 de contrato (cableado de los dos registros,
+    pureza, conducta del `process_tick_dual` real).
+- **Mutaciones:** 5/5 detectadas:
+  - M1 (castigo con el signo cambiado en «pierde»): 4 pruebas;
+  - M2 (castigo u²/16: deja de ser supermartingala): 3;
+  - M3 (no se borra la geometría al empezar): 1;
+  - M4 (`fuente_juzgable` acepta fuentes del núcleo): 1;
+  - M5 (la geometría final es la del horizonte): 2.
+- **Estilo:** clippy y rustfmt limpios en mis archivos y en las regiones tocadas del núcleo y del riesgo.
+- **Replays de cinta real:** las mismas 8 ventanas de 100 000 ticks que RB-V1a (BTC 31-08-2026
+  13:39→23:59 UTC; ETH 17:42→23:59 UTC), con el núcleo de producción. Detalle
+  en `docs/audit/rb_v1b_certificacion_sombra_2026-11-10.txt`.
+  - **Embudo:**
+    - vetos: 2 508 del ML-GATE y 2 042 del consejo;
+    - rechazos del riesgo: 689 por confianza (posteriores a la geometría, se
+      juzgan) y 1 300 por sonda ocupada (anteriores, no se juzgan).
+  - **Sombra, fuente nueva `riesgo:confianza`:** 11 resueltas, todas por τ,
+    con R neto medio ≈ −0,60.
+  - **Sombra, fuentes de RB-V1a:** ML-GATE sin modelo 10 resueltas (≈ −0,71) y
+    consejo 2 (−0,31).
+  - **Evidencia:** ninguna fuente pasa de e^0,1 frente al umbral e^6,1, así
+    que no hay veredicto todavía.
+  - **Operaciones:** 8, todas la sonda de arranque en frío, y las 8 pierden
+    (neto de −0,08 a −0,30 USDT por operación).
+  - **Lectura:** lo que rechaza la confianza, lo que vetan el consejo y el
+    ML-GATE, y lo que se opera sale por tiempo y no cubre la fricción del
+    0,1 %. La pregunta abierta no es qué puerta relajar, sino qué horizonte y
+    qué geometría pagan la fricción.
+- **Pureza A/B:** huella idéntica bit a bit entre `main` 206256e2b (con RB-V1a y sin RB-V1b) y
+  la rama, en BTC v6, donde la rama registró y resolvió 8 intenciones de tres
+  fuentes:
+  - las dos dan 1 operación, `net_pnl` 0xbfd35817b2277730 y `final_capital`
+    0x408f3d94fd09bb11;
+  - tardan 412,8 s frente a 412,6 s.
+
+**Siguiente.**
+- Leer los veredictos vivos en la Demo (GLM: `grep "\[SOMBRA\]"`).
+- El SL se cobra en la barrera aunque el mid salte más allá: ligeramente
+  optimista para «bloquea ganadoras». Es despreciable en monedas líquidas, pero
+  queda declarado.
+- RB-V1c: una ablación contrafactual de verdad (AIPW), para cuando haya
+  operaciones reales con las que compararla.
+
+## 13. RB-V1c — promesa frente a realidad: la puerta de EV del riesgo (2026-11-10)
+
+**Diagnóstico.** Sale de la lectura del código; las cintas lo confirman.
+1. **Suelo del stop.** `MAX_FRICTION_SHARE_OF_RISK = 0.65` (`genome.rs`) fija
+   `sl ≥ f/0,65`, unos 15,4 pb con la fricción de 0,1 %. Su propio comentario
+   dice que «es una política elegida, no una constante física». La fricción
+   puede ser el 65 % del stop, y una operación que vence sin moverse cobra
+   R ≈ −f/sl ≈ −0,65.
+2. **Geometría.** `compute_tp_sl` fija `TP = SL·min_rr_for(0,40, f, sl)`. Con
+   f/sl = 0,65 sale RR = 1,5 + 1,625 = 3,1. El stop es `k·σ(τ)`, con k ≈ 1.
+   Para una difusión sin deriva en el horizonte τ:
+   - P(tocar el SL a 1σ antes de τ) ≈ 2·(1 − Φ(1)) ≈ 32 %;
+   - P(tocar el TP a 3,1σ) ≈ 0,2 %;
+   - el ~68 % restante sale por τ.
+3. **Puerta de EV.** `expected_value_pct = p·TP − (1−p)·SL`, con p la
+   confianza calibrada de DIRECCIÓN (0,5 en la sonda). Tiene dos fallos:
+   - es un modelo binario que ignora las salidas por τ;
+   - confunde «acertar la dirección» con «tocar el TP antes que el SL».
+
+   La probabilidad de primer toque (`probabilidad_tocar_sl_antes_de_tp`) se
+   calcula, pero desde CL-100 sólo es telemetría.
+
+   Ejemplo, la sonda (p = 0,5 y TP = 3,1·SL): promete +0,45 R netos y las
+   cintas dan ≈ −0,6 R.
+
+**Qué cambia** (sólo observa):
+- `RiskEngine::promesa_evaluada(coin)` publica el EV bruto de la puerta.
+  Se borra al empezar cada evaluación y se fija tras calcularlo.
+- `SombraVetos` registra la promesa con cada intención y la convierte a R
+  neto con la misma fricción y el mismo stop con que el libro mide lo
+  realizado.
+- `LibroSombra` acumula por fuente la brecha realizado − prometido y un
+  e-proceso de Ville sobre `x = (r − promesa)/ancho`. La promesa es fija al
+  registrar, así que la brecha conserva el ancho de r.
+  - `veredicto_promesa` dice «PROMETE DE MÁS» o «promete de menos».
+  - Usa el mismo α por cola que los veredictos de lo vetado, como familia
+    aparte: el error total de las dos familias es ≤ 10 %.
+- `EProcesoVille` se extrae como estructura reutilizable. También servirá
+  para la certificación viva Demo → Producción del mandato §31.4.
+
+**Certificación.**
+- **Contratos:**
+  - audit: QS-R4 9/9, Ville 5/5 (mismos valores bit a bit tras el refactor) y
+    promesa 4/4. Cubren la forma cerrada, la promesa optimista certificada en
+    n = 13 exacto, cero falsos con una promesa calibrada mirando en cada
+    resolución, y la validación de entradas;
+  - riesgo: la orden validada promete exactamente 0,9·0,02 − 0,1·0,01 = 0,017;
+    un rechazo por confianza, anterior al EV, no promete nada;
+  - núcleo: conversión a R y aviso al cambiar el veredicto de la promesa.
+- **Mutaciones:** 5/5 detectadas:
+  - M1 (brecha con el signo cambiado): 2 pruebas;
+  - M2 (una intención sin promesa cuenta como promesa 0): 2;
+  - M3 (promesa a R sin descontar la fricción): 1;
+  - M4 (la promesa no se borra al empezar): 1;
+  - M5 (promesa del doble): 1.
+- **Estilo:** clippy y rustfmt limpios en mis archivos y en las regiones tocadas del núcleo y del riesgo.
+- **Replays de cinta real:** las mismas 8 ventanas (BTC 31-08-2026 13:39→23:59 UTC; ETH
+  17:42→23:59 UTC). Detalle en
+  `docs/audit/rb_v1c_certificacion_promesa_2026-11-10.txt`.
+  - **ML-GATE sin modelo** (10 intenciones con promesa): el riesgo prometió de
+    media **+0,89 R** y se realizaron **−0,71 R**, una brecha de ≈ −1,6 R.
+  - **Consejo** (2): promesa +0,37 R frente a −0,31 R realizados.
+  - **Rango:** en las 12 intenciones con promesa, prometió entre +0,37 y +1,05 R
+    y se realizaron entre −0,31 y −1,30 R.
+  - **`riesgo:confianza`:** no lleva promesa, porque se juzga antes del EV.
+  - **Evidencia:** la mayor es e^0,64, lejos del umbral e^6,1. Con una brecha de
+    este tamaño (x ≈ −0,4), el veredicto «PROMETE DE MÁS» llegaría hacia
+    n ≈ 25-30 resoluciones: en la Demo, cuestión de horas.
+- **Pureza A/B:** huella idéntica bit a bit entre `main` 0a365893e (con RB-V1b, sin RB-V1c) y la
+  rama, en BTC v6, donde la rama registró 8 intenciones de tres fuentes (5 con
+  promesa): 1 operación, `net_pnl` 0xbfd35817b2277730 y `final_capital`
+  0x408f3d94fd09bb11 en las dos.
+
+**Propuesta RB-E1** (cambia decisiones: requiere el consejo y la evidencia de
+la Demo).
+- Sustituir la puerta binaria por el EV de triple barrera bajo el modelo:
+  - deriva de la señal (`μ√τ/σ = Φ⁻¹(q)` con q la probabilidad de dirección);
+  - σ de la ley de difusión;
+  - barreras TP y SL, y horizonte τ;
+  - probabilidades de primer toque y salida por τ de la serie de doble
+    barrera.
+- Derivar el suelo de fricción de «EV ≥ umbral», no de una cuota fija de 0,65.
+- Antes de proponerlo: el veredicto «PROMETE DE MÁS» en la Demo y una A/B en
+  las cintas.
+
+## 14. RB-E2 — el embudo vivo: por qué no opera la Demo (2026-11-10)
+
+**Lo que dice el log de la Demo** (GLM, build a3g, pid 32016, 13:25→19:57 hora
+de Bogotá, 20 624 líneas; lectura sin tocar el proceso):
+- **Operaciones:** 0 en 6,5 h; PnL bruto, neto y comisiones a 0.
+- **El orquestador cae a `GenomicAudit` en silencio cada minuto** (394 ciclos
+  `GenomicAudit → DemoVerify → PaperTrading`).
+  - Es deliberado: `OmsSession::begin_refresh` congela la admisión antes de las
+    consultas privadas del refresco de 60 s, y `apply_snapshot` la reabre. Lo
+    que falta es el aviso de la caída.
+  - Coste estimado: la línea «Syncing buffers» sólo se escribe en un múltiplo de
+    5 000 mensajes con la admisión cerrada, y sale 64 veces de 455, así que
+    **≈ 14 % ± 1,6 % de los eventos** llegan con las entradas congeladas.
+  - Mientras no hay calendario de comisiones (`observed_fees_required` sin
+    `live_fee_schedule`), `fee_rates_for` devuelve `None` y el núcleo bloquea
+    las entradas por comisiones, también sin contarlo.
+- **`LATENCY PANIC` de 7–20 s** desde ~18:50 (miles de eventos), con «cola local
+  0 ms, deriva del reloj 36 ms». El retraso está en el feed del testnet
+  (`stream.binancefuture.com`), no en el proceso.
+- **El resto, sin explicar:** el núcleo cuenta su embudo (`direction_diag`,
+  contadores `diag_*`), pero sólo lo imprime el backtest forense
+  (`audit_forensic_backtest.rs`). En vivo es telemetría fantasma.
+
+**Muertes silenciosas que nadie contaba:**
+1. La frontera de entradas de `process_tick_dual` (`entries_blocked`) corta la
+   evaluación por siete causas:
+   - el llamador no lo permite (evento sólo de libro o pánico del host);
+   - comisiones sin observar;
+   - kill switch;
+   - veto de deriva;
+   - feed estancado;
+   - latencia;
+   - liquidaciones con marca temporal inválida.
+2. Una intención con dirección sin ranura no llega al riesgo (sólo se publica
+   una razón en el registro, QO-589).
+3. Los motivos del riesgo sólo están en contadores globales, que mezclan el
+   núcleo real con los universos sombra del host.
+
+**Qué cambia** (sólo observa):
+- **`god_engine_core::embudo_vivo`:**
+  - `BloqueosEntrada::registrar` sustituye la disyunción de la frontera con la
+    misma semántica. Atribuye cada tick bloqueado a su PRIMERA causa activa, así
+    que las causas parten los bloqueos.
+  - `ContadoresNucleo` cuenta, en `process_event`, los eventos sin oportunidad
+    de entrada (sólo libro / pánico del host); además, las intenciones sin
+    ranura y los rechazos del riesgo por motivo de ESTE núcleo
+    (`ultimo_rechazo`, local al hilo), en dos poblaciones: libro plano (la
+    del embudo, la que compite por abrir) y con posición abierta.
+  - `Instantanea` y `linea` resumen una ventana y su acumulado, y nombran el
+    CUELLO: la etapa que más intenciones perdió o, si no hubo intenciones, la
+    causa que más ticks bloqueó.
+- **El host** publica `🔭 [EMBUDO]` una vez por minuto (reloj monótono) con las
+  órdenes que la fase no deja salir, y el informe completo de `direction_diag`
+  cada 60 ventanas. El coste por mensaje es una comparación; lo demás ocurre
+  una vez por minuto.
+- **El certificador de cinta** imprime el embudo acumulado.
+
+**Certificación.**
+- **Pruebas:** unitarias 6/6 (partición por causa y disyunción exacta en las 128
+  combinaciones, restas, cuello, formato y cadencia). Contrato 5/5:
+  - conducta del núcleo real: llamador, comisiones sin observar con el mismo
+    mecanismo del OMS, frontera cruzada, libro frente a pánico del host;
+  - cableado: las siete causas en orden y una sola definición de la frontera;
+    host;
+  - pureza: ningún uso de `diag_embudo` que no registre.
+
+  RB-V1 5/5 intacto.
+- **Mutaciones:** 8/8 detectadas:
+  - M1 (la causa es la última activa): 1 prueba;
+  - M2 (las comisiones dejan de bloquear): 1;
+  - M3 (el núcleo pierde la causa de comisiones): 2;
+  - M4 (el host cuenta con la condición invertida): 1;
+  - M5 (el cuello toma la menor pérdida): 2;
+  - M6 (la ventana se cierra un ms tarde): 1;
+  - M7 (el cuello mira la población con posición): 2;
+  - M8 (poblaciones invertidas al registrar): 1.
+- **Estilo:** clippy y rustfmt limpios en mis archivos y en las regiones tocadas del núcleo y del host.
+- **Cintas reales:** las 8 ventanas de 100 000 registros (BTC 31-08-2026
+  13:39→23:59 UTC; ETH 17:42→23:59 UTC). Detalle en
+  `docs/audit/rb_e2_embudo_vivo_2026-11-10.txt`.
+  - **Frontera:** de 199 998 ticks se bloquean 100 499, todos por el llamador
+    (99 499 eventos de sólo libro y 1 000 de calentamiento). Las 99 499
+    evaluaciones coinciden con los ticks que cruzan.
+  - **Embudo con el libro plano** (6 377 intenciones):
+    - escudos 1 130 (17,7 %; X-016 998, anti-whiplash 130, L2 2);
+    - sin ranura 0;
+    - riesgo: 4 558 admitidas y 689 rechazadas por confianza (10,8 %);
+    - consejo 2 042 (32,0 %);
+    - ML-GATE 2 508 (39,3 %, sin modelos del roster);
+    - aperturas 8 (la sonda).
+  - **Conservación exacta** en las 8 ventanas: intenciones − escudos = sin
+    ranura + evaluadas por el riesgo, y admitidas = consejo + ML-GATE +
+    aperturas.
+  - **Cuello por ventana:** ML-GATE (v1, v4, ETH v2), escudo X-016 (v2, v3,
+    ETH v1) y consejo (v5, v6).
+  - **Con la sonda abierta** (fuera del embudo): sin ranura y «sonda ocupada»;
+    era lo que inflaba la primera versión, que mezclaba las dos poblaciones.
+- **Pureza A/B:** huella idéntica bit a bit entre `main` 972297bf0 y la rama en BTC v6
+  (1 operación, `net_pnl` 0xbfd35817b2277730, `final_capital`
+  0x408f3d94fd09bb11). La disyunción de la frontera es la de siempre.
+
+**Hallazgo para RB-E3** (cambia señales, átomo aparte): `lib.rs:6153-6158`.
+- **El fallo:** el sesgo spot vale `clamp(base_bps / 10, ±0,05)`, pero su
+  comentario dice «10 bps ⇒ ±0,05… escala con la magnitud real». Con `/10`,
+  cualquier base de más de 0,5 pb lo satura: un ±0,05 binario.
+- **En la Demo es un artefacto:** el futuro es el libro del testnet y el spot
+  es el real. De ahí los `ml=0.4500/0.5500` exactos del log en los símbolos sin
+  modelo.
+- **Qué afecta:** a las ramas de señal que leen `ml_prob` con sesgo, no al
+  ML-GATE, que lee el ensamble puro.
+- **Corrección propuesta:**
+  - la escala documentada (`/200`);
+  - sin sesgo cuando el spot y el futuro no son del mismo venue (Demo), o con
+    la base medida contra el mark o el índice;
+  - A/B en cintas y en sombra.

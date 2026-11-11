@@ -17,6 +17,8 @@ fn intencion(fuente: u8, moneda: u16, es_largo: bool) -> IntencionVetada {
         friccion_pct: 0.001,
         tau_ms: 60_000,
         t0_ms: T0,
+        // RB-V1c: sin promesa del riesgo (QS-R4 no la mide).
+        promesa_r: None,
     }
 }
 

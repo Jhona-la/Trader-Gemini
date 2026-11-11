@@ -1,0 +1,197 @@
+# RB-G1 — Censo léxico de alcanzabilidad desde el host (Codex RB, 2026-11-10)
+#
+# Base: main 936a375a3 (antes de W29 55a3fd464). Script: censo léxico ad hoc (RB-G1 lo convertirá en contrato).
+# Método: para cada archivo de producción de crates/*/src y src/ (sin tests/, benches/, examples/ ni el bloque
+#   #[cfg(test)]), se toman sus `pub struct`/`pub enum` y se buscan esos nombres en el resto de archivos de
+#   producción (sin contar lib.rs, que sólo re-exporta).
+#   G = sus tipos sólo los usa crates/god-engine-core/src/omniscient_living_graph.rs. Ese orquestador se evalúa
+#       únicamente desde GodEngineCore::evaluate_omniscient_living_graph, que tiene 0 llamadas en código de
+#       producción (también 0: evaluate_quantum_multi_slot y synthesize_quantum_multi_slot_emissions). Ningún
+#       motor G recibe datos de la Demo ni de Producción; sus vetos no deciden ninguna orden real.
+#   0 = sus tipos no los usa ningún otro archivo de producción (sólo tests o nadie).
+# Salvedades: censo léxico, no un grafo de llamadas. No ve módulos que sólo exportan funciones libres o
+#   traits, ni usos vía macros. Una «G» o un «0» es una hipótesis fuerte de código fuera del flujo real,
+#   que el dueño confirma o refuta. No es una orden de borrado (contrato de no-degradación): la salida
+#   correcta para cada motor es demostrar valor fuera de muestra neto de fees y conectarse, o retirarse.
+#
+archivos de producción analizados: 437
+módulos cuyos tipos públicos SÓLO usa omniscient_living_graph.rs (inalcanzable desde el host): 62
+   G  crates/feature-engine/src/amplituhedron_order_flow.rs
+   G  crates/feature-engine/src/ashtekar_lqg_area.rs
+   G  crates/feature-engine/src/bergman_fock_reproducing.rs
+   G  crates/feature-engine/src/calabi_yau_seiberg_witten.rs
+   G  crates/feature-engine/src/connes_kreimer_hopf_algebra.rs
+   G  crates/feature-engine/src/gross_pitaevskii_bec.rs
+   G  crates/feature-engine/src/hyperbolic_poincare_hodge.rs
+   G  crates/feature-engine/src/jt_schwarzian_gravity.rs
+   G  crates/feature-engine/src/kostant_souriau_prequantum.rs
+   G  crates/feature-engine/src/lattice_qcd_wilson_polyakov.rs
+   G  crates/feature-engine/src/liouville_quantum_gravity.rs
+   G  crates/feature-engine/src/m_theory_joyce_g2.rs
+   G  crates/feature-engine/src/matrix_model_kp_hierarchy.rs
+   G  crates/feature-engine/src/monge_kantorovich_wasserstein.rs
+   G  crates/feature-engine/src/penrose_spin_network.rs
+   G  crates/feature-engine/src/peps_hypergraph_ricci.rs
+   G  crates/feature-engine/src/quantum_geodesic_phase_space.rs
+   G  crates/feature-engine/src/symplectic_floer_cohomology.rs
+   G  crates/feature-engine/src/vietoris_rips_persistence.rs
+   G  crates/god-engine-core/src/topological_metamorphosis.rs
+   G  crates/risk-engine/src/adaptive_quantum_veto.rs
+   G  crates/risk-engine/src/asymptotic_safety_reuter.rs
+   G  crates/risk-engine/src/bekenstein_mukhanov_quantization.rs
+   G  crates/risk-engine/src/chern_simons_berry_phase.rs
+   G  crates/risk-engine/src/dirac_monopole_chern_bundle.rs
+   G  crates/risk-engine/src/drgt_massive_gravity.rs
+   G  crates/risk-engine/src/fisher_rao_amari_manifold.rs
+   G  crates/risk-engine/src/gromov_symplectic_barrier.rs
+   G  crates/risk-engine/src/holographic_lloyd_complexity.rs
+   G  crates/risk-engine/src/lindblad_master_decoherence.rs
+   G  crates/risk-engine/src/page_curve_island_risk.rs
+   G  crates/risk-engine/src/polyakov_schwarzschild_horizon.rs
+   G  crates/risk-engine/src/quantum_extremal_surface.rs
+   G  crates/risk-engine/src/quantum_no_arbitrage_conformal.rs
+   G  crates/risk-engine/src/quaternionic_hyperkahler_manifold.rs
+   G  crates/risk-engine/src/reeb_contact_vortex.rs
+   G  crates/risk-engine/src/ryu_takayanagi_entanglement.rs
+   G  crates/risk-engine/src/tensor_network_mps_dmrg.rs
+   G  crates/risk-engine/src/toric_code_stabilizer.rs
+   G  crates/risk-engine/src/umegaki_relative_entropy.rs
+   G  crates/signal-engine/src/ads_cft_holographic.rs
+   G  crates/signal-engine/src/berry_phase_holonomy.rs
+   G  crates/signal-engine/src/continuous_volatility_operator.rs
+   G  crates/signal-engine/src/derham_hodge_currents.rs
+   G  crates/signal-engine/src/donaldson_thomas_quantum.rs
+   G  crates/signal-engine/src/fqhe_chern_simons.rs
+   G  crates/signal-engine/src/fractional_rough_volatility.rs
+   G  crates/signal-engine/src/jarzynski_crooks_thermodynamics.rs
+   G  crates/signal-engine/src/mean_field_games_psychology.rs
+   G  crates/signal-engine/src/mfdfa_multifractal_hurst.rs
+   G  crates/signal-engine/src/mpdo_dissipative_dmrg.rs
+   G  crates/signal-engine/src/nls_peregrine_soliton.rs
+   G  crates/signal-engine/src/non_abelian_braiding_jones.rs
+   G  crates/signal-engine/src/quantum_many_body_scars.rs
+   G  crates/signal-engine/src/riemann_burgers_shockwave.rs
+   G  crates/signal-engine/src/ruelle_frobenius_transfer.rs
+   G  crates/signal-engine/src/srb_kolmogorov_entropy.rs
+   G  crates/signal-engine/src/starobinsky_inflationary_attractor.rs
+   G  crates/signal-engine/src/supersymmetry_nicolai_map.rs
+   G  crates/signal-engine/src/wheeler_dewitt_minisuperspace.rs
+   G  crates/signal-engine/src/wilson_exact_renormalization.rs
+   G  crates/strategy-core/src/chromodynamic_gauge_su3.rs
+módulos cuyos tipos públicos no usa NINGÚN otro archivo de producción: 116
+   0  crates/audit-engine/src/resilience.rs
+   0  crates/audit-engine/src/state_validator.rs
+   0  crates/backtest-engine/src/oos_context.rs
+   0  crates/dark-alpha-engine/src/atiyah_singer_dirac.rs
+   0  crates/dark-alpha-engine/src/hidden_liquidity.rs
+   0  crates/dark-alpha-engine/src/neuro_plasticity.rs
+   0  crates/dark-alpha-engine/src/online_ppo.rs
+   0  crates/data-ingest/src/rutas_feed.rs
+   0  crates/data-ingest/src/sbe_decoder.rs
+   0  crates/data-pipeline/src/dynamic_ranker.rs
+   0  crates/data-pipeline/src/feature_vm.rs
+   0  crates/data-pipeline/src/validation.rs
+   0  crates/data-pipeline/src/ws_client.rs
+   0  crates/evolution-engine/src/ast_mutator.rs
+   0  crates/evolution-engine/src/cma_es.rs
+   0  crates/evolution-engine/src/crossover_cauchy.rs
+   0  crates/evolution-engine/src/meta.rs
+   0  crates/evolution-engine/src/score_retention.rs
+   0  crates/evolution-engine/src/stanford_discovery.rs
+   0  crates/execution-engine/src/dynamic_symbols.rs
+   0  crates/execution-engine/src/fixed_filter.rs
+   0  crates/execution-engine/src/simulator.rs
+   0  crates/feature-engine/src/correlation.rs
+   0  crates/feature-engine/src/cover_orabona_wfr_ville.rs
+   0  crates/feature-engine/src/feynman_path_instanton.rs
+   0  crates/feature-engine/src/flujo_rg.rs
+   0  crates/feature-engine/src/grothendieck_sheaves.rs
+   0  crates/feature-engine/src/hairer_landauer_anderson.rs
+   0  crates/feature-engine/src/kam_eth_tur_stein.rs
+   0  crates/feature-engine/src/lead_lag.rs
+   0  crates/feature-engine/src/lppls_sornette.rs
+   0  crates/feature-engine/src/matriz_rmt.rs
+   0  crates/feature-engine/src/norma_hinf.rs
+   0  crates/feature-engine/src/normalizer.rs
+   0  crates/feature-engine/src/path_signatures.rs
+   0  crates/feature-engine/src/rough_ergodic.rs
+   0  crates/feature-engine/src/simd_yoshida_replicator.rs
+   0  crates/feature-engine/src/soa_shadow_otoc.rs
+   0  crates/feature-engine/src/spot_futures_abl_iceberg.rs
+   0  crates/feature-engine/src/transfer_entropy.rs
+   0  crates/feature-engine/src/tzcnt_lut_kpz.rs
+   0  crates/feature-engine/src/voiculescu_jarzynski_svgd.rs
+   0  crates/feature-engine/src/zakai_doob_amplituhedron.rs
+   0  crates/flight-recorder/src/mmap_flight_recorder.rs
+   0  crates/god-engine-core/src/avisos.rs
+   0  crates/god-engine-core/src/base_z.rs
+   0  crates/god-engine-core/src/dataset_recorder.rs
+   0  crates/god-engine-core/src/direction_diag.rs
+   0  crates/god-engine-core/src/ensemble.rs
+   0  crates/god-engine-core/src/fitness_contract.rs
+   0  crates/god-engine-core/src/latency_accelerator.rs
+   0  crates/god-engine-core/src/ml_coverage.rs
+   0  crates/god-engine-core/src/order_flow_aggregator.rs
+   0  crates/god-engine-core/src/slippage_predictor.rs
+   0  crates/god-engine-core/src/trailing.rs
+   0  crates/metacortex-engine/src/cazador_constantes.rs
+   0  crates/metacortex-engine/src/compiler_sandbox.rs
+   0  crates/metacortex-engine/src/evolutionary_templates.rs
+   0  crates/metacortex-engine/src/fases_autonomous.rs
+   0  crates/metacortex-engine/src/hot_swap_controller.rs
+   0  crates/metacortex-engine/src/immune_system.rs
+   0  crates/os-guardian/src/deferred_drop_reaper.rs
+   0  crates/os-guardian/src/jit_atomic_runtime.rs
+   0  crates/os-guardian/src/large_pages.rs
+   0  crates/os-guardian/src/morton_z_curve.rs
+   0  crates/os-guardian/src/observability_plane.rs
+   0  crates/os-guardian/src/rns_simd_arithmetic.rs
+   0  crates/os-guardian/src/silicon_topology.rs
+   0  crates/os-guardian/src/subnormal_control.rs
+   0  crates/os-guardian/src/telemetry.rs
+   0  crates/quantum-arena/src/active_universe.rs
+   0  crates/quantum-arena/src/adaptive_quantiles.rs
+   0  crates/quantum-arena/src/continuous_spectral_portfolio.rs
+   0  crates/quantum-arena/src/protection_health.rs
+   0  crates/quantum-arena/src/topological_persistence.rs
+   0  crates/quantum-arena/src/wasserstein_kantorovich.rs
+   0  crates/risk-engine/src/correlation_guard.rs
+   0  crates/risk-engine/src/envio.rs
+   0  crates/risk-engine/src/freno_estrategia.rs
+   0  crates/risk-engine/src/leverage_matrix.rs
+   0  crates/risk-engine/src/random_matrix.rs
+   0  crates/risk-engine/src/riemann_zeta_gue.rs
+   0  crates/risk-engine/src/selection_stats.rs
+   0  crates/risk-engine/src/sonda.rs
+   0  crates/risk-engine/src/tp_sl.rs
+   0  crates/risk-engine/src/veto_registry.rs
+   0  crates/risk-engine/src/ville_grossman_ignition_gate.rs
+   0  crates/signal-engine/src/coaxial_breakout.rs
+   0  crates/signal-engine/src/conformal_reversion_filter.rs
+   0  crates/signal-engine/src/feynman_propagator.rs
+   0  crates/signal-engine/src/flow_excitation_confluence.rs
+   0  crates/signal-engine/src/flow_impulse.rs
+   0  crates/signal-engine/src/game_theoretic_nash.rs
+   0  crates/signal-engine/src/hawkes_bessel.rs
+   0  crates/signal-engine/src/navier_stokes_manifold.rs
+   0  crates/signal-engine/src/perceptron_gate.rs
+   0  crates/signal-engine/src/proyeccion_espectral.rs
+   0  crates/signal-engine/src/quantum_oscillator.rs
+   0  crates/signal-engine/src/renyi_tsallis_entropy.rs
+   0  crates/signal-engine/src/skill_motores.rs
+   0  crates/signal-engine/src/soliton_wave.rs
+   0  crates/signal-engine/src/stochastic_resonance.rs
+   0  crates/signal-engine/src/supersonic_shockwave.rs
+   0  crates/signal-engine/src/trend_runner.rs
+   0  crates/storage-engine/src/ledger.rs
+   0  crates/strategy-core/src/birch_swinnerton_dyer.rs
+   0  crates/strategy-core/src/kahler_hodge.rs
+   0  crates/strategy-core/src/maker.rs
+   0  crates/strategy-core/src/multivariate_coint.rs
+   0  crates/strategy-core/src/stat_arb.rs
+   0  crates/strategy-core/src/yang_mills_gauge.rs
+   0  crates/telemetry-server/src/flight_recorder.rs
+   0  crates/telemetry-server/src/forensic_auditor.rs
+   0  crates/telemetry-server/src/online_causal_feedback.rs
+   0  crates/telemetry-server/src/telegram_bot.rs
+   0  src/sa_params.rs

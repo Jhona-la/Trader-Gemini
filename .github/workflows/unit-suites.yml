@@ -109,15 +109,15 @@ jobs:
         # Metadata only, once per run; no unification across incompatible semver.
         run: cargo +nightly-2026-06-30 tree --workspace --duplicates --locked
       - name: Tests (${{ matrix.grupo }})
-        run: cargo +nightly-2026-06-30 test ${{ matrix.paquetes }} --locked -- --test-threads=1
+        run: cargo +nightly-2026-06-30 test --no-fail-fast ${{ matrix.paquetes }} --locked -- --test-threads=1
       - name: Terminal equity report contracts
         if: matrix.grupo == 'entrenador'
         # Exercise the production report with synthetic equity, without loading tapes.
-        run: cargo +nightly-2026-06-30 test -p trader-gemini-v5 --bin backtest_windows --locked si_b15_report_contract -- --test-threads=1
+        run: cargo +nightly-2026-06-30 test --no-fail-fast -p trader-gemini-v5 --bin backtest_windows --locked si_b15_report_contract -- --test-threads=1
       - name: Host OMS session contracts
         if: matrix.grupo == 'entrenador'
         # Synthetic sessions exercise the production gate without exchange I/O.
-        run: cargo +nightly-2026-06-30 test -p trader-gemini-v5 --test host_oms_contract --locked -- --test-threads=1
+        run: cargo +nightly-2026-06-30 test --no-fail-fast -p trader-gemini-v5 --test host_oms_contract --locked -- --test-threads=1
 
   meta-analitica:
     # Sol (2026-10-19): los contratos de la meta-analítica del impacto

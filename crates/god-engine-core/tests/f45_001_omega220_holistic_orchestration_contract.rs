@@ -602,6 +602,43 @@ fn test_c1_holistic_living_graph_end_to_end_synthesis() {
     assert!(!report.kerr_newman_report.naked_singularity_veto);
     assert!(!report.kerr_newman_report.hawking_thermal_evaporation_veto);
     assert!(report.kerr_newman_report.slot_scaling_factor >= 0.10);
+
+    // 71. Programa de Langlands Geométrico & Hecke Eigensheaves (Fase 106)
+    assert!(
+        report
+            .geometric_langlands_report
+            .automorphic_l_function_central
+            > 0.0
+    );
+    assert!(!report.geometric_langlands_report.langlands_anomaly_veto);
+    assert!(report.geometric_langlands_report.slot_scale >= 0.10);
+
+    // 72. Computación Cuántica Topológica & Trenzado Anyónico de Fibonacci (Fase 107)
+    assert!(report.topological_braiding_report.topological_fidelity >= 0.50);
+    assert!(!report.topological_braiding_report.topological_braid_veto);
+    assert!(report.topological_braiding_report.slot_scale >= 0.10);
+
+    // 73. Complejidad Holográfica AdS/CFT & Scrambling de Hayden-Preskill (Fase 108)
+    assert!(report.hayden_preskill_report.ryu_takayanagi_entropy > 0.0);
+    assert!(!report.hayden_preskill_report.hayden_preskill_veto);
+    assert!(!report.hayden_preskill_report.mss_chaos_veto);
+    assert!(report.hayden_preskill_report.slot_scale >= 0.10);
+
+    // 74. Simetría Espejo Homológica de Kontsevich en Calabi-Yau 3-Folds (Fase 109)
+    assert!(report.homological_mirror_report.instanton_yukawa_coupling >= 0.0);
+    assert!(!report.homological_mirror_report.mirror_symmetry_collapse_veto);
+    assert!(report.homological_mirror_report.slot_scale >= 0.10);
+
+    // 75. Modelos Quantum Double de Kitaev D(S3) & Anyones No-Abelianos (Fase 110)
+    assert!(report.kitaev_quantum_double_report.topological_order_parameter >= 0.0);
+    assert!(!report.kitaev_quantum_double_report.deconfinement_veto);
+    assert!(report.kitaev_quantum_double_report.slot_scale >= 0.10);
+
+    // 76. Teoría de Absorbedor Wheeler-Feynman & Amortiguamiento Dirac de Radiación (Fase 111)
+    assert!(report.wheeler_feynman_report.dirac_radiation_reaction_force.is_finite());
+    assert!(!report.wheeler_feynman_report.wheeler_feynman_absorber_veto);
+    assert!(!report.wheeler_feynman_report.dirac_radiation_runaway_veto);
+    assert!(report.wheeler_feynman_report.slot_scale >= 0.10);
 }
 
 #[test]

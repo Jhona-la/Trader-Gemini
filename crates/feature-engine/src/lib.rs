@@ -16,6 +16,7 @@ pub mod feynman_path_instanton;
 pub mod firma_maxent;
 pub mod fisher_rao;
 pub mod flujo_rg;
+pub mod geometric_langlands_hecke;
 pub mod gross_pitaevskii_bec;
 pub mod grothendieck_sheaves;
 pub mod hairer_landauer_anderson;
@@ -23,6 +24,7 @@ pub mod hawkes;
 pub mod hawkes_cross;
 pub mod heterotic_e8_calabi_yau;
 pub mod hodge_flow;
+pub mod homological_mirror_symmetry;
 pub mod hurst_dfa;
 pub mod hyperbolic_poincare_hodge;
 pub mod jt_schwarzian_gravity;
@@ -118,6 +120,10 @@ pub use feynman_path_instanton::{
     FeynmanInstantonEngine, InstantonParams, InstantonRegime, InstantonTunnelingReport,
     MAX_PATH_POINTS,
 };
+pub use geometric_langlands_hecke::{
+    GeometricLanglandsHeckeConfig, GeometricLanglandsHeckeEngine, GeometricLanglandsHeckeReport,
+    DEFAULT_PRIME_SCALES, HE_BUFFER_CAPACITY, NUM_PRIME_SCALES,
+};
 pub use gross_pitaevskii_bec::{
     GrossPitaevskiiBecEngine, GrossPitaevskiiBecReport, GrossPitaevskiiParams, BEC_ANGULAR_SECTORS,
     HBAR_EFF, PARTICLE_MASS_M,
@@ -140,6 +146,10 @@ pub use heterotic_e8_calabi_yau::{
 pub use hodge_flow::{
     CrossMarketHodgeReport, HelmholtzHodgeFlowEngine, HelmholtzHodgeParams,
     HodgeDecompositionResult, HodgeRegime, MAX_HODGE_ASSETS,
+};
+pub use homological_mirror_symmetry::{
+    HomologicalMirrorSymmetryConfig, HomologicalMirrorSymmetryEngine,
+    HomologicalMirrorSymmetryReport, GW_QUINTIC_INVARIANTS, HMS_MODULI_HISTORY,
 };
 pub use hyperbolic_poincare_hodge::{
     HyperbolicPoincareHodgeEngine, HyperbolicPoincareHodgeParams, HyperbolicPoincareHodgeReport,
