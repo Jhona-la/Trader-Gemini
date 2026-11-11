@@ -1,0 +1,13 @@
+# INTEGRADOR-T2 (2026-11-10): banderas de LLVM caras, sólo para los binarios de
+# producción y Demo. Antes estaban en `.cargo/config.toml` y se aplicaban a
+# TODA compilación (check, tests, scripts de build, macros). Cargo concatena
+# este `rustflags` con el de `.cargo/config.toml`, así que aquí van sólo los
+# añadidos. Uso:
+#   cargo build --release --config .cargo/produccion.toml --bin god_engine
+#   cargo test --profile perf --config .cargo/produccion.toml ...   (latencia)
+# `opt-level=3` ya no va en rustflags: lo fija `[profile.release]` en Cargo.toml.
+[target.x86_64-pc-windows-msvc]
+rustflags = [
+    "-C", "llvm-args=-enable-dfa-jump-thread",
+    "-C", "llvm-args=-inline-threshold=1000",
+]

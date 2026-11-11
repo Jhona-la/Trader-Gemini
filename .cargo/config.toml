@@ -1,5 +1,8 @@
 [build]
-rustflags = ["-C", "target-cpu=native", "-C", "opt-level=3"]
+# INTEGRADOR-T2: sin `-C opt-level=3` aqui: lo fija cada perfil de Cargo.toml
+# (release=3, dev=1 con dependencias a 3). Las banderas de LLVM caras van en
+# .cargo/produccion.toml, solo para los binarios de produccion y Demo.
+rustflags = ["-C", "target-cpu=native"]
 
 # RB-H2 (Codex RB, 2026-10-19): frescura por CONTENIDO en el target/ compartido.
 # Cargo nombra los artefactos de los paquetes del workspace con un hash de su

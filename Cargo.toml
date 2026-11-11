@@ -263,7 +263,18 @@ path = "src/bin/backtest_windows.rs"
 # Cambia la huella de Cargo; aplicar entre builds, siempre en target/ compartido.
 debug = 0
 strip = "symbols"
+# INTEGRADOR-T2: código propio a O1 (compila rápido, prueba sin ser lentísimo);
+# dependencias a O3 (se compilan una vez y quedan en caché).
+opt-level = 1
+
+[profile.dev.package."*"]
+opt-level = 3
 
 [profile.test]
 debug = 0
 strip = "symbols"
+
+# INTEGRADOR-T2: pruebas de latencia con la optimización de release. Úsese con
+# `--profile perf --config .cargo/produccion.toml` para medir lo que corre en producción.
+[profile.perf]
+inherits = "release"
