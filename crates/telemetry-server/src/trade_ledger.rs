@@ -272,3 +272,357 @@ fn finite_or_absent(value: f64) -> f64 {
 fn measured_opt(value: f64) -> Option<f64> {
     if value.is_finite() { Some(value) } else { None }
 }
+
+// ===========================================================================
+// M1 PASO 2 — Informe financiero: ROI / PnL / WR ANTES y DESPUES de fees,
+// con PERIODO y DATOS USADOS. Sin datos reales => N/D, nunca cifras inventadas.
+// ===========================================================================
+
+/// Periodo cerrado `[start_ns, end_ns]` en nanosegundos. Lo aporta el llamador:
+/// aquí no hay ventana por defecto ni constantes de tiempo. Un periodo con
+/// `end_ns < start_ns` es inválido y deja TODAS las métricas en N/D.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct ReportPeriod {
+    start_ns: u64,
+    end_ns: u64,
+}
+
+impl ReportPeriod {
+    pub fn new(start_ns: u64, end_ns: u64) -> Self {
+        Self { start_ns, end_ns }
+    }
+
+    pub fn start_ns(&self) -> u64 {
+        self.start_ns
+    }
+
+    pub fn end_ns(&self) -> u64 {
+        self.end_ns
+    }
+
+    pub fn is_valid(&self) -> bool {
+        self.end_ns >= self.start_ns
+    }
+
+    pub fn contains(&self, timestamp_ns: u64) -> bool {
+        self.start_ns <= timestamp_ns && timestamp_ns <= self.end_ns
+    }
+}
+
+/// Procedencia de los datos del informe. Sólo `Real` autoriza a publicar
+/// cifras; `Unavailable` obliga a N/D en todas las métricas. Es el llamador
+/// (Demo/Producción) quien declara la procedencia y el dataset usado.
+#[derive(Debug, Clone, PartialEq)]
+pub enum DataProvenance {
+    /// Datos reales medidos de la wallet, con el identificador del dataset.
+    Real { dataset: String },
+    /// Sin datos reales: no se publica ninguna cifra.
+    Unavailable,
+}
+
+impl DataProvenance {
+    pub fn is_real(&self) -> bool {
+        match self {
+            DataProvenance::Real { .. } => true,
+            DataProvenance::Unavailable => false,
+        }
+    }
+
+    pub fn dataset(&self) -> Option<&str> {
+        match self {
+            DataProvenance::Real { dataset } => Some(dataset.as_str()),
+            DataProvenance::Unavailable => None,
+        }
+    }
+}
+
+/// Métricas calculadas sobre un conjunto de asientos. Comportamiento puro y
+/// determinista; NO constituye evidencia financiera por sí mismo: el informe
+/// (`FinancialReport`) sólo las publica cuando hay datos reales declarados.
+/// Convención explícita (sin heurística): `before_fees` = bruto, es decir SIN
+/// ningún coste; `after_fees` = neto, es decir DESPUÉS de `fees + funding +
+/// slippage` (los tres costes registrados por operación). Así `WR` puede caer
+/// al pasar de bruto a neto, que es justo lo que el informe debe medir.
+/// Unidades: PnL y costes en la moneda de la wallet; ROI en porcentaje;
+/// `win_rate_*` como fracción en [0, 1]. `NaN` = N/D por campo.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct LedgerMetrics {
+    rows: usize,
+    pnl_before_fees: f64,
+    pnl_after_fees: f64,
+    fees: f64,
+    funding: f64,
+    slippage: f64,
+    roi_before_fees_pct: f64,
+    roi_after_fees_pct: f64,
+    win_rate_before_fees: f64,
+    win_rate_after_fees: f64,
+}
+
+impl LedgerMetrics {
+    /// Cálculo puro sobre asientos YA medidos. Sin capital fijo: `wallet_capital`
+    /// es el balance REAL de la wallet en Demo/Producción, aportado por el
+    /// llamador. Sin capital medido, o con capital nulo/negativo, los ROI son
+    /// N/D (guarda de división por cero). Sin asientos, todo es N/D.
+    pub fn compute(entries: &[TradeLedgerEntry], wallet_capital: f64) -> Self {
+        // @BEGIN_COMPUTE@
+        if entries.is_empty() {
+            return Self::absent();
+        }
+        let capital = finite_or_absent(wallet_capital);
+        let pnl_before_fees = sum_checked(entries.iter().map(|e| e.gross_pnl()));
+        let pnl_after_fees = sum_checked(entries.iter().map(|e| e.net_pnl()));
+        let fees = sum_checked(entries.iter().map(|e| e.fees()));
+        let funding = sum_checked(entries.iter().map(|e| e.funding()));
+        let slippage = sum_checked(entries.iter().map(|e| e.slippage()));
+        Self {
+            rows: entries.len(),
+            pnl_before_fees,
+            pnl_after_fees,
+            fees,
+            funding,
+            slippage,
+            roi_before_fees_pct: roi_checked(pnl_before_fees, capital),
+            roi_after_fees_pct: roi_checked(pnl_after_fees, capital),
+            win_rate_before_fees: win_rate_checked(entries, |e| e.gross_pnl()),
+            win_rate_after_fees: win_rate_checked(entries, |e| e.net_pnl()),
+        }
+        // @END_COMPUTE@
+    }
+
+    fn absent() -> Self {
+        Self {
+            rows: 0,
+            pnl_before_fees: f64::NAN,
+            pnl_after_fees: f64::NAN,
+            fees: f64::NAN,
+            funding: f64::NAN,
+            slippage: f64::NAN,
+            roi_before_fees_pct: f64::NAN,
+            roi_after_fees_pct: f64::NAN,
+            win_rate_before_fees: f64::NAN,
+            win_rate_after_fees: f64::NAN,
+        }
+    }
+
+    pub fn rows(&self) -> usize {
+        self.rows
+    }
+
+    pub fn pnl_before_fees(&self) -> f64 {
+        self.pnl_before_fees
+    }
+
+    pub fn pnl_after_fees(&self) -> f64 {
+        self.pnl_after_fees
+    }
+
+    pub fn fees(&self) -> f64 {
+        self.fees
+    }
+
+    pub fn funding(&self) -> f64 {
+        self.funding
+    }
+
+    pub fn slippage(&self) -> f64 {
+        self.slippage
+    }
+
+    pub fn roi_before_fees_pct(&self) -> f64 {
+        self.roi_before_fees_pct
+    }
+
+    pub fn roi_after_fees_pct(&self) -> f64 {
+        self.roi_after_fees_pct
+    }
+
+    pub fn win_rate_before_fees(&self) -> f64 {
+        self.win_rate_before_fees
+    }
+
+    pub fn win_rate_after_fees(&self) -> f64 {
+        self.win_rate_after_fees
+    }
+}
+
+/// Informe de un periodo. Lleva SIEMPRE el periodo y los datos usados
+/// (dataset, filas, capital). Sin datos reales, todas las métricas son N/D.
+#[derive(Debug, Clone, PartialEq)]
+pub struct FinancialReport {
+    period: ReportPeriod,
+    dataset: Option<String>,
+    rows: usize,
+    wallet_capital: f64,
+    metrics: LedgerMetrics,
+}
+
+impl FinancialReport {
+    /// Construye el informe del periodo usando SÓLO los asientos cuyo
+    /// `timestamp_ns` cae dentro de `[start_ns, end_ns]`: mezclar operaciones
+    /// de fuera del periodo produciría cifras que no corresponden a los datos
+    /// declarados. Sin procedencia real, periodo inválido, capital no medido
+    /// o periodo sin operaciones => N/D en todas las métricas.
+    pub fn build(
+        ledger: &TradeLedger,
+        period: ReportPeriod,
+        wallet_capital: f64,
+        provenance: DataProvenance,
+    ) -> Self {
+        // @BEGIN_BUILD@
+        let inside: Vec<TradeLedgerEntry> = if period.is_valid() {
+            ledger
+                .entries()
+                .iter()
+                .filter(|e| period.contains(e.timestamp_ns()))
+                .cloned()
+                .collect()
+        } else {
+            Vec::new()
+        };
+
+        let capital = finite_or_absent(wallet_capital);
+        // Disponibilidad independiente: que falte el capital deja SÓLO los ROI
+        // en N/D (roi_checked), no descarta PnL ni WR medidos. No se exige
+        // capital aquí para no publicar N/D donde sí hay datos reales.
+        let publicable = provenance.is_real() && period.is_valid() && !inside.is_empty();
+
+        let metrics = if publicable {
+            LedgerMetrics::compute(&inside, capital)
+        } else {
+            LedgerMetrics::absent()
+        };
+
+        // Un periodo inválido NO es un dato medido: no se publican filas ni
+        // capital como si el informe fuera válido (evita `0 filas` y un
+        // capital real en un informe rechazado).
+        let usable_period = provenance.is_real() && period.is_valid();
+        Self {
+            period,
+            dataset: provenance.dataset().map(str::to_string),
+            rows: if usable_period { inside.len() } else { 0 },
+            wallet_capital: if usable_period { capital } else { f64::NAN },
+            metrics,
+        }
+        // @END_BUILD@
+    }
+
+    pub fn period(&self) -> ReportPeriod {
+        self.period
+    }
+
+    /// Identificador del dataset usado, o `None` si no hay datos reales.
+    pub fn dataset(&self) -> Option<&str> {
+        self.dataset.as_deref()
+    }
+
+    /// Filas usadas del periodo. `0` con procedencia real significa "periodo
+    /// sin operaciones" (dato medido); con procedencia ausente significa N/D.
+    pub fn rows(&self) -> usize {
+        self.rows
+    }
+
+    /// Capital real usado (`NaN` = no medido). Nunca un valor fijo.
+    pub fn wallet_capital(&self) -> f64 {
+        self.wallet_capital
+    }
+
+    pub fn metrics(&self) -> &LedgerMetrics {
+        &self.metrics
+    }
+
+    /// `true` sólo si hay métricas calculadas a partir de datos reales.
+    pub fn has_evidence(&self) -> bool {
+        self.dataset.is_some() && self.metrics.rows() > 0
+    }
+
+    /// Representación para el cable: `None` = N/D explícito. Evita que un
+    /// `null` se interprete como `0.00` en el panel (paso 3).
+    pub fn wire(&self) -> ReportWire {
+        let m = &self.metrics;
+        ReportWire {
+            period_start_ns: self.period.start_ns(),
+            period_end_ns: self.period.end_ns(),
+            dataset: self.dataset.clone(),
+            // Un periodo inválido no es un dato medido: `rows` también es N/D.
+            rows: if self.dataset.is_some() && self.period.is_valid() {
+                Some(self.rows)
+            } else {
+                None
+            },
+            wallet_capital: measured_opt(self.wallet_capital),
+            pnl_before_fees: measured_opt(m.pnl_before_fees()),
+            pnl_after_fees: measured_opt(m.pnl_after_fees()),
+            fees: measured_opt(m.fees()),
+            funding: measured_opt(m.funding()),
+            slippage: measured_opt(m.slippage()),
+            roi_before_fees_pct: measured_opt(m.roi_before_fees_pct()),
+            roi_after_fees_pct: measured_opt(m.roi_after_fees_pct()),
+            win_rate_before_fees: measured_opt(m.win_rate_before_fees()),
+            win_rate_after_fees: measured_opt(m.win_rate_after_fees()),
+        }
+    }
+}
+
+/// Informe para el cable. Cada métrica es `Option<f64>`: `None` = N/D,
+/// `Some(v)` = valor medido (incluido un cero real).
+#[derive(Debug, Clone, PartialEq)]
+pub struct ReportWire {
+    pub period_start_ns: u64,
+    pub period_end_ns: u64,
+    pub dataset: Option<String>,
+    pub rows: Option<usize>,
+    pub wallet_capital: Option<f64>,
+    pub pnl_before_fees: Option<f64>,
+    pub pnl_after_fees: Option<f64>,
+    pub fees: Option<f64>,
+    pub funding: Option<f64>,
+    pub slippage: Option<f64>,
+    pub roi_before_fees_pct: Option<f64>,
+    pub roi_after_fees_pct: Option<f64>,
+    pub win_rate_before_fees: Option<f64>,
+    pub win_rate_after_fees: Option<f64>,
+}
+
+/// Suma fail-closed: un componente ausente o un desborde dejan el campo en
+/// N/D en vez de publicar una suma parcial como si fuera un total medido.
+fn sum_checked<I: IntoIterator<Item = f64>>(values: I) -> f64 {
+    let mut acc = 0.0f64;
+    for value in values {
+        if !value.is_finite() {
+            return f64::NAN;
+        }
+        acc += value;
+        if !acc.is_finite() {
+            return f64::NAN;
+        }
+    }
+    acc
+}
+
+/// ROI con guarda explícita de división por cero y de capital no medido.
+fn roi_checked(pnl: f64, capital: f64) -> f64 {
+    if !pnl.is_finite() || !capital.is_finite() || capital <= 0.0 {
+        return f64::NAN;
+    }
+    finite_or_absent(pnl / capital * 100.0)
+}
+
+/// Win rate como fracción en [0, 1]. Sin asientos o con algún valor ausente
+/// => N/D (no se cuentan como derrotas ni se inventa un 0.0).
+fn win_rate_checked<F: Fn(&TradeLedgerEntry) -> f64>(entries: &[TradeLedgerEntry], pick: F) -> f64 {
+    if entries.is_empty() {
+        return f64::NAN;
+    }
+    let mut wins = 0usize;
+    for entry in entries {
+        let value = pick(entry);
+        if !value.is_finite() {
+            return f64::NAN;
+        }
+        if value > 0.0 {
+            wins += 1;
+        }
+    }
+    finite_or_absent(wins as f64 / entries.len() as f64)
+}
