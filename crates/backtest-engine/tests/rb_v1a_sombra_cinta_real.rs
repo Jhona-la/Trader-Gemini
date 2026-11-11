@@ -113,6 +113,15 @@ fn rb_v1a_sombra_de_los_vetos_sobre_cinta_real() {
             e.media_r().map_or("—".to_string(), |m| format!("{m:+.3}")),
             (1.0 / ALFA_COLA).ln(),
         );
+        if let (Some(promesa), Some(brecha)) = (e.promesa_media_r(), e.brecha_media_r()) {
+            println!(
+                "    promesa del riesgo {promesa:+.3} R frente a {:+.3} R realizado en {} (brecha {brecha:+.3} R; evidencia de promesa de más e^{:.2}) → {:?}",
+                promesa + brecha,
+                e.n_promesa,
+                e.log_evidencia_promesa().1,
+                e.veredicto_promesa(ALFA_COLA)
+            );
+        }
         if e.n > 0 {
             assert!(
                 e.media_r().is_some_and(f64::is_finite),

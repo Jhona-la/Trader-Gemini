@@ -35,6 +35,12 @@
 //! CUALQUIER momento, se mire cuantas veces se mire (ver `log_evidencia`).
 //! El de z·SE (QS-R4) es asintótico y necesita un `n_min`.
 //!
+//! RB-V1c añade la PROMESA: cada intención puede llevar el EV neto que el
+//! riesgo le prometió (`promesa_r`, en R). Por fuente se acumula la brecha
+//! realizado − prometido con otro e-proceso, y `veredicto_promesa` certifica,
+//! en cualquier momento, si el riesgo promete de más (su EV valida operaciones
+//! que no pagan lo que dice) o de menos.
+//!
 //! Límites conocidos (deliberados):
 //! - Resolución al ritmo de los precios observados: un toque entre dos
 //!   precios se detecta en el siguiente (igual que la gestión viva).
@@ -70,6 +76,10 @@ pub struct IntencionVetada {
     pub tau_ms: u64,
     /// Instante del veto en ms.
     pub t0_ms: u64,
+    /// RB-V1c — EV neto de fricción que el riesgo prometió para la intención,
+    /// en R (`(EV bruto − f)/sl`); `None` si la evaluación no llegó a
+    /// calcularlo.
+    pub promesa_r: Option<f64>,
 }
 
 impl IntencionVetada {
@@ -84,6 +94,7 @@ impl IntencionVetada {
             && self.friccion_pct.is_finite()
             && self.friccion_pct >= 0.0
             && self.tau_ms > 0
+            && self.promesa_r.is_none_or(f64::is_finite)
     }
 
     /// Retorno a favor de la intención con el precio `p`, en fracción.
@@ -129,6 +140,77 @@ pub const REJILLA_APUESTAS: [f64; APUESTAS] = {
     u
 };
 
+/// RB-V1b/RB-V1c — e-proceso de Ville sobre observaciones `x` de un intervalo
+/// de ancho 1 conocido antes de verlas: la riqueza de cada apuesta `u_j` de la
+/// rejilla contra «media ≤ 0» y contra «media ≥ 0» (ver `log_evidencia`).
+#[derive(Debug, Clone, Copy, Default, PartialEq)]
+pub struct EProcesoVille {
+    /// `ln` de la riqueza contra H0⁺ (media ≤ 0): `Σ_i (u_j·x_i − u_j²/8)`.
+    pub log_riqueza_positiva: [f64; APUESTAS],
+    /// `ln` de la riqueza contra H0⁻ (media ≥ 0): `Σ_i (−u_j·x_i − u_j²/8)`.
+    pub log_riqueza_negativa: [f64; APUESTAS],
+}
+
+/// Signo de una media que un e-proceso certifica.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Signo {
+    Positivo,
+    Negativo,
+}
+
+impl EProcesoVille {
+    /// Apuesta una observación `x` de un intervalo de ancho 1. El intervalo y
+    /// la apuesta se fijan antes de ver `x`: la apuesta es predecible.
+    pub fn apostar(&mut self, x: f64) {
+        let riquezas = self
+            .log_riqueza_positiva
+            .iter_mut()
+            .zip(self.log_riqueza_negativa.iter_mut());
+        for ((positiva, negativa), u) in riquezas.zip(REJILLA_APUESTAS) {
+            let castigo = u * u / 8.0;
+            *positiva += u * x - castigo;
+            *negativa -= u * x + castigo;
+        }
+    }
+
+    /// `(ln M⁺, ln M⁻)`: el logaritmo de la evidencia (e-valor) acumulada
+    /// contra «la media no es positiva» y contra «la media no es negativa».
+    ///
+    /// `M⁺_n = (1/J)·Σ_j Π_i exp(u_j·x_i − u_j²/8)`, y `M⁻` con `−x_i`. Por el
+    /// lema de Hoeffding, una variable de ancho 1 con media condicional
+    /// `E[x_i | pasado] ≤ 0` cumple `E[exp(u·x_i − u²/8) | pasado] ≤ 1` para
+    /// toda `u ≥ 0`. Así `M⁺` es una supermartingala no negativa con
+    /// `M⁺_0 = 1` bajo H0⁺, y la mezcla de apuestas conserva la propiedad. La
+    /// desigualdad maximal de Ville da `P(∃n: M⁺_n ≥ 1/α) ≤ α`, válida mirando
+    /// en cada resolución. Supone resultados condicionalmente independientes
+    /// entre intenciones (límite declarado: monedas correlacionadas no lo son).
+    pub fn log_evidencia(&self) -> (f64, f64) {
+        (
+            log_media_exp(&self.log_riqueza_positiva),
+            log_media_exp(&self.log_riqueza_negativa),
+        )
+    }
+
+    /// El signo de la media si su evidencia alcanza `1/alfa_cola` y la del
+    /// contrario no (las dos a la vez sería contradictorio). `None` si no hay
+    /// evidencia o `alfa_cola` cae fuera de (0, 1).
+    pub fn signo(&self, alfa_cola: f64) -> Option<Signo> {
+        if !alfa_cola.is_finite() || alfa_cola <= 0.0 || alfa_cola >= 1.0 {
+            return None;
+        }
+        let umbral = (1.0 / alfa_cola).ln();
+        let (positiva, negativa) = self.log_evidencia();
+        if !positiva.is_finite() || !negativa.is_finite() {
+            return None;
+        }
+        match (positiva >= umbral, negativa >= umbral) {
+            (true, false) => Some(Signo::Positivo),
+            (false, true) => Some(Signo::Negativo),
+            _ => None,
+        }
+    }
+}
+
 /// Acumulados de una fuente de veto.
 #[derive(Debug, Clone, Copy, Default, PartialEq)]
 pub struct EstadisticaFuente {
@@ -138,12 +220,18 @@ pub struct EstadisticaFuente {
     pub vencidas: u64,
     pub suma_r: f64,
     pub suma_r2: f64,
-    /// RB-V1b — `ln` de la riqueza de cada apuesta `u_j` contra H0⁺ («lo
-    /// vetado no paga»: E[r] ≤ 0): `Σ_i (u_j·x_i − u_j²/8)`.
-    pub log_riqueza_paga: [f64; APUESTAS],
-    /// RB-V1b — lo mismo contra H0⁻ («lo vetado no pierde»: E[r] ≥ 0):
-    /// `Σ_i (−u_j·x_i − u_j²/8)`.
-    pub log_riqueza_pierde: [f64; APUESTAS],
+    /// RB-V1b — evidencia sobre el signo de E[r], con `x = r/ancho`.
+    pub evidencia_r: EProcesoVille,
+    /// RB-V1c — resoluciones de intenciones con promesa del riesgo.
+    pub n_promesa: u64,
+    /// RB-V1c — Σ promesa (R) de esas resoluciones.
+    pub suma_promesa_r: f64,
+    /// RB-V1c — Σ R realizado de esas mismas resoluciones.
+    pub suma_r_prometida: f64,
+    /// RB-V1c — evidencia sobre el signo de E[r − promesa], con
+    /// `x = (r − promesa)/ancho` (la promesa es fija al registrar, así que
+    /// `r − promesa` conserva el ancho de `r`).
+    pub evidencia_brecha: EProcesoVille,
 }
 
 /// `ln((1/J)·Σ_j e^(l_j))` sin desbordamiento (se resta el máximo).
@@ -154,6 +242,17 @@ fn log_media_exp(l: &[f64; APUESTAS]) -> f64 {
     }
     let suma: f64 = l.iter().map(|&v| (v - max).exp()).sum();
     max + (suma / APUESTAS as f64).ln()
+}
+
+/// RB-V1c — qué dice la evidencia sobre la promesa del riesgo.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Promesa {
+    SinEvidencia,
+    /// Lo realizado queda por debajo de lo prometido: el EV del riesgo es
+    /// optimista y valida operaciones que no pagan lo que dice.
+    PrometeDeMas,
+    /// Lo realizado supera lo prometido: el EV del riesgo es conservador.
+    PrometeDeMenos,
 }
 
 /// Qué dice la evidencia acumulada de una fuente.
@@ -207,59 +306,48 @@ impl EstadisticaFuente {
         }
     }
 
-    /// RB-V1b — apuesta de una resolución: `x = r/ancho`, con `r` en
-    /// `[−(sl+f)/sl, (tp−f)/sl]` y `ancho = (tp+sl)/sl` fijado al registrar
-    /// (no depende de cómo se resuelva), así que `x` vive en un intervalo de
-    /// ancho 1 y la apuesta es predecible.
-    fn apostar(&mut self, x: f64) {
-        let riquezas = self
-            .log_riqueza_paga
-            .iter_mut()
-            .zip(self.log_riqueza_pierde.iter_mut());
-        for ((paga, pierde), u) in riquezas.zip(REJILLA_APUESTAS) {
-            let castigo = u * u / 8.0;
-            *paga += u * x - castigo;
-            *pierde -= u * x + castigo;
-        }
-    }
-
-    /// RB-V1b — `(ln M⁺, ln M⁻)`: el logaritmo de la evidencia (e-valor)
-    /// acumulada contra «lo vetado no paga» y contra «lo vetado no pierde».
-    ///
-    /// `M⁺_n = (1/J)·Σ_j Π_i exp(u_j·x_i − u_j²/8)`, y `M⁻` con `−x_i`. Por el
-    /// lema de Hoeffding, una variable de ancho 1 con media condicional
-    /// `E[x_i | pasado] ≤ 0` cumple `E[exp(u·x_i − u²/8) | pasado] ≤ 1` para
-    /// toda `u ≥ 0`; la apuesta `u_j` se fija antes de ver el resultado, y el
-    /// ancho, al registrar. Así `M⁺` es una supermartingala no negativa con
-    /// `M⁺_0 = 1` bajo H0⁺, y la mezcla de apuestas conserva la propiedad. La
-    /// desigualdad maximal de Ville da `P(∃n: M⁺_n ≥ 1/α) ≤ α`, válida mirando
-    /// en cada resolución. Supone que los resultados de distintas intenciones
-    /// son condicionalmente independientes (límite declarado: monedas
-    /// correlacionadas no lo son).
+    /// RB-V1b — `(ln M⁺, ln M⁻)` de E[r]: la evidencia contra «lo vetado no
+    /// paga» y contra «lo vetado no pierde» (ver `EProcesoVille`).
     pub fn log_evidencia(&self) -> (f64, f64) {
-        (
-            log_media_exp(&self.log_riqueza_paga),
-            log_media_exp(&self.log_riqueza_pierde),
-        )
+        self.evidencia_r.log_evidencia()
     }
 
     /// RB-V1b — veredicto siempre válido: la fuente bloquea ganadoras si la
     /// evidencia contra «no paga» alcanza `1/alfa_cola`, ahorra dinero si la
-    /// alcanza la de «no pierde», y no hay veredicto si ninguna (o las dos,
-    /// que sería contradictorio). Cada cola se contrasta con `alfa_cola`.
+    /// alcanza la de «no pierde», y no hay veredicto si ninguna.
     pub fn veredicto_ville(&self, alfa_cola: f64) -> Veredicto {
-        if !alfa_cola.is_finite() || alfa_cola <= 0.0 || alfa_cola >= 1.0 {
-            return Veredicto::SinEvidencia;
+        match self.evidencia_r.signo(alfa_cola) {
+            Some(Signo::Positivo) => Veredicto::BloqueaGanadoras,
+            Some(Signo::Negativo) => Veredicto::AhorraDinero,
+            None => Veredicto::SinEvidencia,
         }
-        let umbral = (1.0 / alfa_cola).ln();
-        let (paga, pierde) = self.log_evidencia();
-        if !paga.is_finite() || !pierde.is_finite() {
-            return Veredicto::SinEvidencia;
-        }
-        match (paga >= umbral, pierde >= umbral) {
-            (true, false) => Veredicto::BloqueaGanadoras,
-            (false, true) => Veredicto::AhorraDinero,
-            _ => Veredicto::SinEvidencia,
+    }
+
+    /// RB-V1c — EV medio que prometió el riesgo, en R, sobre las resoluciones
+    /// con promesa.
+    pub fn promesa_media_r(&self) -> Option<f64> {
+        (self.n_promesa > 0).then(|| self.suma_promesa_r / self.n_promesa as f64)
+    }
+
+    /// RB-V1c — brecha media realizado − prometido, en R (negativa: el riesgo
+    /// promete de más).
+    pub fn brecha_media_r(&self) -> Option<f64> {
+        (self.n_promesa > 0)
+            .then(|| (self.suma_r_prometida - self.suma_promesa_r) / self.n_promesa as f64)
+    }
+
+    /// RB-V1c — `(ln M⁺, ln M⁻)` de E[r − promesa]: la evidencia contra «el
+    /// riesgo no promete de menos» y contra «no promete de más».
+    pub fn log_evidencia_promesa(&self) -> (f64, f64) {
+        self.evidencia_brecha.log_evidencia()
+    }
+
+    /// RB-V1c — veredicto siempre válido sobre la promesa del riesgo.
+    pub fn veredicto_promesa(&self, alfa_cola: f64) -> Promesa {
+        match self.evidencia_brecha.signo(alfa_cola) {
+            Some(Signo::Negativo) => Promesa::PrometeDeMas,
+            Some(Signo::Positivo) => Promesa::PrometeDeMenos,
+            None => Promesa::SinEvidencia,
         }
     }
 }
@@ -371,7 +459,13 @@ impl LibroSombra {
                 s.suma_r += r;
                 s.suma_r2 += r * r;
                 let ancho = (i.tp_pct + i.sl_pct) / i.sl_pct;
-                s.apostar(r / ancho);
+                s.evidencia_r.apostar(r / ancho);
+                if let Some(promesa) = i.promesa_r {
+                    s.n_promesa += 1;
+                    s.suma_promesa_r += promesa;
+                    s.suma_r_prometida += r;
+                    s.evidencia_brecha.apostar((r - promesa) / ancho);
+                }
             }
             // La última abierta ocupa el hueco; `k` no avanza porque esa
             // casilla trae ahora una intención todavía sin revisar.

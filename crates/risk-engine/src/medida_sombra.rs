@@ -64,6 +64,17 @@ impl RiskEngine {
             .filter(|&(moneda, _)| moneda == coin_id)
             .map(|(_, g)| g)
     }
+
+    /// RB-V1c — el EV bruto que la última evaluación prometió si fue de
+    /// `coin_id`: `p·TP − (1−p)·SL`, en fracción del precio, con la `p` y la
+    /// geometría con que la juzgó la puerta de EV. `None` si fue de otra
+    /// moneda o terminó antes de calcularlo (p. ej., un rechazo por
+    /// confianza). Leerla no consume nada.
+    pub fn promesa_evaluada(&self, coin_id: usize) -> Option<f64> {
+        self.promesa_evaluada
+            .filter(|&(moneda, _)| moneda == coin_id)
+            .map(|(_, ev)| ev)
+    }
 }
 
 #[cfg(test)]
@@ -114,5 +125,21 @@ mod tests {
         );
         motor.reset(100.0);
         assert_eq!(motor.geometria_evaluada(3), None, "reset la borra");
+    }
+
+    #[test]
+    fn rb_v1c_la_promesa_es_de_su_moneda_y_reset_la_borra() {
+        let mut motor = RiskEngine::new(100.0);
+        assert_eq!(motor.promesa_evaluada(3), None);
+        motor.promesa_evaluada = Some((3, 0.017));
+        assert_eq!(motor.promesa_evaluada(4), None, "otra moneda");
+        assert_eq!(motor.promesa_evaluada(3), Some(0.017));
+        assert_eq!(
+            motor.promesa_evaluada(3),
+            Some(0.017),
+            "leerla no la consume"
+        );
+        motor.reset(100.0);
+        assert_eq!(motor.promesa_evaluada(3), None, "reset la borra");
     }
 }

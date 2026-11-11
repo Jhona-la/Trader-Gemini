@@ -404,6 +404,10 @@ pub struct RiskEngine {
     /// que se rechaza o se veta después de calcularla. Se borra al empezar
     /// cada evaluación; ninguna decisión la lee.
     geometria_evaluada: Option<(usize, medida_sombra::GeometriaSombra)>,
+    /// RB-V1c: moneda y EV bruto (`p·TP − (1−p)·SL`, fracción del precio)
+    /// que la evaluación en curso prometió. Se borra al empezar cada
+    /// evaluación; ninguna decisión la lee.
+    promesa_evaluada: Option<(usize, f64)>,
 }
 
 /// CL-131 (R2 de la revisión del PR #62) — lo que una orden validada aporta
@@ -434,6 +438,7 @@ impl RiskEngine {
             freno_estrategia: freno_estrategia::FrenoEstrategia::new(),
             medida_pendiente: None,
             geometria_evaluada: None,
+            promesa_evaluada: None,
         }
     }
 
@@ -444,6 +449,7 @@ impl RiskEngine {
         self.freno_estrategia = freno_estrategia::FrenoEstrategia::new();
         self.medida_pendiente = None;
         self.geometria_evaluada = None;
+        self.promesa_evaluada = None;
     }
 
     /// CL-131/CL-135 — la medida de la última orden validada de `coin_id`,
@@ -696,8 +702,10 @@ impl RiskEngine {
         set_reject_direction(intent.signal);
         // CL-131: la medida pendiente es la de la última orden validada.
         self.medida_pendiente = None;
-        // RB-V1b: la geometría es la de esta evaluación o ninguna.
+        // RB-V1b/RB-V1c: la geometría y la promesa son las de esta
+        // evaluación o ninguna.
         self.geometria_evaluada = None;
+        self.promesa_evaluada = None;
         if coin_id >= arena.coins.len() || intent.signal == SignalType::Flat {
             return rej(REJ_FLAT_COIN);
         }
@@ -1743,6 +1751,9 @@ impl RiskEngine {
         if !expected_value_pct.is_finite() || !ev_fee_multiplier.is_finite() {
             return rej(REJ_INVALID_INPUT);
         }
+        // RB-V1c: lo que esta evaluación promete, para contrastarlo en sombra
+        // con lo que ocurre. Sólo se escribe.
+        self.promesa_evaluada = Some((coin_id, expected_value_pct));
         // Ω46.2 / D4 (CL-98): en fase de sonda (menos de `CIERRES_DE_SONDA`
         // cierres) la orden es una sonda: se admite porque está presupuestada
         // (una abierta en la cartera, orden mínima, pérdidas dentro del

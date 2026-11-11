@@ -1,5 +1,5 @@
-//! CONTRATO RB-V1b (Codex RB, 2026-11-10): la geometría que el riesgo publica
-//! para la sombra es la de la intención evaluada, o ninguna.
+//! CONTRATO RB-V1b/RB-V1c (Codex RB, 2026-11-10): la geometría y la promesa que
+//! el riesgo publica para la sombra son las de la intención evaluada, o ninguna.
 //!
 //! QUÉ: `RiskEngine::geometria_evaluada` lleva el TP, el SL, la fricción de ida
 //! y vuelta y el τ con que `evaluate_single_intent` evaluó la intención. El
@@ -112,6 +112,22 @@ fn rb_v1b_la_orden_validada_publica_su_geometria_exacta() {
 
     // La fricción es la misma que la cuenta mide al abrir la orden (C-F5c):
     // con la primera operación, l = (SL + f)/SL y w = (TP − f)/SL exactos.
+    // RB-V1c: la promesa de la puerta de EV es p·TP − (1−p)·SL con la p de la
+    // intención (0,9) y la geometría de la orden: 0,9·0,02 − 0,1·0,01 = 0,017.
+    let Some(promesa) = riesgo.promesa_evaluada(0) else {
+        panic!("una orden validada publica lo que promete");
+    };
+    println!("observado: promesa bruta {promesa:.6} (esperada 0,017)");
+    assert!(
+        (promesa - (0.9 * tp - 0.1 * sl)).abs() <= cota,
+        "promesa {promesa}"
+    );
+    assert_eq!(
+        riesgo.promesa_evaluada(1),
+        None,
+        "la promesa es de la moneda 0"
+    );
+
     let Some(m) = riesgo.tomar_medida_validada(0) else {
         panic!("la orden validada deja su medida pendiente");
     };
@@ -150,6 +166,11 @@ fn rb_v1b_un_rechazo_posterior_a_la_geometria_la_conserva() {
     let Some(g) = riesgo.geometria_evaluada(0) else {
         panic!("la confianza se juzga después de la geometría");
     };
+    assert_eq!(
+        riesgo.promesa_evaluada(0),
+        None,
+        "RB-V1c: la confianza se juzga ANTES del EV: no hay promesa"
+    );
     let cota = 8.0 * f64::EPSILON;
     assert!(
         (g.tp_pct - 0.02).abs() <= cota,
@@ -190,6 +211,7 @@ fn rb_v1b_un_rechazo_anterior_a_la_geometria_no_publica_ninguna() {
         None,
         "y la de la evaluación anterior se borró al empezar esta"
     );
+    assert_eq!(riesgo.promesa_evaluada(0), None, "la promesa también");
 
     let plana = SignalIntent {
         signal: SignalType::Flat,

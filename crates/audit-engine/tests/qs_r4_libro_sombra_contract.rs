@@ -17,6 +17,8 @@ fn intencion(fuente: u8, moneda: u16, es_largo: bool) -> IntencionVetada {
         friccion_pct: 0.001,
         tau_ms: 60_000,
         t0_ms: T0,
+        // RB-V1c: sin promesa del riesgo (QS-R4 no la mide).
+        promesa_r: None,
     }
 }
 
@@ -85,9 +87,18 @@ fn qs_r4_una_abierta_por_fuente_moneda_y_lado() {
     assert!(l.registrar(intencion(2, 7, true)));
     assert!(!l.registrar(intencion(2, 7, true)));
     assert_eq!(l.descartadas_solape, 1);
-    assert!(l.registrar(intencion(2, 7, false)), "el otro lado es otra intención");
-    assert!(l.registrar(intencion(3, 7, true)), "otra fuente es otra intención");
-    assert!(l.registrar(intencion(2, 8, true)), "otra moneda es otra intención");
+    assert!(
+        l.registrar(intencion(2, 7, false)),
+        "el otro lado es otra intención"
+    );
+    assert!(
+        l.registrar(intencion(3, 7, true)),
+        "otra fuente es otra intención"
+    );
+    assert!(
+        l.registrar(intencion(2, 8, true)),
+        "otra moneda es otra intención"
+    );
     assert_eq!(l.abiertas(), 4);
 }
 
@@ -109,13 +120,31 @@ fn qs_r4_entradas_invalidas_se_descartan() {
     let mut l = LibroSombra::new();
     let base = intencion(0, 0, true);
     let malas = [
-        IntencionVetada { entrada: f64::NAN, ..base },
-        IntencionVetada { entrada: 0.0, ..base },
-        IntencionVetada { sl_pct: 0.0, ..base },
-        IntencionVetada { tp_pct: f64::INFINITY, ..base },
-        IntencionVetada { friccion_pct: -0.001, ..base },
+        IntencionVetada {
+            entrada: f64::NAN,
+            ..base
+        },
+        IntencionVetada {
+            entrada: 0.0,
+            ..base
+        },
+        IntencionVetada {
+            sl_pct: 0.0,
+            ..base
+        },
+        IntencionVetada {
+            tp_pct: f64::INFINITY,
+            ..base
+        },
+        IntencionVetada {
+            friccion_pct: -0.001,
+            ..base
+        },
         IntencionVetada { tau_ms: 0, ..base },
-        IntencionVetada { fuente: MAX_FUENTES as u8, ..base },
+        IntencionVetada {
+            fuente: MAX_FUENTES as u8,
+            ..base
+        },
     ];
     for m in malas {
         assert!(!l.registrar(m), "{m:?}");
@@ -144,7 +173,10 @@ fn qs_r4_veredicto_por_fuente() {
     //   (1,8 − 1,2)/2 = +0,3 R con dispersión 1,5 R: hacen falta muchas.
     for k in 0..40u16 {
         let t = T0 + 1_000 * k as u64;
-        let i = |f| IntencionVetada { t0_ms: t, ..intencion(f, k, true) };
+        let i = |f| IntencionVetada {
+            t0_ms: t,
+            ..intencion(f, k, true)
+        };
         l.registrar(i(5));
         l.observar(k, 99.0, t + 1);
         l.registrar(i(6));
@@ -153,12 +185,18 @@ fn qs_r4_veredicto_por_fuente() {
         l.observar(k, if k % 2 == 0 { 101.0 } else { 99.0 }, t + 1);
     }
     assert_eq!(stats(&l, 5).veredicto(1.64, 30), Veredicto::AhorraDinero);
-    assert_eq!(stats(&l, 6).veredicto(1.64, 30), Veredicto::BloqueaGanadoras);
+    assert_eq!(
+        stats(&l, 6).veredicto(1.64, 30),
+        Veredicto::BloqueaGanadoras
+    );
     // Media +0,3, error estándar 1,5/√40·√(40/39) ≈ 0,24: z = 1,64 no la separa.
     assert_eq!(stats(&l, 7).veredicto(1.64, 30), Veredicto::SinEvidencia);
     // Sin muestra suficiente o z inválido, nunca hay veredicto.
     assert_eq!(stats(&l, 5).veredicto(1.64, 41), Veredicto::SinEvidencia);
-    assert_eq!(stats(&l, 5).veredicto(f64::NAN, 30), Veredicto::SinEvidencia);
+    assert_eq!(
+        stats(&l, 5).veredicto(f64::NAN, 30),
+        Veredicto::SinEvidencia
+    );
     assert_eq!(stats(&l, 5).veredicto(0.0, 30), Veredicto::SinEvidencia);
     assert_eq!(stats(&l, 9).veredicto(1.64, 1), Veredicto::SinEvidencia);
 }
