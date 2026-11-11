@@ -11013,3 +11013,21 @@ Puerto recursos reanclado sobre PR90/7b598f7e (padre mainfd956f9, AGY F1-074/F1-
   certificado de una media de ancho 1, en cualquier momento (Ville). Usadlo
   para cualquier certificación secuencial (Demo → Producción, §31.4 del
   mandato).
+
+## 2026-11-10 — Codex RB: RB-E2 (embudo vivo)
+
+- **Antes de proponer cambiar una puerta, lee `🔭 [EMBUDO]`** en el log del
+  host. Lo publican la Demo y Producción una vez por minuto: ticks bloqueados
+  por causa, la cadena de vetos con el libro plano y el CUELLO.
+- **La frontera de entradas** (`entries_blocked`) tiene siete causas. La
+  comisión sin observar bloquea en silencio mientras el OMS no publica el
+  calendario de comisiones: en cada refresco, y si uno falla, hasta el
+  siguiente bueno.
+- **El orquestador** cae a `GenomicAudit` durante cada refresco del OMS (60 s):
+  es deliberado (`begin_refresh`). No lo «arregles» sin medir antes su coste.
+- **Hay que separar poblaciones:** intenciones con el libro plano (compiten
+  por abrir) frente a intenciones con posición abierta («sonda ocupada»,
+  «sin ranura»). Mezclarlas infla el cuello.
+- **Defecto conocido (RB-E3, sin arreglar):** `spot_bias` usa `/10` donde su
+  comentario pide `/200`, y satura a ±0,05. En la Demo, además, la base
+  testnet–spot es un artefacto.

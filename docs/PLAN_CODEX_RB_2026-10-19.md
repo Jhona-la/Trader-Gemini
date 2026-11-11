@@ -727,3 +727,119 @@ la Demo).
 - Derivar el suelo de fricción de «EV ≥ umbral», no de una cuota fija de 0,65.
 - Antes de proponerlo: el veredicto «PROMETE DE MÁS» en la Demo y una A/B en
   las cintas.
+
+## 14. RB-E2 — el embudo vivo: por qué no opera la Demo (2026-11-10)
+
+**Lo que dice el log de la Demo** (GLM, build a3g, pid 32016, 13:25→19:57 hora
+de Bogotá, 20 624 líneas; lectura sin tocar el proceso):
+- **Operaciones:** 0 en 6,5 h; PnL bruto, neto y comisiones a 0.
+- **El orquestador cae a `GenomicAudit` en silencio cada minuto** (394 ciclos
+  `GenomicAudit → DemoVerify → PaperTrading`).
+  - Es deliberado: `OmsSession::begin_refresh` congela la admisión antes de las
+    consultas privadas del refresco de 60 s, y `apply_snapshot` la reabre. Lo
+    que falta es el aviso de la caída.
+  - Coste estimado: la línea «Syncing buffers» sólo se escribe en un múltiplo de
+    5 000 mensajes con la admisión cerrada, y sale 64 veces de 455, así que
+    **≈ 14 % ± 1,6 % de los eventos** llegan con las entradas congeladas.
+  - Mientras no hay calendario de comisiones (`observed_fees_required` sin
+    `live_fee_schedule`), `fee_rates_for` devuelve `None` y el núcleo bloquea
+    las entradas por comisiones, también sin contarlo.
+- **`LATENCY PANIC` de 7–20 s** desde ~18:50 (miles de eventos), con «cola local
+  0 ms, deriva del reloj 36 ms». El retraso está en el feed del testnet
+  (`stream.binancefuture.com`), no en el proceso.
+- **El resto, sin explicar:** el núcleo cuenta su embudo (`direction_diag`,
+  contadores `diag_*`), pero sólo lo imprime el backtest forense
+  (`audit_forensic_backtest.rs`). En vivo es telemetría fantasma.
+
+**Muertes silenciosas que nadie contaba:**
+1. La frontera de entradas de `process_tick_dual` (`entries_blocked`) corta la
+   evaluación por siete causas:
+   - el llamador no lo permite (evento sólo de libro o pánico del host);
+   - comisiones sin observar;
+   - kill switch;
+   - veto de deriva;
+   - feed estancado;
+   - latencia;
+   - liquidaciones con marca temporal inválida.
+2. Una intención con dirección sin ranura no llega al riesgo (sólo se publica
+   una razón en el registro, QO-589).
+3. Los motivos del riesgo sólo están en contadores globales, que mezclan el
+   núcleo real con los universos sombra del host.
+
+**Qué cambia** (sólo observa):
+- **`god_engine_core::embudo_vivo`:**
+  - `BloqueosEntrada::registrar` sustituye la disyunción de la frontera con la
+    misma semántica. Atribuye cada tick bloqueado a su PRIMERA causa activa, así
+    que las causas parten los bloqueos.
+  - `ContadoresNucleo` cuenta, en `process_event`, los eventos sin oportunidad
+    de entrada (sólo libro / pánico del host); además, las intenciones sin
+    ranura y los rechazos del riesgo por motivo de ESTE núcleo
+    (`ultimo_rechazo`, local al hilo), en dos poblaciones: libro plano (la
+    del embudo, la que compite por abrir) y con posición abierta.
+  - `Instantanea` y `linea` resumen una ventana y su acumulado, y nombran el
+    CUELLO: la etapa que más intenciones perdió o, si no hubo intenciones, la
+    causa que más ticks bloqueó.
+- **El host** publica `🔭 [EMBUDO]` una vez por minuto (reloj monótono) con las
+  órdenes que la fase no deja salir, y el informe completo de `direction_diag`
+  cada 60 ventanas. El coste por mensaje es una comparación; lo demás ocurre
+  una vez por minuto.
+- **El certificador de cinta** imprime el embudo acumulado.
+
+**Certificación.**
+- **Pruebas:** unitarias 6/6 (partición por causa y disyunción exacta en las 128
+  combinaciones, restas, cuello, formato y cadencia). Contrato 5/5:
+  - conducta del núcleo real: llamador, comisiones sin observar con el mismo
+    mecanismo del OMS, frontera cruzada, libro frente a pánico del host;
+  - cableado: las siete causas en orden y una sola definición de la frontera;
+    host;
+  - pureza: ningún uso de `diag_embudo` que no registre.
+
+  RB-V1 5/5 intacto.
+- **Mutaciones:** 8/8 detectadas:
+  - M1 (la causa es la última activa): 1 prueba;
+  - M2 (las comisiones dejan de bloquear): 1;
+  - M3 (el núcleo pierde la causa de comisiones): 2;
+  - M4 (el host cuenta con la condición invertida): 1;
+  - M5 (el cuello toma la menor pérdida): 2;
+  - M6 (la ventana se cierra un ms tarde): 1;
+  - M7 (el cuello mira la población con posición): 2;
+  - M8 (poblaciones invertidas al registrar): 1.
+- **Estilo:** clippy y rustfmt limpios en mis archivos y en las regiones tocadas del núcleo y del host.
+- **Cintas reales:** las 8 ventanas de 100 000 registros (BTC 31-08-2026
+  13:39→23:59 UTC; ETH 17:42→23:59 UTC). Detalle en
+  `docs/audit/rb_e2_embudo_vivo_2026-11-10.txt`.
+  - **Frontera:** de 199 998 ticks se bloquean 100 499, todos por el llamador
+    (99 499 eventos de sólo libro y 1 000 de calentamiento). Las 99 499
+    evaluaciones coinciden con los ticks que cruzan.
+  - **Embudo con el libro plano** (6 377 intenciones):
+    - escudos 1 130 (17,7 %; X-016 998, anti-whiplash 130, L2 2);
+    - sin ranura 0;
+    - riesgo: 4 558 admitidas y 689 rechazadas por confianza (10,8 %);
+    - consejo 2 042 (32,0 %);
+    - ML-GATE 2 508 (39,3 %, sin modelos del roster);
+    - aperturas 8 (la sonda).
+  - **Conservación exacta** en las 8 ventanas: intenciones − escudos = sin
+    ranura + evaluadas por el riesgo, y admitidas = consejo + ML-GATE +
+    aperturas.
+  - **Cuello por ventana:** ML-GATE (v1, v4, ETH v2), escudo X-016 (v2, v3,
+    ETH v1) y consejo (v5, v6).
+  - **Con la sonda abierta** (fuera del embudo): sin ranura y «sonda ocupada»;
+    era lo que inflaba la primera versión, que mezclaba las dos poblaciones.
+- **Pureza A/B:** huella idéntica bit a bit entre `main` 972297bf0 y la rama en BTC v6
+  (1 operación, `net_pnl` 0xbfd35817b2277730, `final_capital`
+  0x408f3d94fd09bb11). La disyunción de la frontera es la de siempre.
+
+**Hallazgo para RB-E3** (cambia señales, átomo aparte): `lib.rs:6153-6158`.
+- **El fallo:** el sesgo spot vale `clamp(base_bps / 10, ±0,05)`, pero su
+  comentario dice «10 bps ⇒ ±0,05… escala con la magnitud real». Con `/10`,
+  cualquier base de más de 0,5 pb lo satura: un ±0,05 binario.
+- **En la Demo es un artefacto:** el futuro es el libro del testnet y el spot
+  es el real. De ahí los `ml=0.4500/0.5500` exactos del log en los símbolos sin
+  modelo.
+- **Qué afecta:** a las ramas de señal que leen `ml_prob` con sesgo, no al
+  ML-GATE, que lee el ensamble puro.
+- **Corrección propuesta:**
+  - la escala documentada (`/200`);
+  - sin sesgo cuando el spot y el futuro no son del mismo venue (Demo), o con
+    la base medida contra el mark o el índice;
+  - A/B en cintas y en sombra.

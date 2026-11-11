@@ -21,6 +21,7 @@
 mod cinta_real;
 
 use backtest_engine::booktick_replay::run_booktick_replay_with_observer;
+use god_engine_core::embudo_vivo::{linea, Instantanea};
 use god_engine_core::sombra_vetos::{ALFA_COLA, FUENTES};
 
 #[test]
@@ -35,8 +36,11 @@ fn rb_v1a_sombra_de_los_vetos_sobre_cinta_real() {
     let mut veredictos = [None; FUENTES.len()];
     let mut libro = (0usize, 0u64, 0u64, 0u64, 0u64, 0u64);
     let mut embudo = (0u64, 0u64, 0u64, 0u64, 0u64);
+    // RB-E2: el embudo vivo acumulado, igual que lo resume el host.
+    let mut embudo_vivo = Instantanea::default();
     let t0 = std::time::Instant::now();
     let s = run_booktick_replay_with_observer(&ticks, &genoma, None, &cfg, |_, core| {
+        embudo_vivo = Instantanea::de(core, 0);
         embudo = (
             core.diag_sin_conviccion,
             core.diag_council_vetoes,
@@ -138,5 +142,20 @@ fn rb_v1a_sombra_de_los_vetos_sobre_cinta_real() {
         "  embudo del núcleo: sin convicción {sin_conviccion} · vetos del consejo {consejo} · vetos del ML-GATE {ml} · sin margen {margen} · aperturas {aperturas}"
     );
     println!("  rechazos del riesgo: {}", risk_engine::reject_report());
+    println!(
+        "  {}",
+        linea(&embudo_vivo, &embudo_vivo, hasta.saturating_sub(desde))
+    );
+    // RB-E2: conservación del embudo con el libro plano. Cada intención que
+    // supera los escudos tiene dirección y busca ranura: o no la encuentra o
+    // el riesgo la evalúa. Ninguna desaparece sin contarse.
+    let plano = embudo_vivo.nucleo.libro_plano;
+    let superan =
+        embudo_vivo.intenciones.iter().sum::<u64>() - embudo_vivo.escudos.iter().sum::<u64>();
+    assert_eq!(
+        superan,
+        plano.sin_ranura.iter().sum::<u64>() + plano.riesgo_aceptadas + plano.rechazos(),
+        "el embudo con el libro plano se conserva: {embudo_vivo:?}"
+    );
     assert!(s.executed_ticks > 0, "el replay no ejecutó ningún tick");
 }

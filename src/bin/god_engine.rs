@@ -4228,6 +4228,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         let mut cadencia_espectro = telemetry_server::estrangulador::Estrangulador::new(60_000);
         // CL-139b: el kill switch avisa al entrar en pánico, no en cada racha.
         let mut aviso_kill_switch = telemetry_server::estrangulador::Estrangulador::new(60_000);
+        // RB-E2: embudo vivo. Una línea por minuto con lo que detiene cada
+        // entrada (ticks bloqueados por causa, escudos, ranura, riesgo por
+        // motivo, consejo, ML-GATE, margen y fase) y su cuello de botella; cada
+        // 60 ventanas, el informe completo de `direction_diag`. Sólo lee
+        // contadores: ninguna decisión depende de ellos.
+        let mut embudo_vivo = god_engine_core::embudo_vivo::EmbudoVivo::new(60_000);
+        let mut ventanas_embudo: u64 = 0;
+        let mut ordenes_sin_permiso_de_fase: u64 = 0;
 
         // FASE 6 (EVENT LOOP)
         god_engine_core::bootloader::SystemDiagnostics::execute_phase_6_hft();
@@ -4797,6 +4805,31 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 let newly_transitioned = is_trading_allowed && !has_transitioned;
                 if newly_transitioned {
                     has_transitioned = true;
+                }
+                // RB-E2: la orden que el núcleo propuso y la fase no deja salir
+                // (auditoría del orquestador o refresco del OMS en curso).
+                if !is_trading_allowed && new_order.is_some() {
+                    ordenes_sin_permiso_de_fase = ordenes_sin_permiso_de_fase.saturating_add(1);
+                }
+                let ahora_embudo_ms =
+                    ahora_mono.saturating_duration_since(instant_baseline).as_millis() as u64;
+                if embudo_vivo.toca(ahora_embudo_ms) {
+                    let instantanea = god_engine_core::embudo_vivo::Instantanea::de(
+                        &engine_real,
+                        ordenes_sin_permiso_de_fase,
+                    );
+                    telemetry_server::telemetry_log!(
+                        "{} · fase {:?}",
+                        embudo_vivo.cerrar(instantanea, ahora_embudo_ms),
+                        current_phase
+                    );
+                    ventanas_embudo = ventanas_embudo.saturating_add(1);
+                    if ventanas_embudo.is_multiple_of(60) {
+                        telemetry_server::telemetry_log!(
+                            "{}",
+                            engine_real.diag_dir.report()
+                        );
+                    }
                 }
 
                 // M6-H02 (CIERRE 2026-09-24) — CIERRES POR BRACKET:
