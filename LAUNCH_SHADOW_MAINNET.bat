@@ -10,7 +10,7 @@ echo [1/3] Compilando en el target\ compartido (CPU nativa via .cargo\config.tom
 :: RB-H1 (2026-10-19): SIN RUSTFLAGS de entorno. La variable reemplazaba los
 :: rustflags de .cargo/config.toml y obligaba a recompilar todo el arbol con
 :: una huella distinta a la de los agentes.
-cargo build --release --bin god_engine -j 2
+cargo build --release --config .cargo/produccion.toml --bin god_engine -j 2
 if %errorlevel% neq 0 (
     echo [ERROR] Fallo la compilacion de god_engine.
     pause

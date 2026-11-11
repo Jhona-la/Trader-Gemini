@@ -36,7 +36,7 @@ echo.
 :: RB-H1 (2026-10-19): UN SOLO target\ compartido (antes CARGO_TARGET_DIR=
 :: target_release_god duplicaba el arbol release completo, >8 GB). -j 2 por
 :: el presupuesto de 16 GB de RAM (AGENT_SYNC §4).
-cargo build --release --bin god_engine -j 2
+cargo build --release --config .cargo/produccion.toml --bin god_engine -j 2
 if %ERRORLEVEL% neq 0 (
     color 0C
     echo.
