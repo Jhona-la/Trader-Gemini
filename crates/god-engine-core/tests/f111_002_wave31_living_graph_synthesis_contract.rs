@@ -61,7 +61,11 @@ fn test_c1_wave31_triad_holistic_orchestration() {
     );
 
     // Certificaciones Fase 109: Simetría Espejo Homológica
-    assert!(!report.homological_mirror_report.mirror_symmetry_collapse_veto);
+    assert!(
+        !report
+            .homological_mirror_report
+            .mirror_symmetry_collapse_veto
+    );
     assert!(report.homological_mirror_report.instanton_yukawa_coupling >= 0.0);
     assert!(
         report.homological_mirror_report.slot_scale >= 0.10
@@ -70,7 +74,12 @@ fn test_c1_wave31_triad_holistic_orchestration() {
 
     // Certificaciones Fase 110: Kitaev Quantum Double
     assert!(!report.kitaev_quantum_double_report.deconfinement_veto);
-    assert!(report.kitaev_quantum_double_report.topological_order_parameter >= 0.0);
+    assert!(
+        report
+            .kitaev_quantum_double_report
+            .topological_order_parameter
+            >= 0.0
+    );
     assert!(
         report.kitaev_quantum_double_report.directional_signal >= -1.0
             && report.kitaev_quantum_double_report.directional_signal <= 1.0
@@ -79,7 +88,10 @@ fn test_c1_wave31_triad_holistic_orchestration() {
     // Certificaciones Fase 111: Wheeler-Feynman Absorber
     assert!(!report.wheeler_feynman_report.wheeler_feynman_absorber_veto);
     assert!(!report.wheeler_feynman_report.dirac_radiation_runaway_veto);
-    assert!(report.wheeler_feynman_report.dirac_radiation_reaction_force.is_finite());
+    assert!(report
+        .wheeler_feynman_report
+        .dirac_radiation_reaction_force
+        .is_finite());
     assert!(report.wheeler_feynman_report.absorber_absorption_capacity > 0.0);
 
     // Certificación holística
@@ -96,8 +108,10 @@ fn test_c2_homological_mirror_symmetry_collapse_veto_propagation() {
         QuantumSlotOrchestrator::new(QuantumSlotOrchestratorParams::default());
 
     // Fijamos umbral mínimo estricto de determinante jacobiano para forzar veto de colapso de espejo
-    let mut config = HomologicalMirrorSymmetryConfig::default();
-    config.min_jacobian_determinant = 100.0; // Imposible de satisfacer -> veto forzado
+    let config = HomologicalMirrorSymmetryConfig {
+        min_jacobian_determinant: 100.0,
+        ..Default::default()
+    };
     orchestrator.homological_mirror_engines[0] =
         feature_engine::HomologicalMirrorSymmetryEngine::new(config);
 
@@ -140,7 +154,11 @@ fn test_c2_homological_mirror_symmetry_collapse_veto_propagation() {
         &open_is_long,
     );
 
-    assert!(report.homological_mirror_report.mirror_symmetry_collapse_veto);
+    assert!(
+        report
+            .homological_mirror_report
+            .mirror_symmetry_collapse_veto
+    );
     for decision in &report.multi_slot_evaluation.decisions {
         assert_eq!(decision.signal, SignalType::Flat);
         assert!(decision.vetoed);
@@ -159,8 +177,10 @@ fn test_c3_kitaev_quantum_double_deconfinement_veto_propagation() {
         QuantumSlotOrchestrator::new(QuantumSlotOrchestratorParams::default());
 
     // Configurar umbral estricto de desconfinamiento en Kitaev Quantum Double
-    let mut config = KitaevQuantumDoubleConfig::default();
-    config.min_ground_state_fidelity = 0.99; // Forzar veto por fidelidad insuficiente
+    let config = KitaevQuantumDoubleConfig {
+        min_ground_state_fidelity: 0.99,
+        ..Default::default()
+    };
     orchestrator.kitaev_quantum_double_engines[0] =
         signal_engine::KitaevQuantumDoubleEngine::new(config);
 
@@ -223,8 +243,10 @@ fn test_c4_wheeler_feynman_absorber_radiation_runaway_veto_propagation() {
         QuantumSlotOrchestrator::new(QuantumSlotOrchestratorParams::default());
 
     // Configurar umbral estricto de pre-aceleración de Dirac
-    let mut config = WheelerFeynmanAbsorberConfig::default();
-    config.max_runaway_jerk_threshold = 0.001; // Forzar veto por jerk divergente
+    let config = WheelerFeynmanAbsorberConfig {
+        max_runaway_jerk_threshold: 0.001,
+        ..Default::default()
+    };
     orchestrator.wheeler_feynman_engines[0] =
         risk_engine::WheelerFeynmanAbsorberEngine::new(config);
 
@@ -274,10 +296,7 @@ fn test_c4_wheeler_feynman_absorber_radiation_runaway_veto_propagation() {
             for decision in &report.multi_slot_evaluation.decisions {
                 assert_eq!(decision.signal, SignalType::Flat);
                 assert!(decision.vetoed);
-                assert_eq!(
-                    decision.veto_reason,
-                    Some("DIRAC_RADIATION_RUNAWAY_VETO")
-                );
+                assert_eq!(decision.veto_reason, Some("DIRAC_RADIATION_RUNAWAY_VETO"));
             }
             assert!(!report.ville_ruin_bound_satisfied);
             break;

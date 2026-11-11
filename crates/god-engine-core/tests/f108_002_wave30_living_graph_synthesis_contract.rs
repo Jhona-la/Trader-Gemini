@@ -100,8 +100,10 @@ fn test_c2_langlands_automorphic_anomaly_veto_propagation() {
         QuantumSlotOrchestrator::new(QuantumSlotOrchestratorParams::default());
 
     // Set tight tolerance on Langlands engine
-    let mut config = GeometricLanglandsHeckeConfig::default();
-    config.max_anomaly_tolerance = 0.10;
+    let config = GeometricLanglandsHeckeConfig {
+        max_anomaly_tolerance: 0.10,
+        ..Default::default()
+    };
     orchestrator.geometric_langlands_engines[0] =
         feature_engine::GeometricLanglandsHeckeEngine::new(config);
 
@@ -111,8 +113,8 @@ fn test_c2_langlands_automorphic_anomaly_veto_propagation() {
 
     // Inject strong periodic resonant spoofing at prime lag 2
     for i in 0..30 {
-        let ret = if i % 2 == 0 { 0.02 } else { -0.02 };
-        let ofi = if i % 2 == 0 { 1.0 } else { -1.0 };
+        let ret = if i & 1 == 0 { 0.02 } else { -0.02 };
+        let ofi = if i & 1 == 0 { 1.0 } else { -1.0 };
         let triad = [
             AssetColorState {
                 normalized_return: ret,
@@ -169,9 +171,11 @@ fn test_c3_topological_braiding_decoherence_veto_propagation() {
     let mut slot_orchestrator =
         QuantumSlotOrchestrator::new(QuantumSlotOrchestratorParams::default());
 
-    let mut config = TopologicalQuantumBraidingConfig::default();
-    config.min_fidelity_threshold = 0.999999;
-    config.decoherence_tolerance = 0.00000001;
+    let config = TopologicalQuantumBraidingConfig {
+        min_fidelity_threshold: 0.999999,
+        decoherence_tolerance: 0.00000001,
+        ..Default::default()
+    };
     orchestrator.topological_braiding_engines[0] =
         signal_engine::TopologicalQuantumBraidingEngine::new(config);
 

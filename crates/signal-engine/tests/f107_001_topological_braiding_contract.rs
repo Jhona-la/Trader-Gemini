@@ -75,9 +75,11 @@ fn test_c3_directional_signal_evolution_from_asymmetric_flow() {
 
 #[test]
 fn test_c4_decoherence_tolerance_and_veto_firing() {
-    let mut config = TopologicalQuantumBraidingConfig::default();
-    config.min_fidelity_threshold = 0.999999;
-    config.decoherence_tolerance = 0.0000001;
+    let config = TopologicalQuantumBraidingConfig {
+        min_fidelity_threshold: 0.999999,
+        decoherence_tolerance: 0.0000001,
+        ..Default::default()
+    };
     let mut engine = TopologicalQuantumBraidingEngine::new(config);
 
     // Warmup

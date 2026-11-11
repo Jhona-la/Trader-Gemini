@@ -57,8 +57,10 @@ fn test_c3_hayden_preskill_veto_on_severe_drawdown() {
 
 #[test]
 fn test_c4_mss_chaos_bound_violation_veto() {
-    let mut config = HaydenPreskillConfig::default();
-    config.max_mss_tolerance = 0.05;
+    let config = HaydenPreskillConfig {
+        max_mss_tolerance: 0.05,
+        ..Default::default()
+    };
     let mut engine = HaydenPreskillEngine::new(config);
 
     // Inject massive exponential growth in OTOC to force Lyapunov explosion

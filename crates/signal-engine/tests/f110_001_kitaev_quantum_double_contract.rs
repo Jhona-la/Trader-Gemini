@@ -32,29 +32,29 @@ fn test_c2_s3_group_algebra_cayley_table_invariants() {
     let table = engine.multiplication_table();
 
     // 1. Identidad: e * g = g * e = g para todo g
-    for g in 0..S3_ORDER {
+    for (g, row) in table.iter().enumerate().take(S3_ORDER) {
         assert_eq!(table[0][g], g, "0 debe actuar como identidad izquierda");
-        assert_eq!(table[g][0], g, "0 debe actuar como identidad derecha");
+        assert_eq!(row[0], g, "0 debe actuar como identidad derecha");
     }
 
     // 2. Inversos: g * g^{-1} = e = 0
-    for g in 0..S3_ORDER {
-        let inv = S3_INVERSES[g];
+    for (g, &inv) in S3_INVERSES.iter().enumerate().take(S3_ORDER) {
         assert_eq!(table[g][inv], 0, "g * g^{{-1}} debe ser la identidad");
         assert_eq!(table[inv][g], 0, "g^{{-1}} * g debe ser la identidad");
     }
 
     // 3. Asociatividad estricta para todos los 6^3 = 216 tripletes: (a * b) * c = a * (b * c)
-    for a in 0..S3_ORDER {
-        for b in 0..S3_ORDER {
-            for c in 0..S3_ORDER {
-                let ab = S3_MULTIPLICATION_TABLE[a][b];
+    for (a, row_a) in S3_MULTIPLICATION_TABLE.iter().enumerate() {
+        for (b, &ab) in row_a.iter().enumerate() {
+            for (c, &bc) in S3_MULTIPLICATION_TABLE[b].iter().enumerate() {
                 let lhs = S3_MULTIPLICATION_TABLE[ab][c];
-
-                let bc = S3_MULTIPLICATION_TABLE[b][c];
                 let rhs = S3_MULTIPLICATION_TABLE[a][bc];
 
-                assert_eq!(lhs, rhs, "Fallo de asociatividad en triplete ({}, {}, {})", a, b, c);
+                assert_eq!(
+                    lhs, rhs,
+                    "Fallo de asociatividad en triplete ({}, {}, {})",
+                    a, b, c
+                );
             }
         }
     }

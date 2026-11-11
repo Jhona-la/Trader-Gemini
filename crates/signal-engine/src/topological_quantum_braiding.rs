@@ -99,15 +99,21 @@ impl Unitary2x2 {
     }
 
     pub fn matmul(&self, other: &Self) -> Self {
-        let mut res = [[Complex2D::zero(); 2]; 2];
-        for i in 0..2 {
-            for j in 0..2 {
-                let term1 = self.m[i][0].mul(&other.m[0][j]);
-                let term2 = self.m[i][1].mul(&other.m[1][j]);
-                res[i][j] = term1.add(&term2);
-            }
+        let r00 = self.m[0][0]
+            .mul(&other.m[0][0])
+            .add(&self.m[0][1].mul(&other.m[1][0]));
+        let r01 = self.m[0][0]
+            .mul(&other.m[0][1])
+            .add(&self.m[0][1].mul(&other.m[1][1]));
+        let r10 = self.m[1][0]
+            .mul(&other.m[0][0])
+            .add(&self.m[1][1].mul(&other.m[1][0]));
+        let r11 = self.m[1][0]
+            .mul(&other.m[0][1])
+            .add(&self.m[1][1].mul(&other.m[1][1]));
+        Self {
+            m: [[r00, r01], [r10, r11]],
         }
-        Self { m: res }
     }
 
     pub fn apply(&self, state: [Complex2D; 2]) -> [Complex2D; 2] {
@@ -289,7 +295,7 @@ impl TopologicalQuantumBraidingEngine {
         // compile non-abelian rotations on the qubit Bloch sphere, converting phase into observable amplitude.
         let flow_acceleration = (vol / (spr + 0.1)).clamp(0.5, 3.0);
         let composite_momentum = (ret * 100.0 + ofi_clean * 0.50) * flow_acceleration;
-        let alternate_step = (self.total_braids % 2) == 0;
+        let alternate_step = (self.total_braids & 1) == 0;
 
         let selected_gate = if composite_momentum > 0.05 {
             if alternate_step {
