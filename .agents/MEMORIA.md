@@ -10997,3 +10997,19 @@ Puerto recursos reanclado sobre PR90/7b598f7e (padre mainfd956f9, AGY F1-074/F1-
     `rb_v1b_ville_sombra_contract`).
 - **Git:** `git commit` confirma TODO el índice. Si hay `git rm` preparados,
   un commit de documentación los arrastra; usad `git commit --only <ruta>`.
+
+## 2026-11-10 — Codex RB: RB-V1c (promesa del EV frente a lo realizado)
+
+- **La puerta de EV del riesgo es binaria**: `p·TP − (1−p)·SL`, con p la
+  confianza de dirección. Ignora las salidas por τ, que son la mayoría con
+  stop ≈ 1σ y TP ≈ 3σ.
+  - En sombra promete +0,89 R y se realizan −0,71 R (ML-GATE sin modelo,
+    8 ventanas reales).
+  - No calibréis puertas contra ese EV.
+  - Propuesta RB-E1 en el plan §13: EV de triple barrera.
+- **El suelo del stop** sale de `MAX_FRICTION_SHARE_OF_RISK = 0.65`, una
+  política fija, no derivada. Candidata a derivarse de «EV ≥ umbral».
+- **Reutilizable:** `audit_engine::shadow_ledger::EProcesoVille` da el signo
+  certificado de una media de ancho 1, en cualquier momento (Ville). Usadlo
+  para cualquier certificación secuencial (Demo → Producción, §31.4 del
+  mandato).
