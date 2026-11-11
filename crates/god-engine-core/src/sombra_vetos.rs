@@ -35,6 +35,10 @@
 //!   si la moneda no tiene intenciones abiertas. Los avisos al log siguen una
 //!   escala log₂ de las resoluciones de cada fuente, más uno si cambia su
 //!   veredicto, y viajan por la cola sin bloqueo de la telemetría.
+//! - RB-V1c: cada intención lleva además el EV que el riesgo le prometió
+//!   (`RiskEngine::promesa_evaluada`), convertido a R con la misma geometría
+//!   y fricción, y el libro certifica si esa promesa se cumple
+//!   (`EstadisticaFuente::veredicto_promesa`).
 //! - Sólo observa: ninguna decisión lee este libro (contrato
 //!   `rb_v1a_sombra_vetos_contract`).
 //!
@@ -43,7 +47,9 @@
 //! barrera aunque el mid salte más allá; las intenciones de monedas
 //! correlacionadas no son independientes y el e-proceso lo supone.
 
-use audit_engine::shadow_ledger::{EstadisticaFuente, IntencionVetada, LibroSombra, Veredicto};
+use audit_engine::shadow_ledger::{
+    EstadisticaFuente, IntencionVetada, LibroSombra, Promesa, Veredicto,
+};
 use risk_engine::medida_sombra::GeometriaSombra;
 
 /// Consejo: deliberación no aprobada o con consenso del lado contrario (D-738).
@@ -108,6 +114,9 @@ pub struct Veto {
     /// TP, SL, fricción y τ con que la evaluó (`geometria_evaluada`); `None`
     /// si no la había (se cuenta en `sin_geometria`).
     pub geometria: Option<GeometriaSombra>,
+    /// RB-V1c: EV bruto que el riesgo prometió (`promesa_evaluada`, fracción
+    /// del precio); `None` si la evaluación no llegó a la puerta de EV.
+    pub promesa_bruta: Option<f64>,
     /// Instante del veto (tiempo del evento), en ms.
     pub t0_ms: u64,
 }
@@ -121,7 +130,7 @@ pub struct SombraVetos {
     /// Avisos emitidos (se escriban o no en el log).
     pub avisos: u64,
     vistas: [u64; FUENTES.len()],
-    ultimo_veredicto: [Option<Veredicto>; FUENTES.len()],
+    ultimo_veredicto: [Option<(Veredicto, Promesa)>; FUENTES.len()],
 }
 
 impl SombraVetos {
@@ -163,6 +172,11 @@ impl SombraVetos {
             friccion_pct: g.friccion_pct,
             tau_ms,
             t0_ms: veto.t0_ms,
+            // RB-V1c: la promesa en R neto de la MISMA fricción y del mismo
+            // stop con que el libro mide lo realizado.
+            promesa_r: veto
+                .promesa_bruta
+                .map(|ev| (ev - g.friccion_pct) / g.sl_pct),
         });
         if abierta {
             *abiertas += 1;
@@ -192,7 +206,8 @@ impl SombraVetos {
     }
 
     /// Un aviso por fuente cuando su número de resoluciones llega a una
-    /// potencia de 2 o cuando su veredicto cambia respecto al último avisado.
+    /// potencia de 2 o cuando cambia alguno de sus dos veredictos (sobre lo
+    /// vetado y sobre la promesa del riesgo) respecto al último avisado.
     fn avisar(&mut self, trazas: bool) {
         let fuentes = FUENTES
             .iter()
@@ -206,19 +221,23 @@ impl SombraVetos {
                 continue;
             }
             *vista = s.n;
-            let veredicto = s.veredicto_ville(ALFA_COLA);
-            if !s.n.is_power_of_two() && *ultimo == Some(veredicto) {
+            let veredictos = (s.veredicto_ville(ALFA_COLA), s.veredicto_promesa(ALFA_COLA));
+            if !s.n.is_power_of_two() && *ultimo == Some(veredictos) {
                 continue;
             }
-            *ultimo = Some(veredicto);
+            *ultimo = Some(veredictos);
             self.avisos += 1;
             let Some(media) = s.media_r() else {
                 continue;
             };
             let (paga, pierde) = s.log_evidencia();
-            if trazas {
-                telemetry_server::telemetry_log!(
-                    "🕵️ [SOMBRA] {}: {} resueltas (TP {} · SL {} · τ {}), R neto medio {:+.3} · evidencia de Ville: paga e^{:.1}, pierde e^{:.1} (umbral e^{:.1}) → {} · abiertas {} · solapes {} · sin geometría {}",
+            let umbral = (1.0 / ALFA_COLA).ln();
+            if !trazas {
+                continue;
+            }
+            match (s.promesa_media_r(), s.brecha_media_r()) {
+                (Some(promesa), Some(brecha)) => telemetry_server::telemetry_log!(
+                    "🕵️ [SOMBRA] {}: {} resueltas (TP {} · SL {} · τ {}), R neto medio {:+.3} · Ville: paga e^{:.1}, pierde e^{:.1} (umbral e^{:.1}) → {} · promesa del riesgo {:+.2} R, realizado {:+.2} R en {} (de más e^{:.1}) → {} · abiertas {} · solapes {}",
                     nombre,
                     s.n,
                     s.tp,
@@ -227,12 +246,32 @@ impl SombraVetos {
                     media,
                     paga,
                     pierde,
-                    (1.0 / ALFA_COLA).ln(),
-                    texto(veredicto),
+                    umbral,
+                    texto(veredictos.0),
+                    promesa,
+                    promesa + brecha,
+                    s.n_promesa,
+                    s.log_evidencia_promesa().1,
+                    texto_promesa(veredictos.1),
+                    self.libro.abiertas(),
+                    self.libro.descartadas_solape
+                ),
+                _ => telemetry_server::telemetry_log!(
+                    "🕵️ [SOMBRA] {}: {} resueltas (TP {} · SL {} · τ {}), R neto medio {:+.3} · Ville: paga e^{:.1}, pierde e^{:.1} (umbral e^{:.1}) → {} · sin promesa medida · abiertas {} · solapes {} · sin geometría {}",
+                    nombre,
+                    s.n,
+                    s.tp,
+                    s.sl,
+                    s.vencidas,
+                    media,
+                    paga,
+                    pierde,
+                    umbral,
+                    texto(veredictos.0),
                     self.libro.abiertas(),
                     self.libro.descartadas_solape,
                     self.sin_geometria
-                );
+                ),
             }
         }
     }
@@ -263,6 +302,14 @@ const fn texto(v: Veredicto) -> &'static str {
     }
 }
 
+const fn texto_promesa(p: Promesa) -> &'static str {
+    match p {
+        Promesa::PrometeDeMas => "PROMETE DE MÁS: su EV no se cumple",
+        Promesa::PrometeDeMenos => "promete de menos: su EV es conservador",
+        Promesa::SinEvidencia => "promesa sin evidencia todavía",
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -283,6 +330,7 @@ mod tests {
             es_largo: true,
             entrada: 100.0,
             geometria: Some(GEOMETRIA),
+            promesa_bruta: None,
             t0_ms,
         }
     }
@@ -447,5 +495,64 @@ mod tests {
         assert_eq!(certificado_en, Some(n_teorico));
         // Avisos en n = 1, 2, 4, 8, 16, 32 (potencias de 2) y 26 (cambio).
         assert_eq!(s.avisos, 7);
+    }
+    #[test]
+    fn rb_v1c_la_promesa_se_convierte_a_r_con_la_misma_vara_y_se_contrasta() {
+        // Promesa bruta 0,0035 con TP 0,010, SL 0,005 y f 0,001:
+        // (0,0035 − 0,001)/0,005 = +0,5 R. Se resuelve por SL: r = −1,2, así
+        // que la brecha es −1,7 R. Un veto sin promesa no entra en la brecha.
+        let mut s = SombraVetos::new(1);
+        assert!(s.registrar(Veto {
+            promesa_bruta: Some(0.0035),
+            ..veto(FUENTE_ML_SIN_VENTAJA, 0, T0)
+        }));
+        assert!(s.registrar(veto(FUENTE_CONSEJO, 0, T0)));
+        assert_eq!(s.observar(0, 99.0, T0 + 1, true), 2);
+        let Some(e) = s.estadistica(FUENTE_ML_SIN_VENTAJA) else {
+            panic!("la fuente existe");
+        };
+        assert_eq!((e.n, e.n_promesa), (1, 1));
+        assert!(e.promesa_media_r().is_some_and(|p| (p - 0.5).abs() < 1e-12));
+        assert!(e.brecha_media_r().is_some_and(|b| (b + 1.7).abs() < 1e-12));
+        let Some(c) = s.estadistica(FUENTE_CONSEJO) else {
+            panic!("la fuente existe");
+        };
+        assert_eq!((c.n, c.n_promesa), (1, 0));
+    }
+
+    #[test]
+    fn rb_v1c_un_cambio_del_veredicto_de_la_promesa_tambien_avisa() {
+        // Todo SL con promesa +0,5 R: el veredicto de la promesa llega antes
+        // que el de lo vetado (|x| = 1,7/3 frente a 1,2/3), y avisa.
+        let mut s = SombraVetos::new(1);
+        let mut promesa_en = None;
+        for k in 0..40u64 {
+            let t0 = T0 + 10 * k;
+            assert!(s.registrar(Veto {
+                promesa_bruta: Some(0.0035),
+                ..veto(FUENTE_ML_SIN_VENTAJA, 0, t0)
+            }));
+            assert_eq!(s.observar(0, 99.0, t0 + 1, false), 1);
+            let promete = s
+                .estadistica(FUENTE_ML_SIN_VENTAJA)
+                .map(|e| e.veredicto_promesa(ALFA_COLA));
+            if promesa_en.is_none() && promete == Some(Promesa::PrometeDeMas) {
+                promesa_en = Some(k + 1);
+            }
+        }
+        let Some(n_promesa) = promesa_en else {
+            panic!("la promesa optimista se certifica antes de 40 resoluciones");
+        };
+        assert!(
+            n_promesa < 26,
+            "antes que el veredicto sobre lo vetado (n = 26)"
+        );
+        // Potencias de 2 (1, 2, 4, 8, 16, 32) + cambio de la promesa + cambio
+        // de lo vetado en n = 26 (si no coincide con una potencia).
+        let esperados = 6 + u64::from(!n_promesa.is_power_of_two()) + 1;
+        assert_eq!(
+            s.avisos, esperados,
+            "promesa certificada en n = {n_promesa}"
+        );
     }
 }

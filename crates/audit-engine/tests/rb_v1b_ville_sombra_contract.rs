@@ -43,6 +43,7 @@ fn intencion(tp: f64, sl: f64, friccion: f64, t0_ms: u64) -> IntencionVetada {
         friccion_pct: friccion,
         tau_ms: 60_000,
         t0_ms,
+        promesa_r: None,
     }
 }
 

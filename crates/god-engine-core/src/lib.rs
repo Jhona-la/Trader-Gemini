@@ -9706,6 +9706,7 @@ impl GodEngineCore {
                         es_largo: calibrated_intent.signal == SignalType::Long,
                         entrada: coin.current_price.load(Ordering::Relaxed),
                         geometria: self.risk_engine.geometria_evaluada(coin_id),
+                        promesa_bruta: self.risk_engine.promesa_evaluada(coin_id),
                         t0_ms: event_time_ms,
                     });
                 }
@@ -10079,6 +10080,7 @@ impl GodEngineCore {
                             es_largo: order.signal == SignalType::Long,
                             entrada: coin.current_price.load(Ordering::Relaxed),
                             geometria: self.risk_engine.geometria_evaluada(coin_id),
+                            promesa_bruta: self.risk_engine.promesa_evaluada(coin_id),
                             t0_ms: event_time_ms,
                         });
                     }

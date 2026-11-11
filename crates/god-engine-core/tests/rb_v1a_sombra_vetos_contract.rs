@@ -78,6 +78,7 @@ fn rb_v1a_la_observacion_precede_al_riesgo_y_el_registro_sigue_a_la_decision() {
         "sombra_vetos::fuente_del_veto(",
         "has_roster_model",
         "geometria: self.risk_engine.geometria_evaluada(coin_id)",
+        "promesa_bruta: self.risk_engine.promesa_evaluada(coin_id)",
         "t0_ms: event_time_ms",
     ] {
         assert!(bloque.contains(campo), "el registro usa `{campo}`");
@@ -108,6 +109,7 @@ fn rb_v1b_los_rechazos_del_riesgo_se_registran_tras_evaluar_y_antes_de_deliberar
         ".and_then(sombra_vetos::fuente_juzgable)",
         "es_largo: calibrated_intent.signal == SignalType::Long",
         "geometria: self.risk_engine.geometria_evaluada(coin_id)",
+        "promesa_bruta: self.risk_engine.promesa_evaluada(coin_id)",
         "t0_ms: event_time_ms",
     ] {
         assert!(
@@ -149,12 +151,18 @@ fn rb_v1a_el_nucleo_solo_escribe_en_la_sombra() {
     }
 
     let modulo = codigo_de_produccion(SOMBRA);
-    let importaciones: Vec<&str> = modulo.lines().filter(|l| l.starts_with("use ")).collect();
+    // Cada sentencia `use` completa, sin espacios ni la coma final que rustfmt
+    // añade al partirla en varias líneas.
+    let importaciones: Vec<String> = modulo
+        .split(';')
+        .map(|s| s.split_whitespace().collect::<String>().replace(",}", "}"))
+        .filter(|s| s.starts_with("use"))
+        .collect();
     assert_eq!(
         importaciones,
         [
-            "use audit_engine::shadow_ledger::{EstadisticaFuente, IntencionVetada, LibroSombra, Veredicto};",
-            "use risk_engine::medida_sombra::GeometriaSombra;",
+            "useaudit_engine::shadow_ledger::{EstadisticaFuente,IntencionVetada,LibroSombra,Promesa,Veredicto}",
+            "userisk_engine::medida_sombra::GeometriaSombra",
         ],
         "el módulo sólo depende del libro y de la geometría"
     );
@@ -216,6 +224,7 @@ fn rb_v1a_el_nucleo_real_avanza_la_sombra_con_los_mids_de_cada_moneda() {
         es_largo: true,
         entrada: 100.0,
         geometria: Some(g),
+        promesa_bruta: None,
         t0_ms: T0,
     }));
     assert!(core.sombra_vetos.registrar(Veto {
@@ -224,6 +233,7 @@ fn rb_v1a_el_nucleo_real_avanza_la_sombra_con_los_mids_de_cada_moneda() {
         es_largo: false,
         entrada: 50.0,
         geometria: Some(g),
+        promesa_bruta: None,
         t0_ms: T0,
     }));
 
@@ -275,6 +285,7 @@ fn rb_v1a_el_nucleo_real_resuelve_por_vencimiento() {
             friccion_pct: 0.001,
             tau_ms: 60_000.0,
         }),
+        promesa_bruta: None,
         t0_ms: T0,
     }));
     evento(&mut core, 1, 49.95, T0 + 30_000);
