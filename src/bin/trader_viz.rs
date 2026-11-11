@@ -26,11 +26,11 @@ use crossterm::{
     execute,
     style::{Color, Print, ResetColor, SetForegroundColor},
     terminal::{
-        disable_raw_mode, enable_raw_mode, Clear, ClearType, EnterAlternateScreen,
-        LeaveAlternateScreen,
+        Clear, ClearType, EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode,
+        enable_raw_mode,
     },
 };
-use std::io::{stdout, Write};
+use std::io::{Write, stdout};
 use std::time::{Duration, Instant};
 use telemetry_server::mmap_viz_stream::MmapVizStreamReader;
 
@@ -162,9 +162,15 @@ fn render_tui(
     execute!(
         out,
         SetForegroundColor(Color::Cyan),
-        Print("╔══════════════════════════════════════════════════════════════════════════════════════════════╗\n"),
-        Print("║            TRADER GEMINI V5 — SUITE VISUAL DESACOPLADA (ZERO-LATENCY MMAP)                   ║\n"),
-        Print("╚══════════════════════════════════════════════════════════════════════════════════════════════╝\n"),
+        Print(
+            "╔══════════════════════════════════════════════════════════════════════════════════════════════╗\n"
+        ),
+        Print(
+            "║            TRADER GEMINI V5 — SUITE VISUAL DESACOPLADA (ZERO-LATENCY MMAP)                   ║\n"
+        ),
+        Print(
+            "╚══════════════════════════════════════════════════════════════════════════════════════════════╝\n"
+        ),
         ResetColor
     )?;
 
@@ -208,14 +214,60 @@ fn render_tui(
     execute!(
         out,
         SetForegroundColor(Color::Yellow),
-        Print("─── [1] ESTADO FINANCIERO INTEGRAL (PRE & POST FEES) ─────────────────────────────────────────\n"),
+        Print(
+            "─── [1] ESTADO FINANCIERO INTEGRAL (PRE & POST FEES) ─────────────────────────────────────────\n"
+        ),
         ResetColor,
-        Print(format!(" Capital Global:    ${:.2} USD         Apalancamiento: {:.1}x\n", pkt.unified_capital, pkt.global_leverage)),
+        Print(format!(
+            " Capital Global:    ${:.2} USD         Apalancamiento: {:.1}x\n",
+            pkt.unified_capital, pkt.global_leverage
+        )),
         SetForegroundColor(pnl_color),
-        Print(format!(" PnL Neto (Post):   ${:.2} USD         ROI Neto:       {:.2}%\n", net_pnl, pkt.global_roi)),
+        Print(format!(
+            " PnL Neto (Post):   ${:.2} USD         ROI Neto:       {:.2}%\n",
+            net_pnl, pkt.global_roi
+        )),
         ResetColor,
-        Print(format!(" PnL Bruto (Pre):   {} USD         Comisiones:     {} USD\n", gross_pnl, fees)),
-        Print(format!(" Win Rate Global:   {:.1}%              Drawdown:       N/D\n\n", pkt.win_rate * 100.0)),
+        Print(format!(
+            " PnL Bruto (Pre):   {} USD         Comisiones:     {} USD\n",
+            gross_pnl, fees
+        )),
+        Print(format!(
+            " Win Rate Global:   {:.1}%              Drawdown:       N/D\n\n",
+            pkt.win_rate * 100.0
+        )),
+    )?;
+
+    // 1B. Registro de operaciones M1 (conectado a trade_ledger). Sin datos
+    // reales declarados por el operador vía env TG_M1_*, todo es N/D; nunca 0.
+    let reg = telemetry_server::trade_ledger::pnl_panel_from_env();
+    execute!(
+        out,
+        SetForegroundColor(Color::Yellow),
+        Print(
+            "─── [1B] REGISTRO DE OPERACIONES M1 — PRE/POST FEES (trade_ledger) ──────────────────────────\n"
+        ),
+        ResetColor,
+        Print(format!(
+            " PnL Bruto (Pre):   {} USD     Comisiones:     {} USD\n",
+            reg.gross_pnl, reg.fees
+        )),
+        Print(format!(
+            " Funding:           {} USD     Slippage:       {} USD\n",
+            reg.funding, reg.slippage
+        )),
+        Print(format!(
+            " PnL Neto (Post):   {} USD     ROI Pre/Post:   {}% / {}%\n",
+            reg.net_pnl, reg.roi_before_fees_pct, reg.roi_after_fees_pct
+        )),
+        Print(format!(
+            " Win Rate Pre/Post: {} / {}    Periodo:        {}\n",
+            reg.win_rate_before_fees, reg.win_rate_after_fees, reg.period
+        )),
+        Print(format!(
+            " Dataset:           {}    Filas:          {}\n\n",
+            reg.dataset, reg.rows
+        )),
     )?;
 
     // 2. Panel Mirofish Probability Lattice
@@ -248,11 +300,22 @@ fn render_tui(
     execute!(
         out,
         SetForegroundColor(Color::Magenta),
-        Print("─── [2] SIMULACIÓN PROBABILÍSTICA MIROFISH (GALTON BOARD & CONFORMAL) ───────────────────────\n"),
+        Print(
+            "─── [2] SIMULACIÓN PROBABILÍSTICA MIROFISH (GALTON BOARD & CONFORMAL) ───────────────────────\n"
+        ),
         ResetColor,
-        Print(format!(" P(UP):             {}              P(DOWN):        {}\n", p_up, p_down)),
-        Print(format!(" Drift OFI:         {}              Precio Esperado: {}\n", ofi, expected_price)),
-        Print(format!(" Escalas Espectro:  32 diádicas        Riesgo CVaR:    Max @ {}\n\n", max_risk)),
+        Print(format!(
+            " P(UP):             {}              P(DOWN):        {}\n",
+            p_up, p_down
+        )),
+        Print(format!(
+            " Drift OFI:         {}              Precio Esperado: {}\n",
+            ofi, expected_price
+        )),
+        Print(format!(
+            " Escalas Espectro:  32 diádicas        Riesgo CVaR:    Max @ {}\n\n",
+            max_risk
+        )),
     )?;
 
     // 3. Panel Grafo Hiperdimensional & Pods
@@ -287,19 +350,34 @@ fn render_tui(
     execute!(
         out,
         SetForegroundColor(Color::Blue),
-        Print("─── [3] GRAFO HIPERDIMENSIONAL 3D & PODS DE AISLAMIENTO ──────────────────────────────────────\n"),
+        Print(
+            "─── [3] GRAFO HIPERDIMENSIONAL 3D & PODS DE AISLAMIENTO ──────────────────────────────────────\n"
+        ),
         ResetColor,
-        Print(format!(" Nodos Activos:     {}                  Aristas Vivas:  {}\n", nodes_count, edges_count)),
-        Print(format!(" Pods de Red:       {}                  En Cuarentena:  {}\n", pods_count, quarantined)),
-        Print(format!(" Energía Libre:     {}              Ciclos Betti 1: {}\n\n", total_energy, cycles)),
+        Print(format!(
+            " Nodos Activos:     {}                  Aristas Vivas:  {}\n",
+            nodes_count, edges_count
+        )),
+        Print(format!(
+            " Pods de Red:       {}                  En Cuarentena:  {}\n",
+            pods_count, quarantined
+        )),
+        Print(format!(
+            " Energía Libre:     {}              Ciclos Betti 1: {}\n\n",
+            total_energy, cycles
+        )),
     )?;
 
     // 4. Panel Causal Meta-Analytics (Aumann-Shapley & Owen)
     execute!(
         out,
         SetForegroundColor(Color::Cyan),
-        Print("─── [4] ATRIBUCIÓN CAUSAL AUMANN-SHAPLEY & EFICIENCIA SILICIO-ALPHA ─────────────────────────\n"),
-        Print(" Pilar              Net PnL       Owen PnL    Net Share   Fees       η_CPU       SRP Status\n"),
+        Print(
+            "─── [4] ATRIBUCIÓN CAUSAL AUMANN-SHAPLEY & EFICIENCIA SILICIO-ALPHA ─────────────────────────\n"
+        ),
+        Print(
+            " Pilar              Net PnL       Owen PnL    Net Share   Fees       η_CPU       SRP Status\n"
+        ),
         ResetColor,
     )?;
 

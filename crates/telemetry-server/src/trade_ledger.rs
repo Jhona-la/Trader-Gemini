@@ -626,3 +626,221 @@ fn win_rate_checked<F: Fn(&TradeLedgerEntry) -> f64>(entries: &[TradeLedgerEntry
     }
     finite_or_absent(wins as f64 / entries.len() as f64)
 }
+
+// ===========================================================================
+// M1 PASO 3 — Conexión del panel de PnL al registro de operaciones.
+//
+// El `causal_report` del paquete mmap sigue siendo `None` en los archivos
+// preparados por otros (no se tocan). Este conector da al panel una ruta de
+// datos propia y explícita: un JSONL de operaciones REALES, con periodo,
+// dataset y capital REAL de la wallet declarados por el operador mediante
+// variables de entorno. Sin alguno de ellos => TODO "N/D"; nunca se fabrica
+// un 0.00, un capital por defecto ni una procedencia inventada.
+// ===========================================================================
+
+/// Líneas ya formateadas del panel [1] "Pre & Post Fees".
+/// Cada campo es una cadena lista para imprimir: `N/D` = dato no medido.
+#[derive(Debug, Clone, PartialEq)]
+pub struct PnlPanelLines {
+    pub gross_pnl: String,
+    pub fees: String,
+    pub funding: String,
+    pub slippage: String,
+    pub net_pnl: String,
+    pub roi_before_fees_pct: String,
+    pub roi_after_fees_pct: String,
+    pub win_rate_before_fees: String,
+    pub win_rate_after_fees: String,
+    pub period: String,
+    pub dataset: String,
+    pub rows: String,
+}
+
+impl PnlPanelLines {
+    /// Sin datos reales verificables: N/D en TODOS los campos.
+    pub fn unavailable() -> Self {
+        let nd = || "N/D".to_string();
+        Self {
+            gross_pnl: nd(),
+            fees: nd(),
+            funding: nd(),
+            slippage: nd(),
+            net_pnl: nd(),
+            roi_before_fees_pct: nd(),
+            roi_after_fees_pct: nd(),
+            win_rate_before_fees: nd(),
+            win_rate_after_fees: nd(),
+            period: nd(),
+            dataset: nd(),
+            rows: nd(),
+        }
+    }
+}
+
+/// `None` o valor no finito => `N/D`. Un cero medido se imprime como `0.00`.
+fn money(value: Option<f64>) -> String {
+    match value {
+        Some(v) if v.is_finite() => format!("{:.2}", v),
+        _ => "N/D".to_string(),
+    }
+}
+
+/// Win rate (fracción [0,1]) a porcentaje con una decimal.
+fn percent(value: Option<f64>) -> String {
+    match value {
+        Some(v) if v.is_finite() => format!("{:.1}%", v * 100.0),
+        _ => "N/D".to_string(),
+    }
+}
+
+/// ROI ya viene en porcentaje; se muestra con dos decimales.
+fn roi(value: Option<f64>) -> String {
+    match value {
+        Some(v) if v.is_finite() => format!("{:.2}", v),
+        _ => "N/D".to_string(),
+    }
+}
+
+/// Formatea un informe para el panel. Sólo `wire()` (Option<f64>) decide
+/// qué es N/D; aquí no se inventa ningún valor ni se convierte `null` en 0.
+pub fn pnl_panel_lines(report: &FinancialReport) -> PnlPanelLines {
+    // @BEGIN_FORMAT@
+    let w = report.wire();
+    // Sin procedencia real declarada no hay informe: N/D en los 12 campos,
+    // incluido el periodo (presentar un periodo sin datos sugeriría un
+    // informe que no existe). Con procedencia real, periodo y filas son
+    // metadatos medidos aunque las métricas estén ausentes.
+    if w.dataset.is_none() {
+        return PnlPanelLines::unavailable();
+    }
+    PnlPanelLines {
+        gross_pnl: money(w.pnl_before_fees),
+        fees: money(w.fees),
+        funding: money(w.funding),
+        slippage: money(w.slippage),
+        net_pnl: money(w.pnl_after_fees),
+        roi_before_fees_pct: roi(w.roi_before_fees_pct),
+        roi_after_fees_pct: roi(w.roi_after_fees_pct),
+        win_rate_before_fees: percent(w.win_rate_before_fees),
+        win_rate_after_fees: percent(w.win_rate_after_fees),
+        period: format!("{}..{} ns", w.period_start_ns, w.period_end_ns),
+        dataset: match w.dataset {
+            Some(d) => d,
+            None => "N/D".to_string(),
+        },
+        rows: match w.rows {
+            Some(n) => n.to_string(),
+            None => "N/D".to_string(),
+        },
+    }
+    // @END_FORMAT@
+}
+
+/// Parsea un JSONL de operaciones: una línea por operación con
+/// `timestamp_ns`, `symbol`, `gross_pnl`, `fees`, `funding`, `slippage`.
+/// Un campo ausente o no finito queda como ausencia (`NaN`) en el asiento,
+/// no como cero. Una línea malformada => panel completo N/D (fail-closed).
+/// Sin `unwrap`/`expect`/`panic`: todos los fallos devuelven N/D.
+pub fn pnl_panel_from_ledger_jsonl(
+    text: &str,
+    period: ReportPeriod,
+    wallet_capital: f64,
+    provenance: DataProvenance,
+) -> PnlPanelLines {
+    // @BEGIN_PARSE@
+    let mut ledger = TradeLedger::new();
+    for line in text.lines() {
+        if line.trim().is_empty() {
+            continue;
+        }
+        let row: serde_json::Value = match serde_json::from_str(line) {
+            Ok(v) => v,
+            Err(_) => return PnlPanelLines::unavailable(),
+        };
+        let timestamp_ns = match row.get("timestamp_ns").and_then(|v| v.as_u64()) {
+            Some(t) => t,
+            None => return PnlPanelLines::unavailable(),
+        };
+        let symbol = match row.get("symbol").and_then(|v| v.as_str()) {
+            Some(s) if !s.is_empty() => s.to_string(),
+            _ => return PnlPanelLines::unavailable(),
+        };
+        ledger.append(TradeLedgerEntry::from_measured(
+            timestamp_ns,
+            symbol,
+            json_finite(&row, "gross_pnl"),
+            json_finite(&row, "fees"),
+            json_finite(&row, "funding"),
+            json_finite(&row, "slippage"),
+        ));
+    }
+    let report = FinancialReport::build(&ledger, period, wallet_capital, provenance);
+    pnl_panel_lines(&report)
+    // @END_PARSE@
+}
+
+/// Ausente o no finito => `NaN` (N/D). Un cero medido se conserva.
+fn json_finite(row: &serde_json::Value, key: &str) -> f64 {
+    match row.get(key).and_then(|v| v.as_f64()) {
+        Some(v) if v.is_finite() => v,
+        _ => f64::NAN,
+    }
+}
+
+fn env_nonempty(name: &str) -> Option<String> {
+    match std::env::var(name) {
+        Ok(v) if !v.trim().is_empty() => Some(v),
+        _ => None,
+    }
+}
+
+fn env_u64(name: &str) -> Option<u64> {
+    match env_nonempty(name) {
+        Some(v) => match v.trim().parse::<u64>() {
+            Ok(n) => Some(n),
+            Err(_) => None,
+        },
+        None => None,
+    }
+}
+
+/// Fuente de datos del panel, declarada por el operador en Demo/Producción.
+/// Variables: `TG_M1_LEDGER_JSONL` (ruta), `TG_M1_PERIOD_START_NS`,
+/// `TG_M1_PERIOD_END_NS`, `TG_M1_DATASET`, `TG_M1_DATA_REAL`
+/// (`demo`|`production`) y `TG_M1_WALLET_CAPITAL` (balance REAL de la wallet).
+/// Falta alguna o la procedencia no es real => N/D total. No hay ruta por
+/// defecto, ni capital fijo, ni dataset inventado.
+pub fn pnl_panel_from_env() -> PnlPanelLines {
+    let path = match env_nonempty("TG_M1_LEDGER_JSONL") {
+        Some(p) => p,
+        None => return PnlPanelLines::unavailable(),
+    };
+    let dataset = match env_nonempty("TG_M1_DATASET") {
+        Some(d) => d,
+        None => return PnlPanelLines::unavailable(),
+    };
+    let real = match env_nonempty("TG_M1_DATA_REAL") {
+        Some(s) if s == "demo" || s == "production" => DataProvenance::Real { dataset },
+        _ => return PnlPanelLines::unavailable(),
+    };
+    let start = match env_u64("TG_M1_PERIOD_START_NS") {
+        Some(v) => v,
+        None => return PnlPanelLines::unavailable(),
+    };
+    let end = match env_u64("TG_M1_PERIOD_END_NS") {
+        Some(v) => v,
+        None => return PnlPanelLines::unavailable(),
+    };
+    let capital = match env_nonempty("TG_M1_WALLET_CAPITAL") {
+        Some(v) => match v.trim().parse::<f64>() {
+            Ok(c) if c.is_finite() && c > 0.0 => c,
+            _ => return PnlPanelLines::unavailable(),
+        },
+        None => return PnlPanelLines::unavailable(),
+    };
+    let text = match std::fs::read_to_string(&path) {
+        Ok(t) => t,
+        Err(_) => return PnlPanelLines::unavailable(),
+    };
+    pnl_panel_from_ledger_jsonl(&text, ReportPeriod::new(start, end), capital, real)
+}
