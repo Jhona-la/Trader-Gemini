@@ -802,6 +802,11 @@ pub struct GlobalArena {
     /// en alse (backtest y simulación no tienen puente); el host lo vincula
     /// al puente antes de operar.
     pub capital_incompleto: AtomicBool,
+    /// CAPITAL-UNICO V4B (solo medida): entradas que `capital_incompleto`
+    /// vetó en el riesgo y en el OMS. El host las escribe y pone a cero cada
+    /// 60 s en una línea `[CAPITAL]`. No decide nada.
+    pub vetos_capital_riesgo: AtomicU64,
+    pub vetos_capital_oms: AtomicU64,
     pub tick_counter: AtomicU64,
     pub kill_switch_active: AtomicBool,
     pub last_ws_latency_ms: AtomicU64,
@@ -924,6 +929,8 @@ impl GlobalArena {
             capital_exchange: AtomicF64::new(f64::NAN),
             pico_ilegible: AtomicBool::new(false),
             capital_incompleto: AtomicBool::new(false),
+            vetos_capital_riesgo: AtomicU64::new(0),
+            vetos_capital_oms: AtomicU64::new(0),
             tick_counter: AtomicU64::new(0),
             kill_switch_active: AtomicBool::new(false),
             last_ws_latency_ms: AtomicU64::new(0),

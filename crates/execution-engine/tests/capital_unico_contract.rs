@@ -506,5 +506,6 @@ fn v2_contrato_de_fuente_del_host() {
     assert!(host.matches("observar_rest(ticket,").count() >= 2, "arranque y transición");
     assert!(host.contains("resincronizar_cuenta::resincronizar_una_vez("), "y el resincronizador");
     let stream = include_str!("../src/user_data_stream.rs");
-    assert!(stream.contains("self.puente.observar_stream_y_publicar(self.era, &evento"));
+    // V4B: con su socket y la hora del evento E.
+    assert!(stream.contains("self.puente.observar_stream_del_socket(self.era, socket, hora_evento, &evento"));
 }

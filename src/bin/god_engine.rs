@@ -2635,10 +2635,28 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 let puente_rs = Arc::clone(&puente_cuenta);
                 let exec_rs = Arc::clone(&exec);
                 let saldo_rs = Arc::clone(&exchange_capital_imm);
+                let arena_rs = Arc::clone(&arena_imm);
                 rt_handle.spawn(async move {
                     let mut pausa = execution_engine::resincronizar_cuenta::Pausa::nueva();
+                    // V4B (solo medida): cada 60 s, entradas que vetó el puente,
+                    // el motivo del veto y los rechazos con fuente, T, E y motivo.
+                    let mut ultima_medida = std::time::Instant::now();
                     loop {
                         tokio::time::sleep(pausa.actual()).await;
+                        if ultima_medida.elapsed() >= std::time::Duration::from_secs(60) {
+                            ultima_medida = std::time::Instant::now();
+                            let d = puente_rs.tomar_diagnostico();
+                            let rechazos: Vec<String> = d.rechazos.iter().map(|(f, m, n)| format!("{f}/{m}={n}")).collect();
+                            telemetry_server::telemetry_log!(
+                                "[CAPITAL] veto del puente, 60 s: entradas vetadas riesgo={} oms={}; veto={} motivo={}; rechazos [{}]; ultimo: {}",
+                                arena_rs.vetos_capital_riesgo.swap(0, Ordering::Relaxed),
+                                arena_rs.vetos_capital_oms.swap(0, Ordering::Relaxed),
+                                if d.veta { "si" } else { "no" },
+                                d.motivo_veto.unwrap_or("-"),
+                                rechazos.join(" "),
+                                d.ultimo_rechazo.as_deref().unwrap_or("-")
+                            );
+                        }
                         if !puente_rs.necesita_resincronizar() {
                             pausa.exito();
                             continue;
@@ -5427,7 +5445,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                         Err(e) => {
                                             // Atrasada o contradictoria: el puente ya
                                             // tiene algo de esta era (del stream).
-                                            telemetry_server::telemetry_log!("[TRANSITION] Lectura de la cuenta descartada por el puente: {}", e);
+                                            telemetry_server::telemetry_log!("[TRANSITION] Lectura de la cuenta descartada por el puente: fuente=rest T={} E=N/D motivo={}: {}", l.tiempo_saldo_ms.map_or_else(|| "N/D".to_string(), |t| t.to_string()), e.motivo(), e);
                                             puente_transicion.observacion().is_some()
                                         }
                                     },

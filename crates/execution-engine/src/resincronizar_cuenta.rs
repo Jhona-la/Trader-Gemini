@@ -33,7 +33,11 @@ where
         Err(_) => return Err(format!("GET sin respuesta en {} ms", tope.as_millis())),
     };
     // El cero explícito de 3a también entra: es el plano de seguridad.
-    let obs = puente.observar_rest(ticket, &l).map_err(|e| e.to_string())?;
+    // V4B: el motivo sale con la fuente y la marca del saldo (REST no trae E).
+    let obs = puente.observar_rest(ticket, &l).map_err(|e| {
+        let t = l.tiempo_saldo_ms.map_or_else(|| "N/D".to_string(), |t| t.to_string());
+        format!("fuente=rest T={t} E=N/D motivo={}: {e}", e.motivo())
+    })?;
     // Se publica lo VIGENTE bajo el mutex (un evento pudo llegar en medio).
     puente
         .con_era_vigente(ticket.era(), |vigente| publicar(&vigente.unwrap_or(obs)))

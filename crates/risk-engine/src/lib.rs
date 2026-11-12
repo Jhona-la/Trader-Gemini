@@ -784,6 +784,8 @@ impl RiskEngine {
         // de la cuenta, o con su equity incompleta, no se sabe cuánto capital
         // hay ni cuánto se ha caído: no entran posiciones nuevas (fail-closed).
         if arena.capital_incompleto.load(Ordering::Acquire) {
+            // V4B: solo medida (el host lo escribe cada 60 s).
+            arena.vetos_capital_riesgo.fetch_add(1, Ordering::Relaxed);
             return rej(REJ_DRAWDOWN);
         }
         // FASE 3 DEFENSE-IN-DEPTH: Si el kill-switch del sistema inmune está armado

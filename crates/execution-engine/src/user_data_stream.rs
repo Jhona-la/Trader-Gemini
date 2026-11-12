@@ -58,6 +58,9 @@ impl AccountSink for NoopSink {
 
 use std::sync::atomic::{AtomicBool, Ordering};
 
+/// V4B: el streamer aún no abrió un socket propio.
+const SIN_SOCKET: u64 = u64::MAX;
+
 /// F1.6: stream privado. `start()` es infinito (diseñado para tokio::spawn).
 pub struct UserDataStreamer {
     client: BinanceClient,
@@ -75,6 +78,9 @@ pub struct UserDataStreamer {
     /// demo seguía vivo tras la transición a mainnet y sus ACCOUNT_UPDATE de
     /// TESTNET pisaban el capital real del plano compartido.
     shutdown: Option<Arc<AtomicBool>>,
+    /// V4B: socket del puente que este streamer tiene abierto. `u64::MAX`
+    /// = ninguno propio todavía (`dispatch` sin `start`): vale el vigente.
+    socket: std::sync::atomic::AtomicU64,
 }
 
 impl UserDataStreamer {
@@ -89,6 +95,7 @@ impl UserDataStreamer {
             expired_flag: Arc::new(AtomicBool::new(false)),
             arena: None,
             shutdown: None,
+            socket: std::sync::atomic::AtomicU64::new(SIN_SOCKET),
         }
     }
 
@@ -209,6 +216,10 @@ impl UserDataStreamer {
                     // que jamás llegarán por este stream — catch-up mínimo.
                     if connected_once {
                         self.reconcile_after_reconnect();
+                    } else {
+                        // V4B: el primer socket no es un corte (la lectura del
+                        // arranque ya está en el puente); se toma el vigente.
+                        self.socket.store(self.puente.socket(), Ordering::Release);
                     }
                     connected_once = true;
                     stream
@@ -284,6 +295,13 @@ impl UserDataStreamer {
             }
 
             keepalive_handle.abort();
+            // V4B (contrato qra_capital_v4b): el veto de entradas se activa al
+            // PERDER el socket, no al reconectar. Desde aquí hasta una REST
+            // pedida después de abrir el socket nuevo, ninguna entrada pasa; una
+            // REST del hueco aplica sus datos al freno pero no suelta el veto.
+            if let Err(e) = self.puente.perdida_socket(self.era) {
+                println!("🔌 [UDS] Pérdida del socket de la era {} ignorada por el puente: {e}", self.era);
+            }
             // I-11: tras el corte, la escalera (una conexión que no entregó
             // nada sigue subiendo; una que sí, empieza en el primer escalón).
             let pausa = espera.fallo(None);
@@ -316,6 +334,8 @@ impl UserDataStreamer {
         if let Err(e) = self.puente.reconexion(self.era) {
             println!("🔌 [UDS] Reconexión de la era {} ignorada por el puente: {e}", self.era);
         }
+        // V4B: los eventos de aquí en adelante son del socket nuevo.
+        self.socket.store(self.puente.socket(), Ordering::Release);
         quantum_arena::protection_health::mark_dirty();
         println!("🔄 [UDS] Reconectado — reconciliation pendiente: el watchdog de 60s cubrirá el gap (protection_dirty forzará auditoría en ≤5s)");
     }
@@ -820,7 +840,8 @@ impl UserDataStreamer {
                 // la equity queda incompleta y se vetan las entradas hasta
                 // resincronizar por REST.
                 eprintln!("⚠️ [CAPITAL] ACCOUNT_UPDATE ilegible ({e}): equity incompleta hasta resincronizar");
-                let _ = self.puente.reconexion(self.era);
+                // V4B: sin corte del socket: evidencia perdida y anclaje nuevo.
+                let _ = self.puente.evidencia_perdida(self.era);
                 return;
             }
         };
@@ -868,16 +889,23 @@ impl UserDataStreamer {
                     ((p.symbol.clone(), lado), dato)
                 })
                 .collect();
+            // V4B: se conservan las dos marcas: `T` ordena el componente y `E`,
+            // dentro del mismo socket, desempata dos eventos con la misma `T`.
+            let hora_evento = ev.event_time.filter(|t| *t > 0);
             let evento = crate::puente_cuenta::EventoStream {
                 tiempo_ms: ev.transaction_time.or(ev.event_time).filter(|t| *t > 0),
                 saldo,
                 posiciones,
             };
+            let socket = match self.socket.load(Ordering::Acquire) {
+                SIN_SOCKET => self.puente.socket(),
+                s => s,
+            };
             // V3 (P1.2): la publicación sale de la misma sección crítica que
             // la decisión del puente: una transición no se cuela en medio.
             let sink = &self.sink;
             let con_saldo = evento.saldo.is_some();
-            let r = self.puente.observar_stream_y_publicar(self.era, &evento, |obs| {
+            let r = self.puente.observar_stream_del_socket(self.era, socket, hora_evento, &evento, |obs| {
                 // Una actualización sólo de posiciones no cambia el saldo:
                 // se publica la equity con el saldo que ya había.
                 if con_saldo {
@@ -886,7 +914,13 @@ impl UserDataStreamer {
                 sink.on_equity(obs.equity);
             });
             if let Err(e) = r {
-                eprintln!("⚠️ [CAPITAL] ACCOUNT_UPDATE no aplicado: {e}");
+                // V4B: fuente, T, E y motivo (el host además lo resume cada 60 s).
+                println!(
+                    "⚠️ [CAPITAL] ACCOUNT_UPDATE no aplicado: fuente=stream socket={socket} T={} E={} motivo={}: {e}",
+                    evento.tiempo_ms.map_or_else(|| "N/D".to_string(), |t| t.to_string()),
+                    hora_evento.map_or_else(|| "N/D".to_string(), |t| t.to_string()),
+                    e.motivo()
+                );
             }
         }
 

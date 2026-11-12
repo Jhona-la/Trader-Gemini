@@ -383,6 +383,8 @@ impl OmsSession {
         // la era del puente de la cuenta (y equity completa). Sólo entradas:
         // los cierres no pasan por aquí.
         if arena.capital_incompleto.load(Ordering::Acquire) {
+            // V4B: solo medida (el host lo escribe cada 60 s).
+            arena.vetos_capital_oms.fetch_add(1, Ordering::Relaxed);
             return Err("OMS_ENTRY_WITHHELD: account balance not current for this session".into());
         }
         let current = self.ready.load(Ordering::Acquire)

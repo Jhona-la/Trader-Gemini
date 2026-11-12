@@ -251,7 +251,8 @@ fn p12_evento_y_reconexion_tardios_de_la_era_anterior_no_tocan_la_vigente() {
     assert!(p.con_era_vigente(era, |o| o.map(|o| o.saldo)).flatten() == Some(13.0));
     let stream = include_str!("../src/user_data_stream.rs");
     assert!(stream.contains("self.puente.reconexion(self.era)"));
-    assert!(stream.contains("self.puente.observar_stream_y_publicar(self.era, &evento"));
+    // V4B: el streamer publica con su socket y la hora del evento E.
+    assert!(stream.contains("self.puente.observar_stream_del_socket(self.era, socket, hora_evento, &evento"));
 }
 
 #[test]

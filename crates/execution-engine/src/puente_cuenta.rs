@@ -41,6 +41,33 @@
 //! Una fila con la misma cantidad y marca más vieja no pisa el PnL no
 //! realizado más nuevo.
 //!
+//! V4B (dictamen de Codex QRA sobre la propuesta de N1 y contrato
+//! `qra_capital_v4b.md`): la generación del SOCKET es distinta de la era de
+//! la cuenta.
+//!
+//! - Cada socket del stream tiene su número ([`PuenteCuenta::socket`]). La
+//!   pérdida ([`PuenteCuenta::perdida_socket`], al salir del lazo de lectura)
+//!   y la apertura de uno nuevo ([`PuenteCuenta::reconexion`]) suben el
+//!   número, dejan la equity incompleta y vetan las entradas desde ese mismo
+//!   instante. La procedencia del stream de una marca vale sólo para el
+//!   socket que la puso; un evento de otro socket se rechaza
+//!   ([`Rechazo::OtroSocket`]).
+//! - Dentro de un socket se conservan las dos marcas del evento (`T` y `E`).
+//!   Con la misma `T`: `E` mayor aplica, `E` igual con el mismo contenido se
+//!   deduplica y con otro contenido es contradicción, `E` menor es una
+//!   regresión y se descarta. Sin `E` vale el orden de entrega del socket.
+//! - Un empate sin orden demostrable (REST contra stream, o tras reconectar)
+//!   no se resuelve por llegada: rechaza, deja el componente en empate, veta
+//!   las entradas y sólo lo resuelve una lectura REST con ticket posterior.
+//! - El ticket de REST lleva era, socket y generación. Una lectura de otro
+//!   socket (tomada antes del corte, o con un corte en medio) se rechaza
+//!   entera. Sólo suelta el veto una lectura completa con ticket tomado
+//!   después del último anclaje (corte, reconexión o rechazo que dejó la
+//!   equity incompleta) y con el socket abierto. La cuenta quieta (mismo
+//!   saldo y mismo `updateTime`) se confirma igual: no se compara con la hora
+//!   local. Una foto retrasada no pisa el PnL no realizado de un componente
+//!   observado después de tomar su ticket.
+//!
 //! El módulo sólo usa `std` (se compila solo en las pruebas de auditoría).
 //! No toca d*, `capital_del_freno` ni ningún umbral.
 
@@ -173,10 +200,12 @@ pub struct EventoStream {
     pub posiciones: Vec<(ClavePosicion, DatoPosicion)>,
 }
 
-/// Se toma ANTES de pedir la lectura REST: ata la lectura a la era.
+/// Se toma ANTES de pedir la lectura REST: ata la lectura a la era, al socket
+/// del stream y al orden de adquisición (generación).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Ticket {
     era: u64,
+    socket: u64,
     generacion: u64,
 }
 
@@ -185,7 +214,14 @@ impl Ticket {
         self.era
     }
 
-    /// Cuántas observaciones había aceptado el puente al tomarlo (informativo).
+    /// V4B: el socket del stream vigente al tomarlo.
+    pub fn socket(&self) -> u64 {
+        self.socket
+    }
+
+    /// Orden de adquisición: cuántos cambios había registrado el puente al
+    /// tomarlo. Una lectura con generación mayor que la de una evidencia se
+    /// pidió después de observarla.
     pub fn generacion(&self) -> u64 {
         self.generacion
     }
@@ -206,12 +242,32 @@ pub enum Rechazo {
     Contradiccion { componente: String, tiempo_ms: u64 },
     /// Sin marca, con otro valor que el ya observado: no lo modifica.
     SinOrden { componente: String },
+    /// V4B: de otro socket del stream (un evento del socket anterior, o una
+    /// lectura REST con ticket tomado antes de un corte). No cambia nada.
+    OtroSocket { socket: u64, vigente: u64 },
+}
+
+impl Rechazo {
+    /// Nombre corto del motivo, para el log.
+    pub fn motivo(&self) -> &'static str {
+        match self {
+            Rechazo::OtraEra => "OtraEra",
+            Rechazo::Atrasada { .. } => "Atrasada",
+            Rechazo::Contradiccion { .. } => "Contradiccion",
+            Rechazo::SinOrden { .. } => "SinOrden",
+            Rechazo::OtroSocket { .. } => "OtroSocket",
+        }
+    }
 }
 
 impl std::fmt::Display for Rechazo {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Rechazo::OtraEra => write!(f, "observación de otra sesión de cuenta (era)"),
+            Rechazo::OtroSocket { socket, vigente } => write!(
+                f,
+                "observación del socket {socket}, vigente {vigente}: anterior al corte; no cambia nada"
+            ),
             Rechazo::Atrasada { componente, tiempo_ms, ultimo_ms } => write!(
                 f,
                 "{componente}: observación atrasada (marca {}, última aceptada {ultimo_ms})",
@@ -229,31 +285,43 @@ impl std::fmt::Display for Rechazo {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Veredicto {
     Aplicar,
     Igual,
 }
 
-/// Regla única de frescura de un componente. V4 (N1): con `empate_aplica`,
-/// un dato con la misma marca que la vigente se aplica (lo usa el stream sólo
-/// si esa marca la puso él mismo en esta conexión: una conexión entrega en
-/// orden y dos fills de una orden pueden traer la misma `T`).
+/// V4B: cómo se ordena un dato con la MISMA marca `T` que la vigente.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Empate {
+    /// Orden verificable: el dato es posterior (misma conexión con `E` mayor
+    /// o, sin `E`, entregado después; o una REST con ticket posterior a un
+    /// empate ya señalado). Se aplica.
+    Posterior,
+    /// Mismas marcas o sin orden demostrable: igual = duplicado; distinto =
+    /// contradicción (pide reconciliación).
+    SinOrden,
+    /// Misma conexión con `E` menor: regresión, se descarta.
+    Anterior,
+}
+
+/// Regla única de frescura de un componente.
 fn decidir(
     componente: impl Fn() -> String,
     observado: bool,
     igual: bool,
     t: Option<u64>,
     marca: Option<u64>,
-    empate_aplica: bool,
+    empate: Empate,
 ) -> Result<Veredicto, Rechazo> {
     if !observado {
         return Ok(Veredicto::Aplicar);
     }
     match (t, marca) {
-        (Some(t), Some(m)) if t > m || (empate_aplica && t == m) => Ok(Veredicto::Aplicar),
+        (Some(t), Some(m)) if t > m || (t == m && empate == Empate::Posterior) => Ok(Veredicto::Aplicar),
         (Some(_), None) => Ok(Veredicto::Aplicar),
         _ if igual => Ok(Veredicto::Igual),
-        (Some(t), Some(m)) if t == m => Err(Rechazo::Contradiccion {
+        (Some(t), Some(m)) if t == m && empate == Empate::SinOrden => Err(Rechazo::Contradiccion {
             componente: componente(),
             tiempo_ms: t,
         }),
@@ -279,26 +347,89 @@ fn maxima(a: Option<u64>, b: Option<u64>) -> Option<u64> {
     }
 }
 
+/// V4B: quién puso la marca vigente de un componente.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Origen {
+    Rest,
+    /// El stream, en el socket `socket`, con la hora de evento `e` (la mayor
+    /// vista con esa `T`).
+    Stream { socket: u64, e: Option<u64> },
+}
+
+/// V4B: evidencia de un componente (el saldo o una posición) además de su
+/// valor y su marca.
+#[derive(Debug, Clone, Copy, Default)]
+struct Evidencia {
+    origen: Option<Origen>,
+    /// Generación en que se escribió por última vez (orden de adquisición).
+    generacion: u64,
+    /// Empate sin orden pendiente: desde esta generación (sólo lo resuelve una
+    /// REST con ticket de generación igual o mayor y del socket abierto).
+    empate_desde: Option<u64>,
+}
+
+impl Evidencia {
+    /// Cómo ordena el stream (socket `socket`, hora `e`) un dato con la misma `T`.
+    fn empate_stream(&self, socket: u64, e: Option<u64>) -> Empate {
+        if self.empate_desde.is_some() {
+            return Empate::SinOrden;
+        }
+        match self.origen {
+            Some(Origen::Stream { socket: s, e: previa }) if s == socket => match (e, previa) {
+                (Some(e), Some(p)) if e > p => Empate::Posterior,
+                (Some(e), Some(p)) if e == p => Empate::SinOrden,
+                (Some(_), Some(_)) => Empate::Anterior,
+                // Sin `E`: la conexión entrega en orden.
+                _ => Empate::Posterior,
+            },
+            _ => Empate::SinOrden,
+        }
+    }
+
+    /// Cómo ordena una REST con `ticket` un dato con la misma `T`.
+    fn empate_rest(&self, ticket: &Ticket, anclada: bool) -> Empate {
+        match self.empate_desde {
+            Some(g) if anclada && ticket.generacion >= g => Empate::Posterior,
+            _ => Empate::SinOrden,
+        }
+    }
+}
+
+#[derive(Debug, Default)]
+struct Diagnostico {
+    /// (fuente, motivo) → rechazos desde la última toma.
+    rechazos: HashMap<(&'static str, &'static str), u64>,
+    ultimo: Option<String>,
+}
+
 #[derive(Debug, Default)]
 struct Estado {
     era: u64,
+    /// Cambios registrados (observaciones aceptadas, cortes, anclajes).
     generacion: u64,
+    /// V4B: número del socket del stream vigente.
+    socket: u64,
+    /// V4B: `false` entre la pérdida del socket y la apertura del siguiente.
+    socket_cerrado: bool,
+    /// V4B: generación del último anclaje. Una REST sólo suelta el veto con
+    /// ticket de generación igual o mayor.
+    ancla: u64,
     saldo: Option<f64>,
     marca_saldo: Option<u64>,
-    /// V4 (N1): la marca vigente del saldo la puso el stream en esta conexión
-    /// (no REST, ni una conexión anterior). Sólo entonces el empate aplica.
-    marca_saldo_stream: bool,
-    /// V4 (N1): posiciones cuya marca vigente la puso el stream en esta conexión.
-    marcas_pos_stream: std::collections::HashSet<ClavePosicion>,
+    ev_saldo: Evidencia,
     /// Posiciones abiertas observadas: (cantidad, PnL no realizado).
     abiertas: HashMap<ClavePosicion, (f64, f64)>,
     /// Marca de cada posición observada (abierta o cerrada).
     marcas_pos: HashMap<ClavePosicion, Option<u64>>,
+    ev_pos: HashMap<ClavePosicion, Evidencia>,
     completa: bool,
     /// Mientras la equity está incompleta: la última completa (techo).
     techo: Option<f64>,
     /// Equity de la era anterior (sólo para el freno, nunca para entradas).
     anterior: Option<f64>,
+    /// Por qué está incompleta (diagnóstico).
+    motivo: Option<&'static str>,
+    diag: Diagnostico,
 }
 
 impl Estado {
@@ -323,14 +454,48 @@ impl Estado {
         self.saldo.is_none() || !self.completa
     }
 
+    fn motivo_veto(&self) -> Option<&'static str> {
+        if self.saldo.is_none() {
+            Some("SinSaldo")
+        } else if !self.completa {
+            Some(self.motivo.unwrap_or("Incompleta"))
+        } else {
+            None
+        }
+    }
+
     /// Deja la equity incompleta con techo en la equity actual.
-    fn incompleta(&mut self) {
+    fn incompleta(&mut self, motivo: &'static str) {
         let actual = self.observacion().map(|o| o.equity);
         self.techo = match (self.techo, actual) {
             (Some(t), Some(a)) => Some(t.min(a)),
             (t, a) => t.or(a),
         };
         self.completa = false;
+        self.motivo = Some(motivo);
+    }
+
+    /// V4B: incompleta y anclaje nuevo; devuelve la generación del anclaje.
+    fn anclar(&mut self, motivo: &'static str) -> u64 {
+        self.incompleta(motivo);
+        self.generacion += 1;
+        self.ancla = self.generacion;
+        self.ancla
+    }
+
+    fn registrar(&mut self, fuente: &'static str, t: Option<u64>, e: Option<u64>, r: &Rechazo) {
+        *self.diag.rechazos.entry((fuente, r.motivo())).or_insert(0) += 1;
+        let marca = |x: Option<u64>| x.map_or_else(|| "N/D".to_string(), |v| v.to_string());
+        self.diag.ultimo = Some(format!(
+            "fuente={fuente} T={} E={} motivo={}: {r}",
+            marca(t),
+            marca(e),
+            r.motivo()
+        ));
+    }
+
+    fn evidencia_pos(&self, clave: &ClavePosicion) -> Evidencia {
+        self.ev_pos.get(clave).copied().unwrap_or_default()
     }
 
     /// Veredicto de una posición contra lo observado.
@@ -339,7 +504,7 @@ impl Estado {
         clave: &ClavePosicion,
         dato: &DatoPosicion,
         t: Option<u64>,
-        empate_aplica: bool,
+        empate: Empate,
     ) -> Result<Veredicto, Rechazo> {
         let observado = self.marcas_pos.contains_key(clave) || self.abiertas.contains_key(clave);
         let igual = match (dato, self.abiertas.get(clave)) {
@@ -348,24 +513,40 @@ impl Estado {
             _ => false,
         };
         let marca = self.marcas_pos.get(clave).copied().flatten();
-        decidir(|| format!("posición {} {}", clave.0, clave.1), observado, igual, t, marca, empate_aplica)
+        decidir(|| format!("posición {} {}", clave.0, clave.1), observado, igual, t, marca, empate)
     }
 
-    /// Aplica según el veredicto. V4 (recomendado de P1.3): un `Igual` con
-    /// marca más vieja que la vigente (o sin marca frente a una con marca) no
-    /// pisa el PnL no realizado más nuevo; sólo confirma la cantidad.
+    /// Aplica según el veredicto. Un `Igual` sólo confirma la cantidad salvo
+    /// que el dato sea posterior a la evidencia vigente: marca vigente
+    /// ausente, o la misma marca con orden verificable (`posterior`). Así una
+    /// fila con marca más vieja, un repetido tras reconectar o una foto
+    /// pedida antes de la evidencia no pisan el PnL no realizado más nuevo.
     fn aplicar_posicion_con(
         &mut self,
         clave: &ClavePosicion,
         dato: &DatoPosicion,
         t: Option<u64>,
         v: &Veredicto,
+        posterior: bool,
+        origen: Option<Origen>,
     ) {
         let marca = self.marcas_pos.get(clave).copied().flatten();
-        if matches!(v, Veredicto::Igual) && marca.is_some() && t < marca {
+        if matches!(v, Veredicto::Igual) && marca.is_some() && (t < marca || (t == marca && !posterior)) {
+            return;
+        }
+        if matches!(dato, DatoPosicion::Invalida) {
             return;
         }
         self.aplicar_posicion(clave, dato, t);
+        let g = self.generacion;
+        let ev = self.ev_pos.entry(clave.clone()).or_default();
+        ev.generacion = g;
+        if matches!(v, Veredicto::Aplicar) {
+            ev.empate_desde = None;
+            if t.is_some() {
+                ev.origen = origen;
+            }
+        }
     }
 
     fn aplicar_posicion(&mut self, clave: &ClavePosicion, dato: &DatoPosicion, t: Option<u64>) {
@@ -386,6 +567,19 @@ impl Estado {
         let previa = self.marcas_pos.get(clave).copied().flatten();
         self.marcas_pos.insert(clave.clone(), maxima(previa, t));
     }
+}
+
+/// Lo que el host escribe cada 60 s (solo medida).
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct DiagnosticoPuente {
+    pub veta: bool,
+    /// Por qué veta ahora (`SinSaldo`, `Reconexion`, `PerdidaSocket`,
+    /// `Contradiccion`, `SinOrden`, `EvidenciaInvalida`, `EventoIlegible`).
+    pub motivo_veto: Option<&'static str>,
+    /// Rechazos desde la última toma: (fuente, motivo, cuántos), ordenados.
+    pub rechazos: Vec<(&'static str, &'static str, u64)>,
+    /// El último rechazo, con fuente, `T`, `E` y motivo.
+    pub ultimo_rechazo: Option<String>,
 }
 
 type Observador = Box<dyn Fn(bool) + Send + Sync>;
@@ -448,6 +642,11 @@ impl PuenteCuenta {
         self.estado().era
     }
 
+    /// V4B: número del socket del stream vigente.
+    pub fn socket(&self) -> u64 {
+        self.estado().socket
+    }
+
     /// Sesión de cuenta nueva (transición): el saldo queda sin observar, la
     /// equity incompleta y las entradas vetadas hasta una lectura aceptada de
     /// esta era. Lo que llegue con otra era se rechaza. La equity de la era
@@ -456,8 +655,11 @@ impl PuenteCuenta {
         let mut e = self.estado();
         let era = e.era + 1;
         let anterior = e.observacion().map(|o| o.equity).or(e.anterior);
+        // El número de socket sigue subiendo: nada de la era anterior coincide.
+        let socket = e.socket + 1;
         *e = Estado {
             era,
+            socket,
             completa: false,
             anterior,
             ..Estado::default()
@@ -471,6 +673,7 @@ impl PuenteCuenta {
         let e = self.estado();
         Ticket {
             era: e.era,
+            socket: e.socket,
             generacion: e.generacion,
         }
     }
@@ -480,6 +683,7 @@ impl PuenteCuenta {
         let e = self.estado();
         (e.era == era).then_some(Ticket {
             era,
+            socket: e.socket,
             generacion: e.generacion,
         })
     }
@@ -491,7 +695,9 @@ impl PuenteCuenta {
         (e.era == era).then(|| f(e.observacion()))
     }
 
-    /// Lectura REST. Entera o nada: si un componente se rechaza, no cambia nada.
+    /// Lectura REST. Entera o nada: si un componente se rechaza, no cambia
+    /// nada (salvo, en una contradicción, dejar el empate señalado y las
+    /// entradas vetadas).
     pub fn observar_rest<L: FuenteRest + ?Sized>(
         &self,
         ticket: Ticket,
@@ -502,17 +708,44 @@ impl PuenteCuenta {
         if ticket.era != e.era {
             return Err(Rechazo::OtraEra);
         }
-        // V4 (N1): en REST el empate sigue siendo contradicción (no se sabe si
-        // la foto es anterior o posterior a los eventos con esa marca).
-        let empate = false;
-        let saldo = decidir(
+        let fuente = "rest";
+        // V4B: una lectura pedida antes de un corte no cubre los eventos que
+        // ese corte pudo perder.
+        if ticket.socket != e.socket {
+            let r = Rechazo::OtroSocket {
+                socket: ticket.socket,
+                vigente: e.socket,
+            };
+            e.registrar(fuente, l.tiempo_saldo_ms, None, &r);
+            return Err(r);
+        }
+        // Puede soltar el veto y resolver un empate: ticket del socket abierto
+        // y posterior al último anclaje.
+        let anclada = !e.socket_cerrado && ticket.generacion >= e.ancla;
+        // Contradicción de REST: se señala el empate del componente y se veta.
+        let contradiccion = |e: &mut Estado, r: Rechazo, pos: Option<&ClavePosicion>, t| {
+            if matches!(r, Rechazo::Contradiccion { .. }) {
+                let g = e.anclar("Contradiccion");
+                match pos {
+                    None => e.ev_saldo.empate_desde = Some(g),
+                    Some(c) => e.ev_pos.entry(c.clone()).or_default().empate_desde = Some(g),
+                }
+                self.notificar(e);
+            }
+            e.registrar(fuente, t, None, &r);
+            r
+        };
+        let saldo = match decidir(
             || "saldo".to_string(),
             e.saldo.is_some(),
             e.saldo.is_some_and(|s| mismo_saldo(s, l.saldo)),
             l.tiempo_saldo_ms,
             e.marca_saldo,
-            empate,
-        )?;
+            e.ev_saldo.empate_rest(&ticket, anclada),
+        ) {
+            Ok(v) => v,
+            Err(r) => return Err(contradiccion(&mut *e, r, None, l.tiempo_saldo_ms)),
+        };
         let mut incompleta = l.posiciones.is_none();
         let mut plan: Vec<(ClavePosicion, DatoPosicion, Option<u64>, Veredicto)> = Vec::new();
         if let Some(m) = &l.posiciones {
@@ -521,36 +754,66 @@ impl PuenteCuenta {
                     incompleta = true;
                     continue;
                 }
-                let v = e.decidir_posicion(clave, &p.dato, p.tiempo_ms, empate)?;
-                plan.push((clave.clone(), p.dato, p.tiempo_ms, v));
+                let empate = e.evidencia_pos(clave).empate_rest(&ticket, anclada);
+                match e.decidir_posicion(clave, &p.dato, p.tiempo_ms, empate) {
+                    Ok(v) => plan.push((clave.clone(), p.dato, p.tiempo_ms, v)),
+                    Err(r) => return Err(contradiccion(&mut *e, r, Some(clave), p.tiempo_ms)),
+                }
             }
             // Una abierta que la foto completa no trae: cierre sin marca.
-            for clave in e.abiertas.keys() {
-                if !m.contains_key(clave) {
-                    let v = e.decidir_posicion(clave, &DatoPosicion::Cerrada, None, empate)?;
-                    plan.push((clave.clone(), DatoPosicion::Cerrada, None, v));
+            let ausentes: Vec<ClavePosicion> =
+                e.abiertas.keys().filter(|c| !m.contains_key(*c)).cloned().collect();
+            for clave in ausentes {
+                let empate = e.evidencia_pos(&clave).empate_rest(&ticket, anclada);
+                match e.decidir_posicion(&clave, &DatoPosicion::Cerrada, None, empate) {
+                    Ok(v) => plan.push((clave, DatoPosicion::Cerrada, None, v)),
+                    Err(r) => return Err(contradiccion(&mut *e, r, Some(&clave), None)),
                 }
             }
         }
         // El techo se toma con la evidencia de ANTES de esta lectura.
         if incompleta {
-            e.incompleta();
+            e.incompleta("EvidenciaInvalida");
         }
         if let Veredicto::Aplicar = saldo {
             e.saldo = Some(l.saldo);
+            e.ev_saldo.generacion = e.generacion;
+            e.ev_saldo.empate_desde = None;
         }
-        // Una REST con marca igual o más nueva pasa a ser el origen de la marca:
-        // un evento del stream con esa misma marca ya no la empata.
         if l.tiempo_saldo_ms.is_some() && l.tiempo_saldo_ms >= e.marca_saldo {
-            e.marca_saldo_stream = false;
+            e.ev_saldo.origen = Some(Origen::Rest);
+            if anclada && ticket.generacion >= e.ev_saldo.empate_desde.unwrap_or(0) {
+                // Una foto anclada con el mismo saldo confirma el empate.
+                e.ev_saldo.empate_desde = None;
+            }
         }
         e.marca_saldo = maxima(e.marca_saldo, l.tiempo_saldo_ms);
         for (clave, dato, t, v) in &plan {
+            let ev = e.evidencia_pos(clave);
+            // La foto se pidió después de la última escritura de esta posición.
+            let posterior = ticket.generacion > ev.generacion || !e.ev_pos.contains_key(clave);
+            e.aplicar_posicion_con(clave, dato, *t, v, posterior, Some(Origen::Rest));
             let marca = e.marcas_pos.get(clave).copied().flatten();
             if t.is_some() && *t >= marca {
-                e.marcas_pos_stream.remove(clave);
+                let ev = e.ev_pos.entry(clave.clone()).or_default();
+                ev.origen = Some(Origen::Rest);
+                if anclada && ev.empate_desde.is_some_and(|g| ticket.generacion >= g) {
+                    ev.empate_desde = None;
+                }
             }
-            e.aplicar_posicion_con(clave, dato, *t, v);
+        }
+        // Una posición en empate que la foto completa no trae y que el puente
+        // tiene cerrada: la foto confirma el cierre.
+        if let (Some(m), true) = (&l.posiciones, anclada) {
+            let Estado { ev_pos, abiertas, .. } = &mut *e;
+            for (clave, ev) in ev_pos.iter_mut() {
+                if !m.contains_key(clave)
+                    && !abiertas.contains_key(clave)
+                    && ev.empate_desde.is_some_and(|g| ticket.generacion >= g)
+                {
+                    ev.empate_desde = None;
+                }
+            }
         }
         if incompleta {
             // Con la suma del activo, una posición sin observar tampoco cuenta 0.
@@ -560,19 +823,25 @@ impl PuenteCuenta {
                     e.techo = Some(e.techo.map_or(cota, |t| t.min(cota)));
                 }
             }
-        } else {
-            e.completa = true;
-            e.techo = None;
+        } else if anclada {
+            // V4B: sólo una lectura completa, del socket abierto y pedida
+            // después del último anclaje suelta el veto.
+            let pendiente = e.ev_saldo.empate_desde.is_some() || e.ev_pos.values().any(|v| v.empate_desde.is_some());
+            if !pendiente {
+                e.completa = true;
+                e.techo = None;
+                e.motivo = None;
+            }
         }
         e.generacion += 1;
         self.notificar(&e);
         Ok(e.observacion().expect("saldo recién fijado"))
     }
 
-    /// Evento del stream de la era `era`. `Ok(None)` = aceptado, pero todavía
-    /// no hay saldo observado (nada que publicar).
+    /// Evento del stream de la era `era` (socket vigente, sin `E`). `Ok(None)`
+    /// = aceptado, pero todavía no hay saldo observado (nada que publicar).
     pub fn observar_stream(&self, era: u64, ev: &EventoStream) -> Result<Option<Observacion>, Rechazo> {
-        self.observar_stream_y_publicar(era, ev, |_| {})
+        self.observar_evento(era, None, None, ev, |_| {})
     }
 
     /// Como [`observar_stream`](Self::observar_stream), y `publicar` corre con
@@ -585,15 +854,65 @@ impl PuenteCuenta {
         ev: &EventoStream,
         publicar: impl FnOnce(&Observacion),
     ) -> Result<Option<Observacion>, Rechazo> {
+        self.observar_evento(era, None, None, ev, publicar)
+    }
+
+    /// V4B: evento del socket `socket` con su hora de evento `E`
+    /// (`hora_evento_ms`); `ev.tiempo_ms` lleva la `T`. Un evento de otro
+    /// socket se rechaza sin tocar nada.
+    pub fn observar_stream_del_socket(
+        &self,
+        era: u64,
+        socket: u64,
+        hora_evento_ms: Option<u64>,
+        ev: &EventoStream,
+        publicar: impl FnOnce(&Observacion),
+    ) -> Result<Option<Observacion>, Rechazo> {
+        self.observar_evento(era, Some(socket), hora_evento_ms, ev, publicar)
+    }
+
+    fn observar_evento(
+        &self,
+        era: u64,
+        socket: Option<u64>,
+        hora: Option<u64>,
+        ev: &EventoStream,
+        publicar: impl FnOnce(&Observacion),
+    ) -> Result<Option<Observacion>, Rechazo> {
         let mut e = self.estado();
         if era != e.era {
             return Err(Rechazo::OtraEra);
         }
         let t = ev.tiempo_ms;
-        let rechazo = |e: &mut Estado, r: Rechazo| {
-            if !matches!(r, Rechazo::Atrasada { .. }) {
-                e.incompleta();
+        let fuente = "stream";
+        let socket = socket.unwrap_or(e.socket);
+        if socket != e.socket || e.socket_cerrado {
+            let r = Rechazo::OtroSocket {
+                socket,
+                vigente: e.socket,
+            };
+            e.registrar(fuente, t, hora, &r);
+            return Err(r);
+        }
+        let origen = Some(Origen::Stream { socket, e: hora });
+        // Atrasada (incluida la regresión de `E`) se descarta sin más; una
+        // contradicción o un dato sin orden dejan la equity incompleta y un
+        // anclaje nuevo; la contradicción además señala el empate.
+        let rechazo = |e: &mut Estado, r: Rechazo, pos: Option<&ClavePosicion>| {
+            match &r {
+                Rechazo::Contradiccion { .. } => {
+                    let g = e.anclar("Contradiccion");
+                    match pos {
+                        None => e.ev_saldo.empate_desde = Some(g),
+                        Some(c) => e.ev_pos.entry(c.clone()).or_default().empate_desde = Some(g),
+                    }
+                }
+                Rechazo::SinOrden { .. } => {
+                    e.anclar("SinOrden");
+                }
+                _ => {}
             }
+            e.registrar(fuente, t, hora, &r);
             r
         };
         let saldo = match ev.saldo {
@@ -603,11 +922,11 @@ impl PuenteCuenta {
                 e.saldo.is_some_and(|v| mismo_saldo(v, s)),
                 t,
                 e.marca_saldo,
-                e.marca_saldo_stream,
+                e.ev_saldo.empate_stream(socket, hora),
             ) {
                 Ok(v) => Some((s, v)),
                 Err(r) => {
-                    let r = rechazo(&mut *e, r);
+                    let r = rechazo(&mut *e, r, None);
                     self.notificar(&e);
                     return Err(r);
                 }
@@ -615,20 +934,18 @@ impl PuenteCuenta {
             None => None,
         };
         let mut incompleta = false;
-        let mut veredictos: Vec<Option<Veredicto>> = Vec::with_capacity(ev.posiciones.len());
+        let mut veredictos: Vec<Option<(Veredicto, bool)>> = Vec::with_capacity(ev.posiciones.len());
         for (clave, dato) in &ev.posiciones {
             if *dato == DatoPosicion::Invalida {
                 incompleta = true;
                 veredictos.push(None);
                 continue;
             }
-            // V4 (N1): el empate aplica sólo si la marca vigente de esta
-            // posición la puso el stream en esta misma conexión.
-            let empate_pos = e.marcas_pos_stream.contains(clave);
-            match e.decidir_posicion(clave, dato, t, empate_pos) {
-                Ok(v) => veredictos.push(Some(v)),
+            let empate = e.evidencia_pos(clave).empate_stream(socket, hora);
+            match e.decidir_posicion(clave, dato, t, empate) {
+                Ok(v) => veredictos.push(Some((v, empate == Empate::Posterior))),
                 Err(r) => {
-                    let r = rechazo(&mut *e, r);
+                    let r = rechazo(&mut *e, r, Some(clave));
                     self.notificar(&e);
                     return Err(r);
                 }
@@ -636,25 +953,35 @@ impl PuenteCuenta {
         }
         // El techo se toma con la evidencia de ANTES de este evento.
         if incompleta {
-            e.incompleta();
+            e.anclar("EvidenciaInvalida");
         }
-        if let Some((s, Veredicto::Aplicar)) = saldo {
-            e.saldo = Some(s);
-            // Sólo un dato que se aplicó hace del stream el origen de la marca;
-            // un igual (p. ej. un repetido tras reconectar) no la reabre.
-            if t.is_some() {
-                e.marca_saldo_stream = true;
+        let empate_saldo = e.ev_saldo.empate_stream(socket, hora);
+        match saldo {
+            Some((s, Veredicto::Aplicar)) => {
+                e.saldo = Some(s);
+                e.ev_saldo.generacion = e.generacion;
+                e.ev_saldo.empate_desde = None;
+                // Sólo un dato que se aplicó hace del stream el origen de la
+                // marca; un igual (p. ej. un repetido tras reconectar) no.
+                if t.is_some() {
+                    e.ev_saldo.origen = origen;
+                }
             }
+            Some((_, Veredicto::Igual)) if t.is_some() && t == e.marca_saldo && empate_saldo == Empate::Posterior => {
+                // Duplicado posterior del mismo socket: guarda la `E` mayor.
+                e.ev_saldo.origen = origen;
+            }
+            _ => {}
         }
         if saldo.is_some() {
             e.marca_saldo = maxima(e.marca_saldo, t);
         }
         for ((clave, dato), v) in ev.posiciones.iter().zip(&veredictos) {
-            let Some(v) = v else { continue };
-            if matches!(v, Veredicto::Aplicar) && t.is_some() {
-                e.marcas_pos_stream.insert(clave.clone());
+            let Some((v, posterior)) = v else { continue };
+            e.aplicar_posicion_con(clave, dato, t, v, *posterior, origen);
+            if matches!(v, Veredicto::Igual) && *posterior && t.is_some() {
+                e.ev_pos.entry(clave.clone()).or_default().origen = origen;
             }
-            e.aplicar_posicion_con(clave, dato, t, v);
         }
         e.generacion += 1;
         let obs = e.observacion();
@@ -665,22 +992,53 @@ impl PuenteCuenta {
         Ok(obs)
     }
 
-    /// Reconexión del stream de la era `era`: pudo perderse un evento. La
-    /// evidencia se conserva, la equity queda incompleta (con techo en la
-    /// actual) y se vetan las entradas hasta resincronizar. La reconexión de
-    /// otra era no toca nada.
+    /// Apertura de un socket nuevo del stream de la era `era` (reconexión):
+    /// pudo perderse un evento. La evidencia se conserva, la equity queda
+    /// incompleta (con techo en la actual) y se vetan las entradas hasta una
+    /// REST pedida después de esta apertura. Sube el número de socket: la
+    /// procedencia y los tickets del socket anterior dejan de valer. La
+    /// reconexión de otra era no toca nada.
     pub fn reconexion(&self, era: u64) -> Result<(), Rechazo> {
+        self.abrir_socket(era).map(|_| ())
+    }
+
+    /// Como [`reconexion`](Self::reconexion); devuelve el número del socket nuevo.
+    pub fn abrir_socket(&self, era: u64) -> Result<u64, Rechazo> {
         let mut e = self.estado();
         if era != e.era {
             return Err(Rechazo::OtraEra);
         }
-        e.incompleta();
-        // V4 (N1): una conexión nueva no garantiza el orden con los eventos de
-        // la anterior. Un evento con la misma marca que la vigente podría ser
-        // un repetido o un atrasado: ya no empata (contradicción, no aplica).
-        e.marca_saldo_stream = false;
-        e.marcas_pos_stream.clear();
-        e.generacion += 1;
+        e.socket += 1;
+        e.socket_cerrado = false;
+        e.anclar("Reconexion");
+        self.notificar(&e);
+        Ok(e.socket)
+    }
+
+    /// V4B: el socket del stream de la era `era` se perdió (fin del lazo de
+    /// lectura). Desde este instante se vetan las entradas; una REST pedida
+    /// durante el hueco aplica sus datos (el freno los ve) pero no suelta el
+    /// veto: sólo lo hace una REST pedida después de abrir el socket nuevo.
+    pub fn perdida_socket(&self, era: u64) -> Result<(), Rechazo> {
+        let mut e = self.estado();
+        if era != e.era {
+            return Err(Rechazo::OtraEra);
+        }
+        e.socket += 1;
+        e.socket_cerrado = true;
+        e.anclar("PerdidaSocket");
+        self.notificar(&e);
+        Ok(())
+    }
+
+    /// V4B: un `ACCOUNT_UPDATE` ilegible del socket vigente: evidencia perdida
+    /// sin corte. Equity incompleta y anclaje nuevo; el socket sigue.
+    pub fn evidencia_perdida(&self, era: u64) -> Result<(), Rechazo> {
+        let mut e = self.estado();
+        if era != e.era {
+            return Err(Rechazo::OtraEra);
+        }
+        e.anclar("EventoIlegible");
         self.notificar(&e);
         Ok(())
     }
@@ -711,6 +1069,21 @@ impl PuenteCuenta {
     /// Posiciones abiertas observadas.
     pub fn posiciones_en_cache(&self) -> usize {
         self.estado().abiertas.len()
+    }
+
+    /// Diagnóstico (solo medida): veto y su motivo, rechazos por fuente y
+    /// motivo desde la última toma, y el último rechazo. Vacía los contadores.
+    pub fn tomar_diagnostico(&self) -> DiagnosticoPuente {
+        let mut e = self.estado();
+        let mut rechazos: Vec<(&'static str, &'static str, u64)> =
+            e.diag.rechazos.drain().map(|((f, m), n)| (f, m, n)).collect();
+        rechazos.sort();
+        DiagnosticoPuente {
+            veta: e.veta_entradas(),
+            motivo_veto: e.motivo_veto(),
+            rechazos,
+            ultimo_rechazo: e.diag.ultimo.take(),
+        }
     }
 }
 
