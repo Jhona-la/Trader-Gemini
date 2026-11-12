@@ -2698,7 +2698,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     {
                         let ticket = puente_imm.ticket();
                         let executor = exec_imm.load_full();
-                        match executor.fetch_account_lectura().await {
+                        let lectura = executor.fetch_account_lectura().await;
+                        let _ = execution_engine::execution_evidence::tomar_aviso_capital();
+                        match lectura {
                             Ok(l) => match puente_imm.observar_rest(ticket, &l) {
                                 Ok(obs) => {
                                     exchange_capital_imm
@@ -5309,6 +5311,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             });
                             if let Err(e) = &lectura {
                                 telemetry_server::telemetry_log!("[TRANSITION] Lectura de la cuenta descartada: {}", e.chars().take(300).collect::<String>());
+                            }
+                            // Revisión independiente 1(b): el aviso de esta lectura
+                            // se escribe aquí en vez de quedar viejo en el buzón.
+                            if let Some(aviso) = execution_engine::execution_evidence::tomar_aviso_capital() {
+                                telemetry_server::telemetry_log!("⚠️ [CAPITAL] [TRANSITION] {}", aviso);
                             }
                             if let Ok(bal) = lectura.map(|obs| obs.saldo) {
                                 if oms_balance.publish_current_balance(&balance_token, bal, |balance| {

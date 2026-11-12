@@ -9,8 +9,18 @@
 //! Este archivo sólo usa la API que ya existía en `main` (`parse_account_equity`
 //! y `UserDataStreamer`), para que la RED se reproduzca con
 //! `git restore --source=main` de las fuentes de producción (revisión
-//! independiente, punto 5). Las dos primeras fallan en main por la razón
-//! correcta; la guarda pasa en los dos.
+//! independiente, punto 5).
+//!
+//! Corrida en un worktree de `main` `e090a6fd6` con sólo este archivo copiado
+//! (2026-11-12): 7 fallan por la razón correcta y 1 pasa.
+//! - `capital_unico_rest_y_stream_miden_el_mismo_capital`: 7299,88 contra 1655,81.
+//! - `capital_unico_sin_perdida_real_el_freno_no_dispara`: caída falsa del 77 %.
+//! - `capital_unico_con_caida_real_del_55_…`: la mitad del 55 % pasa en main; la
+//!   del 45 % falla por la misma caída falsa (no es una guarda pura).
+//! - `v2_red_…` (V2, P1.1/P1.4): main publica `[40]` por `[100]` (uPnL −60),
+//!   `[10]` por `[0]` (uPnL +10), `[50]` por `[100]` (caché de USDC) y
+//!   `[100, 7000]` por `[]` (USDT duplicado).
+//! - `v2_guarda_ausente_no_es_cero_y_el_cero_real_se_publica`: pasa en los dos.
 
 use execution_engine::client::BinanceClient;
 use execution_engine::execution_evidence::parse_account_equity;
