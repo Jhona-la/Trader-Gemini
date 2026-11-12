@@ -11,6 +11,36 @@ use signal_engine::quantum_slot_orchestrator::{
 };
 use strategy_core::{AssetColorState, SignalType};
 
+/// Integracion origin/main: los vetos de olas posteriores (Donaldson-Thomas, ola 27; DRGT, ola 28;
+/// heterotico, ola 29; Dirac de Wheeler-Feynman, ola 31) van antes en la cadena de etiquetas y estos
+/// fixtures tambien los disparan. Se apagan esos motores para que cada caso mida solo el veto de la
+/// ola 24; la decision de vetar no cambia.
+fn aislar_de_olas_posteriores(orchestrator: &mut OmniscientLivingGraphOrchestrator) {
+    orchestrator.donaldson_thomas_engines[0] =
+        signal_engine::DonaldsonThomasQuantumEngine::new(signal_engine::DonaldsonThomasConfig {
+            wall_crossing_threshold: f64::MAX,
+            ..Default::default()
+        });
+    orchestrator.heterotic_e8_engines[0] =
+        feature_engine::HeteroticE8CalabiYauEngine::new(feature_engine::HeteroticE8CalabiYauConfig {
+            anomaly_threshold: f64::MAX,
+            ..Default::default()
+        });
+    orchestrator.wheeler_feynman_engines[0] =
+        risk_engine::WheelerFeynmanAbsorberEngine::new(risk_engine::WheelerFeynmanAbsorberConfig {
+            radiation_damping_coupling: 0.0,
+            max_absorber_deficit: 1.0,
+            max_runaway_jerk_threshold: f64::MAX,
+            ..Default::default()
+        });
+    orchestrator.drgt_gravity_engines[0] =
+        risk_engine::DrgtMassiveGravityEngine::new(risk_engine::DrgtMassiveGravityConfig {
+            graviton_mass_mg: 1e-3,
+            higuchi_margin: 0.0,
+            ..Default::default()
+        });
+}
+
 #[test]
 fn test_c1_wave24_triad_holistic_orchestration() {
     let mut orchestrator = OmniscientLivingGraphOrchestrator::new(3);
@@ -100,6 +130,7 @@ fn test_c1_wave24_triad_holistic_orchestration() {
 #[test]
 fn test_c2_wave24_kostant_souriau_prequantum_collapse_veto_propagation() {
     let mut orchestrator = OmniscientLivingGraphOrchestrator::new(1);
+    aislar_de_olas_posteriores(&mut orchestrator);
     orchestrator.kostant_souriau_engines[0] =
         feature_engine::KostantSouriauPrequantumEngine::new(feature_engine::KostantSouriauConfig {
             min_polarization_coherence: 1.0,
@@ -188,6 +219,7 @@ fn test_c2_wave24_kostant_souriau_prequantum_collapse_veto_propagation() {
 #[test]
 fn test_c3_wave24_qmbs_ergodic_collapse_veto_propagation() {
     let mut orchestrator = OmniscientLivingGraphOrchestrator::new(1);
+    aislar_de_olas_posteriores(&mut orchestrator);
     orchestrator.qmbs_engines[0] =
         signal_engine::QuantumManyBodyScarsEngine::new(signal_engine::QuantumManyBodyScarsConfig {
             min_revival_fidelity: 1.0,
