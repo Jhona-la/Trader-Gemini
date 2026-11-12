@@ -235,7 +235,10 @@ fn cf2_ente_un_dato_de_masa_una_entrada() {
     como_en_vivo.prospect_pressure = p;
     let p_crowd = 1.0 / (1.0 + 0.25 * ls.ln().powi(2));
     let a = ente.evaluate(&solo_ls, 0.5).confidence;
-    assert!((a - p_crowd).abs() < 1e-12, "sólo LS: {a} frente a {p_crowd}");
+    assert!(
+        (a - p_crowd).abs() < 1e-12,
+        "sólo LS: {a} frente a {p_crowd}"
+    );
     let b = ente.evaluate(&como_en_vivo, 0.5).confidence;
     assert!(
         (a - b).abs() < 1e-12,
@@ -291,7 +294,11 @@ fn cf2_ente_inerte_sin_vetos() {
             _ => (&viva, Some(&w)),
         };
         let traza = consejo.deliberar_traced(&base, wr, pesos);
-        assert!(!traza.opinions.is_empty(), "fallo de integridad: {:?}", traza.consensus.vetoed_by);
+        assert!(
+            !traza.opinions.is_empty(),
+            "fallo de integridad: {:?}",
+            traza.consensus.vetoed_by
+        );
         if traza.opinions.iter().any(|o| o.is_veto) {
             continue;
         }
@@ -314,7 +321,9 @@ fn cf2_ente_inerte_sin_vetos() {
         }
         aprobadas += a.approved as usize;
     }
-    println!("cargas sin veto {sin_veto}, aprobadas {aprobadas}, pesos del tracker vivo {pesos_vivos:?}");
+    println!(
+        "cargas sin veto {sin_veto}, aprobadas {aprobadas}, pesos del tracker vivo {pesos_vivos:?}"
+    );
     assert!(
         sin_veto >= 2_000 && aprobadas >= 100,
         "rejilla sin ejercer: {sin_veto} cargas sin veto, {aprobadas} aprobadas"
@@ -381,10 +390,14 @@ fn cf2_ente_decide_por_el_suelo_del_override() {
     let s_meta = s / 3.0 * 0.4;
     let w_meta = 2.0 * (1.0 + (wr - 0.20) / 0.80);
     let f = |e: f64| {
-        (s * s + 0.4 * 0.9 + 0.4 + s_meta * wr * w_meta + e) / (s + 0.4 * 0.9 + 0.4 + wr * w_meta + e)
+        (s * s + 0.4 * 0.9 + 0.4 + s_meta * wr * w_meta + e)
+            / (s + 0.4 * 0.9 + 0.4 + wr * w_meta + e)
     };
     let (f1, f02) = (f(1.0), f(0.2));
-    assert!(f1 >= 0.28 && f02 < 0.28, "forma cerrada: f(1) {f1}, f(0,2) {f02}");
+    assert!(
+        f1 >= 0.28 && f02 < 0.28,
+        "forma cerrada: f(1) {f1}, f(0,2) {f02}"
+    );
     let a = consejo.deliberar_with_weights(&base, 0.8, Some(&w));
     let b = consejo.deliberar_with_weights(&extremo, 0.8, Some(&w));
     assert!(
@@ -448,7 +461,10 @@ fn cf2_ente_decide_el_override_de_un_veto_unico() {
             / (0.05 * 1.2 + 0.36 + 0.1 + 0.5 * w_meta + u + e)
     };
     let (f1, f02) = (f(1.0), f(0.2));
-    assert!(f1 >= 0.28 && f02 < 0.28, "forma cerrada: f(1) {f1}, f(0,2) {f02}");
+    assert!(
+        f1 >= 0.28 && f02 < 0.28,
+        "forma cerrada: f(1) {f1}, f(0,2) {f02}"
+    );
     let a = consejo.deliberar_with_weights(&base, 0.5, Some(&w));
     let b = consejo.deliberar_with_weights(&adverso, 0.5, Some(&w));
     assert!(

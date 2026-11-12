@@ -274,3 +274,40 @@ fn c6_multi_slot_order_emission_and_capital_preservation() {
     // El margen total asignado no puede exceder el capital arriesgado ($13 * 0.20 = $2.60)
     assert!(total_margin_allocated <= capital * risk_fraction + 1e-4);
 }
+
+#[test]
+fn c7_invalid_capital_risk_or_leverage_emits_no_orders() {
+    let mut orchestrator = QuantumSlotOrchestrator::default();
+    let report = orchestrator.evaluate_multi_slot_signals(
+        2000.0,
+        1999.5,
+        2000.5,
+        10.0,
+        2.0,
+        1_700_000_300,
+        0.80,
+        0.80,
+        0.80,
+        0.01,
+        15_000.0,
+        &[false, false, false],
+        &[0.0, 0.0, 0.0],
+        &[false, false, false],
+    );
+    assert_eq!(report.active_slots_count, 3);
+
+    for (capital, leverage, risk) in [
+        (13.0, 5.0, 0.0),
+        (0.0, 5.0, 0.20),
+        (-1.0, 5.0, 0.20),
+        (f64::NAN, 5.0, 0.20),
+        (13.0, 5.0, f64::NAN),
+        (13.0, 5.0, -0.01),
+        (13.0, 0.0, 0.20),
+        (13.0, -1.0, 0.20),
+        (13.0, f64::NAN, 0.20),
+    ] {
+        let emission = orchestrator.synthesize_order_emissions(&report, capital, leverage, risk);
+        assert_eq!(emission.active_count, 0, "capital={capital} leverage={leverage} risk={risk}");
+    }
+}

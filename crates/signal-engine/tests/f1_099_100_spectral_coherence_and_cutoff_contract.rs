@@ -52,9 +52,18 @@ fn test_f1_099_kish_effective_boost_properties() {
     assert!((compute_ensemble_boost_effective(10.0) - 1.4).abs() < 1e-12);
 
     // Paridad hacia atrás con compute_ensemble_boost
-    assert_eq!(compute_ensemble_boost(1, 5), compute_ensemble_boost_effective(1.0));
-    assert_eq!(compute_ensemble_boost(3, 5), compute_ensemble_boost_effective(3.0));
-    assert_eq!(compute_ensemble_boost(5, 5), compute_ensemble_boost_effective(5.0));
+    assert_eq!(
+        compute_ensemble_boost(1, 5),
+        compute_ensemble_boost_effective(1.0)
+    );
+    assert_eq!(
+        compute_ensemble_boost(3, 5),
+        compute_ensemble_boost_effective(3.0)
+    );
+    assert_eq!(
+        compute_ensemble_boost(5, 5),
+        compute_ensemble_boost_effective(5.0)
+    );
 }
 
 #[test]
@@ -68,11 +77,26 @@ fn test_f1_099_unbalanced_ensemble_does_not_inflate_boost() {
     let mut orch = TensorVoteOrchestrator::new(arena);
 
     // 1 estrategia emite un voto contundente 0.80, mientras otras 4 emiten votos ínfimos 0.001
-    orch.add_strategy(Box::new(MockStrategy { name: "Dominant", val: 0.80 }));
-    orch.add_strategy(Box::new(MockStrategy { name: "Tiny1", val: 0.001 }));
-    orch.add_strategy(Box::new(MockStrategy { name: "Tiny2", val: 0.001 }));
-    orch.add_strategy(Box::new(MockStrategy { name: "Tiny3", val: 0.001 }));
-    orch.add_strategy(Box::new(MockStrategy { name: "Tiny4", val: 0.001 }));
+    orch.add_strategy(Box::new(MockStrategy {
+        name: "Dominant",
+        val: 0.80,
+    }));
+    orch.add_strategy(Box::new(MockStrategy {
+        name: "Tiny1",
+        val: 0.001,
+    }));
+    orch.add_strategy(Box::new(MockStrategy {
+        name: "Tiny2",
+        val: 0.001,
+    }));
+    orch.add_strategy(Box::new(MockStrategy {
+        name: "Tiny3",
+        val: 0.001,
+    }));
+    orch.add_strategy(Box::new(MockStrategy {
+        name: "Tiny4",
+        val: 0.001,
+    }));
 
     let decision = orch.evaluate_continuous_consensus_for_coin(0, "BTCUSDT");
 
@@ -97,7 +121,10 @@ fn test_f1_099_spectral_interference_physics() {
         .store(0.51, std::sync::atomic::Ordering::Relaxed); // cutoff_floor = 0.01
 
     let mut orch = TensorVoteOrchestrator::new(std::sync::Arc::clone(&arena));
-    orch.add_strategy(Box::new(MockStrategy { name: "S1", val: 0.0 }));
+    orch.add_strategy(Box::new(MockStrategy {
+        name: "S1",
+        val: 0.0,
+    }));
 
     arena
         .registry

@@ -41,6 +41,143 @@ use risk_engine::kelly_envelope::RiskEnvelope;
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
 
+use god_engine_core::entry_reservation::{EntryReservation, ReservationError};
+
+struct VisibleIoc<'a> {
+    tick: &'a ReplayTick,
+    remaining_bid: f64,
+    remaining_ask: f64,
+}
+
+impl<'a> VisibleIoc<'a> {
+    fn new(tick: &'a ReplayTick) -> Self {
+        Self {
+            tick,
+            remaining_bid: tick.bid_qty,
+            remaining_ask: tick.ask_qty,
+        }
+    }
+
+    fn settle(
+        &mut self,
+        arena: &GlobalArena,
+        reservation: &EntryReservation,
+        is_long: bool,
+        limit: f64,
+        requested: f64,
+    ) -> Result<f64, ReservationError> {
+        let (quote, remaining) = if is_long {
+            (self.tick.ask, &mut self.remaining_ask)
+        } else {
+            (self.tick.bid, &mut self.remaining_bid)
+        };
+        let crosses = if is_long { limit >= quote } else { limit <= quote };
+        let step = quantum_arena::symbol_registry::try_spec(reservation.coin_id)
+            .map(|spec| spec.step_size);
+        let filled = if limit.is_finite()
+            && limit > 0.0
+            && quote.is_finite()
+            && quote > 0.0
+            && crosses
+            && requested.is_finite()
+            && requested > 0.0
+            && remaining.is_finite()
+            && *remaining > 0.0
+        {
+            if requested <= *remaining {
+                requested
+            } else if let Some(step) = step.filter(|value| value.is_finite() && *value > 0.0) {
+                floor_visible_quantity(*remaining, step)
+            } else {
+                0.0
+            }
+        } else {
+            0.0
+        };
+        if filled == 0.0 {
+            reservation.cancel(arena)?;
+        } else {
+            reservation.confirmar_llenado(arena, Some(filled))?;
+            *remaining -= filled;
+        }
+        Ok(filled)
+    }
+}
+
+// Only reduce a proposed order when the book limits it. If binary rounding
+// pushes the product above the displayed size, back off by one lot.
+fn floor_visible_quantity(visible: f64, step: f64) -> f64 {
+    let lots = (visible / step).floor();
+    let rounded = lots * step;
+    if !rounded.is_finite() || rounded <= 0.0 {
+        0.0
+    } else if rounded <= visible {
+        rounded
+    } else {
+        (lots - 1.0) * step
+    }
+}
+
+#[cfg(test)]
+mod visible_ioc_contract {
+    use super::*;
+    use quantum_arena::position::PositionHorizon;
+
+    #[test]
+    fn visible_liquidity_below_one_lot_cannot_fill() {
+        assert_eq!(floor_visible_quantity(0.0004, 0.001), 0.0);
+        assert_eq!(floor_visible_quantity(0.2504, 0.001), 0.25);
+    }
+
+    #[test]
+    fn partial_fill_settles_the_reservation_and_cancels_the_remainder() -> Result<(), String> {
+        crate::asegurar_spec_nativo("BTCUSDT");
+        let symbol = quantum_arena::symbol_registry::try_symbol(0)
+            .ok_or("registered replay symbol missing")?;
+        let arena = GlobalArena::build_in_own_stack(1_000.0);
+        let tick = ReplayTick {
+            ts_ms: 1_700_000_000_000,
+            bid: 99.0,
+            ask: 100.0,
+            bid_qty: 1.0,
+            ask_qty: 0.25,
+        };
+        let mut book = VisibleIoc::new(&tick);
+
+        for slot in 0..2 {
+            let position = arena.coins[0].positions.get_slot(slot);
+            assert!(position.open_with_fee(
+                true, 100.0, 1.0, 16.0, tick.ts_ms, 110.0, 90.0,
+                PositionHorizon::Continuous, 0.6, 0.6, 0.125,
+            ));
+            arena.used_margin.fetch_add(16.0, Ordering::Relaxed);
+            arena.unified_capital.fetch_sub(0.125, Ordering::Relaxed);
+            let reservation = EntryReservation {
+                coin_id: 0,
+                slot,
+                generation: position.generation.load(Ordering::Acquire),
+                symbol: symbol.clone(),
+            };
+            let executed = book
+                .settle(&arena, &reservation, true, 100.0, 1.0)
+                .map_err(|err| format!("could not settle IOC: {err:?}"))?;
+
+            if slot == 0 {
+                assert_eq!(executed, 0.25, "visible ask fills only a quarter");
+                assert!(position.is_open());
+                assert_eq!(position.quantity.load(Ordering::Acquire), 0.25);
+                assert_eq!(position.entry_fee.load(Ordering::Acquire), 0.03125);
+            } else {
+                assert_eq!(executed, 0.0, "another event cannot refill the same ask");
+                assert!(!position.is_open(), "zero execution cancels the reservation");
+            }
+            assert_eq!(arena.used_margin.load(Ordering::Acquire), 4.0);
+            assert_eq!(arena.unified_capital.load(Ordering::Acquire), 999.96875);
+        }
+        Ok(())
+    }
+}
+
 /// Tick de libro en disco (repr exacto de *_ticks.bin de parquet_to_bin).
 #[repr(C)]
 #[derive(Debug, Clone, Copy, Default)]
@@ -440,6 +577,45 @@ pub fn run_booktick_replay_with_observer(
     run_booktick_replay_observed(ticks, genome, omni, cfg, before_event)
 }
 
+/// Counts locally settled entries in the explicit visible-book IOC replay.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub struct ReplayIocStats {
+    pub filled: u64,
+    pub partial_with_canceled_remainder: u64,
+    pub canceled_without_fill: u64,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ReplayIocError {
+    TradeOnly,
+    MissingSymbol,
+    MissingReservation,
+    Settlement(ReservationError),
+}
+
+/// Run Booktick with IOC entry settlement against one snapshot of visible liquidity.
+/// The core still prices entries and exits. The proposed entry price is the IOC
+/// limit. Available quantity is shared by depth and trade from the same row.
+/// Partial size is rounded down to the symbol step. The replay does not model
+/// venue queue priority, route latency, or the exchange fill price.
+/// The caller must supply book observations and register the symbol in slot zero.
+pub fn run_booktick_replay_with_visible_ioc(
+    ticks: &[ReplayTick],
+    genome: &SuperGenotype,
+    omni: Option<&OmniHistory>,
+    cfg: &ReplayConfig,
+) -> Result<(ReplayStats, ReplayIocStats), ReplayIocError> {
+    if cfg.trade_only {
+        return Err(ReplayIocError::TradeOnly);
+    }
+    if quantum_arena::symbol_registry::try_symbol(0).is_none() {
+        return Err(ReplayIocError::MissingSymbol);
+    }
+    let mut ioc = ReplayIocStats::default();
+    let stats = run_booktick_replay_inner(ticks, genome, omni, cfg, |_, _| {}, Some(&mut ioc))?;
+    Ok((stats, ioc))
+}
+
 // Same execution path in tests and production; the empty production observer
 // is monomorphized away. Inspect state BEFORE each event to test non-anticipation.
 fn run_booktick_replay_observed(
@@ -447,8 +623,22 @@ fn run_booktick_replay_observed(
     genome: &SuperGenotype,
     omni: Option<&OmniHistory>,
     cfg: &ReplayConfig,
-    mut before_event: impl FnMut(usize, &GodEngineCore),
+    before_event: impl FnMut(usize, &GodEngineCore),
 ) -> ReplayStats {
+    match run_booktick_replay_inner(ticks, genome, omni, cfg, before_event, None) {
+        Ok(stats) => stats,
+        Err(_) => ReplayStats { close_reason: ReplayCloseReason::NoReplay, ..Default::default() },
+    }
+}
+
+fn run_booktick_replay_inner(
+    ticks: &[ReplayTick],
+    genome: &SuperGenotype,
+    omni: Option<&OmniHistory>,
+    cfg: &ReplayConfig,
+    mut before_event: impl FnMut(usize, &GodEngineCore),
+    mut ioc: Option<&mut ReplayIocStats>,
+) -> Result<ReplayStats, ReplayIocError> {
     let mut stats = ReplayStats::default();
     if ticks.len().saturating_sub(cfg.warmup_ticks) <= 10
         || !cfg.initial_capital.is_finite()
@@ -458,7 +648,7 @@ fn run_booktick_replay_observed(
         // cinta agotada (el consumidor puede distinguir el cero del
         // final_capital como instrumento, no como resultado económico).
         stats.close_reason = ReplayCloseReason::NoReplay;
-        return stats;
+        return Ok(stats);
     }
 
     let arena = GlobalArena::build_in_own_stack(cfg.initial_capital);
@@ -526,6 +716,7 @@ fn run_booktick_replay_observed(
         // acumulador, no índice: los inválidos intermedios no cuentan.
         executed_ticks += 1;
         executed_last_ts = t.ts_ms;
+        let mut book = ioc.as_ref().map(|_| VisibleIoc::new(t));
 
         // F3.4-04 (Línea C / Ola Ω93) + F1-001 (Fable / Ola Ω151):
         // En modo trade_only (sin libro real) no alimentar muros con la
@@ -670,29 +861,15 @@ fn run_booktick_replay_observed(
                 t.bid_qty < t.ask_qty,
             );
             let recibo = core.take_local_close_accounting(0);
-            // F1-020 (Ola Ω153): Envolvente disparada POR ORDEN nueva sobre la ranura
-            // resonante específica recién abierta (eliminando prev_open que silenciaba slots 1/2).
-            if o2.is_some() {
-                if let Some(coin) = arena.coins.get(0) {
-                    if let Some(slot_idx) = (0..3).find(|&i| {
-                        let p = coin.positions.get_slot(i);
-                        p.is_open() && p.generation.load(Ordering::Acquire) != gen_before[i]
-                    }) {
-                        let atr_now = core.feature_engines[0].get_atr_pct();
-                        if !live_envelope_gate_for_slot(
-                            &arena,
-                            &mut risk_envelope,
-                            0,
-                            slot_idx,
-                            mid,
-                            atr_now,
-                            &mut stats.envelope_vetoes,
-                        ) {
-                            core.feature_engines[0].last_exit_fastband_ms = t.ts_ms;
-                        }
-                    }
-                }
-            }
+            settle_replay_entry(
+                &mut core,
+                &mut risk_envelope,
+                o2,
+                gen_before,
+                t,
+                &mut stats.envelope_vetoes,
+                book.as_mut().zip(ioc.as_deref_mut()),
+            )?;
             c1 = None;
             c2 = closed.map(|c| (c, recibo_del_cierre(recibo, t.ts_ms, c.2)));
         } else {
@@ -721,27 +898,15 @@ fn run_booktick_replay_observed(
                 false,
             );
             let recibo1 = core.take_local_close_accounting(0);
-            if o1.is_some() {
-                if let Some(coin) = arena.coins.get(0) {
-                    if let Some(slot_idx) = (0..3).find(|&i| {
-                        let p = coin.positions.get_slot(i);
-                        p.is_open() && p.generation.load(Ordering::Acquire) != gen_before1[i]
-                    }) {
-                        let atr_now = core.feature_engines[0].get_atr_pct();
-                        if !live_envelope_gate_for_slot(
-                            &arena,
-                            &mut risk_envelope,
-                            0,
-                            slot_idx,
-                            mid,
-                            atr_now,
-                            &mut stats.envelope_vetoes,
-                        ) {
-                            core.feature_engines[0].last_exit_fastband_ms = t.ts_ms;
-                        }
-                    }
-                }
-            }
+            settle_replay_entry(
+                &mut core,
+                &mut risk_envelope,
+                o1,
+                gen_before1,
+                t,
+                &mut stats.envelope_vetoes,
+                book.as_mut().zip(ioc.as_deref_mut()),
+            )?;
             let maker_flag = t.bid_qty < t.ask_qty;
             let gen_before2: [u64; 3] = if let Some(coin) = arena.coins.get(0) {
                 std::array::from_fn(|i| coin.positions.get_slot(i).generation.load(Ordering::Acquire))
@@ -767,27 +932,15 @@ fn run_booktick_replay_observed(
                 maker_flag,
             );
             let recibo2 = core.take_local_close_accounting(0);
-            if o2.is_some() {
-                if let Some(coin) = arena.coins.get(0) {
-                    if let Some(slot_idx) = (0..3).find(|&i| {
-                        let p = coin.positions.get_slot(i);
-                        p.is_open() && p.generation.load(Ordering::Acquire) != gen_before2[i]
-                    }) {
-                        let atr_now = core.feature_engines[0].get_atr_pct();
-                        if !live_envelope_gate_for_slot(
-                            &arena,
-                            &mut risk_envelope,
-                            0,
-                            slot_idx,
-                            mid,
-                            atr_now,
-                            &mut stats.envelope_vetoes,
-                        ) {
-                            core.feature_engines[0].last_exit_fastband_ms = t.ts_ms;
-                        }
-                    }
-                }
-            }
+            settle_replay_entry(
+                &mut core,
+                &mut risk_envelope,
+                o2,
+                gen_before2,
+                t,
+                &mut stats.envelope_vetoes,
+                book.as_mut().zip(ioc.as_deref_mut()),
+            )?;
             c1 = closed1.map(|c| (c, recibo_del_cierre(recibo1, t.ts_ms, c.2)));
             c2 = closed2.map(|c| (c, recibo_del_cierre(recibo2, t.ts_ms, c.2)));
         }
@@ -879,7 +1032,64 @@ fn run_booktick_replay_observed(
         executed_last_ts.saturating_sub(ticks[0].ts_ms),
     );
     stats.omni_neutral = omni.is_none();
-    stats
+    Ok(stats)
+}
+
+fn settle_replay_entry(
+    core: &mut GodEngineCore,
+    envelope: &mut RiskEnvelope,
+    order: Option<(bool, f64, f64, f64, f64)>,
+    generations: [u64; 3],
+    tick: &ReplayTick,
+    vetoes: &mut u64,
+    ioc: Option<(&mut VisibleIoc<'_>, &mut ReplayIocStats)>,
+) -> Result<(), ReplayIocError> {
+    let Some((is_long, limit, requested, _, _)) = order else {
+        return Ok(());
+    };
+    let slot_idx = core.arena.coins.get(0).and_then(|coin| {
+        (0..3).find(|&i| {
+            let position = coin.positions.get_slot(i);
+            position.is_open() && position.generation.load(Ordering::Acquire) != generations[i]
+        })
+    });
+    let Some(slot_idx) = slot_idx else {
+        return if ioc.is_some() {
+            Err(ReplayIocError::MissingReservation)
+        } else {
+            Ok(())
+        };
+    };
+    let atr_now = core.feature_engines[0].get_atr_pct();
+    if !live_envelope_gate_for_slot(&core.arena, envelope, 0, slot_idx, tick.mid(), atr_now, vetoes) {
+        core.feature_engines[0].last_exit_fastband_ms = tick.ts_ms;
+        return Ok(());
+    }
+    if let Some((book, counters)) = ioc {
+        let reservation = core
+            .entry_reservation(0)
+            .filter(|r| {
+                r.slot == slot_idx
+                    && r.generation
+                        == core.arena.coins[0]
+                            .positions
+                            .get_slot(slot_idx)
+                            .generation
+                            .load(Ordering::Acquire)
+            })
+            .ok_or(ReplayIocError::MissingReservation)?;
+        let filled = book
+            .settle(&core.arena, &reservation, is_long, limit, requested)
+            .map_err(ReplayIocError::Settlement)?;
+        if filled == 0.0 {
+            counters.canceled_without_fill += 1;
+        } else if filled < requested {
+            counters.partial_with_canceled_remainder += 1;
+        } else {
+            counters.filled += 1;
+        }
+    }
+    Ok(())
 }
 
 impl ReplayTick {

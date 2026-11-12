@@ -216,3 +216,98 @@ fn test_c6_ieee754_resilience_and_defensive_sanitization() {
     assert!(m.net_realized_pnl.is_finite());
     assert!(m.kelly_growth_rate.is_finite());
 }
+
+/// La evidencia no finita se rechaza antes de evaluar o promover, sin imputar retornos.
+#[test]
+fn test_c6_nonfinite_evidence_is_not_evaluated_or_promoted() {
+    let hypothesis = QuantitativeHypothesis::default();
+    let volatilities = [0.02; 11];
+
+    for invalid in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+        let mut returns = [0.01; 11];
+        returns[1] = invalid;
+        let metrics = StanfordDiscoveryEngine::isolated_evaluate(
+            &hypothesis,
+            &returns,
+            &volatilities,
+            0.0004,
+            0.0001,
+        );
+        assert_eq!(metrics.total_trades, 0);
+        assert_eq!(metrics.max_drawdown.to_bits(), 1.0_f64.to_bits());
+        assert_eq!(metrics.net_realized_pnl.to_bits(), 0.0_f64.to_bits());
+        assert_eq!(metrics.fee_drag_usd.to_bits(), 0.0_f64.to_bits());
+        assert_eq!(metrics.slippage_drag_usd.to_bits(), 0.0_f64.to_bits());
+
+        let mut engine = StanfordDiscoveryEngine::new(12345);
+        let before_hypothesis = *engine.incumbent_hypothesis();
+        let before_metrics = *engine.incumbent_metrics();
+        let rejected =
+            engine.run_discovery_cycle(4, &returns, &volatilities, 0.0004, 0.0001, 50.0);
+        assert!(!rejected.is_promoted_to_active);
+        assert_eq!(rejected.generation, 0);
+        assert_eq!(rejected.champion_hypothesis, before_hypothesis);
+        assert_eq!(rejected.champion_metrics, before_metrics);
+
+        let valid_returns = [0.01; 11];
+        let mut control = StanfordDiscoveryEngine::new(12345);
+        let expected = control.run_discovery_cycle(
+            4,
+            &valid_returns,
+            &volatilities,
+            0.0004,
+            0.0001,
+            50.0,
+        );
+        let actual = engine.run_discovery_cycle(
+            4,
+            &valid_returns,
+            &volatilities,
+            0.0004,
+            0.0001,
+            50.0,
+        );
+        assert_eq!(actual.generation, expected.generation);
+        assert_eq!(actual.is_promoted_to_active, expected.is_promoted_to_active);
+        assert_eq!(actual.champion_hypothesis, expected.champion_hypothesis);
+        assert_eq!(actual.champion_metrics, expected.champion_metrics);
+        assert_eq!(actual.causal_pillar_importance, expected.causal_pillar_importance);
+    }
+}
+
+/// Ninguna métrica externa no finita puede atravesar la puerta pública de promoción.
+#[test]
+fn test_c6_nonfinite_metrics_cannot_promote_through_meta_distill() {
+    let hypothesis = QuantitativeHypothesis::default();
+    let valid = SandboxEvaluationMetrics {
+        hypothesis_id: hypothesis.id,
+        sharpe_ratio: 2.0,
+        win_rate: 0.60,
+        max_drawdown: 0.05,
+        net_realized_pnl: 20.0,
+        kelly_growth_rate: 0.01,
+        total_trades: 11,
+        fee_drag_usd: 0.1,
+        slippage_drag_usd: 0.1,
+    };
+    let invalid_metrics = [
+        SandboxEvaluationMetrics { sharpe_ratio: f64::INFINITY, ..valid },
+        SandboxEvaluationMetrics { win_rate: f64::NAN, ..valid },
+        SandboxEvaluationMetrics { max_drawdown: f64::NAN, ..valid },
+        SandboxEvaluationMetrics { net_realized_pnl: f64::NAN, ..valid },
+        SandboxEvaluationMetrics { kelly_growth_rate: f64::NAN, ..valid },
+        SandboxEvaluationMetrics { fee_drag_usd: f64::INFINITY, ..valid },
+        SandboxEvaluationMetrics { slippage_drag_usd: f64::NEG_INFINITY, ..valid },
+    ];
+
+    for invalid in invalid_metrics {
+        let mut engine = StanfordDiscoveryEngine::new(12345);
+        let before_hypothesis = *engine.incumbent_hypothesis();
+        let before_metrics = *engine.incumbent_metrics();
+        let rejected = engine.meta_distill(&[hypothesis], &[invalid], None);
+        assert!(!rejected.is_promoted_to_active);
+        assert_eq!(rejected.generation, 0);
+        assert_eq!(rejected.champion_hypothesis, before_hypothesis);
+        assert_eq!(rejected.champion_metrics, before_metrics);
+    }
+}

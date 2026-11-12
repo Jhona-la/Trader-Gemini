@@ -15,7 +15,7 @@
 /// eventos y cociente de recorte (margen impuesto / margen pedido).
 #[test]
 fn el_recorte_de_margen_queda_registrado_por_moneda() {
-    let src: String = include_str!("../src/lib.rs").split_whitespace().collect();
+    let src: String = include_str!("../../src/lib.rs").split_whitespace().collect();
 
     // 1) El recorte debe incrementar un contador POR MONEDA (no un println,
     //    no un contador global sin símbolo: en multiactivo eso es opaco).
@@ -51,7 +51,7 @@ fn el_recorte_de_margen_queda_registrado_por_moneda() {
 /// un universo multiactivo).
 #[test]
 fn la_telemetria_del_recorte_no_es_global() {
-    let src: String = include_str!("../src/lib.rs").split_whitespace().collect();
+    let src: String = include_str!("../../src/lib.rs").split_whitespace().collect();
     // Si se hubiera usado `set` global, no habría coin_id en la llamada.
     assert!(
         src.contains("get_for_coin_or(coin_id,\"sol_a2_margen_reducido\""),
@@ -70,7 +70,7 @@ fn la_telemetria_del_recorte_no_es_global() {
 /// medida por este mismo contrato.
 #[test]
 fn el_recorte_puede_rescatar_apalancamiento_y_eso_sigue_siendo_deuda() {
-    let src: String = include_str!("../src/lib.rs").split_whitespace().collect();
+    let src: String = include_str!("../../src/lib.rs").split_whitespace().collect();
     let recorta = src.contains("final_margin=safe_limit;");
     let rescata = src.contains("letneeded_leverage=");
     assert!(

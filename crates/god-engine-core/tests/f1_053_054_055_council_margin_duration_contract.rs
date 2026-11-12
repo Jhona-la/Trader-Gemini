@@ -3,7 +3,6 @@
 //! - F1-054: Unified margin calculation in risk-engine, removal of conflicting nucleus haircut, and diag_margin_drops telemetry
 //! - F1-055: Continuous adaptive Hurst duration modulation scaled by sample size N and DFA uncertainty without Brownian saturation
 
-use std::sync::Arc;
 use std::sync::atomic::Ordering;
 use god_engine_core::{
     GodEngineCore,
@@ -15,7 +14,7 @@ use quantum_arena::GlobalArena;
 
 #[test]
 fn f1_053_council_params_direct_read_and_isolation_from_registry() {
-    let arena = Arc::new(GlobalArena::new(1000.0));
+    let arena = GlobalArena::build_in_own_stack(1000.0);
     let mut core = GodEngineCore::new_auxiliar(arena.clone());
 
     // Configurar un valor específico en QuantumConfig
@@ -43,7 +42,7 @@ fn f1_053_council_params_direct_read_and_isolation_from_registry() {
 
 #[test]
 fn f1_054_margin_drops_counter_and_telemetry_initialization() {
-    let arena = Arc::new(GlobalArena::new(1000.0));
+    let arena = GlobalArena::build_in_own_stack(1000.0);
     let mut core = GodEngineCore::new_auxiliar(arena.clone());
 
     // diag_margin_drops nace en 0

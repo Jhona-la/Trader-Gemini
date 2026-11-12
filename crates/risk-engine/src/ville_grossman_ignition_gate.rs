@@ -1,14 +1,12 @@
 //! # Módulo: Puerta Cuántica de Ignición y Certificación OOS con Cota de Ville y Piso de Grossman-Zhou
 //!
 //! ## Método Pedagógico Riguroso (Modo Profesor)
-//! - **QUÉ:** Puerta de ignición determinista y continua (`VilleGrossmanIgnitionGate`) que acopla
-//!   la desigualdad maximal de supermartingalas de Ville ($\mathbb{P}(\text{ruina}) \le 10^{-6}$)
-//!   con la teoría de control estocástico de piso móvil de Grossman-Zhou ($W_t \ge S_t$) y la
-//!   certificación cuantitativa Fuera de Muestra (OOS).
+//! - **QUÉ:** Puerta de ignición determinista y continua (`VilleGrossmanIgnitionGate`) que separa
+//!   la evidencia de edge de la probabilidad de ruina, mantiene la certificación live cerrada mientras
+//!   ésta no esté identificada y aplica el piso móvil de Grossman-Zhou ($W_t \ge S_t$) junto a OOS.
 //! - **POR QUÉ:** La promesa de duplicación exponencial del capital cada 72 horas ($\ln(2) \approx 0.69315$ nats / 72h)
-//!   exige que la probabilidad de ruina absorbente sea estrictamente acotada a nivel de hardware y matemática
-//!   ($\le 10^{-6}$). El modelo de Grossman-Zhou garantiza que el drawdown nunca sobrepase el límite
-//!   innegociable (1.5%) reduciendo dinámicamente el cushion de riesgo a cero antes del suelo móvil.
+//!   no puede justificar una probabilidad de ruina inventada. Grossman-Zhou limita el drawdown reduciendo
+//!   dinámicamente el cushion de riesgo a cero antes del suelo móvil.
 //! - **PARA QUÉ:**
 //!   1. Bloquear de raíz cualquier emisión de orden real en Binance si las condiciones de seguridad matemática
 //!      no están certificadas al 100%.
@@ -33,8 +31,10 @@ use crate::ville_e_process::VilleEProcess;
 pub struct IgnitionCertificationReport {
     /// Veredicto definitivo: true si y solo si TODOS los invariantes matemáticos y OOS son conformes.
     pub certified_for_live_ignition: bool,
-    /// Cota superior maximal de Ville sobre la probabilidad de ruina [0.0, 1.0].
+    /// Probabilidad de ruina no identificada (`N/D` como NaN); nunca se deriva del E-proceso.
     pub ruin_probability_bound: f64,
+    /// Cota superior del p-valor bajo H0 de ausencia de edge; evidencia, no probabilidad de ruina.
+    pub edge_p_value_bound: f64,
     /// Valor actual del supermartingala / E-proceso de Ville M_t.
     pub ville_e_value: f64,
     /// Colchón relativo de riqueza de Grossman-Zhou [0.0, 1.0] (C_t / W_t).
@@ -63,6 +63,8 @@ impl IgnitionViolationBits {
     pub const OOS_SHARPE_INSUFFICIENT: u32 = 1 << 3;
     pub const OOS_SAMPLES_INSUFFICIENT: u32 = 1 << 4;
     pub const WEALTH_NON_FINITE: u32 = 1 << 5;
+    pub const RUIN_PROBABILITY_UNIDENTIFIED: u32 = 1 << 6;
+    pub const EDGE_EVIDENCE_INSUFFICIENT: u32 = 1 << 7;
 }
 
 /// Parámetros de calibración para la Puerta de Ignición de Ville + Grossman-Zhou.
@@ -117,10 +119,10 @@ pub struct VilleGrossmanIgnitionGate {
 impl VilleGrossmanIgnitionGate {
     /// Construye una nueva puerta de ignición con capital inicial y parámetros personalizados.
     pub fn new(initial_wealth: f64, params: VilleGrossmanParams) -> Self {
-        let safe_initial = if initial_wealth.is_finite() && initial_wealth > 0.0 {
+        let peak_initial = if initial_wealth.is_finite() && initial_wealth > 0.0 {
             initial_wealth
         } else {
-            100.0
+            0.0
         };
 
         // Instanciar VilleEProcess con alpha correspondiente a la cota de ruina requerida
@@ -142,9 +144,9 @@ impl VilleGrossmanIgnitionGate {
         Self {
             params,
             ville_process: ville,
-            initial_wealth: safe_initial,
-            current_wealth: safe_initial,
-            peak_wealth: safe_initial,
+            initial_wealth,
+            current_wealth: initial_wealth,
+            peak_wealth: peak_initial,
             oos_pnl_bps_sum: 0.0,
             oos_pnl_bps_sq_sum: 0.0,
             oos_win_count: 0,
@@ -155,10 +157,6 @@ impl VilleGrossmanIgnitionGate {
     /// Actualiza la riqueza actual del portfolio y computa los nuevos máximos y suelos móviles.
     #[inline]
     pub fn update_wealth(&mut self, current_wealth: f64) {
-        if !current_wealth.is_finite() || current_wealth <= 0.0 {
-            return;
-        }
-
         self.current_wealth = current_wealth;
         if current_wealth > self.peak_wealth {
             self.peak_wealth = current_wealth;
@@ -219,7 +217,11 @@ impl VilleGrossmanIgnitionGate {
         let mut violations = 0_u32;
 
         // 1. Verificación de Riqueza finita y positiva
-        if !self.current_wealth.is_finite() || self.current_wealth <= 0.0 {
+        if !self.initial_wealth.is_finite()
+            || self.initial_wealth <= 0.0
+            || !self.current_wealth.is_finite()
+            || self.current_wealth <= 0.0
+        {
             violations |= IgnitionViolationBits::WEALTH_NON_FINITE;
         }
 
@@ -240,14 +242,15 @@ impl VilleGrossmanIgnitionGate {
             violations |= IgnitionViolationBits::GROSSMAN_FLOOR_BREACHED;
         }
 
-        // 4. Cota maximal de Ville sobre la probabilidad de ruina
-        // Por Ville (1939): P_{H0}(sup M_t >= lambda) <= 1 / lambda
-        let ruin_prob_bound = self.ville_process.anytime_p_value();
+        // 4. Evidencia de edge, nunca una probabilidad de ruina
+        let edge_p_value_bound = self.ville_process.anytime_p_value();
+        let ruin_probability_bound = f64::NAN;
+        violations |= IgnitionViolationBits::RUIN_PROBABILITY_UNIDENTIFIED;
 
-        if ruin_prob_bound > self.params.max_ruin_probability
+        if edge_p_value_bound > self.params.max_ruin_probability
             && self.oos_trade_count >= self.params.min_oos_samples
         {
-            violations |= IgnitionViolationBits::RUIN_PROBABILITY_EXCEEDED;
+            violations |= IgnitionViolationBits::EDGE_EVIDENCE_INSUFFICIENT;
         }
 
         // 5. Estadísticas OOS (Muestreo y Sharpe Ratio)
@@ -290,11 +293,14 @@ impl VilleGrossmanIgnitionGate {
             0.0
         };
 
-        let certified = violations == 0;
+        let certified = violations == 0
+            && ruin_probability_bound.is_finite()
+            && ruin_probability_bound <= self.params.max_ruin_probability;
 
         IgnitionCertificationReport {
             certified_for_live_ignition: certified,
-            ruin_probability_bound: ruin_prob_bound,
+            ruin_probability_bound,
+            edge_p_value_bound,
             ville_e_value: self.ville_process.e_value,
             grossman_cushion_ratio: cushion_ratio,
             risk_multiplier: risk_mult,

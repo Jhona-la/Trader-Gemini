@@ -227,12 +227,16 @@ impl MatrizCorrelacionEwma {
             self.corte += 1;
             return Ok(None);
         }
-        for i in 0..self.n {
-            let ret = (precios[i] - self.last[i]) / self.last[i];
+        for ((&precio, &anterior), salida) in precios
+            .iter()
+            .zip(self.last.iter())
+            .zip(self.rets.iter_mut())
+        {
+            let ret = (precio - anterior) / anterior;
             if !ret.is_finite() {
                 return Err("retorno no representable");
             }
-            self.rets[i] = ret;
+            *salida = ret;
         }
         for i in 0..self.n {
             let mu = self.mean[i].update(self.rets[i]);

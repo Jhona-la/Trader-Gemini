@@ -68,6 +68,54 @@ fn test_page_curve_island_risk_hard_veto_on_information_collapse() {
 }
 
 #[test]
+fn test_page_curve_island_risk_hard_veto_with_present_but_insufficient_island() {
+    let engine = PageCurveIslandRiskEngine::new(PageCurveIslandConfig::default());
+
+    let weights = [1.0, 0.0, 0.0, 0.0];
+    let report = engine.evaluate(1.0, &weights, 1.50, 0.85);
+
+    let s_bh = 1.2_f64.ln();
+    let s_rad = 76.0_f64.ln();
+    let s_island = 0.15 * s_bh + 0.85 * s_rad * 0.10;
+    assert!((s_island - 0.39546056744343134).abs() < 1e-15);
+    assert!(s_island > 1.02 * s_bh);
+    assert!((1.02 * s_bh - 0.1859679876898337).abs() < 1e-9);
+
+    assert!(report.post_page_transition);
+    assert!(report.quantum_island_present);
+    assert!(report.island_veto_induced);
+    assert_eq!(report.page_entropy, report.bekenstein_hawking_entropy);
+    assert_eq!(report.slot_scale_factor, 0.0);
+
+    let absent = engine.evaluate(1.0, &weights, 1.50, 0.99);
+    assert!(absent.post_page_transition);
+    assert!(!absent.quantum_island_present);
+    assert!(absent.island_veto_induced);
+    assert_eq!(absent.page_entropy, absent.radiation_entropy);
+    assert!(absent.page_entropy > absent.bekenstein_hawking_entropy);
+    assert_eq!(absent.slot_scale_factor, 0.0);
+}
+
+#[test]
+fn test_page_curve_island_risk_anticorrelation_preserves_island() {
+    let engine = PageCurveIslandRiskEngine::new(PageCurveIslandConfig::default());
+
+    let weights = [1.0, 1.0, 0.2, 0.1];
+    let report = engine.evaluate(13.0, &weights, 0.01, -1.0);
+
+    assert!(report.post_page_transition);
+    assert!(
+        report.quantum_island_present,
+        "La anticorrelación perfecta diversifica; no debe colapsar el área de la isla"
+    );
+    assert!(
+        !report.island_veto_induced,
+        "Una isla presente con S_island = S_BH no debe inducir veto"
+    );
+    assert!(report.page_entropy <= report.bekenstein_hawking_entropy);
+}
+
+#[test]
 fn test_page_curve_island_risk_stability_under_nan_and_extremes() {
     let config = PageCurveIslandConfig::default();
     let engine = PageCurveIslandRiskEngine::new(config);

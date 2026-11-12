@@ -105,6 +105,71 @@ fn test_c3_ergodic_chaotic_collapse_under_pure_noise() {
 }
 
 #[test]
+fn test_c3_high_variance_decay_branch_and_exact_gamma_boundary() {
+    let volatility = 0.01;
+    let witness_params = RuelleFrobeniusParams {
+        decay_regularization: 0.0,
+        thermodynamic_beta: -9.9,
+        ..Default::default()
+    };
+    let mut witness = RuelleFrobeniusTransferEngine::new(witness_params);
+    let witness_report = witness.update_and_evaluate(0.01, 0.875, 500.0, volatility, 1_700_000_200);
+
+    let variance_contribution = witness_report.leading_decay_rate_gamma;
+    let var_x = variance_contribution / (volatility - variance_contribution);
+    assert!(variance_contribution > 0.0 && variance_contribution < volatility);
+    assert!(
+        var_x > 0.80,
+        "El fixture debe ejercitar var_x > 0.80: {var_x}"
+    );
+
+    let boundary_params = RuelleFrobeniusParams {
+        decay_regularization: 5.0 - variance_contribution,
+        ..witness_params
+    };
+    let mut boundary = RuelleFrobeniusTransferEngine::new(boundary_params);
+    let boundary_report =
+        boundary.update_and_evaluate(0.01, 0.875, 500.0, volatility, 1_700_000_200);
+
+    assert_eq!(boundary_report.leading_decay_rate_gamma, 5.0);
+    assert!(boundary_report.spectral_gap >= boundary_params.min_spectral_gap);
+    assert!(!boundary_report.ergodic_chaotic_collapse);
+    assert!(boundary_report.signal_conviction_modulator > 0.05);
+
+    let above_params = RuelleFrobeniusParams {
+        decay_regularization: boundary_params.decay_regularization + 1e-9,
+        ..witness_params
+    };
+    let mut above = RuelleFrobeniusTransferEngine::new(above_params);
+    let above_report = above.update_and_evaluate(0.01, 0.875, 500.0, volatility, 1_700_000_200);
+
+    assert!(above_report.leading_decay_rate_gamma > 5.0);
+    assert!(above_report.spectral_gap >= above_params.min_spectral_gap);
+    assert!(var_x > 0.80 && above_report.leading_decay_rate_gamma > 5.0);
+    assert!(above_report.ergodic_chaotic_collapse);
+    assert_eq!(above_report.signal_conviction_modulator, 0.05);
+}
+
+#[test]
+fn test_c2_zero_variance_preserves_only_intrinsic_decay() {
+    let params = RuelleFrobeniusParams {
+        thermodynamic_beta: 1e9,
+        ..Default::default()
+    };
+    let mut engine = RuelleFrobeniusTransferEngine::new(params);
+
+    let report = engine.update_and_evaluate(0.0, 1.0 / 6.0, 1.0, 20.0, 1_700_000_300);
+
+    assert_eq!(report.leading_decay_rate_gamma, params.decay_regularization);
+    assert_eq!(
+        report.leading_decay_rate_gamma - params.decay_regularization,
+        0.0
+    );
+    assert!(report.spectral_gap >= params.min_spectral_gap);
+    assert!(!report.ergodic_chaotic_collapse);
+}
+
+#[test]
 fn test_c4_grid_size_and_stack_boundedness() {
     assert_eq!(RUELLE_GRID_SIZE, 16);
 }

@@ -7,12 +7,25 @@
 
 use feature_engine::HeteroticE8CalabiYauConfig;
 use god_engine_core::omniscient_living_graph::OmniscientLivingGraphOrchestrator;
-use risk_engine::KerrNewmanConfig;
+use risk_engine::{KerrNewmanConfig, WheelerFeynmanAbsorberConfig, WheelerFeynmanAbsorberEngine};
 use signal_engine::quantum_slot_orchestrator::{
     QuantumSlotOrchestrator, QuantumSlotOrchestratorParams,
 };
 use signal_engine::FractonTopologicalConfig;
 use strategy_core::{AssetColorState, SignalType};
+
+/// Integracion origin/main (W31): el salto de precio de estos fixtures tambien dispara el veto
+/// Dirac de Wheeler-Feynman (ola 31), que encabeza la cadena de etiquetas. Se apaga ese motor
+/// para que cada caso mida solo el veto de la ola 29; la decision de vetar no cambia.
+fn aislar_de_la_ola_31(orchestrator: &mut OmniscientLivingGraphOrchestrator) {
+    orchestrator.wheeler_feynman_engines[0] =
+        WheelerFeynmanAbsorberEngine::new(WheelerFeynmanAbsorberConfig {
+            radiation_damping_coupling: 0.0,
+            max_absorber_deficit: 1.0,
+            max_runaway_jerk_threshold: f64::MAX,
+            ..Default::default()
+        });
+}
 
 #[test]
 fn test_c1_wave29_triad_holistic_orchestration() {
@@ -90,6 +103,7 @@ fn test_c1_wave29_triad_holistic_orchestration() {
 #[test]
 fn test_c2_wave29_heterotic_e8_anomaly_cancellation_veto_propagation() {
     let mut orchestrator = OmniscientLivingGraphOrchestrator::new(1);
+    aislar_de_la_ola_31(&mut orchestrator);
     let mut slot_orchestrator =
         QuantumSlotOrchestrator::new(QuantumSlotOrchestratorParams::default());
 
@@ -192,6 +206,7 @@ fn test_c2_wave29_heterotic_e8_anomaly_cancellation_veto_propagation() {
 #[test]
 fn test_c3_wave29_fracton_topological_collapse_veto_propagation() {
     let mut orchestrator = OmniscientLivingGraphOrchestrator::new(1);
+    aislar_de_la_ola_31(&mut orchestrator);
     let mut slot_orchestrator =
         QuantumSlotOrchestrator::new(QuantumSlotOrchestratorParams::default());
 
@@ -291,6 +306,7 @@ fn test_c3_wave29_fracton_topological_collapse_veto_propagation() {
 #[test]
 fn test_c4_wave29_kerr_newman_naked_singularity_veto_propagation() {
     let mut orchestrator = OmniscientLivingGraphOrchestrator::new(1);
+    aislar_de_la_ola_31(&mut orchestrator);
     let mut slot_orchestrator =
         QuantumSlotOrchestrator::new(QuantumSlotOrchestratorParams::default());
 

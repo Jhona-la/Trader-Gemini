@@ -27,7 +27,11 @@ fn tiempos(dt_denso: f64, dt_disperso: f64) -> Vec<f64> {
     let mut t = Vec::with_capacity(64);
     let mut ahora = 0.0;
     for bloque in 0..4 {
-        let dt = if bloque % 2 == 0 { dt_denso } else { dt_disperso };
+        let dt = if bloque % 2 == 0 {
+            dt_denso
+        } else {
+            dt_disperso
+        };
         for _ in 0..16 {
             t.push(ahora);
             ahora += dt;

@@ -185,4 +185,3 @@ fn lg8_145_02_03_08_statarb_y_vecm_operabilidad_y_ambito_estricto() {
     assert!(!vecm.is_operable_for_coin(1, ""));
     assert_eq!(vecm.evaluate_for_coin(1, ""), 0.0);
 }
-

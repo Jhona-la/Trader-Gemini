@@ -151,16 +151,15 @@ fn contract_bsd_confluence_nan_immunity() {
 fn contract_bsd_backward_compatibility_delegation() {
     let mut desplazamientos = [0.25f64; 32];
     desplazamientos[16] = 0.45;
-    let v_old =
-        FlowExcitationConfluenceEngine::voto_espectral_con_riemann_kahler_gauge_y_helmholtz(
-            &desplazamientos,
-            1.8,
-            0.15,
-            1.0,
-            0.2,
-            0.1,
-            1.05,
-        );
+    let v_old = FlowExcitationConfluenceEngine::voto_espectral_con_riemann_kahler_gauge_y_helmholtz(
+        &desplazamientos,
+        1.8,
+        0.15,
+        1.0,
+        0.2,
+        0.1,
+        1.05,
+    );
     let v_new =
         FlowExcitationConfluenceEngine::voto_espectral_con_bsd_riemann_kahler_gauge_y_helmholtz(
             &desplazamientos,

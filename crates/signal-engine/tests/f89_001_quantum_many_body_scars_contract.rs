@@ -91,17 +91,33 @@ fn test_c4_nan_infinity_immunity_and_hilbert_dimension() {
     let config = QuantumManyBodyScarsConfig::default();
     let mut engine = QuantumManyBodyScarsEngine::new(config);
 
-    let report = engine.evaluate(
-        f64::NAN,
-        f64::INFINITY,
-        f64::NEG_INFINITY,
-        f64::NAN,
-        f64::NAN,
-    );
+    for invalido in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+        for (ret, ofi, spread, vol, dt) in [
+            (invalido, 0.25, 1.5, 0.01, 0.10),
+            (0.002, invalido, 1.5, 0.01, 0.10),
+            (0.002, 0.25, invalido, 0.01, 0.10),
+            (0.002, 0.25, 1.5, invalido, 0.10),
+            (0.002, 0.25, 1.5, 0.01, invalido),
+        ] {
+            let report = engine.evaluate(ret, ofi, spread, vol, dt);
+            assert!(report.revival_fidelity.is_finite());
+            assert!(report.spectral_form_factor.is_finite());
+            assert!(report.scarred_directional_signal.is_finite());
+            assert!(report.eth_violation_degree.is_finite());
+            assert!(report.slot_scale_factor.is_finite());
+            assert!(report.ergodic_collapse_veto);
+            assert_eq!(report.slot_scale_factor, 0.15);
+        }
+    }
 
-    assert!(report.revival_fidelity.is_finite());
-    assert!(report.spectral_form_factor.is_finite());
-    assert!(report.scarred_directional_signal.is_finite());
-    assert!(report.eth_violation_degree.is_finite());
-    assert!(report.slot_scale_factor.is_finite());
+    for (ret, ofi, spread, vol, dt) in [
+        (0.002, 0.25, -1.0, 0.01, 0.10),
+        (0.002, 0.25, 1.5, -0.01, 0.10),
+        (0.002, 0.25, 1.5, 0.01, 0.0),
+        (0.002, 0.25, 1.5, 0.01, -0.10),
+    ] {
+        let report = engine.evaluate(ret, ofi, spread, vol, dt);
+        assert!(report.ergodic_collapse_veto);
+        assert_eq!(report.slot_scale_factor, 0.15);
+    }
 }

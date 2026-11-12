@@ -1,8 +1,8 @@
+use omniscient_registry::{OmniscientRegistry, ParameterKind};
 use signal_engine::feynman_propagator::{FeynmanPropagatorEngine, FeynmanPropagatorParams};
 use signal_engine::voto_espectral::ESCALAS_VOTO;
-use strategy_core::QuantumStrategy;
-use omniscient_registry::{OmniscientRegistry, ParameterKind};
 use std::sync::Arc;
+use strategy_core::QuantumStrategy;
 
 #[test]
 fn test_feynman_params_validation_and_defaults() {
@@ -105,29 +105,32 @@ fn test_feynman_hermite_transmission_gate_adaptive_cutoff() {
     );
 
     // Caso A: coherencia = 0.25 con threshold por defecto (0.20)
-    registry.register_or_update(
-        "feynman_coherence",
-        ParameterKind::Adaptive,
-        0.25,
-        "Test",
-    );
+    registry.register_or_update("feynman_coherence", ParameterKind::Adaptive, 0.25, "Test");
 
-    let mut engine_low_thresh = FeynmanPropagatorEngine::new().with_params(FeynmanPropagatorParams {
-        coherence_threshold: 0.20,
-        ..Default::default()
-    });
+    let mut engine_low_thresh =
+        FeynmanPropagatorEngine::new().with_params(FeynmanPropagatorParams {
+            coherence_threshold: 0.20,
+            ..Default::default()
+        });
     engine_low_thresh.init(Arc::clone(&registry)).unwrap();
     let eval_low = engine_low_thresh.evaluate();
-    assert!(eval_low > 0.0, "Coherence 0.25 > 0.20 threshold should transmit signal");
+    assert!(
+        eval_low > 0.0,
+        "Coherence 0.25 > 0.20 threshold should transmit signal"
+    );
 
     // Caso B: mismo estado pero con threshold elevado a 0.30 -> debe cortar a 0.0 (decoherencia)
-    let mut engine_high_thresh = FeynmanPropagatorEngine::new().with_params(FeynmanPropagatorParams {
-        coherence_threshold: 0.30,
-        ..Default::default()
-    });
+    let mut engine_high_thresh =
+        FeynmanPropagatorEngine::new().with_params(FeynmanPropagatorParams {
+            coherence_threshold: 0.30,
+            ..Default::default()
+        });
     engine_high_thresh.init(Arc::clone(&registry)).unwrap();
     let eval_high = engine_high_thresh.evaluate();
-    assert_eq!(eval_high, 0.0, "Coherence 0.25 <= 0.30 threshold must strictly collapse signal to 0.0");
+    assert_eq!(
+        eval_high, 0.0,
+        "Coherence 0.25 <= 0.30 threshold must strictly collapse signal to 0.0"
+    );
 }
 
 #[test]

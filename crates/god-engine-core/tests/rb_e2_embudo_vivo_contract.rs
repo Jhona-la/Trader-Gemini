@@ -212,10 +212,11 @@ fn rb_e2_el_host_publica_el_embudo_y_cuenta_las_ordenes_sin_permiso_de_fase() {
         "while let Ok(mensaje_ws) = rx_events.recv() {",
     );
     let fase = posicion(HOST, bucle, "current_phase = orch.on_tick();");
+    // Con varias entradas por evento (F28) el host recibe `entry_orders`.
     let cuenta = posicion(
         HOST,
         fase,
-        "if !is_trading_allowed && new_order.is_some() {",
+        "if !is_trading_allowed && !entry_orders.is_empty() {",
     );
     let descarte = posicion(HOST, fase, "if !is_trading_allowed {");
     assert!(

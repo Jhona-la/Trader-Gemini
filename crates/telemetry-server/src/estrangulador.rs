@@ -22,7 +22,11 @@ pub struct Estrangulador {
 
 impl Estrangulador {
     pub const fn new(ventana_ms: u64) -> Self {
-        Self { ventana_ms, ultimo_ms: None, suprimidos: 0 }
+        Self {
+            ventana_ms,
+            ultimo_ms: None,
+            suprimidos: 0,
+        }
     }
 
     /// Devuelve `Some(n)` si toca avisar en `ahora_ms`, con `n` avisos
@@ -60,7 +64,11 @@ mod tests {
             }
         }
         assert_eq!(avisos, 360);
-        assert_eq!(contados + e.suprimidos, 3_600_000, "cada aviso queda contado una vez");
+        assert_eq!(
+            contados + e.suprimidos,
+            3_600_000,
+            "cada aviso queda contado una vez"
+        );
     }
 
     /// Esperado: el primer aviso pasa siempre y un reloj que retrocede no
@@ -69,7 +77,11 @@ mod tests {
     fn cl139_primer_aviso_y_reloj_que_retrocede() {
         let mut e = Estrangulador::new(60_000);
         assert_eq!(e.admitir(100_000), Some(0));
-        assert_eq!(e.admitir(10), None, "un reloj que retrocede no abre la ventana");
+        assert_eq!(
+            e.admitir(10),
+            None,
+            "un reloj que retrocede no abre la ventana"
+        );
         assert_eq!(e.admitir(159_999), None);
         assert_eq!(e.admitir(160_000), Some(2));
     }

@@ -11,6 +11,36 @@ use signal_engine::quantum_slot_orchestrator::{
 };
 use strategy_core::{AssetColorState, SignalType};
 
+/// Integracion origin/main: los vetos de olas posteriores (Donaldson-Thomas, ola 27; DRGT, ola 28;
+/// heterotico, ola 29; Dirac de Wheeler-Feynman, ola 31) van antes en la cadena de etiquetas y estos
+/// fixtures tambien los disparan. Se apagan esos motores para que cada caso mida solo el veto de la
+/// ola 24; la decision de vetar no cambia.
+fn aislar_de_olas_posteriores(orchestrator: &mut OmniscientLivingGraphOrchestrator) {
+    orchestrator.donaldson_thomas_engines[0] =
+        signal_engine::DonaldsonThomasQuantumEngine::new(signal_engine::DonaldsonThomasConfig {
+            wall_crossing_threshold: f64::MAX,
+            ..Default::default()
+        });
+    orchestrator.heterotic_e8_engines[0] =
+        feature_engine::HeteroticE8CalabiYauEngine::new(feature_engine::HeteroticE8CalabiYauConfig {
+            anomaly_threshold: f64::MAX,
+            ..Default::default()
+        });
+    orchestrator.wheeler_feynman_engines[0] =
+        risk_engine::WheelerFeynmanAbsorberEngine::new(risk_engine::WheelerFeynmanAbsorberConfig {
+            radiation_damping_coupling: 0.0,
+            max_absorber_deficit: 1.0,
+            max_runaway_jerk_threshold: f64::MAX,
+            ..Default::default()
+        });
+    orchestrator.drgt_gravity_engines[0] =
+        risk_engine::DrgtMassiveGravityEngine::new(risk_engine::DrgtMassiveGravityConfig {
+            graviton_mass_mg: 1e-3,
+            higuchi_margin: 0.0,
+            ..Default::default()
+        });
+}
+
 #[test]
 fn test_c1_wave24_triad_holistic_orchestration() {
     let mut orchestrator = OmniscientLivingGraphOrchestrator::new(3);
@@ -100,6 +130,13 @@ fn test_c1_wave24_triad_holistic_orchestration() {
 #[test]
 fn test_c2_wave24_kostant_souriau_prequantum_collapse_veto_propagation() {
     let mut orchestrator = OmniscientLivingGraphOrchestrator::new(1);
+    aislar_de_olas_posteriores(&mut orchestrator);
+    orchestrator.kostant_souriau_engines[0] =
+        feature_engine::KostantSouriauPrequantumEngine::new(feature_engine::KostantSouriauConfig {
+            min_polarization_coherence: 1.0,
+            max_symplectic_curvature_drift: 0.0,
+            ..Default::default()
+        });
     let mut slot_orchestrator =
         QuantumSlotOrchestrator::new(QuantumSlotOrchestratorParams::default());
 
@@ -164,22 +201,30 @@ fn test_c2_wave24_kostant_souriau_prequantum_collapse_veto_propagation() {
         );
     }
 
-    if report.kostant_souriau_report.prequantum_collapse_veto {
-        assert!(
-            !report.ville_ruin_bound_satisfied,
-            "Colapso precuántico debe invalidar la condición de Ville"
+    assert!(report.kostant_souriau_report.prequantum_collapse_veto);
+    assert!(
+        !report.ville_ruin_bound_satisfied,
+        "Colapso precuántico debe invalidar la condición de Ville"
+    );
+    for decision in &report.multi_slot_evaluation.decisions {
+        assert_eq!(decision.signal, SignalType::Flat);
+        assert!(decision.vetoed);
+        assert_eq!(
+            decision.veto_reason,
+            Some("KOSTANT_SOURIAU_PREQUANTUM_COLLAPSE_VETO")
         );
-        for decision in &report.multi_slot_evaluation.decisions {
-            assert_eq!(decision.signal, SignalType::Flat);
-            assert!(decision.vetoed);
-            assert!(decision.veto_reason.is_some());
-        }
     }
 }
 
 #[test]
 fn test_c3_wave24_qmbs_ergodic_collapse_veto_propagation() {
     let mut orchestrator = OmniscientLivingGraphOrchestrator::new(1);
+    aislar_de_olas_posteriores(&mut orchestrator);
+    orchestrator.qmbs_engines[0] =
+        signal_engine::QuantumManyBodyScarsEngine::new(signal_engine::QuantumManyBodyScarsConfig {
+            min_revival_fidelity: 1.0,
+            ..Default::default()
+        });
     let mut slot_orchestrator =
         QuantumSlotOrchestrator::new(QuantumSlotOrchestratorParams::default());
 
@@ -242,15 +287,18 @@ fn test_c3_wave24_qmbs_ergodic_collapse_veto_propagation() {
         );
     }
 
-    if report.qmbs_report.ergodic_collapse_veto {
-        assert!(
-            !report.ville_ruin_bound_satisfied,
-            "Colapso ergódico total debe invalidar la condición de Ville"
+    assert!(report.qmbs_report.ergodic_collapse_veto);
+    assert!(
+        !report.ville_ruin_bound_satisfied,
+        "Colapso ergódico total debe invalidar la condición de Ville"
+    );
+    for decision in &report.multi_slot_evaluation.decisions {
+        assert_eq!(decision.signal, SignalType::Flat);
+        assert!(decision.vetoed);
+        assert_eq!(
+            decision.veto_reason,
+            Some("QUANTUM_SCARS_ERGODIC_COLLAPSE_VETO")
         );
-        for decision in &report.multi_slot_evaluation.decisions {
-            assert_eq!(decision.signal, SignalType::Flat);
-            assert!(decision.vetoed);
-        }
     }
 }
 
@@ -300,16 +348,18 @@ fn test_c4_wave24_qes_extremal_surface_collapse_veto_propagation() {
         &open_is_long,
     );
 
-    if report.qes_report.extremal_surface_collapse_veto {
-        assert!(
-            !report.ville_ruin_bound_satisfied,
-            "Colapso de superficie extremal de capital debe invalidar la cota de Ville"
+    assert!(report.qes_report.extremal_surface_collapse_veto);
+    assert!(
+        !report.ville_ruin_bound_satisfied,
+        "Colapso de superficie extremal de capital debe invalidar la cota de Ville"
+    );
+    for decision in &report.multi_slot_evaluation.decisions {
+        assert_eq!(decision.signal, SignalType::Flat);
+        assert!(decision.vetoed);
+        assert_eq!(
+            decision.veto_reason,
+            Some("QUANTUM_EXTREMAL_SURFACE_COLLAPSE_VETO")
         );
-        for decision in &report.multi_slot_evaluation.decisions {
-            assert_eq!(decision.signal, SignalType::Flat);
-            assert!(decision.vetoed);
-            assert!(decision.veto_reason.is_some());
-        }
     }
 }
 

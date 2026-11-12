@@ -87,12 +87,11 @@ pub struct JtSchwarzianReport {
 pub struct JtSchwarzianEngine {
     config: JtSchwarzianConfig,
     prev_f_prime: f64,
-    prev_f_double_prime: f64,
-    initialized: bool,
-    /// `true` cuando `prev_f_double_prime` es una f'' medida (dos tasas observadas). Hasta
-    /// entonces f''' no se puede calcular: suponer f'' = 0 en la muestra anterior convierte
-    /// cualquier cambio de tasa entre dos ticks en f''' = Δf'/dt² (≈ 400·Δf' a 50 ms).
-    f_double_prime_measured: bool,
+    /// f'' de la muestra anterior: `None` hasta que dos tasas observadas la miden. Sin ella
+    /// f''' no se puede calcular: suponer f'' = 0 en la muestra anterior convierte cualquier
+    /// cambio de tasa entre dos ticks en f''' = Δf'/dt² (≈ 400·Δf' a 50 ms).
+    prev_f_double_prime: Option<f64>,
+    step_count: usize,
 }
 
 impl JtSchwarzianEngine {
@@ -100,9 +99,8 @@ impl JtSchwarzianEngine {
         Self {
             config,
             prev_f_prime: 1.0,
-            prev_f_double_prime: 0.0,
-            initialized: false,
-            f_double_prime_measured: false,
+            prev_f_double_prime: None,
+            step_count: 0,
         }
     }
 
@@ -135,26 +133,31 @@ impl JtSchwarzianEngine {
             market_time_rate
         };
 
-        if !self.initialized {
+        if self.step_count == 0 {
             self.prev_f_prime = f_prime;
-            self.prev_f_double_prime = 0.0;
-            self.initialized = true;
+            self.prev_f_double_prime = None;
+            self.step_count = 1;
             return self.warm_up_report();
         }
 
         // Derivadas numéricas de segundo y tercer orden. f'' necesita dos tasas y f''' tres:
         // con sólo dos, la f'' anterior no está medida y f''' no se calcula.
         let f_double_prime = (f_prime - self.prev_f_prime) / safe_dt;
-        if !self.f_double_prime_measured {
+        if self.step_count == 1 {
             self.prev_f_prime = f_prime;
-            self.prev_f_double_prime = f_double_prime;
-            self.f_double_prime_measured = true;
+            self.prev_f_double_prime = Some(f_double_prime);
+            self.step_count = 2;
             return self.warm_up_report();
         }
-        let f_triple_prime = (f_double_prime - self.prev_f_double_prime) / safe_dt;
+        let Some(prev_f_double_prime) = self.prev_f_double_prime else {
+            self.prev_f_prime = f_prime;
+            self.prev_f_double_prime = Some(f_double_prime);
+            return self.warm_up_report();
+        };
+        let f_triple_prime = (f_double_prime - prev_f_double_prime) / safe_dt;
 
         self.prev_f_prime = f_prime;
-        self.prev_f_double_prime = f_double_prime;
+        self.prev_f_double_prime = Some(f_double_prime);
 
         // Derivada de Schwarzian: {f, tau} = f'''/f' - 1.5 * (f''/f')^2
         let term1 = f_triple_prime / f_prime;

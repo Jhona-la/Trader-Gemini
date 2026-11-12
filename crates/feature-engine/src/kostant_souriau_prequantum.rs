@@ -124,29 +124,28 @@ impl KostantSouriauPrequantumEngine {
         spread_friction: f64,
         volatility: f64,
     ) -> KostantSouriauReport {
-        let q = if price_ret.is_finite() {
-            price_ret.clamp(-1.0, 1.0)
-        } else {
-            0.0
-        };
+        let inputs_valid = price_ret.is_finite()
+            && order_flow_imbalance.is_finite()
+            && spread_friction.is_finite()
+            && spread_friction >= 0.0
+            && volatility.is_finite()
+            && volatility >= 0.0;
+        if !inputs_valid {
+            return KostantSouriauReport {
+                prequantum_observable_val: 0.0,
+                symplectic_curvature_norm: 0.0,
+                reeb_contact_holonomy: 1.0,
+                polarization_coherence: 0.0,
+                symplectic_drift: self.config.max_symplectic_curvature_drift,
+                prequantum_collapse_veto: true,
+                slot_scale_factor: 0.10,
+            };
+        }
 
-        let p = if order_flow_imbalance.is_finite() {
-            order_flow_imbalance.clamp(-1.0, 1.0)
-        } else {
-            0.0
-        };
-
-        let spread = if spread_friction.is_finite() {
-            spread_friction.clamp(0.0, 50.0)
-        } else {
-            1.0
-        };
-
-        let vol = if volatility.is_finite() {
-            volatility.clamp(0.0001, 10.0)
-        } else {
-            0.01
-        };
+        let q = price_ret.clamp(-1.0, 1.0);
+        let p = order_flow_imbalance.clamp(-1.0, 1.0);
+        let spread = spread_friction.clamp(0.0, 50.0);
+        let vol = volatility.clamp(0.0001, 10.0);
 
         let hbar = self.config.hbar_eff.max(self.config.epsilon);
 

@@ -90,7 +90,8 @@ fn test_physical_gauge_dynamic_payload_override() {
 
     let op_micro_custom = SeniorMicroestructura.evaluate(&payload, 0.55);
     let expected_custom_lam = (1.0_f64 - 0.95 * 0.25).clamp(0.05, 1.0);
-    let expected_custom_conf = (0.60_f64 * expected_custom_lam * (0.40 + 0.60 * 0.80)).clamp(0.0, 1.0);
+    let expected_custom_conf =
+        (0.60_f64 * expected_custom_lam * (0.40 + 0.60 * 0.80)).clamp(0.0, 1.0);
 
     assert!((op_micro_custom.confidence - expected_custom_conf).abs() < 1e-12);
 
@@ -125,7 +126,10 @@ fn test_physical_gauge_council_params_propagation() {
 
     // Payload con defaults canónicos
     let payload = base_physical_payload();
-    assert_eq!(payload.hodge_curl_attenuation, DEFAULT_HODGE_CURL_ATTENUATION);
+    assert_eq!(
+        payload.hodge_curl_attenuation,
+        DEFAULT_HODGE_CURL_ATTENUATION
+    );
     assert_eq!(payload.hodge_laminar_floor, DEFAULT_HODGE_LAMINAR_FLOOR);
     assert_eq!(payload.ym_ref_current, DEFAULT_YM_REF_CURRENT);
     assert_eq!(payload.ym_max_weight, DEFAULT_YM_MAX_WEIGHT);
@@ -151,7 +155,7 @@ fn test_physical_gauge_bounds_validation_and_fail_closed() {
         0.50,
         0.40,
         0.70,
-        f64::NAN, // curl_attenuation corrupto -> fallback a 0.70
+        f64::NAN,      // curl_attenuation corrupto -> fallback a 0.70
         f64::INFINITY, // laminar_floor corrupto -> fallback a 0.30
     );
     let expected_lam = (1.0_f64 - 0.70 * 0.40).clamp(0.30, 1.0);
@@ -172,12 +176,24 @@ fn test_physical_gauge_bounds_validation_and_fail_closed() {
 
     // 3. CouncilParams::with_physical_gauge_bounds rechaza valores fuera de rango
     let params = CouncilParams::default();
-    assert!(params.with_physical_gauge_bounds(-0.1, 0.30, 0.05, 0.20).is_err());
-    assert!(params.with_physical_gauge_bounds(1.1, 0.30, 0.05, 0.20).is_err());
-    assert!(params.with_physical_gauge_bounds(0.70, -0.05, 0.05, 0.20).is_err());
-    assert!(params.with_physical_gauge_bounds(0.70, 0.30, 0.0, 0.20).is_err());
-    assert!(params.with_physical_gauge_bounds(0.70, 0.30, -0.05, 0.20).is_err());
-    assert!(params.with_physical_gauge_bounds(0.70, 0.30, 0.05, 1.25).is_err());
+    assert!(params
+        .with_physical_gauge_bounds(-0.1, 0.30, 0.05, 0.20)
+        .is_err());
+    assert!(params
+        .with_physical_gauge_bounds(1.1, 0.30, 0.05, 0.20)
+        .is_err());
+    assert!(params
+        .with_physical_gauge_bounds(0.70, -0.05, 0.05, 0.20)
+        .is_err());
+    assert!(params
+        .with_physical_gauge_bounds(0.70, 0.30, 0.0, 0.20)
+        .is_err());
+    assert!(params
+        .with_physical_gauge_bounds(0.70, 0.30, -0.05, 0.20)
+        .is_err());
+    assert!(params
+        .with_physical_gauge_bounds(0.70, 0.30, 0.05, 1.25)
+        .is_err());
 }
 
 #[test]
@@ -187,10 +203,11 @@ fn test_physical_gauge_lorentz_smoothness_and_helmholtz_decay() {
     let mut prev_conf = 1.0;
     for step in 0..=10 {
         let curl = step as f64 / 10.0;
-        let (conf, _, _, _) = evaluate_microstructure_flow_confidence(
-            0.80, curl, 1.0, 0.70, 0.30,
+        let (conf, _, _, _) = evaluate_microstructure_flow_confidence(0.80, curl, 1.0, 0.70, 0.30);
+        assert!(
+            conf <= prev_conf + 1e-12,
+            "Confianza debe ser monótonamente decreciente con curl"
         );
-        assert!(conf <= prev_conf + 1e-12, "Confianza debe ser monótonamente decreciente con curl");
         prev_conf = conf;
     }
 
@@ -199,10 +216,11 @@ fn test_physical_gauge_lorentz_smoothness_and_helmholtz_decay() {
     let mut prev_w = 0.0;
     for step in 1..=10 {
         let ym_curr = step as f64 * 0.05;
-        let (_, _, w_ym, _) = evaluate_series_temporales_ym(
-            0.50, 0.50, ym_curr, 0.05, 0.20,
+        let (_, _, w_ym, _) = evaluate_series_temporales_ym(0.50, 0.50, ym_curr, 0.05, 0.20);
+        assert!(
+            w_ym >= prev_w - 1e-12,
+            "w_ym debe ser monótonamente creciente con |ym_curr|"
         );
-        assert!(w_ym >= prev_w - 1e-12, "w_ym debe ser monótonamente creciente con |ym_curr|");
         assert!(w_ym <= 0.20 + 1e-12, "w_ym no debe exceder el peso máximo");
         prev_w = w_ym;
     }

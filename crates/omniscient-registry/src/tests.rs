@@ -1,6 +1,6 @@
 #[cfg(test)]
 mod tests {
-    use crate::{OmniscientRegistry, ParameterKind, Parameter};
+    use crate::{OmniscientRegistry, Parameter, ParameterKind};
     use std::sync::Arc;
     use std::thread;
 
@@ -30,7 +30,7 @@ mod tests {
     #[test]
     fn test_detect_collisions() {
         let registry = OmniscientRegistry::new();
-        
+
         let p1 = Parameter::new("shared_param", ParameterKind::Adaptive, 1.0, "StrategyA");
         let p2 = Parameter::new("shared_param", ParameterKind::Adaptive, 1.0, "StrategyB");
 
@@ -47,7 +47,7 @@ mod tests {
         let registry = OmniscientRegistry::new();
         let p = Parameter::new("dynamic_val", ParameterKind::Adaptive, 100.5, "StrategyA");
         let _ = registry.register(p);
-        
+
         let snapshot = registry.scan_all();
         assert_eq!(snapshot[0].get_value(), 100.5);
     }

@@ -25,7 +25,7 @@ if not exist ".env" (
 )
 
 echo [1/3] Verificando compilacion de Maximo Rendimiento (Release)...
-cargo build --release --bin god_engine -j 2
+cargo build --release --config .cargo/produccion.toml --bin god_engine -j 2
 if %ERRORLEVEL% neq 0 (
     echo [ERROR] La compilacion ha fallado. Revisa los logs.
     echo TIP: Asegurate de no tener ningun IDE que bloquee el directorio target/.

@@ -6,7 +6,7 @@
 //! - PARA QUÉ: Blindar la cota de ruina Ville $\mathbb{P}(\text{ruina}) \le 10^{-6}$ y regular el dimensionamiento continuo de capital.
 //! - CÓMO: 5 contratos exhaustivos testeando inicialización, apantallamiento de Vainshtein, estabilidad de Higuchi, colapso de screening y resiliencia `rb_p1`.
 //! - CUÁNDO: En cada ejecución del pipeline de integración continua de `risk-engine`.
-//! - DÓNDE: `crates/risk-engine/tests/f102_001_drgt_massive_gravity_contract.rs`.
+//! - DÓNDE: `crates/risk-engine/tests/suite_fisica/f102_001_drgt_massive_gravity_contract.rs`.
 //! - QUIÉN: Rol 5 (QA Engineer) y Rol 3 (Risk Manager Cuántico).
 
 use risk_engine::drgt_massive_gravity::{DrgtMassiveGravityConfig, DrgtMassiveGravityEngine};

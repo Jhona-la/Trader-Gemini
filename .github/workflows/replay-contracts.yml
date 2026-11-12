@@ -50,6 +50,7 @@ jobs:
       CARGO_INCREMENTAL: '0'
       CARGO_PROFILE_DEV_DEBUG: '0'
       CARGO_PROFILE_TEST_DEBUG: '0'
+      RUSTC_WRAPPER: ''
     defaults:
       run:
         shell: pwsh
@@ -88,7 +89,9 @@ jobs:
         run: |
           cargo +nightly-2026-06-30 test --no-fail-fast -p data-pipeline --locked --test parser_input_contract -- --test-threads=1
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          cargo +nightly-2026-06-30 test --no-fail-fast -p risk-engine --locked --test nonfinite_admission_contract --test c07_ruin_composition_contract --test observed_zero_capital_contract -- --test-threads=1
+          cargo +nightly-2026-06-30 test --no-fail-fast -p risk-engine --locked --test suite_admision -- --test-threads=1 nonfinite_admission_contract::
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cargo +nightly-2026-06-30 test --no-fail-fast -p risk-engine --locked --test c07_ruin_composition_contract --test observed_zero_capital_contract -- --test-threads=1
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           cargo +nightly-2026-06-30 test --no-fail-fast -p backtest-engine --locked --test oos_context_contract -- --test-threads=1
 
@@ -180,6 +183,7 @@ jobs:
       CARGO_INCREMENTAL: '0'
       CARGO_PROFILE_DEV_DEBUG: '0'
       CARGO_PROFILE_TEST_DEBUG: '0'
+      RUSTC_WRAPPER: ''
     defaults:
       run:
         shell: pwsh

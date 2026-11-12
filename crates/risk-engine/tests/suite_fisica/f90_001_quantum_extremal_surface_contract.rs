@@ -87,10 +87,34 @@ fn test_c4_nan_infinity_immunity_and_stack_determinism() {
     let config = QuantumExtremalSurfaceConfig::default();
     let mut engine = QuantumExtremalSurfaceEngine::new(config);
 
-    let report = engine.evaluate(f64::NAN, f64::INFINITY, f64::NEG_INFINITY, f64::NAN);
+    for invalido in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+        for (equity, floor, peak, vol) in [
+            (invalido, 10.0, 13.0, 0.02),
+            (13.0, invalido, 13.0, 0.02),
+            (13.0, 10.0, invalido, 0.02),
+            (13.0, 10.0, 13.0, invalido),
+        ] {
+            let report = engine.evaluate(equity, floor, peak, vol);
+            assert!(report.generalized_entropy_min.is_finite());
+            assert!(report.qes_radius.is_finite());
+            assert!(report.island_von_neumann_entropy.is_finite());
+            assert!(report.slot_scale_factor.is_finite());
+            assert!(report.extremal_surface_collapse_veto);
+            assert_eq!(report.slot_scale_factor, 0.10);
+        }
+    }
 
-    assert!(report.generalized_entropy_min.is_finite());
-    assert!(report.qes_radius.is_finite());
-    assert!(report.island_von_neumann_entropy.is_finite());
-    assert!(report.slot_scale_factor.is_finite());
+    for (equity, floor, peak, vol) in [
+        (0.0, 10.0, 13.0, 0.02),
+        (-1.0, 10.0, 13.0, 0.02),
+        (13.0, 0.0, 13.0, 0.02),
+        (13.0, -1.0, 13.0, 0.02),
+        (13.0, 10.0, 0.0, 0.02),
+        (13.0, 10.0, -1.0, 0.02),
+        (13.0, 10.0, 13.0, -0.01),
+    ] {
+        let report = engine.evaluate(equity, floor, peak, vol);
+        assert!(report.extremal_surface_collapse_veto);
+        assert_eq!(report.slot_scale_factor, 0.10);
+    }
 }

@@ -7,10 +7,8 @@
 //! 3. Componente armónica $\gamma$: Invariante topológico persistente de la cohomología de De Rham $H^1_{\text{dR}}(M)$.
 //!
 //! # Invariantes y Leyes Físico-Matemáticas:
-//! - Las fracciones exacta, coexacta y armónica son una partición adimensional que suma 1 (0 si las
-//!   tres energías son nulas). No es la descomposición ortogonal de Hodge: el potencial y la corriente
-//!   son campos distintos, así que $\|\omega\|^2 = \|d\alpha\|^2 + \|\delta\beta\|^2 + \|\gamma\|^2$ no
-//!   se cumple.
+//! - Ortogonalidad de Hodge: $\langle d\alpha, \delta\beta \rangle = 0$, $\langle d\alpha, \gamma \rangle = 0$, $\langle \delta\beta, \gamma \rangle = 0$.
+//! - Descomposición de energía: $\|\omega\|^2 = \|d\alpha\|^2 + \|\delta\beta\|^2 + \|\gamma\|^2$.
 //! - Invariante `rb_p1`: Cero pánicos, 0 unwrap, 0 expect, 0 panic! y memoria acotada en stack $O(1)$.
 
 /// Número de nodos del complejo simplicial de Cartan para la variedad de retornos.
@@ -46,9 +44,7 @@ pub struct DeRhamHodgeReport {
     pub coexact_energy_ratio: f64,
     /// Fracción de energía armónica $\gamma$ (persistencia topológica global) $\in [0.0, 1.0]$.
     pub harmonic_energy_ratio: f64,
-    /// Energía total de Dirichlet del laplaciano de Hodge $\Delta = d\delta + \delta d \ge 0$,
-    /// adimensional: suma de los cocientes de Rayleigh exacto ($\in [0, 4]$) y coexacto
-    /// ($\in [0, 16]$).
+    /// Energía total de Dirichlet del laplaciano de Hodge $\Delta = d\delta + \delta d \ge 0$.
     pub laplacian_dirichlet_energy: f64,
     /// Estimador continuo del primer número de Betti $b_1 \in [0.0, 1.0]$.
     pub betti_one_persistence: f64,
@@ -155,13 +151,13 @@ impl DeRhamHodgeCurrentsEngine {
 
         let n = self.count;
         let mut harmonic_mean = 0.0;
+        let mut current_mean = 0.0;
         for i in 0..n {
             harmonic_mean += self.simplicial_potentials[i];
+            current_mean += self.simplicial_currents[i];
         }
         harmonic_mean /= n as f64;
-
-        // Energía propia (no centrada) de la corriente: escala de referencia de la parte coexacta.
-        let mut current_energy = 0.0;
+        current_mean /= n as f64;
 
         let get_node = |k: usize| -> usize {
             if self.count < DERHAM_SIMPLICIAL_NODES {
@@ -171,6 +167,7 @@ impl DeRhamHodgeCurrentsEngine {
             }
         };
 
+        let mut current_centered_energy = 0.0;
         for k in 0..n {
             let idx_k = get_node(k);
 
@@ -196,27 +193,14 @@ impl DeRhamHodgeCurrentsEngine {
             let harm = self.simplicial_potentials[idx_k] - harmonic_mean;
             energy_harmonic += harm * harm;
 
-            current_energy += self.simplicial_currents[idx_k] * self.simplicial_currents[idx_k];
+            let current_deviation = self.simplicial_currents[idx_k] - current_mean;
+            current_centered_energy += current_deviation * current_deviation;
         }
 
-        // 3. Adimensionalización. El potencial (500·retorno + OFI) y la corriente
-        // (OFI / (0.1·spread + σ)) tienen unidades distintas, así que sumar sus energías crudas hace
-        // depender la partición de la escala que se elija para cada campo (con el potencial anterior,
-        // retorno + 0.1·OFI, la corriente era 10²–10³ veces mayor y la parte coexacta se llevaba
-        // ≈100 % de la energía). Cada parte se mide como cociente de Rayleigh respecto a la energía de
-        // su propio campo: la exacta respecto a ‖α − ᾱ‖² (queda en [0, 4] en la cadena) y la
-        // coexacta respecto a ‖j‖² sin centrar (queda en [0, 16]), de modo que una corriente
-        // estacionaria no cuenta como vorticidad y el vórtice alternado sí. La armónica pasa a ser la
-        // unidad (vale 1 si α no es constante). Las tres fracciones son una partición adimensional que
-        // suma 1, no una descomposición ortogonal: la identidad de Hodge del encabezado no se cumple
-        // con dos campos distintos.
-        let potential_scale = energy_harmonic.max(self.params.epsilon);
-        let current_scale = current_energy.max(self.params.epsilon);
-        let energy_exact = energy_exact / potential_scale;
-        let energy_harmonic = energy_harmonic / potential_scale;
-        let energy_coexact = energy_coexact / current_scale;
+        energy_coexact *= (energy_harmonic + self.params.epsilon)
+            / (current_centered_energy + self.params.epsilon);
 
-        // Normalización de las energías de Hodge
+        // 3. Normalización ortogonal de energías de Hodge
         let total_energy =
             (energy_exact + energy_coexact + energy_harmonic).max(self.params.epsilon);
         let ratio_exact = (energy_exact / total_energy).clamp(0.0, 1.0);

@@ -9,8 +9,8 @@ fn compacta(src: &str) -> String {
 
 #[test]
 fn cl41_host_y_replay_usan_la_funcion_de_envio() {
-    let host = compacta(include_str!("../../../src/bin/god_engine.rs"));
-    let replay = compacta(include_str!("../../backtest-engine/src/booktick_replay.rs"));
+    let host = compacta(include_str!("../../../../src/bin/god_engine.rs"));
+    let replay = compacta(include_str!("../../../backtest-engine/src/booktick_replay.rs"));
     for (nombre, src) in [("host", &host), ("replay", &replay)] {
         assert!(
             src.contains("risk_engine::envio::apalancamiento_de_envio("),
@@ -31,7 +31,7 @@ fn cl41_host_y_replay_usan_la_funcion_de_envio() {
 /// viejo y un cierre del núcleo podía intercalarse con el reajuste.
 #[test]
 fn cl41c_el_host_decide_el_envio_antes_del_spawn() {
-    let host = compacta(include_str!("../../../src/bin/god_engine.rs"));
+    let host = compacta(include_str!("../../../../src/bin/god_engine.rs"));
     let guarda = "letSome(effective_leverage)=decision_envioelse{";
     let i = host.find(guarda).expect("el spawn de la entrada usa la decisión tomada fuera");
     let spawn = host[..i].rfind("rt_handle.spawn(asyncmove{").expect("spawn de la entrada");

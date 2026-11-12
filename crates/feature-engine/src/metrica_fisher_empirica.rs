@@ -65,7 +65,7 @@ pub fn beta_q(q: f64) -> Option<f64> {
 
 /// Score (∇ log p) de la q-gaussiana en (μ, σ) para una observación z:
 ///   s_μ = 2βu / (σ·base)
-///   s_σ = (2βu²/base − 1) / σ,   base = 1 − (1−q)βu²
+///   s_σ = 2βu² / (σ·base) − 1/σ,   base = 1 − (1−q)βu²
 /// El −1/σ es la derivada de −ln σ (la normalización de p), y hace que
 /// E_p[s] = 0. Con q > 1, cuando |u|→∞, s_μ→0 y s_σ→(2/(q−1) − 1)/σ.
 /// `None` = fuera de soporte (base ≤ 0), σ ≤ 0, q inválido o no finito:
@@ -81,7 +81,7 @@ pub fn score_q_gaussiana(q: f64, mu: f64, sigma: f64, z: f64) -> Option<[f64; 2]
         return None;
     }
     let s_mu = 2.0 * beta * u / (sigma * base);
-    let s_sigma = (2.0 * beta * u * u / base - 1.0) / sigma;
+    let s_sigma = 2.0 * beta * u * u / (sigma * base) - 1.0 / sigma;
     if !(s_mu.is_finite() && s_sigma.is_finite()) {
         return None;
     }
@@ -135,7 +135,10 @@ pub fn metrica_fisher_empirica(
 /// fijas, que fuera del punto de muestreo no es la métrica. Como R no
 /// depende de (μ, σ), el estimador se evalúa en el punto estándar (0, 1):
 /// su paso h es absoluto y con σ muy pequeña o muy grande daría un
-/// resultado sin sentido. `Err` = q fuera de rango, menos de
+/// resultado sin sentido. Re-evaluar la media con las innovaciones fijas
+/// u = (z−μ)/σ en z_θ = θ_μ + θ_σ·u da el mismo campo G/θ_σ² salvo
+/// redondeo; evaluado en (μ̂, σ̂) con σ̂ ≈ 0.001 pedía σ − 2h < 0 y
+/// devolvía `Err`. `Err` = q fuera de rango, menos de
 /// [`M_MIN_MUESTRAS`], algún score no finito o métrica degenerada.
 pub fn ricci_q_gaussiana(
     q: f64,

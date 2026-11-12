@@ -39,7 +39,7 @@ pub struct ActiveTrajectoryTrack {
     pub is_long: bool,
     pub entry_price: f64,
     pub entry_time_ms: u64,
-    pub expected_magnitude: f64, // Delta precio % esperado
+    pub expected_magnitude: f64,  // Delta precio % esperado
     pub expected_volume_usd: f64, // Volumen/capital base esperado en la ola
     /// τ esperado de la posición en ms: el horizonte continuo de ESTA
     /// trayectoria. Todas las fracciones de tiempo se miden contra él.
@@ -134,7 +134,11 @@ impl TrajectoryAuditor {
         Self { tracks, num_coins }
     }
 
-    fn traza(&mut self, symbol_id: usize, ranura: usize) -> Option<&mut Option<ActiveTrajectoryTrack>> {
+    fn traza(
+        &mut self,
+        symbol_id: usize,
+        ranura: usize,
+    ) -> Option<&mut Option<ActiveTrajectoryTrack>> {
         self.tracks.get_mut(symbol_id)?.get_mut(ranura)
     }
 
@@ -341,7 +345,12 @@ impl TrajectoryAuditor {
     /// moneda divergente a 7,7–31 ev/s. Devuelve `true` sólo la primera vez
     /// que esta traza diverge por cada motivo, así que una posición avisa
     /// como mucho tres veces, alterne el motivo o no.
-    pub fn divergencia_nueva(&mut self, symbol_id: usize, ranura: usize, status: &TrajectoryStatus) -> bool {
+    pub fn divergencia_nueva(
+        &mut self,
+        symbol_id: usize,
+        ranura: usize,
+        status: &TrajectoryStatus,
+    ) -> bool {
         let TrajectoryStatus::Divergent { reason, .. } = status else {
             return false;
         };
@@ -483,7 +492,12 @@ mod tests {
 
         auditor.record_entry(0, 0, 1, true, 100.0, t0, 0.01, 50_000.0, 30_000);
         assert_eq!(
-            auditor.tracks.iter().flatten().filter(|t| t.is_some()).count(),
+            auditor
+                .tracks
+                .iter()
+                .flatten()
+                .filter(|t| t.is_some())
+                .count(),
             1,
             "una entrada debe producir exactamente una traza viva"
         );
@@ -520,7 +534,10 @@ mod tests {
             let st = a.evaluate_tick(0, 0, px, 10.0, t0 + 200_000 + k);
             avisos += a.divergencia_nueva(0, 0, &st) as u32;
         }
-        assert_eq!(avisos, 2, "el agotamiento es un motivo nuevo; alternar no repite");
+        assert_eq!(
+            avisos, 2,
+            "el agotamiento es un motivo nuevo; alternar no repite"
+        );
         let st = a.evaluate_tick(1, 0, 99.3, 10.0, t0);
         assert!(!a.divergencia_nueva(1, 0, &st), "sin traza no hay aviso");
     }
@@ -560,8 +577,14 @@ mod tests {
         let status = auditor.evaluate_tick(0, 0, 99.6, 1_000.0, t0 + 5 * tau_ms);
         match status {
             TrajectoryStatus::Divergent { reason, score } => {
-                assert_eq!(reason, TrajectoryDivergenceReason::TimeExhaustionWithoutProgress);
-                assert!(score > 4.0, "la fracción de τ no debe venir recortada: {score}");
+                assert_eq!(
+                    reason,
+                    TrajectoryDivergenceReason::TimeExhaustionWithoutProgress
+                );
+                assert!(
+                    score > 4.0,
+                    "la fracción de τ no debe venir recortada: {score}"
+                );
             }
             other => panic!("se esperaba agotamiento temporal, llegó {other:?}"),
         }
@@ -584,7 +607,10 @@ mod tests {
         assert!(matches!(st0, TrajectoryStatus::Aligned { .. }), "{st0:?}");
         assert!(matches!(st1, TrajectoryStatus::Divergent { .. }), "{st1:?}");
         assert!(a.record_exit(0, 1, 100.39, t0 + 3_000).is_some());
-        assert!(a.tracks[0][0].is_some(), "el cierre de la ranura 1 no toca la 0");
+        assert!(
+            a.tracks[0][0].is_some(),
+            "el cierre de la ranura 1 no toca la 0"
+        );
     }
 
     /// CL-140c — Esperado: `conciliar` da el TCE de la ranura que el núcleo
@@ -598,14 +624,32 @@ mod tests {
         a.record_entry(0, 0, 1, true, 100.0, t0, 0.01, 0.0, 30_000);
         a.record_entry(0, 1, 3, true, 100.0, t0, 0.01, 0.0, 30_000);
         a.record_entry(0, 2, 5, false, 100.0, t0, 0.01, 0.0, 30_000);
-        let cerradas = a.conciliar(0, [Some(1), Some(3), None], [Some(2), Some(3), None], 101.0, t0 + 25_000);
-        assert!(cerradas[0].is_some(), "cerrada y reabierta por el núcleo: TCE");
+        let cerradas = a.conciliar(
+            0,
+            [Some(1), Some(3), None],
+            [Some(2), Some(3), None],
+            101.0,
+            t0 + 25_000,
+        );
+        assert!(
+            cerradas[0].is_some(),
+            "cerrada y reabierta por el núcleo: TCE"
+        );
         assert_eq!(cerradas[1..], [None, None]);
         assert!(a.tracks[0][0].is_none() && a.tracks[0][2].is_none());
         assert!(a.tracks[0][1].is_some(), "la ranura viva conserva su traza");
-        assert_eq!(a.conciliar(0, [None; RANURAS], [None; RANURAS], 101.0, t0), [None; RANURAS]);
-        assert!(a.tracks[0][1].is_none(), "ya cerrada antes del evento: descarte");
-        assert_eq!(a.conciliar(9, [None; RANURAS], [None; RANURAS], 101.0, t0), [None; RANURAS]);
+        assert_eq!(
+            a.conciliar(0, [None; RANURAS], [None; RANURAS], 101.0, t0),
+            [None; RANURAS]
+        );
+        assert!(
+            a.tracks[0][1].is_none(),
+            "ya cerrada antes del evento: descarte"
+        );
+        assert_eq!(
+            a.conciliar(9, [None; RANURAS], [None; RANURAS], 101.0, t0),
+            [None; RANURAS]
+        );
     }
 
     /// CL-140c — Esperado: con la ranura 0 abierta, una reserva en la 1 que
@@ -619,7 +663,10 @@ mod tests {
         a.record_entry(0, 0, 1, true, 100.0, t0, 0.01, 0.0, 30_000);
         a.record_entry(0, 1, 1, true, 101.0, t0 + 1_000, 0.01, 0.0, 30_000);
         let vivas = [Some(1), None, None];
-        assert_eq!(a.conciliar(0, vivas, vivas, 100.5, t0 + 2_000), [None; RANURAS]);
+        assert_eq!(
+            a.conciliar(0, vivas, vivas, 100.5, t0 + 2_000),
+            [None; RANURAS]
+        );
         assert!(a.tracks[0][1].is_none());
         assert_eq!(a.tracks[0][0].as_ref().map(|t| t.entry_price), Some(100.0));
     }

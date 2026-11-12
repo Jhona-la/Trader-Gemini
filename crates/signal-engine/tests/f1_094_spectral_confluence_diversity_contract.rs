@@ -15,8 +15,8 @@
 //! de una misma hipótesis de momentum e ignoraba el OBI y la calibración ML en el consenso espectral.
 
 use signal_engine::flow_excitation_confluence::FlowExcitationConfluenceEngine;
-use signal_engine::hawkes_bessel::HawkesBesselEngine;
 use signal_engine::flow_impulse::FlowImpulseEngine;
+use signal_engine::hawkes_bessel::HawkesBesselEngine;
 
 #[test]
 fn f1_094_control_backward_compatibility_when_neutral() {

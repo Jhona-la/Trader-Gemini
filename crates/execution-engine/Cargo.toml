@@ -3,6 +3,9 @@ name = "execution-engine"
 version = "0.1.0"
 edition = "2021"
 
+[features]
+loopback-contract = []
+
 [dependencies]
 risk-engine = { path = "../risk-engine" }
 signal-engine = { path = "../signal-engine" }
@@ -22,3 +25,6 @@ ryu = "1.0.23"
 itoa = "1.0.18"
 arc-swap = "1.9.2"
 crossbeam-queue = "0.3"
+
+[dev-dependencies]
+tokio = { version = "1", features = ["test-util"] }

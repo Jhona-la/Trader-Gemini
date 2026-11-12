@@ -699,6 +699,26 @@ impl RiskEngine {
         intent: &SignalIntent,
         arena: &GlobalArena,
     ) -> ValidatedOrder {
+        self.evaluate_quantum_order_impl(coin_id, intent, arena, None)
+    }
+
+    pub fn evaluate_quantum_order_with_probe_snapshot(
+        &mut self,
+        coin_id: usize,
+        intent: &SignalIntent,
+        arena: &GlobalArena,
+        probe_occupied: bool,
+    ) -> ValidatedOrder {
+        self.evaluate_quantum_order_impl(coin_id, intent, arena, Some(probe_occupied))
+    }
+
+    fn evaluate_quantum_order_impl(
+        &mut self,
+        coin_id: usize,
+        intent: &SignalIntent,
+        arena: &GlobalArena,
+        probe_occupied: Option<bool>,
+    ) -> ValidatedOrder {
         set_reject_direction(intent.signal);
         // CL-131: la medida pendiente es la de la última orden validada.
         self.medida_pendiente = None;
@@ -884,6 +904,7 @@ impl RiskEngine {
             pf,
             temporal_scale,
             arena,
+            probe_occupied,
         )
     }
 
@@ -897,6 +918,7 @@ impl RiskEngine {
         profit_factor: f64,
         temporal_scale: f64,
         arena: &GlobalArena,
+        probe_occupied: Option<bool>,
     ) -> ValidatedOrder {
         set_reject_direction(intent.signal);
         // CL-146: un capital NaN pasaba esta puerta y llegaba como límite NaN
@@ -917,7 +939,9 @@ impl RiskEngine {
             return rej(REJ_ESTRATEGIA_FALSADA);
         }
         let es_sonda = crate::sonda::en_fase_de_sonda(arena, coin_id);
-        if !crate::sonda::admite_sonda_con_fase(arena, es_sonda) {
+        let probe_occupied =
+            probe_occupied.unwrap_or_else(|| !crate::sonda::admite_sonda_con_fase(arena, es_sonda));
+        if es_sonda && probe_occupied {
             return rej(REJ_SONDA_OCUPADA);
         }
         // D-750 — EL NOCIONAL MÍNIMO ES EL DEL SÍMBOLO, NO UN LITERAL DE

@@ -79,8 +79,12 @@ impl TickOrigin {
     pub fn descripcion(self) -> &'static str {
         match self {
             TickOrigin::Real => "aggTrades REALES del exchange (TGMTRAW/TGMTICK1)",
-            TickOrigin::Sintetico => "VELAS EXPANDIDAS por parquet_to_bin — microestructura fabricada (D-691)",
-            TickOrigin::LegadoSinCabecera => "legado SIN cabecera: origen desconocido, se asume sintético (D-691)",
+            TickOrigin::Sintetico => {
+                "VELAS EXPANDIDAS por parquet_to_bin — microestructura fabricada (D-691)"
+            }
+            TickOrigin::LegadoSinCabecera => {
+                "legado SIN cabecera: origen desconocido, se asume sintético (D-691)"
+            }
         }
     }
 
@@ -161,7 +165,10 @@ fn load_binary_ticks_with_limit(
     ticks.try_reserve_exact(num_ticks).map_err(|e| {
         std::io::Error::new(
             std::io::ErrorKind::OutOfMemory,
-            format!("{}: no memory for {num_ticks} tick events: {e}", path.display()),
+            format!(
+                "{}: no memory for {num_ticks} tick events: {e}",
+                path.display()
+            ),
         )
     })?;
     for t in slice {
@@ -214,7 +221,13 @@ mod tests_lg15 {
     #[test]
     fn lg15_el_cuerpo_empieza_tras_la_cabecera() {
         let mut bytes = TICK_MAGIC_SYNTH.to_vec();
-        let tick = BinTick { timestamp: 1_700_000_000_000, bid_price: 100.0, ask_price: 100.5, bid_qty: 2.0, ask_qty: 3.0 };
+        let tick = BinTick {
+            timestamp: 1_700_000_000_000,
+            bid_price: 100.0,
+            ask_price: 100.5,
+            bid_qty: 2.0,
+            ask_qty: 3.0,
+        };
         let crudo: [u8; std::mem::size_of::<BinTick>()] = unsafe { std::mem::transmute(tick) };
         bytes.extend_from_slice(&crudo);
         let (origen, cuerpo) = cuerpo_de_ticks(&bytes);

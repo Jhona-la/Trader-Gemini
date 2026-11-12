@@ -6,12 +6,8 @@ use signal_engine::hawkes_bessel::{
     excitacion_hawkes_norm_with_ss, HawkesBesselEngine, HawkesBesselParams, DEFAULT_ALPHA,
     DEFAULT_BETA, DEFAULT_MU,
 };
-use signal_engine::perceptron_gate::{
-    PerceptronGateEngine, PerceptronGateParams,
-};
-use signal_engine::proyeccion_espectral::{
-    ProyeccionEspectralEngine, ProyeccionEspectralParams,
-};
+use signal_engine::perceptron_gate::{PerceptronGateEngine, PerceptronGateParams};
+use signal_engine::proyeccion_espectral::{ProyeccionEspectralEngine, ProyeccionEspectralParams};
 use std::sync::Arc;
 use strategy_core::QuantumStrategy;
 
@@ -34,8 +30,18 @@ fn test_spectral_projection_c1_continuity_and_smoothness() {
     for i in 0..=steps {
         let masa = params.masa_minima + i as f64 * delta;
         let w = params.compute_weight(masa);
-        assert!(w >= prev_w, "Monotonía rota en masa {}: {} < {}", masa, w, prev_w);
-        assert!((w - prev_w) <= 0.01, "Discontinuidad de salto detectada en masa {}", masa);
+        assert!(
+            w >= prev_w,
+            "Monotonía rota en masa {}: {} < {}",
+            masa,
+            w,
+            prev_w
+        );
+        assert!(
+            (w - prev_w) <= 0.01,
+            "Discontinuidad de salto detectada en masa {}",
+            masa
+        );
         prev_w = w;
     }
     assert!((prev_w - 1.0).abs() < 1e-12);
@@ -102,7 +108,10 @@ fn test_perceptron_gate_params_validation_and_dynamic_infer() {
     let mut high_gain_params = params;
     high_gain_params.ganancia = 5.0;
     let out_high = PerceptronGateEngine::infer_with_params(score, weight, &high_gain_params);
-    assert!(out_high > out_std, "Mayor ganancia debe aumentar la respuesta del perceptrón");
+    assert!(
+        out_high > out_std,
+        "Mayor ganancia debe aumentar la respuesta del perceptrón"
+    );
 
     // Dynamic evaluation via registry
     let registry = Arc::new(OmniscientRegistry::new());
@@ -126,7 +135,9 @@ fn test_hawkes_bessel_params_validation_and_branching_ratio() {
     assert!(default_params.validate().is_ok());
 
     // Estado estacionario: 1 + 0.3 / 0.5 = 1.6
-    assert!((default_params.steady_state_ratio() - (1.0 + DEFAULT_ALPHA / DEFAULT_BETA)).abs() < 1e-12);
+    assert!(
+        (default_params.steady_state_ratio() - (1.0 + DEFAULT_ALPHA / DEFAULT_BETA)).abs() < 1e-12
+    );
 
     let custom_params = HawkesBesselParams {
         default_mu: DEFAULT_MU,

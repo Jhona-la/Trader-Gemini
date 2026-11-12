@@ -15,7 +15,12 @@ use std::sync::Mutex;
 /// Las variables de entorno son del proceso: un test a la vez.
 static ENTORNO: Mutex<()> = Mutex::new(());
 
-const VARIABLES: [&str; 4] = ["SHADOW_MODE", "USE_TESTNET", "BINANCE_USE_DEMO", "TG_GENOME_ENV"];
+const VARIABLES: [&str; 4] = [
+    "SHADOW_MODE",
+    "USE_TESTNET",
+    "BINANCE_USE_DEMO",
+    "TG_GENOME_ENV",
+];
 
 fn ruta_con(modo: Option<&str>, venue_de_prueba: bool) -> String {
     let _g = ENTORNO.lock().unwrap_or_else(|e| e.into_inner());
@@ -36,19 +41,72 @@ fn ruta_con(modo: Option<&str>, venue_de_prueba: bool) -> String {
 
 #[test]
 fn cl61_papel_sin_banderas_escribe_en_demo() {
-    assert_eq!(ruta_con(Some("demo"), false), "data/demo/kelly_envelope.json");
+    assert_eq!(
+        ruta_con(Some("demo"), false),
+        "data/demo/kelly_envelope.json"
+    );
 }
 
 #[test]
 fn cl61_produccion_solo_con_dinero_real_en_el_venue_real() {
-    assert_eq!(ruta_con(Some("prod"), false), "data/prod/kelly_envelope.json");
+    assert_eq!(
+        ruta_con(Some("prod"), false),
+        "data/prod/kelly_envelope.json"
+    );
     // Armado contra testnet: los cierres no son de mercado real.
-    assert_eq!(ruta_con(Some("prod"), true), "data/demo/kelly_envelope.json");
-    assert_eq!(ruta_con(Some("demo"), true), "data/demo/kelly_envelope.json");
-    assert_eq!(ruta_con(Some("backtest"), false), "data/demo/kelly_envelope.json");
+    assert_eq!(
+        ruta_con(Some("prod"), true),
+        "data/demo/kelly_envelope.json"
+    );
+    assert_eq!(
+        ruta_con(Some("demo"), true),
+        "data/demo/kelly_envelope.json"
+    );
+    assert_eq!(
+        ruta_con(Some("backtest"), false),
+        "data/demo/kelly_envelope.json"
+    );
 }
 
 #[test]
 fn cl61_sin_modo_declarado_no_se_presume_produccion() {
     assert_eq!(ruta_con(None, false), "data/demo/kelly_envelope.json");
+}
+
+struct LimpiarArchivos(Vec<std::path::PathBuf>);
+
+impl Drop for LimpiarArchivos {
+    fn drop(&mut self) {
+        for ruta in &self.0 {
+            let _ = std::fs::remove_file(ruta);
+        }
+    }
+}
+
+#[test]
+fn cl48_los_diarios_reales_no_se_sobrescriben_entre_demo_y_prod() {
+    let _g = ENTORNO.lock().unwrap_or_else(|e| e.into_inner());
+    let nanos = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .expect("reloj del fixture")
+        .as_nanos();
+    let nombre = format!("cl48-{}-{nanos}.jsonl", std::process::id());
+    // SAFETY: el Mutex serializa los tests de este binario, que no lanza hilos.
+    unsafe {
+        for v in VARIABLES {
+            std::env::remove_var(v);
+        }
+        std::env::set_var("TG_GENOME_ENV", "demo");
+    }
+    let demo = env_data_path(&nombre);
+    // SAFETY: el mismo Mutex sigue tomado al cambiar el modo.
+    unsafe { std::env::set_var("TG_GENOME_ENV", "prod") };
+    let prod = env_data_path(&nombre);
+    let _limpieza = LimpiarArchivos(vec![demo.clone().into(), prod.clone().into()]);
+
+    assert_ne!(demo, prod);
+    std::fs::write(&demo, b"demo").expect("diario Demo");
+    std::fs::write(&prod, b"prod").expect("diario Prod");
+    assert_eq!(std::fs::read(&demo).expect("leer Demo"), b"demo");
+    assert_eq!(std::fs::read(&prod).expect("leer Prod"), b"prod");
 }

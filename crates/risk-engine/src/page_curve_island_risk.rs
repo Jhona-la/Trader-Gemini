@@ -31,9 +31,10 @@
 //!    unidades de $\sigma_{\text{ref}}$. Un libro plano ($\Lambda = 0$) no radia. Un peso o una
 //!    volatilidad desconocidos no se leen como cero.
 //! 3. Se evalúa el área de la frontera de la isla
-//!    $\operatorname{Area}(\partial I) \sim 1.0 - |\rho_{\text{max}}|$, con $\rho_{\text{max}}$ la
-//!    correlación máxima entre activos expuestos. Sin exposición el área es 1; con $\rho$
-//!    desconocida, 0.
+//!    $\operatorname{Area}(\partial I) \sim \min\{1, 1.0 - \rho_{\text{max}}\}$, con
+//!    $\rho_{\text{max}} \in [-1, 1]$ la correlación máxima, con signo, entre activos expuestos:
+//!    una anticorrelación es cobertura y no reduce el área. Sin exposición el área es 1; con
+//!    $\rho$ desconocida, 0.
 //! 4. Si $\operatorname{Area}(\partial I) \ge \text{min\_island\_area}$, se activa la isla y se evalúa $S_{\text{island}} = \frac{\operatorname{Area}(\partial I)}{4 G_N} + S_{\text{bulk}}$.
 //! 5. Se activa `island_veto_induced = true` y `slot_scale_factor = 0.0` si la equity está en o
 //!    bajo el piso de Grossman-Zhou (no queda colchón sobre el piso), si la exposición o la
@@ -125,8 +126,10 @@ impl PageCurveIslandRiskEngine {
     ///   de `volatility_reference`. No finita o negativa es desconocida y, con Λ > 0, veta. El
     ///   grafo vivo pasa 100·√traza de la CWT por evento (con suelo 0,01): no es una volatilidad
     ///   a un horizonte fijo, así que el término térmico depende de la cadencia de eventos.
-    /// - `max_cross_correlation`: |ρ| máxima entre los activos expuestos. No finita es
-    ///   desconocida y no acredita isla. Con Λ = 0 no interviene.
+    /// - `max_cross_correlation`: ρ máxima, con signo, entre los PnL de los activos expuestos (con
+    ///   la dirección de cada posición; se acota a [-1, 1]): una anticorrelación es cobertura y no
+    ///   reduce el área de la isla. No finita es desconocida y no acredita isla. Con Λ = 0 no
+    ///   interviene.
     pub fn evaluate(
         &self,
         equity_usd: f64,
@@ -204,14 +207,17 @@ impl PageCurveIslandRiskEngine {
         let s_rad = (s_shannon + s_vol).max(0.0);
 
         // 3. Área de la frontera de la isla holográfica: proporcional a la descorrelación
-        // residual. Sin exposición toda la equity es refugio (área 1); una ρ desconocida no
-        // certifica la isla (antes caía a 0.0, que se leía como diversificación perfecta).
+        // residual 1 − ρ, con signo: una anticorrelación es cobertura y no reduce el área (con
+        // 1 − |ρ|, ρ = −1 destruía la isla). Sin exposición toda la equity es refugio (área 1);
+        // una ρ desconocida no certifica la isla (antes caía a 0.0, que se leía como
+        // diversificación perfecta).
         let island_fraction = if exposicion_desconocida {
             0.0
         } else if exposicion <= 0.0 {
             1.0
         } else if max_cross_correlation.is_finite() {
-            (1.0 - max_cross_correlation.clamp(-1.0, 1.0).abs()).clamp(0.0, 1.0)
+            let safe_corr = max_cross_correlation.clamp(-1.0, 1.0);
+            (1.0 - safe_corr).clamp(0.0, 1.0)
         } else {
             0.0
         };

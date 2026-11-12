@@ -48,12 +48,13 @@ pub fn clasificar_respuesta_ioc(
 ) -> Result<ResultadoIoc, String> {
     let ack = parse_query_order_response(body, symbol, client_order_id)
         .map_err(|e| format!("AMBIGUOUS: IOC_EVIDENCE_INVALID id={client_order_id}: {e}"))?;
-    let ejecutada = terminal_maker_executed_quantity(symbol, client_order_id, &ack).map_err(|_| {
-        format!(
-            "AMBIGUOUS: IOC_TERMINAL_UNVERIFIED id={client_order_id} status={}",
-            ack.status
-        )
-    })?;
+    let ejecutada =
+        terminal_maker_executed_quantity(symbol, client_order_id, &ack).map_err(|_| {
+            format!(
+                "AMBIGUOUS: IOC_TERMINAL_UNVERIFIED id={client_order_id} status={}",
+                ack.status
+            )
+        })?;
     if ejecutada > 0.0 {
         Ok(ResultadoIoc::Llenada { ack, ejecutada })
     } else {
@@ -82,8 +83,8 @@ pub fn resultado_para_el_host(r: &ResultadoIoc, client_order_id: &str) -> Result
 
 /// CL-45: cantidad ejecutada de una orden YA TERMINAL según el registro
 /// (respuesta `RESULT` fusionada con los fills del WS). `None` si la orden no
-/// está, sigue activa, su estado es desconocido o no ejecutó nada: entonces
-/// no hay evidencia de cantidad y el host confirma como antes.
+/// está, sigue activa, su estado es desconocido o no ejecutó nada: el host
+/// conserva la reserva y resuelve la misma orden por REST antes de confirmar.
 pub fn cantidad_ejecutada_terminal(orden: Option<&TrackedOrder>) -> Option<f64> {
     let o = orden?;
     if o.status.is_active() || o.status == OrderStatus::Unknown {
@@ -101,6 +102,9 @@ pub enum DestinoReserva {
     Confirmar { ejecutada: f64 },
     /// Sin evidencia concluyente: la reserva se conserva y se reconcilia.
     Conservar,
+    /// El plazo total de recuperación expiró: cancelar la reserva local sin
+    /// certificar fill ni OCO y bloquear admisión hasta reconciliar.
+    CancelarPorDeadline,
 }
 
 /// CL-46b: error del remanente taker del maker-chase tal como lo ve el host.

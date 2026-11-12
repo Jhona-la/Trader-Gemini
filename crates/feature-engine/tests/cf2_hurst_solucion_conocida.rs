@@ -120,10 +120,19 @@ fn ruido_blanco(m: usize, semilla: u64) -> Vec<f64> {
 fn cf2_dfa_fgn_07_media_dentro_de_005() {
     let (phis, sd) = hosking(0.7, 1024);
     let mut rng = Lcg(0x5EED_F23B);
-    let hs: Vec<f64> = (0..100).map(|_| pendiente(&fgn(&phis, &sd, &mut rng))).collect();
+    let hs: Vec<f64> = (0..100)
+        .map(|_| pendiente(&fgn(&phis, &sd, &mut rng)))
+        .collect();
     let (m, s) = media_sd(&hs);
-    eprintln!("[cf2 dfa fGn 0,7] media {m:.4}, sd {s:.4}, se {:.4}", s / 10.0);
-    assert!((m - 0.7).abs() < 0.05, "media {m:.4}, sd {s:.4}, se {:.4}", s / 10.0);
+    eprintln!(
+        "[cf2 dfa fGn 0,7] media {m:.4}, sd {s:.4}, se {:.4}",
+        s / 10.0
+    );
+    assert!(
+        (m - 0.7).abs() < 0.05,
+        "media {m:.4}, sd {s:.4}, se {:.4}",
+        s / 10.0
+    );
 }
 
 /// Verdad: H = 0,7 en cada realización. Lectura literal del plan: al menos
@@ -143,7 +152,9 @@ fn cf2_dfa_fgn_07_media_dentro_de_005() {
 fn cf2_dfa_fgn_07_error_por_realizacion() {
     let (phis, sd) = hosking(0.7, 1024);
     let mut rng = Lcg(0x5EED_F23C);
-    let hs: Vec<f64> = (0..100).map(|_| pendiente(&fgn(&phis, &sd, &mut rng))).collect();
+    let hs: Vec<f64> = (0..100)
+        .map(|_| pendiente(&fgn(&phis, &sd, &mut rng)))
+        .collect();
     let (m, s) = media_sd(&hs);
     let dentro = hs.iter().filter(|&&h| (h - 0.7).abs() < 0.05).count();
     assert!(
@@ -196,7 +207,10 @@ fn cf2_dfa_ruido_blanco_sesgo_de_forma_cerrada() {
     let sxy: f64 = x.iter().zip(&y).map(|(a, b)| (a - mx) * (b - my)).sum();
     let sxx: f64 = x.iter().map(|a| (a - mx).powi(2)).sum();
     let cerrada = sxy / sxx;
-    assert!((cerrada - 0.5259).abs() < 1e-3, "pendiente cerrada {cerrada:.5}");
+    assert!(
+        (cerrada - 0.5259).abs() < 1e-3,
+        "pendiente cerrada {cerrada:.5}"
+    );
     let hs = ruido_blanco(200, 0xB1A5_0501);
     let (m, s) = media_sd(&hs);
     eprintln!("[cf2 dfa ruido blanco] media {m:.4}, sd {s:.4}, cerrada {cerrada:.4}");

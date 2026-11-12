@@ -108,3 +108,79 @@ fn test_c4_nan_infinity_immunity_and_stack_determinism() {
     assert!(report.directional_bias.is_finite());
     assert!(report.slot_scaling_factor.is_finite());
 }
+
+#[test]
+fn test_c5_invalid_inputs_veto_without_state_mutation() {
+    let nominal = (0.001, 0.10, 1.5, 0.02, 0.01);
+    let mut engine = StarobinskyInflationaryEngine::default();
+    let mut control = StarobinskyInflationaryEngine::default();
+
+    let initial = engine.evaluate(nominal.0, nominal.1, nominal.2, nominal.3, nominal.4);
+    control.evaluate(nominal.0, nominal.1, nominal.2, nominal.3, nominal.4);
+    assert!(!initial.reheating_collapse_veto);
+
+    let mut assert_invalid = |inputs: (f64, f64, f64, f64, f64)| {
+        let report = engine.evaluate(inputs.0, inputs.1, inputs.2, inputs.3, inputs.4);
+        assert!(
+            report.reheating_collapse_veto,
+            "Entrada inválida {:?} debe activar el veto",
+            inputs
+        );
+        assert_eq!(report.slot_scaling_factor, 0.15);
+        for value in [
+            report.inflaton_field,
+            report.inflaton_velocity,
+            report.effective_potential,
+            report.epsilon_slow_roll,
+            report.eta_slow_roll,
+            report.spectral_index,
+            report.tensor_to_scalar_ratio,
+            report.e_folding_estimate,
+            report.directional_bias,
+            report.slot_scaling_factor,
+        ] {
+            assert!(value.is_finite());
+        }
+
+        let expected = control.evaluate(nominal.0, nominal.1, nominal.2, nominal.3, nominal.4);
+        let actual = engine.evaluate(nominal.0, nominal.1, nominal.2, nominal.3, nominal.4);
+        assert_eq!(
+            actual.inflaton_field.to_bits(),
+            expected.inflaton_field.to_bits(),
+            "La entrada inválida {:?} mutó phi_state",
+            inputs
+        );
+        assert_eq!(
+            actual.inflaton_velocity.to_bits(),
+            expected.inflaton_velocity.to_bits(),
+            "La entrada inválida {:?} mutó prev_phi",
+            inputs
+        );
+    };
+
+    for invalid in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+        for inputs in [
+            (invalid, 0.10, 1.5, 0.02, 0.01),
+            (0.001, invalid, 1.5, 0.02, 0.01),
+            (0.001, 0.10, invalid, 0.02, 0.01),
+            (0.001, 0.10, 1.5, invalid, 0.01),
+            (0.001, 0.10, 1.5, 0.02, invalid),
+        ] {
+            assert_invalid(inputs);
+        }
+    }
+
+    for inputs in [
+        (0.001, 0.10, 0.0, 0.02, 0.01),
+        (0.001, 0.10, -1.0, 0.02, 0.01),
+        (0.001, 0.10, 1.5, -0.01, 0.01),
+        (0.001, 0.10, 1.5, 0.02, 0.0),
+        (0.001, 0.10, 1.5, 0.02, -0.01),
+    ] {
+        assert_invalid(inputs);
+    }
+
+    let mut zero_vol_engine = StarobinskyInflationaryEngine::default();
+    let zero_vol_report = zero_vol_engine.evaluate(0.001, 0.10, 1.5, 0.0, 0.01);
+    assert!(!zero_vol_report.reheating_collapse_veto);
+}

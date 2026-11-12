@@ -57,7 +57,10 @@ fn pasa_la_guarda(eng: &StatArbEngine, tau_ms: f64) -> (bool, f64) {
     // Resolución de la base de 1e-6 (un tick de 0,1 USD a 100 000 USD): sin
     // piso StatArb no vota (CL-111) y la guarda no probaría nada.
     match eng.veredicto(tau_ms, 1e-6) {
-        Some(v) => (v.demostrada && v.t_media_cota_ms <= 2.0 * tau_ms, v.prueba.t),
+        Some(v) => (
+            v.demostrada && v.t_media_cota_ms <= 2.0 * tau_ms,
+            v.prueba.t,
+        ),
         None => (false, f64::NEG_INFINITY),
     }
 }
@@ -65,7 +68,14 @@ fn pasa_la_guarda(eng: &StatArbEngine, tau_ms: f64) -> (bool, f64) {
 /// Caminatas independientes: `semillas` parejas de `pasos` pasos de `dt_ms`
 /// con σ = `sigma` por paso y ruido de medida iid de desviación `ruido` en
 /// cada log-precio. Devuelve las que pasan la guarda al final y los t.
-fn caminatas(semillas: u64, pasos: u64, dt_ms: u64, sigma: f64, ruido: f64, tau_ms: f64) -> (u64, Vec<f64>) {
+fn caminatas(
+    semillas: u64,
+    pasos: u64,
+    dt_ms: u64,
+    sigma: f64,
+    ruido: f64,
+    tau_ms: f64,
+) -> (u64, Vec<f64>) {
     let mut pasan = 0u64;
     let mut ts_t = Vec::new();
     for s in 0..semillas {
@@ -107,7 +117,10 @@ fn cf3_guarda_t_media_no_deja_pasar_caminatas_independientes() {
     let tau_ms = 600_000.0;
     let semillas = 40u64;
     let (pasan, t) = caminatas(semillas, 6_000, 200, 2e-5, 0.0, tau_ms);
-    println!("observado: pasan {pasan}/{semillas}; t mediano {:.2} (crítico 1,75)", mediana(&t));
+    println!(
+        "observado: pasan {pasan}/{semillas}; t mediano {:.2} (crítico 1,75)",
+        mediana(&t)
+    );
     assert!(
         pasan * 10 <= semillas,
         "caminatas independientes que pasan la guarda: {pasan}/{semillas}"
@@ -121,7 +134,10 @@ fn cl97_guarda_madura_no_deja_pasar_caminatas_independientes() {
     let tau_ms = 600_000.0;
     let semillas = 40u64;
     let (pasan, t) = caminatas(semillas, 14_400, 1_000, 2e-5 * 5f64.sqrt(), 0.0, tau_ms);
-    println!("observado: pasan {pasan}/{semillas}; t mediano {:.2} (crítico 1,75)", mediana(&t));
+    println!(
+        "observado: pasan {pasan}/{semillas}; t mediano {:.2} (crítico 1,75)",
+        mediana(&t)
+    );
     assert!(pasan * 10 <= semillas, "pasan {pasan}/{semillas}");
 }
 
@@ -134,6 +150,9 @@ fn cl97_el_ruido_de_medida_no_fabrica_reversion() {
     let semillas = 40u64;
     let sigma = 2e-5 * 5f64.sqrt();
     let (pasan, t) = caminatas(semillas, 14_400, 1_000, sigma, 2.0 * sigma, tau_ms);
-    println!("observado: pasan {pasan}/{semillas}; t mediano {:.2} (crítico 1,75)", mediana(&t));
+    println!(
+        "observado: pasan {pasan}/{semillas}; t mediano {:.2} (crítico 1,75)",
+        mediana(&t)
+    );
     assert!(pasan * 10 <= semillas, "pasan {pasan}/{semillas}");
 }

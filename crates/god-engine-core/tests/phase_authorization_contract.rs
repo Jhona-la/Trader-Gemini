@@ -1,7 +1,7 @@
 use god_engine_core::orchestrator::{PhaseOrchestrator, SystemPhase};
 use std::sync::{
-    Arc,
     atomic::{AtomicBool, Ordering},
+    Arc,
 };
 
 #[test]
@@ -131,7 +131,8 @@ fn revocation_between_audit_and_demo_verify_does_not_authorize() {
 fn qra_boot_01_oms_reconciliation_required_for_live_ignition() {
     let approval = Arc::new(AtomicBool::new(true));
     let oms_reconciled = Arc::new(AtomicBool::new(false));
-    let mut phase = PhaseOrchestrator::new_with_oms(1, false, approval.clone(), oms_reconciled.clone());
+    let mut phase =
+        PhaseOrchestrator::new_with_oms(1, false, approval.clone(), oms_reconciled.clone());
     // GLM-216: certificado demo válido para que el foco de ESTE contrato
     // siga siendo la reconciliación OMS, no la puerta de Producción.
     phase.set_evidencia_demo(Some(god_engine_core::orchestrator::EvidenciaDemo {
@@ -181,7 +182,8 @@ fn qra_boot_01_oms_reconciliation_required_for_demo_testnet_mode_when_configured
     let approval = Arc::new(AtomicBool::new(true));
     let oms_reconciled = Arc::new(AtomicBool::new(false));
     // Testnet / Demo mode with remote executor configured
-    let mut phase = PhaseOrchestrator::new_with_oms(1, true, approval.clone(), oms_reconciled.clone());
+    let mut phase =
+        PhaseOrchestrator::new_with_oms(1, true, approval.clone(), oms_reconciled.clone());
 
     phase.on_tick(); // Init -> DataWarmup
     phase.on_tick(); // DataWarmup -> GenomicAudit
@@ -274,4 +276,52 @@ fn glm219_breaker_prod_a_demo_con_ev_real_negativo() {
     assert_eq!(d.current_phase, SystemPhase::PaperTrading);
     assert!(!d.registrar_desempeno_prod(10, -0.01));
     assert_eq!(d.current_phase, SystemPhase::PaperTrading);
+}
+
+#[test]
+fn glm219_evidencia_no_finita_dispara_breaker_y_exige_recertificacion() {
+    use god_engine_core::orchestrator::EvidenciaDemo;
+
+    let mut fallos = Vec::new();
+    for invalido in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+        let approval = Arc::new(AtomicBool::new(true));
+        let oms = Arc::new(AtomicBool::new(true));
+        let mut p = PhaseOrchestrator::new_with_oms(1, false, approval, oms);
+        p.set_evidencia_demo(Some(EvidenciaDemo {
+            cierres: 30,
+            ev_neto_por_trade: 0.001,
+            wins: 20,
+        }));
+        for _ in 0..4 {
+            p.on_tick();
+        }
+        assert_eq!(p.current_phase, SystemPhase::ProductionMainnet);
+        assert!(p.is_trading_allowed());
+
+        if !p.registrar_desempeno_prod(10, invalido) {
+            fallos.push(format!("{invalido}: no disparó el breaker"));
+        }
+        if p.current_phase != SystemPhase::DemoVerify {
+            fallos.push(format!("{invalido}: fase insegura {:?}", p.current_phase));
+        }
+        if p.is_trading_allowed() {
+            fallos.push(format!("{invalido}: trading sigue autorizado"));
+        }
+        if p.evidencia_demo.is_some() {
+            fallos.push(format!("{invalido}: conservó evidencia favorable"));
+        }
+
+        p.set_evidencia_demo(Some(EvidenciaDemo {
+            cierres: 30,
+            ev_neto_por_trade: 0.002,
+            wins: 21,
+        }));
+        p.on_tick();
+        if p.current_phase != SystemPhase::ProductionMainnet || !p.is_trading_allowed() {
+            fallos.push(format!(
+                "{invalido}: no recuperó con certificado nuevo válido"
+            ));
+        }
+    }
+    assert!(fallos.is_empty(), "{fallos:?}");
 }

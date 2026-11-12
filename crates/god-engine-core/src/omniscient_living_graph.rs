@@ -1635,6 +1635,12 @@ impl OmniscientLivingGraphOrchestrator {
                     Some("FQHE_GAP_COLLAPSE_VETO")
                 } else if joyce_g2_report.joyce_g2_singularity_veto {
                     Some("JOYCE_G2_SINGULARITY_VETO")
+                } else if qes_report.extremal_surface_collapse_veto {
+                    Some("QUANTUM_EXTREMAL_SURFACE_COLLAPSE_VETO")
+                } else if qmbs_report.ergodic_collapse_veto {
+                    Some("QUANTUM_SCARS_ERGODIC_COLLAPSE_VETO")
+                } else if ks_report.prequantum_collapse_veto {
+                    Some("KOSTANT_SOURIAU_PREQUANTUM_COLLAPSE_VETO")
                 } else if asymptotic_safety_report.asymptotic_safety_singularity_veto {
                     Some("ASYMPTOTIC_SAFETY_SINGULARITY_VETO")
                 } else if donaldson_thomas_report.donaldson_thomas_wall_crossing_veto {
@@ -1649,16 +1655,10 @@ impl OmniscientLivingGraphOrchestrator {
                     Some("FLOER_HOMOLOGY_OBSTRUCTION_VETO")
                 } else if fisher_rao_report.information_collapse_veto {
                     Some("FISHER_RAO_INFORMATION_COLLAPSE_VETO")
-                } else if starobinsky_report.reheating_collapse_veto {
-                    Some("STAROBINSKY_REHEATING_COLLAPSE_VETO")
-                } else if amplituhedron_report.collinear_singularity_veto {
-                    Some("AMPLITUHEDRON_COLLINEAR_SINGULARITY_VETO")
-                } else if qes_report.extremal_surface_collapse_veto {
-                    Some("QUANTUM_EXTREMAL_SURFACE_COLLAPSE_VETO")
-                } else if qmbs_report.ergodic_collapse_veto {
-                    Some("QUANTUM_SCARS_ERGODIC_COLLAPSE_VETO")
-                } else if ks_report.prequantum_collapse_veto {
-                    Some("KOSTANT_SOURIAU_PREQUANTUM_COLLAPSE_VETO")
+                } else if dirac_monopole_report.monopole_veto_induced {
+                    Some("YANG_MILLS_DIRAC_MONOPOLE_VETO")
+                } else if peps_hypergraph_report.hyperbolic_dispersion_detected {
+                    Some("PEPS_HYPERBOLIC_DISPERSION_VETO")
                 } else if holographic_lloyd_report.lloyd_bound_exhaustion_veto {
                     Some("HOLOGRAPHIC_LLOYD_BOUND_EXHAUSTION_VETO")
                 } else if mpdo_report.dissipative_decoherence_veto {
@@ -1687,14 +1687,14 @@ impl OmniscientLivingGraphOrchestrator {
                     Some("GROSS_PITAEVSKII_VORTEX_VETO")
                 } else if lindblad_report.hard_veto_induced {
                     Some("LINDBLAD_DECOHERENCE_VETO")
+                } else if starobinsky_report.reheating_collapse_veto {
+                    Some("STAROBINSKY_REHEATING_COLLAPSE_VETO")
                 } else if polyakov_schwarzschild_report.event_horizon_veto_induced {
                     Some("POLYAKOV_SCHWARZSCHILD_EVENT_HORIZON_VETO")
+                } else if amplituhedron_report.collinear_singularity_veto {
+                    Some("AMPLITUHEDRON_COLLINEAR_SINGULARITY_VETO")
                 } else if ashtekar_lqg_report.ashtekar_area_singularity_detected {
                     Some("ASHTEKAR_AREA_SINGULARITY_VETO")
-                } else if dirac_monopole_report.monopole_veto_induced {
-                    Some("YANG_MILLS_DIRAC_MONOPOLE_VETO")
-                } else if peps_hypergraph_report.hyperbolic_dispersion_detected {
-                    Some("PEPS_HYPERBOLIC_DISPERSION_VETO")
                 } else if umegaki_relative_entropy_report.hard_veto_induced {
                     Some("UMEGAKI_RELATIVE_ENTROPY_VETO")
                 } else if bergman_fock_report.critical_saturation_detected {
