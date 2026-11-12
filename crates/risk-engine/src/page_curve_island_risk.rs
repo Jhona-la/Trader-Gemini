@@ -25,10 +25,21 @@
 //!
 //! ## 4. CÓMO
 //! 1. Se calcula $S_{\text{BH}} = \ln(1.0 + \text{equity} / (\text{floor} + \epsilon))$.
-//! 2. Se calcula $S_{\text{Rad}}$ a partir de las ponderaciones de margen y la volatilidad del portafolio.
-//! 3. Se evalúa el área de la frontera de la isla $\operatorname{Area}(\partial I) \sim 1.0 - \rho_{\text{cross\_corr\_max}}$.
+//! 2. Se calcula $S_{\text{Rad}}$ = entropía de Shannon de la composición de la exposición +
+//!    $\ln(1 + \Lambda\sigma/\sigma_{\text{ref}})$, con $\Lambda = \sum_i w_i$ la exposición
+//!    bruta en unidades de equity y $\sigma$ la volatilidad que entrega el llamador, en las
+//!    unidades de $\sigma_{\text{ref}}$. Un libro plano ($\Lambda = 0$) no radia. Un peso o una
+//!    volatilidad desconocidos no se leen como cero.
+//! 3. Se evalúa el área de la frontera de la isla
+//!    $\operatorname{Area}(\partial I) \sim \min\{1, 1.0 - \rho_{\text{max}}\}$, con
+//!    $\rho_{\text{max}} \in [-1, 1]$ la correlación máxima, con signo, entre activos expuestos:
+//!    una anticorrelación es cobertura y no reduce el área. Sin exposición el área es 1; con
+//!    $\rho$ desconocida, 0.
 //! 4. Si $\operatorname{Area}(\partial I) \ge \text{min\_island\_area}$, se activa la isla y se evalúa $S_{\text{island}} = \frac{\operatorname{Area}(\partial I)}{4 G_N} + S_{\text{bulk}}$.
-//! 5. Si $S_{\text{Rad}} > S_{\text{BH}}$ y la isla está ausente o $S_{\text{island}} \ge S_{\text{BH}}$, se activa `island_veto_induced = true` y `slot_scale_factor = 0.0`.
+//! 5. Se activa `island_veto_induced = true` y `slot_scale_factor = 0.0` si la equity está en o
+//!    bajo el piso de Grossman-Zhou (no queda colchón sobre el piso), si la exposición o la
+//!    volatilidad con exposición abierta son desconocidas, o si $S_{\text{Rad}} \ge S_{\text{BH}}$
+//!    y la isla está ausente o $S_{\text{island}} > 1.02\,S_{\text{BH}}$.
 //! 6. En régimen unitario sin veto, se modula $\eta_{\text{page}} \in [0.15, 1.25]$ asegurando convergencia unitaria.
 //!
 //! ## 5. CUÁNDO
@@ -108,9 +119,17 @@ impl PageCurveIslandRiskEngine {
 
     /// Evalúa la Curva de Page y la fórmula de isla:
     /// - `equity_usd`: capital actual en USD.
-    /// - `asset_weights`: ponderaciones de exposición de hasta 4 activos (normalizadas).
-    /// - `portfolio_volatility`: volatilidad anualizada/instantánea del portafolio.
-    /// - `max_cross_correlation`: correlación cruzada máxima entre pares de activos en [-1.0, 1.0].
+    /// - `asset_weights`: exposición bruta de hasta 4 activos en unidades de equity
+    ///   (|nocional_i| / equity), sin normalizar; Λ = Σw es el apalancamiento bruto. Un peso no
+    ///   finito o negativo es exposición desconocida, no cero, y veta.
+    /// - `portfolio_volatility`: volatilidad del retorno por unidad de nocional, en las unidades
+    ///   de `volatility_reference`. No finita o negativa es desconocida y, con Λ > 0, veta. El
+    ///   grafo vivo pasa 100·√traza de la CWT por evento (con suelo 0,01): no es una volatilidad
+    ///   a un horizonte fijo, así que el término térmico depende de la cadencia de eventos.
+    /// - `max_cross_correlation`: ρ máxima, con signo, entre los PnL de los activos expuestos (con
+    ///   la dirección de cada posición; se acota a [-1, 1]): una anticorrelación es cobertura y no
+    ///   reduce el área de la isla. No finita es desconocida y no acredita isla. Con Λ = 0 no
+    ///   interviene.
     pub fn evaluate(
         &self,
         equity_usd: f64,
@@ -124,35 +143,46 @@ impl PageCurveIslandRiskEngine {
             0.0
         };
 
-        let safe_vol = if portfolio_volatility.is_finite() && portfolio_volatility > 0.0001 {
-            portfolio_volatility.min(10.0)
-        } else {
+        // Volatilidad desconocida: no se lee como calma; con exposición abierta veta (paso 5) y el
+        // 0.01 sólo mantiene finito el reporte. Una conocida se acota a [1e-4, 10] sin saltos, para
+        // que la radiación no baje al subir la volatilidad.
+        let vol_desconocida = !portfolio_volatility.is_finite() || portfolio_volatility < 0.0;
+        let safe_vol = if vol_desconocida {
             0.01
-        };
-
-        let safe_corr = if max_cross_correlation.is_finite() {
-            max_cross_correlation.clamp(-1.0, 1.0)
         } else {
-            0.0
+            portfolio_volatility.clamp(1e-4, 10.0)
         };
 
         // 1. Capacidad Bekenstein-Hawking del capital: S_BH = ln(1.0 + equity / floor)
-        let s_bh = ((safe_equity / self.config.emergency_floor_usd.max(0.1)) + 1.0)
-            .max(1e-6)
-            .ln();
+        let floor_usd = self.config.emergency_floor_usd.max(0.1);
+        let s_bh = ((safe_equity / floor_usd) + 1.0).max(1e-6).ln();
 
-        // 2. Entropía de radiación de riesgo: entropía de Shannon de pesos + componente térmica de volatilidad
-        let mut s_shannon = 0.0;
-        let mut total_w = 0.0;
+        // 2. Entropía de radiación de riesgo. La exposición bruta Λ = Σw entra en el término
+        // térmico. Un peso no finito o negativo, o una suma que desborda, es exposición
+        // desconocida (no cero); sólo la exposición certificable entra en la entropía.
+        let mut exposicion_desconocida = false;
+        let mut exposicion_bruta = 0.0;
         for &w in asset_weights.iter() {
-            if w.is_finite() && w > 0.0 {
-                total_w += w;
+            if !w.is_finite() || w < 0.0 {
+                exposicion_desconocida = true;
+            } else {
+                exposicion_bruta += w;
             }
         }
-        if total_w > 1e-6 {
+        if !exposicion_bruta.is_finite() {
+            exposicion_desconocida = true;
+        }
+        let exposicion = if exposicion_desconocida {
+            0.0
+        } else {
+            exposicion_bruta
+        };
+        // Shannon de la composición: escala libre, sólo mide cómo se reparte la exposición.
+        let mut s_shannon = 0.0;
+        if exposicion > 1e-6 {
             for &w in asset_weights.iter() {
-                if w.is_finite() && w > 0.0 {
-                    let p = w / total_w;
+                if w > 0.0 {
+                    let p = w / exposicion;
                     s_shannon -= p * p.ln();
                 }
             }
@@ -164,11 +194,33 @@ impl PageCurveIslandRiskEngine {
         } else {
             0.02
         };
-        let s_vol = (1.0 + safe_vol / vol_ref).ln();
+        // Término térmico extensivo: la volatilidad del capital escala como Λ·σ (con un activo; con
+        // varios y correlaciones no negativas es una cota superior, por la desigualdad
+        // triangular). Sin exposición no radia.
+        let carga_termica = exposicion * safe_vol / vol_ref;
+        let carga_certificable = carga_termica.is_finite();
+        let s_vol = if carga_certificable {
+            (1.0 + carga_termica).ln()
+        } else {
+            0.0
+        };
         let s_rad = (s_shannon + s_vol).max(0.0);
 
-        // 3. Área de la frontera de la isla holográfica: proporcional a la descorrelación residual
-        let island_fraction = (1.0 - safe_corr).clamp(0.0, 1.0);
+        // 3. Área de la frontera de la isla holográfica: proporcional a la descorrelación
+        // residual 1 − ρ, con signo: una anticorrelación es cobertura y no reduce el área (con
+        // 1 − |ρ|, ρ = −1 destruía la isla). Sin exposición toda la equity es refugio (área 1);
+        // una ρ desconocida no certifica la isla (antes caía a 0.0, que se leía como
+        // diversificación perfecta).
+        let island_fraction = if exposicion_desconocida {
+            0.0
+        } else if exposicion <= 0.0 {
+            1.0
+        } else if max_cross_correlation.is_finite() {
+            let safe_corr = max_cross_correlation.clamp(-1.0, 1.0);
+            (1.0 - safe_corr).clamp(0.0, 1.0)
+        } else {
+            0.0
+        };
         let island_present = island_fraction >= self.config.min_island_area;
 
         // 4. Fórmula de la Superficie Extremal Cuántica (QES) para la Curva de Page
@@ -192,11 +244,21 @@ impl PageCurveIslandRiskEngine {
             s_rad
         };
 
-        // 5. Criterio de veto determinista absoluto incondicional:
-        // Si el riesgo superó el límite de Page (post_page == true) Y la isla no puede formarse
-        // o su entropía colapsa la capacidad del capital (s_island > s_bh * 1.02),
-        // se activa el veto absoluto PAGE_CURVE_INFORMATION_COLLAPSE_VETO.
-        let veto_induced = post_page && (!island_present || s_island > s_bh * 1.02);
+        // 5. Criterio de veto determinista absoluto incondicional
+        // (PAGE_CURVE_INFORMATION_COLLAPSE_VETO), en tres cláusulas:
+        // - Piso de Grossman-Zhou: en o bajo el piso no queda colchón (equity − piso)⁺ que
+        //   arriesgar. Es un corte, no una escala proporcional al colchón: sobre el piso decide
+        //   la curva de Page.
+        // - Radiación no certificable (exposición o volatilidad desconocidas con exposición
+        //   abierta): falla cerrado.
+        // - Curva de Page: el riesgo superó el límite (post_page) y la isla no puede formarse
+        //   o su entropía colapsa la capacidad del capital (s_island > s_bh * 1.02).
+        let sin_capacidad_sobre_piso = safe_equity <= floor_usd;
+        let radiacion_indeterminada =
+            exposicion_desconocida || !carga_certificable || (vol_desconocida && exposicion > 0.0);
+        let veto_induced = sin_capacidad_sobre_piso
+            || radiacion_indeterminada
+            || (post_page && (!island_present || s_island > s_bh * 1.02));
 
         // 6. Factor de escala de slot continuo
         let slot_scale = if veto_induced {

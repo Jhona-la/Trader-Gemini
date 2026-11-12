@@ -259,8 +259,11 @@ pub struct StatefulEngine {
     /// la q-gaussiana (núcleo del ciclo 221) evaluada en la frontera %64
     /// sobre el anillo de retornos (600) con (μ̂, σ̂) muestrales. Métrica
     /// model-relative: g = E[s·s] con la población REAL de retornos.
-    /// R≈−1 = población casi-gaussiana; |R| menor = colas efectivas que
-    /// APLANAN la geometría (régimen de extremos). NaN en warmup (<600
+    /// Con q = 1.2 la propia familia da R = −4/3 y una población gaussiana
+    /// ≈ −1.46 (σ ≈ 0.057 con 600 muestras); |R| menor = colas efectivas
+    /// más pesadas (5 % de saltos de 8σ: ≈ −1.17). No es monótono en la
+    /// cola: un único outlier extremo infla σ̂ y SUBE |R| (≈ −2.6 con un
+    /// salto de 46σ). NaN en warmup (<600
     /// retornos), σ̂ degenerada o propagación fail-closed del estimador —
     /// jamás cero fabricado. q fijo = [`RICCI_Q_FIJO`] (perilla: el
     /// consumo — q estimado vs fijo — es decisión del consejo).
@@ -1089,8 +1092,9 @@ impl StatefulEngine {
             // muestrales y las MISMAS muestras como población (métrica
             // model-relative — el R mide la geometría del modelo
             // q-gaussiano evaluada en la población REAL de retornos).
-            // ~17 evals × 600 scores cada 64 ticks: despreciable en
-            // frontera. Fail-closed propagado: Err o σ̂ degenerada ⇒ NaN
+            // 600 scores cada 64 ticks (G se estima una vez y el campo
+            // G/σ² es exacto): despreciable en frontera. Fail-closed
+            // propagado: Err o σ̂ degenerada ⇒ NaN
             // (ausencia honesta, sin ceros).
             if self.tick_count % 64 == 0 && self.ret_llenos == 600 {
                 let mut media = 0.0;

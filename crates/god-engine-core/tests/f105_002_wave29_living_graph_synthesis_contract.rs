@@ -114,6 +114,17 @@ fn test_c2_wave29_heterotic_e8_anomaly_cancellation_veto_propagation() {
             ..Default::default()
         });
 
+    // Aísla el absorbedor de Wheeler-Feynman (W31 §111): el salto final del precio (~1 %) tras
+    // el calentamiento da un jerk ≈ 9 con F_rad·v ≈ 59 (> 5), dispara su veto de fuga de Dirac y
+    // su etiqueta, que va antes en la cadena, taparía la que verifica este contrato.
+    orchestrator.wheeler_feynman_engines[0] =
+        risk_engine::WheelerFeynmanAbsorberEngine::new(risk_engine::WheelerFeynmanAbsorberConfig {
+            radiation_damping_coupling: 0.0,
+            max_absorber_deficit: f64::INFINITY,
+            max_runaway_jerk_threshold: f64::INFINITY,
+            ..Default::default()
+        });
+
     let triad = [
         AssetColorState {
             normalized_return: 0.005,
@@ -206,6 +217,17 @@ fn test_c3_wave29_fracton_topological_collapse_veto_propagation() {
             ..Default::default()
         });
 
+    // Aísla el absorbedor de Wheeler-Feynman (W31 §111): el salto final del precio (~1 %) tras
+    // el calentamiento da un jerk ≈ 9 con F_rad·v ≈ 59 (> 5), dispara su veto de fuga de Dirac y
+    // su etiqueta, que va antes en la cadena, taparía la que verifica este contrato.
+    orchestrator.wheeler_feynman_engines[0] =
+        risk_engine::WheelerFeynmanAbsorberEngine::new(risk_engine::WheelerFeynmanAbsorberConfig {
+            radiation_damping_coupling: 0.0,
+            max_absorber_deficit: f64::INFINITY,
+            max_runaway_jerk_threshold: f64::INFINITY,
+            ..Default::default()
+        });
+
     let triad = [
         AssetColorState {
             normalized_return: 0.001,
@@ -292,6 +314,17 @@ fn test_c4_wave29_kerr_newman_naked_singularity_veto_propagation() {
     orchestrator.kerr_newman_engines[0] =
         risk_engine::KerrNewmanBlackHoleEngine::new(KerrNewmanConfig {
             cosmic_censorship_margin: 1000.0,
+            ..Default::default()
+        });
+
+    // Aísla el absorbedor de Wheeler-Feynman (W31 §111): el salto final del precio (~1 %) tras
+    // el calentamiento da un jerk ≈ 9 con F_rad·v ≈ 59 (> 5), dispara su veto de fuga de Dirac y
+    // su etiqueta, que va antes en la cadena, taparía la que verifica este contrato.
+    orchestrator.wheeler_feynman_engines[0] =
+        risk_engine::WheelerFeynmanAbsorberEngine::new(risk_engine::WheelerFeynmanAbsorberConfig {
+            radiation_damping_coupling: 0.0,
+            max_absorber_deficit: f64::INFINITY,
+            max_runaway_jerk_threshold: f64::INFINITY,
             ..Default::default()
         });
 
