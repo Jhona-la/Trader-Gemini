@@ -417,6 +417,11 @@ struct Estado {
     saldo: Option<f64>,
     marca_saldo: Option<u64>,
     ev_saldo: Evidencia,
+    /// V4C: último saldo que el stream de esta era entregó, con su `T` y su
+    /// `E`, sólo mientras su orden sea demostrable (ver
+    /// [`Estado::registrar_saldo_stream`]). Una REST con esa misma `T` y otro
+    /// valor puede ser una foto atrasada: no cierra un empate ni suelta el veto.
+    ultimo_saldo_stream: Option<(u64, Option<u64>, f64)>,
     /// Posiciones abiertas observadas: (cantidad, PnL no realizado).
     abiertas: HashMap<ClavePosicion, (f64, f64)>,
     /// Marca de cada posición observada (abierta o cerrada).
@@ -494,6 +499,29 @@ impl Estado {
         ));
     }
 
+    /// V4C: registra el saldo `s` que entregó el stream con `T = t` y `E =
+    /// hora`. `aceptado`: el puente lo aplicó o lo confirmó como igual;
+    /// si no, fue una contradicción. Con la misma `T` sólo avanza con `E`
+    /// mayor (la hora de evento de Binance, que una reemisión conserva); con
+    /// `E` igual u omitida y otro valor no hay orden y se olvida (arbitra la
+    /// REST con ticket posterior, como en V4B); con `E` menor (una reemisión
+    /// vieja) no cambia nada.
+    fn registrar_saldo_stream(&mut self, t: Option<u64>, hora: Option<u64>, s: f64, aceptado: bool) {
+        let Some(t) = t else { return };
+        match self.ultimo_saldo_stream {
+            Some((ts, _, _)) if ts > t => {}
+            Some((ts, es, vs)) if ts == t => match (hora, es) {
+                (Some(h), Some(p)) if h > p => self.ultimo_saldo_stream = Some((t, hora, s)),
+                (Some(h), Some(p)) if h < p => {}
+                _ if mismo_saldo(vs, s) => {}
+                _ if aceptado => self.ultimo_saldo_stream = Some((t, hora.or(es), s)),
+                _ => self.ultimo_saldo_stream = None,
+            },
+            _ if aceptado => self.ultimo_saldo_stream = Some((t, hora, s)),
+            _ => self.ultimo_saldo_stream = None,
+        }
+    }
+
     fn evidencia_pos(&self, clave: &ClavePosicion) -> Evidencia {
         self.ev_pos.get(clave).copied().unwrap_or_default()
     }
@@ -521,6 +549,14 @@ impl Estado {
     /// ausente, o la misma marca con orden verificable (`posterior`). Así una
     /// fila con marca más vieja, un repetido tras reconectar o una foto
     /// pedida antes de la evidencia no pisan el PnL no realizado más nuevo.
+    ///
+    /// V4C (F3): en ese caso, si NO hay orden demostrable entre las dos
+    /// lecturas del PnL no realizado (`anterior_demostrable == false`; p. ej.
+    /// la fila REST trae la marca del último cambio de cantidad, o la marca
+    /// la puso la otra fuente), el freno ve la MENOR de las dos: las pérdidas
+    /// pasan, las ganancias esperan a una lectura con orden. Si la lectura es
+    /// demostrablemente anterior (mismo socket, `E` o `T` menor), se descarta.
+    #[allow(clippy::too_many_arguments)]
     fn aplicar_posicion_con(
         &mut self,
         clave: &ClavePosicion,
@@ -528,10 +564,18 @@ impl Estado {
         t: Option<u64>,
         v: &Veredicto,
         posterior: bool,
+        anterior_demostrable: bool,
         origen: Option<Origen>,
     ) {
         let marca = self.marcas_pos.get(clave).copied().flatten();
         if matches!(v, Veredicto::Igual) && marca.is_some() && (t < marca || (t == marca && !posterior)) {
+            if !anterior_demostrable {
+                if let (DatoPosicion::Abierta { upnl, .. }, Some(a)) = (dato, self.abiertas.get_mut(clave)) {
+                    if upnl.is_finite() && (*upnl < a.1 || !a.1.is_finite()) {
+                        a.1 = *upnl;
+                    }
+                }
+            }
             return;
         }
         if matches!(dato, DatoPosicion::Invalida) {
@@ -746,6 +790,32 @@ impl PuenteCuenta {
             Ok(v) => v,
             Err(r) => return Err(contradiccion(&mut *e, r, None, l.tiempo_saldo_ms)),
         };
+        // V4C (riesgo de F2): con la misma `T` que el último saldo del stream y
+        // otro valor, no hay forma de saber si la foto es posterior o una foto
+        // atrasada (el saldo intermedio entre dos fills de esa `T`). No se
+        // aplica, no cierra el empate ni suelta el veto, y el freno ve el
+        // menor de los dos saldos. La cierra una REST que coincida con el
+        // stream o una lectura con marca más nueva.
+        if let (Some(t), Some((ts, _, vs))) = (l.tiempo_saldo_ms, e.ultimo_saldo_stream) {
+            if t == ts && Some(t) == e.marca_saldo && !mismo_saldo(vs, l.saldo) {
+                let r = contradiccion(
+                    &mut *e,
+                    Rechazo::Contradiccion {
+                        componente: "saldo".to_string(),
+                        tiempo_ms: t,
+                    },
+                    None,
+                    Some(t),
+                );
+                let upnl: f64 = e.abiertas.values().map(|(_, u)| *u).sum();
+                let cota = (vs.min(l.saldo) + upnl).max(0.0);
+                if cota.is_finite() {
+                    e.techo = Some(e.techo.map_or(cota, |c| c.min(cota)));
+                }
+                self.notificar(&e);
+                return Err(r);
+            }
+        }
         let mut incompleta = l.posiciones.is_none();
         let mut plan: Vec<(ClavePosicion, DatoPosicion, Option<u64>, Veredicto)> = Vec::new();
         if let Some(m) = &l.posiciones {
@@ -792,7 +862,9 @@ impl PuenteCuenta {
             let ev = e.evidencia_pos(clave);
             // La foto se pidió después de la última escritura de esta posición.
             let posterior = ticket.generacion > ev.generacion || !e.ev_pos.contains_key(clave);
-            e.aplicar_posicion_con(clave, dato, *t, v, posterior, Some(Origen::Rest));
+            // V4C (F3): entre una foto REST y la evidencia vigente no hay orden
+            // demostrable del PnL no realizado cuando la fila trae marca vieja.
+            e.aplicar_posicion_con(clave, dato, *t, v, posterior, false, Some(Origen::Rest));
             let marca = e.marcas_pos.get(clave).copied().flatten();
             if t.is_some() && *t >= marca {
                 let ev = e.ev_pos.entry(clave.clone()).or_default();
@@ -924,8 +996,14 @@ impl PuenteCuenta {
                 e.marca_saldo,
                 e.ev_saldo.empate_stream(socket, hora),
             ) {
-                Ok(v) => Some((s, v)),
+                Ok(v) => {
+                    e.registrar_saldo_stream(t, hora, s, true);
+                    Some((s, v))
+                }
                 Err(r) => {
+                    if matches!(r, Rechazo::Contradiccion { .. }) {
+                        e.registrar_saldo_stream(t, hora, s, false);
+                    }
                     let r = rechazo(&mut *e, r, None);
                     self.notificar(&e);
                     return Err(r);
@@ -934,16 +1012,22 @@ impl PuenteCuenta {
             None => None,
         };
         let mut incompleta = false;
-        let mut veredictos: Vec<Option<(Veredicto, bool)>> = Vec::with_capacity(ev.posiciones.len());
+        let mut veredictos: Vec<Option<(Veredicto, bool, bool)>> = Vec::with_capacity(ev.posiciones.len());
         for (clave, dato) in &ev.posiciones {
             if *dato == DatoPosicion::Invalida {
                 incompleta = true;
                 veredictos.push(None);
                 continue;
             }
-            let empate = e.evidencia_pos(clave).empate_stream(socket, hora);
+            let evidencia = e.evidencia_pos(clave);
+            let empate = evidencia.empate_stream(socket, hora);
+            // V4C (F3): sólo el mismo socket ordena dos lecturas del stream
+            // (`E` menor con la misma `T`, o `T` menor): esa es anterior.
+            let marca = e.marcas_pos.get(clave).copied().flatten();
+            let mismo_socket = matches!(evidencia.origen, Some(Origen::Stream { socket: s, .. }) if s == socket);
+            let anterior = mismo_socket && (empate == Empate::Anterior || (t.is_some() && t < marca));
             match e.decidir_posicion(clave, dato, t, empate) {
-                Ok(v) => veredictos.push(Some((v, empate == Empate::Posterior))),
+                Ok(v) => veredictos.push(Some((v, empate == Empate::Posterior, anterior))),
                 Err(r) => {
                     let r = rechazo(&mut *e, r, Some(clave));
                     self.notificar(&e);
@@ -977,8 +1061,8 @@ impl PuenteCuenta {
             e.marca_saldo = maxima(e.marca_saldo, t);
         }
         for ((clave, dato), v) in ev.posiciones.iter().zip(&veredictos) {
-            let Some((v, posterior)) = v else { continue };
-            e.aplicar_posicion_con(clave, dato, t, v, *posterior, origen);
+            let Some((v, posterior, anterior)) = v else { continue };
+            e.aplicar_posicion_con(clave, dato, t, v, *posterior, *anterior, origen);
             if matches!(v, Veredicto::Igual) && *posterior && t.is_some() {
                 e.ev_pos.entry(clave.clone()).or_default().origen = origen;
             }
