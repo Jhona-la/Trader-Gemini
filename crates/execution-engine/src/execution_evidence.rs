@@ -196,30 +196,132 @@ pub fn parse_active_positions(text: &str) -> Result<Vec<ActivePosition>, String>
     Ok(positions)
 }
 
-/// CL-8 — CAPITAL DE LA CUENTA = saldo de la cartera (`totalWalletBalance`).
-///
-/// El arena modela el capital como patrimonio y el margen retenido aparte
-/// (`used_margin`, que la adopción de posiciones del arranque suma). Se leía
-/// `availableBalance`, que Binance ya da NETO del margen inicial de las
-/// posiciones y órdenes abiertas: con posiciones vivas al arrancar, el margen
-/// se restaba dos veces y el capital libre salía infravalorado para siempre
-/// (la base de Kelly, del drawdown y del régimen micro). Sin el campo no se
-/// sustituye por otro de semántica distinta: el llamador reintenta.
-pub fn parse_account_equity(text: &str) -> Result<f64, String> {
-    let account: serde_json::Value = serde_json::from_str(text)
-        .map_err(|e| format!("ACCOUNT_EVIDENCE_INVALID: schema: {e}"))?;
-    let raw = account
-        .get("totalWalletBalance")
-        .ok_or_else(|| "ACCOUNT_EVIDENCE_INVALID: sin totalWalletBalance".to_string())?;
-    let value = match raw {
+/// CAPITAL-UNICO — el activo de margen cuyo saldo es el capital de la cuenta,
+/// el MISMO que el user-data stream publica en `on_capital` (ACCOUNT_UPDATE,
+/// `B[].a == "USDT"`). Los demás activos de la cartera no cuentan.
+pub const ACTIVO_DE_MARGEN: &str = "USDT";
+
+/// Lectura del capital de `/fapi/v2/account`.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct CapitalCuenta {
+    /// `walletBalance` del activo [`ACTIVO_DE_MARGEN`] en `assets[]`.
+    pub capital: f64,
+    /// `totalWalletBalance` (todos los activos), sólo para el aviso.
+    pub total_todos_los_activos: Option<f64>,
+    /// `multiAssetsMargin`, si la respuesta lo trae.
+    pub multi_activo: Option<bool>,
+}
+
+impl CapitalCuenta {
+    /// Aviso para el arranque cuando la cuenta tiene saldo fuera del activo de
+    /// margen o está en modo multi-activo: ese saldo NO entra en el capital
+    /// (lo conservador: menos capital, tamaños menores). `None` si no hay nada
+    /// que avisar.
+    pub fn aviso(&self) -> Option<String> {
+        let otros = self
+            .total_todos_los_activos
+            .map(|t| t - self.capital)
+            .filter(|d| d.is_finite() && d.abs() > 0.01);
+        if self.multi_activo != Some(true) && otros.is_none() {
+            return None;
+        }
+        let mut s = format!(
+            "CAPITAL-UNICO: el capital es el saldo de {ACTIVO_DE_MARGEN} ({:.4}).",
+            self.capital
+        );
+        if let (Some(t), Some(d)) = (self.total_todos_los_activos, otros) {
+            s.push_str(&format!(
+                " La cartera suma {t:.4} con todos los activos: {d:.4} en otros activos NO cuentan para tamaño ni frenos."
+            ));
+        }
+        if self.multi_activo == Some(true) {
+            s.push_str(
+                " La cuenta está en MODO MULTI-ACTIVO (multiAssetsMargin=true): el margen puede usar otros activos, pero el motor sólo cuenta el saldo del activo de margen. Decisión del operador: pasar la cuenta a modo de un solo activo o aceptar esta medida.",
+            );
+        }
+        Some(s)
+    }
+}
+
+fn numero_cuenta(v: Option<&serde_json::Value>) -> Option<f64> {
+    match v? {
         serde_json::Value::String(s) => s.parse::<f64>().ok(),
         serde_json::Value::Number(n) => n.as_f64(),
         _ => None,
-    };
-    match value {
-        Some(v) if v.is_finite() && v >= 0.0 => Ok(v),
-        _ => Err("ACCOUNT_EVIDENCE_INVALID: totalWalletBalance fuera de dominio".to_string()),
     }
+}
+
+/// CL-8 + CAPITAL-UNICO — capital de la cuenta = `walletBalance` del activo de
+/// margen ([`ACTIVO_DE_MARGEN`]) en `assets[]` de `/fapi/v2/account`.
+///
+/// CL-8: es el saldo de la cartera, no `availableBalance` (que Binance ya da
+/// NETO del margen inicial que la adopción de posiciones vuelve a reservar).
+///
+/// CAPITAL-UNICO (corridas a3d/a3f/a3g, 2026-11-09/10): antes se leía
+/// `totalWalletBalance`, que suma TODOS los activos (7 299,88 en la Testnet),
+/// mientras el stream publica sólo el saldo de USDT (1 655,81). El freno del
+/// inmune toma el mínimo de los dos planos contra un pico medido en la unidad
+/// de REST: una caída falsa del 77 % ≥ d* cerraba la posición a los 3-6 s.
+/// Ahora los dos planos miden el mismo saldo. Sin el activo, o con su saldo
+/// fuera de dominio, no se sustituye por otro campo: el llamador reintenta.
+pub fn parse_account_capital(text: &str) -> Result<CapitalCuenta, String> {
+    let account: serde_json::Value = serde_json::from_str(text)
+        .map_err(|e| format!("ACCOUNT_EVIDENCE_INVALID: schema: {e}"))?;
+    let assets = account
+        .get("assets")
+        .and_then(|a| a.as_array())
+        .ok_or_else(|| "ACCOUNT_EVIDENCE_INVALID: sin assets[]".to_string())?;
+    let mut filas = assets
+        .iter()
+        .filter(|a| a.get("asset").and_then(|s| s.as_str()) == Some(ACTIVO_DE_MARGEN));
+    let fila = filas.next().ok_or_else(|| {
+        format!("ACCOUNT_EVIDENCE_INVALID: sin el activo de margen {ACTIVO_DE_MARGEN} en assets[]")
+    })?;
+    if filas.next().is_some() {
+        return Err(format!(
+            "ACCOUNT_EVIDENCE_INVALID: activo {ACTIVO_DE_MARGEN} repetido en assets[]"
+        ));
+    }
+    let capital = match numero_cuenta(fila.get("walletBalance")) {
+        Some(v) if v.is_finite() && v >= 0.0 => v,
+        _ => {
+            return Err(format!(
+                "ACCOUNT_EVIDENCE_INVALID: walletBalance de {ACTIVO_DE_MARGEN} ausente o fuera de dominio"
+            ))
+        }
+    };
+    let total_todos_los_activos =
+        numero_cuenta(account.get("totalWalletBalance")).filter(|v| v.is_finite());
+    let multi_activo = account.get("multiAssetsMargin").and_then(|v| v.as_bool());
+    Ok(CapitalCuenta {
+        capital,
+        total_todos_los_activos,
+        multi_activo,
+    })
+}
+
+fn buzon_aviso_capital() -> &'static std::sync::Mutex<Option<String>> {
+    static BUZON: std::sync::OnceLock<std::sync::Mutex<Option<String>>> =
+        std::sync::OnceLock::new();
+    BUZON.get_or_init(|| std::sync::Mutex::new(None))
+}
+
+/// El ejecutor deja aquí el aviso de la última lectura de `/fapi/v2/account`
+/// (el trait sólo devuelve el número) para que el host lo escriba en su log.
+pub fn publicar_aviso_capital(aviso: Option<String>) {
+    if let Ok(mut b) = buzon_aviso_capital().lock() {
+        *b = aviso;
+    }
+}
+
+/// Toma (y vacía) el aviso pendiente de [`publicar_aviso_capital`].
+pub fn tomar_aviso_capital() -> Option<String> {
+    buzon_aviso_capital().lock().ok().and_then(|mut b| b.take())
+}
+
+/// El capital de [`parse_account_capital`] (la API que usa el ejecutor).
+pub fn parse_account_equity(text: &str) -> Result<f64, String> {
+    parse_account_capital(text).map(|c| c.capital)
 }
 
 // Deserialize directly from the wire so repeated recognized keys remain errors.

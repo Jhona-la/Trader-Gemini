@@ -4731,11 +4731,19 @@ impl ExecutionProvider for OrderExecutor {
             Ok((limits, text)) => {
                 self.update_limits(&limits);
 
-                // CL-8: patrimonio (`totalWalletBalance`), no `availableBalance`
-                // (ya neto del margen que la adopción vuelve a reservar).
-                crate::execution_evidence::parse_account_equity(&text).map_err(|e| {
-                    format!("{e}. Response /fapi/v2/account: {text}")
-                })
+                // CL-8: saldo de la cartera, no `availableBalance` (ya neto del
+                // margen que la adopción vuelve a reservar). CAPITAL-UNICO: el
+                // del activo de margen (USDT), el mismo que publica el stream.
+                crate::execution_evidence::parse_account_capital(&text)
+                    .map(|c| {
+                        let aviso = c.aviso();
+                        if let Some(a) = &aviso {
+                            println!("⚠️ {a}");
+                        }
+                        crate::execution_evidence::publicar_aviso_capital(aviso);
+                        c.capital
+                    })
+                    .map_err(|e| format!("{e}. Response /fapi/v2/account: {text}"))
             }
             Err(e) => Err(e),
         }

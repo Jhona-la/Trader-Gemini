@@ -1749,6 +1749,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     "🌍 [OMNI-AWARENESS] API Real Balance Extracted: ${:.4}",
                     bal
                 );
+                // CAPITAL-UNICO: saldo fuera de USDT o modo multi-activo, dicho
+                // en el arranque en vez de resolverlo en silencio.
+                if let Some(aviso) = execution_engine::execution_evidence::tomar_aviso_capital() {
+                    telemetry_server::telemetry_log!("⚠️ [CAPITAL] {}", aviso);
+                }
                 break bal;
             }
             Err(e) => {

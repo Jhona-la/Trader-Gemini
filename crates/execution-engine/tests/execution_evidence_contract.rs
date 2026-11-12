@@ -221,13 +221,16 @@ fn maker_active_response_does_not_authorize_a_market_replacement() {
 /// descuenta el margen que el arranque vuelve a reservar al adoptar).
 #[test]
 fn cl8_el_capital_es_el_saldo_de_la_cartera_no_el_disponible() {
-    let cuenta = r#"{"totalWalletBalance":"13.00000000","availableBalance":"8.40000000","totalInitialMargin":"4.60000000"}"#;
+    // CAPITAL-UNICO: el saldo de la cartera del activo de margen (USDT en
+    // assets[]), el mismo que publica el stream; ver capital_unico_contract.rs.
+    let cuenta = r#"{"totalWalletBalance":"13.00000000","availableBalance":"8.40000000","totalInitialMargin":"4.60000000","assets":[{"asset":"USDT","walletBalance":"13.00000000","availableBalance":"8.40000000","initialMargin":"4.60000000"}]}"#;
     assert_eq!(parse_account_equity(cuenta).unwrap(), 13.0);
     for malo in [
         r#"{"availableBalance":"8.4"}"#,
-        r#"{"totalWalletBalance":"NaN"}"#,
-        r#"{"totalWalletBalance":"-1"}"#,
-        r#"{"totalWalletBalance":null}"#,
+        r#"{"assets":[{"asset":"USDT","availableBalance":"8.4"}]}"#,
+        r#"{"assets":[{"asset":"USDT","walletBalance":"NaN"}]}"#,
+        r#"{"assets":[{"asset":"USDT","walletBalance":"-1"}]}"#,
+        r#"{"assets":[{"asset":"USDT","walletBalance":null}]}"#,
         "no es json",
     ] {
         assert!(parse_account_equity(malo).is_err(), "{malo}");
