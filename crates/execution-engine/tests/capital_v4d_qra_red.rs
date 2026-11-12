@@ -8,6 +8,11 @@
 //! el coordinador (rediseno) y, en P1-a, el ayudante `con_veto_del_host` pasa el
 //! puente por el arranque del streamer real (las aserciones no cambian; ese modulo
 //! usa el puente del crate, el mismo tipo que recibe el streamer).
+//! V4E: los seis `#[ignore]` se quitaron. Con el contrato nuevo (publicador del
+//! puente y testigo de sesion) se adaptan, sin tocar ninguna asercion: el ayudante
+//! `con_veto_del_host` (publicador), las anclas de fuente del host, del helper y de
+//! la transicion, y en P1-c la sesion de cada ejecutor y la llamada del helper
+//! (`observar_rest_de_sesion`). Tabla en integrador_capital_unico.md, seccion V4E.
 
 #[path = "../src/puente_cuenta.rs"]
 #[allow(dead_code)]
@@ -87,7 +92,16 @@ mod qra_capital_v4d_primer_socket {
         streamer.sin_socket_todavia();
         let publicado = Arc::new(AtomicBool::new(false));
         let salida = Arc::clone(&publicado);
-        puente.vincular_veto(move |veta| salida.store(veta, Ordering::Release));
+        // V4E (adaptacion del integrador): `vincular_veto` ya no recibe `false`;
+        // el veto lo suelta el publicador, que publica antes el saldo (como el host).
+        let saldo = Arc::new(std::sync::atomic::AtomicU64::new(f64::NAN.to_bits()));
+        puente.vincular_publicador(move |p| {
+            if let Some(s) = p.saldo {
+                saldo.store(s.to_bits(), Ordering::Relaxed);
+            }
+            salida.store(p.veta, Ordering::Release);
+            !p.veta
+        });
         (puente, publicado)
     }
 
@@ -127,11 +141,13 @@ mod qra_capital_v4d_primer_socket {
 
     #[test]
     fn control_el_corte_minimo_ejercita_la_ruta_real_del_host() {
-        let rest = HOST.find(".observar_rest(ticket, &l)");
+        // V4E (anclas adaptadas): la REST de arranque lleva el testigo de sesion y
+        // el veto lo escribe el publicador del puente.
+        let rest = HOST.find(".observar_rest_de_sesion(ticket, token_arranque.generation(), &l)");
         let lector = HOST.find("streamer.start().await");
         assert!(matches!((rest, lector), (Some(r), Some(s)) if r < s));
-        assert!(HOST.contains("puente_cuenta.vincular_veto"));
-        assert!(HOST.contains("arena_veto.capital_incompleto.store(veta, Ordering::Release)"));
+        assert!(HOST.contains("puente_cuenta.vincular_publicador"));
+        assert!(HOST.contains("arena.capital_incompleto.store(!suelto, Ordering::Release)"));
         assert!(OMS.contains("if arena.capital_incompleto.load(Ordering::Acquire)"));
         assert!(STREAM.contains("let ws_stream = match connect_async(url.as_str()).await"));
     }
@@ -215,7 +231,6 @@ mod qra_capital_v4d_publicacion {
     }
 
     #[test]
-    #[ignore = "V4D: REDISENO (contrato host-puente y risk-engine, mas de dos modulos); ver integrador_capital_unico.md, seccion V4D, P1-b"]
     fn qra_publicacion_get_positivo_retiene_admision_hasta_publicar_saldo() -> Result<(), Rechazo> {
         let (puente, arena) = transicion()?;
         let obs = puente.observar_rest(puente.ticket(), &lectura(10.0, None))?;
@@ -241,7 +256,6 @@ mod qra_capital_v4d_publicacion {
     }
 
     #[test]
-    #[ignore = "V4D: REDISENO (contrato host-puente y risk-engine, mas de dos modulos); ver integrador_capital_unico.md, seccion V4D, P1-b"]
     fn qra_publicacion_cuenta_vacia_no_dimensiona_con_saldo_anterior() -> Result<(), Rechazo> {
         let (puente, arena) = transicion()?;
         puente.observar_rest(puente.ticket(), &lectura(0.0, None))?;
@@ -262,8 +276,11 @@ mod qra_capital_v4d_publicacion {
 
     #[test]
     fn qra_publicacion_control_host_conecta_veto_al_oms() -> Result<(), String> {
-        let vinculo = bloque(HOST, "puente_cuenta.vincular_veto(move |veta| {", "});")?;
-        assert!(vinculo.contains("arena_veto.capital_incompleto.store(veta, Ordering::Release)"));
+        // V4E (anclas adaptadas): el veto lo escribe el publicador del puente.
+        let vinculo = bloque(HOST, "puente_cuenta.vincular_publicador(move |p| {", "});")?;
+        assert!(vinculo.contains("publicar_capital_de_sesion("));
+        let publicador = bloque(HOST, "fn publicar_capital_de_sesion(", "fn suspend_symbol_until(")?;
+        assert!(publicador.contains("arena.capital_incompleto.store(!suelto, Ordering::Release)"));
         let admision = bloque(OMS, "fn check_entry_locked(", "pub fn begin_refresh(")?;
         let sesion = punto(admision, "self.token_is_current(state.generation, token)")?;
         let veto = punto(admision, "arena.capital_incompleto.load(Ordering::Acquire)")?;
@@ -279,7 +296,8 @@ mod qra_capital_v4d_publicacion {
             "let mut intento: u32 = 0;",
             "if let Ok(real_positions) = balance_executor.fetch_open_positions().await",
         )?;
-        let observacion = punto(transicion, "puente_transicion.observar_rest(ticket, l)")?;
+        // V4E (ancla adaptada): la lectura lleva el testigo de la sesion.
+        let observacion = punto(transicion, "puente_transicion.observar_rest_de_sesion(ticket, balance_token.generation(), l)")?;
         let caso_3a = bloque(transicion, "|l| l.rechazo_arranque.clone()) {", "let publicado =")?;
         let rama_3a = punto(transicion, "|l| l.rechazo_arranque.clone()) {")?;
         let publica = punto(transicion, ".publish_current_balance(&balance_token, bal,")?;
@@ -294,7 +312,6 @@ mod qra_capital_v4d_publicacion {
     }
 
     #[test]
-    #[ignore = "V4D: REDISENO (contrato host-puente y risk-engine, mas de dos modulos); ver integrador_capital_unico.md, seccion V4D, P1-b"]
     fn qra_publicacion_background_rest_usa_publicador_de_saldo_de_sesion() -> Result<(), String> {
         let lectura = bloque(HOST, "let puente_rs = Arc::clone(&puente_cuenta);", "match &r {")?;
         let llamada = punto(lectura, "resincronizar_una_vez(")?;
@@ -302,15 +319,20 @@ mod qra_capital_v4d_publicacion {
         assert!(ruta.contains("executor.fetch_account_lectura()"));
         // El publicador compartido debe validar sesión y alcanzar el saldo de tamaño.
         // Adaptar este anclaje si la corrección encapsula esa operación en un helper.
+        // V4E (anclaje adaptado, como pide la nota): la operacion vive en el
+        // publicador del puente (`publicar_capital_de_sesion`), que es el UNICO que
+        // suelta el veto; el GET periodico lleva la sesion de su ejecutor.
+        assert!(ruta.contains("token.generation(),"), "la lectura periodica no lleva la sesion de su ejecutor");
+        assert!(HOST.contains("puente_cuenta.vincular_publicador(move |p| {"));
+        let publicador = bloque(HOST, "fn publicar_capital_de_sesion(", "fn suspend_symbol_until(")?;
         assert!(
-            ruta.contains("publish_current_balance(") && ruta.contains("unified_capital.store("),
+            publicador.contains("publish_current_balance(") && publicador.contains("unified_capital.store("),
             "la resincronización REST puede levantar el veto y sólo actualiza el espejo de saldo",
         );
         Ok(())
     }
 
     #[test]
-    #[ignore = "V4D: REDISENO (contrato host-puente y risk-engine, mas de dos modulos); ver integrador_capital_unico.md, seccion V4D, P1-b"]
     fn qra_publicacion_risk_adquiere_veto_antes_de_leer_saldo_y_equity() -> Result<(), String> {
         let (_, evaluacion) = RISK.split_once("fn evaluate_quantum_order_impl(")
             .ok_or_else(|| "Falta el evaluador de producción".to_owned())?;
@@ -365,13 +387,19 @@ mod qra_capital_v4d_sesion {
     #[test]
     fn control_fuente_situa_los_dos_intercalados_de_produccion() -> Result<(), String> {
         let trabajador = tramo(HOST, "let puente_rs =", "let mut latched = false;")?;
+        // V4E (anclas adaptadas): los dos intercalados siguen existiendo en el
+        // texto (el ejecutor se toma antes que el ticket; el OMS publica el
+        // ejecutor antes de la era), pero el ejecutor sale del testigo del OMS
+        // con su sesion y el puente rechaza una sesion que no es la de su era.
         en_orden(
             trabajador,
             &[
                 "if !puente_rs.necesita_resincronizar()",
-                "let executor = exec_rs.load_full();",
+                "let token = oms_rs.snapshot_token();",
+                "let executor = Arc::clone(token.executor());",
                 "resincronizar_cuenta::resincronizar_una_vez(",
                 "&puente_rs,",
+                "token.generation(),",
                 "executor.fetch_account_lectura(),",
                 ".await;",
             ],
@@ -382,7 +410,7 @@ mod qra_capital_v4d_sesion {
             &[
                 "let ticket = puente.ticket();",
                 "tokio::time::timeout(tope, lectura).await",
-                "puente.observar_rest(ticket, &l)",
+                "puente.observar_rest_de_sesion(ticket, sesion, &l)",
                 ".con_era_vigente(ticket.era()",
             ],
         )?;
@@ -394,8 +422,8 @@ mod qra_capital_v4d_sesion {
             HOST,
             &[
                 "let paso = oms_session.paso_transicion(",
-                "let new_exec_arc = match paso.resultado",
-                "let era_mainnet = puente_cuenta.nueva_era();",
+                "let (sesion_mainnet, new_exec_arc) = match paso.resultado",
+                "let era_mainnet = puente_cuenta.nueva_era_de_sesion(sesion_mainnet);",
             ],
         )
     }
@@ -410,9 +438,13 @@ mod qra_capital_v4d_sesion {
         }
     }
 
+    // V4E (adaptacion del integrador): cada ejecutor lleva la sesion OMS de su
+    // `SessionToken` (generacion). `PuenteCuenta::new` es la sesion 0 y
+    // `nueva_era` la siguiente, como `replace_executor`.
     struct VistaEjecutor {
         cuenta: &'static str,
         testnet: bool,
+        sesion: u64,
         lectura: LecturaCuenta,
     }
 
@@ -420,11 +452,13 @@ mod qra_capital_v4d_sesion {
         let anterior = Arc::new(VistaEjecutor {
             cuenta: "cuenta_fixture",
             testnet: true,
+            sesion: 0,
             lectura: lectura(97.0, 110),
         });
         let sucesor = Arc::new(VistaEjecutor {
             cuenta: anterior.cuenta,
             testnet: anterior.testnet,
+            sesion: anterior.sesion + 1,
             lectura: lectura(94.0, 120),
         });
         assert_eq!(
@@ -453,7 +487,8 @@ mod qra_capital_v4d_sesion {
     ) -> Result<Observacion, Rechazo> {
         // Mismas llamadas del helper a las APIs reales del puente. La respuesta
         // determinista ocupa el lugar de la espera del GET entre ambos pasos.
-        let observacion = puente.observar_rest(ticket, &ejecutor.lectura)?;
+        // V4E (adaptacion): el helper de produccion entrega la sesion del ejecutor.
+        let observacion = puente.observar_rest_de_sesion(ticket, ejecutor.sesion, &ejecutor.lectura)?;
         puente
             .con_era_vigente(ticket.era(), |vigente| {
                 *publicado = Some(vigente.unwrap_or(observacion));
@@ -480,7 +515,6 @@ mod qra_capital_v4d_sesion {
     }
 
     #[test]
-    #[ignore = "V4D: REDISENO (testigo comun de era y sesion OMS: host, OMS y resincronizador); ver integrador_capital_unico.md, seccion V4D, P1-c"]
     fn red_ejecutor_anterior_retenido_hasta_tomar_ticket_de_la_era_nueva() -> Result<(), Rechazo> {
         let puente = puente_pendiente()?;
         let (mut publicado_en_oms, sucesor) = ejecutores();
@@ -501,7 +535,6 @@ mod qra_capital_v4d_sesion {
     }
 
     #[test]
-    #[ignore = "V4D: REDISENO (testigo comun de era y sesion OMS: host, OMS y resincronizador); ver integrador_capital_unico.md, seccion V4D, P1-c"]
     fn red_ejecutor_nuevo_visible_antes_de_tomar_ticket_de_la_era_anterior() -> Result<(), Rechazo> {
         let puente = puente_pendiente()?;
         let (anterior, sucesor) = ejecutores();

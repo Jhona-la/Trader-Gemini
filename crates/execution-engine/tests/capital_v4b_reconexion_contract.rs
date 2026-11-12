@@ -354,7 +354,8 @@ fn v4b_el_streamer_conserva_e_y_desempata_con_ella() {
 fn v4b_contrato_de_fuente_del_streamer() {
     let src = include_str!("../src/user_data_stream.rs").replace("\r\n", "\n");
     // El veto empieza al perder el socket: antes de la pausa de reconexión.
-    let lazo = &src[src.find("while let Some(msg) = read.next().await").unwrap()..];
+    // V4E (ancla adaptada): el lazo de lectura ahora lee con plazo (socket mudo).
+    let lazo = &src[src.find("let msg = match siguiente_frame(&mut read, VIGENCIA_LISTEN_KEY).await").unwrap()..];
     let perdida = lazo.find("self.puente.perdida_socket(self.era)").expect("pérdida al salir del lazo");
     let pausa = lazo.find("Desconectado. Reanudando").unwrap();
     assert!(perdida < pausa, "la pérdida se marca antes de la pausa");

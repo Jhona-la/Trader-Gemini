@@ -17,8 +17,15 @@ use std::time::Duration;
 
 /// Una pasada de resincronización. `Err` con el motivo; el puente sólo cambia
 /// si la lectura se acepta.
+///
+/// V4E (P1-c, INV-6): `sesion` es la generación del `SessionToken` del OMS del
+/// que sale el ejecutor que hace el GET (`lectura`). El puente rechaza la
+/// lectura si no es la sesión de la era vigente, aunque el ticket se haya
+/// tomado después de un cambio de era. El saldo dimensionable y el veto los
+/// publica el publicador del puente; `publicar` sólo recibe la observación.
 pub async fn resincronizar_una_vez<F>(
     puente: &PuenteCuenta,
+    sesion: u64,
     lectura: F,
     tope: Duration,
     publicar: impl FnOnce(&Observacion),
@@ -34,7 +41,7 @@ where
     };
     // El cero explícito de 3a también entra: es el plano de seguridad.
     // V4B: el motivo sale con la fuente y la marca del saldo (REST no trae E).
-    let obs = puente.observar_rest(ticket, &l).map_err(|e| {
+    let obs = puente.observar_rest_de_sesion(ticket, sesion, &l).map_err(|e| {
         let t = l.tiempo_saldo_ms.map_or_else(|| "N/D".to_string(), |t| t.to_string());
         format!("fuente=rest T={t} E=N/D motivo={}: {e}", e.motivo())
     })?;

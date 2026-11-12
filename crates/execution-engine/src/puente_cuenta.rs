@@ -72,6 +72,7 @@
 //! No toca d*, `capital_del_freno` ni ningún umbral.
 
 use std::collections::HashMap;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Mutex, OnceLock};
 
 /// (símbolo, `positionSide`).
@@ -205,6 +206,8 @@ pub struct EventoStream {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Ticket {
     era: u64,
+    /// V4E (P1-c): sesión OMS a la que pertenece la era.
+    sesion: u64,
     socket: u64,
     generacion: u64,
 }
@@ -212,6 +215,11 @@ pub struct Ticket {
 impl Ticket {
     pub fn era(&self) -> u64 {
         self.era
+    }
+
+    /// V4E (P1-c): sesión OMS (generación de `SessionToken`) de la era del ticket.
+    pub fn sesion(&self) -> u64 {
+        self.sesion
     }
 
     /// V4B: el socket del stream vigente al tomarlo.
@@ -245,6 +253,9 @@ pub enum Rechazo {
     /// V4B: de otro socket del stream (un evento del socket anterior, o una
     /// lectura REST con ticket tomado antes de un corte). No cambia nada.
     OtroSocket { socket: u64, vigente: u64 },
+    /// V4E (P1-c): lectura de un ejecutor de otra sesión OMS que la de la era
+    /// vigente. No cambia nada, no publica ni suelta el veto.
+    OtraSesion { sesion: u64, vigente: u64 },
 }
 
 impl Rechazo {
@@ -252,6 +263,7 @@ impl Rechazo {
     pub fn motivo(&self) -> &'static str {
         match self {
             Rechazo::OtraEra => "OtraEra",
+            Rechazo::OtraSesion { .. } => "OtraSesion",
             Rechazo::Atrasada { .. } => "Atrasada",
             Rechazo::Contradiccion { .. } => "Contradiccion",
             Rechazo::SinOrden { .. } => "SinOrden",
@@ -264,6 +276,10 @@ impl std::fmt::Display for Rechazo {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Rechazo::OtraEra => write!(f, "observación de otra sesión de cuenta (era)"),
+            Rechazo::OtraSesion { sesion, vigente } => write!(
+                f,
+                "lectura de un ejecutor de la sesión OMS {sesion}, vigente {vigente}: no cambia nada"
+            ),
             Rechazo::OtroSocket { socket, vigente } => write!(
                 f,
                 "observación del socket {socket}, vigente {vigente}: anterior al corte; no cambia nada"
@@ -418,6 +434,9 @@ struct Diagnostico {
 #[derive(Debug, Default)]
 struct Estado {
     era: u64,
+    /// V4E (P1-c): sesión OMS de la era (generación de `SessionToken`). Una
+    /// lectura de otra sesión se rechaza ([`Rechazo::OtraSesion`]).
+    sesion: u64,
     /// Cambios registrados (observaciones aceptadas, cortes, anclajes).
     generacion: u64,
     /// V4B: número del socket del stream vigente.
@@ -435,6 +454,12 @@ struct Estado {
     /// [`Estado::registrar_saldo_stream`]). Una REST con esa misma `T` y otro
     /// valor puede ser una foto atrasada: no cierra un empate ni suelta el veto.
     ultimo_saldo_stream: Option<(u64, Option<u64>, f64)>,
+    /// V4E (INV-7): saldos que el stream entregó con la misma `T` que
+    /// `ultimo_saldo_stream`, con su `E`, y que se rechazaron por contradicción
+    /// (evidencia pendiente). No son testigo: sólo dejan que la REST posterior
+    /// arbitre a favor de uno de ellos (contrato V4B y F2 de V4C). Se vacían
+    /// cuando cambia el último saldo aceptado.
+    candidatos_stream: Vec<(Option<u64>, f64)>,
     /// V4C (F2): generación en que se aceptó el último evento del stream. Una
     /// REST sólo puede soltar el veto o cerrar un empate con un ticket
     /// posterior (pedida después de ese evento).
@@ -538,20 +563,56 @@ impl Estado {
     /// `E` igual u omitida y otro valor no hay orden y se olvida (arbitra la
     /// REST con ticket posterior, como en V4B); con `E` menor (una reemisión
     /// vieja) no cambia nada.
+    ///
+    /// V4E (INV-7): un saldo RECHAZADO nunca reemplaza ni borra el último
+    /// aceptado (antes, con la misma `T` y `E` igual u omitida, lo borraba y una
+    /// foto atrasada con esa `T` volvía a cerrar el empate). Si trae la misma
+    /// `T` que el último aceptado y otro valor, queda como candidato aparte.
     fn registrar_saldo_stream(&mut self, t: Option<u64>, hora: Option<u64>, s: f64, aceptado: bool) {
         let Some(t) = t else { return };
+        if !aceptado {
+            if let Some((ts, es, vs)) = self.ultimo_saldo_stream {
+                // Una reemisión vieja (`E` menor que la del aceptado) no cuenta.
+                let vieja = matches!((hora, es), (Some(h), Some(p)) if h < p);
+                let repetido = self.candidatos_stream.iter().any(|&(e, c)| e == hora && mismo_saldo(c, s));
+                if ts == t && !vieja && !mismo_saldo(vs, s) && !repetido {
+                    self.candidatos_stream.push((hora, s));
+                }
+            }
+            return;
+        }
+        let antes = self.ultimo_saldo_stream;
         match self.ultimo_saldo_stream {
             Some((ts, _, _)) if ts > t => {}
             Some((ts, es, vs)) if ts == t => match (hora, es) {
                 (Some(h), Some(p)) if h > p => self.ultimo_saldo_stream = Some((t, hora, s)),
                 (Some(h), Some(p)) if h < p => {}
                 _ if mismo_saldo(vs, s) => {}
-                _ if aceptado => self.ultimo_saldo_stream = Some((t, hora.or(es), s)),
-                _ => self.ultimo_saldo_stream = None,
+                _ => self.ultimo_saldo_stream = Some((t, hora.or(es), s)),
             },
-            _ if aceptado => self.ultimo_saldo_stream = Some((t, hora, s)),
-            _ => self.ultimo_saldo_stream = None,
+            _ => self.ultimo_saldo_stream = Some((t, hora, s)),
         }
+        let cambio = match (antes, self.ultimo_saldo_stream) {
+            (Some((ta, _, va)), Some((tn, _, vn))) => ta != tn || !mismo_saldo(va, vn),
+            _ => true,
+        };
+        if cambio {
+            self.candidatos_stream.clear();
+        }
+    }
+
+    /// V4E (INV-7): `s` es uno de los saldos que el stream entregó con la `T`
+    /// del último aceptado y que pueden ser el último: los de la `E` mayor vista
+    /// para esa `T` (el aceptado o un candidato rechazado) y los que no traen
+    /// `E` (sin orden frente a los demás). Un saldo de una `E` anterior es una
+    /// foto atrasada.
+    fn saldo_del_stream_en_esa_marca(&self, s: f64) -> bool {
+        let Some((_, es, vs)) = self.ultimo_saldo_stream else {
+            return false;
+        };
+        let mayor = self.candidatos_stream.iter().filter_map(|&(e, _)| e).chain(es).max();
+        let vale = |e: Option<u64>, v: f64| mismo_saldo(v, s) && (e.is_none() || e == mayor);
+        vale(es, vs) || self.candidatos_stream.iter().any(|&(e, v)| vale(e, v))
     }
 
     /// V4C (F3): ante una contradicción, el techo del freno baja a la equity
@@ -698,13 +759,41 @@ pub struct DiagnosticoPuente {
 }
 
 type Observador = Box<dyn Fn(bool) + Send + Sync>;
+type Publicador = Box<dyn Fn(&Publicacion) -> bool + Send + Sync>;
+
+/// V4E (P1-b, INV-5): lo que el puente entrega a su publicador tras cada
+/// cambio, bajo su mutex.
+///
+/// Contrato del publicador (el host): con `veta`, alzar el veto. Sin `veta` y
+/// con `saldo`, es el ALZA: publicar ese saldo dimensionable y DESPUÉS, en la
+/// misma llamada, soltar el veto (`Release`); devolver `true` sólo si lo soltó
+/// (p. ej. `false` si la sesión OMS ya no es `sesion`: el veto sigue y el
+/// puente vuelve a ofrecer el alza en el cambio siguiente). Sin `veta` y sin
+/// `saldo`, el veto ya estaba suelto: no hay saldo nuevo que publicar. No debe
+/// reentrar en el puente.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Publicacion {
+    pub era: u64,
+    /// Sesión OMS de la era (P1-c): el publicador sólo publica en ella.
+    pub sesion: u64,
+    pub veta: bool,
+    /// `Some` sólo en el alza.
+    pub saldo: Option<f64>,
+}
 
 /// El puente. Un solo `Mutex`: las decisiones de REST y del stream se
 /// serializan, y lo publicado sale de la misma sección crítica.
 pub struct PuenteCuenta {
     estado: Mutex<Estado>,
-    /// Recibe [`PuenteCuenta::veta_entradas`] tras cada cambio, bajo el mutex.
+    /// V4E: observador de SOLO veto. Recibe `true` en cada cambio en que el
+    /// puente veta y nunca `false`: soltar el veto exige publicar antes el
+    /// saldo dimensionable (INV-5), y este observador no lo publica.
     veto: OnceLock<Observador>,
+    /// V4E (P1-b): el publicador del saldo dimensionable y del veto.
+    publicador: OnceLock<Publicador>,
+    /// V4E: el publicador soltó el veto en su última llamada (sólo se escribe
+    /// bajo el mutex de `estado`).
+    admitido: AtomicBool,
 }
 
 impl std::fmt::Debug for PuenteCuenta {
@@ -720,15 +809,25 @@ impl Default for PuenteCuenta {
 }
 
 impl PuenteCuenta {
-    /// Era 1, sin saldo observado: veta entradas hasta la primera lectura.
+    /// Era 1 de la sesión OMS 0, sin saldo observado: veta entradas hasta la
+    /// primera lectura.
     pub fn new() -> Self {
+        Self::con_sesion(0)
+    }
+
+    /// V4E (P1-c): era 1 ligada a la sesión OMS `sesion` (la generación del
+    /// `SessionToken` vigente al arrancar).
+    pub fn con_sesion(sesion: u64) -> Self {
         Self {
             estado: Mutex::new(Estado {
                 era: 1,
+                sesion,
                 completa: false,
                 ..Estado::default()
             }),
             veto: OnceLock::new(),
+            publicador: OnceLock::new(),
+            admitido: AtomicBool::new(false),
         }
     }
 
@@ -737,19 +836,52 @@ impl PuenteCuenta {
     }
 
     fn notificar(&self, e: &Estado) {
-        if let Some(f) = self.veto.get() {
-            f(e.veta_entradas());
+        let veta = e.veta_entradas();
+        if veta {
+            if let Some(f) = self.veto.get() {
+                f(true);
+            }
+        }
+        let Some(publicar) = self.publicador.get() else {
+            return;
+        };
+        let alza = !veta && !self.admitido.load(Ordering::Relaxed);
+        let admite = publicar(&Publicacion {
+            era: e.era,
+            sesion: e.sesion,
+            veta,
+            saldo: if alza { e.saldo } else { None },
+        });
+        self.admitido.store(!veta && admite, Ordering::Relaxed);
+    }
+
+    /// V4E: vincula un observador de SOLO veto. Se llama en seguida si el
+    /// puente veta, y después en cada cambio en que vete, bajo el mutex del
+    /// puente. Nunca recibe `false` (ver [`Publicacion`]). Sólo el primero vale.
+    pub fn vincular_veto(&self, f: impl Fn(bool) + Send + Sync + 'static) {
+        let e = self.estado();
+        if self.veto.set(Box::new(f)).is_ok() && e.veta_entradas() {
+            if let Some(f) = self.veto.get() {
+                f(true);
+            }
         }
     }
 
-    /// Vincula el veto de entradas (el host escribe la bandera del arena). Se
-    /// llama en seguida con el estado actual y después tras cada cambio, bajo
-    /// el mismo mutex del puente. Sólo el primero vale.
-    pub fn vincular_veto(&self, f: impl Fn(bool) + Send + Sync + 'static) {
+    /// V4E (P1-b, INV-5): vincula el publicador del saldo dimensionable y del
+    /// veto (contrato en [`Publicacion`]). Se llama en seguida con el estado
+    /// actual y después tras cada cambio, bajo el mutex del puente. Sólo el
+    /// primero vale.
+    pub fn vincular_publicador(&self, f: impl Fn(&Publicacion) -> bool + Send + Sync + 'static) {
         let e = self.estado();
-        if self.veto.set(Box::new(f)).is_ok() {
+        if self.publicador.set(Box::new(f)).is_ok() {
+            self.admitido.store(false, Ordering::Relaxed);
             self.notificar(&e);
         }
+    }
+
+    /// V4E (P1-c): sesión OMS de la era vigente.
+    pub fn sesion(&self) -> u64 {
+        self.estado().sesion
     }
 
     /// Era vigente (la del streamer que la reciba).
@@ -766,20 +898,38 @@ impl PuenteCuenta {
     /// equity incompleta y las entradas vetadas hasta una lectura aceptada de
     /// esta era. Lo que llegue con otra era se rechaza. La equity de la era
     /// anterior queda sólo como evidencia para el freno. Devuelve la era nueva.
+    ///
+    /// V4E (P1-c): la era nueva es de la sesión OMS siguiente (la que publica
+    /// `replace_executor`: generación + 1). El host usa
+    /// [`nueva_era_de_sesion`](Self::nueva_era_de_sesion) con la generación
+    /// publicada.
     pub fn nueva_era(&self) -> u64 {
         let mut e = self.estado();
+        let sesion = e.sesion + 1;
+        self.abrir_era(&mut e, sesion)
+    }
+
+    /// V4E (P1-c): como [`nueva_era`](Self::nueva_era), ligada a la sesión OMS
+    /// `sesion` (la generación de `ResultadoTransicion::Publicada`).
+    pub fn nueva_era_de_sesion(&self, sesion: u64) -> u64 {
+        let mut e = self.estado();
+        self.abrir_era(&mut e, sesion)
+    }
+
+    fn abrir_era(&self, e: &mut Estado, sesion: u64) -> u64 {
         let era = e.era + 1;
         let anterior = e.observacion().map(|o| o.equity).or(e.anterior);
         // El número de socket sigue subiendo: nada de la era anterior coincide.
         let socket = e.socket + 1;
         *e = Estado {
             era,
+            sesion,
             socket,
             completa: false,
             anterior,
             ..Estado::default()
         };
-        self.notificar(&e);
+        self.notificar(e);
         era
     }
 
@@ -788,6 +938,7 @@ impl PuenteCuenta {
         let e = self.estado();
         Ticket {
             era: e.era,
+            sesion: e.sesion,
             socket: e.socket,
             generacion: e.generacion,
         }
@@ -798,6 +949,7 @@ impl PuenteCuenta {
         let e = self.estado();
         (e.era == era).then_some(Ticket {
             era,
+            sesion: e.sesion,
             socket: e.socket,
             generacion: e.generacion,
         })
@@ -813,9 +965,26 @@ impl PuenteCuenta {
     /// Lectura REST. Entera o nada: si un componente se rechaza, no cambia
     /// nada (salvo, en una contradicción, dejar el empate señalado y las
     /// entradas vetadas).
+    ///
+    /// V4E (P1-c): equivale a [`observar_rest_de_sesion`](Self::observar_rest_de_sesion)
+    /// con la sesión del ticket (quien llama declara que el ejecutor es de esa
+    /// sesión). Los caminos de producción usan la forma con testigo.
     pub fn observar_rest<L: FuenteRest + ?Sized>(
         &self,
         ticket: Ticket,
+        lectura: &L,
+    ) -> Result<Observacion, Rechazo> {
+        self.observar_rest_de_sesion(ticket, ticket.sesion, lectura)
+    }
+
+    /// V4E (P1-c, INV-6): lectura REST hecha con el ejecutor de la sesión OMS
+    /// `sesion` (la generación del `SessionToken` del que salió el ejecutor).
+    /// Si no es la sesión de la era vigente, se rechaza bajo el mutex sin tocar
+    /// nada ([`Rechazo::OtraSesion`]): ni autoriza ni publica.
+    pub fn observar_rest_de_sesion<L: FuenteRest + ?Sized>(
+        &self,
+        ticket: Ticket,
+        sesion: u64,
         lectura: &L,
     ) -> Result<Observacion, Rechazo> {
         let l = lectura.lectura_cuenta();
@@ -824,6 +993,14 @@ impl PuenteCuenta {
             return Err(Rechazo::OtraEra);
         }
         let fuente = "rest";
+        if sesion != e.sesion || ticket.sesion != e.sesion {
+            let r = Rechazo::OtraSesion {
+                sesion,
+                vigente: e.sesion,
+            };
+            e.registrar(fuente, l.tiempo_saldo_ms, None, &r);
+            return Err(r);
+        }
         // V4B: una lectura pedida antes de un corte no cubre los eventos que
         // ese corte pudo perder.
         if ticket.socket != e.socket {
@@ -882,7 +1059,9 @@ impl PuenteCuenta {
         // menor de los dos saldos. La cierra una REST que coincida con el
         // stream o una lectura con marca más nueva.
         if let (Some(t), Some((ts, _, vs))) = (l.tiempo_saldo_ms, e.ultimo_saldo_stream) {
-            if t == ts && Some(t) == e.marca_saldo && !mismo_saldo(vs, l.saldo) {
+            // V4E (INV-7): vale cualquiera de los saldos que el stream entregó
+            // con esa `T` (el aceptado o uno rechazado por contradicción).
+            if t == ts && Some(t) == e.marca_saldo && !e.saldo_del_stream_en_esa_marca(l.saldo) {
                 let r = contradiccion(
                     &mut *e,
                     Rechazo::Contradiccion {
@@ -997,7 +1176,10 @@ impl PuenteCuenta {
             }
         }
         // V4D (P1-b): el cero de 3a llega al freno, pero no admite entradas.
-        e.rechazo_3a = l.rechazo_arranque.is_some();
+        // V4E (INV-2, dictamen de Codex QRA sobre V4D): una REST sin rechazo sólo
+        // despeja 3a si su ticket puede soltar el veto (posterior al último
+        // anclaje y al último evento aceptado, socket abierto).
+        e.rechazo_3a = l.rechazo_arranque.is_some() || (e.rechazo_3a && !anclada);
         e.generacion += 1;
         self.notificar(&e);
         Ok(e.observacion().expect("saldo recién fijado"))

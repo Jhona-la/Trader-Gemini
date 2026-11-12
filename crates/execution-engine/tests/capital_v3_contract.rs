@@ -190,7 +190,12 @@ fn p12_era_nueva_veta_entradas_hasta_su_saldo_y_reintenta_get_lento_o_fallido() 
     let bandera = Arc::new(AtomicBool::new(false));
     {
         let b = Arc::clone(&bandera);
-        p.vincular_veto(move |v| b.store(v, Relaxed));
+        // V4E: `vincular_veto` ya no recibe `false` (soltar exige publicar el
+        // saldo); la bandera la escribe el publicador, como en el host.
+        p.vincular_publicador(move |pb| {
+            b.store(pb.veta, Relaxed);
+            !pb.veta
+        });
     }
     assert!(bandera.load(Relaxed), "sin saldo observado nace vetando");
     p.observar_rest(p.ticket(), &lectura(100.0, Some(1), &[])).unwrap();
@@ -203,16 +208,16 @@ fn p12_era_nueva_veta_entradas_hasta_su_saldo_y_reintenta_get_lento_o_fallido() 
 
     let rt = rt();
     // GET fallido.
-    let r = rt.block_on(resincronizar_una_vez(&p, async { Err("HTTP 503".to_string()) }, Duration::from_millis(50), |_| {}));
+    let r = rt.block_on(resincronizar_una_vez(&p, p.sesion(), async { Err("HTTP 503".to_string()) }, Duration::from_millis(50), |_| {}));
     assert!(r.unwrap_err().contains("503"));
     assert!(bandera.load(Relaxed));
     // GET lento: el tope lo corta y el puente no cambia.
-    let r = rt.block_on(resincronizar_una_vez(&p, std::future::pending(), Duration::from_millis(20), |_| {}));
+    let r = rt.block_on(resincronizar_una_vez(&p, p.sesion(), std::future::pending(), Duration::from_millis(20), |_| {}));
     assert!(r.unwrap_err().contains("sin respuesta"));
     assert!(bandera.load(Relaxed));
     // Reintento con éxito: publica bajo la era vigente y suelta el veto.
     let mut publicado = None;
-    let r = rt.block_on(resincronizar_una_vez(&p, async { Ok(lectura(13.0, Some(10), &[])) }, Duration::from_millis(50), |o| publicado = Some(o.saldo)));
+    let r = rt.block_on(resincronizar_una_vez(&p, p.sesion(), async { Ok(lectura(13.0, Some(10), &[])) }, Duration::from_millis(50), |o| publicado = Some(o.saldo)));
     assert_eq!(r.unwrap().saldo, 13.0);
     assert_eq!(publicado, Some(13.0));
     assert!(!bandera.load(Relaxed));
@@ -278,9 +283,10 @@ fn p12_cero_confirmado_durante_la_transicion() {
 #[test]
 fn p12_contrato_de_fuente_de_la_transicion() {
     let host = include_str!("../../../src/bin/god_engine.rs");
-    let tr = host.split("let era_mainnet = puente_cuenta.nueva_era();").nth(1).expect("transición");
+    // V4E (P1-c): la era nueva va ligada a la sesion OMS publicada.
+    let tr = host.split("let era_mainnet = puente_cuenta.nueva_era_de_sesion(sesion_mainnet);").nth(1).expect("transición");
     let refresco = tr.find("oms_transition.refresh(&arena_transition)").expect("refresco OMS");
-    let antes = &host[..host.find("let era_mainnet = puente_cuenta.nueva_era();").unwrap()];
+    let antes = &host[..host.find("let era_mainnet = puente_cuenta.nueva_era_de_sesion(sesion_mainnet);").unwrap()];
     assert!(!antes[antes.rfind("ResultadoTransicion::Publicada").unwrap()..].contains("oms_transition.refresh"), "la era cambia ANTES del refresco del OMS");
     assert!(refresco > 0);
     assert!(tr.contains("puente_transicion.ticket_de_era(era_mainnet)"), "el GET va atado a la era");
@@ -362,7 +368,7 @@ fn p13_saldo_100_perdida_abierta_60_con_datos_incompletos_y_reconexion_en_tope()
 
     // Reconexión con el REST en tope: la evidencia se conserva.
     p.reconexion(p.era()).unwrap();
-    let r = rt().block_on(resincronizar_una_vez(&p, std::future::pending(), Duration::from_millis(20), |_| {}));
+    let r = rt().block_on(resincronizar_una_vez(&p, p.sesion(), std::future::pending(), Duration::from_millis(20), |_| {}));
     assert!(r.is_err());
     assert_eq!(p.equity_del_freno(), Some(40.0));
     assert!(p.veta_entradas());

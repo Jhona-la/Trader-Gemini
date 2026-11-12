@@ -497,13 +497,16 @@ fn v2_fixture_multi_activo_falla_cerrado() {
 #[test]
 fn v2_contrato_de_fuente_del_host() {
     let host = include_str!("../../../src/bin/god_engine.rs");
-    assert_eq!(host.matches("PuenteCuenta::new()").count(), 1, "un solo puente por proceso");
+    // V4E (P1-c): el puente nace ligado a la sesion OMS (`con_sesion`).
+    assert_eq!(host.matches("PuenteCuenta::con_sesion(").count(), 1, "un solo puente por proceso");
     assert_eq!(host.matches(".with_puente(Arc::clone(&puente_cuenta))").count(), 2, "demo y mainnet");
     assert!(host.contains("puente_imm.equity_del_freno()"), "el freno usa la equity");
-    assert!(host.contains("puente_cuenta.nueva_era()"));
+    // V4E (P1-c): la era nueva va ligada a la sesion OMS publicada.
+    assert!(host.contains("puente_cuenta.nueva_era_de_sesion("));
     assert!(host.contains("puente_rs.necesita_resincronizar()"));
     assert!(!host.contains(".fetch_account_balance()"), "el host lee la cuenta por fetch_account_lectura");
-    assert!(host.matches("observar_rest(ticket,").count() >= 2, "arranque y transición");
+    // V4E (P1-c): con el testigo de la sesion del ejecutor.
+    assert!(host.matches("observar_rest_de_sesion(ticket,").count() >= 2, "arranque y transición");
     assert!(host.contains("resincronizar_cuenta::resincronizar_una_vez("), "y el resincronizador");
     let stream = include_str!("../src/user_data_stream.rs");
     // V4B: con su socket y la hora del evento E.

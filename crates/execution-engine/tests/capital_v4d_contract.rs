@@ -192,17 +192,37 @@ fn v4d_p1a_y_p1b_los_cierres_no_leen_el_veto() {
     assert!(entrada.contains("capital_incompleto"), "y es la de la admision de entradas");
 }
 
-/// Deuda documentada (P1-a, socket abierto y mudo): `user_data_stream.rs`
-/// solo marca la perdida cuando sale el lector (`while let Some(msg) =
-/// read.next().await` y `perdida_socket` despues). No hay senal de vida
-/// privada con plazo en el codigo (el keepalive del listenKey es un PUT por
-/// REST, no prueba que el socket entregue) y el pedido prohibe inventar uno.
+/// V4D la dejo como deuda (P1-a, socket abierto y mudo). V4E: el plazo es un
+/// dato del exchange que ya estaba en el codigo, la vigencia de un listenKey
+/// (60 min, `client.rs`, `keep_alive_listen_key`); el servidor manda un ping
+/// cada 3 min, asi que un socket que en toda esa vigencia no entrega ni un frame
+/// esta mudo. El lazo de lectura lo trata como perdido: sale y marca
+/// `perdida_socket` (veto) antes de la pausa de reconexion. La prueba usa un
+/// plazo corto solo para no esperar una hora; el de produccion es la constante.
 #[test]
-#[ignore = "V4D: DEUDA. Socket abierto y mudo: sin senal de vida privada con plazo existente en el codigo; no se inventa"]
 fn v4d_p1a_deuda_socket_abierto_y_mudo_deberia_vetar() {
+    use execution_engine::user_data_stream::{siguiente_frame, SiguienteFrame, VIGENCIA_LISTEN_KEY};
+    use std::time::Duration;
+    assert_eq!(VIGENCIA_LISTEN_KEY, Duration::from_secs(60 * 60), "la vigencia del listenKey, dato del exchange");
+    let rt = tokio::runtime::Builder::new_current_thread().enable_time().build().unwrap();
+    let mut mudo = futures_util::stream::pending::<u8>();
+    assert_eq!(rt.block_on(siguiente_frame(&mut mudo, Duration::from_millis(20))), SiguienteFrame::Mudo);
+    let mut vivo = futures_util::stream::iter([7u8]);
+    assert_eq!(rt.block_on(siguiente_frame(&mut vivo, Duration::from_millis(20))), SiguienteFrame::Mensaje(7));
+    assert_eq!(rt.block_on(siguiente_frame(&mut vivo, Duration::from_millis(20))), SiguienteFrame::Fin);
+    // Fuente: el lazo real lee con esa vigencia, y un socket mudo sale del lazo y
+    // marca la perdida antes de la pausa.
+    let src = include_str!("../src/user_data_stream.rs").replace("\r\n", "\n");
+    let lazo = &src[src.find("let msg = match siguiente_frame(&mut read, VIGENCIA_LISTEN_KEY).await").expect("lazo con plazo")..];
+    let rama_mudo = lazo.find("SiguienteFrame::Mudo =>").expect("rama del socket mudo");
+    let perdida = lazo.find("self.puente.perdida_socket(self.era)").expect("perdida al salir del lazo");
+    let pausa = lazo.find("Desconectado. Reanudando").expect("pausa");
+    assert!(rama_mudo < perdida && perdida < pausa);
+    // Y la perdida veta las entradas.
     let (p, _s) = arrancado(&[]);
-    // Aqui pasaria el tiempo sin ningun mensaje del socket privado.
-    assert!(p.veta_entradas(), "un socket mudo deberia contar como perdido");
+    assert!(!p.veta_entradas());
+    p.perdida_socket(p.era()).unwrap();
+    assert!(p.veta_entradas(), "un socket mudo cuenta como perdido");
 }
 
 // ---- P1-b: los dos ceros ------------------------------------------------------

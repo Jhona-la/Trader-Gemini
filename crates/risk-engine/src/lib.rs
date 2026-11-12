@@ -730,6 +730,12 @@ impl RiskEngine {
             return rej(REJ_FLAT_COIN);
         }
 
+        // CAPITAL-UNICO V4E (P1-b, INV-5): el veto del puente se ADQUIERE antes
+        // de leer el saldo y la equity. El host publica el saldo dimensionable y
+        // después suelta el veto (`Release`) en el mismo paso: quien lo ve suelto
+        // ve también ese saldo. La decisión se sigue tomando abajo, en el mismo
+        // sitio y con el mismo rechazo; sólo cambia el orden de las cargas.
+        let capital_vetado = arena.capital_incompleto.load(Ordering::Acquire);
         let current_capital = arena.unified_capital.load(Ordering::Relaxed);
         // FMT-212: validate before clamps/comparisons can turn an unknown
         // probability, peak or configuration into permission (or a panic).
@@ -783,7 +789,7 @@ impl RiskEngine {
         // CAPITAL-UNICO V3 (P1.2/P1.3): sin saldo vigente de la era del puente
         // de la cuenta, o con su equity incompleta, no se sabe cuánto capital
         // hay ni cuánto se ha caído: no entran posiciones nuevas (fail-closed).
-        if arena.capital_incompleto.load(Ordering::Acquire) {
+        if capital_vetado {
             // V4B: solo medida (el host lo escribe cada 60 s).
             arena.vetos_capital_riesgo.fetch_add(1, Ordering::Relaxed);
             return rej(REJ_DRAWDOWN);

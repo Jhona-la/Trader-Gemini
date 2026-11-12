@@ -29,6 +29,38 @@ pub struct RemotePosition {
     pub position_side: String,
 }
 
+/// V4E (socket abierto y mudo): vigencia de un listenKey sin keepalive, DATO DEL
+/// EXCHANGE (Binance USDⓈ-M Futures, user data streams: un listenKey vale 60
+/// minutos; `client.rs`, `keep_alive_listen_key`: "expira a los 60 min"). El
+/// servidor manda además un ping cada 3 min (dato del exchange, comentario del
+/// lazo de lectura). Un socket que en toda la vigencia de un listenKey no
+/// entrega ni un frame, ni siquiera ese ping, está mudo: se trata como perdido
+/// (`perdida_socket`: veto de entradas y reconexión). No es un plazo propio.
+pub const VIGENCIA_LISTEN_KEY: std::time::Duration = std::time::Duration::from_secs(60 * 60);
+
+/// V4E: lo que entrega el socket en el siguiente intento de lectura.
+#[derive(Debug, PartialEq)]
+pub enum SiguienteFrame<T> {
+    Mensaje(T),
+    /// El socket terminó.
+    Fin,
+    /// Ningún frame dentro del plazo.
+    Mudo,
+}
+
+/// V4E: siguiente frame de `lector`, o [`SiguienteFrame::Mudo`] si no llega
+/// ninguno en `plazo`.
+pub async fn siguiente_frame<S>(lector: &mut S, plazo: std::time::Duration) -> SiguienteFrame<S::Item>
+where
+    S: futures_util::Stream + Unpin,
+{
+    match tokio::time::timeout(plazo, lector.next()).await {
+        Ok(Some(m)) => SiguienteFrame::Mensaje(m),
+        Ok(None) => SiguienteFrame::Fin,
+        Err(_) => SiguienteFrame::Mudo,
+    }
+}
+
 /// Interfaz del host para eventos de cuenta. El motor implementa esto para
 /// actualizar su estado (capital, posiciones) con la verdad del exchange.
 pub trait AccountSink: Send + Sync {
@@ -253,7 +285,20 @@ impl UserDataStreamer {
                 }
             });
 
-            while let Some(msg) = read.next().await {
+            loop {
+                // V4E (socket abierto y mudo): sin un solo frame durante la
+                // vigencia de un listenKey, el socket cuenta como perdido.
+                let msg = match siguiente_frame(&mut read, VIGENCIA_LISTEN_KEY).await {
+                    SiguienteFrame::Mensaje(m) => m,
+                    SiguienteFrame::Fin => break,
+                    SiguienteFrame::Mudo => {
+                        println!(
+                            "⚠️ [USER-STREAM] Socket mudo: ningún frame (ni el ping del servidor) en {} s, la vigencia de un listenKey; se trata como perdido.",
+                            VIGENCIA_LISTEN_KEY.as_secs()
+                        );
+                        break;
+                    }
+                };
                 // X-011: muerte inmediata (no en la próxima reconexión) — un
                 // frame del streamer viejo puede pisar el capital del nuevo.
                 if let Some(flag) = &self.shutdown {

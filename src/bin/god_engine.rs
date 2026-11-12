@@ -829,6 +829,40 @@ static SYMBOL_SUSPENDED_UNTIL: std::sync::LazyLock<
     std::sync::Mutex<std::collections::HashMap<String, u64>>,
 > = std::sync::LazyLock::new(|| std::sync::Mutex::new(std::collections::HashMap::new()));
 
+/// CAPITAL-UNICO V4E (P1-b, INV-5; P1-c, INV-6): el publicador del puente de
+/// la cuenta. Corre bajo el mutex del puente (orden de candados: puente y
+/// después la sesión OMS, el mismo de la transición) y no vuelve a entrar en él.
+///
+/// - Con `veta`: el veto de entradas se alza.
+/// - En el alza (`saldo`): si el testigo vigente del OMS es de la sesión de la
+///   era (`p.sesion`), `publish_current_balance` publica el saldo dimensionable
+///   (arena y espejo del freno) y DESPUÉS, en este mismo paso, se suelta el veto
+///   (`Release`; Risk lo adquiere antes de leer el saldo). Si la sesión ya no es
+///   esa, nada se publica y el veto sigue.
+/// - Sin `veta` y sin `saldo`: el veto ya estaba suelto; el arena sigue su
+///   contabilidad, como antes.
+fn publicar_capital_de_sesion(
+    oms: &quantum_engine::host_oms::OmsSession,
+    arena: &quantum_arena::GlobalArena,
+    espejo: &AtomicU64,
+    p: &execution_engine::puente_cuenta::Publicacion,
+) -> bool {
+    let suelto = match (p.veta, p.saldo) {
+        (true, _) => false,
+        (false, None) => return true,
+        (false, Some(saldo)) => {
+            let token = oms.snapshot_token();
+            token.generation() == p.sesion
+                && oms.publish_current_balance(&token, saldo, |balance| {
+                    espejo.store(balance.to_bits(), Ordering::Relaxed);
+                    arena.unified_capital.store(balance, Ordering::Relaxed);
+                })
+        }
+    };
+    arena.capital_incompleto.store(!suelto, Ordering::Release);
+    suelto
+}
+
 fn suspend_symbol_until(symbol: &str, until_ms: u64) {
     SYMBOL_SUSPENDED_UNTIL
         .lock()
@@ -1825,16 +1859,28 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // es la observación del freno. V3: cada componente con su marca; el cero
     // explícito de 3a llega al puente (plano de seguridad) aunque el arranque
     // lo rechace como capital con que operar.
-    let puente_cuenta = Arc::new(execution_engine::puente_cuenta::PuenteCuenta::new());
+    // CAPITAL-UNICO V4E (P1-c): la era 1 queda ligada a la sesión OMS vigente.
+    let puente_cuenta = Arc::new(execution_engine::puente_cuenta::PuenteCuenta::con_sesion(
+        oms_session.snapshot_token().generation(),
+    ));
+    // V4E (P1-a, dictamen de Codex QRA sobre V4D): sin socket privado desde que
+    // nace la era, antes del GET y del streamer (no solo desde el primer poll de
+    // `start`). La REST de arranque llega al freno; las entradas esperan al
+    // primer handshake y a una REST posterior. Los cierres no lo leen.
+    if let Err(e) = puente_cuenta.sin_socket(puente_cuenta.era()) {
+        telemetry_server::telemetry_log!("🔌 [CAPITAL] arranque sin socket ignorado por el puente: {}", e);
+    }
     // CAPITAL-UNICO V3 (P1.4): rutas del pico de un espacio nuevo, que la
     // transición deja al inmune si cambia de verdad la cuenta o el venue.
     let buzon_espacio_pico: Arc<std::sync::Mutex<Option<risk_engine::drawdown::RutasPico>>> =
         Arc::new(std::sync::Mutex::new(None));
     let (initial_capital, initial_equity) = loop {
+        // V4E (P1-c): ejecutor y sesión del mismo testigo del OMS.
+        let token_arranque = oms_session.snapshot_token();
         let ticket = puente_cuenta.ticket();
-        let lectura = exec.load().fetch_account_lectura().await.and_then(|l| {
+        let lectura = token_arranque.executor().fetch_account_lectura().await.and_then(|l| {
             let obs = puente_cuenta
-                .observar_rest(ticket, &l)
+                .observar_rest_de_sesion(ticket, token_arranque.generation(), &l)
                 .map_err(|e| format!("ACCOUNT_EVIDENCE_INVALID: {e}"));
             match l.rechazo_arranque {
                 Some(rechazo) => Err(rechazo),
@@ -2524,10 +2570,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         // CAPITAL-UNICO V3 (P1.2/P1.3): sin saldo vigente de la era o con la
         // equity incompleta, el puente veta las entradas (riesgo y OMS) por
         // esta bandera, escrita bajo el mutex del puente. Los cierres no la leen.
+        // V4E (P1-b, INV-5): la escribe sólo el publicador del puente, que suelta
+        // el veto DESPUÉS de publicar el saldo dimensionable de la sesión
+        // vigente, en el mismo paso (`publicar_capital_de_sesion`).
         {
             let arena_veto = Arc::clone(&arena_real);
-            puente_cuenta.vincular_veto(move |veta| {
-                arena_veto.capital_incompleto.store(veta, Ordering::Release);
+            let oms_veto = Arc::clone(&oms_session);
+            let espejo_veto = Arc::clone(&unified_capital);
+            puente_cuenta.vincular_publicador(move |p| {
+                publicar_capital_de_sesion(&oms_veto, &arena_veto, &espejo_veto, p)
             });
         }
         oms_session.initialize_arena(&arena_real);
@@ -2633,7 +2684,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             // no lo espera: sólo lee el puente.
             {
                 let puente_rs = Arc::clone(&puente_cuenta);
-                let exec_rs = Arc::clone(&exec);
+                let oms_rs = Arc::clone(&oms_session);
                 let saldo_rs = Arc::clone(&exchange_capital_imm);
                 let arena_rs = Arc::clone(&arena_imm);
                 rt_handle.spawn(async move {
@@ -2661,9 +2712,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             pausa.exito();
                             continue;
                         }
-                        let executor = exec_rs.load_full();
+                        // V4E (P1-c, INV-6): ejecutor y sesión del mismo testigo
+                        // del OMS; el puente rechaza la lectura si la sesión no
+                        // es la de su era, y el saldo y el veto los publica el
+                        // publicador del puente (`publicar_capital_de_sesion`).
+                        let token = oms_rs.snapshot_token();
+                        let executor = Arc::clone(token.executor());
                         let r = execution_engine::resincronizar_cuenta::resincronizar_una_vez(
                             &puente_rs,
+                            token.generation(),
                             executor.fetch_account_lectura(),
                             std::time::Duration::from_secs(15),
                             |obs| saldo_rs.store(obs.saldo.to_bits(), Ordering::Relaxed),
@@ -5274,10 +5331,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         }
                         // Revoke before publishing a new executor; in-flight observations from
                         // the previous generation cannot mutate the arena or reauthorize it.
-                        let new_exec_arc = match paso.resultado {
+                        let (sesion_mainnet, new_exec_arc) = match paso.resultado {
                             quantum_engine::host_oms::ResultadoTransicion::Publicada { generacion, ejecutor } => {
                                 telemetry_server::telemetry_log!("✅ [WARMUP COMPLETE] System state synchronized & Darwin Approved. Transitioning to {:?} (sesión OMS {})", current_phase, generacion);
-                                ejecutor
+                                (generacion, ejecutor)
                             }
                             quantum_engine::host_oms::ResultadoTransicion::Esperando => {
                                 has_transitioned = false;
@@ -5314,7 +5371,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         // lectura aceptada de ESTA era, aunque el OMS quede Ready.
                         // Lo que llegue aún de la era demo se rechaza. Los cierres
                         // siguen disponibles.
-                        let era_mainnet = puente_cuenta.nueva_era();
+                        // V4E (P1-c): la era nueva queda ligada a la sesión OMS que
+                        // acaba de publicar el ejecutor; una lectura de un ejecutor
+                        // de otra sesión no la toca.
+                        let era_mainnet = puente_cuenta.nueva_era_de_sesion(sesion_mainnet);
+                        // V4E (P1-a): la era nueva nace sin socket privado, antes de
+                        // encolar el GET, el refresco del OMS y el streamer.
+                        if let Err(e) = puente_cuenta.sin_socket(era_mainnet) {
+                            telemetry_server::telemetry_log!("🔌 [CAPITAL] era {} sin socket ignorada por el puente: {}", era_mainnet, e);
+                        }
                         telemetry_server::telemetry_log!(
                             "🔌 [CAPITAL] puente de la cuenta: era {} (mainnet); entradas vetadas hasta el saldo de esta era",
                             era_mainnet
@@ -5439,9 +5504,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                     telemetry_server::telemetry_log!("⚠️ [CAPITAL] [TRANSITION] {}", aviso);
                                 }
                                 let aceptada = match &lectura {
-                                    Ok(l) => match puente_transicion.observar_rest(ticket, l) {
+                                    Ok(l) => match puente_transicion.observar_rest_de_sesion(ticket, balance_token.generation(), l) {
                                         Ok(_) => true,
                                         Err(execution_engine::puente_cuenta::Rechazo::OtraEra) => break,
+                                        // V4E (P1-c): el token ya no es de la sesión de esta era.
+                                        Err(execution_engine::puente_cuenta::Rechazo::OtraSesion { .. }) => break,
                                         Err(e) => {
                                             // Atrasada o contradictoria: el puente ya
                                             // tiene algo de esta era (del stream).
