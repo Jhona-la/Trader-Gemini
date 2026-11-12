@@ -25,8 +25,8 @@
 use omniscient_registry::OmniscientRegistry;
 use signal_engine::hawkes_bessel::HawkesBesselEngine;
 use signal_engine::trend_runner::HighPayoffTrendRunner;
-use strategy_core::QuantumStrategy;
 use std::sync::Arc;
+use strategy_core::QuantumStrategy;
 
 #[test]
 fn f1_095_hawkes_bessel_graduates_continuously_with_order_book_imbalance() {
@@ -41,7 +41,10 @@ fn f1_095_hawkes_bessel_graduates_continuously_with_order_book_imbalance() {
     // 1. Con desbalance neutro (0.0), el voto debe ser exactamente 0.0
     registry.set_scoped("BTCUSDT", "order_book_imbalance", 0.0);
     let v_cero = engine.evaluate_for_coin(0, "BTCUSDT");
-    assert_eq!(v_cero, 0.0, "Desbalance cero debe producir voto exactamente nulo");
+    assert_eq!(
+        v_cero, 0.0,
+        "Desbalance cero debe producir voto exactamente nulo"
+    );
 
     // 2. Con desbalances crecientes pequeños y medianos, la respuesta debe ser estrictamente monótona
     // y NO saltar a tanh(1.0) = 0.7616
@@ -54,9 +57,23 @@ fn f1_095_hawkes_bessel_graduates_continuously_with_order_book_imbalance() {
     registry.set_scoped("BTCUSDT", "order_book_imbalance", 0.85);
     let v_grande = engine.evaluate_for_coin(0, "BTCUSDT");
 
-    assert!(v_pequeno > 0.0, "Voto pequeño debe ser positivo: {}", v_pequeno);
-    assert!(v_mediano > v_pequeno, "Voto debe crecer monótonamente: mediano {} > pequeno {}", v_mediano, v_pequeno);
-    assert!(v_grande > v_mediano, "Voto debe crecer monótonamente: grande {} > mediano {}", v_grande, v_mediano);
+    assert!(
+        v_pequeno > 0.0,
+        "Voto pequeño debe ser positivo: {}",
+        v_pequeno
+    );
+    assert!(
+        v_mediano > v_pequeno,
+        "Voto debe crecer monótonamente: mediano {} > pequeno {}",
+        v_mediano,
+        v_pequeno
+    );
+    assert!(
+        v_grande > v_mediano,
+        "Voto debe crecer monótonamente: grande {} > mediano {}",
+        v_grande,
+        v_mediano
+    );
 
     // Certificar que no existe el escalón rígido de ±0.7616 en desbalance pequeño
     // La ratio v_pequeno / v_grande debe aproximar tanh(0.10) / tanh(0.85) ≈ 0.0996 / 0.691 ≈ 0.144
@@ -73,7 +90,11 @@ fn f1_095_hawkes_bessel_graduates_continuously_with_order_book_imbalance() {
     registry.set_scoped("BTCUSDT", "order_book_imbalance", 0.0);
     registry.set_scoped("BTCUSDT", "order_flow_imbalance", -0.45);
     let v_fallback_ofi = engine.evaluate_for_coin(0, "BTCUSDT");
-    assert!(v_fallback_ofi < 0.0, "Debe caer en OFI bajista cuando OBI es nulo: {}", v_fallback_ofi);
+    assert!(
+        v_fallback_ofi < 0.0,
+        "Debe caer en OFI bajista cuando OBI es nulo: {}",
+        v_fallback_ofi
+    );
 }
 
 #[test]
@@ -101,7 +122,12 @@ fn f1_095_trend_runner_graduates_continuously_with_ema_trend_swing_z() {
     let v_fuerte = engine.evaluate_for_coin(0, "BTCUSDT");
 
     assert!(v_suave > 0.0, "Voto suave debe ser positivo: {}", v_suave);
-    assert!(v_fuerte > v_suave, "Voto fuerte debe superar a voto suave: {} > {}", v_fuerte, v_suave);
+    assert!(
+        v_fuerte > v_suave,
+        "Voto fuerte debe superar a voto suave: {} > {}",
+        v_fuerte,
+        v_suave
+    );
 
     let ratio_medida = v_suave / v_fuerte;
     let ratio_teorica = (0.20_f64).tanh() / (1.50_f64).tanh();
@@ -122,12 +148,8 @@ fn f1_096_trend_runner_persistence_gate_modulated_by_analytical_uncertainty() {
         *d = (i as f64 + 1.0) * 0.1; // Desplazamiento alcista no nulo
     }
 
-    let voto_browniano = HighPayoffTrendRunner::voto_espectral_con_sigma(
-        &desplazamientos,
-        0.50,
-        0.05,
-        0.30,
-    );
+    let voto_browniano =
+        HighPayoffTrendRunner::voto_espectral_con_sigma(&desplazamientos, 0.50, 0.05, 0.30);
     assert_eq!(
         voto_browniano.media_banda(0, 31).unwrap_or(0.0),
         0.0,
@@ -137,25 +159,19 @@ fn f1_096_trend_runner_persistence_gate_modulated_by_analytical_uncertainty() {
     // Escenario 2: H = 0.54 (ligero exceso sobre 0.50)
     // Con alta incertidumbre (\sigma_H = 0.12, regresión ruidosa), el peso de persistencia
     // debe ser mucho más atenuado que con alta precisión (\sigma_H = 0.02).
-    let voto_ruidoso = HighPayoffTrendRunner::voto_espectral_con_sigma(
-        &desplazamientos,
-        0.54,
-        0.12,
-        0.30,
-    );
-    let voto_preciso = HighPayoffTrendRunner::voto_espectral_con_sigma(
-        &desplazamientos,
-        0.54,
-        0.02,
-        0.30,
-    );
+    let voto_ruidoso =
+        HighPayoffTrendRunner::voto_espectral_con_sigma(&desplazamientos, 0.54, 0.12, 0.30);
+    let voto_preciso =
+        HighPayoffTrendRunner::voto_espectral_con_sigma(&desplazamientos, 0.54, 0.02, 0.30);
 
     let media_ruidosa = voto_ruidoso.media_banda(0, 31).unwrap_or(0.0);
     let media_precisa = voto_preciso.media_banda(0, 31).unwrap_or(0.0);
 
-    assert!(media_precisa > media_ruidosa,
+    assert!(
+        media_precisa > media_ruidosa,
         "Mayor certidumbre en Hurst debe otorgar mayor convicción: precisa={} > ruidosa={}",
-        media_precisa, media_ruidosa
+        media_precisa,
+        media_ruidosa
     );
 
     // Escenario 3: Monte Carlo determinista bajo ruido browniano

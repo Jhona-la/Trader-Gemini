@@ -369,10 +369,10 @@ fn i12_6_el_host_transita_por_el_paso_con_un_solo_refresco() {
         .find("oms_session.paso_transicion(")
         .expect("la transición pasa por OmsSession::paso_transicion");
     let soltar = bloque
-        .find("new_order = None;")
+        .find("entry_orders.clear();")
         .expect("el tick de la transición no abre exposición");
     assert!(soltar < paso);
-    assert!(bloque.contains("entry_reservation.as_ref()"));
+    assert!(bloque.contains("reserved.reservation.cancel(&engine_real.arena)"));
     assert!(bloque.contains("ResultadoTransicion::Esperando"));
     assert!(bloque.contains("ResultadoTransicion::Ocupada"));
     assert!(bloque.contains("let _refresco = refresco;"));

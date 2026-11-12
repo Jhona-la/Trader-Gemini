@@ -190,3 +190,208 @@ impl EntryTransport for OrderExecutor {
         }
     }
 }
+
+/// Resolve the original order without submitting a replacement. Active or
+/// inconclusive evidence remains pending; only a terminal order carries a fill.
+pub async fn resolve_terminal_entry(
+    executor: &OrderExecutor,
+    symbol: &str,
+    client_order_id: &str,
+    dispatch_error: &str,
+) -> crate::ioc_evidence::DestinoReserva {
+    let observation = executor.resolve_via_rest(symbol, client_order_id).await;
+    let order = executor.registry().get(client_order_id);
+    crate::ioc_evidence::destino_tras_consulta(dispatch_error, observation, order.as_ref())
+}
+
+pub const ENTRY_RECOVERY_DEADLINE: std::time::Duration = std::time::Duration::from_secs(8);
+
+pub async fn resolve_terminal_entry_until(
+    executor: &OrderExecutor,
+    symbol: &str,
+    client_order_id: &str,
+    dispatch_error: &str,
+    deadline: std::time::Duration,
+) -> crate::ioc_evidence::DestinoReserva {
+    let recovery = async {
+        loop {
+            let destination =
+                resolve_terminal_entry(executor, symbol, client_order_id, dispatch_error).await;
+            if !matches!(destination, crate::ioc_evidence::DestinoReserva::Conservar)
+                || dispatch_error.starts_with("MAKER_CHASE_UNVERIFIED")
+            {
+                return destination;
+            }
+            tokio::time::sleep(tokio::time::Duration::from_millis(250)).await;
+        }
+    };
+    match tokio::time::timeout_at(tokio::time::Instant::now() + deadline, recovery).await {
+        Ok(destination) => destination,
+        Err(_) => crate::ioc_evidence::DestinoReserva::CancelarPorDeadline,
+    }
+}
+
+#[cfg(test)]
+mod f28_terminal_recovery_tests {
+    use super::*;
+    use crate::ioc_evidence::DestinoReserva;
+    use std::sync::{Arc, Mutex};
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+    #[tokio::test]
+    async fn active_partial_stays_pending_and_expired_partial_confirms_without_resubmission() {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("loopback listener");
+        let base = format!("http://{}", listener.local_addr().unwrap());
+        let requests = Arc::new(Mutex::new(Vec::new()));
+        let recorded = Arc::clone(&requests);
+        let server = tokio::spawn(async move {
+            for status in ["PARTIALLY_FILLED", "EXPIRED"] {
+                let (mut socket, _) = listener.accept().await.expect("accept query");
+                let mut buffer = [0u8; 4096];
+                let read = socket.read(&mut buffer).await.expect("read query");
+                let request = String::from_utf8_lossy(&buffer[..read]);
+                recorded
+                    .lock()
+                    .unwrap_or_else(|e| e.into_inner())
+                    .push(request.lines().next().unwrap_or("").to_string());
+                let body = format!(
+                    "{{\"symbol\":\"BTCUSDT\",\"clientOrderId\":\"f28_rest_partial\",\"orderId\":28028,\"side\":\"BUY\",\"status\":\"{status}\",\"origQty\":\"1.0\",\"executedQty\":\"0.4\",\"avgPrice\":\"100.0\",\"price\":\"100.0\"}}"
+                );
+                let response = format!(
+                    "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                    body.len()
+                );
+                socket
+                    .write_all(response.as_bytes())
+                    .await
+                    .expect("write query");
+                socket.shutdown().await.expect("close query");
+            }
+        });
+        let executor = OrderExecutor::new(String::new(), "offline-contract".into(), false)
+            .con_base_de_prueba(&base);
+        executor.registry().register_intent(
+            "f28_rest_partial",
+            "BTCUSDT",
+            "BUY",
+            "LONG",
+            "LIMIT",
+            1.0,
+            1_000,
+        );
+
+        let terminal = tokio::time::timeout(
+            std::time::Duration::from_secs(5),
+            resolve_terminal_entry_until(
+                &executor,
+                "BTCUSDT",
+                "f28_rest_partial",
+                "AMBIGUOUS: contract",
+                std::time::Duration::from_secs(5),
+            ),
+        )
+        .await
+        .expect("terminal recovery must not stall");
+        server.await.unwrap();
+        assert_eq!(terminal, DestinoReserva::Confirmar { ejecutada: 0.4 });
+        let requests = requests.lock().unwrap_or_else(|e| e.into_inner());
+        assert_eq!(requests.len(), 2);
+        for request in requests.iter() {
+            assert!(request.starts_with("GET /fapi/v1/order?"), "{request}");
+            assert!(
+                request.contains("origClientOrderId=f28_rest_partial"),
+                "{request}"
+            );
+        }
+        assert_eq!(
+            executor
+                .registry()
+                .get("f28_rest_partial")
+                .map(|order| order.executed_qty),
+            Some(0.4)
+        );
+    }
+}
+
+#[cfg(test)]
+mod f28_deadline_recovery_tests {
+    use super::*;
+    use crate::ioc_evidence::DestinoReserva;
+    use std::sync::{Arc, Mutex};
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+    #[tokio::test]
+    async fn persistent_partial_hits_deadline_without_confirming_or_resubmitting() {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("loopback listener");
+        let base = format!("http://{}", listener.local_addr().unwrap());
+        let requests = Arc::new(Mutex::new(Vec::new()));
+        let recorded = Arc::clone(&requests);
+        let server = tokio::spawn(async move {
+            loop {
+                let (mut socket, _) = listener.accept().await.expect("accept query");
+                let mut buffer = [0u8; 4096];
+                let read = socket.read(&mut buffer).await.expect("read query");
+                let request = String::from_utf8_lossy(&buffer[..read]);
+                recorded
+                    .lock()
+                    .unwrap_or_else(|e| e.into_inner())
+                    .push(request.lines().next().unwrap_or("").to_string());
+                let body = "{\"symbol\":\"BTCUSDT\",\"clientOrderId\":\"f28_rest_deadline\",\"orderId\":28029,\"side\":\"BUY\",\"status\":\"PARTIALLY_FILLED\",\"origQty\":\"1.0\",\"executedQty\":\"0.4\",\"avgPrice\":\"100.0\",\"price\":\"100.0\"}";
+                let response = format!(
+                    "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                    body.len()
+                );
+                socket
+                    .write_all(response.as_bytes())
+                    .await
+                    .expect("write query");
+                socket.shutdown().await.expect("close query");
+            }
+        });
+        let executor = OrderExecutor::new(String::new(), "offline-contract".into(), false)
+            .con_base_de_prueba(&base);
+        executor.registry().register_intent(
+            "f28_rest_deadline",
+            "BTCUSDT",
+            "BUY",
+            "LONG",
+            "LIMIT",
+            1.0,
+            1_000,
+        );
+
+        let outcome = tokio::time::timeout(
+            std::time::Duration::from_secs(2),
+            resolve_terminal_entry_until(
+                &executor,
+                "BTCUSDT",
+                "f28_rest_deadline",
+                "AMBIGUOUS: contract",
+                std::time::Duration::from_secs(1),
+            ),
+        )
+        .await
+        .expect("the production deadline must fire");
+        server.abort();
+        assert_eq!(outcome, DestinoReserva::CancelarPorDeadline);
+        let requests = requests.lock().unwrap_or_else(|e| e.into_inner());
+        assert!(!requests.is_empty());
+        for request in requests.iter() {
+            assert!(request.starts_with("GET /fapi/v1/order?"), "{request}");
+            assert!(
+                request.contains("origClientOrderId=f28_rest_deadline"),
+                "{request}"
+            );
+        }
+        let order = executor.registry().get("f28_rest_deadline").unwrap();
+        assert_eq!(
+            order.status,
+            crate::order_registry::OrderStatus::PartiallyFilled
+        );
+        assert_eq!(order.executed_qty, 0.4);
+    }
+}

@@ -31,8 +31,8 @@
 //! Llamado desde `GodEngineCore::process_event()` y desde `evolution.rs` para optimizar.
 
 pub mod atiyah_singer_dirac;
-pub mod hidden_liquidity;
 pub mod helmholtz_hodge;
+pub mod hidden_liquidity;
 pub mod neuro_plasticity;
 pub mod online_ppo;
 
@@ -40,11 +40,9 @@ pub use atiyah_singer_dirac::{
     a_roof_generating_function, dirac_hermite_c1, AtiyahSingerDiracEngine,
     AtiyahSingerDiracMetrics, DIRAC_WINDOW_CAP,
 };
+pub use helmholtz_hodge::{HelmholtzDecomposition, HelmholtzHodgeEngine, HelmholtzHodgeParams};
 pub use hidden_liquidity::{
     BlockAbsorptionState, ConformalGateVerdict, HiddenLiquidityEngine, HiddenLiquidityParams,
-};
-pub use helmholtz_hodge::{
-    HelmholtzDecomposition, HelmholtzHodgeEngine, HelmholtzHodgeParams,
 };
 pub use neuro_plasticity::{NeuroPlasticityEngine, NeuroPlasticityParams};
 pub use online_ppo::{OnlinePpoPolicyEngine, PpoHyperParams};
@@ -1140,8 +1138,10 @@ mod tests {
         let input: Vec<f64> = vec![1.0, 1.0];
         let mut output: Vec<f64> = vec![0.0, 0.0];
         layer.forward_sigmoid(&input, &mut output);
-        assert!(output[0].is_nan(), "raw_total = +Inf debe producir NaN y no 1.0 por clamp espurio");
+        assert!(
+            output[0].is_nan(),
+            "raw_total = +Inf debe producir NaN y no 1.0 por clamp espurio"
+        );
         assert!(output[1].is_finite());
     }
 }
-

@@ -8,13 +8,14 @@ use arc_swap::ArcSwap;
 use execution_engine::{
     entry_dispatch::{self, EntryRequest, EntryTransport},
     executor::{ExecutionProvider, OrderExecutor},
+    order_registry::TrackedOrder,
     order_types::OrderAck,
     reconciliation::{self, PositionRiskEntry},
 };
 use god_engine_core::close_accounting::LocalCloseAccounting;
 use god_engine_core::entry_reservation::{EntryReservation, ReservationError};
 use quantum_arena::{FeeSchedule, GlobalArena, SymbolFees};
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::sync::{
     Arc, Mutex,
     atomic::{AtomicBool, Ordering},
@@ -764,6 +765,134 @@ impl OmsSession {
             arena,
         };
         entry_dispatch::dispatch_entry(&guarded, request).await
+    }
+}
+
+type SettlementSide = (String, bool);
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+struct SettlementId {
+    symbol: String,
+    coin_id: usize,
+    slot: usize,
+    generation: u64,
+}
+
+static SETTLEMENT_SIDES: std::sync::LazyLock<
+    Mutex<HashMap<SettlementSide, Arc<tokio::sync::Mutex<()>>>>,
+> = std::sync::LazyLock::new(|| Mutex::new(HashMap::new()));
+static PENDING_SETTLEMENTS: std::sync::LazyLock<
+    Mutex<HashMap<SettlementId, tokio::sync::OwnedMutexGuard<()>>>,
+> = std::sync::LazyLock::new(|| Mutex::new(HashMap::new()));
+
+/// A pending guard is owned by this registry, not by the async task stack.
+/// Dropping the handle without release therefore cannot open the side early.
+pub struct EntrySettlement {
+    reservation: EntryReservation,
+}
+
+impl EntrySettlement {
+    pub async fn acquire(reservation: EntryReservation, is_long: bool) -> Self {
+        let side = (reservation.symbol.to_ascii_uppercase(), is_long);
+        let lock = {
+            let mut sides = SETTLEMENT_SIDES.lock().unwrap_or_else(|e| e.into_inner());
+            Arc::clone(
+                sides
+                    .entry(side)
+                    .or_insert_with(|| Arc::new(tokio::sync::Mutex::new(()))),
+            )
+        };
+        let permit = lock.lock_owned().await;
+        let id = SettlementId {
+            symbol: reservation.symbol.clone(),
+            coin_id: reservation.coin_id,
+            slot: reservation.slot,
+            generation: reservation.generation,
+        };
+        PENDING_SETTLEMENTS
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .insert(id, permit);
+        Self { reservation }
+    }
+
+    pub fn release(self) {
+        Self::release_for(&self.reservation);
+    }
+
+    pub fn release_for(reservation: &EntryReservation) -> bool {
+        let id = SettlementId {
+            symbol: reservation.symbol.clone(),
+            coin_id: reservation.coin_id,
+            slot: reservation.slot,
+            generation: reservation.generation,
+        };
+        PENDING_SETTLEMENTS
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .remove(&id)
+            .is_some()
+    }
+}
+
+pub fn release_confirmed_side(
+    arena: &GlobalArena,
+    symbol: &str,
+    is_long: bool,
+    protection_complete: bool,
+) -> usize {
+    if !protection_complete {
+        return 0;
+    }
+    let mut released = 0;
+    PENDING_SETTLEMENTS
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .retain(|id, _| {
+            let confirmed = id.symbol.eq_ignore_ascii_case(symbol)
+                && arena.coins.get(id.coin_id).is_some_and(|coin| {
+                    let position = coin.positions.get_slot(id.slot);
+                    position.is_open()
+                        && position.generation.load(Ordering::Acquire) == id.generation
+                        && position.exchange_confirmed.load(Ordering::Acquire)
+                        && position.is_long.load(Ordering::Relaxed) == is_long
+                });
+            if confirmed {
+                released += 1;
+            }
+            !confirmed
+        });
+    released
+}
+
+pub fn cancel_entry_after_deadline(
+    session: &OmsSession,
+    token: &SessionToken,
+    arena: &GlobalArena,
+    reservation: &EntryReservation,
+) -> bool {
+    if !session.begin_refresh(token, arena) {
+        return false;
+    }
+    quantum_arena::protection_health::mark_dirty();
+    match reservation.cancel(arena) {
+        Ok(()) => {
+            EntrySettlement::release_for(reservation);
+            true
+        }
+        Err(_) => false,
+    }
+}
+
+pub fn entry_execution_for_host(
+    order: Option<&TrackedOrder>,
+    paper: bool,
+    requested_quantity: f64,
+) -> Option<f64> {
+    if paper {
+        Some(requested_quantity.abs())
+    } else {
+        execution_engine::ioc_evidence::cantidad_ejecutada_terminal(order)
     }
 }
 

@@ -74,7 +74,20 @@ fn i3a_premisa_el_nucleo_bloquea_entradas_con_la_edad_total() {
     let t = tramo(&n, "letlatency_ms=self.arena.last_ws_latency_ms.load(Ordering::Relaxed);", "ifis_latency_panic{");
     assert!(t.contains("letis_latency_panic=latency_ms>latency_threshold_msasu64;"));
     let bloqueo = tramo(t, "letentries_blocked=", ";");
-    assert!(bloqueo.contains("||is_latency_panic"), "la edad total debe seguir bloqueando entradas");
+    // RB-E2: la disyuncion se escribe como `registrar([...])`, que devuelve true si alguna causa
+    // esta activa (embudo_vivo::BloqueosEntrada::registrar); la latencia es una de sus causas.
+    assert!(
+        bloqueo.contains("||is_latency_panic")
+            || (bloqueo.starts_with("letentries_blocked=self.diag_embudo.bloqueos.registrar([")
+                && bloqueo.contains(",is_latency_panic,")),
+        "la edad total debe seguir bloqueando entradas"
+    );
+    let embudo = compacto(include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/../god-engine-core/src/embudo_vivo.rs")));
+    let registrar = tramo(&embudo, "pubfnregistrar(&mutself,causas:[bool;CAUSAS_BLOQUEO])->bool{", "pubfnbloqueados");
+    assert!(
+        registrar.contains("letSome(primera)=causas.iter().position(|&activa|activa)else{returnfalse;};"),
+        "registrar bloquea si alguna causa esta activa"
+    );
 }
 
 #[test]

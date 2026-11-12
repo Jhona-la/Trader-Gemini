@@ -16,12 +16,15 @@ pub mod feynman_path_instanton;
 pub mod firma_maxent;
 pub mod fisher_rao;
 pub mod flujo_rg;
+pub mod geometric_langlands_hecke;
 pub mod gross_pitaevskii_bec;
 pub mod grothendieck_sheaves;
 pub mod hairer_landauer_anderson;
 pub mod hawkes;
 pub mod hawkes_cross;
+pub mod heterotic_e8_calabi_yau;
 pub mod hodge_flow;
+pub mod homological_mirror_symmetry;
 pub mod hurst_dfa;
 pub mod hyperbolic_poincare_hodge;
 pub mod jt_schwarzian_gravity;
@@ -34,6 +37,7 @@ pub mod lattice_qcd_wilson_polyakov;
 pub mod lead_lag;
 pub mod liouville_quantum_gravity;
 pub mod lppls_sornette;
+pub mod m_theory_joyce_g2;
 pub mod matrix_model_kp_hierarchy;
 pub mod matriz_rmt;
 pub mod metrica_fisher_empirica; // GLM-221 (C1): Fisher empirica q-gaussiana con beta_q
@@ -116,6 +120,10 @@ pub use feynman_path_instanton::{
     FeynmanInstantonEngine, InstantonParams, InstantonRegime, InstantonTunnelingReport,
     MAX_PATH_POINTS,
 };
+pub use geometric_langlands_hecke::{
+    GeometricLanglandsHeckeConfig, GeometricLanglandsHeckeEngine, GeometricLanglandsHeckeReport,
+    DEFAULT_PRIME_SCALES, HE_BUFFER_CAPACITY, NUM_PRIME_SCALES,
+};
 pub use gross_pitaevskii_bec::{
     GrossPitaevskiiBecEngine, GrossPitaevskiiBecReport, GrossPitaevskiiParams, BEC_ANGULAR_SECTORS,
     HBAR_EFF, PARTICLE_MASS_M,
@@ -131,9 +139,17 @@ pub use hairer_landauer_anderson::{
     LandauerButtikerEngine, LandauerButtikerReport, MesoscopicTransportRegime, MESOSCOPIC_CHANNELS,
 };
 pub use hawkes::HawkesProcessEngine;
+pub use heterotic_e8_calabi_yau::{
+    HeteroticE8CalabiYauConfig, HeteroticE8CalabiYauEngine, HeteroticE8CalabiYauReport,
+    HeteroticE8Config, HeteroticE8Report, CARTAN_E8, E8_DIM, HETEROTIC_BUFFER_CAPACITY,
+};
 pub use hodge_flow::{
     CrossMarketHodgeReport, HelmholtzHodgeFlowEngine, HelmholtzHodgeParams,
     HodgeDecompositionResult, HodgeRegime, MAX_HODGE_ASSETS,
+};
+pub use homological_mirror_symmetry::{
+    HomologicalMirrorSymmetryConfig, HomologicalMirrorSymmetryEngine,
+    HomologicalMirrorSymmetryReport, GW_QUINTIC_INVARIANTS, HMS_MODULI_HISTORY,
 };
 pub use hyperbolic_poincare_hodge::{
     HyperbolicPoincareHodgeEngine, HyperbolicPoincareHodgeParams, HyperbolicPoincareHodgeReport,
@@ -165,6 +181,9 @@ pub use lattice_qcd_wilson_polyakov::{
 pub use lead_lag::LeadLagAlphaEngine;
 pub use liouville_quantum_gravity::{
     LiouvilleCft2dQuantumGravityEngine, LiouvilleCftParams, LiouvilleQuantumGravityReport,
+};
+pub use m_theory_joyce_g2::{
+    JoyceG2Config, JoyceG2Report, MTheoryJoyceG2Engine, JOYCE_BUFFER_CAPACITY, JOYCE_DIM,
 };
 pub use matrix_model_kp_hierarchy::{
     MatrixModelKpConfig, MatrixModelKpHierarchyEngine, MatrixModelKpReport, KP_MATRIX_DIM,

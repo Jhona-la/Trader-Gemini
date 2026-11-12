@@ -129,11 +129,14 @@ fn test_c2_wave18_lindblad_decoherence_hard_veto() {
     let open_taus = [0.0; 3];
     let open_is_long = [false; 3];
 
-    // Forzar desfasamiento severo con spread controlado (10 bps) y ticks disipativos
+    // Desfasamiento por spread ancho (≈ 12 bps) y ticks disipativos, que el umbral estricto de
+    // pureza 0,95 del contrato declara veto. El spread queda bajo los vetos de spread fijo de W19
+    // (Liouville > 15 bps, Ryu-Takayanagi > 25 bps), que van antes en la cadena de etiquetas y
+    // taparían la de Lindblad.
     let mut rep = orchestrator.evaluate_and_synthesize(
         0,
         100.0,
-        100.10,
+        100.12,
         10.0,
         10.0,
         1_000_000,
@@ -151,7 +154,7 @@ fn test_c2_wave18_lindblad_decoherence_hard_veto() {
         rep = orchestrator.evaluate_and_synthesize(
             0,
             100.0 + (i as f64) * 0.1,
-            100.10 + (i as f64) * 0.1,
+            100.12 + (i as f64) * 0.1,
             10.0,
             10.0,
             1_000_000 + i * 100,
@@ -190,7 +193,11 @@ fn test_c3_wave18_gross_pitaevskii_vortex_cavitation_veto() {
     let mut slot_orchestrator =
         QuantumSlotOrchestrator::new(QuantumSlotOrchestratorParams::default());
 
-    // Configurar umbrales de BEC para disparar cavitación ante spread ensanchado
+    // El salto de +8 %, junto con el paso del spread de 1 a 12 bps, cruza la curvatura de
+    // singularidad de Liouville (W19), que va antes en la cadena de etiquetas y taparía la de
+    // Gross-Pitaevskii. Este contrato fija la etiqueta del vórtice, así que sube ese umbral; el
+    // veto de Liouville tiene su propio contrato en f75_002 C3. La rama de cavitación del BEC
+    // (fracción de condensado bajo el umbral) tiene el suyo en f70_001 C3.
     orchestrator.bec_engines[0] =
         feature_engine::gross_pitaevskii_bec::GrossPitaevskiiBecEngine::new(
             feature_engine::gross_pitaevskii_bec::GrossPitaevskiiParams {
@@ -201,7 +208,7 @@ fn test_c3_wave18_gross_pitaevskii_vortex_cavitation_veto() {
     // Aislar la prueba de BEC asegurando que Liouville y Ryu-Takayanagi no anticipen el veto ante el shock
     orchestrator.liouville_engines[0] = feature_engine::LiouvilleCft2dQuantumGravityEngine::new(
         feature_engine::LiouvilleCftParams {
-            singularity_curvature_threshold: 100.0,
+            singularity_curvature_threshold: 1.0e6,
             ..Default::default()
         },
     );
@@ -252,14 +259,18 @@ fn test_c3_wave18_gross_pitaevskii_vortex_cavitation_veto() {
         &open_is_long,
     );
 
-    // Shock violento de precio (+8.0%) y spread controlado (13.8 bps) que colapsa la fracción de condensado y nuclea vórtice
+    // Shock violento de precio (+8 %) que nuclea un vórtice cuantizado. El spread (≈ 12 bps) queda
+    // bajo los vetos de spread fijo de W19 (Liouville > 15 bps, Ryu-Takayanagi > 25 bps), que no se
+    // pueden aislar por parámetro y taparían la etiqueta. Con dt=0,1 s, Lloyd también se activa
+    // (rho≈0,999893>=0,95) y tiene precedencia; dt=0,2 s deja rho≈0,499946<0,95 sin cambiar su
+    // umbral, mientras el vórtice conserva carga -3. Lloyd conserva su cobertura positiva en F87.
     let rep = orchestrator.evaluate_and_synthesize(
         0,
         108.0,
-        108.15,
+        108.13,
         5.0,
         5.0,
-        1_000_100,
+        1_000_200,
         &triad,
         1000.0,
         5.0,
@@ -273,6 +284,10 @@ fn test_c3_wave18_gross_pitaevskii_vortex_cavitation_veto() {
     assert!(
         rep.bec_report.quantum_vortex_shedding_detected,
         "Debe detectarse vórtice/cavitación en BEC"
+    );
+    assert_ne!(
+        rep.bec_report.quantized_vortex_charge, 0,
+        "El veto lo dispara el vórtice cuantizado"
     );
     assert!(!rep.ville_ruin_bound_satisfied);
     assert_eq!(

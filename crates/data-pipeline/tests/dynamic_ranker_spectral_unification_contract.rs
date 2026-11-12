@@ -133,8 +133,14 @@ fn c4_spectral_scoring_fractal_memory_alignment() {
     let s_mean_rev = calculate_spectral_universe_score(vol, pct, None, Some(0.20));
 
     // Ambos regímenes con memoria superan al ruido browniano
-    assert!(s_trend > s_noise, "Persistencia fractal H=0.80 supera al ruido H=0.50");
-    assert!(s_mean_rev > s_noise, "Antipersistencia H=0.20 supera al ruido H=0.50");
+    assert!(
+        s_trend > s_noise,
+        "Persistencia fractal H=0.80 supera al ruido H=0.50"
+    );
+    assert!(
+        s_mean_rev > s_noise,
+        "Antipersistencia H=0.20 supera al ruido H=0.50"
+    );
 
     // Simetría de ventaja informacional respecto a H = 0.5
     assert!(

@@ -166,10 +166,9 @@ impl OrderAck {
         s.eq_ignore_ascii_case("NEW") || s.eq_ignore_ascii_case("PARTIALLY_FILLED")
     }
 
-    /// F1-028 / CL-212 (N49): el ACK de un cierre prueba llenado: executedQty
-    /// finito y positivo, o un estado FILLED o PARTIALLY_FILLED. Un EXPIRED,
-    /// un NEW o cualquier estado con executedQty 0 no lo prueba: la posición
-    /// puede seguir abierta. Única regla del reduce-only y del aplanado.
+    /// F1-028 / CL-212 (N49): evidencia legacy de llenado para diagnóstico.
+    /// No prueba un cierre completo: esa decisión exige `classify_close_ack`,
+    /// con identidad, estado, cantidad y remanente coherentes.
     #[inline(always)]
     pub fn prueba_llenado(&self) -> bool {
         (self.executed_qty.is_finite() && self.executed_qty > 0.0)
@@ -246,7 +245,7 @@ pub struct IncomeEntry {
     pub symbol: String,
     #[serde(rename = "incomeType", default)]
     pub income_type: String,
-    #[serde(deserialize_with = "string_or_f64", default)]
+    #[serde(deserialize_with = "string_or_f64")]
     pub income: f64,
     #[serde(default)]
     pub asset: String,

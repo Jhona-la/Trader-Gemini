@@ -48,7 +48,10 @@ fn test_causal_opinion_canonical_defaults_exact_parity() {
     // Caso 1: Breakout alineado con riesgo 0.80 < 0.88 -> NO debe vetar
     let op = SeniorCausal.evaluate(&payload, 0.55);
     assert_eq!(op.role, SeniorRole::Causal);
-    assert!(!op.is_veto, "Breakout alineado institucional no debe ser vetado con riesgo 0.80");
+    assert!(
+        !op.is_veto,
+        "Breakout alineado institucional no debe ser vetado con riesgo 0.80"
+    );
 
     let (is_veto_pure, safe_risk, safe_thresh, is_aligned) = evaluate_causal_manipulation_veto(
         payload.do_calculus_risk,
@@ -62,20 +65,32 @@ fn test_causal_opinion_canonical_defaults_exact_parity() {
     assert_eq!(op.is_veto, is_veto_pure);
     assert!((op.confidence - (1.0 - safe_risk)).abs() < 1e-12);
     assert_eq!(safe_thresh, DEFAULT_CAUSAL_VETO_THRESHOLD);
-    assert_eq!(payload.causal_min_book_imbalance, DEFAULT_CAUSAL_MIN_BOOK_IMBALANCE);
-    assert_eq!(payload.causal_aligned_max_risk, DEFAULT_CAUSAL_ALIGNED_MAX_RISK);
+    assert_eq!(
+        payload.causal_min_book_imbalance,
+        DEFAULT_CAUSAL_MIN_BOOK_IMBALANCE
+    );
+    assert_eq!(
+        payload.causal_aligned_max_risk,
+        DEFAULT_CAUSAL_ALIGNED_MAX_RISK
+    );
     assert!(is_aligned);
 
     // Caso 2: Sin alineación de libro (desequilibrio en contra) -> DEBE vetar
     payload.book_imbalance = -0.50;
     let op_contrary = SeniorCausal.evaluate(&payload, 0.55);
-    assert!(op_contrary.is_veto, "Libro en contra con riesgo 0.80 debe vetar");
+    assert!(
+        op_contrary.is_veto,
+        "Libro en contra con riesgo 0.80 debe vetar"
+    );
 
     // Caso 3: Breakout alineado pero con toxicidad extrema > 0.88 (ej. 0.92) -> DEBE vetar
     payload.book_imbalance = 0.50;
     payload.do_calculus_risk = 0.92;
     let op_toxic = SeniorCausal.evaluate(&payload, 0.55);
-    assert!(op_toxic.is_veto, "Toxicidad extrema > 0.88 debe vetar incluso con libro alineado");
+    assert!(
+        op_toxic.is_veto,
+        "Toxicidad extrema > 0.88 debe vetar incluso con libro alineado"
+    );
 }
 
 #[test]
@@ -94,12 +109,18 @@ fn test_causal_opinion_dynamic_payload_override() {
 
     // Ahora riesgo 0.70 > 0.65, y book_imbalance 0.30 < 0.40 (no califica como breakout alineado) -> DEBE vetar
     let op_strict = SeniorCausal.evaluate(&payload, 0.55);
-    assert!(op_strict.is_veto, "Payload dinámico con cota estricta debe vetar");
+    assert!(
+        op_strict.is_veto,
+        "Payload dinámico con cota estricta debe vetar"
+    );
 
     // Si el libro se ensancha a 0.50 > 0.40 y riesgo 0.70 < aligned_max_risk 0.88 -> debe autorizar
     payload.book_imbalance = 0.50;
     let op_aligned = SeniorCausal.evaluate(&payload, 0.55);
-    assert!(!op_aligned.is_veto, "Breakout institucional adaptativo debe autorizar");
+    assert!(
+        !op_aligned.is_veto,
+        "Breakout institucional adaptativo debe autorizar"
+    );
 }
 
 #[test]
@@ -109,8 +130,8 @@ fn test_causal_opinion_council_params_propagation() {
         .with_causal_bounds(0.60, 0.35, 0.80)
         .expect("Parámetros causales válidos");
 
-    let mut council = ConsejoDeliberacion::with_params(custom_params)
-        .expect("Consejo con custom params");
+    let mut council =
+        ConsejoDeliberacion::with_params(custom_params).expect("Consejo con custom params");
     council.agents = vec![Box::new(SeniorCausal)];
 
     // Payload con defaults canónicos
@@ -130,29 +151,15 @@ fn test_causal_opinion_council_params_propagation() {
 #[test]
 fn test_causal_opinion_bounds_validation_and_fail_closed() {
     // 1. Resiliencia contra no finitos en evaluate_causal_manipulation_veto
-    let (is_veto_nan, safe_risk_nan, safe_thresh_nan, _) = evaluate_causal_manipulation_veto(
-        f64::NAN,
-        0.75,
-        0.50,
-        1.0,
-        0.0,
-        0.25,
-        0.88,
-    );
+    let (is_veto_nan, safe_risk_nan, safe_thresh_nan, _) =
+        evaluate_causal_manipulation_veto(f64::NAN, 0.75, 0.50, 1.0, 0.0, 0.25, 0.88);
     assert!(is_veto_nan, "Riesgo NaN debe fallar cerrado y vetar");
     assert_eq!(safe_risk_nan, 1.0);
     assert_eq!(safe_thresh_nan, 0.75);
 
     // Parámetros corruptos en función pura caen a defaults seguros
-    let (_, _, safe_thresh_corrupt, _) = evaluate_causal_manipulation_veto(
-        0.50,
-        f64::NAN,
-        0.50,
-        1.0,
-        0.0,
-        -1.0,
-        2.5,
-    );
+    let (_, _, safe_thresh_corrupt, _) =
+        evaluate_causal_manipulation_veto(0.50, f64::NAN, 0.50, 1.0, 0.0, -1.0, 2.5);
     assert_eq!(safe_thresh_corrupt, DEFAULT_CAUSAL_VETO_THRESHOLD);
 
     // 2. Validación en MarketSnapshotPayload
@@ -167,10 +174,18 @@ fn test_causal_opinion_bounds_validation_and_fail_closed() {
     assert!(p.validate().is_err());
 
     // 3. Validación en CouncilParams
-    assert!(CouncilParams::default().with_causal_bounds(0.0, 0.25, 0.88).is_err());
-    assert!(CouncilParams::default().with_causal_bounds(1.05, 0.25, 0.88).is_err());
-    assert!(CouncilParams::default().with_causal_bounds(0.75, -0.1, 0.88).is_err());
-    assert!(CouncilParams::default().with_causal_bounds(0.75, 0.25, 1.5).is_err());
+    assert!(CouncilParams::default()
+        .with_causal_bounds(0.0, 0.25, 0.88)
+        .is_err());
+    assert!(CouncilParams::default()
+        .with_causal_bounds(1.05, 0.25, 0.88)
+        .is_err());
+    assert!(CouncilParams::default()
+        .with_causal_bounds(0.75, -0.1, 0.88)
+        .is_err());
+    assert!(CouncilParams::default()
+        .with_causal_bounds(0.75, 0.25, 1.5)
+        .is_err());
 }
 
 #[test]

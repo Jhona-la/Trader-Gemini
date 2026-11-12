@@ -3,8 +3,7 @@
 //! LCG propio — nada aleatorio del sistema, nada flaky.
 
 use feature_engine::metrica_fisher_empirica::{
-    M_MIN_MUESTRAS, beta_q, metrica_fisher_empirica, ricci_q_gaussiana,
-    score_q_gaussiana,
+    beta_q, metrica_fisher_empirica, ricci_q_gaussiana, score_q_gaussiana, M_MIN_MUESTRAS,
 };
 
 /// LCG determinista (64 bits, multiplicador de Knuth) → f64 en [0, 1).
@@ -40,7 +39,10 @@ fn muestras_q_gaussiana(q: f64, mu: f64, sigma: f64, n: usize, semilla: u64) -> 
 #[test]
 fn beta_q_rango_y_normalizacion() {
     // Fuera del rango abierto (1, 5/3): fall-closed.
-    assert!(beta_q(1.0).is_none(), "q=1 es el limite gaussiano, no de la familia");
+    assert!(
+        beta_q(1.0).is_none(),
+        "q=1 es el limite gaussiano, no de la familia"
+    );
     assert!(beta_q(5.0 / 3.0).is_none(), "q=5/3 diverge la varianza");
     assert!(beta_q(1.8).is_none());
     assert!(beta_q(0.9).is_none());
@@ -57,7 +59,7 @@ fn scores_verificados_contra_diferencias_finitas() {
     fn log_p(q: f64, mu: f64, sigma: f64, z: f64) -> f64 {
         let beta = beta_q(q).unwrap();
         let u = (z - mu) / sigma;
-        -sigma.ln() + (1.0 - (1.0 - q) * beta * u * u).ln() / (1.0 - q)
+        (1.0 - (1.0 - q) * beta * u * u).ln() / (1.0 - q) - sigma.ln()
     }
     for (q, mu, sigma, z) in [
         (1.2, 0.3, 1.7, 0.9),
@@ -80,16 +82,54 @@ fn scores_verificados_contra_diferencias_finitas() {
 }
 
 #[test]
+fn score_en_limite_gaussiano_normalizado() {
+    let q = 1.000001;
+    let mu = 0.3;
+    let sigma = 1.7;
+    let z = 0.9;
+    let u = (z - mu) / sigma;
+    let [s_mu, s_sigma] = score_q_gaussiana(q, mu, sigma, z).unwrap();
+
+    assert!((s_mu - u / sigma).abs() < 0.005, "s_mu={s_mu}");
+    assert!(
+        (s_sigma - (u * u - 1.0) / sigma).abs() < 0.005,
+        "score sigma sin normalizar: {s_sigma}"
+    );
+}
+
+#[test]
+fn metrica_en_limite_gaussiano_normalizado() {
+    let sigma = 1.0;
+    let muestras = muestras_q_gaussiana(1.001, 0.0, sigma, 8192, 0x5EED_0011);
+    let g = metrica_fisher_empirica(1.001, 0.0, sigma, &muestras).unwrap();
+
+    assert!((g[0][0] - 1.0 / (sigma * sigma)).abs() < 0.20);
+    assert!(
+        (g[1][1] - 2.0 / (sigma * sigma)).abs() < 0.30,
+        "g_sigma_sigma debe tender a 2/sigma^2, no 3/sigma^2: {}",
+        g[1][1]
+    );
+    assert!(g[0][1].abs() < 0.20);
+    assert!(g[1][0].abs() < 0.20);
+}
+
+#[test]
 fn fall_closed_de_metrica_y_scores() {
     // σ ≤ 0, no finitos, q fuera de rango.
     assert!(score_q_gaussiana(1.3, 0.0, 0.0, 0.5).is_none());
     assert!(score_q_gaussiana(1.3, 0.0, -1.0, 0.5).is_none());
     assert!(score_q_gaussiana(1.7, 0.0, 1.0, 0.5).is_none());
     assert!(score_q_gaussiana(f64::NAN, 0.0, 1.0, 0.5).is_none());
-    // Para q > 1 el soporte es ℝ (ley de potencias): un z gigante tiene score
-    // FINITO (s_mu -> 0, s_sigma acotado por colas pesadas) — observable legítimo, no falla.
+    // Para q > 1 el soporte es ℝ. Con q=1.5 y |u|→∞, s_mu→0 pero
+    // s_sigma→2/(q−1)−1=3: no se puede esperar un score nulo en sigma.
     let gigante = score_q_gaussiana(1.5, 0.0, 1.0, 1e9).expect("soporte infinito en q>1");
-    assert!(gigante[0].abs() < 1e-6 && gigante[1].is_finite());
+    assert!(gigante[0].abs() < 1e-6);
+    assert!((gigante[1] - 3.0).abs() < 1e-6);
+    for invalido in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+        assert!(score_q_gaussiana(1.5, 0.0, 1.0, invalido).is_none());
+        assert!(score_q_gaussiana(1.5, invalido, 1.0, 0.0).is_none());
+        assert!(score_q_gaussiana(1.5, 0.0, invalido, 0.0).is_none());
+    }
     // Métrica: menos muestras que el mínimo → None (nada fabricado).
     let pocas = muestras_q_gaussiana(1.5, 0.0, 1.0, M_MIN_MUESTRAS - 1, 0xC0FFE);
     assert!(metrica_fisher_empirica(1.5, 0.0, 1.0, &pocas).is_none());
@@ -100,11 +140,7 @@ fn fall_closed_de_metrica_y_scores() {
 }
 
 #[test]
-fn ricci_continuidad_gaussiana_y_colas_planas() {
-    // Números analíticos de contrato (geometría de Fisher-Rao q-gaussiana):
-    //   q→1⁺  ⇒ R ≈ −1 (continuidad exacta con el semiplano hiperbólico, 191/193)
-    //   q=1.5 ⇒ R ≈ −2.0 (curvatura hiperbólica más pronunciada por grados de libertad)
-    // Tolerancias para métrica EMPÍRICA: ruido 1/√N (N=8192) ±0.25.
+fn ricci_continuidad_gaussiana_y_colas_normalizadas() {
     let n = 8192;
     let muestras_casi = muestras_q_gaussiana(1.001, 0.0, 1.0, n, 0x5EED_0001);
     let r_casi = ricci_q_gaussiana(1.001, 0.0, 1.0, &muestras_casi)
@@ -114,16 +150,17 @@ fn ricci_continuidad_gaussiana_y_colas_planas() {
         "q=1.001: esperado R ~ -1, obtenido {r_casi}"
     );
 
+    // Con q=1.5 y beta=2, s_sigma=(3u²−1)/(σ(1+u²)). La densidad
+    // proporcional a (1+u²)^-2 da E[(3u²−1)²/(1+u²)²]=1 exactamente:
+    // el numerador es 9J2−6J1+J0=π/2 y el normalizador π/2. Por tanto
+    // R=-2/B=-2; -0.45 correspondía a la densidad sin normalizar.
     let muestras_15 = muestras_q_gaussiana(1.5, 0.0, 1.0, n, 0x5EED_0002);
     let r_15 = ricci_q_gaussiana(1.5, 0.0, 1.0, &muestras_15).expect("Ricci en q=1.5 con beta_q");
     assert!(
         (r_15 - (-2.0)).abs() < 0.25,
-        "q=1.5: esperado R ~ -2.0, obtenido {r_15}"
+        "q=1.5: esperado R=-2 por la métrica normalizada, obtenido {r_15}"
     );
 
-    // Con colas pesadas (q=1.5), el escalar de Ricci de la familia Tsallis
-    // q-gaussiana se hace más negativo (|R| crece de ~1.0 a ~2.0),
-    // reflejando mayor curvatura hiperbólica en el espacio de parámetros.
     assert!(
         r_15.abs() > r_casi.abs(),
         "colas mas pesadas aumentan curvatura hiperbolica: |R(q=1.5)|={} debe ser > |R(q=1.001)|={}",

@@ -416,7 +416,7 @@ impl StanfordDiscoveryEngine {
         funding_rate_per_period: f64,
     ) -> SandboxEvaluationMetrics {
         let n = returns.len();
-        if n < 10 {
+        if n < 10 || returns.iter().any(|value| !value.is_finite()) {
             return SandboxEvaluationMetrics {
                 hypothesis_id: hypothesis.id,
                 sharpe_ratio: 0.0,
@@ -565,7 +565,22 @@ impl StanfordDiscoveryEngine {
         metrics: &[SandboxEvaluationMetrics],
         aumann_shapley_weights: Option<[f64; PILLAR_COUNT]>,
     ) -> DistilledChampion {
-        if candidates.len() != metrics.len() || candidates.is_empty() {
+        if candidates.len() != metrics.len()
+            || candidates.is_empty()
+            || metrics.iter().any(|metric| {
+                [
+                    metric.sharpe_ratio,
+                    metric.win_rate,
+                    metric.max_drawdown,
+                    metric.net_realized_pnl,
+                    metric.kelly_growth_rate,
+                    metric.fee_drag_usd,
+                    metric.slippage_drag_usd,
+                ]
+                .iter()
+                .any(|value| !value.is_finite())
+            })
+        {
             return DistilledChampion {
                 generation: self.current_generation,
                 champion_hypothesis: self.incumbent_hypothesis,
@@ -651,6 +666,17 @@ impl StanfordDiscoveryEngine {
         funding_rate: f64,
         reserve_capital_usd: f64,
     ) -> DistilledChampion {
+        if returns.iter().any(|value| !value.is_finite()) {
+            return DistilledChampion {
+                generation: self.current_generation,
+                champion_hypothesis: self.incumbent_hypothesis,
+                champion_metrics: self.incumbent_metrics,
+                pareto_rank: 0,
+                is_promoted_to_active: false,
+                causal_pillar_importance: self.incumbent_hypothesis.pillar_weights,
+            };
+        }
+
         // 1. SOL PROPOSE
         let proposed = self.propose_hypotheses(batch_size);
 

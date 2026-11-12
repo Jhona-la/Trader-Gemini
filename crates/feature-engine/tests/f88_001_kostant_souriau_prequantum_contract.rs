@@ -88,11 +88,27 @@ fn test_c4_nan_infinity_immunity_and_stack_determinism() {
     let config = KostantSouriauConfig::default();
     let mut engine = KostantSouriauPrequantumEngine::new(config);
 
-    let report = engine.evaluate(f64::NAN, f64::INFINITY, f64::NEG_INFINITY, f64::NAN);
+    for invalido in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+        for (q, p, spread, vol) in [
+            (invalido, 0.15, 1.2, 0.02),
+            (0.005, invalido, 1.2, 0.02),
+            (0.005, 0.15, invalido, 0.02),
+            (0.005, 0.15, 1.2, invalido),
+        ] {
+            let report = engine.evaluate(q, p, spread, vol);
+            assert!(report.prequantum_observable_val.is_finite());
+            assert!(report.symplectic_curvature_norm.is_finite());
+            assert!(report.reeb_contact_holonomy.is_finite());
+            assert!(report.polarization_coherence.is_finite());
+            assert!(report.slot_scale_factor.is_finite());
+            assert!(report.prequantum_collapse_veto);
+            assert_eq!(report.slot_scale_factor, 0.10);
+        }
+    }
 
-    assert!(report.prequantum_observable_val.is_finite());
-    assert!(report.symplectic_curvature_norm.is_finite());
-    assert!(report.reeb_contact_holonomy.is_finite());
-    assert!(report.polarization_coherence.is_finite());
-    assert!(report.slot_scale_factor.is_finite());
+    for (q, p, spread, vol) in [(0.005, 0.15, -1.0, 0.02), (0.005, 0.15, 1.2, -0.01)] {
+        let report = engine.evaluate(q, p, spread, vol);
+        assert!(report.prequantum_collapse_veto);
+        assert_eq!(report.slot_scale_factor, 0.10);
+    }
 }

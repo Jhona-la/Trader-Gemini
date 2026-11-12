@@ -21,8 +21,8 @@
 
 use omniscient_registry::OmniscientRegistry;
 use signal_engine::flow_excitation_confluence::FlowExcitationConfluenceEngine;
-use strategy_core::QuantumStrategy;
 use std::sync::Arc;
+use strategy_core::QuantumStrategy;
 
 fn build_base_long_registry() -> Arc<OmniscientRegistry> {
     let reg = Arc::new(OmniscientRegistry::new());
@@ -92,22 +92,15 @@ fn test_aligned_iceberg_amplifies_long_confidence() {
         v_aligned > v_base,
         "La acumulación institucional alineada debe amplificar la convicción: {v_aligned} > {v_base}"
     );
-    assert!(v_aligned <= 1.0, "El voto amplificado no debe violar la cota [0, 1]: {v_aligned}");
+    assert!(
+        v_aligned <= 1.0,
+        "El voto amplificado no debe violar la cota [0, 1]: {v_aligned}"
+    );
 }
 
 #[test]
 fn test_opposing_iceberg_c1_smooth_damping_and_conformal_veto() {
-    let sweep_pressures = [
-        0.0,
-        -0.10,
-        -0.20,
-        -0.30,
-        -0.45,
-        -0.60,
-        -0.70,
-        -0.85,
-        -1.0,
-    ];
+    let sweep_pressures = [0.0, -0.10, -0.20, -0.30, -0.45, -0.60, -0.70, -0.85, -1.0];
 
     let mut votes = Vec::new();
     for &p in &sweep_pressures {
@@ -169,7 +162,10 @@ fn test_aligned_and_opposing_short_behavior() {
     let mut eng_short_base = FlowExcitationConfluenceEngine::new();
     assert!(eng_short_base.init(reg_short_base).is_ok());
     let v_short_base = eng_short_base.evaluate();
-    assert!(v_short_base < 0.0, "Base short debe votar negativo: {v_short_base}");
+    assert!(
+        v_short_base < 0.0,
+        "Base short debe votar negativo: {v_short_base}"
+    );
 
     // Short con iceberg alineado (distribución institucional en Bid: Π = -0.60)
     let reg_short_aligned = build_base_short_registry();
@@ -239,17 +235,26 @@ fn test_spectral_vote_with_liquidity_modulation() {
 
     // Con presión 0.0 debe ser idéntico al voto espectral clásico
     let v_classic = FlowExcitationConfluenceEngine::voto_espectral(&displacements, lambda_ratio);
-    let v_liq_zero = FlowExcitationConfluenceEngine::voto_espectral_con_liquidez(&displacements, lambda_ratio, 0.0);
+    let v_liq_zero = FlowExcitationConfluenceEngine::voto_espectral_con_liquidez(
+        &displacements,
+        lambda_ratio,
+        0.0,
+    );
 
     for k in 0..32 {
         assert_eq!(
-            v_classic.en_escala(k), v_liq_zero.en_escala(k),
+            v_classic.en_escala(k),
+            v_liq_zero.en_escala(k),
             "Escala {k} debe ser idéntica con presión 0.0"
         );
     }
 
     // Con presión positiva, las microescalas (k < 12) deben recibir mayor impulso que las macroescalas
-    let v_liq_pos = FlowExcitationConfluenceEngine::voto_espectral_con_liquidez(&displacements, lambda_ratio, 0.8);
+    let v_liq_pos = FlowExcitationConfluenceEngine::voto_espectral_con_liquidez(
+        &displacements,
+        lambda_ratio,
+        0.8,
+    );
     let delta_micro = v_liq_pos.en_escala(0) - v_classic.en_escala(0);
     let delta_macro = v_liq_pos.en_escala(31) - v_classic.en_escala(31);
 
@@ -269,6 +274,12 @@ fn test_resilience_to_nans_and_infinities() {
     assert!(eng.init(reg_corrupted).is_ok());
     let v = eng.evaluate();
 
-    assert!(v.is_finite(), "El motor debe blindarse contra NaNs e infinitos: {v}");
-    assert!((-1.0..=1.0).contains(&v), "El voto debe mantenerse acotado en [-1, 1]: {v}");
+    assert!(
+        v.is_finite(),
+        "El motor debe blindarse contra NaNs e infinitos: {v}"
+    );
+    assert!(
+        (-1.0..=1.0).contains(&v),
+        "El voto debe mantenerse acotado en [-1, 1]: {v}"
+    );
 }

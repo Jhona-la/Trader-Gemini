@@ -29,8 +29,14 @@ fn cl162_la_restauracion_devuelve_el_kelly_legado_del_incumbente() {
 
     restaurar_genes_no_observables_en_examen(&mut candidate, &incumbent);
 
-    assert_eq!(candidate.scalp_kelly_fraction.to_bits(), incumbent.scalp_kelly_fraction.to_bits());
-    assert_eq!(candidate.swing_kelly_fraction.to_bits(), incumbent.swing_kelly_fraction.to_bits());
+    assert_eq!(
+        candidate.scalp_kelly_fraction.to_bits(),
+        incumbent.scalp_kelly_fraction.to_bits()
+    );
+    assert_eq!(
+        candidate.swing_kelly_fraction.to_bits(),
+        incumbent.swing_kelly_fraction.to_bits()
+    );
     assert_eq!(
         candidate.kelly_at_tau(WF_BAR_MS).to_bits(),
         incumbent.kelly_at_tau(WF_BAR_MS).to_bits(),

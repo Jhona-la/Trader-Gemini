@@ -55,11 +55,31 @@ fn test_invariante_anti_phantom_boost_preservado() {
     let mut orch = TensorVoteOrchestrator::new(arena);
 
     // 1 activa y 4 silentes plenamente operables
-    orch.add_strategy(Box::new(MockOperableStrategy { name: "Activa", val: 0.50, operable: true }));
-    orch.add_strategy(Box::new(MockOperableStrategy { name: "Silente1", val: 0.0, operable: true }));
-    orch.add_strategy(Box::new(MockOperableStrategy { name: "Silente2", val: 0.0, operable: true }));
-    orch.add_strategy(Box::new(MockOperableStrategy { name: "Silente3", val: 0.0, operable: true }));
-    orch.add_strategy(Box::new(MockOperableStrategy { name: "Silente4", val: 0.0, operable: true }));
+    orch.add_strategy(Box::new(MockOperableStrategy {
+        name: "Activa",
+        val: 0.50,
+        operable: true,
+    }));
+    orch.add_strategy(Box::new(MockOperableStrategy {
+        name: "Silente1",
+        val: 0.0,
+        operable: true,
+    }));
+    orch.add_strategy(Box::new(MockOperableStrategy {
+        name: "Silente2",
+        val: 0.0,
+        operable: true,
+    }));
+    orch.add_strategy(Box::new(MockOperableStrategy {
+        name: "Silente3",
+        val: 0.0,
+        operable: true,
+    }));
+    orch.add_strategy(Box::new(MockOperableStrategy {
+        name: "Silente4",
+        val: 0.0,
+        operable: true,
+    }));
 
     let decision = orch.evaluate_continuous_consensus_for_coin(0, "BTCUSDT");
 
@@ -85,11 +105,31 @@ fn test_invariante_exclusion_inoperable() {
     let mut orch = TensorVoteOrchestrator::new(arena);
 
     // 1 activa (0.50), 2 silentes operables (0.0), y 2 contextualmente inoperables (0.0, operable=false)
-    orch.add_strategy(Box::new(MockOperableStrategy { name: "Activa", val: 0.50, operable: true }));
-    orch.add_strategy(Box::new(MockOperableStrategy { name: "Silente1", val: 0.0, operable: true }));
-    orch.add_strategy(Box::new(MockOperableStrategy { name: "Silente2", val: 0.0, operable: true }));
-    orch.add_strategy(Box::new(MockOperableStrategy { name: "Inoperable1", val: 0.0, operable: false }));
-    orch.add_strategy(Box::new(MockOperableStrategy { name: "Inoperable2", val: 0.0, operable: false }));
+    orch.add_strategy(Box::new(MockOperableStrategy {
+        name: "Activa",
+        val: 0.50,
+        operable: true,
+    }));
+    orch.add_strategy(Box::new(MockOperableStrategy {
+        name: "Silente1",
+        val: 0.0,
+        operable: true,
+    }));
+    orch.add_strategy(Box::new(MockOperableStrategy {
+        name: "Silente2",
+        val: 0.0,
+        operable: true,
+    }));
+    orch.add_strategy(Box::new(MockOperableStrategy {
+        name: "Inoperable1",
+        val: 0.0,
+        operable: false,
+    }));
+    orch.add_strategy(Box::new(MockOperableStrategy {
+        name: "Inoperable2",
+        val: 0.0,
+        operable: false,
+    }));
 
     let decision = orch.evaluate_continuous_consensus_for_coin(0, "BTCUSDT");
 
@@ -118,11 +158,31 @@ fn test_consenso_unanime_operable_con_inoperables_presentes() {
     let mut orch = TensorVoteOrchestrator::new(arena);
 
     // 3 operables unánimes en 0.50 + 2 inoperables (0.0)
-    orch.add_strategy(Box::new(MockOperableStrategy { name: "Operable1", val: 0.50, operable: true }));
-    orch.add_strategy(Box::new(MockOperableStrategy { name: "Operable2", val: 0.50, operable: true }));
-    orch.add_strategy(Box::new(MockOperableStrategy { name: "Operable3", val: 0.50, operable: true }));
-    orch.add_strategy(Box::new(MockOperableStrategy { name: "Inoperable1", val: 0.0, operable: false }));
-    orch.add_strategy(Box::new(MockOperableStrategy { name: "Inoperable2", val: 0.0, operable: false }));
+    orch.add_strategy(Box::new(MockOperableStrategy {
+        name: "Operable1",
+        val: 0.50,
+        operable: true,
+    }));
+    orch.add_strategy(Box::new(MockOperableStrategy {
+        name: "Operable2",
+        val: 0.50,
+        operable: true,
+    }));
+    orch.add_strategy(Box::new(MockOperableStrategy {
+        name: "Operable3",
+        val: 0.50,
+        operable: true,
+    }));
+    orch.add_strategy(Box::new(MockOperableStrategy {
+        name: "Inoperable1",
+        val: 0.0,
+        operable: false,
+    }));
+    orch.add_strategy(Box::new(MockOperableStrategy {
+        name: "Inoperable2",
+        val: 0.0,
+        operable: false,
+    }));
 
     let decision = orch.evaluate_continuous_consensus_for_coin(0, "BTCUSDT");
 
@@ -149,9 +209,21 @@ fn test_invarianza_a_clones_con_operabilidad() {
     let mut orch = TensorVoteOrchestrator::new(arena);
 
     // 3 clones de la misma fuente "CloneMaster"
-    orch.add_strategy(Box::new(MockOperableStrategy { name: "CloneMaster", val: 0.50, operable: true }));
-    orch.add_strategy(Box::new(MockOperableStrategy { name: "CloneMaster", val: 0.50, operable: true }));
-    orch.add_strategy(Box::new(MockOperableStrategy { name: "CloneMaster", val: 0.50, operable: true }));
+    orch.add_strategy(Box::new(MockOperableStrategy {
+        name: "CloneMaster",
+        val: 0.50,
+        operable: true,
+    }));
+    orch.add_strategy(Box::new(MockOperableStrategy {
+        name: "CloneMaster",
+        val: 0.50,
+        operable: true,
+    }));
+    orch.add_strategy(Box::new(MockOperableStrategy {
+        name: "CloneMaster",
+        val: 0.50,
+        operable: true,
+    }));
 
     let decision = orch.evaluate_continuous_consensus_for_coin(0, "BTCUSDT");
 
@@ -177,7 +249,11 @@ fn test_active_vote_overrides_inoperability() {
     let mut orch = TensorVoteOrchestrator::new(arena);
 
     // Estrategia que declara operable=false pero emite voto activo (0.40)
-    orch.add_strategy(Box::new(MockOperableStrategy { name: "SurpriseActive", val: 0.40, operable: false }));
+    orch.add_strategy(Box::new(MockOperableStrategy {
+        name: "SurpriseActive",
+        val: 0.40,
+        operable: false,
+    }));
 
     let decision = orch.evaluate_continuous_consensus_for_coin(0, "BTCUSDT");
 

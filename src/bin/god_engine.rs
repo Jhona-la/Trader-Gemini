@@ -26,13 +26,16 @@ use telemetry_engine::telemetry;
 /// Loading is not statistical promotion; errors must remain visible and retryable.
 fn refresh_ml_models(tracker: &mut god_engine_core::model_reload::ModelReloadTracker) {
     let scan = tracker.scan(std::path::Path::new("models"), |key, path| {
-        let source = path.to_str().ok_or_else(|| "model path is not UTF-8".to_string())?;
+        let source = path
+            .to_str()
+            .ok_or_else(|| "model path is not UTF-8".to_string())?;
         god_engine_core::ml_inference::NanoForest::load_global_from_source(key, source)
             .map_err(|error| error.to_string())
     });
     match scan {
-        Ok(events) => for event in events {
-            match event.result {
+        Ok(events) => {
+            for event in events {
+                match event.result {
                 Ok(()) => telemetry_server::telemetry_log!(
                     "🧠 [ML-RELOAD] Loaded {} (requested path: {})", event.key, event.path.display()),
                 // CL-141: el reintento sigue cada 10 s; el aviso sólo cuando
@@ -42,7 +45,8 @@ fn refresh_ml_models(tracker: &mut god_engine_core::model_reload::ModelReloadTra
                     "⚠️ [ML-RELOAD] Rejected {} (requested path: {}): {} (will retry; no se repite mientras no cambie)",
                     event.key, event.path.display(), error),
             }
-        },
+            }
+        }
         Err(error) => {
             let error = error.to_string();
             if tracker.error_de_escaneo_nuevo(&error) {
@@ -156,7 +160,11 @@ fn decision_fee_breaker(
         return None;
     }
     let bruto: f64 = cierres.iter().map(|c| c.bruto).sum();
-    let bruto_ganador: f64 = cierres.iter().filter(|c| c.bruto > 0.0).map(|c| c.bruto).sum();
+    let bruto_ganador: f64 = cierres
+        .iter()
+        .filter(|c| c.bruto > 0.0)
+        .map(|c| c.bruto)
+        .sum();
     let ganadoras = cierres.iter().filter(|c| c.bruto > 0.0).count();
     let neto = bruto + if funding.is_finite() { funding } else { 0.0 } - fees;
     if !(neto < 0.0 && fees > bruto_ganador) {
@@ -739,33 +747,41 @@ async fn ensure_position_protected(
                 Ok(()) => {
                     telemetry_server::telemetry_log!(
                         "🛡️ [{}] TP re-armado para {} ({:.6} @ {:.4}) — cobertura era {:.6}/{:.6}",
-                        tag, symbol, tp_gap, trig, tp_covered, pos_qty
+                        tag,
+                        symbol,
+                        tp_gap,
+                        trig,
+                        tp_covered,
+                        pos_qty
                     );
                     audit.tp_gap = 0.0;
                     break;
                 }
-                Err(e) if intent == 0 && e.contains("-2021") => {
-                    match live_price {
-                        Some(cur) => {
-                            trig = if is_long {
-                                cur * (1.0 + frac_tp)
-                            } else {
-                                cur * (1.0 - frac_tp)
-                            };
-                            telemetry_server::telemetry_log!(
-                                "↪️ [{}] TP de {} reposicionado al precio vivo ({:.4} → {:.4})",
-                                tag, symbol, tp_price, trig
-                            );
-                        }
-                        None => {
-                            telemetry_server::telemetry_log!(
-                                "⚠️ [{}] top-up TP {} falló (-2021 sin precio vivo): {}",
-                                tag, symbol, e
-                            );
-                            break;
-                        }
+                Err(e) if intent == 0 && e.contains("-2021") => match live_price {
+                    Some(cur) => {
+                        trig = if is_long {
+                            cur * (1.0 + frac_tp)
+                        } else {
+                            cur * (1.0 - frac_tp)
+                        };
+                        telemetry_server::telemetry_log!(
+                            "↪️ [{}] TP de {} reposicionado al precio vivo ({:.4} → {:.4})",
+                            tag,
+                            symbol,
+                            tp_price,
+                            trig
+                        );
                     }
-                }
+                    None => {
+                        telemetry_server::telemetry_log!(
+                            "⚠️ [{}] top-up TP {} falló (-2021 sin precio vivo): {}",
+                            tag,
+                            symbol,
+                            e
+                        );
+                        break;
+                    }
+                },
                 Err(e) => {
                     // B3.5b: evidencia positiva de rechazo para el
                     // escalado, de esta posición (símbolo y lado). Sólo
@@ -819,33 +835,41 @@ async fn ensure_position_protected(
                 Ok(()) => {
                     telemetry_server::telemetry_log!(
                         "🛡️ [{}] SL re-armado para {} ({:.6} @ {:.4}) — cobertura era {:.6}/{:.6}",
-                        tag, symbol, sl_gap, trig, sl_covered, pos_qty
+                        tag,
+                        symbol,
+                        sl_gap,
+                        trig,
+                        sl_covered,
+                        pos_qty
                     );
                     audit.sl_gap = 0.0;
                     break;
                 }
-                Err(e) if intent == 0 && e.contains("-2021") => {
-                    match live_price {
-                        Some(cur) => {
-                            trig = if is_long {
-                                cur * (1.0 - frac_sl)
-                            } else {
-                                cur * (1.0 + frac_sl)
-                            };
-                            telemetry_server::telemetry_log!(
-                                "↪️ [{}] SL de {} reposicionado al precio vivo ({:.4} → {:.4})",
-                                tag, symbol, sl_price, trig
-                            );
-                        }
-                        None => {
-                            telemetry_server::telemetry_log!(
-                                "⚠️ [{}] top-up SL {} falló (-2021 sin precio vivo): {}",
-                                tag, symbol, e
-                            );
-                            break;
-                        }
+                Err(e) if intent == 0 && e.contains("-2021") => match live_price {
+                    Some(cur) => {
+                        trig = if is_long {
+                            cur * (1.0 - frac_sl)
+                        } else {
+                            cur * (1.0 + frac_sl)
+                        };
+                        telemetry_server::telemetry_log!(
+                            "↪️ [{}] SL de {} reposicionado al precio vivo ({:.4} → {:.4})",
+                            tag,
+                            symbol,
+                            sl_price,
+                            trig
+                        );
                     }
-                }
+                    None => {
+                        telemetry_server::telemetry_log!(
+                            "⚠️ [{}] top-up SL {} falló (-2021 sin precio vivo): {}",
+                            tag,
+                            symbol,
+                            e
+                        );
+                        break;
+                    }
+                },
                 Err(e) => {
                     // B3.5b: evidencia positiva de rechazo para el
                     // escalado, de esta posición (símbolo y lado). Sólo
@@ -1039,42 +1063,79 @@ fn restore_kelly_envelope(env: &mut risk_engine::kelly_envelope::RiskEnvelope) -
 /// El spawn de la transición demo→mainnet dejaba DOS loops NTP infinitos
 /// compitiendo por `server_time_offset_ms` (el offset oscilaba cada 15s
 /// según qué loop ganara el fetch). Generación monótona: al lanzar un
-/// sincronizador nuevo, todos los anteriores observan su generación
-/// obsoleta en su guardia y salen — el equivalente al
-/// `if ntp_abort.load() { break; }` del loop, implementado como guardia
-/// en el host porque el loop vive en execution-engine::ntp.
-static NTP_SYNC_GENERATION: AtomicU64 = AtomicU64::new(0);
+/// sincronizador nuevo, los anteriores observan su generación obsoleta en
+/// su guardia y salen.
+///
+/// RB-N1 (Codex RB, 2026-11-10): …y el que queda, CORRE. La guardia
+/// original comparaba el contador con el valor previo de `fetch_add` y toda
+/// generación —también la única— se daba por reemplazada en su primer
+/// chequeo: desde 97996eba0 (2026-09-17) el bucle Kalman no tomó una sola
+/// muestra en producción y la deriva del reloj entró entera en la edad del
+/// dato (a3d: 97 812 LATENCY PANIC con la deriva en −4 863 ms). La guardia
+/// vive ahora en `execution_engine::ntp::SincronizadorUnico`, con contratos
+/// de conducta, y guarda también el estado del reloj (ancla + Kalman) que
+/// comparten todas las generaciones: la de la transición a mainnet sigue
+/// corrigiendo contra la misma ancla en vez de reiniciar la corrección.
+static SINCRONIZADOR_NTP: execution_engine::ntp::SincronizadorUnico =
+    execution_engine::ntp::SincronizadorUnico::new();
 
 fn spawn_ntp_synchronizer(
     handle: &tokio::runtime::Handle,
     client: Arc<execution_engine::client::BinanceClient>,
     arena: Arc<quantum_arena::GlobalArena>,
 ) {
-    let my_gen = NTP_SYNC_GENERATION.fetch_add(1, Ordering::AcqRel);
-    if my_gen > 0 {
+    let generacion = SINCRONIZADOR_NTP.reclamar();
+    if generacion > 1 {
         telemetry_server::telemetry_log!(
             "🔁 [NTP-SYNC] Generación {} — sincronizadores anteriores abortados (HOST-016: un solo loop vivo)",
-            my_gen + 1
+            generacion
         );
     }
     handle.spawn(async move {
-        let sync = execution_engine::ntp::start_ntp_synchronizer(client, arena);
-        let superseded = async {
-            loop {
-                if NTP_SYNC_GENERATION.load(Ordering::Acquire) > my_gen {
-                    break;
-                }
-                tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+        let observador = move |m: execution_engine::ntp::MuestraNtp| {
+            if !execution_engine::ntp::merece_aviso(&m) {
+                return;
             }
-        };
-        tokio::select! {
-            _ = sync => {}
-            _ = superseded => {
+            if m.aceptada {
+                let correccion = match m.correccion_ms {
+                    Some(c) => format!("{} ms", c),
+                    None => "— (ancla fijada)".to_string(),
+                };
                 telemetry_server::telemetry_log!(
-                    "🛑 [NTP-SYNC] Sincronizador de generación {} superseded — loop detenido (HOST-016)",
-                    my_gen + 1
+                    "🕐 [NTP-SYNC] Generación {} viva — muestra #{}: offset de pared {} ms, corrección de la proyección {}, RTT {} ms",
+                    generacion,
+                    m.aceptadas,
+                    m.offset_pared_ms,
+                    correccion,
+                    m.rtt_ms
+                );
+            } else {
+                telemetry_server::telemetry_log!(
+                    "⚠️ [NTP-SYNC] Generación {}: {} mediciones seguidas descartadas por RTT (la última {} ms) — el reloj no se corrige mientras dure",
+                    generacion,
+                    m.rechazadas_seguidas,
+                    m.rtt_ms
                 );
             }
+        };
+        let sync = execution_engine::ntp::start_ntp_synchronizer(
+            client,
+            arena,
+            SINCRONIZADOR_NTP.estado(),
+            observador,
+        );
+        let fin = execution_engine::ntp::correr_mientras_vigente(
+            &SINCRONIZADOR_NTP,
+            generacion,
+            std::time::Duration::from_millis(500),
+            sync,
+        )
+        .await;
+        if fin == execution_engine::ntp::FinSincronizador::Relevado {
+            telemetry_server::telemetry_log!(
+                "🛑 [NTP-SYNC] Sincronizador de generación {} superseded — loop detenido (HOST-016)",
+                generacion
+            );
         }
     });
 }
@@ -1092,6 +1153,27 @@ struct RecoveredContext {
 /// cantidad llenada y la τ de la ranura de ESTA reserva; antes, la cantidad
 /// pedida y la τ de la primera ranura abierta del lado.
 fn anotar_diario_de_posicion(
+    arena: &quantum_arena::GlobalArena,
+    reserva: &god_engine_core::entry_reservation::EntryReservation,
+    symbol: &str,
+    is_long: bool,
+    qty: f64,
+    px: f64,
+) {
+    let ruta = quantum_arena::paths::env_data_path("position_journal.jsonl");
+    anotar_diario_de_posicion_en(
+        std::path::Path::new(&ruta),
+        arena,
+        reserva,
+        symbol,
+        is_long,
+        qty,
+        px,
+    );
+}
+
+fn anotar_diario_de_posicion_en(
+    ruta: &std::path::Path,
     arena: &quantum_arena::GlobalArena,
     reserva: &god_engine_core::entry_reservation::EntryReservation,
     symbol: &str,
@@ -1122,7 +1204,7 @@ fn anotar_diario_de_posicion(
     let _ = std::fs::OpenOptions::new()
         .create(true)
         .append(true)
-        .open(quantum_arena::paths::env_data_path("position_journal.jsonl"))
+        .open(ruta)
         .and_then(|mut f| std::io::Write::write_all(&mut f, jr.as_bytes()));
 }
 
@@ -1131,9 +1213,10 @@ fn anotar_diario_de_posicion(
 /// entrada. Tolerante a diario ausente/corrupto (None ⇒ el llamador usa el
 /// piso espectral conservador).
 fn recover_position_context(symbol: &str, is_long: bool) -> Option<RecoveredContext> {
-    let content =
-        std::fs::read_to_string(quantum_arena::paths::env_data_path("position_journal.jsonl"))
-            .ok()?;
+    let content = std::fs::read_to_string(quantum_arena::paths::env_data_path(
+        "position_journal.jsonl",
+    ))
+    .ok()?;
     let now_ms = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap_or_default()
@@ -1205,12 +1288,18 @@ fn record_emergency_close(
     // Shared direction convention: a long gains when exit > entry.
     // This remains a local estimate, NOT fill-confirmed accounting evidence.
     let pnl_gross = match execution_engine::trade_accounting::checked_gross_pnl(
-        was_long, entry_price, exit_price, qty,
+        was_long,
+        entry_price,
+        exit_price,
+        qty,
     ) {
         Ok(pnl) => pnl,
         Err(reason) => {
             quantum_arena::protection_health::mark_dirty();
-            telemetry_engine::telemetry_err!("[EMERGENCY ACCOUNTING] numeric evidence unavailable: {:?}; no fabricated outcome", reason);
+            telemetry_engine::telemetry_err!(
+                "[EMERGENCY ACCOUNTING] numeric evidence unavailable: {:?}; no fabricated outcome",
+                reason
+            );
             return;
         }
     };
@@ -1253,7 +1342,10 @@ fn compact_position_journal() {
             continue;
         };
         let key = (
-            v.get("sym").and_then(|x| x.as_str()).unwrap_or("").to_string(),
+            v.get("sym")
+                .and_then(|x| x.as_str())
+                .unwrap_or("")
+                .to_string(),
             v.get("long").and_then(|x| x.as_bool()).unwrap_or(false),
         );
         let ts = v.get("ts").and_then(|x| x.as_u64()).unwrap_or(0);
@@ -1521,7 +1613,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     });
     */
 
-
     // I-1b (Línea I): los streams del feed y sus URLs salen de
     // `data_ingest::rutas_feed` (fuente única): por símbolo `@trade` y
     // `@depth5` (categoría pública) y `@kline_1m` (mercado), más
@@ -1693,7 +1784,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         "🛑 [SHUTDOWN] ^C recibido — drenando posiciones y estado..."
                     );
                     // despierta el event loop
-                    let _ = wake.try_send(data_ingest::cola_ws::MensajeWs::recibido_ahora(vec![0xFF]));
+                    let _ =
+                        wake.try_send(data_ingest::cola_ws::MensajeWs::recibido_ahora(vec![0xFF]));
                 }
             }
         });
@@ -1729,7 +1821,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
         });
         if let Err(e) = lanzado {
-            telemetry_server::telemetry_log!("⚠️ [COLA-WS] monitor de contrapresión no lanzado: {}", e);
+            telemetry_server::telemetry_log!(
+                "⚠️ [COLA-WS] monitor de contrapresión no lanzado: {}",
+                e
+            );
         }
     }
 
@@ -1897,8 +1992,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // CL-156 (G021): el calentamiento REST usa el venue del ejecutor, no el modo demo.
     let historical_klines = god_engine_core::bootloader::SystemDiagnostics::execute_phase_3_warmup(
-        is_testnet,
-        &symbols,
+        is_testnet, &symbols,
     )
     .await;
 
@@ -2017,7 +2111,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         let count = std::fs::read_to_string(&dynamic_config_json_path)
                             .ok()
                             .and_then(|s| serde_json::from_str::<serde_json::Value>(&s).ok())
-                            .and_then(|v| v.get("symbols").and_then(|arr| arr.as_array().map(|a| a.len())))
+                            .and_then(|v| {
+                                v.get("symbols")
+                                    .and_then(|arr| arr.as_array().map(|a| a.len()))
+                            })
                             .unwrap_or(0);
                         telemetry_server::telemetry_log!("👀 [HOT-RELOAD] dynamic_config.json changed on disk ({} proposed symbols). Changes will apply on next restart.", count);
                     }
@@ -2117,14 +2214,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut restored_positions = Vec::new();
 
     if exec.load().is_paper_trading() {
-        telemetry_server::telemetry_log!("⚠️ [PAPER LOCAL] Ignorando posiciones REST — no hay cuenta viva que reconciliar.");
+        telemetry_server::telemetry_log!(
+            "⚠️ [PAPER LOCAL] Ignorando posiciones REST — no hay cuenta viva que reconciliar."
+        );
         positions_snapshot_ok = true;
     } else {
         match exec.load().fetch_open_positions().await {
             Ok(pos) => {
                 restored_positions = pos;
                 positions_snapshot_ok = true;
-                telemetry_server::telemetry_log!("🔍 [BOOT_OMS] fetch_open_positions exitoso: {} posiciones recibidas.", restored_positions.len());
+                telemetry_server::telemetry_log!(
+                    "🔍 [BOOT_OMS] fetch_open_positions exitoso: {} posiciones recibidas.",
+                    restored_positions.len()
+                );
             }
             Err(e) => {
                 telemetry_server::telemetry_log!(
@@ -2141,7 +2243,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // 2-5× (falsa escasez ⇒ vetos de entrada contra capital que sí
     // existe). El leverage vivo por símbolo vive en positionRisk. Fallback
     // conservador 10× (comportamiento anterior) si el fetch falla.
-    let restore_lev_map: std::collections::HashMap<String, f64> = if exec.load().is_paper_trading() {
+    let restore_lev_map: std::collections::HashMap<String, f64> = if exec.load().is_paper_trading()
+    {
         std::collections::HashMap::new()
     } else {
         exec.load()
@@ -2357,29 +2460,37 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let rt_handle = tokio::runtime::Handle::current();
 
+    // RB-N1: la hora que responde el servidor es la del PUNTO MEDIO del
+    // viaje, no la de la llegada. Antes se le restaba la pared tomada al
+    // recibir y el ancla del host (`epoch_baseline_ms`) nacía ~RTT/2 por
+    // detrás del servidor. Si la petición falla, el offset es 0 (la hora
+    // local es la mejor estimación disponible) y el sincronizador lo corrige.
+    let pared_antes_ms = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as i64);
     let server_time_ms = match exec.load().fetch_server_time().await {
         Ok(time) => {
             telemetry_server::telemetry_log!(
                 "⏱️ [NTP SYNC] Binance Server Time retrieved: {}",
                 time
             );
-            time
+            Some(time)
         }
         Err(_) => {
             telemetry_server::telemetry_log!(
                 "⚠️ [NTP SYNC FAILED] Falling back to local SystemTime"
             );
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap_or_default()
-                .as_millis() as i64
+            None
         }
     };
     let local_ms = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap_or_default()
         .as_millis() as i64;
-    let ntp_offset_ms = server_time_ms - local_ms;
+    let ntp_offset_ms = match (server_time_ms, pared_antes_ms) {
+        (Some(servidor), Ok(antes)) => servidor - (antes + (local_ms - antes) / 2),
+        _ => 0,
+    };
     telemetry_server::telemetry_log!(
         "⏱️ [NTP SYNC] Local Time: {}, Offset to Binance: {}ms",
         local_ms,
@@ -2869,7 +2980,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         arena_real.config.live_maker_fee.store(live_maker, Ordering::Relaxed);
         arena_real.config.live_taker_fee.store(live_taker, Ordering::Relaxed);
         arena_real.server_time_offset_ms.store(ntp_offset_ms, Ordering::Relaxed);
-        
+
         // Inject arena into OrderExecutor
         exec.load().arena.store(Some(Arc::clone(&arena_real)));
 
@@ -3497,15 +3608,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         );
                         // GLM-219 (bloqueante #3 del A1): en Producción, el
                         // freno evalúa el desempeño real de la cuenta con
-                        // cada refresh del income — EV neto ≤ 0 con cierres
-                        // suficientes devuelve el sistema a DemoVerify y
-                        // exige re-certificación (evidencia limpiada).
-                        if prod_breaker && x_closes > 0 && x_gross.is_finite() && x_fees.is_finite() {
+                        // cada refresh del income — EV neto ≤ 0 o no finito
+                        // con cierres suficientes devuelve el sistema a DemoVerify
+                        // y exige re-certificación (evidencia limpiada).
+                        if prod_breaker && x_closes > 0 {
                             let ev_prod = (x_gross + x_fees) / x_closes as f64;
-                            let disparo = orch_brk
-                                .write()
-                                .unwrap_or_else(|e| e.into_inner())
-                                .registrar_desempeno_prod(x_closes, ev_prod);
+                            let disparo = {
+                                let mut orch = orch_brk.write().unwrap_or_else(|e| e.into_inner());
+                                registrar_breaker_ingreso(&mut *orch, x_closes, x_gross, x_fees)
+                            };
                             if disparo {
                                 telemetry_server::telemetry_log!(
                                     "🛑 [BREAKER Prod→Demo] disparado por income real: EV {ev_prod:+.6} con {x_closes} cierres — operativa bloqueada, re-certificar en Demo"
@@ -3515,28 +3626,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         // GLM-216 (bloqueante #2): en demo, persistir el
                         // certificado de rentabilidad que la puerta a
                         // Producción exige (cierres ≥ 30 y EV neto > 0).
-                        if x_closes > 0 && x_gross.is_finite() && x_fees.is_finite() {
-                            let ev = god_engine_core::orchestrator::EvidenciaDemo {
-                                cierres: x_closes,
-                                ev_neto_por_trade: (x_gross + x_fees) / x_closes as f64,
-                                wins: x_wins,
-                            };
-                            let ruta =
-                                quantum_arena::paths::env_data_path_for(true, "evidencia_demo.json");
-                            match serde_json::to_string_pretty(&ev) {
-                                Ok(txt) => {
-                                    if std::fs::write(&ruta, txt).is_err() {
-                                        telemetry_server::telemetry_log!(
-                                            "⚠️ [ORCHESTRATOR] certificado demo no persistido ({ruta:?}): la puerta a Producción no abrirá tras un reinicio"
-                                        );
-                                    }
-                                }
-                                Err(e) => {
-                                    telemetry_server::telemetry_log!(
-                                        "⚠️ [ORCHESTRATOR] certificado demo no serializable: {e}"
-                                    );
-                                }
-                            }
+                        let ruta = quantum_arena::paths::env_data_path_for(true, "evidencia_demo.json");
+                        if let Err(e) = persistir_evidencia_demo_en_modo(
+                            is_demo_mode,
+                            std::path::Path::new(&ruta),
+                            x_closes,
+                            x_gross,
+                            x_fees,
+                            x_wins,
+                        ) {
+                            telemetry_server::telemetry_log!(
+                                "⚠️ [ORCHESTRATOR] certificado demo no persistido ({ruta:?}): {e}"
+                            );
                         }
                     }
                     // LG-8: p* de la geometría del genoma a la τ de la ventana.
@@ -3933,6 +4034,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             lecturas.colocacion_frenada();
                         }
                         let (g_tp, g_sl) = (prot.tp_gap, prot.sl_gap);
+                        quantum_engine::host_oms::release_confirmed_side(
+                            &arena_wd,
+                            &p.symbol,
+                            is_long,
+                            g_tp <= 0.0 && g_sl <= 0.0,
+                        );
                         // CL-17 — sólo un gap de STOP deja la posición
                         // desnuda. Un TP ausente con el SL completo no es
                         // riesgo: se re-intenta en cada auditoría, pero nunca
@@ -4458,6 +4565,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         let instant_baseline = std::time::Instant::now();
         let local_ms_now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_millis() as i64;
         let epoch_baseline_ms = local_ms_now + ntp_offset_ms;
+        // RB-N1: el sincronizador mide su corrección contra ESTA proyección
+        // (la que consume la edad del dato), no contra un ancla propia: así
+        // absorbe también el error del offset de arranque y el relevo de
+        // generación en la transición a mainnet no la reinicia.
+        SINCRONIZADOR_NTP.fijar_ancla(epoch_baseline_ms, instant_baseline);
         // I-2b (Línea I): deriva D del reloj de pared frente a la proyección
         // de arriba; se mide cada 100 mensajes y acompaña a los avisos.
         let mut deriva_reloj_ms: i64 = 0;
@@ -4499,6 +4611,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         let mut cadencia_espectro = telemetry_server::estrangulador::Estrangulador::new(60_000);
         // CL-139b: el kill switch avisa al entrar en pánico, no en cada racha.
         let mut aviso_kill_switch = telemetry_server::estrangulador::Estrangulador::new(60_000);
+        // RB-E2: embudo vivo. Una línea por minuto con lo que detiene cada
+        // entrada (ticks bloqueados por causa, escudos, ranura, riesgo por
+        // motivo, consejo, ML-GATE, margen y fase) y su cuello de botella; cada
+        // 60 ventanas, el informe completo de `direction_diag`. Sólo lee
+        // contadores: ninguna decisión depende de ellos.
+        let mut embudo_vivo = god_engine_core::embudo_vivo::EmbudoVivo::new(60_000);
+        let mut ventanas_embudo: u64 = 0;
+        let mut ordenes_sin_permiso_de_fase: u64 = 0;
 
         // FASE 6 (EVENT LOOP)
         god_engine_core::bootloader::SystemDiagnostics::execute_phase_6_hft();
@@ -4960,15 +5080,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 // CL-140c: generación de cada ranura abierta antes del evento;
                 // la traza de una ranura que el núcleo cierre en él da su TCE.
                 let ranuras_antes = ranuras_abiertas(&engine_real.arena, coin_id);
-                let (mut new_order, closed_order) = engine_real.process_event(
+                let emissions = engine_real.process_event_multi(
                     coin_id, is_trade, is_kline_closed, is_depth,
                     current_price, qty, dbp, dap, eff_dbq, eff_daq,
                     depth_obi, depth_micro_div, event_time as u64, latency_panic, &omni_features_hot,
                     is_buyer_maker,
                 );
-
-                // Capture identity before later ticks/async work can reuse the slot.
-                let entry_reservation = new_order.and_then(|_| engine_real.entry_reservation(coin_id));
+                let mut entry_orders = emissions.entries;
+                let closed_order = emissions.closed_order;
 
                 // L-0 + X-018 (REHAB-6): los 10 universos sombra con omni real
                 // (D100) pero MUESTREADOS 1-in-10 — antes: 11 evaluaciones
@@ -5069,6 +5188,33 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 if newly_transitioned {
                     has_transitioned = true;
                 }
+                // RB-E2: la orden que el núcleo propuso y la fase no deja salir
+                // (auditoría del orquestador o refresco del OMS en curso).
+                // Con varias entradas por evento (F28) cuenta cada orden de entrada.
+                if !is_trading_allowed && !entry_orders.is_empty() {
+                    ordenes_sin_permiso_de_fase =
+                        ordenes_sin_permiso_de_fase.saturating_add(entry_orders.len() as u64);
+                }
+                let ahora_embudo_ms =
+                    ahora_mono.saturating_duration_since(instant_baseline).as_millis() as u64;
+                if embudo_vivo.toca(ahora_embudo_ms) {
+                    let instantanea = god_engine_core::embudo_vivo::Instantanea::de(
+                        &engine_real,
+                        ordenes_sin_permiso_de_fase,
+                    );
+                    telemetry_server::telemetry_log!(
+                        "{} · fase {:?}",
+                        embudo_vivo.cerrar(instantanea, ahora_embudo_ms),
+                        current_phase
+                    );
+                    ventanas_embudo = ventanas_embudo.saturating_add(1);
+                    if ventanas_embudo.is_multiple_of(60) {
+                        telemetry_server::telemetry_log!(
+                            "{}",
+                            engine_real.diag_dir.report()
+                        );
+                    }
+                }
 
                 // M6-H02 (CIERRE 2026-09-24) — CIERRES POR BRACKET:
                 // contabilidad + aprendizaje, INCONDICIONAL. Este bloque
@@ -5147,13 +5293,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 if !is_trading_allowed {
                     // Readiness revocation applies to new exposure. Refund only the exact
                     // unsent reservation; confirmed/reducing closes below remain dispatchable.
-                    if let Some(ref reservation) = entry_reservation {
-                        if let Err(reason) = reservation.cancel(&engine_real.arena) {
+                    for reserved in &entry_orders {
+                        if let Err(reason) = reserved.reservation.cancel(&engine_real.arena) {
                             quantum_arena::protection_health::mark_dirty();
                             telemetry_engine::telemetry_err!("[ENTRY OMS VETO] reserva no cancelable: {:?}", reason);
                         }
                     }
-                    new_order = None;
+                    entry_orders.clear();
                 }
                 if !is_trading_allowed && closed_order.is_none() {
                     if msg_count > 0 && msg_count.is_multiple_of(5000) {
@@ -5170,14 +5316,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         // ejecutor: con ella `replace_executor` rehusaba siempre, y la transición
                         // se aplazaba mientras el núcleo siguiera proponiendo entradas. Mientras
                         // tanto, cada mensaje construía otro ejecutor y encolaba otro refresco.
-                        if new_order.is_some() && entry_reservation.is_none() {
-                            quantum_arena::protection_health::mark_dirty();
-                            telemetry_engine::telemetry_err!("[OMS TRANSITION] entrada sin identidad de reserva en el tick de la transición: no se envía; reconciliar el estado local");
+                        for reserved in &entry_orders {
+                            if let Err(reason) = reserved.reservation.cancel(&engine_real.arena) {
+                                quantum_arena::protection_health::mark_dirty();
+                                telemetry_engine::telemetry_err!("[OMS TRANSITION] reserva no cancelable: {:?}", reason);
+                            }
                         }
-                        new_order = None;
+                        entry_orders.clear();
                         let paso = oms_session.paso_transicion(
                             &arena_real,
-                            entry_reservation.as_ref(),
+                            None,
                             &reintento_transicion,
                             || {
                                 let is_env_testnet = std::env::var("USE_TESTNET").unwrap_or_default().trim().to_lowercase() == "true";
@@ -5576,20 +5724,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             };
                             let close_res = exec_clone
                                 .load()
-                                .execute_reduce_only_market(&parsed_sym_str, is_long_close, qty, sym_filter.step_size)
+                                .execute_reduce_only_market_with_reconciliation(
+                                    &parsed_sym_str,
+                                    is_long_close,
+                                    qty,
+                                    sym_filter.step_size,
+                                )
                                 .await;
-                            let close_res = match close_res {
-                                Ok(()) => Ok(()),
-                                Err(e1) => {
-                                    // Retry único: glitches transitorios de red.
-                                    tokio::time::sleep(std::time::Duration::from_millis(150)).await;
-                                    exec_clone
-                                        .load()
-                                        .execute_reduce_only_market(&parsed_sym_str, is_long_close, qty, sym_filter.step_size)
-                                        .await
-                                        .map_err(|e2| format!("{} / retry: {}", e1, e2))
-                                }
-                            };
                             match close_res {
                                 Ok(()) => {
                                     // Posición plana en el exchange: purgar los
@@ -5619,33 +5760,30 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
                     // BUG-617: Veto de nuevas entradas por pánico de memoria RAM (>85% en OS-Guardian)
                     let is_mem_panic = engine_real.arena.panic_memory_dump.load(Ordering::Relaxed);
-                    if (is_mem_panic || engine_real.drift_entry_veto()) && new_order.is_some() {
-                        // XXXVII: late veto cancels only this captured reservation.
-                        if let Some(reservation) = &entry_reservation {
-                            if let Err(reason) = reservation.cancel(&engine_real.arena) {
+                    if (is_mem_panic || engine_real.drift_entry_veto()) && !entry_orders.is_empty() {
+                        for reserved in &entry_orders {
+                            if let Err(reason) = reserved.reservation.cancel(&engine_real.arena) {
                                 quantum_arena::protection_health::mark_dirty();
                                 telemetry_engine::telemetry_err!("[ENTRY VETO] cancellation requires reconciliation: {:?}", reason);
                             }
-                        } else {
-                            quantum_arena::protection_health::mark_dirty();
-                            telemetry_engine::telemetry_err!("[ENTRY VETO] missing reservation identity; no asset-wide rollback");
                         }
-                        new_order = None;
+                        entry_orders.clear();
                     }
-
-                    let mut order_tp_price = 0.0;
-                    let mut order_sl_price = 0.0;
-                    let mut is_high_confidence = false;
-                    let mut exec_leverage = 1;
-                    let mut tesis_de_trayectoria: Option<(bool, f64, f64, f64, u64)> = None;
 
                     // F5.1 & BUG-598: Margen libre real = equity - margen total retenido en posiciones vivas
                     let total_margin_used: f64 = engine_real.arena.coins.iter().map(|c| {
                         c.positions.total_margin_used()
                     }).sum();
                     let cap_now = (engine_real.arena.unified_capital.load(Ordering::Relaxed) - total_margin_used).max(0.0);
+                    let mut prepared_entries = Vec::with_capacity(entry_orders.len());
 
-                    if let Some((is_long, entry_price, _qty, core_tp, core_sl)) = new_order {
+                    for reserved_entry in &entry_orders {
+                        let (is_long, entry_price, _qty, core_tp, core_sl) = reserved_entry.order;
+                        let entry_reservation = &reserved_entry.reservation;
+                        let mut order_tp_price = 0.0;
+                        let mut order_sl_price = 0.0;
+                        let mut is_high_confidence = false;
+                        let exec_leverage;
                         // D-442: Usar la distancia de stop real de la orden (core_sl) para dimensionar la envolvente de riesgo
                         let stop_pct = if core_sl > 0.0 && entry_price > 0.0 {
                             ((entry_price - core_sl).abs() / entry_price).max(0.0015)
@@ -5694,15 +5832,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         // Sin esto: deadlock (0 trades → 0 evidencia → 0 trades).
                         // Es epsilon-greedy estándar: exploración forzada inicial.
                         let envelope_n = risk_envelope.posterior.n();
-                        let apalancamiento_validado = if let Some(r) = &entry_reservation {
-                            let ranura = engine_real.arena.coins[coin_id].positions.get_slot(r.slot);
-                            let margen = ranura.margin_used.load(Ordering::Relaxed);
-                            let nocional = ranura.quantity.load(Ordering::Relaxed).abs()
-                                * ranura.entry_price.load(Ordering::Relaxed);
-                            risk_engine::envio::apalancamiento_validado(nocional, margen)
-                        } else {
-                            None
-                        };
+                        let ranura = engine_real.arena.coins[coin_id]
+                            .positions
+                            .get_slot(entry_reservation.slot);
+                        let margen = ranura.margin_used.load(Ordering::Relaxed);
+                        let nocional = ranura.quantity.load(Ordering::Relaxed).abs()
+                            * ranura.entry_price.load(Ordering::Relaxed);
+                        let apalancamiento_validado =
+                            risk_engine::envio::apalancamiento_validado(nocional, margen);
 
                         if envelope_n < 30.0 {
                             // F4-H2 / R5-H3 (BOOTSTRAP MICRO): acumular evidencia con el apalancamiento
@@ -5783,11 +5920,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 .filter(|a| a.is_finite() && *a > 0.0)
                                 .unwrap_or(0.0);
                             let Some((_, taker_fee_entry)) = engine_real.arena.config.fee_rates_for(coin_id) else {
-                                if let Some(ref reservation) = entry_reservation {
-                                    if let Err(reason) = reservation.cancel(&engine_real.arena) {
-                                        quantum_arena::protection_health::mark_dirty();
-                                        telemetry_engine::telemetry_err!("[ENTRY] fee desconocida, reserva no cancelable: {:?}", reason);
-                                    }
+                                if let Err(reason) = entry_reservation.cancel(&engine_real.arena) {
+                                    quantum_arena::protection_health::mark_dirty();
+                                    telemetry_engine::telemetry_err!("[ENTRY] fee desconocida, reserva no cancelable: {:?}", reason);
                                 }
                                 telemetry_engine::telemetry_err!("[ENTRY] {} sin fee observada para su símbolo/sesión: entrada retenida", parsed_sym);
                                 continue;
@@ -5814,21 +5949,33 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             .base_duration_ms
                             .load(Ordering::Relaxed)
                             .max(1.0) as u64;
-                        tesis_de_trayectoria = Some((
+                        let tesis_de_trayectoria = Some((
                             is_long,
                             entry_price,
                             ((core_tp - entry_price) / entry_price).abs(),
                             _qty.abs() * entry_price,
                             dur_ms,
                         ));
+                        prepared_entries.push((
+                            reserved_entry.clone(),
+                            order_tp_price,
+                            order_sl_price,
+                            is_high_confidence,
+                            exec_leverage,
+                            tesis_de_trayectoria,
+                        ));
                     }
 
-                    if let Some((final_is_long, _entry_price, final_qty, _, _)) = new_order {
-                        let Some(reservation) = entry_reservation else {
-                            quantum_arena::protection_health::mark_dirty();
-                            telemetry_engine::telemetry_err!("[ENTRY] missing reservation identity: submission withheld; reconcile local state");
-                            continue;
-                        };
+                    for (
+                        reserved_entry,
+                        order_tp_price,
+                        order_sl_price,
+                        is_high_confidence,
+                        exec_leverage,
+                        tesis_de_trayectoria,
+                    ) in prepared_entries {
+                        let (final_is_long, _entry_price, final_qty, _, _) = reserved_entry.order;
+                        let reservation = reserved_entry.reservation;
                         let parsed_sym_str = parsed_sym.to_string();
                         let entry_oms = Arc::clone(&oms_session);
                         let entry_session = entry_oms.snapshot_token();
@@ -5911,9 +6058,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         };
                         let rejected_reservation = reservation.clone();
                         let rollback_positions = move |arena: &Arc<quantum_arena::GlobalArena>| {
-                            if let Err(reason) = rejected_reservation.cancel(arena) {
-                                quantum_arena::protection_health::mark_dirty();
-                                telemetry_engine::telemetry_err!("[ENTRY ROLLBACK] exact reservation not cancellable: {:?}; other slots untouched", reason);
+                            match rejected_reservation.cancel(arena) {
+                                Ok(()) => true,
+                                Err(reason) => {
+                                    quantum_arena::protection_health::mark_dirty();
+                                    telemetry_engine::telemetry_err!("[ENTRY ROLLBACK] exact reservation not cancellable: {:?}; other slots untouched", reason);
+                                    false
+                                }
                             }
                         };
 
@@ -6035,10 +6186,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             let Some(effective_leverage) = decision_envio else {
                                 return;
                             };
+                            let _settlement = quantum_engine::host_oms::EntrySettlement::acquire(
+                                reservation.clone(),
+                                final_is_long,
+                            )
+                            .await;
 
                             if let Err(reason) = entry_oms.check_entry(&entry_session, &arena_clone) {
                                 telemetry_engine::telemetry_err!("[ENTRY] {}: {}", parsed_sym_str, reason);
-                                rollback_positions(&arena_clone);
+                                if rollback_positions(&arena_clone) {
+                                    quantum_engine::host_oms::EntrySettlement::release_for(&reservation);
+                                }
                                 return;
                             }
                             let entry_executor = Arc::clone(entry_session.executor());
@@ -6051,7 +6209,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                         "❌ [ENTRY] {} abortada: {} — Rollback de posición local.",
                                         parsed_sym_str, e
                                     );
-                                    rollback_positions(&arena_clone);
+                                    if rollback_positions(&arena_clone) {
+                                        quantum_engine::host_oms::EntrySettlement::release_for(&reservation);
+                                    }
                                     return;
                                 }
                             };
@@ -6105,9 +6265,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                     EntryRoute::Market
                                 }
                             };
-                            // CL-45: sólo la IOC responde con su estado terminal
-                            // (RESULT); MARKET responde ACK, sin la ejecución.
-                            let ruta_ioc = matches!(route, EntryRoute::Ioc { .. });
                             let entry_request = EntryRequest {
                                 symbol: &parsed_sym_str,
                                 is_long: final_is_long,
@@ -6135,8 +6292,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                     // read. This is containment, not an exactly-once
                                     // recovery ledger or a completed protection plan.
                                     quantum_arena::protection_health::mark_dirty();
-                                    let observation = entry_executor
-                                        .resolve_via_rest(&parsed_sym_str, &client_id).await;
                                     // CL-46: la consulta decide la reserva. Antes sólo
                                     // se registraba: un terminal sin ejecución dejaba
                                     // una posición que sólo existía en el arena, y uno
@@ -6145,20 +6300,28 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                     // intención (generación); un terminal del padre no
                                     // resuelve hijos maker, y Accepted con la orden
                                     // aún NEW no es un llenado: ambos se conservan.
-                                    use execution_engine::ioc_evidence::{destino_tras_consulta, DestinoReserva};
-                                    let orden = entry_executor.registry().get(&client_id);
-                                    match destino_tras_consulta(&e, observation, orden.as_ref()) {
+                                    use execution_engine::ioc_evidence::DestinoReserva;
+                                    let destino = resolve_entry_for_host(
+                                        &entry_executor,
+                                        &parsed_sym_str,
+                                        &client_id,
+                                        &e,
+                                    )
+                                    .await;
+                                    match destino {
                                         DestinoReserva::Revertir => {
                                             telemetry_engine::telemetry!(
-                                                "❌ [ENTRY] {} id={} envío={} consulta={:?}: terminal sin ejecución — Rollback de la reserva.",
-                                                parsed_sym_str, client_id, e, observation
+                                                "❌ [ENTRY] {} id={} envío={} destino={:?}: terminal sin ejecución — Rollback de la reserva.",
+                                                parsed_sym_str, client_id, e, destino
                                             );
-                                            rollback_positions(&arena_clone);
+                                            if rollback_positions(&arena_clone) {
+                                                quantum_engine::host_oms::EntrySettlement::release_for(&reservation);
+                                            }
                                         }
                                         DestinoReserva::Confirmar { ejecutada } => {
                                             telemetry_engine::telemetry!(
-                                                "✅ [ENTRY] {} id={} envío={} consulta={:?}: ejecutada {:.8} — reserva confirmada; protección por el vigilante.",
-                                                parsed_sym_str, client_id, e, observation, ejecutada
+                                                "✅ [ENTRY] {} id={} envío={} destino={:?}: ejecutada {:.8} — reserva confirmada; protección por el vigilante.",
+                                                parsed_sym_str, client_id, e, destino, ejecutada
                                             );
                                             if let Err(reason) = reservation.confirmar_llenado(&arena_clone, Some(ejecutada)) {
                                                 telemetry_engine::telemetry_err!("[ENTRY CONFIRM] stale/mismatched reservation: {:?}; reconcile fill, do not confirm another slot", reason);
@@ -6174,13 +6337,28 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                                     ejecutada.min(final_qty.abs()),
                                                     _entry_price,
                                                 );
+                                                if order_tp_price <= 0.0 || order_sl_price <= 0.0 {
+                                                    quantum_engine::host_oms::EntrySettlement::release_for(&reservation);
+                                                }
                                             }
                                             quantum_arena::protection_health::mark_dirty();
                                         }
+                                        DestinoReserva::CancelarPorDeadline => {
+                                            telemetry_engine::telemetry_err!(
+                                                "⏰ [ENTRY RECOVERY DEADLINE] {} id={}: admisión revocada; cancelación local sin certificar fill ni OCO",
+                                                parsed_sym_str, client_id
+                                            );
+                                            let _ = quantum_engine::host_oms::cancel_entry_after_deadline(
+                                                &entry_oms,
+                                                &entry_session,
+                                                &arena_clone,
+                                                &reservation,
+                                            );
+                                        }
                                         DestinoReserva::Conservar => {
                                             telemetry_engine::telemetry_err!(
-                                                "⏳ [ENTRY PENDING RECONCILIATION] {} id={} envío={} consulta={:?}. Reserva conservada; NO se certifica fill ni se hace rollback. Resolver atribución de orden/fills/protección.",
-                                                parsed_sym_str, client_id, e, observation
+                                                "⏳ [ENTRY PENDING RECONCILIATION] {} id={} envío={} destino={:?}. Reserva conservada; NO se certifica fill ni se hace rollback. Resolver atribución de orden/fills/protección.",
+                                                parsed_sym_str, client_id, e, destino
                                             );
                                         }
                                     }
@@ -6190,32 +6368,73 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                         "❌ [ENTRY] {} rechazada: {} — Ejecutando Rollback de posición local.",
                                         parsed_sym_str, e
                                     );
-                                    rollback_positions(&arena_clone);
+                                    if rollback_positions(&arena_clone) {
+                                        quantum_engine::host_oms::EntrySettlement::release_for(&reservation);
+                                    }
                                 }
                                 Ok(()) => {
-                                    // B3.14 — la entrada EXISTE en el exchange:
-                                    // los cierres de esta posición contabilizan
-                                    // (los vetados/rechazados son papel).
-                                    // CL-45: con lo EJECUTADO. Una IOC parcial
-                                    // confirmaba antes la cantidad, el margen y la
-                                    // comisión de la orden completa.
-                                    let ejecutada = if ruta_ioc {
-                                        execution_engine::ioc_evidence::cantidad_ejecutada_terminal(
-                                            entry_executor.registry().get(&client_id).as_ref(),
-                                        )
-                                    } else {
-                                        None
+                                    // Paper es una simulación explícita; fuera de paper sólo una
+                                    // orden terminal aporta cantidad ejecutada. Un parcial activo
+                                    // conserva reserva y settlement, sin fill total ni OCO teórico.
+                                    let ejecutada = quantum_engine::host_oms::entry_execution_for_host(
+                                        entry_executor.registry().get(&client_id).as_ref(),
+                                        entry_executor.is_paper_trading(),
+                                        final_qty.abs(),
+                                    );
+                                    let ejecutada = match ejecutada {
+                                        Some(ejecutada) => ejecutada,
+                                        None => {
+                                            quantum_arena::protection_health::mark_dirty();
+                                            telemetry_engine::telemetry_err!(
+                                                "⏳ [ENTRY PENDING FILL] {} id={}: consultando la misma orden hasta evidencia terminal",
+                                                parsed_sym_str, client_id
+                                            );
+                                            use execution_engine::ioc_evidence::DestinoReserva;
+                                            match resolve_entry_for_host(
+                                                &entry_executor,
+                                                &parsed_sym_str,
+                                                &client_id,
+                                                "AMBIGUOUS: ENTRY_TERMINAL_PENDING",
+                                            )
+                                            .await
+                                            {
+                                                DestinoReserva::Confirmar { ejecutada } => ejecutada,
+                                                DestinoReserva::Revertir => {
+                                                    if rollback_positions(&arena_clone) {
+                                                        quantum_engine::host_oms::EntrySettlement::release_for(&reservation);
+                                                    }
+                                                    return;
+                                                }
+                                                DestinoReserva::CancelarPorDeadline => {
+                                                    telemetry_engine::telemetry_err!(
+                                                        "⏰ [ENTRY RECOVERY DEADLINE] {} id={}: admisión revocada; cancelación local sin certificar fill ni OCO",
+                                                        parsed_sym_str, client_id
+                                                    );
+                                                    let _ = quantum_engine::host_oms::cancel_entry_after_deadline(
+                                                        &entry_oms,
+                                                        &entry_session,
+                                                        &arena_clone,
+                                                        &reservation,
+                                                    );
+                                                    return;
+                                                }
+                                                DestinoReserva::Conservar => {
+                                                    quantum_arena::protection_health::mark_dirty();
+                                                    return;
+                                                }
+                                            }
+                                        }
                                     };
-                                    if let Err(reason) = reservation.confirmar_llenado(&arena_clone, ejecutada) {
+                                    if let Err(reason) = reservation.confirmar_llenado(&arena_clone, Some(ejecutada)) {
                                         quantum_arena::protection_health::mark_dirty();
                                         telemetry_engine::telemetry_err!("[ENTRY CONFIRM] stale/mismatched reservation: {:?}; reconcile fill, do not confirm another slot", reason);
+                                        return;
                                     }
                                     // CL-45b: lo llenado (≤ lo pedido) dimensiona el
                                     // bracket y el diario. Con la cantidad pedida, un
                                     // parcial apilado sobre otra ranura del mismo lado
                                     // ponía TP/SL de esta ranura sobre la ajena.
-                                    let cantidad_llenada =
-                                        ejecutada.map_or(final_qty.abs(), |q| q.min(final_qty.abs()));
+                                    let cantidad_llenada = ejecutada.min(final_qty.abs());
                                     if order_tp_price > 0.0 && order_sl_price > 0.0 {
                                         let tag = if is_high_confidence { "🎯 [OCO TENSOR]" } else { "🛡️ [OCO GUARD]" };
                                         telemetry_engine::telemetry!(
@@ -6239,28 +6458,31 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                         // 350ms minimiza esa ventana.
                                         tokio::time::sleep(tokio::time::Duration::from_millis(350)).await;
                                         let mut oco_success = false;
+                                        let mut position_evidence_unknown = false;
                                         // I-8 (N18): los rechazos de cada intento,
                                         // para distinguir el freno temporal del
                                         // exchange de un bracket inaplicable.
                                         let mut errores_bracket: Vec<String> = Vec::with_capacity(3);
                                         for retry in 1..=3 {
-                                            // CERT-M4-H03: verificar que la posición SIGUE ABIERTA
-                                            // antes de cada retry — si el TP bracket llenó mientras
-                                            // el entry task estaba entre ack y OCO, colocar brackets
-                                            // sobre posición flat genera -2022 → retry ×3 → X-009
-                                            // emergency-close sobre nada → falsa escalada.
                                             {
-                                                let still_open = entry_executor
-                                                    .fetch_position_risk()
-                                                    .await
-                                                    .map(|ps| {
-                                                        // CL-12: el lado de ESTA entrada.
+                                                let still_open = match entry_executor.fetch_position_risk().await {
+                                                    Ok(ps) => {
                                                         execution_engine::reconciliation::cantidad_abierta_del_lado(
                                                             &ps, &parsed_sym_str, final_is_long,
                                                         )
                                                         .is_some()
-                                                    })
-                                                    .unwrap_or(true); // si fetch falla, no bloquear
+                                                    }
+                                                    Err(e) => {
+                                                        position_evidence_unknown = true;
+                                                        errores_bracket.push(format!("POSITION_EVIDENCE_UNKNOWN: {e}"));
+                                                        quantum_arena::protection_health::mark_dirty();
+                                                        telemetry_engine::telemetry_err!(
+                                                            "⚠️ [OCO UNKNOWN] {} positionRisk falló ({}): cero OCO; cantidad desconocida y reconciliación pendiente",
+                                                            parsed_sym_str, e
+                                                        );
+                                                        break;
+                                                    }
+                                                };
                                                 if !still_open {
                                                     // I-14 (N34): la fila plana puede ser un
                                                     // cierre (el SL local, el aplanado inmune,
@@ -6282,21 +6504,40 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                                 }
                                             }
                                             let qty_intent = cantidad_llenada;
-                                            let qty_bracket = entry_executor
-                                                .fetch_position_risk()
-                                                .await
-                                                .ok()
-                                                .and_then(|ps| {
-                                                    // HEDGE: DOS registros por símbolo
-                                                    // (LONG/SHORT). CL-12: el del lado de
-                                                    // esta entrada, no el primero abierto.
-                                                    execution_engine::reconciliation::cantidad_abierta_del_lado(
+                                            let qty_bracket = match entry_executor.fetch_position_risk().await {
+                                                Ok(ps) => {
+                                                    match execution_engine::reconciliation::cantidad_abierta_del_lado(
                                                         &ps, &parsed_sym_str, final_is_long,
-                                                    )
-                                                })
-                                                .filter(|a| *a > 0.0)
-                                                .map(|real| real.min(qty_intent))
-                                                .unwrap_or(qty_intent);
+                                                    ) {
+                                                        Some(real) if real > 0.0 => real.min(qty_intent),
+                                                        _ => {
+                                                            // I-14 (N34): la misma fila plana que
+                                                            // arriba, ahora en la segunda lectura:
+                                                            // un cierre o una posición que
+                                                            // positionRisk aún no muestra. Sin la
+                                                            // bandera, el vigilante no la audita
+                                                            // hasta la nominal.
+                                                            telemetry_engine::telemetry!(
+                                                                "✅ [OCO-SKIP] {} sin posición abierta en positionRisk antes de bracket retry {}/3 (cerrada o aún sin mostrar) — la audita el vigilante",
+                                                                parsed_sym_str, retry
+                                                            );
+                                                            quantum_arena::protection_health::mark_dirty();
+                                                            oco_success = true;
+                                                            break;
+                                                        }
+                                                    }
+                                                }
+                                                Err(e) => {
+                                                    position_evidence_unknown = true;
+                                                    errores_bracket.push(format!("POSITION_EVIDENCE_UNKNOWN: {e}"));
+                                                    quantum_arena::protection_health::mark_dirty();
+                                                    telemetry_engine::telemetry_err!(
+                                                        "⚠️ [OCO UNKNOWN] {} positionRisk falló ({}): cero OCO; cantidad desconocida y reconciliación pendiente",
+                                                        parsed_sym_str, e
+                                                    );
+                                                    break;
+                                                }
+                                            };
                                             if qty_bracket < qty_intent {
                                                 telemetry_engine::telemetry!(
                                                     "⏳ [OCO] {} posición real {:.4} < intent {:.4} — bracketeando lo existente (intento {}/3)",
@@ -6341,7 +6582,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                                 }
                                             }
                                         }
-                                        if !oco_success
+                                        if position_evidence_unknown {
+                                            quantum_arena::protection_health::mark_dirty();
+                                            telemetry_engine::telemetry_err!(
+                                                "⚠️ [OCO UNKNOWN] {} queda sin nuevas órdenes ni cierre teórico; sólo reconciliación",
+                                                parsed_sym_str
+                                            );
+                                        } else if !oco_success
                                             && execution_engine::freno_temporal::tras_bracket_fallido(&errores_bracket)
                                                 == execution_engine::freno_temporal::TrasBracketFallido::DiferirAlVigilante
                                         {
@@ -6387,41 +6634,41 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                             // OCO-F2: cerrar la posición REAL del exchange,
                                             // no la qty teórica (reduceOnly con qty > posición
                                             // ⇒ rechazo -2022 y posición naked).
-                                            let close_qty = entry_executor
-                                                .fetch_position_risk()
-                                                .await
-                                                .ok()
-                                                .and_then(|ps| {
-                                                    // CL-12: la posición del lado que se
-                                                    // cierra (hedge: dos registros).
-                                                    execution_engine::reconciliation::cantidad_abierta_del_lado(
+                                            'close_with_known_quantity: {
+                                            let close_qty = match entry_executor.fetch_position_risk().await {
+                                                Ok(ps) => {
+                                                    match execution_engine::reconciliation::cantidad_abierta_del_lado(
                                                         &ps, &parsed_sym_str, is_long_close,
-                                                    )
-                                                })
-                                                .filter(|a| *a > 0.0)
-                                                .unwrap_or(final_qty.abs());
-                                            let close_res = entry_executor
-                                                .execute_reduce_only_market(&parsed_sym_str, is_long_close, close_qty, dyn_step_size)
-                                                .await;
-                                            let close_res = match close_res {
-                                                Ok(()) => Ok(()),
-                                                Err(e1) => {
-                                                    tokio::time::sleep(std::time::Duration::from_millis(150)).await;
-                                                    entry_executor
-                                                        .execute_reduce_only_market(&parsed_sym_str, is_long_close, close_qty, dyn_step_size)
-                                                        .await
-                                                        .map_err(|e2| format!("{} / retry: {}", e1, e2))
+                                                    ) {
+                                                        Some(quantity) if quantity > 0.0 => quantity,
+                                                        _ => break 'close_with_known_quantity,
+                                                    }
+                                                }
+                                                Err(e) => {
+                                                    quantum_arena::protection_health::mark_dirty();
+                                                    telemetry_engine::telemetry_err!(
+                                                        "⚠️ [EMERGENCY UNKNOWN] POSITION_EVIDENCE_UNKNOWN {}: {}; cero cierre/purga con cantidad teórica; sólo reconciliación",
+                                                        parsed_sym_str, e
+                                                    );
+                                                    break 'close_with_known_quantity;
                                                 }
                                             };
-                                            // Purgar órdenes restantes (haya cerrado o no:
-                                            // si no cerró, reduceOnly sigue siendo válida).
-                                            // CL-12: sólo las del LADO cerrado; la purga
-                                            // de todo el símbolo borraba el TP/SL de la
-                                            // posición del lado contrario.
-                                            if let Err(ce) = entry_executor.cancel_position_oco_orders(&parsed_sym_str, is_long_close).await {
-                                                telemetry_engine::telemetry_err!("⚠️ [EMERGENCY] Purga de órdenes de {} falló: {}", parsed_sym_str, ce);
-                                                // I-9 (N15b): pendiente hasta que el vigilante la purgue.
-                                                anotar_purga_pendiente(&parsed_sym_str, is_long_close);
+                                            let close_res = entry_executor
+                                                .execute_reduce_only_market_with_reconciliation(
+                                                    &parsed_sym_str,
+                                                    is_long_close,
+                                                    close_qty,
+                                                    dyn_step_size,
+                                                )
+                                                .await;
+                                            // La purga sólo sigue a un cierre completo o
+                                            // a una posición plana comprobada, nunca a un
+                                            // residual/unknown ni a un fallo de snapshot.
+                                            if close_res.is_ok() {
+                                                if let Err(ce) = entry_executor.cancel_position_oco_orders(&parsed_sym_str, is_long_close).await {
+                                                    telemetry_engine::telemetry_err!("⚠️ [EMERGENCY] Purga de órdenes de {} falló: {}", parsed_sym_str, ce);
+                                                    anotar_purga_pendiente(&parsed_sym_str, is_long_close);
+                                                }
                                             }
                                             match close_res {
                                                 Ok(()) => {
@@ -6439,6 +6686,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                                     // Keep accounting until execution/reconciliation resolves
                                                     // the exit; never refund entry fees as a rejected order.
                                                     quantum_arena::protection_health::mark_dirty();
+                                                    quantum_engine::host_oms::EntrySettlement::release_for(&reservation);
                                                 }
                                                 Err(es) => {
                                                     // ESCALADA X-009: posición viva en el
@@ -6460,7 +6708,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                                     // posición que el exchange aún sostiene.
                                                 }
                                             }
+                                            }
                                         }
+                                        if oco_success {
+                                            quantum_engine::host_oms::EntrySettlement::release_for(&reservation);
+                                        }
+                                    } else {
+                                        quantum_engine::host_oms::EntrySettlement::release_for(&reservation);
                                     }
                                 }
                             }
@@ -6768,29 +7022,40 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         let rx_events_dropper = rx_events_dropper.clone();
         let estado_cola = Arc::clone(&estado_cola);
         let consumidor_listo_rx = consumidor_listo_rx.clone();
-        let lanzado = std::thread::Builder::new().name("ws-reader".to_string()).spawn(move || {
-            if let Some(core_ids) = core_affinity::get_core_ids() {
-                if core_ids.len() > 2 {
-                    core_affinity::set_for_current(core_ids[2]);
-                    telemetry_server::telemetry_log!("🔒 [CPU PINNING] WS Reader pinned to CPU Core {}", core_ids[2].id);
+        let lanzado = std::thread::Builder::new()
+            .name("ws-reader".to_string())
+            .spawn(move || {
+                if let Some(core_ids) = core_affinity::get_core_ids() {
+                    if core_ids.len() > 2 {
+                        core_affinity::set_for_current(core_ids[2]);
+                        telemetry_server::telemetry_log!(
+                            "🔒 [CPU PINNING] WS Reader pinned to CPU Core {}",
+                            core_ids[2].id
+                        );
+                    }
                 }
-            }
-            os_guardian::set_current_thread_time_critical();
-            esperar_consumidor(&consumidor_listo_rx);
-            match tokio::runtime::Builder::new_current_thread().enable_all().build() {
-                Ok(rt) => rt.block_on(bucle_lector_ws(
-                    lector_publico,
-                    tx_events,
-                    rx_events_dropper,
-                    estado_cola,
-                    Some(rx_ws_control),
-                )),
-                Err(e) => {
-                    telemetry_server::telemetry_log!("❌ [WS:publico] runtime no disponible: {}; feed de decisión caído", e);
-                    quantum_arena::feed_health::stall();
+                os_guardian::set_current_thread_time_critical();
+                esperar_consumidor(&consumidor_listo_rx);
+                match tokio::runtime::Builder::new_current_thread()
+                    .enable_all()
+                    .build()
+                {
+                    Ok(rt) => rt.block_on(bucle_lector_ws(
+                        lector_publico,
+                        tx_events,
+                        rx_events_dropper,
+                        estado_cola,
+                        Some(rx_ws_control),
+                    )),
+                    Err(e) => {
+                        telemetry_server::telemetry_log!(
+                            "❌ [WS:publico] runtime no disponible: {}; feed de decisión caído",
+                            e
+                        );
+                        quantum_arena::feed_health::stall();
+                    }
                 }
-            }
-        });
+            });
         if let Err(e) = lanzado {
             telemetry_server::telemetry_log!("❌ [WS:publico] no se pudo lanzar el lector: {}. Sin feed no se opera: salida ordenada.", e);
             telemetry_server::macros::vaciar_telemetria();
@@ -6798,22 +7063,27 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     }
     {
-        let lanzado = std::thread::Builder::new().name("ws-reader-mercado".to_string()).spawn(move || {
-            esperar_consumidor(&consumidor_listo_rx);
-            match tokio::runtime::Builder::new_current_thread().enable_all().build() {
-                Ok(rt) => rt.block_on(bucle_lector_ws(
-                    lector_mercado,
-                    tx_events,
-                    rx_events_dropper,
-                    estado_cola,
-                    None,
-                )),
-                Err(e) => telemetry_server::telemetry_log!(
+        let lanzado = std::thread::Builder::new()
+            .name("ws-reader-mercado".to_string())
+            .spawn(move || {
+                esperar_consumidor(&consumidor_listo_rx);
+                match tokio::runtime::Builder::new_current_thread()
+                    .enable_all()
+                    .build()
+                {
+                    Ok(rt) => rt.block_on(bucle_lector_ws(
+                        lector_mercado,
+                        tx_events,
+                        rx_events_dropper,
+                        estado_cola,
+                        None,
+                    )),
+                    Err(e) => telemetry_server::telemetry_log!(
                     "❌ [WS:mercado] runtime no disponible: {}; sin velas ni liquidaciones en vivo",
                     e
                 ),
-            }
-        });
+                }
+            });
         if let Err(e) = lanzado {
             telemetry_server::telemetry_log!(
                 "❌ [WS:mercado] no se pudo lanzar el lector: {}; sin velas ni liquidaciones en vivo",
@@ -6879,7 +7149,11 @@ async fn bucle_lector_ws(
     // `client_async_tls` no tenían timeout: un handshake TLS colgado (TCP
     // aceptado, servidor mudo) dejaba el feed mudo para siempre SIN
     // disparar el stall, porque el watchdog sólo vigilaba tras conectar.
-    let is_testnet_cfg = std::env::var("USE_TESTNET").unwrap_or_default().trim().to_lowercase() == "true";
+    let is_testnet_cfg = std::env::var("USE_TESTNET")
+        .unwrap_or_default()
+        .trim()
+        .to_lowercase()
+        == "true";
     let watchdog_secs: u64 = std::env::var("BINANCE_WS_TIMEOUT_SECS")
         .ok()
         .and_then(|s| s.parse().ok())
@@ -6900,7 +7174,11 @@ async fn bucle_lector_ws(
         let url = match url::Url::parse(&current_url) {
             Ok(url) => url,
             Err(e) => {
-                telemetry_server::telemetry_log!("❌ [WS] URL inválida «{}»: {}; reintento", current_url, e);
+                telemetry_server::telemetry_log!(
+                    "❌ [WS] URL inválida «{}»: {}; reintento",
+                    current_url,
+                    e
+                );
                 tokio::time::sleep(std::time::Duration::from_millis(5_000)).await;
                 continue;
             }
@@ -6914,17 +7192,26 @@ async fn bucle_lector_ws(
         // I-6b: DNS acotado por la misma política de espera (timeout =
         // vec vacío → sigue la ruta de IPs por ENV/fallback, como un fallo
         // de resolución).
-        let mut resolved_addrs = match tokio::time::timeout(to_conexion, tokio::net::lookup_host(&host_port)).await {
-            Ok(Ok(addrs)) => addrs.collect::<Vec<std::net::SocketAddr>>(),
-            Ok(Err(e)) => {
-                telemetry_server::telemetry_log!("⚠️ [WS] DNS Resolution failed for {}: {}", host_port, e);
-                vec![]
-            }
-            Err(_) => {
-                telemetry_server::telemetry_log!("⚠️ [WS:{}] DNS sin responder en {}s (I-6b): reintento", cfg.nombre, watchdog_secs);
-                vec![]
-            }
-        };
+        let mut resolved_addrs =
+            match tokio::time::timeout(to_conexion, tokio::net::lookup_host(&host_port)).await {
+                Ok(Ok(addrs)) => addrs.collect::<Vec<std::net::SocketAddr>>(),
+                Ok(Err(e)) => {
+                    telemetry_server::telemetry_log!(
+                        "⚠️ [WS] DNS Resolution failed for {}: {}",
+                        host_port,
+                        e
+                    );
+                    vec![]
+                }
+                Err(_) => {
+                    telemetry_server::telemetry_log!(
+                        "⚠️ [WS:{}] DNS sin responder en {}s (I-6b): reintento",
+                        cfg.nombre,
+                        watchdog_secs
+                    );
+                    vec![]
+                }
+            };
 
         // Allow manual IP injection via ENV to bypass DNS if desired
         if let Ok(env_ips) = std::env::var("BINANCE_WS_IPS") {
@@ -6942,13 +7229,18 @@ async fn bucle_lector_ws(
             if let Ok(fallback) = format!("{}:{}", host, port).parse::<std::net::SocketAddr>() {
                 resolved_addrs.push(fallback);
             } else {
-                telemetry_server::telemetry_log!("❌ [WS] No IPs could be resolved or parsed. Retrying...");
+                telemetry_server::telemetry_log!(
+                    "❌ [WS] No IPs could be resolved or parsed. Retrying..."
+                );
                 tokio::time::sleep(espera.fallo(None)).await;
                 continue;
             }
         }
 
-        telemetry_server::telemetry_log!("🔄 [WS] Parallel TCP Connection Race (Happy Eyeballs) to {} endpoints...", resolved_addrs.len());
+        telemetry_server::telemetry_log!(
+            "🔄 [WS] Parallel TCP Connection Race (Happy Eyeballs) to {} endpoints...",
+            resolved_addrs.len()
+        );
 
         let mut tasks = Vec::new();
         for addr in resolved_addrs.iter() {
@@ -6987,25 +7279,44 @@ async fn bucle_lector_ws(
         let target_addr = match tcp_stream.peer_addr() {
             Ok(addr) => addr,
             Err(e) => {
-                telemetry_server::telemetry_log!("⚠️ [WS] conexión cortada antes de usarla: {}; reconecto", e);
+                telemetry_server::telemetry_log!(
+                    "⚠️ [WS] conexión cortada antes de usarla: {}; reconecto",
+                    e
+                );
                 tokio::time::sleep(espera.fallo(None)).await;
                 continue;
             }
         };
-        telemetry_server::telemetry_log!("✅ [WS] Fast-Lane TCP Connection established to {}...", target_addr);
+        telemetry_server::telemetry_log!(
+            "✅ [WS] Fast-Lane TCP Connection established to {}...",
+            target_addr
+        );
 
         // FASE 22: Conexión directa TCP con Zero-Nagle para latencia nula.
         // I-1b: un fallo se registra (antes `let _ =` lo descartaba).
         if let Err(e) = tcp_stream.set_nodelay(true) {
-            telemetry_server::telemetry_log!("⚠️ [WS:{}] TCP_NODELAY no aplicado: {}", cfg.nombre, e);
+            telemetry_server::telemetry_log!(
+                "⚠️ [WS:{}] TCP_NODELAY no aplicado: {}",
+                cfg.nombre,
+                e
+            );
         }
 
         // I-6b: timeout de HANDSHAKE — un TLS colgado (TCP aceptado pero
         // servidor mudo) ya no deja el feed mudo sin stall: se abandona el
         // intento tras watchdog_secs y se reintenta.
-        match tokio::time::timeout(to_conexion, tokio_tungstenite::client_async_tls(url, tcp_stream)).await {
+        match tokio::time::timeout(
+            to_conexion,
+            tokio_tungstenite::client_async_tls(url, tcp_stream),
+        )
+        .await
+        {
             Err(_) => {
-                telemetry_server::telemetry_log!("⚠️ [WS:{}] handshake TLS sin completar en {}s (I-6b): reintento", cfg.nombre, watchdog_secs);
+                telemetry_server::telemetry_log!(
+                    "⚠️ [WS:{}] handshake TLS sin completar en {}s (I-6b): reintento",
+                    cfg.nombre,
+                    watchdog_secs
+                );
                 tokio::time::sleep(espera.fallo(None)).await;
                 continue;
             }
@@ -7023,7 +7334,10 @@ async fn bucle_lector_ws(
                 continue;
             }
             Ok(Ok((ws_stream, _))) => {
-                telemetry_server::telemetry_log!("✅ [WS] WebSocket TLS Connected with TCP_NODELAY. ({})", cfg.nombre);
+                telemetry_server::telemetry_log!(
+                    "✅ [WS] WebSocket TLS Connected with TCP_NODELAY. ({})",
+                    cfg.nombre
+                );
                 if conexiones.establecida() {
                     data_ingest::cola_ws::encolar(
                         &tx_events,
@@ -7114,7 +7428,10 @@ fn ranuras_abiertas(
     coin_id: usize,
 ) -> [Option<u64>; audit_engine::trajectory_auditor::RANURAS] {
     match arena.coins.get(coin_id) {
-        Some(coin) => coin.positions.slots().map(|p| p.snapshot().map(|s| s.generation)),
+        Some(coin) => coin
+            .positions
+            .slots()
+            .map(|p| p.snapshot().map(|s| s.generation)),
         None => [None; audit_engine::trajectory_auditor::RANURAS],
     }
 }
@@ -7148,11 +7465,325 @@ fn format_tau(tau_ms: f64) -> String {
     }
 }
 
+async fn resolve_entry_for_host(
+    executor: &execution_engine::executor::OrderExecutor,
+    symbol: &str,
+    client_order_id: &str,
+    dispatch_error: &str,
+) -> execution_engine::ioc_evidence::DestinoReserva {
+    execution_engine::entry_dispatch::resolve_terminal_entry_until(
+        executor,
+        symbol,
+        client_order_id,
+        dispatch_error,
+        execution_engine::entry_dispatch::ENTRY_RECOVERY_DEADLINE,
+    )
+    .await
+}
+
+fn registrar_breaker_ingreso(
+    orch: &mut god_engine_core::orchestrator::PhaseOrchestrator,
+    cierres: u64,
+    bruto: f64,
+    fees: f64,
+) -> bool {
+    if cierres == 0 {
+        return false;
+    }
+    orch.registrar_desempeno_prod(cierres, (bruto + fees) / cierres as f64)
+}
+
+fn persistir_evidencia_demo_en_modo(
+    is_demo_mode: bool,
+    ruta: &std::path::Path,
+    cierres: u64,
+    bruto: f64,
+    fees: f64,
+    wins: u64,
+) -> Result<bool, String> {
+    if !is_demo_mode {
+        return Ok(false);
+    }
+    if cierres == 0 || !bruto.is_finite() || !fees.is_finite() {
+        return Ok(false);
+    }
+    let ev_neto_por_trade = (bruto + fees) / cierres as f64;
+    if !ev_neto_por_trade.is_finite() {
+        return Ok(false);
+    }
+    let evidencia = god_engine_core::orchestrator::EvidenciaDemo {
+        cierres,
+        ev_neto_por_trade,
+        wins,
+    };
+    let texto = serde_json::to_string_pretty(&evidencia).map_err(|e| e.to_string())?;
+    std::fs::write(ruta, texto).map_err(|e| e.to_string())?;
+    Ok(true)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use quantum_arena::temporal_spectrum::{TAU_ANCHOR_FAST_MS, TAU_ANCHOR_SLOW_MS};
     use std::sync::atomic::Ordering;
+
+    static UNIVERSE_TEST_MUTEX: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+    struct UniverseGuard {
+        previous: Vec<String>,
+        _lock: std::sync::MutexGuard<'static, ()>,
+    }
+
+    impl Drop for UniverseGuard {
+        fn drop(&mut self) {
+            quantum_arena::symbols::update_dynamic_universe(std::mem::take(&mut self.previous));
+        }
+    }
+
+    fn universe_guard() -> UniverseGuard {
+        let lock = UNIVERSE_TEST_MUTEX
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        let previous = quantum_arena::symbols::get_active_universe();
+        UniverseGuard {
+            previous,
+            _lock: lock,
+        }
+    }
+
+    struct DirectorioCertificado {
+        raiz: std::path::PathBuf,
+    }
+
+    impl DirectorioCertificado {
+        fn nuevo(etiqueta: &str) -> Self {
+            let nanos = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .expect("reloj del fixture")
+                .as_nanos();
+            let raiz = std::env::temp_dir().join(format!(
+                "god-engine-certificado-{etiqueta}-{}-{nanos}",
+                std::process::id()
+            ));
+            std::fs::create_dir_all(&raiz).expect("directorio temporal del certificado");
+            Self { raiz }
+        }
+
+        fn ruta(&self) -> std::path::PathBuf {
+            self.raiz.join("evidencia_demo.json")
+        }
+    }
+
+    impl Drop for DirectorioCertificado {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.raiz);
+        }
+    }
+
+    #[test]
+    fn evidencia_demo_produccion_no_toca_bytes_ni_timestamp() {
+        let fixture = DirectorioCertificado::nuevo("produccion");
+        let ruta = fixture.ruta();
+        let originales = b"certificado-demo-independiente";
+        std::fs::write(&ruta, originales).expect("fixture del certificado");
+        let timestamp = std::fs::metadata(&ruta)
+            .and_then(|m| m.modified())
+            .expect("timestamp inicial");
+
+        let escribio = persistir_evidencia_demo_en_modo(false, &ruta, 10, 12.0, -1.0, 7)
+            .expect("ruta Producción sin error de E/S");
+        let bytes = std::fs::read(&ruta).expect("bytes posteriores");
+        let timestamp_despues = std::fs::metadata(&ruta)
+            .and_then(|m| m.modified())
+            .expect("timestamp posterior");
+
+        assert_eq!(
+            bytes, originales,
+            "Producción sobrescribió el certificado: escribio={escribio}"
+        );
+        assert_eq!(timestamp_despues, timestamp);
+        assert!(!escribio);
+    }
+
+    #[test]
+    fn evidencia_demo_demo_si_escribe_segun_politica() {
+        let fixture = DirectorioCertificado::nuevo("demo");
+        let ruta = fixture.ruta();
+        assert!(persistir_evidencia_demo_en_modo(true, &ruta, 30, 10.0, -1.0, 20).unwrap());
+
+        let evidencia: god_engine_core::orchestrator::EvidenciaDemo = serde_json::from_str(
+            &std::fs::read_to_string(&ruta).expect("certificado Demo escrito"),
+        )
+        .expect("certificado Demo válido");
+        assert_eq!(evidencia.cierres, 30);
+        assert_eq!(evidencia.wins, 20);
+        assert!((evidencia.ev_neto_por_trade - 0.3).abs() < 1e-12);
+    }
+
+    #[test]
+    fn evidencia_demo_no_finita_no_escribe() {
+        let fixture = DirectorioCertificado::nuevo("no-finita");
+        let ruta = fixture.ruta();
+        let originales = b"certificado-independiente";
+        for (bruto, fees) in [
+            (f64::NAN, 0.0),
+            (f64::INFINITY, 0.0),
+            (f64::NEG_INFINITY, 0.0),
+            (0.0, f64::NAN),
+            (0.0, f64::INFINITY),
+            (0.0, f64::NEG_INFINITY),
+            (f64::MAX, f64::MAX),
+        ] {
+            std::fs::write(&ruta, originales).expect("fixture por caso");
+            let timestamp = std::fs::metadata(&ruta)
+                .and_then(|m| m.modified())
+                .expect("timestamp por caso");
+            assert!(!persistir_evidencia_demo_en_modo(true, &ruta, 10, bruto, fees, 5).unwrap());
+            assert_eq!(std::fs::read(&ruta).unwrap(), originales);
+            let despues = std::fs::metadata(&ruta)
+                .and_then(|m| m.modified())
+                .expect("timestamp posterior por caso");
+            assert_eq!(despues, timestamp);
+        }
+
+        let inexistente = fixture.raiz.join("inexistente.json");
+        assert!(
+            !persistir_evidencia_demo_en_modo(true, &inexistente, 10, f64::NAN, 0.0, 0).unwrap()
+        );
+        assert!(!inexistente.exists());
+    }
+
+    #[test]
+    fn cl45_cl46_diario_usa_llenado_y_tau_de_esta_reserva() {
+        let previous = quantum_arena::symbols::get_active_universe();
+        let failed = std::panic::catch_unwind(|| {
+            let _universe = universe_guard();
+            quantum_arena::symbols::update_dynamic_universe(vec!["RESFUSDT".into()]);
+            panic!("fallo deliberado: la guarda debe restaurar el universo");
+        });
+        assert!(failed.is_err());
+        assert_eq!(quantum_arena::symbols::get_active_universe(), previous);
+
+        let _universe = universe_guard();
+        quantum_arena::symbols::update_dynamic_universe(vec!["RESFUSDT".into()]);
+        let fixture = DirectorioCertificado::nuevo("diario-posicion");
+        let ruta = fixture.raiz.join("position_journal.jsonl");
+        quantum_arena::symbol_registry::update_registry(vec![
+            quantum_arena::symbol_registry::get_official_binance_spec("BTCUSDT"),
+        ]);
+        let arena = quantum_arena::GlobalArena::build_in_own_stack(100.0);
+        for (slot, tau_ms) in [(0, 30_000), (2, 90_000)] {
+            assert!(arena.coins[0]
+                .positions
+                .get_slot(slot)
+                .open_with_tau_and_fee(
+                    true,
+                    100.0,
+                    1.0,
+                    10.0,
+                    1_000,
+                    101.0,
+                    99.0,
+                    quantum_arena::position::PositionHorizon::Continuous,
+                    0.6,
+                    0.7,
+                    0.25,
+                    tau_ms,
+                ));
+        }
+        arena.used_margin.store(20.0, Ordering::Relaxed);
+        arena.unified_capital.store(99.5, Ordering::Relaxed);
+        let symbol = quantum_arena::symbol_registry::try_symbol(0)
+            .expect("el slot de la reserva tiene símbolo");
+        let reserva = god_engine_core::entry_reservation::EntryReservation {
+            coin_id: 0,
+            slot: 0,
+            generation: arena.coins[0]
+                .positions
+                .slot_0
+                .generation
+                .load(Ordering::Acquire),
+            symbol: symbol.clone(),
+        };
+        reserva
+            .confirmar_llenado(&arena, Some(0.4))
+            .expect("la reserva propia confirma su llenado parcial");
+
+        anotar_diario_de_posicion_en(&ruta, &arena, &reserva, &symbol, true, 0.4, 100.0);
+
+        let contenido = std::fs::read_to_string(&ruta).expect("diario escrito");
+        let registro: serde_json::Value =
+            serde_json::from_str(contenido.lines().next().expect("una línea de diario"))
+                .expect("diario JSON válido");
+        assert_eq!(registro["qty"].as_f64(), Some(0.4));
+        assert_eq!(registro["tau_ms"].as_u64(), Some(30_000));
+        assert_ne!(registro["tau_ms"].as_u64(), Some(90_000));
+    }
+
+    fn fase_produccion_para_breaker() -> god_engine_core::orchestrator::PhaseOrchestrator {
+        let approval = Arc::new(std::sync::atomic::AtomicBool::new(true));
+        let oms = Arc::new(std::sync::atomic::AtomicBool::new(true));
+        let mut p =
+            god_engine_core::orchestrator::PhaseOrchestrator::new_with_oms(1, false, approval, oms);
+        p.set_evidencia_demo(Some(god_engine_core::orchestrator::EvidenciaDemo {
+            cierres: 30,
+            ev_neto_por_trade: 0.001,
+            wins: 20,
+        }));
+        for _ in 0..4 {
+            p.on_tick();
+        }
+        assert_eq!(
+            p.current_phase,
+            god_engine_core::orchestrator::SystemPhase::ProductionMainnet
+        );
+        assert!(p.is_trading_allowed());
+        p
+    }
+
+    #[test]
+    fn breaker_ingreso_no_finito_cierra_trading() {
+        let mut fallos = Vec::new();
+        for (bruto, fees) in [
+            (f64::NAN, 0.0),
+            (f64::INFINITY, 0.0),
+            (f64::NEG_INFINITY, 0.0),
+            (0.0, f64::NAN),
+            (0.0, f64::INFINITY),
+            (0.0, f64::NEG_INFINITY),
+            (f64::MAX, f64::MAX),
+            (f64::MIN, f64::MIN),
+        ] {
+            let mut p = fase_produccion_para_breaker();
+            if !registrar_breaker_ingreso(&mut p, 10, bruto, fees) {
+                fallos.push(format!("bruto={bruto}, fees={fees}: no disparó"));
+            }
+            if p.current_phase != god_engine_core::orchestrator::SystemPhase::DemoVerify {
+                fallos.push(format!("bruto={bruto}, fees={fees}: fase insegura"));
+            }
+            if p.is_trading_allowed() {
+                fallos.push(format!("bruto={bruto}, fees={fees}: trading autorizado"));
+            }
+            if p.evidencia_demo.is_some() {
+                fallos.push(format!("bruto={bruto}, fees={fees}: evidencia favorable"));
+            }
+
+            p.set_evidencia_demo(Some(god_engine_core::orchestrator::EvidenciaDemo {
+                cierres: 30,
+                ev_neto_por_trade: 0.002,
+                wins: 21,
+            }));
+            p.on_tick();
+            if p.current_phase != god_engine_core::orchestrator::SystemPhase::ProductionMainnet
+                || !p.is_trading_allowed()
+            {
+                fallos.push(format!(
+                    "bruto={bruto}, fees={fees}: no recuperó con evidencia válida"
+                ));
+            }
+        }
+        assert!(fallos.is_empty(), "{fallos:?}");
+    }
 
     /// I-11 (N56): un servidor que acepta el WS y corta sin enviar datos no
     /// se reintenta cada 100 ms: la espera crece (0; 0,1; 0,3; 0,7; 1,5;
@@ -7211,7 +7842,11 @@ mod tests {
         use execution_engine::entry_dispatch::admite_iceberg;
         assert!(!execution_engine::binance_api::SUPPORTS_NATIVE_ICEBERG);
         for nocional in [5.1, 600.0, 10_001.0, 1e9] {
-            assert!(!admite_iceberg(execution_engine::binance_api::SUPPORTS_NATIVE_ICEBERG, nocional, 500.0));
+            assert!(!admite_iceberg(
+                execution_engine::binance_api::SUPPORTS_NATIVE_ICEBERG,
+                nocional,
+                500.0
+            ));
         }
         assert!(admite_iceberg(true, 600.0, 500.0));
         assert!(!admite_iceberg(true, 400.0, 500.0));
@@ -7223,18 +7858,35 @@ mod tests {
     /// 0,27 > α) y la falsa suspensión con esperanza positiva queda ≤ α.
     #[test]
     fn lg8_el_fee_breaker_exige_evidencia_y_cuenta_operaciones() {
-        let c = agrupar_cierres(vec![(1_000, -0.4), (1_300, -0.3), (1_900, -0.2), (60_000, 0.5)], 1_000);
+        let c = agrupar_cierres(
+            vec![(1_000, -0.4), (1_300, -0.3), (1_900, -0.2), (60_000, 0.5)],
+            1_000,
+        );
         assert_eq!(c.len(), 2, "tres llenados a ≤ 1 s son un cierre: {c:?}");
         assert!((c[0].bruto + 0.9).abs() < 1e-12);
         // Antes bastaban 3 cierres perdedores: ahora no hay evidencia.
-        let perdedores: Vec<CierreAgregado> =
-            (0..3).map(|i| CierreAgregado { t_ms: 1_000 + i * 60_000, bruto: -0.5 }).collect();
-        assert_eq!(decision_fee_breaker(&perdedores, 0.0, 0.3, 0.35, 0.05, 3_600_000), None);
+        let perdedores: Vec<CierreAgregado> = (0..3)
+            .map(|i| CierreAgregado {
+                t_ms: 1_000 + i * 60_000,
+                bruto: -0.5,
+            })
+            .collect();
+        assert_eq!(
+            decision_fee_breaker(&perdedores, 0.0, 0.3, 0.35, 0.05, 3_600_000),
+            None
+        );
         // Con 8 perdedores la cola es 0,65⁸ ≈ 0,032 ≤ α: suspende hasta que el
         // más antiguo sale de la ventana.
-        let ocho: Vec<CierreAgregado> =
-            (0..8).map(|i| CierreAgregado { t_ms: 1_000 + i * 60_000, bruto: -0.5 }).collect();
-        assert_eq!(decision_fee_breaker(&ocho, 0.0, 0.3, 0.35, 0.05, 3_600_000), Some(1_000 + 3_600_000));
+        let ocho: Vec<CierreAgregado> = (0..8)
+            .map(|i| CierreAgregado {
+                t_ms: 1_000 + i * 60_000,
+                bruto: -0.5,
+            })
+            .collect();
+        assert_eq!(
+            decision_fee_breaker(&ocho, 0.0, 0.3, 0.35, 0.05, 3_600_000),
+            Some(1_000 + 3_600_000)
+        );
         // Monte Carlo: p = 0,40 > p* = 0,35 (esperanza positiva), ventanas de 3 a
         // 12 cierres. La tasa de falsas suspensiones queda ≤ α.
         let mut estado = 0x2545_f491_4f6c_dd1du64;
@@ -7252,7 +7904,10 @@ mod tests {
                 estado ^= estado << 17;
                 let u = (estado >> 11) as f64 / (1u64 << 53) as f64;
                 let bruto = if u < 0.40 { 2.25 } else { -1.0 };
-                cierres.push(CierreAgregado { t_ms: 1 + j * 1_000, bruto });
+                cierres.push(CierreAgregado {
+                    t_ms: 1 + j * 1_000,
+                    bruto,
+                });
             }
             let fees = 0.12 * n as f64;
             if decision_fee_breaker(&cierres, 0.0, fees, 0.35, 0.05, 3_600_000).is_some() {
@@ -7303,20 +7958,32 @@ mod tests {
     #[test]
     fn omega14_g0_5_genome_protection_prices_usa_fuente_unica_curva() {
         let arena = quantum_arena::GlobalArena::build_in_own_stack(13.0);
-        
+
         // Mutamos las curvas continuas en caliente para verificar que genome_protection_prices
         // responde a la curva activa y no a las anclas fijas obsoletas.
         // Curva TP: a = ln(0.04), b = 0.0 (plana en 4%)
         // Curva SL: a = ln(0.02), b = 0.0 (plana en 2%)
-        arena.config.tp_curve_a.store(0.04f64.ln(), Ordering::Relaxed);
+        arena
+            .config
+            .tp_curve_a
+            .store(0.04f64.ln(), Ordering::Relaxed);
         arena.config.tp_curve_b.store(0.0, Ordering::Relaxed);
-        arena.config.sl_curve_a.store(0.02f64.ln(), Ordering::Relaxed);
+        arena
+            .config
+            .sl_curve_a
+            .store(0.02f64.ln(), Ordering::Relaxed);
         arena.config.sl_curve_b.store(0.0, Ordering::Relaxed);
 
         // Sin fricción artificial para aislar la paridad geométrica
         arena.config.live_taker_fee.store(0.0001, Ordering::Relaxed);
-        arena.config.base_slippage_floor.store(0.00001, Ordering::Relaxed);
-        arena.config.latency_penalty_ms.store(0.0, Ordering::Relaxed);
+        arena
+            .config
+            .base_slippage_floor
+            .store(0.00001, Ordering::Relaxed);
+        arena
+            .config
+            .latency_penalty_ms
+            .store(0.0, Ordering::Relaxed);
 
         let entry_price = 50_000.0;
         let tau_test_ms = 120_000; // 2 minutos
@@ -7327,17 +7994,33 @@ mod tests {
         let expected_sl_frac = arena.config.sl_at_tau(tau_test_ms as f64);
 
         // Verificamos que las curvas entreguen exactamente los valores mutados
-        assert!((expected_tp_frac - 0.04).abs() < 1e-6, "expected_tp_frac debe ser 0.04");
-        assert!((expected_sl_frac - 0.02).abs() < 1e-6, "expected_sl_frac debe ser 0.02");
+        assert!(
+            (expected_tp_frac - 0.04).abs() < 1e-6,
+            "expected_tp_frac debe ser 0.04"
+        );
+        assert!(
+            (expected_sl_frac - 0.02).abs() < 1e-6,
+            "expected_sl_frac debe ser 0.02"
+        );
 
         // Verificamos que TP > entry_price y SL < entry_price para long
-        assert!(tp > entry_price, "TP debe ser superior al precio de entrada");
-        assert!(sl < entry_price, "SL debe ser inferior al precio de entrada");
+        assert!(
+            tp > entry_price,
+            "TP debe ser superior al precio de entrada"
+        );
+        assert!(
+            sl < entry_price,
+            "SL debe ser inferior al precio de entrada"
+        );
 
         // Calculamos paridad esperada considerando posibles friction_floors
         let fee_rt = risk_engine::tp_sl::roundtrip_friction(0.0001, 0.00001, 0.0, 0.0);
         let (expected_sl_floor, expected_tp_floor) =
-            quantum_arena::genome::SuperGenotype::friction_floors(fee_rt, expected_sl_frac, expected_tp_frac);
+            quantum_arena::genome::SuperGenotype::friction_floors(
+                fee_rt,
+                expected_sl_frac,
+                expected_tp_frac,
+            );
 
         let expected_tp = entry_price * (1.0 + expected_tp_floor);
         let expected_sl = entry_price * (1.0 - expected_sl_floor);
@@ -7363,15 +8046,39 @@ mod tests {
 
         // Caso tau degenerada / no inicializada (0 ms) -> debe clamar a TAU_ANCHOR_FAST_MS
         let (tp_fast, sl_fast) = genome_protection_prices(&arena, "ETHUSDT", true, entry_price, 0);
-        let (tp_anchor_fast, sl_anchor_fast) = genome_protection_prices(&arena, "ETHUSDT", true, entry_price, TAU_ANCHOR_FAST_MS as u64);
-        assert_eq!(tp_fast, tp_anchor_fast, "Tau = 0 debe colapsar a ancla rápida");
-        assert_eq!(sl_fast, sl_anchor_fast, "Tau = 0 debe colapsar a ancla rápida");
+        let (tp_anchor_fast, sl_anchor_fast) = genome_protection_prices(
+            &arena,
+            "ETHUSDT",
+            true,
+            entry_price,
+            TAU_ANCHOR_FAST_MS as u64,
+        );
+        assert_eq!(
+            tp_fast, tp_anchor_fast,
+            "Tau = 0 debe colapsar a ancla rápida"
+        );
+        assert_eq!(
+            sl_fast, sl_anchor_fast,
+            "Tau = 0 debe colapsar a ancla rápida"
+        );
 
         // Caso tau degenerada cósmica (146 años) -> debe clamar a TAU_ANCHOR_SLOW_MS
-        let (tp_slow, sl_slow) = genome_protection_prices(&arena, "ETHUSDT", true, entry_price, 4_611_686_018_427);
-        let (tp_anchor_slow, sl_anchor_slow) = genome_protection_prices(&arena, "ETHUSDT", true, entry_price, TAU_ANCHOR_SLOW_MS as u64);
-        assert_eq!(tp_slow, tp_anchor_slow, "Tau cósmica debe colapsar a ancla lenta");
-        assert_eq!(sl_slow, sl_anchor_slow, "Tau cósmica debe colapsar a ancla lenta");
+        let (tp_slow, sl_slow) =
+            genome_protection_prices(&arena, "ETHUSDT", true, entry_price, 4_611_686_018_427);
+        let (tp_anchor_slow, sl_anchor_slow) = genome_protection_prices(
+            &arena,
+            "ETHUSDT",
+            true,
+            entry_price,
+            TAU_ANCHOR_SLOW_MS as u64,
+        );
+        assert_eq!(
+            tp_slow, tp_anchor_slow,
+            "Tau cósmica debe colapsar a ancla lenta"
+        );
+        assert_eq!(
+            sl_slow, sl_anchor_slow,
+            "Tau cósmica debe colapsar a ancla lenta"
+        );
     }
 }
-

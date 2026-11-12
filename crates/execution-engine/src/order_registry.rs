@@ -10,7 +10,7 @@
 //!          solo en el camino de ejecución (decenas de ops/seg máx).
 
 use crate::order_types::{FillReport, OrderAck};
-use std::collections::HashMap;
+use std::collections::{hash_map::Entry, HashMap};
 use std::sync::RwLock;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -234,8 +234,16 @@ pub struct RegistryStats {
     pub unknown_status: usize,
 }
 
+#[derive(Default)]
+struct RegistryState {
+    by_client: HashMap<String, TrackedOrder>,
+    // For each WS trade with a fee observation, whether its price permitted journaling.
+    // REST observations do not consume either WS decision.
+    ws_trades: HashMap<String, HashMap<u64, bool>>,
+}
+
 pub struct OrderRegistry {
-    orders: RwLock<HashMap<String, TrackedOrder>>,
+    orders: RwLock<RegistryState>,
 }
 
 impl Default for OrderRegistry {
@@ -247,7 +255,7 @@ impl Default for OrderRegistry {
 impl OrderRegistry {
     pub fn new() -> Self {
         Self {
-            orders: RwLock::new(HashMap::new()),
+            orders: RwLock::new(RegistryState::default()),
         }
     }
 
@@ -265,7 +273,8 @@ impl OrderRegistry {
     ) {
         // FIX #1500: Acceso resiliente a RwLock libre de pánicos por envenenamiento
         let mut map = self.orders.write().unwrap_or_else(|p| p.into_inner());
-        map.entry(client_order_id.to_string())
+        map.by_client
+            .entry(client_order_id.to_string())
             .or_insert_with(|| TrackedOrder {
                 client_order_id: client_order_id.to_string(),
                 symbol: symbol.to_string(),
@@ -298,7 +307,7 @@ impl OrderRegistry {
     /// ejecución. Una orden que el exchange ya reconoció no se toca.
     pub fn mark_local_reject(&self, client_order_id: &str, now_ms: u64) -> bool {
         let mut map = self.orders.write().unwrap_or_else(|p| p.into_inner());
-        match map.get_mut(client_order_id) {
+        match map.by_client.get_mut(client_order_id) {
             Some(o) if o.status == OrderStatus::New && o.order_id == 0 && o.executed_qty == 0.0 => {
                 o.status = OrderStatus::Rejected;
                 o.updated_ms = now_ms;
@@ -348,6 +357,7 @@ impl OrderRegistry {
         let mut map = self.orders.write().unwrap_or_else(|p| p.into_inner());
         let pos_side = infer_position_side(&ack.client_order_id, &ack.side);
         let entry = map
+            .by_client
             .entry(ack.client_order_id.clone())
             .or_insert_with(|| TrackedOrder {
                 client_order_id: ack.client_order_id.clone(),
@@ -441,14 +451,24 @@ impl OrderRegistry {
     /// Aplica un ORDER_TRADE_UPDATE del user-data stream.
     /// Los eventos WS llegan por fill: acumular comisión, no sobrescribirla.
     pub fn apply_trade_update(&self, u: &TradeUpdate, now_ms: u64) {
+        self.apply_trade_update_for_accounting(u, now_ms);
+    }
+
+    /// Returns whether the stream should record this fill. A replay still
+    /// merges the order snapshot, but never books the same identified WS fill twice.
+    pub(crate) fn apply_trade_update_for_accounting(&self, u: &TradeUpdate, now_ms: u64) -> bool {
         let mut map = self.orders.write().unwrap_or_else(|p| p.into_inner());
+        let RegistryState {
+            by_client,
+            ws_trades,
+        } = &mut *map;
         // FIX #1303: Priorizar posición explícita del Exchange si está disponible
         let pos_side = if !u.position_side.is_empty() {
             u.position_side.clone()
         } else {
             infer_position_side(&u.client_order_id, &u.side)
         };
-        let entry = map
+        let entry = by_client
             .entry(u.client_order_id.clone())
             .or_insert_with(|| TrackedOrder {
                 client_order_id: u.client_order_id.clone(),
@@ -491,8 +511,29 @@ impl OrderRegistry {
                 u.cumulative_filled_qty, entry.executed_qty, u.client_order_id
             );
         }
+        let valid_fee =
+            u.last_filled_qty.is_finite() && u.last_filled_qty > 0.0 && u.commission.is_finite();
+        let priced_fill = u.last_filled_price.is_finite() && u.last_filled_price > 0.0;
+        let (book_fee, new_fill) = if !valid_fee {
+            (false, false)
+        } else if u.trade_id == 0 {
+            (true, priced_fill)
+        } else {
+            let trades = ws_trades.entry(u.client_order_id.clone()).or_default();
+            match trades.entry(u.trade_id) {
+                Entry::Vacant(first) => {
+                    first.insert(priced_fill);
+                    (true, priced_fill)
+                }
+                Entry::Occupied(mut seen) => {
+                    let journal = priced_fill && !*seen.get();
+                    *seen.get_mut() |= priced_fill;
+                    (false, journal)
+                }
+            }
+        };
         // R3.4: Comisión acumulativa por fill WS + deduplicación con ACK REST
-        if u.last_filled_qty > 0.0 && u.commission.is_finite() {
+        if book_fee {
             // MOD1/4-015 (INFORME-14): fill con tradeId → unión por id (el
             // mismo fill que REST ya reportó SOBRESCRIBE, no duplica; un fill
             // que REST NO vio se SUMA — antes el max() lo descartaba).
@@ -516,12 +557,14 @@ impl OrderRegistry {
         // R3.4: Monotonic status guard — impedir que actualizaciones WS desordenadas degraden estados terminales
         entry.status = entry.status.merge(u.status);
         entry.updated_ms = now_ms;
+        new_fill
     }
 
     pub fn get(&self, client_order_id: &str) -> Option<TrackedOrder> {
         self.orders
             .read()
             .unwrap_or_else(|p| p.into_inner())
+            .by_client
             .get(client_order_id)
             .cloned()
     }
@@ -535,6 +578,7 @@ impl OrderRegistry {
         self.orders
             .read()
             .unwrap_or_else(|p| p.into_inner())
+            .by_client
             .get(client_order_id)
             .map(|o| o.status)
     }
@@ -542,7 +586,8 @@ impl OrderRegistry {
     /// Todas las órdenes vivas en el registro global (para reconciliación O(N)).
     pub fn active_orders(&self) -> Vec<TrackedOrder> {
         let map = self.orders.read().unwrap_or_else(|p| p.into_inner());
-        map.values()
+        map.by_client
+            .values()
             .filter(|o| o.status.is_active())
             .cloned()
             .collect()
@@ -551,8 +596,8 @@ impl OrderRegistry {
     pub fn stats(&self) -> RegistryStats {
         let map = self.orders.read().unwrap_or_else(|p| p.into_inner());
         let mut s = RegistryStats::default();
-        s.total = map.len();
-        for o in map.values() {
+        s.total = map.by_client.len();
+        for o in map.by_client.values() {
             match o.status {
                 OrderStatus::New | OrderStatus::PartiallyFilled => s.active += 1,
                 OrderStatus::Filled => s.filled += 1,
@@ -571,9 +616,14 @@ impl OrderRegistry {
     /// Purga órdenes terminadas con `updated_ms` estrictamente anterior al timestamp de corte `cutoff_timestamp_ms`.
     pub fn prune_terminated(&self, cutoff_timestamp_ms: u64) -> usize {
         let mut map = self.orders.write().unwrap_or_else(|p| p.into_inner());
-        let before = map.len();
-        map.retain(|_, o| o.status.is_active() || o.updated_ms >= cutoff_timestamp_ms);
-        before - map.len()
+        let RegistryState {
+            by_client,
+            ws_trades,
+        } = &mut *map;
+        let before = by_client.len();
+        by_client.retain(|_, o| o.status.is_active() || o.updated_ms >= cutoff_timestamp_ms);
+        ws_trades.retain(|client_id, _| by_client.contains_key(client_id));
+        before - by_client.len()
     }
 
     /// Identifica órdenes activas que han excedido su tiempo de vida máximo
@@ -599,7 +649,7 @@ impl OrderRegistry {
     pub fn cleanup_stale_orders(&self, max_active_age_ms: u64, now_ms: u64) -> Vec<TrackedOrder> {
         let mut map = self.orders.write().unwrap_or_else(|p| p.into_inner());
         let mut stale = Vec::new();
-        for order in map.values_mut() {
+        for order in map.by_client.values_mut() {
             if order.status.is_active()
                 && now_ms.saturating_sub(order.updated_ms) > max_active_age_ms
                 && now_ms.saturating_sub(order.created_ms) > max_active_age_ms

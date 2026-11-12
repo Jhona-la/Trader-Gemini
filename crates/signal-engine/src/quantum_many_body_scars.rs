@@ -126,35 +126,30 @@ impl QuantumManyBodyScarsEngine {
         volatility: f64,
         dt_sec: f64,
     ) -> QuantumManyBodyScarsReport {
-        let ret = if price_ret.is_finite() {
-            price_ret.clamp(-1.0, 1.0)
-        } else {
-            0.0
-        };
+        let inputs_valid = price_ret.is_finite()
+            && order_flow_imbalance.is_finite()
+            && spread_bps.is_finite()
+            && spread_bps >= 0.0
+            && volatility.is_finite()
+            && volatility >= 0.0
+            && dt_sec.is_finite()
+            && dt_sec > 0.0;
+        if !inputs_valid {
+            return QuantumManyBodyScarsReport {
+                revival_fidelity: 0.0,
+                spectral_form_factor: 0.0,
+                scarred_directional_signal: 0.0,
+                eth_violation_degree: 0.0,
+                ergodic_collapse_veto: true,
+                slot_scale_factor: 0.15,
+            };
+        }
 
-        let ofi = if order_flow_imbalance.is_finite() {
-            order_flow_imbalance.clamp(-1.0, 1.0)
-        } else {
-            0.0
-        };
-
-        let spread = if spread_bps.is_finite() {
-            spread_bps.clamp(0.0, 50.0)
-        } else {
-            1.0
-        };
-
-        let vol = if volatility.is_finite() {
-            volatility.clamp(0.0001, 10.0)
-        } else {
-            0.01
-        };
-
-        let dt = if dt_sec.is_finite() && dt_sec > 0.0 {
-            dt_sec.clamp(0.0001, 10.0)
-        } else {
-            0.10
-        };
+        let ret = price_ret.clamp(-1.0, 1.0);
+        let ofi = order_flow_imbalance.clamp(-1.0, 1.0);
+        let spread = spread_bps.clamp(0.0, 50.0);
+        let vol = volatility.clamp(0.0001, 10.0);
+        let dt = dt_sec.clamp(0.0001, 10.0);
 
         // 1. Evolución de la fase de revival cuántico en el subespacio cicatrizado:
         // $\Delta \phi = (\Omega_{\text{scar}} + |\text{OFI}| \cdot 1.5) \cdot dt$

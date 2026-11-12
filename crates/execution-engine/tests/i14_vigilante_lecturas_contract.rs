@@ -265,6 +265,22 @@ fn i14_n34_la_entrada_que_salta_el_bracket_despierta_al_vigilante() {
         !salto.contains("TPllenódurante"),
         "no hay pierna que haya llenado: el bracket no se colocó"
     );
+    // F2A (main) añadió un segundo salto en la lectura de la cantidad del
+    // bracket: cada OCO-SKIP despierta al vigilante, y ninguno afirma que
+    // llenó un TP.
+    let saltos: Vec<usize> = h.match_indices("[OCO-SKIP]").map(|(i, _)| i).collect();
+    assert_eq!(saltos.len(), 2, "los dos OCO-SKIP del bracket");
+    for i in saltos {
+        let salto = tramo(&h[i..], "[OCO-SKIP]", "oco_success=true;");
+        assert!(
+            salto.contains("quantum_arena::protection_health::mark_dirty();"),
+            "cada OCO-SKIP la audita el vigilante"
+        );
+    }
+    assert!(
+        !h.contains("TPllenódurante"),
+        "no hay pierna que haya llenado: el bracket no se colocó"
+    );
 }
 
 /// RED antes de I-14: la bandera sucia se limpiaba aunque la purga no

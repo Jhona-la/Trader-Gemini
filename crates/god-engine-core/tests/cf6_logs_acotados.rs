@@ -70,10 +70,18 @@ fn cl140_cl141_trayectoria_y_recarga_avisan_lo_nuevo() {
     // del evento y la conciliación (TCE de lo que cerró el núcleo, descarte
     // de lo demás) va antes de evaluar el tick.
     let antes = host.find("let ranuras_antes = ranuras_abiertas(").expect("ranuras antes del evento");
-    let evento = host.find("engine_real.process_event(").expect("evento");
+    let evento = host
+        .find("let emissions = engine_real.process_event_multi(")
+        .expect("evento multi real");
     let conciliacion = host.find("trajectory_auditor.conciliar(").expect("conciliación");
     let evaluacion = host.find("trajectory_auditor.evaluate_tick(").expect("evaluación");
     assert!(antes < evento && evento < conciliacion && conciliacion < evaluacion);
+    let salidas_multi = host.get(evento..conciliacion).unwrap_or_default();
+    assert!(
+        salidas_multi.contains("let mut entry_orders = emissions.entries;")
+            && salidas_multi.contains("let closed_order = emissions.closed_order;"),
+        "la API multi debe producir las entradas y el cierre usados por el host"
+    );
     assert!(!host.contains("trajectory_auditor.record_exit("), "el cierre sale de conciliar");
     assert!(!host.contains("trajectory_auditor.descartar("), "el descarte sale de conciliar");
     // La traza nace con la ranura y la generación de la reserva y sólo si la

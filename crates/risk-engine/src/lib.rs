@@ -8,18 +8,22 @@ pub mod correlation_guard;
 pub mod cramer_lundberg;
 pub mod dirac_monopole_chern_bundle;
 pub mod drawdown;
+pub mod drgt_massive_gravity;
 pub mod envio;
 pub mod evidence;
 pub mod fisher_rao_amari_manifold;
 pub mod freno_estrategia;
 pub mod gromov_symplectic_barrier;
 pub mod guard;
+pub mod hayden_preskill_scrambling;
 pub mod hodge;
 pub mod holographic_lloyd_complexity;
 pub mod kelly;
 pub mod kelly_envelope;
+pub mod kerr_newman_black_hole;
 pub mod leverage_matrix;
 pub mod lindblad_master_decoherence;
+pub mod medida_sombra;
 pub mod orchestrator;
 pub mod page_curve_island_risk;
 pub mod polyakov_schwarzschild_horizon;
@@ -41,6 +45,7 @@ pub mod umegaki_relative_entropy;
 pub mod veto_registry;
 pub mod ville_e_process;
 pub mod ville_grossman_ignition_gate;
+pub mod wheeler_feynman_absorber;
 
 pub use adaptive_quantum_veto::{
     AdaptiveQuantumVetoGovernor, AdaptiveQuantumVetoParams, AdaptiveVetoDecision,
@@ -63,6 +68,9 @@ pub use dirac_monopole_chern_bundle::{
     DiracMonopoleChernBundleEngine, DiracMonopoleParams, DiracMonopoleReport,
     DIRAC_CRITICAL_CURVATURE_FLUX,
 };
+pub use drgt_massive_gravity::{
+    DrgtMassiveGravityConfig, DrgtMassiveGravityEngine, DrgtMassiveGravityReport,
+};
 pub use evidence::{
     profit_factor_lcb, resolve_bayes_prior, win_rate_hierarchical_lcb, win_rate_lcb,
     DEFAULT_BAYES_PRIOR_MASS, DEFAULT_BAYES_PRIOR_WIN_RATE,
@@ -73,10 +81,14 @@ pub use fisher_rao_amari_manifold::{
 pub use gromov_symplectic_barrier::{
     GromovSymplecticBarrierEngine, GromovSymplecticParams, GromovSymplecticReport, Quaternion,
 };
+pub use hayden_preskill_scrambling::{
+    HaydenPreskillConfig, HaydenPreskillEngine, HaydenPreskillReport, HP_HISTORY_CAPACITY,
+};
 pub use holographic_lloyd_complexity::{
     HolographicLloydComplexityEngine, HolographicLloydConfig, HolographicLloydReport,
 };
 pub use kelly_envelope::{EdgePosterior, RiskEnvelope, SURVIVAL_FLOOR, TRADE_HORIZON};
+pub use kerr_newman_black_hole::{KerrNewmanBlackHoleEngine, KerrNewmanConfig, KerrNewmanReport};
 pub use lindblad_master_decoherence::{
     LindbladDecoherenceReport, LindbladMasterDecoherenceEngine, LindbladMasterParams,
     LINDBLAD_TRIAD_DIM,
@@ -132,6 +144,10 @@ pub use ville_e_process::VilleEProcess;
 pub use ville_grossman_ignition_gate::{
     IgnitionCertificationReport, IgnitionViolationBits, VilleGrossmanIgnitionGate,
     VilleGrossmanParams,
+};
+pub use wheeler_feynman_absorber::{
+    WheelerFeynmanAbsorberConfig, WheelerFeynmanAbsorberEngine, WheelerFeynmanAbsorberReport,
+    WFA_HISTORY_CAPACITY,
 };
 
 use quantum_arena::GlobalArena;
@@ -383,6 +399,15 @@ pub struct RiskEngine {
     /// CL-131 — lo medido de la última orden validada, hasta que el núcleo
     /// la tome al abrirla (`tomar_medida_validada`).
     medida_pendiente: Option<MedidaOrden>,
+    /// RB-V1b: moneda y geometría de la evaluación en curso (TP, SL, fricción
+    /// de ida y vuelta y τ) para que el núcleo juzgue en sombra la intención
+    /// que se rechaza o se veta después de calcularla. Se borra al empezar
+    /// cada evaluación; ninguna decisión la lee.
+    geometria_evaluada: Option<(usize, medida_sombra::GeometriaSombra)>,
+    /// RB-V1c: moneda y EV bruto (`p·TP − (1−p)·SL`, fracción del precio)
+    /// que la evaluación en curso prometió. Se borra al empezar cada
+    /// evaluación; ninguna decisión la lee.
+    promesa_evaluada: Option<(usize, f64)>,
 }
 
 /// CL-131 (R2 de la revisión del PR #62) — lo que una orden validada aporta
@@ -412,6 +437,8 @@ impl RiskEngine {
             peak_capital: initial_capital,
             freno_estrategia: freno_estrategia::FrenoEstrategia::new(),
             medida_pendiente: None,
+            geometria_evaluada: None,
+            promesa_evaluada: None,
         }
     }
 
@@ -421,6 +448,8 @@ impl RiskEngine {
         self.peak_capital = initial_capital;
         self.freno_estrategia = freno_estrategia::FrenoEstrategia::new();
         self.medida_pendiente = None;
+        self.geometria_evaluada = None;
+        self.promesa_evaluada = None;
     }
 
     /// CL-131/CL-135 — la medida de la última orden validada de `coin_id`,
@@ -670,9 +699,33 @@ impl RiskEngine {
         intent: &SignalIntent,
         arena: &GlobalArena,
     ) -> ValidatedOrder {
+        self.evaluate_quantum_order_impl(coin_id, intent, arena, None)
+    }
+
+    pub fn evaluate_quantum_order_with_probe_snapshot(
+        &mut self,
+        coin_id: usize,
+        intent: &SignalIntent,
+        arena: &GlobalArena,
+        probe_occupied: bool,
+    ) -> ValidatedOrder {
+        self.evaluate_quantum_order_impl(coin_id, intent, arena, Some(probe_occupied))
+    }
+
+    fn evaluate_quantum_order_impl(
+        &mut self,
+        coin_id: usize,
+        intent: &SignalIntent,
+        arena: &GlobalArena,
+        probe_occupied: Option<bool>,
+    ) -> ValidatedOrder {
         set_reject_direction(intent.signal);
         // CL-131: la medida pendiente es la de la última orden validada.
         self.medida_pendiente = None;
+        // RB-V1b/RB-V1c: la geometría y la promesa son las de esta
+        // evaluación o ninguna.
+        self.geometria_evaluada = None;
+        self.promesa_evaluada = None;
         if coin_id >= arena.coins.len() || intent.signal == SignalType::Flat {
             return rej(REJ_FLAT_COIN);
         }
@@ -851,6 +904,7 @@ impl RiskEngine {
             pf,
             temporal_scale,
             arena,
+            probe_occupied,
         )
     }
 
@@ -864,6 +918,7 @@ impl RiskEngine {
         profit_factor: f64,
         temporal_scale: f64,
         arena: &GlobalArena,
+        probe_occupied: Option<bool>,
     ) -> ValidatedOrder {
         set_reject_direction(intent.signal);
         // CL-146: un capital NaN pasaba esta puerta y llegaba como límite NaN
@@ -884,7 +939,9 @@ impl RiskEngine {
             return rej(REJ_ESTRATEGIA_FALSADA);
         }
         let es_sonda = crate::sonda::en_fase_de_sonda(arena, coin_id);
-        if !crate::sonda::admite_sonda_con_fase(arena, es_sonda) {
+        let probe_occupied =
+            probe_occupied.unwrap_or_else(|| !crate::sonda::admite_sonda_con_fase(arena, es_sonda));
+        if es_sonda && probe_occupied {
             return rej(REJ_SONDA_OCUPADA);
         }
         // D-750 — EL NOCIONAL MÍNIMO ES EL DEL SÍMBOLO, NO UN LITERAL DE
@@ -1379,6 +1436,15 @@ impl RiskEngine {
         // que corresponde es otro τ (la puerta QO-586 del núcleo ya lo filtra
         // antes), no otro stop. QS-D2 retira el atajo micro de Ω47/F4-M1, que
         // admitía esa orden cuando el suelo cabía en 55 pb.
+        // RB-V1b: la geometría que juzgan el suelo y las puertas siguientes,
+        // para la sombra. Sólo se escribe.
+        self.geometria_evaluada = medida_sombra::GeometriaSombra::nueva(
+            tpsl_gate.tp_pct,
+            tpsl_gate.sl_pct,
+            roundtrip_fee,
+            tau_for_sizing,
+        )
+        .map(|g| (coin_id, g));
         if tpsl_gate.below_tradeable_floor {
             return rej(REJ_TP_SL_FLOOR);
         }
@@ -1418,6 +1484,15 @@ impl RiskEngine {
         {
             return rej(REJ_TARGET_GEOMETRY);
         }
+        // RB-V1b: con objetivos explícitos de la intención, la geometría final
+        // difiere de la del horizonte; la sombra juzga la de la orden.
+        self.geometria_evaluada = medida_sombra::GeometriaSombra::nueva(
+            expected_win,
+            expected_loss,
+            roundtrip_fee,
+            tau_for_sizing,
+        )
+        .map(|g| (coin_id, g));
 
         // R7-R2-A-1 / Ola Ω73: Activación analítica de la probabilidad en forma cerrada de primer toque (Ω3 / CL-34)
         // Calibración R-15: La coherencia espectral es una correlación instantánea en [-1, 1],
@@ -1700,6 +1775,9 @@ impl RiskEngine {
         if !expected_value_pct.is_finite() || !ev_fee_multiplier.is_finite() {
             return rej(REJ_INVALID_INPUT);
         }
+        // RB-V1c: lo que esta evaluación promete, para contrastarlo en sombra
+        // con lo que ocurre. Sólo se escribe.
+        self.promesa_evaluada = Some((coin_id, expected_value_pct));
         // Ω46.2 / D4 (CL-98): en fase de sonda (menos de `CIERRES_DE_SONDA`
         // cierres) la orden es una sonda: se admite porque está presupuestada
         // (una abierta en la cartera, orden mínima, pérdidas dentro del

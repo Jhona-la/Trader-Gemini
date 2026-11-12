@@ -23,7 +23,9 @@ fn cl18_una_calibracion_plana_no_publica_umbrales() {
         let pnl = if ganadora { 0.004 } else { -0.003 };
         forest.shadow_evaluate_with_features(features, pnl);
     }
-    forest.retrain_models().expect("hay datos de las dos clases");
+    forest
+        .retrain_models()
+        .expect("hay datos de las dos clases");
     assert!(forest.is_trained());
     assert_eq!(
         forest.get_optimal_thresholds(),

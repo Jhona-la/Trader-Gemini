@@ -13,8 +13,12 @@ fn host() -> String {
 }
 
 fn brazo<'a>(h: &'a str, desde: &str, hasta: &str) -> &'a str {
-    let m = h.find("matchentry_result{").expect("match del resultado de la entrada");
-    let i = m + h[m..].find(desde).unwrap_or_else(|| panic!("ancla «{desde}» ausente"));
+    let m = h
+        .find("matchentry_result{")
+        .expect("match del resultado de la entrada");
+    let i = m + h[m..]
+        .find(desde)
+        .unwrap_or_else(|| panic!("ancla «{desde}» ausente"));
     let f = i + h[i..]
         .find(hasta)
         .unwrap_or_else(|| panic!("ancla «{hasta}» ausente tras «{desde}»"));
@@ -30,10 +34,23 @@ fn brazo<'a>(h: &'a str, desde: &str, hasta: &str) -> &'a str {
 fn cl46_la_consulta_de_una_entrada_ambigua_decide_la_reserva() {
     let h = host();
     let b = brazo(&h, "Err(e)ife.starts_with(\"AMBIGUOUS\")", "Err(e)=>{");
-    assert!(b.contains("resolve_via_rest("));
-    assert!(b.contains("destino_tras_consulta("), "la consulta decide");
-    assert!(b.contains("rollback_positions("), "sin ejecución se revierte");
-    assert!(b.contains("confirmar_llenado("), "con ejecución se confirma");
+    assert!(b.contains("resolve_entry_for_host("));
+    assert!(
+        b.contains("DestinoReserva::Revertir"),
+        "sin ejecución se revierte"
+    );
+    assert!(
+        b.contains("DestinoReserva::Confirmar"),
+        "con ejecución se confirma"
+    );
+    assert!(
+        b.contains("rollback_positions("),
+        "sin ejecución se revierte"
+    );
+    assert!(
+        b.contains("confirmar_llenado("),
+        "con ejecución se confirma"
+    );
 }
 
 /// CL-45: antes el brazo Ok confirmaba la reserva con la cantidad, el margen
@@ -42,7 +59,10 @@ fn cl46_la_consulta_de_una_entrada_ambigua_decide_la_reserva() {
 fn cl45_el_host_confirma_la_reserva_con_lo_ejecutado() {
     let h = host();
     let b = brazo(&h, "Ok(())=>{", "iforder_tp_price>0.0&&order_sl_price>0.0{");
-    assert!(b.contains("confirmar_llenado("), "la confirmación lleva lo ejecutado");
+    assert!(
+        b.contains("confirmar_llenado("),
+        "la confirmación lleva lo ejecutado"
+    );
     assert!(
         !b.contains("reservation.confirm(&arena_clone)"),
         "una sola vía de confirmación"
@@ -59,9 +79,7 @@ fn cl45_el_host_confirma_la_reserva_con_lo_ejecutado() {
 fn cl45b_bracket_y_diario_usan_lo_llenado() {
     let h = host();
     let b = brazo(&h, "Ok(())=>{", "if!oco_success{");
-    assert!(b.contains(
-        "letcantidad_llenada=ejecutada.map_or(final_qty.abs(),|q|q.min(final_qty.abs()));"
-    ));
+    assert!(b.contains("letcantidad_llenada=ejecutada.min(final_qty.abs());"));
     assert!(b.contains("letqty_intent=cantidad_llenada;"));
     assert!(!b.contains("letqty_intent=final_qty.abs();"));
     assert!(b.contains("anotar_diario_de_posicion(&arena_clone,&reservation,&parsed_sym_str,final_is_long,cantidad_llenada,"));
@@ -74,7 +92,11 @@ fn cl45b_bracket_y_diario_usan_lo_llenado() {
 #[test]
 fn cl46b_la_confirmacion_tras_consulta_anota_el_diario() {
     let h = host();
-    let b = brazo(&h, "DestinoReserva::Confirmar{ejecutada}=>{", "DestinoReserva::Conservar=>{");
+    let b = brazo(
+        &h,
+        "DestinoReserva::Confirmar{ejecutada}=>{",
+        "DestinoReserva::Conservar=>{",
+    );
     assert!(b.contains("confirmar_llenado(&arena_clone,Some(ejecutada))"));
     assert!(b.contains("anotar_diario_de_posicion(&arena_clone,&reservation,&parsed_sym_str,final_is_long,ejecutada.min(final_qty.abs()),"));
 }

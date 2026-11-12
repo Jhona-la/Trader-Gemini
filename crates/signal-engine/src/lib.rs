@@ -19,11 +19,14 @@ pub mod feynman_path_integral_routing;
 pub mod feynman_propagator;
 pub mod flow_excitation_confluence;
 pub mod flow_impulse;
+pub mod fqhe_chern_simons;
 pub mod fractional_rough_volatility;
+pub mod fracton_topological_order;
 pub mod game_theoretic_nash;
 pub mod hawkes_bessel;
 pub mod jarzynski_crooks_thermodynamics;
 pub mod kdv_soliton_dispersion;
+pub mod kitaev_quantum_double;
 pub mod mean_field_games_psychology;
 pub mod mfdfa_multifractal_hurst;
 pub mod mpdo_dissipative_dmrg;
@@ -48,6 +51,7 @@ pub mod starobinsky_inflationary_attractor;
 pub mod stochastic_resonance;
 pub mod supersonic_shockwave;
 pub mod supersymmetry_nicolai_map;
+pub mod topological_quantum_braiding;
 pub mod trend_runner;
 pub mod voto_espectral;
 pub mod wheeler_dewitt_minisuperspace;
@@ -70,9 +74,16 @@ pub use feynman_path_integral_routing::{
     ROUTING_PATH_CANDIDATES, ROUTING_PATH_SLICES,
 };
 pub use feynman_propagator::{FeynmanPropagatorEngine, FeynmanPropagatorParams};
+pub use fqhe_chern_simons::{
+    FqheChernSimonsConfig, FqheChernSimonsEngine, FqheChernSimonsReport, FQHE_PLATEAUS,
+};
 pub use fractional_rough_volatility::{
     FractionalRoughVolatilityEngine, FractionalRoughVolatilityParams,
     FractionalRoughVolatilityReport, ROUGH_VOL_WINDOW,
+};
+pub use fracton_topological_order::{
+    FractonTopologicalConfig, FractonTopologicalOrderEngine, FractonTopologicalReport,
+    FRACTON_BUFFER_CAPACITY, FRACTON_SITES,
 };
 pub use hawkes_bessel::{HawkesBesselEngine, HawkesBesselParams};
 pub use jarzynski_crooks_thermodynamics::{
@@ -82,6 +93,10 @@ pub use jarzynski_crooks_thermodynamics::{
 };
 pub use kdv_soliton_dispersion::{
     KdvSolitonDispersionEngine, KdvSolitonParams, KdvSolitonReport, KDV_GRID_POINTS,
+};
+pub use kitaev_quantum_double::{
+    KitaevQuantumDoubleConfig, KitaevQuantumDoubleEngine, KitaevQuantumDoubleReport, S3_INVERSES,
+    S3_MULTIPLICATION_TABLE, S3_ORDER,
 };
 pub use maker::{MakerEngine, MakerQuote};
 pub use mean_field_games_psychology::{
@@ -146,6 +161,10 @@ pub use strategy_core::{SignalIntent, SignalType};
 pub use supersonic_shockwave::{SupersonicShockwaveEngine, SupersonicShockwaveParams};
 pub use supersymmetry_nicolai_map::{
     SupersymmetryNicolaiConfig, SupersymmetryNicolaiEngine, SupersymmetryNicolaiReport,
+};
+pub use topological_quantum_braiding::{
+    Complex2D, TopologicalQuantumBraidingConfig, TopologicalQuantumBraidingEngine,
+    TopologicalQuantumBraidingReport, Unitary2x2, PHI, PHI_INV, PHI_INV_SQRT,
 };
 pub use wheeler_dewitt_minisuperspace::{
     WheelerDeWittConfig, WheelerDeWittMinisuperspaceEngine, WheelerDeWittReport,

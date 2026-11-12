@@ -12,7 +12,10 @@ use dark_alpha_engine::online_ppo::{OnlinePpoPolicyEngine, PpoHyperParams};
 #[test]
 fn test_neuro_plasticity_params_validation_and_defaults() {
     let def = NeuroPlasticityParams::default();
-    assert!(def.validate(), "Los parámetros por defecto deben ser válidos");
+    assert!(
+        def.validate(),
+        "Los parámetros por defecto deben ser válidos"
+    );
     assert_eq!(def.min_multiplier, 0.20);
     assert_eq!(def.max_multiplier, 2.00);
     assert_eq!(def.center_entropy, 0.50);
@@ -24,21 +27,30 @@ fn test_neuro_plasticity_params_validation_and_defaults() {
         max_multiplier: 1.00,
         ..def
     };
-    assert!(!invalid_bounds.validate(), "min > max debe fallar validación");
+    assert!(
+        !invalid_bounds.validate(),
+        "min > max debe fallar validación"
+    );
 
     // Centro fuera de rango [0.01, 0.99]
     let invalid_center = NeuroPlasticityParams {
         center_entropy: 1.50,
         ..def
     };
-    assert!(!invalid_center.validate(), "center_entropy fuera de rango debe fallar");
+    assert!(
+        !invalid_center.validate(),
+        "center_entropy fuera de rango debe fallar"
+    );
 
     // Steepness no-finita o negativa
     let invalid_steepness = NeuroPlasticityParams {
         steepness: -2.0,
         ..def
     };
-    assert!(!invalid_steepness.validate(), "steepness negativa debe fallar");
+    assert!(
+        !invalid_steepness.validate(),
+        "steepness negativa debe fallar"
+    );
 }
 
 #[test]
@@ -51,9 +63,7 @@ fn test_plasticity_multiplier_c1_continuity_and_monotonicity() {
     for step in 0..=100 {
         let entropy = step as f64 / 100.0;
         let mult = NeuroPlasticityEngine::compute_plasticity_multiplier_with_params(
-            &params,
-            entropy,
-            capital,
+            &params, entropy, capital,
         );
         assert!(mult.is_finite());
         if step > 0 {
@@ -69,8 +79,13 @@ fn test_plasticity_multiplier_c1_continuity_and_monotonicity() {
     let eps = 0.001;
     for step in 1..99 {
         let h = step as f64 / 100.0;
-        let m1 = NeuroPlasticityEngine::compute_plasticity_multiplier_with_params(&params, h, capital);
-        let m2 = NeuroPlasticityEngine::compute_plasticity_multiplier_with_params(&params, h + eps, capital);
+        let m1 =
+            NeuroPlasticityEngine::compute_plasticity_multiplier_with_params(&params, h, capital);
+        let m2 = NeuroPlasticityEngine::compute_plasticity_multiplier_with_params(
+            &params,
+            h + eps,
+            capital,
+        );
         let diff = (m2 - m1).abs();
         assert!(
             diff < 0.02,
@@ -79,8 +94,10 @@ fn test_plasticity_multiplier_c1_continuity_and_monotonicity() {
     }
 
     // 3. Modulación suave de micro-cuenta ($13 USD) vs estándar ($100 USD)
-    let mult_micro = NeuroPlasticityEngine::compute_plasticity_multiplier_with_params(&params, 0.50, 13.0);
-    let mult_std = NeuroPlasticityEngine::compute_plasticity_multiplier_with_params(&params, 0.50, 100.0);
+    let mult_micro =
+        NeuroPlasticityEngine::compute_plasticity_multiplier_with_params(&params, 0.50, 13.0);
+    let mult_std =
+        NeuroPlasticityEngine::compute_plasticity_multiplier_with_params(&params, 0.50, 100.0);
     assert!(
         mult_micro > mult_std,
         "Micro-capital ($13) debe tener un factor de adaptación mayor que cuenta estándar ($100)"
@@ -92,11 +109,8 @@ fn test_plasticity_multiplier_nan_and_negative_immunity() {
     let params = NeuroPlasticityParams::default();
 
     // Entropía NaN / Inf
-    let m_nan = NeuroPlasticityEngine::compute_plasticity_multiplier_with_params(
-        &params,
-        f64::NAN,
-        13.0,
-    );
+    let m_nan =
+        NeuroPlasticityEngine::compute_plasticity_multiplier_with_params(&params, f64::NAN, 13.0);
     assert!(m_nan.is_finite());
     assert!(m_nan > 0.1 && m_nan < 2.5);
 
@@ -108,18 +122,12 @@ fn test_plasticity_multiplier_nan_and_negative_immunity() {
     assert!(m_inf.is_finite());
 
     // Capital NaN / negativo
-    let m_cap_nan = NeuroPlasticityEngine::compute_plasticity_multiplier_with_params(
-        &params,
-        0.50,
-        f64::NAN,
-    );
+    let m_cap_nan =
+        NeuroPlasticityEngine::compute_plasticity_multiplier_with_params(&params, 0.50, f64::NAN);
     assert!(m_cap_nan.is_finite());
 
-    let m_cap_neg = NeuroPlasticityEngine::compute_plasticity_multiplier_with_params(
-        &params,
-        0.50,
-        -50.0,
-    );
+    let m_cap_neg =
+        NeuroPlasticityEngine::compute_plasticity_multiplier_with_params(&params, 0.50, -50.0);
     assert!(m_cap_neg.is_finite());
 }
 
@@ -143,8 +151,8 @@ fn test_ppo_hyperparams_validation_and_dynamic_update() {
     engine.update_policy_with_params(
         0.02, // retorno positivo (+2%)
         &features,
-        1.0,  // Long
-        1.5,  // plasticidad dinámica alta
+        1.0, // Long
+        1.5, // plasticidad dinámica alta
         &custom_ppo,
     );
 
@@ -152,7 +160,10 @@ fn test_ppo_hyperparams_validation_and_dynamic_update() {
     for (i, w) in engine.weights.iter().enumerate() {
         let val = w.load(std::sync::atomic::Ordering::Relaxed);
         assert!(val.is_finite(), "Peso {i} debe ser finito");
-        assert!(val >= custom_ppo.min_weight_clip, "Peso {i} debe respetar clip mínimo");
+        assert!(
+            val >= custom_ppo.min_weight_clip,
+            "Peso {i} debe respetar clip mínimo"
+        );
     }
 
     // Inmunidad ante parámetros PPO inválidos (debe caer suavemente al default sin pánico)
@@ -160,14 +171,11 @@ fn test_ppo_hyperparams_validation_and_dynamic_update() {
         learning_rate: -1.0,
         ..custom_ppo
     };
-    engine.update_policy_with_params(
-        -0.01,
-        &features,
-        -1.0,
-        1.0,
-        &bad_ppo,
-    );
-    assert!(engine.reward_ema.load(std::sync::atomic::Ordering::Relaxed).is_finite());
+    engine.update_policy_with_params(-0.01, &features, -1.0, 1.0, &bad_ppo);
+    assert!(engine
+        .reward_ema
+        .load(std::sync::atomic::Ordering::Relaxed)
+        .is_finite());
 }
 
 /// RET-47b (censo C-F7b, F58) + CL-154: los pesos PPO usan el `AtomicF64`

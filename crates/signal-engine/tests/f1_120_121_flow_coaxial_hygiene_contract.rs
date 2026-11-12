@@ -10,24 +10,33 @@ fn test_f1_120_flow_impulse_duration_preserves_genome_under_15s_and_fails_closed
     // Configurar umbrales para que el flow_impulse emita señal válida
     arena.config.weight_obi.store(1.0, Ordering::Relaxed);
     arena.config.weight_ofi.store(1.0, Ordering::Relaxed);
-    arena.config.turbo_coherence_threshold.store(0.1, Ordering::Relaxed);
-    arena.config.turbo_z_score_stdev.store(0.5, Ordering::Relaxed);
+    arena
+        .config
+        .turbo_coherence_threshold
+        .store(0.1, Ordering::Relaxed);
+    arena
+        .config
+        .turbo_z_score_stdev
+        .store(0.5, Ordering::Relaxed);
     arena.config.tensor_poly_a.store(0.01, Ordering::Relaxed);
     arena.config.tensor_poly_b.store(0.001, Ordering::Relaxed);
 
     // 1. Probar valor genómico en [10_000, 15_000): ej. 11_500 ms
-    arena.config.base_duration_ms.store(11_500.0, Ordering::Relaxed);
+    arena
+        .config
+        .base_duration_ms
+        .store(11_500.0, Ordering::Relaxed);
     let intent = FlowImpulseEngine::evaluate_flow_impulse(
-        &arena,
-        0.8,  // obi
+        &arena, 0.8,  // obi
         0.6,  // ofi
         3.5,  // hawkes_ratio (superior al SS de 1.6 para inducir z-score positivo)
         0.05, // entropy baja
-        60_000.0,
-        0.002,
-        1_000_000,
+        60_000.0, 0.002, 1_000_000,
     );
-    assert!(intent.is_some(), "FlowImpulseEngine debe emitir con microestructura favorable");
+    assert!(
+        intent.is_some(),
+        "FlowImpulseEngine debe emitir con microestructura favorable"
+    );
     let intent = intent.unwrap();
     assert_eq!(
         intent.expected_duration_ms, 11_500,
@@ -35,16 +44,12 @@ fn test_f1_120_flow_impulse_duration_preserves_genome_under_15s_and_fails_closed
     );
 
     // 2. Probar valor inválido (NaN o <= 0.0) -> debe fallar cerrado (None)
-    arena.config.base_duration_ms.store(f64::NAN, Ordering::Relaxed);
+    arena
+        .config
+        .base_duration_ms
+        .store(f64::NAN, Ordering::Relaxed);
     let intent_nan = FlowImpulseEngine::evaluate_flow_impulse(
-        &arena,
-        0.8,
-        0.6,
-        3.5,
-        0.05,
-        60_000.0,
-        0.002,
-        1_000_000,
+        &arena, 0.8, 0.6, 3.5, 0.05, 60_000.0, 0.002, 1_000_000,
     );
     assert!(
         intent_nan.is_none(),
@@ -53,14 +58,7 @@ fn test_f1_120_flow_impulse_duration_preserves_genome_under_15s_and_fails_closed
 
     arena.config.base_duration_ms.store(0.0, Ordering::Relaxed);
     let intent_zero = FlowImpulseEngine::evaluate_flow_impulse(
-        &arena,
-        0.8,
-        0.6,
-        3.5,
-        0.05,
-        60_000.0,
-        0.002,
-        1_000_000,
+        &arena, 0.8, 0.6, 3.5, 0.05, 60_000.0, 0.002, 1_000_000,
     );
     assert!(
         intent_zero.is_none(),

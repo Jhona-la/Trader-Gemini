@@ -25,7 +25,9 @@ fn test_f1_125_perceptron_operable_band_anchors() {
         assert!(
             (v - ref_operable).abs() < 1e-12,
             "Escala {} en banda operativa debe tener peso identico a 18: {} vs {}",
-            k, v, ref_operable
+            k,
+            v,
+            ref_operable
         );
     }
 }
@@ -46,7 +48,9 @@ fn test_f1_125_perceptron_monotonic_decay_outside_operable_band() {
         assert!(
             current_val <= prev_val,
             "Microestructura debe decaer monotonicamente: k={} ({}) > k+1 ({})",
-            k, current_val, prev_val
+            k,
+            current_val,
+            prev_val
         );
         prev_val = current_val;
     }
@@ -58,7 +62,9 @@ fn test_f1_125_perceptron_monotonic_decay_outside_operable_band() {
         assert!(
             current_val <= prev_val_macro,
             "Macroestructura debe decaer monotonicamente: k={} ({}) > k-1 ({})",
-            k, current_val, prev_val_macro
+            k,
+            current_val,
+            prev_val_macro
         );
         prev_val_macro = current_val;
     }
@@ -70,11 +76,13 @@ fn test_f1_125_perceptron_monotonic_decay_outside_operable_band() {
     assert!(
         (v_0 - v_esperado_piso).abs() < 1e-10,
         "k=0 debe converger exactamente al peso 0.5: {} vs {}",
-        v_0, v_esperado_piso
+        v_0,
+        v_esperado_piso
     );
     assert!(
         (v_31 - v_esperado_piso).abs() < 1e-10,
         "k=31 debe converger exactamente al peso 0.5: {} vs {}",
-        v_31, v_esperado_piso
+        v_31,
+        v_esperado_piso
     );
 }

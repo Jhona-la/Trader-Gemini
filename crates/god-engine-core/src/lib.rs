@@ -37,6 +37,7 @@ pub mod darwin;
 pub mod dataset_recorder;
 pub mod diffusion;
 pub mod direction_diag;
+pub mod embudo_vivo;
 pub mod ensemble;
 pub mod latency_accelerator;
 pub mod liquidation_feed;
@@ -59,6 +60,7 @@ pub mod reexport_storage {
 }
 pub mod sigma_minuto;
 pub mod slippage_predictor;
+pub mod sombra_vetos;
 pub mod stateful_engine;
 pub mod topological_metamorphosis;
 pub mod trailing;
@@ -871,6 +873,74 @@ use signal_engine::{MakerEngine, MakerQuote, SignalIntent, SignalType};
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
 
+#[derive(Debug, Clone)]
+pub struct ReservedEntryOrder {
+    pub order: (bool, f64, f64, f64, f64),
+    pub reservation: entry_reservation::EntryReservation,
+}
+
+#[derive(Debug, Default)]
+pub struct MultiEventEmissions {
+    pub entries: Vec<ReservedEntryOrder>,
+    pub closed_order: Option<(bool, f64, f64)>,
+}
+
+fn batch_resonant_slot(
+    snapshot: &[Option<quantum_arena::position::PositionSnapshot>;
+         quantum_arena::position::MAX_SPECTRAL_SLOTS],
+    used: &[bool; quantum_arena::position::MAX_SPECTRAL_SLOTS],
+    tau_ms: f64,
+    is_long: bool,
+) -> Option<usize> {
+    let safe_tau = if tau_ms.is_finite() && tau_ms > 10.0 {
+        tau_ms
+    } else {
+        30_000.0
+    };
+    let ln_target = safe_tau.ln();
+    for position in snapshot.iter().flatten() {
+        if position.is_long == is_long {
+            let open_tau = (position.entry_tau_ms as f64).max(10.0);
+            if (ln_target - open_tau.ln()).abs()
+                < quantum_arena::position::PositionManager::DEFAULT_RESONANT_DELTA_LN
+            {
+                return None;
+            }
+        }
+    }
+    snapshot
+        .iter()
+        .enumerate()
+        .position(|(index, position)| position.is_none() && !used[index])
+}
+
+fn batch_same_direction_unsecured(
+    snapshot: &[Option<quantum_arena::position::PositionSnapshot>;
+         quantum_arena::position::MAX_SPECTRAL_SLOTS],
+    is_long: bool,
+    mid_price: f64,
+) -> bool {
+    for position in snapshot
+        .iter()
+        .flatten()
+        .filter(|position| position.is_long == is_long)
+    {
+        let entry = position.entry_price;
+        if !(entry > 0.0) || !(mid_price > 0.0) {
+            return true;
+        }
+        let pnl = if is_long {
+            (mid_price - entry) / entry
+        } else {
+            (entry - mid_price) / entry
+        };
+        if !(pnl >= 0.0028) {
+            return true;
+        }
+    }
+    false
+}
+
 /// Local decision-to-position binding. Not an exchange fill or settlement proof.
 /// The enclosing array supplies coin/slot; symbol guards against index reuse.
 #[derive(Debug, Clone)]
@@ -1283,6 +1353,9 @@ pub struct GodEngineCore {
     /// B3.18 — entradas vetadas por el gate de ensamble (la predicción
     /// decidió NO): diagnóstico de cuánto consume el sistema la predicción.
     pub diag_ml_vetoes: u64,
+    /// RB-V1a: las intenciones que el riesgo validó y vetaron el consejo o el
+    /// ML-GATE, juzgadas en sombra. Sólo se escribe: ninguna decisión lo lee.
+    pub sombra_vetos: sombra_vetos::SombraVetos,
     /// F1-054 (Ola Ω168): órdenes aprobadas por Consejo y ML descartadas por falta de margen libre,
     /// por no alcanzar el notional mínimo o por exceder el colchón de capital.
     pub diag_margin_drops: u64,
@@ -1297,6 +1370,10 @@ pub struct GodEngineCore {
     pub diag_pnl_sum: f64,
     /// Diagnóstico por dirección del embudo de entrada (sólo telemetría).
     pub diag_dir: direction_diag::DirectionDiag,
+    /// RB-E2: lo que el embudo vivo cuenta y `diag_dir` no (ticks bloqueados
+    /// por causa, intenciones sin ranura, rechazos del riesgo por motivo).
+    /// Sólo telemetría: ninguna decisión lo lee.
+    pub diag_embudo: embudo_vivo::ContadoresNucleo,
     /// CL-142: escribe las trazas de diagnóstico (OPEN/CLOSE TRACE, ML-GATE,
     /// ML-DIAG, ML-HEARTBEAT, DIAG, carga de DarkAlpha). `false` sólo en los
     /// núcleos auxiliares (`new_auxiliar`); no cambia ninguna decisión.
@@ -1682,6 +1759,7 @@ impl GodEngineCore {
             diag_sin_conviccion: 0,
             diag_opened: 0,
             diag_ml_vetoes: 0,
+            sombra_vetos: sombra_vetos::SombraVetos::new(n_coins),
             diag_margin_drops: 0,
             diag_close_wins: 0,
             diag_close_total: 0,
@@ -1689,6 +1767,7 @@ impl GodEngineCore {
             diag_notional_max: 0.0,
             diag_pnl_sum: 0.0,
             diag_dir: direction_diag::DirectionDiag::default(),
+            diag_embudo: embudo_vivo::ContadoresNucleo::default(),
             trazas_diagnosticas,
             avisos: avisos::AvisosDelNucleo::new(n_coins),
             rama_registro: vec![[TasaAcierto::default(); N_RAMAS]; n_coins],
@@ -2938,6 +3017,46 @@ impl GodEngineCore {
         out
     }
 
+    pub fn process_event_multi(
+        &mut self,
+        coin_id: usize,
+        is_trade: bool,
+        is_kline_closed: bool,
+        is_depth: bool,
+        current_price: f64,
+        trade_qty: f64,
+        bid: f64,
+        ask: f64,
+        bid_qty: f64,
+        ask_qty: f64,
+        depth_obi: f64,
+        depth_micro_div: f64,
+        event_time_ms: u64,
+        latency_panic: bool,
+        omni_features: &[f64; 54],
+        is_buyer_maker: bool,
+    ) -> MultiEventEmissions {
+        self.process_event_inner(
+            coin_id,
+            is_trade,
+            is_kline_closed,
+            is_depth,
+            current_price,
+            trade_qty,
+            bid,
+            ask,
+            bid_qty,
+            ask_qty,
+            depth_obi,
+            depth_micro_div,
+            event_time_ms,
+            latency_panic,
+            omni_features,
+            is_buyer_maker,
+            true,
+        )
+    }
+
     pub fn process_event(
         &mut self,
         coin_id: usize,
@@ -2951,27 +3070,73 @@ impl GodEngineCore {
         bid_qty: f64,
         ask_qty: f64,
         depth_obi: f64,
-        // MOD2/7-004: era el "funding" falso del camino depth (semántica
-        // cruzada); el funding real viaja en omni_features[11]. Se conserva
-        // el slot para no romper la firma pública del evento unificado.
-        _depth_micro_div: f64,
+        depth_micro_div: f64,
         event_time_ms: u64,
         latency_panic: bool,
         omni_features: &[f64; 54],
         is_buyer_maker: bool,
     ) -> (Option<(bool, f64, f64, f64, f64)>, Option<(bool, f64, f64)>) {
+        let emissions = self.process_event_inner(
+            coin_id,
+            is_trade,
+            is_kline_closed,
+            is_depth,
+            current_price,
+            trade_qty,
+            bid,
+            ask,
+            bid_qty,
+            ask_qty,
+            depth_obi,
+            depth_micro_div,
+            event_time_ms,
+            latency_panic,
+            omni_features,
+            is_buyer_maker,
+            false,
+        );
+        (
+            emissions
+                .entries
+                .into_iter()
+                .next()
+                .map(|entry| entry.order),
+            emissions.closed_order,
+        )
+    }
+
+    fn process_event_inner(
+        &mut self,
+        coin_id: usize,
+        is_trade: bool,
+        is_kline_closed: bool,
+        is_depth: bool,
+        current_price: f64,
+        trade_qty: f64,
+        bid: f64,
+        ask: f64,
+        bid_qty: f64,
+        ask_qty: f64,
+        depth_obi: f64,
+        _depth_micro_div: f64,
+        event_time_ms: u64,
+        latency_panic: bool,
+        omni_features: &[f64; 54],
+        is_buyer_maker: bool,
+        multi: bool,
+    ) -> MultiEventEmissions {
         telemetry_server::profile_node!("GodEngineCore::process_event", {
             // Fast Invariant Check: Zero-cost anomaly rejection for invalid prices or out-of-bounds coin index
             if current_price <= 0.0
                 || !current_price.is_finite()
                 || coin_id >= self.arena.coins.len()
             {
-                return (None, None);
+                return MultiEventEmissions::default();
             }
 
             // Crossed Orderbook Guard: Reject corrupted L2 depth ticks where bid exceeds ask
             if is_depth && bid > 0.0 && ask > 0.0 && bid > ask {
-                return (None, None);
+                return MultiEventEmissions::default();
             }
 
             // P1: Actualizar reloj causal del registro omnisciente sin syscalls repetidas
@@ -4205,6 +4370,9 @@ impl GodEngineCore {
             // en memoria (evitando Ghost Positions y desincronización de margen).
             // A la salida, todo new_order generado es legítimo y viaja sin censura.
             let allow_entries = !latency_panic && (!is_depth || is_trade);
+            // RB-E2: por qué el llamador no permite entradas en este evento.
+            self.diag_embudo
+                .registrar_llamada(is_depth && !is_trade, latency_panic);
 
             // (Ola XLV·I) LLAMADA al publicador de contagio Hawkes: cada 4096
             // ticks del arena (~2-15 min en vivo según densidad), computa la
@@ -4214,7 +4382,7 @@ impl GodEngineCore {
                 crate::contagion_publisher::publish_contagion_roles(&self.arena);
             }
 
-            let (new_order, closed_order, _maker) = self.process_tick_dual(
+            let (emissions, _maker) = self.process_tick_dual_inner(
                 coin_id,
                 eff_bid,
                 eff_ask,
@@ -4224,9 +4392,11 @@ impl GodEngineCore {
                 omni_features,
                 is_depth, // CERT-M2-H01: el depth path ya actualizó macro arriba
                 allow_entries,
+                multi,
+                None,
             );
 
-            (new_order, closed_order)
+            emissions
         })
     }
 
@@ -4322,18 +4492,56 @@ impl GodEngineCore {
         ask_qty: f64,
         event_time_ms: u64,
         omni_features: &[f64; 54],
-        _skip_macro_update: bool,
+        skip_macro_update: bool,
         allow_entries: bool,
     ) -> (
         Option<(bool, f64, f64, f64, f64)>,
         Option<(bool, f64, f64)>,
         Option<MakerQuote>,
     ) {
+        let (emissions, maker_quote) = self.process_tick_dual_inner(
+            coin_id,
+            bid,
+            ask,
+            bid_qty,
+            ask_qty,
+            event_time_ms,
+            omni_features,
+            skip_macro_update,
+            allow_entries,
+            false,
+            None,
+        );
+        (
+            emissions
+                .entries
+                .into_iter()
+                .next()
+                .map(|entry| entry.order),
+            emissions.closed_order,
+            maker_quote,
+        )
+    }
+
+    fn process_tick_dual_inner(
+        &mut self,
+        coin_id: usize,
+        bid: f64,
+        ask: f64,
+        bid_qty: f64,
+        ask_qty: f64,
+        event_time_ms: u64,
+        omni_features: &[f64; 54],
+        _skip_macro_update: bool,
+        allow_entries: bool,
+        multi: bool,
+        candidate_override: Option<[SignalIntent; 2]>,
+    ) -> (MultiEventEmissions, Option<MakerQuote>) {
         telemetry_server::profile_node!("GodEngineCore::process_tick_dual", {
+            let mut entries = Vec::with_capacity(if multi { 2 } else { 1 });
             // Unknown fees veto new exposure. Retained finite estimates still
             // allow defensive closes; they are not fresh exchange observations.
             let observed_fees_valid = self.sync_reality_fees_for_coin(coin_id);
-            let allow_entries = allow_entries && observed_fees_valid;
             let entry_fee_book = self.arena.config.live_fee_schedule.load_full();
             if let Some(accounting) = self.local_close_accounting.get_mut(coin_id) {
                 *accounting = None;
@@ -4341,6 +4549,14 @@ impl GodEngineCore {
             // P1: Actualizar reloj causal del registro omnisciente sin syscalls repetidas
             self.arena.registry.update_event_time(event_time_ms as i64);
             self.fijar_piso_resolucion(coin_id);
+            // RB-V1a: las intenciones vetadas en sombra avanzan con el mid de
+            // este evento (O(1) si la moneda no tiene ninguna abierta).
+            self.sombra_vetos.observar(
+                coin_id,
+                (bid + ask) * 0.5,
+                event_time_ms,
+                self.trazas_diagnosticas,
+            );
 
             if let Some(reservation) = self.entry_reservations.get_mut(coin_id) {
                 *reservation = None;
@@ -4456,12 +4672,19 @@ impl GodEngineCore {
                 self.liquidation_diagnostics.invalid_as_of += 1;
             }
             let liquidation_severity = liquidation_view.ok().flatten().unwrap_or(0.0);
-            let entries_blocked = !allow_entries
-                || kill_latched
-                || self.drift_entry_veto
-                || quantum_arena::feed_health::is_stalled()
-                || is_latency_panic
-                || liquidation_as_of_invalid;
+            // RB-E2: la misma disyunción de antes (`allow_entries` es el permiso
+            // del llamador; las comisiones sin observar vetan aparte;
+            // `is_stalled` es una lectura atómica sin efectos), contada por su
+            // primera causa activa en el orden de `embudo_vivo::NOMBRES_BLOQUEO`.
+            let entries_blocked = self.diag_embudo.bloqueos.registrar([
+                !allow_entries,
+                !observed_fees_valid,
+                kill_latched,
+                self.drift_entry_veto,
+                quantum_arena::feed_health::is_stalled(),
+                is_latency_panic,
+                liquidation_as_of_invalid,
+            ]);
             if is_latency_panic {
                 if let Some(n) = self.avisos.latencia() {
                     telemetry_server::telemetry_log!(
@@ -6661,7 +6884,7 @@ impl GodEngineCore {
             // host nunca recibía el evento de cierre: estado divergente,
             // OCO rancio, contabilidad perdida. Ahora el cierre viaja.
             if entries_blocked {
-                return (None, closed_order, None);
+                return (MultiEventEmissions { entries, closed_order }, None);
             }
 
             let current_obi = obi_val;
@@ -8797,10 +9020,10 @@ impl GodEngineCore {
             // LG-1: ninguna intención sin convicción entra al arbitraje.
             self.diag_sin_conviccion += aplanar_sin_conviccion(&mut fast_intent) as u64;
             self.diag_sin_conviccion += aplanar_sin_conviccion(&mut slow_intent) as u64;
-            let mut candidates = [SignalIntent::flat(), SignalIntent::flat()];
-            let mut num_candidates = 0;
+            let mut candidates = candidate_override.unwrap_or([SignalIntent::flat(), SignalIntent::flat()]);
+            let mut num_candidates = if candidate_override.is_some() { 2 } else { 0 };
 
-            if fast_intent.signal != SignalType::Flat && slow_intent.signal != SignalType::Flat {
+            if num_candidates == 0 && fast_intent.signal != SignalType::Flat && slow_intent.signal != SignalType::Flat {
                 let tau_f = if fast_intent.expected_duration_ms > 0 {
                     fast_intent.expected_duration_ms as f64
                 } else {
@@ -8899,15 +9122,23 @@ impl GodEngineCore {
                         num_candidates = 1;
                     }
                 }
-            } else if fast_intent.signal != SignalType::Flat {
+            } else if num_candidates == 0 && fast_intent.signal != SignalType::Flat {
                 candidates[0] = fast_intent;
                 num_candidates = 1;
-            } else if slow_intent.signal != SignalType::Flat {
+            } else if num_candidates == 0 && slow_intent.signal != SignalType::Flat {
                 candidates[0] = slow_intent;
                 num_candidates = 1;
             }
 
-            let mut new_order = None;
+
+            let admission_snapshot = multi.then(|| {
+                let slots = coin.positions.slots();
+                slots.map(|position| position.snapshot())
+            });
+            let probe_occupied_at_batch_start =
+                multi.then(|| risk_engine::sonda::hay_sonda_abierta(&self.arena));
+            let mut batch_slots_used = [false; quantum_arena::position::MAX_SPECTRAL_SLOTS];
+            let mut batch_probe_admitted = false;
 
             for c_idx in 0..num_candidates {
                 let mut unified_intent = candidates[c_idx];
@@ -9290,7 +9521,7 @@ impl GodEngineCore {
             // Zero phantom equity check: si el capital fue liquidado, detener inmediatamente
             if current_cap <= 0.0 {
                 self.arena.kill_switch_active.store(true, Ordering::SeqCst);
-                return (None, closed_order, None);
+                return (MultiEventEmissions { entries, closed_order }, None);
             }
 
             self.diag_dir.funnel_checkpoint(unified_intent.signal, direction_diag::STAGE_SPECTRAL);
@@ -9610,8 +9841,13 @@ impl GodEngineCore {
 
             // Legacy scale-distance admission over three physical slots.
             // The 0.80 log-distance policy is not measured spectral independence.
-            let maybe_slot = coin.positions.find_resonant_slot(tau_intent_ms, is_long_intent);
-            let raw_slot_available = maybe_slot.is_some();
+            let maybe_slot = if let Some(snapshot) = &admission_snapshot {
+                    batch_resonant_slot(snapshot, &batch_slots_used, tau_intent_ms, is_long_intent)
+                } else {
+                    coin.positions
+                        .find_resonant_slot(tau_intent_ms, is_long_intent)
+                };
+                let raw_slot_available = maybe_slot.is_some();
             // QO-589 — telemetría del rechazo de slot (observabilidad, no
             // política): un candidato no plano que no consigue slot muere
             // en silencio; sin esta razón el hueco de despacho [0.60, 0.80)
@@ -9639,10 +9875,21 @@ impl GodEngineCore {
             // asegurada: sólo exige que la apuesta previa pague antes de
             // doblarle la exposición.
             let same_dir_unsecured = raw_slot_available
-                && coin
-                    .positions
-                    .misma_direccion_sin_asegurar(tau_intent_ms, is_long_intent, mid_price);
-            let slot_available = raw_slot_available && !same_dir_unsecured;
+                    && if let Some(snapshot) = &admission_snapshot {
+                        batch_same_direction_unsecured(snapshot, is_long_intent, mid_price)
+                    } else {
+                        coin.positions.misma_direccion_sin_asegurar(
+                            tau_intent_ms,
+                            is_long_intent,
+                            mid_price,
+                        )
+                    };
+                let slot_available = raw_slot_available && !same_dir_unsecured;
+            // RB-E2: la intención que muere aquí no llega al riesgo; se cuenta.
+            if unified_intent.signal != SignalType::Flat && !slot_available {
+                self.diag_embudo
+                    .registrar_sin_ranura(!coin.positions.is_any_open(), same_dir_unsecured);
+            }
 
             // --- APERTURA MULTI-HORIZONTE CONTINUA INTEGRAL ---
             if unified_intent.signal != SignalType::Flat && slot_available {
@@ -9672,14 +9919,50 @@ impl GodEngineCore {
                         .calibrate_at(raw_confidence_score, event_time_ms)
                 };
                 calibrated_intent.win_probability = cal_prob;
-                let order =
-                    self.risk_engine
-                        .evaluate_quantum_order(coin_id, &calibrated_intent, &self.arena);
-                self.diag_dir.record_risk(
+                let candidate_is_probe = risk_engine::sonda::en_fase_de_sonda(&self.arena, coin_id);
+                let order = if let Some(probe_occupied) = probe_occupied_at_batch_start {
+                        self.risk_engine.evaluate_quantum_order_with_probe_snapshot(
+                            coin_id,
+                            &calibrated_intent,
+                            &self.arena,
+                            probe_occupied || (candidate_is_probe && batch_probe_admitted),
+                        )
+                    } else {
+                        self.risk_engine.evaluate_quantum_order(
+                            coin_id,
+                            &calibrated_intent,
+                            &self.arena,
+                        )
+                    };
+                    self.diag_dir.record_risk(
                     calibrated_intent.signal == SignalType::Long,
                     calibrated_intent.confidence,
                     order.signal != SignalType::Flat,
                 );
+                // RB-E2: el motivo de ESTE núcleo (lectura local al hilo, justo
+                // tras su evaluación), no el contador global del proceso.
+                self.diag_embudo.registrar_riesgo(
+                    !coin.positions.is_any_open(),
+                    order.signal != SignalType::Flat,
+                    risk_engine::ultimo_rechazo(),
+                );
+                // RB-V1b: lo que el riesgo rechaza DESPUÉS de calcular la
+                // geometría (confianza, EV, viabilidad, nocional, fee…) se
+                // juzga en sombra con esa misma geometría. Sólo se escribe.
+                if let Some(fuente) = risk_engine::ultimo_rechazo()
+                    .filter(|_| order.signal == SignalType::Flat)
+                    .and_then(sombra_vetos::fuente_juzgable)
+                {
+                    self.sombra_vetos.registrar(sombra_vetos::Veto {
+                        fuente,
+                        moneda: coin_id,
+                        es_largo: calibrated_intent.signal == SignalType::Long,
+                        entrada: coin.current_price.load(Ordering::Relaxed),
+                        geometria: self.risk_engine.geometria_evaluada(coin_id),
+                        promesa_bruta: self.risk_engine.promesa_evaluada(coin_id),
+                        t0_ms: event_time_ms,
+                    });
+                }
                 if order.signal != SignalType::Flat {
                     // F1-049: Unificar definición de drawdown con risk_engine::drawdown::capital_del_freno
                     // y arena.pico_capital. Erradica la discordancia donde SeniorRiesgo medía DD con
@@ -10037,6 +10320,24 @@ impl GodEngineCore {
                         }
                     }
 
+                    // RB-V1a: lo que el riesgo validó y vetan el consejo o el
+                    // ML-GATE se juzga en sombra, con la geometría y la
+                    // fricción con que el riesgo lo evaluó. Sólo se escribe.
+                    if !(aprobado_por_consejo && ml_gate_ok) {
+                        self.sombra_vetos.registrar(sombra_vetos::Veto {
+                            fuente: sombra_vetos::fuente_del_veto(
+                                aprobado_por_consejo,
+                                has_roster_model,
+                            ),
+                            moneda: coin_id,
+                            es_largo: order.signal == SignalType::Long,
+                            entrada: coin.current_price.load(Ordering::Relaxed),
+                            geometria: self.risk_engine.geometria_evaluada(coin_id),
+                            promesa_bruta: self.risk_engine.promesa_evaluada(coin_id),
+                            t0_ms: event_time_ms,
+                        });
+                    }
+
                     if aprobado_por_consejo && ml_gate_ok {
                         let is_long = order.signal == SignalType::Long;
                         // MOD6/8-010: lector saturado — un used_margin
@@ -10329,19 +10630,30 @@ impl GodEngineCore {
                                     ];
                                     target_pos.set_entry_shadow_features(shadow_feats);
                                 }
-                                new_order = Some((
-                                    is_long,
-                                    real_entry_price,
-                                    qty,
-                                    order.tp_target,
-                                    order.sl_target,
-                                ));
-                                self.entry_reservations[coin_id] = Some(entry_reservation::EntryReservation {
-                                    coin_id, slot: target_pos_slot, generation: expected_generation,
-                                    symbol: sym.to_string(),
-                                });
+                                let order = (
+                                        is_long,
+                                        real_entry_price,
+                                        qty,
+                                        order.tp_target,
+                                        order.sl_target,
+                                    );
+                                    let reservation = entry_reservation::EntryReservation {
+                                        coin_id,
+                                        slot: target_pos_slot,
+                                        generation: expected_generation,
+                                        symbol: sym.to_string(),
+                                    };
+                                    entries.push(ReservedEntryOrder {
+                                        order,
+                                        reservation: reservation.clone(),
+                                    });
+                                    self.entry_reservations[coin_id] = Some(reservation);
+                                    if multi {
+                                        batch_slots_used[target_pos_slot] = true;
+                                        batch_probe_admitted |= candidate_is_probe;
+                                    }
 
-                                if self.trazas_diagnosticas && self.diag_opened <= 100 {
+                                    if self.trazas_diagnosticas && self.diag_opened <= 100 {
                                     telemetry_server::telemetry_log!(
                                         "🚀 [OPEN TRACE] #{} dir={} slot={} tau={}ms rama={:.0} conf={:.4} lev={:.1}x margin=${:.2} notional=${:.2} sc={:.3} obi={:.3} ofi={:.3} cvd={:.3} ht={:.5} st={:.5} mac={:.5} mic={:.5} ts={}",
                                         self.diag_opened,
@@ -10393,9 +10705,8 @@ impl GodEngineCore {
                         }
                     }
                 }
-                // The legacy API returns ONE proposal. Do not reserve a second
-                // candidate whose order/identity would overwrite the first.
-                if new_order.is_some() { break; }
+                // The legacy API returns ONE proposal. Multi owns each reservation.
+                if !multi && !entries.is_empty() { break; }
             }
             } // Fin de iteración concurrente de candidatos espectrales
 
@@ -10443,7 +10754,13 @@ impl GodEngineCore {
                 ));
             }
 
-            (new_order, closed_order, final_maker_quote)
+            (
+                MultiEventEmissions {
+                    entries,
+                    closed_order,
+                },
+                final_maker_quote,
+            )
         })
     }
 
@@ -10695,6 +11012,35 @@ impl GodEngineCore {
             &open_slots,
             &open_taus,
             &open_is_long,
+        )
+    }
+
+    #[cfg(test)]
+    fn process_tick_dual_with_candidates(
+        &mut self,
+        coin_id: usize,
+        bid: f64,
+        ask: f64,
+        bid_qty: f64,
+        ask_qty: f64,
+        event_time_ms: u64,
+        omni_features: &[f64; 54],
+        allow_entries: bool,
+        candidates: [SignalIntent; 2],
+        multi: bool,
+    ) -> (MultiEventEmissions, Option<MakerQuote>) {
+        self.process_tick_dual_inner(
+            coin_id,
+            bid,
+            ask,
+            bid_qty,
+            ask_qty,
+            event_time_ms,
+            omni_features,
+            false,
+            allow_entries,
+            multi,
+            Some(candidates),
         )
     }
 }
@@ -11192,6 +11538,7 @@ mod tests_b3_ml_wiring {
     }
 
     fn install_testusdt_forest() {
+        quantum_arena::symbols::update_dynamic_universe(vec!["TESTUSDT".into()]);
         quantum_arena::symbol_registry::update_registry(vec![
             quantum_arena::symbol_registry::get_official_binance_spec("TESTUSDT"),
         ]);
@@ -11211,6 +11558,7 @@ mod tests_b3_ml_wiring {
 
     #[test]
     fn b3_18_el_ml_prob_del_gate_es_del_mismo_tick_y_lleva_al_forest() {
+        let _model_guard = crate::GlobalModelTestGuard::new();
         install_testusdt_forest();
         // D-714: pila suficiente para construir el arena.
         let arena = quantum_arena::GlobalArena::build_in_own_stack(13.0);
@@ -11251,6 +11599,7 @@ mod tests_b3_ml_wiring {
 
     #[test]
     fn b2_5_ml_prob_sigue_vivo_con_feed_stalled() {
+        let _model_guard = crate::GlobalModelTestGuard::new();
         install_testusdt_forest();
         // D-714: pila suficiente para construir el arena.
         let arena = quantum_arena::GlobalArena::build_in_own_stack(13.0);
@@ -12620,5 +12969,310 @@ mod tests_lg1 {
                 }
             }
         }
+    }
+}
+
+#[cfg(test)]
+static GLOBAL_MODEL_TEST_ENVIRONMENT: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+#[cfg(test)]
+struct GlobalModelTestGuard {
+    previous_universe: Vec<String>,
+    previous_forests: std::sync::Arc<
+        std::collections::HashMap<String, std::sync::Arc<crate::ml_inference::NanoForest>>,
+    >,
+    previous_feed_stalled: bool,
+    _lock: std::sync::MutexGuard<'static, ()>,
+}
+
+#[cfg(test)]
+impl GlobalModelTestGuard {
+    fn new() -> Self {
+        let lock = GLOBAL_MODEL_TEST_ENVIRONMENT
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        let previous_universe = quantum_arena::symbols::get_active_universe();
+        let previous_forests = crate::ml_inference::GLOBAL_FORESTS.load_full();
+        let previous_feed_stalled = quantum_arena::feed_health::is_stalled();
+        Self {
+            previous_universe,
+            previous_forests,
+            previous_feed_stalled,
+            _lock: lock,
+        }
+    }
+}
+
+#[cfg(test)]
+impl Drop for GlobalModelTestGuard {
+    fn drop(&mut self) {
+        crate::ml_inference::GLOBAL_FORESTS.store(std::sync::Arc::clone(&self.previous_forests));
+        quantum_arena::symbols::update_dynamic_universe(self.previous_universe.clone());
+        if self.previous_feed_stalled {
+            quantum_arena::feed_health::stall();
+        } else {
+            quantum_arena::feed_health::clear();
+        }
+    }
+}
+
+#[cfg(test)]
+mod f28_multi_e2e_tests {
+    use super::*;
+
+    type ModelGuard = crate::GlobalModelTestGuard;
+
+    fn fresh_core() -> GodEngineCore {
+        quantum_arena::symbol_registry::update_registry(vec![
+            quantum_arena::symbol_registry::get_official_binance_spec("BTCUSDT"),
+        ]);
+        quantum_arena::symbols::update_dynamic_universe(vec!["BTCUSDT".into()]);
+        quantum_arena::feed_health::clear();
+        let data = crate::ml_inference::NanoForestData {
+            children_left: vec![1, -1, -1],
+            children_right: vec![2, -1, -1],
+            feature: vec![0, -1, -1],
+            threshold: vec![0.0, 0.0, 0.0],
+            value: vec![0.0, 3.0, 3.0],
+            tree_offsets: vec![0, 3],
+            init_score: 0.0,
+        };
+        let forest = crate::ml_inference::NanoForest::from_data(data).unwrap();
+        crate::ml_inference::NanoForest::store_global("BTCUSDT_MOTOR", forest);
+        let baseline = quantum_arena::genome::SuperGenotype::new_baseline(0.0002, 0.0005);
+        let genome = quantum_arena::genome::SuperGenotype::from_vector(&baseline.to_vector());
+        let arena = GlobalArena::from_genome_in_own_stack(1_000.0, &genome);
+        arena
+            .config
+            .live_maker_fee
+            .store(1.0 / 8192.0, Ordering::Relaxed);
+        arena
+            .config
+            .live_taker_fee
+            .store(1.0 / 2048.0, Ordering::Relaxed);
+        arena.coins[0].metrics.trade_count.store(100, Ordering::Relaxed);
+        let mut core = GodEngineCore::new_with_outcome_context(
+            arena,
+            outcome_context::OutcomeContext::IsolatedSimulation,
+        );
+        core.swing_nn = None;
+        core.trazas_diagnosticas = false;
+        core
+    }
+
+    fn orthogonal_longs() -> [SignalIntent; 2] {
+        [
+            SignalIntent {
+                signal: SignalType::Long,
+                confidence: 0.98,
+                expected_duration_ms: 15_000,
+                volume_flow_rate: 4.0,
+                win_probability: 0.98,
+                ..Default::default()
+            },
+            SignalIntent {
+                signal: SignalType::Long,
+                confidence: 0.98,
+                expected_duration_ms: 900_000,
+                volume_flow_rate: 13.0,
+                win_probability: 0.98,
+                ..Default::default()
+            },
+        ]
+    }
+
+    fn warm_without_entries(core: &mut GodEngineCore) {
+        for index in 0..64 {
+            let price = 100.0 + index as f64 * 0.1;
+            let (emissions, _) = core.process_tick_dual_inner(
+                0,
+                price,
+                price + 0.02,
+                5.0,
+                5.0,
+                1_699_999_936_000 + index * 1_000,
+                &[0.0; 54],
+                false,
+                false,
+                false,
+                None,
+            );
+            assert!(emissions.entries.is_empty());
+        }
+    }
+
+    #[test]
+    fn two_orthogonal_longs_reserve_twice_and_legacy_keeps_one() {
+        let _model_guard = ModelGuard::new();
+        let mut legacy = fresh_core();
+        let mut multi = fresh_core();
+        warm_without_entries(&mut legacy);
+        warm_without_entries(&mut multi);
+        let price = 106.4;
+        let (legacy_emissions, _) = legacy.process_tick_dual_with_candidates(
+            0,
+            price,
+            price + 0.02,
+            5.0,
+            5.0,
+            1_700_000_000_000,
+            &[0.0; 54],
+            true,
+            orthogonal_longs(),
+            false,
+        );
+        let (emissions, _) = multi.process_tick_dual_with_candidates(
+            0,
+            price,
+            price + 0.02,
+            5.0,
+            5.0,
+            1_700_000_000_000,
+            &[0.0; 54],
+            true,
+            orthogonal_longs(),
+            true,
+        );
+
+        assert_eq!(legacy_emissions.entries.len(), 1);
+        assert_eq!(legacy.diag_opened, 1);
+        assert_eq!(emissions.entries.len(), 2);
+        assert_eq!(multi.diag_opened, 2);
+        let first = &emissions.entries[0];
+        let second = &emissions.entries[1];
+        assert!(first.order.0 && second.order.0);
+        assert_ne!(first.reservation.slot, second.reservation.slot);
+        for reserved in [first, second] {
+            let position = multi.arena.coins[0]
+                .positions
+                .get_slot(reserved.reservation.slot);
+            assert!(position.is_open());
+            assert_eq!(
+                position.generation.load(Ordering::Acquire),
+                reserved.reservation.generation
+            );
+            assert!(!position.exchange_confirmed.load(Ordering::Acquire));
+        }
+    }
+
+    #[test]
+    fn cold_batch_admits_only_one_probe() {
+        let _model_guard = ModelGuard::new();
+        let mut core = fresh_core();
+        core.arena.coins[0].metrics.trade_count.store(0, Ordering::Relaxed);
+        warm_without_entries(&mut core);
+        let price = 106.4;
+        let (emissions, _) = core.process_tick_dual_with_candidates(
+            0,
+            price,
+            price + 0.02,
+            5.0,
+            5.0,
+            1_700_000_000_000,
+            &[0.0; 54],
+            true,
+            orthogonal_longs(),
+            true,
+        );
+
+        assert_eq!(emissions.entries.len(), 1);
+        assert_eq!(core.diag_opened, 1);
+        assert_eq!(
+            core.arena.coins[0]
+                .positions
+                .slots()
+                .into_iter()
+                .filter(|position| position.is_open())
+                .count(),
+            1
+        );
+    }
+
+    #[test]
+    fn prior_unsecured_long_exposure_still_vetoes_the_whole_batch() {
+        let _model_guard = ModelGuard::new();
+        let mut core = fresh_core();
+        warm_without_entries(&mut core);
+        let price = 106.4;
+        let arena = Arc::clone(&core.arena);
+        let prior = arena.coins[0].positions.get_slot(2);
+        assert!(prior.open_with_tau_and_fee(
+            true,
+            price,
+            1.0,
+            10.0,
+            1_699_999_999_000,
+            price + 10.0,
+            price - 10.0,
+            quantum_arena::position::PositionHorizon::Continuous,
+            0.8,
+            0.9,
+            0.01,
+            60_000,
+        ));
+        prior.exchange_confirmed.store(true, Ordering::Release);
+        core.arena.used_margin.store(10.0, Ordering::Relaxed);
+
+        let (emissions, _) = core.process_tick_dual_with_candidates(
+            0,
+            price,
+            price + 0.02,
+            5.0,
+            5.0,
+            1_700_000_000_000,
+            &[0.0; 54],
+            true,
+            orthogonal_longs(),
+            true,
+        );
+
+        assert!(emissions.entries.is_empty());
+        assert_eq!(core.diag_opened, 0);
+        assert!(prior.is_open());
+        assert_eq!(core.arena.used_margin.load(Ordering::Relaxed), 10.0);
+    }
+
+    #[test]
+    fn prior_secured_long_exposure_does_not_veto_batch_siblings() {
+        let _model_guard = ModelGuard::new();
+        let mut core = fresh_core();
+        warm_without_entries(&mut core);
+        let price = 106.4;
+        let arena = Arc::clone(&core.arena);
+        let prior = arena.coins[0].positions.get_slot(2);
+        assert!(prior.open_with_tau_and_fee(
+            true,
+            100.0,
+            1.0,
+            10.0,
+            1_699_999_999_000,
+            110.0,
+            90.0,
+            quantum_arena::position::PositionHorizon::Continuous,
+            0.8,
+            0.9,
+            0.01,
+            60_000,
+        ));
+        prior.exchange_confirmed.store(true, Ordering::Release);
+        core.arena.used_margin.store(10.0, Ordering::Relaxed);
+
+        let (emissions, _) = core.process_tick_dual_with_candidates(
+            0,
+            price,
+            price + 0.02,
+            5.0,
+            5.0,
+            1_700_000_000_000,
+            &[0.0; 54],
+            true,
+            orthogonal_longs(),
+            true,
+        );
+
+        assert_eq!(emissions.entries.len(), 2);
+        assert_eq!(core.diag_opened, 2);
+        assert!(prior.is_open());
+        assert!(core.arena.used_margin.load(Ordering::Relaxed) > 10.0);
     }
 }

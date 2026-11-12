@@ -32,7 +32,7 @@ if "%BINANCE_API_KEY%"=="YOUR_PRODUCTION_API_KEY_HERE" (
 echo [2] Un solo target\ compartido; se ejecuta la copia de despliegue\...
 
 echo [3] Forjando binario Quantico (Release Mode)...
-cargo build --release --bin god_engine -j 2
+cargo build --release --config .cargo/produccion.toml --bin god_engine -j 2
 
 if %ERRORLEVEL% neq 0 (
     echo [!] ERROR: Fallo en la compilacion de Rust.

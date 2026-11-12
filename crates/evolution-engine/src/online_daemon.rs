@@ -762,25 +762,39 @@ fn wf_replay_segment(
     let macro_vix = reg.get_value_or("macro_vix", 20.0).clamp(5.0, 100.0);
     let macro_gold = reg.get_value_or("macro_gold", 2500.0).clamp(500.0, 5000.0);
 
+    let mut sum_r2 = 0.0;
+    let mut n_r2 = 0u64;
     for ri in from..to {
         let r = rets[ri];
         let next_price = (*price * (1.0 + r)).max(1e-6);
         let base_price = *price;
         let mut prev_mid = base_price;
-        // F1-002: Puente Browniano discreto. Volatilidad estimada de la barra
-        let bar_sigma = (r.abs() * 0.5).max(0.001);
+        // Varianza realizada expansiva de barras previas, sin piso ni tasa manual.
+        let bar_sigma = if n_r2 == 0 {
+            r.abs()
+        } else {
+            (sum_r2 / n_r2 as f64).sqrt()
+        };
+        let mut noises = [0.0; WF_REAL_MICRO_TICKS];
+        let mut brownian_final = 0.0;
+        for (t, noise) in noises.iter_mut().enumerate() {
+            *noise = pseudo_gaussian_noise(ri as u64, t as u64, coin_id as u64);
+            brownian_final += *noise;
+        }
+        let escala = bar_sigma / (WF_REAL_MICRO_TICKS as f64).sqrt();
+        brownian_final *= escala;
+        let mut brownian = 0.0;
 
         for t in 0..WF_REAL_MICRO_TICKS {
             st.ts += 2_000;
             let frac = (t + 1) as f64 / WF_REAL_MICRO_TICKS as f64;
             let drift_mid = base_price + (next_price - base_price) * frac;
-            // Perturbación estocástica de puente browniano condicionado B(t) con B(0)=0 y B(1)=0:
-            let bridge_sd = (frac * (1.0 - frac)).max(0.0).sqrt();
-            let z = pseudo_gaussian_noise(ri as u64, t as u64, coin_id as u64);
+            brownian += noises[t] * escala;
+            let bridge = brownian - frac * brownian_final;
             let mid = if t == WF_REAL_MICRO_TICKS - 1 {
                 next_price
             } else {
-                (drift_mid + base_price * bar_sigma * bridge_sd * z).max(1e-6)
+                (drift_mid + base_price * bridge).max(1e-6)
             };
 
             // D-742 — SPREAD DEL MERCADO, NO DEL EXAMINADO.
@@ -849,6 +863,8 @@ fn wf_replay_segment(
                 }
             }
         }
+        sum_r2 += r * r;
+        n_r2 += 1;
         *price = next_price;
         let cap = arena.unified_capital.load(Ordering::Relaxed);
         // El drawdown que puntúa es el de la ventana de VALIDACIÓN.

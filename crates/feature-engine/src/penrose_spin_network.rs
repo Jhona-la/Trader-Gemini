@@ -133,6 +133,24 @@ impl PenroseSpinNetworkEngine {
         depth_imbalance: f64,
         event_time_ms: u64,
     ) -> PenroseSpinNetworkReport {
+        let inputs_valid = price_ret.is_finite()
+            && instantaneous_vol.is_finite()
+            && ofi.is_finite()
+            && obi.is_finite()
+            && spread_bps.is_finite()
+            && depth_imbalance.is_finite();
+        if !inputs_valid {
+            return PenroseSpinNetworkReport {
+                ryu_takayanagi_entropy: 0.0,
+                intertwiner_norm: 0.0,
+                spin_coherence_index: 0.0,
+                total_spin_dimension: 0.0,
+                holographic_decoherence_detected: true,
+                slot_scaling_factor: 0.10,
+                event_time_ms,
+            };
+        }
+
         self.last_event_time_ms = event_time_ms;
 
         // 1. Asignación de representaciones irreducibles $SU(2)$ a los 4 canales de liquidez:

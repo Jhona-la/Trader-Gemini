@@ -369,27 +369,42 @@ pub struct ArenaReconciliationReport {
     pub unresolved: Vec<ReconciliationIssue>,
 }
 
-// Retain leg identity while checking whether the legacy single-allocation
+// Retain side identity while checking whether the legacy allocation
 // mutation can represent this observation. Never sum a hedge into a flat.
-fn single_remote_position<'a>(
+fn remote_positions_by_side<'a>(
     rows: &[&'a PositionRiskEntry],
-) -> Result<Option<&'a PositionRiskEntry>, ReconciliationIssueKind> {
+) -> Result<
+    (
+        std::collections::BTreeMap<Option<bool>, &'a PositionRiskEntry>,
+        std::collections::HashSet<Option<bool>>,
+    ),
+    ReconciliationIssueKind,
+> {
     use ReconciliationIssueKind::*;
     let mut sides = std::collections::HashSet::new();
-    let mut active = None;
+    let mut active = std::collections::BTreeMap::new();
+    let mut observed = std::collections::HashSet::new();
     for row in rows {
         let side = row.position_side.trim().to_ascii_uppercase();
         // Empty side remains a legacy one-way alias for internal DTOs. Presence
         // validation at the endpoint boundary is still required (FMT-179).
         let side = if side.is_empty() { "BOTH" } else { &side };
         if !matches!(side, "BOTH" | "LONG" | "SHORT")
-            || !sides.insert(side.to_string())
             || !row.position_amt.is_finite()
             || (side == "LONG" && row.position_amt < 0.0)
             || (side == "SHORT" && row.position_amt > 0.0)
         {
             return Err(InvalidRemoteEvidence);
         }
+        if !sides.insert(side.to_string()) {
+            return Err(MultipleRemoteLegs);
+        }
+        let key = match side {
+            "LONG" => Some(true),
+            "SHORT" => Some(false),
+            _ => None,
+        };
+        observed.insert(key);
         if row.position_amt != 0.0 {
             if !row.entry_price.is_finite()
                 || row.entry_price <= 0.0
@@ -403,7 +418,7 @@ fn single_remote_position<'a>(
             if !notional.is_finite() || notional <= 0.0 || !margin.is_finite() || margin <= 0.0 {
                 return Err(InvalidRemoteEvidence);
             }
-            if active.replace(*row).is_some() {
+            if active.insert(key, *row).is_some() {
                 return Err(MultipleRemoteLegs);
             }
         }
@@ -411,7 +426,7 @@ fn single_remote_position<'a>(
     if sides.contains("BOTH") && sides.len() > 1 {
         return Err(InvalidRemoteEvidence);
     }
-    Ok(active)
+    Ok((active, observed))
 }
 
 /// Compatibility wrapper: emits unresolved evidence, returns adjustment count.
@@ -492,7 +507,7 @@ pub fn reconcile_arena_checked(
             }
             continue;
         };
-        let remote_position = match single_remote_position(rows) {
+        let (remote_positions, observed_sides) = match remote_positions_by_side(rows) {
             Ok(p) => p,
             Err(kind) => {
                 report
@@ -501,245 +516,259 @@ pub fn reconcile_arena_checked(
                 continue;
             }
         };
-        let remote_net_qty = remote_position.map(|p| p.position_amt).unwrap_or(0.0);
-        let remote_price = remote_position.map(|p| p.entry_price).unwrap_or(0.0);
-        let remote_leverage = remote_position.map(|p| p.leverage).unwrap_or(0.0);
-        // #595 — la posición del exchange trae su ÚLTIMA MODIFICACIÓN
-        // (updateTime): es la cota inferior honesta de la edad de la
-        // adopción. Pasar `now` fabricaba edad 0 para una posición con
-        // horas de vida — el trailing, los gates de edad y la evidencia de
-        // aprendizaje la trataban como recién nacida. 0 (desconocido) o
-        // futuro (reloj del exchange adelantado) → cae a now.
-        let remote_update_time = remote_position
-            .map(|p| p.update_time)
-            .filter(|t| *t > 0 && *t <= now_ms)
-            .unwrap_or(now_ms);
+        let one_way = observed_sides.contains(&None);
         let coin = &arena.coins[coin_idx];
-        let local_open: Vec<_> = coin
-            .positions
-            .slots()
-            .into_iter()
-            .filter(|p| p.is_open())
-            .collect();
-        if local_open.len() > 1 {
-            report.unresolved.push(ReconciliationIssue {
-                symbol: sym,
-                kind: MultipleLocalAllocations,
-            });
-            continue;
-        }
-        if remote_net_qty != 0.0
-            && local_open.first().is_some_and(|p| {
-                p.is_long.load(std::sync::atomic::Ordering::Relaxed) != (remote_net_qty > 0.0)
-            })
-        {
-            report.unresolved.push(ReconciliationIssue {
-                symbol: sym,
-                kind: DirectionMismatch,
-            });
-            continue;
-        }
-        let cont_open = coin.positions.is_any_open();
-
-        let arena_net_qty: f64 = coin
-            .positions
-            .slots()
-            .iter()
-            .filter(|p| p.is_open())
-            .map(|p| {
-                let q = p.quantity.load(std::sync::atomic::Ordering::Relaxed);
-                if p.is_long.load(std::sync::atomic::Ordering::Relaxed) {
-                    q
-                } else {
-                    -q
+        for remote_side in [Some(true), Some(false), None] {
+            if one_way {
+                if remote_side.is_some() {
+                    continue;
                 }
-            })
-            .sum();
-
-        if remote_net_qty == 0.0 {
-            // Exchange está plano pero la Arena cree que tiene posiciones abiertas: phantom cleanup
-            if cont_open {
-                for slot in coin.positions.slots() {
-                    if !slot.is_open() {
-                        continue;
-                    }
-                    let exit_price = remote_price;
-                    let (was_long, entry_p, qty, m, entry_fee_paid) = slot.close_with_fee();
-                    if m > 0.0 {
-                        arena
-                            .used_margin
-                            .fetch_sub(m, std::sync::atomic::Ordering::Relaxed);
-                    }
-
-                    // With the current flat projection remote_price is zero, so this
-                    // historical accounting branch does not prove an observed close fee.
-                    if qty > 0.0 && exit_price > 0.0 && entry_p > 0.0 {
-                        let gross_pnl =
-                            crate::trade_accounting::gross_pnl(was_long, entry_p, exit_price, qty);
-                        let live_taker = arena
-                            .config
-                            .live_taker_fee
-                            .load(std::sync::atomic::Ordering::Relaxed)
-                            .max(0.0004);
-                        let close_fee = (qty * exit_price) * live_taker;
-                        let net_realized_pnl = gross_pnl - close_fee;
-                        let net_trade_pnl = net_realized_pnl - entry_fee_paid;
-
-                        // D-447: coin.metrics es la fuente unificada para el espectro continuo.
-                        // U-1: los espejos swing/scalp (triple contabilización) extirpados.
-                        coin.metrics
-                            .pnl_realized
-                            .fetch_add(net_trade_pnl, std::sync::atomic::Ordering::Relaxed);
-                        arena
-                            .unified_capital
-                            .fetch_add(net_realized_pnl, std::sync::atomic::Ordering::Relaxed);
-
-                        let is_win = net_trade_pnl > 0.0;
-                        let n = coin
-                            .metrics
-                            .trade_count
-                            .fetch_add(1, std::sync::atomic::Ordering::Relaxed)
-                            as f64
-                            + 1.0;
-
-                        let old_wr = coin
-                            .metrics
-                            .win_rate
-                            .load(std::sync::atomic::Ordering::Relaxed);
-                        let new_wr = old_wr + (((if is_win { 1.0 } else { 0.0 }) - old_wr) / n);
-                        coin.metrics
-                            .win_rate
-                            .store(new_wr, std::sync::atomic::Ordering::Relaxed);
-
-                        if is_win {
-                            coin.metrics
-                                .gross_wins
-                                .fetch_add(net_trade_pnl, std::sync::atomic::Ordering::Relaxed);
-                        } else {
-                            coin.metrics.gross_losses.fetch_add(
-                                net_trade_pnl.abs(),
-                                std::sync::atomic::Ordering::Relaxed,
-                            );
-                        }
-                    }
+            } else {
+                let Some(side) = remote_side else {
+                    continue;
+                };
+                let required_by_local = coin.positions.slots().into_iter().any(|position| {
+                    position.is_open()
+                        && position.is_long.load(std::sync::atomic::Ordering::Relaxed) == side
+                });
+                if !observed_sides.contains(&remote_side) && !required_by_local {
+                    continue;
                 }
-                adjustments += 1;
             }
+            if !observed_sides.contains(&remote_side) {
+                report.unresolved.push(ReconciliationIssue {
+                    symbol: sym.clone(),
+                    kind: MissingRemoteEvidence,
+                });
+                continue;
+            }
+            let remote_position = remote_positions.get(&remote_side).copied();
+            let remote_net_qty = remote_position.map(|p| p.position_amt).unwrap_or(0.0);
+            let remote_price = remote_position.map(|p| p.entry_price).unwrap_or(0.0);
+            let remote_leverage = remote_position.map(|p| p.leverage).unwrap_or(0.0);
+            // #595 — la posición del exchange trae su ÚLTIMA MODIFICACIÓN
+            // (updateTime): es la cota inferior honesta de la edad de la
+            // adopción. Pasar `now` fabricaba edad 0 para una posición con
+            // horas de vida — el trailing, los gates de edad y la evidencia de
+            // aprendizaje la trataban como recién nacida. 0 (desconocido) o
+            // futuro (reloj del exchange adelantado) → cae a now.
+            let remote_update_time = remote_position
+                .map(|p| p.update_time)
+                .filter(|t| *t > 0 && *t <= now_ms)
+                .unwrap_or(now_ms);
+            let local_open: Vec<_> = coin
+                .positions
+                .slots()
+                .into_iter()
+                .filter(|p| {
+                    p.is_open()
+                        && remote_side.is_none_or(|side| {
+                            p.is_long.load(std::sync::atomic::Ordering::Relaxed) == side
+                        })
+                })
+                .collect();
+            if remote_side.is_none()
+                && remote_net_qty != 0.0
+                && local_open.iter().any(|p| {
+                    p.is_long.load(std::sync::atomic::Ordering::Relaxed) != (remote_net_qty > 0.0)
+                })
+            {
+                report.unresolved.push(ReconciliationIssue {
+                    symbol: sym.clone(),
+                    kind: DirectionMismatch,
+                });
+                continue;
+            }
+            let cont_open = !local_open.is_empty();
 
-            // D-633 (DÉCIMA OLA): aquí se purgaban los slots `scalp` y `swing`
-            // liberando margen sin contabilizar PnL. Ningún camino del sistema
-            // abre ya esos slots (sólo el horizonte continuo opera), así que la
-            // purga era inalcanzable y ocultaba que no existe contabilidad para
-            // ellos. Se retira; si un slot volviera a abrirse, su cierre debe
-            // pasar por la contabilidad de arriba, no por una liberación muda.
-        } else {
-            // Exchange tiene posición abierta
-            if !cont_open {
-                // Posición huérfana en exchange: adoptar en Horizonte Continuo
-                let is_long = remote_net_qty > 0.0;
-                let abs_qty = remote_net_qty.abs();
-                let price = if remote_price > 0.0 {
-                    remote_price
-                } else {
-                    coin.current_price
-                        .load(std::sync::atomic::Ordering::Relaxed)
-                };
-                let notional = abs_qty * price;
-                // S-06 / R5-H1: usar el LEVERAGE REAL de la posición reportada por el
-                // exchange. Si no es válido, recurrir al apalancamiento canónico micro (5.0x).
-                let lev = remote_leverage;
-                let lev = if lev.is_finite() && lev >= 1.0 {
-                    lev
-                } else {
-                    CANONICAL_MICRO_LEVERAGE
-                };
-                let margin = notional / lev;
-                // This is an estimate using the currently available symbol rate,
-                // not the historical fee of the original fill. Missing evidence
-                // cannot become a zero fee or a rate borrowed from another symbol.
-                let Some((_, taker_rate)) = arena.config.fee_rates_for(coin_idx) else {
-                    report.unresolved.push(ReconciliationIssue {
-                        symbol: sym,
-                        kind: MissingRemoteEvidence,
-                    });
-                    continue;
-                };
-                let adopted_entry_fee = notional * taker_rate;
-                if !adopted_entry_fee.is_finite() {
-                    report.unresolved.push(ReconciliationIssue {
-                        symbol: sym,
-                        kind: InvalidRemoteEvidence,
-                    });
-                    continue;
-                }
-                // FIX R7-0 (CRÍTICO): el fee iba en el slot TP de
-                // open_with_horizon — instalaba un TP en ~$0.04 y el fee
-                // jamás llegaba al modelo. open_with_fee es la firma correcta.
-                // D-729 (unión): además, si la entrada no es válida (precio o
-                // cantidad), la posición NO se abre y tampoco se reserva margen.
-                // #595: el reloj de la adopción es el del EXCHANGE (updateTime,
-                // cota inferior de la edad), no el arranque del proceso.
-                let adoptada = coin.positions.slot_2.open_with_fee(
-                    is_long,
-                    price,
-                    abs_qty,
-                    margin,
-                    remote_update_time,
-                    0.0,
-                    0.0,
-                    quantum_arena::position::PositionHorizon::Continuous,
-                    0.0,
-                    0.0,
-                    adopted_entry_fee,
-                );
-                if !adoptada {
-                    println!(
-                        "🚨 [RECONCILIACIÓN] {}: posición remota con precio {} y cantidad {} no adoptable — se audita contra el exchange en vez de inventarla",
-                        sym, price, abs_qty
-                    );
-                    continue;
-                }
-                // B3.14 (auditoría): la posición adoptada EXISTE en el
-                // exchange — sin este flag sus cierres NO contabilizan
-                // (sub-cuenta silenciosa en Kelly tras toda adopción del
-                // ciclo de 60s: remanentes de maker-chase parcial, fills
-                // tras rollback, posiciones abiertas fuera del motor).
-                coin.positions
-                    .slot_2
-                    .exchange_confirmed
-                    .store(true, std::sync::atomic::Ordering::Relaxed);
-                arena
-                    .used_margin
-                    .fetch_add(margin, std::sync::atomic::Ordering::Relaxed);
-                adjustments += 1;
-            } else if arena_net_qty != remote_net_qty {
-                // Drift en cantidad: actualizar posición continua o slot abierto para reflejar el tamaño real
-                let target_abs = remote_net_qty.abs();
-                if target_abs == 0.0 {
-                    for slot in coin.positions.slots() {
-                        if slot.is_open() {
-                            let (_, _, _, old_margin, _) = slot.close_with_fee();
-                            if old_margin > 0.0 {
-                                arena
-                                    .used_margin
-                                    .fetch_sub(old_margin, std::sync::atomic::Ordering::Relaxed);
+            let arena_net_qty: f64 = local_open
+                .iter()
+                .map(|p| {
+                    let q = p.quantity.load(std::sync::atomic::Ordering::Relaxed);
+                    if p.is_long.load(std::sync::atomic::Ordering::Relaxed) {
+                        q
+                    } else {
+                        -q
+                    }
+                })
+                .sum();
+
+            if remote_net_qty == 0.0 {
+                // Exchange está plano pero la Arena cree que tiene posiciones abiertas: phantom cleanup
+                if cont_open {
+                    for slot in local_open {
+                        let exit_price = remote_price;
+                        let (was_long, entry_p, qty, m, entry_fee_paid) = slot.close_with_fee();
+                        if m > 0.0 {
+                            arena
+                                .used_margin
+                                .fetch_sub(m, std::sync::atomic::Ordering::Relaxed);
+                        }
+
+                        // With the current flat projection remote_price is zero, so this
+                        // historical accounting branch does not prove an observed close fee.
+                        if qty > 0.0 && exit_price > 0.0 && entry_p > 0.0 {
+                            let gross_pnl = crate::trade_accounting::gross_pnl(
+                                was_long, entry_p, exit_price, qty,
+                            );
+                            let live_taker = arena
+                                .config
+                                .live_taker_fee
+                                .load(std::sync::atomic::Ordering::Relaxed)
+                                .max(0.0004);
+                            let close_fee = (qty * exit_price) * live_taker;
+                            let net_realized_pnl = gross_pnl - close_fee;
+                            let net_trade_pnl = net_realized_pnl - entry_fee_paid;
+
+                            // D-447: coin.metrics es la fuente unificada para el espectro continuo.
+                            // U-1: los espejos swing/scalp (triple contabilización) extirpados.
+                            coin.metrics
+                                .pnl_realized
+                                .fetch_add(net_trade_pnl, std::sync::atomic::Ordering::Relaxed);
+                            arena
+                                .unified_capital
+                                .fetch_add(net_realized_pnl, std::sync::atomic::Ordering::Relaxed);
+
+                            let is_win = net_trade_pnl > 0.0;
+                            let n = coin
+                                .metrics
+                                .trade_count
+                                .fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+                                as f64
+                                + 1.0;
+
+                            let old_wr = coin
+                                .metrics
+                                .win_rate
+                                .load(std::sync::atomic::Ordering::Relaxed);
+                            let new_wr = old_wr + (((if is_win { 1.0 } else { 0.0 }) - old_wr) / n);
+                            coin.metrics
+                                .win_rate
+                                .store(new_wr, std::sync::atomic::Ordering::Relaxed);
+
+                            if is_win {
+                                coin.metrics
+                                    .gross_wins
+                                    .fetch_add(net_trade_pnl, std::sync::atomic::Ordering::Relaxed);
+                            } else {
+                                coin.metrics.gross_losses.fetch_add(
+                                    net_trade_pnl.abs(),
+                                    std::sync::atomic::Ordering::Relaxed,
+                                );
                             }
                         }
                     }
-                } else {
-                    let is_remote_long = remote_net_qty > 0.0;
-                    let target_slot = coin
-                        .positions
-                        .slots()
-                        .into_iter()
-                        .find(|p| {
-                            p.is_open()
-                                && p.is_long.load(std::sync::atomic::Ordering::Relaxed)
-                                    == is_remote_long
-                        })
-                        .or_else(|| coin.positions.slots().into_iter().find(|p| p.is_open()))
-                        .unwrap_or(&coin.positions.slot_2);
+                    adjustments += 1;
+                }
 
+                // D-633 (DÉCIMA OLA): aquí se purgaban los slots `scalp` y `swing`
+                // liberando margen sin contabilizar PnL. Ningún camino del sistema
+                // abre ya esos slots (sólo el horizonte continuo opera), así que la
+                // purga era inalcanzable y ocultaba que no existe contabilidad para
+                // ellos. Se retira; si un slot volviera a abrirse, su cierre debe
+                // pasar por la contabilidad de arriba, no por una liberación muda.
+            } else {
+                // Exchange tiene posición abierta
+                if !cont_open {
+                    // Posición huérfana en exchange: adoptar en Horizonte Continuo
+                    let is_long = remote_net_qty > 0.0;
+                    let abs_qty = remote_net_qty.abs();
+                    let price = if remote_price > 0.0 {
+                        remote_price
+                    } else {
+                        coin.current_price
+                            .load(std::sync::atomic::Ordering::Relaxed)
+                    };
+                    let notional = abs_qty * price;
+                    // S-06 / R5-H1: usar el LEVERAGE REAL de la posición reportada por el
+                    // exchange. Si no es válido, recurrir al apalancamiento canónico micro (5.0x).
+                    let lev = remote_leverage;
+                    let lev = if lev.is_finite() && lev >= 1.0 {
+                        lev
+                    } else {
+                        CANONICAL_MICRO_LEVERAGE
+                    };
+                    let margin = notional / lev;
+                    // This is an estimate using the currently available symbol rate,
+                    // not the historical fee of the original fill. Missing evidence
+                    // cannot become a zero fee or a rate borrowed from another symbol.
+                    let Some((_, taker_rate)) = arena.config.fee_rates_for(coin_idx) else {
+                        report.unresolved.push(ReconciliationIssue {
+                            symbol: sym.clone(),
+                            kind: MissingRemoteEvidence,
+                        });
+                        continue;
+                    };
+                    let adopted_entry_fee = notional * taker_rate;
+                    if !adopted_entry_fee.is_finite() {
+                        report.unresolved.push(ReconciliationIssue {
+                            symbol: sym.clone(),
+                            kind: InvalidRemoteEvidence,
+                        });
+                        continue;
+                    }
+                    // FIX R7-0 (CRÍTICO): el fee iba en el slot TP de
+                    // open_with_horizon — instalaba un TP en ~$0.04 y el fee
+                    // jamás llegaba al modelo. open_with_fee es la firma correcta.
+                    // D-729 (unión): además, si la entrada no es válida (precio o
+                    // cantidad), la posición NO se abre y tampoco se reserva margen.
+                    // #595: el reloj de la adopción es el del EXCHANGE (updateTime,
+                    // cota inferior de la edad), no el arranque del proceso.
+                    let Some(target_slot) = [2usize, 0, 1]
+                        .into_iter()
+                        .map(|index| coin.positions.get_slot(index))
+                        .find(|p| !p.is_open())
+                    else {
+                        report.unresolved.push(ReconciliationIssue {
+                            symbol: sym.clone(),
+                            kind: MultipleLocalAllocations,
+                        });
+                        continue;
+                    };
+                    let adoptada = target_slot.open_with_fee(
+                        is_long,
+                        price,
+                        abs_qty,
+                        margin,
+                        remote_update_time,
+                        0.0,
+                        0.0,
+                        quantum_arena::position::PositionHorizon::Continuous,
+                        0.0,
+                        0.0,
+                        adopted_entry_fee,
+                    );
+                    if !adoptada {
+                        println!(
+                        "🚨 [RECONCILIACIÓN] {}: posición remota con precio {} y cantidad {} no adoptable — se audita contra el exchange en vez de inventarla",
+                        sym, price, abs_qty
+                    );
+                        continue;
+                    }
+                    // B3.14 (auditoría): la posición adoptada EXISTE en el
+                    // exchange — sin este flag sus cierres NO contabilizan
+                    // (sub-cuenta silenciosa en Kelly tras toda adopción del
+                    // ciclo de 60s: remanentes de maker-chase parcial, fills
+                    // tras rollback, posiciones abiertas fuera del motor).
+                    target_slot
+                        .exchange_confirmed
+                        .store(true, std::sync::atomic::Ordering::Relaxed);
+                    arena
+                        .used_margin
+                        .fetch_add(margin, std::sync::atomic::Ordering::Relaxed);
+                    adjustments += 1;
+                } else if arena_net_qty != remote_net_qty {
+                    // positionRisk aggregates same-side entries without slot/generation identity.
+                    // A delta over multiple local allocations has no safe per-slot owner.
+                    if local_open.len() != 1 {
+                        report.unresolved.push(ReconciliationIssue {
+                            symbol: sym.clone(),
+                            kind: MultipleLocalAllocations,
+                        });
+                        continue;
+                    }
+                    let target_slot = local_open[0];
+                    let target_abs = remote_net_qty.abs();
                     target_slot
                         .exchange_confirmed
                         .store(true, std::sync::atomic::Ordering::Relaxed);
@@ -797,8 +826,8 @@ pub fn reconcile_arena_checked(
                     arena
                         .used_margin
                         .fetch_add(margin_diff, std::sync::atomic::Ordering::Relaxed);
+                    adjustments += 1;
                 }
-                adjustments += 1;
             }
         }
     }
@@ -811,6 +840,14 @@ pub fn reconcile_arena_checked(
 mod tests {
     use super::*;
 
+    static UNIVERSE_TEST_MUTEX: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+    fn universe_guard() -> std::sync::MutexGuard<'static, ()> {
+        UNIVERSE_TEST_MUTEX
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+    }
+
     fn entry(symbol: &str, amt: f64) -> PositionRiskEntry {
         PositionRiskEntry {
             symbol: symbol.into(),
@@ -819,6 +856,20 @@ mod tests {
             update_time: 1700000000000,
             ..Default::default()
         }
+    }
+
+    #[test]
+    fn f28_duplicate_remote_side_preserves_multiple_legs_error() {
+        let row = PositionRiskEntry {
+            position_side: "LONG".into(),
+            leverage: 20.0,
+            ..entry("BTCUSDT", 1.0)
+        };
+        let rows = [&row, &row];
+        assert!(matches!(
+            remote_positions_by_side(&rows),
+            Err(ReconciliationIssueKind::MultipleRemoteLegs)
+        ));
     }
 
     #[test]
@@ -905,6 +956,7 @@ mod tests {
     fn test_reconcile_arena_phantom_and_adoption() {
         use quantum_arena::symbol_registry::SymbolSpec;
 
+        let _universe = universe_guard();
         let specs = vec![
             SymbolSpec {
                 symbol: "BTCUSDT".into(),
@@ -1007,6 +1059,7 @@ mod tests {
 
     #[test]
     fn f4_h1_drift_reconciliation_zero_or_nan_leverage_immunity() {
+        let _universe = universe_guard();
         quantum_arena::symbols::update_dynamic_universe(vec!["BTCUSDT".into()]);
         let arena = quantum_arena::GlobalArena::build_in_own_stack(13.0);
         arena.coins[0]
@@ -1064,6 +1117,7 @@ mod tests {
     #[test]
     fn reconciliation_leverage_canonical_micro_leverage() {
         assert_eq!(CANONICAL_MICRO_LEVERAGE, 5.0);
+        let _universe = universe_guard();
         quantum_arena::symbols::update_dynamic_universe(vec!["BTCUSDT".into()]);
         let arena = quantum_arena::GlobalArena::build_in_own_stack(13.0);
         arena.coins[0]

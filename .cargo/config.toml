@@ -1,5 +1,18 @@
 [build]
-rustflags = ["-C", "target-cpu=native", "-C", "opt-level=3"]
+rustc-wrapper = "sccache"
+pipelining = true
+
+[target.x86_64-pc-windows-msvc]
+linker = "rust-lld.exe"
+rustflags = [
+    "-C", "target-cpu=x86-64-v3",
+    "-C", "target-feature=+avx2,+fma,+bmi1,+bmi2,+popcnt,+lzcnt,+sse4.2,+aes,+pclmulqdq",
+    # INTEGRADOR-T2: sin opt-level (lo fija cada perfil de Cargo.toml) ni llvm-args
+    # de inlining/DFA: van a .cargo/produccion.toml (solo produccion y Demo).
+    "-C", "link-arg=/OPT:REF",
+    "-C", "link-arg=/OPT:ICF",
+    "-C", "link-arg=/HIGHENTROPYVA",
+]
 
 # RB-H2 (Codex RB, 2026-10-19): frescura por CONTENIDO en el target/ compartido.
 # Cargo nombra los artefactos de los paquetes del workspace con un hash de su

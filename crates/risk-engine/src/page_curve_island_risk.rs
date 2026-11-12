@@ -168,7 +168,7 @@ impl PageCurveIslandRiskEngine {
         let s_rad = (s_shannon + s_vol).max(0.0);
 
         // 3. Área de la frontera de la isla holográfica: proporcional a la descorrelación residual
-        let island_fraction = (1.0 - safe_corr.abs()).clamp(0.0, 1.0);
+        let island_fraction = (1.0 - safe_corr).clamp(0.0, 1.0);
         let island_present = island_fraction >= self.config.min_island_area;
 
         // 4. Fórmula de la Superficie Extremal Cuántica (QES) para la Curva de Page

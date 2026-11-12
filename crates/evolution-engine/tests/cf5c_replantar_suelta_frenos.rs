@@ -52,8 +52,15 @@ fn cl134_replantar_reinicia_el_estado_de_riesgo_de_cada_universo() {
             engine.risk_engine.freno_estrategia.rechazada,
             a.riesgo_por_operacion_usd.load(Relaxed)
         );
-        assert_eq!(a.pico_capital.load(Relaxed), 13.0, "universo {i}: pico compartido");
-        assert_eq!(engine.risk_engine.peak_capital, 13.0, "universo {i}: pico del riesgo");
+        assert_eq!(
+            a.pico_capital.load(Relaxed),
+            13.0,
+            "universo {i}: pico compartido"
+        );
+        assert_eq!(
+            engine.risk_engine.peak_capital, 13.0,
+            "universo {i}: pico del riesgo"
+        );
         assert_eq!(
             engine.risk_engine.freno_estrategia,
             FrenoEstrategia::new(),
@@ -61,7 +68,10 @@ fn cl134_replantar_reinicia_el_estado_de_riesgo_de_cada_universo() {
         );
         for (nombre, v) in [
             ("riesgo_por_operacion", a.riesgo_por_operacion.load(Relaxed)),
-            ("riesgo_por_operacion_usd", a.riesgo_por_operacion_usd.load(Relaxed)),
+            (
+                "riesgo_por_operacion_usd",
+                a.riesgo_por_operacion_usd.load(Relaxed),
+            ),
             ("ganancia_en_stops", a.ganancia_en_stops.load(Relaxed)),
             ("perdida_en_stops", a.perdida_en_stops.load(Relaxed)),
         ] {
@@ -83,9 +93,21 @@ fn cl134_replantar_reinicia_la_caida_en_stops() {
     }
     forest.replant(SuperGenotype::default());
     for (i, engine) in forest.engines.iter().enumerate() {
-        assert_eq!(risk_engine::drawdown::caida_en_stops(&engine.arena), 0.0, "universo {i}");
-        assert_eq!(engine.arena.resultado_en_stops.load(Relaxed), 0.0, "universo {i}");
-        assert_eq!(engine.arena.pico_en_stops.load(Relaxed), 0.0, "universo {i}");
+        assert_eq!(
+            risk_engine::drawdown::caida_en_stops(&engine.arena),
+            0.0,
+            "universo {i}"
+        );
+        assert_eq!(
+            engine.arena.resultado_en_stops.load(Relaxed),
+            0.0,
+            "universo {i}"
+        );
+        assert_eq!(
+            engine.arena.pico_en_stops.load(Relaxed),
+            0.0,
+            "universo {i}"
+        );
     }
 }
 
@@ -110,7 +132,14 @@ fn cl138_replantar_libera_el_margen_de_las_posiciones_cerradas() {
     }
     forest.replant(SuperGenotype::default());
     for (i, engine) in forest.engines.iter().enumerate() {
-        assert!(!engine.arena.coins[0].positions.slot_2.is_open(), "universo {i}");
-        assert_eq!(engine.arena.used_margin.load(Relaxed), 0.0, "universo {i}: margen retenido");
+        assert!(
+            !engine.arena.coins[0].positions.slot_2.is_open(),
+            "universo {i}"
+        );
+        assert_eq!(
+            engine.arena.used_margin.load(Relaxed),
+            0.0,
+            "universo {i}: margen retenido"
+        );
     }
 }

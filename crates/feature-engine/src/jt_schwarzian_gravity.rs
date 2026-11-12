@@ -81,7 +81,7 @@ pub struct JtSchwarzianReport {
 pub struct JtSchwarzianEngine {
     config: JtSchwarzianConfig,
     prev_f_prime: f64,
-    prev_f_double_prime: f64,
+    prev_f_double_prime: Option<f64>,
     step_count: usize,
 }
 
@@ -90,7 +90,7 @@ impl JtSchwarzianEngine {
         Self {
             config,
             prev_f_prime: 1.0,
-            prev_f_double_prime: 0.0,
+            prev_f_double_prime: None,
             step_count: 0,
         }
     }
@@ -113,7 +113,7 @@ impl JtSchwarzianEngine {
 
         if self.step_count == 0 {
             self.prev_f_prime = f_prime;
-            self.prev_f_double_prime = 0.0;
+            self.prev_f_double_prime = None;
             self.step_count = 1;
 
             return JtSchwarzianReport {
@@ -130,7 +130,7 @@ impl JtSchwarzianEngine {
         if self.step_count == 1 {
             let f_double_prime = (f_prime - self.prev_f_prime) / safe_dt;
             self.prev_f_prime = f_prime;
-            self.prev_f_double_prime = f_double_prime;
+            self.prev_f_double_prime = Some(f_double_prime);
             self.step_count = 2;
 
             return JtSchwarzianReport {
@@ -146,10 +146,25 @@ impl JtSchwarzianEngine {
 
         // Derivadas numéricas de segundo y tercer orden sobre soporte temporal válido
         let f_double_prime = (f_prime - self.prev_f_prime) / safe_dt;
-        let f_triple_prime = (f_double_prime - self.prev_f_double_prime) / safe_dt;
+        let Some(prev_f_double_prime) = self.prev_f_double_prime else {
+            self.prev_f_prime = f_prime;
+            self.prev_f_double_prime = Some(f_double_prime);
+            let lyapunov =
+                (2.0 * std::f64::consts::PI) / self.config.inverse_temperature_beta.max(1e-4);
+            return JtSchwarzianReport {
+                schwarzian_derivative: 0.0,
+                schwarzian_energy: 0.0,
+                density_of_states_rho: self.config.schwarzian_coupling_c
+                    / (2.0 * std::f64::consts::PI * std::f64::consts::PI),
+                lyapunov_exponent: lyapunov,
+                schwarzian_singularity_detected: false,
+                slot_scale_factor: 1.0,
+            };
+        };
+        let f_triple_prime = (f_double_prime - prev_f_double_prime) / safe_dt;
 
         self.prev_f_prime = f_prime;
-        self.prev_f_double_prime = f_double_prime;
+        self.prev_f_double_prime = Some(f_double_prime);
 
         // Derivada de Schwarzian: {f, tau} = f'''/f' - 1.5 * (f''/f')^2
         let term1 = f_triple_prime / f_prime;

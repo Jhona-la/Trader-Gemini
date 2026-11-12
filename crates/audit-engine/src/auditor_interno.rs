@@ -92,14 +92,29 @@ impl Default for TribunalThresholds {
 
 impl TribunalThresholds {
     pub fn validate(&self) -> Result<(), String> {
-        if !self.autoengano_threshold.is_finite() || !(0.05..=1.0).contains(&self.autoengano_threshold) {
-            return Err(format!("Invalid autoengano_threshold: {}", self.autoengano_threshold));
+        if !self.autoengano_threshold.is_finite()
+            || !(0.05..=1.0).contains(&self.autoengano_threshold)
+        {
+            return Err(format!(
+                "Invalid autoengano_threshold: {}",
+                self.autoengano_threshold
+            ));
         }
-        if !self.culpable_peligroso_threshold.is_finite() || !(0.01..=0.50).contains(&self.culpable_peligroso_threshold) {
-            return Err(format!("Invalid culpable_peligroso_threshold: {}", self.culpable_peligroso_threshold));
+        if !self.culpable_peligroso_threshold.is_finite()
+            || !(0.01..=0.50).contains(&self.culpable_peligroso_threshold)
+        {
+            return Err(format!(
+                "Invalid culpable_peligroso_threshold: {}",
+                self.culpable_peligroso_threshold
+            ));
         }
-        if !self.culpable_recuperable_threshold.is_finite() || !(0.001..=0.25).contains(&self.culpable_recuperable_threshold) {
-            return Err(format!("Invalid culpable_recuperable_threshold: {}", self.culpable_recuperable_threshold));
+        if !self.culpable_recuperable_threshold.is_finite()
+            || !(0.001..=0.25).contains(&self.culpable_recuperable_threshold)
+        {
+            return Err(format!(
+                "Invalid culpable_recuperable_threshold: {}",
+                self.culpable_recuperable_threshold
+            ));
         }
         if self.culpable_recuperable_threshold >= self.culpable_peligroso_threshold {
             return Err(format!(
@@ -113,14 +128,27 @@ impl TribunalThresholds {
                 self.culpable_peligroso_threshold, self.autoengano_threshold
             ));
         }
-        if !self.overfitting_recent_min.is_finite() || !(0.0..=1.0).contains(&self.overfitting_recent_min) {
-            return Err(format!("Invalid overfitting_recent_min: {}", self.overfitting_recent_min));
+        if !self.overfitting_recent_min.is_finite()
+            || !(0.0..=1.0).contains(&self.overfitting_recent_min)
+        {
+            return Err(format!(
+                "Invalid overfitting_recent_min: {}",
+                self.overfitting_recent_min
+            ));
         }
-        if !self.overfitting_oos_max.is_finite() || !(-1.0..=0.0).contains(&self.overfitting_oos_max) {
-            return Err(format!("Invalid overfitting_oos_max: {}", self.overfitting_oos_max));
+        if !self.overfitting_oos_max.is_finite()
+            || !(-1.0..=0.0).contains(&self.overfitting_oos_max)
+        {
+            return Err(format!(
+                "Invalid overfitting_oos_max: {}",
+                self.overfitting_oos_max
+            ));
         }
         if !(1..=256).contains(&self.max_features_nominal) {
-            return Err(format!("Invalid max_features_nominal: {}", self.max_features_nominal));
+            return Err(format!(
+                "Invalid max_features_nominal: {}",
+                self.max_features_nominal
+            ));
         }
         Ok(())
     }
@@ -128,26 +156,34 @@ impl TribunalThresholds {
 
 /// OLA Ω120: Función pura analítica que evalúa el veredicto del Tribunal a partir de la máxima discrepancia observada
 #[inline(always)]
-pub fn evaluate_tribunal_verdict(max_disc: f64, thresholds: &TribunalThresholds) -> TribunalVerdict {
+pub fn evaluate_tribunal_verdict(
+    max_disc: f64,
+    thresholds: &TribunalThresholds,
+) -> TribunalVerdict {
     let disc = if max_disc.is_finite() && max_disc >= 0.0 {
         max_disc
     } else {
         1.0 // Fail-closed ante flotante no finito
     };
 
-    let auto = if thresholds.autoengano_threshold.is_finite() && thresholds.autoengano_threshold > 0.0 {
-        thresholds.autoengano_threshold
-    } else {
-        DEFAULT_AUTOENGANO_THRESHOLD
-    };
+    let auto =
+        if thresholds.autoengano_threshold.is_finite() && thresholds.autoengano_threshold > 0.0 {
+            thresholds.autoengano_threshold
+        } else {
+            DEFAULT_AUTOENGANO_THRESHOLD
+        };
 
-    let peligroso = if thresholds.culpable_peligroso_threshold.is_finite() && thresholds.culpable_peligroso_threshold > 0.0 {
+    let peligroso = if thresholds.culpable_peligroso_threshold.is_finite()
+        && thresholds.culpable_peligroso_threshold > 0.0
+    {
         thresholds.culpable_peligroso_threshold
     } else {
         DEFAULT_CULPABLE_PELIGROSO_THRESHOLD
     };
 
-    let recuperable = if thresholds.culpable_recuperable_threshold.is_finite() && thresholds.culpable_recuperable_threshold > 0.0 {
+    let recuperable = if thresholds.culpable_recuperable_threshold.is_finite()
+        && thresholds.culpable_recuperable_threshold > 0.0
+    {
         thresholds.culpable_recuperable_threshold
     } else {
         DEFAULT_CULPABLE_RECUPERABLE_THRESHOLD
@@ -357,10 +393,7 @@ impl VerificadorResultados {
         fills: &[ExchangeFillRecord],
         base_capital: f64,
     ) -> IndependentMetrics {
-        if fills.is_empty()
-            || !base_capital.is_finite()
-            || base_capital <= 0.0
-        {
+        if fills.is_empty() || !base_capital.is_finite() || base_capital <= 0.0 {
             return IndependentMetrics::default();
         }
         let safe_capital = base_capital;
@@ -661,10 +694,7 @@ impl AuditorInterno {
 
     /// Computa directamente las métricas de rendimiento independientes calculadas desde los fills reales
     pub fn compute_independent_metrics(&self) -> IndependentMetrics {
-        VerificadorResultados::compute_metrics_with_capital(
-            &self.fills_journal,
-            self.base_capital,
-        )
+        VerificadorResultados::compute_metrics_with_capital(&self.fills_journal, self.base_capital)
     }
 
     // ------------------------------------------------------- sombras (fase 2)
@@ -787,7 +817,6 @@ impl AuditorInterno {
             ),
         }
     }
-
 }
 
 #[cfg(test)]
@@ -820,7 +849,6 @@ mod tests {
 
         let tribunal = auditor.verify_internal_claims(2.0, 0.50, 0.05);
         assert_ne!(tribunal.justification, "");
-
     }
 
     #[test]

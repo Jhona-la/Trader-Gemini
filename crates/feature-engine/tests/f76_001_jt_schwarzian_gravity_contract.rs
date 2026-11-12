@@ -95,3 +95,17 @@ fn test_c4_jt_schwarzian_stack_safety_and_boundedness() {
     assert!(report.lyapunov_exponent.is_finite());
     assert!(report.slot_scale_factor >= 0.15 && report.slot_scale_factor <= 1.25);
 }
+
+#[test]
+fn test_c5_second_observation_does_not_fabricate_third_derivative() {
+    let mut engine = JtSchwarzianEngine::new(JtSchwarzianConfig::default());
+
+    engine.evaluate(1.1052631578947368, 0.05);
+    let report = engine.evaluate(1.268041237113402, 0.05);
+
+    assert!(
+        !report.schwarzian_singularity_detected,
+        "two observations cannot establish a Schwarzian third derivative: {}",
+        report.schwarzian_derivative
+    );
+}

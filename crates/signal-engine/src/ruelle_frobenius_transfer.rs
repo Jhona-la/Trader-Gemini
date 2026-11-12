@@ -154,8 +154,9 @@ impl RuelleFrobeniusTransferEngine {
         }
 
         // Tasa intrínseca de decaimiento de Ruelle: $\gamma_0 = \gamma_{\text{base}} + \frac{\text{var}}{1 + \text{var}} \cdot \text{vol}$
-        let leading_decay_rate_gamma =
-            (self.params.decay_regularization + var_x * vol_diffusion).clamp(0.001, 10.0);
+        let leading_decay_rate_gamma = (self.params.decay_regularization
+            + (var_x / (1.0 + var_x)) * volatility)
+            .clamp(0.001, 10.0);
 
         // Frecuencia angular de resonancia de microestructura $\omega_0$
         let resonant_frequency_omega = (mean_x * 10.0 + (price_ret - self.prev_ret) * 50.0)
@@ -173,7 +174,7 @@ impl RuelleFrobeniusTransferEngine {
 
         // 7. Detección de Colapso Ergódico Caótico (degeneración a ruido blanco o dispersión crítica)
         let ergodic_chaotic_collapse = spectral_gap < self.params.min_spectral_gap
-            || (var_x > 0.15 && leading_decay_rate_gamma > 1.0);
+            || (var_x > 0.80 && leading_decay_rate_gamma > 5.0);
 
         // 8. Modulador de Convicción $\lambda_{\text{ruelle}} \in [0.05, 1.30]$
         let signal_conviction_modulator = if ergodic_chaotic_collapse {
