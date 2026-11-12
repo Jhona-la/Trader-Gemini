@@ -137,6 +137,9 @@ impl UserDataStreamer {
     /// Loop principal: listenKey → connect WebSocket → lee frames → reintenta
     /// en desconexión. Diseñado para ejecutarse en `tokio::spawn`.
     pub async fn start(&self) {
+        // V4D (P1-a): antes de cualquier espera, el puente sabe que esta era
+        // todavía no tiene socket privado abierto.
+        self.sin_socket_todavia();
         let is_testnet = self
             .client
             .is_testnet
@@ -217,9 +220,7 @@ impl UserDataStreamer {
                     if connected_once {
                         self.reconcile_after_reconnect();
                     } else {
-                        // V4B: el primer socket no es un corte (la lectura del
-                        // arranque ya está en el puente); se toma el vigente.
-                        self.socket.store(self.puente.socket(), Ordering::Release);
+                        self.primer_socket_abierto();
                     }
                     connected_once = true;
                     stream
@@ -328,6 +329,29 @@ impl UserDataStreamer {
     ///   CAPITAL-UNICO V2: la caché vive en el puente; tras la reconexión la
     ///   equity queda incompleta (no sube sobre la última completa) hasta que
     ///   el host resincroniza por REST.
+    /// V4D (P1-a): primer paso de [`start`](Self::start), antes de cualquier
+    /// espera. Hasta el primer handshake no hay socket privado: el puente veta
+    /// las entradas nuevas (una REST de arranque llega al freno, pero no
+    /// suelta el veto). Los cierres no lo consultan.
+    pub fn sin_socket_todavia(&self) {
+        if let Err(e) = self.puente.sin_socket(self.era) {
+            println!("🔌 [UDS] Arranque sin socket de la era {} ignorado por el puente: {e}", self.era);
+        }
+    }
+
+    /// V4D (P1-a): el primer handshake abre el socket en el puente (número
+    /// nuevo y anclaje): una REST pedida antes no suelta el veto, y la
+    /// siguiente REST completa, ya del socket abierto, sí.
+    pub fn primer_socket_abierto(&self) {
+        match self.puente.abrir_socket(self.era) {
+            Ok(socket) => self.socket.store(socket, Ordering::Release),
+            Err(e) => {
+                println!("🔌 [UDS] Apertura del primer socket de la era {} ignorada por el puente: {e}", self.era);
+                self.socket.store(self.puente.socket(), Ordering::Release);
+            }
+        }
+    }
+
     fn reconcile_after_reconnect(&self) {
         // V3 (P1.2): con la era de este streamer; la de una era vieja no
         // toca la caché de la vigente.
@@ -857,6 +881,10 @@ impl UserDataStreamer {
             // Mismo criterio que REST (`parse_account_capital`): USDT repetido
             // no es evidencia de saldo. El evento no cambia el capital.
             eprintln!("🚨 [CAPITAL] ACCOUNT_UPDATE con {activo} repetido en B[]: descartado para el capital");
+            // V4D (P2, regresiones de parser): el lote se pierde entero (saldo
+            // y posiciones); como un evento ilegible, es evidencia perdida sin
+            // corte: equity incompleta, entradas vetadas y REST de recuperación.
+            let _ = self.puente.evidencia_perdida(self.era);
         } else {
             // Ausente (sin fila o sin `wb`) no es cero; negativo o no finito no
             // es un saldo con que operar (REST tampoco lo acepta).

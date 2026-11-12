@@ -439,6 +439,10 @@ struct Estado {
     /// REST sólo puede soltar el veto o cerrar un empate con un ticket
     /// posterior (pedida después de ese evento).
     ultimo_evento: Option<u64>,
+    /// V4D (P1-b): la última REST aceptada trajo el rechazo 3a
+    /// ([`LecturaCuenta::rechazo_arranque`]). Veta las entradas hasta una REST
+    /// sin rechazo o un saldo positivo aplicado (el 3a exige saldo cero).
+    rechazo_3a: bool,
     /// Posiciones abiertas observadas: (cantidad, PnL no realizado).
     abiertas: HashMap<ClavePosicion, (f64, f64)>,
     /// Marca de cada posición observada (abierta o cerrada).
@@ -472,13 +476,24 @@ impl Estado {
         Some(Observacion { saldo, equity })
     }
 
+    /// V4D (P1-b): el cero del caso 3a (USDT en cero con fondos en otro
+    /// activo o modo multi-activo) también veta. El cero llega igual al freno
+    /// (la observación no cambia).
     fn veta_entradas(&self) -> bool {
+        self.necesita_lectura() || self.rechazo_3a
+    }
+
+    /// Sin saldo observado en la era o con la equity incompleta: hace falta
+    /// una REST (el caso 3a no la pide: es un dato completo).
+    fn necesita_lectura(&self) -> bool {
         self.saldo.is_none() || !self.completa
     }
 
     fn motivo_veto(&self) -> Option<&'static str> {
         if self.saldo.is_none() {
             Some("SinSaldo")
+        } else if self.completa && self.rechazo_3a {
+            Some("RechazoArranque")
         } else if !self.completa {
             Some(self.motivo.unwrap_or("Incompleta"))
         } else {
@@ -981,6 +996,8 @@ impl PuenteCuenta {
                 e.motivo = None;
             }
         }
+        // V4D (P1-b): el cero de 3a llega al freno, pero no admite entradas.
+        e.rechazo_3a = l.rechazo_arranque.is_some();
         e.generacion += 1;
         self.notificar(&e);
         Ok(e.observacion().expect("saldo recién fijado"))
@@ -1073,10 +1090,10 @@ impl PuenteCuenta {
                 e.marca_saldo,
                 e.ev_saldo.empate_stream(socket, hora),
             ) {
-                Ok(v) => {
-                    e.registrar_saldo_stream(t, hora, s, true);
-                    Some((s, v))
-                }
+                // V4D (P1-d): el saldo aceptado se registra como último saldo
+                // del stream sólo cuando el lote entero se aplica (abajo); un
+                // lote rechazado por otro componente no deja ese testigo.
+                Ok(v) => Some((s, v)),
                 Err(r) => {
                     if matches!(r, Rechazo::Contradiccion { .. }) {
                         e.registrar_saldo_stream(t, hora, s, false);
@@ -1120,6 +1137,10 @@ impl PuenteCuenta {
         match saldo {
             Some((s, Veredicto::Aplicar)) => {
                 e.saldo = Some(s);
+                // V4D (P1-b): un saldo positivo ya no es el cero de 3a.
+                if s > 0.0 {
+                    e.rechazo_3a = false;
+                }
                 e.ev_saldo.generacion = e.generacion;
                 e.ev_saldo.empate_desde = None;
                 // Sólo un dato que se aplicó hace del stream el origen de la
@@ -1134,7 +1155,8 @@ impl PuenteCuenta {
             }
             _ => {}
         }
-        if saldo.is_some() {
+        if let Some((s, _)) = saldo {
+            e.registrar_saldo_stream(t, hora, s, true);
             e.marca_saldo = maxima(e.marca_saldo, t);
         }
         for ((clave, dato), v) in ev.posiciones.iter().zip(&veredictos) {
@@ -1195,6 +1217,23 @@ impl PuenteCuenta {
         Ok(())
     }
 
+    /// V4D (P1-a): el streamer de la era `era` arranca y todavía no abrió su
+    /// primer socket. Como en [`perdida_socket`](Self::perdida_socket): socket
+    /// cerrado, número nuevo (una REST pedida antes no suelta el veto) y
+    /// entradas vetadas hasta una REST pedida después de abrirlo. Una REST de
+    /// este hueco aplica sus datos al freno. Los cierres no lo consultan.
+    pub fn sin_socket(&self, era: u64) -> Result<(), Rechazo> {
+        let mut e = self.estado();
+        if era != e.era {
+            return Err(Rechazo::OtraEra);
+        }
+        e.socket += 1;
+        e.socket_cerrado = true;
+        e.anclar("SinSocket");
+        self.notificar(&e);
+        Ok(())
+    }
+
     /// V4B: un `ACCOUNT_UPDATE` ilegible del socket vigente: evidencia perdida
     /// sin corte. Equity incompleta y anclaje nuevo; el socket sigue.
     pub fn evidencia_perdida(&self, era: u64) -> Result<(), Rechazo> {
@@ -1209,10 +1248,11 @@ impl PuenteCuenta {
 
     /// `true` sin saldo observado en esta era o con la equity incompleta.
     pub fn necesita_resincronizar(&self) -> bool {
-        self.estado().veta_entradas()
+        self.estado().necesita_lectura()
     }
 
-    /// Ninguna entrada nueva: sin saldo vigente de la era o equity incompleta.
+    /// Ninguna entrada nueva: sin saldo vigente de la era, saldo cero (V4D)
+    /// o equity incompleta.
     /// Los cierres no lo consultan.
     pub fn veta_entradas(&self) -> bool {
         self.estado().veta_entradas()
