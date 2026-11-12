@@ -1743,34 +1743,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         Arc::clone(&oms_reconciled),
     ));
 
-    // CAPITAL-UNICO (b): tope de capital operativo `TG_CAPITAL_OPERATIVO`
-    // (apagado por defecto). Un valor inválido no deja arrancar. Con el mismo
-    // tope que la corrida anterior se restaura el ancla anotada junto al pico,
-    // para que la caída acumulada sobreviva al reinicio (CL-99); con otro tope,
-    // el pico guardado se reinicia más abajo, en el arranque del inmune.
-    let puente_capital = match execution_engine::capital_operativo::puente_global() {
-        Ok(p) => p,
-        Err(e) => {
-            telemetry_server::telemetry_log!("🚨 [CAPITAL] {}", e);
-            std::process::exit(1);
-        }
-    };
-    let ruta_pico_arranque = std::path::PathBuf::from(quantum_arena::paths::env_data_path(
-        &risk_engine::drawdown::archivo_pico(),
-    ));
-    let ruta_anotacion_pico =
-        execution_engine::capital_operativo::ruta_anotacion(&ruta_pico_arranque);
-    let decision_pico = execution_engine::capital_operativo::decidir_pico(
-        execution_engine::capital_operativo::leer_anotacion(&ruta_anotacion_pico),
-        puente_capital.tope(),
-    );
-    if let execution_engine::capital_operativo::DecisionPico::Conservar { ancla: Some(a), .. } =
-        &decision_pico
-    {
-        puente_capital.restaurar_ancla(*a);
-    }
-
-    let initial_capital = loop {
+    // CAPITAL-UNICO V2 (7d): `unidades_coinciden` = la lectura del arranque no
+    // tuvo saldo fuera de USDT ni modo multi-activo (sin aviso). Sólo entonces
+    // el pico viejo del venue puede adoptarse en la migración de definición.
+    let (initial_capital, unidades_coinciden) = loop {
         match exec.load().fetch_account_balance().await {
             Ok(bal) => {
                 telemetry_server::telemetry_log!(
@@ -1779,19 +1755,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 );
                 // CAPITAL-UNICO: saldo fuera de USDT o modo multi-activo, dicho
                 // en el arranque en vez de resolverlo en silencio.
-                if let Some(aviso) = execution_engine::execution_evidence::tomar_aviso_capital() {
+                let aviso = execution_engine::execution_evidence::tomar_aviso_capital();
+                if let Some(aviso) = &aviso {
                     telemetry_server::telemetry_log!("⚠️ [CAPITAL] {}", aviso);
                 }
-                if let Some(tope) = puente_capital.tope() {
-                    telemetry_server::telemetry_log!(
-                        "🧮 [CAPITAL] Tope operativo {}={:.4}: el arena y el freno ven ${:.4} (ancla = saldo de USDT ${:.4}); las pérdidas reales lo bajan en la misma cantidad y nunca supera el saldo real.",
-                        execution_engine::capital_operativo::VARIABLE_TOPE,
-                        tope,
-                        bal,
-                        puente_capital.ancla().unwrap_or(f64::NAN)
-                    );
-                }
-                break bal;
+                break (bal, aviso.is_none());
             }
             Err(e) => {
                 telemetry_server::telemetry_log!("⚠️ [CRITICAL] Failed to fetch balance from API (Testnet/Mainnet): {}. Retrying in 5s to enforce 100% Reality Parity...", e);
@@ -2514,63 +2482,42 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             // CL-133 (B2): un pico ilegible no es un pico ausente: no entran
             // posiciones nuevas y no se sobrescribe, como el estado (CL-108f).
             //
-            // CAPITAL-UNICO (opción A): el archivo lleva también la definición
-            // del capital (`pico_capital_{venue}_usdt.txt`) y nace vacío. Los
-            // picos de la definición anterior (todos los activos: el del venue
-            // y el sin venue de antes de CL-133) ya NO se adoptan: sólo se
-            // nombran en una línea de aviso y quedan intactos.
-            // CAPITAL-UNICO (b): si el tope de capital operativo cambió desde
-            // que se guardó el pico, el pico está en otra escala: se reinicia
-            // con un aviso. Una anotación ilegible se trata como un pico ilegible.
-            let ruta_pico = ruta_pico_arranque.clone();
-            let ruta_anotacion = ruta_anotacion_pico.clone();
-            for aviso in risk_engine::drawdown::avisos_picos_ignorados(&[
-                std::path::PathBuf::from(quantum_arena::paths::env_data_path(
-                    &risk_engine::drawdown::archivo_pico_definicion_anterior(),
-                )),
-                std::path::PathBuf::from(quantum_arena::paths::env_data_path(
-                    risk_engine::drawdown::ARCHIVO_PICO_SIN_VENUE,
-                )),
-            ]) {
+            // CAPITAL-UNICO V2 (opción A; revisión independiente 7a, 7b, 7d): el
+            // archivo lleva también la definición del capital
+            // (`pico_capital_{venue}_usdt.txt`). La decisión es pura y sólo lee
+            // (`drawdown::decidir_arranque_pico`): un pico ausente rearma los
+            // stops sólo si existe la marca de la definición (lo retiró el
+            // operador); sin marca es la migración y los stops se conservan. El
+            // pico viejo del venue se adopta sólo si las unidades coinciden; el
+            // sin venue nunca. Los archivos viejos no se escriben, borran ni renombran.
+            let ruta_pico = std::path::PathBuf::from(quantum_arena::paths::env_data_path(
+                &risk_engine::drawdown::archivo_pico(),
+            ));
+            let ruta_marca = std::path::PathBuf::from(quantum_arena::paths::env_data_path(
+                &risk_engine::drawdown::archivo_marca_definicion(),
+            ));
+            let arranque_pico = risk_engine::drawdown::decidir_arranque_pico(
+                &risk_engine::drawdown::RutasPico {
+                    pico: ruta_pico.clone(),
+                    marca: ruta_marca.clone(),
+                    anterior: std::path::PathBuf::from(quantum_arena::paths::env_data_path(
+                        &risk_engine::drawdown::archivo_pico_definicion_anterior(),
+                    )),
+                    sin_venue: std::path::PathBuf::from(quantum_arena::paths::env_data_path(
+                        risk_engine::drawdown::ARCHIVO_PICO_SIN_VENUE,
+                    )),
+                },
+                unidades_coinciden,
+            );
+            for aviso in &arranque_pico.avisos {
                 telemetry_server::telemetry_log!("⚠️ [IMMUNE] {}", aviso);
             }
             let mut pico_ilegible = false;
-            let mut anotacion_pendiente = true;
-            let carga_pico = match &decision_pico {
-                execution_engine::capital_operativo::DecisionPico::Conservar { .. } => {
-                    // Sólo el archivo con la definición; nada se adopta.
-                    risk_engine::drawdown::leer_pico(&ruta_pico)
-                }
-                execution_engine::capital_operativo::DecisionPico::Reiniciar { tope_anotado } => {
-                    if let risk_engine::drawdown::CargaPico::Leido(viejo) =
-                        risk_engine::drawdown::leer_pico(&ruta_pico)
-                    {
-                        telemetry_server::telemetry_log!(
-                            "⚠️ [IMMUNE] El pico guardado (${:.4}) se midió con el tope de capital operativo {} y ahora es {}: pico reiniciado con el capital actual para no disparar el freno en falso. El freno en stops no cambia.",
-                            viejo,
-                            execution_engine::capital_operativo::describir_tope(*tope_anotado),
-                            execution_engine::capital_operativo::describir_tope(puente_capital.tope())
-                        );
-                    }
-                    // Sin pico restaurado y sin rearmar los stops (su caída no
-                    // depende del capital): el primer ciclo guarda el pico nuevo.
-                    risk_engine::drawdown::CargaPico::Ausente
-                }
-                execution_engine::capital_operativo::DecisionPico::Ilegible(m) => {
-                    anotacion_pendiente = false;
-                    risk_engine::drawdown::CargaPico::Ilegible(format!(
-                        "anotación del tope ilegible: {m}"
-                    ))
-                }
-            };
-            // Revisión independiente (7a): un pico ausente sólo rearma el freno
-            // en stops si lo retiró el operador; no en la migración a `_usdt`
-            // ni en el reinicio por cambio de tope.
-            let retiro_del_operador = decision_pico.ausente_es_retiro_del_operador();
-            match carga_pico {
-                risk_engine::drawdown::CargaPico::Ausente if !retiro_del_operador => {
+            let mut marca_pendiente = !ruta_marca.exists();
+            match arranque_pico.carga.clone() {
+                risk_engine::drawdown::CargaPico::Ausente if !arranque_pico.rearmar_stops => {
                     telemetry_server::telemetry_log!(
-                        "🛡️ [IMMUNE] Pico nuevo en {} (migración de definición o cambio de tope): el primer ciclo guarda el capital actual; el freno duro en stops se conserva.",
+                        "🛡️ [IMMUNE] Pico nuevo en {} (migración de definición): el primer ciclo guarda el capital actual; el freno duro en stops se conserva.",
                         ruta_pico.display()
                     );
                 }
@@ -2585,6 +2532,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 }
                 risk_engine::drawdown::CargaPico::Ilegible(m) => {
                     pico_ilegible = true;
+                    marca_pendiente = false;
                     arena_imm.pico_ilegible.store(true, Ordering::Relaxed);
                     telemetry_server::telemetry_log!(
                         "🚨 [IMMUNE] pico del capital ILEGIBLE ({}): no entran posiciones nuevas y el archivo no se sobrescribe hasta que el operador lo repare o lo retire.",
@@ -2592,13 +2540,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     );
                 }
                 risk_engine::drawdown::CargaPico::Ausente => {
-                    // F1-011: Pico ausente o retirado por el operador -> rearme limpio de contadores
-                    // en stops sin destruir el estado aprendido de los modelos.
+                    // F1-011: pico retirado por el operador (hay marca de la
+                    // definición) -> rearme limpio de contadores en stops sin
+                    // destruir el estado aprendido de los modelos.
                     arena_imm.resultado_en_stops.store(0.0, Ordering::Relaxed);
                     arena_imm.pico_en_stops.store(0.0, Ordering::Relaxed);
                     arena_imm.reset_ventana_stops();
                     telemetry_server::telemetry_log!(
-                        "🛡️ [IMMUNE] Archivo de pico ausente: freno duro de stops rearmado a 0.0"
+                        "🛡️ [IMMUNE] Archivo de pico retirado por el operador: freno duro de stops rearmado a 0.0"
                     );
                 }
             }
@@ -2714,22 +2663,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         && risk_engine::drawdown::guardar_pico(&ruta_pico, peak_capital).is_ok()
                     {
                         pico_guardado = peak_capital;
-                        // CAPITAL-UNICO (b): el tope (y su ancla) se anota
-                        // DESPUÉS de guardar el pico en esa escala; si el
-                        // proceso cae antes, el próximo arranque reinicia otra vez.
-                        if anotacion_pendiente {
-                            let anotacion = execution_engine::capital_operativo::Anotacion {
-                                tope: puente_capital.tope(),
-                                ancla: puente_capital.ancla(),
-                            };
-                            match execution_engine::capital_operativo::guardar_anotacion(
-                                &ruta_anotacion,
-                                &anotacion,
-                            ) {
-                                Ok(()) => anotacion_pendiente = false,
+                        // CAPITAL-UNICO V2 (7a): la marca de la definición se
+                        // escribe DESPUÉS del primer pico guardado en esta
+                        // definición; desde entonces, un pico ausente es un
+                        // retiro del operador.
+                        if marca_pendiente {
+                            match risk_engine::drawdown::guardar_marca_definicion(&ruta_marca) {
+                                Ok(()) => marca_pendiente = false,
                                 Err(e) => telemetry_server::telemetry_log!(
-                                    "⚠️ [IMMUNE] no se pudo anotar el tope en {}: {}",
-                                    ruta_anotacion.display(),
+                                    "⚠️ [IMMUNE] no se pudo escribir la marca {}: {}",
+                                    ruta_marca.display(),
                                     e
                                 ),
                             }

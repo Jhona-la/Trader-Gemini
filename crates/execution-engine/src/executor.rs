@@ -4734,7 +4734,7 @@ impl ExecutionProvider for OrderExecutor {
                 // CL-8: saldo de la cartera, no `availableBalance` (ya neto del
                 // margen que la adopción vuelve a reservar). CAPITAL-UNICO: el
                 // del activo de margen (USDT), el mismo que publica el stream.
-                let saldo = crate::execution_evidence::parse_account_capital(&text)
+                crate::execution_evidence::parse_account_capital(&text)
                     .map(|c| {
                         let aviso = c.aviso();
                         if let Some(a) = &aviso {
@@ -4743,12 +4743,7 @@ impl ExecutionProvider for OrderExecutor {
                         crate::execution_evidence::publicar_aviso_capital(aviso);
                         c.capital
                     })
-                    .map_err(|e| format!("{e}. Response /fapi/v2/account: {text}"))?;
-                // CAPITAL-UNICO (b): el tope TG_CAPITAL_OPERATIVO, en el mismo
-                // puente que el stream. Valor inválido: falla cerrado.
-                crate::capital_operativo::puente_global()
-                    .map(|p| p.capital(saldo))
-                    .map_err(str::to_owned)
+                    .map_err(|e| format!("{e}. Response /fapi/v2/account: {text}"))
             }
             Err(e) => Err(e),
         }

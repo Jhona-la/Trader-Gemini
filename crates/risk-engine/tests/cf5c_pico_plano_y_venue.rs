@@ -129,6 +129,12 @@ fn cl136_shadow_y_demo_guardan_el_pico_del_saldo_de_mainnet() {
     assert_eq!(testnet, "pico_capital_prueba_usdt.txt", "el archivo de testnet lleva venue y definición");
     let anterior = con_entorno(true, false, false, drawdown::archivo_pico_definicion_anterior);
     assert_eq!(anterior, "pico_capital_prueba.txt", "el archivo viejo conserva su nombre");
+    // CAPITAL-UNICO V2 (7a, 7f): la marca de la definición también es por venue
+    // y sale de `drawdown`, no del host.
+    let marca_testnet = con_entorno(true, false, false, drawdown::archivo_marca_definicion);
+    let marca_mainnet = con_entorno(false, true, false, drawdown::archivo_marca_definicion);
+    assert_eq!(marca_testnet, "pico_capital_prueba_usdt.definicion");
+    assert_eq!(marca_mainnet, "pico_capital_mainnet_usdt.definicion", "shadow usa la de mainnet");
 }
 
 /// Esperado (B2): ausente, ilegible y legible son tres casos distintos.

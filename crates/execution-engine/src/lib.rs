@@ -1,7 +1,6 @@
 pub mod adversarial_gate;
 pub mod aplanado_inmune;
 pub mod binance_api;
-pub mod capital_operativo;
 pub mod client;
 pub mod dynamic_symbols;
 pub mod entry_dispatch;

@@ -3,22 +3,19 @@
 //!
 //! - Aviso de otros activos y del modo multi-activo; fallo cerrado sin USDT.
 //! - Revisión independiente 3a: saldo de USDT 0 con fondos en otros activos = `Err`.
-//! - Opción A del pico: `pico_capital_{venue}_usdt.txt` nace vacío; el archivo
-//!   viejo no se adopta y queda intacto byte a byte.
-//! - Tope `TG_CAPITAL_OPERATIVO` en el mismo puente para REST y stream.
+//! - Opción A del pico (V2, sin tope): `pico_capital_{venue}_usdt.txt` manda; la
+//!   marca de la definición distingue migración (stops conservados, 7a) de
+//!   retiro del operador; el pico viejo del venue sólo se adopta si las
+//!   unidades coinciden (7d); el sin venue nunca (7b); nada viejo se toca.
 //!
 //! No tocan d*, `capital_del_freno` ni ningún umbral.
 
-use execution_engine::capital_operativo::{
-    decidir_pico, guardar_anotacion, interpretar_tope, leer_anotacion, ruta_anotacion, Anotacion,
-    DecisionPico, PuenteCapital, VARIABLE_TOPE,
-};
 use execution_engine::client::BinanceClient;
 use execution_engine::execution_evidence::{parse_account_capital, parse_account_equity};
 use execution_engine::trade_accounting::BracketClose;
 use execution_engine::{AccountSink, OrderRegistry, RemotePosition, UserDataStreamer};
 use quantum_arena::GlobalArena;
-use risk_engine::drawdown::{self, CargaPico, FrenoDuro};
+use risk_engine::drawdown::{self, CargaPico, FrenoDuro, RutasPico};
 use std::sync::atomic::{AtomicU64, Ordering::Relaxed};
 use std::sync::Arc;
 
@@ -57,26 +54,20 @@ impl AccountSink for Captura {
     fn on_bracket_close(&self, _c: &BracketClose) {}
 }
 
-/// El capital que el stream publica por `on_capital`, con el puente dado.
-fn stream_con(puente: &Arc<PuenteCapital>, evento: &str) -> f64 {
+/// El saldo que el stream publica por `on_capital`.
+fn stream(evento: &str) -> f64 {
     let sink = Arc::new(Captura(AtomicU64::new(f64::NAN.to_bits())));
     let streamer = UserDataStreamer::new(
         BinanceClient::new("k".into(), true),
         Arc::new(OrderRegistry::new()),
     )
-    .with_sink(sink.clone())
-    .with_puente(Arc::clone(puente));
+    .with_sink(sink.clone());
     streamer.dispatch(evento.as_bytes());
     f64::from_bits(sink.0.load(Relaxed))
 }
 
-/// Lo que `fetch_account_balance` devuelve: parser + el mismo puente.
-fn rest_con(puente: &PuenteCapital, cuenta: &str) -> f64 {
-    puente.capital(parse_account_capital(cuenta).expect("REST válido").capital)
-}
-
 /// Freno como lo cablea el host (lazo inmune): arena = REST del arranque, pico
-/// = el guardado (si se restaura) y el arranque, exchange = stream.
+/// = el guardado (si se restaura) y el arranque, exchange = observación del exchange.
 fn freno(arena_cap: f64, pico_restaurado: Option<f64>, exchange: f64) -> FrenoDuro {
     let arena: Arc<GlobalArena> = GlobalArena::build_in_own_stack(arena_cap);
     arena.unified_capital.store(arena_cap, Relaxed);
@@ -109,6 +100,26 @@ fn con_testnet<T>(f: impl FnOnce() -> T) -> T {
         None => std::env::remove_var("USE_TESTNET"),
     }
     r
+}
+
+/// Rutas del pico de Testnet dentro de `dir`, con los nombres de `drawdown`.
+fn rutas_testnet(dir: &std::path::Path) -> RutasPico {
+    let (pico, marca, anterior) = con_testnet(|| {
+        (
+            drawdown::archivo_pico(),
+            drawdown::archivo_marca_definicion(),
+            drawdown::archivo_pico_definicion_anterior(),
+        )
+    });
+    assert_eq!(pico, "pico_capital_prueba_usdt.txt");
+    assert_eq!(marca, "pico_capital_prueba_usdt.definicion");
+    assert_eq!(anterior, "pico_capital_prueba.txt");
+    RutasPico {
+        pico: dir.join(pico),
+        marca: dir.join(marca),
+        anterior: dir.join(anterior),
+        sin_venue: dir.join(drawdown::ARCHIVO_PICO_SIN_VENUE),
+    }
 }
 
 // ── Aviso y fallo cerrado ────────────────────────────────────────────────
@@ -162,62 +173,117 @@ fn capital_unico_usdt_cero_con_fondos_en_otros_activos_falla_cerrado() {
     assert_eq!(parse_account_equity(vacia).unwrap(), 0.0);
 }
 
-// ── (a) Opción A del pico ────────────────────────────────────────────────
+// ── Opción A del pico (V2) ───────────────────────────────────────────────
 
+/// Migración en la Testnet de a3g: sin pico nuevo y sin marca, con el pico
+/// viejo de 7 323,93 y saldo fuera de USDT (las unidades NO coinciden).
 #[test]
-fn pico_opcion_a_el_archivo_con_la_definicion_nace_vacio_y_el_viejo_queda_intacto() {
-    let dir = dir_temporal("opcion_a");
-    let (nuevo, viejo) = con_testnet(|| {
-        (drawdown::archivo_pico(), drawdown::archivo_pico_definicion_anterior())
-    });
-    assert_eq!(nuevo, "pico_capital_prueba_usdt.txt");
-    assert_eq!(viejo, "pico_capital_prueba.txt");
-    let ruta_nuevo = dir.join(&nuevo);
-    let ruta_viejo = dir.join(&viejo);
-    let ruta_sin_venue = dir.join(drawdown::ARCHIVO_PICO_SIN_VENUE);
-    std::fs::write(&ruta_viejo, PICO_VIEJO).unwrap();
-    std::fs::write(&ruta_sin_venue, PICO_VIEJO).unwrap();
-    let antes = std::fs::read(&ruta_viejo).unwrap();
+fn pico_migracion_con_unidades_distintas_ignora_el_viejo_y_conserva_los_stops() {
+    let dir = dir_temporal("migracion_distintas");
+    let r = rutas_testnet(&dir);
+    std::fs::write(&r.anterior, PICO_VIEJO).unwrap();
+    std::fs::write(&r.sin_venue, PICO_VIEJO).unwrap();
+    let antes = std::fs::read(&r.anterior).unwrap();
 
-    // Lo que hace el host: avisar de los viejos y leer SÓLO el nuevo.
-    let avisos = drawdown::avisos_picos_ignorados(&[ruta_viejo.clone(), ruta_sin_venue.clone()]);
-    assert_eq!(avisos.len(), 2, "{avisos:?}");
-    assert!(avisos[0].contains("7323.9314") && avisos[0].contains("ignorado"), "{avisos:?}");
-    let decision = decidir_pico(leer_anotacion(&ruta_anotacion(&ruta_nuevo)), None);
-    assert_eq!(decision, DecisionPico::Conservar { ancla: None, anotada: false });
-    assert!(matches!(drawdown::leer_pico(&ruta_nuevo), CargaPico::Ausente), "nace vacío");
+    let unidades_coinciden = parse_account_capital(CUENTA_MULTI).unwrap().aviso().is_none();
+    assert!(!unidades_coinciden, "a3g: la cartera tiene USDC y BTC");
+    let a = drawdown::decidir_arranque_pico(&r, unidades_coinciden);
+    assert_eq!(a.carga, CargaPico::Ausente, "el pico nuevo nace vacío");
+    assert!(!a.rearmar_stops, "7a: la migración no rearma el freno en stops");
+    assert_eq!(a.adoptado_de, None);
+    let todo = a.avisos.join(" | ");
+    assert!(todo.contains("7323.9314") && todo.contains("ignorado"), "{todo}");
+    assert!(todo.contains("NO coinciden"), "{todo}");
 
-    // Intactos byte a byte, sin renombrar (ni `.adoptado`).
-    assert_eq!(std::fs::read(&ruta_viejo).unwrap(), antes);
-    assert_eq!(std::fs::read(&ruta_sin_venue).unwrap(), antes);
+    // Intactos byte a byte, sin renombrar (ni `.adoptado`), y leer no crea nada.
+    assert_eq!(std::fs::read(&r.anterior).unwrap(), antes);
+    assert_eq!(std::fs::read(&r.sin_venue).unwrap(), antes);
     assert!(!dir.join("pico_capital.txt.adoptado").exists());
-    assert!(!ruta_nuevo.exists(), "leer no crea el archivo nuevo");
+    assert!(!r.pico.exists() && !r.marca.exists());
 
-    // 7a: sin anotación, el pico ausente es una migración: los stops se conservan.
-    assert!(!decision.ausente_es_retiro_del_operador());
+    // Con el pico nuevo (vacío) y saldo 1655.81 el inmune no dispara...
+    let rest = parse_account_equity(CUENTA_MULTI).unwrap();
+    assert!(!freno(rest, None, stream(&account_update(SALDO))).echado());
+    // ...con una caída real del 55 % sí (lejos de la frontera de d*)...
+    assert!(freno(rest, None, stream(&account_update(SALDO * 0.45))).por_capital());
+    // ...y adoptar el pico viejo disparaba con una caída falsa del 77 %.
+    assert!(freno(rest, Some(7323.93139463), stream(&account_update(SALDO))).echado());
+    let _ = std::fs::remove_dir_all(&dir);
+}
 
-    // Con el pico nuevo (vacío) y capital 1655.81 el inmune no dispara...
-    let puente = Arc::new(PuenteCapital::new(None));
-    let rest = rest_con(&puente, CUENTA_MULTI);
-    let sano = freno(rest, None, stream_con(&puente, &account_update(SALDO)));
-    assert!(!sano.echado(), "{sano}");
-    // ...y con una caída real del 55 % sí (lejos de la frontera de d*).
-    let caida = freno(rest, None, stream_con(&puente, &account_update(SALDO * 0.45)));
-    assert!(caida.por_capital(), "{caida}");
-    // Lo que se evita: adoptar el pico viejo disparaba con una caída falsa del 77 %.
-    let adoptado = freno(rest, Some(7323.93139463), stream_con(&puente, &account_update(SALDO)));
-    assert!(adoptado.echado(), "el pico viejo disparaba: {adoptado}");
+/// 7d: con sólo USDT y sin multi-activo la unidad no cambió (mainnet): el pico
+/// viejo del venue se adopta para no perdonar una caída real (CL-99). El sin
+/// venue nunca (7b). El viejo ilegible, con unidades iguales, es ilegible.
+#[test]
+fn pico_migracion_con_unidades_iguales_adopta_solo_el_viejo_del_venue() {
+    let dir = dir_temporal("migracion_iguales");
+    let r = rutas_testnet(&dir);
+    let solo_usdt = r#"{"multiAssetsMargin":false,"totalWalletBalance":"13.0","assets":[{"asset":"USDT","walletBalance":"13.0"}]}"#;
+    let unidades_coinciden = parse_account_capital(solo_usdt).unwrap().aviso().is_none();
+    assert!(unidades_coinciden);
 
+    std::fs::write(&r.sin_venue, "20\n").unwrap();
+    let a = drawdown::decidir_arranque_pico(&r, unidades_coinciden);
+    assert_eq!(a.carga, CargaPico::Ausente, "7b: el sin venue no se adopta nunca");
+
+    std::fs::write(&r.anterior, "20\n").unwrap();
+    let antes = std::fs::read(&r.anterior).unwrap();
+    let a = drawdown::decidir_arranque_pico(&r, unidades_coinciden);
+    assert_eq!(a.carga, CargaPico::Leido(20.0));
+    assert_eq!(a.adoptado_de.as_deref(), Some(r.anterior.as_path()));
+    assert!(!a.rearmar_stops);
+    assert!(a.avisos.iter().any(|s| s.contains("ADOPTADO")), "{:?}", a.avisos);
+    assert_eq!(std::fs::read(&r.anterior).unwrap(), antes, "el viejo no se toca");
+    assert!(!r.pico.exists());
+    // Con el pico adoptado de 20 y 13 de saldo, la caída real del 35 % se ve.
+    let f = freno(13.0, Some(20.0), 13.0);
+    assert!((f.caida_capital - 0.35).abs() < 1e-9, "{f}");
+
+    std::fs::write(&r.anterior, "veinte\n").unwrap();
+    let a = drawdown::decidir_arranque_pico(&r, unidades_coinciden);
+    assert!(matches!(a.carga, CargaPico::Ilegible(_)), "{:?}", a.carga);
+    // Con unidades distintas, el mismo ilegible sólo se ignora.
+    let a = drawdown::decidir_arranque_pico(&r, false);
+    assert_eq!(a.carga, CargaPico::Ausente);
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// 7a: con la marca, el pico ausente es un retiro del operador (rearme de los
+/// stops, F1-011); el pico nuevo, si existe, manda sobre los viejos.
+#[test]
+fn pico_marca_distingue_retiro_del_operador_de_la_migracion() {
+    let dir = dir_temporal("marca");
+    let r = rutas_testnet(&dir);
+    std::fs::write(&r.anterior, PICO_VIEJO).unwrap();
+
+    drawdown::guardar_marca_definicion(&r.marca).unwrap();
+    assert_eq!(std::fs::read_to_string(&r.marca).unwrap(), drawdown::MARCA_DEFINICION);
+    let a = drawdown::decidir_arranque_pico(&r, true);
+    assert_eq!(a.carga, CargaPico::Ausente);
+    assert!(a.rearmar_stops, "con marca y sin pico, lo retiró el operador");
+    assert_eq!(a.adoptado_de, None, "tras un retiro no se adopta ningún pico viejo");
+
+    drawdown::guardar_pico(&r.pico, 1700.0).unwrap();
+    let a = drawdown::decidir_arranque_pico(&r, true);
+    assert_eq!(a.carga, CargaPico::Leido(1700.0), "el pico de la definición manda");
+    assert!(!a.rearmar_stops);
+
+    std::fs::write(&r.pico, "1,7\n").unwrap();
+    let a = drawdown::decidir_arranque_pico(&r, true);
+    assert!(matches!(a.carga, CargaPico::Ilegible(_)), "CL-133 B2");
+    assert!(!a.rearmar_stops);
     let _ = std::fs::remove_dir_all(&dir);
 }
 
 #[test]
-fn pico_opcion_a_contrato_de_fuente_del_host() {
+fn pico_contrato_de_fuente_del_host() {
     let host = include_str!("../../../src/bin/god_engine.rs");
     assert!(!host.contains("txt.adoptado"), "el host ya no adopta ni renombra el pico sin venue");
-    assert!(host.contains("risk_engine::drawdown::avisos_picos_ignorados("));
-    assert!(host.contains("archivo_pico_definicion_anterior()"));
-    // (c) El aplanado nombra el archivo real, no `pico_capital.txt`.
+    assert!(host.contains("risk_engine::drawdown::decidir_arranque_pico("));
+    assert!(host.contains("risk_engine::drawdown::guardar_marca_definicion(&ruta_marca)"));
+    assert!(host.contains("unidades_coinciden,"), "7d: el host pasa lo que mostró el arranque");
+    assert!(!host.contains("capital_operativo"), "el tope salió de esta rama");
+    // 7e: el aplanado nombra el archivo real, no `pico_capital.txt`.
     assert!(!host.contains("retirar pico_capital.txt"));
     assert!(!host.contains("retirar `pico_capital.txt`"));
     let aplanado = host
@@ -226,143 +292,4 @@ fn pico_opcion_a_contrato_de_fuente_del_host() {
         .expect("mensaje del aplanado");
     let args = &aplanado[..aplanado.find("),").expect("fin del mensaje")];
     assert!(args.contains("drawdown::archivo_pico()"), "{args}");
-}
-
-// ── (b) Tope TG_CAPITAL_OPERATIVO ────────────────────────────────────────
-
-#[test]
-fn tope_apagado_es_identico_a_hoy() {
-    assert_eq!(interpretar_tope(None), Ok(None));
-    let puente = Arc::new(PuenteCapital::new(None));
-    for x in [0.0, 13.0, SALDO, 7299.88] {
-        assert_eq!(puente.capital(x).to_bits(), f64::to_bits(x));
-    }
-    assert!(puente.capital(f64::NAN).is_nan());
-    assert_eq!(rest_con(&puente, CUENTA_MULTI), SALDO);
-    assert_eq!(stream_con(&puente, &account_update(SALDO)), SALDO);
-    assert_eq!(puente.ancla(), None, "apagado no ancla");
-    assert!(!puente.restaurar_ancla(SALDO));
-}
-
-#[test]
-fn tope_50_con_saldo_1655_81_da_50_en_rest_y_en_stream() {
-    let puente = Arc::new(PuenteCapital::new(interpretar_tope(Some("50")).unwrap()));
-    assert_eq!(rest_con(&puente, CUENTA_MULTI), 50.0);
-    assert_eq!(stream_con(&puente, &account_update(SALDO)), 50.0);
-    assert_eq!(puente.ancla(), Some(SALDO));
-    // También si el stream llega primero.
-    let solo_stream = Arc::new(PuenteCapital::new(Some(50.0)));
-    assert_eq!(stream_con(&solo_stream, &account_update(SALDO)), 50.0);
-    assert_eq!(rest_con(&solo_stream, CUENTA_MULTI), 50.0);
-}
-
-#[test]
-fn tope_5000_con_saldo_1655_81_da_el_saldo_real() {
-    let puente = Arc::new(PuenteCapital::new(interpretar_tope(Some(" 5000 ")).unwrap()));
-    assert_eq!(rest_con(&puente, CUENTA_MULTI), SALDO);
-    assert_eq!(stream_con(&puente, &account_update(SALDO)), SALDO);
-    // Nunca mayor que el saldo real, aunque el saldo suba o baje.
-    for s in [10.0, 1000.0, SALDO, 4000.0] {
-        assert!(puente.capital(s) <= s);
-    }
-}
-
-#[test]
-fn tope_invalido_cero_o_negativo_falla_cerrado() {
-    for malo in ["abc", "0", "-5", "NaN", "inf", "-inf", "", " ", "50 USDT", "1e999"] {
-        let e = interpretar_tope(Some(malo)).expect_err(malo);
-        assert!(e.contains(VARIABLE_TOPE) && e.contains("Falla cerrado"), "{malo}: {e}");
-    }
-    assert_eq!(interpretar_tope(Some("0.5")), Ok(Some(0.5)));
-}
-
-#[test]
-fn tope_con_perdida_real_el_capital_baja_y_el_freno_la_ve() {
-    let puente = Arc::new(PuenteCapital::new(Some(50.0)));
-    let arena = rest_con(&puente, CUENTA_MULTI);
-    assert_eq!(arena, 50.0);
-    // Pérdida real de 10 USDT: el capital operativo baja a 40 (20 % de 50).
-    let exchange = stream_con(&puente, &account_update(SALDO - 10.0));
-    assert!((exchange - 40.0).abs() < 1e-9, "{exchange}");
-    let f = freno(arena, None, exchange);
-    assert!((f.caida_capital - 0.2).abs() < 1e-9, "el freno ve la caída del 20 %: {f}");
-    assert!(!f.echado());
-    // 27.5 USDT (55 % de 50) disparan; 22.5 (45 %) no.
-    let f = freno(arena, None, stream_con(&puente, &account_update(SALDO - 27.5)));
-    assert!(f.por_capital(), "{f}");
-    let f = freno(arena, None, stream_con(&puente, &account_update(SALDO - 22.5)));
-    assert!(!f.echado(), "{f}");
-    // Pérdida mayor que el tope: 0, el inmune lo ve como insolvente.
-    assert_eq!(puente.capital(SALDO - 60.0), 0.0);
-}
-
-#[test]
-fn tope_que_cambia_entre_corridas_reinicia_el_pico_y_no_dispara_en_falso() {
-    // Corrida anterior con el tope apagado: pico 1655.81. Ahora tope 50.
-    let apagado = Anotacion { tope: None, ancla: None };
-    let d = decidir_pico(Ok(Some(apagado)), Some(50.0));
-    assert_eq!(d, DecisionPico::Reiniciar { tope_anotado: None });
-    assert!(!d.ausente_es_retiro_del_operador(), "el freno en stops se conserva");
-    let puente = Arc::new(PuenteCapital::new(Some(50.0)));
-    let arena = rest_con(&puente, CUENTA_MULTI);
-    let exchange = stream_con(&puente, &account_update(SALDO));
-    // Si se restaurara el pico de otro tope, caída falsa del 97 %:
-    assert!(freno(arena, Some(SALDO), exchange).echado());
-    // Reiniciado (no se restaura), no dispara:
-    assert!(!freno(arena, None, exchange).echado());
-
-    // Otros cambios: 5000 → 50, sin anotación con tope encendido, 50 → apagado.
-    let tope = |t| Anotacion { tope: Some(t), ancla: Some(SALDO) };
-    assert!(matches!(decidir_pico(Ok(Some(tope(5000.0))), Some(50.0)), DecisionPico::Reiniciar { .. }));
-    assert!(matches!(decidir_pico(Ok(None), Some(50.0)), DecisionPico::Reiniciar { .. }));
-    assert!(matches!(decidir_pico(Ok(Some(tope(50.0))), None), DecisionPico::Reiniciar { .. }));
-    assert!(matches!(decidir_pico(Err("x".into()), Some(50.0)), DecisionPico::Ilegible(_)));
-}
-
-#[test]
-fn tope_igual_entre_corridas_conserva_la_caida_acumulada() {
-    // Corrida anterior: tope 50 anclado en 1655.81, pico 50. Ahora el saldo es 1645.81.
-    let dir = dir_temporal("tope_igual");
-    let ruta = ruta_anotacion(&dir.join("pico_capital_prueba_usdt.txt"));
-    assert!(ruta.ends_with("pico_capital_prueba_usdt.tope.txt"));
-    guardar_anotacion(&ruta, &Anotacion { tope: Some(50.0), ancla: Some(SALDO) }).unwrap();
-    let d = decidir_pico(leer_anotacion(&ruta), Some(50.0));
-    assert_eq!(d, DecisionPico::Conservar { ancla: Some(SALDO), anotada: true });
-    assert!(d.ausente_es_retiro_del_operador(), "con anotación, un pico ausente lo retiró el operador");
-
-    let puente = Arc::new(PuenteCapital::new(Some(50.0)));
-    assert!(puente.restaurar_ancla(SALDO));
-    let rest = r#"{"totalWalletBalance":"1645.81","assets":[{"asset":"USDT","walletBalance":"1645.81"}]}"#;
-    let arena = rest_con(&puente, rest);
-    assert!((arena - 40.0).abs() < 1e-9, "la pérdida de la corrida anterior sigue: {arena}");
-    let f = freno(arena, Some(50.0), stream_con(&puente, &account_update(SALDO - 10.0)));
-    assert!((f.caida_capital - 0.2).abs() < 1e-9, "{f}");
-
-    // Anotación ilegible: se trata como un pico ilegible.
-    std::fs::write(&ruta, "tope=cincuenta\n").unwrap();
-    assert!(matches!(decidir_pico(leer_anotacion(&ruta), Some(50.0)), DecisionPico::Ilegible(_)));
-    // Formato de ida y vuelta.
-    for a in [
-        Anotacion { tope: None, ancla: None },
-        Anotacion { tope: Some(50.0), ancla: Some(SALDO) },
-        Anotacion { tope: Some(0.5), ancla: None },
-    ] {
-        assert_eq!(Anotacion::desde_texto(&a.a_texto()), Ok(a));
-    }
-    let _ = std::fs::remove_dir_all(&dir);
-}
-
-/// La variable se lee en un solo sitio (revisión, 6.7): el módulo del puente.
-#[test]
-fn tope_contrato_de_fuente_un_solo_punto() {
-    let modulo = include_str!("../src/capital_operativo.rs");
-    assert!(modulo.contains(r#"VARIABLE_TOPE: &str = "TG_CAPITAL_OPERATIVO""#));
-    for (nombre, fuente) in [
-        ("executor.rs", include_str!("../src/executor.rs")),
-        ("user_data_stream.rs", include_str!("../src/user_data_stream.rs")),
-        ("god_engine.rs", include_str!("../../../src/bin/god_engine.rs")),
-    ] {
-        assert!(!fuente.contains("\"TG_CAPITAL_OPERATIVO\""), "{nombre} no lee la variable por su cuenta");
-        assert!(fuente.contains("capital_operativo::puente_global()"), "{nombre} usa el puente único");
-    }
 }
