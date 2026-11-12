@@ -780,6 +780,12 @@ impl RiskEngine {
         if arena.pico_ilegible.load(Ordering::Relaxed) {
             return rej(REJ_DRAWDOWN);
         }
+        // CAPITAL-UNICO V3 (P1.2/P1.3): sin saldo vigente de la era del puente
+        // de la cuenta, o con su equity incompleta, no se sabe cuánto capital
+        // hay ni cuánto se ha caído: no entran posiciones nuevas (fail-closed).
+        if arena.capital_incompleto.load(Ordering::Acquire) {
+            return rej(REJ_DRAWDOWN);
+        }
         // FASE 3 DEFENSE-IN-DEPTH: Si el kill-switch del sistema inmune está armado
         // (por latencia sostenida, insolvencia, o cerrojo STOP_TRADING.LOCK),
         // vetar de inmediato cualquier intento de orden nueva en la puerta de entrada

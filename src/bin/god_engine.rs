@@ -427,6 +427,69 @@ async fn esperar_aplanado_inmune_en_curso() {
     );
 }
 
+/// CAPITAL-UNICO V3 (opción A pura) — aplica al arena el arranque del pico de
+/// un espacio (`drawdown::decidir_arranque_pico`, que sólo lee). Con
+/// `cambio_de_espacio` (transición que cambió de verdad la cuenta o el venue)
+/// el pico en memoria del espacio anterior se descarta primero. Devuelve
+/// (pico ilegible, marca de la definición pendiente).
+fn aplicar_arranque_pico(
+    arena: &quantum_arena::GlobalArena,
+    rutas: &risk_engine::drawdown::RutasPico,
+    cambio_de_espacio: bool,
+) -> (bool, bool) {
+    let arranque = risk_engine::drawdown::decidir_arranque_pico(rutas);
+    for aviso in &arranque.avisos {
+        telemetry_server::telemetry_log!("⚠️ [IMMUNE] {}", aviso);
+    }
+    if cambio_de_espacio {
+        arena.pico_capital.store(0.0, Ordering::Release);
+        arena.pico_ilegible.store(false, Ordering::Release);
+        telemetry_server::telemetry_log!(
+            "🛡️ [IMMUNE] la cuenta o el venue cambiaron: el pico pasa a {}",
+            rutas.pico.display()
+        );
+    }
+    let mut marca_pendiente = !rutas.marca.exists();
+    let mut ilegible = false;
+    match arranque.carga {
+        risk_engine::drawdown::CargaPico::Ausente if !arranque.rearmar_stops => {
+            telemetry_server::telemetry_log!(
+                "🛡️ [IMMUNE] Pico nuevo en {} (espacio sin pico propio): nace vacío, el primer ciclo guarda el capital actual; el freno duro en stops se conserva.",
+                rutas.pico.display()
+            );
+        }
+        risk_engine::drawdown::CargaPico::Leido(guardado) => {
+            let pico = risk_engine::drawdown::registrar_pico(&arena.pico_capital, guardado);
+            telemetry_server::telemetry_log!(
+                "🛡️ [IMMUNE] pico del capital restaurado: ${:.4} (guardado ${:.4})",
+                pico,
+                guardado
+            );
+        }
+        risk_engine::drawdown::CargaPico::Ilegible(m) => {
+            ilegible = true;
+            marca_pendiente = false;
+            arena.pico_ilegible.store(true, Ordering::Relaxed);
+            telemetry_server::telemetry_log!(
+                "🚨 [IMMUNE] pico del capital ILEGIBLE ({}): no entran posiciones nuevas y el archivo no se sobrescribe hasta que el operador lo repare o lo retire.",
+                m
+            );
+        }
+        risk_engine::drawdown::CargaPico::Ausente => {
+            // F1-011: pico retirado por el operador (hay marca de la
+            // definición) -> rearme limpio de contadores en stops sin
+            // destruir el estado aprendido de los modelos.
+            arena.resultado_en_stops.store(0.0, Ordering::Relaxed);
+            arena.pico_en_stops.store(0.0, Ordering::Relaxed);
+            arena.reset_ventana_stops();
+            telemetry_server::telemetry_log!(
+                "🛡️ [IMMUNE] Archivo de pico retirado por el operador: freno duro de stops rearmado a 0.0"
+            );
+        }
+    }
+    (ilegible, marca_pendiente)
+}
+
 /// I-10 (N19): un intento del aplanado del sistema inmune, el del disparo o
 /// un reintento. Lo anota en `reintento`, que decide cuándo toca el
 /// siguiente si no se completó. `reloj` es el reloj monótono del inmune: el
@@ -1743,22 +1806,40 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         Arc::clone(&oms_reconciled),
     ));
 
-    // CAPITAL-UNICO V2 (7d): `unidades_coinciden` = la lectura del arranque no
-    // tuvo saldo fuera de USDT ni modo multi-activo (sin aviso). Sólo entonces
-    // el pico viejo del venue puede adoptarse en la migración de definición.
-    //
+    // CAPITAL-UNICO V3 (P1.4, opción A pura): el espacio del pico es venue +
+    // cuenta (huella de la clave API) + definición. Ningún pico ajeno se adopta.
+    let espacio_pico = {
+        let clave = exec.load().client().api_key.load();
+        risk_engine::drawdown::espacio_pico(
+            is_testnet,
+            &risk_engine::drawdown::huella_cuenta(clave.as_bytes()),
+        )
+    };
+    risk_engine::drawdown::fijar_espacio_pico(&espacio_pico);
+    telemetry_server::telemetry_log!("🛡️ [IMMUNE] espacio del pico: {}", espacio_pico);
+
     // CAPITAL-UNICO V2 (decisión 1 del coordinador; P1.1 y P1.4 de Codex QRA):
     // un solo puente de la cuenta por proceso, compartido con el user-data
     // stream. SALDO (walletBalance de USDT) siembra el arena y el tamaño;
     // EQUITY (saldo + PnL no realizado de las posiciones con margen en USDT)
-    // es la observación del freno. Las lecturas REST llevan ticket de frescura.
+    // es la observación del freno. V3: cada componente con su marca; el cero
+    // explícito de 3a llega al puente (plano de seguridad) aunque el arranque
+    // lo rechace como capital con que operar.
     let puente_cuenta = Arc::new(execution_engine::puente_cuenta::PuenteCuenta::new());
-    let (initial_capital, initial_equity, unidades_coinciden) = loop {
+    // CAPITAL-UNICO V3 (P1.4): rutas del pico de un espacio nuevo, que la
+    // transición deja al inmune si cambia de verdad la cuenta o el venue.
+    let buzon_espacio_pico: Arc<std::sync::Mutex<Option<risk_engine::drawdown::RutasPico>>> =
+        Arc::new(std::sync::Mutex::new(None));
+    let (initial_capital, initial_equity) = loop {
         let ticket = puente_cuenta.ticket();
         let lectura = exec.load().fetch_account_lectura().await.and_then(|l| {
-            puente_cuenta
+            let obs = puente_cuenta
                 .observar_rest(ticket, &l)
-                .map_err(|e| format!("ACCOUNT_EVIDENCE_INVALID: {e}"))
+                .map_err(|e| format!("ACCOUNT_EVIDENCE_INVALID: {e}"));
+            match l.rechazo_arranque {
+                Some(rechazo) => Err(rechazo),
+                None => obs,
+            }
         });
         match lectura {
             Ok(obs) => {
@@ -1778,7 +1859,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 if let Some(aviso) = &aviso {
                     telemetry_server::telemetry_log!("⚠️ [CAPITAL] {}", aviso);
                 }
-                break (bal, obs.equity, aviso.is_none());
+                break (bal, obs.equity);
             }
             Err(e) => {
                 telemetry_server::telemetry_log!("⚠️ [CRITICAL] Failed to fetch balance from API (Testnet/Mainnet): {}. Retrying in 5s to enforce 100% Reality Parity...", e);
@@ -2440,6 +2521,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         // Axiom XIV: Superposición Cuántica - Mentes Aisladas (Scalp vs Swing)
         let arena_real = Arc::new(quantum_arena::GlobalArena::new(initial_capital));
+        // CAPITAL-UNICO V3 (P1.2/P1.3): sin saldo vigente de la era o con la
+        // equity incompleta, el puente veta las entradas (riesgo y OMS) por
+        // esta bandera, escrita bajo el mutex del puente. Los cierres no la leen.
+        {
+            let arena_veto = Arc::clone(&arena_real);
+            puente_cuenta.vincular_veto(move |veta| {
+                arena_veto.capital_incompleto.store(veta, Ordering::Release);
+            });
+        }
         oms_session.initialize_arena(&arena_real);
         // X-020 (REHAB-6): arena_shadow ELIMINADA — 40+MB VirtualLock muertos. Jamás procesó un tick (todas sus referencias eran init-only) y su canal tx_shadow encolaba modelos NN eternamente. La "mente sombra" real vive en shadow_forest + ShadowForest del online_daemon.
 
@@ -2515,82 +2605,75 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             // `pico_en_stops`), y su caída no depende del capital, así que
             // un retiro no la cambia (PR70-INT-12 de la Línea G).
             // CL-133 (R5 de la revisión del PR #62): un archivo por venue.
-            // Testnet y papel de mainnet comparten `data/demo` (CL-61), y el
-            // pico de 5 000 USDT de testnet bloqueaba la sesión de papel con
-            // 13 USD reales (caída del 99,7 % ≥ d*). El archivo sin venue
-            // de antes se adopta una vez, si este venue no tiene el suyo, y
-            // se renombra para que el otro venue no lo vuelva a adoptar.
             // CL-133 (B2): un pico ilegible no es un pico ausente: no entran
             // posiciones nuevas y no se sobrescribe, como el estado (CL-108f).
             //
-            // CAPITAL-UNICO V2 (opción A; revisión independiente 7a, 7b, 7d): el
-            // archivo lleva también la definición del capital
-            // (`pico_capital_{venue}_usdt.txt`). La decisión es pura y sólo lee
-            // (`drawdown::decidir_arranque_pico`): un pico ausente rearma los
-            // stops sólo si existe la marca de la definición (lo retiró el
-            // operador); sin marca es la migración y los stops se conservan. El
-            // pico viejo del venue se adopta sólo si las unidades coinciden; el
-            // sin venue nunca. Los archivos viejos no se escriben, borran ni renombran.
-            let ruta_pico = std::path::PathBuf::from(quantum_arena::paths::env_data_path(
-                &risk_engine::drawdown::archivo_pico(),
-            ));
-            let ruta_marca = std::path::PathBuf::from(quantum_arena::paths::env_data_path(
-                &risk_engine::drawdown::archivo_marca_definicion(),
-            ));
-            let arranque_pico = risk_engine::drawdown::decidir_arranque_pico(
-                &risk_engine::drawdown::RutasPico {
-                    pico: ruta_pico.clone(),
-                    marca: ruta_marca.clone(),
-                    anterior: std::path::PathBuf::from(quantum_arena::paths::env_data_path(
-                        &risk_engine::drawdown::archivo_pico_definicion_anterior(),
-                    )),
-                    sin_venue: std::path::PathBuf::from(quantum_arena::paths::env_data_path(
-                        risk_engine::drawdown::ARCHIVO_PICO_SIN_VENUE,
-                    )),
-                },
-                unidades_coinciden,
-            );
-            for aviso in &arranque_pico.avisos {
-                telemetry_server::telemetry_log!("⚠️ [IMMUNE] {}", aviso);
-            }
-            let mut pico_ilegible = false;
-            let mut marca_pendiente = !ruta_marca.exists();
-            match arranque_pico.carga.clone() {
-                risk_engine::drawdown::CargaPico::Ausente if !arranque_pico.rearmar_stops => {
-                    telemetry_server::telemetry_log!(
-                        "🛡️ [IMMUNE] Pico nuevo en {} (migración de definición): el primer ciclo guarda el capital actual; el freno duro en stops se conserva.",
-                        ruta_pico.display()
-                    );
-                }
-                risk_engine::drawdown::CargaPico::Leido(guardado) => {
-                    let pico =
-                        risk_engine::drawdown::registrar_pico(&arena_imm.pico_capital, guardado);
-                    telemetry_server::telemetry_log!(
-                        "🛡️ [IMMUNE] pico del capital restaurado: ${:.4} (guardado ${:.4})",
-                        pico,
-                        guardado
-                    );
-                }
-                risk_engine::drawdown::CargaPico::Ilegible(m) => {
-                    pico_ilegible = true;
-                    marca_pendiente = false;
-                    arena_imm.pico_ilegible.store(true, Ordering::Relaxed);
-                    telemetry_server::telemetry_log!(
-                        "🚨 [IMMUNE] pico del capital ILEGIBLE ({}): no entran posiciones nuevas y el archivo no se sobrescribe hasta que el operador lo repare o lo retire.",
-                        m
-                    );
-                }
-                risk_engine::drawdown::CargaPico::Ausente => {
-                    // F1-011: pico retirado por el operador (hay marca de la
-                    // definición) -> rearme limpio de contadores en stops sin
-                    // destruir el estado aprendido de los modelos.
-                    arena_imm.resultado_en_stops.store(0.0, Ordering::Relaxed);
-                    arena_imm.pico_en_stops.store(0.0, Ordering::Relaxed);
-                    arena_imm.reset_ventana_stops();
-                    telemetry_server::telemetry_log!(
-                        "🛡️ [IMMUNE] Archivo de pico retirado por el operador: freno duro de stops rearmado a 0.0"
-                    );
-                }
+            // CAPITAL-UNICO V3 (opción A pura, decisión 4 del coordinador): el
+            // espacio del pico es venue + cuenta + definición
+            // (`pico_capital_{venue}_{cuenta}_usdt.txt`). El pico de un espacio
+            // nuevo nace vacío SIEMPRE: ningún archivo de otra definición o de
+            // otro espacio se adopta, se borra ni se renombra (una línea de
+            // aviso). Un pico ausente rearma los stops sólo si existe la marca
+            // de la definición del espacio (lo retiró el operador). Si una
+            // transición cambia de verdad la cuenta o el venue, el host deja
+            // las rutas del espacio nuevo en `buzon_imm` y el inmune las adopta.
+            let buzon_imm = Arc::clone(&buzon_espacio_pico);
+            let rutas_pico = risk_engine::drawdown::RutasPico::del_espacio(&espacio_pico, |n| {
+                std::path::PathBuf::from(quantum_arena::paths::env_data_path(n))
+            });
+            let (mut pico_ilegible, mut marca_pendiente) =
+                aplicar_arranque_pico(&arena_imm, &rutas_pico, false);
+            let mut ruta_pico = rutas_pico.pico.clone();
+            let mut ruta_marca = rutas_pico.marca.clone();
+            // CAPITAL-UNICO V3 (P1.2/P1.3): RESINCRONIZADOR del puente, fuera
+            // del lazo que protege posiciones. Mientras el puente vete entradas
+            // (era nueva sin saldo, reconexión, evidencia incompleta), pide
+            // `/fapi/v2/account` con ticket de su era y reintenta los fallos
+            // (5 s, doblando hasta 30 s). Cada GET con tope de 15 s. El inmune
+            // no lo espera: sólo lee el puente.
+            {
+                let puente_rs = Arc::clone(&puente_cuenta);
+                let exec_rs = Arc::clone(&exec);
+                let saldo_rs = Arc::clone(&exchange_capital_imm);
+                rt_handle.spawn(async move {
+                    let mut pausa = execution_engine::resincronizar_cuenta::Pausa::nueva();
+                    loop {
+                        tokio::time::sleep(pausa.actual()).await;
+                        if !puente_rs.necesita_resincronizar() {
+                            pausa.exito();
+                            continue;
+                        }
+                        let executor = exec_rs.load_full();
+                        let r = execution_engine::resincronizar_cuenta::resincronizar_una_vez(
+                            &puente_rs,
+                            executor.fetch_account_lectura(),
+                            std::time::Duration::from_secs(15),
+                            |obs| saldo_rs.store(obs.saldo.to_bits(), Ordering::Relaxed),
+                        )
+                        .await;
+                        if let Some(aviso) = execution_engine::execution_evidence::tomar_aviso_capital() {
+                            telemetry_server::telemetry_log!("⚠️ [CAPITAL] {}", aviso);
+                        }
+                        match &r {
+                            Ok(obs) => {
+                                pausa.exito();
+                                telemetry_server::telemetry_log!(
+                                    "🔄 [CAPITAL] puente resincronizado por REST: saldo ${:.4} · equity ${:.4}",
+                                    obs.saldo,
+                                    obs.equity
+                                );
+                            }
+                            Err(e) => {
+                                pausa.fallo();
+                                telemetry_server::telemetry_log!(
+                                    "⚠️ [CAPITAL] resincronización REST sin aplicar ({}); entradas vetadas, cierres disponibles; reintento en {} s",
+                                    e.chars().take(300).collect::<String>(),
+                                    pausa.actual().as_secs()
+                                );
+                            }
+                        }
+                    }
+                });
             }
             rt_handle.spawn(async move {
                 let mut latched = false;
@@ -2608,9 +2691,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 let mut aviso_atraso_local = telemetry_server::estrangulador::Estrangulador::new(60_000);
                 let mut aviso_feed_quieto = telemetry_server::estrangulador::Estrangulador::new(60_000);
                 let mut aviso_reloj = telemetry_server::estrangulador::Estrangulador::new(600_000);
-                // CAPITAL-UNICO V2: como mucho una resincronización REST cada 30 s.
-                let mut aviso_resincronizar =
-                    telemetry_server::estrangulador::Estrangulador::new(30_000);
                 // I-10 (N19): el aplanado del disparo que no se completó se
                 // reintenta mientras el inmune siga disparado.
                 let mut reintento_aplanado =
@@ -2622,6 +2702,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         execution_engine::aplanado_inmune::PERIODO_CICLO_INMUNE_MS,
                     ))
                     .await;
+
 
                     // F1-011: Comando de rearme explícito por archivo: rearme_frenos.txt
                     let ruta_rearme = std::path::PathBuf::from(quantum_arena::paths::env_data_path("rearme_frenos.txt"));
@@ -2656,6 +2737,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         );
                     }
 
+                    // CAPITAL-UNICO V3 (P1.4): la transición cambió de verdad la
+                    // cuenta o el venue: el pico pasa al espacio nuevo (nace
+                    // vacío si no tiene el suyo; nada ajeno se adopta).
+                    let espacio_nuevo = buzon_imm.lock().unwrap_or_else(|p| p.into_inner()).take();
+                    if let Some(rutas) = espacio_nuevo {
+                        (pico_ilegible, marca_pendiente) = aplicar_arranque_pico(&arena_imm, &rutas, true);
+                        ruta_pico = rutas.pico.clone();
+                        ruta_marca = rutas.marca.clone();
+                        pico_guardado = 0.0;
+                    }
                     if latched {
                         // I-10 (N19): antes el aplanado que no se completó no
                         // se volvía a intentar. Frenado, se reintenta en cada
@@ -2689,42 +2780,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     // dos planos). Antes el riesgo subía el pico con el arena y
                     // el host medía con el mínimo: en papel sobre mainnet,
                     // ganar en papel se veía como una caída del saldo real.
-                    // CAPITAL-UNICO V2 (P1.4): tras una reconexión, resincronizar
-                    // el puente por REST; una respuesta atrasada se rechaza.
-                    if puente_imm.necesita_resincronizar()
-                        && aviso_resincronizar
-                            .admitir(reloj_imm.elapsed().as_millis() as u64)
-                            .is_some()
-                    {
-                        let ticket = puente_imm.ticket();
-                        let executor = exec_imm.load_full();
-                        let lectura = executor.fetch_account_lectura().await;
-                        let _ = execution_engine::execution_evidence::tomar_aviso_capital();
-                        match lectura {
-                            Ok(l) => match puente_imm.observar_rest(ticket, &l) {
-                                Ok(obs) => {
-                                    exchange_capital_imm
-                                        .store(obs.saldo.to_bits(), Ordering::Relaxed);
-                                    telemetry_server::telemetry_log!(
-                                        "🔄 [CAPITAL] puente resincronizado por REST tras la reconexión: saldo ${:.4} · equity ${:.4}",
-                                        obs.saldo,
-                                        obs.equity
-                                    );
-                                }
-                                Err(e) => telemetry_server::telemetry_log!(
-                                    "⚠️ [CAPITAL] resincronización REST descartada: {}",
-                                    e
-                                ),
-                            },
-                            Err(e) => telemetry_server::telemetry_log!(
-                                "⚠️ [CAPITAL] resincronización REST fallida: {}",
-                                e.chars().take(300).collect::<String>()
-                            ),
-                        }
-                    }
-                    let cap_exchange = puente_imm
-                        .observacion()
-                        .map_or(f64::NAN, |o| o.equity);
+                    // CAPITAL-UNICO V3 (P1.3): el lazo del inmune NO espera un GET:
+                    // la resincronización REST corre en su propia tarea
+                    // (`resincronizador`, arriba). Aquí sólo se lee el puente.
+                    // Con la evidencia incompleta, el freno ve la equity
+                    // conservada (las pérdidas pasan, las ganancias esperan); sin
+                    // saldo de esta era, la última de la era anterior.
+                    let cap_exchange = puente_imm.equity_del_freno().unwrap_or(f64::NAN);
                     arena_imm.capital_exchange.store(
                         if cap_exchange.is_finite() {
                             cap_exchange
@@ -5227,6 +5289,43 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 continue;
                             }
                         };
+                        // CAPITAL-UNICO V3 (P1.2): era nueva del puente ANTES de
+                        // encolar el refresco del OMS y de crear el streamer de
+                        // mainnet. Desde aquí el puente veta las entradas (bandera
+                        // del arena, que leen el riesgo y `check_entry`) hasta una
+                        // lectura aceptada de ESTA era, aunque el OMS quede Ready.
+                        // Lo que llegue aún de la era demo se rechaza. Los cierres
+                        // siguen disponibles.
+                        let era_mainnet = puente_cuenta.nueva_era();
+                        telemetry_server::telemetry_log!(
+                            "🔌 [CAPITAL] puente de la cuenta: era {} (mainnet); entradas vetadas hasta el saldo de esta era",
+                            era_mainnet
+                        );
+                        // CAPITAL-UNICO V3 (P1.4): si la transición cambió de verdad
+                        // la cuenta o el venue, el pico pasa a su espacio.
+                        {
+                            let clave = new_exec_arc.client().api_key.load();
+                            let testnet = new_exec_arc
+                                .client()
+                                .is_testnet
+                                .load(std::sync::atomic::Ordering::Relaxed);
+                            let espacio = risk_engine::drawdown::espacio_pico(
+                                testnet,
+                                &risk_engine::drawdown::huella_cuenta(clave.as_bytes()),
+                            );
+                            if espacio != espacio_pico {
+                                risk_engine::drawdown::fijar_espacio_pico(&espacio);
+                                *buzon_espacio_pico.lock().unwrap_or_else(|p| p.into_inner()) =
+                                    Some(risk_engine::drawdown::RutasPico::del_espacio(&espacio, |n| {
+                                        std::path::PathBuf::from(quantum_arena::paths::env_data_path(n))
+                                    }));
+                                telemetry_server::telemetry_log!(
+                                    "🛡️ [IMMUNE] la transición cambia el espacio del pico: {} → {}",
+                                    espacio_pico,
+                                    espacio
+                                );
+                            }
+                        }
                         {
                             let oms_transition = Arc::clone(&oms_session);
                             let arena_transition = Arc::clone(&arena_real);
@@ -5235,15 +5334,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 telemetry_server::telemetry_log!("🧾 [OMS TRANSITION] {:?}", outcome);
                             });
                         }
-
-                        // CAPITAL-UNICO V2 (P1.4): otra cuenta = era nueva del
-                        // puente, ANTES de crear el streamer de mainnet. Lo que
-                        // llegue aún del de la era demo se rechaza.
-                        let era_mainnet = puente_cuenta.nueva_era();
-                        telemetry_server::telemetry_log!(
-                            "🔌 [CAPITAL] puente de la cuenta: era {} (mainnet)",
-                            era_mainnet
-                        );
                         // D-178: Re-spawn UserDataStreamer con las credenciales y cliente de Mainnet
                         let mainnet_streamer = execution_engine::user_data_stream::UserDataStreamer::new(
                             new_exec_arc.client().clone(),
@@ -5301,33 +5391,78 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         let puente_transicion = Arc::clone(&puente_cuenta);
                         let saldo_transicion = Arc::clone(&unified_capital);
                         rt_handle.spawn(async move {
-                            // CAPITAL-UNICO V2 (P1.4): la lectura REST de la
-                            // transición lleva ticket; si el stream de mainnet ya
-                            // publicó algo más nuevo, la respuesta atrasada no
-                            // escribe el arena (además del testigo de sesión).
-                            let ticket = puente_transicion.ticket();
-                            let lectura = balance_executor.fetch_account_lectura().await.and_then(|l| {
-                                puente_transicion.observar_rest(ticket, &l).map_err(|e| e.to_string())
-                            });
-                            if let Err(e) = &lectura {
-                                telemetry_server::telemetry_log!("[TRANSITION] Lectura de la cuenta descartada: {}", e.chars().take(300).collect::<String>());
-                            }
-                            // Revisión independiente 1(b): el aviso de esta lectura
-                            // se escribe aquí en vez de quedar viejo en el buzón.
-                            if let Some(aviso) = execution_engine::execution_evidence::tomar_aviso_capital() {
-                                telemetry_server::telemetry_log!("⚠️ [CAPITAL] [TRANSITION] {}", aviso);
-                            }
-                            if let Ok(bal) = lectura.map(|obs| obs.saldo) {
-                                if oms_balance.publish_current_balance(&balance_token, bal, |balance| {
-                                    saldo_transicion.store(balance.to_bits(), Ordering::Relaxed);
-                                    arena_real_clone.unified_capital.store(balance, Ordering::Relaxed);
-                                    arena_real_clone.config.base_capital.store(balance, Ordering::Relaxed);
-                                    let _ = db_tx_clone.try_send((balance, 0.0));
-                                }) {
-                                    telemetry_server::telemetry_log!("🌍 [TRANSITION] Balance de sesión vigente publicado: ${:.4}", bal);
-                                } else {
-                                    telemetry_server::telemetry_log!("[TRANSITION] Balance inválido u obsoleto: observación descartada sin mutar capital");
+                            // CAPITAL-UNICO V3 (P1.2): el MISMO token de cuenta y
+                            // era para la era nueva, el GET, el reintento y la
+                            // publicación. Se reintenta hasta una lectura de esta
+                            // era (o hasta que la era o la sesión OMS cambien). La
+                            // publicación al arena va bajo el mutex del puente y con
+                            // el testigo de la sesión OMS. El saldo publicado es el
+                            // VIGENTE del puente: si el stream de esta era ya trajo
+                            // algo más nuevo (un cero confirmado, p. ej.), gana.
+                            let mut intento: u32 = 0;
+                            loop {
+                                intento += 1;
+                                let Some(ticket) = puente_transicion.ticket_de_era(era_mainnet) else {
+                                    telemetry_server::telemetry_log!("[TRANSITION] era {} superada: lectura de la cuenta abandonada", era_mainnet);
+                                    break;
+                                };
+                                let lectura = match tokio::time::timeout(
+                                    std::time::Duration::from_secs(15),
+                                    balance_executor.fetch_account_lectura(),
+                                )
+                                .await
+                                {
+                                    Ok(r) => r,
+                                    Err(_) => Err("GET sin respuesta en 15 s".to_string()),
+                                };
+                                // Revisión independiente 1(b): el aviso de esta lectura
+                                // se escribe aquí en vez de quedar viejo en el buzón.
+                                if let Some(aviso) = execution_engine::execution_evidence::tomar_aviso_capital() {
+                                    telemetry_server::telemetry_log!("⚠️ [CAPITAL] [TRANSITION] {}", aviso);
                                 }
+                                let aceptada = match &lectura {
+                                    Ok(l) => match puente_transicion.observar_rest(ticket, l) {
+                                        Ok(_) => true,
+                                        Err(execution_engine::puente_cuenta::Rechazo::OtraEra) => break,
+                                        Err(e) => {
+                                            // Atrasada o contradictoria: el puente ya
+                                            // tiene algo de esta era (del stream).
+                                            telemetry_server::telemetry_log!("[TRANSITION] Lectura de la cuenta descartada por el puente: {}", e);
+                                            puente_transicion.observacion().is_some()
+                                        }
+                                    },
+                                    Err(e) => {
+                                        telemetry_server::telemetry_log!("[TRANSITION] Lectura de la cuenta fallida (intento {}): {}", intento, e.chars().take(300).collect::<String>());
+                                        false
+                                    }
+                                };
+                                if aceptada {
+                                    // 3a: el cero explícito ya está en el puente (plano de
+                                    // seguridad), pero no siembra el arena ni el tamaño.
+                                    if let Some(Some(rechazo)) = lectura.as_ref().ok().map(|l| l.rechazo_arranque.clone()) {
+                                        telemetry_server::telemetry_log!("🚨 [TRANSITION] {}: el cero llega al freno, el arena no se siembra", rechazo);
+                                        break;
+                                    }
+                                    let publicado = puente_transicion.con_era_vigente(era_mainnet, |vigente| {
+                                        let bal = vigente.map_or(f64::NAN, |o| o.saldo);
+                                        oms_balance
+                                            .publish_current_balance(&balance_token, bal, |balance| {
+                                                saldo_transicion.store(balance.to_bits(), Ordering::Relaxed);
+                                                arena_real_clone.unified_capital.store(balance, Ordering::Relaxed);
+                                                arena_real_clone.config.base_capital.store(balance, Ordering::Relaxed);
+                                                let _ = db_tx_clone.try_send((balance, 0.0));
+                                            })
+                                            .then_some(bal)
+                                    });
+                                    match publicado {
+                                        Some(Some(bal)) => telemetry_server::telemetry_log!("🌍 [TRANSITION] Balance de sesión vigente publicado: ${:.4} (era {})", bal, era_mainnet),
+                                        _ => telemetry_server::telemetry_log!("[TRANSITION] Balance inválido u obsoleto: observación descartada sin mutar capital"),
+                                    }
+                                    break;
+                                }
+                                // Reintento: el GET fallido no deja la era sin saldo
+                                // para siempre (el resincronizador también lo cubre).
+                                tokio::time::sleep(std::time::Duration::from_secs(5)).await;
                             }
 
                             if let Ok(real_positions) = balance_executor.fetch_open_positions().await {

@@ -3,10 +3,10 @@
 //!
 //! - Aviso de otros activos y del modo multi-activo; fallo cerrado sin USDT.
 //! - Revisión independiente 3a: saldo de USDT 0 con fondos en otros activos = `Err`.
-//! - Opción A del pico (V2, sin tope): `pico_capital_{venue}_usdt.txt` manda; la
-//!   marca de la definición distingue migración (stops conservados, 7a) de
-//!   retiro del operador; el pico viejo del venue sólo se adopta si las
-//!   unidades coinciden (7d); el sin venue nunca (7b); nada viejo se toca.
+//! - Opción A del pico (V3, pura): el pico del espacio (venue + cuenta +
+//!   definición) manda; la marca distingue espacio nuevo (stops conservados,
+//!   7a) de retiro del operador; ningún pico ajeno se adopta nunca; nada viejo
+//!   se toca. Más en `capital_v3_contract.rs`.
 //!
 //! No tocan d*, `capital_del_freno` ni ningún umbral.
 
@@ -88,38 +88,14 @@ fn dir_temporal(nombre: &str) -> std::path::PathBuf {
     d
 }
 
-static ENTORNO: std::sync::Mutex<()> = std::sync::Mutex::new(());
-
-fn con_testnet<T>(f: impl FnOnce() -> T) -> T {
-    let _g = ENTORNO.lock().unwrap_or_else(|p| p.into_inner());
-    let previo = std::env::var("USE_TESTNET").ok();
-    std::env::set_var("USE_TESTNET", "true");
-    let r = f();
-    match previo {
-        Some(v) => std::env::set_var("USE_TESTNET", v),
-        None => std::env::remove_var("USE_TESTNET"),
-    }
-    r
-}
-
-/// Rutas del pico de Testnet dentro de `dir`, con los nombres de `drawdown`.
+/// Rutas del pico de Testnet dentro de `dir` (V3: espacio venue + cuenta).
 fn rutas_testnet(dir: &std::path::Path) -> RutasPico {
-    let (pico, marca, anterior) = con_testnet(|| {
-        (
-            drawdown::archivo_pico(),
-            drawdown::archivo_marca_definicion(),
-            drawdown::archivo_pico_definicion_anterior(),
-        )
-    });
-    assert_eq!(pico, "pico_capital_prueba_usdt.txt");
-    assert_eq!(marca, "pico_capital_prueba_usdt.definicion");
-    assert_eq!(anterior, "pico_capital_prueba.txt");
-    RutasPico {
-        pico: dir.join(pico),
-        marca: dir.join(marca),
-        anterior: dir.join(anterior),
-        sin_venue: dir.join(drawdown::ARCHIVO_PICO_SIN_VENUE),
-    }
+    let espacio = drawdown::espacio_pico(true, &drawdown::huella_cuenta(b"clave-testnet"));
+    let r = RutasPico::del_espacio(&espacio, |n| dir.join(n));
+    assert!(r.pico.ends_with(format!("pico_capital_{espacio}_usdt.txt")));
+    assert!(r.ajenos.iter().any(|a| a.ends_with("pico_capital_prueba.txt")));
+    assert!(r.ajenos.iter().any(|a| a.ends_with(drawdown::ARCHIVO_PICO_SIN_VENUE)));
+    r
 }
 
 // ── Aviso y fallo cerrado ────────────────────────────────────────────────
@@ -173,31 +149,30 @@ fn capital_unico_usdt_cero_con_fondos_en_otros_activos_falla_cerrado() {
     assert_eq!(parse_account_equity(vacia).unwrap(), 0.0);
 }
 
-// ── Opción A del pico (V2) ───────────────────────────────────────────────
+// ── Opción A del pico (V3: pura) ─────────────────────────────────────────
 
-/// Migración en la Testnet de a3g: sin pico nuevo y sin marca, con el pico
-/// viejo de 7 323,93 y saldo fuera de USDT (las unidades NO coinciden).
+/// Testnet de a3g: sin pico del espacio y sin marca, con el pico viejo de
+/// 7 323,93 en los archivos ajenos: se ignora (una línea) y nace vacío.
 #[test]
-fn pico_migracion_con_unidades_distintas_ignora_el_viejo_y_conserva_los_stops() {
+fn pico_espacio_nuevo_ignora_los_viejos_y_conserva_los_stops() {
     let dir = dir_temporal("migracion_distintas");
     let r = rutas_testnet(&dir);
-    std::fs::write(&r.anterior, PICO_VIEJO).unwrap();
-    std::fs::write(&r.sin_venue, PICO_VIEJO).unwrap();
-    let antes = std::fs::read(&r.anterior).unwrap();
+    for ajeno in &r.ajenos {
+        std::fs::write(ajeno, PICO_VIEJO).unwrap();
+    }
+    let antes = std::fs::read(&r.ajenos[0]).unwrap();
 
-    let unidades_coinciden = parse_account_capital(CUENTA_MULTI).unwrap().aviso().is_none();
-    assert!(!unidades_coinciden, "a3g: la cartera tiene USDC y BTC");
-    let a = drawdown::decidir_arranque_pico(&r, unidades_coinciden);
+    let a = drawdown::decidir_arranque_pico(&r);
     assert_eq!(a.carga, CargaPico::Ausente, "el pico nuevo nace vacío");
-    assert!(!a.rearmar_stops, "7a: la migración no rearma el freno en stops");
-    assert_eq!(a.adoptado_de, None);
+    assert!(!a.rearmar_stops, "7a: el espacio nuevo no rearma el freno en stops");
     let todo = a.avisos.join(" | ");
-    assert!(todo.contains("7323.9314") && todo.contains("ignorado"), "{todo}");
-    assert!(todo.contains("NO coinciden"), "{todo}");
+    assert_eq!(a.avisos.len(), 1);
+    assert!(todo.contains("7323.9314") && todo.contains("IGNORADOS"), "{todo}");
 
     // Intactos byte a byte, sin renombrar (ni `.adoptado`), y leer no crea nada.
-    assert_eq!(std::fs::read(&r.anterior).unwrap(), antes);
-    assert_eq!(std::fs::read(&r.sin_venue).unwrap(), antes);
+    for ajeno in &r.ajenos {
+        assert_eq!(std::fs::read(ajeno).unwrap(), antes);
+    }
     assert!(!dir.join("pico_capital.txt.adoptado").exists());
     assert!(!r.pico.exists() && !r.marca.exists());
 
@@ -211,65 +186,48 @@ fn pico_migracion_con_unidades_distintas_ignora_el_viejo_y_conserva_los_stops() 
     let _ = std::fs::remove_dir_all(&dir);
 }
 
-/// 7d: con sólo USDT y sin multi-activo la unidad no cambió (mainnet): el pico
-/// viejo del venue se adopta para no perdonar una caída real (CL-99). El sin
-/// venue nunca (7b). El viejo ilegible, con unidades iguales, es ilegible.
+/// V3 (decisión 4 del coordinador): se acabó la adopción condicional de V2
+/// (7d). Con sólo USDT y sin multi-activo el viejo del venue TAMPOCO se
+/// adopta; ilegible, tampoco bloquea (es ajeno).
 #[test]
-fn pico_migracion_con_unidades_iguales_adopta_solo_el_viejo_del_venue() {
+fn pico_nunca_adopta_ni_con_unidades_en_apariencia_iguales() {
     let dir = dir_temporal("migracion_iguales");
     let r = rutas_testnet(&dir);
     let solo_usdt = r#"{"multiAssetsMargin":false,"totalWalletBalance":"13.0","assets":[{"asset":"USDT","walletBalance":"13.0"}]}"#;
-    let unidades_coinciden = parse_account_capital(solo_usdt).unwrap().aviso().is_none();
-    assert!(unidades_coinciden);
-
-    std::fs::write(&r.sin_venue, "20\n").unwrap();
-    let a = drawdown::decidir_arranque_pico(&r, unidades_coinciden);
-    assert_eq!(a.carga, CargaPico::Ausente, "7b: el sin venue no se adopta nunca");
-
-    std::fs::write(&r.anterior, "20\n").unwrap();
-    let antes = std::fs::read(&r.anterior).unwrap();
-    let a = drawdown::decidir_arranque_pico(&r, unidades_coinciden);
-    assert_eq!(a.carga, CargaPico::Leido(20.0));
-    assert_eq!(a.adoptado_de.as_deref(), Some(r.anterior.as_path()));
-    assert!(!a.rearmar_stops);
-    assert!(a.avisos.iter().any(|s| s.contains("ADOPTADO")), "{:?}", a.avisos);
-    assert_eq!(std::fs::read(&r.anterior).unwrap(), antes, "el viejo no se toca");
+    assert_eq!(parse_account_capital(solo_usdt).unwrap().aviso(), None);
+    for contenido in ["20\n", "veinte\n"] {
+        for ajeno in &r.ajenos {
+            std::fs::write(ajeno, contenido).unwrap();
+        }
+        let a = drawdown::decidir_arranque_pico(&r);
+        assert_eq!(a.carga, CargaPico::Ausente, "{contenido:?}");
+        assert!(!a.rearmar_stops);
+    }
     assert!(!r.pico.exists());
-    // Con el pico adoptado de 20 y 13 de saldo, la caída real del 35 % se ve.
-    let f = freno(13.0, Some(20.0), 13.0);
-    assert!((f.caida_capital - 0.35).abs() < 1e-9, "{f}");
-
-    std::fs::write(&r.anterior, "veinte\n").unwrap();
-    let a = drawdown::decidir_arranque_pico(&r, unidades_coinciden);
-    assert!(matches!(a.carga, CargaPico::Ilegible(_)), "{:?}", a.carga);
-    // Con unidades distintas, el mismo ilegible sólo se ignora.
-    let a = drawdown::decidir_arranque_pico(&r, false);
-    assert_eq!(a.carga, CargaPico::Ausente);
     let _ = std::fs::remove_dir_all(&dir);
 }
 
 /// 7a: con la marca, el pico ausente es un retiro del operador (rearme de los
-/// stops, F1-011); el pico nuevo, si existe, manda sobre los viejos.
+/// stops, F1-011); el pico del espacio, si existe, manda sobre los viejos.
 #[test]
-fn pico_marca_distingue_retiro_del_operador_de_la_migracion() {
+fn pico_marca_distingue_retiro_del_operador_del_espacio_nuevo() {
     let dir = dir_temporal("marca");
     let r = rutas_testnet(&dir);
-    std::fs::write(&r.anterior, PICO_VIEJO).unwrap();
+    std::fs::write(&r.ajenos[0], PICO_VIEJO).unwrap();
 
     drawdown::guardar_marca_definicion(&r.marca).unwrap();
     assert_eq!(std::fs::read_to_string(&r.marca).unwrap(), drawdown::MARCA_DEFINICION);
-    let a = drawdown::decidir_arranque_pico(&r, true);
+    let a = drawdown::decidir_arranque_pico(&r);
     assert_eq!(a.carga, CargaPico::Ausente);
     assert!(a.rearmar_stops, "con marca y sin pico, lo retiró el operador");
-    assert_eq!(a.adoptado_de, None, "tras un retiro no se adopta ningún pico viejo");
 
     drawdown::guardar_pico(&r.pico, 1700.0).unwrap();
-    let a = drawdown::decidir_arranque_pico(&r, true);
-    assert_eq!(a.carga, CargaPico::Leido(1700.0), "el pico de la definición manda");
+    let a = drawdown::decidir_arranque_pico(&r);
+    assert_eq!(a.carga, CargaPico::Leido(1700.0), "el pico del espacio manda");
     assert!(!a.rearmar_stops);
 
     std::fs::write(&r.pico, "1,7\n").unwrap();
-    let a = drawdown::decidir_arranque_pico(&r, true);
+    let a = drawdown::decidir_arranque_pico(&r);
     assert!(matches!(a.carga, CargaPico::Ilegible(_)), "CL-133 B2");
     assert!(!a.rearmar_stops);
     let _ = std::fs::remove_dir_all(&dir);
@@ -279,9 +237,9 @@ fn pico_marca_distingue_retiro_del_operador_de_la_migracion() {
 fn pico_contrato_de_fuente_del_host() {
     let host = include_str!("../../../src/bin/god_engine.rs");
     assert!(!host.contains("txt.adoptado"), "el host ya no adopta ni renombra el pico sin venue");
-    assert!(host.contains("risk_engine::drawdown::decidir_arranque_pico("));
+    assert!(host.contains("risk_engine::drawdown::decidir_arranque_pico(rutas)"));
     assert!(host.contains("risk_engine::drawdown::guardar_marca_definicion(&ruta_marca)"));
-    assert!(host.contains("unidades_coinciden,"), "7d: el host pasa lo que mostró el arranque");
+    assert!(!host.contains("unidades_coinciden"), "V3: la inferencia de unidades salió");
     assert!(!host.contains("capital_operativo"), "el tope salió de esta rama");
     // 7e: el aplanado nombra el archivo real, no `pico_capital.txt`.
     assert!(!host.contains("retirar pico_capital.txt"));
@@ -297,7 +255,7 @@ fn pico_contrato_de_fuente_del_host() {
 // ── V2: puente de la cuenta (decisión 1; P1.1 y P1.4 de Codex QRA) ───────
 
 use execution_engine::execution_evidence::parse_account_lectura;
-use execution_engine::puente_cuenta::{EventoStream, LecturaRest, PuenteCuenta, Rechazo};
+use execution_engine::puente_cuenta::{DatoPosicion, EventoStream, PuenteCuenta, Rechazo};
 
 /// Saldo y equity que publica el stream (todas las llamadas, en orden).
 #[derive(Default)]
@@ -356,9 +314,11 @@ fn v2_rest_saldo_sin_upnl_y_equity_aparte_con_upnl_positivo_y_negativo() {
         let (c, l) = parse_account_lectura(&cuenta_con_posicion(100.0, up, 1789000000000)).unwrap();
         assert_eq!(c.capital, 100.0);
         assert_eq!(l.saldo, 100.0, "el arena nace del saldo, no de wb + uPnL");
-        assert_eq!(l.equity(), 100.0 + up, "la posición en USDC no entra");
-        assert_eq!(l.tiempo_ms, Some(1789000000000));
-        assert_eq!(l.upnl.as_ref().map(|m| m.len()), Some(1), "sólo la abierta con margen en USDT");
+        let p = PuenteCuenta::new();
+        assert_eq!(p.observar_rest(p.ticket(), &l).unwrap().equity, 100.0 + up, "la posición en USDC no entra");
+        assert_eq!(l.tiempo_saldo_ms, Some(1789000000000));
+        let abiertas = l.posiciones.as_ref().unwrap().values().filter(|p| matches!(p.dato, DatoPosicion::Abierta { .. })).count();
+        assert_eq!(abiertas, 1, "sólo la abierta con margen en USDT");
     }
 }
 
@@ -428,9 +388,9 @@ fn v2_rest_atrasado_no_pisa_un_estado_mas_nuevo() {
     let (s, sink) = streamer_con(&puente);
     let l = |wb: f64, up: f64, t: u64| parse_account_lectura(&cuenta_con_posicion(wb, up, t)).unwrap().1;
 
-    // Arranque: ticket sin nada en medio = aceptado aunque no traiga tiempo.
+    // Arranque: sin nada observado, una lectura sin marca se acepta.
     let t0 = puente.ticket();
-    let sin_tiempo = LecturaRest { tiempo_ms: None, ..l(100.0, 0.0, 1) };
+    let sin_tiempo = execution_engine::puente_cuenta::LecturaCuenta { tiempo_saldo_ms: None, ..l(100.0, 0.0, 1) };
     assert_eq!(puente.observar_rest(t0, &sin_tiempo).unwrap().saldo, 100.0);
 
     // Se pide REST (ticket) y, antes de que responda, el stream publica 80.
@@ -439,7 +399,8 @@ fn v2_rest_atrasado_no_pisa_un_estado_mas_nuevo() {
     assert_eq!(ultima(&sink.saldo), Some(80.0));
     // La respuesta llega tarde con el estado de t = 1 500: no pisa.
     assert!(matches!(puente.observar_rest(ticket, &l(100.0, 0.0, 1_500)), Err(Rechazo::Atrasada { .. })));
-    assert!(matches!(puente.observar_rest(ticket, &sin_tiempo), Err(Rechazo::Atrasada { .. })));
+    // V3: sin marca y con otro saldo, no modifica lo observado.
+    assert!(matches!(puente.observar_rest(ticket, &sin_tiempo), Err(Rechazo::SinOrden { .. })));
     assert_eq!(puente.observacion().unwrap().saldo, 80.0);
     // Con un tiempo propio no anterior al último aceptado, sí vale.
     assert_eq!(puente.observar_rest(ticket, &l(79.0, -4.0, 2_500)).unwrap().equity, 75.0);
@@ -449,19 +410,20 @@ fn v2_rest_atrasado_no_pisa_un_estado_mas_nuevo() {
     assert_eq!(ultima(&sink.saldo), Some(80.0), "no se publicó el atrasado");
 }
 
-/// Reconexión: la caché se vacía y la equity no sube sobre la última completa
-/// hasta que una lectura REST la completa. Cero tras saldo positivo.
+/// Reconexión: la evidencia se conserva (V3), la equity queda incompleta y no
+/// sube sobre la última completa hasta que una lectura REST la completa. Cero
+/// tras saldo positivo.
 #[test]
 fn v2_reconexion_no_olvida_la_perdida_abierta_hasta_resincronizar() {
     let puente = Arc::new(PuenteCuenta::new());
     let (s, sink) = streamer_con(&puente);
     s.dispatch(evento(1, Some(100.0), &[("BTCUSDT", 0.01, -60.0)]).as_bytes());
     assert_eq!(ultima(&sink.equity), Some(40.0));
-    puente.reconexion();
+    puente.reconexion(puente.era()).unwrap();
     assert!(puente.necesita_resincronizar());
-    assert_eq!(puente.posiciones_en_cache(), 0);
-    // Tras el hueco llega sólo el saldo: sin la posición en la caché, la
-    // equity cruda sería 100; queda en 40 (la pérdida abierta sigue a la vista).
+    assert_eq!(puente.posiciones_en_cache(), 1, "V3: la evidencia se conserva");
+    // Tras el hueco llega sólo el saldo: la equity queda en 40 (la pérdida
+    // abierta sigue a la vista).
     s.dispatch(evento(2, Some(100.0), &[]).as_bytes());
     assert_eq!(ultima(&sink.saldo), Some(100.0));
     assert_eq!(ultima(&sink.equity), Some(40.0));
@@ -521,7 +483,11 @@ fn v2_fixture_multi_activo_falla_cerrado() {
     let fixture = include_str!("fixtures/cuenta_multi_activo_v2.json");
     let e = parse_account_capital(fixture).unwrap_err();
     assert!(e.contains("ACCOUNT_EVIDENCE_INVALID") && e.contains("otros activos"), "{e}");
-    assert!(parse_account_lectura(fixture).is_err());
+    // V3 (P1.3): el cero explícito llega al puente (plano de seguridad) con el
+    // rechazo para el arranque.
+    let (_, l) = parse_account_lectura(fixture).unwrap();
+    assert_eq!(l.saldo, 0.0);
+    assert!(l.rechazo_arranque.as_deref().is_some_and(|r| r.contains("otros activos")));
     let negativo = fixture.replacen(r#""walletBalance": "0.00000000""#, r#""walletBalance": "-20.00000000""#, 1);
     assert!(parse_account_capital(&negativo).unwrap_err().contains("préstamo"));
 }
@@ -533,11 +499,12 @@ fn v2_contrato_de_fuente_del_host() {
     let host = include_str!("../../../src/bin/god_engine.rs");
     assert_eq!(host.matches("PuenteCuenta::new()").count(), 1, "un solo puente por proceso");
     assert_eq!(host.matches(".with_puente(Arc::clone(&puente_cuenta))").count(), 2, "demo y mainnet");
-    assert!(host.contains(".map_or(f64::NAN, |o| o.equity)"), "el freno usa la equity");
+    assert!(host.contains("puente_imm.equity_del_freno()"), "el freno usa la equity");
     assert!(host.contains("puente_cuenta.nueva_era()"));
-    assert!(host.contains("puente_imm.necesita_resincronizar()"));
+    assert!(host.contains("puente_rs.necesita_resincronizar()"));
     assert!(!host.contains(".fetch_account_balance()"), "el host lee la cuenta por fetch_account_lectura");
-    assert!(host.matches("observar_rest(ticket,").count() >= 3, "arranque, resincronización y transición");
+    assert!(host.matches("observar_rest(ticket,").count() >= 2, "arranque y transición");
+    assert!(host.contains("resincronizar_cuenta::resincronizar_una_vez("), "y el resincronizador");
     let stream = include_str!("../src/user_data_stream.rs");
-    assert!(stream.contains("self.puente.observar_stream(self.era, &evento)"));
+    assert!(stream.contains("self.puente.observar_stream_y_publicar(self.era, &evento"));
 }

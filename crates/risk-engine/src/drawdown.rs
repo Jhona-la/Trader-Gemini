@@ -177,33 +177,24 @@ pub fn leer_pico(ruta: &std::path::Path) -> CargaPico {
     }
 }
 
-/// CL-133 (R5 de la revisión del PR #62) — nombre del archivo del pico del
-/// VENUE de este proceso. Testnet y papel de mainnet guardan en `data/demo`
-/// (CL-61): con un solo archivo, el pico de 5 000 USDT de una sesión de
-/// testnet bloqueaba la sesión de papel siguiente con 13 USD reales (caída
-/// del 99,7 % ≥ d*).
+/// CL-133 (R5 de la revisión del PR #62) — el pico es del VENUE de este
+/// proceso. Testnet y papel de mainnet guardan en `data/demo` (CL-61): con un
+/// solo archivo, el pico de 5 000 USDT de una sesión de testnet bloqueaba la
+/// sesión de papel siguiente con 13 USD reales (caída del 99,7 % ≥ d*).
 ///
 /// CL-136 (PR70-INT-02 de la Línea G) — el venue es el del SALDO con que se
 /// mide la caída, y el saldo lo decide el endpoint: testnet sólo con
-/// `USE_TESTNET=true`, el mismo predicado que eligen el cliente REST, el WS y
-/// el bootloader. `SHADOW_MODE` y `BINANCE_USE_DEMO` operan papel contra los
-/// endpoints y el saldo de MAINNET: antes caían en el archivo de testnet por
-/// `is_demo_env` y el lanzador oficial de shadow volvía a R5. El archivo de
-/// testnet conserva su nombre («prueba») para no dejar huérfano el pico guardado.
+/// `USE_TESTNET=true`. `SHADOW_MODE` y `BINANCE_USE_DEMO` operan papel contra
+/// los endpoints y el saldo de MAINNET. El venue de testnet se llama «prueba».
 ///
-/// CAPITAL-UNICO (opción A, decisión del coordinador del 2026-11-11): el
-/// nombre lleva también la DEFINICIÓN del capital, `_usdt` (saldo de USDT del
-/// activo de margen). El pico de la definición anterior (todos los activos:
-/// 7 323,93 en Testnet contra 1 655,81 de USDT) disparaba el inmune con una
-/// caída falsa del 77 %. El archivo nuevo nace vacío; el viejo no se adopta,
-/// no se borra y no se renombra (ver [`archivo_pico_definicion_anterior`]).
-pub fn archivo_pico() -> String {
-    format!("pico_capital_{}_usdt.txt", venue_del_pico())
-}
-
-fn venue_del_pico() -> &'static str {
-    let testnet = std::env::var("USE_TESTNET")
-        .is_ok_and(|s| s.trim().eq_ignore_ascii_case("true"));
+/// CAPITAL-UNICO V3 (opción A pura, decisión 4 del coordinador del
+/// 2026-11-12) — el ESPACIO del pico es venue + cuenta + definición:
+/// `pico_capital_{venue}_{cuenta}_usdt.txt`, con `cuenta` = [`huella_cuenta`]
+/// de la clave API del ejecutor. El pico nuevo nace vacío SIEMPRE; ningún
+/// archivo de otra definición o de otro espacio se adopta nunca (ni con
+/// unidades en apariencia iguales: una foto actual no prueba la unidad del
+/// pico histórico), ni se borra, ni se renombra.
+pub fn venue_de(testnet: bool) -> &'static str {
     if testnet {
         "prueba"
     } else {
@@ -211,30 +202,80 @@ fn venue_del_pico() -> &'static str {
     }
 }
 
+fn venue_del_pico() -> &'static str {
+    venue_de(std::env::var("USE_TESTNET").is_ok_and(|s| s.trim().eq_ignore_ascii_case("true")))
+}
+
+/// Huella de la cuenta para el espacio del pico: FNV-1a de 64 bits de la clave
+/// API (la pública, nunca el secreto), en 12 cifras hexadecimales. Otra clave
+/// = otra cuenta para el pico (rotar la clave reinicia el pico, con aviso).
+pub fn huella_cuenta(clave_api: &[u8]) -> String {
+    let mut h: u64 = 0xcbf2_9ce4_8422_2325;
+    for b in clave_api {
+        h ^= u64::from(*b);
+        h = h.wrapping_mul(0x0000_0100_0000_01b3);
+    }
+    format!("{:012x}", h >> 16)
+}
+
+/// Espacio del pico: `{venue}_{cuenta}`.
+pub fn espacio_pico(testnet: bool, huella: &str) -> String {
+    format!("{}_{huella}", venue_de(testnet))
+}
+
+fn espacio_vigente() -> &'static std::sync::Mutex<Option<String>> {
+    static ESPACIO: std::sync::OnceLock<std::sync::Mutex<Option<String>>> = std::sync::OnceLock::new();
+    ESPACIO.get_or_init(|| std::sync::Mutex::new(None))
+}
+
+/// El host fija el espacio del pico del proceso (arranque y transición que
+/// cambie de cuenta o de venue). Sólo lo leen [`archivo_pico`] y los mensajes.
+pub fn fijar_espacio_pico(espacio: &str) {
+    *espacio_vigente().lock().unwrap_or_else(|p| p.into_inner()) = Some(espacio.to_string());
+}
+
+/// Nombre del archivo del pico del espacio `espacio`.
+pub fn archivo_pico_del_espacio(espacio: &str) -> String {
+    format!("pico_capital_{espacio}_usdt.txt")
+}
+
+/// Marca de la definición del espacio `espacio` (ver [`archivo_marca_definicion`]).
+pub fn archivo_marca_del_espacio(espacio: &str) -> String {
+    format!("pico_capital_{espacio}_usdt.definicion")
+}
+
+/// Archivo del pico del espacio vigente ([`fijar_espacio_pico`]); sin espacio
+/// fijado, el del venue sin cuenta (`pico_capital_{venue}_sin_cuenta_usdt.txt`).
+pub fn archivo_pico() -> String {
+    let e = espacio_vigente().lock().unwrap_or_else(|p| p.into_inner()).clone();
+    archivo_pico_del_espacio(&e.unwrap_or_else(|| format!("{}_sin_cuenta", venue_del_pico())))
+}
+
 /// CAPITAL-UNICO — archivo del pico de este venue con la definición anterior
-/// (`totalWalletBalance`, todos los activos). El host sólo lo LEE para
-/// escribir una línea con el pico ignorado; nunca lo adopta, ni lo escribe,
-/// ni lo borra, ni lo renombra.
+/// (`totalWalletBalance`, todos los activos). Sólo se nombra en el aviso.
 pub fn archivo_pico_definicion_anterior() -> String {
     format!("pico_capital_{}.txt", venue_del_pico())
 }
 
-/// El archivo del pico de antes de CL-133, sin venue. CAPITAL-UNICO: también
-/// está en la unidad vieja; el host ya NO lo adopta (sólo lo nombra en el
-/// aviso del arranque si existe).
+/// El archivo del pico de V2 (definición USDT, sin cuenta en el espacio). Sólo
+/// se nombra en el aviso.
+pub fn archivo_pico_v2_sin_cuenta() -> String {
+    format!("pico_capital_{}_usdt.txt", venue_del_pico())
+}
+
+/// El archivo del pico de antes de CL-133, sin venue. Sólo se nombra en el aviso.
 pub const ARCHIVO_PICO_SIN_VENUE: &str = "pico_capital.txt";
 
 /// CAPITAL-UNICO V2 (revisión independiente, 7a) — marca de la definición del
-/// pico de este venue. El host la escribe tras guardar por primera vez el pico
-/// de [`archivo_pico`]. Con ella se distingue «el pico falta porque el
+/// pico del espacio vigente. El host la escribe tras guardar por primera vez
+/// el pico del espacio. Con ella se distingue «el pico falta porque el
 /// operador lo retiró» (hay marca: rearme de los stops, F1-011) de «el pico
-/// falta porque la definición es nueva» (no hay marca: migración, los stops
-/// se conservan). Sale de aquí, como el nombre del pico (7f).
+/// falta porque el espacio es nuevo» (no hay marca: los stops se conservan).
 pub fn archivo_marca_definicion() -> String {
-    format!("pico_capital_{}_usdt.definicion", venue_del_pico())
+    archivo_pico().replace("_usdt.txt", "_usdt.definicion")
 }
 
-/// Contenido de la marca de [`archivo_marca_definicion`].
+/// Contenido de la marca de la definición.
 pub const MARCA_DEFINICION: &str = "capital = walletBalance de USDT (CAPITAL-UNICO V2)\n";
 
 /// Escribe la marca de la definición (temporal y renombrado, como el pico).
@@ -249,17 +290,34 @@ pub fn guardar_marca_definicion(ruta: &std::path::Path) -> std::io::Result<()> {
     std::fs::rename(&tmp, ruta)
 }
 
-/// Rutas que mira el arranque del pico (todas de este venue).
-#[derive(Debug, Clone)]
+/// Rutas que mira el arranque del pico.
+#[derive(Debug, Clone, PartialEq)]
 pub struct RutasPico {
-    /// [`archivo_pico`]: el que manda.
+    /// Pico del espacio: el único que se lee como pico.
     pub pico: std::path::PathBuf,
-    /// [`archivo_marca_definicion`].
+    /// Marca de la definición del espacio.
     pub marca: std::path::PathBuf,
-    /// [`archivo_pico_definicion_anterior`].
-    pub anterior: std::path::PathBuf,
-    /// [`ARCHIVO_PICO_SIN_VENUE`].
-    pub sin_venue: std::path::PathBuf,
+    /// Archivos de otra definición o de otro espacio de este venue: sólo se
+    /// nombran en la línea de aviso. Nunca se adoptan, escriben, borran ni renombran.
+    pub ajenos: Vec<std::path::PathBuf>,
+}
+
+impl RutasPico {
+    /// Las rutas del espacio `espacio`; `ruta` pone el directorio de datos.
+    pub fn del_espacio(espacio: &str, ruta: impl Fn(&str) -> std::path::PathBuf) -> Self {
+        let venue = espacio.split('_').next().unwrap_or("");
+        let mut ajenos = vec![
+            ruta(&format!("pico_capital_{venue}.txt")),
+            ruta(ARCHIVO_PICO_SIN_VENUE),
+            ruta(&format!("pico_capital_{venue}_usdt.txt")),
+        ];
+        ajenos.dedup();
+        Self {
+            pico: ruta(&archivo_pico_del_espacio(espacio)),
+            marca: ruta(&archivo_marca_del_espacio(espacio)),
+            ajenos,
+        }
+    }
 }
 
 /// Lo que el arranque hace con el pico.
@@ -268,104 +326,48 @@ pub struct ArranquePico {
     /// El pico a restaurar (o ausente / ilegible), como lo usa el host.
     pub carga: CargaPico,
     /// `true` sólo si el operador retiró el pico (hay marca y no hay pico):
-    /// rearme de los contadores en stops (F1-011). En la migración, `false`.
+    /// rearme de los contadores en stops (F1-011). Espacio nuevo: `false`.
     pub rearmar_stops: bool,
-    /// Archivo viejo cuyo pico se adoptó (7d). Nunca se escribe, borra ni renombra.
-    pub adoptado_de: Option<std::path::PathBuf>,
-    /// Líneas para el log del arranque.
+    /// Como mucho UNA línea para el log del arranque (picos ajenos ignorados).
     pub avisos: Vec<String>,
 }
 
-/// CAPITAL-UNICO V2 (revisión independiente 7a, 7b y 7d; decisión 2 del
-/// coordinador) — decide el pico del arranque. Sólo lee.
+/// CAPITAL-UNICO V3 (opción A pura) — decide el pico del arranque. Sólo lee.
 ///
-/// - El pico de [`archivo_pico`] manda si existe (legible o ilegible, CL-133 B2).
+/// - El pico del espacio manda si existe (legible o ilegible, CL-133 B2).
 /// - Si falta y hay marca, lo retiró el operador: se rearman los stops (F1-011).
-/// - Si falta y no hay marca, es la migración de definición: los stops se
-///   conservan (7a). El pico viejo del venue se adopta SÓLO si el arranque
-///   demostró que las unidades coinciden (`unidades_coinciden`: la lectura
-///   REST no tuvo saldo fuera de USDT ni modo multi-activo, 7d); si no, se
-///   ignora con una línea. Si coinciden y el viejo es ilegible, es ilegible
-///   (fail-closed, CL-133 B2).
-/// - El archivo sin venue (antes de CL-133) nunca se adopta (7b).
-/// - Ningún archivo viejo se escribe, borra ni renombra.
-pub fn decidir_arranque_pico(rutas: &RutasPico, unidades_coinciden: bool) -> ArranquePico {
-    let mut avisos = Vec::new();
-    let ignorar = |ruta: &std::path::Path, avisos: &mut Vec<String>| {
-        avisos.extend(avisos_picos_ignorados(&[ruta.to_path_buf()]));
-    };
+/// - Si falta y no hay marca, el espacio es nuevo: el pico nace vacío y los
+///   stops se conservan (7a).
+/// - Ningún archivo ajeno se adopta, escribe, borra ni renombra; los que
+///   existan se nombran en una sola línea de aviso.
+pub fn decidir_arranque_pico(rutas: &RutasPico) -> ArranquePico {
+    let avisos = aviso_picos_ignorados(&rutas.ajenos).into_iter().collect();
     let carga = leer_pico(&rutas.pico);
-    if !matches!(carga, CargaPico::Ausente) {
-        ignorar(&rutas.anterior, &mut avisos);
-        ignorar(&rutas.sin_venue, &mut avisos);
-        return ArranquePico { carga, rearmar_stops: false, adoptado_de: None, avisos };
-    }
-    ignorar(&rutas.sin_venue, &mut avisos);
-    if rutas.marca.exists() {
-        ignorar(&rutas.anterior, &mut avisos);
-        return ArranquePico {
-            carga: CargaPico::Ausente,
-            rearmar_stops: true,
-            adoptado_de: None,
-            avisos,
-        };
-    }
-    // Migración de definición: sin marca y sin pico nuevo.
-    match leer_pico(&rutas.anterior) {
-        CargaPico::Leido(p) if unidades_coinciden => {
-            avisos.push(format!(
-                "pico de la definición anterior ADOPTADO: {p:.4} de {} (el arranque mostró sólo USDT y sin modo multi-activo: las unidades coinciden); el archivo viejo no se toca",
-                rutas.anterior.display()
-            ));
-            ArranquePico {
-                carga: CargaPico::Leido(p),
-                rearmar_stops: false,
-                adoptado_de: Some(rutas.anterior.clone()),
-                avisos,
-            }
-        }
-        CargaPico::Ilegible(m) if unidades_coinciden => ArranquePico {
-            carga: CargaPico::Ilegible(format!("pico de la definición anterior: {m}")),
-            rearmar_stops: false,
-            adoptado_de: None,
-            avisos,
-        },
-        _ => {
-            if !unidades_coinciden {
-                if let CargaPico::Leido(_) | CargaPico::Ilegible(_) = leer_pico(&rutas.anterior) {
-                    avisos.push(
-                        "las unidades NO coinciden (saldo fuera de USDT o modo multi-activo en el arranque): el pico de la definición anterior no se adopta".to_string(),
-                    );
-                }
-            }
-            ignorar(&rutas.anterior, &mut avisos);
-            ArranquePico {
-                carga: CargaPico::Ausente,
-                rearmar_stops: false,
-                adoptado_de: None,
-                avisos,
-            }
-        }
+    let rearmar_stops = matches!(carga, CargaPico::Ausente) && rutas.marca.exists();
+    ArranquePico {
+        carga,
+        rearmar_stops,
+        avisos,
     }
 }
 
-/// CAPITAL-UNICO (opción A) — avisos de los picos guardados con la definición
-/// anterior que el arranque IGNORA. Sólo lee: no adopta, no escribe, no borra
-/// ni renombra. Un archivo ausente no da aviso; uno ilegible, sí.
-pub fn avisos_picos_ignorados(rutas: &[std::path::PathBuf]) -> Vec<String> {
-    rutas
+/// CAPITAL-UNICO V3 — UNA línea con los picos de otra definición o de otro
+/// espacio que el arranque IGNORA (`None` si no hay ninguno). Sólo lee.
+pub fn aviso_picos_ignorados(rutas: &[std::path::PathBuf]) -> Option<String> {
+    let partes: Vec<String> = rutas
         .iter()
         .filter_map(|ruta| match leer_pico(ruta) {
             CargaPico::Ausente => None,
-            CargaPico::Leido(p) => Some(format!(
-                "pico de la definición anterior (todos los activos) ignorado: {p:.4} en {}; no se adopta, no se borra y no se renombra",
-                ruta.display()
-            )),
-            CargaPico::Ilegible(m) => Some(format!(
-                "pico de la definición anterior ignorado (ilegible: {m}); no se adopta ni se toca"
-            )),
+            CargaPico::Leido(p) => Some(format!("{p:.4} en {}", ruta.display())),
+            CargaPico::Ilegible(m) => Some(format!("ilegible ({m})")),
         })
-        .collect()
+        .collect();
+    (!partes.is_empty()).then(|| {
+        format!(
+            "picos de otra definición o de otro espacio IGNORADOS (opción A: el pico de este espacio nace vacío): {}; no se adoptan, no se borran y no se renombran",
+            partes.join("; ")
+        )
+    })
 }
 
 /// CL-132 (R3 de la revisión del PR #62) / F2 (Ola Omega220): EL CAPITAL DE LOS

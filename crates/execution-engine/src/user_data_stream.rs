@@ -311,7 +311,11 @@ impl UserDataStreamer {
     ///   equity queda incompleta (no sube sobre la última completa) hasta que
     ///   el host resincroniza por REST.
     fn reconcile_after_reconnect(&self) {
-        self.puente.reconexion();
+        // V3 (P1.2): con la era de este streamer; la de una era vieja no
+        // toca la caché de la vigente.
+        if let Err(e) = self.puente.reconexion(self.era) {
+            println!("🔌 [UDS] Reconexión de la era {} ignorada por el puente: {e}", self.era);
+        }
         quantum_arena::protection_health::mark_dirty();
         println!("🔄 [UDS] Reconectado — reconciliation pendiente: el watchdog de 60s cubrirá el gap (protection_dirty forzará auditoría en ≤5s)");
     }
@@ -775,15 +779,16 @@ impl UserDataStreamer {
         struct Position {
             #[serde(rename = "s")]
             symbol: String,
-            #[serde(rename = "pa")]
-            #[serde(deserialize_with = "crate::order_types::string_or_f64", default)]
-            position_amt: f64,
+            /// V3 (P1.3): ausente o ilegible no es cero (un cero cerraría la
+            /// posición): se lee aparte con [`numero_del_evento`].
+            #[serde(rename = "pa", default)]
+            position_amt: Option<serde_json::Value>,
             #[serde(rename = "ep")]
             #[serde(deserialize_with = "crate::order_types::string_or_f64", default)]
             entry_price: f64,
-            #[serde(rename = "up")]
-            #[serde(deserialize_with = "crate::order_types::string_or_f64", default)]
-            unrealized_pnl: f64,
+            /// V3 (P1.3): ausente o ilegible no es cero (borraría la pérdida abierta).
+            #[serde(rename = "up", default)]
+            unrealized_pnl: Option<serde_json::Value>,
             #[serde(rename = "iw")]
             #[serde(deserialize_with = "crate::order_types::string_or_f64", default)]
             isolated_wallet: f64,
@@ -808,8 +813,16 @@ impl UserDataStreamer {
             transaction_time: Option<u64>,
             a: AccountData,
         }
-        let Ok(ev) = serde_json::from_str::<Event>(text) else {
-            return;
+        let ev = match serde_json::from_str::<Event>(text) {
+            Ok(ev) => ev,
+            Err(e) => {
+                // V3 (P1.3): un ACCOUNT_UPDATE ilegible es evidencia perdida:
+                // la equity queda incompleta y se vetan las entradas hasta
+                // resincronizar por REST.
+                eprintln!("⚠️ [CAPITAL] ACCOUNT_UPDATE ilegible ({e}): equity incompleta hasta resincronizar");
+                let _ = self.puente.reconexion(self.era);
+                return;
+            }
         };
 
         // CAPITAL-UNICO V2 (decisión 1 del coordinador; P1.1 y P1.4 de Codex
@@ -843,9 +856,16 @@ impl UserDataStreamer {
                     } else {
                         p.position_side.clone()
                     };
-                    let abierta = p.position_amt.is_finite() && p.position_amt.abs() > 1e-8;
-                    let upnl = if p.unrealized_pnl.is_finite() { p.unrealized_pnl } else { 0.0 };
-                    ((p.symbol.clone(), lado), abierta.then_some(upnl))
+                    // V3 (P1.3): cantidad o PnL ausente o no finito = dato
+                    // inválido (equity incompleta), nunca un cierre ni un cero.
+                    let cantidad = numero_del_evento(p.position_amt.as_ref());
+                    let upnl = numero_del_evento(p.unrealized_pnl.as_ref());
+                    let dato = match (cantidad, upnl) {
+                        (Some(c), _) if c.abs() <= 1e-8 => crate::puente_cuenta::DatoPosicion::Cerrada,
+                        (Some(c), Some(u)) => crate::puente_cuenta::DatoPosicion::Abierta { cantidad: c, upnl: u },
+                        _ => crate::puente_cuenta::DatoPosicion::Invalida,
+                    };
+                    ((p.symbol.clone(), lado), dato)
                 })
                 .collect();
             let evento = crate::puente_cuenta::EventoStream {
@@ -853,17 +873,20 @@ impl UserDataStreamer {
                 saldo,
                 posiciones,
             };
-            match self.puente.observar_stream(self.era, &evento) {
-                Ok(Some(obs)) => {
-                    // Una actualización sólo de posiciones no cambia el saldo:
-                    // se publica la equity con el saldo que ya había.
-                    if evento.saldo.is_some() {
-                        self.sink.on_capital(obs.saldo);
-                    }
-                    self.sink.on_equity(obs.equity);
+            // V3 (P1.2): la publicación sale de la misma sección crítica que
+            // la decisión del puente: una transición no se cuela en medio.
+            let sink = &self.sink;
+            let con_saldo = evento.saldo.is_some();
+            let r = self.puente.observar_stream_y_publicar(self.era, &evento, |obs| {
+                // Una actualización sólo de posiciones no cambia el saldo:
+                // se publica la equity con el saldo que ya había.
+                if con_saldo {
+                    sink.on_capital(obs.saldo);
                 }
-                Ok(None) => {}
-                Err(e) => eprintln!("⚠️ [CAPITAL] ACCOUNT_UPDATE no aplicado: {e}"),
+                sink.on_equity(obs.equity);
+            });
+            if let Err(e) = r {
+                eprintln!("⚠️ [CAPITAL] ACCOUNT_UPDATE no aplicado: {e}");
             }
         }
 
@@ -874,21 +897,15 @@ impl UserDataStreamer {
                 .iter()
                 .map(|p| RemotePosition {
                     symbol: p.symbol.clone(),
-                    position_amt: if p.position_amt.is_finite() {
-                        p.position_amt
-                    } else {
-                        0.0
-                    },
+                    // Sólo para el log del host (`on_positions`); el capital
+                    // no sale de aquí.
+                    position_amt: numero_del_evento(p.position_amt.as_ref()).unwrap_or(0.0),
                     entry_price: if p.entry_price.is_finite() && p.entry_price >= 0.0 {
                         p.entry_price
                     } else {
                         0.0
                     },
-                    unrealized_pnl: if p.unrealized_pnl.is_finite() {
-                        p.unrealized_pnl
-                    } else {
-                        0.0
-                    },
+                    unrealized_pnl: numero_del_evento(p.unrealized_pnl.as_ref()).unwrap_or(0.0),
                     isolated_wallet: if p.isolated_wallet.is_finite() && p.isolated_wallet >= 0.0 {
                         p.isolated_wallet
                     } else {
@@ -900,6 +917,17 @@ impl UserDataStreamer {
             self.sink.on_positions(&positions);
         }
     }
+}
+
+/// V3 (P1.3): número de un campo del evento; `None` si falta, está vacío, no
+/// es numérico o no es finito (nunca un cero inventado).
+fn numero_del_evento(v: Option<&serde_json::Value>) -> Option<f64> {
+    match v? {
+        serde_json::Value::String(s) => s.trim().parse::<f64>().ok(),
+        serde_json::Value::Number(n) => n.as_f64(),
+        _ => None,
+    }
+    .filter(|x| x.is_finite())
 }
 
 #[cfg(test)]
@@ -1079,10 +1107,11 @@ mod tests {
 
         streamer.reconcile_after_reconnect();
 
+        // V3 (P1.3): la evidencia se conserva (marcada incompleta), no se borra.
         assert_eq!(
             streamer.puente().posiciones_en_cache(),
-            0,
-            "el cache de posiciones debe vaciarse tras reconexión"
+            2,
+            "la evidencia anterior se conserva como incompleta"
         );
         assert!(streamer.puente().necesita_resincronizar());
         assert!(

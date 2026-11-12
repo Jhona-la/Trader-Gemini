@@ -379,6 +379,12 @@ impl OmsSession {
         if !self.token_is_current(state.generation, token) {
             return Err("OMS_ENTRY_WITHHELD: stale executor session".into());
         }
+        // CAPITAL-UNICO V3 (P1.2): ninguna entrada hasta tener saldo vigente de
+        // la era del puente de la cuenta (y equity completa). Sólo entradas:
+        // los cierres no pasan por aquí.
+        if arena.capital_incompleto.load(Ordering::Acquire) {
+            return Err("OMS_ENTRY_WITHHELD: account balance not current for this session".into());
+        }
         let current = self.ready.load(Ordering::Acquire)
             && !arena
                 .config

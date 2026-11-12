@@ -265,6 +265,17 @@ fn numero_cuenta(v: Option<&serde_json::Value>) -> Option<f64> {
 /// Ahora los dos planos miden el mismo saldo. Sin el activo, o con su saldo
 /// fuera de dominio, no se sustituye por otro campo: el llamador reintenta.
 pub fn parse_account_capital(text: &str) -> Result<CapitalCuenta, String> {
+    match capital_y_rechazo_3a(text)? {
+        (_, Some(rechazo)) => Err(rechazo),
+        (capital, None) => Ok(capital),
+    }
+}
+
+/// El saldo de USDT y, aparte, el rechazo 3a (USDT 0 con fondos en otros
+/// activos o modo multi-activo). V3 (P1.3): el cero de 3a es un cero
+/// EXPLÍCITO y llega al plano de seguridad del puente; sólo el arranque y el
+/// tamaño lo rechazan como capital con que operar.
+fn capital_y_rechazo_3a(text: &str) -> Result<(CapitalCuenta, Option<String>), String> {
     let account: serde_json::Value = serde_json::from_str(text)
         .map_err(|e| format!("ACCOUNT_EVIDENCE_INVALID: schema: {e}"))?;
     let assets = account
@@ -302,21 +313,25 @@ pub fn parse_account_capital(text: &str) -> Result<CapitalCuenta, String> {
     // (colateral en USDC/BNB en modo multi-activo) arrancaba con capital 0 y el
     // inmune aplanaba las posiciones adoptadas como «cuenta INSOLVENTE». Una
     // cuenta vacía de verdad (todo 0) sigue dando 0.
+    let mut rechazo = None;
     if capital <= 0.0 {
         let otros = total_todos_los_activos.filter(|t| *t > 0.01);
         if otros.is_some() || multi_activo == Some(true) {
-            return Err(format!(
+            rechazo = Some(format!(
                 "ACCOUNT_EVIDENCE_INVALID: saldo de {ACTIVO_DE_MARGEN} 0 con {} en otros activos (multiAssetsMargin={}): el motor no arranca con capital 0 en una cuenta con fondos",
                 otros.map_or_else(|| "N/D".to_string(), |t| format!("{t:.4}")),
                 multi_activo.map_or_else(|| "N/D".to_string(), |m| m.to_string())
             ));
         }
     }
-    Ok(CapitalCuenta {
-        capital,
-        total_todos_los_activos,
-        multi_activo,
-    })
+    Ok((
+        CapitalCuenta {
+            capital,
+            total_todos_los_activos,
+            multi_activo,
+        },
+        rechazo,
+    ))
 }
 
 fn buzon_aviso_capital() -> &'static std::sync::Mutex<Option<String>> {
@@ -338,15 +353,24 @@ pub fn tomar_aviso_capital() -> Option<String> {
     buzon_aviso_capital().lock().ok().and_then(|mut b| b.take())
 }
 
-/// CAPITAL-UNICO V2 — lectura REST completa para el puente de la cuenta
-/// ([`crate::puente_cuenta`]): el SALDO de [`parse_account_capital`] (mismos
-/// fallos cerrados) y, aparte, el PnL no realizado de las posiciones con margen
-/// en USDT (`positions[]`, por símbolo y lado) para la EQUITY, con la misma
-/// definición que el stream. `marginBalance` no se usa: no siembra el arena.
+/// CAPITAL-UNICO V3 — lectura REST completa para el puente de la cuenta
+/// ([`crate::puente_cuenta`]): el SALDO (mismos fallos cerrados que
+/// [`parse_account_capital`], salvo el cero de 3a, que viaja en
+/// `rechazo_arranque` para que llegue al plano de seguridad) y, aparte, las
+/// posiciones con margen en USDT para la EQUITY, con la misma definición que
+/// el stream. `marginBalance` no se usa: no siembra el arena.
+///
+/// V3 (P1.1): cada componente lleva SU marca: `updateTime` de la fila de USDT
+/// para el saldo y el de cada fila para su posición (nunca el máximo de las
+/// dos). V3 (P1.3): una fila con cantidad o PnL ausente o no finito es
+/// [`DatoPosicion::Invalida`](crate::puente_cuenta::DatoPosicion::Invalida)
+/// (equity incompleta), no un cierre ni un PnL cero. Las filas con cantidad
+/// cero son cierres con su marca.
 pub fn parse_account_lectura(
     text: &str,
-) -> Result<(CapitalCuenta, crate::puente_cuenta::LecturaRest), String> {
-    let capital = parse_account_capital(text)?;
+) -> Result<(CapitalCuenta, crate::puente_cuenta::LecturaCuenta), String> {
+    use crate::puente_cuenta::{DatoPosicion, PosicionRest};
+    let (capital, rechazo_arranque) = capital_y_rechazo_3a(text)?;
     let account: serde_json::Value = serde_json::from_str(text)
         .map_err(|e| format!("ACCOUNT_EVIDENCE_INVALID: schema: {e}"))?;
     let fila_usdt = account
@@ -357,49 +381,55 @@ pub fn parse_account_lectura(
                 .find(|f| f.get("asset").and_then(|s| s.as_str()) == Some(ACTIVO_DE_MARGEN))
         });
     let tiempo = |v: Option<&serde_json::Value>| v.and_then(|t| t.as_u64()).filter(|t| *t > 0);
-    let mut tiempo_ms = fila_usdt.and_then(|f| tiempo(f.get("updateTime")));
+    let tiempo_saldo_ms = fila_usdt.and_then(|f| tiempo(f.get("updateTime")));
     let upnl_del_activo = fila_usdt
         .and_then(|f| numero_cuenta(f.get("unrealizedProfit")))
-        .filter(|u| u.is_finite())
-        .unwrap_or(0.0);
-    let upnl = match account.get("positions").and_then(|p| p.as_array()) {
+        .filter(|u| u.is_finite());
+    let posiciones = match account.get("positions").and_then(|p| p.as_array()) {
         None => None,
         Some(filas) => {
             let mut m = std::collections::HashMap::new();
             for p in filas {
                 let Some(simbolo) = p.get("symbol").and_then(|s| s.as_str()) else {
+                    // Fila sin símbolo: no se sabe de qué posición es; la
+                    // foto deja de ser completa.
+                    m.insert(
+                        ("?".to_string(), "?".to_string()),
+                        PosicionRest { dato: DatoPosicion::Invalida, tiempo_ms: None },
+                    );
                     continue;
                 };
                 if !crate::puente_cuenta::margen_en_activo(simbolo, None, ACTIVO_DE_MARGEN) {
                     continue;
                 }
-                let cantidad = numero_cuenta(p.get("positionAmt")).unwrap_or(0.0);
-                if !(cantidad.is_finite() && cantidad.abs() > 1e-12) {
-                    continue;
-                }
-                let u = numero_cuenta(p.get("unrealizedProfit"))
-                    .filter(|u| u.is_finite())
-                    .unwrap_or(0.0);
                 let lado = p
                     .get("positionSide")
                     .and_then(|s| s.as_str())
                     .unwrap_or("BOTH")
                     .to_string();
-                if let Some(t) = tiempo(p.get("updateTime")) {
-                    tiempo_ms = Some(tiempo_ms.map_or(t, |a| a.max(t)));
-                }
-                m.insert((simbolo.to_string(), lado), u);
+                let cantidad = numero_cuenta(p.get("positionAmt")).filter(|c| c.is_finite());
+                let upnl = numero_cuenta(p.get("unrealizedProfit")).filter(|u| u.is_finite());
+                let dato = match (cantidad, upnl) {
+                    (Some(c), _) if c.abs() <= 1e-12 => DatoPosicion::Cerrada,
+                    (Some(c), Some(u)) => DatoPosicion::Abierta { cantidad: c, upnl: u },
+                    _ => DatoPosicion::Invalida,
+                };
+                m.insert(
+                    (simbolo.to_string(), lado),
+                    PosicionRest { dato, tiempo_ms: tiempo(p.get("updateTime")) },
+                );
             }
             Some(m)
         }
     };
     Ok((
         capital,
-        crate::puente_cuenta::LecturaRest {
+        crate::puente_cuenta::LecturaCuenta {
             saldo: capital.capital,
-            upnl,
+            tiempo_saldo_ms,
+            posiciones,
+            rechazo_arranque,
             upnl_del_activo,
-            tiempo_ms,
         },
     ))
 }

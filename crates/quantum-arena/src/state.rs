@@ -796,6 +796,12 @@ pub struct GlobalArena {
     /// CL-133 (B2) — el pico guardado es ilegible: no entran posiciones
     /// nuevas hasta que el operador repare o retire el archivo.
     pub pico_ilegible: AtomicBool,
+    /// CAPITAL-UNICO V3 (P1.2/P1.3) — el puente de la cuenta no tiene saldo
+    /// vigente de su era o su equity está incompleta: no entran posiciones
+    /// nuevas (el riesgo y el OMS lo vetan). Los cierres no lo consultan. Nace
+    /// en alse (backtest y simulación no tienen puente); el host lo vincula
+    /// al puente antes de operar.
+    pub capital_incompleto: AtomicBool,
     pub tick_counter: AtomicU64,
     pub kill_switch_active: AtomicBool,
     pub last_ws_latency_ms: AtomicU64,
@@ -917,6 +923,7 @@ impl GlobalArena {
             // ausencia de saldo exchange (backtest/offline) de un cero real observado (0.0).
             capital_exchange: AtomicF64::new(f64::NAN),
             pico_ilegible: AtomicBool::new(false),
+            capital_incompleto: AtomicBool::new(false),
             tick_counter: AtomicU64::new(0),
             kill_switch_active: AtomicBool::new(false),
             last_ws_latency_ms: AtomicU64::new(0),

@@ -126,15 +126,21 @@ fn cl136_shadow_y_demo_guardan_el_pico_del_saldo_de_mainnet() {
     assert_eq!(shadow_testnet, testnet, "papel sobre testnet mide contra el saldo de testnet");
     // CAPITAL-UNICO (opción A): el nombre lleva la definición del capital
     // (`_usdt`); el pico de la definición anterior se queda en su archivo.
-    assert_eq!(testnet, "pico_capital_prueba_usdt.txt", "el archivo de testnet lleva venue y definición");
+    // V3 (opción A pura): el espacio es venue + cuenta + definición; sin
+    // espacio fijado por el host (este binario de prueba), «sin_cuenta».
+    assert_eq!(testnet, "pico_capital_prueba_sin_cuenta_usdt.txt", "el archivo de testnet lleva venue y definición");
     let anterior = con_entorno(true, false, false, drawdown::archivo_pico_definicion_anterior);
     assert_eq!(anterior, "pico_capital_prueba.txt", "el archivo viejo conserva su nombre");
     // CAPITAL-UNICO V2 (7a, 7f): la marca de la definición también es por venue
     // y sale de `drawdown`, no del host.
     let marca_testnet = con_entorno(true, false, false, drawdown::archivo_marca_definicion);
     let marca_mainnet = con_entorno(false, true, false, drawdown::archivo_marca_definicion);
-    assert_eq!(marca_testnet, "pico_capital_prueba_usdt.definicion");
-    assert_eq!(marca_mainnet, "pico_capital_mainnet_usdt.definicion", "shadow usa la de mainnet");
+    assert_eq!(marca_testnet, "pico_capital_prueba_sin_cuenta_usdt.definicion");
+    assert_eq!(marca_mainnet, "pico_capital_mainnet_sin_cuenta_usdt.definicion", "shadow usa la de mainnet");
+    // V3: el espacio del host lleva la huella de la cuenta.
+    let h = drawdown::huella_cuenta(b"clave-publica-de-prueba");
+    assert_eq!(drawdown::archivo_pico_del_espacio(&drawdown::espacio_pico(true, &h)), format!("pico_capital_prueba_{h}_usdt.txt"));
+    assert_eq!(drawdown::archivo_marca_del_espacio(&drawdown::espacio_pico(false, &h)), format!("pico_capital_mainnet_{h}_usdt.definicion"));
 }
 
 /// Esperado (B2): ausente, ilegible y legible son tres casos distintos.

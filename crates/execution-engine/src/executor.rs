@@ -314,13 +314,14 @@ pub trait ExecutionProvider: Send + Sync {
     /// CAPITAL-UNICO V2 — lectura de la cuenta para el puente
     /// ([`crate::puente_cuenta`]): SALDO y, aparte, el PnL no realizado por
     /// posición (EQUITY). Por defecto (simulador): el saldo, sin posiciones.
-    async fn fetch_account_lectura(&self) -> Result<crate::puente_cuenta::LecturaRest, String> {
+    async fn fetch_account_lectura(&self) -> Result<crate::puente_cuenta::LecturaCuenta, String> {
         let saldo = self.fetch_account_balance().await?;
-        Ok(crate::puente_cuenta::LecturaRest {
+        Ok(crate::puente_cuenta::LecturaCuenta {
             saldo,
-            upnl: Some(std::collections::HashMap::new()),
-            upnl_del_activo: 0.0,
-            tiempo_ms: None,
+            tiempo_saldo_ms: None,
+            posiciones: Some(std::collections::HashMap::new()),
+            rechazo_arranque: None,
+            upnl_del_activo: None,
         })
     }
 
@@ -4721,10 +4722,15 @@ impl ExecutionProvider for OrderExecutor {
 
     async fn fetch_account_balance(&self) -> Result<f64, String> {
         // CAPITAL-UNICO V2: el SALDO de la misma lectura que usa el puente.
-        self.fetch_account_lectura().await.map(|l| l.saldo)
+        // V3: el cero de 3a llega al puente, pero aquí sigue fallando cerrado.
+        let l = self.fetch_account_lectura().await?;
+        match l.rechazo_arranque {
+            Some(e) => Err(e),
+            None => Ok(l.saldo),
+        }
     }
 
-    async fn fetch_account_lectura(&self) -> Result<crate::puente_cuenta::LecturaRest, String> {
+    async fn fetch_account_lectura(&self) -> Result<crate::puente_cuenta::LecturaCuenta, String> {
         let timestamp = self.get_synced_timestamp();
 
         let cupo = self.check_exit_rate_limits(timestamp, Tramo::Lectura)?;
