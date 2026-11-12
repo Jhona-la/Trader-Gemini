@@ -3,6 +3,8 @@
 //! ESCRITA. Cambios: esta cabecera, la ruta del puente y del host al arbol del repo y, como pide su
 //! nota, el adaptador `observar_arranque` conectado al punto real nuevo (el publicador: con el
 //! contrato V4E `vincular_veto` ya no recibe `false`). Las aserciones no cambian.
+//! V4F: el adaptador de la transicion pasa al punto real nuevo (`relevar_sesion`, que abre la
+//! era sin socket en el mismo paso que el relevo del OMS). Las aserciones siguen sin cambiar.
 
 //! Contratos de aceptación de V4F. Ejecutar contra el SHA que se va a juzgar.
 //! Colocar este archivo junto a puente_cuenta.rs y god_engine.rs del mismo SHA.
@@ -91,17 +93,23 @@ fn p1a_arranque_frio_no_autoriza_antes_del_primer_poll() -> Result<(), String> {
 
 #[test]
 fn p1a_transicion_no_autoriza_antes_del_primer_poll() -> Result<(), String> {
-    let tramo = ancla(HOST, "let era_mainnet =", "let oms_transition =")?;
+    // V4F (adaptador del integrador, como pide la nota): el host abre la era
+    // y la deja sin socket en `relevar_sesion`, en el mismo paso que el relevo
+    // del OMS. Si el host lo hace sincrono, se usa ese punto real; si no, la
+    // era nueva queda sin marca de socket y las aserciones de abajo fallan.
+    let tramo = ancla(HOST, "// CAPITAL-UNICO V4F (P1-c, dictamen de Codex QRA sobre V4E): el", "let oms_transition =")?;
     let p = PuenteCuenta::new();
     p.observar_rest(p.ticket(), &foto(120.0, 50)).map_err(|e| e.to_string())?;
     let publicado = observar_arranque(&p);
     let era_anterior = p.ticket();
-    let nueva = p.nueva_era();
+    let siguiente = p.sesion() + 1;
+    let _nueva = if marca_sin_socket(tramo, "puente_cuenta.relevar_sesion(||") {
+        p.relevar_sesion(|| ((), Some(siguiente))).1.ok_or("relevo sin era")?
+    } else {
+        p.nueva_era()
+    };
     assert!(matches!(p.observar_rest(era_anterior, &foto(120.0, 50)), Err(Rechazo::OtraEra)));
     assert_eq!(p.equity_del_freno(), Some(120.0));
-    if marca_sin_socket(tramo, "puente_cuenta.sin_socket(era_mainnet)") {
-        p.sin_socket(nueva).map_err(|e| e.to_string())?;
-    }
     rest_del_hueco_y_confirmacion(&p, &publicado, 80.0, 100).map_err(|e| e.to_string())?;
     Ok(())
 }

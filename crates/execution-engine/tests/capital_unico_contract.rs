@@ -502,7 +502,8 @@ fn v2_contrato_de_fuente_del_host() {
     assert_eq!(host.matches(".with_puente(Arc::clone(&puente_cuenta))").count(), 2, "demo y mainnet");
     assert!(host.contains("puente_imm.equity_del_freno()"), "el freno usa la equity");
     // V4E (P1-c): la era nueva va ligada a la sesion OMS publicada.
-    assert!(host.contains("puente_cuenta.nueva_era_de_sesion("));
+    // V4F (P1-c): en el mismo paso que el relevo del OMS.
+    assert!(host.contains("puente_cuenta.relevar_sesion("));
     assert!(host.contains("puente_rs.necesita_resincronizar()"));
     assert!(!host.contains(".fetch_account_balance()"), "el host lee la cuenta por fetch_account_lectura");
     // V4E (P1-c): con el testigo de la sesion del ejecutor.

@@ -760,6 +760,8 @@ pub struct DiagnosticoPuente {
 
 type Observador = Box<dyn Fn(bool) + Send + Sync>;
 type Publicador = Box<dyn Fn(&Publicacion) -> bool + Send + Sync>;
+/// V4F (P1-c): la generación vigente del `SessionToken` del OMS.
+type Testigo = Box<dyn Fn() -> u64 + Send + Sync>;
 
 /// V4E (P1-b, INV-5): lo que el puente entrega a su publicador tras cada
 /// cambio, bajo su mutex.
@@ -791,6 +793,9 @@ pub struct PuenteCuenta {
     veto: OnceLock<Observador>,
     /// V4E (P1-b): el publicador del saldo dimensionable y del veto.
     publicador: OnceLock<Publicador>,
+    /// V4F (P1-c): testigo de la sesión OMS vigente. Se consulta bajo el mutex
+    /// del puente, en el mismo paso que cada escritura ([`Self::vigente`]).
+    testigo: OnceLock<Testigo>,
     /// V4E: el publicador soltó el veto en su última llamada (sólo se escribe
     /// bajo el mutex de `estado`).
     admitido: AtomicBool,
@@ -827,12 +832,82 @@ impl PuenteCuenta {
             }),
             veto: OnceLock::new(),
             publicador: OnceLock::new(),
+            testigo: OnceLock::new(),
             admitido: AtomicBool::new(false),
         }
     }
 
     fn estado(&self) -> std::sync::MutexGuard<'_, Estado> {
         self.estado.lock().unwrap_or_else(|p| p.into_inner())
+    }
+
+    /// V4F (P1-c): EL punto por el que pasa toda escritura del puente (saldo,
+    /// equity del freno, posiciones, veto, socket, generación) y toda
+    /// publicación al espejo con [`con_era_vigente`](Self::con_era_vigente).
+    /// Se llama con el mutex tomado y la escritura sigue en esa misma sección
+    /// crítica: entre comprobar y escribir no hay hueco.
+    ///
+    /// - `era` debe ser la vigente (`OtraEra`).
+    /// - Con testigo vinculado, la sesión OMS vigente debe ser la de la era
+    ///   (`OtraSesion { sesion: la de la era, vigente: la del OMS }`). Es la
+    ///   ventana entre el relevo del OMS y el cambio de era: ahí nada de la
+    ///   sesión anterior escribe. El host la cierra además con
+    ///   [`relevar_sesion`](Self::relevar_sesion); el testigo cubre cualquier
+    ///   otro relevo.
+    fn vigente(&self, e: &Estado, era: u64) -> Result<(), Rechazo> {
+        if era != e.era {
+            return Err(Rechazo::OtraEra);
+        }
+        match self.testigo.get() {
+            Some(testigo) => {
+                let oms = testigo();
+                if oms == e.sesion {
+                    Ok(())
+                } else {
+                    Err(Rechazo::OtraSesion {
+                        sesion: e.sesion,
+                        vigente: oms,
+                    })
+                }
+            }
+            None => Ok(()),
+        }
+    }
+
+    /// V4F (P1-c): vincula el testigo de la sesión OMS (la generación del
+    /// `SessionToken` vigente). Corre bajo el mutex del puente (orden de
+    /// candados: puente y después la sesión OMS, el mismo del publicador) y no
+    /// debe reentrar en él. Sólo el primero vale.
+    pub fn vincular_testigo_de_sesion(&self, f: impl Fn() -> u64 + Send + Sync + 'static) {
+        let _e = self.estado();
+        let _ = self.testigo.set(Box::new(f));
+    }
+
+    /// V4F (P1-c): relevo de la sesión OMS y era nueva del puente en un solo
+    /// paso, bajo el mutex del puente. `relevo` publica el ejecutor nuevo (en el
+    /// host, `OmsSession::paso_transicion`) y devuelve la generación publicada,
+    /// o `None` si no publicó. Con `Some(sesion)`, sin soltar el mutex, se abre
+    /// la era de esa sesión y nace sin socket privado (como
+    /// [`sin_socket`](Self::sin_socket)). Ninguna lectura ni evento de la sesión
+    /// anterior se cuela entre el relevo y el cambio de era: espera al mutex y
+    /// después encuentra otra era. Devuelve lo de `relevo` y la era nueva.
+    /// `relevo` no debe reentrar en el puente.
+    pub fn relevar_sesion<R>(&self, relevo: impl FnOnce() -> (R, Option<u64>)) -> (R, Option<u64>) {
+        let mut e = self.estado();
+        let (r, sesion) = relevo();
+        let era = sesion.map(|sesion| {
+            let era = self.abrir_era(&mut e, sesion);
+            Self::cerrar_socket(&mut e, "SinSocket");
+            self.notificar(&e);
+            era
+        });
+        (r, era)
+    }
+
+    fn cerrar_socket(e: &mut Estado, motivo: &'static str) {
+        e.socket += 1;
+        e.socket_cerrado = true;
+        e.anclar(motivo);
     }
 
     fn notificar(&self, e: &Estado) {
@@ -957,9 +1032,13 @@ impl PuenteCuenta {
 
     /// Corre `f` bajo el mutex del puente si `era` sigue vigente: ninguna
     /// transición se cuela entre la comprobación y la publicación.
+    ///
+    /// V4F (P1-c): con el mismo punto que las escrituras ([`Self::vigente`]):
+    /// si la sesión OMS ya no es la de la era, `f` no corre (el espejo no se
+    /// escribe con lo de la sesión anterior).
     pub fn con_era_vigente<R>(&self, era: u64, f: impl FnOnce(Option<Observacion>) -> R) -> Option<R> {
         let e = self.estado();
-        (e.era == era).then(|| f(e.observacion()))
+        self.vigente(&e, era).ok().map(|()| f(e.observacion()))
     }
 
     /// Lectura REST. Entera o nada: si un componente se rechaza, no cambia
@@ -998,6 +1077,13 @@ impl PuenteCuenta {
                 sesion,
                 vigente: e.sesion,
             };
+            e.registrar(fuente, l.tiempo_saldo_ms, None, &r);
+            return Err(r);
+        }
+        // V4F (P1-c): el lote entero se decide aquí, con el testigo del OMS y
+        // bajo el mismo mutex que lo escribe. Tras el relevo del OMS, una
+        // lectura de la sesión anterior no toca saldo, equity, veto ni espejo.
+        if let Err(r) = self.vigente(&e, ticket.era) {
             e.registrar(fuente, l.tiempo_saldo_ms, None, &r);
             return Err(r);
         }
@@ -1227,11 +1313,18 @@ impl PuenteCuenta {
         publicar: impl FnOnce(&Observacion),
     ) -> Result<Option<Observacion>, Rechazo> {
         let mut e = self.estado();
-        if era != e.era {
-            return Err(Rechazo::OtraEra);
-        }
         let t = ev.tiempo_ms;
         let fuente = "stream";
+        // V4F (P1-c): era y testigo de sesión en el mismo paso que la escritura;
+        // el `publicar` del evento (espejo del host) tampoco corre si se rechaza.
+        match self.vigente(&e, era) {
+            Ok(()) => {}
+            Err(Rechazo::OtraEra) => return Err(Rechazo::OtraEra),
+            Err(r) => {
+                e.registrar(fuente, t, hora, &r);
+                return Err(r);
+            }
+        }
         let socket = socket.unwrap_or(e.socket);
         if socket != e.socket || e.socket_cerrado {
             let r = Rechazo::OtroSocket {
@@ -1373,9 +1466,7 @@ impl PuenteCuenta {
     /// Como [`reconexion`](Self::reconexion); devuelve el número del socket nuevo.
     pub fn abrir_socket(&self, era: u64) -> Result<u64, Rechazo> {
         let mut e = self.estado();
-        if era != e.era {
-            return Err(Rechazo::OtraEra);
-        }
+        self.vigente(&e, era)?;
         e.socket += 1;
         e.socket_cerrado = false;
         e.anclar("Reconexion");
@@ -1389,12 +1480,8 @@ impl PuenteCuenta {
     /// veto: sólo lo hace una REST pedida después de abrir el socket nuevo.
     pub fn perdida_socket(&self, era: u64) -> Result<(), Rechazo> {
         let mut e = self.estado();
-        if era != e.era {
-            return Err(Rechazo::OtraEra);
-        }
-        e.socket += 1;
-        e.socket_cerrado = true;
-        e.anclar("PerdidaSocket");
+        self.vigente(&e, era)?;
+        Self::cerrar_socket(&mut e, "PerdidaSocket");
         self.notificar(&e);
         Ok(())
     }
@@ -1406,12 +1493,8 @@ impl PuenteCuenta {
     /// este hueco aplica sus datos al freno. Los cierres no lo consultan.
     pub fn sin_socket(&self, era: u64) -> Result<(), Rechazo> {
         let mut e = self.estado();
-        if era != e.era {
-            return Err(Rechazo::OtraEra);
-        }
-        e.socket += 1;
-        e.socket_cerrado = true;
-        e.anclar("SinSocket");
+        self.vigente(&e, era)?;
+        Self::cerrar_socket(&mut e, "SinSocket");
         self.notificar(&e);
         Ok(())
     }
@@ -1420,9 +1503,7 @@ impl PuenteCuenta {
     /// sin corte. Equity incompleta y anclaje nuevo; el socket sigue.
     pub fn evidencia_perdida(&self, era: u64) -> Result<(), Rechazo> {
         let mut e = self.estado();
-        if era != e.era {
-            return Err(Rechazo::OtraEra);
-        }
+        self.vigente(&e, era)?;
         e.anclar("EventoIlegible");
         self.notificar(&e);
         Ok(())

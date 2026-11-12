@@ -420,10 +420,13 @@ mod qra_capital_v4d_sesion {
         en_orden(transicion, &["let ejecutor ="])?;
         en_orden(
             HOST,
+            // V4F (ancla adaptada por el integrador): el relevo del OMS corre
+            // dentro de `relevar_sesion`, que abre la era en el mismo paso.
             &[
+                "let (paso, era_del_relevo) = puente_cuenta.relevar_sesion(|| {",
                 "let paso = oms_session.paso_transicion(",
                 "let (sesion_mainnet, new_exec_arc) = match paso.resultado",
-                "let era_mainnet = puente_cuenta.nueva_era_de_sesion(sesion_mainnet);",
+                "let Some(era_mainnet) = era_del_relevo else {",
             ],
         )
     }

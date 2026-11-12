@@ -286,7 +286,9 @@ fn v4e_p1c_contrato_de_fuente_host_resincronizador_y_publicador() {
     let sesion = rs.find("token.generation(),").unwrap();
     assert!(token < ejecutor && ejecutor < sesion);
     assert!(host.contains("PuenteCuenta::con_sesion(\n        oms_session.snapshot_token().generation(),"));
-    assert!(host.contains("let era_mainnet = puente_cuenta.nueva_era_de_sesion(sesion_mainnet);"));
+    // V4F (ancla adaptada): la era de la sesion publicada la abre el relevo.
+    assert!(host.contains("let (paso, era_del_relevo) = puente_cuenta.relevar_sesion(|| {"));
+    assert!(host.contains("let Some(era_mainnet) = era_del_relevo else {"));
     assert!(host.contains("observar_rest_de_sesion(ticket, balance_token.generation(), l)"));
     assert!(host.contains("observar_rest_de_sesion(ticket, token_arranque.generation(), &l)"));
     let helper = include_str!("../src/resincronizar_cuenta.rs").replace("\r\n", "\n");

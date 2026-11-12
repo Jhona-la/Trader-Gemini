@@ -284,9 +284,14 @@ fn p12_cero_confirmado_durante_la_transicion() {
 fn p12_contrato_de_fuente_de_la_transicion() {
     let host = include_str!("../../../src/bin/god_engine.rs");
     // V4E (P1-c): la era nueva va ligada a la sesion OMS publicada.
-    let tr = host.split("let era_mainnet = puente_cuenta.nueva_era_de_sesion(sesion_mainnet);").nth(1).expect("transición");
+    // V4F (adaptacion de ancla del integrador): la abre `relevar_sesion` en el
+    // mismo paso que el relevo; `era_mainnet` es la era que devolvio.
+    let ancla = "let Some(era_mainnet) = era_del_relevo else {";
+    let relevo = host.find("let (paso, era_del_relevo) = puente_cuenta.relevar_sesion(|| {").expect("relevo");
+    assert!(relevo < host.find("let paso = oms_session.paso_transicion(").unwrap(), "el relevo del OMS corre dentro del relevo del puente");
+    let tr = host.split(ancla).nth(1).expect("transición");
     let refresco = tr.find("oms_transition.refresh(&arena_transition)").expect("refresco OMS");
-    let antes = &host[..host.find("let era_mainnet = puente_cuenta.nueva_era_de_sesion(sesion_mainnet);").unwrap()];
+    let antes = &host[..host.find(ancla).unwrap()];
     assert!(!antes[antes.rfind("ResultadoTransicion::Publicada").unwrap()..].contains("oms_transition.refresh"), "la era cambia ANTES del refresco del OMS");
     assert!(refresco > 0);
     assert!(tr.contains("puente_transicion.ticket_de_era(era_mainnet)"), "el GET va atado a la era");

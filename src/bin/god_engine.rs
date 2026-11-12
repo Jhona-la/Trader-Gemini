@@ -1863,6 +1863,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let puente_cuenta = Arc::new(execution_engine::puente_cuenta::PuenteCuenta::con_sesion(
         oms_session.snapshot_token().generation(),
     ));
+    // CAPITAL-UNICO V4F (P1-c): testigo de la sesión OMS. Toda escritura del
+    // puente lo comprueba bajo el mutex del puente, en el mismo paso: tras un
+    // relevo del OMS nada de la sesión anterior escribe saldo, equity ni espejo.
+    {
+        let oms_testigo = Arc::clone(&oms_session);
+        puente_cuenta.vincular_testigo_de_sesion(move || oms_testigo.snapshot_token().generation());
+    }
     // V4E (P1-a, dictamen de Codex QRA sobre V4D): sin socket privado desde que
     // nace la era, antes del GET y del streamer (no solo desde el primer poll de
     // `start`). La REST de arranque llega al freno; las entradas esperan al
@@ -5288,6 +5295,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             }
                         }
                         entry_orders.clear();
+                        // CAPITAL-UNICO V4F (P1-c, dictamen de Codex QRA sobre V4E): el
+                        // relevo del OMS y la era nueva del puente van en un solo paso,
+                        // bajo el mutex del puente (orden de candados: puente y después
+                        // la sesión OMS, el del publicador). Un GET o un evento de la
+                        // sesión anterior espera al mutex y después encuentra otra era:
+                        // no hay ventana entre publicar el ejecutor y cambiar de era.
+                        let (paso, era_del_relevo) = puente_cuenta.relevar_sesion(|| {
                         let paso = oms_session.paso_transicion(
                             &arena_real,
                             None,
@@ -5326,6 +5340,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 Arc::new(mainnet_executor)
                             },
                         );
+                        let sesion_publicada = match &paso.resultado {
+                            quantum_engine::host_oms::ResultadoTransicion::Publicada { generacion, .. } => Some(*generacion),
+                            _ => None,
+                        };
+                        (paso, sesion_publicada)
+                        });
                         if let Some(motivo) = paso.reserva_no_cancelable {
                             telemetry_engine::telemetry_err!("[OMS TRANSITION] reserva del tick no cancelable: {:?}", motivo);
                         }
@@ -5374,12 +5394,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         // V4E (P1-c): la era nueva queda ligada a la sesión OMS que
                         // acaba de publicar el ejecutor; una lectura de un ejecutor
                         // de otra sesión no la toca.
-                        let era_mainnet = puente_cuenta.nueva_era_de_sesion(sesion_mainnet);
                         // V4E (P1-a): la era nueva nace sin socket privado, antes de
                         // encolar el GET, el refresco del OMS y el streamer.
-                        if let Err(e) = puente_cuenta.sin_socket(era_mainnet) {
-                            telemetry_server::telemetry_log!("🔌 [CAPITAL] era {} sin socket ignorada por el puente: {}", era_mainnet, e);
-                        }
+                        // V4F (P1-c): las dos cosas las hizo `relevar_sesion`, en el
+                        // mismo paso que el relevo del OMS.
+                        let Some(era_mainnet) = era_del_relevo else {
+                            telemetry_engine::telemetry_err!("[OMS TRANSITION] sesión OMS {} publicada sin era del puente: entradas vetadas", sesion_mainnet);
+                            has_transitioned = false;
+                            continue;
+                        };
                         telemetry_server::telemetry_log!(
                             "🔌 [CAPITAL] puente de la cuenta: era {} (mainnet); entradas vetadas hasta el saldo de esta era",
                             era_mainnet
