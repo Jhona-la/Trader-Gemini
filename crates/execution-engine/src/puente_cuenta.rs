@@ -33,6 +33,14 @@
 //!   completa: las pérdidas pasan, las ganancias esperan) y se vetan las
 //!   entradas hasta una lectura completa. El cero explícito sí se aplica.
 //!
+//! V4 (hallazgo N1 de la revisión independiente de 2c3b06225): dos
+//! `ACCOUNT_UPDATE` con la misma `T` (dos fills de una orden en la misma
+//! transacción) aplican el último si la marca vigente de ese componente la
+//! puso el stream en la misma conexión. En REST el empate sigue siendo
+//! contradicción; tras una reconexión o una REST con esa marca, también.
+//! Una fila con la misma cantidad y marca más vieja no pisa el PnL no
+//! realizado más nuevo.
+//!
 //! El módulo sólo usa `std` (se compila solo en las pruebas de auditoría).
 //! No toca d*, `capital_del_freno` ni ningún umbral.
 
@@ -226,19 +234,23 @@ enum Veredicto {
     Igual,
 }
 
-/// Regla única de frescura de un componente.
+/// Regla única de frescura de un componente. V4 (N1): con `empate_aplica`,
+/// un dato con la misma marca que la vigente se aplica (lo usa el stream sólo
+/// si esa marca la puso él mismo en esta conexión: una conexión entrega en
+/// orden y dos fills de una orden pueden traer la misma `T`).
 fn decidir(
     componente: impl Fn() -> String,
     observado: bool,
     igual: bool,
     t: Option<u64>,
     marca: Option<u64>,
+    empate_aplica: bool,
 ) -> Result<Veredicto, Rechazo> {
     if !observado {
         return Ok(Veredicto::Aplicar);
     }
     match (t, marca) {
-        (Some(t), Some(m)) if t > m => Ok(Veredicto::Aplicar),
+        (Some(t), Some(m)) if t > m || (empate_aplica && t == m) => Ok(Veredicto::Aplicar),
         (Some(_), None) => Ok(Veredicto::Aplicar),
         _ if igual => Ok(Veredicto::Igual),
         (Some(t), Some(m)) if t == m => Err(Rechazo::Contradiccion {
@@ -273,6 +285,11 @@ struct Estado {
     generacion: u64,
     saldo: Option<f64>,
     marca_saldo: Option<u64>,
+    /// V4 (N1): la marca vigente del saldo la puso el stream en esta conexión
+    /// (no REST, ni una conexión anterior). Sólo entonces el empate aplica.
+    marca_saldo_stream: bool,
+    /// V4 (N1): posiciones cuya marca vigente la puso el stream en esta conexión.
+    marcas_pos_stream: std::collections::HashSet<ClavePosicion>,
     /// Posiciones abiertas observadas: (cantidad, PnL no realizado).
     abiertas: HashMap<ClavePosicion, (f64, f64)>,
     /// Marca de cada posición observada (abierta o cerrada).
@@ -322,6 +339,7 @@ impl Estado {
         clave: &ClavePosicion,
         dato: &DatoPosicion,
         t: Option<u64>,
+        empate_aplica: bool,
     ) -> Result<Veredicto, Rechazo> {
         let observado = self.marcas_pos.contains_key(clave) || self.abiertas.contains_key(clave);
         let igual = match (dato, self.abiertas.get(clave)) {
@@ -330,7 +348,24 @@ impl Estado {
             _ => false,
         };
         let marca = self.marcas_pos.get(clave).copied().flatten();
-        decidir(|| format!("posición {} {}", clave.0, clave.1), observado, igual, t, marca)
+        decidir(|| format!("posición {} {}", clave.0, clave.1), observado, igual, t, marca, empate_aplica)
+    }
+
+    /// Aplica según el veredicto. V4 (recomendado de P1.3): un `Igual` con
+    /// marca más vieja que la vigente (o sin marca frente a una con marca) no
+    /// pisa el PnL no realizado más nuevo; sólo confirma la cantidad.
+    fn aplicar_posicion_con(
+        &mut self,
+        clave: &ClavePosicion,
+        dato: &DatoPosicion,
+        t: Option<u64>,
+        v: &Veredicto,
+    ) {
+        let marca = self.marcas_pos.get(clave).copied().flatten();
+        if matches!(v, Veredicto::Igual) && marca.is_some() && t < marca {
+            return;
+        }
+        self.aplicar_posicion(clave, dato, t);
     }
 
     fn aplicar_posicion(&mut self, clave: &ClavePosicion, dato: &DatoPosicion, t: Option<u64>) {
@@ -467,29 +502,33 @@ impl PuenteCuenta {
         if ticket.era != e.era {
             return Err(Rechazo::OtraEra);
         }
+        // V4 (N1): en REST el empate sigue siendo contradicción (no se sabe si
+        // la foto es anterior o posterior a los eventos con esa marca).
+        let empate = false;
         let saldo = decidir(
             || "saldo".to_string(),
             e.saldo.is_some(),
             e.saldo.is_some_and(|s| mismo_saldo(s, l.saldo)),
             l.tiempo_saldo_ms,
             e.marca_saldo,
+            empate,
         )?;
         let mut incompleta = l.posiciones.is_none();
-        let mut plan: Vec<(ClavePosicion, DatoPosicion, Option<u64>)> = Vec::new();
+        let mut plan: Vec<(ClavePosicion, DatoPosicion, Option<u64>, Veredicto)> = Vec::new();
         if let Some(m) = &l.posiciones {
             for (clave, p) in m {
                 if p.dato == DatoPosicion::Invalida {
                     incompleta = true;
                     continue;
                 }
-                e.decidir_posicion(clave, &p.dato, p.tiempo_ms)?;
-                plan.push((clave.clone(), p.dato, p.tiempo_ms));
+                let v = e.decidir_posicion(clave, &p.dato, p.tiempo_ms, empate)?;
+                plan.push((clave.clone(), p.dato, p.tiempo_ms, v));
             }
             // Una abierta que la foto completa no trae: cierre sin marca.
             for clave in e.abiertas.keys() {
                 if !m.contains_key(clave) {
-                    e.decidir_posicion(clave, &DatoPosicion::Cerrada, None)?;
-                    plan.push((clave.clone(), DatoPosicion::Cerrada, None));
+                    let v = e.decidir_posicion(clave, &DatoPosicion::Cerrada, None, empate)?;
+                    plan.push((clave.clone(), DatoPosicion::Cerrada, None, v));
                 }
             }
         }
@@ -500,9 +539,18 @@ impl PuenteCuenta {
         if let Veredicto::Aplicar = saldo {
             e.saldo = Some(l.saldo);
         }
+        // Una REST con marca igual o más nueva pasa a ser el origen de la marca:
+        // un evento del stream con esa misma marca ya no la empata.
+        if l.tiempo_saldo_ms.is_some() && l.tiempo_saldo_ms >= e.marca_saldo {
+            e.marca_saldo_stream = false;
+        }
         e.marca_saldo = maxima(e.marca_saldo, l.tiempo_saldo_ms);
-        for (clave, dato, t) in &plan {
-            e.aplicar_posicion(clave, dato, *t);
+        for (clave, dato, t, v) in &plan {
+            let marca = e.marcas_pos.get(clave).copied().flatten();
+            if t.is_some() && *t >= marca {
+                e.marcas_pos_stream.remove(clave);
+            }
+            e.aplicar_posicion_con(clave, dato, *t, v);
         }
         if incompleta {
             // Con la suma del activo, una posición sin observar tampoco cuenta 0.
@@ -555,6 +603,7 @@ impl PuenteCuenta {
                 e.saldo.is_some_and(|v| mismo_saldo(v, s)),
                 t,
                 e.marca_saldo,
+                e.marca_saldo_stream,
             ) {
                 Ok(v) => Some((s, v)),
                 Err(r) => {
@@ -566,15 +615,23 @@ impl PuenteCuenta {
             None => None,
         };
         let mut incompleta = false;
+        let mut veredictos: Vec<Option<Veredicto>> = Vec::with_capacity(ev.posiciones.len());
         for (clave, dato) in &ev.posiciones {
             if *dato == DatoPosicion::Invalida {
                 incompleta = true;
+                veredictos.push(None);
                 continue;
             }
-            if let Err(r) = e.decidir_posicion(clave, dato, t) {
-                let r = rechazo(&mut *e, r);
-                self.notificar(&e);
-                return Err(r);
+            // V4 (N1): el empate aplica sólo si la marca vigente de esta
+            // posición la puso el stream en esta misma conexión.
+            let empate_pos = e.marcas_pos_stream.contains(clave);
+            match e.decidir_posicion(clave, dato, t, empate_pos) {
+                Ok(v) => veredictos.push(Some(v)),
+                Err(r) => {
+                    let r = rechazo(&mut *e, r);
+                    self.notificar(&e);
+                    return Err(r);
+                }
             }
         }
         // El techo se toma con la evidencia de ANTES de este evento.
@@ -583,12 +640,21 @@ impl PuenteCuenta {
         }
         if let Some((s, Veredicto::Aplicar)) = saldo {
             e.saldo = Some(s);
+            // Sólo un dato que se aplicó hace del stream el origen de la marca;
+            // un igual (p. ej. un repetido tras reconectar) no la reabre.
+            if t.is_some() {
+                e.marca_saldo_stream = true;
+            }
         }
         if saldo.is_some() {
             e.marca_saldo = maxima(e.marca_saldo, t);
         }
-        for (clave, dato) in &ev.posiciones {
-            e.aplicar_posicion(clave, dato, t);
+        for ((clave, dato), v) in ev.posiciones.iter().zip(&veredictos) {
+            let Some(v) = v else { continue };
+            if matches!(v, Veredicto::Aplicar) && t.is_some() {
+                e.marcas_pos_stream.insert(clave.clone());
+            }
+            e.aplicar_posicion_con(clave, dato, t, v);
         }
         e.generacion += 1;
         let obs = e.observacion();
@@ -609,6 +675,11 @@ impl PuenteCuenta {
             return Err(Rechazo::OtraEra);
         }
         e.incompleta();
+        // V4 (N1): una conexión nueva no garantiza el orden con los eventos de
+        // la anterior. Un evento con la misma marca que la vigente podría ser
+        // un repetido o un atrasado: ya no empata (contradicción, no aplica).
+        e.marca_saldo_stream = false;
+        e.marcas_pos_stream.clear();
         e.generacion += 1;
         self.notificar(&e);
         Ok(())

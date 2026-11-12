@@ -112,11 +112,19 @@ fn p11_rest_simultaneo_empate_contradictorio_no_sobrescribe_y_coherente_si() {
     // El empate coherente sí vale (y completa la equity).
     assert_eq!(p.observar_rest(p.ticket(), &lectura(0.0, Some(200), &[])).unwrap().saldo, 0.0);
     assert!(!p.veta_entradas());
-    // Dos eventos del stream con la misma marca y otro saldo: el segundo no pisa
-    // y deja la equity incompleta (hace falta REST).
-    let r = ws(&p, Some(200), Some(7.0), &[]);
+    // V4 (N1): dos eventos del stream con la misma marca (dos fills de una
+    // orden en la misma transaccion) aplican el ultimo y no vetan. Antes el
+    // segundo era contradiccion y el veto quedaba pegado.
+    assert_eq!(ws(&p, Some(300), Some(5.0), &[]).unwrap().unwrap().saldo, 5.0);
+    assert_eq!(ws(&p, Some(300), Some(7.0), &[]).unwrap().unwrap().saldo, 7.0);
+    assert_eq!(p.observacion().unwrap().saldo, 7.0);
+    assert!(!p.veta_entradas());
+    // Un evento del stream con la misma marca que la REST aceptada sigue sin pisar.
+    let r = p.observar_rest(p.ticket(), &lectura(7.0, Some(400), &[]));
+    assert!(r.is_ok(), "{r:?}");
+    let r = ws(&p, Some(400), Some(9.0), &[]);
     assert!(matches!(r, Err(Rechazo::Contradiccion { .. })), "{r:?}");
-    assert_eq!(p.observacion().unwrap().saldo, 0.0);
+    assert_eq!(p.observacion().unwrap().saldo, 7.0);
     assert!(p.veta_entradas());
 }
 
