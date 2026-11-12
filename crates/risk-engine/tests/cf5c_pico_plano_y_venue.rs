@@ -124,7 +124,11 @@ fn cl136_shadow_y_demo_guardan_el_pico_del_saldo_de_mainnet() {
     assert_eq!(shadow, mainnet, "shadow mide contra el saldo de mainnet");
     assert_eq!(demo, mainnet, "BINANCE_USE_DEMO no cambia de endpoint");
     assert_eq!(shadow_testnet, testnet, "papel sobre testnet mide contra el saldo de testnet");
-    assert_eq!(testnet, "pico_capital_prueba.txt", "el archivo de testnet conserva su nombre");
+    // CAPITAL-UNICO (opción A): el nombre lleva la definición del capital
+    // (`_usdt`); el pico de la definición anterior se queda en su archivo.
+    assert_eq!(testnet, "pico_capital_prueba_usdt.txt", "el archivo de testnet lleva venue y definición");
+    let anterior = con_entorno(true, false, false, drawdown::archivo_pico_definicion_anterior);
+    assert_eq!(anterior, "pico_capital_prueba.txt", "el archivo viejo conserva su nombre");
 }
 
 /// Esperado (B2): ausente, ilegible y legible son tres casos distintos.

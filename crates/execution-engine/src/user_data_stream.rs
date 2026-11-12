@@ -66,6 +66,9 @@ pub struct UserDataStreamer {
     /// demo seguía vivo tras la transición a mainnet y sus ACCOUNT_UPDATE de
     /// TESTNET pisaban el capital real del plano compartido.
     shutdown: Option<Arc<AtomicBool>>,
+    /// CAPITAL-UNICO (b): puente del tope de capital operativo. `None` = el
+    /// del proceso (`capital_operativo::puente_global`).
+    puente: Option<Arc<crate::capital_operativo::PuenteCapital>>,
 }
 
 impl UserDataStreamer {
@@ -79,6 +82,7 @@ impl UserDataStreamer {
             expired_flag: Arc::new(AtomicBool::new(false)),
             arena: None,
             shutdown: None,
+            puente: None,
         }
     }
 
@@ -96,6 +100,12 @@ impl UserDataStreamer {
 
     pub fn with_sink(mut self, sink: Arc<dyn AccountSink>) -> Self {
         self.sink = sink;
+        self
+    }
+
+    /// CAPITAL-UNICO (b): puente propio (pruebas); por defecto, el del proceso.
+    pub fn with_puente(mut self, puente: Arc<crate::capital_operativo::PuenteCapital>) -> Self {
+        self.puente = Some(puente);
         self
     }
 
@@ -812,7 +822,7 @@ impl UserDataStreamer {
         };
 
         for b in &ev.a.balances {
-            if b.asset == "USDT" {
+            if b.asset == crate::execution_evidence::ACTIVO_DE_MARGEN {
                 if let Some(wb) = b.wallet_balance {
                     if wb >= 0.0 && wb.is_finite() {
                         let total_equity = if (wb + total_unrealized_pnl).is_finite() {
@@ -820,7 +830,17 @@ impl UserDataStreamer {
                         } else {
                             wb
                         };
-                        self.sink.on_capital(total_equity);
+                        // CAPITAL-UNICO (b): el mismo puente que REST. Con
+                        // el tope inválido no se publica capital (falla cerrado).
+                        let capital = match &self.puente {
+                            Some(p) => Ok(p.capital(total_equity)),
+                            None => crate::capital_operativo::puente_global()
+                                .map(|p| p.capital(total_equity)),
+                        };
+                        match capital {
+                            Ok(c) => self.sink.on_capital(c),
+                            Err(e) => eprintln!("🚨 [CAPITAL] ACCOUNT_UPDATE sin publicar: {e}"),
+                        }
                     }
                 }
             }

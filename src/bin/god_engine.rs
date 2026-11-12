@@ -470,11 +470,12 @@ async fn aplanado_inmune(
     let intento = reintento.intentos();
     match &resultado {
         Ok((cancelaciones, positions)) => telemetry_server::telemetry_log!(
-            "🧹 [SISTEMA INMUNE] Aplanado (intento {}): {} cancelaciones de órdenes, {} posiciones cerradas, {} ranuras dejan de contar como reales. Rearme manual: si fue por drawdown, reiniciar no basta (el pico se guarda); hay que retirar pico_capital.txt del entorno, que acepta el capital actual como nuevo pico.",
+            "🧹 [SISTEMA INMUNE] Aplanado (intento {}): {} cancelaciones de órdenes, {} posiciones cerradas, {} ranuras dejan de contar como reales. Rearme manual: si fue por drawdown, reiniciar no basta (el pico se guarda); hay que retirar {} del entorno, que acepta el capital actual como nuevo pico.",
             intento,
             cancelaciones,
             positions,
-            consumidas
+            consumidas,
+            quantum_arena::paths::env_data_path(&risk_engine::drawdown::archivo_pico())
         ),
         Err(e) if tras == TrasAplanado::Frenado => {
             // Un baneo 418 puede durar minutos: un aviso por minuto, no uno
@@ -1742,6 +1743,33 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         Arc::clone(&oms_reconciled),
     ));
 
+    // CAPITAL-UNICO (b): tope de capital operativo `TG_CAPITAL_OPERATIVO`
+    // (apagado por defecto). Un valor inválido no deja arrancar. Con el mismo
+    // tope que la corrida anterior se restaura el ancla anotada junto al pico,
+    // para que la caída acumulada sobreviva al reinicio (CL-99); con otro tope,
+    // el pico guardado se reinicia más abajo, en el arranque del inmune.
+    let puente_capital = match execution_engine::capital_operativo::puente_global() {
+        Ok(p) => p,
+        Err(e) => {
+            telemetry_server::telemetry_log!("🚨 [CAPITAL] {}", e);
+            std::process::exit(1);
+        }
+    };
+    let ruta_pico_arranque = std::path::PathBuf::from(quantum_arena::paths::env_data_path(
+        &risk_engine::drawdown::archivo_pico(),
+    ));
+    let ruta_anotacion_pico =
+        execution_engine::capital_operativo::ruta_anotacion(&ruta_pico_arranque);
+    let decision_pico = execution_engine::capital_operativo::decidir_pico(
+        execution_engine::capital_operativo::leer_anotacion(&ruta_anotacion_pico),
+        puente_capital.tope(),
+    );
+    if let execution_engine::capital_operativo::DecisionPico::Conservar { ancla: Some(a), .. } =
+        &decision_pico
+    {
+        puente_capital.restaurar_ancla(*a);
+    }
+
     let initial_capital = loop {
         match exec.load().fetch_account_balance().await {
             Ok(bal) => {
@@ -1753,6 +1781,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 // en el arranque en vez de resolverlo en silencio.
                 if let Some(aviso) = execution_engine::execution_evidence::tomar_aviso_capital() {
                     telemetry_server::telemetry_log!("⚠️ [CAPITAL] {}", aviso);
+                }
+                if let Some(tope) = puente_capital.tope() {
+                    telemetry_server::telemetry_log!(
+                        "🧮 [CAPITAL] Tope operativo {}={:.4}: el arena y el freno ven ${:.4} (ancla = saldo de USDT ${:.4}); las pérdidas reales lo bajan en la misma cantidad y nunca supera el saldo real.",
+                        execution_engine::capital_operativo::VARIABLE_TOPE,
+                        tope,
+                        bal,
+                        puente_capital.ancla().unwrap_or(f64::NAN)
+                    );
                 }
                 break bal;
             }
@@ -2447,7 +2484,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         // para el disparo por STOP_TRADING.LOCK o por latencia. Para el de
         // drawdown no (CL-99, CL-108): el pico y lo medido se guardan, y tras
         // el reinicio la misma caída vuelve a disparar. Para rearmarlo hay que
-        // retirar `pico_capital.txt` del entorno, que es aceptar el capital
+        // retirar el archivo del pico de este venue y definición
+        // (`drawdown::archivo_pico()`) del entorno, que es aceptar el capital
         // actual como el nuevo pico (T1-07 de la Línea G).
         {
             let arena_imm = Arc::clone(&arena_real);
@@ -2475,31 +2513,67 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             // se renombra para que el otro venue no lo vuelva a adoptar.
             // CL-133 (B2): un pico ilegible no es un pico ausente: no entran
             // posiciones nuevas y no se sobrescribe, como el estado (CL-108f).
-            let ruta_pico = std::path::PathBuf::from(quantum_arena::paths::env_data_path(
-                &risk_engine::drawdown::archivo_pico(),
-            ));
-            let ruta_pico_sin_venue = std::path::PathBuf::from(quantum_arena::paths::env_data_path(
-                risk_engine::drawdown::ARCHIVO_PICO_SIN_VENUE,
-            ));
+            //
+            // CAPITAL-UNICO (opción A): el archivo lleva también la definición
+            // del capital (`pico_capital_{venue}_usdt.txt`) y nace vacío. Los
+            // picos de la definición anterior (todos los activos: el del venue
+            // y el sin venue de antes de CL-133) ya NO se adoptan: sólo se
+            // nombran en una línea de aviso y quedan intactos.
+            // CAPITAL-UNICO (b): si el tope de capital operativo cambió desde
+            // que se guardó el pico, el pico está en otra escala: se reinicia
+            // con un aviso. Una anotación ilegible se trata como un pico ilegible.
+            let ruta_pico = ruta_pico_arranque.clone();
+            let ruta_anotacion = ruta_anotacion_pico.clone();
+            for aviso in risk_engine::drawdown::avisos_picos_ignorados(&[
+                std::path::PathBuf::from(quantum_arena::paths::env_data_path(
+                    &risk_engine::drawdown::archivo_pico_definicion_anterior(),
+                )),
+                std::path::PathBuf::from(quantum_arena::paths::env_data_path(
+                    risk_engine::drawdown::ARCHIVO_PICO_SIN_VENUE,
+                )),
+            ]) {
+                telemetry_server::telemetry_log!("⚠️ [IMMUNE] {}", aviso);
+            }
             let mut pico_ilegible = false;
-            let carga_pico = match risk_engine::drawdown::leer_pico(&ruta_pico) {
-                risk_engine::drawdown::CargaPico::Ausente => {
-                    let antigua = risk_engine::drawdown::leer_pico(&ruta_pico_sin_venue);
-                    if matches!(antigua, risk_engine::drawdown::CargaPico::Leido(_)) {
-                        let adoptado = ruta_pico_sin_venue.with_extension("txt.adoptado");
-                        if let Err(e) = std::fs::rename(&ruta_pico_sin_venue, &adoptado) {
-                            telemetry_server::telemetry_log!(
-                                "⚠️ [IMMUNE] no se pudo renombrar {}: {}",
-                                ruta_pico_sin_venue.display(),
-                                e
-                            );
-                        }
-                    }
-                    antigua
+            let mut anotacion_pendiente = true;
+            let carga_pico = match &decision_pico {
+                execution_engine::capital_operativo::DecisionPico::Conservar { .. } => {
+                    // Sólo el archivo con la definición; nada se adopta.
+                    risk_engine::drawdown::leer_pico(&ruta_pico)
                 }
-                otra => otra,
+                execution_engine::capital_operativo::DecisionPico::Reiniciar { tope_anotado } => {
+                    if let risk_engine::drawdown::CargaPico::Leido(viejo) =
+                        risk_engine::drawdown::leer_pico(&ruta_pico)
+                    {
+                        telemetry_server::telemetry_log!(
+                            "⚠️ [IMMUNE] El pico guardado (${:.4}) se midió con el tope de capital operativo {} y ahora es {}: pico reiniciado con el capital actual para no disparar el freno en falso. El freno en stops no cambia.",
+                            viejo,
+                            execution_engine::capital_operativo::describir_tope(*tope_anotado),
+                            execution_engine::capital_operativo::describir_tope(puente_capital.tope())
+                        );
+                    }
+                    // Sin pico restaurado y sin rearmar los stops (su caída no
+                    // depende del capital): el primer ciclo guarda el pico nuevo.
+                    risk_engine::drawdown::CargaPico::Ausente
+                }
+                execution_engine::capital_operativo::DecisionPico::Ilegible(m) => {
+                    anotacion_pendiente = false;
+                    risk_engine::drawdown::CargaPico::Ilegible(format!(
+                        "anotación del tope ilegible: {m}"
+                    ))
+                }
             };
+            // Revisión independiente (7a): un pico ausente sólo rearma el freno
+            // en stops si lo retiró el operador; no en la migración a `_usdt`
+            // ni en el reinicio por cambio de tope.
+            let retiro_del_operador = decision_pico.ausente_es_retiro_del_operador();
             match carga_pico {
+                risk_engine::drawdown::CargaPico::Ausente if !retiro_del_operador => {
+                    telemetry_server::telemetry_log!(
+                        "🛡️ [IMMUNE] Pico nuevo en {} (migración de definición o cambio de tope): el primer ciclo guarda el capital actual; el freno duro en stops se conserva.",
+                        ruta_pico.display()
+                    );
+                }
                 risk_engine::drawdown::CargaPico::Leido(guardado) => {
                     let pico =
                         risk_engine::drawdown::registrar_pico(&arena_imm.pico_capital, guardado);
@@ -2640,6 +2714,26 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         && risk_engine::drawdown::guardar_pico(&ruta_pico, peak_capital).is_ok()
                     {
                         pico_guardado = peak_capital;
+                        // CAPITAL-UNICO (b): el tope (y su ancla) se anota
+                        // DESPUÉS de guardar el pico en esa escala; si el
+                        // proceso cae antes, el próximo arranque reinicia otra vez.
+                        if anotacion_pendiente {
+                            let anotacion = execution_engine::capital_operativo::Anotacion {
+                                tope: puente_capital.tope(),
+                                ancla: puente_capital.ancla(),
+                            };
+                            match execution_engine::capital_operativo::guardar_anotacion(
+                                &ruta_anotacion,
+                                &anotacion,
+                            ) {
+                                Ok(()) => anotacion_pendiente = false,
+                                Err(e) => telemetry_server::telemetry_log!(
+                                    "⚠️ [IMMUNE] no se pudo anotar el tope en {}: {}",
+                                    ruta_anotacion.display(),
+                                    e
+                                ),
+                            }
+                        }
                     }
                     // CL-106 → CL-130 (R1 de la revisión del PR #62): el MISMO
                     // freno duro que el veto de entradas del riesgo. Dispara

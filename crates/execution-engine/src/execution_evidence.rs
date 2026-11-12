@@ -282,17 +282,36 @@ pub fn parse_account_capital(text: &str) -> Result<CapitalCuenta, String> {
             "ACCOUNT_EVIDENCE_INVALID: activo {ACTIVO_DE_MARGEN} repetido en assets[]"
         ));
     }
+    let total_todos_los_activos =
+        numero_cuenta(account.get("totalWalletBalance")).filter(|v| v.is_finite());
+    let multi_activo = account.get("multiAssetsMargin").and_then(|v| v.as_bool());
     let capital = match numero_cuenta(fila.get("walletBalance")) {
         Some(v) if v.is_finite() && v >= 0.0 => v,
+        Some(v) if v.is_finite() && v < 0.0 => {
+            return Err(format!(
+                "ACCOUNT_EVIDENCE_INVALID: walletBalance de {ACTIVO_DE_MARGEN} negativo ({v}); en modo multi-activo es un préstamo contra otro colateral: no es un capital con que operar"
+            ))
+        }
         _ => {
             return Err(format!(
                 "ACCOUNT_EVIDENCE_INVALID: walletBalance de {ACTIVO_DE_MARGEN} ausente o fuera de dominio"
             ))
         }
     };
-    let total_todos_los_activos =
-        numero_cuenta(account.get("totalWalletBalance")).filter(|v| v.is_finite());
-    let multi_activo = account.get("multiAssetsMargin").and_then(|v| v.as_bool());
+    // Revisión independiente, 3a: saldo de USDT 0 con dinero en otros activos
+    // (colateral en USDC/BNB en modo multi-activo) arrancaba con capital 0 y el
+    // inmune aplanaba las posiciones adoptadas como «cuenta INSOLVENTE». Una
+    // cuenta vacía de verdad (todo 0) sigue dando 0.
+    if capital <= 0.0 {
+        let otros = total_todos_los_activos.filter(|t| *t > 0.01);
+        if otros.is_some() || multi_activo == Some(true) {
+            return Err(format!(
+                "ACCOUNT_EVIDENCE_INVALID: saldo de {ACTIVO_DE_MARGEN} 0 con {} en otros activos (multiAssetsMargin={}): el motor no arranca con capital 0 en una cuenta con fondos",
+                otros.map_or_else(|| "N/D".to_string(), |t| format!("{t:.4}")),
+                multi_activo.map_or_else(|| "N/D".to_string(), |m| m.to_string())
+            ));
+        }
+    }
     Ok(CapitalCuenta {
         capital,
         total_todos_los_activos,

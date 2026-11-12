@@ -190,16 +190,58 @@ pub fn leer_pico(ruta: &std::path::Path) -> CargaPico {
 /// endpoints y el saldo de MAINNET: antes caían en el archivo de testnet por
 /// `is_demo_env` y el lanzador oficial de shadow volvía a R5. El archivo de
 /// testnet conserva su nombre («prueba») para no dejar huérfano el pico guardado.
+///
+/// CAPITAL-UNICO (opción A, decisión del coordinador del 2026-11-11): el
+/// nombre lleva también la DEFINICIÓN del capital, `_usdt` (saldo de USDT del
+/// activo de margen). El pico de la definición anterior (todos los activos:
+/// 7 323,93 en Testnet contra 1 655,81 de USDT) disparaba el inmune con una
+/// caída falsa del 77 %. El archivo nuevo nace vacío; el viejo no se adopta,
+/// no se borra y no se renombra (ver [`archivo_pico_definicion_anterior`]).
 pub fn archivo_pico() -> String {
-    let testnet = std::env::var("USE_TESTNET")
-        .is_ok_and(|s| s.trim().eq_ignore_ascii_case("true"));
-    let venue = if testnet { "prueba" } else { "mainnet" };
-    format!("pico_capital_{venue}.txt")
+    format!("pico_capital_{}_usdt.txt", venue_del_pico())
 }
 
-/// El archivo del pico de antes de CL-133, sin venue. El host lo adopta una
-/// vez, si el venue no tiene el suyo, y lo renombra.
+fn venue_del_pico() -> &'static str {
+    let testnet = std::env::var("USE_TESTNET")
+        .is_ok_and(|s| s.trim().eq_ignore_ascii_case("true"));
+    if testnet {
+        "prueba"
+    } else {
+        "mainnet"
+    }
+}
+
+/// CAPITAL-UNICO — archivo del pico de este venue con la definición anterior
+/// (`totalWalletBalance`, todos los activos). El host sólo lo LEE para
+/// escribir una línea con el pico ignorado; nunca lo adopta, ni lo escribe,
+/// ni lo borra, ni lo renombra.
+pub fn archivo_pico_definicion_anterior() -> String {
+    format!("pico_capital_{}.txt", venue_del_pico())
+}
+
+/// El archivo del pico de antes de CL-133, sin venue. CAPITAL-UNICO: también
+/// está en la unidad vieja; el host ya NO lo adopta (sólo lo nombra en el
+/// aviso del arranque si existe).
 pub const ARCHIVO_PICO_SIN_VENUE: &str = "pico_capital.txt";
+
+/// CAPITAL-UNICO (opción A) — avisos de los picos guardados con la definición
+/// anterior que el arranque IGNORA. Sólo lee: no adopta, no escribe, no borra
+/// ni renombra. Un archivo ausente no da aviso; uno ilegible, sí.
+pub fn avisos_picos_ignorados(rutas: &[std::path::PathBuf]) -> Vec<String> {
+    rutas
+        .iter()
+        .filter_map(|ruta| match leer_pico(ruta) {
+            CargaPico::Ausente => None,
+            CargaPico::Leido(p) => Some(format!(
+                "pico de la definición anterior (todos los activos) ignorado: {p:.4} en {}; no se adopta, no se borra y no se renombra",
+                ruta.display()
+            )),
+            CargaPico::Ilegible(m) => Some(format!(
+                "pico de la definición anterior ignorado (ilegible: {m}); no se adopta ni se toca"
+            )),
+        })
+        .collect()
+}
 
 /// CL-132 (R3 de la revisión del PR #62) / F2 (Ola Omega220): EL CAPITAL DE LOS
 /// FRENOS DE DRAWDOWN: el más conservador de los dos planos, el del arena y el
