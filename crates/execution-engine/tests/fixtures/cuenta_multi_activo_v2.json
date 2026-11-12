@@ -1,0 +1,15 @@
+{
+  "_nota": "SINTETICO (sin claves): esquema de /fapi/v2/account segun la documentacion de Binance USD-M (Account Information V2), en modo multi-activo con el colateral en USDC y BNB y el saldo de USDT en 0. No es una respuesta real de a3g: N/D hasta capturar una sin claves.",
+  "feeTier": 0, "canTrade": true, "canDeposit": true, "canWithdraw": true, "updateTime": 0,
+  "multiAssetsMargin": true, "tradeGroupId": -1,
+  "totalInitialMargin": "0.00000000", "totalMaintMargin": "0.00000000",
+  "totalWalletBalance": "5612.40000000", "totalUnrealizedProfit": "0.00000000",
+  "totalMarginBalance": "5612.40000000", "availableBalance": "5612.40000000",
+  "maxWithdrawAmount": "5612.40000000",
+  "assets": [
+    {"asset": "USDT", "walletBalance": "0.00000000", "unrealizedProfit": "0.00000000", "marginBalance": "0.00000000", "availableBalance": "5612.40000000", "marginAvailable": true, "updateTime": 1789000000000},
+    {"asset": "USDC", "walletBalance": "5000.00000000", "unrealizedProfit": "0.00000000", "marginBalance": "5000.00000000", "availableBalance": "5000.00000000", "marginAvailable": true, "updateTime": 1789000000000},
+    {"asset": "BNB", "walletBalance": "1.00000000", "unrealizedProfit": "0.00000000", "marginBalance": "1.00000000", "availableBalance": "1.00000000", "marginAvailable": true, "updateTime": 1789000000000}
+  ],
+  "positions": []
+}

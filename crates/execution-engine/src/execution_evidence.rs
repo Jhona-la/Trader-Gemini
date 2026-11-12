@@ -338,6 +338,72 @@ pub fn tomar_aviso_capital() -> Option<String> {
     buzon_aviso_capital().lock().ok().and_then(|mut b| b.take())
 }
 
+/// CAPITAL-UNICO V2 — lectura REST completa para el puente de la cuenta
+/// ([`crate::puente_cuenta`]): el SALDO de [`parse_account_capital`] (mismos
+/// fallos cerrados) y, aparte, el PnL no realizado de las posiciones con margen
+/// en USDT (`positions[]`, por símbolo y lado) para la EQUITY, con la misma
+/// definición que el stream. `marginBalance` no se usa: no siembra el arena.
+pub fn parse_account_lectura(
+    text: &str,
+) -> Result<(CapitalCuenta, crate::puente_cuenta::LecturaRest), String> {
+    let capital = parse_account_capital(text)?;
+    let account: serde_json::Value = serde_json::from_str(text)
+        .map_err(|e| format!("ACCOUNT_EVIDENCE_INVALID: schema: {e}"))?;
+    let fila_usdt = account
+        .get("assets")
+        .and_then(|a| a.as_array())
+        .and_then(|a| {
+            a.iter()
+                .find(|f| f.get("asset").and_then(|s| s.as_str()) == Some(ACTIVO_DE_MARGEN))
+        });
+    let tiempo = |v: Option<&serde_json::Value>| v.and_then(|t| t.as_u64()).filter(|t| *t > 0);
+    let mut tiempo_ms = fila_usdt.and_then(|f| tiempo(f.get("updateTime")));
+    let upnl_del_activo = fila_usdt
+        .and_then(|f| numero_cuenta(f.get("unrealizedProfit")))
+        .filter(|u| u.is_finite())
+        .unwrap_or(0.0);
+    let upnl = match account.get("positions").and_then(|p| p.as_array()) {
+        None => None,
+        Some(filas) => {
+            let mut m = std::collections::HashMap::new();
+            for p in filas {
+                let Some(simbolo) = p.get("symbol").and_then(|s| s.as_str()) else {
+                    continue;
+                };
+                if !crate::puente_cuenta::margen_en_activo(simbolo, None, ACTIVO_DE_MARGEN) {
+                    continue;
+                }
+                let cantidad = numero_cuenta(p.get("positionAmt")).unwrap_or(0.0);
+                if !(cantidad.is_finite() && cantidad.abs() > 1e-12) {
+                    continue;
+                }
+                let u = numero_cuenta(p.get("unrealizedProfit"))
+                    .filter(|u| u.is_finite())
+                    .unwrap_or(0.0);
+                let lado = p
+                    .get("positionSide")
+                    .and_then(|s| s.as_str())
+                    .unwrap_or("BOTH")
+                    .to_string();
+                if let Some(t) = tiempo(p.get("updateTime")) {
+                    tiempo_ms = Some(tiempo_ms.map_or(t, |a| a.max(t)));
+                }
+                m.insert((simbolo.to_string(), lado), u);
+            }
+            Some(m)
+        }
+    };
+    Ok((
+        capital,
+        crate::puente_cuenta::LecturaRest {
+            saldo: capital.capital,
+            upnl,
+            upnl_del_activo,
+            tiempo_ms,
+        },
+    ))
+}
+
 /// El capital de [`parse_account_capital`] (la API que usa el ejecutor).
 pub fn parse_account_equity(text: &str) -> Result<f64, String> {
     parse_account_capital(text).map(|c| c.capital)

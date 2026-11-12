@@ -5,6 +5,7 @@ pub mod client;
 pub mod dynamic_symbols;
 pub mod entry_dispatch;
 pub mod execution_evidence;
+pub mod puente_cuenta;
 pub mod executor;
 pub mod fixed_filter;
 pub mod freno_temporal;

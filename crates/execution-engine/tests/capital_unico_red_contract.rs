@@ -51,6 +51,32 @@ impl AccountSink for Captura {
     fn on_bracket_close(&self, _c: &BracketClose) {}
 }
 
+/// Todas las llamadas a `on_capital` (API de main: tres métodos).
+struct Llamadas(std::sync::Mutex<Vec<f64>>);
+impl AccountSink for Llamadas {
+    fn on_capital(&self, usdt: f64) {
+        self.0.lock().unwrap().push(usdt);
+    }
+    fn on_positions(&self, _p: &[RemotePosition]) {}
+    fn on_bracket_close(&self, _c: &BracketClose) {}
+}
+
+/// Lo que el stream publica por `on_capital` para una SECUENCIA de eventos
+/// en el mismo streamer (la caché de posiciones persiste entre eventos).
+fn saldos_del_stream(eventos: &[&str]) -> Vec<f64> {
+    let sink = Arc::new(Llamadas(std::sync::Mutex::new(Vec::new())));
+    let streamer = UserDataStreamer::new(
+        BinanceClient::new("k".into(), true),
+        Arc::new(OrderRegistry::new()),
+    )
+    .with_sink(sink.clone());
+    for e in eventos {
+        streamer.dispatch(e.as_bytes());
+    }
+    let v = sink.0.lock().unwrap().clone();
+    v
+}
+
 /// El capital que el stream publica por `on_capital` para un ACCOUNT_UPDATE.
 fn capital_del_stream(evento: &str) -> f64 {
     let sink = Arc::new(Captura(AtomicU64::new(f64::NAN.to_bits())));
@@ -110,4 +136,50 @@ fn capital_unico_con_caida_real_del_55_el_freno_dispara_y_del_45_no() {
         !freno.echado(),
         "una caída real del 45 % no llega a d*: {freno}"
     );
+}
+
+// ── V2 (P1.1 y P1.4 de Codex QRA): el puente del SALDO no lleva PnL no
+//    realizado. Las RED fallan en main (`wb + uPnL`); las guardas pasan en los dos.
+
+/// RED: wallet 100 y uPnL −60. REST lee 100; main publicaba 40 en el saldo.
+#[test]
+fn v2_red_el_saldo_del_stream_no_lleva_upnl_negativo() {
+    let ev = r#"{"e":"ACCOUNT_UPDATE","E":1789000000000,"T":1789000000000,"a":{"m":"ORDER","B":[{"a":"USDT","wb":"100.00000000"}],"P":[{"s":"BTCUSDT","pa":"0.010","ep":"60000","up":"-60.00000000","iw":"0","ps":"BOTH"}]}}"#;
+    assert_eq!(saldos_del_stream(&[ev]), vec![100.0], "el saldo es el wb de USDT");
+}
+
+/// RED: wallet 0 y uPnL +10. Main publicaba 10 como saldo.
+#[test]
+fn v2_red_el_saldo_del_stream_no_lleva_upnl_positivo() {
+    let ev = r#"{"e":"ACCOUNT_UPDATE","E":1789000000000,"T":1789000000000,"a":{"m":"ORDER","B":[{"a":"USDT","wb":"0"}],"P":[{"s":"BTCUSDT","pa":"0.010","ep":"60000","up":"10","iw":"0","ps":"BOTH"}]}}"#;
+    assert_eq!(saldos_del_stream(&[ev]), vec![0.0], "cero real, sin el uPnL");
+}
+
+/// RED: una posición con margen en USDC quedaba en la caché y su uPnL entraba
+/// en el capital de USDT del evento siguiente (main: 100 − 50 = 50).
+#[test]
+fn v2_red_la_cache_de_otro_activo_no_entra_en_el_saldo() {
+    let usdc = r#"{"e":"ACCOUNT_UPDATE","E":1789000000000,"T":1789000000000,"a":{"m":"ORDER","B":[],"P":[{"s":"BTCUSDC","pa":"0.010","ep":"60000","up":"-50","iw":"0","ps":"BOTH"}]}}"#;
+    let usdt = r#"{"e":"ACCOUNT_UPDATE","E":1789000000001,"T":1789000000001,"a":{"m":"ORDER","B":[{"a":"USDT","wb":"100"}],"P":[]}}"#;
+    assert_eq!(saldos_del_stream(&[usdc, usdt]), vec![100.0]);
+}
+
+/// RED: USDT repetido en `B[]` no es evidencia de saldo (mismo criterio que
+/// REST). Main publicaba los dos (el último, 7000, ganaba).
+#[test]
+fn v2_red_usdt_duplicado_en_el_stream_no_publica_saldo() {
+    let ev = r#"{"e":"ACCOUNT_UPDATE","E":1789000000000,"T":1789000000000,"a":{"m":"ORDER","B":[{"a":"USDT","wb":"100"},{"a":"USDT","wb":"7000"}],"P":[]}}"#;
+    assert_eq!(saldos_del_stream(&[ev]), Vec::<f64>::new());
+}
+
+/// Guarda: ausente no es cero; una actualización sólo de posiciones no cambia
+/// el saldo; un cero tras un saldo positivo sí se publica (el freno por
+/// capital ≤ 0 lo recibe).
+#[test]
+fn v2_guarda_ausente_no_es_cero_y_el_cero_real_se_publica() {
+    let cien = r#"{"e":"ACCOUNT_UPDATE","E":1789000000000,"T":1789000000000,"a":{"m":"ORDER","B":[{"a":"USDT","wb":"100"}],"P":[]}}"#;
+    let sin_wb = r#"{"e":"ACCOUNT_UPDATE","E":1789000000001,"T":1789000000001,"a":{"m":"ORDER","B":[{"a":"USDT"}],"P":[]}}"#;
+    let solo_pos = r#"{"e":"ACCOUNT_UPDATE","E":1789000000002,"T":1789000000002,"a":{"m":"ORDER","B":[],"P":[{"s":"BTCUSDT","pa":"0.010","ep":"60000","up":"-30","iw":"0","ps":"BOTH"}]}}"#;
+    let cero = r#"{"e":"ACCOUNT_UPDATE","E":1789000000003,"T":1789000000003,"a":{"m":"ORDER","B":[{"a":"USDT","wb":"0"}],"P":[{"s":"BTCUSDT","pa":"0","ep":"0","up":"0","iw":"0","ps":"BOTH"}]}}"#;
+    assert_eq!(saldos_del_stream(&[cien, sin_wb, solo_pos, cero]), vec![100.0, 0.0]);
 }

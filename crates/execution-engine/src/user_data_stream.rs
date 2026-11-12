@@ -32,7 +32,14 @@ pub struct RemotePosition {
 /// Interfaz del host para eventos de cuenta. El motor implementa esto para
 /// actualizar su estado (capital, posiciones) con la verdad del exchange.
 pub trait AccountSink: Send + Sync {
-    fn on_capital(&self, usdt_total_equity: f64);
+    /// CAPITAL-UNICO V2: el SALDO (`walletBalance` de USDT), sin PnL no
+    /// realizado. Alimenta el arena y el tamaño. Cero real se publica; un
+    /// evento sin saldo de USDT no llama aquí.
+    fn on_capital(&self, usdt_saldo: f64);
+    /// CAPITAL-UNICO V2: la EQUITY (saldo + PnL no realizado de las posiciones
+    /// con margen en USDT), observación aparte para el freno y las guardas con
+    /// posición abierta. Siempre llega junto a un `on_capital` coherente.
+    fn on_equity(&self, _usdt_equity: f64) {}
     fn on_positions(&self, positions: &[RemotePosition]);
     /// F412/F413/F271 (Sol, censo C-F7b §3): cierre confirmado por el
     /// exchange, con PnL bruto y comisiones reales del fill. Es la fuente
@@ -49,16 +56,18 @@ impl AccountSink for NoopSink {
     fn on_bracket_close(&self, _c: &crate::trade_accounting::BracketClose) {}
 }
 
-use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Mutex;
 
 /// F1.6: stream privado. `start()` es infinito (diseñado para tokio::spawn).
 pub struct UserDataStreamer {
     client: BinanceClient,
     registry: Arc<OrderRegistry>,
     sink: Arc<dyn AccountSink>,
-    cached_positions: Mutex<HashMap<(String, String), f64>>,
+    /// CAPITAL-UNICO V2: saldo, equity, caché de PnL no realizado y frescura
+    /// (`puente_cuenta`). Por defecto, uno propio; el host le pasa el suyo.
+    puente: Arc<crate::puente_cuenta::PuenteCuenta>,
+    /// Era del puente con la que nació este streamer (cuenta).
+    era: u64,
     api_secret: Option<String>,
     expired_flag: Arc<AtomicBool>,
     arena: Option<Arc<quantum_arena::GlobalArena>>,
@@ -74,7 +83,8 @@ impl UserDataStreamer {
             client,
             registry,
             sink: Arc::new(NoopSink),
-            cached_positions: Mutex::new(HashMap::new()),
+            puente: Arc::new(crate::puente_cuenta::PuenteCuenta::new()),
+            era: 1,
             api_secret: None,
             expired_flag: Arc::new(AtomicBool::new(false)),
             arena: None,
@@ -97,6 +107,19 @@ impl UserDataStreamer {
     pub fn with_sink(mut self, sink: Arc<dyn AccountSink>) -> Self {
         self.sink = sink;
         self
+    }
+
+    /// CAPITAL-UNICO V2: puente de la cuenta compartido con el host (REST del
+    /// arranque y de la resincronización). El streamer toma la era vigente.
+    pub fn with_puente(mut self, puente: Arc<crate::puente_cuenta::PuenteCuenta>) -> Self {
+        self.era = puente.era();
+        self.puente = puente;
+        self
+    }
+
+    /// El puente de la cuenta de este streamer.
+    pub fn puente(&self) -> &Arc<crate::puente_cuenta::PuenteCuenta> {
+        &self.puente
     }
 
     pub fn with_arena(mut self, arena: Arc<quantum_arena::GlobalArena>) -> Self {
@@ -284,10 +307,11 @@ impl UserDataStreamer {
     ///   2. `cached_positions` se limpia → durante el gap no llegaron los
     ///      ACCOUNT_UPDATE de cierre: el cache habría seguido reportando
     ///      posiciones ya cerradas y equidad falsa hasta el próximo update.
+    ///   CAPITAL-UNICO V2: la caché vive en el puente; tras la reconexión la
+    ///   equity queda incompleta (no sube sobre la última completa) hasta que
+    ///   el host resincroniza por REST.
     fn reconcile_after_reconnect(&self) {
-        if let Ok(mut cache) = self.cached_positions.lock() {
-            cache.clear();
-        }
+        self.puente.reconexion();
         quantum_arena::protection_health::mark_dirty();
         println!("🔄 [UDS] Reconectado — reconciliation pendiente: el watchdog de 60s cubrirá el gap (protection_dirty forzará auditoría en ≤5s)");
     }
@@ -765,6 +789,9 @@ impl UserDataStreamer {
             isolated_wallet: f64,
             #[serde(rename = "ps", default)]
             position_side: String,
+            /// Activo de margen de la posición, si el evento lo trae.
+            #[serde(rename = "ma", default)]
+            margin_asset: Option<String>,
         }
         #[derive(Deserialize)]
         struct AccountData {
@@ -775,54 +802,68 @@ impl UserDataStreamer {
         }
         #[derive(Deserialize)]
         struct Event {
+            #[serde(rename = "E", default)]
+            event_time: Option<u64>,
+            #[serde(rename = "T", default)]
+            transaction_time: Option<u64>,
             a: AccountData,
         }
         let Ok(ev) = serde_json::from_str::<Event>(text) else {
             return;
         };
 
-        // F1.6: Equidad total = Wallet Balance + Sum(Unrealized PnL acumulado de todas las posiciones)
-        // FIX #744: Binance envía deltas. Mantener cache de todas las posiciones para sumar PnL total real.
-        let total_unrealized_pnl: f64 = if let Ok(mut cache) = self.cached_positions.lock() {
-            for p in &ev.a.positions {
-                let key = (p.symbol.clone(), p.position_side.clone());
-                let pnl = if p.unrealized_pnl.is_finite() {
-                    p.unrealized_pnl
-                } else {
-                    0.0
-                };
-                if p.position_amt.abs() > 1e-8 {
-                    cache.insert(key, pnl);
-                } else {
-                    cache.remove(&key);
-                }
-            }
-            cache.values().sum()
+        // CAPITAL-UNICO V2 (decisión 1 del coordinador; P1.1 y P1.4 de Codex
+        // QRA): SALDO y EQUITY por separado, a través del puente de la cuenta.
+        // Antes se publicaba `wb + uPnL` (de TODAS las posiciones cacheadas,
+        // de cualquier activo) como el capital: con wb 100 y uPnL −60, REST
+        // leía 100 y el stream 40.
+        let activo = crate::execution_evidence::ACTIVO_DE_MARGEN;
+        let filas: Vec<&Balance> = ev.a.balances.iter().filter(|b| b.asset == activo).collect();
+        if filas.len() > 1 {
+            // Mismo criterio que REST (`parse_account_capital`): USDT repetido
+            // no es evidencia de saldo. El evento no cambia el capital.
+            eprintln!("🚨 [CAPITAL] ACCOUNT_UPDATE con {activo} repetido en B[]: descartado para el capital");
         } else {
-            ev.a.positions
+            // Ausente (sin fila o sin `wb`) no es cero; negativo o no finito no
+            // es un saldo con que operar (REST tampoco lo acepta).
+            let saldo = filas
+                .first()
+                .and_then(|b| b.wallet_balance)
+                .filter(|wb| wb.is_finite() && *wb >= 0.0);
+            let posiciones = ev
+                .a
+                .positions
                 .iter()
-                .map(|p| {
-                    if p.unrealized_pnl.is_finite() {
-                        p.unrealized_pnl
-                    } else {
-                        0.0
-                    }
+                .filter(|p| {
+                    crate::puente_cuenta::margen_en_activo(&p.symbol, p.margin_asset.as_deref(), activo)
                 })
-                .sum()
-        };
-
-        for b in &ev.a.balances {
-            if b.asset == crate::execution_evidence::ACTIVO_DE_MARGEN {
-                if let Some(wb) = b.wallet_balance {
-                    if wb >= 0.0 && wb.is_finite() {
-                        let total_equity = if (wb + total_unrealized_pnl).is_finite() {
-                            (wb + total_unrealized_pnl).max(0.0)
-                        } else {
-                            wb
-                        };
-                        self.sink.on_capital(total_equity);
+                .map(|p| {
+                    let lado = if p.position_side.is_empty() {
+                        "BOTH".to_string()
+                    } else {
+                        p.position_side.clone()
+                    };
+                    let abierta = p.position_amt.is_finite() && p.position_amt.abs() > 1e-8;
+                    let upnl = if p.unrealized_pnl.is_finite() { p.unrealized_pnl } else { 0.0 };
+                    ((p.symbol.clone(), lado), abierta.then_some(upnl))
+                })
+                .collect();
+            let evento = crate::puente_cuenta::EventoStream {
+                tiempo_ms: ev.transaction_time.or(ev.event_time).filter(|t| *t > 0),
+                saldo,
+                posiciones,
+            };
+            match self.puente.observar_stream(self.era, &evento) {
+                Ok(Some(obs)) => {
+                    // Una actualización sólo de posiciones no cambia el saldo:
+                    // se publica la equity con el saldo que ya había.
+                    if evento.saldo.is_some() {
+                        self.sink.on_capital(obs.saldo);
                     }
+                    self.sink.on_equity(obs.equity);
                 }
+                Ok(None) => {}
+                Err(e) => eprintln!("⚠️ [CAPITAL] ACCOUNT_UPDATE no aplicado: {e}"),
             }
         }
 
@@ -916,23 +957,30 @@ mod tests {
     fn account_update_routes_to_sink() {
         use std::sync::atomic::AtomicU64;
         let raw = r#"{"e":"ACCOUNT_UPDATE","a":{"B":[{"a":"USDT","wb":"105.25"}],"P":[{"s":"BTCUSDT","pa":"0.002","ep":"60000","up":"1.5","iw":"0"}]}}"#;
-        struct Cap(AtomicU64);
+        struct Cap(AtomicU64, AtomicU64);
         impl AccountSink for Cap {
             fn on_capital(&self, usdt: f64) {
                 self.0
-                    .store((usdt * 100.0) as u64, std::sync::atomic::Ordering::Relaxed);
+                    .store((usdt * 100.0).round() as u64, std::sync::atomic::Ordering::Relaxed);
+            }
+            fn on_equity(&self, usdt: f64) {
+                self.1
+                    .store((usdt * 100.0).round() as u64, std::sync::atomic::Ordering::Relaxed);
             }
             fn on_positions(&self, _p: &[RemotePosition]) {}
             fn on_bracket_close(&self, _c: &crate::trade_accounting::BracketClose) {}
         }
-        let sink = Arc::new(Cap(AtomicU64::new(0)));
+        let sink = Arc::new(Cap(AtomicU64::new(0), AtomicU64::new(0)));
         let streamer = UserDataStreamer::new(
             BinanceClient::new("k".into(), true),
             Arc::new(OrderRegistry::new()),
         )
         .with_sink(sink.clone());
         streamer.dispatch(raw.as_bytes());
-        assert_eq!(sink.0.load(std::sync::atomic::Ordering::Relaxed), 10675);
+        // CAPITAL-UNICO V2 (P1.1 de Codex QRA): el puente del saldo lleva sólo
+        // el `wb` de USDT (antes 106.75 = wb + uPnL); la equity va aparte.
+        assert_eq!(sink.0.load(std::sync::atomic::Ordering::Relaxed), 10525);
+        assert_eq!(sink.1.load(std::sync::atomic::Ordering::Relaxed), 10675);
     }
 
     #[test]
@@ -1024,23 +1072,19 @@ mod tests {
         quantum_arena::protection_health::clear_dirty();
         let registry = Arc::new(OrderRegistry::new());
         let streamer = UserDataStreamer::new(BinanceClient::new("key".into(), true), registry);
-        streamer
-            .cached_positions
-            .lock()
-            .unwrap()
-            .insert(("BTCUSDT".into(), "BOTH".into()), 1.5);
-        streamer
-            .cached_positions
-            .lock()
-            .unwrap()
-            .insert(("ETHUSDT".into(), "BOTH".into()), -0.4);
+        streamer.dispatch(
+            br#"{"e":"ACCOUNT_UPDATE","a":{"B":[{"a":"USDT","wb":"100"}],"P":[{"s":"BTCUSDT","pa":"1","up":"1.5","ps":"BOTH"},{"s":"ETHUSDT","pa":"1","up":"-0.4","ps":"BOTH"}]}}"#,
+        );
+        assert_eq!(streamer.puente().posiciones_en_cache(), 2);
 
         streamer.reconcile_after_reconnect();
 
-        assert!(
-            streamer.cached_positions.lock().unwrap().is_empty(),
+        assert_eq!(
+            streamer.puente().posiciones_en_cache(),
+            0,
             "el cache de posiciones debe vaciarse tras reconexión"
         );
+        assert!(streamer.puente().necesita_resincronizar());
         assert!(
             quantum_arena::protection_health::is_dirty(),
             "protection_dirty debe marcarse para forzar la auditoría en ≤5s"

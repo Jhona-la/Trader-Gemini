@@ -1746,12 +1746,31 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // CAPITAL-UNICO V2 (7d): `unidades_coinciden` = la lectura del arranque no
     // tuvo saldo fuera de USDT ni modo multi-activo (sin aviso). Sólo entonces
     // el pico viejo del venue puede adoptarse en la migración de definición.
-    let (initial_capital, unidades_coinciden) = loop {
-        match exec.load().fetch_account_balance().await {
-            Ok(bal) => {
+    //
+    // CAPITAL-UNICO V2 (decisión 1 del coordinador; P1.1 y P1.4 de Codex QRA):
+    // un solo puente de la cuenta por proceso, compartido con el user-data
+    // stream. SALDO (walletBalance de USDT) siembra el arena y el tamaño;
+    // EQUITY (saldo + PnL no realizado de las posiciones con margen en USDT)
+    // es la observación del freno. Las lecturas REST llevan ticket de frescura.
+    let puente_cuenta = Arc::new(execution_engine::puente_cuenta::PuenteCuenta::new());
+    let (initial_capital, initial_equity, unidades_coinciden) = loop {
+        let ticket = puente_cuenta.ticket();
+        let lectura = exec.load().fetch_account_lectura().await.and_then(|l| {
+            puente_cuenta
+                .observar_rest(ticket, &l)
+                .map_err(|e| format!("ACCOUNT_EVIDENCE_INVALID: {e}"))
+        });
+        match lectura {
+            Ok(obs) => {
+                let bal = obs.saldo;
                 telemetry_server::telemetry_log!(
                     "🌍 [OMNI-AWARENESS] API Real Balance Extracted: ${:.4}",
                     bal
+                );
+                telemetry_server::telemetry_log!(
+                    "🧮 [CAPITAL] saldo USDT ${:.4} (arena y tamaño) · equity ${:.4} (saldo + PnL no realizado USDT, freno)",
+                    obs.saldo,
+                    obs.equity
                 );
                 // CAPITAL-UNICO: saldo fuera de USDT o modo multi-activo, dicho
                 // en el arranque en vez de resolverlo en silencio.
@@ -1759,7 +1778,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 if let Some(aviso) = &aviso {
                     telemetry_server::telemetry_log!("⚠️ [CAPITAL] {}", aviso);
                 }
-                break (bal, aviso.is_none());
+                break (bal, obs.equity, aviso.is_none());
             }
             Err(e) => {
                 telemetry_server::telemetry_log!("⚠️ [CRITICAL] Failed to fetch balance from API (Testnet/Mainnet): {}. Retrying in 5s to enforce 100% Reality Parity...", e);
@@ -2024,6 +2043,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Shared Atomic Capital Pool (Dynamically scaled from API extraction)
     // Axiom V: Unified Cross-Margin Pool
     let unified_capital = Arc::new(AtomicU64::new(initial_capital.to_bits()));
+    // CAPITAL-UNICO V2: espejo de la EQUITY del exchange, aparte del saldo,
+    // para lectores del host; el freno la lee del puente (coherente con el saldo).
+    let equity_exchange = Arc::new(AtomicU64::new(initial_equity.to_bits()));
 
     // F412/F413/F271 (Sol, censo C-F7b §3): canal INDEPENDIENTE del Auditor
     // Interno. El productor es el hilo del user-data stream (fills del
@@ -2191,8 +2213,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // ORDER_TRADE_UPDATE → OrderRegistry; ACCOUNT_UPDATE → puente de capital.
     // La adopción de posiciones al arena es dueño el mapa de estado (F4.9);
     // aquí garantizamos que el capital dinámico refleje la verdad del exchange.
+    // CAPITAL-UNICO V2: `on_capital` es el SALDO (sin PnL no realizado) y
+    // `on_equity` la EQUITY; las dos salen del puente de la cuenta.
     struct CapitalBridgeSink {
         unified_capital: Arc<AtomicU64>,
+        equity_exchange: Arc<AtomicU64>,
     }
     impl execution_engine::user_data_stream::AccountSink for CapitalBridgeSink {
         fn on_capital(&self, usdt: f64) {
@@ -2201,6 +2226,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             if usdt >= 0.0 && usdt.is_finite() {
                 self.unified_capital
                     .store(usdt.to_bits(), Ordering::Relaxed);
+            }
+        }
+        fn on_equity(&self, usdt: f64) {
+            if usdt >= 0.0 && usdt.is_finite() {
+                self.equity_exchange.store(usdt.to_bits(), Ordering::Relaxed);
             }
         }
         fn on_positions(&self, positions: &[execution_engine::user_data_stream::RemotePosition]) {
@@ -2268,6 +2298,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         fn on_capital(&self, usdt: f64) {
             self.capital.on_capital(usdt);
         }
+        fn on_equity(&self, usdt: f64) {
+            self.capital.on_equity(usdt);
+        }
         fn on_positions(&self, positions: &[execution_engine::user_data_stream::RemotePosition]) {
             self.capital.on_positions(positions);
         }
@@ -2286,12 +2319,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     .with_sink(std::sync::Arc::new(SinkHost {
         capital: CapitalBridgeSink {
             unified_capital: Arc::clone(&unified_capital),
+            equity_exchange: Arc::clone(&equity_exchange),
         },
         // F412/F413/F271: canal independiente del Auditor Interno.
         auditor: AuditorCloseSink {
             fills_tx: fills_indep_tx.clone(),
         },
     }))
+    // CAPITAL-UNICO V2: el mismo puente que sembró el REST del arranque.
+    .with_puente(Arc::clone(&puente_cuenta))
     // D-702 (DÉCIMA OLA · auditoría integral): este streamer nace ANTES que el
     // arena (que se construye dentro del hilo del núcleo, con pila de 32 MiB por
     // D-684), así que no puede recibirlo; el de la era de producción sí lo
@@ -2464,6 +2500,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             // exchange real) — antes solo leía el arena: en live el funding/
             // slippage real invisibilizaban el drawdown contable verdadero.
             let exchange_capital_imm = Arc::clone(&unified_capital);
+            // CAPITAL-UNICO V2: el freno mide con la EQUITY del puente (saldo +
+            // PnL no realizado USDT), no con el saldo: sigue viendo las
+            // pérdidas abiertas. Tras una reconexión del stream, el inmune
+            // resincroniza el puente por REST (con ticket de frescura).
+            let puente_imm = Arc::clone(&puente_cuenta);
             // CL-99 (LC-F4-10, LC-F0-10): el pico del capital es uno, el del
             // arena, compartido con el veto de entradas del riesgo, y se
             // guarda por entorno para que un reinicio no borre la caída
@@ -2567,6 +2608,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 let mut aviso_atraso_local = telemetry_server::estrangulador::Estrangulador::new(60_000);
                 let mut aviso_feed_quieto = telemetry_server::estrangulador::Estrangulador::new(60_000);
                 let mut aviso_reloj = telemetry_server::estrangulador::Estrangulador::new(600_000);
+                // CAPITAL-UNICO V2: como mucho una resincronización REST cada 30 s.
+                let mut aviso_resincronizar =
+                    telemetry_server::estrangulador::Estrangulador::new(30_000);
                 // I-10 (N19): el aplanado del disparo que no se completó se
                 // reintenta mientras el inmune siga disparado.
                 let mut reintento_aplanado =
@@ -2645,8 +2689,40 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     // dos planos). Antes el riesgo subía el pico con el arena y
                     // el host medía con el mínimo: en papel sobre mainnet,
                     // ganar en papel se veía como una caída del saldo real.
-                    let cap_exchange =
-                        f64::from_bits(exchange_capital_imm.load(Ordering::Relaxed));
+                    // CAPITAL-UNICO V2 (P1.4): tras una reconexión, resincronizar
+                    // el puente por REST; una respuesta atrasada se rechaza.
+                    if puente_imm.necesita_resincronizar()
+                        && aviso_resincronizar
+                            .admitir(reloj_imm.elapsed().as_millis() as u64)
+                            .is_some()
+                    {
+                        let ticket = puente_imm.ticket();
+                        let executor = exec_imm.load_full();
+                        match executor.fetch_account_lectura().await {
+                            Ok(l) => match puente_imm.observar_rest(ticket, &l) {
+                                Ok(obs) => {
+                                    exchange_capital_imm
+                                        .store(obs.saldo.to_bits(), Ordering::Relaxed);
+                                    telemetry_server::telemetry_log!(
+                                        "🔄 [CAPITAL] puente resincronizado por REST tras la reconexión: saldo ${:.4} · equity ${:.4}",
+                                        obs.saldo,
+                                        obs.equity
+                                    );
+                                }
+                                Err(e) => telemetry_server::telemetry_log!(
+                                    "⚠️ [CAPITAL] resincronización REST descartada: {}",
+                                    e
+                                ),
+                            },
+                            Err(e) => telemetry_server::telemetry_log!(
+                                "⚠️ [CAPITAL] resincronización REST fallida: {}",
+                                e.chars().take(300).collect::<String>()
+                            ),
+                        }
+                    }
+                    let cap_exchange = puente_imm
+                        .observacion()
+                        .map_or(f64::NAN, |o| o.equity);
                     arena_imm.capital_exchange.store(
                         if cap_exchange.is_finite() {
                             cap_exchange
@@ -5158,14 +5234,24 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             });
                         }
 
+                        // CAPITAL-UNICO V2 (P1.4): otra cuenta = era nueva del
+                        // puente, ANTES de crear el streamer de mainnet. Lo que
+                        // llegue aún del de la era demo se rechaza.
+                        let era_mainnet = puente_cuenta.nueva_era();
+                        telemetry_server::telemetry_log!(
+                            "🔌 [CAPITAL] puente de la cuenta: era {} (mainnet)",
+                            era_mainnet
+                        );
                         // D-178: Re-spawn UserDataStreamer con las credenciales y cliente de Mainnet
                         let mainnet_streamer = execution_engine::user_data_stream::UserDataStreamer::new(
                             new_exec_arc.client().clone(),
                             new_exec_arc.registry(),
                         )
+                        .with_puente(Arc::clone(&puente_cuenta))
                         .with_sink(std::sync::Arc::new(SinkHost {
                             capital: CapitalBridgeSink {
                                 unified_capital: Arc::clone(&unified_capital),
+                                equity_exchange: Arc::clone(&equity_exchange),
                             },
                             // F412/F413/F271: mismo canal independiente — la
                             // era mainnet es la que tiene cierres reales.
@@ -5210,9 +5296,23 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         let oms_balance = Arc::clone(&oms_session);
                         let db_tx_clone = db_tx.clone();
                         let arena_real_clone = Arc::clone(&engine_real.arena);
+                        let puente_transicion = Arc::clone(&puente_cuenta);
+                        let saldo_transicion = Arc::clone(&unified_capital);
                         rt_handle.spawn(async move {
-                            if let Ok(bal) = balance_executor.fetch_account_balance().await {
+                            // CAPITAL-UNICO V2 (P1.4): la lectura REST de la
+                            // transición lleva ticket; si el stream de mainnet ya
+                            // publicó algo más nuevo, la respuesta atrasada no
+                            // escribe el arena (además del testigo de sesión).
+                            let ticket = puente_transicion.ticket();
+                            let lectura = balance_executor.fetch_account_lectura().await.and_then(|l| {
+                                puente_transicion.observar_rest(ticket, &l).map_err(|e| e.to_string())
+                            });
+                            if let Err(e) = &lectura {
+                                telemetry_server::telemetry_log!("[TRANSITION] Lectura de la cuenta descartada: {}", e.chars().take(300).collect::<String>());
+                            }
+                            if let Ok(bal) = lectura.map(|obs| obs.saldo) {
                                 if oms_balance.publish_current_balance(&balance_token, bal, |balance| {
+                                    saldo_transicion.store(balance.to_bits(), Ordering::Relaxed);
                                     arena_real_clone.unified_capital.store(balance, Ordering::Relaxed);
                                     arena_real_clone.config.base_capital.store(balance, Ordering::Relaxed);
                                     let _ = db_tx_clone.try_send((balance, 0.0));

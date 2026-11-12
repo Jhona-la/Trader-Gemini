@@ -311,6 +311,19 @@ pub trait ExecutionProvider: Send + Sync {
 
     async fn fetch_account_balance(&self) -> Result<f64, String>;
 
+    /// CAPITAL-UNICO V2 — lectura de la cuenta para el puente
+    /// ([`crate::puente_cuenta`]): SALDO y, aparte, el PnL no realizado por
+    /// posición (EQUITY). Por defecto (simulador): el saldo, sin posiciones.
+    async fn fetch_account_lectura(&self) -> Result<crate::puente_cuenta::LecturaRest, String> {
+        let saldo = self.fetch_account_balance().await?;
+        Ok(crate::puente_cuenta::LecturaRest {
+            saldo,
+            upnl: Some(std::collections::HashMap::new()),
+            upnl_del_activo: 0.0,
+            tiempo_ms: None,
+        })
+    }
+
     async fn set_leverage(&self, symbol: &str, leverage: u32) -> Result<(), String>;
 
     async fn fetch_commission_rate(&self, symbol: &str) -> Result<(f64, f64), String>;
@@ -4707,6 +4720,11 @@ impl ExecutionProvider for OrderExecutor {
     }
 
     async fn fetch_account_balance(&self) -> Result<f64, String> {
+        // CAPITAL-UNICO V2: el SALDO de la misma lectura que usa el puente.
+        self.fetch_account_lectura().await.map(|l| l.saldo)
+    }
+
+    async fn fetch_account_lectura(&self) -> Result<crate::puente_cuenta::LecturaRest, String> {
         let timestamp = self.get_synced_timestamp();
 
         let cupo = self.check_exit_rate_limits(timestamp, Tramo::Lectura)?;
@@ -4734,14 +4752,16 @@ impl ExecutionProvider for OrderExecutor {
                 // CL-8: saldo de la cartera, no `availableBalance` (ya neto del
                 // margen que la adopción vuelve a reservar). CAPITAL-UNICO: el
                 // del activo de margen (USDT), el mismo que publica el stream.
-                crate::execution_evidence::parse_account_capital(&text)
-                    .map(|c| {
+                // V2: la EQUITY (saldo + PnL no realizado de las posiciones con
+                // margen en USDT) va aparte, para el freno; no siembra el arena.
+                crate::execution_evidence::parse_account_lectura(&text)
+                    .map(|(c, lectura)| {
                         let aviso = c.aviso();
                         if let Some(a) = &aviso {
                             println!("⚠️ {a}");
                         }
                         crate::execution_evidence::publicar_aviso_capital(aviso);
-                        c.capital
+                        lectura
                     })
                     .map_err(|e| format!("{e}. Response /fapi/v2/account: {text}"))
             }
@@ -5970,7 +5990,8 @@ mod tests_n5c {
             "fetch_income_page",
             "fetch_open_orders_inner",
             "fetch_open_positions",
-            "fetch_account_balance",
+            // CAPITAL-UNICO V2: la petición vive en fetch_account_lectura.
+            "fetch_account_lectura",
             "fetch_commission_rate",
             "check_rate_limits",
             "fetch_hedge_mode",
@@ -6447,7 +6468,8 @@ mod tests_m4_c02 {
             "cancel_order",
             "execute_reduce_only_market",
             "fetch_open_positions",
-            "fetch_account_balance",
+            // CAPITAL-UNICO V2: la petición vive en fetch_account_lectura.
+            "fetch_account_lectura",
             // CL-20: piernas protectoras (reductoras por construcción).
             "place_algo_leg",
             "execute_oco_order",
@@ -6736,7 +6758,8 @@ pub(crate) mod tests_n20 {
             "fetch_open_algo_orders_inner",
             "fetch_open_orders_inner",
             "fetch_open_positions",
-            "fetch_account_balance",
+            // CAPITAL-UNICO V2: la petición vive en fetch_account_lectura.
+            "fetch_account_lectura",
             "fetch_commission_rate",
         ];
         // RV16-T: cada envío lleva su propio freno (entre el envío anterior, o
