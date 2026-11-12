@@ -347,6 +347,19 @@ fn maxima(a: Option<u64>, b: Option<u64>) -> Option<u64> {
     }
 }
 
+/// V4C (F2): procedencia del stream del socket `socket` con hora `hora`, sin
+/// olvidar la `E` mayor ya vista en ese socket (un evento sin `E` no la borra).
+fn con_e_mayor(previa: Option<Origen>, socket: u64, hora: Option<u64>) -> Option<Origen> {
+    let vista = match previa {
+        Some(Origen::Stream { socket: s, e }) if s == socket => e,
+        _ => None,
+    };
+    Some(Origen::Stream {
+        socket,
+        e: maxima(hora, vista),
+    })
+}
+
 /// V4B: quién puso la marca vigente de un componente.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Origen {
@@ -422,6 +435,10 @@ struct Estado {
     /// [`Estado::registrar_saldo_stream`]). Una REST con esa misma `T` y otro
     /// valor puede ser una foto atrasada: no cierra un empate ni suelta el veto.
     ultimo_saldo_stream: Option<(u64, Option<u64>, f64)>,
+    /// V4C (F2): generación en que se aceptó el último evento del stream. Una
+    /// REST sólo puede soltar el veto o cerrar un empate con un ticket
+    /// posterior (pedida después de ese evento).
+    ultimo_evento: Option<u64>,
     /// Posiciones abiertas observadas: (cantidad, PnL no realizado).
     abiertas: HashMap<ClavePosicion, (f64, f64)>,
     /// Marca de cada posición observada (abierta o cerrada).
@@ -519,6 +536,45 @@ impl Estado {
             },
             _ if aceptado => self.ultimo_saldo_stream = Some((t, hora, s)),
             _ => self.ultimo_saldo_stream = None,
+        }
+    }
+
+    /// V4C (F3): ante una contradicción, el techo del freno baja a la equity
+    /// con el saldo menor y, por posición, el PnL no realizado menor entre lo
+    /// vigente y lo que trae la lectura rechazada (`filas`; `completa`: una
+    /// posición abierta que no viene se toma por cerrada). Una fila inválida
+    /// no aporta. Sólo baja el techo: no escribe saldo, cantidad ni marcas.
+    fn bajar_techo_en_conflicto(&mut self, saldo: Option<f64>, filas: &[(ClavePosicion, DatoPosicion)], completa: bool) {
+        let Some(s) = (match (self.saldo, saldo) {
+            (Some(a), Some(b)) => Some(a.min(b)),
+            (a, b) => a.or(b),
+        }) else {
+            return;
+        };
+        let vigente = |c: &ClavePosicion| self.abiertas.get(c).map(|(_, u)| *u).filter(|u| u.is_finite());
+        let mut upnl = 0.0;
+        for (clave, u) in &self.abiertas {
+            if !u.1.is_finite() {
+                continue;
+            }
+            let otra = match filas.iter().find(|(c, _)| c == clave).map(|(_, d)| d) {
+                Some(DatoPosicion::Abierta { upnl, .. }) if upnl.is_finite() => *upnl,
+                Some(DatoPosicion::Cerrada) => 0.0,
+                None if completa => 0.0,
+                _ => u.1,
+            };
+            upnl += u.1.min(otra);
+        }
+        for (clave, dato) in filas {
+            if let (DatoPosicion::Abierta { upnl: u, .. }, None) = (dato, vigente(clave)) {
+                if u.is_finite() && !self.abiertas.contains_key(clave) {
+                    upnl += u.min(0.0);
+                }
+            }
+        }
+        let cota = (s + upnl).max(0.0);
+        if cota.is_finite() {
+            self.techo = Some(self.techo.map_or(cota, |t| t.min(cota)));
         }
     }
 
@@ -765,8 +821,21 @@ impl PuenteCuenta {
         }
         // Puede soltar el veto y resolver un empate: ticket del socket abierto
         // y posterior al último anclaje.
-        let anclada = !e.socket_cerrado && ticket.generacion >= e.ancla;
-        // Contradicción de REST: se señala el empate del componente y se veta.
+        // V4C (F2): y pedida después del último evento aceptado del stream.
+        let anclada = !e.socket_cerrado
+            && ticket.generacion >= e.ancla
+            && e.ultimo_evento.map_or(true, |g| ticket.generacion > g);
+        // V4C (F3): las filas de esta lectura, para la cota del freno si se
+        // rechaza.
+        let filas: Vec<(ClavePosicion, DatoPosicion)> = l
+            .posiciones
+            .iter()
+            .flatten()
+            .map(|(c, p)| (c.clone(), p.dato))
+            .collect();
+        let completa_l = l.posiciones.is_some();
+        // Contradicción de REST: se señala el empate del componente y se veta;
+        // el freno ve el saldo menor y el PnL no realizado menor por posición.
         let contradiccion = |e: &mut Estado, r: Rechazo, pos: Option<&ClavePosicion>, t| {
             if matches!(r, Rechazo::Contradiccion { .. }) {
                 let g = e.anclar("Contradiccion");
@@ -774,6 +843,7 @@ impl PuenteCuenta {
                     None => e.ev_saldo.empate_desde = Some(g),
                     Some(c) => e.ev_pos.entry(c.clone()).or_default().empate_desde = Some(g),
                 }
+                e.bajar_techo_en_conflicto(Some(l.saldo), &filas, completa_l);
                 self.notificar(e);
             }
             e.registrar(fuente, t, None, &r);
@@ -807,11 +877,7 @@ impl PuenteCuenta {
                     None,
                     Some(t),
                 );
-                let upnl: f64 = e.abiertas.values().map(|(_, u)| *u).sum();
-                let cota = (vs.min(l.saldo) + upnl).max(0.0);
-                if cota.is_finite() {
-                    e.techo = Some(e.techo.map_or(cota, |c| c.min(cota)));
-                }
+                e.bajar_techo_en_conflicto(Some(vs.min(l.saldo)), &filas, completa_l);
                 self.notificar(&e);
                 return Err(r);
             }
@@ -851,7 +917,12 @@ impl PuenteCuenta {
             e.ev_saldo.empate_desde = None;
         }
         if l.tiempo_saldo_ms.is_some() && l.tiempo_saldo_ms >= e.marca_saldo {
-            e.ev_saldo.origen = Some(Origen::Rest);
+            // V4C (F1): una foto que sólo confirma el saldo con la misma marca
+            // no le quita al stream el orden de su socket (el fill siguiente
+            // con la misma `T` y `E` mayor sigue aplicando).
+            if l.tiempo_saldo_ms > e.marca_saldo || matches!(saldo, Veredicto::Aplicar) {
+                e.ev_saldo.origen = Some(Origen::Rest);
+            }
             if anclada && ticket.generacion >= e.ev_saldo.empate_desde.unwrap_or(0) {
                 // Una foto anclada con el mismo saldo confirma el empate.
                 e.ev_saldo.empate_desde = None;
@@ -862,13 +933,18 @@ impl PuenteCuenta {
             let ev = e.evidencia_pos(clave);
             // La foto se pidió después de la última escritura de esta posición.
             let posterior = ticket.generacion > ev.generacion || !e.ev_pos.contains_key(clave);
+            let marca_antes = e.marcas_pos.get(clave).copied().flatten();
             // V4C (F3): entre una foto REST y la evidencia vigente no hay orden
             // demostrable del PnL no realizado cuando la fila trae marca vieja.
             e.aplicar_posicion_con(clave, dato, *t, v, posterior, false, Some(Origen::Rest));
             let marca = e.marcas_pos.get(clave).copied().flatten();
             if t.is_some() && *t >= marca {
                 let ev = e.ev_pos.entry(clave.clone()).or_default();
-                ev.origen = Some(Origen::Rest);
+                // V4C (F1): como en el saldo, confirmar con la misma marca no
+                // le quita el origen al stream.
+                if *t > marca_antes || matches!(v, Veredicto::Aplicar) {
+                    ev.origen = Some(Origen::Rest);
+                }
                 if anclada && ev.empate_desde.is_some_and(|g| ticket.generacion >= g) {
                     ev.empate_desde = None;
                 }
@@ -966,7 +1042,6 @@ impl PuenteCuenta {
             e.registrar(fuente, t, hora, &r);
             return Err(r);
         }
-        let origen = Some(Origen::Stream { socket, e: hora });
         // Atrasada (incluida la regresión de `E`) se descarta sin más; una
         // contradicción o un dato sin orden dejan la equity incompleta y un
         // anclaje nuevo; la contradicción además señala el empate.
@@ -978,6 +1053,8 @@ impl PuenteCuenta {
                         None => e.ev_saldo.empate_desde = Some(g),
                         Some(c) => e.ev_pos.entry(c.clone()).or_default().empate_desde = Some(g),
                     }
+                    // V4C (F3): el freno ve también las pérdidas del evento rechazado.
+                    e.bajar_techo_en_conflicto(ev.saldo, &ev.posiciones, false);
                 }
                 Rechazo::SinOrden { .. } => {
                     e.anclar("SinOrden");
@@ -1048,12 +1125,12 @@ impl PuenteCuenta {
                 // Sólo un dato que se aplicó hace del stream el origen de la
                 // marca; un igual (p. ej. un repetido tras reconectar) no.
                 if t.is_some() {
-                    e.ev_saldo.origen = origen;
+                    e.ev_saldo.origen = con_e_mayor(e.ev_saldo.origen, socket, hora);
                 }
             }
             Some((_, Veredicto::Igual)) if t.is_some() && t == e.marca_saldo && empate_saldo == Empate::Posterior => {
                 // Duplicado posterior del mismo socket: guarda la `E` mayor.
-                e.ev_saldo.origen = origen;
+                e.ev_saldo.origen = con_e_mayor(e.ev_saldo.origen, socket, hora);
             }
             _ => {}
         }
@@ -1062,11 +1139,14 @@ impl PuenteCuenta {
         }
         for ((clave, dato), v) in ev.posiciones.iter().zip(&veredictos) {
             let Some((v, posterior, anterior)) = v else { continue };
+            let origen = con_e_mayor(e.evidencia_pos(clave).origen, socket, hora);
             e.aplicar_posicion_con(clave, dato, t, v, *posterior, *anterior, origen);
             if matches!(v, Veredicto::Igual) && *posterior && t.is_some() {
                 e.ev_pos.entry(clave.clone()).or_default().origen = origen;
             }
         }
+        // V4C (F2): una REST pedida antes de este evento ya no suelta el veto.
+        e.ultimo_evento = Some(e.generacion);
         e.generacion += 1;
         let obs = e.observacion();
         if let Some(o) = &obs {

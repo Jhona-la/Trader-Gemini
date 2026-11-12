@@ -258,6 +258,56 @@ fn v4c_control_rest_con_marca_nueva_cierra_el_empate() {
     assert!(!p.veta_entradas());
 }
 
+// ── F2: frontera del ticket con el último evento aceptado ────────────────
+
+/// Un paquete rechazado del socket anterior no cuenta como evento aceptado:
+/// no invalida un ticket pedido después del último evento del socket vigente.
+#[test]
+fn v4c_control_paquete_del_socket_viejo_no_invalida_el_ticket() {
+    let p = arrancado(100.0, 100, &[]);
+    let viejo = p.socket();
+    let nuevo = p.abrir_socket(p.era()).unwrap();
+    ws(&p, 200, 201, Some(99.0), &[]).unwrap();
+    let b = p.ticket();
+    let r = p.observar_stream_del_socket(p.era(), viejo, Some(500), &ev(500, Some(1.0), &[]), |_| {});
+    assert!(matches!(r, Err(Rechazo::OtroSocket { .. })), "{r:?}");
+    assert_eq!(p.socket(), nuevo);
+    p.observar_rest(b, &rest(99.0, Some(200), &[])).unwrap();
+    assert!(!p.veta_entradas());
+}
+
+/// Una REST pedida antes del último evento aceptado no suelta el veto aunque
+/// coincida; un evento aceptado DESPUÉS del ticket lo invalida.
+#[test]
+fn v4c_ticket_anterior_al_ultimo_evento_no_suelta_el_veto() {
+    let p = arrancado(100.0, 100, &[]);
+    p.abrir_socket(p.era()).unwrap();
+    let a = p.ticket();
+    ws(&p, 200, 201, Some(99.0), &[]).unwrap();
+    p.observar_rest(a, &rest(99.0, Some(200), &[])).unwrap();
+    assert!(p.veta_entradas(), "la foto se pidió antes del evento");
+    p.observar_rest(p.ticket(), &rest(99.0, Some(200), &[])).unwrap();
+    assert!(!p.veta_entradas());
+}
+
+// ── F3: contradicción con la pérdida del lote rechazado ──────────────────
+
+/// La contradicción de saldo no escribe saldo ni cantidad, pero el freno ve
+/// la pérdida abierta mayor; la REST coherente pedida después recupera.
+#[test]
+fn v4c_contradiccion_de_saldo_baja_el_freno_y_se_recupera() {
+    let p = arrancado(100.0, 100, &[("BTCUSDT", ab(1.0, 0.0), Some(100))]);
+    ws(&p, 200, 202, Some(100.0), &[("BTCUSDT", ab(1.0, -10.0))]).unwrap();
+    let r = p.observar_rest(p.ticket(), &rest(101.0, Some(200), &[("BTCUSDT", ab(1.0, -60.0), Some(200))]));
+    assert!(matches!(r, Err(Rechazo::Contradiccion { .. })), "{r:?}");
+    assert_eq!(saldo(&p), 100.0);
+    assert!(p.veta_entradas());
+    assert!(cerca(p.equity_del_freno().unwrap(), 40.0));
+    let o = p.observar_rest(p.ticket(), &rest(100.0, Some(200), &[("BTCUSDT", ab(1.0, -10.0), Some(300))])).unwrap();
+    assert!(cerca(o.equity, 90.0), "{o:?}");
+    assert!(!p.veta_entradas());
+}
+
 fn saldo(p: &PuenteCuenta) -> f64 {
     p.observacion().unwrap().saldo
 }
