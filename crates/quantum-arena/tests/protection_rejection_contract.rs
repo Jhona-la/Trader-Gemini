@@ -13,9 +13,12 @@ fn unknown_execution_status_is_not_confirmed_rejection() {
         "Binance API Error: {\"code\":-1000,\"msg\":\"Unknown error\"}",
         "AMBIGUOUS: previous code=-2019; current response unavailable",
     ] {
-        assert!(!note_rejection("RET34_UNKNOWN_EXECUTION", msg), "{msg}");
+        assert!(
+            !note_rejection("RET34_UNKNOWN_EXECUTION", true, msg),
+            "{msg}"
+        );
     }
-    assert_eq!(rejections_of("RET34_UNKNOWN_EXECUTION"), 0);
+    assert_eq!(rejections_of("RET34_UNKNOWN_EXECUTION", true), 0);
 }
 
 #[test]
@@ -30,9 +33,12 @@ fn incidental_negative_numbers_are_not_exchange_evidence() {
         "Binance API Error: {\"msg\":\"previous -2019: error\"}",
         "REJECTED http=502 body=proxy upstream -2019: unknown",
     ] {
-        assert!(!note_rejection("RET34_INCIDENTAL_NUMBERS", msg), "{msg}");
+        assert!(
+            !note_rejection("RET34_INCIDENTAL_NUMBERS", true, msg),
+            "{msg}"
+        );
     }
-    assert_eq!(rejections_of("RET34_INCIDENTAL_NUMBERS"), 0);
+    assert_eq!(rejections_of("RET34_INCIDENTAL_NUMBERS", true), 0);
 }
 
 #[test]
@@ -45,20 +51,28 @@ fn current_structured_and_legacy_display_rejections_remain_accepted() {
         "Binance API Error: {\"code\":-4164,\"msg\":\"Notional too small\"}",
         "{\"code\":-2019,\"msg\":\"Insufficient margin\"}",
     ] {
-        assert!(note_rejection("RET34_CURRENT_REJECTIONS", msg), "{msg}");
+        assert!(
+            note_rejection("RET34_CURRENT_REJECTIONS", true, msg),
+            "{msg}"
+        );
     }
-    assert_eq!(rejections_of("RET34_CURRENT_REJECTIONS"), 6);
+    assert_eq!(rejections_of("RET34_CURRENT_REJECTIONS", true), 6);
 }
 
 #[test]
 fn ambiguous_observation_does_not_increment_escalation_evidence() {
     let symbol = "AUDIT_XXV_AMBIGUOUS";
-    let before = rejections_of(symbol);
-    assert!(!note_rejection(symbol, "AMBIGUOUS: code=-1007 timeout"));
-    assert_eq!(rejections_of(symbol), before);
+    let before = rejections_of(symbol, true);
+    assert!(!note_rejection(
+        symbol,
+        true,
+        "AMBIGUOUS: code=-1007 timeout"
+    ));
+    assert_eq!(rejections_of(symbol, true), before);
     assert!(note_rejection(
         symbol,
+        true,
         "REJECTED code=-2019 msg=Insufficient margin"
     ));
-    assert_eq!(rejections_of(symbol), before + 1);
+    assert_eq!(rejections_of(symbol, true), before + 1);
 }

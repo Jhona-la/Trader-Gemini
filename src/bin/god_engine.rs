@@ -274,12 +274,31 @@ fn genome_protection_prices(
     (tp, sl)
 }
 
+/// La posición viva cuya cobertura TP/SL audita `ensure_position_protected`.
+struct PosicionAProteger<'a> {
+    symbol: &'a str,
+    is_long: bool,
+    /// Cantidad de la posición, en valor absoluto (unidades del activo).
+    qty: f64,
+    entry_price: f64,
+    /// τ de entrada que recuerda el arena; 0 si no la conoce (ancla rápida).
+    entry_tau_ms: u64,
+}
+
 /// Resultado de una auditoría de cobertura (B1.3 + HOST-024).
 struct ProtectionAudit {
     /// Gap TP/SL restante tras el intento de top-up (unidades del activo).
     tp_gap: f64,
     sl_gap: f64,
-    evidence_unknown: bool,
+    /// I-14 (N44): el error del filtro del símbolo si no se pudo leer. Las
+    /// piernas sí se leyeron y los huecos cuentan como antes, pero no se
+    /// colocó nada y la auditoría del vigilante no está completa.
+    sin_filtro: Option<String>,
+    /// I-14 (N44): el error de la primera pierna cuya colocación no dejaron
+    /// salir el freno temporal o la cuota crítica agotada
+    /// (`freno_temporal`). La auditoría del vigilante se repite en el ciclo
+    /// siguiente; antes cerraba completa y la pierna esperaba a la nominal.
+    colocacion_frenada: Option<String>,
 }
 
 /// I-9 (N15b del censo C-F7b): las piernas de (símbolo, lado) siguen vivas
@@ -292,20 +311,41 @@ fn anotar_purga_pendiente(symbol: &str, is_long: bool) {
     quantum_arena::protection_health::mark_dirty();
 }
 
+/// I-14 (N34): la huérfana que el vigilante no pudo cancelar queda como purga
+/// pendiente (I-9). Sólo despierta al vigilante si es nueva: una que ya estaba
+/// pendiente se reintenta igual, y marcarla en cada auditoría la adelantaría
+/// sin fin. Devuelve si marcó la bandera (un evento terminal más).
+fn anotar_huerfana_pendiente(symbol: &str, is_long: bool) -> bool {
+    let nueva = execution_engine::purga_pendiente::PURGAS_PENDIENTES.anotar(symbol, is_long);
+    if nueva {
+        quantum_arena::protection_health::mark_dirty();
+    }
+    nueva
+}
+
 /// I-9: el vigilante reintenta las purgas pendientes con la foto de
 /// posiciones de su auditoría, antes de la purga de huérfanas.
+///
+/// I-14 (N34): devuelve las posiciones (símbolo, lado) purgadas. El listado de
+/// huérfanas de la auditoría se tomó antes que el reintento, y las piernas
+/// que canceló cada purga no se juzgan en esta auditoría
+/// (`vigilante::quitar_las_purgadas`); en hedge, las del otro lado sí.
 async fn reintentar_purgas_pendientes(
     executor: &execution_engine::executor::OrderExecutor,
     positions: &[execution_engine::PositionRiskEntry],
-) {
+) -> std::collections::HashSet<(String, bool)> {
     use execution_engine::purga_pendiente::{Reintento, PURGAS_PENDIENTES};
+    let mut purgados = std::collections::HashSet::new();
     for ((symbol, is_long), r) in PURGAS_PENDIENTES.reintentar(executor, positions).await {
         let lado = if is_long { "LONG" } else { "SHORT" };
         match r {
-            Reintento::Purgada(n) => telemetry_server::telemetry_log!(
-                "🧹 [PURGA-PENDIENTE] {} {}: {} pierna(s) cancelada(s); el símbolo vuelve a admitir entradas",
-                symbol, lado, n
-            ),
+            Reintento::Purgada(n) => {
+                telemetry_server::telemetry_log!(
+                    "🧹 [PURGA-PENDIENTE] {} {}: {} pierna(s) cancelada(s); el símbolo vuelve a admitir entradas",
+                    symbol, lado, n
+                );
+                purgados.insert((symbol, is_long));
+            }
             Reintento::Aplazada => telemetry_engine::telemetry_err!(
                 "🧹 [PURGA-PENDIENTE] {} {}: hay una posición abierta que sus piernas podrían proteger; no se purga a ciegas y el símbolo sigue sin entradas",
                 symbol, lado
@@ -316,58 +356,137 @@ async fn reintentar_purgas_pendientes(
             ),
         }
     }
+    purgados
 }
 
 /// B2.6 / D-698 — purga las piernas TP/SL sin posición debajo (en hedge,
 /// sin posición de su lado). Las usan el vigilante en cada auditoría y el
 /// apagado tras el aplanado final (CL-44b).
+///
+/// I-14 (N34): recibe el listado (`openAlgoOrders` sin símbolo), que quien
+/// llama lee ANTES de `positions`. Juzgado con posiciones anteriores, una
+/// entrada que colocaba su bracket entre las dos lecturas lo veía cancelado
+/// como huérfano. Antes el error del listado se tragaba (`if let Ok`) y la
+/// auditoría limpiaba la bandera sin haber visto las piernas. Una huérfana
+/// cuya cancelación falla queda como purga pendiente (I-9): el símbolo no
+/// admite entradas hasta que el vigilante la purgue, porque una reentrada
+/// abriría con ella armada encima y la contaría como su protección. Antes de
+/// anotarla se releen las piernas de su símbolo: una pierna que disparó o se
+/// canceló tras el listado ya no existe y su cancelación falla, pero no queda
+/// nada que purgar (`vigilante::sigue_abierta`). Devuelve cuántas marcas hizo
+/// en la bandera (purgas pendientes nuevas).
 async fn purge_orphan_legs(
     executor: &execution_engine::executor::OrderExecutor,
+    all_legs: &[execution_engine::order_types::OpenAlgoOrder],
     positions: &[execution_engine::PositionRiskEntry],
-) {
+) -> u64 {
+    use execution_engine::vigilante::{es_huerfana, lado_de_la_purga, sigue_abierta};
     // B2.6 — PURGA DE PIERNAS HUÉRFANAS: piernas TP/SL cuya
     // posición ya cerró disparan al vacío (REJECTED benigno
     // que quema slots algo y ensucia el stream). Cancelarlas.
-    if let Ok(all_legs) = executor.fetch_all_open_algo_orders().await {
-        for leg in &all_legs {
-            // D-698 (DÉCIMA OLA · auditoría integral): `positionSide`
-            // vacío es DESCONOCIDO, no «no coincide». Con el
-            // predicado anterior, una pierna sin ese campo —el mismo
-            // que ya llegó vacío con `algoStatus` (B1.3-fix)— daba
-            // `side_open = false` para toda posición LARGA viva, y el
-            // watchdog purgaba su TP y su SL dejándola desnuda.
-            let side_unknown = leg.position_side.is_empty();
-            let side_open = positions.iter().any(|p| {
-                p.symbol == leg.symbol
-                    && p.position_amt.abs() > 0.0
-                    && (leg.position_side == "BOTH"
-                        || side_unknown
-                        || (p.position_amt > 0.0) == (leg.position_side == "LONG"))
-            });
-            if !side_open {
-                // D-698: se cancela por `algoId` y el fallo se
-                // reporta: una pierna que sobrevive a la purga
-                // dispara sobre la posición siguiente.
-                match executor
-                    .cancel_algo_order_ids(
-                        &leg.symbol,
-                        leg.algo_id,
-                        &leg.client_algo_id,
-                    )
-                    .await
-                {
-                    Ok(()) => telemetry_server::telemetry_log!(
-                        "🧹 [PROTECTION-WATCHDOG] Pierna huérfana purgada: {} {} algoId {} (posición ya cerrada)",
-                        leg.symbol, leg.order_type, leg.algo_id
-                    ),
-                    Err(e) => telemetry_engine::telemetry_err!(
-                        "🚨 [PROTECTION-WATCHDOG] Pierna huérfana VIVA: {} {} algoId {} no se pudo cancelar: {}",
+    let mut marcas = 0u64;
+    for leg in all_legs {
+        // D-698 (DÉCIMA OLA · auditoría integral): `positionSide` vacío es
+        // DESCONOCIDO, no «no coincide» (`vigilante::es_huerfana`). Con el
+        // predicado anterior, una pierna sin ese campo —el mismo que ya llegó
+        // vacío con `algoStatus` (B1.3-fix)— daba `side_open = false` para
+        // toda posición LARGA viva, y el watchdog purgaba su TP y su SL
+        // dejándola desnuda.
+        if !es_huerfana(leg, positions) {
+            continue;
+        }
+        // D-698: se cancela por `algoId` y el fallo se reporta: una pierna
+        // que sobrevive a la purga dispara sobre la posición siguiente.
+        match executor
+            .cancel_algo_order_ids(&leg.symbol, leg.algo_id, &leg.client_algo_id)
+            .await
+        {
+            Ok(()) => telemetry_server::telemetry_log!(
+                "🧹 [PROTECTION-WATCHDOG] Pierna huérfana purgada: {} {} algoId {} (posición ya cerrada)",
+                leg.symbol, leg.order_type, leg.algo_id
+            ),
+            Err(e) => {
+                let releida = executor.fetch_open_algo_orders(&leg.symbol).await;
+                if !sigue_abierta(leg, &releida) {
+                    telemetry_server::telemetry_log!(
+                        "🧹 [PROTECTION-WATCHDOG] Pierna huérfana {} {} algoId {}: la cancelación falló ({}) pero ya no está abierta (disparó o se canceló tras el listado)",
                         leg.symbol, leg.order_type, leg.algo_id, e
-                    ),
+                    );
+                    continue;
+                }
+                telemetry_engine::telemetry_err!(
+                    "🚨 [PROTECTION-WATCHDOG] Pierna huérfana VIVA: {} {} algoId {} no se pudo cancelar: {}; queda como purga pendiente y, mientras el proceso siga, el símbolo no admite entradas hasta purgarla",
+                    leg.symbol, leg.order_type, leg.algo_id, e
+                );
+                if anotar_huerfana_pendiente(&leg.symbol, lado_de_la_purga(leg)) {
+                    marcas += 1;
                 }
             }
         }
     }
+    marcas
+}
+
+/// I-14 (N34, N44): cierra las lecturas de una auditoría del vigilante y
+/// dice si se completaron. Con alguna fallida o frenada la bandera no se
+/// limpia y la relectura la decide `ReintentoLectura`. `eventos` son los
+/// terminales al empezar la auditoría más sus propias marcas: un evento ajeno
+/// que llegue durante ella adelanta la relectura, uno suyo no. No vuelve a
+/// marcar la bandera: `mark_dirty` cuenta un evento y la adelantaría en cada
+/// ciclo.
+fn cerrar_lecturas_del_vigilante(
+    reintento: &mut execution_engine::vigilante::ReintentoLectura,
+    ciclo: u32,
+    eventos: u64,
+    lecturas: &execution_engine::vigilante::Lecturas,
+) -> bool {
+    use execution_engine::vigilante::{Cierre, CICLOS_NOMINALES};
+    let cierre = reintento.cerrar(ciclo, eventos, lecturas);
+    match &cierre {
+        Cierre::Completa {
+            incompletas_previas,
+            frenadas_previas,
+        } => {
+            if *incompletas_previas > 0 || *frenadas_previas > 0 {
+                telemetry_server::telemetry_log!(
+                    "🐕 [PROTECTION-WATCHDOG] Lecturas completas de nuevo tras {} auditoría(s) sin completar: {} con fallo o sin cuota y {} frenada(s)",
+                    incompletas_previas.saturating_add(*frenadas_previas),
+                    incompletas_previas,
+                    frenadas_previas
+                );
+            }
+        }
+        Cierre::Fallida {
+            error,
+            espera_ciclos,
+        } => telemetry_engine::telemetry_err!(
+            "⚠️ [PROTECTION-WATCHDOG] Auditoría sin completar ({}): no se coloca ni se purga sobre lo no leído; se relee en {} s como mucho",
+            error,
+            u64::from(*espera_ciclos) * 5
+        ),
+        Cierre::PorCuota { espera_ciclos } => telemetry_server::telemetry_log!(
+            "🐕 [PROTECTION-WATCHDOG] Auditoría sin la cuota de lectura: no se coloca ni se purga sobre lo no leído; se relee en {} s como mucho",
+            u64::from(*espera_ciclos) * 5
+        ),
+        // Un baneo 418 puede durar minutos: un aviso al empezar y otro por
+        // minuto, no uno cada 5 s. Un fallo de la misma auditoría se avisa
+        // siempre.
+        Cierre::Frenada { seguidas, fallo } => {
+            if *seguidas == 1 || *seguidas % CICLOS_NOMINALES == 0 {
+                telemetry_server::telemetry_log!(
+                    "🐕 [PROTECTION-WATCHDOG] Auditoría frenada (un 429/418, su freno o la cuota crítica agotada, en una lectura o una colocación; {} seguida(s)): se relee en cada ciclo hasta que se libere",
+                    seguidas
+                );
+            }
+            if let Some(error) = fallo {
+                telemetry_engine::telemetry_err!(
+                    "⚠️ [PROTECTION-WATCHDOG] Auditoría frenada y además con una lectura fallida ({}): no se coloca ni se purga sobre lo no leído; se relee en el ciclo siguiente",
+                    error
+                );
+            }
+        }
+    }
+    cierre.completa()
 }
 
 /// CL-44b (ADR-0015): antes de un aplanado total espera a que acabe la
@@ -508,65 +627,63 @@ async fn aplanado_inmune(
 /// lado con shortfall — un OCO completo sobre-protegería el sano y el
 /// exchange rechaza por qty > posición). Devuelve el estado de la
 /// cobertura tras el intento. `tag` identifica el llamador en telemetría.
+///
+/// I-14 (N44): devuelve Err si no pudo leer las piernas, sin colocar nada.
+/// Antes las leía con `unwrap_or_default`: un error (5xx, red, cuerpo
+/// ilegible, cuota) era «ninguna pierna» y colocaba TP y SL encima de las
+/// que quizá seguían vivas. Sin el filtro del símbolo tampoco coloca nada,
+/// pero devuelve los huecos leídos (`sin_filtro`), como antes.
 async fn ensure_position_protected(
     executor: &execution_engine::executor::OrderExecutor,
     arena: &quantum_arena::GlobalArena,
-    symbol: &str,
-    is_long: bool,
-    pos_qty: f64,
-    entry_price: f64,
-    entry_tau_ms: u64,
+    posicion: PosicionAProteger<'_>,
     tag: &str,
-) -> ProtectionAudit {
-    let legs = match executor.fetch_open_algo_orders(symbol).await {
-        Ok(legs) => legs,
-        Err(e) => {
-            quantum_arena::protection_health::mark_dirty();
-            telemetry_server::telemetry_log!(
-                "⚠️ [{}] {} cobertura DESCONOCIDA ({}): cero nuevas piernas hasta reconciliación",
-                tag,
-                symbol,
-                e
-            );
-            return ProtectionAudit {
-                tp_gap: 0.0,
-                sl_gap: 0.0,
-                evidence_unknown: true,
-            };
-        }
-    };
-    let want_side = if is_long { "LONG" } else { "SHORT" };
-    let mut tp_covered = 0.0f64;
-    let mut sl_covered = 0.0f64;
-    for a in &legs {
-        let side_ok =
-            a.position_side == want_side || a.position_side == "BOTH" || a.position_side.is_empty();
-        let live = matches!(a.algo_status.as_str(), "NEW" | "TRIGGERING" | "TRIGGERED");
-        if !side_ok || !live {
-            continue;
-        }
-        if a.order_type.contains("TAKE_PROFIT") {
-            tp_covered += a.quantity;
-        } else {
-            // STOP_MARKET y TRAILING_STOP_MARKET cuentan como cobertura de pérdida.
-            sl_covered += a.quantity;
-        }
-    }
-    let Ok(f) = executor.get_symbol_filter(symbol).await else {
-        return ProtectionAudit {
-            tp_gap: pos_qty - tp_covered,
-            sl_gap: pos_qty - sl_covered,
-            evidence_unknown: false,
-        };
-    };
+) -> Result<ProtectionAudit, String> {
+    let PosicionAProteger {
+        symbol,
+        is_long,
+        qty: pos_qty,
+        entry_price,
+        entry_tau_ms,
+    } = posicion;
+    // B1.3: STOP_MARKET y TRAILING_STOP_MARKET cuentan como cobertura de
+    // pérdida (`vigilante::cobertura_leida`). Los errores se devuelven tal
+    // cual: el vigilante los clasifica con `freno_temporal`.
+    let (tp_covered, sl_covered) = execution_engine::vigilante::cobertura_leida(
+        executor.fetch_open_algo_orders(symbol).await,
+        is_long,
+    )?;
     let tp_gap = (pos_qty - tp_covered).max(0.0);
     let sl_gap = (pos_qty - sl_covered).max(0.0);
-    if tp_gap < f.step_size && sl_gap < f.step_size {
-        return ProtectionAudit {
+    // I-14 (N44): cubierta del todo, sin el filtro. Antes lo pedía igual, y
+    // un símbolo cuyo filtro no se podía leer dejaba incompleta cada
+    // auditoría de una posición que no necesitaba nada.
+    if tp_gap <= 0.0 && sl_gap <= 0.0 {
+        return Ok(ProtectionAudit {
             tp_gap: 0.0,
             sl_gap: 0.0,
-            evidence_unknown: false,
-        }; // protegida
+            sin_filtro: None,
+            colocacion_frenada: None,
+        });
+    }
+    let f = match executor.get_symbol_filter(symbol).await {
+        Ok(f) => f,
+        Err(e) => {
+            return Ok(ProtectionAudit {
+                tp_gap,
+                sl_gap,
+                sin_filtro: Some(e),
+                colocacion_frenada: None,
+            })
+        }
+    };
+    if tp_gap < f.step_size && sl_gap < f.step_size {
+        return Ok(ProtectionAudit {
+            tp_gap: 0.0,
+            sl_gap: 0.0,
+            sin_filtro: None,
+            colocacion_frenada: None,
+        }); // protegida
     }
     if entry_price <= 0.0 {
         telemetry_server::telemetry_log!(
@@ -574,11 +691,12 @@ async fn ensure_position_protected(
             tag,
             symbol
         );
-        return ProtectionAudit {
+        return Ok(ProtectionAudit {
             tp_gap,
             sl_gap,
-            evidence_unknown: false,
-        };
+            sin_filtro: None,
+            colocacion_frenada: None,
+        });
     }
     let (tp_price, sl_price) =
         genome_protection_prices(arena, symbol, is_long, entry_price, entry_tau_ms);
@@ -589,7 +707,8 @@ async fn ensure_position_protected(
     let mut audit = ProtectionAudit {
         tp_gap,
         sl_gap,
-        evidence_unknown: false,
+        sin_filtro: None,
+        colocacion_frenada: None,
     };
     // Precio VIVO del arena para el reintento -2021: cuando la posición
     // deriva más allá del nivel del genoma calculado desde el ENTRY, el
@@ -665,14 +784,31 @@ async fn ensure_position_protected(
                 },
                 Err(e) => {
                     // B3.5b: evidencia positiva de rechazo para el
-                    // escalado (los fallos de red no cuentan).
-                    let _ = quantum_arena::protection_health::note_rejection(symbol, &e);
+                    // escalado, de esta posición (símbolo y lado). Sólo
+                    // cuenta un código del exchange; la red, un 5xx y los
+                    // -1000, -1006 y -1007 (ejecución desconocida) no
+                    // (I-14, N44).
+                    let rechazo =
+                        quantum_arena::protection_health::note_rejection(symbol, is_long, &e);
+                    // I-14 (N44): frenada sin salir, se reintenta en el
+                    // ciclo siguiente.
+                    let frenada = execution_engine::freno_temporal::es_freno_temporal(&e);
                     telemetry_server::telemetry_log!(
-                        "⚠️ [{}] top-up TP {} falló: {}",
+                        "⚠️ [{}] top-up TP {} falló ({}): {}",
                         tag,
                         symbol,
+                        if rechazo {
+                            "rechazo del exchange"
+                        } else if frenada {
+                            "frenada: se reintenta en el ciclo siguiente"
+                        } else {
+                            "no cuenta como rechazo"
+                        },
                         e
                     );
+                    if frenada && audit.colocacion_frenada.is_none() {
+                        audit.colocacion_frenada = Some(e);
+                    }
                     break;
                 }
             }
@@ -736,20 +872,37 @@ async fn ensure_position_protected(
                 },
                 Err(e) => {
                     // B3.5b: evidencia positiva de rechazo para el
-                    // escalado (los fallos de red no cuentan).
-                    let _ = quantum_arena::protection_health::note_rejection(symbol, &e);
+                    // escalado, de esta posición (símbolo y lado). Sólo
+                    // cuenta un código del exchange; la red, un 5xx y los
+                    // -1000, -1006 y -1007 (ejecución desconocida) no
+                    // (I-14, N44).
+                    let rechazo =
+                        quantum_arena::protection_health::note_rejection(symbol, is_long, &e);
+                    // I-14 (N44): frenada sin salir, se reintenta en el
+                    // ciclo siguiente.
+                    let frenada = execution_engine::freno_temporal::es_freno_temporal(&e);
                     telemetry_server::telemetry_log!(
-                        "⚠️ [{}] top-up SL {} falló: {}",
+                        "⚠️ [{}] top-up SL {} falló ({}): {}",
                         tag,
                         symbol,
+                        if rechazo {
+                            "rechazo del exchange"
+                        } else if frenada {
+                            "frenada: se reintenta en el ciclo siguiente"
+                        } else {
+                            "no cuenta como rechazo"
+                        },
                         e
                     );
+                    if frenada && audit.colocacion_frenada.is_none() {
+                        audit.colocacion_frenada = Some(e);
+                    }
                     break;
                 }
             }
         }
     }
-    audit
+    Ok(audit)
 }
 
 /// B3.6 — CIRCUIT BREAKER POR SÍMBOLO (anti-horno de comisiones).
@@ -2998,17 +3151,41 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     let recovered_tau = ctx.as_ref().map(|c| c.tau_ms).unwrap_or(0);
 
                     rt_handle.spawn(async move {
-                        let _ = ensure_position_protected(
+                        // I-14 (N44): sin leer las piernas o el filtro no se
+                        // coloca nada, y con una colocación frenada la pierna
+                        // no salió; la posición queda para el vigilante. Una
+                        // colocación rechazada o ambigua espera, como en sus
+                        // auditorías, a la nominal.
+                        if let Ok(ProtectionAudit {
+                            sin_filtro: Some(e),
+                            ..
+                        })
+                        | Ok(ProtectionAudit {
+                            colocacion_frenada: Some(e),
+                            ..
+                        })
+                        | Err(e) = ensure_position_protected(
                             &exec_oco.load(),
                             &arena_restore,
-                            &pos_sym,
-                            pos_is_long,
-                            pos_qty,
-                            pos_entry,
-                            recovered_tau,
+                            PosicionAProteger {
+                                symbol: &pos_sym,
+                                is_long: pos_is_long,
+                                qty: pos_qty,
+                                entry_price: pos_entry,
+                                entry_tau_ms: recovered_tau,
+                            },
                             "RESTORE",
                         )
-                        .await;
+                        .await
+                        {
+                            telemetry_engine::telemetry_err!(
+                                "⚠️ [RESTORE] {} {}: protección sin re-armar ({}); la audita el vigilante",
+                                pos_sym,
+                                if pos_is_long { "LONG" } else { "SHORT" },
+                                e
+                            );
+                            quantum_arena::protection_health::mark_dirty();
+                        }
                     });
                 } else {
                     // LG-28: una posición del exchange sin ranura (símbolo fuera
@@ -3674,11 +3851,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 // ACOTADA en vez de riesgo desnudo ilimitado. Umbral 3
                 // absorbe los estados transitorios (bracket en vuelo tras
                 // una entrada, 1 auditoría).
-                let mut naked_streak: std::collections::HashMap<String, u32> =
+                // I-14 (N42): por posición, (símbolo, lado). Con la racha por
+                // símbolo, en hedge el lado cubierto la borraba en cada
+                // auditoría y el lado desnudo no llegaba nunca a 3.
+                let mut naked_streak: std::collections::HashMap<(String, bool), u32> =
                     std::collections::HashMap::new();
-                // B3.5b — snapshot de rechazos por símbolo entre auditorías.
-                let mut naked_rejections: std::collections::HashMap<String, u64> =
-                    std::collections::HashMap::new();
+                // B3.5b — base de rechazos por posición entre auditorías.
+                // I-14 (N42): ya no se borra al quedar la posición cubierta o
+                // cerrada; se fija al acumulado de ese momento.
+                let mut naked_rejections = execution_engine::vigilante::BaseDeRechazos::new();
+                // I-14 (N34, N44): espera entre relecturas tras una auditoría
+                // con lecturas fallidas.
+                let mut reintento_lectura = execution_engine::vigilante::ReintentoLectura::new();
                 const NAKED_ESCALATION_LIMIT: u32 = 3;
                 loop {
                     fast.tick().await;
@@ -3693,7 +3877,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     let events_at_start = quantum_arena::protection_health::terminal_events_seen();
                     // Cadencia: reactiva si hay señal terminal; nominal cada
                     // 12 ticks de 5s (=60s, alineado con la reconciliación).
-                    if !dirty && ticks % 12 != 0 {
+                    // I-14: tras una auditoría incompleta decide
+                    // `ReintentoLectura`. Tras un fallo de lectura o sin la
+                    // cuota de lectura relee 1, 2, 4, 8 y luego 12 disparos de
+                    // este intervalo después del disparo en que empezó la
+                    // auditoría: como mucho 5, 10, 20, 40 y 60 s tras acabar
+                    // ella (`Skip` pierde los disparos que caen durante una
+                    // auditoría larga). Tras un 429/418, su freno o la cuota
+                    // crítica agotada, en una lectura o una colocación, en el
+                    // disparo siguiente. Aparte de la auditoría nominal, sólo
+                    // un evento terminal ajeno adelanta la relectura.
+                    let nominal = ticks.is_multiple_of(execution_engine::vigilante::CICLOS_NOMINALES);
+                    if !nominal && !reintento_lectura.toca(ticks, events_at_start, dirty) {
                         continue;
                     }
                     // CL-44b (ADR-0015): no audita durante un aplanado total.
@@ -3710,27 +3905,80 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     // re-bracket ni cierre de escalada. Todo lo que hace aquí
                     // reduce riesgo: piernas protectoras (CL-20), purga de
                     // huérfanas y cierre reduce-only (CL-3).
-                    let Ok(positions) = executor.fetch_position_risk().await else {
-                        continue;
+                    let mut lecturas = execution_engine::vigilante::Lecturas::new();
+                    // I-14: las marcas de la bandera que hace esta auditoría
+                    // (purgas pendientes nuevas) no adelantan su relectura.
+                    let mut marcas_propias = 0u64;
+                    // I-14 (N34): el listado de piernas va antes que las
+                    // posiciones, y las huérfanas se juzgan con posiciones
+                    // leídas después. Con la foto anterior, el bracket que una
+                    // entrada colocaba entre las dos lecturas salía huérfano y
+                    // se cancelaba.
+                    let listado = executor.fetch_all_open_algo_orders().await;
+                    let positions = match executor.fetch_position_risk().await {
+                        Ok(positions) => positions,
+                        Err(e) => {
+                            if let Err(el) = &listado {
+                                lecturas.error("openAlgoOrders", el);
+                            }
+                            lecturas.error("positionRisk", &e);
+                            cerrar_lecturas_del_vigilante(
+                                &mut reintento_lectura,
+                                ticks,
+                                events_at_start + marcas_propias,
+                                &lecturas,
+                            );
+                            continue;
+                        }
                     };
-                    // B3.5b (auditoría) — símbolos con posición ABIERTA en esta
-                    // auditoría: al salir del loop, el streak y el snapshot de
-                    // rechazos de símbolos YA CERRADOS se purgan. Sin esto, un
-                    // streak=2 sobrevivía al cierre de la posición (TP/manual)
-                    // y una RE-ENTRADA horas después heredaba el conteo: 1
-                    // rechazo nuevo → streak 3 → CIERRE DE EMERGENCIA de una
-                    // posición sana cuyo bracket apenas estaba en vuelo.
-                    let mut open_syms: std::collections::HashSet<String> =
+                    // B3.5b (auditoría) — posiciones (símbolo, lado) ABIERTAS
+                    // en esta auditoría: al salir del loop se purga el streak
+                    // de las YA CERRADAS y su base de rechazos se fija al
+                    // acumulado de ahora (I-14, N42). Sin esto, un streak=2
+                    // sobrevivía al cierre de la posición (TP/manual) y una
+                    // RE-ENTRADA horas después heredaba el conteo: 1 rechazo
+                    // nuevo → streak 3 → CIERRE DE EMERGENCIA de una posición
+                    // sana cuyo bracket apenas estaba en vuelo.
+                    let mut abiertas: std::collections::HashSet<(String, bool)> =
                         std::collections::HashSet::new();
-                    reintentar_purgas_pendientes(&executor, &positions).await;
-                    purge_orphan_legs(&executor, &positions).await;
+                    let purgados = reintentar_purgas_pendientes(&executor, &positions).await;
+                    // I-14 (N34): sin el listado de piernas la auditoría no
+                    // está completa: no se limpia la bandera y la relectura la
+                    // decide `ReintentoLectura`. El listado es anterior al
+                    // reintento: las piernas que acaba de cancelar cada purga
+                    // no se juzgan en esta auditoría (en hedge, las del otro
+                    // lado del símbolo sí).
+                    match listado {
+                        Ok(mut piernas) => {
+                            execution_engine::vigilante::quitar_las_purgadas(
+                                &mut piernas,
+                                &purgados,
+                                executor.is_hedge_mode.load(Ordering::SeqCst),
+                            );
+                            marcas_propias += purge_orphan_legs(&executor, &piernas, &positions).await;
+                        }
+                        Err(e) => lecturas.error("openAlgoOrders", &e),
+                    }
                     let mut naked_total = 0usize;
+                    let mut sin_leer = 0usize;
                     for p in positions
                         .iter()
                         .filter(|p| p.is_open() && p.position_amt.abs() > 0.0)
                     {
-                        open_syms.insert(p.symbol.clone());
                         let is_long = p.position_amt > 0.0;
+                        let clave = (p.symbol.clone(), is_long);
+                        abiertas.insert(clave.clone());
+                        // I-14 (N42): la primera mirada a la posición siembra
+                        // su base con el acumulado de ahora, antes de colocar
+                        // nada: los rechazos anotados antes (los de un RESTORE
+                        // que ya terminó) no son de esta racha. Los de un
+                        // RESTORE que termina después cuentan como nuevos
+                        // (N44c).
+                        naked_rejections.sembrar(
+                            &p.symbol,
+                            is_long,
+                            quantum_arena::protection_health::rejections_of(&p.symbol, is_long),
+                        );
                         let qty = p.position_amt.abs();
                         // τ de entrada: la que recuerda el arena local si el
                         // símbolo está mapeado; si no, ancla rápida.
@@ -3749,24 +3997,41 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                     })
                             })
                             .unwrap_or(0);
-                        let prot = ensure_position_protected(
+                        let prot = match ensure_position_protected(
                             &executor,
                             &arena_wd,
-                            &p.symbol,
-                            is_long,
-                            qty,
-                            p.entry_price,
-                            tau,
+                            PosicionAProteger {
+                                symbol: &p.symbol,
+                                is_long,
+                                qty,
+                                entry_price: p.entry_price,
+                                entry_tau_ms: tau,
+                            },
                             "WATCHDOG",
                         )
-                        .await;
-                        if prot.evidence_unknown {
-                            quantum_arena::protection_health::mark_dirty();
-                            telemetry_server::telemetry_log!(
-                                "⚠️ [WATCHDOG] {} cobertura desconocida: no se contabiliza gap ni se escala; reconciliación pendiente",
-                                p.symbol
-                            );
-                            continue;
+                        .await
+                        {
+                            Ok(prot) => prot,
+                            Err(e) => {
+                                // I-14 (N44): sin las piernas no se coloca nada
+                                // ni cambia la racha de la posición, y su base
+                                // de rechazos sólo se siembra si era nueva; se
+                                // relee.
+                                sin_leer += 1;
+                                lecturas.error(&p.symbol, &e);
+                                continue;
+                            }
+                        };
+                        if let Some(e) = &prot.sin_filtro {
+                            // I-14 (N44): sin el filtro no se colocó nada; los
+                            // huecos leídos cuentan para la escalada como antes,
+                            // pero la auditoría no está completa.
+                            lecturas.error(&p.symbol, e);
+                        }
+                        if prot.colocacion_frenada.is_some() {
+                            // I-14 (N44): la pierna no salió; se reintenta en el
+                            // ciclo siguiente, no en la auditoría nominal.
+                            lecturas.colocacion_frenada();
                         }
                         let (g_tp, g_sl) = (prot.tp_gap, prot.sl_gap);
                         quantum_engine::host_oms::release_confirmed_side(
@@ -3799,10 +4064,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             // ahora se envían y su rechazo, si llega, es la
                             // evidencia.
                             let rejections_now =
-                                quantum_arena::protection_health::rejections_of(&p.symbol);
+                                quantum_arena::protection_health::rejections_of(&p.symbol, is_long);
                             let rejections_prev =
-                                naked_rejections.get(&p.symbol).copied().unwrap_or(0);
-                            naked_rejections.insert(p.symbol.clone(), rejections_now);
+                                naked_rejections.tomar(&p.symbol, is_long, rejections_now);
                             if rejections_now <= rejections_prev {
                                 telemetry_server::telemetry_log!(
                                     "🐕 [WATCHDOG] {} con gap pero sin rechazos nuevos — no escala (¿red?)",
@@ -3811,7 +4075,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 continue;
                             }
                             let streak = naked_streak
-                                .entry(p.symbol.clone())
+                                .entry(clave.clone())
                                 .and_modify(|c| *c += 1)
                                 .or_insert(1);
                             if *streak >= NAKED_ESCALATION_LIMIT {
@@ -3896,8 +4160,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                                             close_sym, e
                                                         );
                                                         anotar_purga_pendiente(&close_sym, close_long);
+                                                        marcas_propias += 1;
                                                     }
-                                                    naked_streak.remove(&close_sym);
+                                                    naked_streak.remove(&clave);
                                                     // B3.19 — la emergencia también
                                                     // alimenta la contabilidad y el
                                                     // posterior de Kelly (antes sólo
@@ -3938,39 +4203,66 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                             // con la posición abierta. I-9 (N15b):
                                             // queda pendiente para el vigilante y el
                                             // símbolo no admite entradas hasta purgarla.
-                                            naked_streak.remove(&close_sym);
+                                            naked_streak.remove(&clave);
                                             anotar_purga_pendiente(&close_sym, close_long);
+                                            marcas_propias += 1;
                                         }
                                     }
                                 }
                             }
                         } else {
-                            naked_streak.remove(&p.symbol);
-                            naked_rejections.remove(&p.symbol);
+                            naked_streak.remove(&clave);
+                            // I-14 (N42): cubierta, la base pasa al acumulado de
+                            // ahora; antes se borraba y el hueco siguiente
+                            // contaba los rechazos viejos como nuevos.
+                            naked_rejections.fijar(
+                                &p.symbol,
+                                is_long,
+                                quantum_arena::protection_health::rejections_of(&p.symbol, is_long),
+                            );
                         }
                     }
-                    // B3.5b (auditoría) — purga de estado de símbolos SIN
-                    // posición: streak/snapshot heredados por una re-entrada
-                    // futura eran la receta del falso positivo de escalado.
-                    naked_streak.retain(|k, _| open_syms.contains(k));
-                    naked_rejections.retain(|k, _| open_syms.contains(k));
+                    // B3.5b (auditoría) — posiciones cerradas: el streak
+                    // heredado por una re-entrada futura era la receta del
+                    // falso positivo de escalado y se purga; su base de
+                    // rechazos se fija al acumulado de ahora (I-14, N42), así
+                    // que la re-entrada sólo cuenta rechazos nuevos.
+                    naked_streak.retain(|k, _| abiertas.contains(k));
+                    naked_rejections.fijar_los_cerrados(
+                        &abiertas,
+                        quantum_arena::protection_health::rejections_of,
+                    );
+                    let completa = cerrar_lecturas_del_vigilante(
+                        &mut reintento_lectura,
+                        ticks,
+                        events_at_start + marcas_propias,
+                        &lecturas,
+                    );
                     if dirty {
-                        if naked_total == 0 {
+                        if sin_leer > 0 {
                             telemetry_server::telemetry_log!(
-                                "🐕 [PROTECTION-WATCHDOG] Auditoría reactiva: todas las posiciones cubiertas"
+                                "⚠️ [PROTECTION-WATCHDOG] {} posición(es) sin leer su protección: nada se coloca sobre ellas; se releen",
+                                sin_leer
                             );
-                        } else {
+                        }
+                        if naked_total > 0 {
                             telemetry_server::telemetry_log!(
                                 "⚠️ [PROTECTION-WATCHDOG] {} posición(es) con gap de protección residual",
                                 naked_total
+                            );
+                        } else if sin_leer == 0 {
+                            telemetry_server::telemetry_log!(
+                                "🐕 [PROTECTION-WATCHDOG] Auditoría reactiva: todas las posiciones cubiertas"
                             );
                         }
                         // B3.5b (auditoría) — sólo limpiar la bandera si NO
                         // llegó un evento terminal NUEVO durante esta
                         // auditoría (generación estable); si llegó, dejarla
                         // sucia para re-auditar en 5s, no en 60s.
-                        if quantum_arena::protection_health::terminal_events_seen()
-                            == events_at_start
+                        // I-14 (N34, N44): ni con una lectura fallida.
+                        if completa
+                            && quantum_arena::protection_health::terminal_events_seen()
+                                == events_at_start
                         {
                             quantum_arena::protection_health::clear_dirty();
                         }
@@ -6192,11 +6484,22 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                                     }
                                                 };
                                                 if !still_open {
+                                                    // I-14 (N34): la fila plana puede ser un
+                                                    // cierre (el SL local, el aplanado inmune,
+                                                    // un TP de un intento anterior) o una
+                                                    // posición que positionRisk aún no muestra.
+                                                    // La bandera sucia hace que el vigilante
+                                                    // audite en su disparo siguiente, no en la
+                                                    // nominal. Si positionRisk sigue sin
+                                                    // mostrarla entonces, esa auditoría tampoco
+                                                    // la ve y la protección espera a la nominal
+                                                    // (N34c, abierto).
                                                     telemetry_engine::telemetry!(
-                                                        "✅ [OCO-SKIP] {} posición ya cerrada antes de bracket retry {}/3 — TP llenó durante entry task",
+                                                        "✅ [OCO-SKIP] {} sin posición abierta en positionRisk antes de bracket retry {}/3 (cerrada o aún sin mostrar) — la audita el vigilante",
                                                         parsed_sym_str, retry
                                                     );
-                                                    oco_success = true;
+                                                    quantum_arena::protection_health::mark_dirty();
+                                                    oco_success = true; // no más retries
                                                     break;
                                                 }
                                             }
@@ -6208,10 +6511,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                                     ) {
                                                         Some(real) if real > 0.0 => real.min(qty_intent),
                                                         _ => {
+                                                            // I-14 (N34): la misma fila plana que
+                                                            // arriba, ahora en la segunda lectura:
+                                                            // un cierre o una posición que
+                                                            // positionRisk aún no muestra. Sin la
+                                                            // bandera, el vigilante no la audita
+                                                            // hasta la nominal.
                                                             telemetry_engine::telemetry!(
-                                                                "✅ [OCO-SKIP] {} posición ya cerrada antes de bracket retry {}/3 — TP llenó durante entry task",
+                                                                "✅ [OCO-SKIP] {} sin posición abierta en positionRisk antes de bracket retry {}/3 (cerrada o aún sin mostrar) — la audita el vigilante",
                                                                 parsed_sym_str, retry
                                                             );
+                                                            quantum_arena::protection_health::mark_dirty();
                                                             oco_success = true;
                                                             break;
                                                         }
@@ -6641,8 +6951,30 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
             // CL-44b: tras salir no queda auditoría que purgue; una pierna sin
             // posición debajo dispararía sobre la siguiente posición del lado.
-            if let Ok(positions) = rt_handle_for_thread.block_on(executor.fetch_position_risk()) {
-                rt_handle_for_thread.block_on(purge_orphan_legs(&executor, &positions));
+            // I-14 (N34): sin el listado de piernas no se purga nada; se dice.
+            // El listado va antes que las posiciones, como en el vigilante.
+            let listado = rt_handle_for_thread.block_on(executor.fetch_all_open_algo_orders());
+            match (listado, rt_handle_for_thread.block_on(executor.fetch_position_risk())) {
+                (Ok(piernas), Ok(positions)) => {
+                    // Las purgas pendientes no se guardan entre reinicios: las
+                    // nuevas que deje el apagado se dicen.
+                    let nuevas = rt_handle_for_thread
+                        .block_on(purge_orphan_legs(&executor, &piernas, &positions));
+                    if nuevas > 0 {
+                        telemetry_engine::telemetry_err!(
+                            "⚠️ [SHUTDOWN] {} purga(s) pendiente(s) nueva(s) de piernas huérfanas sin cancelar: no se guardan entre reinicios; quedan para el vigilante del próximo arranque.",
+                            nuevas
+                        );
+                    }
+                }
+                (Err(e), _) => telemetry_engine::telemetry_err!(
+                    "⚠️ [SHUTDOWN] Purga de piernas huérfanas sin listado ({}): quedan para el vigilante del próximo arranque.",
+                    e
+                ),
+                (Ok(_), Err(e)) => telemetry_engine::telemetry_err!(
+                    "⚠️ [SHUTDOWN] Purga de piernas huérfanas sin posiciones ({}): quedan para el vigilante del próximo arranque.",
+                    e
+                ),
             }
             persist_kelly_envelope(&risk_envelope);
             // CL-120 (T2-4): la última foto del estado aprendido, y se espera
