@@ -5640,6 +5640,9 @@ impl GodEngineCore {
                             .unified_capital
                             .fetch_add(net_realized_pnl, Ordering::Relaxed);
                     } else if was_exchange_confirmed && net_realized_pnl < 0.0 {
+                        // V4I (precision 1 de Qoder): solo una posicion ejecutada con cantidad
+                        // mayor que cero deja un debito estimado.
+                        if qty.is_finite() && qty > 0.0 {
                         self.arena
                             .config
                             .entry_publication_gate
@@ -5654,6 +5657,7 @@ impl GodEngineCore {
                                 },
                                 -net_realized_pnl,
                             );
+                        }
                     }
 
                     let is_win = net_trade_pnl > 0.0;

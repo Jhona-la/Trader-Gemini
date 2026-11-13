@@ -2985,6 +2985,10 @@ impl OrderExecutor {
             return Err("SEGURIDAD: query de orden excede el buffer (orden abortada)".to_string());
         }
 
+        // CAPITAL-UNICO V4I (INV-F): frontera del transporte. Entre esta comprobación y la
+        // entrega (socket o cliente HTTP) no hay ninguna espera. Fuera de una entrada guardada
+        // (salidas defensivas) cruza siempre.
+        quantum_arena::dimensionable::cruzar_frontera_de_envio()?;
         // F1.5: registrar la intención antes del envío. CL-47: después de la
         // última salida previa al envío, como la IOC (CL-39b): un buffer
         // desbordado no deja una intención huérfana.
@@ -3575,6 +3579,9 @@ impl ExecutionProvider for OrderExecutor {
             return Err("SEGURIDAD: query de orden excede el buffer (orden abortada)".to_string());
         }
 
+        // CAPITAL-UNICO V4I (INV-F): frontera del transporte (sin espera hasta la entrega).
+        quantum_arena::dimensionable::cruzar_frontera_de_envio()?;
+
         let mut sig_buf = [0u8; 64];
         let payload = &buf.as_str()[payload_start..];
         let api_secret = self.api_secret.load();
@@ -3853,6 +3860,8 @@ impl ExecutionProvider for OrderExecutor {
         buf.push_str("&signature=");
         buf.push_str(signature);
 
+        // CAPITAL-UNICO V4I (INV-F): frontera del transporte (sin espera hasta la entrega).
+        quantum_arena::dimensionable::cruzar_frontera_de_envio()?;
         // CL-39: la intención queda referenciada por clientOrderId justo antes
         // del envío, como en MARKET (F1.5): si la respuesta se pierde, la
         // reconciliación la resuelve por consulta.
@@ -3971,6 +3980,8 @@ impl ExecutionProvider for OrderExecutor {
         buf.push_str("&timestamp=");
         buf.push_u64(timestamp);
 
+        // CAPITAL-UNICO V4I (INV-F): frontera del transporte (sin espera hasta la entrega).
+        quantum_arena::dimensionable::cruzar_frontera_de_envio()?;
         let mut sig_buf = [0u8; 64];
         let payload = &buf.as_str()[payload_start..];
         let api_secret = self.api_secret.load();

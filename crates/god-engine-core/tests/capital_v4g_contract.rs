@@ -63,7 +63,8 @@ fn anclas_del_adaptador() {
     ]);
     orden(HOST, &[".activar(&arena_real);", "puente_cuenta.vincular_publicador(move |p| {"]);
     orden(HOST, &[
-        "reservation.confirmar_llenado_con_marca(&arena_clone, Some(ejecutada), entry_executor.registry().get(&client_id).map(|o| o.marca_fill_ms).filter(|m| *m > 0))",
+        // V4I (INV-E): la marca que cubre la orden es la de su evento terminal del stream.
+        "reservation.confirmar_llenado_con_marca(&arena_clone, Some(ejecutada), entry_executor.registry().marca_terminal(&client_id))",
     ]);
     orden(NUCLEO, &[
         "let mut _publication = publication_arena.config.entry_publication_gate",

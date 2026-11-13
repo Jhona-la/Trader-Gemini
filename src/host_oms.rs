@@ -814,6 +814,15 @@ impl OmsSession {
         arena: &GlobalArena,
         reserva: Option<quantum_arena::dimensionable::ClaveReserva>,
     ) -> Result<(), String> {
+        // V4I (INV-E): la orden que respalda la reserva, para atribuirle cada fill del stream.
+        if let Some(clave) = reserva {
+            arena
+                .config
+                .entry_publication_gate
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .vincular_orden(clave, request.client_order_id);
+        }
         let guarded = GuardedEntry {
             session: self,
             token,
@@ -1046,6 +1055,8 @@ impl<T: EntryTransport> EntryTransport for GuardedEntry<'_, T> {
 
     async fn configure_leverage(&self, symbol: &str, leverage: u32) -> Result<(), String> {
         let _permit = self.session.admit_transport(self.token, self.arena)?;
+        // V4I (INV-F, punto 5c): una propuesta revocada no configura apalancamiento.
+        self.revalidar_capital()?;
         self.transport.configure_leverage(symbol, leverage).await
     }
 
@@ -1053,6 +1064,23 @@ impl<T: EntryTransport> EntryTransport for GuardedEntry<'_, T> {
         // Leverage confirmation may have awaited while OMS was revoked or replaced.
         let _permit = self.session.admit_transport(self.token, self.arena)?;
         self.revalidar_capital()?;
-        self.transport.submit_entry(request).await
+        // V4I (INV-F): la frontera es la entrega al transporte, no esta linea. Cada paso de la
+        // entrega revalida (veto del puente, veto del libro, revision e importe) antes de ceder
+        // al ejecutor; hasta que el ejecutor entrega su primer POST, una revision vencida
+        // abandona la entrega (0 llamadas); despues, cada POST de apertura siguiente (el MARKET
+        // del remanente maker) pasa por `cruzar_frontera_de_envio`. La puerta se toma y se
+        // suelta dentro de cada paso: ningun candado durante la red.
+        let frontera = quantum_arena::dimensionable::FronteraDeEnvio::nueva();
+        let mut envio = std::pin::pin!(async { self.transport.submit_entry(request).await });
+        std::future::poll_fn(|cx| {
+            let vigente = self.revalidar_capital();
+            if let Err(e) = &vigente {
+                if !frontera.cruzada() {
+                    return std::task::Poll::Ready(Err(e.clone()));
+                }
+            }
+            frontera.paso(vigente.is_ok(), || std::future::Future::poll(envio.as_mut(), cx))
+        })
+        .await
     }
 }

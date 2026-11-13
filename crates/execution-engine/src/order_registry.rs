@@ -245,6 +245,9 @@ struct RegistryState {
     // For each WS trade with a fee observation, whether its price permitted journaling.
     // REST observations do not consume either WS decision.
     ws_trades: HashMap<String, HashMap<u64, bool>>,
+    // CAPITAL-UNICO V4I (INV-E): marca (T) del evento terminal de cada orden en el stream.
+    // Cubre toda su ejecucion; el updateTime de un ACK acumulado no se guarda aqui.
+    marcas_terminales: HashMap<String, u64>,
 }
 
 pub struct OrderRegistry {
@@ -471,7 +474,14 @@ impl OrderRegistry {
         let RegistryState {
             by_client,
             ws_trades,
+            marcas_terminales,
         } = &mut *map;
+        if matches!(u.status, OrderStatus::Filled | OrderStatus::Canceled | OrderStatus::Expired)
+            && u.trade_time_ms > 0
+        {
+            let m = marcas_terminales.entry(u.client_order_id.clone()).or_insert(0);
+            *m = (*m).max(u.trade_time_ms);
+        }
         // FIX #1303: Priorizar posición explícita del Exchange si está disponible
         let pos_side = if !u.position_side.is_empty() {
             u.position_side.clone()
@@ -574,6 +584,18 @@ impl OrderRegistry {
         new_fill
     }
 
+    /// CAPITAL-UNICO V4I (INV-E): la marca del evento terminal de la orden en el stream, la unica
+    /// que cubre toda su ejecucion para el libro del dimensionable.
+    pub fn marca_terminal(&self, client_order_id: &str) -> Option<u64> {
+        self.orders
+            .read()
+            .unwrap_or_else(|p| p.into_inner())
+            .marcas_terminales
+            .get(client_order_id)
+            .copied()
+            .filter(|m| *m > 0)
+    }
+
     pub fn get(&self, client_order_id: &str) -> Option<TrackedOrder> {
         self.orders
             .read()
@@ -633,10 +655,12 @@ impl OrderRegistry {
         let RegistryState {
             by_client,
             ws_trades,
+            marcas_terminales,
         } = &mut *map;
         let before = by_client.len();
         by_client.retain(|_, o| o.status.is_active() || o.updated_ms >= cutoff_timestamp_ms);
         ws_trades.retain(|client_id, _| by_client.contains_key(client_id));
+        marcas_terminales.retain(|client_id, _| by_client.contains_key(client_id));
         before - by_client.len()
     }
 

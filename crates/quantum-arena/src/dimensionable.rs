@@ -1,5 +1,5 @@
-//! CAPITAL-UNICO V4G y V4H: el saldo dimensionable (`GlobalArena::unified_capital`, lo que lee
-//! Risk) deja de ser un acumulador en el arena vivo y se DERIVA:
+//! CAPITAL-UNICO V4G, V4H y V4I: el saldo dimensionable (`GlobalArena::unified_capital`, lo que
+//! lee Risk) deja de ser un acumulador en el arena vivo y se DERIVA:
 //!
 //! dimensionable = saldo vigente aceptado por el puente (era y sesion vigentes)
 //!                 - debitos que el exchange aun no refleja.
@@ -9,16 +9,22 @@
 //! no hay candado nuevo en el camino de los ticks. Cada operacion vuelve a calcular el valor entero
 //! (no por incrementos): sin debitos es exactamente el saldo vigente.
 //!
-//! Invariantes (secciones "V4G - DISENO" y "V4H - DISENO" de `integrador_capital_unico.md`):
+//! Invariantes (secciones "V4G - DISENO", "V4H - DISENO" y "V4I - DISENO" de
+//! `integrador_capital_unico.md`):
 //!
 //! - INV-D: el saldo vigente es el de MAYOR marca del exchange del alcance (era, sesion). Una marca
-//!   menor no mueve nada; con marcas iguales, o sin marca, se toma el MENOR de los dos valores.
-//! - INV-E: un debito solo sale cuando un saldo vigente tiene marca ESTRICTAMENTE mayor que la
-//!   marca propia de ese debito (la mayor `T` de los fills de su orden). Igualdad o marca
-//!   desconocida: se conserva. Una reserva viva (sin ejecucion) no la quita ningun saldo:
-//!   cancelar la QUITA (no suma dinero). Confirmar o cancelar dos veces no cambia nada.
-//! - INV-F: la propuesta se revalida bajo la puerta al reservar ([`LibroDimensionable::admite`])
-//!   y al enviar ([`LibroDimensionable::envio_valido`]).
+//!   menor no mueve nada; con marcas iguales, o sin marca, se toma el MENOR de los dos valores, con
+//!   SU marca. V4I: un saldo SIN marca que queda vigente es un suelo: desde ahi el saldo solo baja,
+//!   con o sin marca, hasta que llegue evidencia positiva (el primer saldo que el puente entrega
+//!   despues de vetar, es decir, una REST pedida despues). Un cambio de cuenta empieza de cero.
+//! - INV-E: un debito solo sale cuando el saldo vigente tiene marca ESTRICTAMENTE mayor que la
+//!   marca propia de ese debito, o con un corte de cuenta conciliado. V4I: el debito de una entrada
+//!   se lleva por fill (`trade_id`) con su comision REAL; la orden entera solo sale con la marca de
+//!   su evento terminal en el stream, nunca con el `updateTime` de un ACK acumulado. Lo retenido
+//!   por una entrada es el mayor entre lo estimado y lo real, menos lo real ya incluido.
+//! - INV-F: la propuesta se revalida bajo la puerta al reservar ([`LibroDimensionable::admite`],
+//!   V4I: por revision identificable, no por importe) y en la frontera del transporte
+//!   ([`FronteraDeEnvio`] y [`LibroDimensionable::envio_valido_en`]).
 //! - INV-G: los debitos locales conocidos y aun no observados (cierre local con perdida, fill de
 //!   cierre, funding pagado) restan en el acto; ningun credito local suma; un cierre externo veta
 //!   la admision hasta un saldo pedido despues de detectarlo.
@@ -27,6 +33,7 @@
 //! sigue siendo el acumulador de siempre: las mismas sumas atomicas que antes.
 
 use crate::state::GlobalArena;
+use std::collections::HashSet;
 use std::sync::atomic::Ordering;
 
 /// Identidad de una reserva: la ranura exacta y su generacion (la orden de esa ranura).
@@ -45,6 +52,9 @@ enum Origen {
     CierreLocal(ClaveReserva),
     /// Un fill de cierre del stream, por moneda y `trade_id`.
     FillCierre { coin_id: usize, trade_id: u64 },
+    /// V4I: un fill de entrada que no se pudo atribuir a ninguna reserva (por ejemplo el
+    /// remanente de otra orden): su comision real queda retenida por su identidad.
+    FillEntradaSuelto { coin_id: usize, trade_id: u64 },
     /// Funding pagado visto en el historial de ingresos.
     Funding(u64),
 }
@@ -53,15 +63,28 @@ enum Origen {
 enum Estado {
     /// Reserva de entrada sin ejecucion conocida: ningun saldo la quita.
     Viva,
-    /// Estimado local sin marca: ningun saldo lo quita (lo reemplazan los fills de cierre).
+    /// Estimado local sin marca: ningun saldo lo quita.
     Estimado,
-    /// Debito con la marca maxima de sus fills; `None` = desconocida (no se puede probar inclusion).
+    /// Debito ejecutado. Para una entrada, la marca de su evento terminal en el stream; para el
+    /// resto, la de su evento. `None` = desconocida (no se puede probar inclusion por marca).
     Pendiente(Option<u64>),
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+/// V4I (INV-E): un fill de una entrada, por su identidad nativa.
+#[derive(Debug, Clone, PartialEq)]
+struct FillEntrada {
+    trade_id: u64,
+    /// Comision real cargada al activo del capital (USDT). Otra moneda: cero aqui.
+    comision: f64,
+    marca: Option<u64>,
+    /// Un corte de cuenta conciliado lo incluyo.
+    conciliado: bool,
+}
+
+#[derive(Debug, Clone, PartialEq)]
 struct Debito {
     origen: Origen,
+    /// Entrada: comision estimada (tras la ejecucion, la de lo ejecutado). Resto: el debito.
     importe: f64,
     estado: Estado,
     /// Alcance (era, sesion) vigente al crearlo.
@@ -72,15 +95,57 @@ struct Debito {
     base: Option<f64>,
     /// INV-F: revision del saldo vigente al reservar (cualquier saldo nuevo la cambia).
     rev: u64,
+    /// V4I (INV-E): `clientOrderId` de la orden que respalda la entrada.
+    orden: Option<String>,
+    /// V4I (INV-E): fills conocidos de la entrada, por `trade_id`.
+    fills: Vec<FillEntrada>,
+    /// V4I (INV-E): marca del evento terminal de la orden en el stream (llega antes o despues
+    /// del ACK; al ejecutar se toma la mayor de las dos).
+    marca_orden: Option<u64>,
+}
+
+fn cubre(marca_saldo: Option<u64>, marca: Option<u64>) -> bool {
+    matches!((marca_saldo, marca), (Some(m), Some(t)) if m > t)
 }
 
 impl Debito {
-    /// INV-E: el saldo con marca `marca_saldo` ya lo incluye.
-    fn incluido(&self, marca_saldo: Option<u64>) -> bool {
-        match (self.estado, marca_saldo) {
-            (Estado::Pendiente(Some(t)), Some(m)) => m > t,
-            _ => false,
+    fn nuevo(origen: Origen, importe: f64, estado: Estado, alcance: Option<(u64, u64)>, seq: u64) -> Self {
+        Self {
+            origen,
+            importe,
+            estado,
+            alcance,
+            seq,
+            base: None,
+            rev: 0,
+            orden: None,
+            fills: Vec::new(),
+            marca_orden: None,
         }
+    }
+
+    /// Lo que este debito retiene con el saldo vigente de marca `marca_saldo` (INV-E).
+    fn retenido(&self, marca_saldo: Option<u64>) -> f64 {
+        if let Estado::Pendiente(m) = self.estado {
+            if cubre(marca_saldo, m) {
+                return 0.0;
+            }
+        }
+        if self.fills.is_empty() {
+            return self.importe;
+        }
+        let real: f64 = self.fills.iter().map(|f| f.comision).sum();
+        let incluido: f64 = self
+            .fills
+            .iter()
+            .filter(|f| f.conciliado || cubre(marca_saldo, f.marca))
+            .map(|f| f.comision)
+            .sum();
+        (self.importe.max(real) - incluido).max(0.0)
+    }
+
+    fn es_entrada_viva(&self) -> bool {
+        matches!(self.origen, Origen::Entrada(_)) && self.estado == Estado::Viva
     }
 }
 
@@ -92,6 +157,57 @@ fn mayor(a: Option<u64>, b: Option<u64>) -> Option<u64> {
     }
 }
 
+/// V4I (INV-B ii): un movimiento de la cuenta en la ventana de un corte, por su identidad del
+/// exchange. Importe en unidades de 1e-8 del activo (el exchange publica 8 decimales): la suma es
+/// exacta, sin tolerancias.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct MovimientoDeCuenta {
+    /// `tradeId` de una comision o un resultado realizado; `tranId` de un funding u otro.
+    pub id: u64,
+    pub tipo: TipoMovimiento,
+    pub importe_e8: i64,
+    pub hora: u64,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TipoMovimiento {
+    Comision,
+    ResultadoRealizado,
+    Funding,
+    Otro,
+}
+
+/// V4I (INV-B ii): un corte de cuenta. `saldo_base` con marca `marca_base` y `saldo_corte` con
+/// marca `marca_corte` son dos lecturas del activo del capital; `movimientos` son TODOS los
+/// movimientos de la cuenta con hora en `(marca_base, marca_corte]`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CorteDeCuenta {
+    pub saldo_base_e8: i64,
+    pub marca_base: u64,
+    pub saldo_corte_e8: i64,
+    pub marca_corte: u64,
+    pub movimientos: Vec<MovimientoDeCuenta>,
+}
+
+/// Por que un corte no se acredito (los cargos siguen retenidos).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CorteRechazado {
+    LibroInactivo,
+    /// El corte no es el saldo vigente del libro (valor o marca).
+    NoEsElSaldoVigente,
+    /// Un movimiento cae en la frontera o fuera de la ventana: no se sabe de que lado queda.
+    IntervaloAmbiguo,
+    /// Base mas movimientos no da el saldo del corte.
+    NoCuadra,
+}
+
+/// Unidades de 1e-8 de un saldo publicado por el exchange con hasta 8 decimales. La conversion
+/// recupera el decimal exacto (es el double mas cercano) para importes menores que 2^53 / 1e8.
+pub fn a_e8(valor: f64) -> Option<i64> {
+    let x = (valor * 1e8).round();
+    (valor.is_finite() && x.abs() < 9.0e15).then_some(x as i64)
+}
+
 /// El libro del dimensionable. Se usa siempre bajo `entry_publication_gate`.
 #[derive(Debug, Default)]
 pub struct LibroDimensionable {
@@ -101,7 +217,8 @@ pub struct LibroDimensionable {
     marca: Option<u64>,
     /// INV-D: la mayor marca conocida (ordena las lecturas; no prueba inclusion).
     marca_max: Option<u64>,
-    /// INV-F: revision del saldo vigente; sube con cada saldo que cambia valor, marca o alcance.
+    /// INV-F: revision del saldo vigente; sube con cada saldo que cambia valor, marca o alcance,
+    /// con cada veto del puente y con cada cierre externo.
     rev: u64,
     alcance: Option<(u64, u64)>,
     debitos: Vec<Debito>,
@@ -109,9 +226,23 @@ pub struct LibroDimensionable {
     /// evidencia perdida que pide el host; `true`: ya veto, y el primer saldo que entregue al
     /// soltar (una REST pedida despues de detectarlo) suelta este veto.
     veto: Option<bool>,
+    /// V4I (INV-D): suelo sin marca. `false`: el saldo vigente salio de una lectura sin marca y
+    /// solo puede bajar; `true`: el puente ya veto, y el primer saldo que entregue al soltar es
+    /// evidencia positiva (una REST pedida despues).
+    suelo: Option<bool>,
+    /// V4I (INV-D): identidad de la cuenta (venue y clave publica, sin credenciales).
+    cuenta: Option<u64>,
     /// Alcance de la publicacion en curso (lo fija el publicador antes del saldo).
     entrante: Option<(u64, u64)>,
     seq: u64,
+    /// V4I (INV-F): valores publicados en esta revision y en las anteriores (bits del f64). Una
+    /// decision cuyo importe se publico en una revision anterior no identifica su revision.
+    publicados_ahora: HashSet<u64>,
+    publicados_antes: HashSet<u64>,
+    /// V4I (INV-F): un importe ambiguo ya se rechazo en esta revision: desde ahi se publica un
+    /// valor que no aparecio en ninguna revision anterior (el double inmediato inferior).
+    desambiguar: bool,
+    publicado: Option<f64>,
 }
 
 impl LibroDimensionable {
@@ -133,7 +264,8 @@ impl LibroDimensionable {
 
     /// Debitos (reservas y debitos locales) que el exchange aun no refleja.
     pub fn reservado(&self) -> f64 {
-        self.debitos.iter().map(|d| d.importe).sum()
+        let marca = self.marca;
+        self.debitos.iter().map(|d| d.retenido(marca)).sum()
     }
 
     pub fn reservas(&self) -> usize {
@@ -151,18 +283,50 @@ impl LibroDimensionable {
         self.veto.is_some()
     }
 
-    /// saldo vigente - reservado, si hay saldo.
-    pub fn dimensionable(&self) -> Option<f64> {
-        self.saldo.map(|s| s - self.reservado())
+    /// V4I: el libro espera evidencia positiva del puente (cierre externo o suelo sin marca): el
+    /// host debe pedirle evidencia perdida (veta hasta una REST pedida despues).
+    pub fn espera_evidencia(&self) -> bool {
+        self.derivado && (self.veto == Some(false) || self.suelo == Some(false))
     }
 
-    fn publicar(&self, arena: &GlobalArena) {
+    /// V4I: el saldo vigente es un suelo sin marca (solo baja hasta la evidencia positiva).
+    pub fn en_suelo(&self) -> bool {
+        self.suelo.is_some()
+    }
+
+    /// saldo vigente - reservado, si hay saldo. V4I (INV-F): tras rechazar un importe ambiguo,
+    /// el mayor double por debajo que no se publico en una revision anterior (nunca por encima).
+    pub fn dimensionable(&self) -> Option<f64> {
+        self.saldo.map(|s| {
+            let mut v = s - self.reservado();
+            if self.desambiguar {
+                while self.publicados_antes.contains(&v.to_bits()) && v.is_finite() {
+                    v = v.next_down();
+                }
+            }
+            v
+        })
+    }
+
+    fn publicar(&mut self, arena: &GlobalArena) {
         if !self.derivado {
             return;
         }
         if let Some(d) = self.dimensionable() {
             arena.unified_capital.store(d, Ordering::Relaxed);
         }
+        // V4I (INV-F): lo publicado en esta revision identifica la decision que lo use.
+        if let Some(d) = self.dimensionable() {
+            self.publicados_ahora.insert(d.to_bits());
+            self.publicado = Some(d);
+        }
+    }
+
+    fn nueva_revision(&mut self) {
+        self.rev = self.rev.wrapping_add(1);
+        let ahora = std::mem::take(&mut self.publicados_ahora);
+        self.publicados_antes.extend(ahora);
+        self.desambiguar = false;
     }
 
     fn siguiente(&mut self) -> u64 {
@@ -172,7 +336,8 @@ impl LibroDimensionable {
 
     fn retirar_incluidos(&mut self) {
         let marca = self.marca;
-        self.debitos.retain(|d| !d.incluido(marca));
+        self.debitos
+            .retain(|d| !(matches!(d.estado, Estado::Pendiente(_)) && d.retenido(marca) <= 0.0));
     }
 
     /// El publicador del puente: saldo aceptado con su marca del exchange, en el alcance que fijo
@@ -188,32 +353,64 @@ impl LibroDimensionable {
         self.entrante = Some((era, sesion));
     }
 
+    /// V4I (INV-D): la cuenta del ejecutor (identidad estable de venue y clave publica). Otra
+    /// cuenta empieza sin saldo (la admision queda vetada hasta su primera lectura) y nada de lo
+    /// leido en la anterior ordena ni prueba inclusion en esta; los debitos se conservan.
+    pub fn fijar_cuenta(&mut self, arena: &GlobalArena, cuenta: u64) {
+        if self.cuenta == Some(cuenta) {
+            return;
+        }
+        let habia = self.cuenta.is_some();
+        self.cuenta = Some(cuenta);
+        if habia {
+            self.saldo = None;
+            self.marca = None;
+            self.marca_max = None;
+            self.suelo = None;
+            self.nueva_revision();
+            self.publicar(arena);
+        }
+    }
+
     fn aceptar(&mut self, arena: &GlobalArena, alcance: Option<(u64, u64)>, saldo: f64, marca: Option<u64>) {
         if !saldo.is_finite() {
             return;
         }
         let mismo_alcance = alcance == self.alcance;
+        let menor = |actual: f64, marca_actual: Option<u64>| {
+            if saldo < actual {
+                (saldo, marca)
+            } else {
+                (actual, marca_actual)
+            }
+        };
+        let evidencia = self.suelo == Some(true);
         let (valor, marca_elegida) = match self.saldo {
             None => (saldo, marca),
+            // V4I (INV-D): el primer saldo que el puente entrega tras vetar es una REST pedida
+            // despues de la caida sin marca: evidencia positiva, sale del suelo.
+            Some(_) if evidencia => (saldo, marca),
+            // V4I (INV-D): suelo sin marca: solo baja, con o sin marca (una foto con marca mayor
+            // pudo tomarse antes de la caida sin marca).
+            Some(actual) if self.suelo.is_some() => menor(actual, self.marca),
             Some(actual) => match (marca, self.marca_max) {
                 (Some(n), Some(v)) if n > v => (saldo, marca),
                 // INV-D: una marca menor no mueve nada dentro del alcance.
                 (Some(n), Some(v)) if n < v && mismo_alcance => return,
                 // INV-D: marca igual, sin marca, o una foto mas vieja de otro alcance: no hay
                 // orden; el menor de los dos, con SU marca (no se presta la de la otra lectura).
-                _ => {
-                    if saldo < actual {
-                        (saldo, marca)
-                    } else {
-                        (actual, self.marca)
-                    }
-                }
+                _ => menor(actual, self.marca),
             },
         };
         if self.saldo != Some(valor) || self.marca != marca_elegida || !mismo_alcance {
-            self.rev = self.rev.wrapping_add(1);
+            self.nueva_revision();
         }
-        self.marca_max = mayor(self.marca_max, marca);
+        self.marca_max = if evidencia { marca } else { mayor(self.marca_max, marca) };
+        // V4I (INV-D): un saldo sin marca que queda vigente abre el suelo; la evidencia positiva
+        // lo cierra si trae marca.
+        if evidencia || self.suelo.is_none() {
+            self.suelo = marca_elegida.is_none().then_some(false);
+        }
         // INV-G: el veto por cierre externo se suelta con el primer saldo que el puente entrega
         // despues de haber vetado por la evidencia perdida (una REST pedida despues del hecho).
         if self.veto == Some(true) {
@@ -227,12 +424,19 @@ impl LibroDimensionable {
     }
 
     /// INV-G: el puente veto (el publicador lo ve). Si el libro espera la conciliacion de un
-    /// cierre externo, desde aqui el primer saldo entregado al soltar es posterior al hecho.
+    /// cierre externo o la salida de un suelo sin marca, desde aqui el primer saldo entregado al
+    /// soltar es posterior al hecho. V4I (INV-F): el veto abre una revision nueva (una decision
+    /// anterior al veto no se reserva ni se envia despues).
     pub fn veto_del_puente(&mut self) {
         if let Some(visto) = self.veto.as_mut() {
             *visto = true;
         }
+        if let Some(visto) = self.suelo.as_mut() {
+            *visto = true;
+        }
+        self.nueva_revision();
     }
+
     /// Reserva de una entrada (el nucleo, al abrir la ranura).
     pub fn reservar(&mut self, arena: &GlobalArena, clave: ClaveReserva, comision: f64) {
         self.reservar_con_base(arena, clave, comision, None);
@@ -248,36 +452,41 @@ impl LibroDimensionable {
         // Un rebate no suma (INV-G): el importe no baja de cero.
         if comision.is_finite() {
             let seq = self.siguiente();
-            let rev = self.rev;
-            self.debitos.push(Debito {
-                origen: Origen::Entrada(clave),
-                importe: comision.max(0.0),
-                estado: Estado::Viva,
-                alcance: self.alcance,
-                seq,
-                base,
-                rev,
-            });
+            let mut d = Debito::nuevo(Origen::Entrada(clave), comision.max(0.0), Estado::Viva, self.alcance, seq);
+            d.base = base;
+            d.rev = self.rev;
+            self.debitos.push(d);
         }
         self.publicar(arena);
     }
 
     /// INV-F, al reservar (bajo la puerta, antes de reservar): la entrada que Risk dimensiono con
-    /// `capital` sigue solo si el veto del puente esta suelto, el libro no veta y el dimensionable
-    /// actual no es menor. Sin activar, siempre.
-    pub fn admite(&self, arena: &GlobalArena, capital: Option<f64>) -> bool {
+    /// `capital` sigue solo si el veto del puente esta suelto, el libro no veta y `capital` es un
+    /// valor publicado en la revision VIGENTE (y en ninguna anterior: 100, 90 y otra vez 100 no
+    /// identifican la decision) que el valor publicado aun cubre. Un importe ambiguo se rechaza y
+    /// desde ahi se publica un valor que lo identifique: la decision se recalcula con el.
+    /// Sin activar, siempre.
+    pub fn admite(&mut self, arena: &GlobalArena, capital: Option<f64>) -> bool {
         if !self.derivado {
             return true;
         }
-        match (capital, self.dimensionable()) {
-            (Some(c), Some(d)) => {
-                c.is_finite()
-                    && self.veto.is_none()
-                    && !arena.capital_incompleto.load(Ordering::Acquire)
-                    && d >= c
-            }
-            _ => false,
+        let (Some(c), Some(p)) = (capital, self.publicado) else { return false };
+        if !c.is_finite()
+            || self.veto.is_some()
+            || arena.capital_incompleto.load(Ordering::Acquire)
+            || self.dimensionable().is_none()
+        {
+            return false;
         }
+        let bits = c.to_bits();
+        if self.publicados_antes.contains(&bits) {
+            if !self.desambiguar {
+                self.desambiguar = true;
+                self.publicar(arena);
+            }
+            return false;
+        }
+        self.publicados_ahora.contains(&bits) && p >= c
     }
 
     /// INV-F, al enviar: la reserva sigue viva, el libro no veta y el disponible para ella (saldo
@@ -302,16 +511,14 @@ impl LibroDimensionable {
         }
         let Some(base) = propia.base else { return true };
         // Deliberado: una reserva de entrada POSTERIOR y todavia viva no invalida esta (se
-        // decidio contando con ella); una posterior ya ejecutada si cuenta. El margen combinado
-        // de las dos lo valida el exchange.
+        // decidio contando con ella); una posterior ya ejecutada si cuenta, con lo que retiene
+        // (comision real incluida). El margen combinado de las dos lo valida el exchange.
+        let marca = self.marca;
         let ajeno: f64 = self
             .debitos
             .iter()
-            .filter(|d| {
-                d.seq != propia.seq
-                    && !(matches!(d.origen, Origen::Entrada(_)) && d.estado == Estado::Viva && d.seq > propia.seq)
-            })
-            .map(|d| d.importe)
+            .filter(|d| d.seq != propia.seq && !(d.es_entrada_viva() && d.seq > propia.seq))
+            .map(|d| d.retenido(marca))
             .sum();
         base.is_finite() && saldo - ajeno >= base
     }
@@ -327,6 +534,8 @@ impl LibroDimensionable {
     }
 
     /// Cancelacion sin ejecucion: quita la reserva viva, no suma dinero. Repetida: nada.
+    /// V4I (INV-E): si el stream ya informo fills de esa orden, su comision real se conserva
+    /// (solo se libera la parte no ejecutada).
     pub fn cancelar(&mut self, arena: &GlobalArena, clave: ClaveReserva, comision: f64) {
         if !self.derivado {
             if comision.is_finite() && comision != 0.0 {
@@ -339,14 +548,22 @@ impl LibroDimensionable {
             .iter()
             .position(|d| d.origen == Origen::Entrada(clave) && d.estado == Estado::Viva)
         {
-            self.debitos.remove(i);
+            if self.debitos[i].fills.is_empty() {
+                self.debitos.remove(i);
+            } else {
+                let d = &mut self.debitos[i];
+                d.importe = 0.0;
+                d.estado = Estado::Pendiente(d.marca_orden);
+            }
         }
+        self.retirar_incluidos();
         self.publicar(arena);
     }
 
-    /// Ejecucion confirmada: `devuelta` es la comision de lo NO ejecutado; `marca_fill`, la mayor
-    /// `T` del exchange de los fills de esa orden. Repetida: solo puede subir la marca. Si el saldo
-    /// vigente ya tiene marca mayor, el debito sale en el acto (sin sumar nada).
+    /// Ejecucion confirmada: `devuelta` es la comision estimada de lo NO ejecutado; `marca_fill`,
+    /// la marca que cubre TODA la ejecucion de la orden (V4I: la del evento terminal del stream;
+    /// `None` si no se conoce). Repetida: solo puede subir la marca. Si el saldo vigente ya tiene
+    /// marca mayor, el debito sale en el acto (sin sumar nada).
     pub fn ejecutar(&mut self, arena: &GlobalArena, clave: ClaveReserva, devuelta: f64, marca_fill: Option<u64>) {
         if !self.derivado {
             if devuelta.is_finite() && devuelta != 0.0 {
@@ -360,14 +577,14 @@ impl LibroDimensionable {
                 match d.estado {
                     Estado::Viva => {
                         if devuelta.is_finite() {
-                            d.importe -= devuelta;
+                            d.importe = (d.importe - devuelta).max(0.0);
                         }
-                        d.estado = Estado::Pendiente(marca_fill);
+                        d.estado = Estado::Pendiente(mayor(marca_fill, d.marca_orden));
                     }
                     Estado::Pendiente(m) => d.estado = Estado::Pendiente(mayor(m, marca_fill)),
                     Estado::Estimado => {}
                 }
-                !(d.importe.is_finite() && d.importe > 0.0)
+                !(d.importe.is_finite() && d.importe > 0.0) && d.fills.is_empty()
             };
             if vacia {
                 self.debitos.remove(i);
@@ -377,8 +594,84 @@ impl LibroDimensionable {
         self.publicar(arena);
     }
 
+    /// V4I (INV-E): la orden `orden` (su `clientOrderId`) respalda la reserva `clave`. El host lo
+    /// fija bajo la puerta antes de enviarla; asi el stream atribuye cada fill a su reserva.
+    pub fn vincular_orden(&mut self, clave: ClaveReserva, orden: &str) {
+        if let Some(d) = self.debitos.iter_mut().find(|d| d.origen == Origen::Entrada(clave)) {
+            d.orden = Some(orden.to_owned());
+        }
+    }
+
+    /// V4I (INV-E): un fill de entrada del stream, por su identidad (`trade_id`) y con su comision
+    /// REAL en el activo del capital (`None`: la comision va en otra moneda; no se resta aqui).
+    /// Repetido (mismo `trade_id`), nada; `trade_id` 0 (sin identidad) se suma siempre. Si el
+    /// saldo vigente ya tiene marca mayor, la comision ya esta incluida. Un fill que no se atribuye
+    /// a ninguna reserva queda retenido por su identidad (`coin_id`, `trade_id`).
+    pub fn fill_de_entrada(
+        &mut self,
+        arena: &GlobalArena,
+        coin_id: usize,
+        orden: &str,
+        trade_id: u64,
+        comision: Option<f64>,
+        marca: Option<u64>,
+    ) {
+        if !self.derivado {
+            return;
+        }
+        let comision = comision.filter(|c| c.is_finite()).unwrap_or(0.0).max(0.0);
+        let marca = marca.filter(|t| *t > 0);
+        let marca_saldo = self.marca;
+        if let Some(d) = self.debitos.iter_mut().find(|d| {
+            matches!(d.origen, Origen::Entrada(c) if c.coin_id == coin_id) && d.orden.as_deref() == Some(orden)
+        }) {
+            if trade_id != 0 && d.fills.iter().any(|f| f.trade_id == trade_id) {
+                return;
+            }
+            d.fills.push(FillEntrada { trade_id, comision, marca, conciliado: false });
+        } else {
+            let ya = trade_id != 0
+                && self
+                    .debitos
+                    .iter()
+                    .any(|d| d.origen == Origen::FillEntradaSuelto { coin_id, trade_id });
+            if ya || comision <= 0.0 || cubre(marca_saldo, marca) {
+                return;
+            }
+            let seq = self.siguiente();
+            let tid = if trade_id != 0 { trade_id } else { u64::MAX - seq };
+            self.debitos.push(Debito::nuevo(
+                Origen::FillEntradaSuelto { coin_id, trade_id: tid },
+                comision,
+                Estado::Pendiente(marca),
+                self.alcance,
+                seq,
+            ));
+        }
+        self.retirar_incluidos();
+        self.publicar(arena);
+    }
+
+    /// V4I (INV-E): el evento terminal de la orden en el stream (FILLED, CANCELED o EXPIRED) con
+    /// su marca: cubre toda la ejecucion de esa orden. Un ACK acumulado no la aporta.
+    pub fn marca_de_orden(&mut self, arena: &GlobalArena, coin_id: usize, orden: &str, marca: u64) {
+        if !self.derivado || marca == 0 {
+            return;
+        }
+        if let Some(d) = self.debitos.iter_mut().find(|d| {
+            matches!(d.origen, Origen::Entrada(c) if c.coin_id == coin_id) && d.orden.as_deref() == Some(orden)
+        }) {
+            d.marca_orden = mayor(d.marca_orden, Some(marca));
+            if let Estado::Pendiente(m) = d.estado {
+                d.estado = Estado::Pendiente(mayor(m, Some(marca)));
+            }
+        }
+        self.retirar_incluidos();
+        self.publicar(arena);
+    }
+
     /// INV-G: cierre local del nucleo de una posicion que existio en el exchange con resultado
-    /// neto negativo. Debito estimado (sin marca) hasta que lo reemplacen los fills de cierre.
+    /// neto negativo. Debito estimado (sin marca) hasta que la reconciliacion vea la moneda plana.
     pub fn debito_cierre_local(&mut self, arena: &GlobalArena, clave: ClaveReserva, importe: f64) {
         if !self.derivado || !(importe.is_finite() && importe > 0.0) {
             return;
@@ -387,39 +680,33 @@ impl LibroDimensionable {
             return;
         }
         let seq = self.siguiente();
-        self.debitos.push(Debito {
-            origen: Origen::CierreLocal(clave),
-            importe,
-            estado: Estado::Estimado,
-            alcance: self.alcance,
-            seq,
-            base: None,
-            rev: 0,
-        });
+        self.debitos
+            .push(Debito::nuevo(Origen::CierreLocal(clave), importe, Estado::Estimado, self.alcance, seq));
         self.publicar(arena);
     }
 
-    /// INV-G: un fill de cierre del stream. `debito` = comision - PnL realizado de ese fill (solo
-    /// cuenta si es positivo: ningun credito suma). `terminal`: la orden de cierre termino; sus
-    /// debitos exactos reemplazan el estimado del cierre local de esa moneda.
+    /// INV-G: un fill de cierre del stream. `debito` = comision en el activo del capital - PnL
+    /// realizado de ese fill (solo cuenta si es positivo: ningun credito suma). `terminal`: la
+    /// orden de cierre termino. V4I: `trade_id` 0 (sin identidad) no se deduplica (ruta
+    /// conservadora); marca 0 es desconocida.
     pub fn fill_de_cierre(&mut self, arena: &GlobalArena, coin_id: usize, trade_id: u64, debito: f64, marca: u64, terminal: bool) {
         if !self.derivado {
             return;
         }
         let marca = (marca > 0).then_some(marca);
-        let origen = Origen::FillCierre { coin_id, trade_id };
-        let ya_incluido = matches!((self.marca, marca), (Some(m), Some(t)) if m > t);
-        if debito.is_finite() && debito > 0.0 && !ya_incluido && !self.debitos.iter().any(|d| d.origen == origen) {
+        let ya_incluido = cubre(self.marca, marca);
+        let repetido = trade_id != 0
+            && self.debitos.iter().any(|d| d.origen == Origen::FillCierre { coin_id, trade_id });
+        if debito.is_finite() && debito > 0.0 && !ya_incluido && !repetido {
             let seq = self.siguiente();
-            self.debitos.push(Debito {
-                origen,
-                importe: debito,
-                estado: Estado::Pendiente(marca),
-                alcance: self.alcance,
+            let tid = if trade_id != 0 { trade_id } else { u64::MAX - seq };
+            self.debitos.push(Debito::nuevo(
+                Origen::FillCierre { coin_id, trade_id: tid },
+                debito,
+                Estado::Pendiente(marca),
+                self.alcance,
                 seq,
-                base: None,
-                rev: 0,
-            });
+            ));
         }
         // El fill no dice de que ranura es: un terminal NO retira el estimado de ningun cierre
         // local (el de otra ranura de la misma moneda seguiria debiendose). Los estimados salen
@@ -435,21 +722,14 @@ impl LibroDimensionable {
             return;
         }
         let marca = (marca > 0).then_some(marca);
-        let ya_incluido = matches!((self.marca, marca), (Some(m), Some(t)) if m > t);
+        let ya_incluido = cubre(self.marca, marca);
         let origen = Origen::Funding(id);
         if ya_incluido || self.debitos.iter().any(|d| d.origen == origen) {
             return;
         }
         let seq = self.siguiente();
-        self.debitos.push(Debito {
-            origen,
-            importe,
-            estado: Estado::Pendiente(marca),
-            alcance: self.alcance,
-            seq,
-            base: None,
-            rev: 0,
-        });
+        self.debitos
+            .push(Debito::nuevo(origen, importe, Estado::Pendiente(marca), self.alcance, seq));
         self.publicar(arena);
     }
 
@@ -464,6 +744,7 @@ impl LibroDimensionable {
         // Hace falta un veto del puente posterior a esto (el host pide evidencia perdida al
         // puente: veta hasta una REST pedida despues) antes de que un saldo lo suelte.
         self.veto = Some(false);
+        self.nueva_revision();
         self.publicar(arena);
     }
 
@@ -482,5 +763,135 @@ impl LibroDimensionable {
             return true;
         }
         false
+    }
+
+    /// V4I (INV-B ii): corte de cuenta conciliado. Se acredita solo si el corte ES el saldo
+    /// vigente (valor y marca), cada movimiento cae dentro de `(marca_base, marca_corte]` y la
+    /// identidad contable es exacta: `saldo_base + suma(movimientos) = saldo_corte`, en unidades
+    /// de 1e-8. Entonces todo cargo con evento hasta el corte esta en el saldo: salen los fills y
+    /// debitos con marca menor o igual que el corte o cuya identidad aparece en los movimientos, y
+    /// las entradas cuya orden termino hasta el corte. Si no se acredita, nada cambia y los cargos
+    /// siguen retenidos. Devuelve cuantos cargos libero.
+    pub fn conciliar(&mut self, arena: &GlobalArena, corte: &CorteDeCuenta) -> Result<usize, CorteRechazado> {
+        if !self.derivado {
+            return Err(CorteRechazado::LibroInactivo);
+        }
+        let vigente = self.saldo.and_then(a_e8);
+        if vigente != Some(corte.saldo_corte_e8) || self.marca != Some(corte.marca_corte) || self.suelo.is_some() {
+            return Err(CorteRechazado::NoEsElSaldoVigente);
+        }
+        if corte.marca_corte <= corte.marca_base
+            || corte
+                .movimientos
+                .iter()
+                .any(|m| m.hora <= corte.marca_base || m.hora > corte.marca_corte)
+        {
+            return Err(CorteRechazado::IntervaloAmbiguo);
+        }
+        let suma = corte
+            .movimientos
+            .iter()
+            .try_fold(corte.saldo_base_e8, |s, m| s.checked_add(m.importe_e8));
+        if suma != Some(corte.saldo_corte_e8) {
+            return Err(CorteRechazado::NoCuadra);
+        }
+        let hasta = corte.marca_corte;
+        let en_corte = |t: Option<u64>| matches!(t, Some(t) if t <= hasta);
+        let comisiones: HashSet<u64> = corte
+            .movimientos
+            .iter()
+            .filter(|m| matches!(m.tipo, TipoMovimiento::Comision | TipoMovimiento::ResultadoRealizado))
+            .map(|m| m.id)
+            .collect();
+        let fundings: HashSet<u64> = corte
+            .movimientos
+            .iter()
+            .filter(|m| m.tipo == TipoMovimiento::Funding)
+            .map(|m| m.id)
+            .collect();
+        let antes = self.debitos.len();
+        let mut liberados = 0usize;
+        for d in &mut self.debitos {
+            for f in &mut d.fills {
+                if !f.conciliado && (en_corte(f.marca) || comisiones.contains(&f.trade_id)) {
+                    f.conciliado = true;
+                    liberados += 1;
+                }
+            }
+        }
+        self.debitos.retain(|d| {
+            let fuera = match (d.origen, d.estado) {
+                (Origen::Entrada(_), Estado::Pendiente(m)) => en_corte(m),
+                (Origen::FillCierre { trade_id, .. }, Estado::Pendiente(m))
+                | (Origen::FillEntradaSuelto { trade_id, .. }, Estado::Pendiente(m)) => {
+                    en_corte(m) || comisiones.contains(&trade_id)
+                }
+                (Origen::Funding(id), Estado::Pendiente(m)) => en_corte(m) || fundings.contains(&id),
+                _ => false,
+            };
+            !fuera
+        });
+        liberados += antes - self.debitos.len();
+        self.retirar_incluidos();
+        self.publicar(arena);
+        Ok(liberados)
+    }
+}
+
+/// V4I (INV-F): la frontera del transporte. El guardia del OMS revalida la reserva en CADA paso
+/// de la entrega (cada `poll`, antes de ceder al ejecutor) y deja el resultado aqui, en el hilo
+/// que corre ese paso; el ejecutor llama a [`cruzar_frontera_de_envio`] justo antes de cada POST
+/// de apertura (sin ninguna espera entre esa llamada y la entrega al cliente HTTP o al socket).
+/// Sin frontera activa (salidas defensivas, otros caminos), cruza siempre. Ningun candado se
+/// sostiene durante la red: la revalidacion toma y suelta la puerta dentro del paso.
+pub struct FronteraDeEnvio {
+    cruzada: std::sync::atomic::AtomicBool,
+}
+
+thread_local! {
+    static FRONTERA: std::cell::Cell<Option<bool>> = const { std::cell::Cell::new(None) };
+    static CRUCE: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+impl Default for FronteraDeEnvio {
+    fn default() -> Self {
+        Self::nueva()
+    }
+}
+
+impl FronteraDeEnvio {
+    pub fn nueva() -> Self {
+        Self { cruzada: std::sync::atomic::AtomicBool::new(false) }
+    }
+
+    /// El ejecutor ya entrego una orden de apertura de esta entrada: desde ahi no se abandona la
+    /// entrega (la respuesta decide), pero cada POST siguiente vuelve a pasar la frontera.
+    pub fn cruzada(&self) -> bool {
+        self.cruzada.load(Ordering::Relaxed)
+    }
+
+    /// Corre un paso de la entrega con la revalidacion `vigente` de este paso.
+    pub fn paso<R>(&self, vigente: bool, f: impl FnOnce() -> R) -> R {
+        let previa = FRONTERA.with(|c| c.replace(Some(vigente)));
+        let cruce_previo = CRUCE.with(|c| c.replace(false));
+        let r = f();
+        if CRUCE.with(|c| c.replace(cruce_previo)) {
+            self.cruzada.store(true, Ordering::Relaxed);
+        }
+        FRONTERA.with(|c| c.set(previa));
+        r
+    }
+}
+
+/// V4I (INV-F): el ejecutor la llama justo antes de cada POST de apertura. Con la frontera activa
+/// y la revision vencida, la orden NO se entrega.
+pub fn cruzar_frontera_de_envio() -> Result<(), String> {
+    match FRONTERA.with(|c| c.get()) {
+        None => Ok(()),
+        Some(true) => {
+            CRUCE.with(|c| c.set(true));
+            Ok(())
+        }
+        Some(false) => Err("OMS_ENTRY_WITHHELD: capital revision changed before the transport".into()),
     }
 }

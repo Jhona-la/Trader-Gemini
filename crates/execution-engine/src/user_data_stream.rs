@@ -781,28 +781,76 @@ impl UserDataStreamer {
             );
             if let Some(arena) = self.arena.as_deref() {
                 if let Some(coin_id) = quantum_arena::symbol_registry::try_index(&update.symbol) {
-                    let mut libro = arena
-                        .config
-                        .entry_publication_gate
-                        .lock()
-                        .unwrap_or_else(|e| e.into_inner());
-                    libro.fill_de_cierre(
-                        arena,
-                        coin_id,
-                        update.trade_id,
-                        comision_usdt - o.realized_profit,
-                        update.trade_time_ms,
-                        terminal,
-                    );
-                    if externo {
-                        libro.cierre_externo(arena);
-                    }
-                    drop(libro);
+                    // V4I (punto 5b): testigo y candado en el mismo paso. Bajo el mutex del
+                    // puente, con la era de este socket y la sesion OMS vigentes (orden puente,
+                    // puerta); un evento de la sesion anterior no escribe el libro.
+                    let aplicado = self.puente.con_era_vigente(self.era, |_| {
+                        let mut libro = arena
+                            .config
+                            .entry_publication_gate
+                            .lock()
+                            .unwrap_or_else(|e| e.into_inner());
+                        libro.fill_de_cierre(
+                            arena,
+                            coin_id,
+                            update.trade_id,
+                            comision_usdt - o.realized_profit,
+                            update.trade_time_ms,
+                            terminal,
+                        );
+                        if externo {
+                            libro.cierre_externo(arena);
+                        }
+                        drop(libro);
+                    });
                     // INV-G: el veto del libro se suelta solo con una REST pedida despues de esto
                     // (el puente veta hasta entonces). Sin la puerta tomada (orden puente, puerta).
-                    if externo {
+                    if externo && aplicado.is_some() {
                         let _ = self.puente.evidencia_perdida(self.era);
                     }
+                }
+            }
+        }
+
+        // CAPITAL-UNICO V4I (INV-E): cada fill de una entrada llega al libro por su identidad
+        // (`trade_id`) con su comision REAL en USDT (otra moneda no carga el USDT); el evento
+        // terminal de la orden aporta la marca que cubre toda su ejecucion. Un ACK acumulado no
+        // la aporta. El padre maker (`mc_`) no la aporta: su remanente (`mcT_`) es otra orden.
+        let coid = update.client_order_id.as_str();
+        let es_entrada = coid.starts_with("cL_")
+            || coid.starts_with("cS_")
+            || coid.starts_with("mc_")
+            || coid.starts_with("mcT_");
+        let orden_terminal = matches!(
+            update.status,
+            OrderStatus::Filled | OrderStatus::Canceled | OrderStatus::Expired
+        );
+        if es_entrada && (new_fill || orden_terminal) {
+            if let Some(arena) = self.arena.as_deref() {
+                if let Some(coin_id) = quantum_arena::symbol_registry::try_index(&update.symbol) {
+                    let comision_usdt = (update.commission_asset.is_empty()
+                        || update.commission_asset.eq_ignore_ascii_case("USDT"))
+                    .then_some(update.commission);
+                    let _ = self.puente.con_era_vigente(self.era, |_| {
+                        let mut libro = arena
+                            .config
+                            .entry_publication_gate
+                            .lock()
+                            .unwrap_or_else(|e| e.into_inner());
+                        if new_fill {
+                            libro.fill_de_entrada(
+                                arena,
+                                coin_id,
+                                coid,
+                                update.trade_id,
+                                comision_usdt,
+                                Some(update.trade_time_ms),
+                            );
+                        }
+                        if orden_terminal && !coid.starts_with("mc_") {
+                            libro.marca_de_orden(arena, coin_id, coid, update.trade_time_ms);
+                        }
+                    });
                 }
             }
         }

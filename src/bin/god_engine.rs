@@ -897,6 +897,36 @@ fn suspend_symbol_until(symbol: &str, until_ms: u64) {
         .insert(symbol.to_string(), until_ms);
 }
 
+/// CAPITAL-UNICO V4I (INV-D): identidad estable de la cuenta del ejecutor (venue y clave publica;
+/// nunca el secreto). El libro del dimensionable empieza de cero si cambia: nada leido en otra
+/// cuenta ordena ni prueba inclusion en esta.
+fn identidad_de_cuenta(testnet: bool, clave_publica: &str) -> u64 {
+    use std::hash::{Hash, Hasher};
+    let mut h = std::collections::hash_map::DefaultHasher::new();
+    testnet.hash(&mut h);
+    clave_publica.hash(&mut h);
+    h.finish()
+}
+
+/// CAPITAL-UNICO V4I (INV-D): el libro entro en un suelo sin marca (o espera la evidencia de un
+/// cierre externo): se pide evidencia perdida al puente (veta hasta una REST pedida despues) fuera
+/// de su mutex, en un hilo aparte, porque el publicador corre dentro de el.
+fn pedir_evidencia_si_espera(arena: &quantum_arena::GlobalArena, puente: &std::sync::Weak<execution_engine::puente_cuenta::PuenteCuenta>) {
+    let espera = arena
+        .config
+        .entry_publication_gate
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .espera_evidencia();
+    if espera {
+        if let Some(puente) = puente.upgrade() {
+            std::thread::spawn(move || {
+                let _ = puente.evidencia_perdida(puente.era());
+            });
+        }
+    }
+}
+
 fn is_symbol_suspended(symbol: &str) -> bool {
     let now_ms = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -1838,6 +1868,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         (mainnet_key.clone(), mainnet_secret.clone(), false)
     };
 
+    // CAPITAL-UNICO V4I (INV-D): identidad de la cuenta de arranque (sin el secreto).
+    let cuenta_de_arranque = identidad_de_cuenta(is_testnet, &active_key);
     let mut order_executor =
         execution_engine::executor::OrderExecutor::new(active_key, active_secret, is_testnet);
     // D-700 (DÉCIMA OLA · auditoría integral): LA PUERTA HUMANA GOBIERNA EL
@@ -2617,6 +2649,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             .lock()
             .unwrap_or_else(|e| e.into_inner())
             .activar(&arena_real);
+        // V4I (INV-D): la cuenta del ejecutor de arranque.
+        arena_real
+            .config
+            .entry_publication_gate
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .fijar_cuenta(&arena_real, cuenta_de_arranque);
         // V4H (INV-G): un cierre externo que detecte el OMS pide evidencia perdida al puente
         // (veta hasta una REST pedida despues); ese saldo suelta el veto del libro.
         {
@@ -2629,8 +2668,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             let arena_veto = Arc::clone(&arena_real);
             let oms_veto = Arc::clone(&oms_session);
             let espejo_veto = Arc::clone(&unified_capital);
+            let puente_evidencia = Arc::downgrade(&puente_cuenta);
             puente_cuenta.vincular_publicador(move |p| {
-                publicar_capital_de_sesion(&oms_veto, &arena_veto, &espejo_veto, p)
+                let suelto = publicar_capital_de_sesion(&oms_veto, &arena_veto, &espejo_veto, p);
+                // V4I (INV-D): del suelo sin marca solo se sale con evidencia positiva.
+                if !p.veta {
+                    pedir_evidencia_si_espera(&arena_veto, &puente_evidencia);
+                }
+                suelto
             });
         }
         oms_session.initialize_arena(&arena_real);
@@ -3585,6 +3630,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         // reinicios del motor. Una mañana mala ahora cuesta el día entero,
         // no un arranque.
         {
+            // V4I (punto 5b): el testigo de era del funding (ver el bucle).
+            let puente_brk = Arc::clone(&puente_cuenta);
             let exec_brk = Arc::clone(&exec);
             let arena_brk = Arc::clone(&arena_real);
             // GLM-219 (bloqueante #3): el breaker Prod→Demo se alimenta aquí,
@@ -3641,6 +3688,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 tick.tick().await; // primer tick inmediato: alinear al ciclo de 5 min
                 loop {
                     tick.tick().await;
+                    // V4I (punto 5b): la era se toma ANTES que el ejecutor; la respuesta solo
+                    // escribe el libro si esa era (y su sesion OMS) siguen vigentes al aplicarla.
+                    let era_brk = puente_brk.era();
                     let executor = exec_brk.load_full();
                     if executor.is_kill_switch_active() {
                         continue;
@@ -3717,7 +3767,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     // CAPITAL-UNICO V4H (INV-G): funding PAGADO visto en el historial de
                     // ingresos y aun no reflejado en el saldo vigente: resta del dimensionable
                     // hasta un saldo con marca posterior. El cobrado no suma.
-                    {
+                    // V4I (punto 5b): testigo y candado en el mismo paso (mutex del puente, era y
+                    // sesion vigentes; despues la puerta). Una respuesta de la sesion anterior que
+                    // llega despues del relevo no escribe el libro.
+                    let _ = puente_brk.con_era_vigente(era_brk, |_| {
                         let mut libro = arena_brk
                             .config
                             .entry_publication_gate
@@ -3734,7 +3787,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 libro.debito_funding(&arena_brk, id, -e.income, e.time);
                             }
                         }
-                    }
+                    });
                     // GLM-214 (H2): publicar la VERDAD DEL EXCHANGE de la
                     // ventana para el display financiero (seqlock del
                     // profiler). El contador interno sólo suma receipts de
@@ -5410,6 +5463,23 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             quantum_engine::host_oms::ResultadoTransicion::Publicada { generacion, .. } => Some(*generacion),
                             _ => None,
                         };
+                        // V4I (INV-D): el relevo puede cambiar de cuenta (testnet o mainnet): con
+                        // otra cuenta el libro empieza sin saldo, antes de la era nueva y bajo el
+                        // mutex del puente (orden puente, puerta).
+                        if sesion_publicada.is_some() {
+                            let testnet_del_relevo = std::env::var("USE_TESTNET").unwrap_or_default().trim().to_lowercase() == "true";
+                            let cuenta_del_relevo = if testnet_del_relevo {
+                                identidad_de_cuenta(true, &testnet_key)
+                            } else {
+                                identidad_de_cuenta(false, &mainnet_key)
+                            };
+                            arena_real
+                                .config
+                                .entry_publication_gate
+                                .lock()
+                                .unwrap_or_else(|e| e.into_inner())
+                                .fijar_cuenta(&arena_real, cuenta_del_relevo);
+                        }
                         (paso, sesion_publicada)
                         });
                         if let Some(motivo) = paso.reserva_no_cancelable {
@@ -6495,7 +6565,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                                 "✅ [ENTRY] {} id={} envío={} destino={:?}: ejecutada {:.8} — reserva confirmada; protección por el vigilante.",
                                                 parsed_sym_str, client_id, e, destino, ejecutada
                                             );
-                                            if let Err(reason) = reservation.confirmar_llenado_con_marca(&arena_clone, Some(ejecutada), entry_executor.registry().get(&client_id).map(|o| o.marca_fill_ms).filter(|m| *m > 0)) {
+                                            if let Err(reason) = reservation.confirmar_llenado_con_marca(&arena_clone, Some(ejecutada), entry_executor.registry().marca_terminal(&client_id)) {
                                                 telemetry_engine::telemetry_err!("[ENTRY CONFIRM] stale/mismatched reservation: {:?}; reconcile fill, do not confirm another slot", reason);
                                             } else {
                                                 // CL-46b: el diario B2.7 también aquí; sin él,
@@ -6597,7 +6667,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                             }
                                         }
                                     };
-                                    if let Err(reason) = reservation.confirmar_llenado_con_marca(&arena_clone, Some(ejecutada), entry_executor.registry().get(&client_id).map(|o| o.marca_fill_ms).filter(|m| *m > 0)) {
+                                    if let Err(reason) = reservation.confirmar_llenado_con_marca(&arena_clone, Some(ejecutada), entry_executor.registry().marca_terminal(&client_id)) {
                                         quantum_arena::protection_health::mark_dirty();
                                         telemetry_engine::telemetry_err!("[ENTRY CONFIRM] stale/mismatched reservation: {:?}; reconcile fill, do not confirm another slot", reason);
                                         return;
