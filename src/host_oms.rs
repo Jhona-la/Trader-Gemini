@@ -38,6 +38,10 @@ pub struct OmsSession {
     state: Mutex<SessionState>,
     quiescent: Notify,
     refresh_serial: tokio::sync::Mutex<()>,
+    /// CAPITAL-UNICO V4H (INV-G): lo que el host hace cuando una pasada detecta un cierre que el
+    /// exchange aplico sin evento local (pide evidencia perdida al puente: veta hasta una REST
+    /// pedida despues). Se llama sin candados del OMS.
+    al_cierre_externo: std::sync::OnceLock<Box<dyn Fn() + Send + Sync>>,
 }
 
 struct SessionState {
@@ -80,6 +84,9 @@ pub struct SnapshotOutcome {
     pub pending_regular_orders: usize,
     pub pruned: usize,
     pub error: Option<String>,
+    /// CAPITAL-UNICO V4H (INV-G): la pasada detecto un cierre que el exchange aplico sin evento
+    /// local; el libro quedo vetado hasta un saldo pedido despues.
+    pub cierre_externo: bool,
 }
 
 impl SnapshotOutcome {
@@ -94,6 +101,7 @@ impl SnapshotOutcome {
             pending_regular_orders: 0,
             pruned: 0,
             error: None,
+            cierre_externo: false,
         }
     }
 }
@@ -208,7 +216,13 @@ impl OmsSession {
             }),
             quiescent: Notify::new(),
             refresh_serial: tokio::sync::Mutex::new(()),
+            al_cierre_externo: std::sync::OnceLock::new(),
         }
+    }
+
+    /// CAPITAL-UNICO V4H (INV-G): vincula la accion del host ante un cierre externo (una vez).
+    pub fn vincular_cierre_externo(&self, f: impl Fn() + Send + Sync + 'static) {
+        let _ = self.al_cierre_externo.set(Box::new(f));
     }
 
     pub fn snapshot_token(&self) -> SessionToken {
@@ -539,7 +553,7 @@ impl OmsSession {
         }
         // Lock order is always session -> publication. Core uses only publication, and
         // rechecks the pause/book under it before publishing a position or debiting capital.
-        let _publication = arena
+        let mut _publication = arena
             .config
             .entry_publication_gate
             .lock()
@@ -631,6 +645,17 @@ impl OmsSession {
                 .map(|(_, taker)| taker)
         });
         let arena_report = reconciliation::reconcile_arena_checked(&positions, arena, now_ms);
+        // CAPITAL-UNICO V4H (INV-G): un cierre que el exchange aplico sin evento local (la
+        // reconciliacion cierra una ranura ya plana en el exchange) veta la admision hasta el
+        // primer saldo posterior; una moneda plana retira el estimado de su cierre local (ya no
+        // llegara fill que lo reemplace) y veta igual. Bajo la misma puerta.
+        let mut cierre_externo = arena_report.cierres_externos > 0;
+        if cierre_externo {
+            _publication.cierre_externo(arena);
+        }
+        for &coin_id in &arena_report.monedas_planas {
+            cierre_externo |= _publication.moneda_plana(arena, coin_id);
+        }
         // GLM-210 (A3, 2026-11-06): tras reconciliar, una ranura que SIGUE
         // abierta y sin confirmar bloquea la admisión. Con I-15 sólo puede
         // ser una cuya confirmación consumió el aplanado total y que la fila
@@ -676,6 +701,7 @@ impl OmsSession {
             } else {
                 None
             },
+            cierre_externo,
         }
     }
 
@@ -756,7 +782,14 @@ impl OmsSession {
                 .resolver_intenciones_ausentes(abiertas, MAX_CONSULTAS_INTENCIONES_AUSENTES)
                 .await;
         }
-        self.apply_snapshot(&token, positions, orders, fees, arena, now_ms())
+        let outcome = self.apply_snapshot(&token, positions, orders, fees, arena, now_ms());
+        // V4H (INV-G): fuera de los candados del OMS y de la puerta (orden puente, sesion, puerta).
+        if outcome.cierre_externo {
+            if let Some(f) = self.al_cierre_externo.get() {
+                f();
+            }
+        }
+        outcome
     }
 
     pub async fn dispatch_entry<T: EntryTransport>(
@@ -766,11 +799,27 @@ impl OmsSession {
         request: &EntryRequest<'_>,
         arena: &GlobalArena,
     ) -> Result<(), String> {
+        self.dispatch_entry_reservada(token, transport, request, arena, None).await
+    }
+
+    /// CAPITAL-UNICO V4H (INV-F): como [`dispatch_entry`](Self::dispatch_entry), con la reserva
+    /// del libro del dimensionable que respalda esta entrada. Justo antes de cada llamada al
+    /// exchange el guardia revalida contra el libro: la reserva sigue viva, el libro no veta y
+    /// el disponible para ella cubre aun el dimensionable con el que Risk la decidio.
+    pub async fn dispatch_entry_reservada<T: EntryTransport>(
+        &self,
+        token: &SessionToken,
+        transport: &T,
+        request: &EntryRequest<'_>,
+        arena: &GlobalArena,
+        reserva: Option<quantum_arena::dimensionable::ClaveReserva>,
+    ) -> Result<(), String> {
         let guarded = GuardedEntry {
             session: self,
             token,
             transport,
             arena,
+            reserva,
         };
         entry_dispatch::dispatch_entry(&guarded, request).await
     }
@@ -944,6 +993,29 @@ struct GuardedEntry<'a, T> {
     token: &'a SessionToken,
     transport: &'a T,
     arena: &'a GlobalArena,
+    /// V4H (INV-F): la reserva del libro que respalda esta entrada.
+    reserva: Option<quantum_arena::dimensionable::ClaveReserva>,
+}
+
+impl<T> GuardedEntry<'_, T> {
+    /// V4H (INV-F): la decision sigue siendo la misma revision del capital al enviar.
+    fn revalidar_capital(&self) -> Result<(), String> {
+        // El veto del PUENTE pudo entrar despues del permiso (el publicador veta antes de
+        // esperar la puerta): el libro lo vuelve a mirar aqui, junto al suyo.
+        let Some(clave) = self.reserva else { return Ok(()) };
+        let valido = self
+            .arena
+            .config
+            .entry_publication_gate
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .envio_valido_en(self.arena, clave);
+        if valido {
+            Ok(())
+        } else {
+            Err("OMS_ENTRY_WITHHELD: capital revision changed since the decision".into())
+        }
+    }
 }
 
 struct TransportPermit<'a> {
@@ -980,6 +1052,7 @@ impl<T: EntryTransport> EntryTransport for GuardedEntry<'_, T> {
     async fn submit_entry(&self, request: &EntryRequest<'_>) -> Result<(), String> {
         // Leverage confirmation may have awaited while OMS was revoked or replaced.
         let _permit = self.session.admit_transport(self.token, self.arena)?;
+        self.revalidar_capital()?;
         self.transport.submit_entry(request).await
     }
 }

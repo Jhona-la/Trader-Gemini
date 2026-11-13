@@ -367,6 +367,11 @@ pub struct ArenaReconciliationReport {
     /// No adjustment was authorized for these instruments. This does NOT mean
     /// that remote risk is represented or that new exposure may be admitted.
     pub unresolved: Vec<ReconciliationIssue>,
+    /// CAPITAL-UNICO V4H (INV-G): ranuras locales que esta pasada cerro porque el exchange ya
+    /// estaba plano (cierre que el exchange aplico sin evento local que las cerrara antes).
+    pub cierres_externos: usize,
+    /// V4H (INV-G): monedas con fila remota y sin posicion abierta en el exchange.
+    pub monedas_planas: Vec<usize>,
 }
 
 // Retain side identity while checking whether the legacy allocation
@@ -516,6 +521,9 @@ pub fn reconcile_arena_checked(
                 continue;
             }
         };
+        if remote_positions.is_empty() {
+            report.monedas_planas.push(coin_idx);
+        }
         let one_way = observed_sides.contains(&None);
         let coin = &arena.coins[coin_idx];
         for remote_side in [Some(true), Some(false), None] {
@@ -597,6 +605,7 @@ pub fn reconcile_arena_checked(
                 // Exchange está plano pero la Arena cree que tiene posiciones abiertas: phantom cleanup
                 if cont_open {
                     for slot in local_open {
+                        report.cierres_externos += 1;
                         let exit_price = remote_price;
                         let (was_long, entry_p, qty, m, entry_fee_paid) = slot.close_with_fee();
                         if m > 0.0 {

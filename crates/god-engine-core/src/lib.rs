@@ -5632,10 +5632,28 @@ impl GodEngineCore {
                     // CAPITAL-UNICO V4G (INV-A): con el dimensionable derivado
                     // (arena vivo del host) el PnL de un cierre llega con el
                     // saldo del exchange, no se suma aqui. Sin activar, igual.
+                    // V4H (INV-G): una perdida local de una posicion que existio en el
+                    // exchange resta en el acto (debito estimado del libro) hasta que la
+                    // reemplacen los fills de cierre; una ganancia no suma.
                     if !self.arena.config.dimensionable_derivado.load(Ordering::Acquire) {
                         self.arena
                             .unified_capital
                             .fetch_add(net_realized_pnl, Ordering::Relaxed);
+                    } else if was_exchange_confirmed && net_realized_pnl < 0.0 {
+                        self.arena
+                            .config
+                            .entry_publication_gate
+                            .lock()
+                            .unwrap_or_else(|e| e.into_inner())
+                            .debito_cierre_local(
+                                &self.arena,
+                                quantum_arena::dimensionable::ClaveReserva {
+                                    coin_id,
+                                    slot: slot_idx,
+                                    generation: position_generation,
+                                },
+                                -net_realized_pnl,
+                            );
                     }
 
                     let is_win = net_trade_pnl > 0.0;
@@ -9939,6 +9957,9 @@ impl GodEngineCore {
                             &self.arena,
                         )
                     };
+                    // CAPITAL-UNICO V4H (INV-F): el dimensionable con el que Risk decidio;
+                    // se revalida bajo la puerta al reservar.
+                    let capital_de_la_decision = self.risk_engine.capital_evaluado();
                     self.diag_dir.record_risk(
                     calibrated_intent.signal == SignalType::Long,
                     calibrated_intent.confidence,
@@ -10504,7 +10525,11 @@ impl GodEngineCore {
                                 };
                                 if publication_arena.config.entry_publication_paused.load(Ordering::Acquire)
                                     || !same_book
-                                    || publication_arena.config.fee_rates_for(coin_id) != Some(self.reality_fees()) {
+                                    || publication_arena.config.fee_rates_for(coin_id) != Some(self.reality_fees())
+                                    // CAPITAL-UNICO V4H (INV-F): misma revision del capital que vio
+                                    // Risk, o se descarta (veto del puente o del libro, o el
+                                    // dimensionable bajo desde la decision).
+                                    || !_publication.admite(&publication_arena, capital_de_la_decision) {
                                     continue;
                                 }
                                 let expected_generation = target_pos.generation
@@ -10517,7 +10542,7 @@ impl GodEngineCore {
                                     coin_id, slot: target_pos_slot, generation: expected_generation,
                                 };
                                 self.arena.used_margin.fetch_add(margin_req, Ordering::Relaxed);
-                                _publication.reservar(&self.arena, clave_reserva, fee_paid);
+                                _publication.reservar_con_base(&self.arena, clave_reserva, fee_paid, capital_de_la_decision);
 
 
                                 // Publicación ATÓMICA e inmutable de la posición junto con su tau espectral:

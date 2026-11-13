@@ -193,9 +193,10 @@ const COMISION: f64 = 0.04; // fixture: comision de entrada de la reserva
 fn anclas_de_la_reserva() {
     // V4G: reserva, cancelacion y ejecucion por el libro, bajo la puerta (contra c001f15b eran
     // `self.arena.unified_capital.fetch_add(-fee_paid, ..)` y `arena.unified_capital.fetch_add(fee, ..)`).
+    // V4H: la reserva lleva la base con la que decidio Risk (INV-F).
     orden(NUCLEO, &[
         "let mut _publication = publication_arena.config.entry_publication_gate",
-        "_publication.reservar(&self.arena, clave_reserva, fee_paid);",
+        "_publication.reservar_con_base(&self.arena, clave_reserva, fee_paid, capital_de_la_decision);",
     ]);
     orden(RESERVA, &[
         "pub fn cancel(&self, arena: &GlobalArena)",

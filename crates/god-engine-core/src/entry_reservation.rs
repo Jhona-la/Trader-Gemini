@@ -40,7 +40,8 @@ impl EntryReservation {
         Ok(slot)
     }
 
-    fn clave(&self) -> ClaveReserva {
+    /// CAPITAL-UNICO V4H: la clave de esta reserva en el libro del dimensionable.
+    pub fn clave(&self) -> ClaveReserva {
         ClaveReserva { coin_id: self.coin_id, slot: self.slot, generation: self.generation }
     }
 

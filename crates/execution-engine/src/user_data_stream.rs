@@ -559,6 +559,11 @@ impl UserDataStreamer {
             /// reportado por REST y WS en el OrderRegistry.
             #[serde(rename = "t", default)]
             trade_id: u64,
+            /// CAPITAL-UNICO V4H (INV-G): reduce-only y PnL realizado del fill.
+            #[serde(rename = "R", default)]
+            reduce_only: bool,
+            #[serde(rename = "rp", default, deserialize_with = "crate::order_types::string_or_f64")]
+            realized_profit: f64,
             #[serde(rename = "T")]
             trade_time_ms: u64,
             #[serde(rename = "ps", default)]
@@ -754,6 +759,52 @@ impl UserDataStreamer {
                 o.is_maker,
                 update.commission,
             );
+        }
+
+        // CAPITAL-UNICO V4H (INV-G): todo fill que cierra posicion llega al libro del
+        // dimensionable como debito exacto (comision - PnL realizado, con su `T`); un
+        // credito no suma. Una liquidacion o un ADL (lo origina el exchange) veta ademas
+        // la admision hasta el saldo siguiente.
+        if new_fill && (o.reduce_only || close_kind.is_some() || o.realized_profit != 0.0) {
+            let comision_usdt = if update.commission_asset.is_empty()
+                || update.commission_asset.eq_ignore_ascii_case("USDT")
+            {
+                update.commission
+            } else {
+                0.0
+            };
+            let coid = update.client_order_id.as_str();
+            let externo = coid.starts_with("autoclose") || coid.starts_with("adl_autoclose");
+            let terminal = matches!(
+                update.status,
+                OrderStatus::Filled | OrderStatus::Canceled | OrderStatus::Expired
+            );
+            if let Some(arena) = self.arena.as_deref() {
+                if let Some(coin_id) = quantum_arena::symbol_registry::try_index(&update.symbol) {
+                    let mut libro = arena
+                        .config
+                        .entry_publication_gate
+                        .lock()
+                        .unwrap_or_else(|e| e.into_inner());
+                    libro.fill_de_cierre(
+                        arena,
+                        coin_id,
+                        update.trade_id,
+                        comision_usdt - o.realized_profit,
+                        update.trade_time_ms,
+                        terminal,
+                    );
+                    if externo {
+                        libro.cierre_externo(arena);
+                    }
+                    drop(libro);
+                    // INV-G: el veto del libro se suelta solo con una REST pedida despues de esto
+                    // (el puente veta hasta entonces). Sin la puerta tomada (orden puente, puerta).
+                    if externo {
+                        let _ = self.puente.evidencia_perdida(self.era);
+                    }
+                }
+            }
         }
 
         // K-04 / R3.1 / D-179: Motor de cancelación automática de pierna hermana OCO

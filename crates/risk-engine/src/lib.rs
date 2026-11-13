@@ -408,6 +408,11 @@ pub struct RiskEngine {
     /// que la evaluación en curso prometió. Se borra al empezar cada
     /// evaluación; ninguna decisión la lee.
     promesa_evaluada: Option<(usize, f64)>,
+    /// CAPITAL-UNICO V4H (INV-F): el saldo dimensionable con el que dimensiono la evaluacion en
+    /// curso (el mayor de sus lecturas de `unified_capital`). El nucleo lo revalida bajo la
+    /// puerta al reservar: si el dimensionable bajo, la propuesta se descarta. Se borra al
+    /// empezar cada evaluacion.
+    capital_evaluado: Option<f64>,
 }
 
 /// CL-131 (R2 de la revisión del PR #62) — lo que una orden validada aporta
@@ -439,6 +444,7 @@ impl RiskEngine {
             medida_pendiente: None,
             geometria_evaluada: None,
             promesa_evaluada: None,
+            capital_evaluado: None,
         }
     }
 
@@ -450,6 +456,13 @@ impl RiskEngine {
         self.medida_pendiente = None;
         self.geometria_evaluada = None;
         self.promesa_evaluada = None;
+        self.capital_evaluado = None;
+    }
+
+    /// CAPITAL-UNICO V4H (INV-F): el dimensionable que uso la ultima evaluacion (`None` si no
+    /// llego a leerlo o lo rechazo por invalido).
+    pub fn capital_evaluado(&self) -> Option<f64> {
+        self.capital_evaluado
     }
 
     /// CL-131/CL-135 — la medida de la última orden validada de `coin_id`,
@@ -726,6 +739,7 @@ impl RiskEngine {
         // evaluación o ninguna.
         self.geometria_evaluada = None;
         self.promesa_evaluada = None;
+        self.capital_evaluado = None;
         if coin_id >= arena.coins.len() || intent.signal == SignalType::Flat {
             return rej(REJ_FLAT_COIN);
         }
@@ -765,6 +779,8 @@ impl RiskEngine {
         {
             return rej(REJ_TARGET_GEOMETRY);
         }
+        // CAPITAL-UNICO V4H (INV-F): el dimensionable con el que se decide.
+        self.capital_evaluado = Some(current_capital);
 
         // CL-99 (LC-F4-10): el pico es el del arena, compartido con el
         // sistema inmune del host y guardado por él entre reinicios.
@@ -1117,6 +1133,8 @@ impl RiskEngine {
         // independencia ni borrar el conteo conservador.
         let is_long = intent.signal == SignalType::Long;
         let current_cap = arena.unified_capital.load(Ordering::Relaxed);
+        // CAPITAL-UNICO V4H (INV-F): si esta segunda lectura es mayor, es la que cuenta.
+        self.capital_evaluado = self.capital_evaluado.map(|c| c.max(current_cap));
         let corr_thresh = arena
             .config
             .global_correlation_threshold

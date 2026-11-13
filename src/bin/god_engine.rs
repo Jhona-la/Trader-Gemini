@@ -856,6 +856,16 @@ fn publicar_capital_de_sesion(
     espejo: &AtomicU64,
     p: &execution_engine::puente_cuenta::Publicacion,
 ) -> bool {
+    // V4H (INV-G): un veto del puente posterior a un cierre externo habilita que el saldo que
+    // entregue al soltar (una REST pedida despues) suelte el veto del libro.
+    if p.veta {
+        arena
+            .config
+            .entry_publication_gate
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .veto_del_puente();
+    }
     let suelto = match (p.veta, p.vigente) {
         (true, _) | (false, None) => false,
         (false, Some((saldo, marca))) => {
@@ -863,12 +873,15 @@ fn publicar_capital_de_sesion(
             let token = oms.snapshot_token();
             token.generation() == p.sesion
                 && oms.publish_current_balance(&token, saldo, |balance| {
-                    arena
+                    let mut libro = arena
                         .config
                         .entry_publication_gate
                         .lock()
-                        .unwrap_or_else(|e| e.into_inner())
-                        .saldo_aceptado(arena, balance, marca);
+                        .unwrap_or_else(|e| e.into_inner());
+                    // V4H (INV-D): el orden por marca vale dentro de la era y la sesion.
+                    libro.fijar_alcance(p.era, p.sesion);
+                    libro.saldo_aceptado(arena, balance, marca);
+                    drop(libro);
                     espejo.store(balance.to_bits(), Ordering::Relaxed);
                 })
         }
@@ -2604,6 +2617,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             .lock()
             .unwrap_or_else(|e| e.into_inner())
             .activar(&arena_real);
+        // V4H (INV-G): un cierre externo que detecte el OMS pide evidencia perdida al puente
+        // (veta hasta una REST pedida despues); ese saldo suelta el veto del libro.
+        {
+            let puente_cierre = Arc::clone(&puente_cuenta);
+            oms_session.vincular_cierre_externo(move || {
+                let _ = puente_cierre.evidencia_perdida(puente_cierre.era());
+            });
+        }
         {
             let arena_veto = Arc::clone(&arena_real);
             let oms_veto = Arc::clone(&oms_session);
@@ -3691,6 +3712,27 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 }
                             }
                             _ => {}
+                        }
+                    }
+                    // CAPITAL-UNICO V4H (INV-G): funding PAGADO visto en el historial de
+                    // ingresos y aun no reflejado en el saldo vigente: resta del dimensionable
+                    // hasta un saldo con marca posterior. El cobrado no suma.
+                    {
+                        let mut libro = arena_brk
+                            .config
+                            .entry_publication_gate
+                            .lock()
+                            .unwrap_or_else(|e| e.into_inner());
+                        for e in fee_partition.same_asset_by_symbol.values().flatten() {
+                            if e.income_type == "FUNDING_FEE" && e.income < 0.0 {
+                                // Identidad: tranId del exchange (o simbolo y hora si falta).
+                                let id = if e.tran_id != 0 {
+                                    e.tran_id
+                                } else {
+                                    e.symbol.bytes().fold(e.time, |h, b| h.rotate_left(5) ^ u64::from(b))
+                                };
+                                libro.debito_funding(&arena_brk, id, -e.income, e.time);
+                            }
                         }
                     }
                     // GLM-214 (H2): publicar la VERDAD DEL EXCHANGE de la
@@ -6402,8 +6444,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 client_order_id: &client_id,
                                 route,
                             };
-                            let entry_result = entry_oms.dispatch_entry(
+                            // V4H (INV-F): el guardia revalida la reserva contra el libro
+                            // justo antes de cada llamada al exchange.
+                            let entry_result = entry_oms.dispatch_entry_reservada(
                                 &entry_session, entry_executor.as_ref(), &entry_request, &arena_clone,
+                                Some(reservation.clave()),
                             ).await;
 
                             match entry_result {

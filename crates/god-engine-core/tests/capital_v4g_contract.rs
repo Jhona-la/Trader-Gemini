@@ -67,7 +67,7 @@ fn anclas_del_adaptador() {
     ]);
     orden(NUCLEO, &[
         "let mut _publication = publication_arena.config.entry_publication_gate",
-        "_publication.reservar(&self.arena, clave_reserva, fee_paid);",
+        "_publication.reservar_con_base(&self.arena, clave_reserva, fee_paid, capital_de_la_decision);",
         "if !target_pos.open_with_tau_and_fee(",
         "_publication.cancelar(&self.arena, clave_reserva, fee_paid);",
     ]);
@@ -110,9 +110,12 @@ fn reservar_del_nucleo(arena: &GlobalArena, slot: usize, comision: f64) -> Entry
     let pos = arena.coins[0].positions.get_slot(slot);
     let generation = pos.generation.load(Ordering::Acquire).wrapping_add(1);
     {
+        // V4H (INV-F): con el dimensionable que leyo Risk, revalidado bajo la puerta.
+        let capital = (!arena.capital_incompleto.load(Ordering::Acquire)).then(|| arena.unified_capital.load(Ordering::Relaxed));
         let mut _publication = arena.config.entry_publication_gate.lock().unwrap_or_else(|e| e.into_inner());
+        assert!(_publication.admite(arena, capital), "la revalidacion descarto la reserva del fixture");
         let clave = quantum_arena::dimensionable::ClaveReserva { coin_id: 0, slot, generation };
-        _publication.reservar(arena, clave, comision);
+        _publication.reservar_con_base(arena, clave, comision, capital);
         assert!(pos.open_with_tau_and_fee(
             true, 100.0, 1.0, 10.0, 1000, 101.0, 99.0, PositionHorizon::Continuous, 0.6, 0.7, comision, 30_000,
         ));
@@ -360,7 +363,8 @@ fn v4g_inv_c_ejecucion_parcial() {
     confirmar(&r, &m.arena, 0.4, 150);
     assert!(m.dimensionable() < 100.0, "la parte ejecutada sigue reservada hasta que el exchange la refleje");
     assert!(m.dimensionable() > 100.0 - COMISION, "la parte no ejecutada ya no esta reservada");
-    m.rest(99.99, 150);
+    // V4H (INV-E): el saldo que la incluye trae marca estrictamente posterior al fill.
+    m.rest(99.99, 151);
     m.exacto("saldo del exchange tras el parcial");
     // Confirmacion repetida: no vuelve a escalar ni acredita nada.
     r.confirmar_llenado_con_marca(&m.arena, Some(0.2), Some(150)).unwrap();
@@ -370,7 +374,7 @@ fn v4g_inv_c_ejecucion_parcial() {
     let m = montaje();
     m.rest(100.0, 100);
     let r = reservar_del_nucleo(&m.arena, 0, COMISION);
-    m.stream(99.99, 150);
+    m.stream(99.99, 151);
     assert!(m.dimensionable() <= m.saldo());
     confirmar(&r, &m.arena, 0.4, 150);
     m.exacto("saldo neto antes del ack del parcial");
@@ -386,7 +390,8 @@ fn v4g_inv_c_sin_doble_resta_de_la_comision() {
     let m = montaje();
     m.rest(100.0, 100);
     let r = reservar_del_nucleo(&m.arena, 0, COMISION);
-    m.stream(99.95, 150);
+    // V4H (INV-E): el saldo que incluye el fill (T=150) trae marca posterior.
+    m.stream(99.95, 151);
     assert!(m.dimensionable() <= m.saldo(), "INV-A antes de la confirmacion");
     confirmar(&r, &m.arena, 1.0, 150);
     m.exacto("stream antes del ack");
@@ -396,7 +401,7 @@ fn v4g_inv_c_sin_doble_resta_de_la_comision() {
     let r = reservar_del_nucleo(&m.arena, 0, COMISION);
     confirmar(&r, &m.arena, 1.0, 150);
     assert_eq!(m.dimensionable(), 100.0 - COMISION, "ejecutada y aun no reflejada");
-    m.stream(99.95, 150);
+    m.stream(99.95, 151);
     m.exacto("ack antes del stream");
 }
 
@@ -453,7 +458,7 @@ fn v4g_inv_a_cierre_local_no_sube_el_dimensionable_sobre_la_cuenta() {
     m.rest(100.0, 100);
     let r = reservar_del_nucleo(&m.arena, 0, COMISION);
     confirmar(&r, &m.arena, 1.0, 150);
-    m.stream(100.0 - COMISION, 150);
+    m.stream(100.0 - COMISION, 151); // V4H (INV-E): marca posterior al fill
     m.exacto("entrada reflejada");
     cierre_local(&m.arena, 5.0);
     assert!(m.dimensionable() <= m.saldo(), "dimensionable {} con {} en la cuenta", m.dimensionable(), m.saldo());
@@ -486,9 +491,8 @@ fn control_sin_activar_el_arena_sigue_siendo_acumulador() {
 
 // ---------------------------------------------------------------- RED de Codex QRA (QRA-CAPITAL-V4G-TRES-RED)
 // `qra_v4g_causal.rs` (19:48), adoptadas con las piezas reales del arena y el adaptador del host.
-// Mismas aserciones e importes. Las dos del libro siguen abiertas (pasan a V4H, INV-E, segun el
-// aviso del coordinador de las 19:32): se marcan `ignore` con su motivo para que la suite se
-// pueda correr; la del publicador se cierra aqui.
+// Mismas aserciones e importes. Las dos del libro las cierra V4H (INV-E): sin `ignore` desde
+// V4H; la del publicador se cerro en V4G.
 
 const QRA_INICIAL: f64 = 100.0;
 const QRA_COMISION_TOTAL: f64 = 0.75;
@@ -503,7 +507,6 @@ fn qra_libro_activo(arena: &GlobalArena) -> std::sync::MutexGuard<'_, quantum_ar
 }
 
 #[test]
-#[ignore = "RED de Codex QRA abierta: T igual no prueba inclusion (pasa a V4H, INV-E)"]
 fn qra_red_mismo_t_parcial_y_final_no_libera_comision_sin_cobertura() {
     let mut cortes = Vec::new();
     for observacion_antes_de_confirmar in [false, true] {
@@ -530,7 +533,6 @@ fn qra_red_mismo_t_parcial_y_final_no_libera_comision_sin_cobertura() {
 }
 
 #[test]
-#[ignore = "RED de Codex QRA abierta: fill sin T y marca no correlacionada (pasa a V4H, INV-E)"]
 fn qra_red_fill_sin_t_no_libera_comision_por_una_marca_no_correlacionada() {
     let arena = GlobalArena::build_in_own_stack(0.0);
     let mut libro = qra_libro_activo(&arena);
