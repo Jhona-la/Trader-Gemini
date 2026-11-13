@@ -3785,15 +3785,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             continue;
                         }
                         let a = per.entry(e.symbol.clone()).or_default();
+                        // DEMO_TEL (T1): la fila FUNDING_FEE de esta pasada (el brazo del match
+                        // queda intacto: lo anclan los contratos de capital).
+                        if e.income_type == "FUNDING_FEE" {
+                            telemetry_server::telemetry_log!(
+                                "DEMO_TEL event=FUNDING ts={} symbol={} income={:.8} asset={} tran_id={}",
+                                e.time, e.symbol, e.income, e.asset, e.tran_id
+                            );
+                        }
                         match e.income_type.as_str() {
                             "REALIZED_PNL" => a.registros.push((e.time, e.income)),
-                            "FUNDING_FEE" => {
-                                a.funding += e.income;
-                                telemetry_server::telemetry_log!(
-                                    "DEMO_TEL event=FUNDING ts={} symbol={} income={:.8} asset={} tran_id={}",
-                                    e.time, e.symbol, e.income, e.asset, e.tran_id
-                                );
-                            }
+                            "FUNDING_FEE" => a.funding += e.income,
                             "COMMISSION" => {
                                 if let Some(cost) = quantum_engine::host_oms::signed_commission_cost(e.income) {
                                     a.fees += cost;

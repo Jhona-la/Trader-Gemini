@@ -229,11 +229,14 @@ fn demo_tel_trade_fee() {
 
 #[test]
 fn demo_tel_funding() {
+    // En la pasada del FEE-BREAKER sobre las filas de income, justo antes del match, cuyo
+    // brazo `"FUNDING_FEE" => a.funding += e.income,` no cambia (lo anclan los contratos V4H).
     orden(HOST, &[
-        "\"FUNDING_FEE\" => {",
-        "a.funding += e.income;",
+        "for e in fee_partition.same_asset_by_symbol.values().flatten() {",
+        "if e.income_type == \"FUNDING_FEE\" {",
         "DEMO_TEL event=FUNDING",
-        "\"COMMISSION\" => {",
+        "match e.income_type.as_str() {",
+        "\"FUNDING_FEE\" => a.funding += e.income,",
     ]);
     let linea = demo_tel!(
         HOST,
