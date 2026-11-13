@@ -130,16 +130,22 @@ fn vincular(p: &PuenteCuenta, a: &Arc<Arena>, sesion_oms: Arc<AtomicU64>) -> Arc
     let (arena, registro) = (Arc::clone(a), Arc::clone(&vistas));
     p.vincular_publicador(move |pb| {
         registro.lock().unwrap().push(*pb);
-        let suelto = match (pb.veta, pb.saldo) {
-            (true, _) => false,
-            (false, None) => return true,
-            (false, Some(s)) => {
+        // V4G (INV-B): como el host, publica el saldo vigente en CADA cambio sin veto; las
+        // comprobaciones del lector intercalado valen en el alza (antes de soltar el veto).
+        let suelto = match (pb.veta, pb.vigente) {
+            (true, _) | (false, None) => false,
+            (false, Some((s, _))) => {
                 if sesion_oms.load(Ordering::Relaxed) != pb.sesion {
                     false
                 } else {
-                    assert_eq!(arena.saldo_si_admite(), None, "nadie admite antes del alza");
+                    let alza = pb.saldo.is_some();
+                    if alza {
+                        assert_eq!(arena.saldo_si_admite(), None, "nadie admite antes del alza");
+                    }
                     arena.saldo.store(s.to_bits(), Ordering::Relaxed);
-                    assert_eq!(arena.saldo_si_admite(), None, "ni entre publicar y soltar");
+                    if alza {
+                        assert_eq!(arena.saldo_si_admite(), None, "ni entre publicar y soltar");
+                    }
                     true
                 }
             }
@@ -169,11 +175,14 @@ fn v4e_p1b_saldo_positivo_menor_se_publica_antes_de_soltar_el_veto() {
     assert_eq!(a.saldo_si_admite(), Some(10.0), "se admite con el saldo nuevo, nunca con el anterior");
     let alzas: Vec<f64> = vistas.lock().unwrap().iter().filter_map(|v| v.saldo).collect();
     assert_eq!(alzas, vec![10.0], "el saldo se ofrece una vez, en el alza");
-    // Ya admitido: un evento posterior no vuelve a publicar el saldo del arena.
+    // Ya admitido: un evento posterior no es otro alza (`saldo` es solo del alza)...
     ws(&p, 200, Some(201), 9.0).unwrap();
     let ultima = *vistas.lock().unwrap().last().unwrap();
     assert_eq!((ultima.veta, ultima.saldo), (false, None));
-    assert_eq!(a.saldo_si_admite(), Some(10.0));
+    // ...pero V4G (INV-B, residual (a) de V4E): su saldo llega al dimensionable en el mismo paso.
+    // Antes esta linea fijaba el defecto: `Some(10.0)` con 9 en la cuenta.
+    assert_eq!(ultima.vigente.map(|(s, _)| s), Some(9.0));
+    assert_eq!(a.saldo_si_admite(), Some(9.0));
 }
 
 #[test]
@@ -224,13 +233,18 @@ fn v4e_p1b_el_observador_de_solo_veto_nunca_recibe_false() {
 fn v4e_p1b_contrato_de_fuente_del_host_y_de_risk() {
     let host = include_str!("../../../src/bin/god_engine.rs").replace("\r\n", "\n");
     // Un solo escritor del veto en el host: el publicador del puente.
-    assert_eq!(host.matches("capital_incompleto").count(), 1);
+    // V4G (asercion adaptada, misma intencion): el publicador escribe el veto dos veces (lo alza
+    // mientras el saldo aceptado espera la puerta y lo resuelve al final); todas las escrituras del
+    // host siguen dentro de `publicar_capital_de_sesion`.
     assert!(!host.contains("puente_cuenta.vincular_veto("), "el host no usa el observador de solo veto");
     let f = &host[host.find("fn publicar_capital_de_sesion(").unwrap()..];
     let f = &f[..f.find("\nfn ").unwrap()];
+    assert_eq!(host.matches("capital_incompleto").count(), f.matches("capital_incompleto").count());
+    assert_eq!(f.matches("capital_incompleto").count(), 2);
     let sesion = f.find("token.generation() == p.sesion").expect("la sesion de la era");
     let publica = f.find("oms.publish_current_balance(&token, saldo,").expect("el saldo por el testigo del OMS");
-    let arena = f.find("arena.unified_capital.store(balance").expect("el saldo del arena");
+    // V4G (ancla adaptada): el saldo llega al arena por el libro del dimensionable.
+    let arena = f.find(".saldo_aceptado(arena, balance, marca);").expect("el saldo del arena");
     let veto = f.find("arena.capital_incompleto.store(!suelto, Ordering::Release)").expect("el veto");
     assert!(sesion < publica && publica < arena && arena < veto, "saldo antes que veto, en el mismo paso");
     let risk = include_str!("../../risk-engine/src/lib.rs").replace("\r\n", "\n");

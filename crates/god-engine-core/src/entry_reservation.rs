@@ -1,4 +1,5 @@
 //! Identity for one local proposal, not proof of an exchange fill or a durable ledger.
+use quantum_arena::dimensionable::ClaveReserva;
 use quantum_arena::{position::PositionTransitionError, symbol_registry, GlobalArena};
 use std::sync::atomic::Ordering;
 
@@ -39,8 +40,17 @@ impl EntryReservation {
         Ok(slot)
     }
 
+    fn clave(&self) -> ClaveReserva {
+        ClaveReserva { coin_id: self.coin_id, slot: self.slot, generation: self.generation }
+    }
+
     /// Release only this rejected reservation, at most once. No exchange I/O.
     /// Slot transition is serialized; portfolio atomics are not a durable transaction.
+    ///
+    /// CAPITAL-UNICO V4G (INV-C): la comision pasa por el libro del dimensionable, bajo la
+    /// puerta de publicacion: con el dimensionable derivado se QUITA la reserva (no se suma
+    /// dinero sobre un saldo que quiza ya la incluia); sin activar, se devuelve como siempre.
+    /// Quien llama no tiene la puerta tomada (el nucleo compensa con su propia guarda).
     pub fn cancel(&self, arena: &GlobalArena) -> Result<(), ReservationError> {
         let (_, _, _, margin, fee) = self
             .position(arena)?
@@ -49,9 +59,12 @@ impl EntryReservation {
         if margin > 0.0 {
             arena.used_margin.fetch_sub(margin, Ordering::AcqRel);
         }
-        if fee.is_finite() && fee != 0.0 {
-            arena.unified_capital.fetch_add(fee, Ordering::AcqRel);
-        }
+        arena
+            .config
+            .entry_publication_gate
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .cancelar(arena, self.clave(), fee);
         Ok(())
     }
 
@@ -75,23 +88,43 @@ impl EntryReservation {
         arena: &GlobalArena,
         ejecutada: Option<f64>,
     ) -> Result<(), ReservationError> {
-        let Some(q) = ejecutada else {
-            return self.confirm(arena);
+        self.confirmar_llenado_con_marca(arena, ejecutada, None)
+    }
+
+    /// CAPITAL-UNICO V4G: como [`confirmar_llenado`](Self::confirmar_llenado), con la marca del
+    /// exchange (`T`) del ultimo fill. Con el dimensionable derivado la reserva queda reducida a
+    /// la comision de lo ejecutado y la quita el primer saldo aceptado con marca igual o mayor
+    /// (ya la incluye: no hay doble resta). Sin activar, la parte no pagada vuelve al capital,
+    /// como antes.
+    pub fn confirmar_llenado_con_marca(
+        &self,
+        arena: &GlobalArena,
+        ejecutada: Option<f64>,
+        marca_fill: Option<u64>,
+    ) -> Result<(), ReservationError> {
+        let devuelta = match ejecutada {
+            None => {
+                self.position(arena)?
+                    .confirm_generation(self.generation)
+                    .map_err(ReservationError::Position)?;
+                0.0
+            }
+            Some(q) => self
+                .position(arena)?
+                .confirmar_llenado_generation(self.generation, q, &arena.used_margin)
+                .map_err(ReservationError::Position)?,
         };
-        let devuelta = self
-            .position(arena)?
-            .confirmar_llenado_generation(self.generation, q, &arena.used_margin)
-            .map_err(ReservationError::Position)?;
-        if devuelta.is_finite() && devuelta != 0.0 {
-            arena.unified_capital.fetch_add(devuelta, Ordering::AcqRel);
-        }
+        arena
+            .config
+            .entry_publication_gate
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .ejecutar(arena, self.clave(), devuelta, marca_fill);
         Ok(())
     }
 
     /// Bind caller-supplied confirmation to the exact slot, not a fixed legacy slot.
     pub fn confirm(&self, arena: &GlobalArena) -> Result<(), ReservationError> {
-        self.position(arena)?
-            .confirm_generation(self.generation)
-            .map_err(ReservationError::Position)
+        self.confirmar_llenado_con_marca(arena, None, None)
     }
 }

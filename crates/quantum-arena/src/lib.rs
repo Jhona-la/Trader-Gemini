@@ -4,6 +4,7 @@ pub mod atomic_float;
 pub mod capital_entrada;
 pub mod config;
 pub mod continuous_spectral_portfolio;
+pub mod dimensionable;
 pub mod espectral_multiactivo;
 pub mod evalues;
 pub mod fee_schedule;

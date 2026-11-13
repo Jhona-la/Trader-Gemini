@@ -56,10 +56,10 @@ impl LectorHost {
     }
 
     fn publicar(&self, p: &Publicacion) -> bool {
-        let suelto = match (p.veta, p.saldo) {
-            (true, _) => false,
-            (false, None) => return true,
-            (false, Some(saldo)) => {
+        // V4G (adaptador): como el host, publica el saldo vigente en cada cambio sin veto.
+        let suelto = match (p.veta, p.vigente) {
+            (true, _) | (false, None) => false,
+            (false, Some((saldo, _))) => {
                 if p.sesion == self.sesion.load(Ordering::Acquire) {
                     self.espejo.store(saldo.to_bits(), Ordering::Relaxed);
                     self.dimensionable.store(saldo.to_bits(), Ordering::Relaxed);
@@ -115,7 +115,8 @@ fn comprobar_camino_real() -> Result<(), String> {
         "ResultadoTransicion::Publicada { generacion, .. } => Some(*generacion)",
         "ResultadoTransicion::Publicada { generacion, ejecutor }",
         "let Some(era_mainnet) = era_del_relevo else {"])?;
-    orden(HOST, &["fn publicar_capital_de_sesion(", "(false, Some(saldo))",
+    // V4G (ancla adaptada): el publicador entrega el saldo vigente (`p.vigente`).
+    orden(HOST, &["fn publicar_capital_de_sesion(", "(false, Some((saldo, marca)))",
         "oms.snapshot_token()", "token.generation() == p.sesion",
         "oms.publish_current_balance(&token, saldo", "arena.capital_incompleto.store(!suelto"])?;
     orden(HOST, &["let token = oms_rs.snapshot_token();", "executor.fetch_account_lectura()",

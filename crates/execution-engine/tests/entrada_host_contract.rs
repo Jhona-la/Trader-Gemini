@@ -48,7 +48,7 @@ fn cl46_la_consulta_de_una_entrada_ambigua_decide_la_reserva() {
         "sin ejecución se revierte"
     );
     assert!(
-        b.contains("confirmar_llenado("),
+        b.contains("confirmar_llenado_con_marca("), // V4G: con la marca del ultimo fill
         "con ejecución se confirma"
     );
 }
@@ -60,7 +60,7 @@ fn cl45_el_host_confirma_la_reserva_con_lo_ejecutado() {
     let h = host();
     let b = brazo(&h, "Ok(())=>{", "iforder_tp_price>0.0&&order_sl_price>0.0{");
     assert!(
-        b.contains("confirmar_llenado("),
+        b.contains("confirmar_llenado_con_marca("), // V4G: con la marca del ultimo fill
         "la confirmación lleva lo ejecutado"
     );
     assert!(
@@ -97,6 +97,6 @@ fn cl46b_la_confirmacion_tras_consulta_anota_el_diario() {
         "DestinoReserva::Confirmar{ejecutada}=>{",
         "DestinoReserva::Conservar=>{",
     );
-    assert!(b.contains("confirmar_llenado(&arena_clone,Some(ejecutada))"));
+    assert!(b.contains("confirmar_llenado_con_marca(&arena_clone,Some(ejecutada),")); // V4G: ancla adaptada
     assert!(b.contains("anotar_diario_de_posicion(&arena_clone,&reservation,&parsed_sym_str,final_is_long,ejecutada.min(final_qty.abs()),"));
 }

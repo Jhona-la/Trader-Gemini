@@ -108,6 +108,11 @@ pub struct TrackedOrder {
     /// Último fill (qty) — para detección de fills en vivo.
     pub last_fill_qty: f64,
     pub last_fill_price: f64,
+    /// CAPITAL-UNICO V4G: marca del exchange (ms) del último fill conocido: la mayor entre la `T`
+    /// de los fills del stream y el `updateTime` del ack con cantidad ejecutada. 0 = desconocida.
+    /// El libro del dimensionable quita la comisión reservada de esta orden cuando el puente
+    /// acepta un saldo con marca igual o mayor (ese saldo ya la incluye).
+    pub marca_fill_ms: u64,
 }
 
 impl TrackedOrder {
@@ -297,6 +302,7 @@ impl OrderRegistry {
                 updated_ms: now_ms,
                 last_fill_qty: 0.0,
                 last_fill_price: 0.0,
+                marca_fill_ms: 0,
             });
     }
 
@@ -381,6 +387,7 @@ impl OrderRegistry {
                 updated_ms: now_ms,
                 last_fill_qty: 0.0,
                 last_fill_price: 0.0,
+                marca_fill_ms: 0,
             });
         if estimated_fee.is_some()
             && (entry.order_id != 0
@@ -399,6 +406,9 @@ impl OrderRegistry {
         // Invariantes: executed_qty y avg_price del exchange son la verdad.
         // Quantity, average and quote describe the same cumulative observation.
         // A smaller cumulative snapshot cannot supply a newer average/notional.
+        if ack.executed_qty.is_finite() && ack.executed_qty > 0.0 && ack.update_time > 0 {
+            entry.marca_fill_ms = entry.marca_fill_ms.max(ack.update_time);
+        }
         if ack.executed_qty.is_finite() && ack.executed_qty >= entry.executed_qty {
             entry.executed_qty = ack.executed_qty;
             if ack.avg_price.is_finite() && ack.avg_price > 0.0 {
@@ -492,6 +502,7 @@ impl OrderRegistry {
                 updated_ms: now_ms,
                 last_fill_qty: 0.0,
                 last_fill_price: 0.0,
+                marca_fill_ms: 0,
             });
         if entry.position_side.is_empty() {
             entry.position_side = pos_side;
@@ -552,6 +563,9 @@ impl OrderRegistry {
         if u.execution_type.is_empty() || u.execution_type == "TRADE" || u.last_filled_qty > 0.0 {
             entry.last_fill_qty = u.last_filled_qty;
             entry.last_fill_price = u.last_filled_price;
+        }
+        if u.last_filled_qty.is_finite() && u.last_filled_qty > 0.0 && u.trade_time_ms > 0 {
+            entry.marca_fill_ms = entry.marca_fill_ms.max(u.trade_time_ms);
         }
 
         // R3.4: Monotonic status guard — impedir que actualizaciones WS desordenadas degraden estados terminales

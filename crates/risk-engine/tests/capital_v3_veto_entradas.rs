@@ -44,7 +44,11 @@ fn v3_contrato_de_fuente_veto_solo_de_entradas() {
     assert!(entrada[..entrada.find("pub fn begin_refresh").unwrap()].contains("arena.capital_incompleto.load(Ordering::Acquire)"));
     // Los cierres (aplanado del inmune y salidas del ejecutor) no la leen.
     let host = include_str!("../../../src/bin/god_engine.rs");
-    assert_eq!(host.matches("capital_incompleto").count(), 1, "el host sólo la escribe desde el puente");
+    // V4G (asercion adaptada, misma intencion): el publicador del puente la escribe dos veces
+    // (veto mientras el saldo aceptado espera la puerta, y el resultado); ninguna fuera de el.
+    let publicador = host.split("fn publicar_capital_de_sesion(").nth(1).expect("publicador");
+    let publicador = &publicador[..publicador.find("\nfn ").expect("fin del publicador")];
+    assert_eq!(host.matches("capital_incompleto").count(), publicador.matches("capital_incompleto").count(), "el host sólo la escribe desde el puente");
     let aplanado = include_str!("../../execution-engine/src/aplanado_inmune.rs");
     assert!(!aplanado.contains("capital_incompleto"));
     let ejecutor = include_str!("../../execution-engine/src/executor.rs");

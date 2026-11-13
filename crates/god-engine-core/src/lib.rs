@@ -5629,9 +5629,14 @@ impl GodEngineCore {
                         event_time_ms,
                     );
 
-                    self.arena
-                        .unified_capital
-                        .fetch_add(net_realized_pnl, Ordering::Relaxed);
+                    // CAPITAL-UNICO V4G (INV-A): con el dimensionable derivado
+                    // (arena vivo del host) el PnL de un cierre llega con el
+                    // saldo del exchange, no se suma aqui. Sin activar, igual.
+                    if !self.arena.config.dimensionable_derivado.load(Ordering::Acquire) {
+                        self.arena
+                            .unified_capital
+                            .fetch_add(net_realized_pnl, Ordering::Relaxed);
+                    }
 
                     let is_win = net_trade_pnl > 0.0;
 
@@ -10489,7 +10494,7 @@ impl GodEngineCore {
                                 // OMS must not scan an empty slot and then erase
                                 // a newly published reservation as a phantom.
                                 let publication_arena = Arc::clone(&self.arena);
-                                let _publication = publication_arena.config.entry_publication_gate
+                                let mut _publication = publication_arena.config.entry_publication_gate
                                     .lock().unwrap_or_else(|e| e.into_inner());
                                 let current_book = publication_arena.config.live_fee_schedule.load_full();
                                 let same_book = match (&entry_fee_book, &current_book) {
@@ -10502,10 +10507,17 @@ impl GodEngineCore {
                                     || publication_arena.config.fee_rates_for(coin_id) != Some(self.reality_fees()) {
                                     continue;
                                 }
-                                self.arena.used_margin.fetch_add(margin_req, Ordering::Relaxed);
-                                self.arena.unified_capital.fetch_add(-fee_paid, Ordering::Relaxed);
                                 let expected_generation = target_pos.generation
                                     .load(Ordering::Acquire).wrapping_add(1);
+                                // CAPITAL-UNICO V4G: la comision va al libro del
+                                // dimensionable, bajo esta misma puerta (en el arena
+                                // vivo se deriva: saldo aceptado - reservas; sin
+                                // activar, la misma resta de siempre).
+                                let clave_reserva = quantum_arena::dimensionable::ClaveReserva {
+                                    coin_id, slot: target_pos_slot, generation: expected_generation,
+                                };
+                                self.arena.used_margin.fetch_add(margin_req, Ordering::Relaxed);
+                                _publication.reservar(&self.arena, clave_reserva, fee_paid);
 
 
                                 // Publicación ATÓMICA e inmutable de la posición junto con su tau espectral:
@@ -10525,7 +10537,7 @@ impl GodEngineCore {
                                 ) {
                                     // Compensate only this attempted local reservation.
                                     self.arena.used_margin.fetch_add(-margin_req, Ordering::Relaxed);
-                                    self.arena.unified_capital.fetch_add(fee_paid, Ordering::Relaxed);
+                                    _publication.cancelar(&self.arena, clave_reserva, fee_paid);
                                     continue; // No order, success counter or learning trace.
                                 }
                                 self.diag_opened += 1;

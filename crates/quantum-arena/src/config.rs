@@ -79,7 +79,13 @@ pub struct QuantumConfig {
     pub observed_fees_required: AtomicBool,
     /// Serializes local entry publication with OMS snapshot application.
     /// The tick's analytics do not acquire this lock.
-    pub entry_publication_gate: std::sync::Mutex<()>,
+    /// CAPITAL-UNICO V4G: la misma puerta guarda el libro del saldo dimensionable
+    /// ([`crate::dimensionable::LibroDimensionable`]): reservar, cancelar, ejecutar y el saldo
+    /// aceptado por el puente se serializan aqui, sin candado nuevo.
+    pub entry_publication_gate: std::sync::Mutex<crate::dimensionable::LibroDimensionable>,
+    /// V4G: el libro esta activo (arena vivo del host). Lo leen sin candado el cierre local y la
+    /// reconciliacion: con el dimensionable derivado no escriben `unified_capital`.
+    pub dimensionable_derivado: AtomicBool,
     pub entry_publication_paused: AtomicBool,
     pub weight_obi: AtomicF64,
     pub weight_ofi: AtomicF64,
@@ -394,7 +400,8 @@ impl QuantumConfig {
             live_taker_fee: AtomicF64::new(0.0005), // Fracción (VIP0 Taker: 5 bps = 0.05%)
             live_fee_schedule: ArcSwapOption::empty(),
             observed_fees_required: AtomicBool::new(false),
-            entry_publication_gate: std::sync::Mutex::new(()),
+            entry_publication_gate: std::sync::Mutex::new(crate::dimensionable::LibroDimensionable::default()),
+            dimensionable_derivado: AtomicBool::new(false),
             entry_publication_paused: AtomicBool::new(false),
             global_max_drawdown: AtomicF64::new(genome.global_max_drawdown),
             global_leverage: AtomicF64::new(genome.global_leverage),

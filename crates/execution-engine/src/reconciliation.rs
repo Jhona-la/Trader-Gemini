@@ -625,9 +625,18 @@ pub fn reconcile_arena_checked(
                             coin.metrics
                                 .pnl_realized
                                 .fetch_add(net_trade_pnl, std::sync::atomic::Ordering::Relaxed);
-                            arena
-                                .unified_capital
-                                .fetch_add(net_realized_pnl, std::sync::atomic::Ordering::Relaxed);
+                            // CAPITAL-UNICO V4G (INV-A): con el dimensionable derivado
+                            // el PnL llega con el saldo del exchange (esto corre bajo la
+                            // puerta del libro: solo se lee la bandera, sin candado).
+                            if !arena
+                                .config
+                                .dimensionable_derivado
+                                .load(std::sync::atomic::Ordering::Acquire)
+                            {
+                                arena
+                                    .unified_capital
+                                    .fetch_add(net_realized_pnl, std::sync::atomic::Ordering::Relaxed);
+                            }
 
                             let is_win = net_trade_pnl > 0.0;
                             let n = coin

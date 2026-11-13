@@ -771,8 +771,10 @@ type Testigo = Box<dyn Fn() -> u64 + Send + Sync>;
 /// misma llamada, soltar el veto (`Release`); devolver `true` sólo si lo soltó
 /// (p. ej. `false` si la sesión OMS ya no es `sesion`: el veto sigue y el
 /// puente vuelve a ofrecer el alza en el cambio siguiente). Sin `veta` y sin
-/// `saldo`, el veto ya estaba suelto: no hay saldo nuevo que publicar. No debe
-/// reentrar en el puente.
+/// `saldo`, el veto ya estaba suelto. V4G (INV-B): sin `veta`, `vigente` trae
+/// siempre el saldo aceptado y su marca, y el publicador lo entrega al saldo
+/// dimensionable en esta misma llamada (o veta si no puede). No debe reentrar
+/// en el puente.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Publicacion {
     pub era: u64,
@@ -781,6 +783,11 @@ pub struct Publicacion {
     pub veta: bool,
     /// `Some` sólo en el alza.
     pub saldo: Option<f64>,
+    /// V4G (INV-B): el saldo aceptado vigente de la era y su marca del exchange, en CADA cambio
+    /// en que el puente no veta (también con la admisión ya abierta). El publicador lo entrega al
+    /// dimensionable en este mismo paso; si no puede (otra sesión OMS), veta y devuelve `false`,
+    /// y el puente lo vuelve a ofrecer en el cambio siguiente.
+    pub vigente: Option<(f64, Option<u64>)>,
 }
 
 /// El puente. Un solo `Mutex`: las decisiones de REST y del stream se
@@ -926,6 +933,7 @@ impl PuenteCuenta {
             sesion: e.sesion,
             veta,
             saldo: if alza { e.saldo } else { None },
+            vigente: if veta { None } else { e.saldo.map(|s| (s, e.marca_saldo)) },
         });
         self.admitido.store(!veta && admite, Ordering::Relaxed);
     }

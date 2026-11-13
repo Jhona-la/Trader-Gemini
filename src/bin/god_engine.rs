@@ -839,23 +839,37 @@ static SYMBOL_SUSPENDED_UNTIL: std::sync::LazyLock<
 ///   (arena y espejo del freno) y DESPUÉS, en este mismo paso, se suelta el veto
 ///   (`Release`; Risk lo adquiere antes de leer el saldo). Si la sesión ya no es
 ///   esa, nada se publica y el veto sigue.
-/// - Sin `veta` y sin `saldo`: el veto ya estaba suelto; el arena sigue su
-///   contabilidad, como antes.
+/// - CAPITAL-UNICO V4G (INV-B): sin `veta`, en CADA cambio (también con la
+///   admisión ya abierta), el saldo aceptado vigente (`p.vigente`) llega al
+///   saldo dimensionable en este mismo paso: el libro del arena
+///   ([`quantum_arena::dimensionable::LibroDimensionable`], bajo la puerta de
+///   publicación) deriva `unified_capital = saldo aceptado - reservas que el
+///   exchange aún no refleja`. Si no puede llegar (la sesión OMS ya no es la de
+///   la era), la admisión se veta y el puente lo vuelve a ofrecer.
+///   Orden de candados: puente, sesión OMS, puerta.
+/// - V4G (RED de Codex `red_risk_no_admite_saldo_anterior_si_publicador_espera_puerta`):
+///   mientras el saldo ya aceptado espera la puerta, la admisión queda vetada;
+///   el espejo del freno se escribe después del libro.
 fn publicar_capital_de_sesion(
     oms: &quantum_engine::host_oms::OmsSession,
     arena: &quantum_arena::GlobalArena,
     espejo: &AtomicU64,
     p: &execution_engine::puente_cuenta::Publicacion,
 ) -> bool {
-    let suelto = match (p.veta, p.saldo) {
-        (true, _) => false,
-        (false, None) => return true,
-        (false, Some(saldo)) => {
+    let suelto = match (p.veta, p.vigente) {
+        (true, _) | (false, None) => false,
+        (false, Some((saldo, marca))) => {
+            arena.capital_incompleto.store(true, Ordering::Release);
             let token = oms.snapshot_token();
             token.generation() == p.sesion
                 && oms.publish_current_balance(&token, saldo, |balance| {
+                    arena
+                        .config
+                        .entry_publication_gate
+                        .lock()
+                        .unwrap_or_else(|e| e.into_inner())
+                        .saldo_aceptado(arena, balance, marca);
                     espejo.store(balance.to_bits(), Ordering::Relaxed);
-                    arena.unified_capital.store(balance, Ordering::Relaxed);
                 })
         }
     };
@@ -2580,6 +2594,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         // V4E (P1-b, INV-5): la escribe sólo el publicador del puente, que suelta
         // el veto DESPUÉS de publicar el saldo dimensionable de la sesión
         // vigente, en el mismo paso (`publicar_capital_de_sesion`).
+        // V4G (INV-A): el saldo dimensionable del arena vivo se DERIVA del saldo
+        // aceptado por el puente menos las reservas que el exchange aún no refleja
+        // (libro bajo la puerta de publicación). Se activa antes de vincular el
+        // publicador: desde aquí el cierre local y la reconciliación no lo suben.
+        arena_real
+            .config
+            .entry_publication_gate
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .activar(&arena_real);
         {
             let arena_veto = Arc::clone(&arena_real);
             let oms_veto = Arc::clone(&oms_session);
@@ -5556,7 +5580,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                         oms_balance
                                             .publish_current_balance(&balance_token, bal, |balance| {
                                                 saldo_transicion.store(balance.to_bits(), Ordering::Relaxed);
-                                                arena_real_clone.unified_capital.store(balance, Ordering::Relaxed);
+                                                // V4G: el saldo dimensionable ya lo entrego el
+                                                // publicador al aceptarse esta REST (un solo
+                                                // camino). `base_capital` es la referencia de
+                                                // tamano de Risk, no el dimensionable.
                                                 arena_real_clone.config.base_capital.store(balance, Ordering::Relaxed);
                                                 let _ = db_tx_clone.try_send((balance, 0.0));
                                             })
@@ -6423,7 +6450,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                                 "✅ [ENTRY] {} id={} envío={} destino={:?}: ejecutada {:.8} — reserva confirmada; protección por el vigilante.",
                                                 parsed_sym_str, client_id, e, destino, ejecutada
                                             );
-                                            if let Err(reason) = reservation.confirmar_llenado(&arena_clone, Some(ejecutada)) {
+                                            if let Err(reason) = reservation.confirmar_llenado_con_marca(&arena_clone, Some(ejecutada), entry_executor.registry().get(&client_id).map(|o| o.marca_fill_ms).filter(|m| *m > 0)) {
                                                 telemetry_engine::telemetry_err!("[ENTRY CONFIRM] stale/mismatched reservation: {:?}; reconcile fill, do not confirm another slot", reason);
                                             } else {
                                                 // CL-46b: el diario B2.7 también aquí; sin él,
@@ -6525,7 +6552,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                             }
                                         }
                                     };
-                                    if let Err(reason) = reservation.confirmar_llenado(&arena_clone, Some(ejecutada)) {
+                                    if let Err(reason) = reservation.confirmar_llenado_con_marca(&arena_clone, Some(ejecutada), entry_executor.registry().get(&client_id).map(|o| o.marca_fill_ms).filter(|m| *m > 0)) {
                                         quantum_arena::protection_health::mark_dirty();
                                         telemetry_engine::telemetry_err!("[ENTRY CONFIRM] stale/mismatched reservation: {:?}; reconcile fill, do not confirm another slot", reason);
                                         return;

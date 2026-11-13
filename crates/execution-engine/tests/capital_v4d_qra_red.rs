@@ -303,7 +303,12 @@ mod qra_capital_v4d_publicacion {
         let publica = punto(transicion, ".publish_current_balance(&balance_token, bal,")?;
         assert!(observacion < rama_3a && rama_3a < publica);
         assert!(caso_3a.contains("break;") && !caso_3a.contains("unified_capital.store("));
-        assert!(publica < punto(transicion, "arena_real_clone.unified_capital.store(balance,")?);
+        // V4G (ancla adaptada): el saldo dimensionable de la transicion lo entrega el publicador
+        // del puente al aceptarse la REST (un solo camino); la transicion ya no escribe el campo
+        // y su `base_capital` sigue detras de `publish_current_balance` con el testigo.
+        assert!(!caso_3a.contains("saldo_aceptado("));
+        assert!(!transicion.contains("unified_capital.store("), "la transicion no es un segundo camino del dimensionable");
+        assert!(publica < punto(transicion, "arena_real_clone.config.base_capital.store(balance,")?);
 
         let publicador = bloque(OMS, "pub fn publish_current_balance", "pub async fn await_quiescence")?;
         let token_y_dominio = punto(publicador, "self.token_is_current(state.generation, token) && balance.is_finite() && balance >= 0.0")?;
@@ -325,8 +330,13 @@ mod qra_capital_v4d_publicacion {
         assert!(ruta.contains("token.generation(),"), "la lectura periodica no lleva la sesion de su ejecutor");
         assert!(HOST.contains("puente_cuenta.vincular_publicador(move |p| {"));
         let publicador = bloque(HOST, "fn publicar_capital_de_sesion(", "fn suspend_symbol_until(")?;
+        // V4G (ancla adaptada): el publicador entrega el saldo al libro del dimensionable, que es
+        // quien escribe `unified_capital` (saldo aceptado menos reservas).
+        let libro = include_str!("../../quantum-arena/src/dimensionable.rs");
         assert!(
-            publicador.contains("publish_current_balance(") && publicador.contains("unified_capital.store("),
+            publicador.contains("publish_current_balance(")
+                && publicador.contains(".saldo_aceptado(arena, balance, marca);")
+                && libro.contains("arena.unified_capital.store(d, Ordering::Relaxed);"),
             "la resincronización REST puede levantar el veto y sólo actualiza el espejo de saldo",
         );
         Ok(())

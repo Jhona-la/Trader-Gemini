@@ -80,6 +80,7 @@ fn test_f1_030_exit_rate_limits_separation_contract() {
         updated_ms: 1015,
         last_fill_qty: 1.5,
         last_fill_price: 3500.0,
+        marca_fill_ms: 0,
     };
 
     let report = order.to_fill_report();
