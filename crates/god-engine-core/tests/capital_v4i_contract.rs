@@ -56,10 +56,10 @@ fn anclas_del_adaptador() {
         "let orden_terminal = matches!(",
         "let aplicado = self.puente.con_era_vigente(self.era, |_| {",
         // V4J (punto 2): con cantidad y comision tal como llegan; sin `T`, sin marca.
-        "libro.fill_de_entrada_con(",
-        "marca_fill,",
+        "marca: marca_fill,",
+        "libro.fill_de_entrada_del_stream(",
         "if let (true, false, Some(t)) = (orden_terminal, coid.starts_with(\"mc_\"), marca_fill) {",
-        "libro.marca_de_orden(arena, coin_id, coid, t);",
+        "libro.marca_de_orden_con_acumulado(arena, coin_id, coid, t, acumulado_e8);",
     ]);
     // Host: funding con testigo; confirmaciones con la marca terminal; cuenta; evidencia.
     orden(HOST, &[
@@ -619,17 +619,19 @@ fn v4i_ruta_hermana_c_maker_inalcanzable_y_frontera_en_cada_post() {
     assert!(texto(HOST).contains("let force_maker = false;"), "el host volvio a habilitar la ruta maker");
     assert!(texto(API).contains("pub const SUPPORTS_NATIVE_ICEBERG: bool = false;"), "iceberg nativo habilitado");
     let e = texto(EJECUTOR);
-    for (funcion, envio) in [
-        ("async fn execute_raw_qty_internal(", "self.order_registry.register_intent("),
-        ("async fn execute_limit_order(", "sign_payload_to_buffer(payload, &api_secret, &mut sig_buf);"),
-        ("async fn execute_ioc_order(", "self.order_registry.register_intent("),
-        ("async fn execute_iceberg_limit(", "let res = self.client.execute_order_payload(buf.as_str()).await;"),
+    // V4J (punto 1): el cruce esta en el ultimo instante antes de la entrega al cliente HTTP
+    // (despues de registrar la intencion y firmar); entre el cruce y la entrega, nada.
+    for (funcion, envio, cruce) in [
+        ("async fn execute_raw_qty_internal(", "let res = self.client.execute_order_payload_typed(buf.as_str()).await;", "self.cruzar_frontera(&client_order_id, timestamp)?;"),
+        ("async fn execute_limit_order(", "let res = self.client.execute_order_payload(buf.as_str()).await;", "quantum_arena::dimensionable::cruzar_frontera_de_envio()?;"),
+        ("async fn execute_ioc_order(", "match self.client.execute_order_payload_body(buf.as_str()).await {", "self.cruzar_frontera(client_order_id, timestamp)?;"),
+        ("async fn execute_iceberg_limit(", "let res = self.client.execute_order_payload(buf.as_str()).await;", "quantum_arena::dimensionable::cruzar_frontera_de_envio()?;"),
     ] {
         let cuerpo = e.rsplit_once(funcion).unwrap_or_else(|| panic!("falta {funcion}")).1;
         let (antes, _) = cuerpo.split_once(envio).unwrap_or_else(|| panic!("{funcion}: falta el envio"));
-        assert!(antes.contains("quantum_arena::dimensionable::cruzar_frontera_de_envio()?;"), "{funcion}: el POST no pasa la frontera");
-        let tras = antes.rsplit_once("cruzar_frontera_de_envio()?;").unwrap().1;
-        assert!(!tras.contains(".await"), "{funcion}: hay una espera entre la frontera y la entrega");
+        assert!(antes.contains(cruce), "{funcion}: el POST no pasa la frontera");
+        let tras = antes.rsplit_once(cruce).unwrap().1;
+        assert!(tras.trim().lines().all(|l| l.trim().is_empty()), "{funcion}: hay codigo entre la frontera y la entrega: {tras:?}");
     }
     // El remanente del maker sale por la ruta MARKET (que pasa la frontera), despues de cancelar.
     orden(&e, &["async fn execute_maker_chase(", "self.cancel_order(symbol, client_order_id).await", "self.query_order(symbol, client_order_id).await", "self.execute_raw_qty_with_client_id(symbol, is_long, remaining, step_size, remnant_id)"]);

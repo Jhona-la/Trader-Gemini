@@ -418,14 +418,16 @@ pub fn aviso_picos_ignorados(rutas: &[std::path::PathBuf]) -> Option<String> {
 /// de siempre. No cambia ningún umbral: sólo la magnitud que se mide.
 pub fn capital_del_freno(arena: &quantum_arena::GlobalArena) -> f64 {
     use std::sync::atomic::Ordering::Relaxed;
-    let exchange = arena.capital_exchange.load(Relaxed);
     if arena
         .config
         .dimensionable_derivado
         .load(std::sync::atomic::Ordering::Acquire)
     {
+        // Acquire: empareja con `publicar_equity_del_freno` (el pico ya incluye esta equity).
+        let exchange = arena.capital_exchange.load(std::sync::atomic::Ordering::Acquire);
         return if exchange.is_finite() { exchange } else { f64::NAN };
     }
+    let exchange = arena.capital_exchange.load(Relaxed);
     let capital = arena.unified_capital.load(Relaxed);
     if exchange.is_finite() {
         capital.min(exchange)
@@ -434,6 +436,17 @@ pub fn capital_del_freno(arena: &quantum_arena::GlobalArena) -> f64 {
     }
 }
 
+
+/// CAPITAL-UNICO V4J (punto 5): publica la magnitud del freno con el libro derivado: la equity
+/// conservadora del puente (`None` o no finita: ausencia, NaN). El pico de ese ambito se registra
+/// ANTES de publicar la magnitud (`Release`): quien la lea (`capital_del_freno`, `Acquire`) ve un
+/// pico que ya la incluye. El host la llama bajo el mutex del puente (mismo paso que la
+/// observacion aceptada, el relevo y el cambio de espacio del pico).
+pub fn publicar_equity_del_freno(arena: &quantum_arena::GlobalArena, equity: Option<f64>) {
+    let e = equity.filter(|e| e.is_finite()).unwrap_or(f64::NAN);
+    registrar_pico(&arena.pico_capital, e);
+    arena.capital_exchange.store(e, std::sync::atomic::Ordering::Release);
+}
 
 /// CL-106 (LC-F4-10, decisión del dueño «Ambos», 2026-10-12) — FRENO DURO DE
 /// LA CUENTA: UNA PRUEBA DE NIVEL α CON EL TAMAÑO REAL DE LAS ÓRDENES.
@@ -835,8 +848,12 @@ pub fn freno_duro(arena: &quantum_arena::GlobalArena, pico: f64, capital: f64) -
 /// se etiqueta como pérdida de mercado probada ni rearma el freno.
 #[derive(Debug, Default, Clone)]
 pub struct FlujosExternos {
+    /// Cuenta del ambito (la fija el primer flujo; otro ambito se rechaza).
+    ambito: Option<u64>,
     vistos: std::collections::HashMap<u64, (f64, u64)>,
     neto_incierto: f64,
+    /// Flujos en otro activo: inciertos para el USDT, sin cifra en USDT.
+    otros_activos: usize,
 }
 
 /// Lo que pasó al registrar un flujo.
@@ -847,31 +864,46 @@ pub enum RegistroDeFlujo {
     Repetido,
     /// Importe no finito o cero: no es un flujo.
     Invalido,
+    /// De otra cuenta (una respuesta retenida de la sesión anterior): no se mezcla.
+    OtroAmbito,
+    /// En otro activo: queda como incierto, sin sumarse como USDT.
+    OtroActivo,
 }
 
 /// De dónde viene la caída medida, para la línea del disparo.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum OrigenDeLaCaida {
-    /// Ningún flujo externo sin acreditar en el ámbito: caída del patrimonio.
+    /// Ningún flujo externo de salida sin acreditar en el ámbito: caída del patrimonio.
     Patrimonio,
-    /// Hay flujos externos sin política de ajuste: la caída puede ser un retiro.
+    /// Hay salidas externas (o flujos en otro activo) sin política de ajuste: la caída puede
+    /// ser un retiro, no una pérdida de mercado probada.
     FlujoIncierto,
 }
 
 impl FlujosExternos {
-    pub fn registrar(&mut self, id: u64, importe: f64, revision: u64) -> RegistroDeFlujo {
+    /// `ambito`: la cuenta vigente del libro; `revision`: la era del puente en que se vio.
+    pub fn registrar(&mut self, ambito: u64, id: u64, activo: &str, importe: f64, revision: u64) -> RegistroDeFlujo {
+        if self.ambito.is_some_and(|a| a != ambito) {
+            return RegistroDeFlujo::OtroAmbito;
+        }
         if !(importe.is_finite() && importe != 0.0) {
             return RegistroDeFlujo::Invalido;
         }
         if self.vistos.contains_key(&id) {
             return RegistroDeFlujo::Repetido;
         }
+        self.ambito = Some(ambito);
         self.vistos.insert(id, (importe, revision));
-        self.neto_incierto += importe;
-        RegistroDeFlujo::Nuevo
+        if activo.eq_ignore_ascii_case("USDT") {
+            self.neto_incierto += importe;
+            RegistroDeFlujo::Nuevo
+        } else {
+            self.otros_activos += 1;
+            RegistroDeFlujo::OtroActivo
+        }
     }
 
-    /// Suma de los flujos registrados (sin política de ajuste: todos inciertos).
+    /// Suma en USDT de los flujos registrados (sin política de ajuste: todos inciertos).
     pub fn neto_incierto(&self) -> f64 {
         self.neto_incierto
     }
@@ -880,15 +912,16 @@ impl FlujosExternos {
         self.vistos.len()
     }
 
+    /// Vínculo con la caída: una salida neta en USDT o un flujo en otro activo la puede
+    /// explicar; un depósito no.
     pub fn origen_de_la_caida(&self) -> OrigenDeLaCaida {
-        if self.vistos.is_empty() {
-            OrigenDeLaCaida::Patrimonio
-        } else {
+        if self.neto_incierto < 0.0 || self.otros_activos > 0 {
             OrigenDeLaCaida::FlujoIncierto
+        } else {
+            OrigenDeLaCaida::Patrimonio
         }
     }
 }
-
 /// V4J (F8): tipos del historial de ingresos de Binance USD-M que son flujos
 /// externos de la cuenta (no resultado de operar).
 pub fn es_flujo_externo(tipo: &str) -> bool {

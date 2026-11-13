@@ -43,6 +43,10 @@ struct Servidor {
     seguir_get: Notify,
     /// Cantidad ejecutada que devuelve la consulta del GTX.
     ejecutada_gtx: Mutex<String>,
+    /// Control: el servidor recibe el POST de la orden y retiene su respuesta hasta `seguir_post`.
+    retener_post: AtomicBool,
+    llego_post: Notify,
+    seguir_post: Notify,
 }
 
 impl Servidor {
@@ -122,11 +126,17 @@ async fn servir(listener: tokio::net::TcpListener, s: Arc<Servidor>) {
                     let l = p.params.get("leverage").cloned().unwrap_or_default();
                     format!(r#"{{"symbol":"{SIMBOLO}","leverage":{l},"maxNotionalValue":"1000000"}}"#)
                 }
-                ("POST", "/fapi/v1/order") => match p.params.get("timeInForce").map(String::as_str) {
+                ("POST", "/fapi/v1/order") => {
+                    if s.retener_post.load(Ordering::Acquire) {
+                        s.llego_post.notify_one();
+                        s.seguir_post.notified().await;
+                    }
+                    match p.params.get("timeInForce").map(String::as_str) {
                     Some("GTX") => orden_json(&p, "NEW", "0"),
                     Some("IOC") => orden_json(&p, "FILLED", "0.010"),
                     _ => orden_json(&p, "FILLED", p.params.get("quantity").map(String::as_str).unwrap_or("0.010")),
-                },
+                    }
+                }
                 ("DELETE", "/fapi/v1/order") => orden_json(&p, "CANCELED", "0"),
                 ("GET", "/fapi/v1/order") => {
                     if s.retener_get.load(Ordering::Acquire) {
@@ -256,7 +266,10 @@ impl EntryTransport for Intercalado<'_> {
 const CORTES: [&str; 6] = ["revision", "importe ABA", "veto del libro", "veto del puente", "caida y reapertura", "sesion"];
 
 fn aplicar_corte(m: &Montaje, corte: &str) {
-    let a = &m.arena;
+    aplicar_corte_en(&m.arena, &m.sesion, &m.token, corte)
+}
+
+fn aplicar_corte_en(a: &GlobalArena, sesion: &OmsSession, token: &SessionToken, corte: &str) {
     match corte {
         "revision" => {
             let mut l = a.config.entry_publication_gate.lock().unwrap();
@@ -278,7 +291,7 @@ fn aplicar_corte(m: &Montaje, corte: &str) {
             drop(l);
             a.capital_incompleto.store(false, Ordering::Release);
         }
-        "sesion" => assert!(m.sesion.begin_refresh(&m.token, a)),
+        "sesion" => assert!(sesion.begin_refresh(token, a)),
         otro => panic!("corte desconocido {otro}"),
     }
 }
@@ -335,6 +348,49 @@ async fn veto_y_revision_en_la_entrega_local_por_ruta() {
         }
     }
 
+    // Barrera entre el registro de la intencion y la entrega local (MARKET e IOC): el corte lo
+    // publica OTRO hilo, dentro del registro. 0 paquetes y la intencion cerrada (nunca salio).
+    for (nombre, ruta) in [("MARKET", EntryRoute::Market), ("IOC", EntryRoute::Ioc { price: 101.0 })] {
+        for corte in CORTES {
+            let m = montaje().await;
+            let clave = m.reservar(1);
+            let (a, ses, tok) = (Arc::clone(&m.arena), Arc::clone(&m.sesion), m.token.clone());
+            m.ejecutor.registry().observar_intenciones(move |_| {
+                let (a, ses, tok) = (Arc::clone(&a), Arc::clone(&ses), tok.clone());
+                std::thread::spawn(move || aplicar_corte_en(&a, &ses, &tok, corte)).join().unwrap();
+            });
+            let r = pedido(ruta, "cL_v4j_registro");
+            let t = Intercalado { real: &m.ejecutor, antes_de_apalancar: None, antes_de_enviar: None };
+            let res = m.sesion.dispatch_entry_reservada(&m.token, &t, &r, &m.arena, Some(clave)).await;
+            assert!(res.is_err(), "{nombre} / {corte}: entrega aceptada tras el corte en el registro");
+            assert_eq!(m.servidor.ordenes().len(), 0, "{nombre} / {corte}: paquete con el testigo vencido entre registro y entrega");
+            let estado = m.ejecutor.registry().get("cL_v4j_registro").map(|o| o.status);
+            assert_eq!(estado, Some(execution_engine::OrderStatus::Rejected), "{nombre} / {corte}: la intencion retenida quedo abierta");
+        }
+    }
+
+    // Control con el ACK retenido: un envio valido espera la red y, mientras tanto, los
+    // escritores (saldo, veto del puente y del libro) publican sin esperar al envio.
+    {
+        let m = montaje().await;
+        m.servidor.retener_post.store(true, Ordering::Release);
+        let clave = m.reservar(1);
+        let r = pedido(EntryRoute::Market, "cL_v4j_ack");
+        let t = Intercalado { real: &m.ejecutor, antes_de_apalancar: None, antes_de_enviar: None };
+        let envio = m.sesion.dispatch_entry_reservada(&m.token, &t, &r, &m.arena, Some(clave));
+        let escritores = async {
+            m.servidor.llego_post.notified().await;
+            // Los candados del cruce ya se soltaron: estos escritores no esperan la red.
+            for corte in ["revision", "veto del libro", "veto del puente"] {
+                aplicar_corte(&m, corte);
+            }
+            assert!(m.arena.config.entry_publication_gate.try_lock().is_ok(), "la puerta quedo tomada durante la red");
+            m.servidor.seguir_post.notify_one();
+        };
+        let (_res, ()) = tokio::join!(envio, escritores);
+        assert_eq!(m.servidor.ordenes().len(), 1, "control: el envio valido no salio una vez");
+    }
+
     // Ruta maker a MARKET: GTX entregado, corte mientras el ejecutor espera la consulta, remanente.
     for corte in CORTES {
         let m = montaje().await;
@@ -356,6 +412,16 @@ async fn veto_y_revision_en_la_entrega_local_por_ruta() {
         assert_eq!(gtx, 1, "{corte}: el GTX valido ya entregado pertenece a su revision");
         assert_eq!(market, 0, "{corte}: el remanente salio con la revision vencida ({res:?})");
         assert_eq!(m.servidor.contar("DELETE", "/fapi/v1/order"), 1, "{corte}: la cancelacion del GTX se conserva");
+        // El GTX ejecuto 0,005: el error retenido no lleva al rollback ordinario; la reserva se
+        // conserva para la reconciliacion (destino del host).
+        let e = res.expect_err("fixture: el remanente retenido");
+        assert!(e.starts_with("MAKER_CHASE_UNVERIFIED"), "{corte}: {e}");
+        assert_eq!(
+            execution_engine::ioc_evidence::destino_tras_consulta(&e, execution_engine::OrderResolution::Timeout, None),
+            execution_engine::ioc_evidence::DestinoReserva::Conservar,
+            "{corte}: el host revertiria una reserva con ejecucion"
+        );
+        assert!(m.reservado() > 0.0, "{corte}: la reserva con ejecucion se perdio");
     }
     // Control maker a MARKET sin corte: el remanente sale una vez.
     {

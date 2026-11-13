@@ -810,6 +810,10 @@ pub struct PuenteCuenta {
     /// para la era siguiente). Una era de OTRA cuenta no hereda la equity
     /// anterior para el freno. Candado propio (se toma después de `estado`).
     cuentas: Mutex<(Option<u64>, Option<u64>)>,
+    /// V4J (punto 5): observador de la equity del freno (la de esta era o la conservada de la
+    /// anterior de la MISMA cuenta), llamado bajo el mutex en cada cambio: el host publica la
+    /// magnitud del freno y su pico en el mismo paso que el puente la acepta.
+    freno: OnceLock<Box<dyn Fn(Option<f64>) + Send + Sync>>,
 }
 
 impl std::fmt::Debug for PuenteCuenta {
@@ -846,7 +850,27 @@ impl PuenteCuenta {
             testigo: OnceLock::new(),
             admitido: AtomicBool::new(false),
             cuentas: Mutex::new((None, None)),
+            freno: OnceLock::new(),
         }
+    }
+
+    /// V4J (punto 5): vincula el observador de la equity del freno (solo el primero vale). Se
+    /// llama en seguida con el estado actual y despues en cada cambio, bajo el mutex del puente.
+    pub fn vincular_freno(&self, f: impl Fn(Option<f64>) + Send + Sync + 'static) {
+        let e = self.estado();
+        if self.freno.set(Box::new(f)).is_ok() {
+            if let Some(f) = self.freno.get() {
+                f(e.observacion().map(|o| o.equity).or(e.anterior));
+            }
+        }
+    }
+
+    /// V4J (punto 5): corre `f` con la equity del freno bajo el mutex del puente: lo que `f`
+    /// lea y escriba (la magnitud y el pico del ambito) queda serializado con el relevo y con
+    /// cada observacion aceptada. `f` no debe reentrar en el puente.
+    pub fn con_equity_del_freno<R>(&self, f: impl FnOnce(Option<f64>) -> R) -> R {
+        let e = self.estado();
+        f(e.observacion().map(|o| o.equity).or(e.anterior))
     }
 
     /// CAPITAL-UNICO V4J (punto 5): la cuenta (identidad de venue y clave
@@ -936,6 +960,10 @@ impl PuenteCuenta {
     }
 
     fn notificar(&self, e: &Estado) {
+        // V4J (punto 5): la equity del freno se publica en el mismo paso (antes del saldo).
+        if let Some(f) = self.freno.get() {
+            f(e.observacion().map(|o| o.equity).or(e.anterior));
+        }
         let veta = e.veta_entradas();
         if veta {
             if let Some(f) = self.veto.get() {

@@ -252,6 +252,10 @@ struct RegistryState {
 
 pub struct OrderRegistry {
     orders: RwLock<RegistryState>,
+    /// CAPITAL-UNICO V4J (punto 1): observador de cada intencion registrada, para las pruebas
+    /// de la frontera del transporte (una barrera determinista entre el registro de la intencion
+    /// y la entrega). Produccion no lo fija.
+    observador_de_intencion: std::sync::OnceLock<Box<dyn Fn(&str) + Send + Sync>>,
 }
 
 impl Default for OrderRegistry {
@@ -264,7 +268,13 @@ impl OrderRegistry {
     pub fn new() -> Self {
         Self {
             orders: RwLock::new(RegistryState::default()),
+            observador_de_intencion: std::sync::OnceLock::new(),
         }
+    }
+
+    /// V4J: fija el observador de intenciones (solo el primero vale; ver el campo).
+    pub fn observar_intenciones(&self, f: impl Fn(&str) + Send + Sync + 'static) {
+        let _ = self.observador_de_intencion.set(Box::new(f));
     }
 
     /// Registra la intención ANTES del envío (si el POST muere en red, la orden
@@ -307,6 +317,10 @@ impl OrderRegistry {
                 last_fill_price: 0.0,
                 marca_fill_ms: 0,
             });
+        drop(map);
+        if let Some(f) = self.observador_de_intencion.get() {
+            f(client_order_id);
+        }
     }
 
     /// CL-39b: un rechazo FIRME del exchange (la orden nunca existió) cierra

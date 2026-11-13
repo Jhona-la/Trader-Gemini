@@ -751,16 +751,16 @@ impl RiskEngine {
         // sitio y con el mismo rechazo; sólo cambia el orden de las cargas.
         let capital_vetado = arena.capital_incompleto.load(Ordering::Acquire);
         let current_capital = arena.unified_capital.load(Ordering::Relaxed);
-        // CAPITAL-UNICO V4J (punto 5): con el libro derivado, la cache del pico es la del ambito
-        // vigente del arena ANTES de validar (una cache vieja no decide ni bloquea para siempre).
-        if arena.config.dimensionable_derivado.load(Ordering::Acquire) {
-            self.peak_capital = arena.pico_capital.load(Ordering::Acquire);
-        }
         // FMT-212: validate before clamps/comparisons can turn an unknown
         // probability, peak or configuration into permission (or a panic).
         let clamp_min = arena.config.kelly_clamp_min.load(Ordering::Relaxed);
         let clamp_max = arena.config.kelly_clamp_max.load(Ordering::Relaxed);
         let configured_dd = arena.config.global_max_drawdown.load(Ordering::Relaxed);
+        // CAPITAL-UNICO V4J (punto 5): con el libro derivado, la cache del pico es la del ambito
+        // vigente del arena ANTES de validar (una cache vieja no decide ni bloquea para siempre).
+        if arena.config.dimensionable_derivado.load(Ordering::Acquire) {
+            self.peak_capital = arena.pico_capital.load(Ordering::Acquire);
+        }
         if !current_capital.is_finite()
             || current_capital <= 0.0
             || !self.peak_capital.is_finite()
@@ -797,24 +797,20 @@ impl RiskEngine {
         // el host como una caída del saldo real.
         let capital_freno = crate::drawdown::capital_del_freno(arena);
         // CAPITAL-UNICO V4J (punto 5): con el libro derivado, el freno mide la equity del
-        // puente (ver `capital_del_freno`) y el pico es el del ámbito vigente del arena: la
-        // caché de este motor se toma de él (nunca reintroduce el pico de otra cuenta, venue o
-        // definición), y mientras el ámbito no tenga su primer pico (lo escribe el inmune con
-        // la equity de ese ámbito) este escritor no lo inicia.
+        // puente (ver `capital_del_freno`) y el pico es el del ambito vigente, que escribe el
+        // host en el MISMO paso en que publica esa equity (bajo el mutex del puente, antes de la
+        // magnitud). Este motor solo lo LEE: su cache nunca reintroduce el pico de otra cuenta,
+        // venue o definicion, y no escribe un pico sin el testigo de ambito del host.
         let derivado = arena.config.dimensionable_derivado.load(Ordering::Acquire);
         if derivado {
-            self.peak_capital = arena.pico_capital.load(Ordering::Acquire);
-        }
-        let capital_freno = if derivado && !(self.peak_capital > 0.0) {
-            f64::NAN
+            let pico = arena.pico_capital.load(Ordering::Acquire);
+            self.peak_capital = if capital_freno.is_finite() { pico.max(capital_freno) } else { pico };
         } else {
-            capital_freno
-        };
-        self.peak_capital = crate::drawdown::registrar_pico(
-            &arena.pico_capital,
-            capital_freno.max(self.peak_capital),
-        );
-        // U-3: los picos espejo scalp/swing (sin lectores) extirpados.
+            self.peak_capital = crate::drawdown::registrar_pico(
+                &arena.pico_capital,
+                capital_freno.max(self.peak_capital),
+            );
+        }        // U-3: los picos espejo scalp/swing (sin lectores) extirpados.
 
         // CL-133 (B2): con el pico guardado ilegible no se sabe cuánto se ha
         // caído; no entran posiciones nuevas (fail-closed, como CL-108f).

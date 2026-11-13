@@ -117,7 +117,25 @@ struct FillEntrada {
     desconocida: bool,
     /// V4J (punto 3): cantidad ejecutada en este fill (`l` del stream), si se conoce.
     cantidad: Option<f64>,
+    /// V4J (punto 2): `l` y `z` (acumulado de la orden tras este fill) en unidades de 1e-8,
+    /// leidos del decimal del stream: la cadena de fills se comprueba sin aritmetica binaria.
+    cantidad_e8: Option<i64>,
+    acumulado_e8: Option<i64>,
     marca: Option<u64>,
+}
+
+/// V4J (punto 2): un fill de entrada tal como lo entrega el stream privado.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct FillDelStream {
+    pub trade_id: u64,
+    /// `l` (cantidad de este fill), si es valida.
+    pub cantidad: Option<f64>,
+    /// `l` y `z` en unidades de 1e-8, si su decimal es exacto en 8 cifras.
+    pub cantidad_e8: Option<i64>,
+    pub acumulado_e8: Option<i64>,
+    pub comision: ComisionDeFill,
+    /// `T` del fill (ausente o 0: `None`).
+    pub marca: Option<u64>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -146,7 +164,10 @@ struct Debito {
     /// V4J (punto 3): cantidad de la orden que respalda la reserva, si se conoce.
     cantidad: Option<f64>,
     /// V4J (punto 2): la cuenta vigente al crearlo (identidad de un fill suelto o de cierre).
+    /// Solo un saldo de ESA cuenta puede probar su inclusion.
     cuenta: Option<u64>,
+    /// V4J (punto 2): `z` del evento terminal de la orden (acumulado final), en 1e-8.
+    acumulado_final_e8: Option<i64>,
 }
 
 fn cubre(marca_saldo: Option<u64>, marca: Option<u64>) -> bool {
@@ -173,7 +194,35 @@ impl Debito {
             estimado: importe,
             cantidad: None,
             cuenta: None,
+            acumulado_final_e8: None,
         }
+    }
+
+    /// V4J (punto 2): el evento terminal dio el acumulado final y los fills vistos lo cubren sin
+    /// huecos (cadena exacta en 1e-8: cada fill empieza donde acaba el anterior y el ultimo acaba
+    /// en el acumulado final). Sin eso, un fill puede no haber llegado aun (terminal primero).
+    fn ejecucion_completa(&self) -> bool {
+        let Some(fin) = self.acumulado_final_e8 else { return false };
+        let mut cadena: Vec<(i64, i64)> = Vec::with_capacity(self.fills.len());
+        for f in &self.fills {
+            match (f.acumulado_e8, f.cantidad_e8) {
+                (Some(z), Some(l)) => {
+                    if l > 0 {
+                        cadena.push((z, l));
+                    }
+                }
+                _ => return false,
+            }
+        }
+        cadena.sort_unstable();
+        let mut previo = 0i64;
+        for (z, l) in cadena {
+            if z.checked_sub(l) != Some(previo) {
+                return false;
+            }
+            previo = z;
+        }
+        previo == fin
     }
 
     /// V4J: comisiones reales de los fills que la marca del saldo vigente no cubre (cada cargo
@@ -189,13 +238,24 @@ impl Debito {
     /// Lo que este debito retiene con el saldo vigente de marca `marca_saldo` (INV-E, V4J).
     fn retenido(&self, marca_saldo: Option<u64>) -> f64 {
         let terminal_cubierto = matches!(self.estado, Estado::Pendiente(m) if cubre(marca_saldo, m));
-        if self.fills.is_empty() {
+        // V4J (punto 2): con la cantidad de la orden conocida, ninguna marca libera lo ejecutado
+        // y aun no visto (terminal recibido antes que su fill): rige la cadena o la cantidad.
+        if self.fills.is_empty() && cantidad_valida(self.cantidad).is_none() {
             return if terminal_cubierto { 0.0 } else { self.importe };
         }
+        if self.fills.is_empty() && terminal_cubierto && self.acumulado_final_e8 == Some(0) {
+            return 0.0;
+        }
         let pendiente = self.real_pendiente(marca_saldo);
-        // V4J (punto 2): un fill con la comision desconocida retiene el estimado entero.
+        // V4J (punto 2): un fill con la comision desconocida retiene el estimado entero (y el
+        // libro veta la admision hasta la evidencia: ver `fill_de_entrada_del_stream`).
         if self.fills.iter().any(|f| f.desconocida) {
             return pendiente + self.estimado.max(self.importe);
+        }
+        // V4J (punto 2): el terminal cubierto solo libera el estimado sobrante si TODA la
+        // ejecucion de la orden esta vista fill a fill (cadena exacta hasta el acumulado final).
+        if terminal_cubierto && self.ejecucion_completa() {
+            return pendiente;
         }
         // V4J (punto 3): con la cantidad de la orden y la de cada fill, lo aun no ejecutado
         // retiene su parte del estimado y lo ejecutado su comision real hasta cubrirla.
@@ -304,8 +364,17 @@ impl LibroDimensionable {
 
     /// Debitos (reservas y debitos locales) que el exchange aun no refleja.
     pub fn reservado(&self) -> f64 {
-        let marca = self.marca;
-        self.debitos.iter().map(|d| d.retenido(marca)).sum()
+        self.debitos.iter().map(|d| d.retenido(self.marca_para(d))).sum()
+    }
+
+    /// V4J (punto 2): la marca del saldo vigente solo prueba inclusion de los cargos de SU
+    /// cuenta; los de otra cuenta se conservan (restan, y nada de esta cuenta los retira).
+    fn marca_para(&self, d: &Debito) -> Option<u64> {
+        if d.cuenta == self.cuenta {
+            self.marca
+        } else {
+            None
+        }
     }
 
     pub fn reservas(&self) -> usize {
@@ -375,9 +444,11 @@ impl LibroDimensionable {
     }
 
     fn retirar_incluidos(&mut self) {
-        let marca = self.marca;
-        self.debitos
-            .retain(|d| !(matches!(d.estado, Estado::Pendiente(_)) && d.retenido(marca) <= 0.0));
+        let (marca, cuenta) = (self.marca, self.cuenta);
+        self.debitos.retain(|d| {
+            let m = if d.cuenta == cuenta { marca } else { None };
+            !(matches!(d.estado, Estado::Pendiente(_)) && d.retenido(m) <= 0.0)
+        });
     }
 
     /// El publicador del puente: saldo aceptado con su marca del exchange, en el alcance que fijo
@@ -500,6 +571,7 @@ impl LibroDimensionable {
             let mut d = Debito::nuevo(Origen::Entrada(clave), comision.max(0.0), Estado::Viva, self.alcance, seq);
             d.base = base;
             d.rev = self.rev;
+            d.cuenta = self.cuenta;
             self.debitos.push(d);
         }
         self.publicar(arena);
@@ -560,12 +632,12 @@ impl LibroDimensionable {
         // que retiene (comision real incluida). V4J (punto 3): lo YA ejecutado de una posterior
         // viva (sus fills, aunque el ACK aun no cambie su estado) cuenta siempre. El margen
         // combinado de las dos lo valida el exchange.
-        let marca = self.marca;
         let ajeno: f64 = self
             .debitos
             .iter()
             .filter(|d| d.seq != propia.seq)
             .map(|d| {
+                let marca = self.marca_para(d);
                 if d.es_entrada_viva() && d.seq > propia.seq {
                     d.retenido_ejecutado(marca)
                 } else {
@@ -687,12 +759,8 @@ impl LibroDimensionable {
         let _ = self.fill_de_entrada_con(arena, coin_id, orden, trade_id, None, comision, marca);
     }
 
-    /// V4J (puntos 2 y 3): un fill de entrada del stream con su cantidad (`l`) y su comision tal
-    /// como llego. Identidad: `trade_id` dentro de la reserva; un fill suelto, ademas, por moneda
-    /// y cuenta. Marca ausente o 0: el fill nunca prueba inclusion por marca. Comision desconocida:
-    /// con reserva, se retiene el estimado entero; sin reserva no hay importe que retener y la
-    /// admision queda vetada hasta una REST pedida despues (devuelve `true`: el llamador pide al
-    /// puente la evidencia perdida, como en un cierre externo).
+    /// V4J (puntos 2 y 3): un fill de entrada con su cantidad (`l`) y su comision tal como llego
+    /// (sin el decimal exacto del stream: ver [`fill_de_entrada_del_stream`](Self::fill_de_entrada_del_stream)).
     #[allow(clippy::too_many_arguments)]
     pub fn fill_de_entrada_con(
         &mut self,
@@ -704,37 +772,45 @@ impl LibroDimensionable {
         comision: ComisionDeFill,
         marca: Option<u64>,
     ) -> bool {
+        let fill = FillDelStream { trade_id, cantidad, cantidad_e8: None, acumulado_e8: None, comision, marca };
+        self.fill_de_entrada_del_stream(arena, coin_id, orden, &fill)
+    }
+
+    /// V4J (puntos 2 y 3): un fill de entrada del stream privado. Identidad: `trade_id` dentro de
+    /// la reserva de ESTA cuenta; un fill suelto, ademas, por moneda y cuenta. Marca ausente o 0:
+    /// el fill nunca prueba inclusion por marca. Comision desconocida (ausente, ilegible o sin
+    /// activo): no hay cota demostrable del cargo, asi que, ademas de retener el estimado de la
+    /// reserva, la admision queda vetada hasta una REST pedida despues (devuelve `true`: el
+    /// llamador pide al puente la evidencia perdida, como en un cierre externo).
+    pub fn fill_de_entrada_del_stream(&mut self, arena: &GlobalArena, coin_id: usize, orden: &str, fill: &FillDelStream) -> bool {
         if !self.derivado {
             return false;
         }
-        let (importe, desconocida) = match comision {
+        let (importe, desconocida) = match fill.comision {
             ComisionDeFill::Activo(c) if c.is_finite() => (c.max(0.0), false),
             ComisionDeFill::OtroActivo => (0.0, false),
             _ => (0.0, true),
         };
-        let marca = marca.filter(|t| *t > 0);
+        let trade_id = fill.trade_id;
+        let marca = fill.marca.filter(|t| *t > 0);
         let marca_saldo = self.marca;
         let cuenta = self.cuenta;
-        let mut veta = false;
         if let Some(d) = self.debitos.iter_mut().find(|d| {
-            matches!(d.origen, Origen::Entrada(c) if c.coin_id == coin_id) && d.orden.as_deref() == Some(orden)
+            matches!(d.origen, Origen::Entrada(c) if c.coin_id == coin_id) && d.orden.as_deref() == Some(orden) && d.cuenta == cuenta
         }) {
             if trade_id != 0 && d.fills.iter().any(|f| f.trade_id == trade_id) {
                 return false;
             }
-            d.fills.push(FillEntrada { trade_id, comision: importe, desconocida, cantidad, marca });
-        } else if desconocida {
-            // Sin reserva y sin importe: no hay cifra que retener. Veto hasta la evidencia.
-            let repetido = trade_id != 0
-                && self.debitos.iter().any(|d| {
-                    d.origen == Origen::FillEntradaSuelto { coin_id, trade_id } && d.cuenta == cuenta
-                });
-            if !repetido {
-                self.veto = Some(false);
-                self.nueva_revision();
-                veta = true;
-            }
-        } else {
+            d.fills.push(FillEntrada {
+                trade_id,
+                comision: importe,
+                desconocida,
+                cantidad: fill.cantidad,
+                cantidad_e8: fill.cantidad_e8,
+                acumulado_e8: fill.acumulado_e8,
+                marca,
+            });
+        } else if !desconocida {
             let ya = trade_id != 0
                 && self.debitos.iter().any(|d| {
                     d.origen == Origen::FillEntradaSuelto { coin_id, trade_id } && d.cuenta == cuenta
@@ -754,20 +830,34 @@ impl LibroDimensionable {
             d.cuenta = cuenta;
             self.debitos.push(d);
         }
+        if desconocida {
+            // Sin cota del cargo: veto hasta la evidencia (una REST pedida despues).
+            self.veto = Some(false);
+            self.nueva_revision();
+        }
         self.retirar_incluidos();
         self.publicar(arena);
-        veta
+        desconocida
     }
-
     /// V4I (INV-E): el evento terminal de la orden en el stream (FILLED, CANCELED o EXPIRED) con
     /// su marca: cubre toda la ejecucion de esa orden. Un ACK acumulado no la aporta.
     pub fn marca_de_orden(&mut self, arena: &GlobalArena, coin_id: usize, orden: &str, marca: u64) {
+        self.marca_de_orden_con_acumulado(arena, coin_id, orden, marca, None);
+    }
+
+    /// V4J (punto 2): el evento terminal con su acumulado final (`z` en 1e-8). La marca cubre el
+    /// ESTADO de la orden; el estimado sobrante solo sale si los fills vistos cubren ese acumulado.
+    pub fn marca_de_orden_con_acumulado(&mut self, arena: &GlobalArena, coin_id: usize, orden: &str, marca: u64, acumulado_e8: Option<i64>) {
         if !self.derivado || marca == 0 {
             return;
         }
+        let cuenta = self.cuenta;
         if let Some(d) = self.debitos.iter_mut().find(|d| {
-            matches!(d.origen, Origen::Entrada(c) if c.coin_id == coin_id) && d.orden.as_deref() == Some(orden)
+            matches!(d.origen, Origen::Entrada(c) if c.coin_id == coin_id) && d.orden.as_deref() == Some(orden) && d.cuenta == cuenta
         }) {
+            if acumulado_e8.is_some() {
+                d.acumulado_final_e8 = acumulado_e8;
+            }
             d.marca_orden = mayor(d.marca_orden, Some(marca));
             if let Estado::Pendiente(m) = d.estado {
                 d.estado = Estado::Pendiente(mayor(m, Some(marca)));
@@ -787,8 +877,9 @@ impl LibroDimensionable {
             return;
         }
         let seq = self.siguiente();
-        self.debitos
-            .push(Debito::nuevo(Origen::CierreLocal(clave), importe, Estado::Estimado, self.alcance, seq));
+        let mut d = Debito::nuevo(Origen::CierreLocal(clave), importe, Estado::Estimado, self.alcance, seq);
+        d.cuenta = self.cuenta;
+        self.debitos.push(d);
         self.publicar(arena);
     }
 

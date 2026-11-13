@@ -538,12 +538,11 @@ impl UserDataStreamer {
             execution_type: String,
             #[serde(rename = "i")]
             order_id: u64,
-            #[serde(rename = "l")]
-            #[serde(deserialize_with = "crate::order_types::string_or_f64", default)]
-            last_filled_qty: f64,
-            #[serde(rename = "z")]
-            #[serde(deserialize_with = "crate::order_types::string_or_f64", default)]
-            cumulative_filled_qty: f64,
+            /// V4J (punto 2): `l` y `z` se leen como decimal (cadena de fills exacta en 1e-8).
+            #[serde(rename = "l", default)]
+            last_filled_qty: Option<serde_json::Value>,
+            #[serde(rename = "z", default)]
+            cumulative_filled_qty: Option<serde_json::Value>,
             #[serde(rename = "L")]
             #[serde(deserialize_with = "crate::order_types::string_or_f64", default)]
             last_filled_price: f64,
@@ -605,8 +604,8 @@ impl UserDataStreamer {
             order_id: o.order_id,
             status: OrderStatus::parse(&o.order_status),
             orig_qty: o.orig_qty,
-            cumulative_filled_qty: o.cumulative_filled_qty,
-            last_filled_qty: o.last_filled_qty,
+            cumulative_filled_qty: numero_del_evento(o.cumulative_filled_qty.as_ref()).unwrap_or(0.0),
+            last_filled_qty: numero_del_evento(o.last_filled_qty.as_ref()).unwrap_or(0.0),
             last_filled_price: o.last_filled_price,
             avg_price: if o.avg_price > 0.0 {
                 o.avg_price
@@ -621,13 +620,15 @@ impl UserDataStreamer {
         // V4J (punto 2): la comision para el libro. `N` explicito de otro activo: atribuida sin
         // restar del USDT. `n` ausente o ilegible: desconocida. Sin `N`, la convencion de V4I
         // (USDT) solo con una cifra valida.
-        let comision_libro = match (comision_leida, o.commission_asset.as_deref()) {
-            (None, _) => quantum_arena::dimensionable::ComisionDeFill::Desconocida,
-            (Some(_), Some(a)) if !a.is_empty() && !a.eq_ignore_ascii_case("USDT") => {
-                quantum_arena::dimensionable::ComisionDeFill::OtroActivo
-            }
-            (Some(c), _) => quantum_arena::dimensionable::ComisionDeFill::Activo(c),
+        // V4J (punto 2, revision previa de Codex): sin `N` (ausente o vacio) el activo del cargo
+        // no esta atribuido: desconocida, como la cifra ausente o ilegible.
+        let comision_libro = match (comision_leida, o.commission_asset.as_deref().map(str::trim)) {
+            (None, _) | (_, None) | (_, Some("")) => quantum_arena::dimensionable::ComisionDeFill::Desconocida,
+            (Some(c), Some(a)) if a.eq_ignore_ascii_case("USDT") => quantum_arena::dimensionable::ComisionDeFill::Activo(c),
+            (Some(_), Some(_)) => quantum_arena::dimensionable::ComisionDeFill::OtroActivo,
         };
+        let cantidad_e8 = decimal_e8(o.last_filled_qty.as_ref());
+        let acumulado_e8 = decimal_e8(o.cumulative_filled_qty.as_ref());
         let now = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .map(|d| d.as_millis() as u64)
@@ -855,19 +856,20 @@ impl UserDataStreamer {
                             .lock()
                             .unwrap_or_else(|e| e.into_inner());
                         let mut veta = false;
-                        if new_fill {
-                            veta = libro.fill_de_entrada_con(
-                                arena,
-                                coin_id,
-                                coid,
-                                update.trade_id,
+                        // Un evento sin ejecucion (`l` = 0: NEW, CANCELED, EXPIRED) no es un fill.
+                        if new_fill && cantidad_e8 != Some(0) {
+                            let fill = quantum_arena::dimensionable::FillDelStream {
+                                trade_id: update.trade_id,
                                 cantidad,
-                                comision_libro,
-                                marca_fill,
-                            );
+                                cantidad_e8,
+                                acumulado_e8,
+                                comision: comision_libro,
+                                marca: marca_fill,
+                            };
+                            veta = libro.fill_de_entrada_del_stream(arena, coin_id, coid, &fill);
                         }
                         if let (true, false, Some(t)) = (orden_terminal, coid.starts_with("mc_"), marca_fill) {
-                            libro.marca_de_orden(arena, coin_id, coid, t);
+                            libro.marca_de_orden_con_acumulado(arena, coin_id, coid, t, acumulado_e8);
                         }
                         veta
                     });
@@ -1150,6 +1152,29 @@ impl UserDataStreamer {
 
 /// V3 (P1.3): número de un campo del evento; `None` si falta, está vacío, no
 /// es numérico o no es finito (nunca un cero inventado).
+/// CAPITAL-UNICO V4J (punto 2): un decimal del stream (`"0.005"` o `0.005`) en unidades de
+/// 1e-8, exacto: sin signo, hasta 8 cifras decimales (mas cifras distintas de cero: `None`).
+fn decimal_e8(v: Option<&serde_json::Value>) -> Option<i64> {
+    let texto = match v? {
+        serde_json::Value::String(s) => s.trim().to_string(),
+        serde_json::Value::Number(n) => n.to_string(),
+        _ => return None,
+    };
+    let (entero, fraccion) = texto.split_once('.').unwrap_or((texto.as_str(), ""));
+    if entero.is_empty() || !entero.bytes().all(|b| b.is_ascii_digit()) || !fraccion.bytes().all(|b| b.is_ascii_digit()) {
+        return None;
+    }
+    let (cifras, resto) = fraccion.split_at(fraccion.len().min(8));
+    if resto.bytes().any(|b| b != b'0') {
+        return None;
+    }
+    let mut frac = cifras.to_string();
+    while frac.len() < 8 {
+        frac.push('0');
+    }
+    entero.parse::<i64>().ok()?.checked_mul(100_000_000)?.checked_add(frac.parse::<i64>().ok()?)
+}
+
 fn numero_del_evento(v: Option<&serde_json::Value>) -> Option<f64> {
     match v? {
         serde_json::Value::String(s) => s.trim().parse::<f64>().ok(),

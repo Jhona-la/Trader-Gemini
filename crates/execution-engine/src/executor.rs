@@ -822,6 +822,15 @@ impl OrderExecutor {
         &self.client
     }
 
+    /// CAPITAL-UNICO V4J (punto 1): cruce de la frontera del transporte de una orden con su
+    /// intencion ya registrada. Retenida (la entrega ya no vale), la intencion se cierra como un
+    /// rechazo local: la orden nunca salio.
+    fn cruzar_frontera(&self, client_order_id: &str, timestamp: u64) -> Result<(), String> {
+        quantum_arena::dimensionable::cruzar_frontera_de_envio().inspect_err(|_| {
+            self.order_registry.mark_local_reject(client_order_id, timestamp);
+        })
+    }
+
     #[cfg(any(test, feature = "loopback-contract"))]
     pub fn con_base_de_prueba(mut self, base: &str) -> Self {
         self.client = self.client.clone().con_base_de_prueba(base);
@@ -2985,11 +2994,8 @@ impl OrderExecutor {
             return Err("SEGURIDAD: query de orden excede el buffer (orden abortada)".to_string());
         }
 
-        // CAPITAL-UNICO V4I (INV-F): frontera del transporte. Entre esta comprobación y la
-        // entrega (socket o cliente HTTP) no hay ninguna espera. Fuera de una entrada guardada
-        // (salidas defensivas) cruza siempre.
-        quantum_arena::dimensionable::cruzar_frontera_de_envio()?;
         // F1.5: registrar la intención antes del envío. CL-47: después de la
+
         // última salida previa al envío, como la IOC (CL-39b): un buffer
         // desbordado no deja una intención huérfana.
         self.order_registry.register_intent(
@@ -3015,6 +3021,8 @@ impl OrderExecutor {
                 .to_str()
                 .unwrap_or("")
                 .to_string();
+            // V4J (punto 1): la via WS (stub, inalcanzable) cruza igual antes de su entrega.
+            self.cruzar_frontera(&client_order_id, timestamp)?;
             if let Err(e) = self.ws.send_order_payload(
                 &api_key,
                 &api_secret,
@@ -3053,6 +3061,10 @@ impl OrderExecutor {
         buf.push_str("&signature=");
         buf.push_str(signature);
 
+        // CAPITAL-UNICO V4J (punto 1): frontera del transporte en el ultimo instante antes de la
+        // entrega al cliente HTTP (intencion registrada y firma hechas; ninguna espera entre el
+        // cruce y la entrega). Retenida, la intencion se cierra (la orden nunca salio).
+        self.cruzar_frontera(&client_order_id, timestamp)?;
         let res = self.client.execute_order_payload_typed(buf.as_str()).await;
         match &res {
             Ok((limits, ack)) => {
@@ -3494,6 +3506,7 @@ impl ExecutionProvider for OrderExecutor {
             .await
     }
 
+
     #[inline(always)]
     async fn execute_raw_qty_with_client_id(
         &self,
@@ -3579,10 +3592,8 @@ impl ExecutionProvider for OrderExecutor {
             return Err("SEGURIDAD: query de orden excede el buffer (orden abortada)".to_string());
         }
 
-        // CAPITAL-UNICO V4I (INV-F): frontera del transporte (sin espera hasta la entrega).
-        quantum_arena::dimensionable::cruzar_frontera_de_envio()?;
-
         let mut sig_buf = [0u8; 64];
+
         let payload = &buf.as_str()[payload_start..];
         let api_secret = self.api_secret.load();
 
@@ -3595,6 +3606,8 @@ impl ExecutionProvider for OrderExecutor {
                 .to_str()
                 .unwrap_or("")
                 .to_string();
+            // V4J (punto 1): la via WS (stub, inalcanzable) cruza igual antes de su entrega.
+            quantum_arena::dimensionable::cruzar_frontera_de_envio()?;
             if let Err(e) = self.ws.send_order_payload(
                 &api_key,
                 &api_secret,
@@ -3627,6 +3640,8 @@ impl ExecutionProvider for OrderExecutor {
         buf.push_str("&signature=");
         buf.push_str(signature);
 
+        // CAPITAL-UNICO V4J (punto 1): frontera en el ultimo instante antes de la entrega.
+        quantum_arena::dimensionable::cruzar_frontera_de_envio()?;
         let res = self.client.execute_order_payload(buf.as_str()).await;
         match &res {
             Ok(limits) => {
@@ -3860,9 +3875,8 @@ impl ExecutionProvider for OrderExecutor {
         buf.push_str("&signature=");
         buf.push_str(signature);
 
-        // CAPITAL-UNICO V4I (INV-F): frontera del transporte (sin espera hasta la entrega).
-        quantum_arena::dimensionable::cruzar_frontera_de_envio()?;
         // CL-39: la intención queda referenciada por clientOrderId justo antes
+
         // del envío, como en MARKET (F1.5): si la respuesta se pierde, la
         // reconciliación la resuelve por consulta.
         self.order_registry.register_intent(
@@ -3884,6 +3898,9 @@ impl ExecutionProvider for OrderExecutor {
         // ejecución > 0 ⇒ Ok; terminal sin ejecución ⇒ IOC_UNFILLED (el host
         // revierte); sin evidencia terminal ⇒ AMBIGUOUS (el host conserva la
         // reserva y reconcilia).
+        // CAPITAL-UNICO V4J (punto 1): frontera en el ultimo instante antes de la entrega;
+        // retenida, la intencion se cierra (la orden nunca salio).
+        self.cruzar_frontera(client_order_id, timestamp)?;
         match self.client.execute_order_payload_body(buf.as_str()).await {
             Ok((limits, body)) => {
                 self.update_limits(&limits);
@@ -3980,9 +3997,8 @@ impl ExecutionProvider for OrderExecutor {
         buf.push_str("&timestamp=");
         buf.push_u64(timestamp);
 
-        // CAPITAL-UNICO V4I (INV-F): frontera del transporte (sin espera hasta la entrega).
-        quantum_arena::dimensionable::cruzar_frontera_de_envio()?;
         let mut sig_buf = [0u8; 64];
+
         let payload = &buf.as_str()[payload_start..];
         let api_secret = self.api_secret.load();
         sign_payload_to_buffer(payload, &api_secret, &mut sig_buf);
@@ -3990,6 +4006,8 @@ impl ExecutionProvider for OrderExecutor {
         buf.push_str("&signature=");
         buf.push_str(signature);
 
+        // CAPITAL-UNICO V4J (punto 1): frontera en el ultimo instante antes de la entrega.
+        quantum_arena::dimensionable::cruzar_frontera_de_envio()?;
         let res = self.client.execute_order_payload(buf.as_str()).await;
         match res {
             Ok(limits) => {

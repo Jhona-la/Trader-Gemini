@@ -93,9 +93,9 @@ impl Montaje {
 /// Un frame ORDER_TRADE_UPDATE de una entrada. `t_fill`: `None` omite `T`; `n`/`asset`: `None`
 /// omite el campo.
 #[allow(clippy::too_many_arguments)]
-fn fill(coid: &str, x: &str, estado: &str, trade: u64, l: &str, t_fill: Option<u64>, n: Option<&str>, asset: Option<&str>) -> Vec<u8> {
+fn fill(coid: &str, x: &str, estado: &str, trade: u64, l: &str, z: &str, t_fill: Option<u64>, n: Option<&str>, asset: Option<&str>) -> Vec<u8> {
     let mut o = format!(
-        r#""s":"{SIMBOLO}","c":"{coid}","S":"BUY","o":"MARKET","x":"{x}","X":"{estado}","i":7,"q":"1","z":"1","l":"{l}","L":"100","ap":"100","t":{trade},"R":false,"rp":"0","ps":"BOTH","sp":"0","m":false"#
+        r#""s":"{SIMBOLO}","c":"{coid}","S":"BUY","o":"MARKET","x":"{x}","X":"{estado}","i":7,"q":"1","z":"{z}","l":"{l}","L":"100","ap":"100","t":{trade},"R":false,"rp":"0","ps":"BOTH","sp":"0","m":false"#
     );
     if let Some(t) = t_fill {
         o.push_str(&format!(r#","T":{t}"#));
@@ -123,10 +123,10 @@ fn terminal_con_t_no_hereda_cobertura_al_fill_sin_t() {
         let m = montaje();
         let s = m.streamer();
         let clave = m.reservar(0, 0.75, "cL_v4j_t", cantidad);
-        s.dispatch(&fill("cL_v4j_t", "TRADE", "PARTIALLY_FILLED", 41, "0.5", Some(200), Some("0.25"), Some("USDT")));
-        s.dispatch(&fill("cL_v4j_t", "TRADE", "PARTIALLY_FILLED", 42, "0.5", None, Some("0.50"), Some("USDT")));
+        s.dispatch(&fill("cL_v4j_t", "TRADE", "PARTIALLY_FILLED", 41, "0.5", "0.5", Some(200), Some("0.25"), Some("USDT")));
+        s.dispatch(&fill("cL_v4j_t", "TRADE", "PARTIALLY_FILLED", 42, "0.5", "1", None, Some("0.50"), Some("USDT")));
         // Terminal de la orden (sin ejecucion nueva) con T200.
-        s.dispatch(&fill("cL_v4j_t", "EXPIRED", "EXPIRED", 0, "0", Some(200), Some("0"), Some("USDT")));
+        s.dispatch(&fill("cL_v4j_t", "EXPIRED", "EXPIRED", 0, "0", "1", Some(200), Some("0"), Some("USDT")));
         m.arena.config.entry_publication_gate.lock().unwrap().ejecutar(&m.arena, clave, 0.0, None);
         s.dispatch(&cuenta("99.75", 201));
         assert!(m.vetado() || m.dim() <= 99.25, "cantidad={cantidad:?}: el terminal acredito el cargo sin T: {}", m.dim());
@@ -150,27 +150,58 @@ fn parser_fill_t_omitida_cero_y_comision_desconocida() {
         let m = montaje();
         let s = m.streamer();
         let _ = m.reservar(0, 0.04, "cL_v4j_sin_t", Some(1.0));
-        s.dispatch(&fill("cL_v4j_sin_t", "TRADE", "FILLED", 51, "1", t, Some("0.30"), Some("USDT")));
+        s.dispatch(&fill("cL_v4j_sin_t", "TRADE", "FILLED", 51, "1", "1", t, Some("0.30"), Some("USDT")));
         assert_eq!(m.reservado(), 0.30, "T={t:?}: el frame se descarto o el cargo se perdio");
         s.dispatch(&cuenta("99.70", 950));
         assert_eq!(m.reservado(), 0.30, "T={t:?}: la ausencia de marca se convirtio en prueba");
     }
-    // Comision ausente o ilegible con reserva: se retiene el estimado entero (0,04) aunque la
-    // orden se ejecute entera; el cero explicito, con la orden ejecutada, no retiene nada.
-    for (n, esperado) in [(None, 0.04), (Some("abc"), 0.04), (Some("0"), 0.0)] {
+    // Comision ausente, ilegible o sin activo (`N` omitida o vacia) con reserva: se retiene el
+    // estimado entero (0,04) aunque la orden se ejecute entera y, como no hay cota demostrable
+    // del cargo (el estimado puede ser menor, o cero), la admision queda vetada hasta la
+    // evidencia. El cero explicito en USDT, con la orden ejecutada, no retiene ni veta.
+    for (n, asset, esperado, veta) in [
+        (None, Some("USDT"), 0.04, true),
+        (Some("abc"), Some("USDT"), 0.04, true),
+        (Some("0.02"), None, 0.04, true),
+        (Some("0.02"), Some(""), 0.04, true),
+        (Some("0"), Some("USDT"), 0.0, false),
+    ] {
         let m = montaje();
         let s = m.streamer();
         let _ = m.reservar(0, 0.04, "cL_v4j_n", Some(1.0));
-        s.dispatch(&fill("cL_v4j_n", "TRADE", "FILLED", 61, "1", Some(300), n, Some("USDT")));
-        s.dispatch(&cuenta("100", 301));
-        assert_eq!(m.reservado(), esperado, "n={n:?}");
-        assert!(!m.vetado(), "n={n:?}: con reserva no hace falta vetar");
+        s.dispatch(&fill("cL_v4j_n", "TRADE", "FILLED", 61, "1", "1", Some(300), n, asset));
+        assert_eq!(m.vetado(), veta, "n={n:?} N={asset:?}: veto");
+        if !veta {
+            s.dispatch(&cuenta("100", 301));
+        }
+        assert_eq!(m.reservado(), esperado, "n={n:?} N={asset:?}");
+    }
+    // Con estimado CERO, una comision desconocida no deja capacidad completa: veta.
+    {
+        let m = montaje();
+        let s = m.streamer();
+        let _ = m.reservar(0, 0.0, "cL_v4j_cero", Some(1.0));
+        s.dispatch(&fill("cL_v4j_cero", "TRADE", "FILLED", 62, "1", "1", Some(300), None, Some("USDT")));
+        assert!(m.vetado() && m.arena.capital_incompleto.load(Ordering::Acquire), "estimado cero y cargo desconocido: admitido");
+    }
+    // Terminal recibido ANTES que su fill: el terminal (acumulado 1) cubierto por una foto no
+    // libera el estimado mientras el fill no llego; el fill tardio con T se acredita por su marca.
+    {
+        let m = montaje();
+        let s = m.streamer();
+        let clave = m.reservar(0, 0.04, "cL_v4j_tarde", Some(1.0));
+        s.dispatch(&fill("cL_v4j_tarde", "EXPIRED", "FILLED", 0, "0", "1", Some(400), Some("0"), Some("USDT")));
+        m.arena.config.entry_publication_gate.lock().unwrap().ejecutar(&m.arena, clave, 0.0, Some(400));
+        s.dispatch(&cuenta("99.96", 500));
+        assert_eq!(m.reservado(), 0.04, "el terminal libero el estimado sin el fill");
+        s.dispatch(&fill("cL_v4j_tarde", "TRADE", "FILLED", 63, "1", "1", Some(450), Some("0.03"), Some("USDT")));
+        assert_eq!(m.reservado(), 0.0, "el fill tardio con T450 ya estaba en la foto T500");
     }
     // Comision desconocida sin reserva que la respalde: no hay cifra que retener, veto.
     {
         let m = montaje();
         let s = m.streamer();
-        s.dispatch(&fill("cL_v4j_suelto", "TRADE", "FILLED", 71, "1", Some(300), None, Some("USDT")));
+        s.dispatch(&fill("cL_v4j_suelto", "TRADE", "FILLED", 71, "1", "1", Some(300), None, Some("USDT")));
         assert!(m.vetado(), "un cargo desconocido sin reserva no veto");
         assert!(m.arena.capital_incompleto.load(Ordering::Acquire), "el puente no pidio la evidencia perdida");
         // La REST pedida despues suelta el veto (evidencia positiva).
@@ -183,7 +214,7 @@ fn parser_fill_t_omitida_cero_y_comision_desconocida() {
         let m = montaje();
         let s = m.streamer();
         let _ = m.reservar(0, 0.04, "cL_v4j_bnb", Some(1.0));
-        s.dispatch(&fill("cL_v4j_bnb", "TRADE", "FILLED", 81, "1", Some(300), Some("0.5"), Some(asset)));
+        s.dispatch(&fill("cL_v4j_bnb", "TRADE", "FILLED", 81, "1", "1", Some(300), Some("0.5"), Some(asset)));
         assert_eq!(m.reservado(), esperado, "N={asset}");
         assert_eq!(m.dim(), 100.0 - esperado, "N={asset}: la comision de otro activo se resto del USDT");
     }
@@ -198,7 +229,7 @@ fn identidad_de_cargo_repetido_y_tras_relevo() {
     let m = montaje();
     let s = m.streamer();
     let _ = m.reservar(0, 0.04, "cL_v4j_rep", Some(1.0));
-    let frame = fill("cL_v4j_rep", "TRADE", "FILLED", 91, "1", None, Some("0.20"), Some("USDT"));
+    let frame = fill("cL_v4j_rep", "TRADE", "FILLED", 91, "1", "1", None, Some("0.20"), Some("USDT"));
     s.dispatch(&frame);
     s.dispatch(&frame);
     assert_eq!(m.reservado(), 0.20, "duplicado en el mismo socket");
@@ -212,7 +243,7 @@ fn identidad_de_cargo_repetido_y_tras_relevo() {
     nuevo.dispatch(&cuenta("99.80", 800));
     assert_eq!(m.reservado(), 0.20, "tras el relevo la ausencia de marca se tomo por prueba");
     // Fill suelto (sin reserva) con T: en la misma cuenta, una vez.
-    let suelto = fill("cL_v4j_otra", "TRADE", "FILLED", 92, "1", Some(810), Some("0.10"), Some("USDT"));
+    let suelto = fill("cL_v4j_otra", "TRADE", "FILLED", 92, "1", "1", Some(810), Some("0.10"), Some("USDT"));
     nuevo.dispatch(&suelto);
     nuevo.dispatch(&suelto);
     assert_eq!(m.reservado(), 0.20 + 0.10, "fill suelto repetido");

@@ -2668,6 +2668,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         // V4J (punto 5): el puente sabe de que cuenta es cada era (la equity de otra cuenta no
         // queda como evidencia del freno).
         puente_cuenta.anunciar_cuenta(cuenta_de_arranque);
+        // CAPITAL-UNICO V4J (punto 5): la magnitud del freno (equity conservadora del puente) y su
+        // pico se publican en el mismo paso en que el puente acepta cada observacion (bajo su
+        // mutex): Risk decide con la vista vigente, no con la del ultimo ciclo del inmune.
+        {
+            let arena_freno = Arc::clone(&arena_real);
+            puente_cuenta.vincular_freno(move |equity| {
+                risk_engine::drawdown::publicar_equity_del_freno(&arena_freno, equity);
+            });
+        }
         // V4H (INV-G): un cierre externo que detecte el OMS pide evidencia perdida al puente
         // (veta hasta una REST pedida despues); ese saldo suelta el veto del libro.
         {
@@ -2925,17 +2934,21 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     // CAPITAL-UNICO V3 (P1.4): la transición cambió de verdad la
                     // cuenta o el venue: el pico pasa al espacio nuevo (nace
                     // vacío si no tiene el suyo; nada ajeno se adopta).
-                    let espacio_nuevo = buzon_imm.lock().unwrap_or_else(|p| p.into_inner()).take();
-                    if let Some(rutas) = espacio_nuevo {
-                        // V4J (punto 5): nada del ambito anterior mide el pico nuevo.
-                        arena_imm.capital_exchange.store(f64::NAN, Ordering::Relaxed);
-                        *flujos_imm.lock().unwrap_or_else(|p| p.into_inner()) =
-                            risk_engine::drawdown::FlujosExternos::default();
-                        (pico_ilegible, marca_pendiente) = aplicar_arranque_pico(&arena_imm, &rutas, true);
-                        ruta_pico = rutas.pico.clone();
-                        ruta_marca = rutas.marca.clone();
-                        pico_guardado = 0.0;
-                    }
+                    // V4J (punto 5): el cambio de espacio se aplica bajo el mutex del puente (el mismo
+                    // paso que el relevo y que cada observacion aceptada).
+                    puente_imm.con_equity_del_freno(|_| {
+                        let espacio_nuevo = buzon_imm.lock().unwrap_or_else(|p| p.into_inner()).take();
+                        if let Some(rutas) = espacio_nuevo {
+                            // V4J (punto 5): nada del ambito anterior mide el pico nuevo.
+                            arena_imm.capital_exchange.store(f64::NAN, Ordering::Release);
+                            *flujos_imm.lock().unwrap_or_else(|p| p.into_inner()) =
+                                risk_engine::drawdown::FlujosExternos::default();
+                            (pico_ilegible, marca_pendiente) = aplicar_arranque_pico(&arena_imm, &rutas, true);
+                            ruta_pico = rutas.pico.clone();
+                            ruta_marca = rutas.marca.clone();
+                            pico_guardado = 0.0;
+                        }                    });
+
                     if latched {
                         // I-10 (N19): antes el aplanado que no se completó no
                         // se volvía a intentar. Frenado, se reintenta en cada
@@ -2975,21 +2988,38 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     // Con la evidencia incompleta, el freno ve la equity
                     // conservada (las pérdidas pasan, las ganancias esperan); sin
                     // saldo de esta era, la última de la era anterior.
-                    let cap_exchange = puente_imm.equity_del_freno().unwrap_or(f64::NAN);
-                    arena_imm.capital_exchange.store(
-                        if cap_exchange.is_finite() {
-                            cap_exchange
-                        } else {
-                            f64::NAN
-                        },
-                        Ordering::Relaxed,
-                    );
-                    let cap = risk_engine::drawdown::capital_del_freno(&arena_imm);
-                    let peak_capital =
-                        risk_engine::drawdown::registrar_pico(&arena_imm.pico_capital, cap);
+                    // V4J (punto 5): lectura de la equity, publicacion de la magnitud y escritura del
+                    // pico en UN paso bajo el mutex del puente: un relevo o un cambio de espacio no se
+                    // intercala entre la lectura y la escritura. La ruta que se persiste es la del
+                    // mismo paso (la escritura del archivo, fuera del mutex).
+                    let (cap, peak_capital, ruta_del_pico) = puente_imm.con_equity_del_freno(|equity| {
+                        let espacio_nuevo = buzon_imm.lock().unwrap_or_else(|p| p.into_inner()).take();
+                        if let Some(rutas) = espacio_nuevo {
+                            // V4J (punto 5): nada del ambito anterior mide el pico nuevo.
+                            arena_imm.capital_exchange.store(f64::NAN, Ordering::Release);
+                            *flujos_imm.lock().unwrap_or_else(|p| p.into_inner()) =
+                                risk_engine::drawdown::FlujosExternos::default();
+                            (pico_ilegible, marca_pendiente) = aplicar_arranque_pico(&arena_imm, &rutas, true);
+                            ruta_pico = rutas.pico.clone();
+                            ruta_marca = rutas.marca.clone();
+                            pico_guardado = 0.0;
+                        }                        let cap_exchange = equity.unwrap_or(f64::NAN);
+                        arena_imm.capital_exchange.store(
+                            if cap_exchange.is_finite() {
+                                cap_exchange
+                            } else {
+                                f64::NAN
+                            },
+                            Ordering::Release,
+                        );
+                        let cap = risk_engine::drawdown::capital_del_freno(&arena_imm);
+                        let peak_capital =
+                            risk_engine::drawdown::registrar_pico(&arena_imm.pico_capital, cap);
+                        (cap, peak_capital, ruta_pico.clone())
+                    });
                     if !pico_ilegible
                         && peak_capital > pico_guardado
-                        && risk_engine::drawdown::guardar_pico(&ruta_pico, peak_capital).is_ok()
+                        && risk_engine::drawdown::guardar_pico(&ruta_del_pico, peak_capital).is_ok()
                     {
                         pico_guardado = peak_capital;
                         // CAPITAL-UNICO V2 (7a): la marca de la definición se
@@ -3819,7 +3849,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     // CAPITAL-UNICO V4J (F8): flujos externos de la cuenta por su tranId y la era
                     // en que se vieron; un replay no cuenta otra vez. Solo atribucion: no ajustan
                     // pico ni freno (no hay politica de transferencias).
-                    {
+                    // Testigo de era: una respuesta de la sesion anterior no registra nada; el ambito
+                    // es la cuenta vigente del libro y el activo, el de cada movimiento.
+                    let _ = puente_brk.con_era_vigente(era_brk, |_| {
+                        let cuenta = arena_brk
+                            .config
+                            .entry_publication_gate
+                            .lock()
+                            .unwrap_or_else(|e| e.into_inner())
+                            .cuenta()
+                            .unwrap_or(0);
                         let mut flujos = flujos_brk.lock().unwrap_or_else(|p| p.into_inner());
                         for e in &entries {
                             if risk_engine::drawdown::es_flujo_externo(&e.income_type) {
@@ -3828,12 +3867,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 } else {
                                     e.income_type.bytes().fold(e.time, |h, b| h.rotate_left(5) ^ u64::from(b))
                                 };
-                                if flujos.registrar(id, e.income, era_brk) == risk_engine::drawdown::RegistroDeFlujo::Nuevo {
-                                    telemetry_server::telemetry_log!("[CAPITAL] flujo externo {} {:.8} USDT (tranId {}, era {}): incierto, sin ajuste de pico ni freno", e.income_type, e.income, id, era_brk);
+                                let r = flujos.registrar(cuenta, id, &e.asset, e.income, era_brk);
+                                if matches!(r, risk_engine::drawdown::RegistroDeFlujo::Nuevo | risk_engine::drawdown::RegistroDeFlujo::OtroActivo) {
+                                    telemetry_server::telemetry_log!("[CAPITAL] flujo externo {} {:.8} {} (tranId {}, era {}): incierto, sin ajuste de pico ni freno", e.income_type, e.income, e.asset, id, era_brk);
                                 }
                             }
                         }
-                    }
+                    });
                     // GLM-214 (H2): publicar la VERDAD DEL EXCHANGE de la
                     // ventana para el display financiero (seqlock del
                     // profiler). El contador interno sólo suma receipts de
@@ -5529,10 +5569,37 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 .lock()
                                 .unwrap_or_else(|e| e.into_inner());
                             if libro_relevo.cuenta().is_some_and(|c| c != cuenta_del_relevo) {
-                                arena_real.capital_exchange.store(f64::NAN, Ordering::Relaxed);
+                                arena_real.capital_exchange.store(f64::NAN, Ordering::Release);
+                                arena_real.pico_capital.store(0.0, Ordering::Release);
                             }
                             libro_relevo.fijar_cuenta(&arena_real, cuenta_del_relevo);
                             drop(libro_relevo);
+                            // CAPITAL-UNICO V3 (P1.4) y V4J (punto 5): si la transicion cambio de verdad
+                            // la cuenta o el venue, el pico pasa a su espacio EN ESTE MISMO PASO (bajo el
+                            // mutex del puente, antes de la era nueva y de su primera foto).
+                            if let quantum_engine::host_oms::ResultadoTransicion::Publicada { ejecutor, .. } = &paso.resultado {
+                                let clave = ejecutor.client().api_key.load();
+                                let testnet = ejecutor
+                                    .client()
+                                    .is_testnet
+                                    .load(std::sync::atomic::Ordering::Relaxed);
+                                let espacio = risk_engine::drawdown::espacio_pico(
+                                    testnet,
+                                    &risk_engine::drawdown::huella_cuenta(clave.as_bytes()),
+                                );
+                                if espacio != espacio_pico {
+                                    risk_engine::drawdown::fijar_espacio_pico(&espacio);
+                                    *buzon_espacio_pico.lock().unwrap_or_else(|p| p.into_inner()) =
+                                        Some(risk_engine::drawdown::RutasPico::del_espacio(&espacio, |n| {
+                                            std::path::PathBuf::from(quantum_arena::paths::env_data_path(n))
+                                        }));
+                                    telemetry_server::telemetry_log!(
+                                        "🛡️ [IMMUNE] la transición cambia el espacio del pico: {} → {}",
+                                        espacio_pico,
+                                        espacio
+                                    );
+                                }
+                            }
                         }
                         (paso, sesion_publicada)
                         });
@@ -5597,31 +5664,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             "🔌 [CAPITAL] puente de la cuenta: era {} (mainnet); entradas vetadas hasta el saldo de esta era",
                             era_mainnet
                         );
-                        // CAPITAL-UNICO V3 (P1.4): si la transición cambió de verdad
-                        // la cuenta o el venue, el pico pasa a su espacio.
-                        {
-                            let clave = new_exec_arc.client().api_key.load();
-                            let testnet = new_exec_arc
-                                .client()
-                                .is_testnet
-                                .load(std::sync::atomic::Ordering::Relaxed);
-                            let espacio = risk_engine::drawdown::espacio_pico(
-                                testnet,
-                                &risk_engine::drawdown::huella_cuenta(clave.as_bytes()),
-                            );
-                            if espacio != espacio_pico {
-                                risk_engine::drawdown::fijar_espacio_pico(&espacio);
-                                *buzon_espacio_pico.lock().unwrap_or_else(|p| p.into_inner()) =
-                                    Some(risk_engine::drawdown::RutasPico::del_espacio(&espacio, |n| {
-                                        std::path::PathBuf::from(quantum_arena::paths::env_data_path(n))
-                                    }));
-                                telemetry_server::telemetry_log!(
-                                    "🛡️ [IMMUNE] la transición cambia el espacio del pico: {} → {}",
-                                    espacio_pico,
-                                    espacio
-                                );
-                            }
-                        }
+                        // CAPITAL-UNICO V3 (P1.4): el cambio de espacio del pico ya se hizo dentro del
+                        // relevo (V4J, punto 5: mismo paso que la era nueva).
                         {
                             let oms_transition = Arc::clone(&oms_session);
                             let arena_transition = Arc::clone(&arena_real);
