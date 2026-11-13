@@ -16,6 +16,7 @@ use std::sync::{Arc, MutexGuard};
 
 const HOST: &str = include_str!("../../../src/bin/god_engine.rs");
 const STREAM: &str = include_str!("../../execution-engine/src/user_data_stream.rs");
+const DEMO_TEL_MOD: &str = include_str!("../../../src/demo_tel.rs");
 const SIMBOLO: &str = "TELBUSDT";
 const SESION: u64 = 3;
 const COMISION: f64 = 0.04;
@@ -53,15 +54,18 @@ fn anclas_del_adaptador() {
         "f64::from_bits(unified_capital.load(std::sync::atomic::Ordering::Relaxed))",
     ]);
     // `on_capital` (CAPITAL_UPDATE y update_dynamic_capital) recibe la observacion del puente.
+    // T2: el stream la entrega con su revision (`on_capital_aceptado`) y el sink del host vive en
+    // `src/demo_tel.rs`; su emision real la prueba `tests/demo_tel_capital_update_sink_contract.rs`.
     orden(STREAM, &[
         "let r = self.puente.observar_stream_del_socket(self.era, socket, hora_evento, &evento, |obs| {",
-        "sink.on_capital(obs.saldo);",
+        "sink.on_capital_aceptado(obs.saldo, &revision);",
     ]);
-    orden(HOST, &[
-        "fn on_capital(&self, usdt: f64) {",
+    orden(DEMO_TEL_MOD, &[
+        "fn capital(&self, usdt: f64, revision: Option<&RevisionSaldo>) {",
         "audit_engine::telemetry::update_dynamic_capital(usdt);",
-        "DEMO_TEL event=CAPITAL_UPDATE",
+        "emitir(linea_capital_update(ts, usdt, revision));",
     ]);
+    assert!(texto(HOST).contains("use quantum_engine::demo_tel::CapitalBridgeSink;"));
 }
 
 fn libro(arena: &GlobalArena) -> MutexGuard<'_, LibroDimensionable> {
@@ -153,15 +157,16 @@ fn telemetria_publica_saldo_aceptado_no_el_dimensionable() {
     assert_ne!(espejo.load(Ordering::Relaxed), dimensionable.to_bits(), "{FALLO}");
 
     // `on_capital` del stream (CAPITAL_UPDATE / update_dynamic_capital): la observacion del puente.
+    // T2: el callback TIENE que producirse (antes se comprobaba solo si ocurria): un evento con
+    // marca posterior (T=150) al saldo aceptado.
     let mut on_capital = None;
-    let evento = EventoStream { tiempo_ms: Some(100), saldo: Some(100.0), posiciones: Vec::new() };
-    let _ = puente.observar_stream_del_socket(puente.era(), socket, Some(100), &evento, |obs| {
+    let evento = EventoStream { tiempo_ms: Some(150), saldo: Some(100.0), posiciones: Vec::new() };
+    let _ = puente.observar_stream_del_socket(puente.era(), socket, Some(150), &evento, |obs| {
         on_capital = Some(obs.saldo);
     });
-    if let Some(usdt) = on_capital {
-        assert_eq!(usdt.to_bits(), 100.0f64.to_bits(), "{FALLO} (on_capital {usdt})");
-        assert_ne!(usdt.to_bits(), dimensionable.to_bits(), "{FALLO} (on_capital {usdt})");
-    }
+    let usdt = on_capital.expect("TELEMETRIA: el puente no entrego la observacion del stream a on_capital");
+    assert_eq!(usdt.to_bits(), 100.0f64.to_bits(), "{FALLO} (on_capital {usdt})");
+    assert_ne!(usdt.to_bits(), dimensionable.to_bits(), "{FALLO} (on_capital {usdt})");
 
     // Asercion 3: tras cancelar la reserva, el publicado sigue siendo el saldo aceptado (INV-C).
     libro(&arena).cancelar(&arena, CLAVE, COMISION);

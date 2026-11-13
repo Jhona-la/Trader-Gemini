@@ -10,6 +10,12 @@
 //!    con un comparador por campos equivalente (el workspace no trae `regex`).
 //!
 //! Ademas: el formato de la linea `💧 [FILL]` existente no cambia (punto 4 del pedido).
+//!
+//! T2 (QRA-TELEMETRIA-DEMO, cinco desviaciones; solo cambia el CONTENIDO de las lineas):
+//! ORDER_SEND declarada como INTENTO y su testigo ORDER_RESULT; TRADE_FEE con su tradeId;
+//! FUNDING con alcance y cobertura N/D; SYMBOL_SPEC con su fuente; IMMUNE_TRIGGER con cada dato
+//! bajo su nombre real y sin relecturas, busquedas ni E/S antes del kill-switch. CAPITAL_UPDATE sale
+//! ahora del sink de `src/demo_tel.rs` (prueba real en `demo_tel_capital_update_sink_contract.rs`).
 
 use execution_engine::entry_dispatch::EntryRoute;
 use execution_engine::order_registry::OrderStatus;
@@ -17,6 +23,14 @@ use execution_engine::order_registry::OrderStatus;
 const HOST: &str = include_str!("../src/bin/god_engine.rs");
 const STREAM: &str = include_str!("../crates/execution-engine/src/user_data_stream.rs");
 const NUCLEO: &str = include_str!("../crates/god-engine-core/src/lib.rs");
+const DEMO_TEL_MOD: &str = include_str!("../src/demo_tel.rs");
+
+/// El texto entre dos anclas (la primera aparicion de `desde` y la siguiente de `hasta`).
+fn tramo(fuente: &str, desde: &str, hasta: &str) -> String {
+    let f = texto(fuente);
+    let a = f.split_once(desde).unwrap_or_else(|| panic!("ancla ausente: {desde}")).1;
+    a.split_once(hasta).unwrap_or_else(|| panic!("ancla ausente: {hasta}")).0.to_string()
+}
 
 fn texto(fuente: &str) -> String {
     fuente.replace("\r\n", "\n")
@@ -150,16 +164,64 @@ fn demo_tel_order_send() {
         let linea = demo_tel!(
             HOST,
             "ts, parsed_sym_str, final_is_long, final_qty, client_id, effective_leverage, route",
-            "DEMO_TEL event=ORDER_SEND ts={} symbol={} is_long={} qty={:.6} client_order_id={} lev={} route={:?}",
+            "DEMO_TEL event=ORDER_SEND tipo=INTENTO ts={} symbol={} is_long={} qty={:.6} client_order_id={} lev={} route={:?}",
             ts, parsed_sym_str, final_is_long, final_qty, client_id, effective_leverage, route
         );
         let v = casa(&linea, "ORDER_SEND", &[
-            ("ts", C::Dig), ("symbol", C::Word), ("is_long", C::Bool), ("qty", C::Num),
+            ("tipo", C::Lit("INTENTO")), ("ts", C::Dig), ("symbol", C::Word), ("is_long", C::Bool), ("qty", C::Num),
             ("client_order_id", C::NoEsp), ("lev", C::Dig), ("route", C::Resto),
         ]);
-        assert_eq!(v[3], "0.012300");
-        assert_eq!(v[6], format!("{route:?}"));
+        assert_eq!(v[4], "0.012300");
+        assert_eq!(v[7], format!("{route:?}"));
     }
+}
+
+/// T2 (desviacion 1): testigo del despacho, despues de `dispatch_entry_reservada` y antes de
+/// las ramas que deciden. Su clasificacion usa EXACTAMENTE las marcas del primer brazo del match
+/// (AMBIGUOUS / MAKER_CHASE_UNVERIFIED); el match que decide no cambia.
+#[test]
+fn demo_tel_order_result_testigo() {
+    orden(HOST, &[
+        "DEMO_TEL event=ORDER_SEND tipo=INTENTO",
+        "let entry_result = entry_oms.dispatch_entry_reservada(",
+        "Some(reservation.clave()),",
+        ").await;",
+        "let resultado_envio = match &entry_result {",
+        "Ok(()) => \"ENTREGADA\",",
+        "Err(e) if e.starts_with(\"AMBIGUOUS\") || e.starts_with(\"MAKER_CHASE_UNVERIFIED\") => \"AMBIGUA\",",
+        "Err(_) => \"RECHAZADA\",",
+        "DEMO_TEL event=ORDER_RESULT",
+        "match entry_result {",
+        "Err(e) if e.starts_with(\"AMBIGUOUS\")\n                                    || e.starts_with(\"MAKER_CHASE_UNVERIFIED\") =>",
+        "Err(e) => {",
+        "Ok(()) => {",
+    ]);
+    // El tramo del testigo no decide nada: ni rollback, ni reserva, ni reintento.
+    let t = tramo(HOST, "let resultado_envio = match &entry_result {", "match entry_result {");
+    for prohibido in ["rollback", "release_for", "confirmar", "dispatch_", ".await", "return"] {
+        assert!(!t.contains(prohibido), "el testigo hace algo mas que registrar: {prohibido}");
+    }
+    // La misma clasificacion, evaluada.
+    let clase = |r: &Result<(), String>| match r {
+        Ok(()) => "ENTREGADA",
+        Err(e) if e.starts_with("AMBIGUOUS") || e.starts_with("MAKER_CHASE_UNVERIFIED") => "AMBIGUA",
+        Err(_) => "RECHAZADA",
+    };
+    assert_eq!(clase(&Ok(())), "ENTREGADA");
+    assert_eq!(clase(&Err("AMBIGUOUS: timeout".into())), "AMBIGUA");
+    assert_eq!(clase(&Err("MAKER_CHASE_UNVERIFIED: x".into())), "AMBIGUA");
+    assert_eq!(clase(&Err("-2019 margin".into())), "RECHAZADA");
+    let (parsed_sym_str, client_id) = ("BTCUSDT", "cL_abc123");
+    let linea = demo_tel!(
+        HOST,
+        "parsed_sym_str, client_id, resultado_envio",
+        "DEMO_TEL event=ORDER_RESULT ts={} symbol={} client_order_id={} resultado={}",
+        1_763_000_000_001u64, parsed_sym_str, client_id, clase(&Err("AMBIGUOUS".into()))
+    );
+    let v = casa(&linea, "ORDER_RESULT", &[
+        ("ts", C::Dig), ("symbol", C::Word), ("client_order_id", C::NoEsp), ("resultado", C::Word),
+    ]);
+    assert_eq!(v[3], "AMBIGUA");
 }
 
 // 2. FILL ------------------------------------------------------------------------------------
@@ -212,17 +274,37 @@ fn demo_tel_trade_fee() {
         "DEMO_TEL event=TRADE_FEE",
         "CAPITAL-UNICO V4H (INV-G): todo fill que cierra posicion",
     ]);
+    // T2 (desviacion 2): el tradeId nativo del MISMO fill (`update.trade_id`, el que lleva la
+    // linea FILL), AUSENTE si el evento no lo trajo; nunca el clientOrderId ni otro sustituto.
+    orden(STREAM, &[
+        "crate::trade_accounting::record_entry_fill(",
+        "let fee_trade_id = if update.trade_id == 0 { \"AUSENTE\".to_string() } else { update.trade_id.to_string() };",
+        "let fee_asset = if update.commission_asset.is_empty() { \"AUSENTE\" } else { update.commission_asset.as_str() };",
+        "DEMO_TEL event=TRADE_FEE",
+    ]);
     let linea = demo_tel!(
         STREAM,
-        "update.trade_time_ms, update.symbol, update.client_order_id, update.commission, update.commission_asset, o.is_maker",
-        "DEMO_TEL event=TRADE_FEE ts={} symbol={} client_order_id={} fee={:.8} fee_asset={} is_maker={}",
-        1_763_000_000_124u64, "VETUSDT", "cS_x1", 0.00203904f64, "USDT", false
+        "update.trade_time_ms, update.symbol, update.client_order_id, fee_trade_id, update.commission, fee_asset, o.is_maker",
+        "DEMO_TEL event=TRADE_FEE ts={} symbol={} client_order_id={} trade_id={} fee={:.8} fee_asset={} is_maker={} alcance=ENTRADA",
+        1_763_000_000_124u64, "VETUSDT", "cS_x1", 42u64, 0.00203904f64, "USDT", false
     );
     let v = casa(&linea, "TRADE_FEE", &[
-        ("ts", C::Dig), ("symbol", C::Word), ("client_order_id", C::NoEsp), ("fee", C::Sig),
-        ("fee_asset", C::Word), ("is_maker", C::Bool),
+        ("ts", C::Dig), ("symbol", C::Word), ("client_order_id", C::NoEsp), ("trade_id", C::Dig), ("fee", C::Sig),
+        ("fee_asset", C::Word), ("is_maker", C::Bool), ("alcance", C::Lit("ENTRADA")),
     ]);
-    assert_eq!(v[3], "0.00203904");
+    assert_eq!((v[3].as_str(), v[4].as_str()), ("42", "0.00203904"));
+    // Ausencia explicita: tambien casa (palabra AUSENTE), y el valor no es el clientOrderId.
+    let ausente = demo_tel!(
+        STREAM,
+        "update.trade_time_ms, update.symbol, update.client_order_id, fee_trade_id, update.commission, fee_asset, o.is_maker",
+        "DEMO_TEL event=TRADE_FEE ts={} symbol={} client_order_id={} trade_id={} fee={:.8} fee_asset={} is_maker={} alcance=ENTRADA",
+        1u64, "VETUSDT", "cS_x1", "AUSENTE", 0.0f64, "AUSENTE", false
+    );
+    let v = casa(&ausente, "TRADE_FEE", &[
+        ("ts", C::Dig), ("symbol", C::Word), ("client_order_id", C::NoEsp), ("trade_id", C::Lit("AUSENTE")),
+        ("fee", C::Sig), ("fee_asset", C::Lit("AUSENTE")), ("is_maker", C::Bool), ("alcance", C::Lit("ENTRADA")),
+    ]);
+    assert_ne!(v[3], v[2]);
 }
 
 // 4. FUNDING ---------------------------------------------------------------------------------
@@ -238,16 +320,30 @@ fn demo_tel_funding() {
         "match e.income_type.as_str() {",
         "\"FUNDING_FEE\" => a.funding += e.income,",
     ]);
+    // T2 (desviacion 3): alcance declarado (la pasada rodante del FEE-BREAKER con su ventana, el
+    // filtro de la particion y el tope de paginas de la llamada) y cobertura N/D (no se deduce).
+    orden(HOST, &[
+        "let window_start = now_breaker.saturating_sub(window_ms);",
+        ".fetch_income_paged(&[], window_start, 4)",
+        "partition_legacy_fee_evidence(&entries);",
+        "for e in fee_partition.same_asset_by_symbol.values().flatten() {",
+        "if e.symbol.is_empty() {",
+        "let tran_id_funding = if e.tran_id == 0 { \"AUSENTE\".to_string() } else { e.tran_id.to_string() };",
+        "DEMO_TEL event=FUNDING",
+    ]);
     let linea = demo_tel!(
         HOST,
-        "e.time, e.symbol, e.income, e.asset, e.tran_id",
-        "DEMO_TEL event=FUNDING ts={} symbol={} income={:.8} asset={} tran_id={}",
-        1_763_000_000_000u64, "BTCUSDT", -0.01234567f64, "USDT", 9_876_543_210u64
+        "e.time, e.symbol, e.income, e.asset, tran_id_funding, window_start, now_breaker",
+        "DEMO_TEL event=FUNDING ts={} symbol={} income={:.8} asset={} tran_id={} income_type=FUNDING_FEE alcance=FEE_BREAKER_VENTANA_RODANTE ventana_desde_ms={} ventana_hasta_ms={} filtro=MISMO_ACTIVO_Y_SIMBOLO_NO_VACIO paginas_max=4 cobertura=N/D",
+        1_763_000_000_000u64, "BTCUSDT", -0.01234567f64, "USDT", 9_876_543_210u64, 1_762_900_000_000u64, 1_763_000_100_000u64
     );
     let v = casa(&linea, "FUNDING", &[
         ("ts", C::Dig), ("symbol", C::Word), ("income", C::Sig), ("asset", C::Word), ("tran_id", C::Dig),
+        ("income_type", C::Lit("FUNDING_FEE")), ("alcance", C::Lit("FEE_BREAKER_VENTANA_RODANTE")),
+        ("ventana_desde_ms", C::Dig), ("ventana_hasta_ms", C::Dig), ("filtro", C::Lit("MISMO_ACTIVO_Y_SIMBOLO_NO_VACIO")),
+        ("paginas_max", C::Lit("4")), ("cobertura", C::Lit("N/D")),
     ]);
-    assert_eq!(v[2], "-0.01234567");
+    assert_eq!((v[2].as_str(), v[4].as_str()), ("-0.01234567", "9876543210"), "importe con signo y tranId");
 }
 
 // 5. UNREALIZED_PNL --------------------------------------------------------------------------
@@ -276,20 +372,26 @@ fn demo_tel_unrealized_pnl() {
 
 #[test]
 fn demo_tel_capital_update() {
-    orden(HOST, &[
-        "fn on_capital(&self, usdt: f64) {",
+    // T2: el sink vive en `src/demo_tel.rs`; el host lo usa (no define otro).
+    orden(DEMO_TEL_MOD, &[
+        "fn capital(&self, usdt: f64, revision: Option<&RevisionSaldo>) {",
         "audit_engine::telemetry::update_dynamic_capital(usdt);",
-        "DEMO_TEL event=CAPITAL_UPDATE",
+        "emitir(linea_capital_update(ts, usdt, revision));",
+        "self.unified_capital.store(usdt.to_bits(), Ordering::Relaxed);",
         "fn on_equity(&self, usdt: f64) {",
     ]);
-    let linea = demo_tel!(
-        HOST,
-        "as u64, usdt",
-        "DEMO_TEL event=CAPITAL_UPDATE ts={} wallet_balance={:.4}",
-        1_763_000_000_000u64, 100.0f64
-    );
-    let v = casa(&linea, "CAPITAL_UPDATE", &[("ts", C::Dig), ("wallet_balance", C::Num)]);
-    assert_eq!(v[1], "100.0000");
+    assert!(texto(HOST).contains("use quantum_engine::demo_tel::CapitalBridgeSink;"));
+    assert!(!texto(HOST).contains("struct CapitalBridgeSink"));
+    assert_eq!(texto(DEMO_TEL_MOD).matches("\"DEMO_TEL event=CAPITAL_UPDATE").count(), 1);
+    let rev = execution_engine::user_data_stream::RevisionSaldo {
+        fuente: "WS", era: 2, socket: 5, marca_ms: Some(200), hora_evento_ms: None,
+    };
+    let linea = quantum_engine::demo_tel::linea_capital_update(1_763_000_000_000, 100.0, Some(&rev));
+    let v = casa(&linea, "CAPITAL_UPDATE", &[
+        ("ts", C::Dig), ("wallet_balance", C::Num), ("fuente", C::Lit("WS")), ("era", C::Dig), ("socket", C::Dig),
+        ("marca_ms", C::Dig), ("hora_evento_ms", C::Lit("N/D")),
+    ]);
+    assert_eq!((v[1].as_str(), v[5].as_str()), ("100.0000", "200"));
 }
 
 // 7. DECISION_MID ----------------------------------------------------------------------------
@@ -376,15 +478,23 @@ fn demo_tel_symbol_spec() {
         "quantum_arena::symbol_registry::update_registry(boot_specs);",
         "🧬 [B3.38]",
     ]);
+    // T2 (desviacion 4): la fuente del dato. El vector sale de la semilla local del registro
+    // (`get_official_binance_spec`), no de `exchangeInfo`; la linea lo dice.
+    orden(HOST, &[
+        "let boot_specs: Vec<quantum_arena::symbol_registry::SymbolSpec> = symbols",
+        ".map(|s| quantum_arena::symbol_registry::get_official_binance_spec(&s.to_uppercase()))",
+        "DEMO_TEL event=SYMBOL_SPEC",
+    ]);
     let spec = quantum_arena::symbol_registry::get_official_binance_spec("BTCUSDT");
     let linea = demo_tel!(
         HOST,
         "spec.symbol, spec.min_notional, spec.tick_size, spec.step_size",
-        "DEMO_TEL event=SYMBOL_SPEC symbol={} min_notional={:.4} tick_size={:.8} step_size={:.8}",
+        "DEMO_TEL event=SYMBOL_SPEC symbol={} min_notional={:.4} tick_size={:.8} step_size={:.8} fuente=SEMILLA_LOCAL exchange_info=N/D",
         spec.symbol, spec.min_notional, spec.tick_size, spec.step_size
     );
     let v = casa(&linea, "SYMBOL_SPEC", &[
         ("symbol", C::Word), ("min_notional", C::Num), ("tick_size", C::Num), ("step_size", C::Num),
+        ("fuente", C::Lit("SEMILLA_LOCAL")), ("exchange_info", C::Lit("N/D")),
     ]);
     assert_eq!(v[0], "BTCUSDT");
 }
@@ -394,35 +504,65 @@ fn demo_tel_symbol_spec() {
 #[test]
 fn demo_tel_immune_trigger() {
     // Tras el aviso del disparo y antes de armar el kill-switch; el freno y el pico se leen
-    // tal como estan (T7): `cap` (capital del freno), `peak_capital` y `cap_exchange`.
+    // tal como estan (T7): `cap` (capital del freno), `peak_capital` y `cap_exchange`, todos
+    // calculados ANTES de la decision de este ciclo.
     orden(HOST, &[
+        "let operator_lock = operator_lock_exists();",
         "let cap_exchange = puente_imm.equity_del_freno().unwrap_or(f64::NAN);",
         "let cap = risk_engine::drawdown::capital_del_freno(&arena_imm);",
         "risk_engine::drawdown::registrar_pico(&arena_imm.pico_capital, cap);",
         "let freno = risk_engine::drawdown::freno_duro(&arena_imm, peak_capital, cap);",
+        "let insolvent = cap <= 0.0;",
+        "let dd_breach = freno.echado();",
+        "let lat_breach = latency_strikes >= 3;",
+        "if operator_lock || insolvent || dd_breach || lat_breach {",
         "🚨 [SISTEMA INMUNE] ACTIVADO",
         "DEMO_TEL event=IMMUNE_TRIGGER",
         "arena_imm.kill_switch_active.store(true, Ordering::Relaxed);",
+        "executor.trigger_kill_switch();",
     ]);
+    // T2 (desviacion 5): el motivo sigue la MISMA precedencia que el texto `reason` del disparo.
+    orden(HOST, &[
+        "let reason = if operator_lock {",
+        "} else if insolvent {",
+        "} else if dd_breach {",
+        "let motivo_imm = if operator_lock {",
+        "\"OPERATOR_LOCK\"",
+        "} else if insolvent {",
+        "\"INSOLVENTE\"",
+        "} else if dd_breach {",
+        "\"DRAWDOWN\"",
+        "\"LATENCIA\"",
+    ]);
+    // Sin relecturas del arena, sin busqueda de simbolo y sin E/S entre la decision y el kill-switch.
+    let t = tramo(HOST, "🚨 [SISTEMA INMUNE] ACTIVADO", "arena_imm.kill_switch_active.store(true, Ordering::Relaxed);");
+    for prohibido in [".load(", "arena_imm.", "symbol_registry", "try_symbol", "position(", ".await", "std::fs", "puente_imm."] {
+        assert!(!t.contains(prohibido), "IMMUNE_TRIGGER: trabajo nuevo antes del kill-switch: {prohibido}");
+    }
+    assert!(t.contains("let equity_del_freno_imm = if cap_exchange.is_finite() {"));
+    assert!(t.contains("\"AUSENTE\".to_string()"), "la equity del freno ausente se declara, no se sustituye");
     let linea = demo_tel!(
         HOST,
-        "ts_imm, peak_capital, balance_rest, balance_stream, drop_pct, threshold_pct, sym_imm, cap",
-        "DEMO_TEL event=IMMUNE_TRIGGER ts={} peak_capital={:.4} balance_rest={:.4} balance_stream={:.4} drop_pct={:.4} threshold_pct={:.4} symbol={} freno_capital={:.4} freno_capital_plano=min(arena.unified_capital,arena.capital_exchange) peak_plano=registrar_pico(arena.pico_capital,freno_capital) balance_rest_plano=puente.equity_del_freno balance_stream_plano=arena.unified_capital",
-        1_763_000_000_000u64, 7299.88f64, 7299.88f64, 1655.81f64, 77.3172f64, 50.0f64, "ALL", 1655.81f64
+        "ts_imm, motivo_imm, cap, peak_capital, equity_del_freno_imm, freno.caida_capital * 100.0, freno.tope_capital * 100.0, operator_lock, insolvent, dd_breach, lat_breach, latency_strikes",
+        "DEMO_TEL event=IMMUNE_TRIGGER ts={} motivo={} alcance=CUENTA freno_capital={:.4} freno_capital_plano=drawdown.capital_del_freno(min(arena.unified_capital,arena.capital_exchange)) peak_capital={:.4} peak_plano=drawdown.registrar_pico(arena.pico_capital,freno_capital) equity_del_freno={} equity_del_freno_plano=puente.equity_del_freno caida_capital_pct={:.4} tope_capital_pct={:.4} operator_lock={} insolvent={} dd_breach={} lat_breach={} latency_strikes={} revision=N/D lecturas_posteriores=ninguna",
+        1_763_000_000_000u64, "DRAWDOWN", 1655.81f64, 7299.88f64, "AUSENTE", 77.3172f64, 50.0f64, false, false, true, false, 0u32
     );
     let v = casa(&linea, "IMMUNE_TRIGGER", &[
-        ("ts", C::Dig), ("peak_capital", C::Num), ("balance_rest", C::Num), ("balance_stream", C::Num),
-        ("drop_pct", C::Num), ("threshold_pct", C::Num), ("symbol", C::Word), ("freno_capital", C::Num),
-        ("freno_capital_plano", C::Lit("min(arena.unified_capital,arena.capital_exchange)")),
-        ("peak_plano", C::Lit("registrar_pico(arena.pico_capital,freno_capital)")),
-        ("balance_rest_plano", C::Lit("puente.equity_del_freno")),
-        ("balance_stream_plano", C::Lit("arena.unified_capital")),
+        ("ts", C::Dig), ("motivo", C::Word), ("alcance", C::Lit("CUENTA")), ("freno_capital", C::Num),
+        ("freno_capital_plano", C::Lit("drawdown.capital_del_freno(min(arena.unified_capital,arena.capital_exchange))")),
+        ("peak_capital", C::Num),
+        ("peak_plano", C::Lit("drawdown.registrar_pico(arena.pico_capital,freno_capital)")),
+        ("equity_del_freno", C::Lit("AUSENTE")), ("equity_del_freno_plano", C::Lit("puente.equity_del_freno")),
+        ("caida_capital_pct", C::Num), ("tope_capital_pct", C::Num), ("operator_lock", C::Bool),
+        ("insolvent", C::Bool), ("dd_breach", C::Bool), ("lat_breach", C::Bool), ("latency_strikes", C::Dig),
+        ("revision", C::Lit("N/D")), ("lecturas_posteriores", C::Lit("ninguna")),
     ]);
-    assert_eq!(v[4], "77.3172");
+    assert_eq!((v[1].as_str(), v[9].as_str()), ("DRAWDOWN", "77.3172"));
+    // Los nombres viejos que imputaban planos ajenos ya no estan.
+    for viejo in ["balance_rest=", "balance_stream=", "drop_pct=", "threshold_pct="] {
+        assert!(!linea.contains(viejo), "{viejo}");
+    }
     // Los planos declarados en la linea son los que el codigo usa hoy.
-    let src = texto(HOST);
-    assert!(src.contains("let balance_stream = arena_imm.unified_capital.load(Ordering::Relaxed);"));
-    assert!(src.contains("let balance_rest = if cap_exchange.is_finite() { cap_exchange } else { balance_stream };"));
     orden(include_str!("../crates/risk-engine/src/drawdown.rs"), &[
         "pub fn capital_del_freno(arena: &quantum_arena::GlobalArena) -> f64 {",
         "let capital = arena.unified_capital.load(Relaxed);",
@@ -431,9 +571,15 @@ fn demo_tel_immune_trigger() {
     ]);
 }
 
-/// Ninguna linea DEMO_TEL fuera de las once.
+/// Las once lineas mas el testigo ORDER_RESULT (T2), y ninguna otra.
 #[test]
 fn demo_tel_son_once_lineas() {
-    let n: usize = [HOST, STREAM, NUCLEO].iter().map(|s| texto(s).matches("\"DEMO_TEL event=").count()).sum();
-    assert_eq!(n, 11);
+    let n: usize = [HOST, STREAM, NUCLEO, DEMO_TEL_MOD].iter().map(|s| texto(s).matches("\"DEMO_TEL event=").count()).sum();
+    assert_eq!(n, 12);
+    let eventos = ["ORDER_SEND", "FILL", "TRADE_FEE", "FUNDING", "UNREALIZED_PNL", "CAPITAL_UPDATE", "DECISION_MID",
+        "TRADE_CLOSE", "AUDIT_SUMMARY", "SYMBOL_SPEC", "IMMUNE_TRIGGER", "ORDER_RESULT"];
+    for ev in eventos {
+        let k: usize = [HOST, STREAM, NUCLEO, DEMO_TEL_MOD].iter().map(|s| texto(s).matches(&format!("\"DEMO_TEL event={ev} ")).count()).sum();
+        assert_eq!(k, 1, "{ev}");
+    }
 }

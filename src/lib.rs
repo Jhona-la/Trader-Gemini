@@ -2,6 +2,7 @@ pub mod config;
 pub mod dark_alpha_router;
 pub mod dark_alpha_sniffer;
 pub mod dashboard;
+pub mod demo_tel;
 pub mod env_manager;
 pub mod host_oms;
 pub mod model_manifest;
