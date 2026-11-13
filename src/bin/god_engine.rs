@@ -441,6 +441,11 @@ fn aplicar_arranque_pico(
     for aviso in &arranque.avisos {
         telemetry_server::telemetry_log!("⚠️ [IMMUNE] {}", aviso);
     }
+    // CAPITAL-UNICO V4J (punto 5): con el libro derivado el pico es el de la equity del puente:
+    // nace vacio (sin foto no se escribe) salvo el pico persistido compatible de este espacio.
+    if !cambio_de_espacio && arena.config.dimensionable_derivado.load(Ordering::Acquire) {
+        arena.pico_capital.store(0.0, Ordering::Release);
+    }
     if cambio_de_espacio {
         arena.pico_capital.store(0.0, Ordering::Release);
         arena.pico_ilegible.store(false, Ordering::Release);
@@ -449,7 +454,9 @@ fn aplicar_arranque_pico(
             rutas.pico.display()
         );
     }
-    let mut marca_pendiente = !rutas.marca.exists();
+    // V4J (punto 5): una marca de otra magnitud (legado) se reescribe con la vigente tras el
+    // primer pico guardado de esta magnitud.
+    let mut marca_pendiente = !risk_engine::drawdown::marca_vigente(&rutas.marca);
     let mut ilegible = false;
     match arranque.carga {
         risk_engine::drawdown::CargaPico::Ausente if !arranque.rearmar_stops => {
@@ -1938,6 +1945,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
     // CAPITAL-UNICO V3 (P1.4): rutas del pico de un espacio nuevo, que la
     // transición deja al inmune si cambia de verdad la cuenta o el venue.
+    // CAPITAL-UNICO V4J (F8): flujos externos vistos en el ambito vigente del pico.
+    let flujos_externos = Arc::new(std::sync::Mutex::new(risk_engine::drawdown::FlujosExternos::default()));
     let buzon_espacio_pico: Arc<std::sync::Mutex<Option<risk_engine::drawdown::RutasPico>>> =
         Arc::new(std::sync::Mutex::new(None));
     let (initial_capital, initial_equity) = loop {
@@ -2656,6 +2665,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             .lock()
             .unwrap_or_else(|e| e.into_inner())
             .fijar_cuenta(&arena_real, cuenta_de_arranque);
+        // V4J (punto 5): el puente sabe de que cuenta es cada era (la equity de otra cuenta no
+        // queda como evidencia del freno).
+        puente_cuenta.anunciar_cuenta(cuenta_de_arranque);
         // V4H (INV-G): un cierre externo que detecte el OMS pide evidencia perdida al puente
         // (veta hasta una REST pedida despues); ese saldo suelta el veto del libro.
         {
@@ -2766,6 +2778,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             // transición cambia de verdad la cuenta o el venue, el host deja
             // las rutas del espacio nuevo en `buzon_imm` y el inmune las adopta.
             let buzon_imm = Arc::clone(&buzon_espacio_pico);
+            let flujos_imm = Arc::clone(&flujos_externos);
             let rutas_pico = risk_engine::drawdown::RutasPico::del_espacio(&espacio_pico, |n| {
                 std::path::PathBuf::from(quantum_arena::paths::env_data_path(n))
             });
@@ -2914,6 +2927,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     // vacío si no tiene el suyo; nada ajeno se adopta).
                     let espacio_nuevo = buzon_imm.lock().unwrap_or_else(|p| p.into_inner()).take();
                     if let Some(rutas) = espacio_nuevo {
+                        // V4J (punto 5): nada del ambito anterior mide el pico nuevo.
+                        arena_imm.capital_exchange.store(f64::NAN, Ordering::Relaxed);
+                        *flujos_imm.lock().unwrap_or_else(|p| p.into_inner()) =
+                            risk_engine::drawdown::FlujosExternos::default();
                         (pico_ilegible, marca_pendiente) = aplicar_arranque_pico(&arena_imm, &rutas, true);
                         ruta_pico = rutas.pico.clone();
                         ruta_marca = rutas.marca.clone();
@@ -3140,7 +3157,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 cap
                             )
                         } else if dd_breach {
-                            format!("drawdown: {freno}")
+                            // V4J (F8): sin politica de ajuste por flujos, un retiro no se
+                            // etiqueta como perdida de mercado: la linea lo atribuye.
+                            let flujos = flujos_imm.lock().unwrap_or_else(|p| p.into_inner());
+                            match flujos.origen_de_la_caida() {
+                                risk_engine::drawdown::OrigenDeLaCaida::Patrimonio => format!("drawdown: {freno}"),
+                                risk_engine::drawdown::OrigenDeLaCaida::FlujoIncierto => format!(
+                                    "drawdown: {freno}; atribucion: {} flujo(s) externo(s) incierto(s), neto {:.8} USDT, sin politica de ajuste (no se etiqueta como perdida de mercado; pico y freno se conservan)",
+                                    flujos.cantidad(),
+                                    flujos.neto_incierto()
+                                ),
+                            }
                         } else {
                             format!(
                                 "{} strikes de latencia en {} s, el último por {} (red+reloj {}ms, umbral {}ms, edad total {}ms, cola local {}ms, deriva del reloj {}ms)",
@@ -3632,6 +3659,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         {
             // V4I (punto 5b): el testigo de era del funding (ver el bucle).
             let puente_brk = Arc::clone(&puente_cuenta);
+            let flujos_brk = Arc::clone(&flujos_externos);
             let exec_brk = Arc::clone(&exec);
             let arena_brk = Arc::clone(&arena_real);
             // GLM-219 (bloqueante #3): el breaker Prod→Demo se alimenta aquí,
@@ -3788,6 +3816,24 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             }
                         }
                     });
+                    // CAPITAL-UNICO V4J (F8): flujos externos de la cuenta por su tranId y la era
+                    // en que se vieron; un replay no cuenta otra vez. Solo atribucion: no ajustan
+                    // pico ni freno (no hay politica de transferencias).
+                    {
+                        let mut flujos = flujos_brk.lock().unwrap_or_else(|p| p.into_inner());
+                        for e in &entries {
+                            if risk_engine::drawdown::es_flujo_externo(&e.income_type) {
+                                let id = if e.tran_id != 0 {
+                                    e.tran_id
+                                } else {
+                                    e.income_type.bytes().fold(e.time, |h, b| h.rotate_left(5) ^ u64::from(b))
+                                };
+                                if flujos.registrar(id, e.income, era_brk) == risk_engine::drawdown::RegistroDeFlujo::Nuevo {
+                                    telemetry_server::telemetry_log!("[CAPITAL] flujo externo {} {:.8} USDT (tranId {}, era {}): incierto, sin ajuste de pico ni freno", e.income_type, e.income, id, era_brk);
+                                }
+                            }
+                        }
+                    }
                     // GLM-214 (H2): publicar la VERDAD DEL EXCHANGE de la
                     // ventana para el display financiero (seqlock del
                     // profiler). El contador interno sólo suma receipts de
@@ -5473,12 +5519,20 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             } else {
                                 identidad_de_cuenta(false, &mainnet_key)
                             };
-                            arena_real
+                            // V4J (punto 5): la era que abre este relevo es de esta cuenta; con
+                            // otra cuenta, la equity del freno pasa a ausencia en el mismo paso (ni
+                            // el inmune ni Risk escriben el pico sucesor con la de la anterior).
+                            puente_cuenta.anunciar_cuenta(cuenta_del_relevo);
+                            let mut libro_relevo = arena_real
                                 .config
                                 .entry_publication_gate
                                 .lock()
-                                .unwrap_or_else(|e| e.into_inner())
-                                .fijar_cuenta(&arena_real, cuenta_del_relevo);
+                                .unwrap_or_else(|e| e.into_inner());
+                            if libro_relevo.cuenta().is_some_and(|c| c != cuenta_del_relevo) {
+                                arena_real.capital_exchange.store(f64::NAN, Ordering::Relaxed);
+                            }
+                            libro_relevo.fijar_cuenta(&arena_real, cuenta_del_relevo);
+                            drop(libro_relevo);
                         }
                         (paso, sesion_publicada)
                         });

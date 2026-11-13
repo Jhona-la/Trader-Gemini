@@ -806,6 +806,10 @@ pub struct PuenteCuenta {
     /// V4E: el publicador soltó el veto en su última llamada (sólo se escribe
     /// bajo el mutex de `estado`).
     admitido: AtomicBool,
+    /// CAPITAL-UNICO V4J (punto 5): (cuenta de la era vigente, cuenta anunciada
+    /// para la era siguiente). Una era de OTRA cuenta no hereda la equity
+    /// anterior para el freno. Candado propio (se toma después de `estado`).
+    cuentas: Mutex<(Option<u64>, Option<u64>)>,
 }
 
 impl std::fmt::Debug for PuenteCuenta {
@@ -841,6 +845,20 @@ impl PuenteCuenta {
             publicador: OnceLock::new(),
             testigo: OnceLock::new(),
             admitido: AtomicBool::new(false),
+            cuentas: Mutex::new((None, None)),
+        }
+    }
+
+    /// CAPITAL-UNICO V4J (punto 5): la cuenta (identidad de venue y clave
+    /// pública, la misma que fija el libro) de la era que abra el próximo relevo,
+    /// o de la era vigente si aún no tiene. El host la anuncia al arrancar y
+    /// dentro del relevo (no toma el mutex de `estado`: se puede llamar desde el
+    /// cierre de [`relevar_sesion`](Self::relevar_sesion)).
+    pub fn anunciar_cuenta(&self, cuenta: u64) {
+        let mut c = self.cuentas.lock().unwrap_or_else(|p| p.into_inner());
+        c.1 = Some(cuenta);
+        if c.0.is_none() {
+            c.0 = Some(cuenta);
         }
     }
 
@@ -1001,7 +1019,21 @@ impl PuenteCuenta {
 
     fn abrir_era(&self, e: &mut Estado, sesion: u64) -> u64 {
         let era = e.era + 1;
-        let anterior = e.observacion().map(|o| o.equity).or(e.anterior);
+        // V4J (punto 5): la equity de la era anterior solo vale como evidencia
+        // conservada para el freno de la MISMA cuenta.
+        let misma_cuenta = {
+            let mut c = self.cuentas.lock().unwrap_or_else(|p| p.into_inner());
+            let misma = c.0.is_none() || c.1.is_none() || c.0 == c.1;
+            if c.1.is_some() {
+                c.0 = c.1;
+            }
+            misma
+        };
+        let anterior = if misma_cuenta {
+            e.observacion().map(|o| o.equity).or(e.anterior)
+        } else {
+            None
+        };
         // El número de socket sigue subiendo: nada de la era anterior coincide.
         let socket = e.socket + 1;
         *e = Estado {

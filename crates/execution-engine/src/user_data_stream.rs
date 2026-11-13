@@ -550,9 +550,9 @@ impl UserDataStreamer {
             #[serde(rename = "ap", default)]
             #[serde(deserialize_with = "crate::order_types::string_or_f64")]
             avg_price: f64,
-            #[serde(rename = "n")]
-            #[serde(deserialize_with = "crate::order_types::string_or_f64", default)]
-            commission: f64,
+            /// CAPITAL-UNICO V4J (punto 2): ausente, ilegible y cero explicito se distinguen.
+            #[serde(rename = "n", default)]
+            commission: Option<serde_json::Value>,
             #[serde(rename = "N")]
             commission_asset: Option<String>,
             /// MOD1/4-015: tradeId del exchange — deduplica el mismo fill
@@ -564,8 +564,10 @@ impl UserDataStreamer {
             reduce_only: bool,
             #[serde(rename = "rp", default, deserialize_with = "crate::order_types::string_or_f64")]
             realized_profit: f64,
-            #[serde(rename = "T")]
-            trade_time_ms: u64,
+            /// CAPITAL-UNICO V4J (punto 2): `T` ausente no descarta el frame (el cargo no se
+            /// pierde); ausente o 0, el fill no lleva marca (nunca prueba inclusion por marca).
+            #[serde(rename = "T", default)]
+            trade_time_ms: Option<u64>,
             #[serde(rename = "ps", default)]
             position_side: String,
             #[serde(rename = "q")]
@@ -590,6 +592,9 @@ impl UserDataStreamer {
             return;
         };
         let o = ev.o;
+        // V4J (punto 2): la marca del fill (T > 0) y su comision tal como llegaron.
+        let marca_fill = o.trade_time_ms.filter(|t| *t > 0);
+        let comision_leida = numero_del_evento(o.commission.as_ref());
         let update = TradeUpdate {
             client_order_id: o.client_order_id,
             symbol: o.symbol,
@@ -608,15 +613,25 @@ impl UserDataStreamer {
             } else {
                 o.last_filled_price
             },
-            commission: o.commission,
-            commission_asset: o.commission_asset.unwrap_or_default(),
+            commission: comision_leida.unwrap_or(0.0),
+            commission_asset: o.commission_asset.clone().unwrap_or_default(),
             trade_id: o.trade_id,
-            trade_time_ms: o.trade_time_ms,
+            trade_time_ms: o.trade_time_ms.unwrap_or(0),
+        };
+        // V4J (punto 2): la comision para el libro. `N` explicito de otro activo: atribuida sin
+        // restar del USDT. `n` ausente o ilegible: desconocida. Sin `N`, la convencion de V4I
+        // (USDT) solo con una cifra valida.
+        let comision_libro = match (comision_leida, o.commission_asset.as_deref()) {
+            (None, _) => quantum_arena::dimensionable::ComisionDeFill::Desconocida,
+            (Some(_), Some(a)) if !a.is_empty() && !a.eq_ignore_ascii_case("USDT") => {
+                quantum_arena::dimensionable::ComisionDeFill::OtroActivo
+            }
+            (Some(c), _) => quantum_arena::dimensionable::ComisionDeFill::Activo(c),
         };
         let now = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .map(|d| d.as_millis() as u64)
-            .unwrap_or(o.trade_time_ms);
+            .unwrap_or(o.trade_time_ms.unwrap_or(0));
         let new_fill = self
             .registry
             .apply_trade_update_for_accounting(&update, now);
@@ -766,15 +781,16 @@ impl UserDataStreamer {
         // credito no suma. Una liquidacion o un ADL (lo origina el exchange) veta ademas
         // la admision hasta el saldo siguiente.
         if new_fill && (o.reduce_only || close_kind.is_some() || o.realized_profit != 0.0) {
-            let comision_usdt = if update.commission_asset.is_empty()
-                || update.commission_asset.eq_ignore_ascii_case("USDT")
-            {
-                update.commission
-            } else {
-                0.0
+            // V4J (punto 2): otra moneda no resta del USDT; una comision desconocida no tiene
+            // importe que retener: veto hasta una REST pedida despues (como un cierre externo).
+            let (comision_usdt, comision_desconocida) = match comision_libro {
+                quantum_arena::dimensionable::ComisionDeFill::Activo(c) => (c, false),
+                quantum_arena::dimensionable::ComisionDeFill::OtroActivo => (0.0, false),
+                quantum_arena::dimensionable::ComisionDeFill::Desconocida => (0.0, true),
             };
             let coid = update.client_order_id.as_str();
             let externo = coid.starts_with("autoclose") || coid.starts_with("adl_autoclose");
+            let veta_cierre = externo || comision_desconocida;
             let terminal = matches!(
                 update.status,
                 OrderStatus::Filled | OrderStatus::Canceled | OrderStatus::Expired
@@ -798,14 +814,14 @@ impl UserDataStreamer {
                             update.trade_time_ms,
                             terminal,
                         );
-                        if externo {
+                        if veta_cierre {
                             libro.cierre_externo(arena);
                         }
                         drop(libro);
                     });
                     // INV-G: el veto del libro se suelta solo con una REST pedida despues de esto
                     // (el puente veta hasta entonces). Sin la puerta tomada (orden puente, puerta).
-                    if externo && aplicado.is_some() {
+                    if veta_cierre && aplicado.is_some() {
                         let _ = self.puente.evidencia_perdida(self.era);
                     }
                 }
@@ -828,29 +844,36 @@ impl UserDataStreamer {
         if es_entrada && (new_fill || orden_terminal) {
             if let Some(arena) = self.arena.as_deref() {
                 if let Some(coin_id) = quantum_arena::symbol_registry::try_index(&update.symbol) {
-                    let comision_usdt = (update.commission_asset.is_empty()
-                        || update.commission_asset.eq_ignore_ascii_case("USDT"))
-                    .then_some(update.commission);
-                    let _ = self.puente.con_era_vigente(self.era, |_| {
+                    // V4J (puntos 2 y 3): con su cantidad (`l`) y la comision tal como llego;
+                    // sin `T` el fill no lleva marca. Una comision desconocida sin reserva veta
+                    // hasta una REST pedida despues (el libro lo devuelve).
+                    let cantidad = Some(update.last_filled_qty).filter(|q| q.is_finite() && *q > 0.0);
+                    let aplicado = self.puente.con_era_vigente(self.era, |_| {
                         let mut libro = arena
                             .config
                             .entry_publication_gate
                             .lock()
                             .unwrap_or_else(|e| e.into_inner());
+                        let mut veta = false;
                         if new_fill {
-                            libro.fill_de_entrada(
+                            veta = libro.fill_de_entrada_con(
                                 arena,
                                 coin_id,
                                 coid,
                                 update.trade_id,
-                                comision_usdt,
-                                Some(update.trade_time_ms),
+                                cantidad,
+                                comision_libro,
+                                marca_fill,
                             );
                         }
-                        if orden_terminal && !coid.starts_with("mc_") {
-                            libro.marca_de_orden(arena, coin_id, coid, update.trade_time_ms);
+                        if let (true, false, Some(t)) = (orden_terminal, coid.starts_with("mc_"), marca_fill) {
+                            libro.marca_de_orden(arena, coin_id, coid, t);
                         }
+                        veta
                     });
+                    if aplicado == Some(true) {
+                        let _ = self.puente.evidencia_perdida(self.era);
+                    }
                 }
             }
         }

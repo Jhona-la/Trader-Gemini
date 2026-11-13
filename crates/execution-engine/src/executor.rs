@@ -4817,6 +4817,10 @@ impl ExecutionProvider for OrderExecutor {
         buf.push_str("&signature=");
         buf.push_str(signature);
 
+        // CAPITAL-UNICO V4J (punto 1): el cambio de apalancamiento que acompana una apertura
+        // guardada cruza la misma frontera (sin espera hasta la entrega). Fuera de una entrada
+        // guardada cruza siempre.
+        quantum_arena::dimensionable::cruzar_frontera_de_envio()?;
         let res = self.client.post_payload(buf.as_str()).await;
         match res {
             Ok((limits, text)) => {

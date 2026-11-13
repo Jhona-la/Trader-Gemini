@@ -51,14 +51,15 @@ fn anclas_del_adaptador() {
         "let aplicado = self.puente.con_era_vigente(self.era, |_| {",
         "libro.fill_de_cierre(",
         "libro.cierre_externo(arena);",
-        "if externo && aplicado.is_some() {",
+        "if veta_cierre && aplicado.is_some() {",
         "let _ = self.puente.evidencia_perdida(self.era);",
         "let orden_terminal = matches!(",
-        "let _ = self.puente.con_era_vigente(self.era, |_| {",
-        "libro.fill_de_entrada(",
-        "Some(update.trade_time_ms),",
-        "if orden_terminal && !coid.starts_with(\"mc_\") {",
-        "libro.marca_de_orden(arena, coin_id, coid, update.trade_time_ms);",
+        "let aplicado = self.puente.con_era_vigente(self.era, |_| {",
+        // V4J (punto 2): con cantidad y comision tal como llegan; sin `T`, sin marca.
+        "libro.fill_de_entrada_con(",
+        "marca_fill,",
+        "if let (true, false, Some(t)) = (orden_terminal, coid.starts_with(\"mc_\"), marca_fill) {",
+        "libro.marca_de_orden(arena, coin_id, coid, t);",
     ]);
     // Host: funding con testigo; confirmaciones con la marca terminal; cuenta; evidencia.
     orden(HOST, &[
@@ -73,7 +74,7 @@ fn anclas_del_adaptador() {
     assert_eq!(texto(HOST).matches("entry_executor.registry().marca_terminal(&client_id)").count(), 2, "las dos confirmaciones usan la marca terminal");
     assert!(!texto(HOST).contains("map(|o| o.marca_fill_ms)"), "una confirmacion vuelve a usar la marca del ACK");
     orden(OMS, &[
-        ".vincular_orden(clave, request.client_order_id);",
+        ".vincular_orden_con_cantidad(clave, request.client_order_id, request.quantity);",
         "async fn configure_leverage(&self, symbol: &str, leverage: u32) -> Result<(), String> {",
         "self.revalidar_capital()?;",
         "self.transport.configure_leverage(symbol, leverage).await",
@@ -81,9 +82,9 @@ fn anclas_del_adaptador() {
         "self.revalidar_capital()?;",
         "let frontera = quantum_arena::dimensionable::FronteraDeEnvio::nueva();",
         "self.transport.submit_entry(request).await",
-        "let vigente = self.revalidar_capital();",
+        // V4J (punto 1): el cruce ejecuta el validador de la sesion y del libro.
         "if !frontera.cruzada() {",
-        "frontera.paso(vigente.is_ok(), || std::future::Future::poll(envio.as_mut(), cx))",
+        "frontera.paso(&validar, || std::future::Future::poll(envio.as_mut(), cx))",
     ]);
     orden(NUCLEO, &[
         "} else if was_exchange_confirmed && net_realized_pnl < 0.0 {",
@@ -665,12 +666,12 @@ fn v4i_qoder_cierre_local_solo_con_cantidad_ejecutada() {
 
 // ---------------------------------------------------------------- corte de cuenta (anadido B)
 
-/// Un cargo sin marca solo sale con un corte conciliado: saldo base, todos los movimientos de la
-/// ventana por su identidad y el saldo del corte cuadran EXACTO. Sin cuadrar, en la frontera de la
-/// ventana o con un corte que no es el saldo vigente, el cargo sigue retenido.
+/// Un cargo sin marca no sale con el saldo siguiente. V4I lo soltaba con un corte de cuenta
+/// conciliado; V4J (punto 4, salida A4b de `qra_v4j_criterios.md`) retiro ese corte del API
+/// productivo: la misma secuencia queda retenida con cualquier foto posterior (ninguna marca, por
+/// mayor que sea, prueba la inclusion de un cargo sin la suya). Ver `capital_v4j_corte_contract.rs`.
 #[test]
 fn v4i_corte_de_cuenta_conciliado_unica_salida_sin_marca() {
-    use quantum_arena::dimensionable::{a_e8, CorteDeCuenta, CorteRechazado, MovimientoDeCuenta, TipoMovimiento};
     let arena = arena_activa();
     {
         let mut l = libro(&arena);
@@ -682,22 +683,6 @@ fn v4i_corte_de_cuenta_conciliado_unica_salida_sin_marca() {
         l.saldo_aceptado(&arena, 99.75, Some(300));
     }
     assert_eq!(dim(&arena), 99.5, "el cargo sin marca sigue retenido con el saldo siguiente");
-    let mov = |id, importe: f64, hora| MovimientoDeCuenta { id, tipo: TipoMovimiento::Comision, importe_e8: a_e8(importe).unwrap(), hora };
-    let corte = |movs: Vec<MovimientoDeCuenta>, base| CorteDeCuenta {
-        saldo_base_e8: a_e8(100.0).unwrap(),
-        marca_base: base,
-        saldo_corte_e8: a_e8(99.75).unwrap(),
-        marca_corte: 300,
-        movimientos: movs,
-    };
-    let mut l = libro(&arena);
-    assert_eq!(l.conciliar(&arena, &corte(vec![mov(77, -0.2, 250)], 100)), Err(CorteRechazado::NoCuadra));
-    assert_eq!(l.conciliar(&arena, &corte(vec![mov(77, -0.25, 100)], 100)), Err(CorteRechazado::IntervaloAmbiguo));
-    let mut viejo = corte(vec![mov(77, -0.25, 250)], 100);
-    viejo.marca_corte = 299;
-    assert_eq!(l.conciliar(&arena, &viejo), Err(CorteRechazado::NoEsElSaldoVigente));
-    drop(l);
-    assert_eq!(dim(&arena), 99.5, "un corte no acreditado libero el cargo");
-    assert!(libro(&arena).conciliar(&arena, &corte(vec![mov(77, -0.25, 250)], 100)).unwrap() > 0);
-    assert_eq!(dim(&arena), 99.75, "el corte conciliado no libero el cargo");
+    libro(&arena).saldo_aceptado(&arena, 99.75, Some(10_000));
+    assert_eq!(dim(&arena), 99.5, "una marca mayor cualquiera libero el cargo sin marca");
 }

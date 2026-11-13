@@ -276,7 +276,20 @@ pub fn archivo_marca_definicion() -> String {
 }
 
 /// Contenido de la marca de la definición.
-pub const MARCA_DEFINICION: &str = "capital = walletBalance de USDT (CAPITAL-UNICO V2)\n";
+///
+/// CAPITAL-UNICO V4J (punto 5): la marca nombra la MAGNITUD del pico. Desde
+/// V4J el pico es el máximo de la equity conservadora del puente; antes de V4J
+/// se registraba con el mínimo entre la capacidad del libro y la equity, que
+/// queda por debajo. Un pico guardado con otra marca (o sin ella) es de
+/// procedencia incierta: no se adopta por coincidencia numérica (ver
+/// [`decidir_arranque_pico`]).
+pub const MARCA_DEFINICION: &str =
+    "capital = equity USDT conservadora del puente; pico de esa magnitud (CAPITAL-UNICO V4J)\n";
+
+/// V4J (punto 5): la marca existe y nombra la magnitud vigente.
+pub fn marca_vigente(ruta: &std::path::Path) -> bool {
+    std::fs::read_to_string(ruta).is_ok_and(|t| t == MARCA_DEFINICION)
+}
 
 /// Escribe la marca de la definición (temporal y renombrado, como el pico).
 pub fn guardar_marca_definicion(ruta: &std::path::Path) -> std::io::Result<()> {
@@ -342,7 +355,19 @@ pub struct ArranquePico {
 ///   existan se nombran en una sola línea de aviso.
 pub fn decidir_arranque_pico(rutas: &RutasPico) -> ArranquePico {
     let avisos = aviso_picos_ignorados(&rutas.ajenos).into_iter().collect();
-    let carga = leer_pico(&rutas.pico);
+    let carga = match leer_pico(&rutas.pico) {
+        // V4J (punto 5): un pico legible sin la marca de la magnitud vigente es
+        // de procedencia incierta (un pico legado del mínimo con la capacidad, o
+        // sin marca). Se trata como ilegible: no entran posiciones nuevas y el
+        // archivo no se sobrescribe hasta que el operador lo migre (marca
+        // vigente tras verificarlo) o lo retire. Nunca se adopta por su cifra.
+        CargaPico::Leido(p) if !marca_vigente(&rutas.marca) => CargaPico::Ilegible(format!(
+            "{}: pico {p} de procedencia incierta (sin la marca de la magnitud vigente en {}); migrarlo o retirarlo",
+            rutas.pico.display(),
+            rutas.marca.display()
+        )),
+        otra => otra,
+    };
     let rearmar_stops = matches!(carga, CargaPico::Ausente) && rutas.marca.exists();
     ArranquePico {
         carga,
@@ -380,10 +405,28 @@ pub fn aviso_picos_ignorados(rutas: &[std::path::PathBuf]) -> Option<String> {
 /// apaga inmediatamente el sistema por caída de fondos.
 /// Si el exchange no ha sido observado (f64::NAN en backtest o inicio sin conexión),
 /// se utiliza el capital del arena.
+///
+/// CAPITAL-UNICO V4J (punto 5, `qra_plano_del_freno.md`): con el libro del
+/// dimensionable activo (`dimensionable_derivado`), `unified_capital` es la
+/// CAPACIDAD de entrada (saldo menos reservas y débitos aún no incluidos): una
+/// reserva o un débito local no son una caída del patrimonio. El freno y el
+/// pico miden entonces la equity conservadora que acepta y conserva el puente
+/// (la que el inmune publica en `capital_exchange`); sin ella, el valor no es
+/// finito (ausencia, nunca la capacidad del libro): no escribe pico y el
+/// freno lo distingue antes de medir. Cero y deuda observados son cifras
+/// válidas. Sin activar (acumulador: backtest, replay, simulación), el mínimo
+/// de siempre. No cambia ningún umbral: sólo la magnitud que se mide.
 pub fn capital_del_freno(arena: &quantum_arena::GlobalArena) -> f64 {
     use std::sync::atomic::Ordering::Relaxed;
-    let capital = arena.unified_capital.load(Relaxed);
     let exchange = arena.capital_exchange.load(Relaxed);
+    if arena
+        .config
+        .dimensionable_derivado
+        .load(std::sync::atomic::Ordering::Acquire)
+    {
+        return if exchange.is_finite() { exchange } else { f64::NAN };
+    }
+    let capital = arena.unified_capital.load(Relaxed);
     if exchange.is_finite() {
         capital.min(exchange)
     } else {
@@ -781,6 +824,75 @@ pub fn freno_duro(arena: &quantum_arena::GlobalArena, pico: f64, capital: f64) -
         caida_capital,
         tope_capital,
     }
+}
+
+/// CAPITAL-UNICO V4J (punto 5, F8 de `qra_plano_del_freno.md`): un flujo
+/// externo de la cuenta (depósito, retiro o traspaso) visto por su identidad
+/// del exchange (`tranId`) y la revisión de la evidencia en que se vio. No
+/// existe política de ajuste del pico por flujos: el pico y la protección se
+/// conservan (la caída del patrimonio se sigue midiendo y puede disparar), y el
+/// flujo queda registrado como INCIERTO para la atribución del disparo: nunca
+/// se etiqueta como pérdida de mercado probada ni rearma el freno.
+#[derive(Debug, Default, Clone)]
+pub struct FlujosExternos {
+    vistos: std::collections::HashMap<u64, (f64, u64)>,
+    neto_incierto: f64,
+}
+
+/// Lo que pasó al registrar un flujo.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RegistroDeFlujo {
+    Nuevo,
+    /// Mismo `tranId` (replay o repetición de la consulta): no cuenta otra vez.
+    Repetido,
+    /// Importe no finito o cero: no es un flujo.
+    Invalido,
+}
+
+/// De dónde viene la caída medida, para la línea del disparo.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum OrigenDeLaCaida {
+    /// Ningún flujo externo sin acreditar en el ámbito: caída del patrimonio.
+    Patrimonio,
+    /// Hay flujos externos sin política de ajuste: la caída puede ser un retiro.
+    FlujoIncierto,
+}
+
+impl FlujosExternos {
+    pub fn registrar(&mut self, id: u64, importe: f64, revision: u64) -> RegistroDeFlujo {
+        if !(importe.is_finite() && importe != 0.0) {
+            return RegistroDeFlujo::Invalido;
+        }
+        if self.vistos.contains_key(&id) {
+            return RegistroDeFlujo::Repetido;
+        }
+        self.vistos.insert(id, (importe, revision));
+        self.neto_incierto += importe;
+        RegistroDeFlujo::Nuevo
+    }
+
+    /// Suma de los flujos registrados (sin política de ajuste: todos inciertos).
+    pub fn neto_incierto(&self) -> f64 {
+        self.neto_incierto
+    }
+
+    pub fn cantidad(&self) -> usize {
+        self.vistos.len()
+    }
+
+    pub fn origen_de_la_caida(&self) -> OrigenDeLaCaida {
+        if self.vistos.is_empty() {
+            OrigenDeLaCaida::Patrimonio
+        } else {
+            OrigenDeLaCaida::FlujoIncierto
+        }
+    }
+}
+
+/// V4J (F8): tipos del historial de ingresos de Binance USD-M que son flujos
+/// externos de la cuenta (no resultado de operar).
+pub fn es_flujo_externo(tipo: &str) -> bool {
+    matches!(tipo, "TRANSFER" | "INTERNAL_TRANSFER" | "CROSS_COLLATERAL_TRANSFER" | "COIN_SWAP_DEPOSIT" | "COIN_SWAP_WITHDRAW")
 }
 
 #[cfg(test)]

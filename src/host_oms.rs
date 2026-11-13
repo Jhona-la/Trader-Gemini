@@ -496,6 +496,47 @@ impl OmsSession {
         }
     }
 
+    /// CAPITAL-UNICO V4J (punto 1): el validador del cruce de la frontera del transporte. Con el
+    /// estado de la sesion tomado y, sin soltarlo, la puerta del libro (el orden de candados de
+    /// `replace_executor` y `ocupada`): testigo de la sesion vigente, sesion lista y publicacion no
+    /// pausada (un refresco o un relevo), veto del puente y, con reserva, veto del libro, revision
+    /// e importe. Los dos candados se sueltan al devolver: ninguno se sostiene durante la red.
+    pub fn entrega_vigente(
+        &self,
+        token: &SessionToken,
+        arena: &GlobalArena,
+        reserva: Option<quantum_arena::dimensionable::ClaveReserva>,
+    ) -> Result<(), String> {
+        let state = self.state.lock().unwrap_or_else(|e| e.into_inner());
+        if !self.token_is_current(state.generation, token) {
+            return Err("stale executor session".into());
+        }
+        if !self.ready.load(Ordering::Acquire)
+            || arena
+                .config
+                .entry_publication_paused
+                .load(Ordering::Acquire)
+        {
+            return Err("session is refreshing or unreconciled".into());
+        }
+        let libro = arena
+            .config
+            .entry_publication_gate
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        if arena.capital_incompleto.load(Ordering::Acquire) {
+            return Err("account balance not current for this session".into());
+        }
+        if let Some(clave) = reserva {
+            if !libro.envio_valido_en(arena, clave) {
+                return Err("capital revision changed since the decision".into());
+            }
+        }
+        drop(libro);
+        drop(state);
+        Ok(())
+    }
+
     fn admit_transport<'a>(
         &'a self,
         token: &SessionToken,
@@ -815,13 +856,14 @@ impl OmsSession {
         reserva: Option<quantum_arena::dimensionable::ClaveReserva>,
     ) -> Result<(), String> {
         // V4I (INV-E): la orden que respalda la reserva, para atribuirle cada fill del stream.
+        // V4J (punto 3): con su cantidad (la misma unidad que la `l` de cada fill).
         if let Some(clave) = reserva {
             arena
                 .config
                 .entry_publication_gate
                 .lock()
                 .unwrap_or_else(|e| e.into_inner())
-                .vincular_orden(clave, request.client_order_id);
+                .vincular_orden_con_cantidad(clave, request.client_order_id, request.quantity);
         }
         let guarded = GuardedEntry {
             session: self,
@@ -1057,29 +1099,34 @@ impl<T: EntryTransport> EntryTransport for GuardedEntry<'_, T> {
         let _permit = self.session.admit_transport(self.token, self.arena)?;
         // V4I (INV-F, punto 5c): una propuesta revocada no configura apalancamiento.
         self.revalidar_capital()?;
-        self.transport.configure_leverage(symbol, leverage).await
+        // V4J (punto 1): el POST de /leverage tambien cruza la frontera con el validador.
+        let frontera = quantum_arena::dimensionable::FronteraDeEnvio::nueva();
+        let validar = || self.session.entrega_vigente(self.token, self.arena, self.reserva);
+        let mut cambio = std::pin::pin!(async { self.transport.configure_leverage(symbol, leverage).await });
+        std::future::poll_fn(|cx| frontera.paso(&validar, || std::future::Future::poll(cambio.as_mut(), cx))).await
     }
 
     async fn submit_entry(&self, request: &EntryRequest<'_>) -> Result<(), String> {
         // Leverage confirmation may have awaited while OMS was revoked or replaced.
         let _permit = self.session.admit_transport(self.token, self.arena)?;
         self.revalidar_capital()?;
-        // V4I (INV-F): la frontera es la entrega al transporte, no esta linea. Cada paso de la
-        // entrega revalida (veto del puente, veto del libro, revision e importe) antes de ceder
-        // al ejecutor; hasta que el ejecutor entrega su primer POST, una revision vencida
-        // abandona la entrega (0 llamadas); despues, cada POST de apertura siguiente (el MARKET
-        // del remanente maker) pasa por `cruzar_frontera_de_envio`. La puerta se toma y se
-        // suelta dentro de cada paso: ningun candado durante la red.
+        // V4I (INV-F): la frontera es la entrega al transporte, no esta linea. Hasta que el
+        // ejecutor entrega su primer POST, una revision vencida al empezar un paso abandona la
+        // entrega (0 llamadas). V4J (punto 1): cada cruce de la frontera EJECUTA el validador
+        // (`OmsSession::entrega_vigente`: sesion, vetos, revision e importe, bajo la sesion y la
+        // puerta), asi que un cambio dentro del mismo `poll`, despues de la revalidacion del
+        // inicio del paso, tambien retiene el POST. Los candados se sueltan en el cruce: ninguno
+        // durante la red.
         let frontera = quantum_arena::dimensionable::FronteraDeEnvio::nueva();
+        let validar = || self.session.entrega_vigente(self.token, self.arena, self.reserva);
         let mut envio = std::pin::pin!(async { self.transport.submit_entry(request).await });
         std::future::poll_fn(|cx| {
-            let vigente = self.revalidar_capital();
-            if let Err(e) = &vigente {
-                if !frontera.cruzada() {
-                    return std::task::Poll::Ready(Err(e.clone()));
+            if !frontera.cruzada() {
+                if let Err(e) = self.revalidar_capital() {
+                    return std::task::Poll::Ready(Err(e));
                 }
             }
-            frontera.paso(vigente.is_ok(), || std::future::Future::poll(envio.as_mut(), cx))
+            frontera.paso(&validar, || std::future::Future::poll(envio.as_mut(), cx))
         })
         .await
     }

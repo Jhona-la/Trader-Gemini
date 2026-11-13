@@ -751,6 +751,11 @@ impl RiskEngine {
         // sitio y con el mismo rechazo; sólo cambia el orden de las cargas.
         let capital_vetado = arena.capital_incompleto.load(Ordering::Acquire);
         let current_capital = arena.unified_capital.load(Ordering::Relaxed);
+        // CAPITAL-UNICO V4J (punto 5): con el libro derivado, la cache del pico es la del ambito
+        // vigente del arena ANTES de validar (una cache vieja no decide ni bloquea para siempre).
+        if arena.config.dimensionable_derivado.load(Ordering::Acquire) {
+            self.peak_capital = arena.pico_capital.load(Ordering::Acquire);
+        }
         // FMT-212: validate before clamps/comparisons can turn an unknown
         // probability, peak or configuration into permission (or a panic).
         let clamp_min = arena.config.kelly_clamp_min.load(Ordering::Relaxed);
@@ -791,6 +796,20 @@ impl RiskEngine {
         // pico con el arena: en papel sobre mainnet, ganar en papel se veía en
         // el host como una caída del saldo real.
         let capital_freno = crate::drawdown::capital_del_freno(arena);
+        // CAPITAL-UNICO V4J (punto 5): con el libro derivado, el freno mide la equity del
+        // puente (ver `capital_del_freno`) y el pico es el del ámbito vigente del arena: la
+        // caché de este motor se toma de él (nunca reintroduce el pico de otra cuenta, venue o
+        // definición), y mientras el ámbito no tenga su primer pico (lo escribe el inmune con
+        // la equity de ese ámbito) este escritor no lo inicia.
+        let derivado = arena.config.dimensionable_derivado.load(Ordering::Acquire);
+        if derivado {
+            self.peak_capital = arena.pico_capital.load(Ordering::Acquire);
+        }
+        let capital_freno = if derivado && !(self.peak_capital > 0.0) {
+            f64::NAN
+        } else {
+            capital_freno
+        };
         self.peak_capital = crate::drawdown::registrar_pico(
             &arena.pico_capital,
             capital_freno.max(self.peak_capital),
