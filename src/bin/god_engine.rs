@@ -1575,6 +1575,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .iter()
         .map(|s| quantum_arena::symbol_registry::get_official_binance_spec(&s.to_uppercase()))
         .collect();
+    // DEMO_TEL (T1): antes de que `update_registry` consuma el vector.
+    for spec in &boot_specs {
+        telemetry_server::telemetry_log!(
+            "DEMO_TEL event=SYMBOL_SPEC symbol={} min_notional={:.4} tick_size={:.8} step_size={:.8}",
+            spec.symbol, spec.min_notional, spec.tick_size, spec.step_size
+        );
+    }
     quantum_arena::symbol_registry::update_registry(boot_specs);
     telemetry_server::telemetry_log!(
         "🧬 [B3.38] Identidad registrada: {} símbolos del bootloader en orden de slot (core≡handler)",
@@ -2415,6 +2422,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     impl execution_engine::user_data_stream::AccountSink for CapitalBridgeSink {
         fn on_capital(&self, usdt: f64) {
             audit_engine::telemetry::update_dynamic_capital(usdt);
+            telemetry_server::telemetry_log!(
+                "DEMO_TEL event=CAPITAL_UPDATE ts={} wallet_balance={:.4}",
+                std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_millis() as u64, usdt
+            );
             // F2: permite propagar 0.0 observado de la cuenta real al puente de capital
             if usdt >= 0.0 && usdt.is_finite() {
                 self.unified_capital
@@ -3158,6 +3169,27 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             "🚨 [SISTEMA INMUNE] ACTIVADO: {}. Kill-switch ARMADO + aplanado total.",
                             reason
                         );
+                        // DEMO_TEL (T1, IMMUNE_TRIGGER): solo registro; el freno y el pico no
+                        // se tocan (T7). Se anotan tal como estan el capital que mide el freno
+                        // (`cap`), el pico y el plano de cada uno.
+                        let ts_imm = std::time::SystemTime::now()
+                            .duration_since(std::time::UNIX_EPOCH)
+                            .unwrap_or_default()
+                            .as_millis() as u64;
+                        let balance_stream = arena_imm.unified_capital.load(Ordering::Relaxed);
+                        let balance_rest = if cap_exchange.is_finite() { cap_exchange } else { balance_stream };
+                        let drop_pct = freno.caida_capital * 100.0;
+                        let threshold_pct = freno.tope_capital * 100.0;
+                        let sym_imm = arena_imm
+                            .coins
+                            .iter()
+                            .position(|c| c.positions.is_any_open())
+                            .and_then(quantum_arena::symbol_registry::try_symbol)
+                            .unwrap_or_else(|| "ALL".to_string());
+                        telemetry_server::telemetry_log!(
+                            "DEMO_TEL event=IMMUNE_TRIGGER ts={} peak_capital={:.4} balance_rest={:.4} balance_stream={:.4} drop_pct={:.4} threshold_pct={:.4} symbol={} freno_capital={:.4} freno_capital_plano=min(arena.unified_capital,arena.capital_exchange) peak_plano=registrar_pico(arena.pico_capital,freno_capital) balance_rest_plano=puente.equity_del_freno balance_stream_plano=arena.unified_capital",
+                            ts_imm, peak_capital, balance_rest, balance_stream, drop_pct, threshold_pct, sym_imm, cap
+                        );
                         arena_imm.kill_switch_active.store(true, Ordering::Relaxed);
                         let executor = exec_imm.load_full();
                         executor.trigger_kill_switch();
@@ -3755,7 +3787,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         let a = per.entry(e.symbol.clone()).or_default();
                         match e.income_type.as_str() {
                             "REALIZED_PNL" => a.registros.push((e.time, e.income)),
-                            "FUNDING_FEE" => a.funding += e.income,
+                            "FUNDING_FEE" => {
+                                a.funding += e.income;
+                                telemetry_server::telemetry_log!(
+                                    "DEMO_TEL event=FUNDING ts={} symbol={} income={:.8} asset={} tran_id={}",
+                                    e.time, e.symbol, e.income, e.asset, e.tran_id
+                                );
+                            }
                             "COMMISSION" => {
                                 if let Some(cost) = quantum_engine::host_oms::signed_commission_cost(e.income) {
                                     a.fees += cost;
@@ -6514,6 +6552,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 client_order_id: &client_id,
                                 route,
                             };
+                            // DEMO_TEL (T1): intento de envío de entrada, una vez por orden (no por tick).
+                            let ts = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_millis() as u64;
+                            telemetry_server::telemetry_log!(
+                                "DEMO_TEL event=ORDER_SEND ts={} symbol={} is_long={} qty={:.6} client_order_id={} lev={} route={:?}",
+                                ts, parsed_sym_str, final_is_long, final_qty, client_id, effective_leverage, route
+                            );
                             // V4H (INV-F): el guardia revalida la reserva contra el libro
                             // justo antes de cada llamada al exchange.
                             let entry_result = entry_oms.dispatch_entry_reservada(
@@ -7008,6 +7052,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         total_unrealized_pnl += coin.metrics.pnl_unrealized.load(Ordering::Relaxed);
                     }
                 }
+                // DEMO_TEL (T1): dentro del bloque de cada 100 mensajes, no por tick.
+                let open_positions = engine_real.arena.coins.iter().filter(|c| c.positions.is_any_open()).count();
+                let ts_now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_millis() as u64;
+                telemetry_server::telemetry_log!(
+                    "DEMO_TEL event=UNREALIZED_PNL ts={} total_upnl={:.6} open_positions={}",
+                    ts_now, total_unrealized_pnl, open_positions
+                );
 
                 let win_rate = if total_trades > 0 { (total_wins as f64 / total_trades as f64) * 100.0 } else { 0.0 };
 
@@ -7163,11 +7214,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             match rt_handle_for_thread.block_on(executor.flatten_all_positions()) {
                 // I-10: el primer número son cancelaciones de órdenes, no
                 // posiciones (el aviso decía «cerradas» y «ya planas»).
-                Ok((cancelaciones, cerradas)) => telemetry_server::telemetry_log!(
-                    "🛑 [SHUTDOWN] Flatten-all completado: {} posiciones cerradas, {} cancelaciones de órdenes.",
-                    cerradas,
-                    cancelaciones
-                ),
+                Ok((cancelaciones, cerradas)) => {
+                    telemetry_server::telemetry_log!(
+                        "🛑 [SHUTDOWN] Flatten-all completado: {} posiciones cerradas, {} cancelaciones de órdenes.",
+                        cerradas,
+                        cancelaciones
+                    );
+                    let ts = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_millis() as u64;
+                    telemetry_server::telemetry_log!(
+                        "DEMO_TEL event=AUDIT_SUMMARY ts={} status=ORDERLY_SHUTDOWN closed_positions={} cancelled_orders={}",
+                        ts, cerradas, cancelaciones
+                    );
+                }
                 Err(e) => telemetry_server::telemetry_log!(
                     "🛑 [SHUTDOWN] Flatten-all con error: {:?} — el arranque próximo reconciliará.",
                     e

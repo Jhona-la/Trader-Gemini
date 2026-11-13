@@ -635,6 +635,10 @@ impl UserDataStreamer {
                 update.orig_qty,
                 update.status
             );
+            println!(
+                "DEMO_TEL event=FILL ts={} symbol={} side={} price={:.6} qty={:.6} cum_qty={:.6} client_order_id={} trade_id={} is_maker={} status={:?}",
+                update.trade_time_ms, update.symbol, update.side, update.last_filled_price, update.last_filled_qty, update.cumulative_filled_qty, update.client_order_id, update.trade_id, o.is_maker, update.status
+            );
         }
         // B3.7 — CONTABILIDAD DE CIERRES POR BRACKET: todo fill de pierna de
         // salida (STOP_MARKET/TAKE_PROFIT_MARKET — convención-independiente)
@@ -758,6 +762,10 @@ impl UserDataStreamer {
                 update.last_filled_price,
                 o.is_maker,
                 update.commission,
+            );
+            println!(
+                "DEMO_TEL event=TRADE_FEE ts={} symbol={} client_order_id={} fee={:.8} fee_asset={} is_maker={}",
+                update.trade_time_ms, update.symbol, update.client_order_id, update.commission, update.commission_asset, o.is_maker
             );
         }
 

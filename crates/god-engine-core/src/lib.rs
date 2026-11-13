@@ -5474,6 +5474,11 @@ impl GodEngineCore {
                             event_time_ms
                         );
                     }
+                    // DEMO_TEL (T1): una vez por cierre, no por tick.
+                    telemetry_server::telemetry_log!(
+                        "DEMO_TEL event=TRADE_CLOSE ts={} close_id={} symbol={} slot={} dir={} entry_price={:.6} exit_price={:.6} gross_pnl={:.6} reason={}",
+                        event_time_ms, self.diag_close_total, sym, slot_idx, if is_long { "LONG" } else { "SHORT" }, entry, exit_price, gross_pnl, reason
+                    );
 
                     // Use the physics maker/taker rate on the final recorded
                     // notional, including its adverse exit-price movement.
@@ -10717,6 +10722,11 @@ impl GodEngineCore {
                                         event_time_ms
                                     );
                                 }
+                                    // DEMO_TEL (T1): una vez por orden de apertura admitida, no por tick.
+                                    telemetry_server::telemetry_log!(
+                                        "DEMO_TEL event=DECISION_MID ts={} signal_id={} symbol={} slot={} dir={} mid={:.6} bid={:.6} ask={:.6}",
+                                        event_time_ms, self.diag_opened, sym, target_pos_slot, if is_long { "LONG" } else { "SHORT" }, mid_price, bid, ask
+                                    );
                             } else {
                                 self.diag_margin_drops += 1;
                                 if self.trazas_diagnosticas && self.diag_margin_drops <= 100 {
