@@ -524,7 +524,7 @@ impl OmsSession {
             .entry_publication_gate
             .lock()
             .unwrap_or_else(|e| e.into_inner());
-        if arena.capital_incompleto.load(Ordering::Acquire) {
+        if quantum_arena::dimensionable::LibroDimensionable::veto_de_admision(arena) {
             return Err("account balance not current for this session".into());
         }
         if let Some(clave) = reserva {

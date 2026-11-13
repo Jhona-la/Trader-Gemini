@@ -429,7 +429,8 @@ fn p13_el_lazo_inmune_no_espera_un_get() {
     let inicio = host.find("let mut latched = false;").expect("lazo inmune");
     let fin = inicio + host[inicio..].find("freno_duro(&arena_imm").expect("freno");
     assert!(!host[inicio..fin].contains("fetch_account_lectura()"), "el lazo del inmune espera un GET");
-    assert!(host[inicio..fin].contains("puente_imm.equity_del_freno()"));
+    // V4J (punto 5): la lectura de la equity del freno se hace bajo el mutex del puente.
+    assert!(host[inicio..fin].contains("puente_imm.con_equity_del_freno("));
     // El resincronizador es otra tarea, con tope por GET.
     let rs = host.split("RESINCRONIZADOR del puente").nth(1).expect("resincronizador");
     let rs = &rs[..rs.find("let mut latched = false;").unwrap()];

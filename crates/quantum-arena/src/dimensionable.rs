@@ -464,6 +464,11 @@ impl LibroDimensionable {
         self.entrante = Some((era, sesion));
     }
 
+    /// V4J (punto 1): el veto del puente sobre la admision de entradas (lo lee el cruce).
+    pub fn veto_de_admision(arena: &GlobalArena) -> bool {
+        arena.capital_incompleto.load(Ordering::Acquire)
+    }
+
     /// V4J: la cuenta fijada (para el host, al relevar).
     pub fn cuenta(&self) -> Option<u64> {
         self.cuenta

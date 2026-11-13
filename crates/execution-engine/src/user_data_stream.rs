@@ -784,10 +784,11 @@ impl UserDataStreamer {
         if new_fill && (o.reduce_only || close_kind.is_some() || o.realized_profit != 0.0) {
             // V4J (punto 2): otra moneda no resta del USDT; una comision desconocida no tiene
             // importe que retener: veto hasta una REST pedida despues (como un cierre externo).
-            let (comision_usdt, comision_desconocida) = match comision_libro {
-                quantum_arena::dimensionable::ComisionDeFill::Activo(c) => (c, false),
-                quantum_arena::dimensionable::ComisionDeFill::OtroActivo => (0.0, false),
-                quantum_arena::dimensionable::ComisionDeFill::Desconocida => (0.0, true),
+            let comision_desconocida = matches!(comision_libro, quantum_arena::dimensionable::ComisionDeFill::Desconocida);
+            let comision_usdt = if !comision_desconocida && update.commission_asset.eq_ignore_ascii_case("USDT") {
+                update.commission
+            } else {
+                0.0
             };
             let coid = update.client_order_id.as_str();
             let externo = coid.starts_with("autoclose") || coid.starts_with("adl_autoclose");
@@ -815,7 +816,9 @@ impl UserDataStreamer {
                             update.trade_time_ms,
                             terminal,
                         );
-                        if veta_cierre {
+                        if externo {
+                            libro.cierre_externo(arena);
+                        } else if comision_desconocida {
                             libro.cierre_externo(arena);
                         }
                         drop(libro);

@@ -500,7 +500,8 @@ fn v2_contrato_de_fuente_del_host() {
     // V4E (P1-c): el puente nace ligado a la sesion OMS (`con_sesion`).
     assert_eq!(host.matches("PuenteCuenta::con_sesion(").count(), 1, "un solo puente por proceso");
     assert_eq!(host.matches(".with_puente(Arc::clone(&puente_cuenta))").count(), 2, "demo y mainnet");
-    assert!(host.contains("puente_imm.equity_del_freno()"), "el freno usa la equity");
+    // V4J (punto 5): la lectura de la equity del freno se hace bajo el mutex del puente.
+    assert!(host.contains("puente_imm.con_equity_del_freno("), "el freno usa la equity");
     // V4E (P1-c): la era nueva va ligada a la sesion OMS publicada.
     // V4F (P1-c): en el mismo paso que el relevo del OMS.
     assert!(host.contains("puente_cuenta.relevar_sesion("));
