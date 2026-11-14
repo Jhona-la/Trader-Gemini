@@ -382,6 +382,29 @@ class CargoSemaforoTests(unittest.TestCase):
         self.assertEqual(r.returncode, 78, r.stdout + r.stderr)
         self.assertIn("39.94 GB < umbral 40 GB", r.stderr)
 
+    def test_borde_se_compara_sin_redondear(self):
+        # NO APTO de COPILOT sobre b82d283: se comparaba el libre YA redondeado
+        # a 2 decimales. 39.058.593 KiB = 39.995.999.232 B = 39,996 GB, que se
+        # escribe «40.00» pero está bajo 40 GB: debe bloquear (78, DISCO-BAJO).
+        r = self.correr_aislado(self.bin_aislado(df=self.df_falso(39058593)),
+                                "check", SEMAFORO_SOLO_DECIDIR=1)
+        self.assertEqual(r.returncode, 78, r.stdout + r.stderr)
+        self.assertIn("DISCO-BAJO", r.stderr)
+        self.assertIn("40.00 GB < umbral 40 GB", r.stderr)
+        self.assertIn("DISCO-BAJO", self.bitacora.read_text(encoding="utf-8"))
+        # Gemela justo por encima: 39.062.501 KiB = 40.000.001.024 B: pasa.
+        self.bitacora.unlink()
+        r = self.correr_aislado(self.bin_aislado(df=self.df_falso(39062501)),
+                                "check", SEMAFORO_SOLO_DECIDIR=1)
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertIn("DISCO_LIBRE_GB=40.00", r.stdout)
+        self.assertNotIn("DISCO-BAJO", r.stdout + r.stderr)
+        # La costura con decimales se compara tal cual.
+        r = self.correr_aislado(self.bin_aislado(), "check", SEMAFORO_SOLO_DECIDIR=1,
+                                SEMAFORO_DISCO_GB="39.996")
+        self.assertEqual(r.returncode, 78, r.stdout + r.stderr)
+        self.assertIn("39.996 GB < umbral 40 GB", r.stderr)
+
     def test_liberacion_anota_disco_y_avisa_si_quedo_bajo(self):
         # GD-04: el build ya compilado no se bloquea; la línea LIBERA dice el
         # libre al liberar y que quedó bajo el umbral.

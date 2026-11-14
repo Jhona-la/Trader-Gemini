@@ -123,16 +123,22 @@ fi
 # Libre del sistema de archivos que contiene la raíz, en GB decimales, o
 # «desconocida» ante CUALQUIER fallo de la medición (df ausente, código
 # distinto de 0, salida ilegible). Sólo lee: no escribe nada.
+# Imprime DOS campos: «<exacto> <para mostrar>». El exacto es el que se
+# compara con el umbral: con df son los bytes exactos (KiB * 1024, aritmética
+# entera) pasados a GB con sus 9 decimales, sin redondeo; con la costura
+# SEMAFORO_DISCO_GB es el valor tal cual. El de mostrar es el exacto
+# redondeado a 2 decimales (df) o la costura tal cual: sólo para mensajes y
+# bitácora. Antes se comparaba el redondeado y 39,996 GB («40.00») pasaba.
 disco_libre_gb() {
   if [ -n "${SEMAFORO_DISCO_GB+x}" ]; then
     if disco_conocido "$SEMAFORO_DISCO_GB"; then
-      echo "$SEMAFORO_DISCO_GB"
+      echo "$SEMAFORO_DISCO_GB $SEMAFORO_DISCO_GB"
     else
       echo "desconocida"
     fi
     return
   fi
-  local salida kib
+  local salida kib bytes exacto
   if ! command -v df > /dev/null 2>&1; then
     echo "desconocida"
     return
@@ -144,19 +150,25 @@ disco_libre_gb() {
   # df -P: una línea por sistema de archivos; la 4.ª columna es «Available»
   # en bloques de 1024 B (-k).
   kib=$(printf '%s\n' "$salida" | awk 'NR == 2 { print $4 }')
+  # Más de 15 cifras de KiB desbordaría la aritmética entera de 64 bits:
+  # se trata como salida ilegible (fail-open visible, igual que la basura).
   case "$kib" in
-    '' | *[!0-9]*) echo "desconocida" ;;
-    *) awk -v k="$kib" 'BEGIN { printf "%.2f\n", k * 1024 / 1e9 }' ;;
+    '' | *[!0-9]* | ????????????????*) echo "desconocida" ;;
+    *)
+      bytes=$(( 10#$kib * 1024 ))
+      exacto=$(printf '%d.%09d' $(( bytes / 1000000000 )) $(( bytes % 1000000000 )))
+      echo "$exacto $(awk -v g="$exacto" 'BEGIN { printf "%.2f", g }')"
+      ;;
   esac
 }
 
 disco_bajo() { awk -v a="$1" -v b="$2" 'BEGIN { exit !(a < b) }'; }
 
-disco=$(disco_libre_gb)
+read -r disco disco_ver <<< "$(disco_libre_gb)"
 if disco_conocido "$disco"; then
-  disco_log="${disco}GB"
+  disco_log="${disco_ver}GB"
   if disco_bajo "$disco" "$disco_min"; then
-    linea="DISCO-BAJO: disco libre ${disco} GB < umbral ${disco_min} GB (GB decimal, 1 GB = 1e9 B); no compilo: sin target/, sin cerrojo, sin cargo, nada borrado: cargo $*"
+    linea="DISCO-BAJO: disco libre ${disco_ver} GB < umbral ${disco_min} GB (GB decimal, 1 GB = 1e9 B); no compilo: sin target/, sin cerrojo, sin cargo, nada borrado: cargo $*"
     echo "[semaforo] $linea" >&2
     # Única escritura permitida antes de salir: la línea en logs/ (no target/).
     mkdir -p "$raiz/logs"
@@ -165,6 +177,7 @@ if disco_conocido "$disco"; then
   fi
 else
   disco_log="desconocida"
+  disco_ver="desconocida"
   echo "[semaforo] disco libre desconocido; guarda DISCO-BAJO no aplicada" >&2
 fi
 
@@ -177,13 +190,13 @@ fi
 # FA-047 — observabilidad al liberar: el libre de disco en ese momento y, si
 # quedó bajo el umbral, dicho en la línea. No bloquea lo ya compilado.
 disco_al_liberar() {
-  local d
-  d=$(disco_libre_gb)
+  local d d_ver
+  read -r d d_ver <<< "$(disco_libre_gb)"
   if disco_conocido "$d"; then
     if disco_bajo "$d" "$disco_min"; then
-      echo "disco_libre=${d}GB DISCO-BAJO al liberar (< ${disco_min} GB)"
+      echo "disco_libre=${d_ver}GB DISCO-BAJO al liberar (< ${disco_min} GB)"
     else
-      echo "disco_libre=${d}GB"
+      echo "disco_libre=${d_ver}GB"
     fi
   else
     echo "disco_libre=desconocida"
@@ -339,7 +352,7 @@ fi
 registrar "ADQUIERE ram_libre=${ram_log} disco_libre=${disco_log} jobs=${CARGO_BUILD_JOBS:-todos}: cargo $*"
 
 if [ "${SEMAFORO_SOLO_DECIDIR:-0}" = "1" ]; then
-  echo "[semaforo] turno concedido; CARGO_TARGET_DIR=$CARGO_TARGET_DIR CARGO_BUILD_JOBS=${CARGO_BUILD_JOBS:-todos} CARGO_UNSTABLE_CHECKSUM_FRESHNESS=$CARGO_UNSTABLE_CHECKSUM_FRESHNESS DISCO_LIBRE_GB=${disco} DISCO_MIN_GB=${disco_min} (GB decimal, 1 GB = 1e9 B)"
+  echo "[semaforo] turno concedido; CARGO_TARGET_DIR=$CARGO_TARGET_DIR CARGO_BUILD_JOBS=${CARGO_BUILD_JOBS:-todos} CARGO_UNSTABLE_CHECKSUM_FRESHNESS=$CARGO_UNSTABLE_CHECKSUM_FRESHNESS DISCO_LIBRE_GB=${disco_ver} DISCO_MIN_GB=${disco_min} (GB decimal, 1 GB = 1e9 B)"
   registrar "LIBERA (solo decidir) $(disco_al_liberar)"
   exit 0
 fi
