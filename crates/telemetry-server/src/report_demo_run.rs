@@ -612,6 +612,11 @@ fn validar_tel(
         if admite_ausencia(tipo, k) && es_ausencia(v) {
             continue;
         }
+        if v == FUERA_DE_DOMINIO {
+            return Err(format!(
+                "{tipo}: diagnóstico de cobertura: campo {k} fuera del dominio admitido por el emisor (sin valor)"
+            ));
+        }
         if DECIMALES.contains(k) && !decimal_finito(v) {
             return Err(format!("{tipo}: {k}={v} no es un decimal finito"));
         }
@@ -623,7 +628,95 @@ fn validar_tel(
     if tipo == "FILL" && campos.get("trade_id").map(|t| t == "0").unwrap_or(true) {
         return Err("FILL: trade_id 0 (sin identidad nativa)".to_string());
     }
+    validar_dominios(tipo, &campos)?;
     Ok(Some(campos))
+}
+
+/// DEMO_TEL T3 (T3-6): dominio de los campos textuales que el esquema cerraba
+/// sólo por "no vacío". Un valor fuera de dominio es diagnóstico (fuente, línea,
+/// campo y valor) y el evento no entra en los joins.
+const BOOLEANOS: &[(&str, &str)] = &[
+    ("FILL", "is_maker"),
+    ("TRADE_FEE", "is_maker"),
+    ("ORDER_SEND", "is_long"),
+    ("IMMUNE_TRIGGER", "operator_lock"),
+    ("IMMUNE_TRIGGER", "insolvent"),
+    ("IMMUNE_TRIGGER", "dd_breach"),
+    ("IMMUNE_TRIGGER", "lat_breach"),
+];
+
+/// Estados de `OrderStatus` que existen pero sólo describen la orden: con ellos
+/// una línea FILL no acredita una ejecución.
+const ESTADOS_SOLO_DE_ORDEN: &[&str] = &["New", "Canceled", "Expired", "Rejected"];
+
+/// DEMO_TEL T3 (T3-5): códigos cortos de los planos de IMMUNE_TRIGGER y su
+/// significado (compatibilidad de lectura: también se aceptan los textos
+/// largos de T2).
+pub const PLANOS_IMMUNE: &[(&str, &str, &str)] = &[
+    ("freno_capital_plano", "FRENO", "drawdown.capital_del_freno(min(arena.unified_capital,arena.capital_exchange))"),
+    ("peak_plano", "PICO", "drawdown.registrar_pico(arena.pico_capital,freno_capital)"),
+    ("equity_del_freno_plano", "PUENTE", "puente.equity_del_freno"),
+];
+
+/// Marca del emisor para un valor fuera del dominio admitido (IMMUNE_TRIGGER).
+pub const FUERA_DE_DOMINIO: &str = "FUERA_DE_DOMINIO";
+
+fn fuera_de_dominio(tipo: &str, k: &str, v: &str, admitidos: &str) -> String {
+    format!("{tipo}: dominio: campo {k}={v} fuera de dominio (admitidos: {admitidos})")
+}
+
+fn validar_dominios(tipo: &str, campos: &BTreeMap<String, String>) -> Result<(), String> {
+    let v = |k: &str| campos.get(k).map(String::as_str).unwrap_or("");
+    for (t, k) in BOOLEANOS {
+        if *t == tipo && !matches!(v(k), "true" | "false") {
+            return Err(fuera_de_dominio(tipo, k, v(k), "true, false"));
+        }
+    }
+    match tipo {
+        "FILL" => {
+            if !matches!(v("side"), "BUY" | "SELL") {
+                return Err(fuera_de_dominio(tipo, "side", v("side"), "BUY, SELL"));
+            }
+            match v("status") {
+                "Filled" | "PartiallyFilled" => {}
+                "Unknown" => {
+                    return Err(format!(
+                        "FILL: evidencia insuficiente: campo status=Unknown (estado no reconocido por el registro; no acredita ejecución)"
+                    ));
+                }
+                s if ESTADOS_SOLO_DE_ORDEN.contains(&s) => {
+                    return Err(format!(
+                        "FILL: dominio: campo status={s} es un estado sólo de orden; no acredita un fill ejecutado"
+                    ));
+                }
+                s => return Err(fuera_de_dominio(tipo, "status", s, "Filled, PartiallyFilled")),
+            }
+        }
+        "ORDER_SEND" if v("tipo") != "INTENTO" => {
+            return Err(fuera_de_dominio(tipo, "tipo", v("tipo"), "INTENTO"));
+        }
+        "ORDER_RESULT" if !matches!(v("resultado"), "ENTREGADA" | "RECHAZADA" | "AMBIGUA") => {
+            return Err(fuera_de_dominio(tipo, "resultado", v("resultado"), "ENTREGADA, RECHAZADA, AMBIGUA"));
+        }
+        // T3-5: el campo terminal tiene un valor cerrado; un corte dentro de él
+        // (`lecturas_posteriores=ning`) es una línea truncada, no un evento.
+        "IMMUNE_TRIGGER" => {
+            if v("lecturas_posteriores") != "ninguna" {
+                return Err(format!(
+                    "IMMUNE_TRIGGER: campo terminal lecturas_posteriores={} incompleto o fuera de dominio (línea truncada o esquema distinto)",
+                    v("lecturas_posteriores")
+                ));
+            }
+            if v("alcance") != "CUENTA" {
+                return Err(fuera_de_dominio(tipo, "alcance", v("alcance"), "CUENTA"));
+            }
+            if !matches!(v("motivo"), "OPERATOR_LOCK" | "INSOLVENTE" | "DRAWDOWN" | "LATENCIA") {
+                return Err(fuera_de_dominio(tipo, "motivo", v("motivo"), "OPERATOR_LOCK, INSOLVENTE, DRAWDOWN, LATENCIA"));
+            }
+        }
+        _ => {}
+    }
+    Ok(())
 }
 
 /// Línea humana `💧 [FILL] SYM SIDE TYPE COID @ PRICE (acum a/b status S)`.
@@ -824,6 +917,16 @@ pub struct VentanaIncome {
     pub hasta_ms: u64,
 }
 
+/// DEMO_TEL T3 (T3-4): un importe observado en el income, con su activo. Los
+/// importes de activos distintos nunca se suman entre sí.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ImporteObservado {
+    pub tipo: String,
+    pub activo: String,
+    pub importe: f64,
+    pub filas: usize,
+}
+
 /// Una fila del informe mixto: la fila legacy (dinero del income) más el join.
 #[derive(Debug, Clone, PartialEq)]
 pub struct FilaMixta {
@@ -831,9 +934,18 @@ pub struct FilaMixta {
     /// `LEGACY` (líneas DEMO), `FILL_NATIVO` (DEMO_TEL por tradeId) o `N/D`.
     pub join: &'static str,
     pub fill: Option<FillNativo>,
-    /// Funding y neto sólo con cobertura declarada; sin ella, N/D (no cero).
+    /// Funding y neto oficiales: sólo con cobertura acreditada. T3 no construye
+    /// el certificador de cobertura del income (T3-3): siempre N/D (no cero).
     pub funding_acreditado: Option<f64>,
     pub neto_acreditado: Option<f64>,
+    /// DEMO_TEL T3 (T3-2): `TRADE_ID` (tradeId explícito: identidad nativa) o
+    /// `TRAN_ID` (el fallback sólo identifica la fila contable: no une).
+    pub origen_clave: &'static str,
+    /// DEMO_TEL T3 (T3-4): importes observados por (tipo, activo).
+    pub observado: Vec<ImporteObservado>,
+    /// DEMO_TEL T3 (T3-4): motivo por el que la operación está incompleta en el
+    /// numerario del alcance (p. ej. una comisión en otro activo).
+    pub incompleta: Option<String>,
 }
 
 /// Informe mixto con cobertura y estado de aceptación.
@@ -854,6 +966,294 @@ pub struct InformeMixto {
     pub income_duplicado: usize,
     pub apto: bool,
     pub motivos_no_apto: Vec<String>,
+    /// DEMO_TEL T3 (T3-3): numerario declarado del alcance (`--activo`).
+    pub activo: Option<String>,
+    /// DEMO_TEL T3 (T3-3): defectos de las filas del income (línea y motivo).
+    pub income_diagnosticos: Vec<DiagnosticoTel>,
+    /// DEMO_TEL T3 (T3-4): operaciones cuya suma de la tabla LEGACY mezcla activos.
+    pub legacy_sin_autoridad: Vec<String>,
+}
+
+/// DEMO_TEL T3 (T3-3): lo que se sabe del income además de sus filas.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct EvidenciaIncome {
+    /// Numerario del alcance (`--activo`); `None` = no declarado.
+    pub activo: Option<String>,
+    /// Diagnósticos del lector auditado ([`parse_income_jsonl_auditado`]).
+    pub diagnosticos: Vec<DiagnosticoTel>,
+    /// Líneas no vacías del archivo de income leído.
+    pub lineas: usize,
+    /// sha256 (hex) de los bytes del archivo de income leído.
+    pub sha256: Option<String>,
+    /// Recibo de cobertura (`--recibo-income`): `None` si no se dio, `Err` si
+    /// no se pudo leer o no es JSON.
+    pub recibo: Option<Result<serde_json::Value, String>>,
+}
+
+/// DEMO_TEL T3 (T3-3): income leído con sus defectos. Una fila inválida no
+/// desaparece: queda como diagnóstico con su línea y bloquea la acreditación.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct IncomeLeido {
+    pub filas: Vec<IncomeRow>,
+    pub diagnosticos: Vec<DiagnosticoTel>,
+    /// Líneas no vacías.
+    pub lineas: usize,
+}
+
+/// Activo de una fila sin activo válido: se muestra con esa marca, nunca se
+/// deduce del sufijo del símbolo.
+pub const ACTIVO_AUSENTE: &str = "AUSENTE";
+pub const ACTIVO_VACIO: &str = "VACIO";
+pub const ACTIVO_INVALIDO: &str = "INVALIDO";
+
+fn numero_json(v: Option<&serde_json::Value>) -> Option<f64> {
+    match v? {
+        serde_json::Value::Number(n) => n.as_f64(),
+        serde_json::Value::String(s) if decimal_finito(s) => s.parse::<f64>().ok(),
+        _ => None,
+    }
+    .filter(|x| x.is_finite())
+}
+
+fn entero_json(v: Option<&serde_json::Value>) -> Option<u64> {
+    match v? {
+        serde_json::Value::Number(n) => n.as_u64(),
+        serde_json::Value::String(s) if entero(s) => s.parse::<u64>().ok(),
+        _ => None,
+    }
+}
+
+/// DEMO_TEL T3 (T3-3/T3-4): lector auditado del JSONL de income, para el
+/// informe oficial (la tabla LEGACY sigue con [`parse_income_jsonl`]). Cada
+/// defecto es un diagnóstico con su línea:
+/// - `integridad`: la línea no es un objeto JSON (truncada o corrupta), o le
+///   falta `symbol`, `income_type`, un `income` finito o `time_ms`;
+/// - `activo`: `asset` ausente, vacío o de tipo inválido (la fila se conserva
+///   con la marca [`ACTIVO_AUSENTE`]/[`ACTIVO_VACIO`]/[`ACTIVO_INVALIDO`]);
+/// - `ámbito`: la fila declara `venue`/`cuenta` distintos del alcance (la fila
+///   es de otra cuenta y no entra).
+pub fn parse_income_jsonl_auditado(text: &str, ambito: &Ambito) -> IncomeLeido {
+    let mut l = IncomeLeido::default();
+    for (i, line) in text.lines().enumerate() {
+        if line.trim().is_empty() {
+            continue;
+        }
+        l.lineas += 1;
+        let linea = i + 1;
+        let diag = |mensaje: String| DiagnosticoTel { fuente: "income".to_string(), linea, mensaje };
+        let v: serde_json::Value = match serde_json::from_str(line) {
+            Ok(v @ serde_json::Value::Object(_)) => v,
+            _ => {
+                l.diagnosticos.push(diag("integridad: la línea no es un objeto JSON (truncada o corrupta)".to_string()));
+                continue;
+            }
+        };
+        let texto = |k: &str| v.get(k).and_then(|x| x.as_str()).filter(|s| !s.is_empty()).map(str::to_string);
+        let (Some(symbol), Some(income_type)) = (texto("symbol"), texto("income_type")) else {
+            l.diagnosticos.push(diag("integridad: fila sin symbol o sin income_type".to_string()));
+            continue;
+        };
+        let Some(income) = numero_json(v.get("income")) else {
+            l.diagnosticos.push(diag(format!("integridad: {symbol} {income_type}: income ausente o no finito")));
+            continue;
+        };
+        let Some(time_ms) = entero_json(v.get("time_ms")) else {
+            l.diagnosticos.push(diag(format!("integridad: {symbol} {income_type}: time_ms ausente o inválido")));
+            continue;
+        };
+        let mut fuera = false;
+        for (k, esperado) in [("venue", &ambito.venue), ("cuenta", &ambito.cuenta)] {
+            if let Some(x) = v.get(k) {
+                if x.as_str() != Some(esperado.as_str()) {
+                    l.diagnosticos.push(diag(format!(
+                        "ámbito: {symbol} {income_type}: {k}={x} distinto del alcance {esperado}; la fila no entra"
+                    )));
+                    fuera = true;
+                }
+            }
+        }
+        if fuera {
+            continue;
+        }
+        let asset = match v.get("asset") {
+            None => ACTIVO_AUSENTE.to_string(),
+            Some(serde_json::Value::String(s)) if s.trim().is_empty() => ACTIVO_VACIO.to_string(),
+            Some(serde_json::Value::String(s)) => s.clone(),
+            Some(_) => ACTIVO_INVALIDO.to_string(),
+        };
+        if matches!(asset.as_str(), ACTIVO_AUSENTE | ACTIVO_VACIO | ACTIVO_INVALIDO) {
+            l.diagnosticos.push(diag(format!(
+                "activo: {symbol} {income_type}: asset {asset}; el sufijo del símbolo no acredita la moneda"
+            )));
+        }
+        let trade_id = match v.get("trade_id") {
+            Some(serde_json::Value::String(s)) => s.trim().to_string(),
+            Some(serde_json::Value::Number(n)) => n.to_string(),
+            _ => String::new(),
+        };
+        let tran_id = entero_json(v.get("tran_id")).unwrap_or(0);
+        l.filas.push(IncomeRow { symbol, income_type, income, time_ms, tran_id, trade_id, asset });
+    }
+    l
+}
+
+/// sha256 (hex en minúsculas) de unos bytes. FIPS 180-4, sin dependencias.
+pub fn sha256_hex(datos: &[u8]) -> String {
+    const K: [u32; 64] = [
+        0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4, 0xab1c5ed5, 0xd807aa98,
+        0x12835b01, 0x243185be, 0x550c7dc3, 0x72be5d74, 0x80deb1fe, 0x9bdc06a7, 0xc19bf174, 0xe49b69c1, 0xefbe4786,
+        0x0fc19dc6, 0x240ca1cc, 0x2de92c6f, 0x4a7484aa, 0x5cb0a9dc, 0x76f988da, 0x983e5152, 0xa831c66d, 0xb00327c8,
+        0xbf597fc7, 0xc6e00bf3, 0xd5a79147, 0x06ca6351, 0x14292967, 0x27b70a85, 0x2e1b2138, 0x4d2c6dfc, 0x53380d13,
+        0x650a7354, 0x766a0abb, 0x81c2c92e, 0x92722c85, 0xa2bfe8a1, 0xa81a664b, 0xc24b8b70, 0xc76c51a3, 0xd192e819,
+        0xd6990624, 0xf40e3585, 0x106aa070, 0x19a4c116, 0x1e376c08, 0x2748774c, 0x34b0bcb5, 0x391c0cb3, 0x4ed8aa4a,
+        0x5b9cca4f, 0x682e6ff3, 0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208, 0x90befffa, 0xa4506ceb, 0xbef9a3f7,
+        0xc67178f2,
+    ];
+    let mut h: [u32; 8] =
+        [0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a, 0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19];
+    let mut m = datos.to_vec();
+    let bits = (datos.len() as u64).wrapping_mul(8);
+    m.push(0x80);
+    while m.len() % 64 != 56 {
+        m.push(0);
+    }
+    m.extend_from_slice(&bits.to_be_bytes());
+    for bloque in m.chunks(64) {
+        let mut w = [0u32; 64];
+        for t in 0..16 {
+            w[t] = u32::from_be_bytes([bloque[4 * t], bloque[4 * t + 1], bloque[4 * t + 2], bloque[4 * t + 3]]);
+        }
+        for t in 16..64 {
+            let s0 = w[t - 15].rotate_right(7) ^ w[t - 15].rotate_right(18) ^ (w[t - 15] >> 3);
+            let s1 = w[t - 2].rotate_right(17) ^ w[t - 2].rotate_right(19) ^ (w[t - 2] >> 10);
+            w[t] = w[t - 16].wrapping_add(s0).wrapping_add(w[t - 7]).wrapping_add(s1);
+        }
+        let [mut a, mut b, mut c, mut d, mut e, mut f, mut g, mut hh] = h;
+        for t in 0..64 {
+            let s1 = e.rotate_right(6) ^ e.rotate_right(11) ^ e.rotate_right(25);
+            let ch = (e & f) ^ (!e & g);
+            let t1 = hh.wrapping_add(s1).wrapping_add(ch).wrapping_add(K[t]).wrapping_add(w[t]);
+            let s0 = a.rotate_right(2) ^ a.rotate_right(13) ^ a.rotate_right(22);
+            let maj = (a & b) ^ (a & c) ^ (b & c);
+            let t2 = s0.wrapping_add(maj);
+            hh = g;
+            g = f;
+            f = e;
+            e = d.wrapping_add(t1);
+            d = c;
+            c = b;
+            b = a;
+            a = t1.wrapping_add(t2);
+        }
+        for (x, y) in h.iter_mut().zip([a, b, c, d, e, f, g, hh]) {
+            *x = x.wrapping_add(y);
+        }
+    }
+    h.iter().map(|x| format!("{x:08x}")).collect()
+}
+
+/// DEMO_TEL T3 (T3-3): motivos de cobertura del income. T3 no construye el
+/// certificador de procedencia (decisión de alcance admitida por los criterios
+/// T3-3): un recibo coherente sólo acredita lo que su checksum puede acreditar
+/// (que el archivo es el descrito), nunca el origen ni la cobertura completa,
+/// así que siempre queda un motivo de cobertura y el informe no es APTO.
+fn motivos_de_cobertura(
+    ambito: &Ambito,
+    ventana: Option<VentanaIncome>,
+    ev: &EvidenciaIncome,
+) -> Vec<String> {
+    let mut m = Vec::new();
+    let declarado = |s: &str| !s.is_empty() && s != "N/D";
+    if !declarado(&ambito.venue) || !declarado(&ambito.cuenta) {
+        m.push("ámbito: venue/cuenta del alcance no declarados (--ambito)".to_string());
+    }
+    if ev.activo.is_none() {
+        m.push("activo: numerario del alcance no declarado (--activo)".to_string());
+    }
+    match &ev.recibo {
+        None => m.push("cobertura: sin recibo de cobertura del income (--recibo-income)".to_string()),
+        Some(Err(e)) => m.push(format!("integridad: recibo de cobertura ilegible: {e}")),
+        Some(Ok(r)) => {
+            let s = |k: &str| r.get(k).and_then(|x| x.as_str());
+            match (s("archivo_sha256"), ev.sha256.as_deref()) {
+                (Some(a), Some(b)) if a.eq_ignore_ascii_case(b) => {}
+                (Some(a), b) => m.push(format!(
+                    "integridad: el sha256 del recibo ({a}) no corresponde al archivo de income leído ({})",
+                    b.unwrap_or("N/D")
+                )),
+                (None, _) => m.push("integridad: el recibo no declara archivo_sha256".to_string()),
+            }
+            for (k, esperado) in [("venue", &ambito.venue), ("cuenta", &ambito.cuenta)] {
+                match s(k) {
+                    Some(x) if x == esperado => {}
+                    Some(x) => m.push(format!("ámbito: el recibo declara {k}={x} y el alcance {esperado}")),
+                    None => m.push(format!("ámbito: el recibo no declara {k}")),
+                }
+            }
+            match (s("activo"), ev.activo.as_deref()) {
+                (Some(a), Some(b)) if a == b => {}
+                (Some(a), b) => m.push(format!("activo: el recibo declara activo={a} y el alcance {}", b.unwrap_or("N/D"))),
+                (None, _) => m.push("activo: el recibo no declara activo".to_string()),
+            }
+            let tipos: Vec<&str> =
+                r.get("tipos").and_then(|x| x.as_array()).map(|a| a.iter().filter_map(|t| t.as_str()).collect()).unwrap_or_default();
+            for t in ["REALIZED_PNL", "COMMISSION", "FUNDING_FEE"] {
+                if !tipos.contains(&t) {
+                    m.push(format!("cobertura: el recibo no declara el tipo {t}"));
+                }
+            }
+            let paginas = r.get("paginas").and_then(|x| x.as_array()).cloned().unwrap_or_default();
+            let mut filas = 0u64;
+            let mut defecto_pag = None;
+            if paginas.is_empty() {
+                defecto_pag = Some("el recibo no declara páginas".to_string());
+            }
+            for (i, p) in paginas.iter().enumerate() {
+                let n = p.get("pagina").and_then(|x| x.as_u64());
+                if n != Some(i as u64 + 1) {
+                    defecto_pag.get_or_insert(format!("falta la página {} (secuencia {:?})", i + 1, n));
+                }
+                filas += p.get("filas").and_then(|x| x.as_u64()).unwrap_or(0);
+                let ultima = i + 1 == paginas.len();
+                let cont = p.get("continuacion").filter(|c| !c.is_null());
+                if ultima && cont.is_some() {
+                    defecto_pag.get_or_insert("la última página tiene continuación: no hay término".to_string());
+                }
+                if !ultima && cont.is_none() {
+                    defecto_pag.get_or_insert(format!("la página {} no enlaza la siguiente", i + 1));
+                }
+            }
+            if r.get("termino").and_then(|x| x.as_bool()) != Some(true) {
+                defecto_pag.get_or_insert("el recibo no declara término comprobable".to_string());
+            }
+            if defecto_pag.is_none() && filas != ev.lineas as u64 {
+                defecto_pag = Some(format!("las páginas suman {filas} filas y el archivo tiene {}", ev.lineas));
+            }
+            if let Some(d) = defecto_pag {
+                m.push(format!("paginación: {d}"));
+            }
+            let intervalo = |k: &str| {
+                let x = r.get(k)?;
+                Some((x.get("desde_ms")?.as_u64()?, x.get("hasta_ms")?.as_u64()?))
+            };
+            for k in ["intervalo_solicitado", "intervalo_cubierto"] {
+                match (intervalo(k), ventana) {
+                    (Some((a, b)), Some(v)) if a <= v.desde_ms && b >= v.hasta_ms => {}
+                    (Some((a, b)), Some(v)) => m.push(format!(
+                        "cobertura: {k} {a}..{b} no cubre la ventana {}..{}: intervalo incompleto",
+                        v.desde_ms, v.hasta_ms
+                    )),
+                    (Some(_), None) => {}
+                    (None, _) => m.push(format!("cobertura: el recibo no declara {k}")),
+                }
+            }
+            m.push(
+                "cobertura: el recibo no acredita la procedencia de la captura (un checksum no es autenticidad; certificador de income fuera del alcance de T3): funding y neto oficiales N/D"
+                    .to_string(),
+            );
+        }
+    }
+    m
 }
 
 /// Income filtrado por ventana y deduplicado por (símbolo, tipo, tranId, activo).
@@ -906,15 +1306,65 @@ pub fn build_report_mixto(
     income: &[IncomeRow],
     ventana: Option<VentanaIncome>,
 ) -> InformeMixto {
+    build_report_mixto_con(legacy, lecturas, ambito, income, ventana, &EvidenciaIncome::default())
+}
+
+/// DEMO_TEL T3 (T3-2): procedencia de la clave contable de una fila de income.
+/// Sólo un tradeId explícito es identidad nativa; el tranId sólo identifica la
+/// fila contable y nunca une con un fill ni con el log.
+fn origen_y_clave(r: &IncomeRow) -> (&'static str, String) {
+    if r.trade_id.trim().is_empty() {
+        ("TRAN_ID", r.tran_id.to_string())
+    } else {
+        ("TRADE_ID", r.trade_id.clone())
+    }
+}
+
+fn fmt_importe(x: f64) -> String {
+    if x.is_finite() { format!("{x}") } else { "N/D".to_string() }
+}
+
+/// DEMO_TEL T3: [`build_report_mixto`] con la evidencia del income (numerario,
+/// defectos de filas y recibo de cobertura).
+///
+/// - T3-2: las filas se agrupan por (símbolo, procedencia de la clave, id): un
+///   income sin tradeId (omitido o vacío) con `tranId` igual a un tradeId nativo
+///   es otra operación, sin join, y el fill sigue sin pareja.
+/// - T3-3: funding y neto oficiales N/D mientras no haya cobertura acreditada
+///   (T3 no construye el certificador); el informe nunca es APTO sin ella.
+/// - T3-4: los importes se conservan por (tipo, activo); un activo fuera del
+///   numerario del alcance deja la operación incompleta, y la suma nominal de la
+///   tabla LEGACY queda señalada sin autoridad oficial.
+pub fn build_report_mixto_con(
+    legacy: &[(String, String, LogOp)],
+    lecturas: &[LecturaTel],
+    ambito: &Ambito,
+    income: &[IncomeRow],
+    ventana: Option<VentanaIncome>,
+    ev: &EvidenciaIncome,
+) -> InformeMixto {
     let (income_ok, fuera, dup, conflictos_income) = income_acreditado(income, ventana);
     let unidos = unir_fills(lecturas);
-    let base = build_report(legacy, &income_ok);
+    let mut grupos: BTreeMap<(String, &'static str, String), Vec<IncomeRow>> = BTreeMap::new();
+    for r in &income_ok {
+        let (origen, clave) = origen_y_clave(r);
+        grupos.entry((r.symbol.clone(), origen, clave)).or_default().push(r.clone());
+    }
     let mut filas = Vec::new();
     let mut motivos = Vec::new();
-    for mut op in base {
-        let tiene_legacy = legacy.iter().any(|(s, t, _)| *s == op.symbol && *t == op.trade_id);
-        let clave = (ambito.venue.clone(), ambito.cuenta.clone(), op.symbol.clone(), op.trade_id.clone());
-        let fill = unidos.fills.get(&clave).cloned();
+    let mut legacy_sin_autoridad = Vec::new();
+    for ((symbol, origen, clave), rows) in &grupos {
+        let nativa = *origen == "TRADE_ID";
+        let log: &[(String, String, LogOp)] = if nativa { legacy } else { &[] };
+        let Some(mut op) = build_report(log, rows).into_iter().next() else {
+            continue;
+        };
+        let tiene_legacy = nativa && legacy.iter().any(|(s, t, _)| s == symbol && t == clave);
+        let fill = if nativa {
+            unidos.fills.get(&(ambito.venue.clone(), ambito.cuenta.clone(), symbol.clone(), clave.clone())).cloned()
+        } else {
+            None
+        };
         let join = if tiene_legacy {
             "LEGACY"
         } else if let Some(f) = &fill {
@@ -928,17 +1378,58 @@ pub fn build_report_mixto(
         };
         if join == "N/D" {
             motivos.push(format!("{} trade_id={}: sin join nativo ni legacy", op.symbol, op.trade_id));
+            if !nativa {
+                motivos.push(format!(
+                    "join: {symbol} tran_id={clave}: fila contable sin tradeId explícito; el tranId no es identidad nativa"
+                ));
+            }
         }
-        let (funding_acreditado, neto_acreditado) = match ventana {
-            Some(_) => (Some(op.funding), op.net.is_finite().then_some(op.net)),
-            None => (None, None),
-        };
+        let mut por_activo: BTreeMap<(String, String), (f64, usize)> = BTreeMap::new();
+        for r in rows {
+            let e = por_activo.entry((r.income_type.clone(), r.asset.clone())).or_insert((0.0, 0));
+            e.0 += r.income;
+            e.1 += 1;
+        }
+        let observado: Vec<ImporteObservado> = por_activo
+            .into_iter()
+            .map(|((tipo, activo), (importe, n))| ImporteObservado { tipo, activo, importe, filas: n })
+            .collect();
+        let mut activos: Vec<&str> = observado.iter().map(|o| o.activo.as_str()).collect();
+        activos.sort_unstable();
+        activos.dedup();
+        let ajenos: Vec<&ImporteObservado> = observado
+            .iter()
+            .filter(|o| ev.activo.as_deref().map_or(activos.len() > 1, |a| o.activo != a))
+            .collect();
+        let incompleta = (!ajenos.is_empty()).then(|| {
+            let cargos: Vec<String> =
+                ajenos.iter().map(|o| format!("{} {} {}", o.tipo, fmt_importe(o.importe), o.activo)).collect();
+            format!(
+                "activo: {} trade_id={}: importes fuera del numerario {} ({}); operación incompleta, neto N/D",
+                symbol,
+                clave,
+                ev.activo.as_deref().unwrap_or("N/D"),
+                cargos.join(", ")
+            )
+        });
+        if let Some(m) = &incompleta {
+            motivos.push(m.clone());
+        }
+        if activos.len() > 1 {
+            legacy_sin_autoridad.push(format!(
+                "{symbol} {clave}: la tabla LEGACY suma nominalmente {}; sin autoridad oficial",
+                activos.join(" + ")
+            ));
+        }
         filas.push(FilaMixta {
             fill: if join == "FILL_NATIVO" { fill } else { None },
             op,
             join,
-            funding_acreditado,
-            neto_acreditado,
+            funding_acreditado: None,
+            neto_acreditado: None,
+            origen_clave: origen,
+            observado,
+            incompleta,
         });
     }
     let fills_sin_pareja: Vec<ClaveFill> = unidos
@@ -947,7 +1438,7 @@ pub fn build_report_mixto(
         .filter(|(v, c, s, t)| {
             *v == ambito.venue
                 && *c == ambito.cuenta
-                && !income_ok.iter().any(|r| r.symbol == *s && income_op_key(r).1 == *t)
+                && !income_ok.iter().any(|r| r.symbol == *s && origen_y_clave(r) == ("TRADE_ID", t.clone()))
         })
         .cloned()
         .collect();
@@ -971,7 +1462,15 @@ pub fn build_report_mixto(
         motivos.push(format!("{} fills sin pareja en el income", fills_sin_pareja.len()));
     }
     motivos.extend(conflictos_income);
+    // T3-3: las filas inválidas o contradictorias del income bloquean la acreditación.
+    for d in &ev.diagnosticos {
+        motivos.push(format!("income línea {}: {}", d.linea, d.mensaje));
+    }
+    motivos.extend(motivos_de_cobertura(ambito, ventana, ev));
     InformeMixto {
+        activo: ev.activo.clone(),
+        income_diagnosticos: ev.diagnosticos.clone(),
+        legacy_sin_autoridad,
         apto: motivos.is_empty(),
         filas,
         ambito: ambito.clone(),
@@ -998,6 +1497,7 @@ fn fmt_opt_money(v: Option<f64>) -> String {
 pub fn render_informe_mixto(i: &InformeMixto) -> String {
     let mut s = String::from("COBERTURA M1 (DEMO_TEL)\n");
     s.push_str(&format!("ambito: venue={} cuenta={}\n", i.ambito.venue, i.ambito.cuenta));
+    s.push_str(&format!("activo del alcance: {}\n", i.activo.as_deref().unwrap_or("N/D")));
     match i.ventana {
         Some(v) => s.push_str(&format!("ventana income: {}..{} ms\n", v.desde_ms, v.hasta_ms)),
         None => s.push_str("ventana income: N/D\n"),
@@ -1019,14 +1519,22 @@ pub fn render_informe_mixto(i: &InformeMixto) -> String {
     for d in &i.diagnosticos {
         s.push_str(&format!("  diagnostico {}:{}: {}\n", d.fuente, d.linea, d.mensaje));
     }
-    s.push_str("símbolo | trade | join | fill_ms | fill_precio | fill_qty | ord→fill_ms | funding | neto\n");
+    s.push_str(&format!("income: diagnosticos de filas {}\n", i.income_diagnosticos.len()));
+    for d in &i.income_diagnosticos {
+        s.push_str(&format!("  diagnostico {}:{}: {}\n", d.fuente, d.linea, d.mensaje));
+    }
+    s.push_str(
+        "símbolo | trade | join | fill_ms | fill_precio | fill_qty | ord→fill_ms | funding | neto | origen_clave | observado\n",
+    );
     for f in &i.filas {
         let (fp, fq) = match &f.fill {
             Some(x) => (fmt_opt(Some(x.price)), fmt_opt(Some(x.qty))),
             None => ("N/D".to_string(), "N/D".to_string()),
         };
+        let observado: Vec<String> =
+            f.observado.iter().map(|o| format!("{}={} {}", o.tipo, fmt_importe(o.importe), o.activo)).collect();
         s.push_str(&format!(
-            "{} | {} | {} | {} | {} | {} | {} | {} | {}\n",
+            "{} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {}{}\n",
             f.op.symbol,
             f.op.trade_id,
             f.join,
@@ -1036,7 +1544,13 @@ pub fn render_informe_mixto(i: &InformeMixto) -> String {
             fmt_ms(f.op.order_to_fill_ms),
             fmt_opt_money(f.funding_acreditado),
             fmt_opt_money(f.neto_acreditado),
+            f.origen_clave,
+            observado.join("; "),
+            if f.incompleta.is_some() { " (INCOMPLETA)" } else { "" },
         ));
+    }
+    for l in &i.legacy_sin_autoridad {
+        s.push_str(&format!("LEGACY sin autoridad oficial: {l}\n"));
     }
     if i.apto {
         s.push_str("ACEPTACION: APTO\n");
@@ -1127,6 +1641,8 @@ pub fn cli_main() {
     let mut funnel_path: Option<String> = None;
     let mut ventana: Option<VentanaIncome> = None;
     let mut ambito = Ambito::new("N/D", "N/D");
+    let mut activo: Option<String> = None;
+    let mut recibo_path: Option<String> = None;
     let mut i = 1;
     while i < args.len() {
         match args[i].as_str() {
@@ -1163,6 +1679,21 @@ pub fn cli_main() {
                 i += 1;
                 income_path = args.get(i).cloned();
             }
+            // DEMO_TEL T3 (T3-3): numerario del alcance y recibo de cobertura del income.
+            "--activo" => {
+                i += 1;
+                match args.get(i) {
+                    Some(a) if !a.trim().is_empty() => activo = Some(a.trim().to_string()),
+                    _ => {
+                        eprintln!("--activo <ASSET> inválido");
+                        std::process::exit(2);
+                    }
+                }
+            }
+            "--recibo-income" => {
+                i += 1;
+                recibo_path = args.get(i).cloned();
+            }
             "--funnel" => {
                 i += 1;
                 funnel_path = args.get(i).cloned();
@@ -1175,7 +1706,7 @@ pub fn cli_main() {
         (false, Some(b)) => b,
         _ => {
             eprintln!(
-                "uso: demo_report --log <run.log> [--log <otro segmento>] --income <income.jsonl> [--ventana <desde_ms>:<hasta_ms>] [--ambito <venue>:<cuenta>] [--funnel <gate.json>]"
+                "uso: demo_report --log <run.log> [--log <otro segmento>] --income <income.jsonl> [--ventana <desde_ms>:<hasta_ms>] [--ambito <venue>:<cuenta>] [--activo <ASSET>] [--recibo-income <recibo.json>] [--funnel <gate.json>]"
             );
             std::process::exit(2);
         }
@@ -1199,18 +1730,34 @@ pub fn cli_main() {
         }
         lecturas.push(parse_demo_tel(&log_text, log_path, &ambito));
     }
-    let income_text = match std::fs::read_to_string(&income_path) {
-        Ok(t) => t,
+    // DEMO_TEL T3 (T3-3): los bytes exactos que se consumen (para el sha256 del recibo).
+    let income_bytes = match std::fs::read(&income_path) {
+        Ok(b) => b,
         Err(e) => {
             eprintln!("no lee {}: {}", income_path, e);
             std::process::exit(2);
         }
     };
+    let income_text = String::from_utf8_lossy(&income_bytes).into_owned();
     let income = parse_income_jsonl(&income_text);
     let ops = build_report(&log_ops, &income);
     println!("{}", render_report_table(&ops));
     // M1 T2: cobertura y estado de aceptación, después de la tabla legacy.
-    let mixto = build_report_mixto(&log_ops, &lecturas, &ambito, &income, ventana);
+    // T3: el informe oficial lee el income con el lector auditado.
+    let leido = parse_income_jsonl_auditado(&income_text, &ambito);
+    let recibo = recibo_path.map(|p| {
+        std::fs::read_to_string(&p)
+            .map_err(|e| format!("no lee {p}: {e}"))
+            .and_then(|t| serde_json::from_str::<serde_json::Value>(&t).map_err(|e| format!("{p}: {e}")))
+    });
+    let ev = EvidenciaIncome {
+        activo,
+        diagnosticos: leido.diagnosticos,
+        lineas: leido.lineas,
+        sha256: Some(sha256_hex(&income_bytes)),
+        recibo,
+    };
+    let mixto = build_report_mixto_con(&log_ops, &lecturas, &ambito, &leido.filas, ventana, &ev);
     println!("{}", render_informe_mixto(&mixto));
 
     if let Some(fp) = funnel_path {

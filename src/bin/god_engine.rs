@@ -1957,6 +1957,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             let obs = puente_cuenta
                 .observar_rest_de_sesion(ticket, token_arranque.generation(), &l)
                 .map_err(|e| format!("ACCOUNT_EVIDENCE_INVALID: {e}"));
+            // DEMO_TEL T3 (T3-1): la revisión REST que el puente aceptó, al log (sólo registro).
+            if let Ok(aceptada) = &obs {
+                quantum_engine::demo_tel::capital_rest_aceptado(&ticket, &l, aceptada);
+            }
             match l.rechazo_arranque {
                 Some(rechazo) => Err(rechazo),
                 None => obs,
@@ -2798,10 +2802,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         // publicador del puente (`publicar_capital_de_sesion`).
                         let token = oms_rs.snapshot_token();
                         let executor = Arc::clone(token.executor());
+                        // DEMO_TEL T3 (T3-1): testigo de la lectura (devuelve lo mismo) para
+                        // registrar la revisión REST aceptada; no cambia la pasada.
+                        let rest_anotada = quantum_engine::demo_tel::LecturaRestAnotada::default();
                         let r = execution_engine::resincronizar_cuenta::resincronizar_una_vez(
                             &puente_rs,
                             token.generation(),
-                            executor.fetch_account_lectura(),
+                            rest_anotada.anotar(
+                                &puente_rs,
+                                executor.fetch_account_lectura(),
+                            ),
                             std::time::Duration::from_secs(15),
                             |obs| saldo_rs.store(obs.saldo.to_bits(), Ordering::Relaxed),
                         )
@@ -2812,6 +2822,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         match &r {
                             Ok(obs) => {
                                 pausa.exito();
+                                rest_anotada.registrar(obs);
                                 telemetry_server::telemetry_log!(
                                     "🔄 [CAPITAL] puente resincronizado por REST: saldo ${:.4} · equity ${:.4}",
                                     obs.saldo,
@@ -3161,15 +3172,25 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         } else {
                             "LATENCIA"
                         };
-                        let equity_del_freno_imm = if cap_exchange.is_finite() {
-                            format!("{:.4}", cap_exchange)
-                        } else {
-                            "AUSENTE".to_string()
-                        };
-                        telemetry_server::telemetry_log!(
-                            "DEMO_TEL event=IMMUNE_TRIGGER ts={} motivo={} alcance=CUENTA freno_capital={:.4} freno_capital_plano=drawdown.capital_del_freno(min(arena.unified_capital,arena.capital_exchange)) peak_capital={:.4} peak_plano=drawdown.registrar_pico(arena.pico_capital,freno_capital) equity_del_freno={} equity_del_freno_plano=puente.equity_del_freno caida_capital_pct={:.4} tope_capital_pct={:.4} operator_lock={} insolvent={} dd_breach={} lat_breach={} latency_strikes={} revision=N/D lecturas_posteriores=ninguna",
-                            ts_imm, motivo_imm, cap, peak_capital, equity_del_freno_imm, freno.caida_capital * 100.0, freno.tope_capital * 100.0, operator_lock, insolvent, dd_breach, lat_breach, latency_strikes
-                        );
+                        // T3 (T3-5): el mismo emisor que prueba `demo_tel_lines_contract.rs`
+                        // (`quantum_engine::demo_tel::emitir_immune_trigger`): planos con código
+                        // corto y dominio acotado, para que la línea entera quepa en el logger
+                        // acotado. La equity del freno no finita sigue siendo AUSENTE (NaN).
+                        let equity_del_freno_imm = if cap_exchange.is_finite() { cap_exchange } else { f64::NAN };
+                        quantum_engine::demo_tel::emitir_immune_trigger(&quantum_engine::demo_tel::DisparoInmune {
+                            ts_ms: ts_imm,
+                            motivo: motivo_imm,
+                            freno_capital: cap,
+                            peak_capital,
+                            equity_del_freno: equity_del_freno_imm,
+                            caida_capital_pct: freno.caida_capital * 100.0,
+                            tope_capital_pct: freno.tope_capital * 100.0,
+                            operator_lock,
+                            insolvent,
+                            dd_breach,
+                            lat_breach,
+                            latency_strikes,
+                        });
                         arena_imm.kill_switch_active.store(true, Ordering::Relaxed);
                         let executor = exec_imm.load_full();
                         executor.trigger_kill_switch();
@@ -5688,7 +5709,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 }
                                 let aceptada = match &lectura {
                                     Ok(l) => match puente_transicion.observar_rest_de_sesion(ticket, balance_token.generation(), l) {
-                                        Ok(_) => true,
+                                        Ok(aceptada_rest) => {
+                                            // DEMO_TEL T3 (T3-1): la revisión REST aceptada, al log (sólo registro).
+                                            quantum_engine::demo_tel::capital_rest_aceptado(&ticket, l, &aceptada_rest);
+                                            true
+                                        }
                                         Err(execution_engine::puente_cuenta::Rechazo::OtraEra) => break,
                                         // V4E (P1-c): el token ya no es de la sesión de esta era.
                                         Err(execution_engine::puente_cuenta::Rechazo::OtraSesion { .. }) => break,

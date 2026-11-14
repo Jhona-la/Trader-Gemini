@@ -1,0 +1,93 @@
+//! DEMO_TEL T3 — adaptador de montaje de la BASE bb2db3e42b95631391a38076f9c850962af217b8.
+//!
+//! Se copia como `tests/t3_montaje/adaptador.rs` en una copia de trabajo de la base para
+//! correr los oráculos T3-1 y T3-5 sin tocarlos (qra_t3_criterios.md, recibos :74). Cada
+//! función hace lo mismo que el host de bb2db3e4 en esa ruta:
+//! - REST de arranque y resincronización: el puente real y `resincronizar_una_vez` real;
+//!   el host de la base no registra nada de esas revisiones (god_engine.rs:1956-1964 y
+//!   :2799-2808 de bb2db3e4).
+//! - IMMUNE_TRIGGER: el `telemetry_log!` con el texto y los argumentos exactos de
+//!   god_engine.rs:3164-3172 de bb2db3e4 (la equity ausente como texto AUSENTE).
+#![allow(dead_code)]
+
+use execution_engine::puente_cuenta::{LecturaCuenta, Observacion, PuenteCuenta, Rechazo, Ticket};
+
+pub const PIN: &str = "base";
+
+pub fn rest_inicial(puente: &PuenteCuenta, ticket: Ticket, sesion: u64, l: &LecturaCuenta) -> Result<Observacion, Rechazo> {
+    puente.observar_rest_de_sesion(ticket, sesion, l)
+}
+
+pub async fn resincronizar<F>(
+    puente: &PuenteCuenta,
+    sesion: u64,
+    lectura: F,
+    publicar: impl FnOnce(&Observacion),
+) -> Result<Observacion, String>
+where
+    F: std::future::Future<Output = Result<LecturaCuenta, String>>,
+{
+    execution_engine::resincronizar_cuenta::resincronizar_una_vez(
+        puente,
+        sesion,
+        lectura,
+        std::time::Duration::from_secs(5),
+        publicar,
+    )
+    .await
+}
+
+fn en_orden(fuente: &str, pasos: &[&str]) -> Result<(), String> {
+    let f = fuente.replace("\r\n", "\n");
+    let mut resto = f.as_str();
+    for p in pasos {
+        resto = resto.split_once(p).ok_or_else(|| format!("montaje: ancla ausente o fuera de orden: {p}"))?.1;
+    }
+    Ok(())
+}
+
+pub fn ruta_rest_del_host(host: &str) -> Result<(), String> {
+    en_orden(host, &[".observar_rest_de_sesion(ticket, token_arranque.generation(), &l)", "match l.rechazo_arranque {"])?;
+    en_orden(host, &["resincronizar_cuenta::resincronizar_una_vez(", "executor.fetch_account_lectura(),", ".await;"])
+}
+
+pub fn emitir_immune(c: &super::CasoInmune) {
+    let (ts_imm, motivo_imm, cap, peak_capital) = (c.ts_ms, c.motivo, c.freno_capital, c.peak_capital);
+    let equity_del_freno_imm = match c.equity_del_freno {
+        Some(x) if x.is_finite() => format!("{:.4}", x),
+        _ => "AUSENTE".to_string(),
+    };
+    let (caida, tope) = (c.caida_capital_pct, c.tope_capital_pct);
+    let (operator_lock, insolvent, dd_breach, lat_breach, latency_strikes) =
+        (c.operator_lock, c.insolvent, c.dd_breach, c.lat_breach, c.latency_strikes);
+    telemetry_server::telemetry_log!(
+        "DEMO_TEL event=IMMUNE_TRIGGER ts={} motivo={} alcance=CUENTA freno_capital={:.4} freno_capital_plano=drawdown.capital_del_freno(min(arena.unified_capital,arena.capital_exchange)) peak_capital={:.4} peak_plano=drawdown.registrar_pico(arena.pico_capital,freno_capital) equity_del_freno={} equity_del_freno_plano=puente.equity_del_freno caida_capital_pct={:.4} tope_capital_pct={:.4} operator_lock={} insolvent={} dd_breach={} lat_breach={} latency_strikes={} revision=N/D lecturas_posteriores=ninguna",
+        ts_imm, motivo_imm, cap, peak_capital, equity_del_freno_imm, caida, tope, operator_lock, insolvent, dd_breach, lat_breach, latency_strikes
+    );
+}
+
+pub fn linea_immune(c: &super::CasoInmune) -> String {
+    let equity = match c.equity_del_freno {
+        Some(x) if x.is_finite() => format!("{:.4}", x),
+        _ => "AUSENTE".to_string(),
+    };
+    format!(
+        "DEMO_TEL event=IMMUNE_TRIGGER ts={} motivo={} alcance=CUENTA freno_capital={:.4} freno_capital_plano=drawdown.capital_del_freno(min(arena.unified_capital,arena.capital_exchange)) peak_capital={:.4} peak_plano=drawdown.registrar_pico(arena.pico_capital,freno_capital) equity_del_freno={} equity_del_freno_plano=puente.equity_del_freno caida_capital_pct={:.4} tope_capital_pct={:.4} operator_lock={} insolvent={} dd_breach={} lat_breach={} latency_strikes={} revision=N/D lecturas_posteriores=ninguna",
+        c.ts_ms, c.motivo, c.freno_capital, c.peak_capital, equity, c.caida_capital_pct, c.tope_capital_pct,
+        c.operator_lock, c.insolvent, c.dd_breach, c.lat_breach, c.latency_strikes
+    )
+}
+
+/// En la base el plano viaja con su texto largo, que es su significado.
+pub fn significado_plano(_campo: &str, valor: &str) -> Option<String> {
+    Some(valor.to_string())
+}
+
+pub fn ruta_del_disparo(host: &str) -> Result<(), String> {
+    en_orden(host, &[
+        "if operator_lock || insolvent || dd_breach || lat_breach {",
+        "🚨 [SISTEMA INMUNE] ACTIVADO",
+        "\"DEMO_TEL event=IMMUNE_TRIGGER ts={} motivo={}",
+        "arena_imm.kill_switch_active.store(true, Ordering::Relaxed);",
+    ])
+}

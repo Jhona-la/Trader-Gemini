@@ -376,9 +376,15 @@ fn demo_tel_capital_update() {
     orden(DEMO_TEL_MOD, &[
         "fn capital(&self, usdt: f64, revision: Option<&RevisionSaldo>) {",
         "audit_engine::telemetry::update_dynamic_capital(usdt);",
-        "emitir(linea_capital_update(ts, usdt, revision));",
+        // T3 (T3-1, ancla adaptada): la línea sale por `registrar_revision`, que no repite
+        // una revisión idéntica y escribe con el mismo `emitir` (testigo + telemetry_log!).
+        "registrar_revision(usdt, revision);",
         "self.unified_capital.store(usdt.to_bits(), Ordering::Relaxed);",
         "fn on_equity(&self, usdt: f64) {",
+    ]);
+    orden(DEMO_TEL_MOD, &[
+        "fn registrar_revision(saldo: f64, revision: Option<&RevisionSaldo>) {",
+        "emitir(linea_capital_update(ts_ahora_ms(), saldo, revision));",
     ]);
     assert!(texto(HOST).contains("use quantum_engine::demo_tel::CapitalBridgeSink;"));
     assert!(!texto(HOST).contains("struct CapitalBridgeSink"));
@@ -391,7 +397,8 @@ fn demo_tel_capital_update() {
         ("ts", C::Dig), ("wallet_balance", C::Num), ("fuente", C::Lit("WS")), ("era", C::Dig), ("socket", C::Dig),
         ("marca_ms", C::Dig), ("hora_evento_ms", C::Lit("N/D")),
     ]);
-    assert_eq!((v[1].as_str(), v[5].as_str()), ("100.0000", "200"));
+    // T3 (T3-1): el saldo con su representación exacta, sin redondeo a cuatro decimales.
+    assert_eq!((v[1].as_str(), v[5].as_str()), ("100", "200"));
 }
 
 // 7. DECISION_MID ----------------------------------------------------------------------------
@@ -517,7 +524,8 @@ fn demo_tel_immune_trigger() {
         "let lat_breach = latency_strikes >= 3;",
         "if operator_lock || insolvent || dd_breach || lat_breach {",
         "🚨 [SISTEMA INMUNE] ACTIVADO",
-        "DEMO_TEL event=IMMUNE_TRIGGER",
+        // T3 (T3-5, ancla adaptada): la línea sale del emisor compartido.
+        "quantum_engine::demo_tel::emitir_immune_trigger(",
         "arena_imm.kill_switch_active.store(true, Ordering::Relaxed);",
         "executor.trigger_kill_switch();",
     ]);
@@ -540,19 +548,39 @@ fn demo_tel_immune_trigger() {
         assert!(!t.contains(prohibido), "IMMUNE_TRIGGER: trabajo nuevo antes del kill-switch: {prohibido}");
     }
     assert!(t.contains("let equity_del_freno_imm = if cap_exchange.is_finite() {"));
-    assert!(t.contains("\"AUSENTE\".to_string()"), "la equity del freno ausente se declara, no se sustituye");
-    let linea = demo_tel!(
-        HOST,
-        "ts_imm, motivo_imm, cap, peak_capital, equity_del_freno_imm, freno.caida_capital * 100.0, freno.tope_capital * 100.0, operator_lock, insolvent, dd_breach, lat_breach, latency_strikes",
-        "DEMO_TEL event=IMMUNE_TRIGGER ts={} motivo={} alcance=CUENTA freno_capital={:.4} freno_capital_plano=drawdown.capital_del_freno(min(arena.unified_capital,arena.capital_exchange)) peak_capital={:.4} peak_plano=drawdown.registrar_pico(arena.pico_capital,freno_capital) equity_del_freno={} equity_del_freno_plano=puente.equity_del_freno caida_capital_pct={:.4} tope_capital_pct={:.4} operator_lock={} insolvent={} dd_breach={} lat_breach={} latency_strikes={} revision=N/D lecturas_posteriores=ninguna",
-        1_763_000_000_000u64, "DRAWDOWN", 1655.81f64, 7299.88f64, "AUSENTE", 77.3172f64, 50.0f64, false, false, true, false, 0u32
-    );
+    // T3 (T3-5, anclas adaptadas): la línea la escribe el emisor compartido
+    // `quantum_engine::demo_tel::emitir_immune_trigger` con los MISMOS operandos; la equity
+    // ausente viaja como NaN y el emisor la escribe AUSENTE (sin sustituto).
+    assert!(t.contains("{ cap_exchange } else { f64::NAN };"), "la equity del freno ausente se declara, no se sustituye");
+    orden(HOST, &[
+        "quantum_engine::demo_tel::emitir_immune_trigger(&quantum_engine::demo_tel::DisparoInmune {",
+        "ts_ms: ts_imm,", "motivo: motivo_imm,", "freno_capital: cap,", "peak_capital,",
+        "equity_del_freno: equity_del_freno_imm,", "caida_capital_pct: freno.caida_capital * 100.0,",
+        "tope_capital_pct: freno.tope_capital * 100.0,", "operator_lock,", "insolvent,", "dd_breach,", "lat_breach,",
+        "latency_strikes,", "arena_imm.kill_switch_active.store(true, Ordering::Relaxed);",
+    ]);
+    assert!(!texto(HOST).contains("\"DEMO_TEL event=IMMUNE_TRIGGER"), "un solo texto de la línea, en el emisor compartido");
+    assert!(texto(DEMO_TEL_MOD).contains("\"AUSENTE\""));
+    let mut linea = String::new();
+    quantum_engine::demo_tel::escribir_immune_trigger(&mut linea, &quantum_engine::demo_tel::DisparoInmune {
+        ts_ms: 1_763_000_000_000, motivo: "DRAWDOWN", freno_capital: 1655.81, peak_capital: 7299.88,
+        equity_del_freno: f64::NAN, caida_capital_pct: 77.3172, tope_capital_pct: 50.0, operator_lock: false,
+        insolvent: false, dd_breach: true, lat_breach: false, latency_strikes: 0,
+    })
+    .unwrap();
+    // Los planos van con su código corto; su significado lo documenta el lector.
+    let plano = |k: &str| {
+        telemetry_server::report_demo_run::PLANOS_IMMUNE.iter().find(|p| p.0 == k).map(|p| (p.1, p.2)).unwrap()
+    };
+    assert_eq!(plano("freno_capital_plano"), ("FRENO", "drawdown.capital_del_freno(min(arena.unified_capital,arena.capital_exchange))"));
+    assert_eq!(plano("peak_plano"), ("PICO", "drawdown.registrar_pico(arena.pico_capital,freno_capital)"));
+    assert_eq!(plano("equity_del_freno_plano"), ("PUENTE", "puente.equity_del_freno"));
     let v = casa(&linea, "IMMUNE_TRIGGER", &[
         ("ts", C::Dig), ("motivo", C::Word), ("alcance", C::Lit("CUENTA")), ("freno_capital", C::Num),
-        ("freno_capital_plano", C::Lit("drawdown.capital_del_freno(min(arena.unified_capital,arena.capital_exchange))")),
+        ("freno_capital_plano", C::Lit("FRENO")),
         ("peak_capital", C::Num),
-        ("peak_plano", C::Lit("drawdown.registrar_pico(arena.pico_capital,freno_capital)")),
-        ("equity_del_freno", C::Lit("AUSENTE")), ("equity_del_freno_plano", C::Lit("puente.equity_del_freno")),
+        ("peak_plano", C::Lit("PICO")),
+        ("equity_del_freno", C::Lit("AUSENTE")), ("equity_del_freno_plano", C::Lit("PUENTE")),
         ("caida_capital_pct", C::Num), ("tope_capital_pct", C::Num), ("operator_lock", C::Bool),
         ("insolvent", C::Bool), ("dd_breach", C::Bool), ("lat_breach", C::Bool), ("latency_strikes", C::Dig),
         ("revision", C::Lit("N/D")), ("lecturas_posteriores", C::Lit("ninguna")),
@@ -582,4 +610,285 @@ fn demo_tel_son_once_lineas() {
         let k: usize = [HOST, STREAM, NUCLEO, DEMO_TEL_MOD].iter().map(|s| texto(s).matches(&format!("\"DEMO_TEL event={ev} ")).count()).sum();
         assert_eq!(k, 1, "{ev}");
     }
+}
+
+// ===========================================================================
+// DEMO_TEL T3-5 (qra_t3_criterios.md:50-59): IMMUNE_TRIGGER llega íntegro por el logger
+// acotado. Procesos hijos (este binario, `--exact`, T3_IMMUNE_HIJO) con el logger del host
+// (`Rotacion::desde_entorno` + `init_telemetry_logger_rotativo(16_384, rot)`) y TG_LOG_TS
+// activo e inactivo; el emisor es el de la rama real del disparo de cada pin
+// (`t3_montaje/adaptador.rs`). El padre lee el destino drenado con el lector real.
+// ===========================================================================
+
+#[path = "t3_montaje/adaptador.rs"]
+mod adaptador;
+
+/// Operandos de un disparo (los que el host calcula antes de decidir).
+pub struct CasoInmune {
+    pub ts_ms: u64,
+    pub motivo: &'static str,
+    pub freno_capital: f64,
+    pub peak_capital: f64,
+    /// `None` = el puente no tenía equity del freno (AUSENTE).
+    pub equity_del_freno: Option<f64>,
+    pub caida_capital_pct: f64,
+    pub tope_capital_pct: f64,
+    pub operator_lock: bool,
+    pub insolvent: bool,
+    pub dd_breach: bool,
+    pub lat_breach: bool,
+    pub latency_strikes: u32,
+}
+
+const T3_IMMUNE_HIJO: &str = "T3_IMMUNE_HIJO";
+const T3_IMMUNE_NOMBRE: &str = "t3_immune_trigger_atraviesa_logger_y_parser_sin_truncar";
+/// Mayor capital representable dentro del dominio admitido (|x| < 1e12) con `{:.4}`.
+const CAP_MAX: f64 = 999_999_999_999.9;
+const PCT_MAX: f64 = 999_999.9999;
+
+fn caso(motivo: &'static str) -> CasoInmune {
+    CasoInmune {
+        ts_ms: 1_763_000_000_000,
+        motivo,
+        freno_capital: 1655.81,
+        peak_capital: 7299.88,
+        equity_del_freno: None,
+        caida_capital_pct: 77.3172,
+        tope_capital_pct: 50.0,
+        operator_lock: false,
+        insolvent: false,
+        dd_breach: false,
+        lat_breach: false,
+        latency_strikes: 0,
+    }
+}
+
+/// Los disparos válidos: el fixture exacto del dictamen, equity finita y ausente, las
+/// cuatro causas y los valores más largos del dominio admitido.
+fn casos_validos() -> Vec<CasoInmune> {
+    vec![
+        CasoInmune { dd_breach: true, ..caso("DRAWDOWN") },
+        CasoInmune { operator_lock: true, equity_del_freno: Some(1655.8071), ..caso("OPERATOR_LOCK") },
+        CasoInmune { insolvent: true, freno_capital: -3.25, equity_del_freno: Some(0.0), ..caso("INSOLVENTE") },
+        CasoInmune { lat_breach: true, latency_strikes: 3, equity_del_freno: Some(1655.8071), ..caso("LATENCIA") },
+        CasoInmune {
+            ts_ms: u64::MAX,
+            motivo: "OPERATOR_LOCK",
+            freno_capital: -CAP_MAX,
+            peak_capital: CAP_MAX,
+            equity_del_freno: Some(-CAP_MAX),
+            caida_capital_pct: -PCT_MAX,
+            tope_capital_pct: -PCT_MAX,
+            operator_lock: true,
+            insolvent: true,
+            dd_breach: true,
+            lat_breach: true,
+            latency_strikes: u32::MAX,
+        },
+    ]
+}
+
+/// Un disparo con un capital fuera del dominio admitido: diagnóstico, nunca un valor inventado.
+fn caso_fuera_de_dominio() -> CasoInmune {
+    CasoInmune { dd_breach: true, freno_capital: 1e13, ..caso("DRAWDOWN") }
+}
+
+fn hijo_immune() {
+    match telemetry_server::macros::Rotacion::desde_entorno() {
+        Some(rot) => assert!(telemetry_server::macros::init_telemetry_logger_rotativo(16_384, rot)),
+        None => panic!("el hijo necesita TG_LOG_FILE"),
+    }
+    assert!(telemetry_server::macros::LOG_QUEUE.get().is_some(), "la cola del logger no está activa");
+    telemetry_server::telemetry_log!("T3_CENTINELA antes");
+    for c in casos_validos() {
+        adaptador::emitir_immune(&c);
+    }
+    adaptador::emitir_immune(&caso_fuera_de_dominio());
+    telemetry_server::telemetry_log!("T3_CENTINELA despues");
+    telemetry_server::macros::vaciar_telemetria();
+}
+
+fn correr_hijo_immune(ts: bool, extra: &[(&str, &str)]) -> String {
+    let dir = std::env::temp_dir().join(format!("t3_immune_{}_{}", std::process::id(), ts));
+    std::fs::create_dir_all(&dir).unwrap();
+    let log = dir.join("demo_t3_immune.log");
+    let mut cmd = std::process::Command::new(std::env::current_exe().unwrap());
+    cmd.args(["--exact", T3_IMMUNE_NOMBRE, "--nocapture", "--test-threads=1"])
+        .env(T3_IMMUNE_HIJO, "1")
+        .env("TG_LOG_FILE", &log)
+        .env("TG_LOG_TS", if ts { "1" } else { "0" });
+    for (k, v) in extra {
+        cmd.env(k, v);
+    }
+    let out = cmd.output().expect("lanza el hijo");
+    assert!(out.status.success(), "el hijo falló: {}", String::from_utf8_lossy(&out.stderr));
+    let texto = std::fs::read_to_string(&log).expect("destino del logger");
+    let _ = std::fs::remove_dir_all(&dir);
+    texto
+}
+
+/// Campo por campo, contra los operandos del disparo.
+fn comprobar_campos(e: &telemetry_server::report_demo_run::EventoTel, c: &CasoInmune) {
+    let v = |k: &str| e.campos.get(k).unwrap_or_else(|| panic!("falta {k}: {:?}", e.campos)).as_str();
+    let num = |k: &str, esperado: f64| {
+        let x: f64 = v(k).parse().unwrap_or_else(|_| panic!("{k}={} no es número", v(k)));
+        assert!((x - esperado).abs() <= 0.5e-4 * esperado.abs().max(1.0), "{k}={} frente a {esperado}", v(k));
+    };
+    assert_eq!(v("ts"), c.ts_ms.to_string());
+    assert_eq!(v("motivo"), c.motivo);
+    assert_eq!(v("alcance"), "CUENTA");
+    num("freno_capital", c.freno_capital);
+    num("peak_capital", c.peak_capital);
+    match c.equity_del_freno {
+        Some(x) => num("equity_del_freno", x),
+        None => assert_eq!(v("equity_del_freno"), "AUSENTE"),
+    }
+    num("caida_capital_pct", c.caida_capital_pct);
+    num("tope_capital_pct", c.tope_capital_pct);
+    for (k, b) in [("operator_lock", c.operator_lock), ("insolvent", c.insolvent), ("dd_breach", c.dd_breach), ("lat_breach", c.lat_breach)] {
+        assert_eq!(v(k), b.to_string(), "{k}");
+    }
+    assert_eq!(v("latency_strikes"), c.latency_strikes.to_string());
+    assert_eq!(v("revision"), "N/D");
+    assert_eq!(v("lecturas_posteriores"), "ninguna");
+    for (k, largo) in [
+        ("freno_capital_plano", "drawdown.capital_del_freno(min(arena.unified_capital,arena.capital_exchange))"),
+        ("peak_plano", "drawdown.registrar_pico(arena.pico_capital,freno_capital)"),
+        ("equity_del_freno_plano", "puente.equity_del_freno"),
+    ] {
+        assert_eq!(adaptador::significado_plano(k, v(k)).as_deref(), Some(largo), "significado de {k}={}", v(k));
+    }
+}
+
+#[test]
+fn t3_immune_trigger_atraviesa_logger_y_parser_sin_truncar() {
+    if std::env::var(T3_IMMUNE_HIJO).is_ok() {
+        hijo_immune();
+        return;
+    }
+    adaptador::ruta_del_disparo(HOST).unwrap_or_else(|e| panic!("[{}] {e}", adaptador::PIN));
+    assert!(texto(HOST).contains("Some(rot) => telemetry_server::macros::init_telemetry_logger_rotativo(16_384, rot),"));
+    use telemetry_server::macros::MAX_LOG_LEN;
+    use telemetry_server::report_demo_run::{parse_demo_tel, Ambito};
+
+
+    for ts in [true, false] {
+        let texto_log = correr_hijo_immune(ts, &[]);
+        let antes = texto_log.find("T3_CENTINELA antes").expect("centinela previa");
+        let despues = texto_log.find("T3_CENTINELA despues").expect("centinela final (cola drenada)");
+        assert!(antes < despues);
+        if ts {
+            assert!(texto_log.lines().all(|l| l.is_empty() || l.starts_with("[ts=")), "TG_LOG_TS=1 sin prefijo");
+        } else {
+            assert!(!texto_log.contains("[ts="), "TG_LOG_TS=0 con prefijo");
+        }
+        let l = parse_demo_tel(&texto_log, "segmento", &Ambito::new("binance_usdm", "A"));
+        let eventos: Vec<_> = l.eventos.iter().filter(|e| e.tipo == "IMMUNE_TRIGGER").collect();
+        let validos = casos_validos();
+        assert_eq!(
+            eventos.len(),
+            validos.len(),
+            "[{}] TG_LOG_TS={ts}: un evento íntegro por disparo válido; diagnósticos: {:?}",
+            adaptador::PIN,
+            l.diagnosticos
+        );
+        for (e, c) in eventos.iter().zip(&validos) {
+            assert_eq!(e.ts_recepcion.is_some(), ts);
+            comprobar_campos(e, c);
+        }
+        // El disparo fuera de dominio: un solo diagnóstico de cobertura, sin truncados.
+        assert_eq!(l.diagnosticos.len(), 1, "[{}] {:?}", adaptador::PIN, l.diagnosticos);
+        assert!(l.diagnosticos[0].mensaje.contains("freno_capital fuera del dominio"), "{}", l.diagnosticos[0].mensaje);
+        assert!(!l.diagnosticos.iter().any(|d| d.mensaje.contains("truncada")), "{:?}", l.diagnosticos);
+        assert_eq!(texto_log.matches("event=IMMUNE_TRIGGER").count(), validos.len() + 1, "conteo exacto de líneas");
+
+        // El comparador muerde: suprimir el campo terminal o mutar el formato falla.
+        let una = texto_log.lines().find(|x| x.contains("event=IMMUNE_TRIGGER")).unwrap();
+        for mutante in [
+            una.replace(" lecturas_posteriores=ninguna", ""),
+            una.replace("latency_strikes=", "latency_strikes:"),
+            una[..una.len() - 3].to_string(),
+        ] {
+            let m = parse_demo_tel(&mutante, "mutante", &Ambito::new("binance_usdm", "A"));
+            assert!(m.eventos.is_empty() && m.diagnosticos.len() == 1, "un mutante pasó como evento: {mutante}");
+        }
+    }
+    // Presupuesto de bytes: prefijo de mayor longitud representable (`tg_epoch_ms` es u128)
+    // más la línea con los máximos del dominio admitido.
+    let prefijo_max = format!("[ts={}] ", u128::MAX).len();
+    for c in casos_validos() {
+        let n = adaptador::linea_immune(&c).len();
+        assert!(
+            prefijo_max + n <= MAX_LOG_LEN,
+            "[{}] presupuesto: prefijo {prefijo_max} + línea {n} > {MAX_LOG_LEN} ({})",
+            adaptador::PIN,
+            c.motivo
+        );
+    }
+
+}
+
+/// Coste y demora del disparo bajo captura equivalente (TG_LOG_FILE, cola productiva) en
+/// cualquiera de los pines: `cargo test ... t3_bench_disparo_immune -- --ignored --exact --nocapture`.
+#[test]
+#[ignore]
+fn t3_bench_disparo_immune() {
+    if let Ok(n) = std::env::var("T3_BENCH_HIJO") {
+        let n: usize = n.parse().unwrap();
+        match telemetry_server::macros::Rotacion::desde_entorno() {
+            Some(rot) => assert!(telemetry_server::macros::init_telemetry_logger_rotativo(16_384, rot)),
+            None => panic!("TG_LOG_FILE"),
+        }
+        let c = CasoInmune { dd_breach: true, equity_del_freno: Some(1655.8071), ..caso("DRAWDOWN") };
+        let mut ns = Vec::with_capacity(n);
+        for i in 0..n {
+            let c = CasoInmune { ts_ms: 1_763_000_000_000 + i as u64, ..c };
+            let t0 = std::time::Instant::now();
+            adaptador::emitir_immune(&c);
+            ns.push(t0.elapsed().as_nanos() as u64);
+            // Un disparo cada 50 µs: más de los que el host puede producir (uno por latch).
+            while t0.elapsed() < std::time::Duration::from_micros(50) {
+                std::hint::spin_loop();
+            }
+        }
+        telemetry_server::macros::vaciar_telemetria();
+        ns.sort_unstable();
+        let media = ns.iter().sum::<u64>() as f64 / n as f64;
+        println!(
+            "T3_BENCH_IMMUNE pin={} n={n} p50_ns={} p99_ns={} max_ns={} media_ns={media:.1}",
+            adaptador::PIN,
+            ns[n / 2],
+            ns[n * 99 / 100],
+            ns[n - 1]
+        );
+        return;
+    }
+    let n = 20_000usize;
+    for ts in ["0", "1"] {
+        let dir = std::env::temp_dir().join(format!("t3_bench_{}_{ts}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let log = dir.join("bench.log");
+        let out = std::process::Command::new(std::env::current_exe().unwrap())
+            .args(["--exact", "t3_bench_disparo_immune", "--ignored", "--nocapture", "--test-threads=1"])
+            .env("T3_BENCH_HIJO", n.to_string())
+            .env("TG_LOG_FILE", &log)
+            .env("TG_LOG_TS", ts)
+            .output()
+            .unwrap();
+        assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+        let texto = std::fs::read_to_string(&log).unwrap();
+        let escritas = texto.matches("event=IMMUNE_TRIGGER").count();
+        let integras = parse_demo_tel_cuenta(&texto);
+        let linea = String::from_utf8_lossy(&out.stdout).lines().find(|l| l.starts_with("T3_BENCH_IMMUNE")).unwrap_or("").to_string();
+        println!("{linea} TG_LOG_TS={ts} escritas={escritas} integras={integras} perdidas={}", n - escritas.min(n));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+}
+
+fn parse_demo_tel_cuenta(texto: &str) -> usize {
+    telemetry_server::report_demo_run::parse_demo_tel(texto, "bench", &telemetry_server::report_demo_run::Ambito::new("b", "a"))
+        .eventos
+        .iter()
+        .filter(|e| e.tipo == "IMMUNE_TRIGGER")
+        .count()
 }

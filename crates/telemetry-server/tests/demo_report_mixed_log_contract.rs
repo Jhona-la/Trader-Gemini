@@ -250,6 +250,8 @@ fn m1_cli_log_mixto_informa_cobertura_y_veta_apto_si_faltan_joins() -> Result<()
         &parse_income_jsonl(INCOME),
     ));
     assert!(r.salida.starts_with(&esperado), "la tabla legacy cambió:\n{}", r.salida);
+    // T3 (T3-3, criterio :37): el resultado mixto es NO APTO antes de reemplazarlo.
+    assert!(r.salida.contains("ACEPTACION: NO APTO"), "{}", r.salida);
     // MIXED_EXTRA trae el esquema DEMO_TEL de 515e3bf4 (ORDER_SEND sin `tipo`, ...):
     // queda diagnosticado y el informe oficial no es apto aunque el legacy una.
     let solo_legacy = escribir("solo_legacy.log", LEGACY)?;
@@ -257,7 +259,11 @@ fn m1_cli_log_mixto_informa_cobertura_y_veta_apto_si_faltan_joins() -> Result<()
     assert_eq!(r.codigo, 0, "{}", r.error);
     assert!(r.salida.starts_with(&esperado));
     assert!(r.salida.contains("VETUSDT | 701 | LEGACY | 3000 |"), "{}", r.salida);
-    assert!(r.salida.contains("ACEPTACION: APTO"), "{}", r.salida);
+    // T3 (T3-3, criterio :37): la expectativa T2 de APTO con ventana sola se corrige: una
+    // ventana declarada no certifica funding ni neto (oficiales N/D) y no hay APTO.
+    assert!(r.salida.contains("VETUSDT | 701 | LEGACY | 3000 | N/D | N/D | 1000 | N/D | N/D"), "{}", r.salida);
+    assert!(r.salida.contains("ACEPTACION: NO APTO"), "{}", r.salida);
+    assert!(!r.salida.contains("ACEPTACION: APTO"), "{}", r.salida);
 
     // Cero sin respaldo: sin ventana, funding y neto N/D y no apto (la tabla legacy igual).
     let r = correr_cli(&["--log", &solo_legacy, "--income", &income]);
@@ -299,4 +305,524 @@ fn m1_cli_log_mixto_informa_cobertura_y_veta_apto_si_faltan_joins() -> Result<()
     assert!(r.error.contains("línea 2"), "{}", r.error);
     let _ = std::fs::remove_dir_all(&dir);
     Ok(())
+}
+
+
+// ===========================================================================
+// DEMO_TEL T3 (qra_t3_criterios.md, T3-2, T3-3, T3-4 y T3-6). Oráculos escritos sobre
+// la API pública que ya existía en bb2db3e4 (CLI `demo_report`, `parse_demo_tel`,
+// `build_report_mixto`, `render_informe_mixto`): corren igual en la base y en la entrega.
+// ===========================================================================
+use telemetry_server::report_demo_run::render_informe_mixto;
+
+/// sha256 hex (FIPS 180-4), propio de la prueba: el recibo del fixture se calcula aquí,
+/// sin depender de la implementación bajo prueba.
+fn sha256_prueba(datos: &[u8]) -> String {
+    let k: [u32; 64] = [
+        0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4, 0xab1c5ed5, 0xd807aa98,
+        0x12835b01, 0x243185be, 0x550c7dc3, 0x72be5d74, 0x80deb1fe, 0x9bdc06a7, 0xc19bf174, 0xe49b69c1, 0xefbe4786,
+        0x0fc19dc6, 0x240ca1cc, 0x2de92c6f, 0x4a7484aa, 0x5cb0a9dc, 0x76f988da, 0x983e5152, 0xa831c66d, 0xb00327c8,
+        0xbf597fc7, 0xc6e00bf3, 0xd5a79147, 0x06ca6351, 0x14292967, 0x27b70a85, 0x2e1b2138, 0x4d2c6dfc, 0x53380d13,
+        0x650a7354, 0x766a0abb, 0x81c2c92e, 0x92722c85, 0xa2bfe8a1, 0xa81a664b, 0xc24b8b70, 0xc76c51a3, 0xd192e819,
+        0xd6990624, 0xf40e3585, 0x106aa070, 0x19a4c116, 0x1e376c08, 0x2748774c, 0x34b0bcb5, 0x391c0cb3, 0x4ed8aa4a,
+        0x5b9cca4f, 0x682e6ff3, 0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208, 0x90befffa, 0xa4506ceb, 0xbef9a3f7,
+        0xc67178f2,
+    ];
+    let mut h: [u32; 8] = [0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a, 0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19];
+    let mut m = datos.to_vec();
+    let bits = (datos.len() as u64) * 8;
+    m.push(0x80);
+    while m.len() % 64 != 56 {
+        m.push(0);
+    }
+    m.extend_from_slice(&bits.to_be_bytes());
+    for b in m.chunks(64) {
+        let mut w = [0u32; 64];
+        for t in 0..16 {
+            w[t] = u32::from_be_bytes([b[4 * t], b[4 * t + 1], b[4 * t + 2], b[4 * t + 3]]);
+        }
+        for t in 16..64 {
+            let s0 = w[t - 15].rotate_right(7) ^ w[t - 15].rotate_right(18) ^ (w[t - 15] >> 3);
+            let s1 = w[t - 2].rotate_right(17) ^ w[t - 2].rotate_right(19) ^ (w[t - 2] >> 10);
+            w[t] = w[t - 16].wrapping_add(s0).wrapping_add(w[t - 7]).wrapping_add(s1);
+        }
+        let mut v = h;
+        for t in 0..64 {
+            let s1 = v[4].rotate_right(6) ^ v[4].rotate_right(11) ^ v[4].rotate_right(25);
+            let ch = (v[4] & v[5]) ^ (!v[4] & v[6]);
+            let t1 = v[7].wrapping_add(s1).wrapping_add(ch).wrapping_add(k[t]).wrapping_add(w[t]);
+            let s0 = v[0].rotate_right(2) ^ v[0].rotate_right(13) ^ v[0].rotate_right(22);
+            let maj = (v[0] & v[1]) ^ (v[0] & v[2]) ^ (v[1] & v[2]);
+            v = [t1.wrapping_add(s0.wrapping_add(maj)), v[0], v[1], v[2], v[3].wrapping_add(t1), v[4], v[5], v[6]];
+        }
+        for (x, y) in h.iter_mut().zip(v) {
+            *x = x.wrapping_add(y);
+        }
+    }
+    h.iter().map(|x| format!("{x:08x}")).collect()
+}
+
+#[test]
+fn t3_sha256_de_la_prueba_es_el_de_fips() {
+    assert_eq!(sha256_prueba(b"abc"), "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad");
+    assert_eq!(sha256_prueba(b""), "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855");
+}
+
+fn dir_prueba(nombre: &str) -> Result<std::path::PathBuf, String> {
+    let dir = std::env::temp_dir().join(format!("t3_{nombre}_{}", std::process::id()));
+    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    Ok(dir)
+}
+
+fn escribir_en(dir: &std::path::Path, nombre: &str, texto: &str) -> Result<String, String> {
+    let p = dir.join(nombre);
+    std::fs::write(&p, texto).map_err(|e| e.to_string())?;
+    Ok(p.to_string_lossy().into_owned())
+}
+
+/// La sección oficial (después de la tabla LEGACY).
+fn seccion_oficial(salida: &str) -> &str {
+    salida.split_once("COBERTURA M1").map(|(_, m)| m).unwrap_or("")
+}
+
+// --- T3-2 · El fallback tranId solo identifica la fila contable ----------------------------
+
+const FILL_711: &str = "DEMO_TEL event=FILL ts=3000 symbol=VETUSDT side=SELL price=0.005120 qty=400.000000 cum_qty=400.000000 client_order_id=cS_t trade_id=711 is_maker=false status=PartiallyFilled\n";
+/// Income sin tradeId (omitido) y con tradeId vacío, ambos con tranId=711.
+const INC_FALLBACK_OMITIDO: &str = "{\"symbol\":\"VETUSDT\",\"income_type\":\"COMMISSION\",\"income\":-0.00082,\"time_ms\":3000,\"tran_id\":711,\"asset\":\"USDT\"}\n";
+const INC_FALLBACK_VACIO: &str = "{\"symbol\":\"VETUSDT\",\"income_type\":\"COMMISSION\",\"income\":-0.00082,\"time_ms\":3000,\"trade_id\":\"\",\"tran_id\":711,\"asset\":\"USDT\"}\n";
+/// Gemelo positivo: tradeId explícito 711 y tranId distinto.
+const INC_EXPLICITO: &str = "{\"symbol\":\"VETUSDT\",\"income_type\":\"COMMISSION\",\"income\":-0.00082,\"time_ms\":3000,\"trade_id\":\"711\",\"tran_id\":905,\"asset\":\"USDT\"}\n";
+/// Movimiento distinto con fallback del mismo número (funding firmado sin tradeId).
+const INC_FUNDING_711: &str = "{\"symbol\":\"VETUSDT\",\"income_type\":\"FUNDING_FEE\",\"income\":-0.0001,\"time_ms\":3300,\"tran_id\":711,\"asset\":\"USDT\"}\n";
+
+#[test]
+fn t3_join_nativo_exige_trade_id_explicito_aunque_tran_id_coincida() {
+    let a = || Ambito::new("binance_usdm", "A");
+    let k = |c: &str, s: &str, t: &str| ("binance_usdm".to_string(), c.to_string(), s.to_string(), t.to_string());
+    let tel = parse_demo_tel(FILL_711, "stdout", &a());
+    assert_eq!((tel.eventos.len(), tel.diagnosticos.len()), (1, 0), "control: el fill nativo es válido");
+
+    // Negativo, en sus dos variantes (tradeId omitido y vacío).
+    for (variante, inc) in [("omitido", INC_FALLBACK_OMITIDO), ("vacío", INC_FALLBACK_VACIO)] {
+        let income = parse_income_jsonl(inc);
+        assert_eq!(income.len(), 1, "{variante}");
+        let inf = build_report_mixto(&[], &[tel.clone()], &a(), &income, Some(VENTANA));
+        assert_eq!(inf.filas.len(), 1, "{variante}: la fila contable se conserva");
+        let f = &inf.filas[0];
+        assert_eq!(f.op.trade_id, "711", "{variante}: identidad transaccional de la fila");
+        assert_eq!(f.op.commission.to_bits(), (-0.00082f64).to_bits(), "{variante}: importe exacto");
+        assert_eq!(f.join, "N/D", "{variante}: el tranId no es identidad nativa");
+        assert!(f.fill.is_none(), "{variante}");
+        assert_eq!((f.op.fill_ts_ms, f.op.entry_price, f.op.order_to_fill_ms), (None, None, None), "{variante}: nada prestado del fill");
+        assert!(f.op.side.is_empty(), "{variante}: sin lado prestado");
+        assert_eq!(inf.fills_nativos, 1, "{variante}");
+        assert_eq!(inf.fills_sin_pareja, vec![k("A", "VETUSDT", "711")], "{variante}: el fill sigue sin pareja, una vez");
+        assert!(!inf.apto, "{variante}");
+        let r = render_informe_mixto(&inf);
+        assert!(
+            r.contains("VETUSDT | 711 | N/D | N/D | N/D | N/D | N/D | N/D | N/D | TRAN_ID | COMMISSION=-0.00082 USDT\n"),
+            "{variante}: origen de la clave y fila exacta:\n{r}"
+        );
+        assert!(r.contains("sin pareja 1)"), "{variante}:\n{r}");
+    }
+
+    // Gemelo positivo: tradeId explícito 711, tranId distinto.
+    let income = parse_income_jsonl(INC_EXPLICITO);
+    let inf = build_report_mixto(&[], &[tel.clone()], &a(), &income, Some(VENTANA));
+    assert_eq!(inf.filas.len(), 1);
+    let f = &inf.filas[0];
+    assert_eq!(f.join, "FILL_NATIVO");
+    let fill = f.fill.as_ref().expect("fill del join");
+    assert_eq!((fill.qty, fill.price, fill.ts_evento, fill.side.as_str()), (400.0, 0.00512, 3000, "SELL"));
+    assert_eq!((f.op.fill_ts_ms, f.op.side.as_str()), (Some(3000), "SELL"));
+    assert!(inf.fills_sin_pareja.is_empty());
+    let r = render_informe_mixto(&inf);
+    assert!(r.contains("VETUSDT | 711 | FILL_NATIVO | 3000 | 0.005120 | 400.000000 | N/D | N/D | N/D | TRADE_ID | COMMISSION=-0.00082 USDT\n"), "{r}");
+
+    // Otro símbolo, otra cuenta u otro venue: no enlaza.
+    for (lectura, que) in [
+        (parse_demo_tel(&FILL_711.replace("VETUSDT", "DOGEUSDT"), "stdout", &a()), "símbolo"),
+        (parse_demo_tel(FILL_711, "otra", &Ambito::new("binance_usdm", "B")), "cuenta"),
+        (parse_demo_tel(FILL_711, "otra", &Ambito::new("bybit", "A")), "venue"),
+    ] {
+        let inf = build_report_mixto(&[], &[lectura], &a(), &income, Some(VENTANA));
+        assert_eq!(inf.filas.len(), 1, "{que}");
+        assert_eq!(inf.filas[0].join, "N/D", "otro {que}: no enlaza");
+        assert!(inf.filas[0].fill.is_none(), "{que}");
+    }
+
+    // Coexistencia: comisión con tradeId explícito 711 y funding sin tradeId con tranId=711.
+    let income = parse_income_jsonl(&format!("{INC_EXPLICITO}{INC_FUNDING_711}"));
+    let inf = build_report_mixto(&[], &[tel.clone()], &a(), &income, Some(VENTANA));
+    assert_eq!(inf.filas.len(), 2, "dos procedencias, dos filas: {:?}", inf.filas);
+    let nativa: Vec<_> = inf.filas.iter().filter(|f| f.join == "FILL_NATIVO").collect();
+    let nd: Vec<_> = inf.filas.iter().filter(|f| f.join == "N/D").collect();
+    assert_eq!((nativa.len(), nd.len()), (1, 1));
+    assert_eq!(nativa[0].op.commission.to_bits(), (-0.00082f64).to_bits());
+    assert_eq!(nativa[0].op.funding, 0.0, "el funding sin tradeId no se imputa al fill");
+    assert_eq!(nd[0].op.funding.to_bits(), (-0.0001f64).to_bits(), "el funding conserva su identidad e importe");
+    assert!(nd[0].op.commission.is_nan());
+    assert!(nd[0].fill.is_none() && nd[0].op.fill_ts_ms.is_none());
+    assert!(inf.fills_sin_pareja.is_empty());
+    let r = render_informe_mixto(&inf);
+    assert!(r.contains("VETUSDT | 711 | N/D | N/D | N/D | N/D | N/D | N/D | N/D | TRAN_ID | FUNDING_FEE=-0.0001 USDT\n"), "{r}");
+    // Ningún caso agrega dinero.
+    let filas: Vec<_> = inf.filas.iter().map(|f| f.op.clone()).collect();
+    let total: f64 = income.iter().map(|r| r.income).sum();
+    assert!((suma_dinero(&filas) - total).abs() < 1e-15);
+}
+
+// --- T3-3 · Cobertura financiera verificable y compuerta de CLI ---------------------------
+
+const INC_T33: &str = concat!(
+    "{\"symbol\":\"VETUSDT\",\"income_type\":\"REALIZED_PNL\",\"income\":0.047808,\"time_ms\":4000,\"trade_id\":\"701\",\"tran_id\":802,\"asset\":\"USDT\"}\n",
+    "{\"symbol\":\"VETUSDT\",\"income_type\":\"COMMISSION\",\"income\":-0.00406,\"time_ms\":4000,\"trade_id\":\"701\",\"tran_id\":803,\"asset\":\"USDT\"}\n",
+    "{\"symbol\":\"VETUSDT\",\"income_type\":\"COMMISSION\",\"income\":-0.5,\"time_ms\":99999,\"trade_id\":\"799\",\"tran_id\":999,\"asset\":\"USDT\"}\n",
+);
+
+#[derive(Clone)]
+struct Recibo {
+    sha: String,
+    venue: Option<&'static str>,
+    cuenta: Option<&'static str>,
+    activo: Option<&'static str>,
+    paginas: Vec<(u64, u64, Option<&'static str>)>,
+    cubierto: (u64, u64),
+    extra: &'static str,
+}
+
+impl Recibo {
+    fn json(&self) -> String {
+        let campo = |k: &str, v: Option<&str>| v.map(|v| format!("\"{k}\":\"{v}\",")).unwrap_or_default();
+        let paginas: Vec<String> = self
+            .paginas
+            .iter()
+            .map(|(n, f, c)| {
+                let cont = c.map(|c| format!("\"{c}\"")).unwrap_or_else(|| "null".to_string());
+                format!("{{\"pagina\":{n},\"filas\":{f},\"continuacion\":{cont}}}")
+            })
+            .collect();
+        format!(
+            "{{\"archivo_sha256\":\"{}\",{}{}{}\"tipos\":[\"REALIZED_PNL\",\"COMMISSION\",\"FUNDING_FEE\"],\"intervalo_solicitado\":{{\"desde_ms\":0,\"hasta_ms\":10000}},\"intervalo_cubierto\":{{\"desde_ms\":{},\"hasta_ms\":{}}},\"paginas\":[{}],\"termino\":true{}}}",
+            self.sha,
+            campo("venue", self.venue),
+            campo("cuenta", self.cuenta),
+            campo("activo", self.activo),
+            self.cubierto.0,
+            self.cubierto.1,
+            paginas.join(","),
+            self.extra
+        )
+    }
+}
+
+fn recibo_completo(income: &str) -> Recibo {
+    Recibo {
+        sha: sha256_prueba(income.as_bytes()),
+        venue: Some("binance_usdm"),
+        cuenta: Some("A"),
+        activo: Some("USDT"),
+        paginas: vec![(1, income.lines().filter(|l| !l.trim().is_empty()).count() as u64, None)],
+        cubierto: (0, 10_000),
+        extra: "",
+    }
+}
+
+#[test]
+fn t3_cli_ventana_sola_no_certifica_funding_ni_neto() -> Result<(), String> {
+    let dir = dir_prueba("t33")?;
+    let log = escribir_en(&dir, "legacy.log", LEGACY)?;
+    let legacy_de = |inc: &str| -> Result<String, String> {
+        Ok(render_report_table(&build_report(&parse_run_log(LEGACY).map_err(|e| format!("{e:?}"))?, &parse_income_jsonl(inc))))
+    };
+    let fila_701 = "VETUSDT | 701 | LEGACY | 3000 | N/D | N/D | 1000 | N/D | N/D | TRADE_ID | COMMISSION=-0.00406 USDT; REALIZED_PNL=0.047808 USDT";
+    let control = |nombre: &str, r: &Corrida, legacy: &str| -> String {
+        assert_eq!(r.codigo, 0, "{nombre}: {}", r.error);
+        assert!(r.salida.starts_with(legacy), "{nombre}: la tabla LEGACY cambió:\n{}", r.salida);
+        let oficial = seccion_oficial(&r.salida);
+        assert!(!oficial.is_empty(), "{nombre}: sin sección oficial delimitada:\n{}", r.salida);
+        assert!(oficial.contains("ventana income: 0..10000 ms"), "{nombre}");
+        assert!(
+            oficial.contains("VETUSDT | 701 | LEGACY | 3000 | N/D | N/D | 1000 | N/D | N/D |"),
+            "{nombre}: join verificado y funding/neto oficiales N/D:\n{oficial}"
+        );
+        assert!(oficial.contains("REALIZED_PNL=0.047808 USDT"), "{nombre}: el bruto observado se muestra como tal:\n{oficial}");
+        assert!(oficial.contains("income fuera de ventana 1,"), "{nombre}: la fila exterior se contabiliza:\n{oficial}");
+        assert!(!oficial.contains("| 799 |"), "{nombre}: la fila exterior se filtra:\n{oficial}");
+        assert!(oficial.contains("ACEPTACION: NO APTO"), "{nombre}:\n{oficial}");
+        assert!(!oficial.contains("ACEPTACION: APTO"), "{nombre}:\n{oficial}");
+        oficial.to_string()
+    };
+    let correr = |nombre: &str, income: &str, recibo: Option<String>, extra: &[&str]| -> Result<Corrida, String> {
+        let inc = escribir_en(&dir, &format!("{nombre}.jsonl"), income)?;
+        let mut args: Vec<String> = vec!["--log".into(), log.clone(), "--income".into(), inc, "--ventana".into(), "0:10000".into()];
+        if let Some(rc) = recibo {
+            args.push("--recibo-income".into());
+            args.push(escribir_en(&dir, &format!("{nombre}.recibo.json"), &rc)?);
+        }
+        args.extend(extra.iter().map(|s| s.to_string()));
+        let a: Vec<&str> = args.iter().map(String::as_str).collect();
+        Ok(correr_cli(&a))
+    };
+    let alcance: &[&str] = &["--ambito", "binance_usdm:A", "--activo", "USDT"];
+    let esperado_legacy = legacy_de(INC_T33)?;
+
+    // (0) Ventana sola: el caso que en T2 daba funding 0, neto finito y APTO.
+    let r = correr("ventana_sola", INC_T33, None, &[])?;
+    let of = control("ventana_sola", &r, &esperado_legacy);
+    assert!(!of.contains("0.000000"), "ventana sola: funding cero sin respaldo:\n{of}");
+
+    // (1) Gemelo con ventana y metadatos completos y coherentes, también anunciando
+    // cobertura sin respaldo: N/D y NO APTO, con motivo de cobertura.
+    for (nombre, extra) in [("gemelo", ""), ("anuncia_cobertura", ",\"cobertura\":\"COMPLETA\",\"certificado\":true")] {
+        let mut rc = recibo_completo(INC_T33);
+        rc.extra = extra;
+        let r = correr(nombre, INC_T33, Some(rc.json()), alcance)?;
+        let of = control(nombre, &r, &esperado_legacy);
+        assert!(of.contains(fila_701), "{nombre}: fila exacta con join y observados:\n{of}");
+        assert!(of.contains("motivo: cobertura: el recibo no acredita la procedencia"), "{nombre}:\n{of}");
+        for categoria in ["motivo: ámbito:", "motivo: activo:", "integridad:", "motivo: paginación:", "intervalo incompleto"] {
+            assert!(!of.contains(categoria), "{nombre}: motivo ajeno {categoria}:\n{of}");
+        }
+    }
+
+    // (2) Una carencia por variante, con su motivo específico.
+    let sin_asset = INC_T33.replace(",\"tran_id\":803,\"asset\":\"USDT\"", ",\"tran_id\":803");
+    let asset_vacio = INC_T33.replace(",\"tran_id\":803,\"asset\":\"USDT\"", ",\"tran_id\":803,\"asset\":\"\"");
+    let asset_tipo = INC_T33.replace(",\"tran_id\":803,\"asset\":\"USDT\"", ",\"tran_id\":803,\"asset\":5");
+    let truncado = format!("{INC_T33}{{\"symbol\":\"VETUSDT\",\"income_ty\n");
+    let base = || recibo_completo(INC_T33);
+    let con = |f: &dyn Fn(&mut Recibo)| {
+        let mut rc = base();
+        f(&mut rc);
+        Some(rc.json())
+    };
+    let casos: Vec<(&str, String, Option<String>, &[&str], &str)> = vec![
+        ("ambito_ausente", INC_T33.into(), Some(base().json()), &["--activo", "USDT"], "motivo: ámbito: venue/cuenta del alcance no declarados"),
+        ("cuenta_discordante", INC_T33.into(), con(&|r| r.cuenta = Some("B")), alcance, "motivo: ámbito: el recibo declara cuenta=B"),
+        ("venue_discordante", INC_T33.into(), con(&|r| r.venue = Some("bybit")), alcance, "motivo: ámbito: el recibo declara venue=bybit"),
+        ("cuenta_ausente_en_recibo", INC_T33.into(), con(&|r| r.cuenta = None), alcance, "motivo: ámbito: el recibo no declara cuenta"),
+        ("activo_no_declarado", INC_T33.into(), Some(base().json()), &["--ambito", "binance_usdm:A"], "motivo: activo: numerario del alcance no declarado"),
+        ("activo_fuera_de_alcance", INC_T33.into(), con(&|r| r.activo = Some("BNB")), alcance, "motivo: activo: el recibo declara activo=BNB"),
+        ("asset_ausente", sin_asset.clone(), Some(recibo_completo(&sin_asset).json()), alcance, "asset AUSENTE; el sufijo del símbolo no acredita la moneda"),
+        ("asset_vacio", asset_vacio.clone(), Some(recibo_completo(&asset_vacio).json()), alcance, "asset VACIO; el sufijo del símbolo no acredita la moneda"),
+        ("asset_tipo_invalido", asset_tipo.clone(), Some(recibo_completo(&asset_tipo).json()), alcance, "asset INVALIDO; el sufijo del símbolo no acredita la moneda"),
+        ("sin_recibo", INC_T33.into(), None, alcance, "motivo: cobertura: sin recibo de cobertura del income"),
+        ("hash_discordante", INC_T33.into(), con(&|r| r.sha = sha256_prueba(b"otro archivo")), alcance, "motivo: integridad: el sha256 del recibo"),
+        ("jsonl_truncado", truncado.clone(), Some(recibo_completo(&truncado).json()), alcance, "integridad: la línea no es un objeto JSON (truncada o corrupta)"),
+        ("pagina_faltante", INC_T33.into(), con(&|r| r.paginas = vec![(1, 2, Some("c1")), (3, 1, None)]), alcance, "motivo: paginación: falta la página 2"),
+        ("intervalo_incompleto", INC_T33.into(), con(&|r| r.cubierto = (0, 5_000)), alcance, "intervalo_cubierto 0..5000 no cubre la ventana 0..10000: intervalo incompleto"),
+    ];
+    for (nombre, inc, rc, extra, motivo) in &casos {
+        let r = correr(nombre, inc, rc.clone(), extra)?;
+        let of = control(nombre, &r, &legacy_de(inc)?);
+        assert!(of.contains(motivo), "{nombre}: falta el motivo {motivo:?}:\n{of}");
+    }
+    // Un activo inválido se muestra con su marca, nunca como USDT por el sufijo del símbolo.
+    let r = correr("asset_ausente_fila", &sin_asset, Some(recibo_completo(&sin_asset).json()), alcance)?;
+    let of = seccion_oficial(&r.salida);
+    assert!(of.contains("COMMISSION=-0.00406 AUSENTE; REALIZED_PNL=0.047808 USDT (INCOMPLETA)"), "{of}");
+    let _ = std::fs::remove_dir_all(&dir);
+    Ok(())
+}
+
+// --- T3-4 · Los activos no se suman entre sí -----------------------------------------------
+
+const FILL_711_ENTERO: &str = "DEMO_TEL event=FILL ts=3000 symbol=VETUSDT side=SELL price=0.005120 qty=996.000000 cum_qty=996.000000 client_order_id=cS_m trade_id=711 is_maker=false status=Filled\n";
+const INC_MEZCLA: &str = concat!(
+    "{\"symbol\":\"VETUSDT\",\"income_type\":\"REALIZED_PNL\",\"income\":10,\"time_ms\":4000,\"trade_id\":\"711\",\"tran_id\":1001,\"asset\":\"USDT\"}\n",
+    "{\"symbol\":\"VETUSDT\",\"income_type\":\"COMMISSION\",\"income\":-1,\"time_ms\":3000,\"trade_id\":\"711\",\"tran_id\":1002,\"asset\":\"USDT\"}\n",
+    "{\"symbol\":\"VETUSDT\",\"income_type\":\"COMMISSION\",\"income\":-0.01,\"time_ms\":3000,\"trade_id\":\"711\",\"tran_id\":1003,\"asset\":\"BNB\"}\n",
+    "{\"symbol\":\"VETUSDT\",\"income_type\":\"COMMISSION\",\"income\":-0.01,\"time_ms\":3000,\"trade_id\":\"711\",\"tran_id\":1003,\"asset\":\"BNB\"}\n",
+);
+const INC_SOLO_USDT: &str = concat!(
+    "{\"symbol\":\"VETUSDT\",\"income_type\":\"REALIZED_PNL\",\"income\":10,\"time_ms\":4000,\"trade_id\":\"711\",\"tran_id\":1001,\"asset\":\"USDT\"}\n",
+    "{\"symbol\":\"VETUSDT\",\"income_type\":\"COMMISSION\",\"income\":-1,\"time_ms\":3000,\"trade_id\":\"711\",\"tran_id\":1002,\"asset\":\"USDT\"}\n",
+    "{\"symbol\":\"VETUSDT\",\"income_type\":\"FUNDING_FEE\",\"income\":0.25,\"time_ms\":3500,\"tran_id\":1004,\"asset\":\"USDT\"}\n",
+);
+
+#[test]
+fn t3_income_no_mezcla_activos_en_la_misma_operacion() -> Result<(), String> {
+    let dir = dir_prueba("t34")?;
+    let log = escribir_en(&dir, "fill.log", FILL_711_ENTERO)?;
+    let alcance = ["--ventana", "0:10000", "--ambito", "binance_usdm:A", "--activo", "USDT"];
+    let correr = |nombre: &str, inc: &str| -> Result<Corrida, String> {
+        let p = escribir_en(&dir, nombre, inc)?;
+        let mut a = vec!["--log", log.as_str(), "--income", p.as_str()];
+        a.extend(alcance);
+        Ok(correr_cli(&a))
+    };
+
+    // Mezcla: +10 USDT, -1 USDT, -0,01 BNB y el replay idéntico de la comisión BNB.
+    let r = correr("mezcla.jsonl", INC_MEZCLA)?;
+    assert_eq!(r.codigo, 0, "{}", r.error);
+    let legacy = render_report_table(&build_report(&[], &parse_income_jsonl(INC_MEZCLA)));
+    assert!(r.salida.starts_with(&legacy), "la tabla LEGACY conserva su comportamiento:\n{}", r.salida);
+    let of = seccion_oficial(&r.salida);
+    assert!(of.contains("duplicado 1,"), "un replay contado:\n{of}");
+    assert!(
+        of.contains("VETUSDT | 711 | FILL_NATIVO | 3000 | 0.005120 | 996.000000 | N/D | N/D | N/D | TRADE_ID | COMMISSION=-0.01 BNB; COMMISSION=-1 USDT; REALIZED_PNL=10 USDT (INCOMPLETA)\n"),
+        "tres movimientos, importes y unidades exactos, operación incompleta:\n{of}"
+    );
+    assert!(of.contains("motivo: activo: VETUSDT trade_id=711: importes fuera del numerario USDT (COMMISSION -0.01 BNB)"), "{of}");
+    assert!(of.contains("LEGACY sin autoridad oficial: VETUSDT 711: la tabla LEGACY suma nominalmente BNB + USDT"), "{of}");
+    for mixto in ["-1.01", "8.99", "-1.02", "8.98"] {
+        assert!(!of.contains(mixto), "total mixto {mixto} en la salida oficial:\n{of}");
+    }
+    assert!(of.contains("ACEPTACION: NO APTO"));
+    // La misma lectura por la API: un solo grupo, el replay contado, neto oficial N/D.
+    let tel = parse_demo_tel(FILL_711_ENTERO, "stdout", &acreditado());
+    let inf = build_report_mixto(&[], &[tel], &acreditado(), &parse_income_jsonl(INC_MEZCLA), Some(VENTANA));
+    assert_eq!((inf.filas.len(), inf.income_duplicado), (1, 1));
+    assert_eq!((inf.filas[0].funding_acreditado, inf.filas[0].neto_acreditado), (None, None));
+
+    // Gemelo solo USDT: comisión observada -1 USDT exacta; sin cobertura acreditada el neto
+    // oficial sigue N/D. El funding firmado conserva signo e identidad propia.
+    let r = correr("usdt.jsonl", INC_SOLO_USDT)?;
+    assert_eq!(r.codigo, 0, "{}", r.error);
+    let of = seccion_oficial(&r.salida);
+    assert!(
+        of.contains("VETUSDT | 711 | FILL_NATIVO | 3000 | 0.005120 | 996.000000 | N/D | N/D | N/D | TRADE_ID | COMMISSION=-1 USDT; REALIZED_PNL=10 USDT\n"),
+        "{of}"
+    );
+    assert!(of.contains("VETUSDT | 1004 | N/D | N/D | N/D | N/D | N/D | N/D | N/D | TRAN_ID | FUNDING_FEE=0.25 USDT\n"), "{of}");
+    assert!(!of.contains("INCOMPLETA") && !of.contains("LEGACY sin autoridad"), "{of}");
+    assert!(!of.contains("9.000000") && !of.contains("| 9 |"), "neto 9 sin cobertura acreditada:\n{of}");
+    assert!(of.contains("motivo: cobertura: sin recibo de cobertura del income"), "{of}");
+    assert!(of.contains("duplicado 0,"));
+    let _ = std::fs::remove_dir_all(&dir);
+    Ok(())
+}
+
+// --- T3-6 · Dominios de DEMO_TEL validados al leer -----------------------------------------
+
+/// Una línea válida completa por emisor (esquema de la entrega T2).
+const VALIDAS: &[(&str, &str)] = &[
+    ("FILL", "DEMO_TEL event=FILL ts=3000 symbol=VETUSDT side=SELL price=0.005120 qty=400.000000 cum_qty=400.000000 client_order_id=cS_p trade_id=711 is_maker=false status=PartiallyFilled"),
+    ("TRADE_FEE", "DEMO_TEL event=TRADE_FEE ts=3000 symbol=VETUSDT client_order_id=cS_p trade_id=711 fee=0.00082000 fee_asset=USDT is_maker=false alcance=ENTRADA"),
+    ("ORDER_SEND", "DEMO_TEL event=ORDER_SEND tipo=INTENTO ts=2000 symbol=VETUSDT is_long=false qty=996.000000 client_order_id=cS_p lev=2 route=Ioc { price: 0.00511 }"),
+    ("ORDER_RESULT", "DEMO_TEL event=ORDER_RESULT ts=2001 symbol=VETUSDT client_order_id=cS_p resultado=ENTREGADA"),
+    ("IMMUNE_TRIGGER", "DEMO_TEL event=IMMUNE_TRIGGER ts=4499 motivo=DRAWDOWN alcance=CUENTA freno_capital=1655.8100 freno_capital_plano=FRENO peak_capital=7299.8800 peak_plano=PICO equity_del_freno=AUSENTE equity_del_freno_plano=PUENTE caida_capital_pct=77.3172 tope_capital_pct=50.0000 operator_lock=false insolvent=false dd_breach=true lat_breach=false latency_strikes=0 revision=N/D lecturas_posteriores=ninguna"),
+];
+
+/// (tipo, campo, valor válido actual, valor mutante).
+const MUTANTES: &[(&str, &str, &str, &str)] = &[
+    ("FILL", "side", "SELL", "XYZ"),
+    ("FILL", "side", "SELL", "sell"),
+    ("FILL", "side", "SELL", "1"),
+    ("FILL", "status", "PartiallyFilled", "Arbitrario"),
+    ("FILL", "status", "PartiallyFilled", "Canceled"),
+    ("FILL", "status", "PartiallyFilled", "New"),
+    ("FILL", "status", "PartiallyFilled", "Expired"),
+    ("FILL", "status", "PartiallyFilled", "Unknown"),
+    ("FILL", "is_maker", "false", "maybe"),
+    ("FILL", "is_maker", "false", "1"),
+    ("FILL", "is_maker", "false", "AUSENTE"),
+    ("TRADE_FEE", "is_maker", "false", "0"),
+    ("TRADE_FEE", "is_maker", "false", "AUSENTE"),
+    ("ORDER_SEND", "is_long", "false", "yes"),
+    ("ORDER_SEND", "is_long", "false", "1"),
+    ("ORDER_SEND", "is_long", "false", "AUSENTE"),
+    ("ORDER_SEND", "tipo", "INTENTO", "ENVIO"),
+    ("IMMUNE_TRIGGER", "operator_lock", "false", "1"),
+    ("IMMUNE_TRIGGER", "insolvent", "false", "AUSENTE"),
+    ("IMMUNE_TRIGGER", "dd_breach", "true", "si"),
+    ("IMMUNE_TRIGGER", "lat_breach", "false", "0"),
+    ("ORDER_RESULT", "resultado", "ENTREGADA", "DESCONOCIDA"),
+];
+
+/// Variantes válidas del dominio (siguen siendo eventos con ese valor).
+const VALIDOS_ALTERNOS: &[(&str, &str, &str, &str)] = &[
+    ("FILL", "side", "SELL", "BUY"),
+    ("FILL", "status", "PartiallyFilled", "Filled"),
+    ("FILL", "is_maker", "false", "true"),
+    ("TRADE_FEE", "is_maker", "false", "true"),
+    ("ORDER_SEND", "is_long", "false", "true"),
+    ("ORDER_RESULT", "resultado", "ENTREGADA", "RECHAZADA"),
+    ("ORDER_RESULT", "resultado", "ENTREGADA", "AMBIGUA"),
+    ("IMMUNE_TRIGGER", "operator_lock", "false", "true"),
+];
+
+fn linea_valida(tipo: &str) -> &'static str {
+    VALIDAS.iter().find(|(t, _)| *t == tipo).map(|(_, l)| *l).expect("tipo con línea válida")
+}
+
+fn mutar(tipo: &str, k: &str, de: &str, a: &str) -> String {
+    let linea = linea_valida(tipo);
+    let viejo = format!(" {k}={de}");
+    assert_eq!(linea.matches(&viejo).count(), 1, "{tipo}: {viejo}");
+    linea.replacen(&viejo, &format!(" {k}={a}"), 1)
+}
+
+#[test]
+fn t3_demo_tel_rechaza_dominios_invalidos_y_conserva_validos() {
+    for prefijo in ["", "[ts=1784000000000] "] {
+        let fuente = if prefijo.is_empty() { "stdout" } else { "segmento" };
+        // Por cada mutante, su gemelo válido en la línea anterior.
+        let mut texto = String::new();
+        let mut esperados = Vec::new();
+        for (tipo, k, de, a) in MUTANTES {
+            texto.push_str(&format!("{prefijo}{}\n", linea_valida(tipo)));
+            texto.push_str(&format!("{prefijo}{}\n", mutar(tipo, k, de, a)));
+            esperados.push((texto.lines().count(), *tipo, *k, *a));
+        }
+        for (tipo, k, de, a) in VALIDOS_ALTERNOS {
+            texto.push_str(&format!("{prefijo}{}\n", mutar(tipo, k, de, a)));
+        }
+        texto.push_str(&format!("{prefijo}DEMO_TEL event=FUTURO_X ts=1 a=1\n"));
+        let l = parse_demo_tel(&texto, fuente, &acreditado());
+        // Conteos exactos: gemelos y alternos son eventos; cada mutante, un diagnóstico.
+        assert_eq!(l.eventos.len(), MUTANTES.len() + VALIDOS_ALTERNOS.len(), "{fuente}: {:?}", l.diagnosticos);
+        assert_eq!(l.diagnosticos.len(), MUTANTES.len(), "{fuente}: {:#?}", l.diagnosticos);
+        assert_eq!(l.tipos_desconocidos, vec![(texto.lines().count(), "FUTURO_X".to_string())], "{fuente}: futuros aparte");
+        for ((linea, tipo, k, v), d) in esperados.iter().zip(&l.diagnosticos) {
+            assert_eq!((d.fuente.as_str(), d.linea), (fuente, *linea), "{tipo} {k}={v}");
+            assert!(d.mensaje.starts_with(tipo), "{tipo}: {}", d.mensaje);
+            assert!(d.mensaje.contains(&format!("{k}={v}")), "diagnóstico sin campo y valor: {}", d.mensaje);
+        }
+        let unknown = esperados.iter().position(|e| e.3 == "Unknown").unwrap();
+        assert!(l.diagnosticos[unknown].mensaje.contains("evidencia insuficiente"), "{}", l.diagnosticos[unknown].mensaje);
+        for estado in ["Canceled", "New", "Expired"] {
+            let i = esperados.iter().position(|e| e.3 == estado).unwrap();
+            assert!(l.diagnosticos[i].mensaje.contains("no acredita"), "{}", l.diagnosticos[i].mensaje);
+        }
+        // Cada gemelo válido conserva identidad, campos y estado exactos.
+        for (i, (tipo, _, _, _)) in MUTANTES.iter().enumerate() {
+            let e = &l.eventos[i];
+            assert_eq!((e.tipo.as_str(), e.linea), (*tipo, 2 * i + 1));
+            assert_eq!(e.ts_recepcion, if prefijo.is_empty() { None } else { Some(1_784_000_000_000) });
+            for par in linea_valida(tipo).split(' ').skip(2) {
+                if let Some((k, v)) = par.split_once('=') {
+                    if k != "route" {
+                        assert_eq!(e.campos.get(k).map(String::as_str), Some(v), "{tipo}.{k}");
+                    }
+                }
+            }
+        }
+        for (j, (tipo, k, _, a)) in VALIDOS_ALTERNOS.iter().enumerate() {
+            let e = &l.eventos[MUTANTES.len() + j];
+            assert_eq!((e.tipo.as_str(), e.campos.get(*k).map(String::as_str)), (*tipo, Some(*a)));
+        }
+        // LEGACY intacto: estas líneas no son del parser DEMO.
+        assert_eq!(parse_run_log(&texto).map(|v| v.len()), Ok(0));
+    }
+
+    // Un FILL mutante queda fuera del join y deja el informe no apto; su gemelo válido une.
+    let malo = mutar("FILL", "side", "SELL", "XYZ").replace("trade_id=711", "trade_id=712");
+    let texto = format!("{}\n{malo}\n", linea_valida("FILL"));
+    let l = parse_demo_tel(&texto, "stdout", &acreditado());
+    let income = parse_income_jsonl(concat!(
+        "{\"symbol\":\"VETUSDT\",\"income_type\":\"COMMISSION\",\"income\":-0.00082,\"time_ms\":3000,\"trade_id\":\"711\",\"tran_id\":901,\"asset\":\"USDT\"}\n",
+        "{\"symbol\":\"VETUSDT\",\"income_type\":\"COMMISSION\",\"income\":-0.00122,\"time_ms\":3005,\"trade_id\":\"712\",\"tran_id\":902,\"asset\":\"USDT\"}\n",
+    ));
+    let inf = build_report_mixto(&[], &[l], &acreditado(), &income, Some(VENTANA));
+    let fila = |t: &str| inf.filas.iter().find(|f| f.op.trade_id == t).unwrap();
+    assert_eq!(fila("711").join, "FILL_NATIVO", "control positivo: el gemelo válido une");
+    assert_eq!(fila("712").join, "N/D", "el mutante no une");
+    assert_eq!(inf.diagnosticos.len(), 1);
+    assert_eq!(inf.diagnosticos[0].linea, 2);
+    assert!(!inf.apto);
+    let r = render_informe_mixto(&inf);
+    assert!(r.contains("diagnostico stdout:2: FILL: dominio: campo side=XYZ"), "{r}");
 }
