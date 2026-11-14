@@ -36,6 +36,9 @@ class CargoSemaforoTests(unittest.TestCase):
             SEMAFORO_PAUSA_S="0",
             SEMAFORO_PROCESOS="0",
             SEMAFORO_RAM_GB="10",
+            # FA-048: disco forzado holgado para que ninguna prueba dependa
+            # del SSD real (la guarda DISCO-BAJO es OPT-OUT, default 40 GB).
+            SEMAFORO_DISCO_GB="500",
         )
         # `None` BORRA la variable en vez de escribirla: las pruebas que
         # ejercitan la medición real no pueden heredar la costura que la salta.
@@ -252,6 +255,150 @@ class CargoSemaforoTests(unittest.TestCase):
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
         self.assertNotIn("RAM libre  GB", r.stderr)
         self.assertIn("ram_libre=desconocida", self.bitacora.read_text(encoding="utf-8"))
+
+    # ---- FA-048: guarda DISCO-BAJO (GB decimales, 1 GB = 1e9 B) ----------
+
+    AVISO_DISCO = "[semaforo] disco libre desconocido; guarda DISCO-BAJO no aplicada"
+
+    def bin_aislado(self, df=None, cargo=None):
+        """PATH mínimo FUERA de la raíz: sólo las órdenes que usa el script,
+        más `df` / `cargo` de mentira si se piden (sin df = df ausente)."""
+        fuera = tempfile.TemporaryDirectory(prefix="semaforo-bin-")
+        self.addCleanup(fuera.cleanup)
+        bin_dir = Path(fuera.name)
+        for nombre in ("mkdir", "cat", "awk", "grep", "tr", "rm", "sleep", "date"):
+            shim = bin_dir / nombre
+            shim.write_text(f'#!/bin/bash\nexec "/usr/bin/{nombre}" "$@"\n', encoding="utf-8")
+            shim.chmod(0o700)
+        for nombre, cuerpo in (("df", df), ("cargo", cargo)):
+            if cuerpo is not None:
+                shim = bin_dir / nombre
+                shim.write_text("#!/bin/bash\n" + cuerpo, encoding="utf-8")
+                shim.chmod(0o700)
+        return bin_dir
+
+    def correr_aislado(self, bin_dir, *args, **env):
+        entorno = {k: v for k, v in os.environ.items()
+                   if not k.upper().startswith(("SEMAFORO_", "BASH_FUNC_"))
+                   and k not in ("BASH_ENV", "ENV", "CARGO_BUILD_JOBS")}
+        entorno.update(PATH=str(bin_dir), SEMAFORO_RAIZ=str(self.raiz),
+                       SEMAFORO_AGENTE="prueba", SEMAFORO_PROCESOS="0",
+                       SEMAFORO_RAM_GB="10", SEMAFORO_ESPERA_MAX_MIN="0",
+                       SEMAFORO_PAUSA_S="0")
+        entorno.update({k: str(v) for k, v in env.items()})
+        return subprocess.run(
+            [BASH, "--noprofile", "--norc", str(SCRIPT), *args],
+            cwd=self.raiz, env=entorno, capture_output=True, text=True, timeout=30,
+        )
+
+    @staticmethod
+    def df_falso(kib):
+        return ("printf 'Filesystem 1024-blocks Used Available Capacity Mounted on\\n"
+                f"C: 974851068 1 {kib} 93%% /c\\n'\n")
+
+    def escrito_en_raiz(self):
+        return sorted(p.relative_to(self.raiz).as_posix() for p in self.raiz.rglob("*"))
+
+    def test_disco_bajo_bloquea_antes_de_compilar(self):
+        traza = Path(tempfile.mkdtemp(prefix="semaforo-traza-")) / "cargo.trace"
+        self.addCleanup(shutil.rmtree, traza.parent, True)
+        bin_dir = self.bin_aislado(
+            cargo=f'printf "CARGO %s\\n" "$*" >> "{traza.as_posix()}"; exit 0\n')
+        r = self.correr_aislado(bin_dir, "check", "-p", "quantum-arena", SEMAFORO_DISCO_GB="10")
+        salida = r.stdout + r.stderr
+        self.assertEqual(r.returncode, 78, salida)
+        self.assertIn("DISCO-BAJO", salida)
+        self.assertIn("10 GB", salida)
+        self.assertIn("40 GB", salida)
+        self.assertFalse(traza.exists(), "con DISCO-BAJO no se invoca cargo")
+        self.assertFalse((self.raiz / "target").exists(), "no se crea target/")
+        self.assertFalse(self.cerrojo.exists(), "no se toma el cerrojo")
+        # La línea DISCO-BAJO en logs/ es la ÚNICA escritura permitida.
+        self.assertEqual(self.escrito_en_raiz(), ["logs", "logs/semaforo.log"])
+        lineas = self.bitacora.read_text(encoding="utf-8").splitlines()
+        self.assertEqual(len(lineas), 1, lineas)
+        self.assertIn("DISCO-BAJO", lineas[0])
+        self.assertIn("10 GB < umbral 40 GB", lineas[0])
+
+    def test_disco_suficiente_deja_pasarlo(self):
+        # CONTROL (verde en base y en final): el flujo de decisión no se rompe.
+        r = self.correr("check", SEMAFORO_SOLO_DECIDIR=1, SEMAFORO_DISCO_GB="500")
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertIn("turno concedido", r.stdout)
+
+    def test_solo_decidir_informa_libre_y_umbral(self):
+        r = self.correr("check", SEMAFORO_SOLO_DECIDIR=1, SEMAFORO_DISCO_GB="500")
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertIn("DISCO_LIBRE_GB=500", r.stdout)
+        self.assertRegex(r.stdout, r"DISCO_MIN_GB=\d")
+        self.assertIn("GB decimal, 1 GB = 1e9 B", r.stdout)
+        # GD-04: la liberación anota también el libre de disco.
+        self.assertIn("LIBERA (solo decidir) disco_libre=500GB",
+                      self.bitacora.read_text(encoding="utf-8"))
+
+    def test_disco_ilegible_no_bloquea_y_avisa(self):
+        casos = {
+            "costura ilegible": (self.bin_aislado(), {"SEMAFORO_DISCO_GB": "mucho"}),
+            "df ausente": (self.bin_aislado(), {}),
+            "df con exit != 0": (self.bin_aislado(df="echo roto >&2; exit 1\n"), {}),
+            "df con salida ilegible": (self.bin_aislado(df="printf 'basura\\n'\n"), {}),
+        }
+        for nombre, (bin_dir, env) in casos.items():
+            with self.subTest(nombre):
+                if self.bitacora.exists():
+                    self.bitacora.unlink()
+                if nombre == "df ausente":
+                    probe = subprocess.run(
+                        [BASH, "--noprofile", "--norc", "-c", "command -v df && exit 91; exit 0"],
+                        cwd=self.raiz, env={"PATH": str(bin_dir)},
+                        capture_output=True, text=True, timeout=10)
+                    self.assertEqual(probe.returncode, 0, probe.stdout)
+                r = self.correr_aislado(bin_dir, "check", SEMAFORO_SOLO_DECIDIR=1, **env)
+                self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+                self.assertIn(self.AVISO_DISCO, r.stderr)
+                log = self.bitacora.read_text(encoding="utf-8")
+                self.assertIn("disco libre desconocido", log)
+                self.assertIn("disco_libre=desconocida", log)
+                self.assertIn("DISCO_LIBRE_GB=desconocida", r.stdout)
+
+    def test_umbral_por_defecto_es_40(self):
+        r = self.correr("check", SEMAFORO_SOLO_DECIDIR=1, SEMAFORO_DISCO_GB="500",
+                        SEMAFORO_DISCO_MIN_GB=None)
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertRegex(r.stdout, r"DISCO_MIN_GB=40(\s|$)")
+
+    # Pruebas adicionales del integrador (fuera de la matriz, declaradas).
+
+    def test_df_en_kib_se_convierte_a_gb_decimales(self):
+        # GD-01/GD-02: libre = KiB x 1024 / 1e9. 39.062.500 KiB = 40,00 GB
+        # exactos (37,25 GiB): pasa. Con lectura GiB del umbral bloquearía.
+        # 39.000.000 KiB = 39,94 GB: bloquea.
+        r = self.correr_aislado(self.bin_aislado(df=self.df_falso(39062500)),
+                                "check", SEMAFORO_SOLO_DECIDIR=1)
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertIn("DISCO_LIBRE_GB=40.00", r.stdout)
+        r = self.correr_aislado(self.bin_aislado(df=self.df_falso(39000000)),
+                                "check", SEMAFORO_SOLO_DECIDIR=1)
+        self.assertEqual(r.returncode, 78, r.stdout + r.stderr)
+        self.assertIn("39.94 GB < umbral 40 GB", r.stderr)
+
+    def test_liberacion_anota_disco_y_avisa_si_quedo_bajo(self):
+        # GD-04: el build ya compilado no se bloquea; la línea LIBERA dice el
+        # libre al liberar y que quedó bajo el umbral.
+        contador = Path(tempfile.mkdtemp(prefix="semaforo-df-")) / "n"
+        self.addCleanup(shutil.rmtree, contador.parent, True)
+        df = (f'n=0; [ -f "{contador.as_posix()}" ] && n=$(cat "{contador.as_posix()}")\n'
+              f'echo $((n+1)) > "{contador.as_posix()}"\n'
+              'if [ "$n" = 0 ]; then kib=488281250; else kib=9765625; fi\n'
+              "printf 'Filesystem 1024-blocks Used Available Capacity Mounted on\\n"
+              "C: 974851068 1 %s 93%% /c\\n' \"$kib\"\n")
+        bin_dir = self.bin_aislado(df=df, cargo="exit 0\n")
+        r = self.correr_aislado(bin_dir, "check")
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        log = self.bitacora.read_text(encoding="utf-8")
+        self.assertIn("disco_libre=500.00GB", log)
+        self.assertIn("LIBERA codigo=0", log)
+        self.assertIn("disco_libre=10.00GB DISCO-BAJO al liberar (< 40 GB)", log)
 
 
 if __name__ == "__main__":
