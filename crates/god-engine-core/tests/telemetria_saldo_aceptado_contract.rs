@@ -63,7 +63,13 @@ fn anclas_del_adaptador() {
     orden(DEMO_TEL_MOD, &[
         "fn capital(&self, usdt: f64, revision: Option<&RevisionSaldo>) {",
         "audit_engine::telemetry::update_dynamic_capital(usdt);",
-        "emitir(linea_capital_update(ts, usdt, revision));",
+        // DEMO_TEL T3 (T3-1, ancla adaptada): la línea sale por `registrar_revision`, que
+        // escribe con el mismo `emitir` y no repite una revisión idéntica.
+        "registrar_revision(usdt, revision);",
+    ]);
+    orden(DEMO_TEL_MOD, &[
+        "fn registrar_revision(saldo: f64, revision: Option<&RevisionSaldo>) {",
+        "emitir(linea_capital_update(ts_ahora_ms(), saldo, revision));",
     ]);
     assert!(texto(HOST).contains("use quantum_engine::demo_tel::CapitalBridgeSink;"));
 }
