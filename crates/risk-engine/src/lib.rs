@@ -781,10 +781,12 @@ impl RiskEngine {
                 return rej(REJ_DRAWDOWN);
             };
             self.vista_del_freno = Some(vista);
+            // La cache del pico es SIEMPRE la del ambito vigente (tambien al vetar): una cache vieja
+            // no reintroduce el pico de otra cuenta (contrato V4J punto 5).
+            self.peak_capital = vista.pico;
             if !vista.lista || vista.pico_ilegible {
                 return rej(REJ_DRAWDOWN);
             }
-            self.peak_capital = vista.pico;
             Some(vista)
         } else {
             None
