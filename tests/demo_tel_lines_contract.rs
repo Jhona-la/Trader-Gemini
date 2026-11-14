@@ -879,7 +879,7 @@ fn t3_bench_disparo_immune() {
         let texto = std::fs::read_to_string(&log).unwrap();
         let escritas = texto.matches("event=IMMUNE_TRIGGER").count();
         let integras = parse_demo_tel_cuenta(&texto);
-        let linea = String::from_utf8_lossy(&out.stdout).lines().find(|l| l.starts_with("T3_BENCH_IMMUNE")).unwrap_or("").to_string();
+        let linea = String::from_utf8_lossy(&out.stdout).lines().find_map(|l| l.find("T3_BENCH_IMMUNE").map(|i| l[i..].to_string())).unwrap_or_default();
         println!("{linea} TG_LOG_TS={ts} escritas={escritas} integras={integras} perdidas={}", n - escritas.min(n));
         let _ = std::fs::remove_dir_all(&dir);
     }
