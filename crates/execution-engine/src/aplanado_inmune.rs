@@ -147,6 +147,100 @@ impl ReintentoAplanado {
     }
 }
 
+// ------------------------------------------------------------------------------------------
+// CAPITAL-UNICO V4L (L-F6): autoria, latch, consumo, efecto y reintento con el ambito vigente.
+// ------------------------------------------------------------------------------------------
+
+/// La autoria de un disparo del inmune ya comprometido: su causa y, si es patrimonial
+/// (insolvencia o drawdown), el ambito del plano del freno con cuya evidencia se formo. Una causa
+/// global (operador, latencia) no tiene ambito: cruza relevos (N58).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct AutoriaDelDisparo {
+    /// `Some(ambito)`: causa patrimonial de ese ambito. `None`: causa global.
+    pub ambito_patrimonial: Option<u64>,
+}
+
+impl AutoriaDelDisparo {
+    /// El latch y el reintento de esta autoria siguen vigentes en el ambito actual del plano: una
+    /// causa global siempre; una patrimonial, solo en su propio ambito. Un reintento fuera de su
+    /// ambito no se ejecuta (no recarga al sucesor).
+    pub fn vigente(&self, arena: &quantum_arena::GlobalArena) -> bool {
+        match self.ambito_patrimonial {
+            None => true,
+            Some(a) => arena.ambito_del_plano.load(std::sync::atomic::Ordering::Acquire) == a,
+        }
+    }
+}
+
+/// Compromete los efectos LOCALES de un disparo del inmune en un solo paso. El host la llama bajo
+/// el mutex del puente (el mismo del relevo, `PuenteCuenta::relevar_sesion`), asi que un relevo
+/// queda antes (el disparo patrimonial del ambito anterior se descarta: `None`) o despues (el
+/// relevo ve la autoria y no la exporta al sucesor). Arma el kill-switch de la arena y del
+/// ejecutor vigente y registra su causa. No hace E/S. El aplanado (y su consumo de
+/// confirmaciones) corre despues, sobre el ejecutor devuelto.
+pub fn comprometer_disparo<E: std::ops::Deref<Target = crate::executor::OrderExecutor>>(
+    arena: &quantum_arena::GlobalArena,
+    ejecutor: impl FnOnce() -> E,
+    ambito_patrimonial: Option<u64>,
+) -> Option<(E, AutoriaDelDisparo)> {
+    use crate::executor::ExecutionProvider;
+    use std::sync::atomic::Ordering;
+    let autoria = AutoriaDelDisparo { ambito_patrimonial };
+    if !autoria.vigente(arena) {
+        return None;
+    }
+    let ejecutor = ejecutor();
+    match ambito_patrimonial {
+        Some(a) => arena.latch_patrimonial.store(a.saturating_add(1), Ordering::Release),
+        None => {
+            arena.latch_global.store(true, Ordering::Release);
+            arena.latch_patrimonial.store(0, Ordering::Release);
+        }
+    }
+    arena.kill_switch_active.store(true, Ordering::SeqCst);
+    ejecutor.trigger_kill_switch();
+    Some((ejecutor, autoria))
+}
+
+/// El consumo de confirmaciones del aplanado inmune (CL-44b), ordenado con el relevo: bajo el
+/// candado de escritor del plano (el que toma la preparacion del ambito de un relevo). Si el latch
+/// es patrimonial de un ambito que ya no es el vigente, las ranuras son del sucesor: no consume
+/// ninguna (el aplanado de la cuenta anterior opera solo sobre su sujeto).
+///
+/// Devuelve el permiso (el candado tomado) si las confirmaciones son del sujeto; el llamador
+/// consume con el permiso vivo. `None`: no consume ninguna.
+pub fn permiso_de_consumo(arena: &quantum_arena::GlobalArena) -> Option<std::sync::MutexGuard<'_, ()>> {
+    use std::sync::atomic::Ordering;
+    let escritor = arena.plano_freno_escritor.lock().unwrap_or_else(|e| e.into_inner());
+    let p = arena.latch_patrimonial.load(Ordering::Acquire);
+    if p != 0
+        && !arena.latch_global.load(Ordering::Acquire)
+        && p - 1 != arena.ambito_del_plano.load(Ordering::Acquire)
+    {
+        return None;
+    }
+    Some(escritor)
+}
+
+/// El relevo cambio de ambito (otra cuenta o venue). Si el kill-switch lo armo SOLO una causa
+/// patrimonial de un ambito anterior, no se exporta al sucesor: se sueltan el latch de la arena y el
+/// que el ejecutor sucesor heredo (N58). Una causa global, o una patrimonial del ambito vigente,
+/// se conservan. Devuelve si solto algo. El host la llama dentro del relevo (mutex del puente).
+pub fn relevar_causa_patrimonial(
+    arena: &quantum_arena::GlobalArena,
+    sucesor: &crate::executor::OrderExecutor,
+    ambito_vigente: u64,
+) -> bool {
+    use std::sync::atomic::Ordering;
+    let p = arena.latch_patrimonial.load(Ordering::Acquire);
+    if p == 0 || arena.latch_global.load(Ordering::Acquire) || p - 1 == ambito_vigente {
+        return false;
+    }
+    arena.kill_switch_active.store(false, Ordering::SeqCst);
+    sucesor.soltar_latch_patrimonial_heredado();
+    true
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

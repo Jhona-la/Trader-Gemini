@@ -893,7 +893,11 @@ impl BinanceClient {
             .http
             .post(full_url)
             .header("X-MBX-APIKEY", api_key.as_ref());
-        quantum_arena::dimensionable::comprometer_entrega().map_err(ErrorRest::sin_cabecera)?;
+        // V4L (L-A1): tras un cruce, este POST es el de `/leverage` de la apertura.
+        quantum_arena::dimensionable::comprometer_entrega_de(
+            quantum_arena::dimensionable::FaseDeEntrega::Apalancamiento,
+        )
+        .map_err(ErrorRest::sin_cabecera)?;
         let response = solicitud
             .send()
             .await;

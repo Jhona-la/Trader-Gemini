@@ -354,7 +354,13 @@ pub struct LibroDimensionable {
     /// valor que no aparecio en ninguna revision anterior (el double inmediato inferior).
     desambiguar: bool,
     publicado: Option<f64>,
+    /// V4L (L-A1): testigos de los compromisos locales (los ultimos `MAX_COMPROMISOS`).
+    compromisos: std::collections::VecDeque<CompromisoDeEntrega>,
+    seq_compromiso: u64,
 }
+
+/// V4L (L-A1): testigos de compromiso que conserva el libro (diagnostico y pruebas).
+const MAX_COMPROMISOS: usize = 256;
 
 impl LibroDimensionable {
     /// El host lo activa en el arena vivo antes de vincular el publicador del puente. Desde ahi el
@@ -695,6 +701,41 @@ impl LibroDimensionable {
             return false;
         }
         self.envio_valido(clave)
+    }
+
+    /// CAPITAL-UNICO V4L (L-A1): registra el compromiso local de una entrega validada. Lo llama el
+    /// validador del OMS con el estado de la sesion y esta puerta tomados, en el mismo paso de la
+    /// validacion: los escritores (revision, vetos, sesion) quedan ordenados antes o despues. El
+    /// testigo lleva la revision vigente: un cambio posterior no lo reetiqueta.
+    pub fn comprometer(&mut self, sesion: u64, reserva: Option<ClaveReserva>, fase: FaseDeEntrega) -> CompromisoDeEntrega {
+        self.seq_compromiso += 1;
+        let c = CompromisoDeEntrega { seq: self.seq_compromiso, sesion, revision: self.rev, reserva, fase };
+        if self.compromisos.len() == MAX_COMPROMISOS {
+            self.compromisos.pop_front();
+        }
+        self.compromisos.push_back(c);
+        c
+    }
+
+    /// V4L (L-A1): los testigos de compromiso conservados, del mas antiguo al mas reciente.
+    pub fn compromisos(&self) -> Vec<CompromisoDeEntrega> {
+        self.compromisos.iter().copied().collect()
+    }
+
+    /// V4L (L-A1): revision vigente del libro (la que llevan los testigos de compromiso).
+    pub fn revision(&self) -> u64 {
+        self.rev
+    }
+
+    /// CAPITAL-UNICO V4L (L-A1H): el stream ya informo ejecucion positiva de la orden de esta
+    /// reserva (algun fill con cantidad > 0, o un terminal con acumulado > 0). Un rechazo o un
+    /// terminal sin ejecucion que la contradiga no revierte la reserva: se conserva y se reconcilia.
+    pub fn ejecucion_observada(&self, clave: ClaveReserva) -> bool {
+        self.debitos.iter().any(|d| {
+            d.origen == Origen::Entrada(clave)
+                && (d.fills.iter().any(|f| f.cantidad.is_some_and(|q| q > 0.0) || f.cantidad_e8.is_some_and(|q| q > 0) || f.cantidad.is_none())
+                    || d.acumulado_final_e8.is_some_and(|z| z > 0))
+        })
     }
 
     /// Cancelacion sin ejecucion: quita la reserva viva, no suma dinero. Repetida: nada.
@@ -1133,6 +1174,40 @@ thread_local! {
 /// retiene el paquete. Cierres, cancelaciones y piernas protectoras (sin cruce) pasan siempre. Un
 /// paquete comprometido pertenece a la revision que lo valido aqui.
 pub fn comprometer_entrega() -> Result<(), String> {
+    comprometer_entrega_de(FaseDeEntrega::Orden)
+}
+
+/// CAPITAL-UNICO V4L (L-A1): la fase de la entrega que se compromete (el POST de `/leverage` o el
+/// de la orden de apertura). Solo identifica el paquete en su testigo.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FaseDeEntrega {
+    Apalancamiento,
+    Orden,
+}
+
+/// CAPITAL-UNICO V4L (L-A1): el testigo de un compromiso local. Lo registra el validador del OMS
+/// en el MISMO paso en que valida (sesion, vetos y reserva), con el estado de la sesion y la puerta
+/// del libro tomados: el orden de los escritores (relevo, refresco, saldo, veto, cierre externo).
+/// Desde ese paso el paquete es irrevocable y pertenece a esta revision; una revision posterior no
+/// lo reetiqueta ni lo reenvia.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct CompromisoDeEntrega {
+    /// Orden del compromiso en el libro (unico; nunca se repite).
+    pub seq: u64,
+    /// Generacion de la sesion del OMS que lo valido.
+    pub sesion: u64,
+    /// Revision del libro con la que se valido.
+    pub revision: u64,
+    /// La reserva que lo respalda (`None`: una entrega sin reserva del libro).
+    pub reserva: Option<ClaveReserva>,
+    pub fase: FaseDeEntrega,
+}
+
+/// CAPITAL-UNICO V4L (L-A1): el compromiso local de la entrega en la fase dada. Como
+/// [`comprometer_entrega`]: solo tras un cruce de apertura; corre el validador del paso con la marca
+/// de compromiso, y el validador del OMS registra el testigo bajo sus candados en ese mismo paso.
+/// Despues de un `Ok` no queda ninguna comprobacion: el cliente entrega la solicitud ya construida.
+pub fn comprometer_entrega_de(fase: FaseDeEntrega) -> Result<(), String> {
     if !POR_COMPROMETER.with(|c| c.replace(false)) {
         return Ok(());
     }
@@ -1145,11 +1220,41 @@ pub fn comprometer_entrega() -> Result<(), String> {
     // SAFETY: como en `cruzar_frontera_de_envio`: el puntero lo puso `FronteraDeEnvio::paso` en
     // este hilo y `paso` aun no termino (el cliente compromete dentro del mismo `poll` del cruce).
     let validar = unsafe { &*ptr };
-    validar().map_err(|e| {
+    let previa = COMPROMETIENDO.with(|c| c.replace(Some(fase)));
+    let r = validar();
+    COMPROMETIENDO.with(|c| c.set(previa));
+    let r = r.map_err(|e| {
         // El paquete no se entrego: este paso no cuenta como cruzado.
         CRUCE.with(|c| c.set(false));
         format!("OMS_ENTRY_WITHHELD: at the local commit: {e}")
-    })
+    });
+    if r.is_ok() {
+        // V4L (L-A1): barrera de prueba DESPUES del compromiso y antes de la entrega: un escritor
+        // que gana aqui ya no retiene el paquete (pertenece a la revision que lo acepto).
+        BARRERA_TRAS_COMPROMISO.with(|b| {
+            if let Some(f) = b.borrow().as_ref() {
+                f();
+            }
+        });
+    }
+    r
+}
+
+/// CAPITAL-UNICO V4L (L-A1): el validador corre como compromiso local de esta fase (`None`: como
+/// cruce, sin comprometer). Lo consulta el validador del OMS para registrar el testigo.
+pub fn fase_en_compromiso() -> Option<FaseDeEntrega> {
+    COMPROMETIENDO.with(|c| c.get())
+}
+
+/// V4L (L-A1): solo para pruebas. Barrera determinista entre el compromiso local y la entrega.
+#[doc(hidden)]
+pub fn fijar_barrera_tras_compromiso(barrera: Option<Box<dyn Fn()>>) {
+    BARRERA_TRAS_COMPROMISO.with(|b| *b.borrow_mut() = barrera);
+}
+
+thread_local! {
+    static COMPROMETIENDO: std::cell::Cell<Option<FaseDeEntrega>> = const { std::cell::Cell::new(None) };
+    static BARRERA_TRAS_COMPROMISO: std::cell::RefCell<Option<Box<dyn Fn()>>> = const { std::cell::RefCell::new(None) };
 }
 
 /// V4K (A1): solo para pruebas. Fija (o quita, con `None`) en ESTE hilo una barrera determinista

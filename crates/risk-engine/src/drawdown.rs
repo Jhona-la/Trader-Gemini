@@ -495,7 +495,12 @@ pub struct VistaDelFreno {
     /// V4K (F6): el ambito del plano en esa revision.
     pub ambito: u64,
     /// V4K (F6): el pico del ambito ya esta restaurado (la equity es evidencia lista).
+    /// V4L (L-F6): y la vista es comparable: equity finita y pico finito y positivo del MISMO
+    /// ambito y revision. Un saldo que llega antes, una equity ausente (NaN) o un pico vacio no es
+    /// una vista lista (no se sustituye la evidencia ausente por caida cero).
     pub lista: bool,
+    /// V4L (L-F2): el pico guardado es ilegible (CL-133), leido en la MISMA revision.
+    pub pico_ilegible: bool,
 }
 
 /// CAPITAL-UNICO V4K (F2): escribe el plano del freno (equity y/o pico) como UNA revision: la sube
@@ -514,21 +519,32 @@ thread_local! {
 /// CAPITAL-UNICO V4K (F2): guard de una escritura del plano del freno. Reentrante en el mismo
 /// hilo (un escritor dentro de otro, por ejemplo el observador del puente dentro del relevo):
 /// solo el mas externo abre (impar) y cierra (par) la revision.
+/// V4L (L-F2/F5): el escritor mas externo toma ademas el candado de escritor unico del plano
+/// (`GlobalArena::plano_freno_escritor`) durante toda su revision: dos escritores de hilos distintos
+/// (por ejemplo el observador del puente y el arranque del pico) nunca abren revisiones a la vez.
 pub struct EscrituraDelPlano<'a> {
     arena: &'a quantum_arena::GlobalArena,
+    escritor: Option<std::sync::MutexGuard<'a, ()>>,
 }
 
 impl<'a> EscrituraDelPlano<'a> {
     pub fn abrir(arena: &'a quantum_arena::GlobalArena) -> Self {
-        let externo = PROFUNDIDAD_PLANO.with(|p| {
-            let d = p.get();
-            p.set(d + 1);
-            d == 0
-        });
+        let externo = PROFUNDIDAD_PLANO.with(|p| p.get() == 0);
+        // V4L (L-F2/F5): el candado se toma ANTES de marcar la profundidad (si otro escritor lo
+        // tiene, este hilo aun no figura como escritor).
+        let escritor = externo.then(|| arena.plano_freno_escritor.lock().unwrap_or_else(|e| e.into_inner()));
+        PROFUNDIDAD_PLANO.with(|p| p.set(p.get() + 1));
         if externo {
             arena.plano_freno_rev.fetch_add(1, std::sync::atomic::Ordering::AcqRel);
         }
-        Self { arena }
+        Self { arena, escritor }
+    }
+
+    /// V4L (L-F2): la revision par que deja esta escritura al cerrarse (si es la externa): el
+    /// testigo con el que el host etiqueta su paso. Dentro de otra escritura, la de la externa.
+    pub fn revision_al_cerrar(&self) -> u64 {
+        let r = self.arena.plano_freno_rev.load(std::sync::atomic::Ordering::Acquire);
+        if r % 2 == 1 { r + 1 } else { r }
     }
 }
 
@@ -542,14 +558,22 @@ impl Drop for EscrituraDelPlano<'_> {
         if externo {
             self.arena.plano_freno_rev.fetch_add(1, std::sync::atomic::Ordering::Release);
         }
+        drop(self.escritor.take());
     }
 }
 
 /// CAPITAL-UNICO V4K (F2): lectura coherente del plano del freno (seqlock). `None` si no se pudo
 /// leer una revision estable (un escritor a mitad en todos los intentos): el llamador veta.
+///
+/// V4L (L-F2/F5): `SONDEOS_DE_LA_VISTA` es una cota de implementacion de la adquisicion (no un
+/// parametro economico ni una politica): con los escritores serializados una revision dura pocas
+/// instrucciones, y si en esa cota no hay una revision par estable la adquisicion falla CERRADA
+/// (`None`: el llamador veta). No se cambio su valor respecto de K.
+pub const SONDEOS_DE_LA_VISTA: usize = 64;
+
 pub fn vista_del_freno(arena: &quantum_arena::GlobalArena) -> Option<VistaDelFreno> {
     use std::sync::atomic::{fence, Ordering};
-    for _ in 0..64 {
+    for _ in 0..SONDEOS_DE_LA_VISTA {
         let r1 = arena.plano_freno_rev.load(Ordering::Acquire);
         if r1 % 2 == 1 {
             std::hint::spin_loop();
@@ -558,12 +582,16 @@ pub fn vista_del_freno(arena: &quantum_arena::GlobalArena) -> Option<VistaDelFre
         let equity = arena.capital_exchange.load(Ordering::Acquire);
         let pico = arena.pico_capital.load(Ordering::Acquire);
         let ambito = arena.ambito_del_plano.load(Ordering::Acquire);
-        let lista = !arena.pico_pendiente.load(Ordering::Acquire);
+        let restaurado = !arena.pico_pendiente.load(Ordering::Acquire);
+        let pico_ilegible = arena.pico_ilegible.load(Ordering::Acquire);
         fence(Ordering::Acquire);
         let r2 = arena.plano_freno_rev.load(Ordering::Relaxed);
         if r1 == r2 {
-            let equity = if equity.is_finite() && lista { equity } else { f64::NAN };
-            return Some(VistaDelFreno { equity, pico, revision: r1, ambito, lista });
+            // V4L (L-F6): lista = restaurado + equity finita + pico compatible (finito y > 0) de
+            // esta misma revision. Sin eso, ausencia (veto), nunca caida cero.
+            let lista = restaurado && equity.is_finite() && pico.is_finite() && pico > 0.0;
+            let equity = if equity.is_finite() && restaurado { equity } else { f64::NAN };
+            return Some(VistaDelFreno { equity, pico, revision: r1, ambito, lista, pico_ilegible });
         }
     }
     None
@@ -975,6 +1003,9 @@ pub struct FlujosExternos {
     neto_incierto: f64,
     /// Flujos en otro activo: inciertos para el USDT, sin cifra en USDT.
     otros_activos: usize,
+    /// V4L (L-F8): flujos sin identidad nativa (sin `tranId`): la atribucion queda incierta, sin
+    /// cifra ni deduplicacion inferidas por coincidencia de tipo y hora.
+    sin_identidad: usize,
 }
 
 /// Lo que pasó al registrar un flujo.
@@ -989,6 +1020,8 @@ pub enum RegistroDeFlujo {
     OtroAmbito,
     /// En otro activo: queda como incierto, sin sumarse como USDT.
     OtroActivo,
+    /// V4L (L-F8): sin identidad nativa: atribucion incierta retenida, sin sumar ni deduplicar.
+    SinIdentidad,
 }
 
 /// De dónde viene la caída medida, para la línea del disparo.
@@ -1024,6 +1057,26 @@ impl FlujosExternos {
         }
     }
 
+    /// CAPITAL-UNICO V4L (L-F8): un flujo externo SIN identidad nativa (`tranId` ausente). No se
+    /// infiere identidad por tipo y hora: no se suma ni se deduplica; solo deja la atribucion de la
+    /// caida incierta en este ambito (sin ajustar pico ni freno).
+    pub fn registrar_sin_identidad(&mut self, ambito: u64, importe: f64) -> RegistroDeFlujo {
+        if self.ambito.is_some_and(|a| a != ambito) {
+            return RegistroDeFlujo::OtroAmbito;
+        }
+        if !(importe.is_finite() && importe != 0.0) {
+            return RegistroDeFlujo::Invalido;
+        }
+        self.ambito = Some(ambito);
+        self.sin_identidad = self.sin_identidad.saturating_add(1);
+        RegistroDeFlujo::SinIdentidad
+    }
+
+    /// V4L (L-F8): flujos sin identidad nativa vistos en el ambito.
+    pub fn sin_identidad(&self) -> usize {
+        self.sin_identidad
+    }
+
     /// Suma en USDT de los flujos registrados (sin política de ajuste: todos inciertos).
     pub fn neto_incierto(&self) -> f64 {
         self.neto_incierto
@@ -1036,7 +1089,7 @@ impl FlujosExternos {
     /// Vínculo con la caída: una salida neta en USDT o un flujo en otro activo la puede
     /// explicar; un depósito no.
     pub fn origen_de_la_caida(&self) -> OrigenDeLaCaida {
-        if self.neto_incierto < 0.0 || self.otros_activos > 0 {
+        if self.neto_incierto < 0.0 || self.otros_activos > 0 || self.sin_identidad > 0 {
             OrigenDeLaCaida::FlujoIncierto
         } else {
             OrigenDeLaCaida::Patrimonio

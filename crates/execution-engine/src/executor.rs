@@ -1755,6 +1755,15 @@ impl OrderExecutor {
         self.latch_armado()
     }
 
+    /// CAPITAL-UNICO V4L (L-F6): suelta el latch PROPIO de este ejecutor sucesor cuando lo heredo
+    /// (N58) solo por una causa patrimonial de OTRO ambito (otra cuenta o venue). Lo llama
+    /// unicamente `aplanado_inmune::relevar_causa_patrimonial`, bajo el mutex del relevo y despues de
+    /// comprobar que ninguna causa global (operador, latencia, X-009) lo armo. El latch de la arena
+    /// y las causas globales siguen las reglas de N58.
+    pub fn soltar_latch_patrimonial_heredado(&self) {
+        self.kill_switch.store(false, Ordering::SeqCst);
+    }
+
     /// N58: el latch que frena las entradas. Es el de este ejecutor o el de su
     /// arena (`GlobalArena::kill_switch_active`), leído en cada consulta. Así un
     /// latch que la arena recibe después de construir el ejecutor también lo

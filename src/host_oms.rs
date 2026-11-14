@@ -519,7 +519,7 @@ impl OmsSession {
         {
             return Err("session is refreshing or unreconciled".into());
         }
-        let libro = arena
+        let mut libro = arena
             .config
             .entry_publication_gate
             .lock()
@@ -531,6 +531,13 @@ impl OmsSession {
             if !libro.envio_valido_en(arena, clave) {
                 return Err("capital revision changed since the decision".into());
             }
+        }
+        // CAPITAL-UNICO V4L (L-A1): en el compromiso local (el cliente HTTP, con la solicitud ya
+        // construida) la aceptacion se registra AQUI, con la sesion y la puerta aun tomadas: es el
+        // mismo paso ordenado por los escritores. Desde aqui el paquete es irrevocable y pertenece
+        // a esta revision; nada lo vuelve a comprobar antes de la entrega al transporte.
+        if let Some(fase) = quantum_arena::dimensionable::fase_en_compromiso() {
+            libro.comprometer(state.generation, reserva, fase);
         }
         drop(libro);
         drop(state);
@@ -1004,6 +1011,155 @@ pub fn entry_execution_for_host(
     }
 }
 
+/// CAPITAL-UNICO V4L (L-A1H): lo que el host hizo con la reserva y el settlement de una entrada
+/// tras el resultado del envio. Lo devuelve [`resolver_resultado_de_entrada`], la resolucion que
+/// corre el host (`god_engine.rs`) y que las pruebas llaman tal cual.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum DesenlaceDeEntrada {
+    /// Rechazo firme o terminal sin ejecucion: la generacion exacta se cancelo una vez (devuelve
+    /// solo lo aun reservado) y su settlement quedo suelto.
+    Revertida,
+    /// La reserva ya no es cancelable (otra generacion, ya confirmada o ya cancelada): no se toca
+    /// nada mas; la proteccion queda sucia.
+    ReversionImposible,
+    /// Ejecucion acreditada por evidencia terminal de ESTA orden, confirmada con su cantidad.
+    /// `envio_ambiguo`: el envio fue ambiguo y la consulta lo resolvio (la proteccion la pone el
+    /// vigilante); si no, el host sigue con su bracket.
+    Confirmada { ejecutada: f64, envio_ambiguo: bool },
+    /// La confirmacion no cuadro con la reserva (otra generacion): se reconcilia.
+    ConfirmacionRechazada,
+    /// Sin evidencia concluyente (o con evidencia contradictoria): reserva, cargo, settlement y
+    /// proteccion se conservan hasta reconciliar. Nada se reenvia.
+    Conservada,
+    /// El plazo de recuperacion vencio: admision revocada y reserva local cancelada sin certificar.
+    CanceladaPorDeadline,
+}
+
+/// CAPITAL-UNICO V4L (L-A1H): la reversion de una entrada desde el host. Cancela la generacion
+/// EXACTA de la reserva por su mecanismo productivo (`EntryReservation::cancel`, que cancela solo
+/// esa generacion, devuelve su margen y quita su reserva del libro bajo la puerta) y, solo si esa
+/// cancelacion ocurrio, suelta su settlement. Repetida: la segunda no cancela ni suelta nada.
+pub fn revertir_entrada(arena: &GlobalArena, reservation: &EntryReservation) -> bool {
+    match reservation.cancel(arena) {
+        Ok(()) => {
+            EntrySettlement::release_for(reservation);
+            true
+        }
+        Err(_) => {
+            quantum_arena::protection_health::mark_dirty();
+            false
+        }
+    }
+}
+
+/// V4L (L-A1H, borde de A2): hay evidencia positiva de ejecucion de esta orden (el stream la
+/// atribuyo a la reserva, o el registro la vio ejecutar). Un rechazo o un terminal sin ejecucion
+/// que lo contradiga no suelta la reserva solo porque el callback del fill llego tarde.
+/// El host (`god_engine.rs`, brazos `Revertir` y rechazo firme) y [`resolver_resultado_de_entrada`]
+/// lo consultan antes de revertir. En papel no aplica (no hay exchange).
+pub fn entrada_con_ejecucion_acreditada(arena: &GlobalArena, executor: &OrderExecutor, reservation: &EntryReservation, client_id: &str) -> bool {
+    if executor.is_paper_trading() {
+        return false;
+    }
+    let libro = arena
+        .config
+        .entry_publication_gate
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .ejecucion_observada(reservation.clave());
+    libro
+        || executor
+            .registry()
+            .get(client_id)
+            .is_some_and(|o| !(o.executed_qty.is_finite() && o.executed_qty <= 0.0))
+}
+
+/// CAPITAL-UNICO V4L (L-A1H): la resolucion PRODUCTIVA del resultado de una entrada del host, con
+/// su reserva y su settlement reales. El host la llama con el resultado de
+/// [`OmsSession::dispatch_entry_reservada`]; las pruebas, igual.
+/// - Ambiguo (o maker sin verificar): proteccion sucia y consulta de ESTA identidad
+///   (`resolve_terminal_entry_until`, sin reenvio); el padre no resuelve al hijo maker.
+/// - Rechazo firme sin ejecucion: reversion exacta una vez ([`revertir_entrada`]).
+/// - `Ok`: la cantidad del terminal de esta orden; sin terminal, la misma consulta.
+/// - Con ejecucion acreditada por el stream o el registro, un rechazo o un terminal sin
+///   ejecucion no revierte: se conserva hasta reconciliar.
+pub async fn resolver_resultado_de_entrada(
+    resultado: Result<(), String>,
+    session: &OmsSession,
+    token: &SessionToken,
+    arena: &GlobalArena,
+    executor: &OrderExecutor,
+    reservation: &EntryReservation,
+    client_id: &str,
+    cantidad_pedida: f64,
+    plazo: std::time::Duration,
+) -> DesenlaceDeEntrada {
+    use execution_engine::ioc_evidence::DestinoReserva;
+    let (destino, envio_ambiguo) = match resultado {
+        Err(e) if e.starts_with("AMBIGUOUS") || e.starts_with("MAKER_CHASE_UNVERIFIED") => {
+            quantum_arena::protection_health::mark_dirty();
+            let d = execution_engine::entry_dispatch::resolve_terminal_entry_until(
+                executor,
+                &reservation.symbol,
+                client_id,
+                &e,
+                plazo,
+            )
+            .await;
+            (d, true)
+        }
+        Err(_) => (DestinoReserva::Revertir, false),
+        Ok(()) => {
+            match entry_execution_for_host(executor.registry().get(client_id).as_ref(), executor.is_paper_trading(), cantidad_pedida) {
+                Some(ejecutada) => (DestinoReserva::Confirmar { ejecutada }, false),
+                None => {
+                    quantum_arena::protection_health::mark_dirty();
+                    let d = execution_engine::entry_dispatch::resolve_terminal_entry_until(
+                        executor,
+                        &reservation.symbol,
+                        client_id,
+                        "AMBIGUOUS: ENTRY_TERMINAL_PENDING",
+                        plazo,
+                    )
+                    .await;
+                    (d, false)
+                }
+            }
+        }
+    };
+    match destino {
+        DestinoReserva::Revertir => {
+            if entrada_con_ejecucion_acreditada(arena, executor, reservation, client_id) {
+                quantum_arena::protection_health::mark_dirty();
+                return DesenlaceDeEntrada::Conservada;
+            }
+            if revertir_entrada(arena, reservation) {
+                DesenlaceDeEntrada::Revertida
+            } else {
+                DesenlaceDeEntrada::ReversionImposible
+            }
+        }
+        DestinoReserva::Confirmar { ejecutada } => {
+            let marca = executor.registry().marca_terminal(client_id);
+            match reservation.confirmar_llenado_con_marca(arena, Some(ejecutada), marca) {
+                Ok(()) => DesenlaceDeEntrada::Confirmada { ejecutada, envio_ambiguo },
+                Err(_) => {
+                    quantum_arena::protection_health::mark_dirty();
+                    DesenlaceDeEntrada::ConfirmacionRechazada
+                }
+            }
+        }
+        DestinoReserva::CancelarPorDeadline => {
+            let _ = cancel_entry_after_deadline(session, token, arena, reservation);
+            DesenlaceDeEntrada::CanceladaPorDeadline
+        }
+        DestinoReserva::Conservar => {
+            quantum_arena::protection_health::mark_dirty();
+            DesenlaceDeEntrada::Conservada
+        }
+    }
+}
+
 fn now_ms() -> u64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -1157,11 +1313,13 @@ pub fn registrar_flujos_externos_de_era(
         let mut registros = Vec::new();
         for e in entries {
             if risk_engine::drawdown::es_flujo_externo(&e.income_type) {
-                let id = if e.tran_id != 0 {
-                    e.tran_id
-                } else {
-                    e.income_type.bytes().fold(e.time, |h, b| h.rotate_left(5) ^ u64::from(b))
-                };
+                // V4L (L-F8): sin identidad nativa (`tranId` 0) no se sintetiza una por tipo y hora:
+                // la atribucion queda incierta, sin cifra ni deduplicacion inferidas (id 0).
+                if e.tran_id == 0 {
+                    registros.push((0, flujos.registrar_sin_identidad(cuenta, e.income)));
+                    continue;
+                }
+                let id = e.tran_id;
                 registros.push((id, flujos.registrar(cuenta, id, &e.asset, e.income, era)));
             }
         }

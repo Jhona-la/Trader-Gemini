@@ -770,9 +770,25 @@ impl RiskEngine {
         let configured_dd = arena.config.global_max_drawdown.load(Ordering::Relaxed);
         // CAPITAL-UNICO V4J (punto 5): con el libro derivado, la cache del pico es la del ambito
         // vigente del arena ANTES de validar (una cache vieja no decide ni bloquea para siempre).
-        if arena.config.dimensionable_derivado.load(Ordering::Acquire) {
-            self.peak_capital = arena.pico_capital.load(Ordering::Acquire);
-        }
+        // V4L (L-F2): con el libro derivado la decision adquiere UNA vista del plano (equity, pico,
+        // ambito, readiness y pico ilegible de la misma revision par) antes de validar: la
+        // validacion preliminar del pico, el veto por pico ilegible y el freno usan esa misma
+        // revision, que queda como testigo de la decision (`vista_del_freno()`). Sin revision
+        // estable, o con la vista no lista (pico pendiente, equity ausente o pico no comparable), veta.
+        let vista_de_la_decision = if arena.config.dimensionable_derivado.load(Ordering::Acquire) {
+            let Some(vista) = crate::drawdown::vista_del_freno(arena) else {
+                self.vista_del_freno = None;
+                return rej(REJ_DRAWDOWN);
+            };
+            self.vista_del_freno = Some(vista);
+            if !vista.lista || vista.pico_ilegible {
+                return rej(REJ_DRAWDOWN);
+            }
+            self.peak_capital = vista.pico;
+            Some(vista)
+        } else {
+            None
+        };
         if !current_capital.is_finite()
             || current_capital <= 0.0
             || !self.peak_capital.is_finite()
@@ -818,11 +834,11 @@ impl RiskEngine {
         let capital_freno = crate::drawdown::capital_del_freno(arena);
         let derivado = arena.config.dimensionable_derivado.load(Ordering::Acquire);
         let capital_freno = if derivado {
-            let Some(vista) = crate::drawdown::vista_del_freno(arena) else {
+            // V4L (L-F2): la MISMA vista adquirida arriba (no una segunda lectura del plano).
+            let Some(vista) = vista_de_la_decision else {
                 self.vista_del_freno = None;
                 return rej(REJ_DRAWDOWN);
             };
-            self.vista_del_freno = Some(vista);
             // V4K (F6): pico del ambito aun sin restaurar: no hay evidencia patrimonial lista.
             if !vista.lista {
                 return rej(REJ_DRAWDOWN);

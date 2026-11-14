@@ -86,10 +86,11 @@ fn anclas_del_inmune() {
     // Risk: solo lee el pico con el libro derivado.
     orden(RIESGO, &[
         "if arena.config.dimensionable_derivado.load(Ordering::Acquire) {",
-        "self.peak_capital = arena.pico_capital.load(Ordering::Acquire);",
+        "let Some(vista) = crate::drawdown::vista_del_freno(arena) else {",  // V4L (L-F2): ancla adaptada, UNA vista por decision antes de validar el pico
+        "self.peak_capital = vista.pico;",  // V4L (L-F2): ancla adaptada, el pico de la validacion es el de la vista (antes: carga suelta del arena)
         "let capital_freno = crate::drawdown::capital_del_freno(arena);",
         "if derivado {",
-        "let Some(vista) = crate::drawdown::vista_del_freno(arena) else {",  // V4K (F2): ancla adaptada, equity y pico de la misma revision
+        "let Some(vista) = vista_de_la_decision else {",  // V4L (L-F2): ancla adaptada, la misma vista (antes: segunda lectura del plano)
         "self.peak_capital = if capital_freno.is_finite() { vista.pico.max(capital_freno) } else { vista.pico };",
         "} else {",
         "self.peak_capital = crate::drawdown::registrar_pico(",
@@ -524,11 +525,15 @@ fn anclas_v4k() {
         "risk_engine::drawdown::ambito_del_plano(&arena_imm))",
         "let freno = risk_engine::drawdown::freno_duro(&arena_imm, peak_capital, cap);",
         "let patrimonial = !operator_lock && !lat_breach;",
-        "let Some(executor) = puente_imm.con_equity_del_freno(|_| {",
-        "risk_engine::drawdown::ambito_del_plano(&arena_imm) == ambito_de_la_evidencia)",
-        ".then(|| exec_imm.load_full())",
-        "arena_imm.kill_switch_active.store(true, Ordering::Relaxed);",
-        "executor.trigger_kill_switch();",
+        // V4L (L-F6): anclas adaptadas. La comprobacion del ambito, la toma del ejecutor y los
+        // efectos locales (kill-switch de arena y ejecutor) pasan a `comprometer_disparo`, en el
+        // mismo paso bajo el mutex del puente (antes: comprobacion bajo el mutex y efectos fuera).
+        "let Some((executor, autoria)) = puente_imm.con_equity_del_freno(|_| {",
+        "execution_engine::aplanado_inmune::comprometer_disparo(",
+        "|| exec_imm.load_full(),",
+        "patrimonial.then_some(ambito_de_la_evidencia),",
+        "[SISTEMA INMUNE] ACTIVADO",
+        "autoria_del_latch = Some(autoria);",
     ]);
     orden(HOST, &["risk_engine::drawdown::preparar_ambito_del_pico(&arena_real);", "puente_cuenta.vincular_freno(move |equity| {"]);
     orden(HOST, &[

@@ -523,7 +523,17 @@ async fn aplanado_inmune(
     // Sin consumir su confirmación, un SL o TP local posterior se aprendía
     // como cierre real a un precio inventado. En un reintento consume las
     // que se hayan confirmado desde el intento anterior.
-    let consumidas = arena.consume_exchange_confirmations();
+    // CAPITAL-UNICO V4L (L-F6): el consumo queda ordenado con el relevo (candado de escritor del
+    // plano): tras un relevo a otro ambito, las ranuras son del sucesor y no se consumen.
+    let consumidas = match execution_engine::aplanado_inmune::permiso_de_consumo(arena) {
+        Some(_permiso) => arena.consume_exchange_confirmations(),
+        None => {
+            telemetry_server::telemetry_log!(
+                "🛡️ [SISTEMA INMUNE] aplanado de un ambito patrimonial anterior: no consume confirmaciones del sucesor; opera solo sobre su ejecutor."
+            );
+            0
+        }
+    };
     let resultado = {
         // CL-44b: el vigilante no audita mientras se aplana (re-armaba
         // piernas que quedaban huérfanas).
@@ -2798,8 +2808,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             let rutas_pico = risk_engine::drawdown::RutasPico::del_espacio(&espacio_pico, |n| {
                 std::path::PathBuf::from(quantum_arena::paths::env_data_path(n))
             });
-            let (mut pico_ilegible, mut marca_pendiente) =
-                aplicar_arranque_pico(&arena_imm, &rutas_pico, false);
+            // CAPITAL-UNICO V4L (L-F2/F5 y L-F6, cambio 3 de la adenda): el primer arranque del pico
+            // corre en el MISMO orden de escritor unico que el resto del plano: bajo el mutex del
+            // puente y dentro de una escritura del plano. El observador del freno (que ya puede estar
+            // publicando la primera foto) no se intercala entre restaurar y publicar, y la vista no
+            // queda lista hasta que haya equity comparable del ambito (`vista_del_freno`).
+            let (mut pico_ilegible, mut marca_pendiente) = puente_imm.con_equity_del_freno(|_| {
+                let _plano = risk_engine::drawdown::EscrituraDelPlano::abrir(&arena_imm);
+                aplicar_arranque_pico(&arena_imm, &rutas_pico, false)
+            });
             let mut ruta_pico = rutas_pico.pico.clone();
             let mut ruta_marca = rutas_pico.marca.clone();
             // CAPITAL-UNICO V3 (P1.2/P1.3): RESINCRONIZADOR del puente, fuera
@@ -2896,6 +2913,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 // reintenta mientras el inmune siga disparado.
                 let mut reintento_aplanado =
                     execution_engine::aplanado_inmune::ReintentoAplanado::nuevo();
+                // V4L (L-F6): autoria del latch vigente (causa y ambito del disparo).
+                let mut autoria_del_latch: Option<execution_engine::aplanado_inmune::AutoriaDelDisparo> = None;
                 let mut aviso_aplanado_frenado =
                     telemetry_server::estrangulador::Estrangulador::new(60_000);
                 loop {
@@ -2957,6 +2976,20 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             pico_guardado = 0.0;
                         }                    });
 
+                    // CAPITAL-UNICO V4L (L-F6): un latch patrimonial de un ambito que ya no es el
+                    // vigente (relevo a otra cuenta o venue) no bloquea al sucesor ni se reintenta
+                    // sobre el: el ciclo evalua al sucesor con su propia evidencia. Las causas
+                    // globales y el mismo ambito conservan su latch y su reintento.
+                    if latched && autoria_del_latch.is_some_and(|a| !a.vigente(&arena_imm)) {
+                        let pendiente = reintento_aplanado.pendiente();
+                        reintento_aplanado.olvidar();
+                        autoria_del_latch = None;
+                        latched = false;
+                        telemetry_server::telemetry_log!(
+                            "🛡️ [IMMUNE] latch patrimonial del ambito anterior relevado: el sucesor se evalua con su evidencia.{}",
+                            if pendiente { " El aplanado pendiente del ambito anterior no se reintenta sobre el sucesor." } else { "" }
+                        );
+                    }
                     if latched {
                         // I-10 (N19): antes el aplanado que no se completó no
                         // se volvía a intentar. Frenado, se reintenta en cada
@@ -3000,6 +3033,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     // pico en UN paso bajo el mutex del puente: un relevo o un cambio de espacio no se
                     // intercala entre la lectura y la escritura. La ruta que se persiste es la del
                     // mismo paso (la escritura del archivo, fuera del mutex).
+                    let mut revision_de_la_evidencia = 0u64;
                     let (cap, peak_capital, ruta_del_pico, ambito_de_la_evidencia) = puente_imm.con_equity_del_freno(|equity| {
                         // V4K (F2): este paso es UNA revision del plano del freno (Risk no combina
                         // la equity de este paso con el pico de otro).
@@ -3029,6 +3063,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         let cap = risk_engine::drawdown::capital_del_freno(&arena_imm);
                         let peak_capital =
                             risk_engine::drawdown::registrar_pico(&arena_imm.pico_capital, cap);
+                        // V4L (L-F2): el testigo de este paso es la revision que deja al cerrarse.
+                        revision_de_la_evidencia = _plano.revision_al_cerrar();
                         (cap, peak_capital, ruta_pico.clone(), risk_engine::drawdown::ambito_del_plano(&arena_imm))
                     });
                     if !pico_ilegible
@@ -3225,21 +3261,23 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 deriva
                             )
                         };
-                        telemetry_server::telemetry_log!(
-                            "🚨 [SISTEMA INMUNE] ACTIVADO: {}. Kill-switch ARMADO + aplanado total.",
-                            reason
-                        );
                         // V4K (F6): una decision PATRIMONIAL (insolvencia o drawdown) formada con la
                         // evidencia de un ambito no aplica sus efectos en otro: si entre la captura
                         // (arriba, bajo el mutex del puente) y aqui un relevo cambio de cuenta o venue,
                         // se descarta y el ciclo siguiente decide con la evidencia del sucesor. El
-                        // ejecutor se toma bajo el mismo mutex que el relevo. El candado del operador y
-                        // la latencia no dependen del ambito.
+                        // candado del operador y la latencia no dependen del ambito.
+                        // V4L (L-F6): la autoria se encapsula y sus EFECTOS locales (kill-switch de la
+                        // arena y del ejecutor, causa registrada) se comprometen en el mismo paso que
+                        // la comprobacion del ambito, bajo el mutex del relevo
+                        // (`aplanado_inmune::comprometer_disparo`): un relevo posterior ve la causa y
+                        // no la exporta al sucesor; el reintento solo corre en el ambito del disparo.
                         let patrimonial = !operator_lock && !lat_breach;
-                        let Some(executor) = puente_imm.con_equity_del_freno(|_| {
-                            (!patrimonial
-                                || risk_engine::drawdown::ambito_del_plano(&arena_imm) == ambito_de_la_evidencia)
-                                .then(|| exec_imm.load_full())
+                        let Some((executor, autoria)) = puente_imm.con_equity_del_freno(|_| {
+                            execution_engine::aplanado_inmune::comprometer_disparo(
+                                &arena_imm,
+                                || exec_imm.load_full(),
+                                patrimonial.then_some(ambito_de_la_evidencia),
+                            )
                         }) else {
                             telemetry_server::telemetry_log!(
                                 "🛡️ [IMMUNE] decision patrimonial del ambito anterior descartada tras un relevo ({}): se reevalua con la evidencia del sucesor.",
@@ -3247,8 +3285,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             );
                             continue;
                         };
-                        arena_imm.kill_switch_active.store(true, Ordering::Relaxed);
-                        executor.trigger_kill_switch();
+                        // V4L (L-F6): la linea ACTIVADO sale tras adquirir el efecto.
+                        telemetry_server::telemetry_log!(
+                            "🚨 [SISTEMA INMUNE] ACTIVADO: {}. Kill-switch ARMADO + aplanado total.{}",
+                            reason,
+                            match autoria.ambito_patrimonial {
+                                Some(a) => format!(" Causa patrimonial del ambito {a} (evidencia de la revision {revision_de_la_evidencia} del plano): no se exporta a otra cuenta o venue."),
+                                None => String::new(),
+                            }
+                        );
+                        autoria_del_latch = Some(autoria);
                         // I-10 (N19): el aplanado (CL-44b) en `aplanado_inmune`,
                         // que deja anotado si hay que reintentarlo.
                         aplanado_inmune(
@@ -3919,6 +3965,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 x_gross += pnl;
                             }
                         }
+                        // CAPITAL-UNICO V4L (L-F8): la respuesta se aplica con el MISMO testigo con el
+                        // que se capturo la consulta (era y sesion del puente, tomadas antes del
+                        // ejecutor). Los agregados se prepararon fuera; los efectos que consumen el
+                        // profiler y el breaker se comprometen bajo el mutex del puente (el del
+                        // relevo), sin sostenerlo durante la red. Una respuesta caducada (llega tras el
+                        // relevo) no muta el sucesor: ni profiler, ni breaker, ni certificado, ni
+                        // suspensiones.
+                        let aplicada = puente_brk.con_era_vigente(era_brk, |_| {
                         telemetry_server::profiler::record_exchange_income(
                             x_gross, x_fees, x_closes, x_wins,
                         );
@@ -3927,12 +3981,21 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         // cada refresh del income — EV neto ≤ 0 o no finito
                         // con cierres suficientes devuelve el sistema a DemoVerify
                         // y exige re-certificación (evidencia limpiada).
-                        if prod_breaker && x_closes > 0 {
-                            let ev_prod = (x_gross + x_fees) / x_closes as f64;
-                            let disparo = {
+                        (prod_breaker && x_closes > 0).then(|| {
                                 let mut orch = orch_brk.write().unwrap_or_else(|e| e.into_inner());
                                 registrar_breaker_ingreso(&mut *orch, x_closes, x_gross, x_fees)
-                            };
+                        })
+                        });
+                        let Some(disparo_del_breaker) = aplicada else {
+                            telemetry_server::telemetry_log!(
+                                "🛡️ [FEE-BREAKER] respuesta de income de la era {} caducada (relevo durante la consulta): sin efectos en el sucesor",
+                                era_brk
+                            );
+                            continue;
+                        };
+                        if prod_breaker && x_closes > 0 {
+                            let ev_prod = (x_gross + x_fees) / x_closes as f64;
+                            let disparo = disparo_del_breaker.unwrap_or(false);
                             if disparo {
                                 telemetry_server::telemetry_log!(
                                     "🛑 [BREAKER Prod→Demo] disparado por income real: EV {ev_prod:+.6} con {x_closes} cierres — operativa bloqueada, re-certificar en Demo"
@@ -4002,7 +4065,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             // LG-8: hasta que el cierre más antiguo de la
                             // evidencia sale de la ventana.
                             let suspend_hours = (until_ms - now_breaker) as f64 / 3_600_000.0;
-                            suspend_symbol_until(&sym, until_ms);
+                            // V4L (L-F8): la suspension tambien se compromete con el testigo de la
+                            // consulta; si un relevo gano entretanto, el sucesor no la recibe.
+                            if puente_brk.con_era_vigente(era_brk, |_| suspend_symbol_until(&sym, until_ms)).is_none() {
+                                telemetry_server::telemetry_log!(
+                                    "🛡️ [FEE-BREAKER] suspension de {} de la era {} descartada: relevo durante la evaluacion",
+                                    sym, era_brk
+                                );
+                                break;
+                            }
                             // B3.6b — persistir (atómico, purga expirados): la
                             // suspensión sobrevive reinicios del motor.
                             persist_fee_breaker(now_breaker);
@@ -5592,12 +5663,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 .entry_publication_gate
                                 .lock()
                                 .unwrap_or_else(|e| e.into_inner());
+                            let mut ambito_relevado = false;
                             if libro_relevo.cuenta().is_some_and(|c| c != cuenta_del_relevo) {
-                                arena_real.capital_exchange.store(f64::NAN, Ordering::Release);
-                                arena_real.pico_capital.store(0.0, Ordering::Release);
-                                // V4K (F6): ambito nuevo con el pico pendiente de restaurar (lo
-                                // restaura el inmune desde el buzon); ninguna equity es lista antes.
-                                risk_engine::drawdown::preparar_ambito_del_pico(&arena_real);
+                                // V4L (L-F2/F5, L4 del dictamen): la ausencia, el pico vacio y el ambito
+                                // nuevo se escriben en UNA revision del plano (escritor unico): ningun
+                                // lector ve la equity anulada con el ambito anterior.
+                                risk_engine::drawdown::escribir_plano_del_freno(&arena_real, || {
+                                    arena_real.capital_exchange.store(f64::NAN, Ordering::Release);
+                                    arena_real.pico_capital.store(0.0, Ordering::Release);
+                                    // V4K (F6): ambito nuevo con el pico pendiente de restaurar (lo
+                                    // restaura el inmune desde el buzon); ninguna equity es lista antes.
+                                    risk_engine::drawdown::preparar_ambito_del_pico(&arena_real);
+                                });
+                                ambito_relevado = true;
                             }
                             libro_relevo.fijar_cuenta(&arena_real, cuenta_del_relevo);
                             drop(libro_relevo);
@@ -5605,6 +5683,20 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             // la cuenta o el venue, el pico pasa a su espacio EN ESTE MISMO PASO (bajo el
                             // mutex del puente, antes de la era nueva y de su primera foto).
                             if let quantum_engine::host_oms::ResultadoTransicion::Publicada { ejecutor, .. } = &paso.resultado {
+                                // CAPITAL-UNICO V4L (L-F6): una causa patrimonial del ambito anterior
+                                // (latch de la arena y el que el sucesor heredo, N58) no se exporta
+                                // al ambito nuevo. Las causas globales cruzan. Mismo mutex del relevo.
+                                if ambito_relevado
+                                    && execution_engine::aplanado_inmune::relevar_causa_patrimonial(
+                                        &arena_real,
+                                        ejecutor,
+                                        risk_engine::drawdown::ambito_del_plano(&arena_real),
+                                    )
+                                {
+                                    telemetry_server::telemetry_log!(
+                                        "🛡️ [IMMUNE] relevo a otra cuenta o venue: el kill-switch patrimonial del ambito anterior no se exporta al sucesor (las causas globales se conservan)."
+                                    );
+                                }
                                 let clave = ejecutor.client().api_key.load();
                                 let testnet = ejecutor
                                     .client()
@@ -6685,6 +6777,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                     )
                                     .await;
                                     match destino {
+                                        // V4L (L-A1H, borde de A2): con ejecucion acreditada por el
+                                        // stream o el registro, el terminal sin ejecucion no revierte.
+                                        DestinoReserva::Revertir if quantum_engine::host_oms::entrada_con_ejecucion_acreditada(&arena_clone, &entry_executor, &reservation, &client_id) => {
+                                            quantum_arena::protection_health::mark_dirty();
+                                            telemetry_engine::telemetry_err!(
+                                                "⏳ [ENTRY PENDING RECONCILIATION] {} id={} envío={}: terminal sin ejecución contradicho por ejecución acreditada; reserva, cargo y settlement conservados.",
+                                                parsed_sym_str, client_id, e
+                                            );
+                                        }
                                         DestinoReserva::Revertir => {
                                             telemetry_engine::telemetry!(
                                                 "❌ [ENTRY] {} id={} envío={} destino={:?}: terminal sin ejecución — Rollback de la reserva.",
@@ -6739,6 +6840,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                         }
                                     }
                                 }
+                                // V4L (L-A1H, borde de A2): un rechazo firme con ejecucion acreditada
+                                // de esta orden no revierte; se conserva hasta reconciliar.
+                                Err(e) if quantum_engine::host_oms::entrada_con_ejecucion_acreditada(&arena_clone, &entry_executor, &reservation, &client_id) => {
+                                    quantum_arena::protection_health::mark_dirty();
+                                    telemetry_engine::telemetry_err!(
+                                        "⏳ [ENTRY PENDING RECONCILIATION] {} id={} rechazo {} contradicho por ejecución acreditada; reserva, cargo y settlement conservados.",
+                                        parsed_sym_str, client_id, e
+                                    );
+                                }
                                 Err(e) => {
                                     telemetry_engine::telemetry!(
                                         "❌ [ENTRY] {} rechazada: {} — Ejecutando Rollback de posición local.",
@@ -6775,6 +6885,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                             .await
                                             {
                                                 DestinoReserva::Confirmar { ejecutada } => ejecutada,
+                                                // V4L (L-A1H, borde de A2).
+                                                DestinoReserva::Revertir if quantum_engine::host_oms::entrada_con_ejecucion_acreditada(&arena_clone, &entry_executor, &reservation, &client_id) => {
+                                                    quantum_arena::protection_health::mark_dirty();
+                                                    return;
+                                                }
                                                 DestinoReserva::Revertir => {
                                                     if rollback_positions(&arena_clone) {
                                                         quantum_engine::host_oms::EntrySettlement::release_for(&reservation);
@@ -7056,6 +7171,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                                     );
                                                     entry_executor.trigger_kill_switch();
                                                     arena_clone.kill_switch_active.store(true, Ordering::SeqCst);
+                                                    // V4L (L-F6): causa global (posicion desnuda): cruza relevos (N58).
+                                                    arena_clone.latch_global.store(true, Ordering::SeqCst);
                                                     // CL-44 (ADR-0015): el latch no abandona
                                                     // la posición. El vigilante la audita en
                                                     // 5 s: re-bracket o, con rechazos

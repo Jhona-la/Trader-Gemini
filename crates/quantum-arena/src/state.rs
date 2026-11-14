@@ -808,6 +808,18 @@ pub struct GlobalArena {
     /// CAPITAL-UNICO V4K (F6): ambito del plano del freno; sube con cada cambio de ambito del pico.
     /// Una decision formada con la evidencia de un ambito no aplica sus efectos en otro.
     pub ambito_del_plano: AtomicU64,
+    /// CAPITAL-UNICO V4L (L-F2/F5): escritor unico del plano del freno. Lo toma el escritor mas
+    /// externo (`drawdown::EscrituraDelPlano`) durante toda su revision: arranque, relevo, lazo del
+    /// inmune y observador del puente quedan serializados aunque alguno corra fuera del mutex del
+    /// puente (el callback temprano del observador antes de que exista un lector de Risk).
+    pub plano_freno_escritor: std::sync::Mutex<()>,
+    /// CAPITAL-UNICO V4L (L-F6): ambito + 1 del plano cuya causa PATRIMONIAL (insolvencia o
+    /// drawdown) armo el kill-switch del inmune; 0: ninguna. Una causa de otro ambito no se exporta
+    /// al sucesor (`execution_engine::aplanado_inmune::relevar_causa_patrimonial`).
+    pub latch_patrimonial: AtomicU64,
+    /// CAPITAL-UNICO V4L (L-F6): una causa GLOBAL (candado del operador, latencia, X-009) armo el
+    /// kill-switch: cruza cualquier relevo (N58).
+    pub latch_global: AtomicBool,
     /// CAPITAL-UNICO V3 (P1.2/P1.3) — el puente de la cuenta no tiene saldo
     /// vigente de su era o su equity está incompleta: no entran posiciones
     /// nuevas (el riesgo y el OMS lo vetan). Los cierres no lo consultan. Nace
@@ -943,6 +955,9 @@ impl GlobalArena {
             plano_freno_rev: AtomicU64::new(0),
             pico_pendiente: AtomicBool::new(false),
             ambito_del_plano: AtomicU64::new(0),
+            plano_freno_escritor: std::sync::Mutex::new(()),
+            latch_patrimonial: AtomicU64::new(0),
+            latch_global: AtomicBool::new(false),
             capital_incompleto: AtomicBool::new(false),
             vetos_capital_riesgo: AtomicU64::new(0),
             vetos_capital_oms: AtomicU64::new(0),
