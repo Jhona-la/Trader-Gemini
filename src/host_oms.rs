@@ -1131,3 +1131,40 @@ impl<T: EntryTransport> EntryTransport for GuardedEntry<'_, T> {
         .await
     }
 }
+
+/// CAPITAL-UNICO V4K (F8): el registro de los flujos externos de una respuesta del historial de
+/// ingresos (`/fapi/v1/income`), el MISMO que corre el lazo del host. Testigo de era: con la era de
+/// la consulta vencida (una respuesta retenida que llega despues del relevo) no registra nada y
+/// devuelve `None`. El ambito es la cuenta vigente del libro (bajo el mutex del puente y despues la
+/// puerta); el activo, el de cada movimiento; un `tranId` repetido (replay) no cuenta otra vez.
+/// Solo atribucion: no ajusta pico ni freno (no hay politica de transferencias).
+pub fn registrar_flujos_externos_de_era(
+    puente: &execution_engine::puente_cuenta::PuenteCuenta,
+    era: u64,
+    arena: &GlobalArena,
+    flujos: &std::sync::Mutex<risk_engine::drawdown::FlujosExternos>,
+    entries: &[execution_engine::order_types::IncomeEntry],
+) -> Option<Vec<(u64, risk_engine::drawdown::RegistroDeFlujo)>> {
+    puente.con_era_vigente(era, |_| {
+        let cuenta = arena
+            .config
+            .entry_publication_gate
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .cuenta()
+            .unwrap_or(0);
+        let mut flujos = flujos.lock().unwrap_or_else(|p| p.into_inner());
+        let mut registros = Vec::new();
+        for e in entries {
+            if risk_engine::drawdown::es_flujo_externo(&e.income_type) {
+                let id = if e.tran_id != 0 {
+                    e.tran_id
+                } else {
+                    e.income_type.bytes().fold(e.time, |h, b| h.rotate_left(5) ^ u64::from(b))
+                };
+                registros.push((id, flujos.registrar(cuenta, id, &e.asset, e.income, era)));
+            }
+        }
+        registros
+    })
+}

@@ -47,13 +47,13 @@ fn anclas_del_inmune() {
         "puente_imm.con_equity_del_freno(|_| {",
         "let espacio_nuevo = buzon_imm.lock().unwrap_or_else(|p| p.into_inner()).take();",
         "aplicar_arranque_pico(&arena_imm, &rutas, true);",
-        "let (cap, peak_capital, ruta_del_pico) = puente_imm.con_equity_del_freno(|equity| {",
+        "let (cap, peak_capital, ruta_del_pico, ambito_de_la_evidencia) = puente_imm.con_equity_del_freno(|equity| {",  // V4K (F6): ancla adaptada, el paso devuelve su ambito
         "let espacio_nuevo = buzon_imm.lock().unwrap_or_else(|p| p.into_inner()).take();",
         "let cap_exchange = equity.unwrap_or(f64::NAN);",
         "arena_imm.capital_exchange.store(",
         "let cap = risk_engine::drawdown::capital_del_freno(&arena_imm);",
         "risk_engine::drawdown::registrar_pico(&arena_imm.pico_capital, cap);",
-        "(cap, peak_capital, ruta_pico.clone())",
+        "(cap, peak_capital, ruta_pico.clone(), risk_engine::drawdown::ambito_del_plano(&arena_imm))",
         "risk_engine::drawdown::guardar_pico(&ruta_del_pico, peak_capital)",
         "let freno = risk_engine::drawdown::freno_duro(&arena_imm, peak_capital, cap);",
         "let insolvent = cap <= 0.0;",
@@ -80,7 +80,7 @@ fn anclas_del_inmune() {
     ]);
     orden(HOST, &[
         "let _ = puente_brk.con_era_vigente(era_brk, |_| {",
-        "let r = flujos.registrar(cuenta, id, &e.asset, e.income, era_brk);",
+        "quantum_engine::host_oms::registrar_flujos_externos_de_era(",  // V4K (F8): ancla adaptada, el registro vive en host_oms
     ]);
     orden(HOST, &["risk_engine::drawdown::OrigenDeLaCaida::FlujoIncierto => format!("]);
     // Risk: solo lee el pico con el libro derivado.
@@ -89,8 +89,8 @@ fn anclas_del_inmune() {
         "self.peak_capital = arena.pico_capital.load(Ordering::Acquire);",
         "let capital_freno = crate::drawdown::capital_del_freno(arena);",
         "if derivado {",
-        "let pico = arena.pico_capital.load(Ordering::Acquire);",
-        "self.peak_capital = if capital_freno.is_finite() { pico.max(capital_freno) } else { pico };",
+        "let Some(vista) = crate::drawdown::vista_del_freno(arena) else {",  // V4K (F2): ancla adaptada, equity y pico de la misma revision
+        "self.peak_capital = if capital_freno.is_finite() { vista.pico.max(capital_freno) } else { vista.pico };",
         "} else {",
         "self.peak_capital = crate::drawdown::registrar_pico(",
     ]);
@@ -493,4 +493,324 @@ fn f8_flujo_identificado_y_retiro_incierto_no_rearman() {
     assert_eq!(flujos.origen_de_la_caida(), OrigenDeLaCaida::FlujoIncierto, "el retiro se etiqueto como perdida de mercado");
     assert!(m.arena.capital_incompleto.load(Ordering::Acquire) == false, "fixture: veto segun el estado del puente");
     assert!(texto(HOST).contains("sin politica de ajuste (no se etiqueta como perdida de mercado; pico y freno se conservan)"));
+}
+
+// ================================ V4K: F2, F5, F6 y F8 ================================
+
+/// ADAPTADOR V4K del lazo del inmune (anclado abajo): el paso es UNA revision del plano, con la
+/// equity en ausencia mientras el pico del ambito esta pendiente, y devuelve su ambito.
+fn ciclo_del_inmune_k(m: &Montaje) -> (f64, f64, drawdown::FrenoDuro, u64, u64) {
+    let (cap, pico, ambito) = m.puente.con_equity_del_freno(|equity| {
+        let _plano = drawdown::EscrituraDelPlano::abrir(&m.arena);
+        let cap_exchange = equity.unwrap_or(f64::NAN);
+        let pendiente = m.arena.pico_pendiente.load(Ordering::Acquire);
+        m.arena.capital_exchange.store(if cap_exchange.is_finite() && !pendiente { cap_exchange } else { f64::NAN }, Ordering::Release);
+        let cap = drawdown::capital_del_freno(&m.arena);
+        (cap, drawdown::registrar_pico(&m.arena.pico_capital, cap), drawdown::ambito_del_plano(&m.arena))
+    });
+    let revision = m.arena.plano_freno_rev.load(Ordering::Acquire);
+    (cap, pico, drawdown::freno_duro(&m.arena, pico, cap), revision, ambito)
+}
+
+fn anclas_v4k() {
+    orden(HOST, &[
+        "let (cap, peak_capital, ruta_del_pico, ambito_de_la_evidencia) = puente_imm.con_equity_del_freno(|equity| {",
+        "let _plano = risk_engine::drawdown::EscrituraDelPlano::abrir(&arena_imm);",
+        "let cap_exchange = equity.unwrap_or(f64::NAN);",
+        "let pendiente = arena_imm.pico_pendiente.load(Ordering::Acquire);",
+        "if cap_exchange.is_finite() && !pendiente {",
+        "let cap = risk_engine::drawdown::capital_del_freno(&arena_imm);",
+        "risk_engine::drawdown::registrar_pico(&arena_imm.pico_capital, cap);",
+        "risk_engine::drawdown::ambito_del_plano(&arena_imm))",
+        "let freno = risk_engine::drawdown::freno_duro(&arena_imm, peak_capital, cap);",
+        "let patrimonial = !operator_lock && !lat_breach;",
+        "let Some(executor) = puente_imm.con_equity_del_freno(|_| {",
+        "risk_engine::drawdown::ambito_del_plano(&arena_imm) == ambito_de_la_evidencia)",
+        ".then(|| exec_imm.load_full())",
+        "arena_imm.kill_switch_active.store(true, Ordering::Relaxed);",
+        "executor.trigger_kill_switch();",
+    ]);
+    orden(HOST, &["risk_engine::drawdown::preparar_ambito_del_pico(&arena_real);", "puente_cuenta.vincular_freno(move |equity| {"]);
+    orden(HOST, &[
+        "if libro_relevo.cuenta().is_some_and(|c| c != cuenta_del_relevo) {",
+        "risk_engine::drawdown::preparar_ambito_del_pico(&arena_real);",
+        "libro_relevo.fijar_cuenta(&arena_real, cuenta_del_relevo);",
+        "if espacio == espacio_pico && pico_pendiente_del_relevo {",
+    ]);
+    orden(HOST, &["fn aplicar_arranque_pico(", "risk_engine::drawdown::registrar_pico(&arena.pico_capital, guardado);", "risk_engine::drawdown::pico_restaurado(arena);", "(ilegible, marca_pendiente)"]);
+    orden(HOST, &["let _ = puente_brk.con_era_vigente(era_brk, |_| {", "quantum_engine::host_oms::registrar_flujos_externos_de_era("]);
+}
+
+/// La decision real de Risk: (vetada por drawdown, vista con la que decidio).
+fn decision_de_risk(m: &mut Montaje) -> (bool, Option<drawdown::VistaDelFreno>) {
+    let intento = SignalIntent { signal: SignalType::Long, confidence: 0.9, win_probability: 0.9, expected_duration_ms: 60_000, ..Default::default() };
+    let r = m.riesgo.evaluate_quantum_order(0, &intento, &m.arena);
+    let vetada = r.signal == SignalType::Flat && risk_engine::ultimo_rechazo() == Some(risk_engine::REJ_DRAWDOWN);
+    (vetada, m.riesgo.vista_del_freno())
+}
+
+/// V4K F2 (dictamen V4J :40 y :56): secuencia de Criterios :24 (dimensionable 95, equity 100, 103,
+/// 100, 87) con los escritores intercalados. Se captura la decision REAL de Risk y la revision con
+/// que decidio, y se compara con la decision del host (adaptador del lazo) bajo sus umbrales: misma
+/// revision, misma equity, mismo pico 103 y misma decision del freno. Ademas, con un escritor a
+/// mitad (pico de una observacion nueva sin su equity), Risk no decide con la mezcla: veta.
+#[test]
+fn v4k_f2_risk_y_host_deciden_con_la_misma_revision() {
+    let _g = SERIE.lock().unwrap_or_else(|p| p.into_inner());
+    anclas_v4k();
+    let mut m = montaje(1);
+    m.rest(100.0, Some(0.0), 100);
+    m.arena.config.entry_publication_gate.lock().unwrap().debito_cierre_local(&m.arena, ClaveReserva { coin_id: 0, slot: 1, generation: 1 }, 5.0);
+    assert_eq!(m.dimensionable(), 95.0, "fixture");
+    let _ = ciclo_del_inmune_k(&m);
+    for (i, (upnl, t)) in [(3.0, 200), (0.0, 300), (-13.0, 400)].into_iter().enumerate() {
+        m.rest(100.0, Some(upnl), t);
+        if i % 2 == 0 {
+            // Risk decide ANTES del ciclo del inmune: la observacion ya publico equity y pico.
+            let (_, vista) = decision_de_risk(&mut m);
+            let vista = vista.expect("Risk no leyo una revision estable");
+            assert_eq!((vista.equity, vista.pico), (100.0 + upnl, 103.0), "Risk antes del inmune: mezcla de observaciones");
+        }
+        let (cap, pico, freno, revision, _) = ciclo_del_inmune_k(&m);
+        let (vetada, vista) = decision_de_risk(&mut m);
+        let vista = vista.expect("Risk no leyo una revision estable");
+        assert_eq!(vista.revision, revision, "Risk y el host decidieron con revisiones distintas");
+        assert_eq!((vista.equity, vista.pico), (cap, pico), "Risk y el host vieron otra equity o pico");
+        assert_eq!((cap, pico), (100.0 + upnl, 103.0), "la serie");
+        assert_eq!(vetada, freno.echado() || cap <= 0.0, "decision distinta entre Risk y el host con sus umbrales ({freno})");
+        assert_eq!(freno.caida_capital, (103.0 - cap) / 103.0, "caida incoherente con la serie");
+        assert_eq!(m.dimensionable(), 95.0, "la capacidad cambio con el PnL abierto");
+    }
+    // Escritor a mitad en OTRO hilo: pico de una observacion nueva (120) escrito, su equity no.
+    let a = Arc::clone(&m.arena);
+    let (dentro, seguir) = (Arc::new(std::sync::Barrier::new(2)), Arc::new(std::sync::Barrier::new(2)));
+    let escritor = {
+        let (dentro, seguir) = (Arc::clone(&dentro), Arc::clone(&seguir));
+        std::thread::spawn(move || {
+            let _p = drawdown::EscrituraDelPlano::abrir(&a);
+            drawdown::registrar_pico(&a.pico_capital, 120.0);
+            dentro.wait();
+            seguir.wait();
+            a.capital_exchange.store(120.0, Ordering::Release);
+        })
+    };
+    dentro.wait();
+    let (vetada, vista) = decision_de_risk(&mut m);
+    assert!(vetada && vista.is_none(), "Risk decidio con la equity de una observacion y el pico de otra: {vista:?}");
+    seguir.wait();
+    escritor.join().unwrap();
+    let (_, vista) = decision_de_risk(&mut m);
+    let vista = vista.expect("revision estable tras el escritor");
+    assert_eq!((vista.equity, vista.pico, vista.revision % 2), (120.0, 120.0, 0), "la vista posterior no es la del escritor");
+}
+
+/// V4K F5 (dictamen V4J :43): la secuencia conservadora de F5 con la decision REAL de Risk y su
+/// revision comun con el host, al recibir la cota y al recuperar la foto valida.
+#[test]
+fn v4k_f5_cota_y_recuperacion_con_la_misma_revision() {
+    let _g = SERIE.lock().unwrap_or_else(|p| p.into_inner());
+    let mut m = montaje(1);
+    m.rest(100.0, None, 100);
+    let _ = ciclo_del_inmune_k(&m);
+    m.puente.evidencia_perdida(m.puente.era()).unwrap();
+    m.rest_incompleta(100.0, -10.0, 150);
+    let (cap, pico, freno, revision, _) = ciclo_del_inmune_k(&m);
+    let (vetada, vista) = decision_de_risk(&mut m);
+    let vista = vista.expect("vista de la cota");
+    assert_eq!((cap, pico), (90.0, 100.0), "la cota menor no actuo o el pico cambio");
+    assert_eq!((vista.equity, vista.pico, vista.revision), (cap, pico, revision), "Risk y el host no comparten la cota");
+    assert!(vetada, "con la evidencia perdida Risk admitio una entrada");
+    assert_eq!(freno.caida_capital, 0.1);
+    m.rest_incompleta(100.0, 20.0, 160);
+    let (cap, pico, _, _, _) = ciclo_del_inmune_k(&m);
+    assert_eq!((cap, pico), (90.0, 100.0), "una ganancia no conciliada reabrio");
+    let _ = relevo(&m, 1);
+    let (cap, pico, _, _, _) = ciclo_del_inmune_k(&m);
+    assert_eq!((cap, pico), (90.0, 100.0), "el relevo de la misma cuenta perdio la cota");
+    m.rest(104.0, None, 300);
+    let (cap, pico, freno, revision, _) = ciclo_del_inmune_k(&m);
+    let (vetada, vista) = decision_de_risk(&mut m);
+    let vista = vista.expect("vista de la foto valida");
+    assert_eq!((cap, pico, vista.equity, vista.pico, vista.revision), (104.0, 104.0, 104.0, 104.0, revision));
+    assert_eq!(vetada, freno.echado() || cap <= 0.0, "decision distinta con la foto valida");
+}
+
+/// ADAPTADOR V4K de `aplicar_arranque_pico` (libro derivado, anclado arriba): pico vacio, el
+/// persistido compatible, y el ambito pasa a listo.
+fn aplicar_arranque_k(m: &Montaje, rutas: &drawdown::RutasPico) {
+    m.puente.con_equity_del_freno(|_| {
+        let _plano = drawdown::EscrituraDelPlano::abrir(&m.arena);
+        m.arena.pico_capital.store(0.0, Ordering::Release);
+        if let CargaPico::Leido(g) = drawdown::decidir_arranque_pico(rutas).carga {
+            drawdown::registrar_pico(&m.arena.pico_capital, g);
+        }
+        drawdown::pico_restaurado(&m.arena);
+    });
+}
+
+/// V4K F6 (dictamen V4J :44, :58 y :67): arranque, persistencia del ambito, callback, cache y
+/// relevo juntos. El ambito se prepara antes de vincular el observador: la primera equity (100)
+/// llega antes de restaurar el pico persistido (120) y no es evidencia lista (ni pico ni admision;
+/// Risk veta). Restaurado, host y Risk miden desde 120 con la misma revision. Un relevo a otra
+/// cuenta intercalado entre la captura de la evidencia y la toma del ejecutor descarta la decision
+/// del ambito anterior; sin relevo (control), el efecto se aplica.
+#[test]
+fn v4k_f6_arranque_restaura_antes_de_la_primera_evidencia_y_el_relevo_descarta_efectos() {
+    let _g = SERIE.lock().unwrap_or_else(|p| p.into_inner());
+    anclas_v4k();
+    let dir = std::env::temp_dir().join(format!("tg_v4k_f6_{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let rutas = drawdown::RutasPico::del_espacio("prueba_v4k", |n| dir.join(n));
+    drawdown::guardar_pico(&rutas.pico, 120.0).unwrap();
+    drawdown::guardar_marca_definicion(&rutas.marca).unwrap();
+    // Arranque: el host prepara el ambito antes de vincular el freno (anclas).
+    let arena = GlobalArena::build_in_own_stack(100.0);
+    drawdown::preparar_ambito_del_pico(&arena);
+    let mut m = montaje_con_arena(1, arena);
+    m.rest(100.0, None, 100);
+    assert!(!m.arena.capital_exchange.load(Ordering::Acquire).is_finite(), "la primera equity se publico antes de restaurar el pico");
+    assert_eq!(m.pico(), 0.0, "la primera equity escribio el pico antes de restaurar el persistido");
+    // Veto efectivo de la entrada (pico vacio: `REJ_INVALID_INPUT`; pico pendiente con vista:
+    // `REJ_DRAWDOWN`), nunca una decision con una vista lista.
+    let intento = SignalIntent { signal: SignalType::Long, confidence: 0.9, win_probability: 0.9, expected_duration_ms: 60_000, ..Default::default() };
+    let r = m.riesgo.evaluate_quantum_order(0, &intento, &m.arena);
+    let vista = m.riesgo.vista_del_freno();
+    assert!(
+        r.signal == SignalType::Flat && !vista.is_some_and(|v| v.lista),
+        "Risk decidio con el pico sin restaurar: {:?} vista={vista:?} rechazo={:?}",
+        r.signal,
+        risk_engine::ultimo_rechazo()
+    );
+    assert!(
+        matches!(risk_engine::ultimo_rechazo(), Some(risk_engine::REJ_INVALID_INPUT) | Some(risk_engine::REJ_DRAWDOWN)),
+        "veto por otra compuerta: {:?}",
+        risk_engine::ultimo_rechazo()
+    );
+    let (cap, pico, _, _, _) = ciclo_del_inmune_k(&m);
+    assert!(!cap.is_finite() && pico == 0.0, "el inmune uso la equity antes de restaurar ({cap}, {pico})");
+    aplicar_arranque_k(&m, &rutas);
+    let (cap, pico, freno, revision, ambito) = ciclo_del_inmune_k(&m);
+    let (vetada, vista) = decision_de_risk(&mut m);
+    let vista = vista.expect("vista restaurada");
+    assert_eq!((cap, pico), (100.0, 120.0), "el pico persistido compatible no gobierna");
+    assert_eq!((vista.equity, vista.pico, vista.revision, vista.ambito), (cap, pico, revision, ambito));
+    assert_eq!(vetada, freno.echado() || cap <= 0.0);
+    // Relevo intercalado entre la captura (ciclo) y la toma del ejecutor del disparo.
+    let tomar = |m: &Montaje, capturado: u64| m.puente.con_equity_del_freno(|_| (drawdown::ambito_del_plano(&m.arena) == capturado).then_some(()));
+    assert!(tomar(&m, ambito).is_some(), "control: sin relevo el efecto se aplica");
+    let _ = relevo_k(&m, 2);
+    assert!(tomar(&m, ambito).is_none(), "la decision del ambito anterior aplico sus efectos al sucesor");
+    assert_eq!(m.pico(), 0.0, "el relevo dejo el pico de la cuenta anterior");
+    m.rest(50.0, None, 10);
+    let (cap, _, _, _, _) = ciclo_del_inmune_k(&m);
+    assert!(!cap.is_finite(), "el sucesor uso evidencia antes de restaurar su pico");
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// Relevo del host con la preparacion del ambito (V4K), como `relevo` mas `preparar_ambito_del_pico`.
+fn relevo_k(m: &Montaje, cuenta: u64) -> u64 {
+    let sesion = m.oms.load(Ordering::SeqCst) + 1;
+    let (_, era) = m.puente.relevar_sesion(|| {
+        m.oms.store(sesion, Ordering::SeqCst);
+        m.puente.anunciar_cuenta(cuenta);
+        let mut libro = m.arena.config.entry_publication_gate.lock().unwrap();
+        if libro.cuenta().is_some_and(|c| c != cuenta) {
+            m.arena.capital_exchange.store(f64::NAN, Ordering::Release);
+            m.arena.pico_capital.store(0.0, Ordering::Release);
+            drawdown::preparar_ambito_del_pico(&m.arena);
+        }
+        libro.fijar_cuenta(&m.arena, cuenta);
+        ((), Some(sesion))
+    });
+    let era = era.unwrap();
+    m.puente.abrir_socket(era).unwrap();
+    era
+}
+
+fn montaje_con_arena(cuenta: u64, arena: Arc<GlobalArena>) -> Montaje {
+    // Mismo cableado que `montaje`, sobre el arena dado (el del arranque del host).
+    let oms = Arc::new(AtomicU64::new(SESION));
+    let puente = Arc::new(PuenteCuenta::con_sesion(SESION));
+    {
+        let oms = Arc::clone(&oms);
+        puente.vincular_testigo_de_sesion(move || oms.load(Ordering::SeqCst));
+    }
+    {
+        let mut libro = arena.config.entry_publication_gate.lock().unwrap();
+        libro.activar(&arena);
+        libro.fijar_cuenta(&arena, cuenta);
+    }
+    puente.anunciar_cuenta(cuenta);
+    {
+        let arena = Arc::clone(&arena);
+        puente.vincular_freno(move |equity| drawdown::publicar_equity_del_freno(&arena, equity));
+    }
+    {
+        let (arena, oms) = (Arc::clone(&arena), Arc::clone(&oms));
+        puente.vincular_publicador(move |p| {
+            if p.veta {
+                arena.config.entry_publication_gate.lock().unwrap().veto_del_puente();
+                arena.capital_incompleto.store(true, Ordering::Release);
+                return false;
+            }
+            let Some((saldo, marca)) = p.vigente else {
+                arena.capital_incompleto.store(true, Ordering::Release);
+                return false;
+            };
+            if oms.load(Ordering::SeqCst) != p.sesion {
+                return false;
+            }
+            let mut l = arena.config.entry_publication_gate.lock().unwrap();
+            l.fijar_alcance(p.era, p.sesion);
+            l.saldo_aceptado(&arena, saldo, marca);
+            drop(l);
+            arena.capital_incompleto.store(false, Ordering::Release);
+            true
+        });
+    }
+    puente.abrir_socket(puente.era()).unwrap();
+    Montaje { puente, arena, oms, riesgo: RiskEngine::new(100.0) }
+}
+
+/// V4K F8 (dictamen V4J :46 y :67): una respuesta de income retenida de la era anterior atraviesa
+/// el registro PRODUCTIVO (`host_oms::registrar_flujos_externos_de_era`, el que llama el lazo del
+/// host) despues del relevo: no registra nada en el sucesor. Control: la misma respuesta con la era
+/// vigente registra; replay, otra cuenta y otro activo conservan su identidad; el pico y la
+/// proteccion siguen la evidencia y la caida queda atribuida a un flujo incierto.
+#[test]
+fn v4k_f8_income_retenido_no_registra_en_el_sucesor() {
+    let _g = SERIE.lock().unwrap_or_else(|p| p.into_inner());
+    anclas_v4k();
+    let m = montaje(1);
+    m.rest(100.0, None, 100);
+    let _ = ciclo_del_inmune_k(&m);
+    let flujos = Mutex::new(FlujosExternos::default());
+    let entradas: Vec<execution_engine::order_types::IncomeEntry> = serde_json::from_str(
+        r#"[{"symbol":"","incomeType":"TRANSFER","income":"-35","asset":"USDT","time":150,"tranId":9001,"tradeId":""},
+            {"symbol":"","incomeType":"TRANSFER","income":"-1","asset":"BNB","time":151,"tranId":9002,"tradeId":""},
+            {"symbol":"BTCUSDT","incomeType":"FUNDING_FEE","income":"-0.1","asset":"USDT","time":152,"tranId":9003,"tradeId":""}]"#,
+    )
+    .unwrap();
+    let era_vieja = m.puente.era();
+    // Relevo de la misma cuenta con la respuesta retenida: no registra en el sucesor.
+    let _ = relevo_k(&m, 1);
+    let r = quantum_engine::host_oms::registrar_flujos_externos_de_era(&m.puente, era_vieja, &m.arena, &flujos, &entradas);
+    assert!(r.is_none(), "la respuesta retenida de la era anterior registro en el sucesor: {r:?}");
+    assert_eq!(flujos.lock().unwrap().cantidad(), 0, "movimientos registrados en el sucesor");
+    // Control: con la era vigente, registra los dos flujos externos (no el funding) una vez.
+    let era = m.puente.era();
+    let r = quantum_engine::host_oms::registrar_flujos_externos_de_era(&m.puente, era, &m.arena, &flujos, &entradas).expect("control: era vigente");
+    assert_eq!(r, vec![(9001, RegistroDeFlujo::Nuevo), (9002, RegistroDeFlujo::OtroActivo)]);
+    let r = quantum_engine::host_oms::registrar_flujos_externos_de_era(&m.puente, era, &m.arena, &flujos, &entradas).unwrap();
+    assert_eq!(r, vec![(9001, RegistroDeFlujo::Repetido), (9002, RegistroDeFlujo::Repetido)], "replay");
+    assert_eq!(flujos.lock().unwrap().neto_incierto(), -35.0);
+    // Relevo a OTRA cuenta: la respuesta de la era anterior no registra; la del sucesor, con la
+    // cuenta nueva, se rechaza por ambito (el registro sigue siendo de la cuenta 1).
+    let era_cuenta_1 = m.puente.era();
+    let _ = relevo_k(&m, 2);
+    assert!(quantum_engine::host_oms::registrar_flujos_externos_de_era(&m.puente, era_cuenta_1, &m.arena, &flujos, &entradas).is_none());
+    let r = quantum_engine::host_oms::registrar_flujos_externos_de_era(&m.puente, m.puente.era(), &m.arena, &flujos, &entradas).unwrap();
+    assert!(r.iter().all(|(_, x)| *x == RegistroDeFlujo::OtroAmbito), "otra cuenta mezclo flujos: {r:?}");
+    assert_eq!(flujos.lock().unwrap().origen_de_la_caida(), OrigenDeLaCaida::FlujoIncierto, "el retiro se etiqueto como perdida de mercado");
 }

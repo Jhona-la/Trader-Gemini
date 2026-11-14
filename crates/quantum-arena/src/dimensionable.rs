@@ -168,6 +168,10 @@ struct Debito {
     cuenta: Option<u64>,
     /// V4J (punto 2): `z` del evento terminal de la orden (acumulado final), en 1e-8.
     acumulado_final_e8: Option<i64>,
+    /// V4K (A2): llegaron terminales de la orden con acumulados distintos (por ejemplo, uno
+    /// reciente con ejecucion y otro antiguo con acumulado nulo). La marca y el acumulado ya no
+    /// son de la misma observacion: ningun terminal libera el estimado (se retiene).
+    terminal_incoherente: bool,
 }
 
 fn cubre(marca_saldo: Option<u64>, marca: Option<u64>) -> bool {
@@ -195,6 +199,7 @@ impl Debito {
             cantidad: None,
             cuenta: None,
             acumulado_final_e8: None,
+            terminal_incoherente: false,
         }
     }
 
@@ -237,7 +242,13 @@ impl Debito {
 
     /// Lo que este debito retiene con el saldo vigente de marca `marca_saldo` (INV-E, V4J).
     fn retenido(&self, marca_saldo: Option<u64>) -> f64 {
-        let terminal_cubierto = matches!(self.estado, Estado::Pendiente(m) if cubre(marca_saldo, m));
+        // V4K (A2): con terminales contradictorios, la marca terminal no prueba nada del acumulado:
+        // se trata como no cubierta (retiene lo ejecutado sin cobertura y el estimado del resto).
+        let terminal_cubierto =
+            !self.terminal_incoherente && matches!(self.estado, Estado::Pendiente(m) if cubre(marca_saldo, m));
+        if self.terminal_incoherente {
+            return self.real_pendiente(marca_saldo) + self.estimado.max(self.importe);
+        }
         // V4J (punto 2): con la cantidad de la orden conocida, ninguna marca libera lo ejecutado
         // y aun no visto (terminal recibido antes que su fill): rige la cadena o la cantidad.
         if self.fills.is_empty() && cantidad_valida(self.cantidad).is_none() {
@@ -362,9 +373,21 @@ impl LibroDimensionable {
         self.saldo.map(|s| (s, self.marca))
     }
 
-    /// Debitos (reservas y debitos locales) que el exchange aun no refleja.
+    /// Debitos (reservas y debitos locales) que el exchange aun no refleja, de la cuenta vigente.
+    /// V4K (A5): el libro de cada cuenta es suyo: los debitos de otra cuenta no restan del saldo de
+    /// esta (otra billetera) ni una foto de esta los libera; se conservan y vuelven a restar al
+    /// volver a su cuenta. Un debito sin cuenta (anterior a fijarla) resta en cualquiera.
     pub fn reservado(&self) -> f64 {
-        self.debitos.iter().map(|d| d.retenido(self.marca_para(d))).sum()
+        self.debitos.iter().filter(|d| self.de_esta_cuenta(d)).map(|d| d.retenido(self.marca_para(d))).sum()
+    }
+
+    /// V4K (A5): reservado de las cuentas que no son la vigente (obligaciones conservadas).
+    pub fn reservado_de_otras_cuentas(&self) -> f64 {
+        self.debitos.iter().filter(|d| !self.de_esta_cuenta(d)).map(|d| d.retenido(None)).sum()
+    }
+
+    fn de_esta_cuenta(&self, d: &Debito) -> bool {
+        d.cuenta.is_none() || d.cuenta == self.cuenta
     }
 
     /// V4J (punto 2): la marca del saldo vigente solo prueba inclusion de los cargos de SU
@@ -483,6 +506,12 @@ impl LibroDimensionable {
         }
         let habia = self.cuenta.is_some();
         self.cuenta = Some(cuenta);
+        if !habia {
+            // V4K (A5): lo registrado antes de fijar la primera cuenta es de esa cuenta.
+            for d in self.debitos.iter_mut().filter(|d| d.cuenta.is_none()) {
+                d.cuenta = Some(cuenta);
+            }
+        }
         if habia {
             self.saldo = None;
             self.marca = None;
@@ -593,6 +622,11 @@ impl LibroDimensionable {
             return true;
         }
         let (Some(c), Some(p)) = (capital, self.publicado) else { return false };
+        // V4K (F4): cero y deuda observados conservan la insolvencia: sin capacidad positiva no
+        // se reserva ninguna entrada (no depende de que Risk lo rechace antes).
+        if !(c > 0.0 && p > 0.0) {
+            return false;
+        }
         if !c.is_finite()
             || self.veto.is_some()
             || arena.capital_incompleto.load(Ordering::Acquire)
@@ -640,7 +674,7 @@ impl LibroDimensionable {
         let ajeno: f64 = self
             .debitos
             .iter()
-            .filter(|d| d.seq != propia.seq)
+            .filter(|d| d.seq != propia.seq && self.de_esta_cuenta(d))
             .map(|d| {
                 let marca = self.marca_para(d);
                 if d.es_entrada_viva() && d.seq > propia.seq {
@@ -860,8 +894,18 @@ impl LibroDimensionable {
         if let Some(d) = self.debitos.iter_mut().find(|d| {
             matches!(d.origen, Origen::Entrada(c) if c.coin_id == coin_id) && d.orden.as_deref() == Some(orden) && d.cuenta == cuenta
         }) {
-            if acumulado_e8.is_some() {
-                d.acumulado_final_e8 = acumulado_e8;
+            // V4K (A2): el acumulado no se reemplaza a ciegas mientras la marca guarda el maximo.
+            // Un segundo terminal con OTRO acumulado contradice al primero (una orden termina una
+            // vez): se conserva el mayor (z solo crece) y la orden queda incoherente (retiene).
+            if let Some(z) = acumulado_e8 {
+                match d.acumulado_final_e8 {
+                    None => d.acumulado_final_e8 = Some(z),
+                    Some(prev) if prev != z => {
+                        d.terminal_incoherente = true;
+                        d.acumulado_final_e8 = Some(prev.max(z));
+                    }
+                    Some(_) => {}
+                }
             }
             d.marca_orden = mayor(d.marca_orden, Some(marca));
             if let Estado::Pendiente(m) = d.estado {
@@ -1041,7 +1085,10 @@ impl FronteraDeEnvio {
             previa: FRONTERA.with(|c| c.replace(Some(ptr))),
             cruce_previo: CRUCE.with(|c| c.replace(false)),
         };
+        POR_COMPROMETER.with(|c| c.set(false));
         let r = f();
+        // V4K (A1): un cruce sin compromiso no pasa al paso siguiente.
+        POR_COMPROMETER.with(|c| c.set(false));
         if CRUCE.with(|c| c.get()) {
             self.cruzada.store(true, Ordering::Relaxed);
         }
@@ -1062,8 +1109,52 @@ pub fn cruzar_frontera_de_envio() -> Result<(), String> {
     match validar() {
         Ok(()) => {
             CRUCE.with(|c| c.set(true));
+            // V4K (A1): el POST que sigue a este cruce se vuelve a validar en su compromiso
+            // local (`comprometer_entrega`, en el cliente HTTP, con la solicitud ya construida).
+            POR_COMPROMETER.with(|c| c.set(true));
             Ok(())
         }
         Err(e) => Err(format!("OMS_ENTRY_WITHHELD: at the transport boundary: {e}")),
     }
+}
+
+thread_local! {
+    /// V4K (A1): hay un cruce de apertura cuyo POST aun no se comprometio en el cliente.
+    static POR_COMPROMETER: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+    /// V4K (A1): barrera de prueba en el intervalo entre el cruce y el compromiso local.
+    static BARRERA_DE_COMPROMISO: std::cell::RefCell<Option<Box<dyn Fn()>>> = const { std::cell::RefCell::new(None) };
+}
+
+/// V4K (A1, dictamen V4J :32 y :52): el COMPROMISO LOCAL de la entrega. El cliente HTTP la llama
+/// con la solicitud ya construida (cabeceras cargadas, URL firmada), inmediatamente antes de
+/// entregarla al transporte, sin ninguna espera entre las dos. Solo actua sobre el POST que sigue a
+/// un cruce de apertura ([`cruzar_frontera_de_envio`]): vuelve a ejecutar el validador del paso en
+/// ESTE instante, asi que una publicacion (revision, veto, sesion) entre el cruce y el compromiso
+/// retiene el paquete. Cierres, cancelaciones y piernas protectoras (sin cruce) pasan siempre. Un
+/// paquete comprometido pertenece a la revision que lo valido aqui.
+pub fn comprometer_entrega() -> Result<(), String> {
+    if !POR_COMPROMETER.with(|c| c.replace(false)) {
+        return Ok(());
+    }
+    BARRERA_DE_COMPROMISO.with(|b| {
+        if let Some(f) = b.borrow().as_ref() {
+            f();
+        }
+    });
+    let Some(ptr) = FRONTERA.with(|c| c.get()) else { return Ok(()) };
+    // SAFETY: como en `cruzar_frontera_de_envio`: el puntero lo puso `FronteraDeEnvio::paso` en
+    // este hilo y `paso` aun no termino (el cliente compromete dentro del mismo `poll` del cruce).
+    let validar = unsafe { &*ptr };
+    validar().map_err(|e| {
+        // El paquete no se entrego: este paso no cuenta como cruzado.
+        CRUCE.with(|c| c.set(false));
+        format!("OMS_ENTRY_WITHHELD: at the local commit: {e}")
+    })
+}
+
+/// V4K (A1): solo para pruebas. Fija (o quita, con `None`) en ESTE hilo una barrera determinista
+/// que corre entre el cruce de la frontera y el compromiso local de cada entrega (mismo `poll`).
+#[doc(hidden)]
+pub fn fijar_barrera_de_compromiso(barrera: Option<Box<dyn Fn()>>) {
+    BARRERA_DE_COMPROMISO.with(|b| *b.borrow_mut() = barrera);
 }

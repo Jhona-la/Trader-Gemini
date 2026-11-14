@@ -333,7 +333,14 @@ fn v4i_inv_d_otra_cuenta_empieza_sin_saldo() {
         assert!(!l.admite(&arena, Some(99.0)), "admitida sin saldo de la cuenta nueva");
         l.saldo_aceptado(&arena, 50.0, Some(100));
     }
-    assert_eq!(dim(&arena), 49.0, "su primer saldo vale (aunque su marca sea menor) y los debitos siguen");
+    // V4K (A5, dictamen V4J :37): la cuenta ajena no soporta el debito de la original (antes 49,
+    // que sumaba la reserva de la cuenta 1 al saldo de la 2); el debito se conserva y vuelve a
+    // restar al volver a su cuenta.
+    assert_eq!(dim(&arena), 50.0, "su primer saldo vale (aunque su marca sea menor) y no soporta la reserva ajena");
+    assert_eq!(libro(&arena).reservado_de_otras_cuentas(), 1.0, "el debito de la cuenta 1 se perdio");
+    cuenta(&arena, 1);
+    libro(&arena).saldo_aceptado(&arena, 100.0, Some(600));
+    assert_eq!(dim(&arena), 99.0, "al volver a la cuenta 1 su reserva no sigue restando");
 }
 
 // ---------------------------------------------------------------- punto 2, INV-E

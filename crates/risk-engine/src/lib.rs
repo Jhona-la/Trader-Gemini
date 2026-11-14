@@ -413,6 +413,9 @@ pub struct RiskEngine {
     /// puerta al reservar: si el dimensionable bajo, la propuesta se descarta. Se borra al
     /// empezar cada evaluacion.
     capital_evaluado: Option<f64>,
+    /// CAPITAL-UNICO V4K (F2): la vista del plano del freno (equity, pico y revision comun) con
+    /// la que decidio la ultima evaluacion con el libro derivado. Se borra al empezar cada una.
+    vista_del_freno: Option<crate::drawdown::VistaDelFreno>,
 }
 
 /// CL-131 (R2 de la revisión del PR #62) — lo que una orden validada aporta
@@ -445,6 +448,7 @@ impl RiskEngine {
             geometria_evaluada: None,
             promesa_evaluada: None,
             capital_evaluado: None,
+            vista_del_freno: None,
         }
     }
 
@@ -457,12 +461,19 @@ impl RiskEngine {
         self.geometria_evaluada = None;
         self.promesa_evaluada = None;
         self.capital_evaluado = None;
+        self.vista_del_freno = None;
     }
 
     /// CAPITAL-UNICO V4H (INV-F): el dimensionable que uso la ultima evaluacion (`None` si no
     /// llego a leerlo o lo rechazo por invalido).
     pub fn capital_evaluado(&self) -> Option<f64> {
         self.capital_evaluado
+    }
+
+    /// CAPITAL-UNICO V4K (F2): la vista del plano del freno con la que decidio la ultima
+    /// evaluacion (libro derivado); `None` sin libro derivado o si no llego a leerla.
+    pub fn vista_del_freno(&self) -> Option<crate::drawdown::VistaDelFreno> {
+        self.vista_del_freno
     }
 
     /// CL-131/CL-135 — la medida de la última orden validada de `coin_id`,
@@ -740,6 +751,7 @@ impl RiskEngine {
         self.geometria_evaluada = None;
         self.promesa_evaluada = None;
         self.capital_evaluado = None;
+        self.vista_del_freno = None;
         if coin_id >= arena.coins.len() || intent.signal == SignalType::Flat {
             return rej(REJ_FLAT_COIN);
         }
@@ -795,22 +807,36 @@ impl RiskEngine {
         // conservador entre el arena y el exchange). Antes el riesgo subía el
         // pico con el arena: en papel sobre mainnet, ganar en papel se veía en
         // el host como una caída del saldo real.
-        let capital_freno = crate::drawdown::capital_del_freno(arena);
         // CAPITAL-UNICO V4J (punto 5): con el libro derivado, el freno mide la equity del
         // puente (ver `capital_del_freno`) y el pico es el del ambito vigente, que escribe el
         // host en el MISMO paso en que publica esa equity (bajo el mutex del puente, antes de la
         // magnitud). Este motor solo lo LEE: su cache nunca reintroduce el pico de otra cuenta,
         // venue o definicion, y no escribe un pico sin el testigo de ambito del host.
+        // V4K (F2): equity y pico se leen JUNTOS, con la misma revision del plano
+        // (`vista_del_freno`): nunca la equity de una observacion con el pico de otra. Sin una
+        // revision estable, no entra (fail-closed).
+        let capital_freno = crate::drawdown::capital_del_freno(arena);
         let derivado = arena.config.dimensionable_derivado.load(Ordering::Acquire);
-        if derivado {
-            let pico = arena.pico_capital.load(Ordering::Acquire);
-            self.peak_capital = if capital_freno.is_finite() { pico.max(capital_freno) } else { pico };
+        let capital_freno = if derivado {
+            let Some(vista) = crate::drawdown::vista_del_freno(arena) else {
+                self.vista_del_freno = None;
+                return rej(REJ_DRAWDOWN);
+            };
+            self.vista_del_freno = Some(vista);
+            // V4K (F6): pico del ambito aun sin restaurar: no hay evidencia patrimonial lista.
+            if !vista.lista {
+                return rej(REJ_DRAWDOWN);
+            }
+            let capital_freno = vista.equity;
+            self.peak_capital = if capital_freno.is_finite() { vista.pico.max(capital_freno) } else { vista.pico };
+            capital_freno
         } else {
             self.peak_capital = crate::drawdown::registrar_pico(
                 &arena.pico_capital,
                 capital_freno.max(self.peak_capital),
             );
-        }        // U-3: los picos espejo scalp/swing (sin lectores) extirpados.
+            capital_freno
+        };        // U-3: los picos espejo scalp/swing (sin lectores) extirpados.
 
         // CL-133 (B2): con el pico guardado ilegible no se sabe cuánto se ha
         // caído; no entran posiciones nuevas (fail-closed, como CL-108f).

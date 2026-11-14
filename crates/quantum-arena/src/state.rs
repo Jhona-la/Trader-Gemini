@@ -796,6 +796,18 @@ pub struct GlobalArena {
     /// CL-133 (B2) — el pico guardado es ilegible: no entran posiciones
     /// nuevas hasta que el operador repare o retire el archivo.
     pub pico_ilegible: AtomicBool,
+    /// CAPITAL-UNICO V4K (F2): revision comun del plano del freno (la equity del puente en
+    /// `capital_exchange` y `pico_capital`). Impar: un escritor esta a mitad; par: estable. Los
+    /// escritores la suben antes y despues de escribir (`drawdown::escribir_plano_del_freno`) y
+    /// Risk lee los dos con la misma revision par (`drawdown::vista_del_freno`).
+    pub plano_freno_rev: AtomicU64,
+    /// CAPITAL-UNICO V4K (F6): el ambito del pico esta preparado pero su pico persistido aun no se
+    /// restauro (arranque o relevo a otra cuenta/venue): ninguna equity es evidencia lista; el
+    /// freno la ve ausente y Risk no admite entradas hasta la restauracion.
+    pub pico_pendiente: AtomicBool,
+    /// CAPITAL-UNICO V4K (F6): ambito del plano del freno; sube con cada cambio de ambito del pico.
+    /// Una decision formada con la evidencia de un ambito no aplica sus efectos en otro.
+    pub ambito_del_plano: AtomicU64,
     /// CAPITAL-UNICO V3 (P1.2/P1.3) — el puente de la cuenta no tiene saldo
     /// vigente de su era o su equity está incompleta: no entran posiciones
     /// nuevas (el riesgo y el OMS lo vetan). Los cierres no lo consultan. Nace
@@ -928,6 +940,9 @@ impl GlobalArena {
             // ausencia de saldo exchange (backtest/offline) de un cero real observado (0.0).
             capital_exchange: AtomicF64::new(f64::NAN),
             pico_ilegible: AtomicBool::new(false),
+            plano_freno_rev: AtomicU64::new(0),
+            pico_pendiente: AtomicBool::new(false),
+            ambito_del_plano: AtomicU64::new(0),
             capital_incompleto: AtomicBool::new(false),
             vetos_capital_riesgo: AtomicU64::new(0),
             vetos_capital_oms: AtomicU64::new(0),

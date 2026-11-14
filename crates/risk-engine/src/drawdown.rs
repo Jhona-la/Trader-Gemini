@@ -444,8 +444,129 @@ pub fn capital_del_freno(arena: &quantum_arena::GlobalArena) -> f64 {
 /// observacion aceptada, el relevo y el cambio de espacio del pico).
 pub fn publicar_equity_del_freno(arena: &quantum_arena::GlobalArena, equity: Option<f64>) {
     let e = equity.filter(|e| e.is_finite()).unwrap_or(f64::NAN);
-    registrar_pico(&arena.pico_capital, e);
-    arena.capital_exchange.store(e, std::sync::atomic::Ordering::Release);
+    escribir_plano_del_freno(arena, || {
+        // V4K (F6): con el pico del ambito pendiente de restaurar, la equity no es evidencia lista:
+        // ni escribe pico ni se publica (ausencia) hasta `pico_restaurado`.
+        if arena.pico_pendiente.load(std::sync::atomic::Ordering::Acquire) {
+            arena.capital_exchange.store(f64::NAN, std::sync::atomic::Ordering::Release);
+            return;
+        }
+        registrar_pico(&arena.pico_capital, e);
+        arena.capital_exchange.store(e, std::sync::atomic::Ordering::Release);
+    });
+}
+
+/// CAPITAL-UNICO V4K (F6): prepara un ambito nuevo del plano del freno (arranque, o relevo a otra
+/// cuenta o venue): magnitud en ausencia, pico vacio, pico pendiente de restaurar y ambito nuevo,
+/// en una sola revision. Hasta [`pico_restaurado`] ninguna equity es evidencia lista.
+pub fn preparar_ambito_del_pico(arena: &quantum_arena::GlobalArena) {
+    use std::sync::atomic::Ordering;
+    escribir_plano_del_freno(arena, || {
+        arena.pico_pendiente.store(true, Ordering::Release);
+        arena.ambito_del_plano.fetch_add(1, Ordering::AcqRel);
+        arena.capital_exchange.store(f64::NAN, Ordering::Release);
+        arena.pico_capital.store(0.0, Ordering::Release);
+    });
+}
+
+/// CAPITAL-UNICO V4K (F6): el pico persistido del ambito ya se aplico (leido, ausente o
+/// ilegible, que veta por `pico_ilegible`): desde aqui la equity vuelve a ser evidencia.
+pub fn pico_restaurado(arena: &quantum_arena::GlobalArena) {
+    escribir_plano_del_freno(arena, || {
+        arena.pico_pendiente.store(false, std::sync::atomic::Ordering::Release);
+    });
+}
+
+/// CAPITAL-UNICO V4K (F6): el ambito vigente del plano del freno.
+pub fn ambito_del_plano(arena: &quantum_arena::GlobalArena) -> u64 {
+    arena.ambito_del_plano.load(std::sync::atomic::Ordering::Acquire)
+}
+
+/// CAPITAL-UNICO V4K (F2): una observacion del plano del freno (equity del puente y pico de su
+/// ambito) con la revision comun que la identifica. Risk y el host deciden con la misma.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct VistaDelFreno {
+    /// La equity conservadora del puente (no finita: ausencia).
+    pub equity: f64,
+    /// El pico del ambito vigente.
+    pub pico: f64,
+    /// La revision par de `GlobalArena::plano_freno_rev` en la que se leyeron los dos.
+    pub revision: u64,
+    /// V4K (F6): el ambito del plano en esa revision.
+    pub ambito: u64,
+    /// V4K (F6): el pico del ambito ya esta restaurado (la equity es evidencia lista).
+    pub lista: bool,
+}
+
+/// CAPITAL-UNICO V4K (F2): escribe el plano del freno (equity y/o pico) como UNA revision: la sube
+/// a impar antes y a par despues. Los escritores del host (observador del puente, lazo del inmune,
+/// relevo y arranque del pico) ya se serializan bajo el mutex del puente; esto hace que el lector
+/// sin candado (Risk) no combine la equity de una observacion con el pico de otra.
+pub fn escribir_plano_del_freno<R>(arena: &quantum_arena::GlobalArena, f: impl FnOnce() -> R) -> R {
+    let _g = EscrituraDelPlano::abrir(arena);
+    f()
+}
+
+thread_local! {
+    static PROFUNDIDAD_PLANO: std::cell::Cell<u32> = const { std::cell::Cell::new(0) };
+}
+
+/// CAPITAL-UNICO V4K (F2): guard de una escritura del plano del freno. Reentrante en el mismo
+/// hilo (un escritor dentro de otro, por ejemplo el observador del puente dentro del relevo):
+/// solo el mas externo abre (impar) y cierra (par) la revision.
+pub struct EscrituraDelPlano<'a> {
+    arena: &'a quantum_arena::GlobalArena,
+}
+
+impl<'a> EscrituraDelPlano<'a> {
+    pub fn abrir(arena: &'a quantum_arena::GlobalArena) -> Self {
+        let externo = PROFUNDIDAD_PLANO.with(|p| {
+            let d = p.get();
+            p.set(d + 1);
+            d == 0
+        });
+        if externo {
+            arena.plano_freno_rev.fetch_add(1, std::sync::atomic::Ordering::AcqRel);
+        }
+        Self { arena }
+    }
+}
+
+impl Drop for EscrituraDelPlano<'_> {
+    fn drop(&mut self) {
+        let externo = PROFUNDIDAD_PLANO.with(|p| {
+            let d = p.get().saturating_sub(1);
+            p.set(d);
+            d == 0
+        });
+        if externo {
+            self.arena.plano_freno_rev.fetch_add(1, std::sync::atomic::Ordering::Release);
+        }
+    }
+}
+
+/// CAPITAL-UNICO V4K (F2): lectura coherente del plano del freno (seqlock). `None` si no se pudo
+/// leer una revision estable (un escritor a mitad en todos los intentos): el llamador veta.
+pub fn vista_del_freno(arena: &quantum_arena::GlobalArena) -> Option<VistaDelFreno> {
+    use std::sync::atomic::{fence, Ordering};
+    for _ in 0..64 {
+        let r1 = arena.plano_freno_rev.load(Ordering::Acquire);
+        if r1 % 2 == 1 {
+            std::hint::spin_loop();
+            continue;
+        }
+        let equity = arena.capital_exchange.load(Ordering::Acquire);
+        let pico = arena.pico_capital.load(Ordering::Acquire);
+        let ambito = arena.ambito_del_plano.load(Ordering::Acquire);
+        let lista = !arena.pico_pendiente.load(Ordering::Acquire);
+        fence(Ordering::Acquire);
+        let r2 = arena.plano_freno_rev.load(Ordering::Relaxed);
+        if r1 == r2 {
+            let equity = if equity.is_finite() && lista { equity } else { f64::NAN };
+            return Some(VistaDelFreno { equity, pico, revision: r1, ambito, lista });
+        }
+    }
+    None
 }
 
 /// CL-106 (LC-F4-10, decisión del dueño «Ambos», 2026-10-12) — FRENO DURO DE

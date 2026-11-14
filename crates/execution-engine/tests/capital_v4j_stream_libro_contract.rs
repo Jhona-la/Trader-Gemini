@@ -255,5 +255,11 @@ fn identidad_de_cargo_repetido_y_tras_relevo() {
         libro.saldo_aceptado(&m.arena, 50.0, Some(100));
         libro.fill_de_entrada(&m.arena, m.coin(), "cL_v4j_otra", 92, Some(0.10), Some(810));
     }
-    assert_eq!(m.reservado(), 0.20 + 0.10 + 0.10, "la otra cuenta heredo la identidad del cargo de la anterior");
+    // V4K (A5): la cuenta 2 retiene su propio cargo (no deduplicado contra la 1) y no soporta los
+    // de la 1 (antes 0,20 + 0,10 + 0,10 en una sola suma); los de la 1 se conservan aparte.
+    {
+        let l = m.arena.config.entry_publication_gate.lock().unwrap();
+        assert_eq!(l.reservado(), 0.10, "la otra cuenta heredo la identidad del cargo de la anterior");
+        assert_eq!(l.reservado_de_otras_cuentas(), 0.20 + 0.10, "los cargos de la cuenta 1 se perdieron");
+    }
 }

@@ -661,10 +661,14 @@ impl BinanceClient {
     #[inline(always)]
     pub async fn execute_order_payload(&self, full_url: &str) -> Result<BinanceRateLimits, ErrorRest> {
         let api_key = self.api_key.load();
-        let response = self
+        // V4K (A1): la solicitud se construye entera (cabeceras y URL firmada) ANTES del
+        // compromiso local; entre el compromiso y la entrega al transporte no hay nada.
+        let solicitud = self
             .http
             .post(full_url)
-            .header("X-MBX-APIKEY", api_key.as_ref().clone())
+            .header("X-MBX-APIKEY", api_key.as_ref().clone());
+        quantum_arena::dimensionable::comprometer_entrega().map_err(ErrorRest::sin_cabecera)?;
+        let response = solicitud
             .send()
             .await;
 
@@ -728,10 +732,14 @@ impl BinanceClient {
         use crate::order_types::parse_reject_body;
 
         let api_key = self.api_key.load();
-        let response = self
+        // V4K (A1): la solicitud se construye entera (cabeceras y URL firmada) ANTES del
+        // compromiso local; entre el compromiso y la entrega al transporte no hay nada.
+        let solicitud = self
             .http
             .post(full_url)
-            .header("X-MBX-APIKEY", api_key.as_ref().clone())
+            .header("X-MBX-APIKEY", api_key.as_ref().clone());
+        quantum_arena::dimensionable::comprometer_entrega().map_err(ErrorRest::sin_cabecera)?;
+        let response = solicitud
             .send()
             .await;
 
@@ -880,10 +888,13 @@ impl BinanceClient {
     ) -> Result<(BinanceRateLimits, String), ErrorRest> {
         let api_key_arc = self.api_key.load();
         let api_key = (*api_key_arc).clone();
-        let response = self
+        // V4K (A1): el apalancamiento de una apertura tambien se compromete con la solicitud hecha.
+        let solicitud = self
             .http
             .post(full_url)
-            .header("X-MBX-APIKEY", api_key.as_ref())
+            .header("X-MBX-APIKEY", api_key.as_ref());
+        quantum_arena::dimensionable::comprometer_entrega().map_err(ErrorRest::sin_cabecera)?;
+        let response = solicitud
             .send()
             .await;
 

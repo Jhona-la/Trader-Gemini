@@ -494,6 +494,9 @@ fn aplicar_arranque_pico(
             );
         }
     }
+    // CAPITAL-UNICO V4K (F6): el pico persistido de este ambito ya esta aplicado (o vetado por
+    // ilegible): desde aqui la equity del puente vuelve a ser evidencia lista del freno y de Risk.
+    risk_engine::drawdown::pico_restaurado(arena);
     (ilegible, marca_pendiente)
 }
 
@@ -2668,6 +2671,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         // V4J (punto 5): el puente sabe de que cuenta es cada era (la equity de otra cuenta no
         // queda como evidencia del freno).
         puente_cuenta.anunciar_cuenta(cuenta_de_arranque);
+        // CAPITAL-UNICO V4K (F6): el ambito del pico se prepara ANTES de vincular el observador del
+        // freno: hasta que el inmune restaure el pico persistido compatible
+        // (`aplicar_arranque_pico`), ninguna equity es evidencia lista (ni escribe pico ni admite).
+        risk_engine::drawdown::preparar_ambito_del_pico(&arena_real);
         // CAPITAL-UNICO V4J (punto 5): la magnitud del freno (equity conservadora del puente) y su
         // pico se publican en el mismo paso en que el puente acepta cada observacion (bajo su
         // mutex): Risk decide con la vista vigente, no con la del ultimo ciclo del inmune.
@@ -2937,6 +2944,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     // V4J (punto 5): el cambio de espacio se aplica bajo el mutex del puente (el mismo
                     // paso que el relevo y que cada observacion aceptada).
                     puente_imm.con_equity_del_freno(|_| {
+                        let _plano = risk_engine::drawdown::EscrituraDelPlano::abrir(&arena_imm);
                         let espacio_nuevo = buzon_imm.lock().unwrap_or_else(|p| p.into_inner()).take();
                         if let Some(rutas) = espacio_nuevo {
                             // V4J (punto 5): nada del ambito anterior mide el pico nuevo.
@@ -2992,7 +3000,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     // pico en UN paso bajo el mutex del puente: un relevo o un cambio de espacio no se
                     // intercala entre la lectura y la escritura. La ruta que se persiste es la del
                     // mismo paso (la escritura del archivo, fuera del mutex).
-                    let (cap, peak_capital, ruta_del_pico) = puente_imm.con_equity_del_freno(|equity| {
+                    let (cap, peak_capital, ruta_del_pico, ambito_de_la_evidencia) = puente_imm.con_equity_del_freno(|equity| {
+                        // V4K (F2): este paso es UNA revision del plano del freno (Risk no combina
+                        // la equity de este paso con el pico de otro).
+                        let _plano = risk_engine::drawdown::EscrituraDelPlano::abrir(&arena_imm);
                         let espacio_nuevo = buzon_imm.lock().unwrap_or_else(|p| p.into_inner()).take();
                         if let Some(rutas) = espacio_nuevo {
                             // V4J (punto 5): nada del ambito anterior mide el pico nuevo.
@@ -3004,8 +3015,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             ruta_marca = rutas.marca.clone();
                             pico_guardado = 0.0;
                         }                        let cap_exchange = equity.unwrap_or(f64::NAN);
+                        // V4K (F6): con el pico del ambito aun pendiente, la equity no es evidencia
+                        // lista: ausencia (no escribe pico; el freno la distingue).
+                        let pendiente = arena_imm.pico_pendiente.load(Ordering::Acquire);
                         arena_imm.capital_exchange.store(
-                            if cap_exchange.is_finite() {
+                            if cap_exchange.is_finite() && !pendiente {
                                 cap_exchange
                             } else {
                                 f64::NAN
@@ -3015,7 +3029,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         let cap = risk_engine::drawdown::capital_del_freno(&arena_imm);
                         let peak_capital =
                             risk_engine::drawdown::registrar_pico(&arena_imm.pico_capital, cap);
-                        (cap, peak_capital, ruta_pico.clone())
+                        (cap, peak_capital, ruta_pico.clone(), risk_engine::drawdown::ambito_del_plano(&arena_imm))
                     });
                     if !pico_ilegible
                         && peak_capital > pico_guardado
@@ -3215,8 +3229,25 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             "🚨 [SISTEMA INMUNE] ACTIVADO: {}. Kill-switch ARMADO + aplanado total.",
                             reason
                         );
+                        // V4K (F6): una decision PATRIMONIAL (insolvencia o drawdown) formada con la
+                        // evidencia de un ambito no aplica sus efectos en otro: si entre la captura
+                        // (arriba, bajo el mutex del puente) y aqui un relevo cambio de cuenta o venue,
+                        // se descarta y el ciclo siguiente decide con la evidencia del sucesor. El
+                        // ejecutor se toma bajo el mismo mutex que el relevo. El candado del operador y
+                        // la latencia no dependen del ambito.
+                        let patrimonial = !operator_lock && !lat_breach;
+                        let Some(executor) = puente_imm.con_equity_del_freno(|_| {
+                            (!patrimonial
+                                || risk_engine::drawdown::ambito_del_plano(&arena_imm) == ambito_de_la_evidencia)
+                                .then(|| exec_imm.load_full())
+                        }) else {
+                            telemetry_server::telemetry_log!(
+                                "🛡️ [IMMUNE] decision patrimonial del ambito anterior descartada tras un relevo ({}): se reevalua con la evidencia del sucesor.",
+                                reason
+                            );
+                            continue;
+                        };
                         arena_imm.kill_switch_active.store(true, Ordering::Relaxed);
-                        let executor = exec_imm.load_full();
                         executor.trigger_kill_switch();
                         // I-10 (N19): el aplanado (CL-44b) en `aplanado_inmune`,
                         // que deja anotado si hay que reintentarlo.
@@ -3851,29 +3882,22 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     // pico ni freno (no hay politica de transferencias).
                     // Testigo de era: una respuesta de la sesion anterior no registra nada; el ambito
                     // es la cuenta vigente del libro y el activo, el de cada movimiento.
-                    let _ = puente_brk.con_era_vigente(era_brk, |_| {
-                        let cuenta = arena_brk
-                            .config
-                            .entry_publication_gate
-                            .lock()
-                            .unwrap_or_else(|e| e.into_inner())
-                            .cuenta()
-                            .unwrap_or(0);
-                        let mut flujos = flujos_brk.lock().unwrap_or_else(|p| p.into_inner());
-                        for e in &entries {
-                            if risk_engine::drawdown::es_flujo_externo(&e.income_type) {
-                                let id = if e.tran_id != 0 {
-                                    e.tran_id
-                                } else {
-                                    e.income_type.bytes().fold(e.time, |h, b| h.rotate_left(5) ^ u64::from(b))
-                                };
-                                let r = flujos.registrar(cuenta, id, &e.asset, e.income, era_brk);
-                                if matches!(r, risk_engine::drawdown::RegistroDeFlujo::Nuevo | risk_engine::drawdown::RegistroDeFlujo::OtroActivo) {
-                                    telemetry_server::telemetry_log!("[CAPITAL] flujo externo {} {:.8} {} (tranId {}, era {}): incierto, sin ajuste de pico ni freno", e.income_type, e.income, e.asset, id, era_brk);
-                                }
+                    // V4K (F8): el registro vive en `host_oms::registrar_flujos_externos_de_era` (el
+                    // contrato lo atraviesa con el relevo); aqui solo la linea de cada flujo nuevo.
+                    if let Some(registros) = quantum_engine::host_oms::registrar_flujos_externos_de_era(
+                        &puente_brk,
+                        era_brk,
+                        &arena_brk,
+                        &flujos_brk,
+                        &entries,
+                    ) {
+                        let externos = entries.iter().filter(|e| risk_engine::drawdown::es_flujo_externo(&e.income_type));
+                        for (e, (id, r)) in externos.zip(registros) {
+                            if matches!(r, risk_engine::drawdown::RegistroDeFlujo::Nuevo | risk_engine::drawdown::RegistroDeFlujo::OtroActivo) {
+                                telemetry_server::telemetry_log!("[CAPITAL] flujo externo {} {:.8} {} (tranId {}, era {}): incierto, sin ajuste de pico ni freno", e.income_type, e.income, e.asset, id, era_brk);
                             }
                         }
-                    });
+                    }
                     // GLM-214 (H2): publicar la VERDAD DEL EXCHANGE de la
                     // ventana para el display financiero (seqlock del
                     // profiler). El contador interno sólo suma receipts de
@@ -5571,6 +5595,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             if libro_relevo.cuenta().is_some_and(|c| c != cuenta_del_relevo) {
                                 arena_real.capital_exchange.store(f64::NAN, Ordering::Release);
                                 arena_real.pico_capital.store(0.0, Ordering::Release);
+                                // V4K (F6): ambito nuevo con el pico pendiente de restaurar (lo
+                                // restaura el inmune desde el buzon); ninguna equity es lista antes.
+                                risk_engine::drawdown::preparar_ambito_del_pico(&arena_real);
                             }
                             libro_relevo.fijar_cuenta(&arena_real, cuenta_del_relevo);
                             drop(libro_relevo);
@@ -5587,6 +5614,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                     testnet,
                                     &risk_engine::drawdown::huella_cuenta(clave.as_bytes()),
                                 );
+                                // V4K (F6): con el pico pendiente (otra cuenta en este relevo) las rutas
+                                // del espacio se encolan siempre, tambien al volver al espacio original.
+                                let pico_pendiente_del_relevo = arena_real.pico_pendiente.load(Ordering::Acquire);
+                                if espacio == espacio_pico && pico_pendiente_del_relevo {
+                                    *buzon_espacio_pico.lock().unwrap_or_else(|p| p.into_inner()) =
+                                        Some(risk_engine::drawdown::RutasPico::del_espacio(&espacio, |n| {
+                                            std::path::PathBuf::from(quantum_arena::paths::env_data_path(n))
+                                        }));
+                                }
                                 if espacio != espacio_pico {
                                     risk_engine::drawdown::fijar_espacio_pico(&espacio);
                                     *buzon_espacio_pico.lock().unwrap_or_else(|p| p.into_inner()) =

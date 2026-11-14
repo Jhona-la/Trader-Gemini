@@ -559,3 +559,136 @@ async fn veto_conserva_cierre_cancelacion_y_libera_rechazo() {
         }
     }
 }
+
+// ------------------------------------------------------------------ V4K (A1)
+
+/// V4K (A1, dictamen V4J :32 y :52): el intervalo entre el cruce de la frontera y el COMPROMISO
+/// LOCAL de la entrega (cabeceras cargadas y solicitud construida en el cliente HTTP). Una barrera
+/// determinista en ese intervalo (mismo hilo, mismo `poll`) aplica cada corte por separado: con el
+/// corte antes del compromiso del apalancamiento, 0 apalancamientos y 0 ordenes; antes del
+/// compromiso del POST de la orden, el apalancamiento ya comprometido sale una vez y la orden no.
+/// Control por ruta sin corte: 1 y 1 (la barrera corre y no cambia nada). Rutas: MARKET, IOC, GTX
+/// y el remanente MARKET de la ruta maker.
+#[tokio::test]
+async fn v4k_corte_entre_cruce_y_compromiso_local_por_ruta() {
+    let rutas = [
+        ("MARKET", EntryRoute::Market),
+        ("IOC", EntryRoute::Ioc { price: 101.0 }),
+        ("GTX", EntryRoute::Maker { price: 99.0 }),
+    ];
+    for (nombre, ruta) in rutas {
+        for corte in std::iter::once(None).chain(CORTES.iter().copied().map(Some)) {
+            for en_compromiso in [1usize, 2] {
+                let m = montaje().await;
+                let clave = m.reservar(1);
+                let r = pedido(ruta, "cL_v4k_compromiso");
+                let llamadas = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+                {
+                    let (a, ses, tok, n) = (Arc::clone(&m.arena), Arc::clone(&m.sesion), m.token.clone(), Arc::clone(&llamadas));
+                    quantum_arena::dimensionable::fijar_barrera_de_compromiso(Some(Box::new(move || {
+                        let k = n.fetch_add(1, Ordering::SeqCst) + 1;
+                        if let (Some(c), true) = (corte, k == en_compromiso) {
+                            aplicar_corte_en(&a, &ses, &tok, c);
+                        }
+                    })));
+                }
+                let t = Intercalado { real: &m.ejecutor, antes_de_apalancar: None, antes_de_enviar: None };
+                let res = m.sesion.dispatch_entry_reservada(&m.token, &t, &r, &m.arena, Some(clave)).await;
+                quantum_arena::dimensionable::fijar_barrera_de_compromiso(None);
+                let (apal, ordenes) = (m.servidor.apalancamientos(), m.servidor.ordenes().len());
+                assert!(llamadas.load(Ordering::SeqCst) >= 1, "{nombre}: la barrera del compromiso no corrio");
+                match corte {
+                    None => assert_eq!((apal, ordenes), (1, 1), "{nombre}: control sin corte ({res:?})"),
+                    Some(c) => {
+                        assert!(res.is_err(), "{nombre} / {c} / compromiso {en_compromiso}: entrega aceptada");
+                        let esperado = if en_compromiso == 1 { (0, 0) } else { (1, 0) };
+                        assert_eq!((apal, ordenes), esperado, "{nombre} / {c} / compromiso {en_compromiso}: paquete con el testigo vencido tras el cruce");
+                    }
+                }
+            }
+        }
+    }
+    // Ruta maker a MARKET: el GTX valido sale y se cancela; un corte en el compromiso del
+    // remanente MARKET (tercer compromiso: apalancamiento, GTX, remanente) lo retiene.
+    for corte in CORTES {
+        let m = montaje().await;
+        *m.servidor.ejecutada_gtx.lock().unwrap() = "0.005".into();
+        let clave = m.reservar(1);
+        let r = pedido(EntryRoute::Maker { price: 99.0 }, "mc_v4k_remanente");
+        let n = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        {
+            let (a, ses, tok, n) = (Arc::clone(&m.arena), Arc::clone(&m.sesion), m.token.clone(), Arc::clone(&n));
+            quantum_arena::dimensionable::fijar_barrera_de_compromiso(Some(Box::new(move || {
+                if n.fetch_add(1, Ordering::SeqCst) + 1 == 3 {
+                    aplicar_corte_en(&a, &ses, &tok, corte);
+                }
+            })));
+        }
+        let t = Intercalado { real: &m.ejecutor, antes_de_apalancar: None, antes_de_enviar: None };
+        let res = m.sesion.dispatch_entry_reservada(&m.token, &t, &r, &m.arena, Some(clave)).await;
+        quantum_arena::dimensionable::fijar_barrera_de_compromiso(None);
+        let ordenes = m.servidor.ordenes();
+        let gtx = ordenes.iter().filter(|p| p.params.get("timeInForce").map(String::as_str) == Some("GTX")).count();
+        let market = ordenes.iter().filter(|p| p.params.get("type").map(String::as_str) == Some("MARKET")).count();
+        assert_eq!(gtx, 1, "{corte}: el GTX valido ya comprometido pertenece a su revision");
+        assert_eq!(market, 0, "{corte}: el remanente salio tras un corte en su compromiso ({res:?})");
+        assert_eq!(m.servidor.contar("DELETE", "/fapi/v1/order"), 1, "{corte}: la cancelacion del GTX se conserva");
+        assert!(m.reservado() > 0.0, "{corte}: la reserva con ejecucion se perdio");
+    }
+    // Salidas sin cruce: el cierre defensivo y la cancelacion no pasan por el compromiso (la
+    // barrera no corre) y salen aunque haya veto.
+    {
+        let m = montaje().await;
+        aplicar_corte(&m, "veto del puente");
+        let n = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        {
+            let n = Arc::clone(&n);
+            quantum_arena::dimensionable::fijar_barrera_de_compromiso(Some(Box::new(move || {
+                n.fetch_add(1, Ordering::SeqCst);
+            })));
+        }
+        let _ = m.ejecutor.execute_reduce_only_market_with_reconciliation(SIMBOLO, true, 0.01, 0.001).await;
+        let _ = m.ejecutor.cancel_order(SIMBOLO, "cL_v4k_cualquiera").await;
+        quantum_arena::dimensionable::fijar_barrera_de_compromiso(None);
+        assert_eq!(n.load(Ordering::SeqCst), 0, "una salida defensiva paso por el compromiso de entrada");
+        let cierres = m.servidor.ordenes().iter().filter(|p| p.params.get("reduceOnly").map(String::as_str) == Some("true")).count();
+        assert!(cierres >= 1, "el cierre defensivo no salio");
+        assert_eq!(m.servidor.contar("DELETE", "/fapi/v1/order"), 1, "la cancelacion no salio");
+    }
+}
+
+/// V4K F4 (dictamen V4J :42, criterios :26): con una reserva valida ya hecha, cada variante
+/// (ausencia: cuenta nueva sin saldo; cero; deuda) veta EFECTIVAMENTE la entrada, sin disyuncion:
+/// el libro no admite ninguna entrada nueva, la reserva previa no entrega (0 paquetes por el
+/// transporte local) y el cierre defensivo y la cancelacion salen.
+#[tokio::test]
+async fn v4k_f4_ausente_cero_y_deuda_vetan_y_conservan_salidas() {
+    for variante in ["ausente", "cero", "deuda"] {
+        let m = montaje().await;
+        let clave = m.reservar(1);
+        {
+            let mut l = m.arena.config.entry_publication_gate.lock().unwrap();
+            match variante {
+                "ausente" => {
+                    l.fijar_cuenta(&m.arena, 1);
+                    l.fijar_cuenta(&m.arena, 2);
+                }
+                "cero" => l.saldo_aceptado(&m.arena, 0.0, Some(200)),
+                _ => l.saldo_aceptado(&m.arena, -5.0, Some(200)),
+            }
+            let capital = Some(m.arena.unified_capital.load(Ordering::Relaxed));
+            assert!(!l.admite(&m.arena, capital), "{variante}: el libro admitio una entrada nueva");
+            assert!(!l.admite(&m.arena, capital), "{variante}: admitida al recalcular");
+        }
+        let r = pedido(EntryRoute::Market, "cL_v4k_f4");
+        let t = Intercalado { real: &m.ejecutor, antes_de_apalancar: None, antes_de_enviar: None };
+        let res = m.sesion.dispatch_entry_reservada(&m.token, &t, &r, &m.arena, Some(clave)).await;
+        assert!(res.is_err(), "{variante}: la reserva previa entrego");
+        assert_eq!(m.servidor.ordenes().len(), 0, "{variante}: paquete de entrada");
+        let _ = m.ejecutor.execute_reduce_only_market_with_reconciliation(SIMBOLO, true, 0.01, 0.001).await;
+        let cierres = m.servidor.ordenes().iter().filter(|p| p.params.get("reduceOnly").map(String::as_str) == Some("true")).count();
+        assert!(cierres >= 1, "{variante}: el cierre defensivo no salio");
+        let _ = m.ejecutor.cancel_order(SIMBOLO, "cL_v4k_f4").await;
+        assert_eq!(m.servidor.contar("DELETE", "/fapi/v1/order"), 1, "{variante}: la cancelacion no salio");
+    }
+}
