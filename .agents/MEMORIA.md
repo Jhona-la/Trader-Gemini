@@ -110,6 +110,7 @@
 
 ### Linux (sesiones cloud)
 - `os-guardian` es sólo-Windows; `cargo check` nativo en Linux falla también en main.
+- Preparar la sesión: `rustup target add x86_64-pc-windows-gnu` e instalar `gcc-mingw-w64-x86-64` (prerrequisitos del comando siguiente).
 - `bash scripts/cargo_semaforo.sh check --target x86_64-pc-windows-gnu -p <paquete>`
   (por módulo; el workspace queda para el integrador; REGLAS_DE_TRABAJO.md:15, FA-063)
 - Tests: `wine64` y `CARGO_TARGET_X86_64_PC_WINDOWS_GNU_RUNNER=/usr/lib/wine/wine64
