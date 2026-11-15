@@ -108,37 +108,62 @@ registrar() { printf '%s\t%s\t%s\n' "$(date -u +%FT%TZ)" "$agente" "$*" >> "$bit
 disco_min_defecto=40
 disco_min=${SEMAFORO_DISCO_MIN_GB:-$disco_min_defecto}
 
+# FA-048 v3 — comparación EXACTA, entero contra entero, sin coma flotante.
+# Un valor en GB decimales («40», «39.996», «.5») se pasa a nanogigabytes
+# (1 nGB = 1 B): parte entera * 10^9 + decimales rellenados a 9 cifras, en
+# base 10 forzada (10#) para que un «08» no se lea en octal. Se aceptan como
+# mucho 9 cifras enteras (sin desbordar 64 bits) y 9 decimales (la precisión
+# del exacto de df); cualquier otra forma no es un valor: no imprime nada y
+# falla. Antes awk comparaba en coma flotante y «39.999999999999999» se leía
+# igual que 40.
+a_nano_gb() {
+  local v=$1 ent frac=
+  case "$v" in
+    *.*) ent=${v%%.*}; frac=${v#*.} ;;
+    *) ent=$v ;;
+  esac
+  case "$ent$frac" in
+    '' | *[!0-9]*) return 1 ;;
+  esac
+  [ "${#ent}" -le 9 ] && [ "${#frac}" -le 9 ] || return 1
+  frac="${frac}000000000"
+  echo $(( 10#${ent:-0} * 1000000000 + 10#${frac:0:9} ))
+}
+
+# ¿Lectura conocida? (primer campo de disco_libre_gb: un entero de nGB)
 disco_conocido() {
   case "$1" in
-    '' | . | *[!0-9.]* | *.*.*) return 1 ;;
+    '' | *[!0-9]*) return 1 ;;
     *) return 0 ;;
   esac
 }
 
-if ! disco_conocido "$disco_min"; then
+if ! disco_min_nano=$(a_nano_gb "$disco_min"); then
   echo "[semaforo] SEMAFORO_DISCO_MIN_GB ilegible ('$disco_min'); uso el umbral por defecto ${disco_min_defecto} GB" >&2
   disco_min=$disco_min_defecto
+  disco_min_nano=$(a_nano_gb "$disco_min")
 fi
 
 # Libre del sistema de archivos que contiene la raíz, en GB decimales, o
 # «desconocida» ante CUALQUIER fallo de la medición (df ausente, código
 # distinto de 0, salida ilegible). Sólo lee: no escribe nada.
 # Imprime DOS campos: «<exacto> <para mostrar>». El exacto es el que se
-# compara con el umbral: con df son los bytes exactos (KiB * 1024, aritmética
-# entera) pasados a GB con sus 9 decimales, sin redondeo; con la costura
-# SEMAFORO_DISCO_GB es el valor tal cual. El de mostrar es el exacto
-# redondeado a 2 decimales (df) o la costura tal cual: sólo para mensajes y
-# bitácora. Antes se comparaba el redondeado y 39,996 GB («40.00») pasaba.
+# compara con el umbral, en nanogigabytes enteros (= bytes): con df son los
+# bytes exactos (KiB * 1024, aritmética entera); con la costura
+# SEMAFORO_DISCO_GB, su valor pasado por a_nano_gb (más de 9 decimales o mal
+# formada = «desconocida»). El de mostrar es el exacto redondeado a 2
+# decimales (df) o la costura tal cual: sólo para mensajes y bitácora. Antes
+# se comparaba el redondeado y 39,996 GB («40.00») pasaba.
 disco_libre_gb() {
+  local salida kib bytes exacto nano
   if [ -n "${SEMAFORO_DISCO_GB+x}" ]; then
-    if disco_conocido "$SEMAFORO_DISCO_GB"; then
-      echo "$SEMAFORO_DISCO_GB $SEMAFORO_DISCO_GB"
+    if nano=$(a_nano_gb "$SEMAFORO_DISCO_GB"); then
+      echo "$nano $SEMAFORO_DISCO_GB"
     else
       echo "desconocida"
     fi
     return
   fi
-  local salida kib bytes exacto
   if ! command -v df > /dev/null 2>&1; then
     echo "desconocida"
     return
@@ -157,17 +182,17 @@ disco_libre_gb() {
     *)
       bytes=$(( 10#$kib * 1024 ))
       exacto=$(printf '%d.%09d' $(( bytes / 1000000000 )) $(( bytes % 1000000000 )))
-      echo "$exacto $(awk -v g="$exacto" 'BEGIN { printf "%.2f", g }')"
+      echo "$bytes $(awk -v g="$exacto" 'BEGIN { printf "%.2f", g }')"
       ;;
   esac
 }
 
-disco_bajo() { awk -v a="$1" -v b="$2" 'BEGIN { exit !(a < b) }'; }
+disco_bajo() { (( 10#$1 < 10#$2 )); }
 
 read -r disco disco_ver <<< "$(disco_libre_gb)"
 if disco_conocido "$disco"; then
   disco_log="${disco_ver}GB"
-  if disco_bajo "$disco" "$disco_min"; then
+  if disco_bajo "$disco" "$disco_min_nano"; then
     linea="DISCO-BAJO: disco libre ${disco_ver} GB < umbral ${disco_min} GB (GB decimal, 1 GB = 1e9 B); no compilo: sin target/, sin cerrojo, sin cargo, nada borrado: cargo $*"
     echo "[semaforo] $linea" >&2
     # Única escritura permitida antes de salir: la línea en logs/ (no target/).
@@ -193,7 +218,7 @@ disco_al_liberar() {
   local d d_ver
   read -r d d_ver <<< "$(disco_libre_gb)"
   if disco_conocido "$d"; then
-    if disco_bajo "$d" "$disco_min"; then
+    if disco_bajo "$d" "$disco_min_nano"; then
       echo "disco_libre=${d_ver}GB DISCO-BAJO al liberar (< ${disco_min} GB)"
     else
       echo "disco_libre=${d_ver}GB"

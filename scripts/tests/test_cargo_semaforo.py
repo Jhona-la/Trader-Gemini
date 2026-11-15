@@ -423,6 +423,61 @@ class CargoSemaforoTests(unittest.TestCase):
         self.assertIn("LIBERA codigo=0", log)
         self.assertIn("disco_libre=10.00GB DISCO-BAJO al liberar (< 40 GB)", log)
 
+    def df_que_cae_a(self, kib_al_liberar):
+        """df falso: 500 GB en la primera lectura (admisión) y `kib_al_liberar`
+        en las siguientes (liberación)."""
+        contador = Path(tempfile.mkdtemp(prefix="semaforo-df-")) / "n"
+        self.addCleanup(shutil.rmtree, contador.parent, True)
+        return (f'n=0; [ -f "{contador.as_posix()}" ] && n=$(cat "{contador.as_posix()}")\n'
+                f'echo $((n+1)) > "{contador.as_posix()}"\n'
+                f'if [ "$n" = 0 ]; then kib=488281250; else kib={kib_al_liberar}; fi\n'
+                "printf 'Filesystem 1024-blocks Used Available Capacity Mounted on\\n"
+                "C: 974851068 1 %s 93%% /c\\n' \"$kib\"\n")
+
+    def test_borde_al_liberar_se_compara_sin_redondear(self):
+        # v3 (COPILOT-CLI, cambio b): gemela de test_borde_se_compara_sin_redondear
+        # en disco_al_liberar. 39.058.593 KiB = 39.995.999.232 B («40.00») está
+        # bajo 40 GB: la línea LIBERA lo dice.
+        bin_dir = self.bin_aislado(df=self.df_que_cae_a(39058593), cargo="exit 0\n")
+        r = self.correr_aislado(bin_dir, "check")
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        log = self.bitacora.read_text(encoding="utf-8")
+        self.assertIn("LIBERA codigo=0", log)
+        self.assertIn("disco_libre=40.00GB DISCO-BAJO al liberar (< 40 GB)", log)
+        # Gemela justo por encima: 39.062.501 KiB = 40.000.001.024 B: no es bajo.
+        self.bitacora.unlink()
+        bin_dir = self.bin_aislado(df=self.df_que_cae_a(39062501), cargo="exit 0\n")
+        r = self.correr_aislado(bin_dir, "check")
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        log = self.bitacora.read_text(encoding="utf-8")
+        self.assertIn("LIBERA codigo=0", log)
+        self.assertIn("disco_libre=40.00GB", log)
+        self.assertNotIn("DISCO-BAJO", log)
+
+    def test_costura_exacta_hasta_9_decimales(self):
+        # v3 (COPILOT-CLI, cambio a): 9 decimales se comparan exactos y bloquean.
+        r = self.correr_aislado(self.bin_aislado(), "check", SEMAFORO_SOLO_DECIDIR=1,
+                                SEMAFORO_DISCO_GB="39.999999999")
+        self.assertEqual(r.returncode, 78, r.stdout + r.stderr)
+        self.assertIn("39.999999999 GB < umbral 40 GB", r.stderr)
+        # 10 o más decimales (awk en coma flotante leía el segundo igual que 40):
+        # rama desconocida, sin bloquear y con aviso en stderr y bitácora.
+        for costura in ("39.9999999999", "39.999999999999999"):
+            with self.subTest(costura):
+                if self.bitacora.exists():
+                    self.bitacora.unlink()
+                r = self.correr_aislado(self.bin_aislado(), "check",
+                                        SEMAFORO_SOLO_DECIDIR=1, SEMAFORO_DISCO_GB=costura)
+                self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+                self.assertIn(self.AVISO_DISCO, r.stderr)
+                # El aviso dice «guarda DISCO-BAJO no aplicada»: lo que no debe
+                # aparecer es la línea de bloqueo «DISCO-BAJO: disco libre ...».
+                self.assertNotIn("DISCO-BAJO: disco libre", r.stdout + r.stderr)
+                log = self.bitacora.read_text(encoding="utf-8")
+                self.assertNotIn("DISCO-BAJO: disco libre", log)
+                self.assertIn("disco libre desconocido", log)
+                self.assertIn("DISCO_LIBRE_GB=desconocida", r.stdout)
+
 
 if __name__ == "__main__":
     unittest.main()
