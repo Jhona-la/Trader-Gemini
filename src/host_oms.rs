@@ -1132,7 +1132,14 @@ pub async fn resolver_resultado_de_entrada(
     // dos terminales se confirma lo ejecutado acreditado (padre + hija). Si alguna sigue sin
     // evidencia (ACK de la hija perdido sin terminal, activa o plazo vencido), se conserva todo.
     if !executor.is_paper_trading() {
-        if let Some(hija) = executor.hija_del_maker(client_id) {
+        // Una hija retenida en la frontera nunca salio (rechazo local: sin orderId ni ejecucion):
+        // el remanente quedo retenido y la resolucion previa (conservar) se mantiene.
+        let hija_enviada = executor.hija_del_maker(client_id).filter(|h| {
+            !executor.registry().get(h).is_some_and(|o| {
+                o.status == execution_engine::order_registry::OrderStatus::Rejected && o.order_id == 0 && o.executed_qty == 0.0
+            })
+        });
+        if let Some(hija) = hija_enviada {
             quantum_arena::protection_health::mark_dirty();
             let consultar = |id: String, motivo: &'static str| async move {
                 execution_engine::entry_dispatch::resolve_terminal_entry_until(executor, &reservation.symbol, &id, motivo, plazo).await

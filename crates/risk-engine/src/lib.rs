@@ -861,7 +861,7 @@ impl RiskEngine {
         // V4M (L-F2, dictamen V4L :88): con el libro derivado la guarda ya la aplico la vista de la
         // decision (`vista.pico_ilegible`, misma revision que equity y pico); aqui solo el camino
         // sin libro derivado, que no tiene vista. La guarda se conserva en los dos caminos.
-        if !derivado && arena.pico_ilegible.load(Ordering::Relaxed) {
+        if arena.pico_ilegible.load(Ordering::Relaxed) && !derivado {
             return rej(REJ_DRAWDOWN);
         }
         // CAPITAL-UNICO V3 (P1.2/P1.3): sin saldo vigente de la era del puente
