@@ -118,14 +118,13 @@ verificado por grep AMBOS lados antes de pushear.
 ## 5. Protocolo de ola (obligatorio para cambios de conducta)
 
 worktree aislado `.olaNN` → commits atómicos por bloque → tests del crate
-+ `cargo check --workspace --all-targets` → **ORÁCULO T-1** (release,
-`--test-threads=1 --nocapture`, trinquete 11.0%):
-`cargo test --release -p backtest-engine --test t1_cobertura_genetica --
++ `bash scripts/cargo_semaforo.sh check -p <crate>` → **ORÁCULO T-1**
+(por modulo, nunca workspace ni release; trinquete 11.0%; REGLAS_DE_TRABAJO.md:15, FA-063):
+`bash scripts/cargo_semaforo.sh test -p backtest-engine --test t1_cobertura_genetica --
 t1_cobertura_genetica_del_oraculo_de_aptitud --test-threads=1 --nocapture`
 → PASA ⇒ forense (FORENSIC_INTELLIGENCE_AUDIT.md) + buzón (UNIÓN en
-conflicto) + MEMORIA → **push por refspec** `git push origin rama:main`
-(el checkout compartido puede estar ocupado por otra sesión) → cleanup
-worktree+rama. Si tocó un VETO ⇒ tocó su entrada del registro de vetos
+conflicto) + MEMORIA → entrega SHA al integrador (REGLAS_DE_TRABAJO.md:2, FA-063)
+→ cleanup worktree+rama. Si tocó un VETO ⇒ tocó su entrada del registro de vetos
 (en el mismo commit — regla GLM LXXXVI).
 
 ## 6. Deuda viva (verificada por grep contra el árbol 09186b81, 2026-10-05 post Ω9/LXXXXVIII)

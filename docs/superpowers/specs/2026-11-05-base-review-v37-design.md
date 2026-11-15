@@ -1,3 +1,5 @@
+[SUSTITUIDO por REGLAS_DE_TRABAJO.md:15 (FA-063 seguimiento, 14 nov 2026). Las instrucciones de compilacion de este spec historico quedan derogadas; aplicar REGLAS_DE_TRABAJO.md:15 para compilar.]
+
 # Revisión V37 desde la base — diseño de verificación y evolución causal
 
 ## Intención
