@@ -2813,12 +2813,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             // puente y dentro de una escritura del plano. El observador del freno (que ya puede estar
             // publicando la primera foto) no se intercala entre restaurar y publicar, y la vista no
             // queda lista hasta que haya equity comparable del ambito (`vista_del_freno`).
-            let (mut pico_ilegible, mut marca_pendiente) = puente_imm.con_equity_del_freno(|_| {
+            let (pico_ilegible, marca_pendiente) = puente_imm.con_equity_del_freno(|_| {
                 let _plano = risk_engine::drawdown::EscrituraDelPlano::abrir(&arena_imm);
                 aplicar_arranque_pico(&arena_imm, &rutas_pico, false)
             });
-            let mut ruta_pico = rutas_pico.pico.clone();
-            let mut ruta_marca = rutas_pico.marca.clone();
+            // CAPITAL-UNICO V4N (F2/F5): el estado del pico del lazo del inmune (antes, cinco
+            // variables locales) es el que recibe el paso de host_oms.
+            let mut pico_imm = quantum_engine::host_oms::PicoDelInmune {
+                pico_ilegible,
+                marca_pendiente,
+                ruta_pico: rutas_pico.pico.clone(),
+                ruta_marca: rutas_pico.marca.clone(),
+                pico_guardado: 0.0,
+            };
             // CAPITAL-UNICO V3 (P1.2/P1.3): RESINCRONIZADOR del puente, fuera
             // del lazo que protege posiciones. Mientras el puente vete entradas
             // (era nueva sin saldo, reconexión, evidencia incompleta), pide
@@ -2895,8 +2902,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
             rt_handle.spawn(async move {
                 let mut latched = false;
-                // 0 ⇒ el primer ciclo guarda el pico aunque no haya subido.
-                let mut pico_guardado = 0.0_f64;
+                // 0 ⇒ el primer ciclo guarda el pico aunque no haya subido (`pico_imm.pico_guardado`).
                 let mut latency_strikes: u32 = 0;
                 // I-3a (Línea I): frescura de la edad medida y avisos estrangulados.
                 let reloj_imm = std::time::Instant::now();
@@ -2970,10 +2976,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             arena_imm.capital_exchange.store(f64::NAN, Ordering::Release);
                             *flujos_imm.lock().unwrap_or_else(|p| p.into_inner()) =
                                 risk_engine::drawdown::FlujosExternos::default();
-                            (pico_ilegible, marca_pendiente) = aplicar_arranque_pico(&arena_imm, &rutas, true);
-                            ruta_pico = rutas.pico.clone();
-                            ruta_marca = rutas.marca.clone();
-                            pico_guardado = 0.0;
+                            (pico_imm.pico_ilegible, pico_imm.marca_pendiente) = aplicar_arranque_pico(&arena_imm, &rutas, true);
+                            pico_imm.ruta_pico = rutas.pico.clone();
+                            pico_imm.ruta_marca = rutas.marca.clone();
+                            pico_imm.pico_guardado = 0.0;
                         }                    });
 
                     // CAPITAL-UNICO V4L (L-F6): un latch patrimonial de un ambito que ya no es el
@@ -3051,60 +3057,23 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     // pico en UN paso bajo el mutex del puente: un relevo o un cambio de espacio no se
                     // intercala entre la lectura y la escritura. La ruta que se persiste es la del
                     // mismo paso (la escritura del archivo, fuera del mutex).
-                    let mut revision_de_la_evidencia = 0u64;
-                    let (cap, peak_capital, ruta_del_pico, ambito_de_la_evidencia) = puente_imm.con_equity_del_freno(|equity| {
-                        // V4K (F2): este paso es UNA revision del plano del freno (Risk no combina
-                        // la equity de este paso con el pico de otro).
-                        let _plano = risk_engine::drawdown::EscrituraDelPlano::abrir(&arena_imm);
-                        let espacio_nuevo = buzon_imm.lock().unwrap_or_else(|p| p.into_inner()).take();
-                        if let Some(rutas) = espacio_nuevo {
-                            // V4J (punto 5): nada del ambito anterior mide el pico nuevo.
-                            arena_imm.capital_exchange.store(f64::NAN, Ordering::Release);
-                            *flujos_imm.lock().unwrap_or_else(|p| p.into_inner()) =
-                                risk_engine::drawdown::FlujosExternos::default();
-                            (pico_ilegible, marca_pendiente) = aplicar_arranque_pico(&arena_imm, &rutas, true);
-                            ruta_pico = rutas.pico.clone();
-                            ruta_marca = rutas.marca.clone();
-                            pico_guardado = 0.0;
-                        }                        let cap_exchange = equity.unwrap_or(f64::NAN);
-                        // V4K (F6): con el pico del ambito aun pendiente, la equity no es evidencia
-                        // lista: ausencia (no escribe pico; el freno la distingue).
-                        let pendiente = arena_imm.pico_pendiente.load(Ordering::Acquire);
-                        arena_imm.capital_exchange.store(
-                            if cap_exchange.is_finite() && !pendiente {
-                                cap_exchange
-                            } else {
-                                f64::NAN
-                            },
-                            Ordering::Release,
-                        );
-                        let cap = risk_engine::drawdown::capital_del_freno(&arena_imm);
-                        let peak_capital =
-                            risk_engine::drawdown::registrar_pico(&arena_imm.pico_capital, cap);
-                        // V4L (L-F2): el testigo de este paso es la revision que deja al cerrarse.
-                        revision_de_la_evidencia = _plano.revision_al_cerrar();
-                        (cap, peak_capital, ruta_pico.clone(), risk_engine::drawdown::ambito_del_plano(&arena_imm))
-                    });
-                    if !pico_ilegible
-                        && peak_capital > pico_guardado
-                        && risk_engine::drawdown::guardar_pico(&ruta_del_pico, peak_capital).is_ok()
-                    {
-                        pico_guardado = peak_capital;
-                        // CAPITAL-UNICO V2 (7a): la marca de la definición se
-                        // escribe DESPUÉS del primer pico guardado en esta
-                        // definición; desde entonces, un pico ausente es un
-                        // retiro del operador.
-                        if marca_pendiente {
-                            match risk_engine::drawdown::guardar_marca_definicion(&ruta_marca) {
-                                Ok(()) => marca_pendiente = false,
-                                Err(e) => telemetry_server::telemetry_log!(
-                                    "⚠️ [IMMUNE] no se pudo escribir la marca {}: {}",
-                                    ruta_marca.display(),
-                                    e
-                                ),
-                            }
-                        }
+                    // CAPITAL-UNICO V4N (F2/F5, dictamen V4L :83 y :118): este paso (adopcion del
+                    // espacio nuevo, magnitud, pico y revision del plano en UN paso bajo el mutex del
+                    // puente; persistencia del pico y de la marca fuera de el) es
+                    // `host_oms::paso_del_freno_del_inmune`, la MISMA funcion que ejercitan las pruebas.
+                    let paso_del_freno = quantum_engine::host_oms::paso_del_freno_del_inmune(
+                        &puente_imm,
+                        &arena_imm,
+                        &buzon_imm,
+                        &flujos_imm,
+                        &mut pico_imm,
+                        aplicar_arranque_pico,
+                    );
+                    if let Some(e) = &paso_del_freno.error_de_marca {
+                        telemetry_server::telemetry_log!("⚠️ [IMMUNE] no se pudo escribir la marca {}", e);
                     }
+                    let (cap, peak_capital, revision_de_la_evidencia, ambito_de_la_evidencia) =
+                        (paso_del_freno.cap, paso_del_freno.pico, paso_del_freno.revision, paso_del_freno.ambito);
                     // CL-106 → CL-130 (R1 de la revisión del PR #62): el MISMO
                     // freno duro que el veto de entradas del riesgo. Dispara
                     // cuando la caída de los cierres, contada en stops de SUS

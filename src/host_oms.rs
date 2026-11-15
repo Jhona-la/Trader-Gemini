@@ -1401,3 +1401,93 @@ pub fn registrar_flujos_externos_de_era(
         registros
     })
 }
+
+/// CAPITAL-UNICO V4N (F2/F5): el estado del pico que el lazo del inmune lleva de un ciclo al
+/// siguiente (antes, variables locales de la tarea del binario).
+#[derive(Debug, Clone)]
+pub struct PicoDelInmune {
+    /// El pico guardado del espacio es ilegible (CL-133): no se sobrescribe.
+    pub pico_ilegible: bool,
+    /// La marca de la definicion se escribe tras el primer pico guardado.
+    pub marca_pendiente: bool,
+    pub ruta_pico: std::path::PathBuf,
+    pub ruta_marca: std::path::PathBuf,
+    /// Ultimo pico persistido en este espacio (0 ⇒ el primer ciclo guarda).
+    pub pico_guardado: f64,
+}
+
+/// CAPITAL-UNICO V4N (F2/F5): lo que decide un paso del lazo del inmune: la magnitud del freno, su
+/// pico, el ambito y la revision del plano en que se escribieron (el testigo con que Risk y el host
+/// comparten la decision). `error_de_marca`: la marca de la definicion no se pudo escribir.
+#[derive(Debug, Clone, PartialEq)]
+pub struct PasoDelFreno {
+    pub cap: f64,
+    pub pico: f64,
+    pub ruta_del_pico: std::path::PathBuf,
+    pub ambito: u64,
+    pub revision: u64,
+    pub error_de_marca: Option<String>,
+}
+
+/// CAPITAL-UNICO V4N (F2/F5, dictamen V4L :83 y :118): el paso del host en el ciclo del inmune,
+/// el MISMO que llama el binario (antes en linea en `god_engine.rs` y copiado por las pruebas como
+/// adaptador). En UN paso bajo el mutex del puente y dentro de UNA escritura del plano: adopta el
+/// espacio nuevo del pico si el relevo lo dejo en el buzon (`aplicar_arranque`, la funcion del
+/// binario), publica la equity del puente como magnitud del freno (ausencia mientras el pico del
+/// ambito esta pendiente), registra el pico y toma la revision que la escritura deja al cerrarse.
+/// Fuera del mutex persiste el pico (y la marca tras el primero) salvo pico ilegible. No cambia
+/// ningun umbral ni formula: solo traslada el paso.
+pub fn paso_del_freno_del_inmune(
+    puente: &execution_engine::puente_cuenta::PuenteCuenta,
+    arena: &GlobalArena,
+    buzon: &Mutex<Option<risk_engine::drawdown::RutasPico>>,
+    flujos: &Mutex<risk_engine::drawdown::FlujosExternos>,
+    estado: &mut PicoDelInmune,
+    aplicar_arranque: impl FnOnce(&GlobalArena, &risk_engine::drawdown::RutasPico, bool) -> (bool, bool),
+) -> PasoDelFreno {
+    let mut revision = 0u64;
+    let (cap, pico, ruta_del_pico, ambito) = puente.con_equity_del_freno(|equity| {
+        // V4K (F2): este paso es UNA revision del plano del freno (Risk no combina la equity de
+        // este paso con el pico de otro).
+        let plano = risk_engine::drawdown::EscrituraDelPlano::abrir(arena);
+        let espacio_nuevo = buzon.lock().unwrap_or_else(|p| p.into_inner()).take();
+        if let Some(rutas) = espacio_nuevo {
+            // V4J (punto 5): nada del ambito anterior mide el pico nuevo.
+            arena.capital_exchange.store(f64::NAN, Ordering::Release);
+            *flujos.lock().unwrap_or_else(|p| p.into_inner()) = risk_engine::drawdown::FlujosExternos::default();
+            (estado.pico_ilegible, estado.marca_pendiente) = aplicar_arranque(arena, &rutas, true);
+            estado.ruta_pico = rutas.pico.clone();
+            estado.ruta_marca = rutas.marca.clone();
+            estado.pico_guardado = 0.0;
+        }
+        let cap_exchange = equity.unwrap_or(f64::NAN);
+        // V4K (F6): con el pico del ambito aun pendiente, la equity no es evidencia lista:
+        // ausencia (no escribe pico; el freno la distingue).
+        let pendiente = arena.pico_pendiente.load(Ordering::Acquire);
+        arena.capital_exchange.store(
+            if cap_exchange.is_finite() && !pendiente { cap_exchange } else { f64::NAN },
+            Ordering::Release,
+        );
+        let cap = risk_engine::drawdown::capital_del_freno(arena);
+        let pico = risk_engine::drawdown::registrar_pico(&arena.pico_capital, cap);
+        // V4L (L-F2): el testigo de este paso es la revision que deja al cerrarse.
+        revision = plano.revision_al_cerrar();
+        (cap, pico, estado.ruta_pico.clone(), risk_engine::drawdown::ambito_del_plano(arena))
+    });
+    let mut error_de_marca = None;
+    if !estado.pico_ilegible
+        && pico > estado.pico_guardado
+        && risk_engine::drawdown::guardar_pico(&ruta_del_pico, pico).is_ok()
+    {
+        estado.pico_guardado = pico;
+        // CAPITAL-UNICO V2 (7a): la marca de la definicion se escribe DESPUES del primer pico
+        // guardado en esta definicion; desde entonces, un pico ausente es un retiro del operador.
+        if estado.marca_pendiente {
+            match risk_engine::drawdown::guardar_marca_definicion(&estado.ruta_marca) {
+                Ok(()) => estado.marca_pendiente = false,
+                Err(e) => error_de_marca = Some(format!("{}: {}", estado.ruta_marca.display(), e)),
+            }
+        }
+    }
+    PasoDelFreno { cap, pico, ruta_del_pico, ambito, revision, error_de_marca }
+}

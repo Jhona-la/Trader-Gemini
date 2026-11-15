@@ -39,8 +39,12 @@ fn sin_codigo(s: &str) -> String {
 fn cl132_host_y_riesgo_registran_el_pico_en_el_mismo_plano() {
     let host = sin_codigo(include_str!("../../../src/bin/god_engine.rs"));
     let riesgo = sin_codigo(include_str!("../src/lib.rs"));
-    assert!(host.contains("letcap=risk_engine::drawdown::capital_del_freno(&arena_imm);"));
-    assert!(host.contains("registrar_pico(&arena_imm.pico_capital,cap)"));
+    // CAPITAL-UNICO V4N (F2/F5): ancla adaptada. El paso del inmune pasa del bin a
+    // `host_oms::paso_del_freno_del_inmune`, que el bin llama; el mismo capital y el mismo pico.
+    let oms = sin_codigo(include_str!("../../../src/host_oms.rs"));
+    assert!(host.contains("quantum_engine::host_oms::paso_del_freno_del_inmune("));
+    assert!(oms.contains("letcap=risk_engine::drawdown::capital_del_freno(arena);"));
+    assert!(oms.contains("registrar_pico(&arena.pico_capital,cap)"));
     assert!(riesgo.contains("letcapital_freno=crate::drawdown::capital_del_freno(arena);"));
     assert!(riesgo.contains("registrar_pico(&arena.pico_capital,capital_freno.max(self.peak_capital),)"));
 }

@@ -82,6 +82,14 @@ struct Servidor {
     income: Mutex<String>,
     /// Cantidad ejecutada de un cierre reduce-only.
     ejecutada_cierre: Mutex<String>,
+    /// V4N (F4): exchange CON ESTADO para la posicion y su proteccion. Con `posicion` en `Some`,
+    /// positionRisk devuelve esa cantidad y cada cierre reduce-only ejecuta lo que permita
+    /// `cupo_de_cierre` (y lo descuenta de la posicion): un cierre parcial deja residual real.
+    posicion: Mutex<Option<f64>>,
+    cupo_de_cierre: Mutex<f64>,
+    /// V4N (F4): ordenes algo (protectoras) vivas en el exchange: (algoId, clientAlgoId). La
+    /// cancelacion por identidad las retira; una identidad ya retirada responde -2011.
+    algo_vivas: Mutex<Vec<(u64, String)>>,
 }
 
 impl Servidor {
@@ -164,6 +172,21 @@ async fn servir(listener: tokio::net::TcpListener, s: Arc<Servidor>) {
                 }
                 ("POST", "/fapi/v1/order") => {
                     let cierre = p.params.get("reduceOnly").map(String::as_str) == Some("true");
+                    let con_estado = s.posicion.lock().unwrap().is_some();
+                    if cierre && con_estado {
+                        // V4N (F4): el cierre ejecuta lo que permite el cupo y baja la posicion.
+                        let qty: f64 = p.params.get("quantity").and_then(|q| q.parse().ok()).unwrap_or(0.0);
+                        let ej = {
+                            let mut cupo = s.cupo_de_cierre.lock().unwrap();
+                            let mut pos = s.posicion.lock().unwrap();
+                            let ej = qty.min(*cupo).min(pos.unwrap_or(0.0)).max(0.0);
+                            *cupo -= ej;
+                            *pos = Some(pos.unwrap_or(0.0) - ej);
+                            ej
+                        };
+                        let estado = if ej >= qty - 1e-12 && ej > 0.0 { "FILLED" } else { "EXPIRED" };
+                        return responder(socket, ok, orden_json(&p, estado, &format!("{ej:.3}"))).await;
+                    }
                     if cierre {
                         let ej = s.ejecutada_cierre.lock().unwrap().clone();
                         let estado = if ej == p.params.get("quantity").cloned().unwrap_or_default() { "FILLED" } else { "EXPIRED" };
@@ -200,10 +223,52 @@ async fn servir(listener: tokio::net::TcpListener, s: Arc<Servidor>) {
                     let cuerpo = s.income.lock().unwrap().clone();
                     responder(socket, ok, cuerpo).await
                 }
-                ("GET", "/fapi/v2/positionRisk") => responder(
+                ("GET", "/fapi/v2/positionRisk") => {
+                    let cantidad = s.posicion.lock().unwrap().map(|q| format!("{:.3}", q.max(0.0))).unwrap_or_else(|| "0.010".into());
+                    responder(
+                        socket,
+                        ok,
+                        format!(r#"[{{"symbol":"{SIMBOLO}","positionAmt":"{cantidad}","entryPrice":"100.0","unRealizedProfit":"0.0","positionSide":"BOTH","leverage":"1","marginType":"cross","updateTime":1000}}]"#),
+                    )
+                    .await
+                }
+                // V4N (F4): la proteccion vive en el servicio Algo (no en /fapi/v1/openOrders).
+                ("GET", "/fapi/v1/openAlgoOrders") => {
+                    let vivas: Vec<String> = s
+                        .algo_vivas
+                        .lock()
+                        .unwrap()
+                        .iter()
+                        .map(|(id, cid)| format!(r#"{{"algoId":{id},"clientAlgoId":"{cid}","symbol":"{SIMBOLO}","orderType":"STOP_MARKET","positionSide":"BOTH","algoStatus":"NEW","triggerPrice":"90.0","quantity":"0.010"}}"#))
+                        .collect();
+                    responder(socket, ok, format!("[{}]", vivas.join(","))).await
+                }
+                ("DELETE", "/fapi/v1/algoOrder") => {
+                    let (id, cid) = (p.params.get("algoId").and_then(|a| a.parse::<u64>().ok()), p.params.get("clientAlgoId").cloned());
+                    let retirada = {
+                        let mut vivas = s.algo_vivas.lock().unwrap();
+                        let antes = vivas.len();
+                        vivas.retain(|(a, c)| Some(*a) != id && Some(c) != cid.as_ref());
+                        vivas.len() < antes
+                    };
+                    if retirada {
+                        responder(socket, ok, r#"{"code":"200","msg":"success"}"#.to_string()).await
+                    } else {
+                        responder(socket, "400 Bad Request", r#"{"code":-2011,"msg":"Unknown order sent."}"#.to_string()).await
+                    }
+                }
+                ("DELETE", "/fapi/v1/algoOpenOrders") => {
+                    s.algo_vivas.lock().unwrap().clear();
+                    responder(socket, ok, r#"{"code":200,"msg":"success"}"#.to_string()).await
+                }
+                ("DELETE", "/fapi/v1/allOpenOrders") => responder(socket, ok, r#"{"code":200,"msg":"The operation of cancel all open order is done."}"#.to_string()).await,
+                ("GET", "/fapi/v1/positionSide/dual") => responder(socket, ok, r#"{"dualSidePosition":false}"#.to_string()).await,
+                // V4N (F4): con el exchange con estado, el filtro del simbolo (el reenvio del residual
+                // se cuantiza con su paso y llega al exchange).
+                ("GET", "/fapi/v1/exchangeInfo") if s.posicion.lock().unwrap().is_some() => responder(
                     socket,
                     ok,
-                    format!(r#"[{{"symbol":"{SIMBOLO}","positionAmt":"0.010","entryPrice":"100.0","unRealizedProfit":"0.0","positionSide":"BOTH","leverage":"1","marginType":"cross","updateTime":1000}}]"#),
+                    format!(r#"{{"symbols":[{{"symbol":"{SIMBOLO}","filters":[{{"filterType":"LOT_SIZE","stepSize":"0.001"}},{{"filterType":"PRICE_FILTER","tickSize":"0.1"}},{{"filterType":"MIN_NOTIONAL","notional":"5"}}]}}]}}"#),
                 )
                 .await,
                 _ => responder(socket, ok, r#"{"code":-9999,"msg":"ruta inesperada del montaje"}"#.to_string()).await,
@@ -659,6 +724,58 @@ struct Plano {
     arena: Arc<GlobalArena>,
     oms: Arc<AtomicU64>,
     riesgo: RiskEngine,
+    /// V4N (F2/F5): el paso REAL del host con su estado.
+    paso: PasoReal,
+}
+
+// ============================ PASO REAL DEL HOST (V4N, F2/F5) ============================
+// CAPITAL-UNICO V4N (F2/F5, dictamen V4L :83 y :118): el paso del host en el ciclo del inmune ya no
+// se copia: es `host_oms::paso_del_freno_del_inmune`, la MISMA funcion que llama el binario, con su
+// estado (buzon del espacio, flujos y pico persistido en un directorio temporal propio).
+
+static DIRECTORIOS_DEL_PASO: AtomicU64 = AtomicU64::new(0);
+
+struct PasoReal {
+    buzon: Mutex<Option<drawdown::RutasPico>>,
+    flujos: Mutex<FlujosExternos>,
+    pico: Mutex<quantum_engine::host_oms::PicoDelInmune>,
+    dir: std::path::PathBuf,
+}
+
+fn paso_real() -> PasoReal {
+    let n = DIRECTORIOS_DEL_PASO.fetch_add(1, Ordering::SeqCst);
+    let dir = std::env::temp_dir().join(format!("tg_v4n_paso_{}_{}_{n}", env!("CARGO_CRATE_NAME"), std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let rutas = drawdown::RutasPico::del_espacio("v4n_paso", |n| dir.join(n));
+    let pico = quantum_engine::host_oms::PicoDelInmune {
+        pico_ilegible: false,
+        marca_pendiente: !drawdown::marca_vigente(&rutas.marca),
+        ruta_pico: rutas.pico.clone(),
+        ruta_marca: rutas.marca.clone(),
+        pico_guardado: 0.0,
+    };
+    PasoReal { buzon: Mutex::new(None), flujos: Mutex::new(FlujosExternos::default()), pico: Mutex::new(pico), dir }
+}
+
+impl PasoReal {
+    fn correr(&self, puente: &PuenteCuenta, arena: &GlobalArena) -> quantum_engine::host_oms::PasoDelFreno {
+        let mut pico = self.pico.lock().unwrap();
+        quantum_engine::host_oms::paso_del_freno_del_inmune(puente, arena, &self.buzon, &self.flujos, &mut pico, |_, _, _| {
+            panic!("montaje: el buzon del espacio del pico esta vacio en estas pruebas")
+        })
+    }
+    /// El pico que el paso persistio en disco (None: no escribio).
+    fn pico_en_disco(&self) -> Option<f64> {
+        let ruta = self.pico.lock().unwrap().ruta_pico.clone();
+        std::fs::read_to_string(ruta).ok().and_then(|t| t.trim().parse().ok())
+    }
+}
+
+impl Drop for PasoReal {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir_all(&self.dir);
+    }
 }
 
 
@@ -708,7 +825,7 @@ fn plano_con_arena(cuenta: u64, arena: Arc<GlobalArena>) -> Plano {
         });
     }
     puente.abrir_socket(puente.era()).unwrap();
-    Plano { puente, arena, oms, riesgo: RiskEngine::new(100.0) }
+    Plano { puente, arena, oms, riesgo: RiskEngine::new(100.0), paso: paso_real() }
 }
 
 fn lectura(saldo: f64, upnl: Option<f64>, t: u64, completa: bool) -> LecturaCuenta {
@@ -734,18 +851,13 @@ impl Plano {
         let rechazo = risk_engine::ultimo_rechazo();
         (r.signal == SignalType::Flat && rechazo == Some(risk_engine::REJ_DRAWDOWN), rechazo, self.riesgo.vista_del_freno())
     }
-    /// ADAPTADOR del paso del lazo del inmune (anclado en `anclas_v4l`): una revision del plano bajo
-    /// el mutex del puente, con su testigo (la revision que deja al cerrarse).
+    /// V4N (F2/F5): el paso del lazo del inmune es el PRODUCTIVO
+    /// (`host_oms::paso_del_freno_del_inmune`, el que llama el binario; antes, un adaptador copiado):
+    /// una revision del plano bajo el mutex del puente, con su testigo (la revision que deja al
+    /// cerrarse).
     fn paso_del_host(&self) -> (f64, f64, u64, u64) {
-        self.puente.con_equity_del_freno(|equity| {
-            let plano = drawdown::EscrituraDelPlano::abrir(&self.arena);
-            let cap_exchange = equity.unwrap_or(f64::NAN);
-            let pendiente = self.arena.pico_pendiente.load(Ordering::Acquire);
-            self.arena.capital_exchange.store(if cap_exchange.is_finite() && !pendiente { cap_exchange } else { f64::NAN }, Ordering::Release);
-            let cap = drawdown::capital_del_freno(&self.arena);
-            let pico = drawdown::registrar_pico(&self.arena.pico_capital, cap);
-            (cap, pico, plano.revision_al_cerrar(), drawdown::ambito_del_plano(&self.arena))
-        })
+        let p = self.paso.correr(&self.puente, &self.arena);
+        (p.cap, p.pico, p.revision, p.ambito)
     }
     /// ADAPTADOR del arranque del pico del host (`aplicar_arranque_pico` bajo el mutex del puente y
     /// dentro de una escritura del plano, anclado): pico vacio, el persistido compatible o ilegible.
@@ -789,16 +901,22 @@ impl Plano {
 
 fn anclas_v4l() {
     orden(HOST, &[
-        "let (mut pico_ilegible, mut marca_pendiente) = puente_imm.con_equity_del_freno(|_| {",
+        // V4N (F2/F5): ancla adaptada, los dos valores ya no se reasignan en el bin (pasan a
+        // `PicoDelInmune`).
+        "let (pico_ilegible, marca_pendiente) = puente_imm.con_equity_del_freno(|_| {",
         "let _plano = risk_engine::drawdown::EscrituraDelPlano::abrir(&arena_imm);",
         "aplicar_arranque_pico(&arena_imm, &rutas_pico, false)",
+        "let mut pico_imm = quantum_engine::host_oms::PicoDelInmune {",
     ]);
+    // V4N (F2/F5): el paso ya no esta en linea; el bin llama a la funcion que estas pruebas
+    // EJECUTAN (`PasoReal::correr`). Solo se ata la llamada y el uso de su resultado.
     orden(HOST, &[
-        "let (cap, peak_capital, ruta_del_pico, ambito_de_la_evidencia) = puente_imm.con_equity_del_freno(|equity| {",
-        "let _plano = risk_engine::drawdown::EscrituraDelPlano::abrir(&arena_imm);",
-        "let pendiente = arena_imm.pico_pendiente.load(Ordering::Acquire);",
-        "risk_engine::drawdown::registrar_pico(&arena_imm.pico_capital, cap);",
-        "revision_de_la_evidencia = _plano.revision_al_cerrar();",
+        "let paso_del_freno = quantum_engine::host_oms::paso_del_freno_del_inmune(",
+        "&mut pico_imm,",
+        "aplicar_arranque_pico,",
+        "let (cap, peak_capital, revision_de_la_evidencia, ambito_de_la_evidencia) =",
+        "(paso_del_freno.cap, paso_del_freno.pico, paso_del_freno.revision, paso_del_freno.ambito);",
+        "let freno = risk_engine::drawdown::freno_duro(&arena_imm, peak_capital, cap);",
     ]);
     orden(HOST, &[
         "if libro_relevo.cuenta().is_some_and(|c| c != cuenta_del_relevo) {",
@@ -926,6 +1044,103 @@ fn v4l_f5_cota_sin_ascenso_y_restauracion_productiva() {
     assert_eq!((cap, pico), (104.0, 104.0));
     assert_eq!(vista.map(|v| (v.equity, v.pico, v.revision)), Some((104.0, 104.0, revision)));
     assert!(!vetada, "la foto acreditada no restauro la admision");
+}
+
+/// V4N (F2/F5, dictamen V4L :83 y :118; pedido P:23,38,40). El paso del host es el PRODUCTIVO
+/// (`host_oms::paso_del_freno_del_inmune`, el que llama el binario), con CARTERA y RESERVA no
+/// vacias: posicion abierta en el exchange (uPnL de la lectura del puente) y ranura abierta en el
+/// nucleo, reserva viva de entrada (2) y debito local de cierre (5) en el libro. Con eso la
+/// capacidad (93) difiere de la equity: el freno y el pico miden la equity, no la capacidad.
+/// Serie F2 (100→103→100→87) y secuencia F5 (cota 90 con pico 100, foto incompleta mas alta que
+/// no reabre, foto acreditada 104): en cada paso Risk decide con la MISMA revision que el paso
+/// devuelve, la decision coincide con el freno del host, el pico persistido en disco es el del
+/// paso y la reserva sigue intacta. Barrera: con un escritor del plano retenido en otro hilo, el
+/// paso del host espera (no abre otra revision) y Risk veta; al soltar, el paso deja una revision
+/// par posterior. Control sin escritura: la fase previa admite.
+#[test]
+fn v4n_f2_f5_paso_productivo_con_cartera_y_reserva() {
+    let _g = UNIVERSO.lock().unwrap_or_else(|p| p.into_inner());
+    anclas_v4l();
+    for secuencia in ["F2", "F5"] {
+        let mut m = plano(1);
+        let previa = if secuencia == "F2" { Some(0.0) } else { None };
+        m.rest(100.0, previa, 100);
+        // Cartera y reserva no vacias.
+        let p = m.arena.coins[1].positions.get_slot(0);
+        assert!(p.open_with_tau_and_fee(true, 100.0, 0.01, 10.0, 1_000, 110.0, 90.0, PositionHorizon::Continuous, 0.7, 0.8, 0.04, 60_000), "fixture: ranura abierta");
+        let clave = ClaveReserva { coin_id: 1, slot: 0, generation: p.generation.load(Ordering::Acquire) };
+        {
+            let mut libro = m.arena.config.entry_publication_gate.lock().unwrap();
+            let capital = Some(m.arena.unified_capital.load(Ordering::Relaxed));
+            assert!(libro.admite(&m.arena, capital), "fixture: el libro admite la reserva");
+            libro.reservar_con_base(&m.arena, clave, 2.0, capital);
+            libro.debito_cierre_local(&m.arena, ClaveReserva { coin_id: 0, slot: 1, generation: 1 }, 5.0);
+        }
+        let reservado = m.arena.config.entry_publication_gate.lock().unwrap().reservado();
+        assert_eq!(reservado, 7.0, "{secuencia}: fixture sin reserva y debito");
+        assert_eq!(m.arena.unified_capital.load(Ordering::Relaxed), 93.0, "{secuencia}: fixture: capacidad");
+        let (cap, pico, revision, _) = m.paso_del_host();
+        let (vetada, _, vista) = m.decision();
+        assert_eq!((cap, pico), (100.0, 100.0), "{secuencia}: el paso midio la capacidad y no la equity");
+        assert_eq!(vista.map(|v| (v.revision, v.lista)), Some((revision, true)), "{secuencia}: control previo");
+        assert!(!vetada, "{secuencia}: control previo vetado por drawdown");
+        assert_eq!(m.paso.pico_en_disco(), Some(100.0), "{secuencia}: el paso no persistio su pico");
+        let fases: Vec<(&str, f64, f64, u64, f64, f64)> = if secuencia == "F2" {
+            // (lectura, saldo, uPnL, t, equity esperada, pico esperado)
+            vec![("completa", 100.0, 3.0, 200, 103.0, 103.0), ("completa", 100.0, 0.0, 300, 100.0, 103.0), ("completa", 100.0, -13.0, 400, 87.0, 103.0)]
+        } else {
+            vec![("perdida", 100.0, -10.0, 150, 90.0, 100.0), ("incompleta", 100.0, 20.0, 160, 90.0, 100.0), ("completa", 104.0, f64::NAN, 300, 104.0, 104.0)]
+        };
+        for (lectura, saldo, upnl, t, equity, pico_esperado) in fases {
+            match lectura {
+                "perdida" => {
+                    m.puente.evidencia_perdida(m.puente.era()).unwrap();
+                    m.rest_incompleta(saldo, upnl, t);
+                }
+                "incompleta" => m.rest_incompleta(saldo, upnl, t),
+                _ => m.rest(saldo, upnl.is_finite().then_some(upnl), t),
+            }
+            let (cap, pico, revision, ambito) = m.paso_del_host();
+            let (vetada, _, vista) = m.decision();
+            let vista = vista.unwrap_or_else(|| panic!("{secuencia}/{t}: Risk sin revision estable"));
+            assert_eq!((cap, pico), (equity, pico_esperado), "{secuencia}/{t}: el paso del host no midio la equity del puente");
+            assert_eq!((vista.revision, vista.ambito, vista.equity, vista.pico), (revision, ambito, cap, pico), "{secuencia}/{t}: la revision del paso etiqueta otra muestra");
+            let freno = drawdown::freno_duro(&m.arena, pico, cap);
+            let veto_esperado = freno.echado() || (secuencia == "F5" && lectura != "completa");
+            assert_eq!(vetada, veto_esperado, "{secuencia}/{t}: Risk y el host decidieron distinto con la misma revision ({freno})");
+            assert_eq!(m.paso.pico_en_disco(), Some(pico_esperado), "{secuencia}/{t}: el pico persistido no es el del paso");
+            assert_eq!(m.arena.config.entry_publication_gate.lock().unwrap().reservado(), 7.0, "{secuencia}/{t}: el paso toco la reserva");
+        }
+        // Barrera: un escritor del plano retenido en otro hilo; el paso del host espera.
+        let (dentro, seguir) = (std::sync::Barrier::new(2), std::sync::Barrier::new(2));
+        let paso_hecho = AtomicBool::new(false);
+        let (a, puente, paso_real) = (&m.arena, &m.puente, &m.paso);
+        std::thread::scope(|s| {
+            s.spawn(|| {
+                let _p = drawdown::EscrituraDelPlano::abrir(a);
+                dentro.wait();
+                seguir.wait();
+            });
+            dentro.wait();
+            let rev_del_escritor = a.plano_freno_rev.load(Ordering::Acquire);
+            assert_eq!(rev_del_escritor % 2, 1, "{secuencia}: el escritor no abrio su revision");
+            let paso = s.spawn(|| {
+                let r = paso_real.correr(puente, a);
+                paso_hecho.store(true, Ordering::SeqCst);
+                r
+            });
+            for _ in 0..200 {
+                std::thread::yield_now();
+            }
+            assert!(!paso_hecho.load(Ordering::SeqCst), "{secuencia}: el paso del host abrio otra revision con un escritor a mitad");
+            assert!(drawdown::vista_del_freno(a).is_none(), "{secuencia}: Risk leeria una mezcla");
+            seguir.wait();
+            let r = paso.join().unwrap();
+            assert!(r.revision % 2 == 0 && r.revision > rev_del_escritor, "{secuencia}: el paso no dejo una revision par posterior ({} tras {rev_del_escritor})", r.revision);
+        });
+        let (_, _, vista) = m.decision();
+        assert!(vista.is_some_and(|v| v.revision == m.arena.plano_freno_rev.load(Ordering::Acquire)), "{secuencia}: Risk no ve la revision del ultimo paso");
+    }
 }
 
 /// L-F6 (matriz :42). Arranque: el pico persistido compatible (120) se restaura ANTES de cualquier
@@ -1229,5 +1444,108 @@ async fn v4l_f4_cero_ausencia_deuda_protegen_posicion_real() {
         let parcial = m.ejecutor.execute_reduce_only_market_with_reconciliation(SIMBOLO, true, 0.01, 0.001).await;
         assert!(parcial.is_err(), "{variante}: un cierre parcial se dio por completo");
         assert!(abierta_local(&m), "{variante}: la posicion local se perdio sin evidencia");
+    }
+}
+
+/// V4N (F4, dictamen V4L :84 y :117; pedido P:24,39). Sobre el montaje de `v4l_f4`: posicion
+/// ABIERTA reconciliada (ranura local confirmada por el snapshot) y un exchange CON ESTADO: la
+/// posicion baja con cada cierre y la protectora `CONT_sl_v4n` vive en el servicio Algo del
+/// exchange, donde el host la busca (no en `openOrders`: una orden regular en el snapshot BLOQUEA
+/// la sesion, host_oms.rs:664, y se comprueba aqui como control). Por variante (sano, ausente,
+/// cero y deuda):
+/// 1. el libro rechaza reservar y la reserva previa no revalida salvo en `sano` (0/0 frente a 1/1);
+/// 2. la protectora EXISTE antes de cualquier DELETE (`fetch_open_algo_orders`, estado NEW);
+/// 3. una pierna cancelable con identidad (`CONT_tp_v4n`) se cancela por su identidad con ACK y
+///    deja de existir (la segunda cancelacion recibe -2011: la transicion es real);
+/// 4. el aplanado PRODUCTIVO (`flatten_open_positions`, el del reintento del inmune) con un cierre
+///    PARCIAL (cupo 0.004 de 0.010) no se da por cerrado, deja el residual 0.006 en el exchange,
+///    NO purga la protectora (ningun DELETE de Algo) y la ranura local sigue abierta;
+/// 5. con cupo, el aplanado cierra el residual y SOLO entonces purga: la protectora desaparece.
+#[tokio::test]
+async fn v4n_f4_protectora_viva_y_residual_protegido() {
+    for variante in ["sano", "ausente", "cero", "deuda"] {
+        let m = montaje().await;
+        let abierta = vec![PositionRiskEntry { symbol: SIMBOLO.into(), position_side: "BOTH".into(), position_amt: 0.01, entry_price: 100.0, leverage: 1.0, ..Default::default() }];
+        let mut filas = posiciones_planas();
+        filas.retain(|p| p.symbol != SIMBOLO);
+        filas.extend(abierta);
+        let foto = |m: &Montaje, ordenes: Vec<execution_engine::order_types::OrderAck>, t: u64| {
+            let token = m.sesion.snapshot_token();
+            let fees = FeeSchedule::new(token.generation(), filas_de_comision()).map_err(|e| format!("{e:?}"));
+            m.sesion.apply_snapshot(&token, Ok(filas.clone()), Ok(ordenes), fees, &m.arena, t)
+        };
+        let adopcion = foto(&m, Vec::new(), 2_000);
+        let reconciliada = foto(&m, Vec::new(), 3_000);
+        assert!(adopcion.adopted == 1 && reconciliada.unresolved == 0, "{variante}: fixture sin posicion reconciliada: {adopcion:?} / {reconciliada:?}");
+        let abierta_local = |m: &Montaje| m.arena.coins[0].positions.slots().iter().any(|p| p.is_open() && p.exchange_confirmed.load(Ordering::Acquire));
+        assert!(abierta_local(&m), "{variante}: fixture sin posicion abierta");
+        // Control: la protectora como orden REGULAR en el snapshot bloquea la sesion (no es la via
+        // de la proteccion); el snapshot siguiente sin ordenes regulares la deja lista otra vez.
+        let regular = execution_engine::order_types::OrderAck { symbol: SIMBOLO.into(), client_order_id: "CONT_sl_v4n".into(), status: "NEW".into(), ..Default::default() };
+        let bloqueada = foto(&m, vec![regular], 3_200);
+        assert_eq!(bloqueada.pending_regular_orders, 1, "{variante}: una orden regular viva no bloqueo la sesion: {bloqueada:?}");
+        let lista = foto(&m, Vec::new(), 3_400);
+        assert_eq!(lista.unresolved, 0, "{variante}: la sesion no volvio a quedar lista: {lista:?}");
+        // Exchange con estado: posicion 0.010, protectora SL y pierna TP vivas.
+        *m.servidor.posicion.lock().unwrap() = Some(0.010);
+        *m.servidor.cupo_de_cierre.lock().unwrap() = 0.004;
+        *m.servidor.algo_vivas.lock().unwrap() = vec![(7001, "CONT_sl_v4n".into()), (7002, "CONT_tp_v4n".into())];
+        // 1. Reserva y entrada por variante.
+        let token = m.sesion.snapshot_token();
+        let clave = m.reservar(9);
+        {
+            let mut l = m.arena.config.entry_publication_gate.lock().unwrap();
+            match variante {
+                "ausente" => {
+                    l.fijar_cuenta(&m.arena, 1);
+                    l.fijar_cuenta(&m.arena, 2);
+                }
+                "cero" => l.saldo_aceptado(&m.arena, 0.0, Some(200)),
+                "deuda" => l.saldo_aceptado(&m.arena, -5.0, Some(200)),
+                _ => {}
+            }
+            if variante != "sano" {
+                let capital = Some(m.arena.unified_capital.load(Ordering::Relaxed));
+                assert!(!l.admite(&m.arena, capital), "{variante}: el libro admitio reservar");
+            }
+        }
+        let res = m.sesion.dispatch_entry_reservada(&token, m.ejecutor.as_ref(), &pedido(EntryRoute::Market, "cL_v4n_f4"), &m.arena, Some(clave)).await;
+        if variante == "sano" {
+            assert!(res.is_ok() && (m.servidor.apalancamientos(), m.servidor.aperturas()) == (1, 1), "control sano: {res:?}");
+        } else {
+            assert!(res.is_err(), "{variante}: la reserva previa revalido");
+            assert_eq!((m.servidor.apalancamientos(), m.servidor.aperturas()), (0, 0), "{variante}: salio apalancamiento o apertura");
+        }
+        // 2. La protectora existe ANTES de cualquier DELETE.
+        assert_eq!(m.servidor.contar("DELETE", "/fapi/v1/algoOrder") + m.servidor.contar("DELETE", "/fapi/v1/algoOpenOrders"), 0, "{variante}: montaje: DELETE previo");
+        let vivas = m.ejecutor.fetch_open_algo_orders(SIMBOLO).await.expect("openAlgoOrders");
+        assert!(vivas.iter().any(|o| o.client_algo_id == "CONT_sl_v4n" && o.algo_status == "NEW" && o.algo_id == 7001), "{variante}: la protectora no estaba viva: {vivas:?}");
+        // 3. Cancelacion por identidad con transicion real.
+        assert!(m.ejecutor.cancel_algo_order(SIMBOLO, "CONT_tp_v4n").await.is_ok(), "{variante}: cancelacion sin ACK");
+        let vivas = m.ejecutor.fetch_open_algo_orders(SIMBOLO).await.expect("openAlgoOrders");
+        assert!(!vivas.iter().any(|o| o.client_algo_id == "CONT_tp_v4n"), "{variante}: la pierna cancelada sigue viva");
+        assert!(vivas.iter().any(|o| o.client_algo_id == "CONT_sl_v4n"), "{variante}: la cancelacion se llevo la protectora");
+        assert!(m.ejecutor.cancel_algo_order(SIMBOLO, "CONT_tp_v4n").await.is_err(), "{variante}: la segunda cancelacion encontro la pierna (DELETE sin efecto)");
+        // 4. Aplanado productivo con cierre PARCIAL: residual y protectora conservados.
+        let cierres = |m: &Montaje| m.servidor.ordenes().iter().filter(|p| p.params.get("reduceOnly").map(String::as_str) == Some("true")).count();
+        let cierres_antes = cierres(&m);
+        let parcial = m.ejecutor.flatten_open_positions().await;
+        assert_eq!(cierres(&m), cierres_antes + 2, "{variante}: el cierre y el reenvio del residual no llegaron al exchange");
+        assert!(parcial.as_ref().is_err_and(|e| e.starts_with("FLATTEN_INCOMPLETE")), "{variante}: el cierre parcial se dio por completo: {parcial:?}");
+        let residual = m.servidor.posicion.lock().unwrap().unwrap();
+        assert!((residual - 0.006).abs() < 1e-9, "{variante}: residual inesperado {residual}");
+        assert_eq!(m.servidor.contar("DELETE", "/fapi/v1/algoOpenOrders"), 0, "{variante}: se purgo la proteccion con residual abierto");
+        assert_eq!(m.servidor.contar("DELETE", "/fapi/v1/allOpenOrders"), 0, "{variante}: se purgaron las ordenes con residual abierto");
+        let vivas = m.ejecutor.fetch_open_algo_orders(SIMBOLO).await.expect("openAlgoOrders");
+        assert!(vivas.iter().any(|o| o.client_algo_id == "CONT_sl_v4n"), "{variante}: el residual quedo desnudo: {vivas:?}");
+        assert!(abierta_local(&m), "{variante}: la ranura local se perdio sin evidencia del cierre");
+        // 5. Con cupo: el residual se cierra y SOLO entonces se purga la protectora.
+        *m.servidor.cupo_de_cierre.lock().unwrap() = 1.0;
+        let completo = m.ejecutor.flatten_open_positions().await;
+        assert!(matches!(completo, Ok((_, 1))), "{variante}: el aplanado con cupo no cerro: {completo:?}");
+        assert!(m.servidor.posicion.lock().unwrap().unwrap().abs() < 1e-9, "{variante}: quedo posicion tras el cierre completo");
+        assert_eq!(m.servidor.contar("DELETE", "/fapi/v1/algoOpenOrders"), 1, "{variante}: la purga tras el cierre no salio");
+        let vivas = m.ejecutor.fetch_open_algo_orders(SIMBOLO).await.expect("openAlgoOrders");
+        assert!(vivas.is_empty(), "{variante}: la protectora sobrevivio a la posicion: {vivas:?}");
     }
 }

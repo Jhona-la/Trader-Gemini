@@ -19,6 +19,7 @@ use std::sync::{Arc, Mutex};
 
 const HOST: &str = include_str!("../src/bin/god_engine.rs");
 const RIESGO: &str = include_str!("../crates/risk-engine/src/lib.rs");
+const OMS: &str = include_str!("../src/host_oms.rs");
 const SESION: u64 = 1;
 static SERIE: Mutex<()> = Mutex::new(());
 
@@ -47,16 +48,29 @@ fn anclas_del_inmune() {
         "puente_imm.con_equity_del_freno(|_| {",
         "let espacio_nuevo = buzon_imm.lock().unwrap_or_else(|p| p.into_inner()).take();",
         "aplicar_arranque_pico(&arena_imm, &rutas, true);",
-        "let (cap, peak_capital, ruta_del_pico, ambito_de_la_evidencia) = puente_imm.con_equity_del_freno(|equity| {",  // V4K (F6): ancla adaptada, el paso devuelve su ambito
-        "let espacio_nuevo = buzon_imm.lock().unwrap_or_else(|p| p.into_inner()).take();",
-        "let cap_exchange = equity.unwrap_or(f64::NAN);",
-        "arena_imm.capital_exchange.store(",
-        "let cap = risk_engine::drawdown::capital_del_freno(&arena_imm);",
-        "risk_engine::drawdown::registrar_pico(&arena_imm.pico_capital, cap);",
-        "(cap, peak_capital, ruta_pico.clone(), risk_engine::drawdown::ambito_del_plano(&arena_imm))",
-        "risk_engine::drawdown::guardar_pico(&ruta_del_pico, peak_capital)",
+        // V4N (F2/F5): anclas adaptadas. El paso (buzon, magnitud, pico, revision y persistencia)
+        // es `host_oms::paso_del_freno_del_inmune`; el bin le pasa su buzon y su estado del pico.
+        "let paso_del_freno = quantum_engine::host_oms::paso_del_freno_del_inmune(",
+        "&buzon_imm,",
+        "&flujos_imm,",
+        "&mut pico_imm,",
+        "aplicar_arranque_pico,",
         "let freno = risk_engine::drawdown::freno_duro(&arena_imm, peak_capital, cap);",
         "let insolvent = cap <= 0.0;",
+    ]);
+    // V4N (F2/F5): el orden del paso, en la funcion productiva.
+    orden(OMS, &[
+        "pub fn paso_del_freno_del_inmune(",
+        "puente.con_equity_del_freno(|equity| {",
+        "let plano = risk_engine::drawdown::EscrituraDelPlano::abrir(arena);",
+        "let espacio_nuevo = buzon.lock().unwrap_or_else(|p| p.into_inner()).take();",
+        "let cap_exchange = equity.unwrap_or(f64::NAN);",
+        "arena.capital_exchange.store(",
+        "let cap = risk_engine::drawdown::capital_del_freno(arena);",
+        "let pico = risk_engine::drawdown::registrar_pico(&arena.pico_capital, cap);",
+        "revision = plano.revision_al_cerrar();",
+        "risk_engine::drawdown::guardar_pico(&ruta_del_pico, pico)",
+        "risk_engine::drawdown::guardar_marca_definicion(&estado.ruta_marca)",
     ]);
     // Relevo: dentro del cierre de `relevar_sesion` (mutex del puente), antes de la era nueva.
     orden(HOST, &[
@@ -98,14 +112,10 @@ fn anclas_del_inmune() {
 }
 
 /// Un ciclo del inmune: (capital del freno, pico, freno), bajo el mutex del puente.
+/// V4N (F2/F5): el paso es el PRODUCTIVO (`host_oms::paso_del_freno_del_inmune`), no una copia.
 fn ciclo_del_inmune(m: &Montaje) -> (f64, f64, drawdown::FrenoDuro) {
-    let (cap, pico) = m.puente.con_equity_del_freno(|equity| {
-        let cap_exchange = equity.unwrap_or(f64::NAN);
-        m.arena.capital_exchange.store(if cap_exchange.is_finite() { cap_exchange } else { f64::NAN }, Ordering::Release);
-        let cap = drawdown::capital_del_freno(&m.arena);
-        (cap, drawdown::registrar_pico(&m.arena.pico_capital, cap))
-    });
-    (cap, pico, drawdown::freno_duro(&m.arena, pico, cap))
+    let p = m.paso.correr(&m.puente, &m.arena);
+    (p.cap, p.pico, drawdown::freno_duro(&m.arena, p.pico, p.cap))
 }
 
 /// El relevo del host (`paso_transicion` dentro de `relevar_sesion`): cuenta anunciada, libro y,
@@ -133,6 +143,59 @@ struct Montaje {
     arena: Arc<GlobalArena>,
     oms: Arc<AtomicU64>,
     riesgo: RiskEngine,
+    /// V4N (F2/F5): el paso REAL del host con su estado.
+    paso: PasoReal,
+}
+
+// ============================ PASO REAL DEL HOST (V4N, F2/F5) ============================
+// CAPITAL-UNICO V4N (F2/F5, dictamen V4L :83 y :118): el paso del host en el ciclo del inmune ya no
+// se copia: es `host_oms::paso_del_freno_del_inmune`, la MISMA funcion que llama el binario, con su
+// estado (buzon del espacio, flujos y pico persistido en un directorio temporal propio).
+
+static DIRECTORIOS_DEL_PASO: AtomicU64 = AtomicU64::new(0);
+
+struct PasoReal {
+    buzon: Mutex<Option<drawdown::RutasPico>>,
+    flujos: Mutex<FlujosExternos>,
+    pico: Mutex<quantum_engine::host_oms::PicoDelInmune>,
+    dir: std::path::PathBuf,
+}
+
+fn paso_real() -> PasoReal {
+    let n = DIRECTORIOS_DEL_PASO.fetch_add(1, Ordering::SeqCst);
+    let dir = std::env::temp_dir().join(format!("tg_v4n_paso_{}_{}_{n}", env!("CARGO_CRATE_NAME"), std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let rutas = drawdown::RutasPico::del_espacio("v4n_paso", |n| dir.join(n));
+    let pico = quantum_engine::host_oms::PicoDelInmune {
+        pico_ilegible: false,
+        marca_pendiente: !drawdown::marca_vigente(&rutas.marca),
+        ruta_pico: rutas.pico.clone(),
+        ruta_marca: rutas.marca.clone(),
+        pico_guardado: 0.0,
+    };
+    PasoReal { buzon: Mutex::new(None), flujos: Mutex::new(FlujosExternos::default()), pico: Mutex::new(pico), dir }
+}
+
+impl PasoReal {
+    fn correr(&self, puente: &PuenteCuenta, arena: &GlobalArena) -> quantum_engine::host_oms::PasoDelFreno {
+        let mut pico = self.pico.lock().unwrap();
+        quantum_engine::host_oms::paso_del_freno_del_inmune(puente, arena, &self.buzon, &self.flujos, &mut pico, |_, _, _| {
+            panic!("montaje: el buzon del espacio del pico esta vacio en estas pruebas")
+        })
+    }
+    /// El pico que el paso persistio en disco (None: no escribio).
+    #[allow(dead_code)]
+    fn pico_en_disco(&self) -> Option<f64> {
+        let ruta = self.pico.lock().unwrap().ruta_pico.clone();
+        std::fs::read_to_string(ruta).ok().and_then(|t| t.trim().parse().ok())
+    }
+}
+
+impl Drop for PasoReal {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir_all(&self.dir);
+    }
 }
 
 fn montaje(cuenta: u64) -> Montaje {
@@ -180,7 +243,7 @@ fn montaje(cuenta: u64) -> Montaje {
         });
     }
     puente.abrir_socket(puente.era()).unwrap();
-    Montaje { puente, arena, oms, riesgo: RiskEngine::new(100.0) }
+    Montaje { puente, arena, oms, riesgo: RiskEngine::new(100.0), paso: paso_real() }
 }
 
 fn lectura(saldo: f64, upnl: Option<f64>, t: u64, completa: bool) -> LecturaCuenta {
@@ -498,31 +561,22 @@ fn f8_flujo_identificado_y_retiro_incierto_no_rearman() {
 
 // ================================ V4K: F2, F5, F6 y F8 ================================
 
-/// ADAPTADOR V4K del lazo del inmune (anclado abajo): el paso es UNA revision del plano, con la
-/// equity en ausencia mientras el pico del ambito esta pendiente, y devuelve su ambito.
+/// V4K: el ciclo del inmune con su revision y su ambito.
+/// V4N (F2/F5): el paso es el PRODUCTIVO (`host_oms::paso_del_freno_del_inmune`, antes un
+/// adaptador copiado); la revision es la que el paso devuelve como testigo.
 fn ciclo_del_inmune_k(m: &Montaje) -> (f64, f64, drawdown::FrenoDuro, u64, u64) {
-    let (cap, pico, ambito) = m.puente.con_equity_del_freno(|equity| {
-        let _plano = drawdown::EscrituraDelPlano::abrir(&m.arena);
-        let cap_exchange = equity.unwrap_or(f64::NAN);
-        let pendiente = m.arena.pico_pendiente.load(Ordering::Acquire);
-        m.arena.capital_exchange.store(if cap_exchange.is_finite() && !pendiente { cap_exchange } else { f64::NAN }, Ordering::Release);
-        let cap = drawdown::capital_del_freno(&m.arena);
-        (cap, drawdown::registrar_pico(&m.arena.pico_capital, cap), drawdown::ambito_del_plano(&m.arena))
-    });
-    let revision = m.arena.plano_freno_rev.load(Ordering::Acquire);
-    (cap, pico, drawdown::freno_duro(&m.arena, pico, cap), revision, ambito)
+    let p = m.paso.correr(&m.puente, &m.arena);
+    assert_eq!(p.revision, m.arena.plano_freno_rev.load(Ordering::Acquire), "el testigo del paso no es la revision que dejo");
+    (p.cap, p.pico, drawdown::freno_duro(&m.arena, p.pico, p.cap), p.revision, p.ambito)
 }
 
 fn anclas_v4k() {
     orden(HOST, &[
-        "let (cap, peak_capital, ruta_del_pico, ambito_de_la_evidencia) = puente_imm.con_equity_del_freno(|equity| {",
-        "let _plano = risk_engine::drawdown::EscrituraDelPlano::abrir(&arena_imm);",
-        "let cap_exchange = equity.unwrap_or(f64::NAN);",
-        "let pendiente = arena_imm.pico_pendiente.load(Ordering::Acquire);",
-        "if cap_exchange.is_finite() && !pendiente {",
-        "let cap = risk_engine::drawdown::capital_del_freno(&arena_imm);",
-        "risk_engine::drawdown::registrar_pico(&arena_imm.pico_capital, cap);",
-        "risk_engine::drawdown::ambito_del_plano(&arena_imm))",
+        // V4N (F2/F5): anclas adaptadas. El paso ya no esta en linea: el bin llama a la funcion que
+        // estas pruebas ejecutan (`PasoReal::correr`); se ata la llamada y el uso del resultado.
+        "let paso_del_freno = quantum_engine::host_oms::paso_del_freno_del_inmune(",
+        "&mut pico_imm,",
+        "(paso_del_freno.cap, paso_del_freno.pico, paso_del_freno.revision, paso_del_freno.ambito);",
         "let freno = risk_engine::drawdown::freno_duro(&arena_imm, peak_capital, cap);",
         "let patrimonial = !operator_lock && !lat_breach;",
         // V4L (L-F6): anclas adaptadas. La comprobacion del ambito, la toma del ejecutor y los
@@ -775,7 +829,7 @@ fn montaje_con_arena(cuenta: u64, arena: Arc<GlobalArena>) -> Montaje {
         });
     }
     puente.abrir_socket(puente.era()).unwrap();
-    Montaje { puente, arena, oms, riesgo: RiskEngine::new(100.0) }
+    Montaje { puente, arena, oms, riesgo: RiskEngine::new(100.0), paso: paso_real() }
 }
 
 /// V4K F8 (dictamen V4J :46 y :67): una respuesta de income retenida de la era anterior atraviesa

@@ -238,7 +238,11 @@ fn pico_contrato_de_fuente_del_host() {
     let host = include_str!("../../../src/bin/god_engine.rs");
     assert!(!host.contains("txt.adoptado"), "el host ya no adopta ni renombra el pico sin venue");
     assert!(host.contains("risk_engine::drawdown::decidir_arranque_pico(rutas)"));
-    assert!(host.contains("risk_engine::drawdown::guardar_marca_definicion(&ruta_marca)"));
+    // CAPITAL-UNICO V4N (F2/F5): ancla adaptada. La persistencia del pico y de la marca pasa al paso
+    // del inmune de host_oms (`paso_del_freno_del_inmune`), que el bin llama.
+    let oms = include_str!("../../../src/host_oms.rs");
+    assert!(host.contains("quantum_engine::host_oms::paso_del_freno_del_inmune("));
+    assert!(oms.contains("risk_engine::drawdown::guardar_marca_definicion(&estado.ruta_marca)"));
     assert!(!host.contains("unidades_coinciden"), "V3: la inferencia de unidades salió");
     assert!(!host.contains("capital_operativo"), "el tope salió de esta rama");
     // 7e: el aplanado nombra el archivo real, no `pico_capital.txt`.
