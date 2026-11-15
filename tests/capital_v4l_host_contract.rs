@@ -578,6 +578,70 @@ async fn v4l_a1_compromiso_local_host_revalida_sin_esperar_red() {
     println!("v4l_a1_compromiso_local: {casos} casos");
 }
 
+/// V4N-ANEXO (revision de nivel 1 de M, COPILOT-CLI, punto 2: MAX_COMPROMISOS). L conservaba solo
+/// los ultimos `MAX_COMPROMISOS` testigos del libro en una cola FIFO (cota fija de L, 256 en
+/// `dimensionable.rs` de e3c5cc094, RETIRADA en M); desde M los testigos de una entrega con reserva
+/// viven en el debito de esa reserva y salen con el. Este valor es esa cota vieja, citada para que la
+/// serie la CRUCE; no es un parametro del codigo.
+const COTA_RETIRADA_EN_L: usize = 256;
+
+/// V4N-ANEXO (COPILOT-CLI, punto 2). Por la ruta REAL del compromiso
+/// (`dispatch_entry_reservada` → ejecutor → cliente → 127.0.0.1): una entrega con reserva viva y,
+/// despues, entregas reales con su propia reserva que se cierran (cancelacion del libro) tras su
+/// envio, hasta que el total de compromisos supera la cota vieja con el debito de la primera aun
+/// vivo. Exige: (a) retencion, los testigos del debito vivo siguen identicos; (b) limpieza, ningun
+/// testigo de una entrega cerrada sobrevive a su debito; (c) al cerrar la reserva viva sus testigos
+/// salen. En L la cola FIFO expulsa los testigos del debito vivo y conserva los de las cerradas.
+#[tokio::test]
+async fn v4n_compromisos_cruzan_la_cota_retirada_con_debito_vivo() {
+    let m = montaje().await;
+    // Un ejecutor de produccion NUEVO por entrega, contra el mismo exchange local (mismo registro de
+    // peticiones): el limitador local de entradas es por ejecutor y por segundo de reloj, y la serie
+    // no espera calendario.
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let base = format!("http://{}", listener.local_addr().unwrap());
+    tokio::spawn(servir(listener, Arc::clone(&m.servidor)));
+    let ejecutor = || {
+        let mut e = OrderExecutor::new(String::new(), "offline-contract".into(), false).con_base_de_prueba(&base);
+        e.set_paper_trading(false);
+        e.is_hedge_mode.store(false, Ordering::Relaxed);
+        e
+    };
+    let viva = m.reservar(1);
+    let res = m.sesion.dispatch_entry_reservada(&m.token, &ejecutor(), &pedido(EntryRoute::Market, "cL_v4n_viva"), &m.arena, Some(viva)).await;
+    assert!(res.is_ok(), "fixture: la entrega con reserva viva no salio ({res:?})");
+    let propios = m.compromisos();
+    assert!(propios.len() >= 2 && propios.iter().all(|t| t.reserva == Some(viva)), "fixture: testigos de la entrega viva {propios:?}");
+    let por_entrega = propios.len();
+    // Entregas reales cerradas hasta que el total de compromisos supera la cota vieja.
+    let mut entregas = 0usize;
+    let mut generacion = 1u64;
+    while por_entrega * (entregas + 1) <= COTA_RETIRADA_EN_L {
+        generacion += 1;
+        let clave = m.reservar(generacion);
+        let id = format!("cL_v4n_c{generacion}");
+        let p = EntryRequest { client_order_id: &id, ..pedido(EntryRoute::Market, "cL_v4n_base") };
+        let res = m.sesion.dispatch_entry_reservada(&m.token, &ejecutor(), &p, &m.arena, Some(clave)).await;
+        assert!(res.is_ok(), "fixture: la entrega {generacion} no salio ({res:?})");
+        m.arena.config.entry_publication_gate.lock().unwrap().cancelar(&m.arena, clave, 0.04);
+        entregas += 1;
+    }
+    let enviados = m.servidor.apalancamientos() + m.servidor.aperturas();
+    assert_eq!(enviados, por_entrega * (entregas + 1), "montaje: cada compromiso es un POST real que llego al exchange local");
+    assert!(enviados > COTA_RETIRADA_EN_L, "montaje: la serie no cruzo la cota vieja ({enviados})");
+    assert_eq!(m.arena.config.entry_publication_gate.lock().unwrap().reservas(), 1, "montaje: solo la reserva viva queda abierta");
+    let c = m.compromisos();
+    let retenidos: Vec<_> = c.iter().filter(|t| t.reserva == Some(viva)).copied().collect();
+    assert_eq!(retenidos, propios, "retencion: con {enviados} compromisos el libro expulso los testigos del debito VIVO (quedan {} de {})", retenidos.len(), propios.len());
+    let ajenos = c.iter().filter(|t| t.reserva != Some(viva)).count();
+    assert_eq!(ajenos, 0, "limpieza: {ajenos} testigos de entregas ya cerradas siguen en el libro");
+    // Cierre de la reserva viva: sus testigos salen con su debito.
+    m.arena.config.entry_publication_gate.lock().unwrap().cancelar(&m.arena, viva, 0.04);
+    let tras_cierre = m.compromisos();
+    assert!(tras_cierre.iter().all(|t| t.reserva != Some(viva)), "limpieza al cerrar: quedan testigos de la reserva cerrada {tras_cierre:?}");
+    println!("v4n_compromisos: {enviados} compromisos (cota vieja {COTA_RETIRADA_EN_L}), {} retenidos del debito vivo, {} tras cerrarlo", retenidos.len(), tras_cierre.len());
+}
+
 /// L-A1H (matriz :38). Flujo de resultado del HOST (`resolver_resultado_de_entrada`) con reserva
 /// REAL (ranura abierta sin confirmar, margen y reserva del libro) y settlement real. Sin cancelar
 /// a mano: el error real del envio llega a la resolucion productiva.
@@ -992,6 +1056,68 @@ fn v4l_f2_host_y_risk_con_decision_y_revision_observadas() {
     let (_, _, vista) = m.decision();
     let vista = vista.expect("revision estable");
     assert_eq!((vista.equity, vista.pico, vista.revision % 2), (87.0, 120.0, 0), "la vista final no es la del ultimo escritor");
+}
+
+/// V4N-ANEXO (revision de nivel 1 de M, COPILOT-CLI, punto 1: R:861). La decision REAL de Risk
+/// (`evaluate_quantum_order` con el libro derivado) con una barrera determinista
+/// (`risk_engine::barrera_de_la_decision`) que corre despues de adquirir la vista del plano y antes
+/// de validar y de las guardas. Un escritor real del plano (`escribir_plano_del_freno`, revision
+/// nueva) marca el pico ilegible en esa ventana. Oraculo: la decision es la de la revision
+/// adquirida (su testigo `vista_del_freno()`), nunca una mezcla con la revision posterior; la
+/// siguiente decision adquiere la revision nueva y veta (fail-closed). Sentido inverso: con la vista
+/// ilegible se veta aunque el plano vuelva a ser legible despues. En L la guarda de R:861 relee el
+/// atomico vivo y veta con el bit de otra revision.
+#[test]
+fn v4n_r861_pico_ilegible_entre_la_vista_y_la_guarda() {
+    let _g = UNIVERSO.lock().unwrap_or_else(|p| p.into_inner());
+    let mut m = plano(1);
+    m.rest(100.0, Some(0.0), 100);
+    let _ = m.paso_del_host();
+    // Control sin barrera: la propuesta valida no se veta por drawdown.
+    let (vetada, _, vista) = m.decision();
+    let control = vista.expect("control: Risk sin revision estable");
+    assert!(!vetada && control.lista && !control.pico_ilegible, "control: la propuesta valida se veto ({control:?})");
+    let fijar = |a: &Arc<GlobalArena>, ilegible: bool, corridas: &Arc<AtomicUsize>, rev: &Arc<AtomicU64>| {
+        let (a, n, r) = (Arc::clone(a), Arc::clone(corridas), Arc::clone(rev));
+        risk_engine::barrera_de_la_decision::fijar(Some(Box::new(move || {
+            n.fetch_add(1, Ordering::SeqCst);
+            r.store(a.plano_freno_rev.load(Ordering::Acquire), Ordering::SeqCst);
+            drawdown::escribir_plano_del_freno(&a, || a.pico_ilegible.store(ilegible, Ordering::Release));
+        })));
+    };
+    // 1. Legible al adquirir; ilegible (revision nueva) antes de la guarda.
+    let (corridas, rev_al_adquirir) = (Arc::new(AtomicUsize::new(0)), Arc::new(AtomicU64::new(u64::MAX)));
+    fijar(&m.arena, true, &corridas, &rev_al_adquirir);
+    let (vetada, rechazo, vista) = m.decision();
+    risk_engine::barrera_de_la_decision::fijar(None);
+    assert_eq!(corridas.load(Ordering::SeqCst), 1, "montaje: la barrera no corrio entre la vista y la guarda");
+    let vista = vista.expect("Risk sin revision estable");
+    let rev_nueva = m.arena.plano_freno_rev.load(Ordering::Acquire);
+    assert_eq!(vista.revision, rev_al_adquirir.load(Ordering::SeqCst), "montaje: la vista no es la adquirida antes de la barrera");
+    assert!(rev_nueva > vista.revision && rev_nueva % 2 == 0, "montaje: el escritor no abrio una revision nueva ({} -> {rev_nueva})", vista.revision);
+    assert!(m.arena.pico_ilegible.load(Ordering::Acquire) && !vista.pico_ilegible, "montaje: el cambio no quedo entre la adquisicion y la evaluacion");
+    assert!(
+        !vetada,
+        "R:861: Risk decidio con la vista de la revision {} (pico legible) y veto con el pico ilegible de la revision {rev_nueva}: mezcla de revisiones (rechazo {rechazo:?})",
+        vista.revision
+    );
+    assert_eq!(vetada, control.pico_ilegible || !control.lista, "la decision no es la de la revision adquirida");
+    // La siguiente decision adquiere la revision nueva y veta (la guarda sigue cerrada).
+    let (vetada, _, vista) = m.decision();
+    let vista = vista.expect("Risk sin revision estable");
+    assert!(vetada && vista.pico_ilegible && vista.revision == rev_nueva, "fail-closed: con la revision nueva (pico ilegible) no se veto ({vista:?})");
+    // 2. Sentido inverso: ilegible al adquirir; el plano vuelve a legible despues. Se veta.
+    let (corridas, rev_al_adquirir) = (Arc::new(AtomicUsize::new(0)), Arc::new(AtomicU64::new(u64::MAX)));
+    fijar(&m.arena, false, &corridas, &rev_al_adquirir);
+    let (vetada, _, vista) = m.decision();
+    risk_engine::barrera_de_la_decision::fijar(None);
+    let vista = vista.expect("Risk sin revision estable");
+    assert!(vetada && vista.pico_ilegible, "inverso: con la vista ilegible no se veto ({vista:?})");
+    // 3. Sin barrera y con el plano de nuevo legible: la propuesta vuelve a entrar.
+    drawdown::escribir_plano_del_freno(&m.arena, || m.arena.pico_ilegible.store(false, Ordering::Release));
+    let (vetada, _, vista) = m.decision();
+    assert!(!vetada && vista.is_some_and(|v| !v.pico_ilegible), "cierre: la propuesta valida se veto ({vista:?})");
+    println!("v4n_r861: vista {} (legible) frente a revision {rev_nueva} (ilegible): decide la vista; inverso veta; corridas inversas {}", control.revision, corridas.load(Ordering::SeqCst));
 }
 
 /// L-F5 (matriz :41). Cota 90 con pico 100 (evidencia incompleta), ganancia no conciliada que no

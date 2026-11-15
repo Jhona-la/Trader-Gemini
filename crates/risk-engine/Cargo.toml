@@ -3,6 +3,11 @@ name = "risk-engine"
 version = "0.1.0"
 edition = "2021"
 
+[features]
+# V4N-ANEXO (R:861): barrera de prueba entre la vista de la decision y sus guardas. Solo la activan
+# las dev-dependencies del host (`Cargo.toml` raiz); el binario de produccion no la compila.
+barrera-de-la-decision = []
+
 [dependencies]
 quantum-arena = { path = "../quantum-arena" }
 signal-engine = { path = "../signal-engine" }

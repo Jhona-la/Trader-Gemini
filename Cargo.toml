@@ -94,6 +94,8 @@ libm = "0.2"
 
 [dev-dependencies]
 execution-engine = { path = "crates/execution-engine", features = ["loopback-contract"] }
+# V4N-ANEXO (R:861): la barrera determinista de la decision de Risk, solo en las pruebas del host.
+risk-engine = { path = "crates/risk-engine", features = ["barrera-de-la-decision"] }
 
 [[bin]]
 name = "model_manifest"

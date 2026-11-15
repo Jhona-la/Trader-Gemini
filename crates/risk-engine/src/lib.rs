@@ -8,6 +8,33 @@ pub mod correlation_guard;
 pub mod cramer_lundberg;
 pub mod dirac_monopole_chern_bundle;
 pub mod drawdown;
+/// V4N-ANEXO (revision de nivel 1 de M, R:861): solo para pruebas, con la feature
+/// `barrera-de-la-decision` (la activan las dev-dependencies del host; el binario no la lleva).
+/// Fija en ESTE hilo una barrera determinista que corre dentro de `evaluate_quantum_order`, despues
+/// de adquirir la vista del plano y antes de validar y de las guardas: un escritor que gana aqui
+/// cambia el plano (y su revision) entre la adquisicion y la evaluacion.
+#[cfg(feature = "barrera-de-la-decision")]
+#[doc(hidden)]
+pub mod barrera_de_la_decision {
+    use std::cell::RefCell;
+
+    thread_local! {
+        static BARRERA: RefCell<Option<Box<dyn Fn()>>> = const { RefCell::new(None) };
+    }
+
+    /// Fija (o quita, con `None`) la barrera de este hilo.
+    pub fn fijar(barrera: Option<Box<dyn Fn()>>) {
+        BARRERA.with(|b| *b.borrow_mut() = barrera);
+    }
+
+    pub(crate) fn correr() {
+        BARRERA.with(|b| {
+            if let Some(f) = b.borrow().as_ref() {
+                f();
+            }
+        });
+    }
+}
 pub mod drgt_massive_gravity;
 pub mod envio;
 pub mod evidence;
@@ -791,6 +818,11 @@ impl RiskEngine {
         } else {
             None
         };
+        // V4N-ANEXO (revision de nivel 1 de M, R:861): barrera de prueba entre la adquisicion de la
+        // vista y el resto de la decision. Solo existe con la feature de pruebas; el binario de
+        // produccion no la compila.
+        #[cfg(feature = "barrera-de-la-decision")]
+        barrera_de_la_decision::correr();
         if !current_capital.is_finite()
             || current_capital <= 0.0
             || !self.peak_capital.is_finite()
