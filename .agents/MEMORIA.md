@@ -58,8 +58,10 @@
   (2026-09-25: Swing/Scalping y F-009 pasaron sin marcas de conflicto).
 - `refs/heads/main` se avanza por CAS con el SHA anterior esperado. Sin push sin
   permiso del operador. Commits atómicos con prefijo de bloque.
-- Mandato 9bdf (§§2,22,32) sustituye semáforos y topes de RAM/SSD anteriores: no usar
-  `scripts/cargo_semaforo.sh`. Un único `target/` compartido; prohibidos targets
+- El mandato 9bdf (§§2,22,32) sustituye los topes de RAM/SSD anteriores. Compilar
+  y probar SOLO por `scripts/cargo_semaforo.sh`, conforme a REGLAS_DE_TRABAJO.md:15
+  (decisión del coordinador 14 nov 16:55, FA-063); el semáforo lleva la guarda de
+  disco (DISCO-BAJO). Un único `target/` compartido; prohibidos targets
   alternativos. Worktrees: no retirar ajenos ni por inactividad.
 - `god_engine.exe`: verificar dueño, PID y StartTime antes de detener; relanzar con
   `-RedirectStandardOutput`; log rotado con `TG_LOG_FILE=logs/demo_vNN.log` y stdout a
@@ -92,12 +94,15 @@
   `crates/quantum-arena/tests/toolchain_pin_contract.rs`). Target
   `x86_64-pc-windows-msvc`, enlazador `rust-lld`, `sccache`, `checksum-freshness`
   (contrato `rb_h2_frescura_por_contenido_contract.rs`).
-- Revisión de tipos: `cargo check -p <crate>`; general:
-  `cargo check --workspace --all-targets` (hoy ~18 min con carga; evita emitir
-  ejecutables y PDB).
-- Pruebas de un crate: `cargo test -p <crate> --locked`. Las CI usan
+- Revisión de tipos: `cargo check -p <crate>` POR EL SEMÁFORO
+  (`bash scripts/cargo_semaforo.sh check -p <crate>`); el workspace entero y
+  los builds en release quedan para el integrador, conforme a
+  REGLAS_DE_TRABAJO.md:15 (FA-063).
+- Pruebas de un crate: `bash scripts/cargo_semaforo.sh test -p <crate> --locked`
+  (REGLAS_DE_TRABAJO.md:15, FA-063). Las CI usan
   `cargo +nightly-2026-06-30 test <paquetes> --locked -- --test-threads=1`
-  (`.github/workflows/unit-suites.yml`, `replay-contracts.yml`).
+  (`.github/workflows/unit-suites.yml`, `replay-contracts.yml`): esa invocación
+  es de CI, no un comando de agentes.
 - No definir `RUSTFLAGS` de entorno: `build_loop.ps1` y `run_sim_5.ps1` lo rechazan; la
   configuración compartida está en `.cargo/config.toml` (dueño: integrador).
 - Pruebas Python de scripts: `python -m unittest discover -s scripts/tests`.
@@ -105,10 +110,11 @@
 
 ### Linux (sesiones cloud)
 - `os-guardian` es sólo-Windows; `cargo check` nativo en Linux falla también en main.
-- `rustup target add x86_64-pc-windows-gnu`, instalar `gcc-mingw-w64-x86-64` y
-  `cargo check --target x86_64-pc-windows-gnu --workspace --all-targets`.
+- `bash scripts/cargo_semaforo.sh check --target x86_64-pc-windows-gnu -p <paquete>`
+  (por módulo; el workspace queda para el integrador; REGLAS_DE_TRABAJO.md:15, FA-063)
 - Tests: `wine64` y `CARGO_TARGET_X86_64_PC_WINDOWS_GNU_RUNNER=/usr/lib/wine/wine64
-  WINEDEBUG=-all`, luego `cargo test --target x86_64-pc-windows-gnu -p <crate> --lib`.
+  WINEDEBUG=-all`, luego `bash scripts/cargo_semaforo.sh test --target
+  x86_64-pc-windows-gnu -p <crate> --lib` (FA-063).
 - Demo desde la nube: los hosts de Binance dan 403 y no hay claves; la demo se corre
   en el PC local salvo que el operador habilite red y variables `USE_TESTNET=true`,
   `BINANCE_TESTNET_API_KEY`, `BINANCE_TESTNET_SECRET_KEY`.
