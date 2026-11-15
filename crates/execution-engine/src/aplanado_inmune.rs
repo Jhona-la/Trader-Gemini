@@ -202,6 +202,21 @@ pub fn comprometer_disparo<E: std::ops::Deref<Target = crate::executor::OrderExe
     Some((ejecutor, autoria))
 }
 
+/// CAPITAL-UNICO V4M (F6, dictamen V4L :48-63): el SUJETO de un reintento del aplanado. La
+/// vigencia de la autoria y la toma del ejecutor se hacen en UN paso bajo el mutex del puente (el
+/// del relevo, `PuenteCuenta::relevar_sesion`): o el relevo ya ocurrio (autoria patrimonial no
+/// vigente: `None`, ningun efecto sobre el sucesor) o el ejecutor tomado es el del ambito de la
+/// autoria; un relevo posterior ya no cambia el sujeto (el aplanado opera sobre ese ejecutor).
+/// Sin autoria (causa global), el ejecutor vigente, como antes.
+pub fn sujeto_del_reintento(
+    puente: &crate::puente_cuenta::PuenteCuenta,
+    arena: &quantum_arena::GlobalArena,
+    vigente: &arc_swap::ArcSwap<crate::executor::OrderExecutor>,
+    autoria: Option<AutoriaDelDisparo>,
+) -> Option<std::sync::Arc<crate::executor::OrderExecutor>> {
+    puente.con_equity_del_freno(|_| autoria.is_none_or(|a| a.vigente(arena)).then(|| vigente.load_full()))
+}
+
 /// El consumo de confirmaciones del aplanado inmune (CL-44b), ordenado con el relevo: bajo el
 /// candado de escritor del plano (el que toma la preparacion del ambito de un relevo). Si el latch
 /// es patrimonial de un ambito que ya no es el vigente, las ranuras son del sucesor: no consume

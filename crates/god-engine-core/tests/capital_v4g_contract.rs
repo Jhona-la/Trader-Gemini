@@ -25,6 +25,8 @@ use std::sync::{Arc, Mutex};
 const HOST: &str = include_str!("../../../src/bin/god_engine.rs");
 const RISK: &str = include_str!("../../risk-engine/src/lib.rs");
 const NUCLEO: &str = include_str!("../src/lib.rs");
+/// V4M (D1): la resolucion del resultado de entrada del host vive aqui.
+const OMS: &str = include_str!("../../../src/host_oms.rs");
 const SIMBOLO: &str = "V4GUSDT";
 const SESION: u64 = 3;
 const COMISION: f64 = 0.04; // fixture: comision de entrada estimada por el nucleo
@@ -62,9 +64,14 @@ fn anclas_del_adaptador() {
         "arena.capital_incompleto.store(!suelto, Ordering::Release);",
     ]);
     orden(HOST, &[".activar(&arena_real);", "puente_cuenta.vincular_publicador(move |p| {"]);
-    orden(HOST, &[
+    // V4M (D1, autorizado por el coordinador 20261115-0050): la confirmacion del host se movio a
+    // `host_oms::resolver_resultado_de_entrada`, que el host llama con su resultado. Misma propiedad:
+    // la confirmacion de la entrada lleva la marca de su evento terminal (no la del ACK).
+    orden(HOST, &["quantum_engine::host_oms::resolver_resultado_de_entrada("]);
+    orden(OMS, &[
         // V4I (INV-E): la marca que cubre la orden es la de su evento terminal del stream.
-        "reservation.confirmar_llenado_con_marca(&arena_clone, Some(ejecutada), entry_executor.registry().marca_terminal(&client_id))",
+        "let marca = executor.registry().marca_terminal(client_id);",
+        "reservation.confirmar_llenado_con_marca(arena, Some(ejecutada), marca)",
     ]);
     orden(NUCLEO, &[
         "let mut _publication = publication_arena.config.entry_publication_gate",

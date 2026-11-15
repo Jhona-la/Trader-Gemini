@@ -349,6 +349,9 @@ pub struct OrderExecutor {
     max_orders_10s: AtomicUsize,
     max_orders_1m: AtomicUsize,
     kill_switch: AtomicBool,
+    /// CAPITAL-UNICO V4M (L-A1H): la orden hija (remanente `mcT_`) de cada padre maker, por su
+    /// identidad: el host atribuye padre e hija por su evidencia terminal, sin inferirla.
+    hijas_maker: std::sync::Mutex<std::collections::HashMap<String, String>>,
     active_leverage: ArcSwap<std::collections::HashMap<String, u32>>,
     is_paper_trading: bool,
     /// F1.5: memoria del ciclo de vida de órdenes — compartida con el
@@ -482,6 +485,7 @@ impl OrderExecutor {
             max_orders_10s: AtomicUsize::new(crate::binance_api::LIMITE_ORDENES_10S),
             max_orders_1m: AtomicUsize::new(crate::binance_api::LIMITE_ORDENES_1M),
             kill_switch: AtomicBool::new(false),
+            hijas_maker: std::sync::Mutex::new(std::collections::HashMap::new()),
             active_leverage: ArcSwap::from_pointee(std::collections::HashMap::new()),
             is_paper_trading: false, // Desacoplado: false por defecto para permitir órdenes reales en Testnet/Mainnet; activar con set_paper_trading(true) si se desea simular
             order_registry: std::sync::Arc::new(crate::order_registry::OrderRegistry::new()),
@@ -519,6 +523,7 @@ impl OrderExecutor {
             max_orders_10s: AtomicUsize::new(crate::binance_api::LIMITE_ORDENES_10S),
             max_orders_1m: AtomicUsize::new(crate::binance_api::LIMITE_ORDENES_1M),
             kill_switch: AtomicBool::new(false),
+            hijas_maker: std::sync::Mutex::new(std::collections::HashMap::new()),
             active_leverage: ArcSwap::from_pointee(std::collections::HashMap::new()),
             is_paper_trading: false,
             order_registry,
@@ -1620,10 +1625,13 @@ impl OrderExecutor {
         income_types: &[&str],
         start_ms: u64,
         max_pages: u32,
-    ) -> Result<Vec<crate::order_types::IncomeEntry>, String> {
-        self.fetch_income_window(income_types, start_ms, self.get_synced_timestamp(), max_pages)
-            .await?
+    ) -> Result<crate::income_evidence::IngresosAgotados, String> {
+        // CAPITAL-UNICO V4M (D2): las filas sin identidad nativa viajan aparte (no se pierden).
+        let ventana = self.fetch_income_window(income_types, start_ms, self.get_synced_timestamp(), max_pages).await?;
+        let sin_identidad = ventana.sin_identidad();
+        ventana
             .into_exhausted_entries()
+            .map(|entries| crate::income_evidence::IngresosAgotados { entries, sin_identidad })
             .map_err(|e| format!("INCOME_EVIDENCE: {e:?}"))
     }
 
@@ -1751,6 +1759,11 @@ impl OrderExecutor {
     /// del host. El vigilante de protección ya no lo mira (CL-44), y el latch
     /// nunca frena salidas ni protección (ADR-0015). Ver `latch_armado`.
     #[inline(always)]
+    /// CAPITAL-UNICO V4M (L-A1H): la orden hija (remanente) ligada a un padre maker, si se envio.
+    pub fn hija_del_maker(&self, padre: &str) -> Option<String> {
+        self.hijas_maker.lock().unwrap_or_else(|e| e.into_inner()).get(padre).cloned()
+    }
+
     pub fn is_kill_switch_active(&self) -> bool {
         self.latch_armado()
     }
@@ -3801,6 +3814,8 @@ impl ExecutionProvider for OrderExecutor {
         let micros_str = itoa_buf.format(micros);
         id_buf[4..4 + micros_str.len()].copy_from_slice(micros_str.as_bytes());
         let remnant_id = std::str::from_utf8(&id_buf[..4 + micros_str.len()]).unwrap_or("mcT_0");
+        // V4M (L-A1H): la hija queda ligada a su padre ANTES de enviarse.
+        self.hijas_maker.lock().unwrap_or_else(|e| e.into_inner()).insert(client_order_id.to_string(), remnant_id.to_string());
         // CL-46b: el host no resuelve esta orden hija consultando la padre.
         self.execute_raw_qty_with_client_id(symbol, is_long, remaining, step_size, remnant_id)
             .await

@@ -1095,7 +1095,7 @@ pub async fn resolver_resultado_de_entrada(
     plazo: std::time::Duration,
 ) -> DesenlaceDeEntrada {
     use execution_engine::ioc_evidence::DestinoReserva;
-    let (destino, envio_ambiguo) = match resultado {
+    let (mut destino, envio_ambiguo) = match resultado {
         Err(e) if e.starts_with("AMBIGUOUS") || e.starts_with("MAKER_CHASE_UNVERIFIED") => {
             quantum_arena::protection_health::mark_dirty();
             let d = execution_engine::entry_dispatch::resolve_terminal_entry_until(
@@ -1127,6 +1127,30 @@ pub async fn resolver_resultado_de_entrada(
             }
         }
     };
+    // CAPITAL-UNICO V4M (L-A1H): ruta maker con hija (remanente `mcT_`). El padre no resuelve a la
+    // hija ni al reves: cada una se resuelve por SU identidad y su evidencia terminal; solo con las
+    // dos terminales se confirma lo ejecutado acreditado (padre + hija). Si alguna sigue sin
+    // evidencia (ACK de la hija perdido sin terminal, activa o plazo vencido), se conserva todo.
+    if !executor.is_paper_trading() {
+        if let Some(hija) = executor.hija_del_maker(client_id) {
+            quantum_arena::protection_health::mark_dirty();
+            let consultar = |id: String, motivo: &'static str| async move {
+                execution_engine::entry_dispatch::resolve_terminal_entry_until(executor, &reservation.symbol, &id, motivo, plazo).await
+            };
+            let padre = consultar(client_id.to_string(), "AMBIGUOUS: MAKER_PARENT_TERMINAL").await;
+            let hijo = consultar(hija, "AMBIGUOUS: MAKER_CHILD_TERMINAL").await;
+            let ejecutada = |d: DestinoReserva| match d {
+                DestinoReserva::Confirmar { ejecutada } => Some(ejecutada),
+                DestinoReserva::Revertir => Some(0.0),
+                _ => None,
+            };
+            destino = match (ejecutada(padre), ejecutada(hijo)) {
+                (Some(p), Some(h)) if p + h > 0.0 => DestinoReserva::Confirmar { ejecutada: p + h },
+                (Some(_), Some(_)) => DestinoReserva::Revertir,
+                _ => DestinoReserva::Conservar,
+            };
+        }
+    }
     match destino {
         DestinoReserva::Revertir => {
             if entrada_con_ejecucion_acreditada(arena, executor, reservation, client_id) {
@@ -1286,6 +1310,50 @@ impl<T: EntryTransport> EntryTransport for GuardedEntry<'_, T> {
         })
         .await
     }
+}
+
+/// GLM-216 (bloqueante #2), trasladado por V4M (F8): en demo, persiste el certificado de
+/// rentabilidad que la puerta a Produccion exige. Sin cambio de logica respecto del bin.
+pub fn persistir_evidencia_demo_en_modo(
+    is_demo_mode: bool,
+    ruta: &std::path::Path,
+    cierres: u64,
+    bruto: f64,
+    fees: f64,
+    wins: u64,
+) -> Result<bool, String> {
+    if !is_demo_mode {
+        return Ok(false);
+    }
+    if cierres == 0 || !bruto.is_finite() || !fees.is_finite() {
+        return Ok(false);
+    }
+    let ev_neto_por_trade = (bruto + fees) / cierres as f64;
+    if !ev_neto_por_trade.is_finite() {
+        return Ok(false);
+    }
+    let evidencia = god_engine_core::orchestrator::EvidenciaDemo { cierres, ev_neto_por_trade, wins };
+    let texto = serde_json::to_string_pretty(&evidencia).map_err(|e| e.to_string())?;
+    std::fs::write(ruta, texto).map_err(|e| e.to_string())?;
+    Ok(true)
+}
+
+/// CAPITAL-UNICO V4M (F8, dictamen V4L :65-73): el certificado demo se publica con el MISMO testigo
+/// de la consulta de income (la era del puente, tomada antes del ejecutor; su ambito es la cuenta y
+/// la sesion de esa era). La escritura ocurre bajo el mutex del puente, el mismo del relevo: si el
+/// relevo gano, no se escribe nada (`None`). Es una escritura local pequena, no red.
+#[allow(clippy::too_many_arguments)]
+pub fn certificado_demo_de_era(
+    puente: &execution_engine::puente_cuenta::PuenteCuenta,
+    era: u64,
+    is_demo_mode: bool,
+    ruta: &std::path::Path,
+    cierres: u64,
+    bruto: f64,
+    fees: f64,
+    wins: u64,
+) -> Option<Result<bool, String>> {
+    puente.con_era_vigente(era, |_| persistir_evidencia_demo_en_modo(is_demo_mode, ruta, cierres, bruto, fees, wins))
 }
 
 /// CAPITAL-UNICO V4K (F8): el registro de los flujos externos de una respuesta del historial de

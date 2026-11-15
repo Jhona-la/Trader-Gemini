@@ -53,7 +53,58 @@ pub struct IncomeWindow {
     pub transport_error: Option<String>,
 }
 
+/// CAPITAL-UNICO V4M (D2): una ventana agotada con, aparte, los registros validos salvo por la
+/// identidad nativa (`tranId` ausente o 0). Se comporta como la lista de siempre (`Deref`), asi que
+/// los consumidores existentes no cambian; las filas sin identidad NO entran en esa lista (no suman a
+/// ningun agregado ni se deduplican), pero ya no se pierden: el host las recibe para dejar incierta la
+/// atribucion de flujos.
+#[derive(Debug, Clone, Default)]
+pub struct IngresosAgotados {
+    pub entries: Vec<IncomeEntry>,
+    pub sin_identidad: Vec<IncomeEntry>,
+}
+
+impl std::ops::Deref for IngresosAgotados {
+    type Target = Vec<IncomeEntry>;
+    fn deref(&self) -> &Vec<IncomeEntry> {
+        &self.entries
+    }
+}
+
+impl std::ops::DerefMut for IngresosAgotados {
+    fn deref_mut(&mut self) -> &mut Vec<IncomeEntry> {
+        &mut self.entries
+    }
+}
+
+impl IngresosAgotados {
+    /// Las filas con identidad seguidas de las filas sin identidad (para el registro de flujos del
+    /// host, que trata `tranId` 0 como atribucion incierta sin cifra ni deduplicacion).
+    pub fn con_sin_identidad(&self) -> Vec<IncomeEntry> {
+        self.entries.iter().chain(self.sin_identidad.iter()).cloned().collect()
+    }
+}
 impl IncomeWindow {
+    /// CAPITAL-UNICO V4M (D2): registros en cuarentena SOLO por falta de identidad nativa (`tranId`
+    /// 0) y validos en todo lo demas (importe finito, activo y tipo presentes, instante dentro de la
+    /// ventana). Los demas motivos de cuarentena no cambian.
+    pub fn sin_identidad(&self) -> Vec<IncomeEntry> {
+        self.quarantined
+            .iter()
+            .filter(|q| {
+                let e = &q.entry;
+                q.reason == QuarantineReason::InvalidRecord
+                    && e.tran_id == 0
+                    && e.income.is_finite()
+                    && !e.asset.trim().is_empty()
+                    && !e.income_type.trim().is_empty()
+                    && e.time != 0
+                    && e.time >= self.start_ms
+                    && e.time <= self.end_ms
+            })
+            .map(|q| q.entry.clone())
+            .collect()
+    }
     pub fn into_exhausted_entries(self) -> Result<Vec<IncomeEntry>, IncomeEvidenceError> {
         if self.coverage == IncomeCoverage::PageExhausted {
             Ok(self.entries)

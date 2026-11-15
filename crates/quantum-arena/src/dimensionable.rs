@@ -172,6 +172,8 @@ struct Debito {
     /// reciente con ejecucion y otro antiguo con acumulado nulo). La marca y el acumulado ya no
     /// son de la misma observacion: ningun terminal libera el estimado (se retiene).
     terminal_incoherente: bool,
+    /// V4M (L-A1): testigos de compromiso de los POST de esta entrada, en orden.
+    compromisos: Vec<CompromisoDeEntrega>,
 }
 
 fn cubre(marca_saldo: Option<u64>, marca: Option<u64>) -> bool {
@@ -200,6 +202,7 @@ impl Debito {
             cuenta: None,
             acumulado_final_e8: None,
             terminal_incoherente: false,
+            compromisos: Vec::new(),
         }
     }
 
@@ -354,13 +357,13 @@ pub struct LibroDimensionable {
     /// valor que no aparecio en ninguna revision anterior (el double inmediato inferior).
     desambiguar: bool,
     publicado: Option<f64>,
-    /// V4L (L-A1): testigos de los compromisos locales (los ultimos `MAX_COMPROMISOS`).
-    compromisos: std::collections::VecDeque<CompromisoDeEntrega>,
+    /// V4M (L-A1, dictamen V4L :149): sin cota elegida a mano. Los testigos de una entrega con
+    /// reserva viven en el debito de esa reserva (`Debito::compromisos`) y salen con el; de una
+    /// entrega sin reserva del libro se conserva solo el ultimo. La memoria queda acotada por la
+    /// estructura: debitos vivos por los POST de su entrega (apalancamiento, orden y remanente).
+    ultimo_sin_reserva: Option<CompromisoDeEntrega>,
     seq_compromiso: u64,
 }
-
-/// V4L (L-A1): testigos de compromiso que conserva el libro (diagnostico y pruebas).
-const MAX_COMPROMISOS: usize = 256;
 
 impl LibroDimensionable {
     /// El host lo activa en el arena vivo antes de vincular el publicador del puente. Desde ahi el
@@ -710,16 +713,19 @@ impl LibroDimensionable {
     pub fn comprometer(&mut self, sesion: u64, reserva: Option<ClaveReserva>, fase: FaseDeEntrega) -> CompromisoDeEntrega {
         self.seq_compromiso += 1;
         let c = CompromisoDeEntrega { seq: self.seq_compromiso, sesion, revision: self.rev, reserva, fase };
-        if self.compromisos.len() == MAX_COMPROMISOS {
-            self.compromisos.pop_front();
+        let propia = reserva.and_then(|k| self.debitos.iter_mut().find(|d| d.origen == Origen::Entrada(k)));
+        match propia {
+            Some(d) => d.compromisos.push(c),
+            None => self.ultimo_sin_reserva = Some(c),
         }
-        self.compromisos.push_back(c);
         c
     }
 
     /// V4L (L-A1): los testigos de compromiso conservados, del mas antiguo al mas reciente.
     pub fn compromisos(&self) -> Vec<CompromisoDeEntrega> {
-        self.compromisos.iter().copied().collect()
+        let mut v: Vec<CompromisoDeEntrega> = self.debitos.iter().flat_map(|d| d.compromisos.iter().copied()).chain(self.ultimo_sin_reserva).collect();
+        v.sort_by_key(|c| c.seq);
+        v
     }
 
     /// V4L (L-A1): revision vigente del libro (la que llevan los testigos de compromiso).

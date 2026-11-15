@@ -647,22 +647,8 @@ async fn v4l_a1_host_revierte_una_vez_y_resuelve_maker_parcial() {
     }
     // El host corre los MISMOS pasos en linea (anclas): consulta de la identidad, borde de A2 antes
     // de revertir, reversion exacta y settlement, y confirmacion con la marca terminal.
-    orden(HOST, &[
-        "let entry_result = entry_oms.dispatch_entry_reservada(",
-        "match entry_result {",
-        "Err(e) if e.starts_with(\"AMBIGUOUS\")",
-        "let destino = resolve_entry_for_host(",
-        "DestinoReserva::Revertir if quantum_engine::host_oms::entrada_con_ejecucion_acreditada(&arena_clone, &entry_executor, &reservation, &client_id) => {",
-        "DestinoReserva::Revertir => {",
-        "if rollback_positions(&arena_clone) {",
-        "quantum_engine::host_oms::EntrySettlement::release_for(&reservation);",
-        "Err(e) if quantum_engine::host_oms::entrada_con_ejecucion_acreditada(&arena_clone, &entry_executor, &reservation, &client_id) => {",
-        "Err(e) => {",
-        "if rollback_positions(&arena_clone) {",
-        "Ok(()) => {",
-        "DestinoReserva::Revertir if quantum_engine::host_oms::entrada_con_ejecucion_acreditada(&arena_clone, &entry_executor, &reservation, &client_id) => {",
-    ]);
-    orden(HOST, &["match rejected_reservation.cancel(arena) {"]);
+    // V4M (D1): el host llama a la MISMA resolucion (ya no hay brazo propio en linea).
+    orden(HOST, &["let entry_result = entry_oms.dispatch_entry_reservada(", "let desenlace = quantum_engine::host_oms::resolver_resultado_de_entrada(", "entry_result,", "DesenlaceDeEntrada::Confirmada { ejecutada, envio_ambiguo: false } => ejecutada,"]);
     orden(OMS, &["pub async fn resolver_resultado_de_entrada(", "execution_engine::entry_dispatch::resolve_terminal_entry_until(", "entrada_con_ejecucion_acreditada(arena, executor, reservation, client_id)", "revertir_entrada(arena, reservation)", "reservation.confirmar_llenado_con_marca(arena, Some(ejecutada), marca)"]);
 }
 
@@ -1085,6 +1071,7 @@ fn v4l_f6_disparo_y_reintento_no_saltan_de_ambito() {
         "latched = false;",
         "if latched {",
         "if reintento_aplanado.toca(ahora_reintento) {",
+        "execution_engine::aplanado_inmune::sujeto_del_reintento(",  // V4M (F6): ancla nueva, autoria y ejecutor en un paso
         "let Some((executor, autoria)) = puente_imm.con_equity_del_freno(|_| {",
         "execution_engine::aplanado_inmune::comprometer_disparo(",
         "[SISTEMA INMUNE] ACTIVADO",
@@ -1167,7 +1154,7 @@ async fn v4l_f8_income_antes_del_relevo_no_altera_sucesor() {
         "registrar_breaker_ingreso(&mut *orch, x_closes, x_gross, x_fees)",
         "let Some(disparo_del_breaker) = aplicada else {",
         "continue;",
-        "persistir_evidencia_demo_en_modo(",
+        "quantum_engine::host_oms::certificado_demo_de_era(",  // V4M (F8): ancla adaptada, el certificado con testigo de era
         "if puente_brk.con_era_vigente(era_brk, |_| suspend_symbol_until(&sym, until_ms)).is_none() {",
         "persist_fee_breaker(now_breaker);",
     ]);

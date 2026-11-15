@@ -2997,7 +2997,24 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         // espera doble de `ReintentoAplanado`.
                         let ahora_reintento = reloj_imm.elapsed().as_millis() as u64;
                         if reintento_aplanado.toca(ahora_reintento) {
-                            let executor = exec_imm.load_full();
+                            // CAPITAL-UNICO V4M (F6): vigencia de la autoria y toma del ejecutor en
+                            // UN paso bajo el mutex del relevo. Si el relevo gano antes, el reintento
+                            // del ambito anterior no toca al sucesor.
+                            let sujeto = execution_engine::aplanado_inmune::sujeto_del_reintento(
+                                &puente_imm,
+                                &arena_imm,
+                                &exec_imm,
+                                autoria_del_latch,
+                            );
+                            if sujeto.is_none() {
+                                reintento_aplanado.olvidar();
+                                autoria_del_latch = None;
+                                latched = false;
+                                telemetry_server::telemetry_log!(
+                                    "🛡️ [IMMUNE] reintento patrimonial del ambito anterior descartado: el relevo gano antes de tomar el ejecutor; el sucesor no recibe el aplanado."
+                                );
+                            }
+                            if let Some(executor) = sujeto {
                             aplanado_inmune(
                                 &executor,
                                 &arena_imm,
@@ -3006,6 +3023,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 &mut aviso_aplanado_frenado,
                             )
                             .await;
+                            }
                         }
                         continue;
                     }
@@ -3930,16 +3948,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     // es la cuenta vigente del libro y el activo, el de cada movimiento.
                     // V4K (F8): el registro vive en `host_oms::registrar_flujos_externos_de_era` (el
                     // contrato lo atraviesa con el relevo); aqui solo la linea de cada flujo nuevo.
+                    // CAPITAL-UNICO V4M (D2): con las filas sin identidad nativa que el transporte
+                    // separa (incertidumbre sin cifra ni deduplicacion; no entran en ningun agregado).
+                    let flujos_de_la_consulta = entries.con_sin_identidad();
                     if let Some(registros) = quantum_engine::host_oms::registrar_flujos_externos_de_era(
                         &puente_brk,
                         era_brk,
                         &arena_brk,
                         &flujos_brk,
-                        &entries,
+                        &flujos_de_la_consulta,
                     ) {
-                        let externos = entries.iter().filter(|e| risk_engine::drawdown::es_flujo_externo(&e.income_type));
+                        let externos = flujos_de_la_consulta.iter().filter(|e| risk_engine::drawdown::es_flujo_externo(&e.income_type));
                         for (e, (id, r)) in externos.zip(registros) {
-                            if matches!(r, risk_engine::drawdown::RegistroDeFlujo::Nuevo | risk_engine::drawdown::RegistroDeFlujo::OtroActivo) {
+                            if matches!(r, risk_engine::drawdown::RegistroDeFlujo::Nuevo | risk_engine::drawdown::RegistroDeFlujo::OtroActivo | risk_engine::drawdown::RegistroDeFlujo::SinIdentidad) {
                                 telemetry_server::telemetry_log!("[CAPITAL] flujo externo {} {:.8} {} (tranId {}, era {}): incierto, sin ajuste de pico ni freno", e.income_type, e.income, e.asset, id, era_brk);
                             }
                         }
@@ -4006,7 +4027,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         // certificado de rentabilidad que la puerta a
                         // Producción exige (cierres ≥ 30 y EV neto > 0).
                         let ruta = quantum_arena::paths::env_data_path_for(true, "evidencia_demo.json");
-                        if let Err(e) = persistir_evidencia_demo_en_modo(
+                        // CAPITAL-UNICO V4M (F8): el certificado se publica con el testigo de la
+                        // consulta (`era_brk`), bajo el mutex del relevo; un relevo posterior a la
+                        // guarda del profiler ya no deja escribir la evidencia de la cuenta anterior.
+                        match quantum_engine::host_oms::certificado_demo_de_era(
+                            &puente_brk,
+                            era_brk,
                             is_demo_mode,
                             std::path::Path::new(&ruta),
                             x_closes,
@@ -4014,9 +4040,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             x_fees,
                             x_wins,
                         ) {
-                            telemetry_server::telemetry_log!(
+                            Some(Err(e)) => telemetry_server::telemetry_log!(
                                 "⚠️ [ORCHESTRATOR] certificado demo no persistido ({ruta:?}): {e}"
-                            );
+                            ),
+                            None => telemetry_server::telemetry_log!(
+                                "🛡️ [ORCHESTRATOR] certificado demo de la era {} descartado: relevo durante la evaluacion",
+                                era_brk
+                            ),
+                            Some(Ok(_)) => {}
                         }
                     }
                     // LG-8: p* de la geometría del genoma a la τ de la ventana.
@@ -6747,180 +6778,82 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 Some(reservation.clave()),
                             ).await;
 
-                            match entry_result {
-                                Err(e) if e.starts_with("AMBIGUOUS")
-                                    || e.starts_with("MAKER_CHASE_UNVERIFIED") =>
-                                {
-                                    // XXVIII / FMT-222: aggregate position presence
-                                    // or absence does not identify this intent. Keep
-                                    // the reservation without fabricating a fill or
-                                    // rolling back other slots. Reuse the dispatcher
-                                    // instance; do not reload a different executor.
-                                    // Mark protection dirty BEFORE a possibly slow
-                                    // read. This is containment, not an exactly-once
-                                    // recovery ledger or a completed protection plan.
-                                    quantum_arena::protection_health::mark_dirty();
-                                    // CL-46: la consulta decide la reserva. Antes sólo
-                                    // se registraba: un terminal sin ejecución dejaba
-                                    // una posición que sólo existía en el arena, y uno
-                                    // con ejecución quedaba sin confirmar (su cierre
-                                    // contaba como papel). La reserva es la de ESTA
-                                    // intención (generación); un terminal del padre no
-                                    // resuelve hijos maker, y Accepted con la orden
-                                    // aún NEW no es un llenado: ambos se conservan.
-                                    use execution_engine::ioc_evidence::DestinoReserva;
-                                    let destino = resolve_entry_for_host(
-                                        &entry_executor,
-                                        &parsed_sym_str,
-                                        &client_id,
-                                        &e,
-                                    )
-                                    .await;
-                                    match destino {
-                                        // V4L (L-A1H, borde de A2): con ejecucion acreditada por el
-                                        // stream o el registro, el terminal sin ejecucion no revierte.
-                                        DestinoReserva::Revertir if quantum_engine::host_oms::entrada_con_ejecucion_acreditada(&arena_clone, &entry_executor, &reservation, &client_id) => {
-                                            quantum_arena::protection_health::mark_dirty();
-                                            telemetry_engine::telemetry_err!(
-                                                "⏳ [ENTRY PENDING RECONCILIATION] {} id={} envío={}: terminal sin ejecución contradicho por ejecución acreditada; reserva, cargo y settlement conservados.",
-                                                parsed_sym_str, client_id, e
-                                            );
-                                        }
-                                        DestinoReserva::Revertir => {
-                                            telemetry_engine::telemetry!(
-                                                "❌ [ENTRY] {} id={} envío={} destino={:?}: terminal sin ejecución — Rollback de la reserva.",
-                                                parsed_sym_str, client_id, e, destino
-                                            );
-                                            if rollback_positions(&arena_clone) {
-                                                quantum_engine::host_oms::EntrySettlement::release_for(&reservation);
-                                            }
-                                        }
-                                        DestinoReserva::Confirmar { ejecutada } => {
-                                            telemetry_engine::telemetry!(
-                                                "✅ [ENTRY] {} id={} envío={} destino={:?}: ejecutada {:.8} — reserva confirmada; protección por el vigilante.",
-                                                parsed_sym_str, client_id, e, destino, ejecutada
-                                            );
-                                            if let Err(reason) = reservation.confirmar_llenado_con_marca(&arena_clone, Some(ejecutada), entry_executor.registry().marca_terminal(&client_id)) {
-                                                telemetry_engine::telemetry_err!("[ENTRY CONFIRM] stale/mismatched reservation: {:?}; reconcile fill, do not confirm another slot", reason);
-                                            } else {
-                                                // CL-46b: el diario B2.7 también aquí; sin él,
-                                                // un reinicio re-protegía la posición con la τ
-                                                // de una entrada anterior del mismo lado.
-                                                anotar_diario_de_posicion(
-                                                    &arena_clone,
-                                                    &reservation,
-                                                    &parsed_sym_str,
-                                                    final_is_long,
-                                                    ejecutada.min(final_qty.abs()),
-                                                    _entry_price,
-                                                );
-                                                if order_tp_price <= 0.0 || order_sl_price <= 0.0 {
-                                                    quantum_engine::host_oms::EntrySettlement::release_for(&reservation);
-                                                }
-                                            }
-                                            quantum_arena::protection_health::mark_dirty();
-                                        }
-                                        DestinoReserva::CancelarPorDeadline => {
-                                            telemetry_engine::telemetry_err!(
-                                                "⏰ [ENTRY RECOVERY DEADLINE] {} id={}: admisión revocada; cancelación local sin certificar fill ni OCO",
-                                                parsed_sym_str, client_id
-                                            );
-                                            let _ = quantum_engine::host_oms::cancel_entry_after_deadline(
-                                                &entry_oms,
-                                                &entry_session,
-                                                &arena_clone,
-                                                &reservation,
-                                            );
-                                        }
-                                        DestinoReserva::Conservar => {
-                                            telemetry_engine::telemetry_err!(
-                                                "⏳ [ENTRY PENDING RECONCILIATION] {} id={} envío={} destino={:?}. Reserva conservada; NO se certifica fill ni se hace rollback. Resolver atribución de orden/fills/protección.",
-                                                parsed_sym_str, client_id, e, destino
-                                            );
-                                        }
-                                    }
-                                }
-                                // V4L (L-A1H, borde de A2): un rechazo firme con ejecucion acreditada
-                                // de esta orden no revierte; se conserva hasta reconciliar.
-                                Err(e) if quantum_engine::host_oms::entrada_con_ejecucion_acreditada(&arena_clone, &entry_executor, &reservation, &client_id) => {
-                                    quantum_arena::protection_health::mark_dirty();
-                                    telemetry_engine::telemetry_err!(
-                                        "⏳ [ENTRY PENDING RECONCILIATION] {} id={} rechazo {} contradicho por ejecución acreditada; reserva, cargo y settlement conservados.",
-                                        parsed_sym_str, client_id, e
-                                    );
-                                }
-                                Err(e) => {
+                            // CAPITAL-UNICO V4M (D1, L-A1H): el host ejecuta la MISMA resolucion que
+                            // prueba la bateria (`host_oms::resolver_resultado_de_entrada`, con su
+                            // reserva y su settlement reales): consulta de esta identidad sin reenvio
+                            // ante un envio ambiguo, reversion exacta una vez ante un rechazo firme
+                            // sin ejecucion, borde de A2, padre e hija maker por su evidencia
+                            // terminal y confirmacion con la marca terminal.
+                            let envio_descrito = match &entry_result {
+                                Ok(()) => "Ok".to_string(),
+                                Err(e) => e.clone(),
+                            };
+                            let desenlace = quantum_engine::host_oms::resolver_resultado_de_entrada(
+                                entry_result,
+                                &entry_oms,
+                                &entry_session,
+                                &arena_clone,
+                                &entry_executor,
+                                &reservation,
+                                &client_id,
+                                final_qty.abs(),
+                                execution_engine::entry_dispatch::ENTRY_RECOVERY_DEADLINE,
+                            )
+                            .await;
+                            use quantum_engine::host_oms::DesenlaceDeEntrada;
+                            let ejecutada = match desenlace {
+                                DesenlaceDeEntrada::Confirmada { ejecutada, envio_ambiguo: false } => ejecutada,
+                                DesenlaceDeEntrada::Confirmada { ejecutada, envio_ambiguo: true } => {
                                     telemetry_engine::telemetry!(
-                                        "❌ [ENTRY] {} rechazada: {} — Ejecutando Rollback de posición local.",
-                                        parsed_sym_str, e
+                                        "✅ [ENTRY] {} id={} envío={}: ejecutada {:.8} — reserva confirmada; protección por el vigilante.",
+                                        parsed_sym_str, client_id, envio_descrito, ejecutada
                                     );
-                                    if rollback_positions(&arena_clone) {
+                                    // CL-46b: el diario B2.7 también aquí.
+                                    anotar_diario_de_posicion(
+                                        &arena_clone,
+                                        &reservation,
+                                        &parsed_sym_str,
+                                        final_is_long,
+                                        ejecutada.min(final_qty.abs()),
+                                        _entry_price,
+                                    );
+                                    if order_tp_price <= 0.0 || order_sl_price <= 0.0 {
                                         quantum_engine::host_oms::EntrySettlement::release_for(&reservation);
                                     }
+                                    quantum_arena::protection_health::mark_dirty();
+                                    return;
                                 }
-                                Ok(()) => {
-                                    // Paper es una simulación explícita; fuera de paper sólo una
-                                    // orden terminal aporta cantidad ejecutada. Un parcial activo
-                                    // conserva reserva y settlement, sin fill total ni OCO teórico.
-                                    let ejecutada = quantum_engine::host_oms::entry_execution_for_host(
-                                        entry_executor.registry().get(&client_id).as_ref(),
-                                        entry_executor.is_paper_trading(),
-                                        final_qty.abs(),
+                                DesenlaceDeEntrada::Revertida => {
+                                    telemetry_engine::telemetry!(
+                                        "❌ [ENTRY] {} id={} envío={}: rechazo o terminal sin ejecución — Rollback exacto de la reserva.",
+                                        parsed_sym_str, client_id, envio_descrito
                                     );
-                                    let ejecutada = match ejecutada {
-                                        Some(ejecutada) => ejecutada,
-                                        None => {
-                                            quantum_arena::protection_health::mark_dirty();
-                                            telemetry_engine::telemetry_err!(
-                                                "⏳ [ENTRY PENDING FILL] {} id={}: consultando la misma orden hasta evidencia terminal",
-                                                parsed_sym_str, client_id
-                                            );
-                                            use execution_engine::ioc_evidence::DestinoReserva;
-                                            match resolve_entry_for_host(
-                                                &entry_executor,
-                                                &parsed_sym_str,
-                                                &client_id,
-                                                "AMBIGUOUS: ENTRY_TERMINAL_PENDING",
-                                            )
-                                            .await
-                                            {
-                                                DestinoReserva::Confirmar { ejecutada } => ejecutada,
-                                                // V4L (L-A1H, borde de A2).
-                                                DestinoReserva::Revertir if quantum_engine::host_oms::entrada_con_ejecucion_acreditada(&arena_clone, &entry_executor, &reservation, &client_id) => {
-                                                    quantum_arena::protection_health::mark_dirty();
-                                                    return;
-                                                }
-                                                DestinoReserva::Revertir => {
-                                                    if rollback_positions(&arena_clone) {
-                                                        quantum_engine::host_oms::EntrySettlement::release_for(&reservation);
-                                                    }
-                                                    return;
-                                                }
-                                                DestinoReserva::CancelarPorDeadline => {
-                                                    telemetry_engine::telemetry_err!(
-                                                        "⏰ [ENTRY RECOVERY DEADLINE] {} id={}: admisión revocada; cancelación local sin certificar fill ni OCO",
-                                                        parsed_sym_str, client_id
-                                                    );
-                                                    let _ = quantum_engine::host_oms::cancel_entry_after_deadline(
-                                                        &entry_oms,
-                                                        &entry_session,
-                                                        &arena_clone,
-                                                        &reservation,
-                                                    );
-                                                    return;
-                                                }
-                                                DestinoReserva::Conservar => {
-                                                    quantum_arena::protection_health::mark_dirty();
-                                                    return;
-                                                }
-                                            }
-                                        }
-                                    };
-                                    if let Err(reason) = reservation.confirmar_llenado_con_marca(&arena_clone, Some(ejecutada), entry_executor.registry().marca_terminal(&client_id)) {
-                                        quantum_arena::protection_health::mark_dirty();
-                                        telemetry_engine::telemetry_err!("[ENTRY CONFIRM] stale/mismatched reservation: {:?}; reconcile fill, do not confirm another slot", reason);
-                                        return;
-                                    }
+                                    return;
+                                }
+                                DesenlaceDeEntrada::ReversionImposible => {
+                                    telemetry_engine::telemetry_err!("[ENTRY ROLLBACK] {} id={}: reserva exacta no cancelable; otras ranuras intactas", parsed_sym_str, client_id);
+                                    return;
+                                }
+                                DesenlaceDeEntrada::ConfirmacionRechazada => {
+                                    telemetry_engine::telemetry_err!("[ENTRY CONFIRM] {} id={}: stale/mismatched reservation; reconcile fill, do not confirm another slot", parsed_sym_str, client_id);
+                                    return;
+                                }
+                                DesenlaceDeEntrada::CanceladaPorDeadline => {
+                                    telemetry_engine::telemetry_err!(
+                                        "⏰ [ENTRY RECOVERY DEADLINE] {} id={}: admisión revocada; cancelación local sin certificar fill ni OCO",
+                                        parsed_sym_str, client_id
+                                    );
+                                    return;
+                                }
+                                DesenlaceDeEntrada::Conservada => {
+                                    telemetry_engine::telemetry_err!(
+                                        "⏳ [ENTRY PENDING RECONCILIATION] {} id={} envío={}. Reserva, cargo y settlement conservados; NO se certifica fill ni se hace rollback.",
+                                        parsed_sym_str, client_id, envio_descrito
+                                    );
+                                    return;
+                                }
+                            };
+                            {
                                     // CL-45b: lo llenado (≤ lo pedido) dimensiona el
                                     // bracket y el diario. Con la cantidad pedida, un
                                     // parcial apilado sobre otra ranura del mismo lado
@@ -7192,7 +7125,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                         quantum_engine::host_oms::EntrySettlement::release_for(&reservation);
                                     }
                                 }
-                            }
                         });
                     }
                 }
@@ -7918,21 +7850,6 @@ fn format_tau(tau_ms: f64) -> String {
     }
 }
 
-async fn resolve_entry_for_host(
-    executor: &execution_engine::executor::OrderExecutor,
-    symbol: &str,
-    client_order_id: &str,
-    dispatch_error: &str,
-) -> execution_engine::ioc_evidence::DestinoReserva {
-    execution_engine::entry_dispatch::resolve_terminal_entry_until(
-        executor,
-        symbol,
-        client_order_id,
-        dispatch_error,
-        execution_engine::entry_dispatch::ENTRY_RECOVERY_DEADLINE,
-    )
-    .await
-}
 
 fn registrar_breaker_ingreso(
     orch: &mut god_engine_core::orchestrator::PhaseOrchestrator,
@@ -7954,24 +7871,8 @@ fn persistir_evidencia_demo_en_modo(
     fees: f64,
     wins: u64,
 ) -> Result<bool, String> {
-    if !is_demo_mode {
-        return Ok(false);
-    }
-    if cierres == 0 || !bruto.is_finite() || !fees.is_finite() {
-        return Ok(false);
-    }
-    let ev_neto_por_trade = (bruto + fees) / cierres as f64;
-    if !ev_neto_por_trade.is_finite() {
-        return Ok(false);
-    }
-    let evidencia = god_engine_core::orchestrator::EvidenciaDemo {
-        cierres,
-        ev_neto_por_trade,
-        wins,
-    };
-    let texto = serde_json::to_string_pretty(&evidencia).map_err(|e| e.to_string())?;
-    std::fs::write(ruta, texto).map_err(|e| e.to_string())?;
-    Ok(true)
+    // CAPITAL-UNICO V4M (F8): la logica vive en host_oms (la misma que publica con testigo de era).
+    quantum_engine::host_oms::persistir_evidencia_demo_en_modo(is_demo_mode, ruta, cierres, bruto, fees, wins)
 }
 
 #[cfg(test)]

@@ -71,7 +71,13 @@ fn anclas_del_adaptador() {
     ]);
     orden(HOST, &[".activar(&arena_real);", ".fijar_cuenta(&arena_real, cuenta_de_arranque);", "pedir_evidencia_si_espera(&arena_veto, &puente_evidencia);"]);
     orden(HOST, &["let sesion_publicada = match &paso.resultado {", ".fijar_cuenta(&arena_real, cuenta_del_relevo);", "(paso, sesion_publicada)"]);
-    assert_eq!(texto(HOST).matches("entry_executor.registry().marca_terminal(&client_id)").count(), 2, "las dos confirmaciones usan la marca terminal");
+    // V4M (D1, autorizado 20261115-0050): las dos confirmaciones del host (envio ambiguo resuelto y
+    // brazo Ok) pasan por la UNICA confirmacion de `host_oms::resolver_resultado_de_entrada`. Misma
+    // propiedad: toda confirmacion de entrada usa la marca terminal; el host no confirma por otra via.
+    assert_eq!(texto(HOST).matches("confirmar_llenado_con_marca(").count(), 0, "el host confirma fuera de la resolucion");
+    assert_eq!(texto(OMS).matches("reservation.confirmar_llenado_con_marca(arena, Some(ejecutada), marca)").count(), 1, "una sola confirmacion en la resolucion");
+    assert_eq!(texto(OMS).matches("let marca = executor.registry().marca_terminal(client_id);").count(), 1, "la confirmacion usa la marca terminal");
+    assert!(texto(HOST).contains("quantum_engine::host_oms::resolver_resultado_de_entrada("), "el host no usa la resolucion");
     assert!(!texto(HOST).contains("map(|o| o.marca_fill_ms)"), "una confirmacion vuelve a usar la marca del ACK");
     orden(OMS, &[
         ".vincular_orden_con_cantidad(clave, request.client_order_id, request.quantity);",
