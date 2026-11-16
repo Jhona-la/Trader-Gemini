@@ -6,6 +6,7 @@
 //! del replay de referencia (`backtest-engine/tests/wb45_sombra_identidad_ordenes.rs`).
 
 const NUCLEO: &str = include_str!("../src/lib.rs");
+const RIESGO: &str = include_str!("../../risk-engine/src/lib.rs");
 const LIBRO: &str = include_str!("../src/libro_decisiones.rs");
 
 /// Líneas de código (sin comentarios de línea), recortadas.
@@ -63,4 +64,47 @@ fn wb4_el_nucleo_solo_escribe_en_el_libro() {
     for prohibido in ["calibrator_by_coin", "confidence_calibrator", "registry", "arena"] {
         assert!(!libro.contains(prohibido), "libro_decisiones.rs usa `{prohibido}`");
     }
+}
+
+/// El f encogido se calcula junto al legado y SÓLO se registra: el
+/// `kelly_fraction` que se guarda sigue siendo el de `calculate_kelly_fraction`
+/// y nadie lee las claves `sombra_wb5_*`.
+#[test]
+fn wb5_el_f_encogido_solo_se_registra() {
+    let nucleo = sin_espacios(NUCLEO);
+    let legado = nucleo
+        .find("letkelly_f=risk_engine::kelly::calculate_kelly_fraction(new_wr,pf_para_kelly,")
+        .expect("el legado sigue calculando kelly_f");
+    let guarda = nucleo
+        .find("coin.metrics.kelly_fraction.store(kelly_f,Ordering::Relaxed);")
+        .expect("y se guarda tal cual");
+    let sombra = nucleo
+        .find("letsombra_wb5=risk_engine::kelly::kelly_con_encogimiento(")
+        .expect("la sombra se calcula en el cierre");
+    assert!(legado < guarda && guarda < sombra, "la sombra va después de guardar el legado");
+    assert_eq!(nucleo.matches("kelly_con_encogimiento(").count(), 1);
+    assert_eq!(nucleo.matches(".kelly_fraction.store(").count(), 1, "un solo escritor de kelly_fraction");
+    // `sombra_wb5` y `f_sombra_wb5` sólo van al registro y al log.
+    for uso in lineas(NUCLEO).iter().filter(|l| l.contains("sombra_wb5")) {
+        let permitido = uso.starts_with("let sombra_wb5 = risk_engine::kelly::kelly_con_encogimiento(")
+            || uso.starts_with("let f_sombra_wb5 = sombra_wb5.f_ajustada * koopman_dampener;")
+            || uso.starts_with("(\"sombra_wb5_")
+            || uso.starts_with("sombra_wb5.")
+            || uso.starts_with("f_sombra_wb5,");
+        assert!(permitido, "uso de la sombra WB-5 no permitido: `{uso}`");
+    }
+    for fuente in [NUCLEO, RIESGO] {
+        let f = sin_espacios(fuente);
+        assert!(!f.contains("get_for_coin_strict(coin_id,\"sombra_wb5"), "nadie lee sombra_wb5_*");
+        assert!(!f.contains("get_for_coin_or(coin_id,\"sombra_wb5"), "nadie lee sombra_wb5_*");
+    }
+}
+
+/// LH-04 (la ruta viva del tamaño) y la ruta nueva comparten la cota de
+/// Wilson: una sola implementación (`evidence::wilson_lcb`).
+#[test]
+fn wb5_lh04_usa_la_cota_de_wilson_unica() {
+    let riesgo = sin_espacios(RIESGO);
+    assert!(riesgo.contains("letp_lcb=crate::evidence::wilson_lcb(lh04_wr,n,z_lcb_lh04);"));
+    assert!(!riesgo.contains("letcentro="), "sin una segunda copia de Wilson en LH-04");
 }

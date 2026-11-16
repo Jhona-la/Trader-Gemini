@@ -6070,6 +6070,46 @@ impl GodEngineCore {
                     coin.metrics
                         .kelly_fraction
                         .store(kelly_f, Ordering::Relaxed);
+                    // WB-5 (EN SOMBRA, especificación GLM-APP v3 §5.2): la fracción con la
+                    // p_LCB de Wilson de LH-04, el pago desde `pf_para_kelly` (ya es la cota
+                    // del PF: sin un segundo LCB) y el encogimiento S(n), bajo `clamp_ruin` y
+                    // el mismo amortiguador de Koopman. Se calcula junto al legado y SÓLO se
+                    // registra: el `kelly_fraction` de arriba sigue siendo el del legado.
+                    let n_wb5 = n_prev + 1.0;
+                    let sombra_wb5 = risk_engine::kelly::kelly_con_encogimiento(
+                        new_wr,
+                        n_wb5,
+                        pf_para_kelly,
+                        self.arena.registry.get_value_or("lh04_z_lcb", risk_engine::evidence::Z_LCB),
+                        risk_engine::ruin::conservative_loss_q(new_wr, n_wb5),
+                    );
+                    let f_sombra_wb5 = sombra_wb5.f_ajustada * koopman_dampener;
+                    for (clave, valor) in [
+                        ("sombra_wb5_f", f_sombra_wb5),
+                        ("sombra_wb5_p_lcb", sombra_wb5.p_lcb),
+                        ("sombra_wb5_b_lcb", sombra_wb5.b_lcb),
+                        ("sombra_wb5_s", sombra_wb5.s),
+                        ("sombra_wb5_n", n_wb5),
+                    ] {
+                        self.arena.registry.set_for_coin(coin_id, clave, valor);
+                    }
+                    if self.trazas_diagnosticas {
+                        telemetry_server::telemetry_log!(
+                            "WB5_SOMBRA coin={} sym={} n={} p={:.6} p_lcb={:.6} pf_lcb={:.6} b_lcb={:.6} s={:.6} f_estrella={:.6} f_sombra={:.6} f_legado={:.6} koopman={:.6}",
+                            coin_id,
+                            sym,
+                            n_wb5,
+                            new_wr,
+                            sombra_wb5.p_lcb,
+                            pf_para_kelly,
+                            sombra_wb5.b_lcb,
+                            sombra_wb5.s,
+                            sombra_wb5.f_estrella,
+                            f_sombra_wb5,
+                            kelly_f,
+                            koopman_dampener
+                        );
+                    }
                     coin.last_close_ts.store(event_time_ms, Ordering::Relaxed);
                     coin.last_close_is_long.store(is_long, Ordering::Relaxed);
                     coin.last_close_was_win.store(is_win, Ordering::Relaxed);
