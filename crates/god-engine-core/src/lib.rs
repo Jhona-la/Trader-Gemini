@@ -61,6 +61,8 @@ pub mod reexport_storage {
 pub mod sigma_minuto;
 pub mod slippage_predictor;
 pub mod sombra_vetos;
+// WB-4a (EN SOMBRA): libro de decisiones con los contrafactuales de lo vetado.
+pub mod libro_decisiones;
 pub mod stateful_engine;
 pub mod topological_metamorphosis;
 pub mod trailing;
@@ -1356,6 +1358,10 @@ pub struct GodEngineCore {
     /// RB-V1a: las intenciones que el riesgo validó y vetaron el consejo o el
     /// ML-GATE, juzgadas en sombra. Sólo se escribe: ninguna decisión lo lee.
     pub sombra_vetos: sombra_vetos::SombraVetos,
+    /// WB-4a (EN SOMBRA): las mismas intenciones vetadas con su score y su p
+    /// de hoy, etiquetadas por triple barrera, más las ejecutadas, en un
+    /// calibrador propio. Sólo se escribe: ninguna decisión lo lee.
+    pub libro_decisiones: libro_decisiones::LibroDecisiones,
     /// F1-054 (Ola Ω168): órdenes aprobadas por Consejo y ML descartadas por falta de margen libre,
     /// por no alcanzar el notional mínimo o por exceder el colchón de capital.
     pub diag_margin_drops: u64,
@@ -1760,6 +1766,7 @@ impl GodEngineCore {
             diag_opened: 0,
             diag_ml_vetoes: 0,
             sombra_vetos: sombra_vetos::SombraVetos::new(n_coins),
+            libro_decisiones: libro_decisiones::LibroDecisiones::new(n_coins),
             diag_margin_drops: 0,
             diag_close_wins: 0,
             diag_close_total: 0,
@@ -4557,6 +4564,11 @@ impl GodEngineCore {
                 event_time_ms,
                 self.trazas_diagnosticas,
             );
+            // WB-4a (EN SOMBRA): el libro de decisiones avanza con el mismo mid
+            // (O(1) si la moneda no tiene filas abiertas). Sólo escribe.
+            if self.libro_decisiones.observar(coin_id, (bid + ask) * 0.5, event_time_ms) > 0 {
+                self.libro_decisiones.avisar(self.trazas_diagnosticas);
+            }
 
             if let Some(reservation) = self.entry_reservations.get_mut(coin_id) {
                 *reservation = None;
@@ -5916,6 +5928,10 @@ impl GodEngineCore {
                             &mut self.registro_calibrador_global,
                             (coin_id, score_at_entry, is_win, event_time_ms),
                         );
+                        // WB-4a (EN SOMBRA): la misma ejecutada, con su is_win real, a la
+                        // calibración en sombra del libro de decisiones.
+                        self.libro_decisiones.alimentar_ejecutada(coin_id, score_at_entry, is_win, event_time_ms);
+                        self.libro_decisiones.avisar(self.trazas_diagnosticas);
                     }
 
                     // XXIX / FMT-228: one close is one reward observation.
@@ -9997,6 +10013,18 @@ impl GodEngineCore {
                         promesa_bruta: self.risk_engine.promesa_evaluada(coin_id),
                         t0_ms: event_time_ms,
                     });
+                    // WB-4a (EN SOMBRA): la misma intención, con su score crudo y la p
+                    // calibrada de hoy, al libro de decisiones. Sólo se escribe.
+                    let _ = self.libro_decisiones.registrar_vetada(libro_decisiones::Decision::desde_geometria(
+                        coin_id,
+                        calibrated_intent.signal == SignalType::Long,
+                        coin.current_price.load(Ordering::Relaxed),
+                        self.risk_engine.geometria_evaluada(coin_id),
+                        raw_confidence_score,
+                        cal_prob,
+                        fuente,
+                        event_time_ms,
+                    ));
                 }
                 if order.signal != SignalType::Flat {
                     // F1-049: Unificar definición de drawdown con risk_engine::drawdown::capital_del_freno
@@ -10371,6 +10399,18 @@ impl GodEngineCore {
                             promesa_bruta: self.risk_engine.promesa_evaluada(coin_id),
                             t0_ms: event_time_ms,
                         });
+                        // WB-4a (EN SOMBRA): la misma intención al libro de decisiones,
+                        // con la MISMA atribución de la fuente. Sólo se escribe.
+                        let _ = self.libro_decisiones.registrar_vetada(libro_decisiones::Decision::desde_geometria(
+                            coin_id,
+                            order.signal == SignalType::Long,
+                            coin.current_price.load(Ordering::Relaxed),
+                            self.risk_engine.geometria_evaluada(coin_id),
+                            raw_confidence_score,
+                            cal_prob,
+                            libro_decisiones::fuente_vetada(aprobado_por_consejo, has_roster_model),
+                            event_time_ms,
+                        ));
                     }
 
                     if aprobado_por_consejo && ml_gate_ok {
