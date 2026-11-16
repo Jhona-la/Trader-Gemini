@@ -1595,6 +1595,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .iter()
         .map(|s| quantum_arena::symbol_registry::get_official_binance_spec(&s.to_uppercase()))
         .collect();
+    // DEMO_TEL (T1): antes de que `update_registry` consuma el vector.
+    // T2: la fuente es la semilla local `get_official_binance_spec` (tabla del
+    // registro), no `exchangeInfo`: `exchange_info=N/D` hasta que haya esa lectura.
+    for spec in &boot_specs {
+        telemetry_server::telemetry_log!(
+            "DEMO_TEL event=SYMBOL_SPEC symbol={} min_notional={:.4} tick_size={:.8} step_size={:.8} fuente=SEMILLA_LOCAL exchange_info=N/D",
+            spec.symbol, spec.min_notional, spec.tick_size, spec.step_size
+        );
+    }
     quantum_arena::symbol_registry::update_registry(boot_specs);
     telemetry_server::telemetry_log!(
         "🧬 [B3.38] Identidad registrada: {} símbolos del bootloader en orden de slot (core≡handler)",
@@ -1970,6 +1979,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             let obs = puente_cuenta
                 .observar_rest_de_sesion(ticket, token_arranque.generation(), &l)
                 .map_err(|e| format!("ACCOUNT_EVIDENCE_INVALID: {e}"));
+            // DEMO_TEL T3 (T3-1): la revisión REST que el puente aceptó, al log (sólo registro).
+            if let Ok(aceptada) = &obs {
+                quantum_engine::demo_tel::capital_rest_aceptado(&ticket, &l, aceptada);
+            }
             match l.rechazo_arranque {
                 Some(rechazo) => Err(rechazo),
                 None => obs,
@@ -2430,38 +2443,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // aquí garantizamos que el capital dinámico refleje la verdad del exchange.
     // CAPITAL-UNICO V2: `on_capital` es el SALDO (sin PnL no realizado) y
     // `on_equity` la EQUITY; las dos salen del puente de la cuenta.
-    struct CapitalBridgeSink {
-        unified_capital: Arc<AtomicU64>,
-        equity_exchange: Arc<AtomicU64>,
-    }
-    impl execution_engine::user_data_stream::AccountSink for CapitalBridgeSink {
-        fn on_capital(&self, usdt: f64) {
-            audit_engine::telemetry::update_dynamic_capital(usdt);
-            // F2: permite propagar 0.0 observado de la cuenta real al puente de capital
-            if usdt >= 0.0 && usdt.is_finite() {
-                self.unified_capital
-                    .store(usdt.to_bits(), Ordering::Relaxed);
-            }
-        }
-        fn on_equity(&self, usdt: f64) {
-            if usdt >= 0.0 && usdt.is_finite() {
-                self.equity_exchange.store(usdt.to_bits(), Ordering::Relaxed);
-            }
-        }
-        fn on_positions(&self, positions: &[execution_engine::user_data_stream::RemotePosition]) {
-            if !positions.is_empty() {
-                let summary: Vec<String> = positions
-                    .iter()
-                    .map(|p| format!("{} {}", p.symbol, p.position_amt))
-                    .collect();
-                telemetry_server::telemetry_log!(
-                    "📡 [USER-DATA] Posiciones vivas: {}",
-                    summary.join(", ")
-                );
-            }
-        }
-        fn on_bracket_close(&self, _c: &execution_engine::trade_accounting::BracketClose) {}
-    }
+    // DEMO_TEL T2: el sink vive en `quantum_engine::demo_tel` (mismo
+    // comportamiento) para que su CAPITAL_UPDATE por revisión tenga prueba real.
+    use quantum_engine::demo_tel::CapitalBridgeSink;
 
     /// F412/F413/F271 (Sol, censo C-F7b §3): puente del cierre confirmado por
     /// el exchange hacia el canal independiente del Auditor Interno. El
@@ -2512,6 +2496,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     impl execution_engine::user_data_stream::AccountSink for SinkHost {
         fn on_capital(&self, usdt: f64) {
             self.capital.on_capital(usdt);
+        }
+        fn on_capital_aceptado(&self, usdt: f64, revision: &execution_engine::user_data_stream::RevisionSaldo) {
+            self.capital.on_capital_aceptado(usdt, revision);
         }
         fn on_equity(&self, usdt: f64) {
             self.capital.on_equity(usdt);
@@ -2868,10 +2855,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         // publicador del puente (`publicar_capital_de_sesion`).
                         let token = oms_rs.snapshot_token();
                         let executor = Arc::clone(token.executor());
+                        // DEMO_TEL T3 (T3-1): testigo de la lectura (devuelve lo mismo) para
+                        // registrar la revisión REST aceptada; no cambia la pasada.
+                        let rest_anotada = quantum_engine::demo_tel::LecturaRestAnotada::default();
                         let r = execution_engine::resincronizar_cuenta::resincronizar_una_vez(
                             &puente_rs,
                             token.generation(),
-                            executor.fetch_account_lectura(),
+                            rest_anotada.anotar(
+                                &puente_rs,
+                                executor.fetch_account_lectura(),
+                            ),
                             std::time::Duration::from_secs(15),
                             |obs| saldo_rs.store(obs.saldo.to_bits(), Ordering::Relaxed),
                         )
@@ -2882,6 +2875,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         match &r {
                             Ok(obs) => {
                                 pausa.exito();
+                                rest_anotada.registrar(obs);
                                 telemetry_server::telemetry_log!(
                                     "🔄 [CAPITAL] puente resincronizado por REST: saldo ${:.4} · equity ${:.4}",
                                     obs.saldo,
@@ -3281,6 +3275,57 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 None => String::new(),
                             }
                         );
+                        // DEMO_TEL (T1, IMMUNE_TRIGGER): solo registro; el freno y el pico no
+                        // se tocan (T7). T2: cada dato con su nombre real y su plano, todos
+                        // calculados ANTES de la decisión de este ciclo (sin relecturas del
+                        // arena ni del puente, sin búsqueda de símbolo). El
+                        // disparo es de cuenta (`alcance=CUENTA`); la equity del freno ausente
+                        // queda AUSENTE (no se sustituye por otro plano); la revisión de esa
+                        // equity no está en alcance aquí: N/D.
+                        // C3 (decisión del coordinador D1-D3): la línea sale SOLO con el disparo
+                        // ya comprometido por `aplanado_inmune::comprometer_disparo` (arriba, bajo
+                        // el mutex del puente), junto a la línea ACTIVADO; si un relevo descarta la
+                        // decisión (`continue`), no hay ACTIVADO ni IMMUNE_TRIGGER. El host ya no
+                        // arma el kill-switch: el emisor sólo usa valores ya capturados.
+                        let ts_imm = std::time::SystemTime::now()
+                            .duration_since(std::time::UNIX_EPOCH)
+                            .unwrap_or_default()
+                            .as_millis() as u64;
+                        let motivo_imm = if operator_lock {
+                            "OPERATOR_LOCK"
+                        } else if insolvent {
+                            "INSOLVENTE"
+                        } else if dd_breach {
+                            "DRAWDOWN"
+                        } else {
+                            "LATENCIA"
+                        };
+                        // T3 (T3-5): el mismo emisor que prueba `demo_tel_lines_contract.rs`
+                        // (`quantum_engine::demo_tel::emitir_immune_trigger`): planos con código
+                        // corto y dominio acotado, para que la línea entera quepa en el logger
+                        // acotado. La equity del freno no finita sigue siendo AUSENTE (NaN).
+                        // C3 (D3): en V4 el `cap` del paso ES la equity del puente publicada como
+                        // magnitud del freno: `host_oms::paso_del_freno_del_inmune` (host_oms.rs
+                        // :1463-1471) guarda `equity` del puente en `capital_exchange` y toma
+                        // `cap = capital_del_freno(arena)` en el mismo paso bajo el mutex. Con el
+                        // libro derivado (`dimensionable_derivado`) es esa equity tal cual
+                        // (drawdown.rs:421-428); sin él, `capital_del_freno` la acota por
+                        // `unified_capital`. No hay otra lectura del puente para la telemetría.
+                        let equity_del_freno_imm = if cap.is_finite() { cap } else { f64::NAN };
+                        quantum_engine::demo_tel::emitir_immune_trigger(&quantum_engine::demo_tel::DisparoInmune {
+                            ts_ms: ts_imm,
+                            motivo: motivo_imm,
+                            freno_capital: cap,
+                            peak_capital,
+                            equity_del_freno: equity_del_freno_imm,
+                            caida_capital_pct: freno.caida_capital * 100.0,
+                            tope_capital_pct: freno.tope_capital * 100.0,
+                            operator_lock,
+                            insolvent,
+                            dd_breach,
+                            lat_breach,
+                            latency_strikes,
+                        });
                         autoria_del_latch = Some(autoria);
                         // I-10 (N19): el aplanado (CL-44b) en `aplanado_inmune`,
                         // que deja anotado si hay que reintentarlo.
@@ -3875,6 +3920,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             continue;
                         }
                         let a = per.entry(e.symbol.clone()).or_default();
+                        // DEMO_TEL (T1): la fila FUNDING_FEE de esta pasada (el brazo del match
+                        // queda intacto: lo anclan los contratos de capital).
+                        // T2: con su alcance (pasada rodante del FEE-BREAKER, ya filtrada por
+                        // mismo activo y símbolo no vacío, hasta 4 páginas) y sin deducir
+                        // cobertura: `cobertura=N/D`. tranId 0 = AUSENTE.
+                        if e.income_type == "FUNDING_FEE" {
+                            let tran_id_funding = if e.tran_id == 0 { "AUSENTE".to_string() } else { e.tran_id.to_string() };
+                            telemetry_server::telemetry_log!(
+                                "DEMO_TEL event=FUNDING ts={} symbol={} income={:.8} asset={} tran_id={} income_type=FUNDING_FEE alcance=FEE_BREAKER_VENTANA_RODANTE ventana_desde_ms={} ventana_hasta_ms={} filtro=MISMO_ACTIVO_Y_SIMBOLO_NO_VACIO paginas_max=4 cobertura=N/D",
+                                e.time, e.symbol, e.income, e.asset, tran_id_funding, window_start, now_breaker
+                            );
+                        }
                         match e.income_type.as_str() {
                             "REALIZED_PNL" => a.registros.push((e.time, e.income)),
                             "FUNDING_FEE" => a.funding += e.income,
@@ -5890,7 +5947,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 }
                                 let aceptada = match &lectura {
                                     Ok(l) => match puente_transicion.observar_rest_de_sesion(ticket, balance_token.generation(), l) {
-                                        Ok(_) => true,
+                                        Ok(aceptada_rest) => {
+                                            // DEMO_TEL T3 (T3-1): la revisión REST aceptada, al log (sólo registro).
+                                            quantum_engine::demo_tel::capital_rest_aceptado(&ticket, l, &aceptada_rest);
+                                            true
+                                        }
                                         Err(execution_engine::puente_cuenta::Rechazo::OtraEra) => break,
                                         // V4E (P1-c): el token ya no es de la sesión de esta era.
                                         Err(execution_engine::puente_cuenta::Rechazo::OtraSesion { .. }) => break,
@@ -6740,12 +6801,33 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 client_order_id: &client_id,
                                 route,
                             };
+                            // DEMO_TEL (T1): intento de envío de entrada, una vez por orden (no por tick).
+                            // T2: declarado como INTENTO (sale antes de la revalidación y de la
+                            // entrega; cantidad y ruta solicitadas, no el paquete final).
+                            let ts = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_millis() as u64;
+                            telemetry_server::telemetry_log!(
+                                "DEMO_TEL event=ORDER_SEND tipo=INTENTO ts={} symbol={} is_long={} qty={:.6} client_order_id={} lev={} route={:?}",
+                                ts, parsed_sym_str, final_is_long, final_qty, client_id, effective_leverage, route
+                            );
                             // V4H (INV-F): el guardia revalida la reserva contra el libro
                             // justo antes de cada llamada al exchange.
                             let entry_result = entry_oms.dispatch_entry_reservada(
                                 &entry_session, entry_executor.as_ref(), &entry_request, &arena_clone,
                                 Some(reservation.clave()),
                             ).await;
+                            // DEMO_TEL T2: testigo del resultado del despacho (solo registro; las
+                            // ramas de abajo deciden igual que antes). AMBIGUA = las mismas dos
+                            // marcas que el primer brazo del match.
+                            let resultado_envio = match &entry_result {
+                                Ok(()) => "ENTREGADA",
+                                Err(e) if e.starts_with("AMBIGUOUS") || e.starts_with("MAKER_CHASE_UNVERIFIED") => "AMBIGUA",
+                                Err(_) => "RECHAZADA",
+                            };
+                            telemetry_server::telemetry_log!(
+                                "DEMO_TEL event=ORDER_RESULT ts={} symbol={} client_order_id={} resultado={}",
+                                std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_millis() as u64,
+                                parsed_sym_str, client_id, resultado_envio
+                            );
 
                             // CAPITAL-UNICO V4M (D1, L-A1H): el host ejecuta la MISMA resolucion que
                             // prueba la bateria (`host_oms::resolver_resultado_de_entrada`, con su
@@ -7160,6 +7242,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         total_unrealized_pnl += coin.metrics.pnl_unrealized.load(Ordering::Relaxed);
                     }
                 }
+                // DEMO_TEL (T1): dentro del bloque de cada 100 mensajes, no por tick.
+                let open_positions = engine_real.arena.coins.iter().filter(|c| c.positions.is_any_open()).count();
+                let ts_now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_millis() as u64;
+                telemetry_server::telemetry_log!(
+                    "DEMO_TEL event=UNREALIZED_PNL ts={} total_upnl={:.6} open_positions={}",
+                    ts_now, total_unrealized_pnl, open_positions
+                );
 
                 let win_rate = if total_trades > 0 { (total_wins as f64 / total_trades as f64) * 100.0 } else { 0.0 };
 
@@ -7315,11 +7404,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             match rt_handle_for_thread.block_on(executor.flatten_all_positions()) {
                 // I-10: el primer número son cancelaciones de órdenes, no
                 // posiciones (el aviso decía «cerradas» y «ya planas»).
-                Ok((cancelaciones, cerradas)) => telemetry_server::telemetry_log!(
-                    "🛑 [SHUTDOWN] Flatten-all completado: {} posiciones cerradas, {} cancelaciones de órdenes.",
-                    cerradas,
-                    cancelaciones
-                ),
+                Ok((cancelaciones, cerradas)) => {
+                    telemetry_server::telemetry_log!(
+                        "🛑 [SHUTDOWN] Flatten-all completado: {} posiciones cerradas, {} cancelaciones de órdenes.",
+                        cerradas,
+                        cancelaciones
+                    );
+                    let ts = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_millis() as u64;
+                    telemetry_server::telemetry_log!(
+                        "DEMO_TEL event=AUDIT_SUMMARY ts={} status=ORDERLY_SHUTDOWN closed_positions={} cancelled_orders={}",
+                        ts, cerradas, cancelaciones
+                    );
+                }
                 Err(e) => telemetry_server::telemetry_log!(
                     "🛑 [SHUTDOWN] Flatten-all con error: {:?} — el arranque próximo reconciliará.",
                     e

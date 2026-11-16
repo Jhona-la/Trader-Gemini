@@ -68,6 +68,12 @@ pub trait AccountSink: Send + Sync {
     /// realizado. Alimenta el arena y el tamaño. Cero real se publica; un
     /// evento sin saldo de USDT no llama aquí.
     fn on_capital(&self, usdt_saldo: f64);
+    /// DEMO_TEL T2 (QRA-TELEMETRIA-DEMO, T3): el mismo saldo aceptado con la
+    /// revisión con la que el puente lo aceptó (sólo para registro). Por
+    /// defecto es `on_capital`: un sink que no lo implementa no cambia.
+    fn on_capital_aceptado(&self, usdt_saldo: f64, _revision: &RevisionSaldo) {
+        self.on_capital(usdt_saldo);
+    }
     /// CAPITAL-UNICO V2: la EQUITY (saldo + PnL no realizado de las posiciones
     /// con margen en USDT), observación aparte para el freno y las guardas con
     /// posición abierta. Siempre llega junto a un `on_capital` coherente.
@@ -79,6 +85,17 @@ pub trait AccountSink: Send + Sync {
     /// del núcleo (mismo bloque, mismo predicado), este registro nace del
     /// user-data stream con dedupe por trade_id en el OrderRegistry.
     fn on_bracket_close(&self, close: &crate::trade_accounting::BracketClose);
+}
+
+/// DEMO_TEL T2: la revisión de un saldo aceptado por el puente: fuente, era y
+/// socket del puente, marca `T` del componente y hora `E` del evento.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct RevisionSaldo {
+    pub fuente: &'static str,
+    pub era: u64,
+    pub socket: u64,
+    pub marca_ms: Option<u64>,
+    pub hora_evento_ms: Option<u64>,
 }
 
 struct NoopSink;
@@ -651,6 +668,10 @@ impl UserDataStreamer {
                 update.orig_qty,
                 update.status
             );
+            println!(
+                "DEMO_TEL event=FILL ts={} symbol={} side={} price={:.6} qty={:.6} cum_qty={:.6} client_order_id={} trade_id={} is_maker={} status={:?}",
+                update.trade_time_ms, update.symbol, update.side, update.last_filled_price, update.last_filled_qty, update.cumulative_filled_qty, update.client_order_id, update.trade_id, o.is_maker, update.status
+            );
         }
         // B3.7 — CONTABILIDAD DE CIERRES POR BRACKET: todo fill de pierna de
         // salida (STOP_MARKET/TAKE_PROFIT_MARKET — convención-independiente)
@@ -774,6 +795,15 @@ impl UserDataStreamer {
                 update.last_filled_price,
                 o.is_maker,
                 update.commission,
+            );
+            // DEMO_TEL T2: el tradeId nativo del mismo fill (une con FILL e income);
+            // si el evento no lo trajo (`t` ausente = 0), AUSENTE, nunca un sustituto.
+            // Igual el activo de la comisión. Esta rama es sólo la de entradas.
+            let fee_trade_id = if update.trade_id == 0 { "AUSENTE".to_string() } else { update.trade_id.to_string() };
+            let fee_asset = if update.commission_asset.is_empty() { "AUSENTE" } else { update.commission_asset.as_str() };
+            println!(
+                "DEMO_TEL event=TRADE_FEE ts={} symbol={} client_order_id={} trade_id={} fee={:.8} fee_asset={} is_maker={} alcance=ENTRADA",
+                update.trade_time_ms, update.symbol, update.client_order_id, fee_trade_id, update.commission, fee_asset, o.is_maker
             );
         }
 
@@ -1105,11 +1135,19 @@ impl UserDataStreamer {
             // la decisión del puente: una transición no se cuela en medio.
             let sink = &self.sink;
             let con_saldo = evento.saldo.is_some();
+            // DEMO_TEL T2: la revisión aceptada viaja al sink sólo para el registro.
+            let revision = RevisionSaldo {
+                fuente: "WS",
+                era: self.era,
+                socket,
+                marca_ms: evento.tiempo_ms,
+                hora_evento_ms: hora_evento,
+            };
             let r = self.puente.observar_stream_del_socket(self.era, socket, hora_evento, &evento, |obs| {
                 // Una actualización sólo de posiciones no cambia el saldo:
                 // se publica la equity con el saldo que ya había.
                 if con_saldo {
-                    sink.on_capital(obs.saldo);
+                    sink.on_capital_aceptado(obs.saldo, &revision);
                 }
                 sink.on_equity(obs.equity);
             });
