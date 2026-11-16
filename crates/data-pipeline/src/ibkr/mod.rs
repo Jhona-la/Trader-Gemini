@@ -10,6 +10,7 @@
 //! cifra oficial; decision de diseno del pedido).
 
 pub mod cache;
+pub mod error_handler;
 pub mod pacing;
 pub mod tape_writer;
 

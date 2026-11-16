@@ -257,3 +257,62 @@ fn i6_tape_writer_esquema_dia_utc_y_agregado() {
 
     std::fs::remove_dir_all(&dir).ok();
 }
+/// I7: un 162 de pacing activa el freno de 65 s.
+#[test]
+fn i7_error_162_triggers_circuit_breaker() {
+    use data_pipeline::ibkr::error_handler::ErrorHandler;
+    use std::time::Duration;
+
+    let mut handler = ErrorHandler::new();
+    handler.receive_error(162, "Pacing violation");
+
+    assert!(handler.is_cooling_down(), "Deberia estar en enfriamiento");
+    assert_eq!(handler.cooldown_duration(), Duration::from_secs(65));
+}
+
+/// I7: 65 s parado, luego 60 s a media tasa, luego normal; lee el texto del 162.
+#[test]
+fn i7_freno_fases_y_causas() {
+    use data_pipeline::ibkr::error_handler::{
+        clasificar, CausaIbkr, ErrorHandler, EstadoFreno, IBKR_PACING_RECOVERY_HALF_RATE_SECS,
+    };
+    use data_pipeline::ibkr::IBKR_PACING_BREAKER_COOLDOWN_SECS;
+    use std::time::{Duration, Instant};
+
+    let t0 = Instant::now();
+    let s = Duration::from_secs;
+    let mut h = ErrorHandler::new();
+    assert_eq!(h.estado_at(t0), EstadoFreno::Normal);
+    assert_eq!(
+        h.receive_error_at(162, "Historical Market Data Service error message:API historical data query cancelled: Pacing violation", t0),
+        CausaIbkr::PacingHistorico
+    );
+    let fin = IBKR_PACING_BREAKER_COOLDOWN_SECS;
+    let media = IBKR_PACING_RECOVERY_HALF_RATE_SECS;
+    assert_eq!(h.estado_at(t0 + s(fin) - Duration::from_millis(1)), EstadoFreno::Cooldown);
+    assert_eq!(h.factor_tasa_at(t0 + s(1)), 0.0);
+    assert_eq!(h.estado_at(t0 + s(fin)), EstadoFreno::MediaTasa);
+    assert_eq!(h.factor_tasa_at(t0 + s(fin)), 0.5);
+    assert_eq!(h.estado_at(t0 + s(fin + media)), EstadoFreno::Normal);
+    assert_eq!(h.half_rate_duration(), s(60));
+    assert_eq!(h.eventos().len(), 1);
+    assert_eq!(h.eventos()[0].enfriamiento, s(65));
+
+    // Un pacing nuevo durante el enfriamiento lo alarga.
+    h.receive_error_at(420, "streaming pacing", t0 + s(30));
+    assert!(h.is_cooling_down_at(t0 + s(fin + 1)));
+
+    // El texto del 162 decide: permisos y sin datos no frenan; lo desconocido si.
+    assert_eq!(clasificar(162, "No market data permissions for NYSE STK"), CausaIbkr::SinPermisos);
+    assert_eq!(clasificar(162, "HMDS query returned no data: ESZ6@CME Trades"), CausaIbkr::SinDatos);
+    assert_eq!(clasificar(162, "algo nuevo"), CausaIbkr::HistoricoDesconocido);
+    assert_eq!(clasificar(101, "Max number of tickers has been reached"), CausaIbkr::ExcesoLineas);
+    assert_eq!(clasificar(100, "Max rate of messages per second has been exceeded"), CausaIbkr::Otro);
+    let mut h2 = ErrorHandler::new();
+    h2.receive_error_at(162, "No market data permissions for NYSE STK", t0);
+    h2.receive_error_at(101, "Max number of tickers has been reached", t0);
+    assert_eq!(h2.estado_at(t0), EstadoFreno::Normal);
+    assert_eq!(h2.lineas_excedidas(), 1);
+    h2.receive_error_at(162, "algo nuevo", t0);
+    assert_eq!(h2.estado_at(t0), EstadoFreno::Cooldown, "162 desconocido falla cerrado");
+}
