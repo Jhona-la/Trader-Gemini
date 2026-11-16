@@ -21,3 +21,7 @@ memmap2 = "0.9.11"
 hmac = "0.12"
 sha2 = "0.10"
 hex = "0.4"
+# IBKR-I1 (integrador, 2026-11-16): cliente de la TWS API de Interactive Brokers,
+# SOLO para datos (pedido junie_cli_pedido_conector_ibkr_solo_lectura_v2.md).
+# Pin exacto: "2.7" resolveria a 2.12.0; la 2.7.0 es la auditada por QODER-CLI.
+ibapi = "=2.7.0"
