@@ -5116,8 +5116,12 @@ impl MuestraUso {
 /// timeouts del cliente (client.rs) y de un sello de reloj de pared, y la
 /// alineación de las ventanas del exchange no está comprobada (censo C-F7b,
 /// fila N22).
+///
+/// PUERTA-REST P1: `pub(crate)` para que la puerta REST única
+/// (`binance_gateway::VentanaUso`) herede esta misma lógica de cabeceras en
+/// lugar de duplicarla.
 #[derive(Clone, Debug, Default)]
-struct ContadorExchange {
+pub(crate) struct ContadorExchange {
     muestras: std::collections::VecDeque<MuestraUso>,
 }
 
@@ -5131,7 +5135,7 @@ impl ContadorExchange {
     const MAX_MUESTRAS: usize = 2
         * (crate::binance_api::LIMITE_PESO_1M + crate::binance_api::LIMITE_ORDENES_1M);
 
-    fn observar(&mut self, uso: usize, ahora_ms: u64, ventana_ms: u64) {
+    pub(crate) fn observar(&mut self, uso: usize, ahora_ms: u64, ventana_ms: u64) {
         // CL-180: una muestra llegó a lo sumo ahora. Con un reloj que
         // retrocede, un sello futuro alargaría su vida más allá de su ventana
         // y ninguna respuesta la corregiría; se acota a ahora (conserva el
@@ -5166,7 +5170,7 @@ impl ContadorExchange {
         self.muestras.push_back(MuestraUso { uso, sello_ms: ahora_ms });
     }
 
-    fn vigente(&self, ahora_ms: u64, ventana_ms: u64) -> usize {
+    pub(crate) fn vigente(&self, ahora_ms: u64, ventana_ms: u64) -> usize {
         self.muestras
             .iter()
             .map(|m| m.vigente(ahora_ms, ventana_ms))
