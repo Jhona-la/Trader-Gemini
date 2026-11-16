@@ -2371,7 +2371,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // El motor envía positionSide=LONG/SHORT siempre; si la cuenta está en
     // one-way, TODA orden falla con -4061. Verificar/activar antes de operar.
     // B1.2-fix: también en testnet (cuenta viva), no solo mainnet.
-    if !exec.load().is_paper_trading() {
+    // ARRANQUE C3-6: este pre-flight (POST firmado dualSidePosition=true, muta la
+    // cuenta) corre SOLO con venue Testnet. En mainnet no-papel el modo lo verifica
+    // y garantiza la ruta OMS (OmsSession::refresh, host_oms.rs, fail-closed
+    // OMS_MODE_UNCONFIRMED), que no se toca. En papel no corre ninguno de los dos.
+    if is_testnet && !exec.load().is_paper_trading() {
         match exec.load().ensure_hedge_mode().await {
             Ok(true) => {
                 telemetry_server::telemetry_log!("🔀 [PRE-FLIGHT] Cuenta migrada a modo HEDGE")
