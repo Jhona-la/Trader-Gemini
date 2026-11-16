@@ -38,9 +38,9 @@ pub struct TokenBucket {
 }
 
 impl TokenBucket {
-    /// Cubeta llena con `capacidad` fichas.
+    /// Cubeta llena con `capacidad` fichas. Con `reposicion` cero no repone
+    /// nunca (falla cerrado; sin panico: release usa panic = abort, RB-P1).
     pub fn new(capacidad: usize, reposicion: Duration) -> Self {
-        assert!(!reposicion.is_zero(), "la reposicion no puede ser cero");
         Self { capacidad, reposicion, fichas: capacidad, ultima: None }
     }
 
@@ -57,16 +57,22 @@ impl TokenBucket {
         if ahora <= ultima {
             return;
         }
+        let paso = self.reposicion.as_nanos();
+        if paso == 0 {
+            return;
+        }
         let transcurrido = ahora - ultima;
-        let nuevas = (transcurrido.as_nanos() / self.reposicion.as_nanos()) as usize;
+        let nuevas = usize::try_from(transcurrido.as_nanos() / paso).unwrap_or(usize::MAX);
         if nuevas == 0 {
             return;
         }
-        self.fichas = (self.fichas + nuevas).min(self.capacidad);
-        if self.fichas == self.capacidad {
+        self.fichas = self.fichas.saturating_add(nuevas).min(self.capacidad);
+        let avance = u32::try_from(nuevas).ok().and_then(|n| self.reposicion.checked_mul(n));
+        let siguiente = avance.and_then(|a| ultima.checked_add(a));
+        if self.fichas == self.capacidad || siguiente.is_none() {
             self.ultima = Some(ahora);
         } else {
-            self.ultima = Some(ultima + self.reposicion * nuevas as u32);
+            self.ultima = siguiente;
         }
     }
 
@@ -171,8 +177,8 @@ pub struct StreamingLines {
 }
 
 impl StreamingLines {
+    /// Con `maximo` cero no abre ninguna linea (falla cerrado, sin panico).
     pub fn new(maximo: usize) -> Self {
-        assert!(maximo > 0, "el techo de lineas no puede ser cero");
         Self { maximo, lineas: HashMap::new() }
     }
 
@@ -188,6 +194,10 @@ impl StreamingLines {
         if let Some(uso) = self.lineas.get_mut(clave) {
             *uso = ahora;
             return None;
+        }
+        if self.maximo == 0 {
+            // Sin techo util: la propia linea pedida es la que hay que cancelar.
+            return Some(clave.to_string());
         }
         let mut desalojada = None;
         if self.lineas.len() >= self.maximo {

@@ -340,3 +340,16 @@ fn i8_full_ibkr_module_integration() {
     let _ = std::any::type_name::<(m::PacingGate, m::InFlightCounter, m::StreamingLines, m::ClaveCache, m::CausaIbkr, m::EstadoFreno)>();
     assert_eq!(m::tipos_ibapi_usados().len(), 3);
 }
+/// I4 (RB-P1): los casos limite fallan cerrados sin panico (release = panic = abort).
+#[test]
+fn i4_casos_limite_sin_panico() {
+    use data_pipeline::ibkr::pacing::{StreamingLines, TokenBucket};
+    use std::time::{Duration, Instant};
+    let t0 = Instant::now();
+    let mut b = TokenBucket::new(1, Duration::ZERO);
+    assert!(b.try_acquire_at(t0));
+    assert!(!b.try_acquire_at(t0 + Duration::from_secs(3600)), "reposicion cero no repone nunca");
+    let mut l = StreamingLines::new(0);
+    assert_eq!(l.open_at("ES", t0), Some("ES".to_string()), "techo cero: no se abre");
+    assert_eq!(l.abiertas(), 0);
+}
