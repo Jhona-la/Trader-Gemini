@@ -89,6 +89,35 @@ class CargoSemaforoTests(unittest.TestCase):
         self.assertIn("ADQUIERE", log)
         self.assertIn("LIBERA", log)
 
+    # COMPV2-P3 (2026-11-16): sin PDB en dev/test, release intacto.
+    VAR_PDB = "CARGO_TARGET_X86_64_PC_WINDOWS_MSVC_RUSTFLAGS"
+
+    def test_sin_pdb_en_dev_y_test(self):
+        for args in (("check", "--workspace"), ("test", "--locked", "-p", "x"),
+                     ("test", "--profile", "test"), ("build", "--profile=dev"),
+                     ("test", "-p", "x", "--", "--release")):
+            with self.subTest(args=args):
+                r = self.correr(*args, SEMAFORO_SOLO_DECIDIR=1, **{self.VAR_PDB: None})
+                self.assertEqual(r.returncode, 0, r.stderr)
+                self.assertIn("SIN_PDB=si", r.stdout)
+                self.assertIn(f"{self.VAR_PDB}=-C link-arg=/DEBUG:NONE", r.stdout)
+
+    def test_release_y_perfiles_no_dev_conservan_el_pdb(self):
+        for args in (("build", "--release"), ("test", "-r"), ("build", "--profile", "perf"),
+                     ("build", "--profile=release"), ("bench",), ("+nightly", "bench")):
+            with self.subTest(args=args):
+                r = self.correr(*args, SEMAFORO_SOLO_DECIDIR=1, **{self.VAR_PDB: None})
+                self.assertEqual(r.returncode, 0, r.stderr)
+                self.assertIn("SIN_PDB=no", r.stdout)
+                self.assertNotIn("/DEBUG:NONE", r.stdout)
+
+    def test_sin_pdb_suma_a_lo_del_agente_y_se_puede_apagar(self):
+        r = self.correr("test", SEMAFORO_SOLO_DECIDIR=1, **{self.VAR_PDB: "-C foo=1"})
+        self.assertIn(f"{self.VAR_PDB}=-C foo=1 -C link-arg=/DEBUG:NONE", r.stdout)
+        r = self.correr("test", SEMAFORO_SOLO_DECIDIR=1, SEMAFORO_PDB=1, **{self.VAR_PDB: None})
+        self.assertIn("SIN_PDB=no", r.stdout)
+        self.assertNotIn("/DEBUG:NONE", r.stdout)
+
     def test_builds_ajenos_no_bloquean(self):
         # RÉGIMEN 2026-11-06: los cargo/rustc ajenos (de quien compila por
         # fuera del semáforo) ya NO bloquean el turno — el file-lock interno

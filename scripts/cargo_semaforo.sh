@@ -66,7 +66,8 @@
 #          SEMAFORO_PAUSA_S (15), SEMAFORO_SOLO_DECIDIR=1 (imprime la decisión
 #          y el entorno y sale sin compilar), SEMAFORO_BARRIDO (0 por defecto),
 #          SEMAFORO_DISCO_MIN_GB (40 GB decimales por defecto; límite del
-#          operador, no se deriva).
+#          operador, no se deriva), SEMAFORO_PDB (1 = conservar los .pdb en
+#          dev/test; ver COMPV2-P3).
 # Códigos de salida: 0/código de cargo, 2 (fuera del repo), 75 (sin turno),
 #          78 (DISCO-BAJO, no compila).
 # Costuras de prueba (scripts/tests/test_cargo_semaforo.py): SEMAFORO_RAIZ,
@@ -99,6 +100,41 @@ export CARGO_TARGET_DIR="$raiz/target"
 # RB-H2: frescura por contenido también para las ramas cuya .cargo/config.toml
 # aún no trae la clave (el target es compartido entre worktrees; ver punto 1).
 export CARGO_UNSTABLE_CHECKSUM_FRESHNESS=true
+# COMPV2-P3 (integrador, 2026-11-16) — sin PDB en dev/test (Windows MSVC).
+# P0 (`cargo -v` y `--print link-args`, nightly-2026-06-30): con debug = 0 y
+# strip = "symbols" rustc igual pasa `/DEBUG /PDBALTPATH:%_PDB%` a rust-lld y
+# cada exe de prueba y de build script deja su .pdb (12,6 GB medidos el 15
+# nov). Ni -C strip=debuginfo|none ni -C debuginfo=0 lo cambian; sólo
+# -C link-arg=/DEBUG:NONE (la última /DEBUG manda). Va aquí, no en
+# .cargo/config.toml, porque allí también cambiaría release (que hoy sí deja
+# PDB y no se toca), y las rustflags dentro de [profile] son inestables.
+# La variable del triple se SUMA a las rustflags de la config (no las
+# sustituye). No aplica con --release, -r, --profile distinto de dev/test ni
+# a `cargo bench`. SEMAFORO_PDB=1 la desactiva (quien necesite símbolos).
+sin_pdb=no
+if [ "${SEMAFORO_PDB:-0}" != "1" ]; then
+  sin_pdb=si
+  previo="" subcomando=""
+  for arg in "$@"; do
+    [ "$arg" = "--" ] && break
+    if [ -z "$subcomando" ]; then
+      case "$arg" in +* | -*) ;; *) subcomando=$arg ;; esac
+    fi
+    if [ "$previo" = "--profile" ]; then
+      case "$arg" in dev | test) ;; *) sin_pdb=no ;; esac
+    fi
+    case "$arg" in
+      --release | -r) sin_pdb=no ;;
+      --profile=*) case "${arg#--profile=}" in dev | test) ;; *) sin_pdb=no ;; esac ;;
+    esac
+    previo=$arg
+  done
+  [ "$subcomando" = "bench" ] && sin_pdb=no
+fi
+if [ "$sin_pdb" = "si" ]; then
+  CARGO_TARGET_X86_64_PC_WINDOWS_MSVC_RUSTFLAGS="${CARGO_TARGET_X86_64_PC_WINDOWS_MSVC_RUSTFLAGS:+$CARGO_TARGET_X86_64_PC_WINDOWS_MSVC_RUSTFLAGS }-C link-arg=/DEBUG:NONE"
+  export CARGO_TARGET_X86_64_PC_WINDOWS_MSVC_RUSTFLAGS
+fi
 bitacora="$raiz/logs/semaforo.log"
 registrar() { printf '%s\t%s\t%s\n' "$(date -u +%FT%TZ)" "$agente" "$*" >> "$bitacora"; }
 
@@ -377,7 +413,7 @@ fi
 registrar "ADQUIERE ram_libre=${ram_log} disco_libre=${disco_log} jobs=${CARGO_BUILD_JOBS:-todos}: cargo $*"
 
 if [ "${SEMAFORO_SOLO_DECIDIR:-0}" = "1" ]; then
-  echo "[semaforo] turno concedido; CARGO_TARGET_DIR=$CARGO_TARGET_DIR CARGO_BUILD_JOBS=${CARGO_BUILD_JOBS:-todos} CARGO_UNSTABLE_CHECKSUM_FRESHNESS=$CARGO_UNSTABLE_CHECKSUM_FRESHNESS DISCO_LIBRE_GB=${disco_ver} DISCO_MIN_GB=${disco_min} (GB decimal, 1 GB = 1e9 B)"
+  echo "[semaforo] turno concedido; CARGO_TARGET_DIR=$CARGO_TARGET_DIR CARGO_BUILD_JOBS=${CARGO_BUILD_JOBS:-todos} CARGO_UNSTABLE_CHECKSUM_FRESHNESS=$CARGO_UNSTABLE_CHECKSUM_FRESHNESS DISCO_LIBRE_GB=${disco_ver} DISCO_MIN_GB=${disco_min} (GB decimal, 1 GB = 1e9 B) SIN_PDB=${sin_pdb} CARGO_TARGET_X86_64_PC_WINDOWS_MSVC_RUSTFLAGS=${CARGO_TARGET_X86_64_PC_WINDOWS_MSVC_RUSTFLAGS:-}"
   registrar "LIBERA (solo decidir) $(disco_al_liberar)"
   exit 0
 fi
