@@ -196,9 +196,9 @@ impl std::fmt::Display for EquityDelFreno {
 
 /// Escribe la línea IMMUNE_TRIGGER. Los planos van con su código corto
 /// (significado en `telemetry_server::report_demo_run::PLANOS_IMMUNE`):
-/// `FRENO` = `drawdown.capital_del_freno(min(arena.unified_capital,arena.capital_exchange))`,
+/// `FRENO` = `drawdown.capital_del_freno(arena) [con libro derivado: equity del puente; sin el libro: min(unified_capital, capital_exchange)]`,
 /// `PICO` = `drawdown.registrar_pico(arena.pico_capital,freno_capital)`,
-/// `PUENTE` = `puente.equity_del_freno`. Con el prefijo `[ts=]` de mayor
+/// `PUENTE` = `capital_del_freno(arena) [equity del puente si dimensionable_derivado; min(unified_capital, capital_exchange) en otro caso]`. Con el prefijo `[ts=]` de mayor
 /// longitud representable y los máximos del dominio, la línea cabe en
 /// `telemetry_server::macros::MAX_LOG_LEN` (lo comprueba la prueba T3-5).
 pub fn escribir_immune_trigger(w: &mut impl std::fmt::Write, d: &DisparoInmune) -> std::fmt::Result {

@@ -611,9 +611,9 @@ fn demo_tel_immune_trigger() {
     let plano = |k: &str| {
         telemetry_server::report_demo_run::PLANOS_IMMUNE.iter().find(|p| p.0 == k).map(|p| (p.1, p.2)).unwrap()
     };
-    assert_eq!(plano("freno_capital_plano"), ("FRENO", "drawdown.capital_del_freno(min(arena.unified_capital,arena.capital_exchange))"));
+    assert_eq!(plano("freno_capital_plano"), ("FRENO", "drawdown.capital_del_freno(arena) [con libro derivado: equity del puente; sin el libro: min(unified_capital, capital_exchange)]"));
     assert_eq!(plano("peak_plano"), ("PICO", "drawdown.registrar_pico(arena.pico_capital,freno_capital)"));
-    assert_eq!(plano("equity_del_freno_plano"), ("PUENTE", "puente.equity_del_freno"));
+    assert_eq!(plano("equity_del_freno_plano"), ("PUENTE", "capital_del_freno(arena) [equity del puente si dimensionable_derivado; min(unified_capital, capital_exchange) en otro caso]"));
     let v = casa(&linea, "IMMUNE_TRIGGER", &[
         ("ts", C::Dig), ("motivo", C::Word), ("alcance", C::Lit("CUENTA")), ("freno_capital", C::Num),
         ("freno_capital_plano", C::Lit("FRENO")),
@@ -796,9 +796,9 @@ fn comprobar_campos(e: &telemetry_server::report_demo_run::EventoTel, c: &CasoIn
     assert_eq!(v("revision"), "N/D");
     assert_eq!(v("lecturas_posteriores"), "ninguna");
     for (k, largo) in [
-        ("freno_capital_plano", "drawdown.capital_del_freno(min(arena.unified_capital,arena.capital_exchange))"),
+        ("freno_capital_plano", "drawdown.capital_del_freno(arena) [con libro derivado: equity del puente; sin el libro: min(unified_capital, capital_exchange)]"),
         ("peak_plano", "drawdown.registrar_pico(arena.pico_capital,freno_capital)"),
-        ("equity_del_freno_plano", "puente.equity_del_freno"),
+        ("equity_del_freno_plano", "capital_del_freno(arena) [equity del puente si dimensionable_derivado; min(unified_capital, capital_exchange) en otro caso]"),
     ] {
         assert_eq!(adaptador::significado_plano(k, v(k)).as_deref(), Some(largo), "significado de {k}={}", v(k));
     }

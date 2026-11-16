@@ -653,9 +653,9 @@ const ESTADOS_SOLO_DE_ORDEN: &[&str] = &["New", "Canceled", "Expired", "Rejected
 /// significado (compatibilidad de lectura: también se aceptan los textos
 /// largos de T2).
 pub const PLANOS_IMMUNE: &[(&str, &str, &str)] = &[
-    ("freno_capital_plano", "FRENO", "drawdown.capital_del_freno(min(arena.unified_capital,arena.capital_exchange))"),
+    ("freno_capital_plano", "FRENO", "drawdown.capital_del_freno(arena) [con libro derivado: equity del puente; sin el libro: min(unified_capital, capital_exchange)]"),
     ("peak_plano", "PICO", "drawdown.registrar_pico(arena.pico_capital,freno_capital)"),
-    ("equity_del_freno_plano", "PUENTE", "puente.equity_del_freno"),
+    ("equity_del_freno_plano", "PUENTE", "capital_del_freno(arena) [equity del puente si dimensionable_derivado; min(unified_capital, capital_exchange) en otro caso]"),
 ];
 
 /// Marca del emisor para un valor fuera del dominio admitido (IMMUNE_TRIGGER).
@@ -1957,5 +1957,46 @@ DEMO FILL   symbol=BCHUSDT trade_id=a3b-c1 price=0.012345
         assert!((o.gross + 0.0006).abs() < 1e-12);
         assert!((o.commission + 0.0043).abs() < 1e-12);
         assert!((o.net + 0.0049).abs() < 1e-12);
+    }
+
+    /// D3 (seguimiento de C3): los rotulos FRENO y PUENTE de `PLANOS_IMMUNE` nombran la
+    /// fuente real del valor. En el host, `equity_del_freno` es el `cap` del paso del freno
+    /// (`host_oms::paso_del_freno_del_inmune`: `cap = capital_del_freno(arena)`), no una
+    /// lectura directa del puente; `capital_del_freno` tiene dos ramas (libro derivado o no).
+    #[test]
+    fn d3_rotulos_reflejan_fuente_capital_del_freno() {
+        const HOST: &str = include_str!("../../../src/bin/god_engine.rs");
+        const HOST_OMS: &str = include_str!("../../../src/host_oms.rs");
+        const DRAWDOWN: &str = include_str!("../../risk-engine/src/drawdown.rs");
+        let normal = |s: &str| s.replace("\r\n", "\n");
+        let (host, host_oms, drawdown) = (normal(HOST), normal(HOST_OMS), normal(DRAWDOWN));
+        // La fuente del valor, tal como esta hoy en el codigo.
+        assert!(host.contains("let equity_del_freno_imm = if cap.is_finite() { cap } else { f64::NAN };"));
+        assert!(host.contains("freno_capital: cap,"));
+        assert!(host_oms.contains("let cap = risk_engine::drawdown::capital_del_freno(arena);"));
+        let cuerpo = drawdown
+            .split_once("pub fn capital_del_freno(arena: &quantum_arena::GlobalArena) -> f64 {")
+            .expect("capital_del_freno en drawdown.rs")
+            .1;
+        let cuerpo = &cuerpo[..cuerpo.find("\n}\n").expect("fin de capital_del_freno")];
+        assert!(cuerpo.contains(".dimensionable_derivado") && cuerpo.contains("capital.min(exchange)"));
+
+        let plano = |k: &str| {
+            PLANOS_IMMUNE
+                .iter()
+                .find(|(clave, _, _)| *clave == k)
+                .map(|(_, _, largo)| *largo)
+                .unwrap_or_else(|| panic!("debe existir el plano {k}"))
+        };
+        for k in ["freno_capital_plano", "equity_del_freno_plano"] {
+            let largo = plano(k);
+            assert!(largo.contains("capital_del_freno(arena)"), "plano {k} ({largo}) no nombra capital_del_freno(arena)");
+            assert!(largo.contains("equity del puente"), "plano {k} ({largo}) omite la rama con libro derivado");
+            assert!(
+                largo.contains("min(unified_capital, capital_exchange)"),
+                "plano {k} ({largo}) omite la rama sin libro derivado"
+            );
+            assert!(!largo.contains("puente.equity_del_freno"), "plano {k} ({largo}) imputa una lectura directa del puente");
+        }
     }
 }
