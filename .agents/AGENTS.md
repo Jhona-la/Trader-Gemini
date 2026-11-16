@@ -81,10 +81,14 @@
 </RULE[edicion_privada_y_evidencia]>
 
 <RULE[higiene_disco_y_memoria]>
-- El mandato 9bdf (§§2,22,32) sustituye los topes de RAM, SSD e hilos y las
-  auditorías bloqueantes anteriores. No medir RAM libre, tamaño de carpetas
-  ni espacio de disco como requisito de admisión de un build. No usar
-  `scripts/cargo_semaforo.sh`, turnos de recursos ni semáforos bloqueantes.
+- El mandato 9bdf (§§2,22,32) sustituye los topes artificiales de RAM, SSD
+  e hilos y las auditorías bloqueantes anteriores. Compilar y probar SOLO por
+  el semáforo (`scripts/cargo_semaforo.sh`), sobre el target compartido
+  único (CARGO_TARGET_DIR), conforme a REGLAS_DE_TRABAJO.md:15 (decisión del
+  coordinador 14 nov 16:55, FA-063). El semáforo lleva la guarda de disco
+  (DISCO-BAJO por debajo del umbral de REGLAS_DE_TRABAJO.md:16): esa medición
+  es la única admisión de build que queda, y es del propio turno del semáforo,
+  no una auditoría bloqueante ajena.
 - Usar todos los CPUs/hilos disponibles para compilar y probar, con
   `CARGO_BUILD_JOBS` acorde a esa disponibilidad, sin recortes artificiales,
   y el enlazador `rust-lld`. No imponer topes de RAM o SSD a los agentes.
@@ -101,6 +105,8 @@
   autorización ya dada y su procedencia; la inactividad no concede permiso.
 - BUILD DE TESTS Y SÍMBOLOS (.PDB): Por el mandato explícito del operador del 2026-10-22, el `Cargo.toml` raíz fija `debug = 0` y `strip = "symbols"` en `[profile.dev]` y `[profile.test]`. Sustituye la pauta histórica `debug = 1`: las trazas pierden símbolos/líneas y no se prometen porcentajes de ahorro sin medir. PROHIBIDO forzar `debug = 2` o abrir perfiles/flags locales que dupliquen artefactos fuera del protocolo compartido.
 - El nuevo mandato de recursos no exige modificar ese perfil existente.
-- Para comprobaciones rutinarias de tipos, usar `cargo check --workspace --all-targets` en vez de `cargo test` para evitar emitir ejecutables y PDBs innecesarios.
+- Para comprobaciones rutinarias de tipos, `cargo check -p <paquete>` por módulo
+  a través del semáforo, conforme a REGLAS_DE_TRABAJO.md:15 (FA-063); el
+  workspace entero queda para el integrador.
 - NUNCA crear dumps de logs o runs masivos dentro de `.claude/worktrees/` o la raíz del proyecto. Los logs efímeros deben ir a `logs/` (ignorado en git) y ser rotados.
 </RULE[higiene_disco_y_memoria]>

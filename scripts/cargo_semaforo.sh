@@ -5,8 +5,17 @@
 # — acceso libre, total y sin restricciones a toda la RAM, todos los núcleos
 # de CPU y todo el SSD; quedan eliminados los topes artificiales de RAM y de
 # hilos de compilación, y las esperas por builds ajenos). Este envoltorio ya
-# NO restringe recursos. Conserva sólo lo que protege la INTEGRIDAD del
-# target/ compartido y la observabilidad:
+# NO ESTRANGULA recursos de forma artificial: ni topes de RAM o de hilos ni
+# esperas por builds ajenos (eso sigue ELIMINADO por aquel mandato).
+# FA-048 (2026-11-14) AÑADE un PISO DE SEGURIDAD distinto de aquellos topes:
+# no llenar el SSD. Es regla del operador (REGLAS_DE_TRABAJO.md:16, «40 GB»
+# libres; reafirmada el 14 nov: «que mi portátil no se llene en la ssd»,
+# CONTRATO:9). Con el disco libre bajo el umbral no se compila (punto 7).
+# Nota de gobernanza: .agents/AGENTS.md (higiene_disco_y_memoria) dice «no
+# medir espacio de disco ni usar este script»; REGLAS:15-16 lo manda. Ese
+# conflicto lo resuelve el operador o el coordinador, no este archivo.
+# Conserva lo que protege la INTEGRIDAD del target/ compartido, el piso de
+# disco y la observabilidad:
 #   1. target ÚNICO: CARGO_TARGET_DIR = <raíz del repo>/target, también desde
 #      cualquier worktree (lo deduce de `git rev-parse --git-common-dir`).
 #      RB-H2: es seguro entre worktrees SÓLO con la frescura por contenido de
@@ -36,6 +45,18 @@
 #      prohíbe detenerse en auditorías de tamaño de carpeta);
 #      SEMAFORO_BARRIDO=1 lo reactiva, cada SEMAFORO_BARRIDO_H (6) horas,
 #      con el turno ya tomado y 0 cargo/rustc vivos. Nunca bloquea el build.
+#   7. FA-048 — guarda DISCO-BAJO (OPT-OUT, a diferencia de la RAM, que es
+#      OPT-IN): mide el libre del sistema de archivos que contiene la raíz
+#      (df -Pk, KiB) en GB DECIMALES (1 GB = 1e9 B; libre = KiB x 1024 / 1e9)
+#      y lo compara con SEMAFORO_DISCO_MIN_GB (default 40, el «40 GB» de
+#      REGLAS:16; REGISTRO_DE_FALLAS.md:55 dice «40 GiB» = 42,95 GB, aquí se
+#      fija GB = 1e9 B). Va ANTES de la primera escritura (crear target/): si
+#      libre < umbral sale con 78 sin target/, sin cerrojo y sin cargo; su
+#      única escritura es la línea DISCO-BAJO en logs/semaforo.log. NO borra
+#      nada. Medición fallida (df ausente, código != 0, salida ilegible) =
+#      `desconocida`: NO bloquea, pero avisa por stderr y en la bitácora
+#      (la guarda queda ciega). Al liberar el turno se anota el libre de
+#      nuevo y, si quedó bajo el umbral, la línea lo dice (no bloquea).
 #
 # Uso:   bash scripts/cargo_semaforo.sh <argumentos de cargo>
 #        p. ej. bash scripts/cargo_semaforo.sh check --workspace --all-targets
@@ -43,10 +64,15 @@
 #          OPT-IN), SEMAFORO_TTL_MIN, SEMAFORO_ESPERA_MAX_MIN (60 de espera
 #          del cerrojo; al agotarla sale con 75 sin compilar),
 #          SEMAFORO_PAUSA_S (15), SEMAFORO_SOLO_DECIDIR=1 (imprime la decisión
-#          y el entorno y sale sin compilar), SEMAFORO_BARRIDO (0 por defecto).
+#          y el entorno y sale sin compilar), SEMAFORO_BARRIDO (0 por defecto),
+#          SEMAFORO_DISCO_MIN_GB (40 GB decimales por defecto; límite del
+#          operador, no se deriva).
+# Códigos de salida: 0/código de cargo, 2 (fuera del repo), 75 (sin turno),
+#          78 (DISCO-BAJO, no compila).
 # Costuras de prueba (scripts/tests/test_cargo_semaforo.py): SEMAFORO_RAIZ,
 #          SEMAFORO_PROCESOS (fuerza el nº de cargo/rustc ajenos),
-#          SEMAFORO_RAM_GB (fuerza la RAM libre medida).
+#          SEMAFORO_RAM_GB (fuerza la RAM libre medida),
+#          SEMAFORO_DISCO_GB (fuerza el disco libre medido, en GB).
 set -uo pipefail
 
 raiz=${SEMAFORO_RAIZ:-}
@@ -73,9 +99,134 @@ export CARGO_TARGET_DIR="$raiz/target"
 # RB-H2: frescura por contenido también para las ramas cuya .cargo/config.toml
 # aún no trae la clave (el target es compartido entre worktrees; ver punto 1).
 export CARGO_UNSTABLE_CHECKSUM_FRESHNESS=true
+bitacora="$raiz/logs/semaforo.log"
+registrar() { printf '%s\t%s\t%s\n' "$(date -u +%FT%TZ)" "$agente" "$*" >> "$bitacora"; }
+
+# FA-048 — guarda DISCO-BAJO (punto 7 de la cabecera). Unidad: GB decimales
+# (1 GB = 1e9 B). El umbral es el límite de riesgo del operador (REGLAS:16):
+# no se deriva ni se cambia aquí.
+disco_min_defecto=40
+disco_min=${SEMAFORO_DISCO_MIN_GB:-$disco_min_defecto}
+
+# FA-048 v3 — comparación EXACTA, entero contra entero, sin coma flotante.
+# Un valor en GB decimales («40», «39.996», «.5») se pasa a nanogigabytes
+# (1 nGB = 1 B): parte entera * 10^9 + decimales rellenados a 9 cifras, en
+# base 10 forzada (10#) para que un «08» no se lea en octal. Se aceptan como
+# mucho 9 cifras enteras (sin desbordar 64 bits) y 9 decimales (la precisión
+# del exacto de df); cualquier otra forma no es un valor: no imprime nada y
+# falla. Antes awk comparaba en coma flotante y «39.999999999999999» se leía
+# igual que 40.
+a_nano_gb() {
+  local v=$1 ent frac=
+  case "$v" in
+    *.*) ent=${v%%.*}; frac=${v#*.} ;;
+    *) ent=$v ;;
+  esac
+  case "$ent$frac" in
+    '' | *[!0-9]*) return 1 ;;
+  esac
+  [ "${#ent}" -le 9 ] && [ "${#frac}" -le 9 ] || return 1
+  frac="${frac}000000000"
+  echo $(( 10#${ent:-0} * 1000000000 + 10#${frac:0:9} ))
+}
+
+# ¿Lectura conocida? (primer campo de disco_libre_gb: un entero de nGB)
+disco_conocido() {
+  case "$1" in
+    '' | *[!0-9]*) return 1 ;;
+    *) return 0 ;;
+  esac
+}
+
+if ! disco_min_nano=$(a_nano_gb "$disco_min"); then
+  echo "[semaforo] SEMAFORO_DISCO_MIN_GB ilegible ('$disco_min'); uso el umbral por defecto ${disco_min_defecto} GB" >&2
+  disco_min=$disco_min_defecto
+  disco_min_nano=$(a_nano_gb "$disco_min")
+fi
+
+# Libre del sistema de archivos que contiene la raíz, en GB decimales, o
+# «desconocida» ante CUALQUIER fallo de la medición (df ausente, código
+# distinto de 0, salida ilegible). Sólo lee: no escribe nada.
+# Imprime DOS campos: «<exacto> <para mostrar>». El exacto es el que se
+# compara con el umbral, en nanogigabytes enteros (= bytes): con df son los
+# bytes exactos (KiB * 1024, aritmética entera); con la costura
+# SEMAFORO_DISCO_GB, su valor pasado por a_nano_gb (más de 9 decimales o mal
+# formada = «desconocida»). El de mostrar es el exacto redondeado a 2
+# decimales (df) o la costura tal cual: sólo para mensajes y bitácora. Antes
+# se comparaba el redondeado y 39,996 GB («40.00») pasaba.
+disco_libre_gb() {
+  local salida kib bytes exacto nano
+  if [ -n "${SEMAFORO_DISCO_GB+x}" ]; then
+    if nano=$(a_nano_gb "$SEMAFORO_DISCO_GB"); then
+      echo "$nano $SEMAFORO_DISCO_GB"
+    else
+      echo "desconocida"
+    fi
+    return
+  fi
+  if ! command -v df > /dev/null 2>&1; then
+    echo "desconocida"
+    return
+  fi
+  if ! salida=$(df -Pk "$raiz" 2> /dev/null); then
+    echo "desconocida"
+    return
+  fi
+  # df -P: una línea por sistema de archivos; la 4.ª columna es «Available»
+  # en bloques de 1024 B (-k).
+  kib=$(printf '%s\n' "$salida" | awk 'NR == 2 { print $4 }')
+  # Más de 15 cifras de KiB desbordaría la aritmética entera de 64 bits:
+  # se trata como salida ilegible (fail-open visible, igual que la basura).
+  case "$kib" in
+    '' | *[!0-9]* | ????????????????*) echo "desconocida" ;;
+    *)
+      bytes=$(( 10#$kib * 1024 ))
+      exacto=$(printf '%d.%09d' $(( bytes / 1000000000 )) $(( bytes % 1000000000 )))
+      echo "$bytes $(awk -v g="$exacto" 'BEGIN { printf "%.2f", g }')"
+      ;;
+  esac
+}
+
+disco_bajo() { (( 10#$1 < 10#$2 )); }
+
+read -r disco disco_ver <<< "$(disco_libre_gb)"
+if disco_conocido "$disco"; then
+  disco_log="${disco_ver}GB"
+  if disco_bajo "$disco" "$disco_min_nano"; then
+    linea="DISCO-BAJO: disco libre ${disco_ver} GB < umbral ${disco_min} GB (GB decimal, 1 GB = 1e9 B); no compilo: sin target/, sin cerrojo, sin cargo, nada borrado: cargo $*"
+    echo "[semaforo] $linea" >&2
+    # Única escritura permitida antes de salir: la línea en logs/ (no target/).
+    mkdir -p "$raiz/logs"
+    registrar "$linea"
+    exit 78
+  fi
+else
+  disco_log="desconocida"
+  disco_ver="desconocida"
+  echo "[semaforo] disco libre desconocido; guarda DISCO-BAJO no aplicada" >&2
+fi
+
 mkdir -p "$raiz/target" "$raiz/logs"
 cerrojo="$raiz/target/.semaforo.lock"
-bitacora="$raiz/logs/semaforo.log"
+if [ "$disco_log" = "desconocida" ]; then
+  registrar "disco libre desconocido; guarda DISCO-BAJO no aplicada (umbral ${disco_min} GB): cargo $*"
+fi
+
+# FA-047 — observabilidad al liberar: el libre de disco en ese momento y, si
+# quedó bajo el umbral, dicho en la línea. No bloquea lo ya compilado.
+disco_al_liberar() {
+  local d d_ver
+  read -r d d_ver <<< "$(disco_libre_gb)"
+  if disco_conocido "$d"; then
+    if disco_bajo "$d" "$disco_min_nano"; then
+      echo "disco_libre=${d_ver}GB DISCO-BAJO al liberar (< ${disco_min} GB)"
+    else
+      echo "disco_libre=${d_ver}GB"
+    fi
+  else
+    echo "disco_libre=desconocida"
+  fi
+}
 
 # Cuántos cargo/rustc hay vivos. «?» si no se puede saber, y «?» cuenta como
 # ocupado. LG-25c: antes, sin `powershell` en el PATH se caía a `pgrep`, que
@@ -157,7 +308,6 @@ ram_conocida() {
 
 menor_que() { awk -v a="$1" -v b="$2" 'BEGIN { exit !(a < b) }'; }
 ahora() { date +%s; }
-registrar() { printf '%s\t%s\t%s\n' "$(date -u +%FT%TZ)" "$agente" "$*" >> "$bitacora"; }
 
 cerrojo_huerfano() {
   [ -d "$cerrojo" ] || return 1
@@ -224,11 +374,11 @@ if [ -n "${SEMAFORO_PRUEBA_ROBO:-}" ]; then
   # Costura de prueba: otro agente toma el cerrojo mientras «compilamos».
   printf '%s\n' "$SEMAFORO_PRUEBA_ROBO" > "$cerrojo/dueno"
 fi
-registrar "ADQUIERE ram_libre=${ram_log} jobs=${CARGO_BUILD_JOBS:-todos}: cargo $*"
+registrar "ADQUIERE ram_libre=${ram_log} disco_libre=${disco_log} jobs=${CARGO_BUILD_JOBS:-todos}: cargo $*"
 
 if [ "${SEMAFORO_SOLO_DECIDIR:-0}" = "1" ]; then
-  echo "[semaforo] turno concedido; CARGO_TARGET_DIR=$CARGO_TARGET_DIR CARGO_BUILD_JOBS=${CARGO_BUILD_JOBS:-todos} CARGO_UNSTABLE_CHECKSUM_FRESHNESS=$CARGO_UNSTABLE_CHECKSUM_FRESHNESS"
-  registrar "LIBERA (solo decidir)"
+  echo "[semaforo] turno concedido; CARGO_TARGET_DIR=$CARGO_TARGET_DIR CARGO_BUILD_JOBS=${CARGO_BUILD_JOBS:-todos} CARGO_UNSTABLE_CHECKSUM_FRESHNESS=$CARGO_UNSTABLE_CHECKSUM_FRESHNESS DISCO_LIBRE_GB=${disco_ver} DISCO_MIN_GB=${disco_min} (GB decimal, 1 GB = 1e9 B)"
+  registrar "LIBERA (solo decidir) $(disco_al_liberar)"
   exit 0
 fi
 
@@ -298,5 +448,5 @@ ahora > "$cerrojo/creado"
 
 cargo "$@"
 codigo=$?
-registrar "LIBERA codigo=$codigo duracion=$(( $(ahora) - inicio ))s: cargo $*"
+registrar "LIBERA codigo=$codigo duracion=$(( $(ahora) - inicio ))s $(disco_al_liberar): cargo $*"
 exit "$codigo"
