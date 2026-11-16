@@ -970,3 +970,216 @@ mod tests_xliv_olvido {
     }
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// WB-4b/c (especificación GLM-APP v3, §4.2 b-c) — ISOTÓNICA COMO COMPARADOR Y
+// BRIER FUERA DE MUESTRA. Funciones puras de diagnóstico: ninguna decisión las
+// lee y no sustituyen al Platt (la elección de familia es del coordinador).
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Mínimo de observaciones por grupo para publicar un Brier: el MISMO mínimo
+/// con que el calibrador conformal declara caliente su ventana
+/// (`conformal::MIN_CALIBRACION`).
+pub const MIN_OBS_BRIER: usize = crate::conformal::MIN_CALIBRACION;
+
+/// Regresión isotónica (Pool Adjacent Violators; Zadrozny & Elkan 2002) sobre
+/// `(score, y, peso)`: la curva no decreciente en el score que minimiza el
+/// error cuadrático ponderado (PAVA es exacto para L2 en la familia
+/// monótona). Los empates de score van al MISMO bloque desde el principio.
+/// Devuelve, ordenado por score, un `(score, ajuste)` por entrada válida (score
+/// e y finitos, peso finito > 0); la masa ponderada `Σ w·y` de cada bloque se
+/// conserva.
+pub fn isotonic_pava_ponderada(filas: &[(f64, f64, f64)]) -> Vec<(f64, f64)> {
+    let mut v: Vec<(f64, f64, f64)> = filas
+        .iter()
+        .copied()
+        .filter(|&(s, y, w)| s.is_finite() && y.is_finite() && w.is_finite() && w > 0.0)
+        .collect();
+    v.sort_by(|a, b| a.0.total_cmp(&b.0));
+    // Bloques: (suma w·y, suma w, cuántas filas). Empates de score: un bloque.
+    let mut bloques: Vec<(f64, f64, usize)> = Vec::with_capacity(v.len());
+    let mut previo: Option<f64> = None;
+    for &(s, y, w) in &v {
+        match (previo, bloques.last_mut()) {
+            (Some(p), Some(ultimo)) if p == s => {
+                ultimo.0 += w * y;
+                ultimo.1 += w;
+                ultimo.2 += 1;
+            }
+            _ => bloques.push((w * y, w, 1)),
+        }
+        previo = Some(s);
+        // Fusionar hacia atrás mientras se viole la monotonía.
+        while bloques.len() >= 2 {
+            let k = bloques.len();
+            let (a, b) = (bloques[k - 2], bloques[k - 1]);
+            if a.0 / a.1 > b.0 / b.1 {
+                bloques[k - 2] = (a.0 + b.0, a.1 + b.1, a.2 + b.2);
+                bloques.pop();
+            } else {
+                break;
+            }
+        }
+    }
+    let mut salida = Vec::with_capacity(v.len());
+    let mut i = 0;
+    for (masa, peso, filas_bloque) in bloques {
+        let ajuste = masa / peso;
+        for &(s, _, _) in &v[i..i + filas_bloque] {
+            salida.push((s, ajuste));
+        }
+        i += filas_bloque;
+    }
+    salida
+}
+
+/// [`isotonic_pava_ponderada`] con peso 1 por fila: `(score, won)` con won en
+/// {0, 1} (o cualquier y finita).
+pub fn isotonic_pava(pares: &[(f64, f64)]) -> Vec<(f64, f64)> {
+    let filas: Vec<(f64, f64, f64)> = pares.iter().map(|&(s, y)| (s, y, 1.0)).collect();
+    isotonic_pava_ponderada(&filas)
+}
+
+/// Brier (1950): `BS = (1/n)·Σ(p − y)²` sobre `(p, y)` finitos. `(NaN, 0)`
+/// sin pares válidos.
+pub fn brier_score(preds: &[(f64, f64)]) -> (f64, usize) {
+    let (mut suma, mut n) = (0.0, 0usize);
+    for &(p, y) in preds {
+        if p.is_finite() && y.is_finite() {
+            suma += (p - y) * (p - y);
+            n += 1;
+        }
+    }
+    if n == 0 {
+        (f64::NAN, 0)
+    } else {
+        (suma / n as f64, n)
+    }
+}
+
+/// Brier por grupo con `(grupo, p, y)`: `None` (SIN EVIDENCIA, no un Brier
+/// fabricado) para el grupo con menos de [`MIN_OBS_BRIER`] pares. En el orden
+/// de primera aparición del grupo.
+pub fn brier_por_grupo<K: PartialEq + Copy>(preds: &[(K, f64, f64)]) -> Vec<(K, Option<f64>, usize)> {
+    let mut grupos: Vec<K> = Vec::new();
+    for &(g, _, _) in preds {
+        if !grupos.contains(&g) {
+            grupos.push(g);
+        }
+    }
+    grupos
+        .into_iter()
+        .map(|g| {
+            let del: Vec<(f64, f64)> = preds
+                .iter()
+                .filter(|&&(h, _, _)| h == g)
+                .map(|&(_, p, y)| (p, y))
+                .collect();
+            let (bs, n) = brier_score(&del);
+            (g, (n >= MIN_OBS_BRIER).then_some(bs), n)
+        })
+        .collect()
+}
+
+/// Descomposición de Murphy (1973) del Brier sin rejilla de bins: la versión
+/// CORP (Dimitriadis, Gneiting & Jordan 2021), que toma como recalibración la
+/// isotónica de `y` sobre `p`. Con `p̃` el ajuste PAVA y `ȳ` la frecuencia:
+/// fiabilidad = BS(p) − BS(p̃), resolución = BS(ȳ) − BS(p̃), incertidumbre =
+/// BS(ȳ), y `BS = fiabilidad − resolución + incertidumbre` exacto.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct DescomposicionBrier {
+    pub brier: f64,
+    pub fiabilidad: f64,
+    pub resolucion: f64,
+    pub incertidumbre: f64,
+    pub n: usize,
+}
+
+pub fn descomposicion_brier(preds: &[(f64, f64)]) -> Option<DescomposicionBrier> {
+    let validos: Vec<(f64, f64)> = preds
+        .iter()
+        .copied()
+        .filter(|&(p, y)| p.is_finite() && y.is_finite())
+        .collect();
+    let (brier, n) = brier_score(&validos);
+    if n == 0 {
+        return None;
+    }
+    let media = validos.iter().map(|&(_, y)| y).sum::<f64>() / n as f64;
+    let incertidumbre = brier_score(&validos.iter().map(|&(_, y)| (media, y)).collect::<Vec<_>>()).0;
+    // PAVA ordena por p; se reempareja cada ajuste con su y por el mismo orden.
+    let mut ordenados = validos.clone();
+    ordenados.sort_by(|a, b| a.0.total_cmp(&b.0));
+    let ajuste = isotonic_pava(&ordenados);
+    let recal: Vec<(f64, f64)> = ajuste
+        .iter()
+        .zip(ordenados.iter())
+        .map(|(&(_, pt), &(_, y))| (pt, y))
+        .collect();
+    let brier_recal = brier_score(&recal).0;
+    Some(DescomposicionBrier {
+        brier,
+        fiabilidad: brier - brier_recal,
+        resolucion: incertidumbre - brier_recal,
+        incertidumbre,
+        n,
+    })
+}
+
+/// Resultado del Brier fuera de muestra con corte temporal.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct BrierFueraDeMuestra {
+    /// Observaciones que ajustaron (mitad temprana) y que evaluaron (tardía).
+    pub n_ajuste: usize,
+    pub n_prueba: usize,
+    /// Brier del Platt ajustado, sobre la mitad que lo ajustó.
+    pub brier_en_muestra: f64,
+    /// Brier del mismo Platt sobre la mitad tardía: la brecha con el anterior
+    /// mide DESVÍO (drift) de esa familia.
+    pub brier_fuera: f64,
+    /// Fiabilidad CORP EN MUESTRA del Platt (BS(Platt) − BS(isotónica) en la
+    /// mitad que lo ajustó): la señal limpia de mala especificación de familia.
+    pub brecha_familia_en_muestra: f64,
+}
+
+/// Ajusta un Platt nuevo (el MISMO estimador de producción, con sus fechas)
+/// sobre `ajuste` y lo evalúa sin olvido (`calibrate`) sobre `ajuste` y
+/// `prueba`. `None` si alguna parte tiene menos de [`MIN_OBS_BRIER`].
+pub fn brier_platt_fuera_de_muestra(
+    ajuste: &[(f64, bool, u64)],
+    prueba: &[(f64, bool)],
+) -> Option<BrierFueraDeMuestra> {
+    if ajuste.len() < MIN_OBS_BRIER || prueba.len() < MIN_OBS_BRIER {
+        return None;
+    }
+    let mut platt = PlattCalibrator::new();
+    for &(s, won, ts) in ajuste {
+        platt.update_at(s, won, ts);
+    }
+    let en_muestra: Vec<(f64, f64)> = ajuste
+        .iter()
+        .map(|&(s, won, _)| (platt.calibrate(s), f64::from(won)))
+        .collect();
+    let fuera: Vec<(f64, f64)> = prueba
+        .iter()
+        .map(|&(s, won)| (platt.calibrate(s), f64::from(won)))
+        .collect();
+    let d = descomposicion_brier(&en_muestra)?;
+    Some(BrierFueraDeMuestra {
+        n_ajuste: ajuste.len(),
+        n_prueba: prueba.len(),
+        brier_en_muestra: d.brier,
+        brier_fuera: brier_score(&fuera).0,
+        brecha_familia_en_muestra: d.fiabilidad,
+    })
+}
+
+/// Corte temporal: ordena por fecha y parte en la MITAD (la fracción que
+/// maximiza el mínimo de observaciones de las dos partes, la condición ≥
+/// [`MIN_OBS_BRIER`] de la especificación). Devuelve (temprana, tardía).
+pub fn corte_temporal<T: Copy>(filas: &[T], fecha: impl Fn(&T) -> u64) -> (Vec<T>, Vec<T>) {
+    let mut v: Vec<T> = filas.to_vec();
+    v.sort_by_key(|f| fecha(f));
+    let mitad = v.len() / 2;
+    let tardia = v.split_off(mitad);
+    (v, tardia)
+}

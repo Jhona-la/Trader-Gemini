@@ -18,8 +18,10 @@
 //! de selección que el vivo (por moneda con ≥ 5 observaciones). Los
 //! calibradores vivos (`calibrator_by_coin`, `confidence_calibrator`) NO
 //! reciben ningún contrafactual y ninguna decisión lee este libro: la orden
-//! sigue usando la calibración de hoy. El diagnóstico de Brier fuera de muestra
-//! llega con WB-4b/c.
+//! sigue usando la calibración de hoy. El diagnóstico (`diagnostico`) compara,
+//! con corte temporal, el Brier fuera de muestra del Platt de solo ejecutadas
+//! (el de hoy) y del Platt con contrafactuales, y la brecha de familia frente a
+//! la isotónica.
 //!
 //! CONTRATO (recomendado 9 de QODER-CLI): retención acotada a `WINDOW` (512, el
 //! del calibrador) en filas abiertas y en observaciones; tp/sl ABSOLUTOS al
@@ -38,7 +40,9 @@
 //! persiste: tras un reinicio empieza vacío, y el diagnóstico reajusta los dos
 //! Platt desde sus propias observaciones, así que la comparación sigue pareja.
 
-use crate::calibration::{PlattCalibrator, WINDOW};
+use crate::calibration::{
+    brier_platt_fuera_de_muestra, corte_temporal, BrierFueraDeMuestra, PlattCalibrator, WINDOW,
+};
 use risk_engine::medida_sombra::GeometriaSombra;
 use std::collections::VecDeque;
 
@@ -156,6 +160,20 @@ pub struct Observacion {
     pub won: bool,
     pub ts_ms: u64,
     pub origen: Origen,
+}
+
+/// Diagnóstico de la calibración en sombra (telemetría `WB4_SOMBRA`).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Diagnostico {
+    pub observaciones: usize,
+    pub ejecutadas: usize,
+    pub contrafactuales: usize,
+    /// Platt de SOLO ejecutadas (el de hoy): ajusta con las ejecutadas de la
+    /// mitad temprana, evalúa sobre TODA la mitad tardía.
+    pub solo_ejecutadas: Option<BrierFueraDeMuestra>,
+    /// Platt con contrafactuales: ajusta con toda la mitad temprana y evalúa
+    /// sobre la misma mitad tardía.
+    pub con_contrafactuales: Option<BrierFueraDeMuestra>,
 }
 
 /// El libro de decisiones con su calibración en sombra.
@@ -346,7 +364,8 @@ impl LibroDecisiones {
 
     /// Telemetría `WB4_SOMBRA` (sólo escribe): una línea cuando el número de
     /// filas cerradas más ejecutadas llega a una potencia de 2, con los
-    /// contadores (el Brier fuera de muestra llega con WB-4b/c).
+    /// contadores y el Brier fuera de muestra de las dos calibraciones. Sin
+    /// evidencia (menos de 30 en una mitad), `N/D`.
     pub fn avisar(&mut self, trazas: bool) {
         let total = self.ejecutadas + self.contrafactuales + self.no_resueltas;
         if total == self.avisado || !total.is_power_of_two() {
@@ -356,8 +375,11 @@ impl LibroDecisiones {
         if !trazas {
             return;
         }
+        let d = self.diagnostico();
+        let num = |x: Option<f64>| x.filter(|v| v.is_finite()).map_or("N/D".to_string(), |v| format!("{v:.6}"));
+        let (solo, con) = (d.solo_ejecutadas, d.con_contrafactuales);
         telemetry_server::telemetry_log!(
-            "WB4_SOMBRA ejecutadas={} contrafactuales={} no_resueltas={} abiertas={} solapadas={} invalidas={} llenas={} retenidas={}",
+            "WB4_SOMBRA ejecutadas={} contrafactuales={} no_resueltas={} abiertas={} solapadas={} invalidas={} llenas={} retenidas={} brier_oos_solo_ejecutadas={} brier_oos_con_contrafactuales={} brier_en_muestra_solo_ejecutadas={} brier_en_muestra_con_contrafactuales={} brecha_familia_solo_ejecutadas={} brecha_familia_con_contrafactuales={} n_prueba={}",
             self.ejecutadas,
             self.contrafactuales,
             self.no_resueltas,
@@ -365,8 +387,36 @@ impl LibroDecisiones {
             self.solapadas,
             self.invalidas,
             self.llenas,
-            self.observaciones.len(),
+            d.observaciones,
+            num(solo.map(|r| r.brier_fuera)),
+            num(con.map(|r| r.brier_fuera)),
+            num(solo.map(|r| r.brier_en_muestra)),
+            num(con.map(|r| r.brier_en_muestra)),
+            num(solo.map(|r| r.brecha_familia_en_muestra)),
+            num(con.map(|r| r.brecha_familia_en_muestra)),
+            con.or(solo).map_or("N/D".to_string(), |r| r.n_prueba.to_string()),
         );
+    }
+
+    /// Brier fuera de muestra con corte temporal de las dos calibraciones.
+    pub fn diagnostico(&self) -> Diagnostico {
+        let obs: Vec<Observacion> = self.observaciones.iter().copied().collect();
+        let (temprana, tardia) = corte_temporal(&obs, |o| o.ts_ms);
+        let prueba: Vec<(f64, bool)> = tardia.iter().map(|o| (o.score, o.won)).collect();
+        let ajuste_todo: Vec<(f64, bool, u64)> =
+            temprana.iter().map(|o| (o.score, o.won, o.ts_ms)).collect();
+        let ajuste_ejecutadas: Vec<(f64, bool, u64)> = temprana
+            .iter()
+            .filter(|o| o.origen == Origen::Ejecutada)
+            .map(|o| (o.score, o.won, o.ts_ms))
+            .collect();
+        Diagnostico {
+            observaciones: obs.len(),
+            ejecutadas: obs.iter().filter(|o| o.origen == Origen::Ejecutada).count(),
+            contrafactuales: obs.iter().filter(|o| o.origen == Origen::Contrafactual).count(),
+            solo_ejecutadas: brier_platt_fuera_de_muestra(&ajuste_ejecutadas, &prueba),
+            con_contrafactuales: brier_platt_fuera_de_muestra(&ajuste_todo, &prueba),
+        }
     }
 }
 

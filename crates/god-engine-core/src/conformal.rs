@@ -82,6 +82,10 @@ pub struct ConformalGuardado {
     pub adapt_errors: u64,
 }
 
+/// Observaciones con que la ventana conformal se declara caliente. WB-4c la
+/// reusa como mínimo por grupo del Brier (`calibration::MIN_OBS_BRIER`).
+pub const MIN_CALIBRACION: usize = 30;
+
 pub struct ConformalCalibrator {
     scores: VecDeque<f64>,
     window: usize,
@@ -102,7 +106,7 @@ impl ConformalCalibrator {
         Self {
             scores: VecDeque::with_capacity(256),
             window: 200,
-            min_calibration: 30,
+            min_calibration: MIN_CALIBRACION,
             target_alpha: 0.10,
             effective_alpha: 0.10,
             adapt_steps: 0,
