@@ -145,6 +145,120 @@ impl LimitesExchange {
     }
 }
 
+// ------------------------------------------------------------------ P3 ---
+
+/// El resultado de leer `exchangeInfo.rateLimits`: los tres límites (cada uno
+/// con su origen) y las entradas que no se usaron, con el motivo.
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize)]
+pub struct LecturaRateLimits {
+    pub limites: LimitesExchange,
+    pub ignorados: Vec<String>,
+}
+
+/// La duración en ms de un `interval` × `intervalNum` de `rateLimits`. Sólo
+/// SECOND y MINUTE: son los de los tres contadores (binance_api.rs, N5);
+/// cualquier otro se ignora. Los segundos de cada unidad son su definición,
+/// no un parámetro.
+fn ventana_de_intervalo(intervalo: &str, numero: u64) -> Option<u64> {
+    let unidad = match intervalo {
+        "SECOND" => std::time::Duration::from_secs(1),
+        "MINUTE" => std::time::Duration::from_secs(60),
+        _ => return None,
+    };
+    u64::try_from(unidad.as_millis())
+        .ok()
+        .and_then(|ms| ms.checked_mul(numero))
+}
+
+impl LimitesExchange {
+    /// Lee `rateLimits` del cuerpo de `GET /fapi/v1/exchangeInfo`.
+    ///
+    /// - Cada contador toma la entrada cuyo tipo y ventana son los suyos
+    ///   (`REQUEST_WEIGHT` con `VENTANA_PESO_MS`, `ORDERS` con
+    ///   `VENTANA_ORDENES_10S_MS` y con `VENTANA_ORDENES_1M_MS`): las
+    ///   cabeceras `X-MBX-USED-WEIGHT-1M` / `X-MBX-ORDER-COUNT-10S/1M` valen
+    ///   en esas ventanas.
+    /// - El límite es el que declara el exchange (cambia por cuenta/VIP,
+    ///   `docs/BINANCE_API_MAP.md` cabecera), mayor o menor que LG-12.
+    /// - Un contador sin entrada válida cae a su constante LG-12 (respaldo por
+    ///   contador). Dos entradas para el mismo contador: la menor (lo
+    ///   conservador).
+    /// - Entradas de otro tipo (RAW_REQUESTS), otra ventana, límite 0 o mal
+    ///   formadas no se usan y quedan en `ignorados`.
+    ///
+    /// Error si el cuerpo no es JSON o no trae `rateLimits` como lista.
+    pub fn desde_exchange_info(cuerpo: &str) -> Result<LecturaRateLimits, String> {
+        let valor: serde_json::Value = serde_json::from_str(cuerpo)
+            .map_err(|e| format!("exchangeInfo no es JSON: {e}"))?;
+        let entradas = valor
+            .get("rateLimits")
+            .and_then(|v| v.as_array())
+            .ok_or_else(|| "exchangeInfo sin rateLimits".to_string())?;
+        let mut limites = LimitesExchange::respaldo_lg12();
+        let mut ignorados = Vec::new();
+        for (i, e) in entradas.iter().enumerate() {
+            let tipo = e.get("rateLimitType").and_then(|v| v.as_str());
+            let intervalo = e.get("interval").and_then(|v| v.as_str());
+            let numero = e.get("intervalNum").and_then(|v| v.as_u64());
+            let limite = e
+                .get("limit")
+                .and_then(|v| v.as_u64())
+                .and_then(|l| usize::try_from(l).ok());
+            let (Some(tipo), Some(intervalo), Some(numero), Some(limite)) =
+                (tipo, intervalo, numero, limite)
+            else {
+                ignorados.push(format!("rateLimits[{i}]: mal formada"));
+                continue;
+            };
+            let Some(ventana_ms) = ventana_de_intervalo(intervalo, numero) else {
+                ignorados.push(format!("rateLimits[{i}]: {tipo} {numero} {intervalo}: ventana sin contador"));
+                continue;
+            };
+            if limite == 0 {
+                ignorados.push(format!("rateLimits[{i}]: {tipo} limite 0"));
+                continue;
+            }
+            let hueco = match (tipo, ventana_ms) {
+                ("REQUEST_WEIGHT", v) if v == VENTANA_PESO_MS => &mut limites.peso_1m,
+                ("ORDERS", v) if v == VENTANA_ORDENES_10S_MS => &mut limites.ordenes_10s,
+                ("ORDERS", v) if v == VENTANA_ORDENES_1M_MS => &mut limites.ordenes_1m,
+                _ => {
+                    ignorados.push(format!(
+                        "rateLimits[{i}]: {tipo} {numero} {intervalo}: sin contador"
+                    ));
+                    continue;
+                }
+            };
+            if hueco.origen == OrigenLimite::ExchangeInfo && hueco.limite <= limite {
+                ignorados.push(format!("rateLimits[{i}]: {tipo} repetida, queda la menor"));
+                continue;
+            }
+            *hueco = LimiteVentana {
+                limite,
+                ventana_ms,
+                origen: OrigenLimite::ExchangeInfo,
+            };
+        }
+        Ok(LecturaRateLimits { limites, ignorados })
+    }
+
+    /// Como `desde_exchange_info`, pero sin cuerpo o con un cuerpo ilegible
+    /// devuelve el respaldo LG-12 entero (con el motivo en `ignorados`).
+    pub fn desde_exchange_info_o_respaldo(cuerpo: Option<&str>) -> LecturaRateLimits {
+        match cuerpo.map(LimitesExchange::desde_exchange_info) {
+            Some(Ok(l)) => l,
+            Some(Err(e)) => LecturaRateLimits {
+                limites: LimitesExchange::respaldo_lg12(),
+                ignorados: vec![e],
+            },
+            None => LecturaRateLimits {
+                limites: LimitesExchange::respaldo_lg12(),
+                ignorados: vec!["sin exchangeInfo".to_string()],
+            },
+        }
+    }
+}
+
 /// Lo que una petición suma a cada contador (peso, órdenes 10 s, órdenes
 /// 1 min): `CosteBinance` reparte `ordenes` en los dos contadores ORDERS.
 #[inline]

@@ -5,11 +5,11 @@
 
 use execution_engine::binance_api::{
     CosteBinance, COSTE_ALGO_ABIERTAS_SIMBOLO, COSTE_CANCELACION, COSTE_CONSULTA_ORDEN, COSTE_ORDEN,
-    COSTE_PIERNA_ALGO, COSTE_POSITION_RISK, LIMITE_ORDENES_10S, LIMITE_PESO_1M,
+    COSTE_PIERNA_ALGO, COSTE_POSITION_RISK, LIMITE_ORDENES_10S, LIMITE_ORDENES_1M, LIMITE_PESO_1M,
     VENTANA_ORDENES_10S_MS, VENTANA_ORDENES_1M_MS, VENTANA_PESO_MS,
 };
 use execution_engine::binance_gateway::{
-    coste_de_firma, Alcance, CallPriority, Desenlace, FilaPeso, LimitesExchange, Metodo, PesoFirma,
+    coste_de_firma, Alcance, CallPriority, Desenlace, FilaPeso, LimitesExchange, Metodo, OrigenLimite, PesoFirma,
     PresupuestoPuerta, RechazoPuerta, CONTADOR_ORDENES_10S, TABLA_PESOS,
     CONTADOR_ORDENES_1M, CONTADOR_PESO_1M, FRACCION_FRENO_LECTURA,
 };
@@ -423,4 +423,124 @@ fn gateway_firmas_criticas_verificadas() {
     ] {
         assert_eq!(coste_de_firma(metodo, ruta, con_simbolo), Ok(coste), "{metodo:?} {ruta}");
     }
+}
+
+// ---------------------------------------------------------------- P3 ----
+
+/// Cuerpo de exchangeInfo de prueba con límites distintos de LG-12 (para que
+/// se vea de dónde sale cada uno), en otro orden, con un RAW_REQUESTS que no
+/// es de ningún contador y campos de más.
+fn exchange_info_de_prueba(peso: usize, o10: usize, o1m: usize) -> String {
+    format!(
+        concat!(
+            "{{\"timezone\":\"UTC\",\"serverTime\":1,\"rateLimits\":[",
+            "{{\"rateLimitType\":\"ORDERS\",\"interval\":\"MINUTE\",\"intervalNum\":1,\"limit\":{o1m}}},",
+            "{{\"rateLimitType\":\"RAW_REQUESTS\",\"interval\":\"MINUTE\",\"intervalNum\":5,\"limit\":61000}},",
+            "{{\"rateLimitType\":\"REQUEST_WEIGHT\",\"interval\":\"MINUTE\",\"intervalNum\":1,\"limit\":{peso}}},",
+            "{{\"rateLimitType\":\"ORDERS\",\"interval\":\"SECOND\",\"intervalNum\":10,\"limit\":{o10}}}",
+            "],\"symbols\":[]}}"
+        ),
+        peso = peso,
+        o10 = o10,
+        o1m = o1m
+    )
+}
+
+/// P3: los tres contadores salen de `exchangeInfo.rateLimits`, cada uno con
+/// su ventana, y el presupuesto los usa.
+#[test]
+fn gateway_limites_de_exchangeinfo() {
+    let (peso, o10, o1m) = (LIMITE_PESO_1M / 2, LIMITE_ORDENES_10S / 2, LIMITE_ORDENES_1M / 2);
+    let lectura = LimitesExchange::desde_exchange_info(&exchange_info_de_prueba(peso, o10, o1m));
+    assert!(lectura.is_ok(), "{lectura:?}");
+    let Ok(lectura) = lectura else { return };
+    let l = lectura.limites;
+    assert_eq!(
+        (l.peso_1m.limite, l.ordenes_10s.limite, l.ordenes_1m.limite),
+        (peso, o10, o1m)
+    );
+    assert_eq!(
+        (l.peso_1m.ventana_ms, l.ordenes_10s.ventana_ms, l.ordenes_1m.ventana_ms),
+        (VENTANA_PESO_MS, VENTANA_ORDENES_10S_MS, VENTANA_ORDENES_1M_MS)
+    );
+    for v in l.como_arreglo() {
+        assert_eq!(v.origen, OrigenLimite::ExchangeInfo);
+    }
+    assert_eq!(lectura.ignorados.len(), 1, "{:?}", lectura.ignorados);
+    assert!(lectura.ignorados[0].contains("RAW_REQUESTS"));
+
+    // El límite del exchange también puede ser MAYOR que LG-12 (VIP).
+    let mayor = LimitesExchange::desde_exchange_info(&exchange_info_de_prueba(
+        LIMITE_PESO_1M * 2,
+        LIMITE_ORDENES_10S,
+        LIMITE_ORDENES_1M,
+    ));
+    assert!(matches!(mayor, Ok(ref m) if m.limites.peso_1m.limite == LIMITE_PESO_1M * 2));
+
+    // El presupuesto frena con el límite leído, no con LG-12.
+    let mut p = PresupuestoPuerta::nuevo(l);
+    p.observar(&cabecera_peso(peso), T0);
+    assert!(p.cabe(CallPriority::Critica, COSTE_POSITION_RISK, T0).is_err());
+    let mut q = PresupuestoPuerta::nuevo(LimitesExchange::respaldo_lg12());
+    q.observar(&cabecera_peso(peso), T0);
+    assert!(q.cabe(CallPriority::Critica, COSTE_POSITION_RISK, T0).is_ok());
+
+    // Dos entradas para el mismo contador: queda la menor.
+    let doble = exchange_info_de_prueba(peso, o10, o1m).replace(
+        "\"rateLimits\":[",
+        &format!(
+            "\"rateLimits\":[{{\"rateLimitType\":\"REQUEST_WEIGHT\",\"interval\":\"MINUTE\",\"intervalNum\":1,\"limit\":{}}},",
+            peso - 1
+        ),
+    );
+    assert!(matches!(
+        LimitesExchange::desde_exchange_info(&doble),
+        Ok(ref d) if d.limites.peso_1m.limite == peso - 1
+    ));
+}
+
+/// P3: sin exchangeInfo, ilegible o con un contador ausente o inválido, ese
+/// contador cae a su constante LG-12 de binance_api.rs.
+#[test]
+fn gateway_respaldo_lg12_sin_exchangeinfo() {
+    let lg12 = LimitesExchange::respaldo_lg12();
+    assert_eq!(
+        (lg12.peso_1m.limite, lg12.ordenes_10s.limite, lg12.ordenes_1m.limite),
+        (LIMITE_PESO_1M, LIMITE_ORDENES_10S, LIMITE_ORDENES_1M)
+    );
+    assert_eq!(
+        (lg12.peso_1m.ventana_ms, lg12.ordenes_10s.ventana_ms, lg12.ordenes_1m.ventana_ms),
+        (VENTANA_PESO_MS, VENTANA_ORDENES_10S_MS, VENTANA_ORDENES_1M_MS)
+    );
+    for v in lg12.como_arreglo() {
+        assert_eq!(v.origen, OrigenLimite::RespaldoLg12);
+    }
+
+    for cuerpo in [None, Some("no es json"), Some("{\"symbols\":[]}"), Some("{\"rateLimits\":7}")] {
+        let r = LimitesExchange::desde_exchange_info_o_respaldo(cuerpo);
+        assert_eq!(r.limites, lg12, "{cuerpo:?}");
+        assert_eq!(r.ignorados.len(), 1, "{cuerpo:?}: con su motivo");
+    }
+
+    // Sin la entrada de 10 s, sólo ese contador cae a LG-12.
+    let (peso, o10, o1m) = (LIMITE_PESO_1M / 2, LIMITE_ORDENES_10S / 2, LIMITE_ORDENES_1M / 2);
+    let sin_10s = exchange_info_de_prueba(peso, o10, o1m).replace(
+        &format!(",{{\"rateLimitType\":\"ORDERS\",\"interval\":\"SECOND\",\"intervalNum\":10,\"limit\":{o10}}}"),
+        "",
+    );
+    let r = LimitesExchange::desde_exchange_info_o_respaldo(Some(&sin_10s));
+    assert_eq!(r.limites.ordenes_10s, lg12.ordenes_10s);
+    assert_eq!(r.limites.peso_1m.limite, peso);
+    assert_eq!(r.limites.ordenes_1m.limite, o1m);
+
+    // Límite 0, ventana que no es de ningún contador o entrada mal formada:
+    // no se usan.
+    let raro = exchange_info_de_prueba(0, o10, o1m)
+        .replace("\"intervalNum\":10,", "\"intervalNum\":7,")
+        .replace("\"limit\":61000", "\"limit\":\"mucho\"");
+    let r = LimitesExchange::desde_exchange_info_o_respaldo(Some(&raro));
+    assert_eq!(r.limites.peso_1m, lg12.peso_1m);
+    assert_eq!(r.limites.ordenes_10s, lg12.ordenes_10s);
+    assert_eq!(r.limites.ordenes_1m.limite, o1m);
+    assert_eq!(r.ignorados.len(), 3, "{:?}", r.ignorados);
 }
