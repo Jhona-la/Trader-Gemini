@@ -9,8 +9,8 @@ use execution_engine::binance_api::{
     VENTANA_ORDENES_10S_MS, VENTANA_ORDENES_1M_MS, VENTANA_PESO_MS,
 };
 use execution_engine::binance_gateway::{
-    coste_de_firma, Alcance, CallPriority, Desenlace, FilaPeso, LimitesExchange, Metodo, OrigenLimite, PesoFirma,
-    PresupuestoPuerta, RechazoPuerta, CONTADOR_ORDENES_10S, TABLA_PESOS,
+    coste_de_firma, Alcance, BinanceGateway, CallPriority, CintaJsonl, CintaMemoria, Desenlace, FilaPeso, LimitesExchange, Metodo, OrigenLimite, PesoFirma,
+    Pedido, PresupuestoPuerta, RechazoPuerta, ResultadoLlamada, CONTADOR_ORDENES_10S, TABLA_PESOS,
     CONTADOR_ORDENES_1M, CONTADOR_PESO_1M, FRACCION_FRENO_LECTURA,
 };
 use execution_engine::client::BinanceRateLimits;
@@ -543,4 +543,287 @@ fn gateway_respaldo_lg12_sin_exchangeinfo() {
     assert_eq!(r.limites.ordenes_10s, lg12.ordenes_10s);
     assert_eq!(r.limites.ordenes_1m.limite, o1m);
     assert_eq!(r.ignorados.len(), 3, "{:?}", r.ignorados);
+}
+
+// ---------------------------------------------------------------- P4 ----
+
+/// Una respuesta del servidor local: estado y cabeceras extra.
+#[derive(Clone)]
+struct Guion {
+    estado: u16,
+    cabeceras: Vec<(&'static str, String)>,
+    cuerpo: &'static str,
+}
+
+fn guion(estado: u16, cabeceras: &[(&'static str, &str)]) -> Guion {
+    Guion {
+        estado,
+        cabeceras: cabeceras.iter().map(|(n, v)| (*n, v.to_string())).collect(),
+        cuerpo: "{}",
+    }
+}
+
+/// Servidor HTTP/1.1 mínimo en 127.0.0.1 (nunca Binance): responde, en
+/// orden, cada `Guion` y apunta la línea de petición que recibió. Pasado el
+/// guion responde 500.
+struct Servidor {
+    base: String,
+    recibidas: std::sync::Arc<std::sync::Mutex<Vec<String>>>,
+}
+
+impl Servidor {
+    async fn levantar(guiones: Vec<Guion>) -> Servidor {
+        let oyente = tokio::net::TcpListener::bind("127.0.0.1:0").await;
+        assert!(oyente.is_ok(), "no se pudo abrir 127.0.0.1");
+        let Ok(oyente) = oyente else { unreachable!() };
+        let direccion = oyente.local_addr().map(|a| a.to_string()).unwrap_or_default();
+        let recibidas = std::sync::Arc::new(std::sync::Mutex::new(Vec::<String>::new()));
+        let apuntes = recibidas.clone();
+        tokio::spawn(async move {
+            use tokio::io::{AsyncReadExt, AsyncWriteExt};
+            let mut cola = std::collections::VecDeque::from(guiones);
+            loop {
+                let Ok((mut socket, _)) = oyente.accept().await else { return };
+                let mut leido = Vec::new();
+                let mut buf = [0u8; 4096];
+                while !leido.windows(4).any(|w| w == b"\r\n\r\n") {
+                    match socket.read(&mut buf).await {
+                        Ok(0) | Err(_) => break,
+                        Ok(n) => leido.extend_from_slice(&buf[..n]),
+                    }
+                }
+                let cabeza = String::from_utf8_lossy(&leido).to_string();
+                let linea = cabeza.lines().next().unwrap_or("").to_string();
+                apuntes.lock().unwrap_or_else(|e| e.into_inner()).push(linea);
+                let g = cola.pop_front().unwrap_or_else(|| guion(500, &[]));
+                let mut r = format!("HTTP/1.1 {} X\r\nConnection: close\r\nContent-Type: application/json\r\nContent-Length: {}\r\n", g.estado, g.cuerpo.len());
+                for (n, v) in &g.cabeceras {
+                    r.push_str(&format!("{n}: {v}\r\n"));
+                }
+                r.push_str("\r\n");
+                r.push_str(g.cuerpo);
+                let _ = socket.write_all(r.as_bytes()).await;
+                let _ = socket.shutdown().await;
+            }
+        });
+        Servidor {
+            base: format!("http://{direccion}"),
+            recibidas,
+        }
+    }
+
+    fn recibidas(&self) -> Vec<String> {
+        self.recibidas.lock().unwrap_or_else(|e| e.into_inner()).clone()
+    }
+}
+
+/// Cliente HTTP de prueba: sin proxy del sistema, para que nada salga de 127.0.0.1.
+fn cliente() -> reqwest::Client {
+    reqwest::Client::builder().no_proxy().build().unwrap_or_default()
+}
+
+fn puerta(base: &str, cinta: std::sync::Arc<CintaMemoria>) -> BinanceGateway {
+    BinanceGateway::nueva(base, LimitesExchange::respaldo_lg12(), cliente(), cinta)
+}
+
+fn position_risk(prioridad: CallPriority) -> Pedido {
+    Pedido::nuevo(Metodo::Get, "/fapi/v2/positionRisk", prioridad)
+        .consulta("timestamp=1&signature=SECRETO")
+        .cabecera("X-MBX-APIKEY", "CLAVE")
+}
+
+/// Un pedido de cada prioridad con firma verificada.
+fn uno_de_cada() -> Vec<Pedido> {
+    CallPriority::TODAS.iter().map(|p| position_risk(*p)).collect()
+}
+
+/// P4: un 200 reconcilia la cabecera: `max(local, cabecera)` y la reserva
+/// sale del libro en vuelo.
+#[tokio::test]
+async fn gateway_200_reconcilia_cabeceras() {
+    let cab = (COSTE_POSITION_RISK.peso * 100).to_string();
+    let menor = (COSTE_POSITION_RISK.peso * 50).to_string();
+    let srv = Servidor::levantar(vec![
+        guion(200, &[("X-MBX-USED-WEIGHT-1M", &cab), ("X-MBX-ORDER-COUNT-10S", "3"), ("X-MBX-ORDER-COUNT-1M", "4")]),
+        guion(200, &[("X-MBX-USED-WEIGHT-1M", &menor)]),
+        guion(200, &[]),
+    ])
+    .await;
+    let cinta = std::sync::Arc::new(CintaMemoria::nueva());
+    let g = puerta(&srv.base, cinta.clone());
+
+    let r = g.enviar(position_risk(CallPriority::Lectura)).await;
+    assert!(matches!(r, Ok(ref r) if r.estado == 200), "{r:?}");
+    assert_eq!(g.en_vuelo(), [0, 0, 0]);
+    let uso = g.uso_efectivo();
+    assert_eq!(uso[CONTADOR_PESO_1M], COSTE_POSITION_RISK.peso * 100, "la cabecera manda");
+    assert_eq!((uso[CONTADOR_ORDENES_10S], uso[CONTADOR_ORDENES_1M]), (3, 4));
+
+    // Una cabecera menor que llega después no rebaja el uso de la ventana.
+    assert!(g.enviar(position_risk(CallPriority::Lectura)).await.is_ok());
+    assert_eq!(g.uso_efectivo()[CONTADOR_PESO_1M], COSTE_POSITION_RISK.peso * 100);
+
+    // Lo que salió: método, ruta y consulta, una vez cada pedido.
+    let rec = srv.recibidas();
+    assert_eq!(rec.len(), 2);
+    assert!(rec[0].starts_with("GET /fapi/v2/positionRisk?timestamp=1&signature=SECRETO HTTP/1.1"), "{rec:?}");
+
+    // Sin cabecera, lo local manda: tres positionRisk en la ventana.
+    let srv2 = Servidor::levantar(vec![guion(200, &[]), guion(200, &[]), guion(200, &[])]).await;
+    let g2 = puerta(&srv2.base, std::sync::Arc::new(CintaMemoria::nueva()));
+    for _ in 0..3 {
+        assert!(g2.enviar(position_risk(CallPriority::Critica)).await.is_ok());
+    }
+    assert_eq!(g2.uso_efectivo()[CONTADOR_PESO_1M], COSTE_POSITION_RISK.peso * 3);
+
+    // El presupuesto frena antes de enviar: un límite de peso del tamaño de
+    // un positionRisk deja salir uno y frena el segundo sin tocar la red.
+    let srv3 = Servidor::levantar(vec![guion(200, &[])]).await;
+    let mut chico = LimitesExchange::respaldo_lg12();
+    chico.peso_1m.limite = COSTE_POSITION_RISK.peso;
+    let g3 = BinanceGateway::nueva(&srv3.base, chico, cliente(), std::sync::Arc::new(CintaMemoria::nueva()));
+    assert!(g3.enviar(position_risk(CallPriority::Critica)).await.is_ok());
+    assert!(matches!(
+        g3.enviar(position_risk(CallPriority::Critica)).await,
+        Err(RechazoPuerta::Presupuesto(_))
+    ));
+    assert_eq!(srv3.recibidas().len(), 1, "el rechazado no salió");
+
+    // Firma fuera del mapa o N/D: falla cerrado sin tocar la red.
+    let srv4 = Servidor::levantar(vec![]).await;
+    let g4 = puerta(&srv4.base, std::sync::Arc::new(CintaMemoria::nueva()));
+    assert!(matches!(
+        g4.enviar(Pedido::nuevo(Metodo::Get, "/fapi/v1/income", CallPriority::Lectura)).await,
+        Err(RechazoPuerta::FirmaDesconocida(_))
+    ));
+    assert!(matches!(
+        g4.enviar(Pedido::nuevo(Metodo::Get, "/fapi/v1/klines", CallPriority::Batch)).await,
+        Err(RechazoPuerta::PesoNoVerificado(_))
+    ));
+    assert!(srv4.recibidas().is_empty());
+}
+
+/// Espera hasta que el freno de la puerta se levante (Retry-After de 1 s en
+/// el guion), con un tope para no colgar la prueba.
+async fn esperar_rearme(g: &BinanceGateway) -> bool {
+    for _ in 0..40 {
+        if g.freno_activo().is_ok() {
+            return true;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+    }
+    false
+}
+
+/// P4: un 429 arma el cooldown con su Retry-After; mientras dura no sale
+/// nada (ninguna prioridad, F1.8) y su cabecera no se registra (CL-196);
+/// al vencer se sale otra vez.
+#[tokio::test]
+async fn gateway_429_respeta_retry_after() {
+    let alto = (LIMITE_PESO_1M - 1).to_string();
+    let srv = Servidor::levantar(vec![
+        guion(429, &[("Retry-After", "1"), ("X-MBX-USED-WEIGHT-1M", &alto)]),
+        guion(200, &[]),
+    ])
+    .await;
+    let cinta = std::sync::Arc::new(CintaMemoria::nueva());
+    let g = puerta(&srv.base, cinta.clone());
+
+    let r = g.enviar(position_risk(CallPriority::Lectura)).await;
+    assert!(matches!(r, Err(RechazoPuerta::LimiteExchange(ref t)) if t.contains("HTTP_429") && t.contains("retry_after=1")), "{r:?}");
+    assert!(g.uso_efectivo()[CONTADOR_PESO_1M] < LIMITE_PESO_1M - 1, "la cabecera del 429 no entra");
+    assert_eq!(g.en_vuelo(), [0, 0, 0]);
+    for p in uno_de_cada() {
+        let pr = p.prioridad;
+        assert!(matches!(g.enviar(p).await, Err(RechazoPuerta::Frenado(ref t)) if t.contains("RATE_LIMIT_COOLDOWN")), "{pr:?}");
+    }
+    assert_eq!(srv.recibidas().len(), 1, "durante el cooldown no sale nada");
+
+    assert!(esperar_rearme(&g).await, "el cooldown vence");
+    assert!(g.enviar(position_risk(CallPriority::Critica)).await.is_ok());
+    assert_eq!(srv.recibidas().len(), 2);
+}
+
+/// P4: un 418 es parada TOTAL de la puerta (también Crítica: el exchange
+/// banea la IP) hasta su Retry-After, y se rearma sola: nunca permanente.
+#[tokio::test]
+async fn gateway_418_parada_total_hasta_retry_after() {
+    let srv = Servidor::levantar(vec![guion(418, &[("Retry-After", "1")]), guion(200, &[])]).await;
+    let g = puerta(&srv.base, std::sync::Arc::new(CintaMemoria::nueva()));
+
+    let r = g.enviar(position_risk(CallPriority::Critica)).await;
+    assert!(matches!(r, Err(RechazoPuerta::LimiteExchange(ref t)) if t.contains("HTTP_418")), "{r:?}");
+    assert!(matches!(g.freno_activo(), Err(ref t) if t.contains("RATE_BRAKE")));
+    let orden = Pedido::nuevo(Metodo::Post, "/fapi/v1/order", CallPriority::Critica).con_simbolo(true);
+    assert!(matches!(g.enviar(orden.clone()).await, Err(RechazoPuerta::Frenado(ref t)) if t.contains("RATE_BRAKE")));
+    for p in uno_de_cada() {
+        assert!(matches!(g.enviar(p).await, Err(RechazoPuerta::Frenado(_))));
+    }
+    assert_eq!(srv.recibidas().len(), 1, "durante el baneo no sale nada");
+
+    assert!(esperar_rearme(&g).await, "el freno del 418 se rearma solo");
+    let r = g.enviar(orden).await;
+    assert!(matches!(r, Ok(ref r) if r.estado == 200), "tras el baneo la orden sale: {r:?}");
+    assert_eq!(srv.recibidas().len(), 2);
+}
+
+/// P4: una fila de cinta por pedido, haya salido o no, en orden, sin la
+/// consulta firmada ni la clave; y la cinta JSONL escribe las mismas filas.
+#[tokio::test]
+async fn gateway_cinta_registra_cada_pedido() {
+    let srv = Servidor::levantar(vec![
+        guion(200, &[("X-MBX-USED-WEIGHT-1M", "9")]),
+        guion(400, &[("X-MBX-USED-WEIGHT-1M", "10")]),
+        guion(429, &[("Retry-After", "1")]),
+    ])
+    .await;
+    let cinta = std::sync::Arc::new(CintaMemoria::nueva());
+    let g = puerta(&srv.base, cinta.clone());
+
+    let _ = g.enviar(position_risk(CallPriority::Lectura)).await; // 200
+    let _ = g.enviar(position_risk(CallPriority::Alta)).await; // 400
+    let _ = g.enviar(Pedido::nuevo(Metodo::Get, "/fapi/v1/income", CallPriority::Lectura).consulta("signature=SECRETO")).await; // firma
+    let _ = g.enviar(position_risk(CallPriority::Batch)).await; // 429
+    let _ = g.enviar(position_risk(CallPriority::Critica)).await; // freno
+
+    let filas = cinta.filas();
+    let resultados: Vec<ResultadoLlamada> = filas.iter().map(|f| f.resultado.clone()).collect();
+    assert_eq!(
+        resultados,
+        vec![
+            ResultadoLlamada::Respondida { estado: 200 },
+            ResultadoLlamada::Respondida { estado: 400 },
+            ResultadoLlamada::RechazadaFirma,
+            ResultadoLlamada::LimiteExchange { estado: 429 },
+            ResultadoLlamada::RechazadaFreno,
+        ]
+    );
+    assert_eq!(srv.recibidas().len(), 3);
+    assert_eq!(filas[0].cabecera_peso_1m, Some(9));
+    assert_eq!(filas[1].cabecera_peso_1m, Some(10), "la cabecera de un 400 también cuenta (CL-196)");
+    assert_eq!(filas[0].coste_peso, Some(COSTE_POSITION_RISK.peso));
+    assert_eq!(filas[2].coste_peso, None);
+    assert_eq!(filas[3].prioridad, CallPriority::Batch);
+    for f in &filas {
+        let json = serde_json::to_string(f).unwrap_or_default();
+        assert!(!json.contains("SECRETO") && !json.contains("CLAVE"), "la cinta no lleva la firma: {json}");
+    }
+
+    // La cinta JSONL: una línea por pedido.
+    let ruta = std::env::temp_dir().join(format!("tg_puerta_cinta_{}.jsonl", std::process::id()));
+    let _ = std::fs::remove_file(&ruta);
+    let jsonl = CintaJsonl::abrir(&ruta);
+    assert!(jsonl.is_ok());
+    let Ok(jsonl) = jsonl else { return };
+    let jsonl = std::sync::Arc::new(jsonl);
+    let srv2 = Servidor::levantar(vec![guion(200, &[])]).await;
+    let g2 = BinanceGateway::nueva(&srv2.base, LimitesExchange::respaldo_lg12(), cliente(), jsonl.clone());
+    let _ = g2.enviar(position_risk(CallPriority::Lectura)).await;
+    let _ = g2.enviar(Pedido::nuevo(Metodo::Get, "/fapi/v1/time", CallPriority::Lectura)).await;
+    let texto = std::fs::read_to_string(&ruta).unwrap_or_default();
+    let _ = std::fs::remove_file(&ruta);
+    assert_eq!(jsonl.fallos(), 0);
+    let lineas: Vec<&str> = texto.lines().collect();
+    assert_eq!(lineas.len(), 2, "{texto}");
+    assert!(lineas[0].contains("\"Respondida\"") && lineas[1].contains("RechazadaFirma"), "{texto}");
 }

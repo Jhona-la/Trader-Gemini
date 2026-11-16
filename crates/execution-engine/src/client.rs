@@ -95,8 +95,10 @@ impl BinanceRateLimits {
     }
 }
 
+/// PUERTA-REST P4: `pub(crate)` para que `binance_gateway` lea las cabeceras
+/// con este mismo lector.
 #[inline(always)]
-fn extract_limits(headers: &HeaderMap) -> BinanceRateLimits {
+pub(crate) fn extract_limits(headers: &HeaderMap) -> BinanceRateLimits {
     let mut limits = BinanceRateLimits::default();
     if let Some(val) = headers.get("X-MBX-USED-WEIGHT-1M") {
         if let Ok(s) = val.to_str() {
@@ -283,7 +285,11 @@ pub(crate) struct FrenoExchange {
 }
 
 impl FrenoExchange {
-    fn new(reloj: std::sync::Arc<arc_swap::ArcSwapOption<quantum_arena::GlobalArena>>) -> Self {
+    /// PUERTA-REST P4: `pub(crate)` para que `binance_gateway` herede este
+    /// mismo freno en lugar de duplicarlo.
+    pub(crate) fn new(
+        reloj: std::sync::Arc<arc_swap::ArcSwapOption<quantum_arena::GlobalArena>>,
+    ) -> Self {
         Self {
             cooldown_until_ms: AtomicU64::new(0),
             consecutive_429: AtomicUsize::new(0),
@@ -996,8 +1002,9 @@ fn error_de_orden(
 /// total que vence mientras conecta también cuenta como salida (reqwest 0.11
 /// no dice en qué fase venció): en Windows una conexión rechazada tarda unos
 /// 2 s en fallar, más que los 1,2 s de las órdenes, y cuenta así de más, del
-/// lado seguro (fila N41 del censo).
-fn salio(e: &reqwest::Error) -> bool {
+/// lado seguro (fila N41 del censo). PUERTA-REST P4: `pub(crate)` para la
+/// puerta (`binance_gateway`).
+pub(crate) fn salio(e: &reqwest::Error) -> bool {
     !(e.is_connect() || e.is_builder())
 }
 

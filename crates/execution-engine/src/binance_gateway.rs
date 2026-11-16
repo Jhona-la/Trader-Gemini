@@ -6,7 +6,15 @@
 //! bloquee la IP. Este módulo centraliza el presupuesto por IP de las tres
 //! ventanas de `exchangeInfo.rateLimits` (peso 1 min, órdenes 10 s y 1 min).
 //!
-//! P1 son sólo tipos y la contabilidad, sin tráfico:
+//! Pasos: P1 tipos y contabilidad (sin tráfico), P2 tabla de pesos por firma
+//! desde `docs/BINANCE_API_MAP.md` §1, P3 límites desde
+//! `exchangeInfo.rateLimits` con respaldo LG-12, P4 transporte
+//! (`BinanceGateway`) con el `FrenoExchange` heredado y la cinta. Ningún
+//! llamador del motor pasa todavía por aquí: las migraciones son P6-P10, en
+//! pedidos aparte, y la prueba `no_reqwest_a_binance_fuera_de_la_puerta` (P5)
+//! lleva la lista blanca de lo que falta.
+//!
+//! P1:
 //!
 //! - `CallPriority`: tramo de cuota de una petición. Regla de ruina del
 //!   pedido: las órdenes de cierre y de protección nunca quedan detrás de
@@ -415,6 +423,10 @@ pub enum Desenlace {
     LimiteExchange,
     /// Salió y no hubo respuesta: su coste queda perdido en la ventana.
     SinRespuesta,
+    /// No llegó a salir (falló al conectar o al construirse): sale del libro
+    /// en vuelo; su coste local sigue contando hasta que caduca (de más, del
+    /// lado seguro).
+    NoSalio,
 }
 
 // ------------------------------------------------------------------ P2 ---
@@ -812,4 +824,376 @@ pub struct GatewayCallRecord {
     pub cabecera_ordenes_1m: Option<usize>,
     /// Uso efectivo `max(local, cabecera)` tras el pedido.
     pub uso_efectivo: [usize; 3],
+}
+
+// ------------------------------------------------------------------ P4 ---
+
+/// Dónde se escribe la cinta de auditoría: una fila por pedido.
+pub trait CintaAuditoria: Send + Sync {
+    fn registrar(&self, fila: &GatewayCallRecord);
+}
+
+/// Cinta en memoria (pruebas y diagnóstico). Crece con cada pedido: para un
+/// proceso largo, `CintaJsonl`.
+#[derive(Debug, Default)]
+pub struct CintaMemoria {
+    filas: std::sync::Mutex<Vec<GatewayCallRecord>>,
+}
+
+impl CintaMemoria {
+    pub fn nueva() -> Self {
+        Self::default()
+    }
+
+    /// Copia de las filas registradas, en orden.
+    pub fn filas(&self) -> Vec<GatewayCallRecord> {
+        self.filas
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .clone()
+    }
+}
+
+impl CintaAuditoria for CintaMemoria {
+    fn registrar(&self, fila: &GatewayCallRecord) {
+        self.filas
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .push(fila.clone());
+    }
+}
+
+/// Cinta en un archivo JSONL (una fila JSON por línea, en modo añadir). Si
+/// una escritura falla, la puerta sigue (la cinta no frena una salida) y
+/// `fallos()` lo cuenta.
+#[derive(Debug)]
+pub struct CintaJsonl {
+    archivo: std::sync::Mutex<std::fs::File>,
+    fallos: std::sync::atomic::AtomicU64,
+}
+
+impl CintaJsonl {
+    pub fn abrir(ruta: &std::path::Path) -> std::io::Result<Self> {
+        let archivo = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(ruta)?;
+        Ok(Self {
+            archivo: std::sync::Mutex::new(archivo),
+            fallos: std::sync::atomic::AtomicU64::new(0),
+        })
+    }
+
+    pub fn fallos(&self) -> u64 {
+        self.fallos.load(std::sync::atomic::Ordering::Relaxed)
+    }
+}
+
+impl CintaAuditoria for CintaJsonl {
+    fn registrar(&self, fila: &GatewayCallRecord) {
+        use std::io::Write;
+        let escrito = serde_json::to_string(fila).map_err(std::io::Error::other).and_then(|mut l| {
+            l.push('\n');
+            self.archivo
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .write_all(l.as_bytes())
+        });
+        if escrito.is_err() {
+            self.fallos
+                .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        }
+    }
+}
+
+/// Un pedido a la puerta. `consulta` va tal cual detrás de `?` (la firma HMAC
+/// la pone quien llama, P9); nunca entra en la cinta ni en los errores.
+#[derive(Clone, Debug)]
+pub struct Pedido {
+    pub metodo: Metodo,
+    pub ruta: String,
+    pub consulta: String,
+    pub con_simbolo: bool,
+    pub prioridad: CallPriority,
+    pub cabeceras: Vec<(String, String)>,
+}
+
+impl Pedido {
+    pub fn nuevo(metodo: Metodo, ruta: impl Into<String>, prioridad: CallPriority) -> Self {
+        Self {
+            metodo,
+            ruta: ruta.into(),
+            consulta: String::new(),
+            con_simbolo: false,
+            prioridad,
+            cabeceras: Vec::new(),
+        }
+    }
+
+    pub fn consulta(mut self, consulta: impl Into<String>) -> Self {
+        self.consulta = consulta.into();
+        self
+    }
+
+    pub fn con_simbolo(mut self, con_simbolo: bool) -> Self {
+        self.con_simbolo = con_simbolo;
+        self
+    }
+
+    pub fn cabecera(mut self, nombre: impl Into<String>, valor: impl Into<String>) -> Self {
+        self.cabeceras.push((nombre.into(), valor.into()));
+        self
+    }
+}
+
+/// La respuesta de un pedido que salió y no fue 429/418 (puede ser un 4xx o
+/// un 5xx: lo decide quien llama).
+#[derive(Clone, Debug)]
+pub struct RespuestaPuerta {
+    pub estado: u16,
+    pub cuerpo: String,
+    pub limites: BinanceRateLimits,
+}
+
+/// La puerta REST única: una instancia por red (mainnet o testnet), con su
+/// presupuesto por IP, el freno 429/418 heredado (`FrenoExchange`, client.rs)
+/// y su cinta. Sin reintentos: cada pedido sale como mucho una vez.
+///
+/// Orden de cada pedido:
+/// 1. firma → coste de la tabla (P2); fuera del mapa o N/D, falla cerrado;
+/// 2. freno 429/418 (`FrenoExchange::comprobar`): mientras dura no sale nada,
+///    tampoco una crítica (es el exchange quien frena la IP; enviar alarga el
+///    baneo). Se rearma solo al vencer su Retry-After;
+/// 3. presupuesto de su prioridad (P1); admitido, su coste queda reservado;
+/// 4. envío; con respuesta, su cabecera entra antes de soltar la reserva
+///    (CL-182), salvo en un 429/418, que arma el freno con su Retry-After
+///    (`FrenoExchange::registrar`) y cuya cabecera no se registra (CL-196);
+/// 5. una fila en la cinta, haya salido o no.
+pub struct BinanceGateway {
+    base: String,
+    http: reqwest::Client,
+    freno: std::sync::Arc<crate::client::FrenoExchange>,
+    presupuesto: std::sync::Mutex<PresupuestoPuerta>,
+    cinta: std::sync::Arc<dyn CintaAuditoria>,
+}
+
+impl BinanceGateway {
+    /// Una puerta contra `base` (en producción `client::BINANCE_BASE_URL` o
+    /// `client::BINANCE_TESTNET_URL`; en las pruebas un servidor local). El
+    /// cliente HTTP (plazos, pool) lo pone quien la crea. El freno es nuevo,
+    /// con el reloj del sistema (`current_synced_timestamp_ms` sin arena).
+    pub fn nueva(
+        base: impl Into<String>,
+        limites: LimitesExchange,
+        http: reqwest::Client,
+        cinta: std::sync::Arc<dyn CintaAuditoria>,
+    ) -> Self {
+        Self {
+            base: base.into(),
+            http,
+            freno: std::sync::Arc::new(crate::client::FrenoExchange::new(std::sync::Arc::new(
+                arc_swap::ArcSwapOption::empty(),
+            ))),
+            presupuesto: std::sync::Mutex::new(PresupuestoPuerta::nuevo(limites)),
+            cinta,
+        }
+    }
+
+    /// Una puerta para la red del ejecutor: mainnet o testnet.
+    pub fn para_red(
+        is_testnet: bool,
+        limites: LimitesExchange,
+        http: reqwest::Client,
+        cinta: std::sync::Arc<dyn CintaAuditoria>,
+    ) -> Self {
+        let base = if is_testnet {
+            crate::client::BINANCE_TESTNET_URL
+        } else {
+            crate::client::BINANCE_BASE_URL
+        };
+        Self::nueva(base, limites, http, cinta)
+    }
+
+    pub fn base(&self) -> &str {
+        &self.base
+    }
+
+    /// El reloj del freno (ms).
+    pub fn ahora_ms(&self) -> u64 {
+        self.freno.ahora_ms()
+    }
+
+    fn presupuesto(&self) -> std::sync::MutexGuard<'_, PresupuestoPuerta> {
+        self.presupuesto
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+    }
+
+    /// El uso efectivo de los tres contadores ahora.
+    pub fn uso_efectivo(&self) -> [usize; 3] {
+        let ahora = self.ahora_ms();
+        self.presupuesto().uso_efectivo(ahora)
+    }
+
+    /// El coste en vuelo de los tres contadores.
+    pub fn en_vuelo(&self) -> [usize; 3] {
+        self.presupuesto().en_vuelo()
+    }
+
+    pub fn limites(&self) -> LimitesExchange {
+        self.presupuesto().limites()
+    }
+
+    /// El freno 429/418 ahora: `Err` con su motivo si está activo.
+    pub fn freno_activo(&self) -> Result<(), String> {
+        self.freno.comprobar(self.ahora_ms())
+    }
+
+    fn anotar(
+        &self,
+        pedido: &Pedido,
+        coste: Option<CosteBinance>,
+        resultado: ResultadoLlamada,
+        detalle: String,
+        limites: Option<BinanceRateLimits>,
+    ) {
+        let sello_ms = self.ahora_ms();
+        let uso_efectivo = self.presupuesto().uso_efectivo(sello_ms);
+        let cab = limites.unwrap_or_default();
+        self.cinta.registrar(&GatewayCallRecord {
+            sello_ms,
+            metodo: pedido.metodo.como_str().to_string(),
+            ruta: pedido.ruta.clone(),
+            con_simbolo: pedido.con_simbolo,
+            prioridad: pedido.prioridad,
+            coste_peso: coste.map(|c| c.peso),
+            coste_ordenes: coste.map(|c| c.ordenes),
+            resultado,
+            detalle,
+            cabecera_peso_1m: cab.weight_1m,
+            cabecera_ordenes_10s: cab.orders_10s,
+            cabecera_ordenes_1m: cab.orders_1m,
+            uso_efectivo,
+        });
+    }
+
+    /// Envía un pedido por la puerta (ver el orden en el tipo). Sin
+    /// reintentos.
+    pub async fn enviar(&self, pedido: Pedido) -> Result<RespuestaPuerta, RechazoPuerta> {
+        // 1. Firma.
+        let coste = match coste_de_firma(pedido.metodo, &pedido.ruta, pedido.con_simbolo) {
+            Ok(c) => c,
+            Err(r) => {
+                self.anotar(&pedido, None, ResultadoLlamada::RechazadaFirma, r.to_string(), None);
+                return Err(r);
+            }
+        };
+        // 2. Freno 429/418 heredado.
+        let ahora = self.ahora_ms();
+        if let Err(t) = self.freno.comprobar(ahora) {
+            let r = RechazoPuerta::Frenado(t);
+            self.anotar(&pedido, Some(coste), ResultadoLlamada::RechazadaFreno, r.to_string(), None);
+            return Err(r);
+        }
+        // 3. Presupuesto de su prioridad.
+        let admitida = self.presupuesto().admitir(pedido.prioridad, coste, ahora);
+        let reserva = match admitida {
+            Ok(r) => r,
+            Err(r) => {
+                self.anotar(
+                    &pedido,
+                    Some(coste),
+                    ResultadoLlamada::RechazadaPresupuesto,
+                    r.to_string(),
+                    None,
+                );
+                return Err(r);
+            }
+        };
+        // 4. Envío.
+        let mut url = String::with_capacity(self.base.len() + pedido.ruta.len() + pedido.consulta.len() + 1);
+        url.push_str(&self.base);
+        url.push_str(&pedido.ruta);
+        if !pedido.consulta.is_empty() {
+            url.push('?');
+            url.push_str(&pedido.consulta);
+        }
+        let metodo = match pedido.metodo {
+            Metodo::Get => reqwest::Method::GET,
+            Metodo::Post => reqwest::Method::POST,
+            Metodo::Put => reqwest::Method::PUT,
+            Metodo::Delete => reqwest::Method::DELETE,
+        };
+        let mut peticion = self.http.request(metodo, &url);
+        for (nombre, valor) in &pedido.cabeceras {
+            peticion = peticion.header(nombre.as_str(), valor.as_str());
+        }
+        let respuesta = match peticion.send().await {
+            Ok(r) => r,
+            Err(e) => {
+                let salio = crate::client::salio(&e);
+                let texto = e.without_url().to_string();
+                let desenlace = if salio {
+                    Desenlace::SinRespuesta
+                } else {
+                    Desenlace::NoSalio
+                };
+                self.presupuesto().cerrar(reserva, desenlace, self.ahora_ms());
+                let r = RechazoPuerta::Red(texto);
+                self.anotar(&pedido, Some(coste), ResultadoLlamada::ErrorRed, r.to_string(), None);
+                return Err(r);
+            }
+        };
+        let estado = respuesta.status().as_u16();
+        let limites = crate::client::extract_limits(respuesta.headers());
+        if let Some(texto) = crate::client::classify_rate_limit_or_ban(estado, respuesta.headers()) {
+            // 429/418: arma el freno con su Retry-After; su cabecera no entra.
+            let texto = self.freno.registrar(&texto);
+            self.presupuesto()
+                .cerrar(reserva, Desenlace::LimiteExchange, self.ahora_ms());
+            let r = RechazoPuerta::LimiteExchange(texto);
+            self.anotar(
+                &pedido,
+                Some(coste),
+                ResultadoLlamada::LimiteExchange { estado },
+                r.to_string(),
+                Some(limites),
+            );
+            return Err(r);
+        }
+        let llegada = self.ahora_ms();
+        // CL-182: la cabecera entra antes de soltar la reserva.
+        self.presupuesto()
+            .cerrar(reserva, Desenlace::Respuesta(limites), llegada);
+        self.freno.exito(llegada);
+        let cuerpo = match respuesta.text().await {
+            Ok(c) => c,
+            Err(e) => {
+                let r = RechazoPuerta::Red(format!(
+                    "cuerpo ilegible (estado {estado}): {}",
+                    e.without_url()
+                ));
+                self.anotar(
+                    &pedido,
+                    Some(coste),
+                    ResultadoLlamada::ErrorRed,
+                    r.to_string(),
+                    Some(limites),
+                );
+                return Err(r);
+            }
+        };
+        self.anotar(
+            &pedido,
+            Some(coste),
+            ResultadoLlamada::Respondida { estado },
+            String::new(),
+            Some(limites),
+        );
+        Ok(RespuestaPuerta {
+            estado,
+            cuerpo,
+            limites,
+        })
+    }
 }
