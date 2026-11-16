@@ -316,3 +316,27 @@ fn i7_freno_fases_y_causas() {
     h2.receive_error_at(162, "algo nuevo", t0);
     assert_eq!(h2.estado_at(t0), EstadoFreno::Cooldown, "162 desconocido falla cerrado");
 }
+/// I8: todo el modulo es accesible desde data_pipeline::ibkr, con reexportes.
+#[test]
+fn i8_full_ibkr_module_integration() {
+    use data_pipeline::ibkr::{
+        cache::IbkrCache, error_handler::ErrorHandler, pacing::TokenBucket, tape_writer::TapeWriter, IbkrBar,
+        IbkrGateway, IBKR_DEDUP_CACHE_TTL_SECS, IBKR_HISTORICAL_MAX_PER_10MIN, IBKR_MAX_STREAMING_LINES_BUDGET,
+        IBKR_MIN_PACING_INTERVAL_MS, IBKR_PACING_BREAKER_COOLDOWN_SECS,
+    };
+    assert_eq!(IBKR_HISTORICAL_MAX_PER_10MIN, 60);
+    assert_eq!(IBKR_MIN_PACING_INTERVAL_MS, 2500);
+    assert_eq!(IBKR_DEDUP_CACHE_TTL_SECS, 30);
+    assert_eq!(IBKR_MAX_STREAMING_LINES_BUDGET, 80);
+    assert_eq!(IBKR_PACING_BREAKER_COOLDOWN_SECS, 65);
+    let _ = std::any::type_name::<(IbkrGateway, IbkrBar, IbkrCache<u8>, TokenBucket, TapeWriter, ErrorHandler)>();
+
+    // Reexportes en la raiz del modulo: los mismos tipos.
+    use data_pipeline::ibkr as m;
+    assert_eq!(std::any::type_name::<m::TokenBucket>(), std::any::type_name::<TokenBucket>());
+    assert_eq!(std::any::type_name::<m::IbkrCache<u8>>(), std::any::type_name::<IbkrCache<u8>>());
+    assert_eq!(std::any::type_name::<m::TapeWriter>(), std::any::type_name::<TapeWriter>());
+    assert_eq!(std::any::type_name::<m::ErrorHandler>(), std::any::type_name::<ErrorHandler>());
+    let _ = std::any::type_name::<(m::PacingGate, m::InFlightCounter, m::StreamingLines, m::ClaveCache, m::CausaIbkr, m::EstadoFreno)>();
+    assert_eq!(m::tipos_ibapi_usados().len(), 3);
+}

@@ -14,6 +14,12 @@ pub mod error_handler;
 pub mod pacing;
 pub mod tape_writer;
 
+// IBKR-I8: API publica del conector en la raiz del modulo.
+pub use cache::{ClaveCache, IbkrCache};
+pub use error_handler::{CausaIbkr, ErrorHandler, EstadoFreno};
+pub use pacing::{InFlightCounter, PacingGate, StreamingLines, TokenBucket};
+pub use tape_writer::TapeWriter;
+
 use ibapi::contracts::Contract;
 use ibapi::market_data::MarketDataType;
 use ibapi::Client;
