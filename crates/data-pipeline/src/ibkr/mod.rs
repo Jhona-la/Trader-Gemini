@@ -9,6 +9,7 @@
 //! DERIVADO (calculado desde una cifra oficial, con la cuenta) o N/D (no existe
 //! cifra oficial; decision de diseno del pedido).
 
+pub mod cache;
 pub mod pacing;
 
 use ibapi::contracts::Contract;

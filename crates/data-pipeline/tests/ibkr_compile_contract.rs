@@ -114,3 +114,47 @@ fn i4_lineas_streaming_lru_80() {
     assert_eq!(l.abiertas(), 80);
     assert!(l.contiene("L0") && !l.contiene("L1"));
 }
+/// I5: hit a 29 s y miss a 31 s con la clave de 6 campos.
+#[test]
+fn i5_cache_deduplicates_identical_requests() {
+    use data_pipeline::ibkr::cache::IbkrCache;
+    use std::time::{Duration, Instant};
+
+    let t0 = Instant::now();
+    let mut cache = IbkrCache::new(Duration::from_secs(30));
+    let clave = ("ES", "FUT", "CME", "1 min", "", "TRADES");
+    let barras = vec![1.0, 2.0, 3.0];
+
+    cache.insert_at(clave, barras.clone(), t0);
+    assert_eq!(cache.get_at(clave, t0 + Duration::from_secs(29)), Some(&barras), "Hit a 29 s");
+    assert!(cache.get_at(clave, t0 + Duration::from_secs(31)).is_none(), "Miss a 31 s");
+}
+
+/// I5: cada uno de los 6 campos distingue la clave; el TTL de IBKR es 30 s.
+#[test]
+fn i5_cache_clave_de_seis_campos_y_ttl_ibkr() {
+    use data_pipeline::ibkr::cache::IbkrCache;
+    use data_pipeline::ibkr::IBKR_DEDUP_CACHE_TTL_SECS;
+    use std::time::{Duration, Instant};
+
+    let t0 = Instant::now();
+    let mut cache: IbkrCache<u8> = IbkrCache::ibkr();
+    assert_eq!(cache.ttl(), Duration::from_secs(IBKR_DEDUP_CACHE_TTL_SECS));
+    let base = ("ES", "FUT", "CME", "1 min", "20261116 16:00:00 US/Eastern", "TRADES");
+    cache.insert_at(base, 1, t0);
+    let variantes = [
+        ("NQ", base.1, base.2, base.3, base.4, base.5),
+        (base.0, "STK", base.2, base.3, base.4, base.5),
+        (base.0, base.1, "GLOBEX", base.3, base.4, base.5),
+        (base.0, base.1, base.2, "5 mins", base.4, base.5),
+        (base.0, base.1, base.2, base.3, "", base.5),
+        (base.0, base.1, base.2, base.3, base.4, "MIDPOINT"),
+    ];
+    for v in variantes {
+        assert!(cache.get_at(v, t0).is_none(), "{v:?} no debe chocar con la clave base");
+    }
+    assert_eq!(cache.get_at(base, t0), Some(&1));
+    // Al insertar despues del TTL, lo vencido sale de la memoria.
+    cache.insert_at(variantes[0], 2, t0 + Duration::from_secs(IBKR_DEDUP_CACHE_TTL_SECS + 1));
+    assert_eq!(cache.len(), 1);
+}
