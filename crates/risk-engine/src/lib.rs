@@ -46,6 +46,8 @@ pub mod hayden_preskill_scrambling;
 pub mod hodge;
 pub mod holographic_lloyd_complexity;
 pub mod kelly;
+// WB-5 (OBL-4): el Kelly legado, intacto; `kelly` lo reexporta.
+pub mod kelly_legado;
 pub mod kelly_envelope;
 pub mod kerr_newman_black_hole;
 pub mod leverage_matrix;
@@ -2072,12 +2074,10 @@ impl RiskEngine {
             && lh04_wr < 1.0
         {
             let n = lh04_n;
-            let z2 = z_lcb_lh04 * z_lcb_lh04;
-            let denom = 1.0 + z2 / n;
-            let centro = (lh04_wr + z2 / (2.0 * n)) / denom;
-            let radio =
-                z_lcb_lh04 * ((lh04_wr * (1.0 - lh04_wr) / n + z2 / (4.0 * n * n)).sqrt() / denom);
-            let p_lcb = (centro - radio).clamp(0.0, 1.0);
+            // WB-5 (§5.4.3): la cota de Wilson ÚNICA, la misma de la ruta
+            // nueva `kelly::kelly_con_encogimiento` (mismas operaciones que
+            // el cálculo en línea que había aquí: bit a bit igual).
+            let p_lcb = crate::evidence::wilson_lcb(lh04_wr, n, z_lcb_lh04);
             let b = lh04_pf * (1.0 - lh04_wr) / lh04_wr;
             let f_raw = half_kelly_lh04 * (p_lcb - (1.0 - p_lcb) / b).max(0.0);
             let q_lh04 = crate::ruin::conservative_loss_q(lh04_wr, lh04_n);

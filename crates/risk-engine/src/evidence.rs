@@ -138,6 +138,23 @@ pub fn win_rate_lcb(win_rate: f64, trades: f64) -> Option<f64> {
     }
 }
 
+/// WB-5 (especificación GLM-APP v3, §5.2 a) — cota inferior de WILSON (1927)
+/// de una frecuencia `p` medida en `n` pruebas con el cuantil `z`:
+/// `(p + z²/2n − z·√(p(1−p)/n + z²/4n²)) / (1 + z²/n)`, acotada a [0, 1].
+///
+/// Es la ÚNICA implementación que usan LH-04 (dimensionado en espacio de
+/// riesgo, `lib.rs`) y la ruta nueva `kelly::kelly_con_encogimiento`: las dos
+/// dan la misma p_LCB, bit a bit, para la misma entrada. Sin guardas propias:
+/// quien la llama valida p ∈ [0, 1] y n ≥ 1, como hacía LH-04.
+#[inline]
+pub fn wilson_lcb(p: f64, n: f64, z: f64) -> f64 {
+    let z2 = z * z;
+    let denom = 1.0 + z2 / n;
+    let centro = (p + z2 / (2.0 * n)) / denom;
+    let radio = z * ((p * (1.0 - p) / n + z2 / (4.0 * n * n)).sqrt() / denom);
+    (centro - radio).clamp(0.0, 1.0)
+}
+
 /// Cota inferior bayesiana jerárquica (Empirical Bayes Shrinkage).
 ///
 /// Para muestras pequeñas (n < 20), el estimador no colapsa a 0.0 ante una pérdida
