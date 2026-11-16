@@ -4,11 +4,13 @@
 //! las de transporte (P4) un servidor local en 127.0.0.1.
 
 use execution_engine::binance_api::{
-    COSTE_CONSULTA_ORDEN, COSTE_ORDEN, COSTE_POSITION_RISK, LIMITE_ORDENES_10S, LIMITE_PESO_1M,
+    CosteBinance, COSTE_ALGO_ABIERTAS_SIMBOLO, COSTE_CANCELACION, COSTE_CONSULTA_ORDEN, COSTE_ORDEN,
+    COSTE_PIERNA_ALGO, COSTE_POSITION_RISK, LIMITE_ORDENES_10S, LIMITE_PESO_1M,
     VENTANA_ORDENES_10S_MS, VENTANA_ORDENES_1M_MS, VENTANA_PESO_MS,
 };
 use execution_engine::binance_gateway::{
-    CallPriority, Desenlace, LimitesExchange, PresupuestoPuerta, RechazoPuerta, CONTADOR_ORDENES_10S,
+    coste_de_firma, Alcance, CallPriority, Desenlace, FilaPeso, LimitesExchange, Metodo, PesoFirma,
+    PresupuestoPuerta, RechazoPuerta, CONTADOR_ORDENES_10S, TABLA_PESOS,
     CONTADOR_ORDENES_1M, CONTADOR_PESO_1M, FRACCION_FRENO_LECTURA,
 };
 use execution_engine::client::BinanceRateLimits;
@@ -214,4 +216,211 @@ fn gateway_fraccion_lectura_es_la_del_ejecutor() {
     let literal = resto.split(';').next().unwrap_or("").trim();
     let valor: f64 = literal.parse().unwrap_or(f64::NAN);
     assert_eq!(valor, FRACCION_FRENO_LECTURA, "literal del ejecutor: {literal}");
+}
+
+// ---------------------------------------------------------------- P2 ----
+
+/// El mapa, tal como está en el repo.
+const MAPA: &str = include_str!("../../../docs/BINANCE_API_MAP.md");
+
+/// Una fila esperada, leída del mapa: (método, ruta, alcance, peso).
+type Esperada = (Metodo, String, Alcance, PesoFirma);
+
+/// El primer entero de `s`.
+fn primer_entero(s: &str) -> Option<usize> {
+    let ini = s.find(|c: char| c.is_ascii_digit())?;
+    let resto = &s[ini..];
+    let fin = resto.find(|c: char| !c.is_ascii_digit()).unwrap_or(resto.len());
+    resto[..fin].parse().ok()
+}
+
+/// El peso de una celda: «0 ✔ (y 1 en cada contador de órdenes…)»,
+/// «20 ✔ (antes figuraba 1)», «1-10», «5».
+fn peso_de_celda(celda: &str) -> Option<PesoFirma> {
+    if !celda.contains('✔') {
+        return Some(PesoFirma::NoVerificado);
+    }
+    let peso = primer_entero(celda)?;
+    let ordenes = if celda.contains("contador de órdenes") {
+        let tras = celda.split("(y ").nth(1)?;
+        primer_entero(tras)?
+    } else {
+        0
+    };
+    Some(PesoFirma::Verificado(CosteBinance { peso, ordenes }))
+}
+
+/// Lee las filas de §1 «Endpoints EN USO» del mapa.
+fn filas_del_mapa() -> Vec<Esperada> {
+    let mapa = MAPA.replace("\r\n", "\n");
+    let ini = mapa.find("## 1. Endpoints EN USO").unwrap_or(mapa.len());
+    let seccion = &mapa[ini..];
+    let fin = seccion[3..].find("\n#").map(|k| k + 3).unwrap_or(seccion.len());
+    let mut filas = Vec::new();
+    for linea in seccion[..fin].lines() {
+        if !linea.starts_with("| `/") {
+            continue;
+        }
+        let celdas: Vec<&str> = linea.split('|').map(str::trim).collect();
+        // celdas[0] es vacía (la línea empieza por '|').
+        let ruta = celdas[1].trim_matches('`').to_string();
+        let metodos = celdas[2];
+        // Forma «GET 30 ✔ / POST 1 ✔ (...)»: método y peso en la misma celda.
+        let pares: Vec<&str> = metodos.split(" / ").collect();
+        let en_pares = pares.iter().all(|p| {
+            let mut t = p.split_whitespace();
+            t.next().and_then(Metodo::de_str).is_some()
+                && t.next().is_some_and(|n| n.chars().all(|c| c.is_ascii_digit()))
+        });
+        if en_pares {
+            for p in pares {
+                let metodo = p.split_whitespace().next().and_then(Metodo::de_str);
+                let peso = peso_de_celda(p);
+                assert!(metodo.is_some() && peso.is_some(), "fila del mapa ilegible: {linea}");
+                if let (Some(m), Some(w)) = (metodo, peso) {
+                    filas.push((m, ruta.clone(), Alcance::Unico, w));
+                }
+            }
+            continue;
+        }
+        let celda = celdas[3];
+        for m in metodos.split('/') {
+            let metodo = Metodo::de_str(m);
+            assert!(metodo.is_some(), "método ilegible en el mapa: {linea}");
+            let Some(metodo) = metodo else { continue };
+            if celda.contains("con símbolo") && celda.contains("sin él") {
+                let mut partes = celda.split('/');
+                let con = partes.next().and_then(peso_de_celda_con_marca(celda));
+                let sin = partes.next().and_then(peso_de_celda_con_marca(celda));
+                assert!(con.is_some() && sin.is_some(), "fila del mapa ilegible: {linea}");
+                if let (Some(c), Some(s)) = (con, sin) {
+                    filas.push((metodo, ruta.clone(), Alcance::ConSimbolo, c));
+                    filas.push((metodo, ruta.clone(), Alcance::SinSimbolo, s));
+                }
+            } else {
+                let peso = peso_de_celda(celda);
+                assert!(peso.is_some(), "peso ilegible en el mapa: {linea}");
+                if let Some(w) = peso {
+                    filas.push((metodo, ruta.clone(), Alcance::Unico, w));
+                }
+            }
+        }
+    }
+    filas
+}
+
+/// En «1 con símbolo / 40 sin él ✔» la marca ✔ va al final y vale para las
+/// dos partes.
+fn peso_de_celda_con_marca(celda: &str) -> impl Fn(&str) -> Option<PesoFirma> + '_ {
+    move |parte: &str| {
+        if celda.contains('✔') {
+            primer_entero(parte).map(|peso| PesoFirma::Verificado(CosteBinance { peso, ordenes: 0 }))
+        } else {
+            Some(PesoFirma::NoVerificado)
+        }
+    }
+}
+
+/// P2: la tabla de la puerta es el mapa §1, fila a fila, ni una más ni una
+/// menos; lo no verificado queda N/D.
+#[test]
+fn gateway_tabla_pesos_paridad_con_mapa() {
+    let mapa = filas_del_mapa();
+    // Control del parser: el mapa tiene filas, verificadas y N/D.
+    assert!(!mapa.is_empty(), "el parser no leyó filas del mapa");
+    assert!(mapa.iter().any(|f| f.3 == PesoFirma::NoVerificado));
+    assert!(mapa.iter().any(|f| matches!(f.3, PesoFirma::Verificado(_))));
+
+    for (metodo, ruta, alcance, peso) in &mapa {
+        let en_tabla: Vec<&FilaPeso> = TABLA_PESOS
+            .iter()
+            .filter(|f| f.metodo == *metodo && f.ruta == ruta && f.alcance == *alcance)
+            .collect();
+        assert_eq!(en_tabla.len(), 1, "{metodo:?} {ruta} {alcance:?}: una fila en la tabla");
+        assert_eq!(en_tabla[0].peso, *peso, "{metodo:?} {ruta} {alcance:?}: peso del mapa");
+    }
+    for f in TABLA_PESOS {
+        assert!(
+            mapa.iter()
+                .any(|(m, r, a, _)| *m == f.metodo && r == f.ruta && *a == f.alcance),
+            "{:?} {} {:?}: está en la tabla y no en el mapa §1",
+            f.metodo,
+            f.ruta,
+            f.alcance
+        );
+    }
+    assert_eq!(TABLA_PESOS.len(), mapa.len());
+}
+
+/// P2: lo que no está en el mapa, o está sin ✔, se rechaza; nunca se supone
+/// peso 1.
+#[test]
+fn gateway_firma_desconocida_falla_cerrado() {
+    for (metodo, ruta) in [
+        (Metodo::Get, "/fapi/v1/income"),
+        (Metodo::Get, "/fapi/v1/openInterest"),
+        (Metodo::Get, "/fapi/v1/premiumIndex"),
+        (Metodo::Get, "/fapi/v1/fundingRate"),
+        (Metodo::Get, "/futures/data/openInterestHist"),
+        (Metodo::Get, "/futures/data/topLongShortAccountRatio"),
+        (Metodo::Put, "/fapi/v1/order"),
+        (Metodo::Get, "/fapi/v1/order/"),
+        (Metodo::Get, "/fapi/v9/positionRisk"),
+    ] {
+        for con_simbolo in [false, true] {
+            assert!(
+                matches!(
+                    coste_de_firma(metodo, ruta, con_simbolo),
+                    Err(RechazoPuerta::FirmaDesconocida(_))
+                ),
+                "{metodo:?} {ruta}"
+            );
+        }
+    }
+    let mut nd = 0;
+    for f in TABLA_PESOS {
+        let con_simbolo = f.alcance == Alcance::ConSimbolo;
+        match f.peso {
+            PesoFirma::NoVerificado => {
+                nd += 1;
+                assert!(
+                    matches!(
+                        coste_de_firma(f.metodo, f.ruta, con_simbolo),
+                        Err(RechazoPuerta::PesoNoVerificado(_))
+                    ),
+                    "{:?} {}: N/D falla cerrado",
+                    f.metodo,
+                    f.ruta
+                );
+            }
+            PesoFirma::Verificado(c) => {
+                assert_eq!(coste_de_firma(f.metodo, f.ruta, con_simbolo), Ok(c));
+            }
+        }
+    }
+    assert!(nd > 0, "control: hay filas N/D");
+    // Con y sin símbolo: el peso cambia con el alcance.
+    assert_ne!(
+        coste_de_firma(Metodo::Get, "/fapi/v1/openOrders", true),
+        coste_de_firma(Metodo::Get, "/fapi/v1/openOrders", false)
+    );
+}
+
+/// P2 y regla de ruina: las firmas de cierre y de protección tienen peso
+/// verificado (nunca fallan cerrado) y es el coste del ejecutor.
+#[test]
+fn gateway_firmas_criticas_verificadas() {
+    for (metodo, ruta, con_simbolo, coste) in [
+        (Metodo::Post, "/fapi/v1/order", true, COSTE_ORDEN),
+        (Metodo::Get, "/fapi/v1/order", true, COSTE_CONSULTA_ORDEN),
+        (Metodo::Delete, "/fapi/v1/order", true, COSTE_CANCELACION),
+        (Metodo::Post, "/fapi/v1/algoOrder", true, COSTE_PIERNA_ALGO),
+        (Metodo::Delete, "/fapi/v1/algoOrder", true, COSTE_CANCELACION),
+        (Metodo::Delete, "/fapi/v1/algoOpenOrders", true, COSTE_CANCELACION),
+        (Metodo::Delete, "/fapi/v1/allOpenOrders", true, COSTE_CANCELACION),
+        (Metodo::Get, "/fapi/v2/positionRisk", false, COSTE_POSITION_RISK),
+        (Metodo::Get, "/fapi/v1/openAlgoOrders", true, COSTE_ALGO_ABIERTAS_SIMBOLO),
+    ] {
+        assert_eq!(coste_de_firma(metodo, ruta, con_simbolo), Ok(coste), "{metodo:?} {ruta}");
+    }
 }

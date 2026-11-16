@@ -303,6 +303,198 @@ pub enum Desenlace {
     SinRespuesta,
 }
 
+// ------------------------------------------------------------------ P2 ---
+
+/// Método HTTP de una firma.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, serde::Serialize)]
+pub enum Metodo {
+    Get,
+    Post,
+    Put,
+    Delete,
+}
+
+impl Metodo {
+    pub const fn como_str(self) -> &'static str {
+        match self {
+            Metodo::Get => "GET",
+            Metodo::Post => "POST",
+            Metodo::Put => "PUT",
+            Metodo::Delete => "DELETE",
+        }
+    }
+
+    pub fn de_str(s: &str) -> Option<Metodo> {
+        match s.trim() {
+            "GET" => Some(Metodo::Get),
+            "POST" => Some(Metodo::Post),
+            "PUT" => Some(Metodo::Put),
+            "DELETE" => Some(Metodo::Delete),
+            _ => None,
+        }
+    }
+}
+
+/// Si el peso de la firma depende de que la petición lleve `symbol`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, serde::Serialize)]
+pub enum Alcance {
+    /// Un solo peso, con o sin símbolo.
+    Unico,
+    /// Peso de la petición con `symbol`.
+    ConSimbolo,
+    /// Peso de la petición sin `symbol` (todos los símbolos).
+    SinSimbolo,
+}
+
+/// El peso de una firma según el mapa.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PesoFirma {
+    /// Marcado ✔ en `docs/BINANCE_API_MAP.md` §1 (comprobado el 2026-11-01
+    /// contra la documentación oficial, N22/CL-218).
+    Verificado(CosteBinance),
+    /// En el mapa pero sin ✔: N/D. La puerta lo rechaza (falla cerrado).
+    NoVerificado,
+}
+
+/// Una fila de la tabla de pesos: una firma (método + ruta + alcance).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct FilaPeso {
+    pub metodo: Metodo,
+    pub ruta: &'static str,
+    pub alcance: Alcance,
+    pub peso: PesoFirma,
+}
+
+const fn fila(metodo: Metodo, ruta: &'static str, alcance: Alcance, peso: PesoFirma) -> FilaPeso {
+    FilaPeso {
+        metodo,
+        ruta,
+        alcance,
+        peso,
+    }
+}
+
+const fn verificado(peso: usize, ordenes: usize) -> PesoFirma {
+    PesoFirma::Verificado(CosteBinance { peso, ordenes })
+}
+
+/// La tabla de pesos por firma: TODAS las filas de `docs/BINANCE_API_MAP.md`
+/// §1 «Endpoints EN USO», ni una más. La prueba
+/// `gateway_tabla_pesos_paridad_con_mapa` la compara fila a fila con el mapa:
+/// si el mapa cambia, la prueba falla hasta que la tabla lo siga. Los costes
+/// del ejecutor (`COSTE_*` de binance_api.rs) se usan donde existen, así que
+/// la misma prueba ata también esos costes al mapa. Las líneas citadas son las
+/// del mapa en el commit de P2.
+///
+/// Lo que no está en §1 (income, openInterest, premiumIndex, fundingRate,
+/// ticker, `/futures/data/*`, ...) no tiene fila y falla cerrado como firma
+/// desconocida; nunca se supone peso 1.
+pub const TABLA_PESOS: &[FilaPeso] = {
+    use crate::binance_api::{
+        COSTE_ALGO_ABIERTAS_SIMBOLO, COSTE_CANCELACION, COSTE_CONSULTA_ORDEN, COSTE_ORDEN,
+        COSTE_PIERNA_ALGO, COSTE_POSITION_RISK,
+    };
+    use Alcance::{ConSimbolo, SinSimbolo, Unico};
+    use Metodo::{Delete, Get, Post, Put};
+    use PesoFirma::{NoVerificado, Verificado};
+    &[
+        // :13 «0 ✔ (y 1 en cada contador de órdenes, 10 s y 1 min)»
+        fila(Post, "/fapi/v1/order", Unico, Verificado(COSTE_ORDEN)),
+        // :14 «1 ✔»
+        fila(Get, "/fapi/v1/order", Unico, Verificado(COSTE_CONSULTA_ORDEN)),
+        // :15 «1 ✔»
+        fila(Delete, "/fapi/v1/order", Unico, Verificado(COSTE_CANCELACION)),
+        // :16 «5» sin ✔
+        fila(Post, "/fapi/v1/batchOrders", Unico, NoVerificado),
+        // :17 POST/PUT «1» sin ✔
+        fila(Post, "/fapi/v1/listenKey", Unico, NoVerificado),
+        fila(Put, "/fapi/v1/listenKey", Unico, NoVerificado),
+        // :18 «5 ✔»
+        fila(Get, "/fapi/v2/balance", Unico, verificado(5, 0)),
+        // :19 «5 ✔»
+        fila(Get, "/fapi/v2/positionRisk", Unico, Verificado(COSTE_POSITION_RISK)),
+        // :20 «5 ✔»
+        fila(Get, "/fapi/v2/account", Unico, verificado(5, 0)),
+        // :21 «20 ✔ (antes figuraba 1)»
+        fila(Get, "/fapi/v1/commissionRate", Unico, verificado(20, 0)),
+        // :22 «1» sin ✔
+        fila(Get, "/fapi/v1/leverageBracket", Unico, NoVerificado),
+        // :23 «1» sin ✔
+        fila(Get, "/fapi/v1/exchangeInfo", Unico, NoVerificado),
+        // :24 «1 ✔»
+        fila(Post, "/fapi/v1/leverage", Unico, verificado(1, 0)),
+        // :25 «1» sin ✔
+        fila(Post, "/fapi/v1/marginType", Unico, NoVerificado),
+        // :26 «1» sin ✔
+        fila(Get, "/fapi/v1/time", Unico, NoVerificado),
+        // :27 «1-10» sin ✔
+        fila(Get, "/fapi/v1/klines", Unico, NoVerificado),
+        // :28 «20» sin ✔
+        fila(Get, "/fapi/v1/aggTrades", Unico, NoVerificado),
+        // :29 «0 ✔ (y 1 en cada contador de órdenes; ...)»
+        fila(Post, "/fapi/v1/algoOrder", Unico, Verificado(COSTE_PIERNA_ALGO)),
+        // :30 «1 ✔»
+        fila(Delete, "/fapi/v1/algoOrder", Unico, Verificado(COSTE_CANCELACION)),
+        // :31 «1 ✔»
+        fila(Delete, "/fapi/v1/algoOpenOrders", Unico, Verificado(COSTE_CANCELACION)),
+        // :32 «1 con símbolo / 40 sin él ✔»
+        fila(
+            Get,
+            "/fapi/v1/openAlgoOrders",
+            ConSimbolo,
+            Verificado(COSTE_ALGO_ABIERTAS_SIMBOLO),
+        ),
+        fila(Get, "/fapi/v1/openAlgoOrders", SinSimbolo, verificado(40, 0)),
+        // :33 «1 ✔»
+        fila(Delete, "/fapi/v1/allOpenOrders", Unico, Verificado(COSTE_CANCELACION)),
+        // :34 «1 con símbolo / 40 sin él ✔»
+        fila(Get, "/fapi/v1/openOrders", ConSimbolo, verificado(1, 0)),
+        fila(Get, "/fapi/v1/openOrders", SinSimbolo, verificado(40, 0)),
+        // :35 «GET 30 ✔ / POST 1 ✔»
+        fila(Get, "/fapi/v1/positionSide/dual", Unico, verificado(30, 0)),
+        fila(Post, "/fapi/v1/positionSide/dual", Unico, verificado(1, 0)),
+    ]
+};
+
+/// La fila de la tabla para una petición, si existe.
+pub fn fila_de(metodo: Metodo, ruta: &str, con_simbolo: bool) -> Option<&'static FilaPeso> {
+    TABLA_PESOS.iter().find(|f| {
+        f.metodo == metodo
+            && f.ruta == ruta
+            && match f.alcance {
+                Alcance::Unico => true,
+                Alcance::ConSimbolo => con_simbolo,
+                Alcance::SinSimbolo => !con_simbolo,
+            }
+    })
+}
+
+/// El coste de una petición según la tabla, o el rechazo (falla cerrado):
+/// firma fuera del mapa o con peso N/D.
+pub fn coste_de_firma(
+    metodo: Metodo,
+    ruta: &str,
+    con_simbolo: bool,
+) -> Result<CosteBinance, RechazoPuerta> {
+    let firma = format!(
+        "{} {}{}",
+        metodo.como_str(),
+        ruta,
+        if con_simbolo { " (con symbol)" } else { "" }
+    );
+    match fila_de(metodo, ruta, con_simbolo) {
+        None => Err(RechazoPuerta::FirmaDesconocida(firma)),
+        Some(FilaPeso {
+            peso: PesoFirma::NoVerificado,
+            ..
+        }) => Err(RechazoPuerta::PesoNoVerificado(firma)),
+        Some(FilaPeso {
+            peso: PesoFirma::Verificado(coste),
+            ..
+        }) => Ok(*coste),
+    }
+}
+
 /// Por qué la puerta no dejó salir una petición, o por qué falló.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum RechazoPuerta {
