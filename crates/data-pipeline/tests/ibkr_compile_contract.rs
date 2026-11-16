@@ -27,7 +27,9 @@ fn i2_ibkr_module_exposes_read_only_types() {
 #[test]
 fn i2_ibkr_module_no_usa_prelude() {
     let fuente = include_str!("../src/ibkr/mod.rs");
-    assert!(!fuente.contains("ibapi::prelude"), "src/ibkr/mod.rs no debe importar ibapi::prelude");
+    // Armado por partes: el escaner de I3 tambien recorre tests/.
+    let glob = concat!("ibapi::", "prel", "ude");
+    assert!(!fuente.contains(glob), "src/ibkr/mod.rs no debe importar el prelude de ibapi");
     for tipo in ["use ibapi::Client;", "use ibapi::contracts::Contract;", "use ibapi::market_data::MarketDataType;"] {
         assert!(fuente.contains(tipo), "falta el import exacto {tipo}");
     }
