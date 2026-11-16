@@ -34,3 +34,83 @@ fn i2_ibkr_module_no_usa_prelude() {
         assert!(fuente.contains(tipo), "falta el import exacto {tipo}");
     }
 }
+
+/// I4: la cubeta admite 60, rechaza la 61 y repone 1 ficha cada 10 s.
+#[test]
+fn i4_token_bucket_respects_capacity_and_refill() {
+    use data_pipeline::ibkr::pacing::TokenBucket;
+    use std::time::{Duration, Instant};
+
+    let t0 = Instant::now();
+    let mut bucket = TokenBucket::new(60, Duration::from_secs(10));
+
+    for _ in 0..60 {
+        assert!(bucket.try_acquire_at(t0), "Deberia haber ficha disponible");
+    }
+    assert!(!bucket.try_acquire_at(t0), "La 61 debe fallar");
+    assert!(!bucket.try_acquire_at(t0 + Duration::from_millis(9_999)), "Aun no repone a 9,999 s");
+    assert!(bucket.try_acquire_at(t0 + Duration::from_secs(10)), "Repone 1 ficha tras 10 s");
+    assert!(!bucket.try_acquire_at(t0 + Duration::from_secs(10)), "Solo se repuso 1");
+    // A los 600 s de la ultima toma la cubeta vuelve a estar llena, y no pasa de 60.
+    assert_eq!(bucket.disponibles_at(t0 + Duration::from_secs(10 + 600)), 60);
+}
+
+/// I4: la cubeta de IBKR sale de las constantes (60 fichas, 600 s / 60 = 10 s).
+#[test]
+fn i4_token_bucket_ibkr_derivado_de_constantes() {
+    use data_pipeline::ibkr::pacing::{TokenBucket, IBKR_HISTORICAL_REFILL_SECS, IBKR_HISTORICAL_WINDOW_SECS};
+    use data_pipeline::ibkr::IBKR_HISTORICAL_MAX_PER_10MIN;
+    assert_eq!(IBKR_HISTORICAL_WINDOW_SECS, 600);
+    assert_eq!(IBKR_HISTORICAL_REFILL_SECS * IBKR_HISTORICAL_MAX_PER_10MIN as u64, IBKR_HISTORICAL_WINDOW_SECS);
+    assert_eq!(TokenBucket::ibkr_historico().capacidad(), IBKR_HISTORICAL_MAX_PER_10MIN);
+}
+
+#[test]
+fn i4_pacing_enforces_min_interval() {
+    use data_pipeline::ibkr::pacing::PacingGate;
+    use std::time::{Duration, Instant};
+    let gate = PacingGate::new(2500);
+    assert_eq!(gate.min_interval_ms(), 2500);
+
+    let mut gate = PacingGate::ibkr();
+    let t0 = Instant::now();
+    assert!(gate.try_send_at(t0));
+    assert!(!gate.try_send_at(t0 + Duration::from_millis(2_499)), "antes de 2500 ms no envia");
+    assert!(gate.try_send_at(t0 + Duration::from_millis(2_500)));
+    // Con el espaciador nunca caben 6 envios en 2 s (regla oficial de rafaga).
+    let mut gate = PacingGate::ibkr();
+    let enviados = (0..2_000u64).filter(|ms| gate.try_send_at(t0 + Duration::from_millis(*ms))).count();
+    assert!(enviados < 6, "{enviados} envios en 2 s");
+}
+
+/// I4: como mucho 50 peticiones en vuelo.
+#[test]
+fn i4_in_flight_maximo_50() {
+    use data_pipeline::ibkr::pacing::{InFlightCounter, IBKR_MAX_IN_FLIGHT_HISTORICAL};
+    assert_eq!(IBKR_MAX_IN_FLIGHT_HISTORICAL, 50);
+    let mut c = InFlightCounter::ibkr();
+    for _ in 0..50 {
+        assert!(c.try_begin());
+    }
+    assert!(!c.try_begin(), "la 51 en vuelo debe esperar");
+    c.finish();
+    assert!(c.try_begin(), "al cerrar una queda hueco");
+    assert_eq!(c.en_vuelo(), 50);
+}
+
+/// I4: al abrir la linea 81 se desaloja la menos usada.
+#[test]
+fn i4_lineas_streaming_lru_80() {
+    use data_pipeline::ibkr::pacing::StreamingLines;
+    use std::time::{Duration, Instant};
+    let t0 = Instant::now();
+    let mut l = StreamingLines::ibkr();
+    for i in 0..80u64 {
+        assert_eq!(l.open_at(&format!("L{i}"), t0 + Duration::from_secs(i)), None);
+    }
+    // L0 se vuelve a usar: la menos usada pasa a ser L1.
+    assert_eq!(l.open_at("L0", t0 + Duration::from_secs(100)), None);
+    assert_eq!(l.open_at("L80", t0 + Duration::from_secs(101)), Some("L1".to_string()));
+    assert_eq!(l.abiertas(), 80);
+    assert!(l.contiene("L0") && !l.contiene("L1"));
+}
