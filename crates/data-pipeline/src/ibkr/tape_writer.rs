@@ -26,6 +26,10 @@ pub const IBKR_CINTA_SUBDIR: &str = "cinta_datos/externas/ibkr";
 /// Cabecera del CSV de la cinta.
 pub const IBKR_CINTA_CABECERA: &str = "timestamp_utc,symbol,open,high,low,close,volume,wap,count";
 
+/// Segundos de un dia UTC: 24 h x 60 min x 60 s = 86 400 (tiempo Unix, sin
+/// segundos intercalares).
+const SEGUNDOS_POR_DIA: i64 = 24 * 60 * 60;
+
 /// Escritor de la cinta de IBKR sobre una carpeta.
 #[derive(Debug, Clone)]
 pub struct TapeWriter {
@@ -57,15 +61,15 @@ fn segundos_unix(t: SystemTime) -> io::Result<i64> {
 /// `YYYYMMDD` del dia UTC de `t`.
 pub fn dia_utc(t: SystemTime) -> io::Result<String> {
     let s = segundos_unix(t)?;
-    let (y, m, d) = civil_desde_dias(s.div_euclid(86_400));
+    let (y, m, d) = civil_desde_dias(s.div_euclid(SEGUNDOS_POR_DIA));
     Ok(format!("{y:04}{m:02}{d:02}"))
 }
 
 /// `YYYY-MM-DDTHH:MM:SSZ` de `t` (precision de segundo).
 pub fn timestamp_utc(t: SystemTime) -> io::Result<String> {
     let s = segundos_unix(t)?;
-    let (y, m, d) = civil_desde_dias(s.div_euclid(86_400));
-    let r = s.rem_euclid(86_400);
+    let (y, m, d) = civil_desde_dias(s.div_euclid(SEGUNDOS_POR_DIA));
+    let r = s.rem_euclid(SEGUNDOS_POR_DIA);
     Ok(format!("{y:04}-{m:02}-{d:02}T{:02}:{:02}:{:02}Z", r / 3600, (r % 3600) / 60, r % 60))
 }
 

@@ -270,7 +270,7 @@ fn i7_error_162_triggers_circuit_breaker() {
     assert_eq!(handler.cooldown_duration(), Duration::from_secs(65));
 }
 
-/// I7: 65 s parado, luego 60 s a media tasa, luego normal; lee el texto del 162.
+/// I7: 65 s parado, luego una ventana (I9) a media tasa, luego normal; lee el texto del 162.
 #[test]
 fn i7_freno_fases_y_causas() {
     use data_pipeline::ibkr::error_handler::{
@@ -294,7 +294,7 @@ fn i7_freno_fases_y_causas() {
     assert_eq!(h.estado_at(t0 + s(fin)), EstadoFreno::MediaTasa);
     assert_eq!(h.factor_tasa_at(t0 + s(fin)), 0.5);
     assert_eq!(h.estado_at(t0 + s(fin + media)), EstadoFreno::Normal);
-    assert_eq!(h.half_rate_duration(), s(60));
+    assert_eq!(h.half_rate_duration(), s(media));
     assert_eq!(h.eventos().len(), 1);
     assert_eq!(h.eventos()[0].enfriamiento, s(65));
 
@@ -352,4 +352,108 @@ fn i4_casos_limite_sin_panico() {
     let mut l = StreamingLines::new(0);
     assert_eq!(l.open_at("ES", t0), Some("ES".to_string()), "techo cero: no se abre");
     assert_eq!(l.abiertas(), 0);
+}
+
+/// I9: emisor voraz con reloj inyectado (paso de 500 ms) sobre la cubeta y el
+/// espaciador reales. `factor(t)` es la fase del freno: 0 no envia; < 1 envia
+/// con el doble de espaciado (acople mas favorable posible, que el codigo no
+/// hace); 1 normal. Devuelve el maximo de envios en una ventana movil
+/// semiabierta [t, t + W).
+fn i9_peor_ventana(
+    mut cubeta: data_pipeline::ibkr::pacing::TokenBucket,
+    factor: impl Fn(std::time::Duration) -> f64,
+    horizonte: std::time::Duration,
+) -> usize {
+    use data_pipeline::ibkr::pacing::{PacingGate, IBKR_HISTORICAL_WINDOW_SECS};
+    use data_pipeline::ibkr::IBKR_MIN_PACING_INTERVAL_MS;
+    use std::time::{Duration, Instant};
+    let t0 = Instant::now();
+    let paso = Duration::from_millis(500);
+    let doble = Duration::from_millis(2 * IBKR_MIN_PACING_INTERVAL_MS);
+    let mut gate = PacingGate::ibkr();
+    let mut envios: Vec<Duration> = Vec::new();
+    let mut t = Duration::ZERO;
+    while t < horizonte {
+        let f = factor(t);
+        let espera_media = f < 1.0 && envios.last().is_some_and(|u| t - *u < doble);
+        if f > 0.0 && !espera_media && cubeta.disponibles_at(t0 + t) > 0 && gate.try_send_at(t0 + t) {
+            assert!(cubeta.try_acquire_at(t0 + t));
+            envios.push(t);
+        }
+        t += paso;
+    }
+    let w = Duration::from_secs(IBKR_HISTORICAL_WINDOW_SECS);
+    let (mut j, mut max) = (0usize, 0usize);
+    for i in 0..envios.len() {
+        while j < envios.len() && envios[j] < envios[i] + w {
+            j += 1;
+        }
+        max = max.max(j - i);
+    }
+    max
+}
+
+/// I9: la media tasa dura una ventana historica completa (T_m = W), no 60 s.
+#[test]
+fn i9_media_tasa_dura_una_ventana_historica() {
+    use data_pipeline::ibkr::error_handler::{ErrorHandler, EstadoFreno, IBKR_PACING_RECOVERY_HALF_RATE_SECS};
+    use data_pipeline::ibkr::pacing::IBKR_HISTORICAL_WINDOW_SECS;
+    use data_pipeline::ibkr::IBKR_PACING_BREAKER_COOLDOWN_SECS;
+    use std::time::{Duration, Instant};
+    assert_eq!(IBKR_PACING_RECOVERY_HALF_RATE_SECS, IBKR_HISTORICAL_WINDOW_SECS, "T_m debe ser W");
+    let t0 = Instant::now();
+    let mut h = ErrorHandler::new();
+    h.receive_error_at(162, "Pacing violation", t0);
+    let fin_media = Duration::from_secs(IBKR_PACING_BREAKER_COOLDOWN_SECS + IBKR_HISTORICAL_WINDOW_SECS);
+    assert_eq!(h.estado_at(t0 + fin_media - Duration::from_millis(1)), EstadoFreno::MediaTasa);
+    assert_eq!(h.estado_at(t0 + fin_media), EstadoFreno::Normal);
+}
+
+/// I9: la invariante "nunca mas de C por ventana movil W" NO la cumple la
+/// cubeta actual: su peor caso es N_max = C + ceil(W/r) - 1 = 119, con o sin
+/// freno, y T_m no lo cambia (dN_max/dT_m = 0). Caracterizacion: si alguien
+/// arregla la cubeta, esta prueba sale roja y hay que invertirla.
+#[test]
+fn i9_invariante_ventana_movil_depende_de_la_cubeta_no_de_t_m() {
+    use data_pipeline::ibkr::error_handler::ErrorHandler;
+    use data_pipeline::ibkr::pacing::{TokenBucket, IBKR_HISTORICAL_REFILL_SECS, IBKR_HISTORICAL_WINDOW_SECS};
+    use data_pipeline::ibkr::{IBKR_HISTORICAL_MAX_PER_10MIN, IBKR_PACING_BREAKER_COOLDOWN_SECS};
+    use std::time::{Duration, Instant};
+    let c = IBKR_HISTORICAL_MAX_PER_10MIN;
+    let w = IBKR_HISTORICAL_WINDOW_SECS;
+    let r = IBKR_HISTORICAL_REFILL_SECS;
+    let n_max = c + (w.div_ceil(r) as usize) - 1;
+    assert_eq!(n_max, 119);
+    let s = Duration::from_secs;
+    let tf = IBKR_PACING_BREAKER_COOLDOWN_SECS;
+
+    // Sin freno.
+    assert_eq!(i9_peor_ventana(TokenBucket::ibkr_historico(), |_| 1.0, s(1800)), n_max);
+
+    // Freno en t = 0 con la cubeta llena (peor transicion), para varios T_m.
+    for tm in [0u64, 60, 600, 1200] {
+        let fase = move |t: Duration| {
+            if t < s(tf) {
+                0.0
+            } else if t < s(tf + tm) {
+                0.5
+            } else {
+                1.0
+            }
+        };
+        let peor = i9_peor_ventana(TokenBucket::ibkr_historico(), fase, s(tf + tm + 1800));
+        assert_eq!(peor, n_max, "T_m = {tm} s cambio el peor caso");
+        assert!(peor > c, "la invariante se cumpliria con T_m = {tm} s");
+    }
+
+    // El freno real, con su T_m.
+    let t0 = Instant::now();
+    let mut h = ErrorHandler::new();
+    h.receive_error_at(162, "Pacing violation", t0);
+    let real = i9_peor_ventana(TokenBucket::ibkr_historico(), |t| h.factor_tasa_at(t0 + t), s(3600));
+    assert_eq!(real, n_max);
+
+    // Control: el medidor si ve una cubeta que cumple C_b + ceil(W/r_b) - 1 <= C.
+    let cumple = i9_peor_ventana(TokenBucket::new(1, s(r)), |_| 1.0, s(1800));
+    assert_eq!(cumple, c, "cubeta C_b = 1, r_b = r: exactamente C por ventana");
 }

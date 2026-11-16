@@ -17,11 +17,19 @@
 
 use std::time::{Duration, Instant};
 
+use super::pacing::IBKR_HISTORICAL_WINDOW_SECS;
 use super::IBKR_PACING_BREAKER_COOLDOWN_SECS;
 
-/// Reanudacion a media tasa tras el enfriamiento: 60 s. N/D: no existe cifra
-/// oficial; decision de diseno del pedido (I7).
-pub const IBKR_PACING_RECOVERY_HALF_RATE_SECS: u64 = 60;
+/// Reanudacion a media tasa tras el enfriamiento: T_m = W = 600 s.
+/// IBKR-I9. Notacion: C = IBKR_HISTORICAL_MAX_PER_10MIN = 60,
+/// W = IBKR_HISTORICAL_WINDOW_SECS = 600 s, r = IBKR_HISTORICAL_REFILL_SECS = W/C = 10 s,
+/// g = IBKR_MIN_PACING_INTERVAL_MS = 2,5 s, T_f = IBKR_PACING_BREAKER_COOLDOWN_SECS = 65 s.
+///   N_max(W) = C + ceil(W/r) - 1 = 60 + 60 - 1 = 119 > C   (TokenBucket lleno al empezar; g <= r)
+///   dN_max/dT_m = 0                                        (TokenBucket y PacingGate no leen factor_tasa_at)
+///   => no existe T_m con N_max(W) <= C; la condicion es de la cubeta: C_b + ceil(W/r_b) - 1 <= C.
+///   T_m := W  (respaldo del pedido I9 sin supuestos; NO basta para la invariante).
+/// Pruebas: tests/ibkr_compile_contract.rs, i9_*.
+pub const IBKR_PACING_RECOVERY_HALF_RATE_SECS: u64 = IBKR_HISTORICAL_WINDOW_SECS;
 
 /// Codigo de exceso de lineas streaming (OFICIAL, message_codes.html).
 pub const IBKR_ERR_MAX_TICKERS: i32 = 101;
