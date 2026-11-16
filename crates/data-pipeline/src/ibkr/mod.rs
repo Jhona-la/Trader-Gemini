@@ -11,6 +11,7 @@
 
 pub mod cache;
 pub mod pacing;
+pub mod tape_writer;
 
 use ibapi::contracts::Contract;
 use ibapi::market_data::MarketDataType;

@@ -777,6 +777,7 @@ name = "data-pipeline"
 version = "0.1.0"
 dependencies = [
  "fast-float",
+ "flate2",
  "futures-util",
  "hex",
  "hickory-resolver",

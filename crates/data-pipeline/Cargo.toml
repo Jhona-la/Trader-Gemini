@@ -25,3 +25,6 @@ hex = "0.4"
 # SOLO para datos (pedido junie_cli_pedido_conector_ibkr_solo_lectura_v2.md).
 # Pin exacto: "2.7" resolveria a 2.12.0; la 2.7.0 es la auditada por QODER-CLI.
 ibapi = "=2.7.0"
+# IBKR-I6: gzip de la cinta de IBKR. Version exacta = la ya resuelta en Cargo.lock
+# por otros crates del workspace (no cambia ninguna version).
+flate2 = "=1.1.9"

@@ -158,3 +158,102 @@ fn i5_cache_clave_de_seis_campos_y_ttl_ibkr() {
     cache.insert_at(variantes[0], 2, t0 + Duration::from_secs(IBKR_DEDUP_CACHE_TTL_SECS + 1));
     assert_eq!(cache.len(), 1);
 }
+fn dir_temporal(nombre: &str) -> std::path::PathBuf {
+    let d = std::env::temp_dir().join(format!("ibkr_tape_{nombre}_{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&d);
+    std::fs::create_dir_all(&d).expect("crear carpeta temporal");
+    d
+}
+
+fn barra(segundos_unix: u64, simbolo: &str) -> data_pipeline::ibkr::IbkrBar {
+    data_pipeline::ibkr::IbkrBar {
+        timestamp: std::time::UNIX_EPOCH + std::time::Duration::from_secs(segundos_unix),
+        symbol: simbolo.to_string(),
+        open: 5000.0,
+        high: 5010.0,
+        low: 4995.0,
+        close: 5005.0,
+        volume: 100,
+        wap: 5003.0,
+        count: 50,
+    }
+}
+
+/// I6: escribe ibkr_YYYYMMDD.csv.gz y su companero .sha256.
+#[test]
+fn i6_tape_writer_produces_valid_csv_with_sha256() {
+    use data_pipeline::ibkr::tape_writer::TapeWriter;
+    use data_pipeline::ibkr::IbkrBar;
+    use std::time::SystemTime;
+
+    let tmp_dir = dir_temporal("i6");
+    let mut writer = TapeWriter::new(&tmp_dir);
+
+    let bars = vec![IbkrBar {
+        timestamp: SystemTime::now(),
+        symbol: "ES".to_string(),
+        open: 5000.0,
+        high: 5010.0,
+        low: 4995.0,
+        close: 5005.0,
+        volume: 100,
+        wap: 5003.0,
+        count: 50,
+    }];
+    writer.write_bars(&bars).expect("Escritura exitosa");
+
+    let csv_gz = std::fs::read_dir(&tmp_dir)
+        .unwrap()
+        .flatten()
+        .map(|e| e.path())
+        .find(|p| p.extension().is_some_and(|x| x == "gz"))
+        .expect("debe existir ibkr_YYYYMMDD.csv.gz");
+    assert!(csv_gz.file_name().unwrap().to_string_lossy().starts_with("ibkr_"));
+
+    // El companero es <archivo>.csv.gz.sha256. (El pedido usaba
+    // with_extension("csv.gz.sha256"), que da ibkr_X.csv.csv.gz.sha256.)
+    let sha_file = csv_gz.with_extension("gz.sha256");
+    assert!(sha_file.exists(), "Debe existir el archivo .sha256 companion");
+
+    // Observacion 1 de QODER: el hash se recalcula, no basta con que exista.
+    let csv = TapeWriter::leer_csv(&csv_gz).expect("descomprimir");
+    let firma = std::fs::read_to_string(&sha_file).expect("leer firma");
+    assert_eq!(firma.trim(), data_pipeline::ibkr::tape_writer::sha256_hex(csv.as_bytes()));
+
+    std::fs::remove_dir_all(&tmp_dir).ok();
+}
+
+/// I6: esquema, dia UTC, filas que se agregan y firma que se rehace.
+#[test]
+fn i6_tape_writer_esquema_dia_utc_y_agregado() {
+    use data_pipeline::ibkr::tape_writer::{dia_utc, sha256_hex, timestamp_utc, TapeWriter, IBKR_CINTA_CABECERA};
+
+    assert_eq!(IBKR_CINTA_CABECERA, "timestamp_utc,symbol,open,high,low,close,volume,wap,count");
+    // 2026-11-16T23:59:59Z y 2024-02-29T00:00:00Z (bisiesto).
+    let fin_dia = std::time::UNIX_EPOCH + std::time::Duration::from_secs(1_794_873_599);
+    assert_eq!(dia_utc(fin_dia).unwrap(), "20261116");
+    assert_eq!(timestamp_utc(fin_dia).unwrap(), "2026-11-16T23:59:59Z");
+    let bisiesto = std::time::UNIX_EPOCH + std::time::Duration::from_secs(1_709_164_800);
+    assert_eq!(timestamp_utc(bisiesto).unwrap(), "2024-02-29T00:00:00Z");
+
+    let dir = dir_temporal("i6b");
+    let mut w = TapeWriter::new(&dir);
+    // Dos barras de dias distintos: dos archivos.
+    let tocados = w.write_bars(&[barra(1_794_873_599, "ES"), barra(1_794_873_600, "NQ")]).unwrap();
+    assert_eq!(tocados.len(), 2);
+    let dia = w.ruta_dia("20261116");
+    assert_eq!(
+        TapeWriter::leer_csv(&dia).unwrap(),
+        format!("{IBKR_CINTA_CABECERA}\n2026-11-16T23:59:59Z,ES,5000,5010,4995,5005,100,5003,50\n")
+    );
+    // Otra escritura del mismo dia agrega la fila y rehace la firma.
+    w.write_bars(&[barra(1_794_873_598, "CL")]).unwrap();
+    let csv = TapeWriter::leer_csv(&dia).unwrap();
+    assert_eq!(csv.lines().count(), 3, "cabecera + 2 filas: {csv}");
+    let firma = std::fs::read_to_string(TapeWriter::ruta_firma(&dia)).unwrap();
+    assert_eq!(firma.trim(), sha256_hex(csv.as_bytes()));
+    // Un simbolo con coma romperia el esquema: se rechaza.
+    assert!(w.write_bars(&[barra(1_794_873_598, "E,S")]).is_err());
+
+    std::fs::remove_dir_all(&dir).ok();
+}
