@@ -4,6 +4,9 @@ pub mod dynamic_ranker;
 pub mod feature_vm;
 pub mod historical;
 pub mod http_cliente;
+// IBKR-I2 (integrador, 2026-11-16): conector de Interactive Brokers de SOLO
+// LECTURA (datos). Sin ninguna ruta a ordenes: tests/ibkr_solo_lectura_contract.rs.
+pub mod ibkr;
 // RB-R1 (Codex RB, 2026-10-19): `macro_data` (MacroFetcher) y
 // `market_context` (MarketContextFetcher) ya no viven aquí. Eran los únicos
 // usuarios de `polars` y `yahoo_finance_api` en este crate, y por ellos la

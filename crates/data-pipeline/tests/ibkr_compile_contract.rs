@@ -13,3 +13,22 @@ fn i1_ibapi_dependency_compiles() {
     let _ = std::any::type_name::<Contract>();
     let _ = std::any::type_name::<MarketDataType>();
 }
+
+/// I2: el modulo ibkr publica sus tipos de solo lectura y las constantes.
+#[test]
+fn i2_ibkr_module_exposes_read_only_types() {
+    use data_pipeline::ibkr::{IbkrBar, IbkrGateway, IBKR_HISTORICAL_MAX_PER_10MIN};
+    let _ = std::any::type_name::<IbkrGateway>();
+    let _ = std::any::type_name::<IbkrBar>();
+    assert_eq!(IBKR_HISTORICAL_MAX_PER_10MIN, 60);
+}
+
+/// I2: el modulo importa los tipos exactos de ibapi, no su prelude.
+#[test]
+fn i2_ibkr_module_no_usa_prelude() {
+    let fuente = include_str!("../src/ibkr/mod.rs");
+    assert!(!fuente.contains("ibapi::prelude"), "src/ibkr/mod.rs no debe importar ibapi::prelude");
+    for tipo in ["use ibapi::Client;", "use ibapi::contracts::Contract;", "use ibapi::market_data::MarketDataType;"] {
+        assert!(fuente.contains(tipo), "falta el import exacto {tipo}");
+    }
+}
