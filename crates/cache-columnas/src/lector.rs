@@ -172,3 +172,45 @@ pub fn rango_pub(raiz: &Path, fuente: &str, simbolo: &str) -> Result<Option<(i64
     }
     Ok(r)
 }
+/// P5: los registros (`ts, bid, ask, bq, aq`, LE, sin cabecera) del original con SHA-256 `sha256_original` (hex),
+/// servidos desde la cache. `Ok(None)` si la cache no existe o ninguna serie cubre TODOS los registros
+/// `[0, n_registros)` sin huecos; `Err` si la cubre pero alguna hora no verifica (quien llama cae a la cinta).
+pub fn registros_de_original(raiz: &Path, sha256_original: &str, n_registros: u64) -> Result<Option<Vec<u8>>, String> {
+    let man = leer_manifiesto(raiz)?;
+    let mut series: Vec<(String, String)> = man
+        .horas
+        .iter()
+        .filter(|e| e.sha256_original.eq_ignore_ascii_case(sha256_original))
+        .map(|e| (e.fuente.clone(), e.simbolo.clone()))
+        .collect();
+    series.sort();
+    series.dedup();
+    for (fuente, simbolo) in series {
+        let mut horas: Vec<&EntradaHora> = man
+            .horas
+            .iter()
+            .filter(|e| e.sha256_original.eq_ignore_ascii_case(sha256_original) && e.fuente == fuente && e.simbolo == simbolo)
+            .collect();
+        horas.sort_by_key(|e| e.registro_desde);
+        let mut siguiente = 0u64;
+        let cubre = horas.iter().all(|e| {
+            let ok = e.registro_desde == siguiente;
+            siguiente = e.registro_hasta;
+            ok
+        }) && siguiente == n_registros;
+        if !cubre {
+            continue;
+        }
+        let claves: Vec<String> = horas.iter().map(|e| e.clave.clone()).collect();
+        let montadas = montar(raiz, &claves)?;
+        let mut v = Vec::new();
+        for h in &montadas {
+            v.extend_from_slice(&h.registros()?);
+        }
+        if v.len() as u64 != n_registros.saturating_mul(crate::BYTES_REGISTRO as u64) {
+            return Err(format!("la cache entrego {} B para {n_registros} registros", v.len()));
+        }
+        return Ok(Some(v));
+    }
+    Ok(None)
+}

@@ -57,6 +57,8 @@ telemetry-engine = { path = "crates/telemetry-engine" }
 metacortex-engine = { path = "crates/metacortex-engine" }
 # TGB-E: lectores de cintas de ticks por la cinta logica (.bin o .bin.tgb).
 tick-tape = { path = "crates/tick-tape" }
+# CACHEV3-P5: lectura opt-in de la cache de columnas en train_forest (--cache columnas).
+cache-columnas = { path = "crates/cache-columnas" }
 
 syn = { version = "2.0", features = ["full", "visit"] }
 rkyv = { version = "0.7", features = ["validation"] }

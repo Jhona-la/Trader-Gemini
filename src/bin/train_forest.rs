@@ -127,7 +127,7 @@
 //! Uso: train_forest BTCUSDT [--in data/BTCUSDT_SEP26.bin] [--max-samples 400000]
 //!      [--horizon-ms 300000] [--trees 300] [--lr 0.1] [--depth 5]
 //!      [--val-in selection.bin] [--test-in later-test.bin] [--promote]
-//!      [--calentamiento-ms 43200000]
+//!      [--calentamiento-ms 43200000] [--cache columnas] [--cache-dir cache/columnas]
 
 use god_engine_core::ml_inference::{macro_ml_features, NanoForest, NanoForestData};
 use god_engine_core::stateful_engine::{StatefulEngine, FEATURES_DEAD_IN_SERVE};
@@ -1076,6 +1076,42 @@ fn admitir_cinta_para_muestras(path: &str) -> Result<tick_tape::logica::TapeByte
     Ok(tape)
 }
 
+/// CACHEV3-P5 (opt-in, `--cache columnas`): los ticks de la cinta YA ADMITIDA (la admision de TGB-G no se salta),
+/// servidos desde la cache de columnas si su manifiesto cubre el original entero (mismo SHA-256, registros
+/// `[0, n_total)` sin huecos) y cada hora verifica sus SHA-256. Si no, `None` con el motivo, y el entrenador sigue
+/// por la cinta mapeada de siempre, sin error. Bits exactos: cada palabra se copia, no se reinterpreta.
+fn ticks_desde_cache(cache_dir: &str, tape: &tick_tape::logica::TapeBytes, n_total: usize) -> Option<Vec<BinTick>> {
+    let sha = cache_columnas::hex(&tape.sha256_original());
+    let bytes = match cache_columnas::lector::registros_de_original(std::path::Path::new(cache_dir), &sha, n_total as u64) {
+        Ok(Some(b)) => b,
+        Ok(None) => {
+            println!("   [cache] {cache_dir} no cubre la cinta {sha}: camino de siempre (cinta mapeada)");
+            return None;
+        }
+        Err(e) => {
+            println!("   [cache] {cache_dir} rechazada ({e}): camino de siempre (cinta mapeada)");
+            return None;
+        }
+    };
+    let palabra = |r: &[u8], k: usize| {
+        let mut w = [0u8; 8];
+        w.copy_from_slice(&r[k * 8..(k + 1) * 8]);
+        u64::from_le_bytes(w)
+    };
+    let ticks: Vec<BinTick> = bytes
+        .chunks_exact(std::mem::size_of::<BinTick>())
+        .map(|r| BinTick {
+            ts: palabra(r, 0),
+            bid: f64::from_bits(palabra(r, 1)),
+            ask: f64::from_bits(palabra(r, 2)),
+            bq: f64::from_bits(palabra(r, 3)),
+            aq: f64::from_bits(palabra(r, 4)),
+        })
+        .collect();
+    println!("   [cache] {} ticks desde {cache_dir} (columnas verificadas)", ticks.len());
+    Some(ticks)
+}
+
 fn main() {
     let args: Vec<String> = std::env::args().collect();
     let symbol = if args.len() > 1 && !args[1].starts_with('-') {
@@ -1106,6 +1142,16 @@ fn main() {
     let lambda: f64 = arg("--lambda", "1.0").parse().unwrap();
     let patience: usize = arg("--patience", "40").parse().unwrap();
     let promote = args.iter().any(|a| a == "--promote");
+    // CACHEV3-P5: lectura por la cache de columnas, SOLO con `--cache columnas` (opt-in del operador).
+    let usar_cache_columnas = match arg("--cache", "").as_str() {
+        "" => false,
+        "columnas" => true,
+        otro => {
+            eprintln!("❌ --cache inválido: {otro} (columnas)");
+            std::process::exit(1);
+        }
+    };
+    let cache_dir = arg("--cache-dir", cache_columnas::RUTA_POR_DEFECTO);
     // XLIV-13 (recompone FMT; el merge 6fdccd64 del PR #5 desconectó este
     // contrato): promover exige un test POSTERIOR e independiente, y se
     // comprueba antes de cualquier E/S. --val-in es evidencia de SELECCIÓN.
@@ -1238,6 +1284,9 @@ fn main() {
         }
         let ptr = unsafe { mmap.as_ptr().add(header_off) } as *const BinTick;
         let raw = unsafe { std::slice::from_raw_parts(ptr, n_total) };
+        // CACHEV3-P5: sin `--cache columnas` no se consulta nada y `raw` es la cinta mapeada de siempre.
+        let desde_cache = if usar_cache_columnas { ticks_desde_cache(&cache_dir, &tape, n_total) } else { None };
+        let raw: &[BinTick] = desde_cache.as_deref().unwrap_or(raw);
         validate_tick_order(raw).expect("invalid tick chronology");
         println!("   [{}] {} ticks crudos", path, n_total);
 
@@ -3469,6 +3518,75 @@ mod tests {
                 Err(e) => assert!(!e.is_empty(), "{nombre}: sin causa"),
             }
         }
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// CACHEV3-P5: (a) con una cache que cubre la cinta, el adaptador entrega los MISMOS ticks, bit a bit, que el
+    /// camino actual extrae de la cinta mapeada (también si la cinta llega como `.bin.tgb`); (b) sin cache, con una
+    /// cache que no la cubre o con una hora alterada, cae al camino de siempre (`None`) sin error.
+    #[test]
+    fn train_forest_cache_paridad_y_caida() {
+        let dir = std::env::temp_dir().join(format!("train_forest_cache_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        // Tres horas con bits incómodos (-0.0, NaN con carga, infinito) en las cantidades.
+        let mut cinta = b"TGMTICK1".to_vec();
+        let raros = [(-0.0f64).to_bits(), 0x7ff8_0000_dead_beef, f64::INFINITY.to_bits()];
+        for k in 0..540u64 {
+            let p = 0.45 + 0.013 * k as f64;
+            let bq = if k % 5 == 0 { raros[(k as usize / 5) % 3] } else { (1.0 + k as f64).to_bits() };
+            for x in [1_789_351_200_000 + k * 20_000, (p * 0.99995).to_bits(), (p * 1.00005).to_bits(), bq, 2f64.to_bits()] {
+                cinta.extend_from_slice(&x.to_le_bytes());
+            }
+        }
+        let bin = dir.join("PARUSDT_REAL.bin");
+        std::fs::write(&bin, &cinta).unwrap();
+        let solo_tgb = dir.join("PARTUSDT_REAL.bin");
+        std::fs::write(dir.join("PARTUSDT_REAL.bin.tgb"), tick_tape::tgb::empaquetar(&cinta).unwrap()).unwrap();
+        let cache = dir.join("cache");
+        let op = |s: &str| cache_columnas::construir::Opciones {
+            fuente: "tgb-reales".into(),
+            simbolo: s.into(),
+            ..Default::default()
+        };
+        let i = cache_columnas::construir::construir_desde_cinta(&cache, &bin, &op("PARUSDT")).unwrap();
+        assert_eq!(i.horas_nuevas.len(), 3);
+        let cache_s = cache.to_string_lossy().into_owned();
+        // El camino actual: la cinta lógica mapeada, leída como `BinTick` (igual que `build`).
+        let actual = |p: &std::path::Path| {
+            let t = tick_tape::logica::open_logical_tape(p, tick_tape::tgb::Presupuesto::sin_tope()).unwrap();
+            let n = (t.len() - 8) / std::mem::size_of::<BinTick>();
+            let v = unsafe { std::slice::from_raw_parts(t.as_bytes().as_ptr().add(8) as *const BinTick, n) }.to_vec();
+            (t, v)
+        };
+        let bits = |v: &[BinTick]| -> Vec<[u64; 5]> {
+            v.iter().map(|t| [t.ts, t.bid.to_bits(), t.ask.to_bits(), t.bq.to_bits(), t.aq.to_bits()]).collect()
+        };
+        for ruta in [&bin, &solo_tgb] {
+            let (tape, esperado) = actual(ruta);
+            assert_eq!(esperado.len(), 540);
+            let servido = ticks_desde_cache(&cache_s, &tape, esperado.len()).expect("la cache cubre la cinta");
+            assert_eq!(bits(&servido), bits(&esperado), "paridad valor a valor ({})", ruta.display());
+        }
+        let (tape, esperado) = actual(&bin);
+        // (b) Sin cache: cae.
+        assert!(ticks_desde_cache(&dir.join("no_existe").to_string_lossy(), &tape, esperado.len()).is_none());
+        // Otro largo pedido (no cubre [0, n)): cae.
+        assert!(ticks_desde_cache(&cache_s, &tape, esperado.len() - 1).is_none());
+        // Una hora alterada: cae, sin pánico.
+        let man = cache_columnas::leer_manifiesto(&cache).unwrap();
+        let ask = cache.join(&man.horas[1].clave).join("ask.f64le");
+        let mut b = std::fs::read(&ask).unwrap();
+        b[9] ^= 0x10;
+        std::fs::write(&ask, &b).unwrap();
+        assert!(ticks_desde_cache(&cache_s, &tape, esperado.len()).is_none());
+        // Una hora expulsada: ya no cubre, cae.
+        b[9] ^= 0x10;
+        std::fs::write(&ask, &b).unwrap();
+        assert!(ticks_desde_cache(&cache_s, &tape, esperado.len()).is_some());
+        let uso = cache_columnas::leer_manifiesto(&cache).unwrap().uso_bytes();
+        cache_columnas::expulsion::expulsar_hasta(&cache, uso - 1, "prueba").unwrap();
+        assert!(ticks_desde_cache(&cache_s, &tape, esperado.len()).is_none());
         let _ = std::fs::remove_dir_all(&dir);
     }
 }
