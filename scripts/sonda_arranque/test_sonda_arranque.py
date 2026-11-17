@@ -384,5 +384,108 @@ class P3RetryAfter(_ConServidor):
         self.assertEqual(e4["terminacion"], "incompleta_limite_intentos")
 
 
+# ------------------------------------------------------------------ medidor de M y tol (puro)
+
+def _barras_sinteticas(n, semilla=7):
+    """Paseo determinista (LCG registrado) con OHLCV valido."""
+    x, precio, out = semilla, 100.0, []
+    for _ in range(n):
+        x = (6364136223846793005 * x + 1442695040888963407) % (1 << 64)
+        u = (x >> 11) / float(1 << 53)
+        r = (u - 0.5) * 0.004
+        o = precio
+        c = max(1e-6, o * (1.0 + r))
+        h = max(o, c) * (1.0 + abs(r) / 3)
+        lo = min(o, c) * (1.0 - abs(r) / 3)
+        out.append([o, h, lo, c, 1.0 + u])
+        precio = c
+    return out
+
+
+class P6Medidor(unittest.TestCase):
+    def test_tol_sale_de_la_sensibilidad_no_de_una_constante(self):
+        m = cargar("medir_m")
+        rejilla = [-0.05, -0.02, -0.01, 0.01, 0.02, 0.04, 0.05]
+        # transicion sembrada: el consumidor cambia de decision entre 0.02 y 0.04 (frontera en 0.03)
+        r = m.sensibilidad(lambda x: x >= 1.03, base=1.0, deltas=rejilla)
+        self.assertEqual(r["delta_primera_transicion_observada"], 0.04)
+        self.assertEqual(r["cobertura"], sorted(rejilla))
+        self.assertEqual(r["direcciones_sin_transicion"], ["negativa"])
+        self.assertEqual(r["tol_segura"], "N/D")  # una rejilla finita no acredita una cota universal
+        self.assertTrue(r["frontera_entre_puntos_posible"])
+        self.assertEqual(r["piso_compuerta"], 0.01)  # clamp de lib.rs, informado aparte
+        # otra transicion: sale del consumidor, no de una constante 0,01
+        r2 = m.sensibilidad(lambda x: x <= 0.985, base=1.0, deltas=rejilla)
+        self.assertEqual(r2["delta_primera_transicion_observada"], -0.02)
+        self.assertEqual(r2["direcciones_sin_transicion"], ["positiva"])
+        # sin transicion: tol y M acreditado N/D, y M >= L_max se conserva
+        r3 = m.sensibilidad(lambda x: True, base=1.0, deltas=rejilla)
+        self.assertIsNone(r3["delta_primera_transicion_observada"])
+        self.assertEqual(r3["tol_segura"], "N/D")
+        mm = m.m_minimo({5000: [0.0] * 59}, tol=m.tol_desde_sensibilidad(r3), l_max=1025, paridad=False)
+        self.assertEqual(mm["M_acreditado"], "N/D")
+        self.assertEqual(mm["L_max"], 1025)
+        self.assertTrue(mm["condicion_M_ge_L_max"])
+
+    def test_paridad_del_rasgo_m5000(self):
+        m = cargar("medir_m")
+        inv = m.inventario()
+        self.assertEqual(inv["L_max_finito"], 1025)  # DFA: MAX_HISTORY 1024 retornos + 1 cierre
+        self.assertTrue(all(":" in x["fuente"] for x in inv["rasgos"]))
+        self.assertIn("vt_rasgo_ml", inv["memoria_infinita"])
+        barras = _barras_sinteticas(6000)
+        e = m.errores_rejilla(barras, finales=[5500, 6000], rejilla=[600, 1025, 5000], m_ref=5000)
+        for fin in e["por_final"]:
+            for rasgo, err in fin["errores"][5000].items():
+                self.assertEqual(err, 0.0, rasgo)  # mismo codigo y misma ventana = igualdad exacta
+        # control: con 600 barras el DFA no ve la misma historia (el error no es trivialmente 0)
+        self.assertTrue(any(f["errores"][600]["hurst_dfa_raw"] not in (0.0, None) for f in e["por_final"]))
+        self.assertEqual(e["paridad_consumidor"], "N/D")  # replica Python: paridad con Rust se acredita aparte
+        # el DFA replica la cadencia del motor: ultimo recalculo en 512 + 32*k retornos
+        self.assertEqual(m.ultimo_recalculo(511), None)
+        self.assertEqual(m.ultimo_recalculo(512), 512)
+        self.assertEqual(m.ultimo_recalculo(999), 992)
+        self.assertEqual(m.ultimo_recalculo(4999), 4992)
+        # convencion de error: denominador nulo
+        self.assertEqual(m.error_relativo(0.0, 0.0), 0.0)
+        self.assertIsNone(m.error_relativo(1.0, 0.0))
+        self.assertEqual(m.error_relativo(3, 2, discreto=True), 1.0)
+
+    def test_m_minimo_respeta_tol(self):
+        m = cargar("medir_m")
+        tol = {"valor": 0.02, "acreditada": True, "fuente": "sembrada en el fixture (no es una tol medida)"}
+        errores = {
+            500: [0.001] * 59,  # cumple tol pero 500 < L_max
+            800: [0.001] * 59,
+            1025: [0.001] * 58 + [0.03],  # un exceso
+            1500: [0.019] * 59,
+            5000: [0.0] * 59,
+        }
+        validacion = {1500: [0.01] * 59}
+        r = m.m_minimo(errores, tol=tol, l_max=1025, paridad=True, validacion=validacion)
+        self.assertEqual(r["M_candidato"], 1500)
+        self.assertEqual(r["M_acreditado"], 1500)
+        self.assertGreaterEqual(r["M_acreditado"], r["L_max"])
+        self.assertEqual(r["excesos"][1025], 1)
+        self.assertEqual(r["descartados_por_L_max"], [500, 800])
+        # tol no acreditada: sin candidato ni M acreditado
+        r2 = m.m_minimo(errores, tol=dict(tol, acreditada=False), l_max=1025, paridad=True, validacion=validacion)
+        self.assertEqual(r2["M_acreditado"], "N/D")
+        self.assertIsNone(r2["M_candidato"])
+        # sin paridad con el consumidor: candidato informado, acreditado N/D
+        r3 = m.m_minimo(errores, tol=tol, l_max=1025, paridad=False, validacion=validacion)
+        self.assertEqual((r3["M_candidato"], r3["M_acreditado"]), (1500, "N/D"))
+        # validacion con un exceso o ausente: N/D (la seleccion del minimo no se valida sola)
+        r4 = m.m_minimo(errores, tol=tol, l_max=1025, paridad=True, validacion={1500: [0.01] * 58 + [0.5]})
+        self.assertEqual(r4["M_acreditado"], "N/D")
+        r5 = m.m_minimo(errores, tol=tol, l_max=1025, paridad=True, validacion=None)
+        self.assertEqual(r5["M_acreditado"], "N/D")
+        # menos de 59 arranques o un error no evaluable: ese M no es candidato
+        r6 = m.m_minimo({1500: [0.0] * 58, 5000: [0.0] * 30 + [None] * 29}, tol=tol, l_max=1025, paridad=True,
+                        validacion=validacion)
+        self.assertIsNone(r6["M_candidato"])
+        self.assertEqual(r6["M_acreditado"], "N/D")
+
+
 if __name__ == "__main__":
     unittest.main()
