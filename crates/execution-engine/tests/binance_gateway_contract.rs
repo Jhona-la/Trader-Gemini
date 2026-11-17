@@ -60,7 +60,9 @@ fn gateway_presupuesto_tres_ventanas() {
     let en_vuelo = p.admitir(CallPriority::Critica, COSTE_POSITION_RISK, T0 + 2);
     assert_eq!(p.uso_efectivo(T0 + 2)[CONTADOR_PESO_1M], cab + c);
 
-    // Lo local manda cuando las respuestas no traen cabecera.
+    // Respuestas sin cabecera: su coste queda sin reconciliar SOBRE la última
+    // cabecera conocida (C1, dictamen R1). Antes de C1 este caso esperaba
+    // 3·c: la cabecera previa de 1 se perdía, que es el hueco de R1.
     let mut q = PresupuestoPuerta::nuevo(LimitesExchange::respaldo_lg12());
     q.observar(&cabecera_peso(1), T0);
     for _ in 0..3 {
@@ -69,7 +71,7 @@ fn gateway_presupuesto_tres_ventanas() {
         }
     }
     assert_eq!(q.en_vuelo(), [0, 0, 0]);
-    assert_eq!(q.uso_efectivo(T0)[CONTADOR_PESO_1M], c * 3);
+    assert_eq!(q.uso_efectivo(T0)[CONTADOR_PESO_1M], 1 + c * 3);
 
     // Sin respuesta: el coste queda perdido sobre la cabecera hasta que
     // caduca la ventana (SinRespuesta del ejecutor, CL-201).
@@ -89,20 +91,22 @@ fn gateway_presupuesto_tres_ventanas() {
     assert_eq!(z.uso_efectivo(T0)[CONTADOR_PESO_1M], c, "lo local sigue contando");
 
     // Las órdenes suman a los dos contadores ORDERS; cada uno caduca con su
-    // ventana.
+    // ventana. (C1: las cabeceras vienen en la respuesta de la orden, que así
+    // queda reconciliada; una cabecera suelta de `observar` no cubriría su
+    // coste.)
     let mut r = PresupuestoPuerta::nuevo(LimitesExchange::respaldo_lg12());
     if let Ok(res) = r.admitir(CallPriority::Critica, COSTE_ORDEN, T0) {
         assert_eq!(r.uso_efectivo(T0), [0, COSTE_ORDEN.ordenes, COSTE_ORDEN.ordenes]);
-        r.cerrar(res, Desenlace::Respuesta(BinanceRateLimits::default()), T0);
+        r.cerrar(
+            res,
+            Desenlace::Respuesta(BinanceRateLimits {
+                weight_1m: None,
+                orders_10s: Some(7),
+                orders_1m: Some(9),
+            }),
+            T0,
+        );
     }
-    r.observar(
-        &BinanceRateLimits {
-            weight_1m: None,
-            orders_10s: Some(7),
-            orders_1m: Some(9),
-        },
-        T0,
-    );
     assert_eq!(r.uso_efectivo(T0), [0, 7, 9]);
     let tras_10s = T0 + VENTANA_ORDENES_10S_MS;
     let uso = r.uso_efectivo(tras_10s);
@@ -115,6 +119,137 @@ fn gateway_presupuesto_tres_ventanas() {
         p.cerrar(res, Desenlace::Respuesta(BinanceRateLimits::default()), T0 + 2);
     }
     assert_eq!(p.uso_efectivo(T0 + 2 + VENTANA_PESO_MS)[CONTADOR_PESO_1M], 0);
+}
+
+/// C1 (dictamen R1): con una cabecera previa vigente a `c` del límite, una
+/// respuesta sin cabeceras no devuelve el uso a la cabecera: la segunda
+/// admisión se rechaza. Valores del contraejemplo del dictamen: L = 2400,
+/// c = 5 (positionRisk), H = L - c.
+#[test]
+fn c1_sin_cabecera_tras_cabecera_cerca_del_limite() {
+    let c = COSTE_POSITION_RISK.peso;
+    let l = LIMITE_PESO_1M;
+    let mut p = PresupuestoPuerta::nuevo(LimitesExchange::respaldo_lg12());
+    // Una primera petición trae la cabecera H = L - c (cuenta la suya).
+    let r0 = p.admitir(CallPriority::Critica, COSTE_POSITION_RISK, T0);
+    assert!(r0.is_ok());
+    if let Ok(r0) = r0 {
+        p.cerrar(r0, Desenlace::Respuesta(cabecera_peso(l - c)), T0);
+    }
+    assert_eq!(p.uso_efectivo(T0)[CONTADOR_PESO_1M], l - c);
+    // Entra una crítica: H + c = L.
+    let r1 = p.admitir(CallPriority::Critica, COSTE_POSITION_RISK, T0 + 1);
+    assert!(r1.is_ok(), "H + c = L cabe");
+    // Responde SIN cabeceras: el exchange la contó, nadie lo dice.
+    if let Ok(r1) = r1 {
+        p.cerrar(r1, Desenlace::Respuesta(BinanceRateLimits::default()), T0 + 2);
+    }
+    assert_eq!(p.en_vuelo(), [0, 0, 0]);
+    assert_eq!(p.uso_efectivo(T0 + 2)[CONTADOR_PESO_1M], l, "el coste no desaparece");
+    assert!(
+        matches!(
+            p.admitir(CallPriority::Critica, COSTE_POSITION_RISK, T0 + 3),
+            Err(RechazoPuerta::Presupuesto(_))
+        ),
+        "la segunda admisión pasaría a H + 2c > L"
+    );
+    // Vence su ventana: sale.
+    assert_eq!(p.uso_efectivo(T0 + 2 + VENTANA_PESO_MS)[CONTADOR_PESO_1M], 0);
+
+    // Sin contarlo dos veces: una cabecera de una petición admitida DESPUÉS
+    // de esa respuesta lo cubre.
+    let mut q = PresupuestoPuerta::nuevo(LimitesExchange::respaldo_lg12());
+    if let Ok(a) = q.admitir(CallPriority::Critica, COSTE_POSITION_RISK, T0) {
+        q.cerrar(a, Desenlace::Respuesta(cabecera_peso(100)), T0);
+    }
+    if let Ok(b) = q.admitir(CallPriority::Critica, COSTE_POSITION_RISK, T0) {
+        q.cerrar(b, Desenlace::Respuesta(BinanceRateLimits::default()), T0);
+    }
+    assert_eq!(q.uso_efectivo(T0)[CONTADOR_PESO_1M], 100 + c);
+    if let Ok(d) = q.admitir(CallPriority::Critica, COSTE_POSITION_RISK, T0) {
+        // El servidor contó b y d: 100 + 2c.
+        q.cerrar(d, Desenlace::Respuesta(cabecera_peso(100 + 2 * c)), T0);
+    }
+    assert_eq!(
+        q.uso_efectivo(T0)[CONTADOR_PESO_1M],
+        100 + 2 * c,
+        "la cabecera posterior lo cubre: sin contarlo dos veces"
+    );
+
+    // Una cabecera de una petición admitida ANTES de esa respuesta no lo
+    // cubre (pudo no contarla): se queda, lo conservador.
+    let mut s = PresupuestoPuerta::nuevo(LimitesExchange::respaldo_lg12());
+    let antes = s.admitir(CallPriority::Critica, COSTE_POSITION_RISK, T0);
+    if let Ok(b) = s.admitir(CallPriority::Critica, COSTE_POSITION_RISK, T0) {
+        s.cerrar(b, Desenlace::Respuesta(BinanceRateLimits::default()), T0);
+    }
+    if let Ok(a) = antes {
+        s.cerrar(a, Desenlace::Respuesta(cabecera_peso(50)), T0);
+    }
+    assert_eq!(s.uso_efectivo(T0)[CONTADOR_PESO_1M], 50 + c);
+
+    // Una cabecera suelta (`observar`) no cubre nada.
+    let mut z = PresupuestoPuerta::nuevo(LimitesExchange::respaldo_lg12());
+    if let Ok(b) = z.admitir(CallPriority::Critica, COSTE_POSITION_RISK, T0) {
+        z.cerrar(b, Desenlace::Respuesta(BinanceRateLimits::default()), T0);
+    }
+    z.observar(&cabecera_peso(50), T0 + 1);
+    assert_eq!(z.uso_efectivo(T0 + 1)[CONTADOR_PESO_1M], 50 + c);
+
+    // Un 429/418 (su cabecera no entra) tampoco hace desaparecer el coste.
+    let mut x = PresupuestoPuerta::nuevo(LimitesExchange::respaldo_lg12());
+    if let Ok(a) = x.admitir(CallPriority::Critica, COSTE_POSITION_RISK, T0) {
+        x.cerrar(a, Desenlace::Respuesta(cabecera_peso(l - c)), T0);
+    }
+    if let Ok(b) = x.admitir(CallPriority::Critica, COSTE_POSITION_RISK, T0) {
+        x.cerrar(b, Desenlace::LimiteExchange, T0);
+    }
+    assert_eq!(x.uso_efectivo(T0)[CONTADOR_PESO_1M], l);
+}
+
+/// C1: cabeceras parciales. Cada contador se reconcilia sólo con SU
+/// cabecera: si la respuesta trae el peso pero no los contadores de
+/// órdenes, el coste de órdenes queda sin reconciliar sobre su cabecera
+/// previa y la siguiente orden que pasaría del límite se rechaza.
+#[test]
+fn c1_cabeceras_parciales() {
+    let l10 = LIMITE_ORDENES_10S;
+    // Una petición que gasta en los tres contadores.
+    let mixto = CosteBinance { peso: 1, ordenes: 1 };
+    let mut p = PresupuestoPuerta::nuevo(LimitesExchange::respaldo_lg12());
+    if let Ok(a) = p.admitir(CallPriority::Critica, COSTE_ORDEN, T0) {
+        p.cerrar(
+            a,
+            Desenlace::Respuesta(BinanceRateLimits {
+                weight_1m: Some(10),
+                orders_10s: Some(l10 - 1),
+                orders_1m: Some(l10 - 1),
+            }),
+            T0,
+        );
+    }
+    assert_eq!(p.uso_efectivo(T0), [10, l10 - 1, l10 - 1]);
+    let b = p.admitir(CallPriority::Critica, mixto, T0 + 1);
+    assert!(b.is_ok(), "cabe justo en L del contador de 10 s");
+    if let Ok(b) = b {
+        // Respuesta con el peso, sin los contadores de órdenes.
+        p.cerrar(b, Desenlace::Respuesta(cabecera_peso(11)), T0 + 2);
+    }
+    let uso = p.uso_efectivo(T0 + 2);
+    assert_eq!(uso[CONTADOR_PESO_1M], 11, "el peso se reconcilia con su cabecera");
+    assert_eq!(uso[CONTADOR_ORDENES_10S], l10, "las órdenes no desaparecen");
+    assert_eq!(uso[CONTADOR_ORDENES_1M], l10);
+    assert!(
+        matches!(
+            p.admitir(CallPriority::Critica, COSTE_ORDEN, T0 + 3),
+            Err(RechazoPuerta::Presupuesto(_))
+        ),
+        "la siguiente orden pasaría de L en el contador de 10 s"
+    );
+    // Vence la ventana de 10 s: el contador de 10 s se libera, el de 1 min no.
+    let tras = p.uso_efectivo(T0 + 2 + VENTANA_ORDENES_10S_MS);
+    assert_eq!(tras[CONTADOR_ORDENES_10S], 0);
+    assert_eq!(tras[CONTADOR_ORDENES_1M], l10);
 }
 
 /// P1: Crítica reserva su coste y pasa en la franja (0,8·L, L]; Alta,
@@ -701,6 +836,30 @@ async fn gateway_200_reconcilia_cabeceras() {
         Err(RechazoPuerta::PesoNoVerificado(_))
     ));
     assert!(srv4.recibidas().is_empty());
+}
+
+/// C1 por el transporte: una respuesta con cabecera H = L - c, otra admitida
+/// que responde sin cabeceras, y la tercera ya no sale (antes de C1 salía y
+/// el exchange habría contado H + 2c > L).
+#[tokio::test]
+async fn c1_puerta_sin_cabecera_no_reabre_el_hueco() {
+    let c = COSTE_POSITION_RISK.peso;
+    let h = (LIMITE_PESO_1M - c).to_string();
+    let srv = Servidor::levantar(vec![
+        guion(200, &[("X-MBX-USED-WEIGHT-1M", &h)]),
+        guion(200, &[]),
+        guion(200, &[]),
+    ])
+    .await;
+    let cinta = std::sync::Arc::new(CintaMemoria::nueva());
+    let g = puerta(&srv.base, cinta.clone());
+    assert!(g.enviar(position_risk(CallPriority::Critica)).await.is_ok());
+    assert!(g.enviar(position_risk(CallPriority::Critica)).await.is_ok(), "H + c = L cabe");
+    assert_eq!(g.uso_efectivo()[CONTADOR_PESO_1M], LIMITE_PESO_1M);
+    let r = g.enviar(position_risk(CallPriority::Critica)).await;
+    assert!(matches!(r, Err(RechazoPuerta::Presupuesto(_))), "{r:?}");
+    assert_eq!(srv.recibidas().len(), 2, "la tercera no salió");
+    assert_eq!(cinta.filas().len(), 3);
 }
 
 /// Espera hasta que el freno de la puerta se levante (Retry-After de 1 s en

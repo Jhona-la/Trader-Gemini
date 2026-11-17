@@ -284,7 +284,8 @@ pub fn contadores_de(coste: CosteBinance) -> [usize; 3] {
 ///   (antes de enviar), así que cubre también las peticiones en vuelo y las
 ///   que salieron sin respuesta (lo conservador, como `SinRespuesta`, CL-201).
 ///
-/// El uso efectivo es `max(local, cabecera + en vuelo + perdido)`:
+/// El uso efectivo es
+/// `max(local, cabecera + en vuelo + perdido + sin reconciliar)`:
 ///
 /// - la cabecera corrige la deriva de la estimación local y trae el consumo
 ///   de otros procesos con la misma IP (`max`, como `observar_limites`);
@@ -294,6 +295,14 @@ pub fn contadores_de(coste: CosteBinance) -> [usize; 3] {
 ///   concurrentes no caben en el hueco de una);
 /// - `perdido`: el coste de las que salieron sin respuesta, hasta que caduca
 ///   la ventana (`SinRespuesta` del ejecutor, CL-201);
+/// - `sin_reconciliar` (C1, dictamen R1): el coste de las que respondieron
+///   SIN la cabecera de este contador (o con un 429/418, cuya cabecera no
+///   entra). El exchange sí lo contó, pero ninguna cabecera lo dice: se queda
+///   sobre la última cabecera conocida hasta que una cabecera posterior lo
+///   cubra o hasta que caduque su ventana. Una cabecera lo cubre sólo si
+///   viene de una petición admitida DESPUÉS de que esa respuesta llegara
+///   (por número de secuencia del presupuesto, no por reloj): el servidor ya
+///   la había procesado. Así no se cuenta dos veces ni desaparece;
 /// - la estimación local cubre lo que la puerta envió en la ventana aunque
 ///   ninguna respuesta haya traído cabecera.
 ///
@@ -307,6 +316,8 @@ pub struct VentanaUso {
     local: VecDeque<(u64, usize)>,
     en_vuelo: usize,
     perdido: VecDeque<(u64, usize)>,
+    /// (sello de la respuesta, coste, secuencia del cierre).
+    sin_reconciliar: VecDeque<(u64, usize, u64)>,
 }
 
 /// Un sello futuro (reloj que retrocede) alargaría la vida de su coste más
@@ -332,6 +343,23 @@ fn suma_cola(cola: &VecDeque<(u64, usize)>) -> usize {
         .fold(0usize, |suma, (_, coste)| suma.saturating_add(*coste))
 }
 
+/// `podar_cola` para la cola sin reconciliar: mismo sello acotado a ahora y
+/// misma caducidad por ventana (sus sellos tampoco decrecen).
+fn podar_sin_reconciliar(cola: &mut VecDeque<(u64, usize, u64)>, ahora_ms: u64, ventana_ms: u64) {
+    for (sello, _, _) in cola.iter_mut().rev() {
+        if *sello <= ahora_ms {
+            break;
+        }
+        *sello = ahora_ms;
+    }
+    while cola
+        .front()
+        .is_some_and(|(sello, _, _)| ahora_ms.saturating_sub(*sello) >= ventana_ms)
+    {
+        cola.pop_front();
+    }
+}
+
 impl VentanaUso {
     pub fn nueva(limite: LimiteVentana) -> Self {
         Self {
@@ -340,6 +368,7 @@ impl VentanaUso {
             local: VecDeque::new(),
             en_vuelo: 0,
             perdido: VecDeque::new(),
+            sin_reconciliar: VecDeque::new(),
         }
     }
 
@@ -372,7 +401,40 @@ impl VentanaUso {
         }
     }
 
-    /// Registra una cabecera de uso de una respuesta.
+    /// C1: su respuesta llegó sin la cabecera de este contador (o fue un
+    /// 429/418): sale del libro en vuelo y queda sin reconciliar sobre la
+    /// cabecera, con la secuencia de su cierre, hasta que una cabecera
+    /// posterior la cubra (`cubrir`) o caduque su ventana.
+    pub fn liberar_sin_cabecera(&mut self, coste: usize, ahora_ms: u64, secuencia_cierre: u64) {
+        if coste == 0 {
+            return;
+        }
+        self.en_vuelo = self.en_vuelo.saturating_sub(coste);
+        podar_sin_reconciliar(&mut self.sin_reconciliar, ahora_ms, self.limite.ventana_ms);
+        self.sin_reconciliar
+            .push_back((ahora_ms, coste, secuencia_cierre));
+    }
+
+    /// C1: una cabecera de este contador que trajo la respuesta de una
+    /// petición admitida con secuencia `secuencia_admision` cubre los cierres
+    /// sin cabecera anteriores a esa admisión (el servidor ya los había
+    /// procesado): salen de la cola, la cabecera ya los cuenta.
+    pub fn cubrir(&mut self, secuencia_admision: u64) {
+        self.sin_reconciliar
+            .retain(|(_, _, cierre)| *cierre >= secuencia_admision);
+    }
+
+    /// El coste sin reconciliar vigente.
+    pub fn sin_reconciliar(&mut self, ahora_ms: u64) -> usize {
+        podar_sin_reconciliar(&mut self.sin_reconciliar, ahora_ms, self.limite.ventana_ms);
+        self.sin_reconciliar
+            .iter()
+            .fold(0usize, |suma, (_, coste, _)| suma.saturating_add(*coste))
+    }
+
+    /// Registra una cabecera de uso de una respuesta. No cubre nada sin
+    /// reconciliar: sin la secuencia de su petición no se sabe qué contaba
+    /// (lo conservador). La cubre `PresupuestoPuerta::cerrar`.
     pub fn observar_cabecera(&mut self, uso: usize, ahora_ms: u64) {
         self.cabecera.observar(uso, ahora_ms, self.limite.ventana_ms);
     }
@@ -393,14 +455,16 @@ impl VentanaUso {
         self.en_vuelo
     }
 
-    /// `max(local, cabecera + en vuelo + perdido)`.
+    /// `max(local, cabecera + en vuelo + perdido + sin reconciliar)`.
     pub fn uso_efectivo(&mut self, ahora_ms: u64) -> usize {
         let local = self.uso_local(ahora_ms);
         podar_cola(&mut self.perdido, ahora_ms, self.limite.ventana_ms);
+        let sin_reconciliar = self.sin_reconciliar(ahora_ms);
         let medido = self
             .uso_cabecera(ahora_ms)
             .saturating_add(self.en_vuelo)
-            .saturating_add(suma_cola(&self.perdido));
+            .saturating_add(suma_cola(&self.perdido))
+            .saturating_add(sin_reconciliar);
         local.max(medido)
     }
 }
@@ -412,14 +476,19 @@ impl VentanaUso {
 pub struct Reserva {
     pub coste: CosteBinance,
     pub uso_antes: [usize; 3],
+    /// C1: secuencia de la admisión en el presupuesto.
+    pub secuencia: u64,
 }
 
 /// Cómo terminó una petición admitida.
 #[derive(Clone, Copy, Debug)]
 pub enum Desenlace {
-    /// Hubo respuesta (2xx o error que no es 429/418): su cabecera manda.
+    /// Hubo respuesta (2xx o error que no es 429/418): su cabecera manda en
+    /// cada contador que la trae; en los que no la trae, su coste queda sin
+    /// reconciliar (C1).
     Respuesta(BinanceRateLimits),
-    /// 429/418: su cabecera nunca se registra, manda su Retry-After (CL-196).
+    /// 429/418: su cabecera nunca se registra, manda su Retry-After (CL-196);
+    /// su coste queda sin reconciliar en cada contador (C1: pudo contar).
     LimiteExchange,
     /// Salió y no hubo respuesta: su coste queda perdido en la ventana.
     SinRespuesta,
@@ -659,6 +728,9 @@ impl std::fmt::Display for RechazoPuerta {
 pub struct PresupuestoPuerta {
     limites: LimitesExchange,
     ventanas: [VentanaUso; 3],
+    /// C1: contador de sucesos (admisiones y cierres) para saber qué cierres
+    /// sin cabecera son anteriores a la admisión de una petición.
+    secuencia: u64,
 }
 
 impl PresupuestoPuerta {
@@ -671,7 +743,23 @@ impl PresupuestoPuerta {
                 VentanaUso::nueva(o10),
                 VentanaUso::nueva(o1m),
             ],
+            secuencia: 0,
         }
+    }
+
+    fn siguiente_secuencia(&mut self) -> u64 {
+        let s = self.secuencia;
+        self.secuencia = self.secuencia.saturating_add(1);
+        s
+    }
+
+    /// C1: el coste sin reconciliar vigente de los tres contadores.
+    pub fn sin_reconciliar(&mut self, ahora_ms: u64) -> [usize; 3] {
+        let mut uso = [0usize; 3];
+        for (k, v) in self.ventanas.iter_mut().enumerate() {
+            uso[k] = v.sin_reconciliar(ahora_ms);
+        }
+        uso
     }
 
     pub fn limites(&self) -> LimitesExchange {
@@ -697,7 +785,9 @@ impl PresupuestoPuerta {
     }
 
     /// Registra las cabeceras de una respuesta: sólo los contadores cuya
-    /// cabecera llegó, cada uno con su sello (como `observar_limites`).
+    /// cabecera llegó, cada uno con su sello (como `observar_limites`). No
+    /// cubre coste sin reconciliar (sin la petición de origen no se sabe qué
+    /// contaba la cabecera); eso lo hace `cerrar`.
     pub fn observar(&mut self, limites: &BinanceRateLimits, ahora_ms: u64) {
         let muestras = [limites.weight_1m, limites.orders_10s, limites.orders_1m];
         for (k, m) in muestras.into_iter().enumerate() {
@@ -757,19 +847,46 @@ impl PresupuestoPuerta {
         for (k, v) in self.ventanas.iter_mut().enumerate() {
             v.reservar(gasto[k], ahora_ms);
         }
-        Ok(Reserva { coste, uso_antes })
+        let secuencia = self.siguiente_secuencia();
+        Ok(Reserva {
+            coste,
+            uso_antes,
+            secuencia,
+        })
     }
 
     /// Cierra una reserva: con respuesta registra antes su cabecera (CL-182:
     /// la cabecera entra antes de que el coste salga del libro en vuelo).
+    ///
+    /// C1 (dictamen R1), por contador:
+    /// - respuesta CON la cabecera del contador: la cabecera entra, cubre lo
+    ///   sin reconciliar cerrado antes de la admisión de esta petición y el
+    ///   coste sale del libro en vuelo (la cabecera ya lo cuenta);
+    /// - respuesta SIN esa cabecera, o un 429/418: el coste pasa del libro en
+    ///   vuelo a sin reconciliar (sobre la última cabecera conocida);
+    /// - sin respuesta: perdido hasta que caduca la ventana (CL-201);
+    /// - no salió: sale del libro en vuelo (lo local sigue contando).
     pub fn cerrar(&mut self, reserva: Reserva, desenlace: Desenlace, ahora_ms: u64) {
-        if let Desenlace::Respuesta(limites) = desenlace {
-            self.observar(&limites, ahora_ms);
-        }
-        let sin_respuesta = matches!(desenlace, Desenlace::SinRespuesta);
+        let cierre = self.siguiente_secuencia();
         let gasto = contadores_de(reserva.coste);
+        let muestras: [Option<usize>; 3] = match desenlace {
+            Desenlace::Respuesta(l) => [l.weight_1m, l.orders_10s, l.orders_1m],
+            _ => [None; 3],
+        };
         for (k, v) in self.ventanas.iter_mut().enumerate() {
-            v.liberar(gasto[k], sin_respuesta, ahora_ms);
+            match desenlace {
+                Desenlace::Respuesta(_) => match muestras[k] {
+                    Some(uso) => {
+                        v.observar_cabecera(uso, ahora_ms);
+                        v.cubrir(reserva.secuencia);
+                        v.liberar(gasto[k], false, ahora_ms);
+                    }
+                    None => v.liberar_sin_cabecera(gasto[k], ahora_ms, cierre),
+                },
+                Desenlace::LimiteExchange => v.liberar_sin_cabecera(gasto[k], ahora_ms, cierre),
+                Desenlace::SinRespuesta => v.liberar(gasto[k], true, ahora_ms),
+                Desenlace::NoSalio => v.liberar(gasto[k], false, ahora_ms),
+            }
         }
     }
 
