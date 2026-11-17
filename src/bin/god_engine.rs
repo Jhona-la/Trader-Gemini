@@ -344,6 +344,31 @@ fn volcar_embudo_json(
     Ok(mapa)
 }
 
+// CABLEADOV7 §4: banco de contadores de la sección C (`demo_counters`). Mide; no
+// decide: ninguna rama del motor lee estos contadores. Se publica con
+// `render_registry` al apagar.
+static CONTADORES_DEMO: std::sync::LazyLock<telemetry_server::demo_counters::ContadoresDemo> =
+    std::sync::LazyLock::new(telemetry_server::demo_counters::ContadoresDemo::new);
+/// Motivo de cierre de las piernas del bracket (`trade_accounting`, `trigger_kind`).
+const MOTIVO_CIERRE_BRACKET: &str = "BRACKET_EXCHANGE";
+
+/// Una entrada dimensionada por la rama bootstrap de la envolvente (sin
+/// evidencia: `posterior.n() < 30`). `!operable` = la envolvente la habría vetado.
+/// Cuenta la entrada preparada en bootstrap, no una orden confirmada por el exchange.
+fn contar_bootstrap(contadores: &telemetry_server::demo_counters::ContadoresDemo, operable: bool) -> u64 {
+    contadores.registrar_bootstrap(!operable)
+}
+
+/// Un cierre bracket CONTABILIZADO (no el suprimido por la deduplicación con el
+/// core), con su neto ya admitido por `checked_numeric_net_pnl`. Es dinero del
+/// host, no conciliado con el income del exchange.
+fn contar_cierre_bracket(
+    contadores: &telemetry_server::demo_counters::ContadoresDemo,
+    net_bc: f64,
+) -> Result<u64, telemetry_server::demo_counters::ErrorContador> {
+    contadores.registrar_cierre(MOTIVO_CIERRE_BRACKET, net_bc)
+}
+
 /// P(X ≤ k) con X ~ Binomial(n, p), sumando en espacio logarítmico.
 fn cola_binomial_izquierda(n: usize, k: usize, p: f64) -> f64 {
     if !(p.is_finite() && p > 0.0 && p < 1.0) || k >= n {
@@ -5832,6 +5857,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 total_trades += 1;
                                 if net_bc > 0.0 { total_wins += 1; }
                                 last_bracket_close_ms.insert(bc.symbol.clone(), bc.ts_ms);
+                                // CABLEADOV7 §4: el cierre contabilizado (no el suprimido de arriba).
+                                let _ = contar_cierre_bracket(&CONTADORES_DEMO, net_bc);
                             }
                         }
                         telemetry!(
@@ -6600,6 +6627,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             risk_engine::envio::apalancamiento_validado(nocional, margen);
 
                         if envelope_n < 30.0 {
+                            // CABLEADOV7 §4: una observación por entrada dimensionada en bootstrap.
+                            let _ = contar_bootstrap(&CONTADORES_DEMO, operable);
                             // F4-H2 / R5-H3 (BOOTSTRAP MICRO): acumular evidencia con el apalancamiento
                             // validado por el core/arena, garantizando que el nocional mínimo de Binance
                             // ($5 USDT) no consuma más del margen presupuestado en una cuenta micro ($13 USDT).
@@ -7684,6 +7713,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     e
                 ),
             }
+            // CABLEADOV7 §4: registry de los contadores de la sección C.
+            telemetry_server::telemetry_log!("{}", CONTADORES_DEMO.render_registry());
             telemetry_server::telemetry_log!(
                 "🛑 [SHUTDOWN] Estado persistido. Cierre limpio completo."
             );
@@ -8958,6 +8989,89 @@ mod tests {
                     .contains("volcar_embudo_json(&EMBUDO_HOST, std::path::Path::new(EMBUDO_DEMO_DIR))"),
                 "volcado tras detener el lazo y persistir, fuera del aplanado"
             );
+        }
+
+        /// Código de producción del host (sin el módulo de pruebas).
+        fn produccion() -> String {
+            let f = fuente();
+            f.split_once("#[cfg(test)]\nmod tests {").map(|(p, _)| p.to_string()).unwrap_or(f)
+        }
+
+        #[test]
+        fn contadores_bootstrap_y_cierres_sobre_el_lazo_real() {
+            use telemetry_server::demo_counters::ContadoresDemo;
+            let c = ContadoresDemo::new();
+            // Bootstrap: una entrada con la envolvente que vetaba y otra que no.
+            assert_eq!(contar_bootstrap(&c, false), 1);
+            assert_eq!(contar_bootstrap(&c, true), 2);
+            // Bracket contabilizado con el neto C-VERDE (0.0148 USDT = 1 centavo).
+            assert_eq!(contar_cierre_bracket(&c, 0.0148).ok(), Some(1));
+            let s = c.snapshot();
+            assert_eq!(s.get("bootstrap_orders_sent").copied(), Some(2));
+            assert_eq!(s.get("bootstrap_orders_sent_envolvente_vetaba").copied(), Some(1));
+            assert_eq!(s.get("exit_reason_counts.BRACKET_EXCHANGE").copied(), Some(1));
+            assert_eq!(s.get("exit_pnl_net_by_reason.BRACKET_EXCHANGE.centavos").copied(), Some(1));
+            assert_eq!(s.get("exit_reason_counts.TP").copied(), Some(0), "sin neto acreditado del core no se registra");
+            assert_eq!(s.get("exit_reason_counts.IMMUNE_FLATTEN").copied(), Some(0), "un conteo agregado no es neto por cierre");
+            assert_eq!(s.get("_cableado").copied(), Some(1));
+
+            // Sitios reales del lazo (lógica en línea: se anclan con el texto de la fuente).
+            let p = produccion();
+            assert_eq!(p.matches("contar_bootstrap(&CONTADORES_DEMO, operable)").count(), 1, "una sola observación");
+            assert!(
+                tramo("if envelope_n < 30.0 {", "} else if operable {").contains("contar_bootstrap(&CONTADORES_DEMO, operable)"),
+                "en la rama bootstrap, con el operable de max_leverage_spectral"
+            );
+            let bracket = tramo("if core_ts > 0\n", "🎯 [BRACKET CLOSE]");
+            let (suprimida, contabilizada) = bracket.split_once("} else {").unwrap();
+            assert!(suprimida.contains("ya contabilizado por cierre del core"));
+            assert!(!suprimida.contains("contar_"), "el bracket suprimido no suma");
+            let neto = contabilizada.find("risk_envelope.record_net_pnl(net_bc);").unwrap();
+            let cuenta = contabilizada.find("contar_cierre_bracket(&CONTADORES_DEMO, net_bc)").unwrap();
+            assert!(neto < cuenta, "se cuenta donde el cierre se contabiliza");
+            assert!(!p.contains("CONTADORES_DEMO.registrar_cierre"), "cierres del core e inmune sin neto acreditado: no se registran");
+            assert!(
+                tramo("if let Ok(escritor) = escritor_estado {", "std::process::exit(0);").contains("CONTADORES_DEMO.render_registry()"),
+                "publicación del registry al apagar"
+            );
+        }
+
+        /// Usos de `nombre` en producción que podrían intervenir en una decisión:
+        /// todo lo que no sea su definición, un comentario, un resultado
+        /// descartado (`let _ =`), el volcado del apagado o una línea de log.
+        fn usos_que_deciden(produccion: &str, nombre: &str) -> Vec<String> {
+            produccion
+                .lines()
+                .map(str::trim)
+                .filter(|l| l.contains(nombre))
+                .filter(|l| {
+                    !(l.starts_with("//")
+                        || l.starts_with("static ")
+                        || l.starts_with("let _ = ")
+                        || l.starts_with("match volcar_embudo_json(&EMBUDO_HOST")
+                        || l.starts_with("telemetry_server::telemetry_log!("))
+                })
+                .map(str::to_string)
+                .collect()
+        }
+
+        #[test]
+        fn embudo_no_altera_la_decision() {
+            let p = produccion();
+            assert!(p.contains("EMBUDO_HOST"));
+            assert_eq!(usos_que_deciden(&p, "EMBUDO_HOST"), Vec::<String>::new());
+            // Control: un uso que decide se detecta.
+            let mutado = format!("{p}\nif registrar_flatten_en_embudo(&EMBUDO_HOST, &mut v, s, &c, 0) > 0 {{ continue; }}\n");
+            assert_eq!(usos_que_deciden(&mutado, "EMBUDO_HOST").len(), 1);
+        }
+
+        #[test]
+        fn contadores_no_alteran_decisiones() {
+            let p = produccion();
+            assert!(p.contains("CONTADORES_DEMO"));
+            assert_eq!(usos_que_deciden(&p, "CONTADORES_DEMO"), Vec::<String>::new());
+            let mutado = format!("{p}\nlet exec_leverage = contar_bootstrap(&CONTADORES_DEMO, operable) as u32;\n");
+            assert_eq!(usos_que_deciden(&mutado, "CONTADORES_DEMO").len(), 1);
         }
     }
 }

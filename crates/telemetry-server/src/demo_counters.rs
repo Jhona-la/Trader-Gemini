@@ -7,11 +7,12 @@
 //! del coordinador (12-nov 09:55) prohíbe tocar el motor.
 //!
 //! Los **puntos de incremento** están en el host/núcleo y se DECLARAN en
-//! `PUNTOS_DE_INCREMENTO`; cablearlos requiere autorización explícita del
-//! dueño del host y una corrida en la que se pueda tocar el motor. Mientras
-//! tanto, los contadores quedan a cero y `snapshot()` los publica igualmente,
-//! para que la ausencia de señal sea visible y no se confunda con un cero
-//! medido (se acompaña de `registrado=false` por contador).
+//! `PUNTOS_DE_INCREMENTO`. CABLEADO HOST v7 (CABLEADOV7-P4) cableó en el host
+//! `bootstrap_orders_sent` (y su variante con la envolvente que vetaba) y los
+//! cierres `BRACKET_EXCHANGE` contabilizados; el host publica `render_registry()`
+//! al apagar. El resto sigue SIN CABLEAR: esos contadores quedan a cero y
+//! `snapshot()` los publica igualmente; `_cableado` solo dice que el host
+//! registró al menos un incremento, no que todos los contadores tengan fuente.
 //!
 //! Motivos de veto (lista CORREGIDA de `qoder_veto_host.md` §B, 9 motivos) y
 //! motivos de cierre (8 del núcleo + IMMUNE_FLATTEN + RECONCILIATION +
@@ -59,18 +60,23 @@ pub const ETAPAS_EMBUDO: [&str; 7] = [
     "escudo neuronal (D-473/D-688)",
 ];
 
-/// Declaración de los sitios de incremento. NO se editan en este encargo.
+/// Declaración de los sitios de incremento y de su estado (CABLEADO HOST v7).
 pub const PUNTOS_DE_INCREMENTO: &str = "\
-host_entry_vetos[9]            -> src/bin/god_engine.rs (lista corregida qoder_veto_host.md §B)
-bootstrap_orders_sent          -> src/bin/god_engine.rs:5552-5556
-bootstrap_envolvente_vetaba    -> ibídem, guardar `operable` antes de la rama
-exit_reason_counts[11]         -> god-engine-core/lib.rs:5418-5443 (8), executor.rs:1008,
-                                  reconciliation.rs, trade_accounting.rs:176
-exit_pnl_net_by_reason[11]     -> trade_ledger.rs al asentar cada cierre (centavos)
-ml_shadow_vetos_aprobados      -> god-engine-core/lib.rs:10326-10339
-red_team_veto_leido            -> consumir red_team_veto_* (lib.rs:7382-7383)
-conformal_gauge_veto_leido     -> consumir conformal_gauge_veto_* (lib.rs:6848-6849)
-funnel_veto[d][stage]          -> direction_diag.rs:227-245, SIN la condición de libro plano
+host_entry_vetos[9]            -> SIN CABLEAR: src/bin/god_engine.rs (lista corregida qoder_veto_host.md §B)
+bootstrap_orders_sent          -> CABLEADO: src/bin/god_engine.rs, rama `envelope_n < 30.0` (contar_bootstrap);
+                                  una vez por entrada dimensionada en bootstrap, no por orden confirmada
+bootstrap_envolvente_vetaba    -> CABLEADO: ibídem, `!operable` de max_leverage_spectral
+exit_reason_counts[11]         -> CABLEADO solo BRACKET_EXCHANGE: cierre bracket contabilizado del host
+                                  (contar_cierre_bracket; trade_accounting.rs:176 clasifica el trigger).
+                                  SIN CABLEAR: los 8 del núcleo (god-engine-core/lib.rs:5447-5470; el host
+                                  recibe (is_long, pnl, qty) sin motivo), IMMUNE_FLATTEN (executor.rs:1523:
+                                  conteo agregado sin PnL neto por cierre) y RECONCILIATION (reconciliation.rs)
+exit_pnl_net_by_reason[11]     -> CABLEADO solo BRACKET_EXCHANGE: neto del host (checked_numeric_net_pnl),
+                                  no conciliado con el income del exchange
+ml_shadow_vetos_aprobados      -> SIN CABLEAR: god-engine-core/lib.rs:10430-10444
+red_team_veto_leido            -> SIN CABLEAR: consumir red_team_veto_* (lib.rs:7382-7383, cita heredada)
+conformal_gauge_veto_leido     -> SIN CABLEAR: consumir conformal_gauge_veto_* (lib.rs:6848-6849, cita heredada)
+funnel_veto[d][stage]          -> SIN CABLEAR: direction_diag.rs:227-245, SIN la condición de libro plano
 ";
 
 const D: usize = 2; // direcciones [largo, corto]
@@ -389,13 +395,14 @@ mod tests_contadores_demo {
     fn c_verde_declaracion_de_puntos_de_incremento() {
         for sitio in [
             "direction_diag.rs:227-245",
-            "trade_ledger.rs",
-            "executor.rs:1008",
+            "executor.rs:1523",
             "trade_accounting.rs:176",
-            "lib.rs:5418-5443",
-            "lib.rs:10326-10339",
+            "lib.rs:5447-5470",
+            "lib.rs:10430-10444",
             "lib.rs:7382-7383",
             "lib.rs:6848-6849",
+            "contar_bootstrap",
+            "contar_cierre_bracket",
         ] {
             assert!(
                 PUNTOS_DE_INCREMENTO.contains(sitio),
@@ -403,5 +410,8 @@ mod tests_contadores_demo {
                 sitio
             );
         }
+        // CABLEADOV7: executor.rs:1008 es `Err(e) => Err(e)`, no el retorno del aplanado.
+        assert!(!PUNTOS_DE_INCREMENTO.contains("executor.rs:1008"));
+        assert_eq!(PUNTOS_DE_INCREMENTO.matches("SIN CABLEAR").count(), 6);
     }
 }
