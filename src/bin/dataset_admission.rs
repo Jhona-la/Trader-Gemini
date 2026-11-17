@@ -38,6 +38,9 @@ struct TapeReceipt {
     transport_path: Option<String>,
     transport_bytes: Option<u64>,
     transport_sha256: Option<String>,
+    /// TGB-G: firma de generacion de los registros crudos (`tick_tape::procedencia`): antigua, relativa,
+    /// indeterminada, mixta u otra_o_invalida. Es compatibilidad numerica, NO procedencia acreditada.
+    generation_signature: Option<&'static str>,
 }
 
 #[derive(Debug, Serialize)]
@@ -147,6 +150,7 @@ fn empty_tape_receipt(spec: &TapeSpec) -> TapeReceipt {
         transport_path: None,
         transport_bytes: None,
         transport_sha256: None,
+        generation_signature: None,
     }
 }
 
@@ -283,6 +287,9 @@ where
         return receipt;
     }
     receipt.format = Some("TGMTICK1+40B_LE");
+    receipt.generation_signature = tick_tape::procedencia::firma_de_cinta(&snapshot)
+        .ok()
+        .map(|firma| firma.estado().nombre());
     receipt.provenance = Some(tape.provenance);
     receipt.nondecreasing_order = Some(true);
     receipt.rows = Some(tape.len());
@@ -1237,6 +1244,8 @@ mod tests {
         assert_eq!(r.transport_path.as_deref(), Some(tgb.to_string_lossy().as_ref()));
         assert_eq!(r.transport_bytes, Some(contenedor.len() as u64));
         assert_eq!(r.transport_sha256.as_deref(), Some(sha256_hex(&contenedor).as_str()));
+        // TGB-G: 100.0/100.5 no sale de ninguna de las dos recetas del semi-spread.
+        assert_eq!(r.generation_signature, Some("otra_o_invalida"));
 
         // Sustitucion entre las dos lecturas: aparece un .bin con otro contenido (manda el .bin).
         let otra = tape_bytes(

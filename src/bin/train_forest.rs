@@ -1058,6 +1058,24 @@ fn load_macro_series() -> (
     )
 }
 
+/// TGB-G: cinta que puede entrar a la PREPARACION DE MUESTRAS de entrenamiento: cinta logica verificada,
+/// firma de generacion RELATIVA recalculada sobre la cinta entera y recibo `X.bin.procedencia` con procedencia
+/// relativa acreditada, ligado al SHA-256 y al tamano del original (`tick_tape::procedencia`). Se rechazan
+/// antigua, mixta, otra, indeterminada, recibo ausente, recibo de otro original y analisis incompleto.
+fn admitir_cinta_para_muestras(path: &str) -> Result<tick_tape::logica::TapeBytes, String> {
+    let logica = std::path::Path::new(path);
+    let tape = tick_tape::logica::open_logical_tape(logica, tick_tape::tgb::Presupuesto::sin_tope())
+        .map_err(|e| format!("no pude abrir {path}: {e}"))?;
+    let ruta_recibo = tick_tape::procedencia::ruta_recibo(logica);
+    let recibo = match std::fs::read_to_string(&ruta_recibo) {
+        Ok(t) => Some(t),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => None,
+        Err(e) => return Err(format!("no pude leer {}: {e}", ruta_recibo.display())),
+    };
+    tick_tape::procedencia::admitir_para_entrenamiento(&tape, recibo.as_deref())?;
+    Ok(tape)
+}
+
 fn main() {
     let args: Vec<String> = std::env::args().collect();
     let symbol = if args.len() > 1 && !args[1].starts_with('-') {
@@ -1196,12 +1214,9 @@ fn main() {
     // ── 1+2. Muestras: features+etiquetas desde ticks (reutilizable) ────
     let build = |path: &str| -> Samples {
         // TGB-E: cinta lógica (`.bin`, o `.bin.tgb` verificado entero si el `.bin` no existe).
-        let tape = tick_tape::logica::open_logical_tape(
-            std::path::Path::new(path),
-            tick_tape::tgb::Presupuesto::sin_tope(),
-        )
-        .unwrap_or_else(|e| {
-            eprintln!("❌ no pude abrir {}: {}", path, e);
+        // TGB-G: admitida para entrenar ANTES de construir una sola muestra; si no, sale con su causa.
+        let tape = admitir_cinta_para_muestras(path).unwrap_or_else(|e| {
+            eprintln!("❌ {e}");
             std::process::exit(1);
         });
         let mmap = tape.as_bytes();
@@ -3393,5 +3408,67 @@ mod tests {
             "el modelo vuelve a escribirse sin manifiesto"
         );
         assert!(cuerpo.contains("std::process::exit(3)"), "falta el código de salida del holdout reusado");
+    }
+
+    /// TGB-G: a la preparación de muestras sólo llega la cinta de firma RELATIVA con recibo de procedencia
+    /// acreditada ligado a su SHA-256; la antigua, la que no tiene recibo y la de recibo ajeno se rechazan con su
+    /// causa, también si llegan como `.bin.tgb`.
+    #[test]
+    fn tgb_solo_la_cinta_relativa_acreditada_llega_a_las_muestras() {
+        use model_manifest::sha256_hex;
+        // Recetas auditadas (binance_vision_sync.rs:222 y tape_spread_fix.rs:4) como datos de prueba.
+        let rel = |p: f64| (p - p * 0.00005, p + p * 0.00005);
+        let ant = |p: f64| {
+            let h = (p * 0.00005f64).max(0.01);
+            (p - h, p + h)
+        };
+        let cinta = |f: &dyn Fn(f64) -> (f64, f64)| {
+            let mut v = b"TGMTICK1".to_vec();
+            for k in 0..300u64 {
+                let (b, a) = f(0.45 + 0.013 * k as f64);
+                for x in [1_780_272_000_000 + k * 1_000, b.to_bits(), a.to_bits(), 1f64.to_bits(), 2f64.to_bits()] {
+                    v.extend_from_slice(&x.to_le_bytes());
+                }
+            }
+            v
+        };
+        let recibo = |bytes: &[u8]| {
+            format!(
+                "formato=tg-procedencia-1\nsha256_original={}\nbytes_original={}\nprocedencia_acreditada=relativa\nevidencia_productor=prueba\ncobertura=completa\n",
+                sha256_hex(bytes),
+                bytes.len()
+            )
+        };
+        let dir = std::env::temp_dir().join(format!("train_forest_tgb_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let relativa = cinta(&rel);
+        let antigua = cinta(&ant);
+        let poner = |nombre: &str, bytes: &[u8], rec: Option<String>| -> String {
+            let p = dir.join(nombre);
+            std::fs::write(&p, bytes).unwrap();
+            if let Some(r) = rec {
+                std::fs::write(dir.join(format!("{nombre}.procedencia")), r).unwrap();
+            }
+            p.to_string_lossy().into_owned()
+        };
+        let ok = poner("REL_REAL.bin", &relativa, Some(recibo(&relativa)));
+        assert!(admitir_cinta_para_muestras(&ok).is_ok(), "{:?}", admitir_cinta_para_muestras(&ok).err());
+        // La relativa sólo como .bin.tgb: el recibo es del ORIGINAL, no del contenedor.
+        let tgb = dir.join("RELT_REAL.bin");
+        std::fs::write(dir.join("RELT_REAL.bin.tgb"), tick_tape::tgb::empaquetar(&relativa).unwrap()).unwrap();
+        std::fs::write(dir.join("RELT_REAL.bin.procedencia"), recibo(&relativa)).unwrap();
+        assert!(admitir_cinta_para_muestras(&tgb.to_string_lossy()).is_ok());
+        for (nombre, path) in [
+            ("firma antigua", poner("ANT_REAL.bin", &antigua, Some(recibo(&antigua)))),
+            ("sin recibo", poner("SINREC_REAL.bin", &relativa, None)),
+            ("recibo de otro original", poner("OTRO_REAL.bin", &relativa, Some(recibo(&antigua)))),
+        ] {
+            match admitir_cinta_para_muestras(&path) {
+                Ok(_) => panic!("{nombre}: la cinta llegó a la preparación de muestras sin evidencia suficiente"),
+                Err(e) => assert!(!e.is_empty(), "{nombre}: sin causa"),
+            }
+        }
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

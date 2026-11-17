@@ -17,4 +17,5 @@
 //! - final: SHA-256 de todos los bytes anteriores del contenedor (el sello).
 
 pub mod logica;
+pub mod procedencia;
 pub mod tgb;
