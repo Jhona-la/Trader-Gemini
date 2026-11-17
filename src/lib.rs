@@ -10,6 +10,8 @@ pub mod orderbook;
 pub mod parsers;
 pub mod symbol_manager;
 pub mod sa_params;
+// TGBG-3: puente comun de admision de generacion de cintas REAL (train_forest y dataset_admission).
+pub mod tgb_generation;
 
 // NOTA: Las funciones FFI extern "C" (quantum_ring_new, quantum_ring_free, quantum_ring_read_tick)
 // han sido eliminadas en la Fase 4 de Auditoría Suprema.
