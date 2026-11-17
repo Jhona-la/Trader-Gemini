@@ -7,7 +7,7 @@
 //! - Lineas streaming: https://interactivebrokers.github.io/tws-api/market_data.html
 //! - Codigos de error: https://interactivebrokers.github.io/tws-api/message_codes.html
 
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::time::{Duration, Instant};
 
 use super::{IBKR_HISTORICAL_MAX_PER_10MIN, IBKR_MAX_STREAMING_LINES_BUDGET, IBKR_MIN_PACING_INTERVAL_MS};
@@ -17,6 +17,7 @@ use super::{IBKR_HISTORICAL_MAX_PER_10MIN, IBKR_MAX_STREAMING_LINES_BUDGET, IBKR
 pub const IBKR_HISTORICAL_WINDOW_SECS: u64 = 600;
 
 /// Reposicion de una ficha: 10 s. DERIVADO: 600 s / 60 peticiones.
+/// Desde I10 la admision historica no la usa (`RegistroVentana` solo lee C y W).
 pub const IBKR_HISTORICAL_REFILL_SECS: u64 =
     IBKR_HISTORICAL_WINDOW_SECS / IBKR_HISTORICAL_MAX_PER_10MIN as u64;
 
@@ -27,7 +28,85 @@ pub const IBKR_HISTORICAL_REFILL_SECS: u64 =
 /// reverifico porque el pedido se ejecuta sin red).
 pub const IBKR_MAX_IN_FLIGHT_HISTORICAL: usize = 50;
 
+/// IBKR-I10: admision de las peticiones historicas por ventana deslizante
+/// exacta. Guarda las horas de envio de las ultimas `capacidad` peticiones
+/// admitidas (anillo de capacidad C) y admite una peticion en `t` solo si hay
+/// menos de C marcas en (t - W, t]. Con C = `IBKR_HISTORICAL_MAX_PER_10MIN` y
+/// W = `IBKR_HISTORICAL_WINDOW_SECS` cumple sin supuestos la invariante
+/// "nunca mas de C envios en cualquier ventana de W" (la cubeta de I4 dejaba
+/// pasar C + ceil(W/r) - 1 = 119).
+///
+/// Falla cerrado, sin panico (RB-P1): C = 0 o W = 0 no admiten nada; un `ahora`
+/// anterior a la ultima marca (reloj hacia atras) no admite.
+#[derive(Debug, Clone)]
+pub struct RegistroVentana {
+    capacidad: usize,
+    ventana: Duration,
+    /// Horas de envio admitidas, en orden no decreciente; nunca mas de `capacidad`.
+    envios: VecDeque<Instant>,
+}
+
+impl RegistroVentana {
+    pub fn new(capacidad: usize, ventana: Duration) -> Self {
+        Self { capacidad, ventana, envios: VecDeque::new() }
+    }
+
+    /// Limites oficiales de IBKR: C = 60 peticiones en W = 600 s.
+    pub fn ibkr_historico() -> Self {
+        Self::new(IBKR_HISTORICAL_MAX_PER_10MIN, Duration::from_secs(IBKR_HISTORICAL_WINDOW_SECS))
+    }
+
+    /// Retira las marcas que ya no estan en (ahora - W, ahora].
+    fn purgar(&mut self, ahora: Instant) {
+        // Si ahora - W no es representable, ninguna marca puede haber salido.
+        let Some(borde) = ahora.checked_sub(self.ventana) else {
+            return;
+        };
+        while self.envios.front().is_some_and(|m| *m <= borde) {
+            self.envios.pop_front();
+        }
+    }
+
+    fn cerrado(&self) -> bool {
+        self.capacidad == 0 || self.ventana.is_zero()
+    }
+
+    /// Admite y registra una peticion en `ahora` si la ventana tiene hueco.
+    pub fn try_acquire_at(&mut self, ahora: Instant) -> bool {
+        if self.cerrado() || self.envios.back().is_some_and(|u| ahora < *u) {
+            return false;
+        }
+        self.purgar(ahora);
+        if self.envios.len() >= self.capacidad {
+            return false;
+        }
+        self.envios.push_back(ahora);
+        true
+    }
+
+    /// Peticiones que se admitirian en `ahora` (0 si falla cerrado).
+    pub fn disponibles_at(&mut self, ahora: Instant) -> usize {
+        if self.cerrado() || self.envios.back().is_some_and(|u| ahora < *u) {
+            return 0;
+        }
+        self.purgar(ahora);
+        self.capacidad.saturating_sub(self.envios.len())
+    }
+
+    pub fn capacidad(&self) -> usize {
+        self.capacidad
+    }
+
+    pub fn ventana(&self) -> Duration {
+        self.ventana
+    }
+}
+
 /// Cubeta de fichas: `capacidad` fichas, una ficha nueva cada `reposicion`.
+///
+/// IBKR-I10: ya NO es la admision de las peticiones historicas (su peor caso
+/// es C + ceil(W/r) - 1 = 119 por ventana de 600 s); esa es `RegistroVentana`.
+/// Se conserva como cubeta generica y como control de las pruebas i9/i10.
 #[derive(Debug, Clone)]
 pub struct TokenBucket {
     capacidad: usize,
@@ -42,11 +121,6 @@ impl TokenBucket {
     /// nunca (falla cerrado; sin panico: release usa panic = abort, RB-P1).
     pub fn new(capacidad: usize, reposicion: Duration) -> Self {
         Self { capacidad, reposicion, fichas: capacidad, ultima: None }
-    }
-
-    /// Cubeta con los limites oficiales de IBKR: 60 fichas, una cada 10 s.
-    pub fn ibkr_historico() -> Self {
-        Self::new(IBKR_HISTORICAL_MAX_PER_10MIN, Duration::from_secs(IBKR_HISTORICAL_REFILL_SECS))
     }
 
     fn reponer(&mut self, ahora: Instant) {

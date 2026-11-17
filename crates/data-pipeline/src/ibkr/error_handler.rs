@@ -28,7 +28,10 @@ use super::IBKR_PACING_BREAKER_COOLDOWN_SECS;
 ///   dN_max/dT_m = 0                                        (TokenBucket y PacingGate no leen factor_tasa_at)
 ///   => no existe T_m con N_max(W) <= C; la condicion es de la cubeta: C_b + ceil(W/r_b) - 1 <= C.
 ///   T_m := W  (respaldo del pedido I9 sin supuestos; NO basta para la invariante).
-/// Pruebas: tests/ibkr_compile_contract.rs, i9_*.
+/// IBKR-I10: la admision historica pasa a `pacing::RegistroVentana` (ventana deslizante
+/// exacta), con N_max(W) = C para todo T_m. La invariante ya no depende de la media tasa,
+/// que se conserva como reaccion a la senal de IBKR (162/420).
+/// Pruebas: tests/ibkr_compile_contract.rs, i9_* e i10_*.
 pub const IBKR_PACING_RECOVERY_HALF_RATE_SECS: u64 = IBKR_HISTORICAL_WINDOW_SECS;
 
 /// Codigo de exceso de lineas streaming (OFICIAL, message_codes.html).

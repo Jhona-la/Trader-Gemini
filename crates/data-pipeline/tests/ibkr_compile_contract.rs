@@ -55,14 +55,19 @@ fn i4_token_bucket_respects_capacity_and_refill() {
     assert_eq!(bucket.disponibles_at(t0 + Duration::from_secs(10 + 600)), 60);
 }
 
-/// I4: la cubeta de IBKR sale de las constantes (60 fichas, 600 s / 60 = 10 s).
+/// I4 (ajustada en I10): la admision historica de IBKR sale de las constantes
+/// (C = 60 en W = 600 s; r = 600 s / 60 = 10 s sigue derivada). Desde I10 la
+/// admision es `RegistroVentana`, no `TokenBucket`.
 #[test]
 fn i4_token_bucket_ibkr_derivado_de_constantes() {
-    use data_pipeline::ibkr::pacing::{TokenBucket, IBKR_HISTORICAL_REFILL_SECS, IBKR_HISTORICAL_WINDOW_SECS};
+    use data_pipeline::ibkr::pacing::{RegistroVentana, IBKR_HISTORICAL_REFILL_SECS, IBKR_HISTORICAL_WINDOW_SECS};
     use data_pipeline::ibkr::IBKR_HISTORICAL_MAX_PER_10MIN;
+    use std::time::Duration;
     assert_eq!(IBKR_HISTORICAL_WINDOW_SECS, 600);
     assert_eq!(IBKR_HISTORICAL_REFILL_SECS * IBKR_HISTORICAL_MAX_PER_10MIN as u64, IBKR_HISTORICAL_WINDOW_SECS);
-    assert_eq!(TokenBucket::ibkr_historico().capacidad(), IBKR_HISTORICAL_MAX_PER_10MIN);
+    let r = RegistroVentana::ibkr_historico();
+    assert_eq!(r.capacidad(), IBKR_HISTORICAL_MAX_PER_10MIN);
+    assert_eq!(r.ventana(), Duration::from_secs(IBKR_HISTORICAL_WINDOW_SECS));
 }
 
 #[test]
@@ -338,6 +343,11 @@ fn i8_full_ibkr_module_integration() {
     assert_eq!(std::any::type_name::<m::TapeWriter>(), std::any::type_name::<TapeWriter>());
     assert_eq!(std::any::type_name::<m::ErrorHandler>(), std::any::type_name::<ErrorHandler>());
     let _ = std::any::type_name::<(m::PacingGate, m::InFlightCounter, m::StreamingLines, m::ClaveCache, m::CausaIbkr, m::EstadoFreno)>();
+    // I10: la admision historica tambien se reexporta.
+    assert_eq!(
+        std::any::type_name::<m::RegistroVentana>(),
+        std::any::type_name::<data_pipeline::ibkr::pacing::RegistroVentana>()
+    );
     assert_eq!(m::tipos_ibapi_usados().len(), 3);
 }
 /// I4 (RB-P1): los casos limite fallan cerrados sin panico (release = panic = abort).
@@ -354,13 +364,43 @@ fn i4_casos_limite_sin_panico() {
     assert_eq!(l.abiertas(), 0);
 }
 
-/// I9: emisor voraz con reloj inyectado (paso de 500 ms) sobre la cubeta y el
+/// I10: admision historica que mide `i9_peor_ventana` (registro de I10 o la
+/// cubeta vieja de I4, como control).
+trait I9Admision {
+    fn disponibles_at(&mut self, t: std::time::Instant) -> usize;
+    fn try_acquire_at(&mut self, t: std::time::Instant) -> bool;
+}
+impl I9Admision for data_pipeline::ibkr::pacing::TokenBucket {
+    fn disponibles_at(&mut self, t: std::time::Instant) -> usize {
+        data_pipeline::ibkr::pacing::TokenBucket::disponibles_at(self, t)
+    }
+    fn try_acquire_at(&mut self, t: std::time::Instant) -> bool {
+        data_pipeline::ibkr::pacing::TokenBucket::try_acquire_at(self, t)
+    }
+}
+impl I9Admision for data_pipeline::ibkr::pacing::RegistroVentana {
+    fn disponibles_at(&mut self, t: std::time::Instant) -> usize {
+        data_pipeline::ibkr::pacing::RegistroVentana::disponibles_at(self, t)
+    }
+    fn try_acquire_at(&mut self, t: std::time::Instant) -> bool {
+        data_pipeline::ibkr::pacing::RegistroVentana::try_acquire_at(self, t)
+    }
+}
+
+/// Cubeta vieja de I4 con los limites de IBKR (60 fichas, una cada 10 s).
+fn i9_cubeta_vieja() -> data_pipeline::ibkr::pacing::TokenBucket {
+    use data_pipeline::ibkr::pacing::{TokenBucket, IBKR_HISTORICAL_REFILL_SECS};
+    use data_pipeline::ibkr::IBKR_HISTORICAL_MAX_PER_10MIN;
+    TokenBucket::new(IBKR_HISTORICAL_MAX_PER_10MIN, std::time::Duration::from_secs(IBKR_HISTORICAL_REFILL_SECS))
+}
+
+/// I9: emisor voraz con reloj inyectado (paso de 500 ms) sobre la admision y el
 /// espaciador reales. `factor(t)` es la fase del freno: 0 no envia; < 1 envia
 /// con el doble de espaciado (acople mas favorable posible, que el codigo no
 /// hace); 1 normal. Devuelve el maximo de envios en una ventana movil
 /// semiabierta [t, t + W).
 fn i9_peor_ventana(
-    mut cubeta: data_pipeline::ibkr::pacing::TokenBucket,
+    mut cubeta: impl I9Admision,
     factor: impl Fn(std::time::Duration) -> f64,
     horizonte: std::time::Duration,
 ) -> usize {
@@ -409,26 +449,24 @@ fn i9_media_tasa_dura_una_ventana_historica() {
     assert_eq!(h.estado_at(t0 + fin_media), EstadoFreno::Normal);
 }
 
-/// I9: la invariante "nunca mas de C por ventana movil W" NO la cumple la
-/// cubeta actual: su peor caso es N_max = C + ceil(W/r) - 1 = 119, con o sin
-/// freno, y T_m no lo cambia (dN_max/dT_m = 0). Caracterizacion: si alguien
-/// arregla la cubeta, esta prueba sale roja y hay que invertirla.
+/// I9, invertida en I10: la invariante "nunca mas de C por ventana movil W" la
+/// cumple ahora la admision (`RegistroVentana`): el peor caso es exactamente
+/// C = 60, con o sin freno y para todo T_m. La cubeta vieja de I4 daba
+/// C + ceil(W/r) - 1 = 119 (control: `i10_control_cubeta_vieja_119`).
 #[test]
 fn i9_invariante_ventana_movil_depende_de_la_cubeta_no_de_t_m() {
     use data_pipeline::ibkr::error_handler::ErrorHandler;
-    use data_pipeline::ibkr::pacing::{TokenBucket, IBKR_HISTORICAL_REFILL_SECS, IBKR_HISTORICAL_WINDOW_SECS};
+    use data_pipeline::ibkr::pacing::RegistroVentana;
     use data_pipeline::ibkr::{IBKR_HISTORICAL_MAX_PER_10MIN, IBKR_PACING_BREAKER_COOLDOWN_SECS};
     use std::time::{Duration, Instant};
     let c = IBKR_HISTORICAL_MAX_PER_10MIN;
-    let w = IBKR_HISTORICAL_WINDOW_SECS;
-    let r = IBKR_HISTORICAL_REFILL_SECS;
-    let n_max = c + (w.div_ceil(r) as usize) - 1;
-    assert_eq!(n_max, 119);
+    let n_max = c;
+    assert_eq!(n_max, 60);
     let s = Duration::from_secs;
     let tf = IBKR_PACING_BREAKER_COOLDOWN_SECS;
 
     // Sin freno.
-    assert_eq!(i9_peor_ventana(TokenBucket::ibkr_historico(), |_| 1.0, s(1800)), n_max);
+    assert_eq!(i9_peor_ventana(RegistroVentana::ibkr_historico(), |_| 1.0, s(1800)), n_max);
 
     // Freno en t = 0 con la cubeta llena (peor transicion), para varios T_m.
     for tm in [0u64, 60, 600, 1200] {
@@ -441,19 +479,69 @@ fn i9_invariante_ventana_movil_depende_de_la_cubeta_no_de_t_m() {
                 1.0
             }
         };
-        let peor = i9_peor_ventana(TokenBucket::ibkr_historico(), fase, s(tf + tm + 1800));
+        let peor = i9_peor_ventana(RegistroVentana::ibkr_historico(), fase, s(tf + tm + 1800));
         assert_eq!(peor, n_max, "T_m = {tm} s cambio el peor caso");
-        assert!(peor > c, "la invariante se cumpliria con T_m = {tm} s");
     }
 
     // El freno real, con su T_m.
     let t0 = Instant::now();
     let mut h = ErrorHandler::new();
     h.receive_error_at(162, "Pacing violation", t0);
-    let real = i9_peor_ventana(TokenBucket::ibkr_historico(), |t| h.factor_tasa_at(t0 + t), s(3600));
+    let real = i9_peor_ventana(RegistroVentana::ibkr_historico(), |t| h.factor_tasa_at(t0 + t), s(3600));
     assert_eq!(real, n_max);
+}
 
-    // Control: el medidor si ve una cubeta que cumple C_b + ceil(W/r_b) - 1 <= C.
-    let cumple = i9_peor_ventana(TokenBucket::new(1, s(r)), |_| 1.0, s(1800));
-    assert_eq!(cumple, c, "cubeta C_b = 1, r_b = r: exactamente C por ventana");
+/// I10 (control del medidor): con la cubeta vieja de I4 el mismo emisor voraz
+/// mide C + ceil(W/r) - 1 = 119 por ventana. Si el medidor no viera excesos,
+/// la prueba anterior no probaria nada.
+#[test]
+fn i10_control_cubeta_vieja_119() {
+    use data_pipeline::ibkr::pacing::{IBKR_HISTORICAL_REFILL_SECS, IBKR_HISTORICAL_WINDOW_SECS};
+    use data_pipeline::ibkr::IBKR_HISTORICAL_MAX_PER_10MIN;
+    use std::time::Duration;
+    let (c, w, r) = (IBKR_HISTORICAL_MAX_PER_10MIN, IBKR_HISTORICAL_WINDOW_SECS, IBKR_HISTORICAL_REFILL_SECS);
+    let n_vieja = c + (w.div_ceil(r) as usize) - 1;
+    assert_eq!(n_vieja, 119);
+    assert_eq!(i9_peor_ventana(i9_cubeta_vieja(), |_| 1.0, Duration::from_secs(1800)), n_vieja);
+}
+
+/// I10: el registro admite C en (t - W, t], rechaza la C+1 y la primera marca
+/// sale justo en t + W (borde abierto); el reloj hacia atras no admite.
+#[test]
+fn i10_registro_ventana_borde_exacto() {
+    use data_pipeline::ibkr::pacing::RegistroVentana;
+    use std::time::{Duration, Instant};
+    let t0 = Instant::now();
+    let ms = Duration::from_millis;
+    let mut r = RegistroVentana::new(3, Duration::from_secs(10));
+    assert!(r.try_acquire_at(t0));
+    assert!(r.try_acquire_at(t0 + ms(1_000)));
+    assert!(r.try_acquire_at(t0 + ms(2_000)));
+    assert!(!r.try_acquire_at(t0 + ms(2_000)), "la C+1 en la ventana no entra");
+    assert!(!r.try_acquire_at(t0 + ms(9_999)), "t0 sigue en (t - W, t]");
+    assert_eq!(r.disponibles_at(t0 + ms(9_999)), 0);
+    assert_eq!(r.disponibles_at(t0 + ms(10_000)), 1, "t0 sale en t0 + W");
+    assert!(r.try_acquire_at(t0 + ms(10_000)));
+    assert!(!r.try_acquire_at(t0 + ms(10_500)));
+    assert!(!r.try_acquire_at(t0 + ms(5_000)), "reloj hacia atras: falla cerrado");
+    assert_eq!(r.disponibles_at(t0 + ms(5_000)), 0);
+    assert_eq!(r.disponibles_at(t0 + ms(30_000)), 3);
+}
+
+/// I10 (RB-P1): C = 0 o W = 0 fallan cerrados, sin panico.
+#[test]
+fn i10_registro_casos_limite_sin_panico() {
+    use data_pipeline::ibkr::pacing::RegistroVentana;
+    use std::time::{Duration, Instant};
+    let t0 = Instant::now();
+    let mut sin_capacidad = RegistroVentana::new(0, Duration::from_secs(600));
+    assert!(!sin_capacidad.try_acquire_at(t0), "C = 0 no admite");
+    assert_eq!(sin_capacidad.disponibles_at(t0 + Duration::from_secs(3600)), 0);
+    let mut sin_ventana = RegistroVentana::new(60, Duration::ZERO);
+    assert!(!sin_ventana.try_acquire_at(t0), "W = 0 no admite (la ventana vacia no limitaria)");
+    assert!(!sin_ventana.try_acquire_at(t0 + Duration::from_secs(3600)));
+    assert_eq!(sin_ventana.disponibles_at(t0), 0);
+    let mut enorme = RegistroVentana::new(usize::MAX, Duration::MAX);
+    assert!(enorme.try_acquire_at(t0), "C y W enormes: sin desborde ni reserva de memoria");
+    assert_eq!(enorme.disponibles_at(t0), usize::MAX - 1);
 }
