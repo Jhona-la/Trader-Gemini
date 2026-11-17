@@ -946,6 +946,119 @@ async fn c2_sin_symbol_no_reserva_el_coste_con_symbol() {
     }
 }
 
+/// Cabecera de peso de la primera respuesta del servidor demorado.
+const H_PREVIA: usize = 100;
+/// Cabecera de peso de la respuesta que se cancela durante el cuerpo.
+const H_CUERPO: usize = 107;
+
+/// C3: servidor local de DOS conexiones. La primera responde 200 con la
+/// cabecera de peso `H_PREVIA`. La segunda apunta su línea de petición y se
+/// queda colgada: sin responder (`durante_cuerpo = false`) o tras mandar las
+/// cabeceras (peso `H_CUERPO`) y un byte de un cuerpo de 100 (`true`).
+async fn levantar_demorado(durante_cuerpo: bool) -> Servidor {
+    let oyente = tokio::net::TcpListener::bind("127.0.0.1:0").await;
+    assert!(oyente.is_ok(), "no se pudo abrir 127.0.0.1");
+    let Ok(oyente) = oyente else { unreachable!() };
+    let direccion = oyente.local_addr().map(|a| a.to_string()).unwrap_or_default();
+    let recibidas = std::sync::Arc::new(std::sync::Mutex::new(Vec::<String>::new()));
+    let apuntes = recibidas.clone();
+    tokio::spawn(async move {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        for n in 0..2 {
+            let Ok((mut socket, _)) = oyente.accept().await else { return };
+            let mut leido = Vec::new();
+            let mut buf = [0u8; 4096];
+            while !leido.windows(4).any(|w| w == b"\r\n\r\n") {
+                match socket.read(&mut buf).await {
+                    Ok(0) | Err(_) => break,
+                    Ok(k) => leido.extend_from_slice(&buf[..k]),
+                }
+            }
+            let linea = String::from_utf8_lossy(&leido).lines().next().unwrap_or("").to_string();
+            apuntes.lock().unwrap_or_else(|e| e.into_inner()).push(linea);
+            if n == 0 {
+                let r = format!("HTTP/1.1 200 X\r\nConnection: close\r\nContent-Type: application/json\r\nContent-Length: 2\r\nX-MBX-USED-WEIGHT-1M: {H_PREVIA}\r\n\r\n{{}}");
+                let _ = socket.write_all(r.as_bytes()).await;
+                let _ = socket.shutdown().await;
+                continue;
+            }
+            if durante_cuerpo {
+                let cabeza = format!("HTTP/1.1 200 X\r\nContent-Type: application/json\r\nContent-Length: 100\r\nX-MBX-USED-WEIGHT-1M: {H_CUERPO}\r\n\r\n{{");
+                let _ = socket.write_all(cabeza.as_bytes()).await;
+                let _ = socket.flush().await;
+            }
+            tokio::time::sleep(std::time::Duration::from_secs(30)).await;
+            drop(socket);
+        }
+    });
+    Servidor {
+        base: format!("http://{direccion}"),
+        recibidas,
+    }
+}
+
+/// C3 (dictamen R3): cancelar el futuro de `enviar` (destruirlo) antes de la
+/// respuesta o mientras se lee el cuerpo no deja reservas en vuelo para
+/// siempre ni pierde la fila de la cinta; el coste que pudo salir se
+/// conserva de forma prudente: antes de la respuesta queda SOBRE la cabecera
+/// previa (perdido hasta que vence su ventana); durante el cuerpo lo cuenta
+/// la cabecera que llegó.
+#[tokio::test]
+async fn c3_cancelar_no_deja_reservas_ni_pierde_la_fila() {
+    let c = COSTE_POSITION_RISK.peso;
+    for durante_cuerpo in [false, true] {
+        let srv = levantar_demorado(durante_cuerpo).await;
+        let cinta = std::sync::Arc::new(CintaMemoria::nueva());
+        let g = puerta(&srv.base, cinta.clone());
+        // Una primera respuesta deja la cabecera previa H_PREVIA.
+        let r = g.enviar(position_risk(CallPriority::Critica)).await;
+        assert!(r.is_ok(), "{r:?}");
+        assert_eq!(g.uso_efectivo()[CONTADOR_PESO_1M], H_PREVIA);
+        {
+            let fut = g.enviar(position_risk(CallPriority::Critica));
+            tokio::pin!(fut);
+            let mut terminado: Option<String> = None;
+            let mut listo = false;
+            for _ in 0..500 {
+                tokio::select! {
+                    r = &mut fut => {
+                        terminado = Some(format!("{r:?}"));
+                    }
+                    _ = tokio::time::sleep(std::time::Duration::from_millis(10)) => {}
+                }
+                if terminado.is_some() {
+                    break;
+                }
+                // Antes de la respuesta: el servidor la recibió y sigue en
+                // vuelo. Durante el cuerpo: además, las cabeceras ya
+                // cerraron la reserva.
+                let en_vuelo = g.en_vuelo()[CONTADOR_PESO_1M];
+                if srv.recibidas().len() == 2 && (en_vuelo == 0) == durante_cuerpo {
+                    listo = true;
+                    break;
+                }
+            }
+            assert!(terminado.is_none(), "durante_cuerpo={durante_cuerpo}: no debía terminar: {terminado:?}");
+            assert!(listo, "durante_cuerpo={durante_cuerpo}: no llegó al punto de cancelar");
+            assert_eq!(cinta.filas().len(), 1, "todavía sin la fila del cancelado");
+        } // Aquí se destruye el futuro: la cancelación.
+        assert_eq!(g.en_vuelo(), [0, 0, 0], "durante_cuerpo={durante_cuerpo}: sin reservas permanentes");
+        let filas = cinta.filas();
+        assert_eq!(filas.len(), 2, "durante_cuerpo={durante_cuerpo}: una fila por pedido admitido");
+        let json = serde_json::to_string(&filas[1]).unwrap_or_default();
+        assert!(json.contains("Cancelada"), "{json}");
+        assert!(!json.contains("SECRETO") && !json.contains("CLAVE"), "{json}");
+        assert_eq!(filas[1].coste_peso, Some(c));
+        let uso = g.uso_efectivo()[CONTADOR_PESO_1M];
+        if durante_cuerpo {
+            assert_eq!(filas[1].cabecera_peso_1m, Some(H_CUERPO), "la cabecera que llegó queda en la fila");
+            assert_eq!(uso, H_CUERPO, "la cabecera que llegó lo cuenta");
+        } else {
+            assert_eq!(uso, H_PREVIA + c, "pudo salir: su coste se conserva sobre la cabecera previa");
+        }
+        assert_eq!(srv.recibidas().len(), 2);
+    }
+}
 /// Espera hasta que el freno de la puerta se levante (Retry-After de 1 s en
 /// el guion), con un tope para no colgar la prueba.
 async fn esperar_rearme(g: &BinanceGateway) -> bool {

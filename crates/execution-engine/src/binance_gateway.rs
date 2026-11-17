@@ -951,6 +951,10 @@ pub enum ResultadoLlamada {
     LimiteExchange { estado: u16 },
     /// Salió (o pudo salir) y no hubo respuesta.
     ErrorRed,
+    /// C3: quien llama destruyó el futuro después de la admisión (antes de
+    /// la respuesta o durante el cuerpo). La reserva se cerró como
+    /// `SinRespuesta`: su coste queda hasta que vence su ventana.
+    Cancelada,
 }
 
 /// Una fila de la cinta de auditoría de la puerta: una por pedido, haya
@@ -1254,6 +1258,13 @@ impl BinanceGateway {
 
     /// Envía un pedido por la puerta (ver el orden en el tipo). Sin
     /// reintentos.
+    ///
+    /// C3 (dictamen R3): desde la admisión, la reserva y su fila de cinta
+    /// viven en un `EnvioAbierto`. Si quien llama destruye el futuro (lo
+    /// cancela antes de la respuesta o mientras se lee el cuerpo), su `Drop`
+    /// cierra la reserva como `SinRespuesta` (pudo salir: su coste queda
+    /// perdido hasta que vence su ventana, nunca en vuelo para siempre) y
+    /// deja la fila `Cancelada`. Una fila por pedido admitido, siempre.
     pub async fn enviar(&self, pedido: Pedido) -> Result<RespuestaPuerta, RechazoPuerta> {
         // 1. Firma: alcance de la consulta efectiva (C2) y coste de la tabla.
         let con_simbolo = match pedido.alcance_efectivo() {
@@ -1294,6 +1305,16 @@ impl BinanceGateway {
                 return Err(r);
             }
         };
+        // Desde aquí, cancelar el futuro cierra la reserva y anota (C3).
+        let mut envio = EnvioAbierto {
+            puerta: self,
+            pedido: &pedido,
+            con_simbolo,
+            coste,
+            reserva: Some(reserva),
+            limites: None,
+            anotado: false,
+        };
         // 4. Envío: la consulta sale con los mismos bytes de los que salió el
         // alcance (C2).
         let mut url = String::with_capacity(self.base.len() + pedido.ruta.len() + pedido.consulta.len() + 1);
@@ -1318,40 +1339,30 @@ impl BinanceGateway {
             Err(e) => {
                 let salio = crate::client::salio(&e);
                 let texto = e.without_url().to_string();
-                let desenlace = if salio {
+                envio.cerrar(if salio {
                     Desenlace::SinRespuesta
                 } else {
                     Desenlace::NoSalio
-                };
-                self.presupuesto().cerrar(reserva, desenlace, self.ahora_ms());
+                });
                 let r = RechazoPuerta::Red(texto);
-                self.anotar(&pedido, con_simbolo, Some(coste), ResultadoLlamada::ErrorRed, r.to_string(), None);
+                envio.anotar(ResultadoLlamada::ErrorRed, r.to_string());
                 return Err(r);
             }
         };
         let estado = respuesta.status().as_u16();
         let limites = crate::client::extract_limits(respuesta.headers());
+        envio.limites = Some(limites);
         if let Some(texto) = crate::client::classify_rate_limit_or_ban(estado, respuesta.headers()) {
             // 429/418: arma el freno con su Retry-After; su cabecera no entra.
             let texto = self.freno.registrar(&texto);
-            self.presupuesto()
-                .cerrar(reserva, Desenlace::LimiteExchange, self.ahora_ms());
+            envio.cerrar(Desenlace::LimiteExchange);
             let r = RechazoPuerta::LimiteExchange(texto);
-            self.anotar(
-                &pedido,
-                con_simbolo,
-                Some(coste),
-                ResultadoLlamada::LimiteExchange { estado },
-                r.to_string(),
-                Some(limites),
-            );
+            envio.anotar(ResultadoLlamada::LimiteExchange { estado }, r.to_string());
             return Err(r);
         }
-        let llegada = self.ahora_ms();
         // CL-182: la cabecera entra antes de soltar la reserva.
-        self.presupuesto()
-            .cerrar(reserva, Desenlace::Respuesta(limites), llegada);
-        self.freno.exito(llegada);
+        envio.cerrar(Desenlace::Respuesta(limites));
+        self.freno.exito(self.ahora_ms());
         let cuerpo = match respuesta.text().await {
             Ok(c) => c,
             Err(e) => {
@@ -1359,29 +1370,68 @@ impl BinanceGateway {
                     "cuerpo ilegible (estado {estado}): {}",
                     e.without_url()
                 ));
-                self.anotar(
-                    &pedido,
-                    con_simbolo,
-                    Some(coste),
-                    ResultadoLlamada::ErrorRed,
-                    r.to_string(),
-                    Some(limites),
-                );
+                envio.anotar(ResultadoLlamada::ErrorRed, r.to_string());
                 return Err(r);
             }
         };
-        self.anotar(
-            &pedido,
-            con_simbolo,
-            Some(coste),
-            ResultadoLlamada::Respondida { estado },
-            String::new(),
-            Some(limites),
-        );
+        envio.anotar(ResultadoLlamada::Respondida { estado }, String::new());
         Ok(RespuestaPuerta {
             estado,
             cuerpo,
             limites,
         })
+    }
+}
+
+/// C3: un pedido admitido que todavía puede tener la reserva abierta o la
+/// fila de cinta sin escribir. Si el futuro de `enviar` se destruye antes de
+/// cerrarlos, `Drop` lo hace: la reserva como `SinRespuesta` (lo prudente:
+/// pudo salir) y la fila como `Cancelada`.
+struct EnvioAbierto<'a> {
+    puerta: &'a BinanceGateway,
+    pedido: &'a Pedido,
+    con_simbolo: bool,
+    coste: CosteBinance,
+    reserva: Option<Reserva>,
+    limites: Option<BinanceRateLimits>,
+    anotado: bool,
+}
+
+impl EnvioAbierto<'_> {
+    fn cerrar(&mut self, desenlace: Desenlace) {
+        if let Some(reserva) = self.reserva.take() {
+            let ahora = self.puerta.ahora_ms();
+            self.puerta.presupuesto().cerrar(reserva, desenlace, ahora);
+        }
+    }
+
+    fn anotar(&mut self, resultado: ResultadoLlamada, detalle: String) {
+        if self.anotado {
+            return;
+        }
+        self.anotado = true;
+        self.puerta.anotar(
+            self.pedido,
+            self.con_simbolo,
+            Some(self.coste),
+            resultado,
+            detalle,
+            self.limites,
+        );
+    }
+}
+
+impl Drop for EnvioAbierto<'_> {
+    fn drop(&mut self) {
+        let fase = if self.reserva.is_some() {
+            "antes de la respuesta"
+        } else {
+            "durante el cuerpo"
+        };
+        self.cerrar(Desenlace::SinRespuesta);
+        self.anotar(
+            ResultadoLlamada::Cancelada,
+            format!("PUERTA_CANCELADA: futuro destruido {fase}"),
+        );
     }
 }
