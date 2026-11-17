@@ -1030,6 +1030,37 @@ async fn f1_fragmento_no_cambia_el_alcance() {
     }
 }
 
+/// F2 (dictamen de cierre, Parte 7): texto de alcance que el recibo C5 debe
+/// conservar tal cual.
+const ALCANCE_C5: &str = "P3 entrega el parser de exchangeInfo.rateLimits y el respaldo LG-12. Quedan pendientes la descarga y el refresco seguros hasta verificar el peso de la firma e integrar el llamador. P1-P5 entregan infraestructura y control de excepciones; las migraciones P6-P10 siguen pendientes. El escaner de literales no demuestra exclusividad global del transporte. Esta publicacion no autoriza Mainnet ni acredita imposibilidad global de ordenes en Mainnet. IBKR permanece como infraestructura de solo lectura sin emisor integrado; su primera conexion debe usar el registro historico de ventana y los demas controles. La validacion y la simulacion deben identificar el SHA corregido exacto.";
+
+/// F2: el recibo C5 está versionado junto a la puerta, conserva el texto de
+/// alcance del dictamen y lo que declara pendiente sigue pendiente en el
+/// código (si cambia, el recibo se rehace).
+#[test]
+fn c5_recibo_declara_el_alcance_del_sha() {
+    let ruta = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/recibo_puerta_rest_c5.md");
+    let texto = std::fs::read_to_string(&ruta).map(|t| t.replace("\r\n", "\n"));
+    assert!(texto.is_ok(), "falta el recibo C5 versionado: {}", ruta.display());
+    let texto = texto.unwrap_or_default();
+    // El párrafo de la Parte 7, en una sola línea y sin cambios.
+    assert!(texto.lines().any(|l| l.trim_start_matches("> ") == ALCANCE_C5), "el recibo no conserva el texto de alcance C5");
+    for exigido in [
+        "f0a9d4f092351657b8cda1cb06686e064caf1b4b",
+        "R2-F",
+        "f1_fragmento_no_cambia_el_alcance",
+        "url_de_transporte",
+        "no se transfiere",
+    ] {
+        assert!(texto.contains(exigido), "el recibo no declara: {exigido}");
+    }
+    // Lo que el recibo declara pendiente sigue así en el código.
+    assert!(
+        matches!(coste_de_firma(Metodo::Get, "/fapi/v1/exchangeInfo", false), Err(RechazoPuerta::PesoNoVerificado(_))),
+        "exchangeInfo dejó de ser N/D: rehacer el recibo C5 (descarga y refresco de P3)"
+    );
+}
+
 /// Cabecera de peso de la primera respuesta del servidor demorado.
 const H_PREVIA: usize = 100;
 /// Cabecera de peso de la respuesta que se cancela durante el cuerpo.
