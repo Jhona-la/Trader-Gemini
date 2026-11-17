@@ -129,6 +129,138 @@ fn agrupar_cierres(mut registros: Vec<(u64, f64)>, separacion_ms: u64) -> Vec<Ci
     out
 }
 
+// CABLEADOV7 §2 (pedido CABLEADO HOST v7): productor de `outputs/income_demo.jsonl`.
+// Exporta TODAS las filas de income de la pasada del FEE-BREAKER, antes de la
+// partición por activo y del filtro por símbolo, sin mutarlas ni consultar otra
+// vez el exchange. Es solo E/S: ninguna decisión lee este archivo. No acredita
+// cobertura del exchange ni conciliación: los campos salen como llegaron
+// (`trade_id` vacío y `tran_id` 0 se exportan así, sin fabricarlos).
+const INCOME_DEMO_DIR: &str = "outputs";
+const INCOME_DEMO_ARCHIVO: &str = "income_demo.jsonl";
+const MS_POR_DIA_UTC: u64 = 86_400_000;
+
+/// Publica `bytes` en `destino`: temporal propio en la misma carpeta, `sync_all`
+/// y renombrado sobre el final. Si algo falla solo se retira el temporal propio;
+/// el archivo final anterior queda como estaba.
+fn publicar_archivo_atomico(destino: &std::path::Path, bytes: &[u8]) -> std::io::Result<()> {
+    use std::io::Write as _;
+    let nombre = destino
+        .file_name()
+        .map(|n| n.to_string_lossy().into_owned())
+        .unwrap_or_default();
+    let temporal = destino.with_file_name(format!(".{nombre}.tmp-{}", std::process::id()));
+    let escrito = (|| {
+        let mut f = std::fs::File::create(&temporal)?;
+        f.write_all(bytes)?;
+        f.sync_all()
+    })();
+    let publicado = escrito.and_then(|()| std::fs::rename(&temporal, destino));
+    if publicado.is_err() {
+        let _ = std::fs::remove_file(&temporal);
+    }
+    publicado
+}
+
+/// Una fila con el contrato de `parse_income_jsonl` (`report_demo_run.rs`):
+/// `symbol`, `income_type`, `income`, `time_ms`, `trade_id`, `tran_id`, `asset`.
+fn fila_income_jsonl(e: &execution_engine::order_types::IncomeEntry) -> String {
+    serde_json::json!({
+        "symbol": e.symbol,
+        "income_type": e.income_type,
+        "income": e.income,
+        "time_ms": e.time,
+        "trade_id": e.trade_id,
+        "tran_id": e.tran_id,
+        "asset": e.asset,
+    })
+    .to_string()
+}
+
+/// Día UTC `AAAAMMDD` de una marca epoch-ms (nombre del histórico rotado).
+fn dia_utc(epoch_ms: u64) -> String {
+    i64::try_from(epoch_ms)
+        .ok()
+        .and_then(chrono::DateTime::from_timestamp_millis)
+        .map(|d| d.format("%Y%m%d").to_string())
+        .unwrap_or_else(|| format!("dia{}", epoch_ms / MS_POR_DIA_UTC))
+}
+
+/// Rotación diaria: si el final es de otro día UTC (por su fecha de
+/// modificación), se renombra a `income_demo.<AAAAMMDD>[.n].jsonl` sin pisar un
+/// histórico existente. Nunca borra.
+fn rotar_income_si_cambio_el_dia(
+    final_income: &std::path::Path,
+    ahora_ms: u64,
+) -> std::io::Result<Option<std::path::PathBuf>> {
+    let meta = match std::fs::metadata(final_income) {
+        Ok(m) => m,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(e) => return Err(e),
+    };
+    let modificado_ms = meta
+        .modified()?
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as u64)
+        .unwrap_or(0);
+    if modificado_ms / MS_POR_DIA_UTC == ahora_ms / MS_POR_DIA_UTC {
+        return Ok(None);
+    }
+    let dir = final_income.parent().unwrap_or_else(|| std::path::Path::new("."));
+    let dia = dia_utc(modificado_ms);
+    for n in 0..u32::MAX {
+        let nombre = if n == 0 {
+            format!("income_demo.{dia}.jsonl")
+        } else {
+            format!("income_demo.{dia}.{n}.jsonl")
+        };
+        let destino = dir.join(nombre);
+        if !destino.exists() {
+            std::fs::rename(final_income, &destino)?;
+            return Ok(Some(destino));
+        }
+    }
+    Err(std::io::Error::other("sin nombre libre para el histórico de income"))
+}
+
+/// Escribe las filas de la pasada en `dir/income_demo.jsonl` (unión con lo ya
+/// publicado ese día; una fila idéntica byte a byte no se repite). Devuelve
+/// cuántas filas nuevas añadió. Las líneas previas se conservan tal cual.
+fn escribir_income_jsonl(
+    dir: &std::path::Path,
+    entries: &[execution_engine::order_types::IncomeEntry],
+    ahora_ms: u64,
+) -> std::io::Result<usize> {
+    std::fs::create_dir_all(dir)?;
+    let final_income = dir.join(INCOME_DEMO_ARCHIVO);
+    rotar_income_si_cambio_el_dia(&final_income, ahora_ms)?;
+    // Un final ilegible (no UTF-8) devuelve error y no se reescribe.
+    let previo = match std::fs::read_to_string(&final_income) {
+        Ok(t) => t,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => String::new(),
+        Err(e) => return Err(e),
+    };
+    let filas: Vec<String> = entries.iter().map(fila_income_jsonl).collect();
+    let mut vistas: std::collections::HashSet<&str> =
+        previo.lines().filter(|l| !l.trim().is_empty()).collect();
+    let mut salida = previo.clone();
+    if !salida.is_empty() && !salida.ends_with('\n') {
+        salida.push('\n');
+    }
+    let mut nuevas = 0usize;
+    for f in &filas {
+        if vistas.insert(f.as_str()) {
+            salida.push_str(f);
+            salida.push('\n');
+            nuevas += 1;
+        }
+    }
+    if nuevas == 0 && final_income.exists() {
+        return Ok(0);
+    }
+    publicar_archivo_atomico(&final_income, salida.as_bytes())?;
+    Ok(nuevas)
+}
+
 /// P(X ≤ k) con X ~ Binomial(n, p), sumando en espacio logarítmico.
 fn cola_binomial_izquierda(n: usize, k: usize, p: f64) -> f64 {
     if !(p.is_finite() && p > 0.0 && p < 1.0) || k >= n {
@@ -3903,6 +4035,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             continue;
                         }
                     };
+                    // CABLEADOV7 §2: income de TODA la pasada, antes de la partición y del
+                    // filtro de abajo. Solo E/S: un fallo se anota y la pasada sigue igual.
+                    if let Err(e) = escribir_income_jsonl(std::path::Path::new(INCOME_DEMO_DIR), &entries, now_breaker) {
+                        telemetry_server::telemetry_log!("[INCOME-JSONL] {}/{} no publicado: {}", INCOME_DEMO_DIR, INCOME_DEMO_ARCHIVO, e);
+                    }
                     // No FX conversion: quarantine only the affected symbol's
                     // fee evidence; this is not an instruction to clear its veto.
                     let fee_partition = execution_engine::income_evidence::partition_legacy_fee_evidence(&entries);
@@ -8503,5 +8640,145 @@ mod tests {
             sl_slow, sl_anchor_slow,
             "Tau cósmica debe colapsar a ancla lenta"
         );
+    }
+
+    /// CABLEADOV7 (pedido CABLEADO HOST v7): income, embudo y contadores del host.
+    /// Fixtures sin exchange, sin credenciales y sin arrancar el motor.
+    mod cableado_v7 {
+        use super::*;
+        use execution_engine::order_types::IncomeEntry;
+
+        const FUENTE_HOST: &str = include_str!("god_engine.rs");
+
+        fn fuente() -> String {
+            FUENTE_HOST.replace("\r\n", "\n")
+        }
+
+        /// Texto entre la primera aparición de `desde` y la siguiente de `hasta`.
+        fn tramo(desde: &str, hasta: &str) -> String {
+            let f = fuente();
+            let a = f
+                .split_once(desde)
+                .unwrap_or_else(|| panic!("ancla ausente: {desde}"))
+                .1;
+            a.split_once(hasta)
+                .unwrap_or_else(|| panic!("ancla ausente: {hasta}"))
+                .0
+                .to_string()
+        }
+
+        fn carpeta(nombre: &str) -> std::path::PathBuf {
+            let d = std::env::temp_dir().join(format!("tg_cablev7_{nombre}_{}", std::process::id()));
+            let _ = std::fs::remove_dir_all(&d);
+            std::fs::create_dir_all(&d).unwrap();
+            d
+        }
+
+        fn fila(
+            symbol: &str,
+            income_type: &str,
+            income: f64,
+            asset: &str,
+            time: u64,
+            tran_id: u64,
+            trade_id: &str,
+        ) -> IncomeEntry {
+            IncomeEntry {
+                symbol: symbol.to_string(),
+                income_type: income_type.to_string(),
+                income,
+                asset: asset.to_string(),
+                time,
+                tran_id,
+                trade_id: trade_id.to_string(),
+            }
+        }
+
+        fn ahora_ms() -> u64 {
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_millis() as u64
+        }
+
+        #[test]
+        fn income_jsonl_se_escribe_rotado_y_atomico() {
+            use telemetry_server::report_demo_run::{parse_income_jsonl, parse_income_jsonl_auditado, Ambito};
+            let dir = carpeta("income");
+            let out = dir.join("outputs");
+            let hoy = ahora_ms();
+            let pasada = vec![
+                fila("VETUSDT", "REALIZED_PNL", 0.0199, "USDT", hoy - 5_000, 9001, "777"),
+                // Sin identidad nativa: trade_id vacío y tran_id 0 salen así.
+                fila("VETUSDT", "COMMISSION", -0.0051, "USDT", hoy - 5_000, 0, ""),
+                // El filtro del breaker (mismo activo) la excluiría: la exportación no la pierde.
+                fila("VETUSDT", "COMMISSION", -0.0002, "BNB", hoy - 4_000, 9003, "778"),
+                // Símbolo vacío: el bucle del breaker la salta; aquí también se exporta.
+                fila("", "FUNDING_FEE", 0.0001, "USDT", hoy - 3_000, 9004, ""),
+            ];
+            assert_eq!(escribir_income_jsonl(&out, &pasada, hoy).unwrap(), 4);
+            let final_income = out.join(INCOME_DEMO_ARCHIVO);
+            let texto = std::fs::read_to_string(&final_income).unwrap();
+            let filas = parse_income_jsonl(&texto);
+            assert_eq!(filas.len(), 4, "toda la colección de la pasada: {texto}");
+            assert_eq!(
+                (filas[0].symbol.as_str(), filas[0].income_type.as_str(), filas[0].trade_id.as_str(), filas[0].tran_id),
+                ("VETUSDT", "REALIZED_PNL", "777", 9001)
+            );
+            assert_eq!(filas[0].income, 0.0199);
+            assert_eq!(filas[0].time_ms, hoy - 5_000);
+            assert_eq!((filas[1].trade_id.as_str(), filas[1].tran_id), ("", 0), "no se fabrica identidad");
+            assert!(filas.iter().any(|f| f.asset == "BNB"), "la fila de otro activo sigue ahí");
+            let ambito = Ambito { venue: "binance-testnet".to_string(), cuenta: "demo".to_string() };
+            let leido = parse_income_jsonl_auditado(&texto, &ambito);
+            assert_eq!(leido.filas.len(), 3, "{:?}", leido.diagnosticos);
+            assert_eq!(leido.diagnosticos.len(), 1, "la fila sin símbolo queda como diagnóstico");
+
+            // Segunda pasada: la ventana solapa y trae una fila nueva. Lo publicado se conserva.
+            let mut pasada2 = pasada.clone();
+            pasada2.push(fila("VETUSDT", "FUNDING_FEE", -0.0003, "USDT", hoy - 1_000, 9005, ""));
+            assert_eq!(escribir_income_jsonl(&out, &pasada2, hoy).unwrap(), 1);
+            let texto2 = std::fs::read_to_string(&final_income).unwrap();
+            assert!(texto2.starts_with(&texto), "las líneas previas se conservan tal cual");
+            assert_eq!(texto2.lines().count(), 5, "sin duplicar lo ya publicado");
+            let nombres: Vec<String> = std::fs::read_dir(&out)
+                .unwrap()
+                .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
+                .collect();
+            assert_eq!(nombres, vec![INCOME_DEMO_ARCHIVO.to_string()], "sin temporales tras publicar");
+
+            // Rotación diaria: el final es de ayer; pasa a histórico sin perder un byte.
+            let ayer_ms = hoy - MS_POR_DIA_UTC;
+            std::fs::OpenOptions::new()
+                .write(true)
+                .open(&final_income)
+                .unwrap()
+                .set_modified(std::time::UNIX_EPOCH + std::time::Duration::from_millis(ayer_ms))
+                .unwrap();
+            assert_eq!(escribir_income_jsonl(&out, &pasada[..1], hoy).unwrap(), 1);
+            let historico = out.join(format!("income_demo.{}.jsonl", dia_utc(ayer_ms)));
+            assert_eq!(dia_utc(ayer_ms).len(), 8);
+            assert_eq!(std::fs::read_to_string(&historico).unwrap(), texto2, "histórico íntegro");
+            assert_eq!(std::fs::read_to_string(&final_income).unwrap().lines().count(), 1);
+
+            // Fallos del sistema de archivos: no se pisa ni se borra nada.
+            let ilegible = vec![0xffu8, 0xfe, b'\n'];
+            std::fs::write(&final_income, &ilegible).unwrap();
+            assert!(escribir_income_jsonl(&out, &pasada, hoy).is_err(), "un final ilegible no se reescribe");
+            assert_eq!(std::fs::read(&final_income).unwrap(), ilegible);
+            let ocupado = dir.join("ocupado");
+            std::fs::write(&ocupado, b"x").unwrap();
+            assert!(escribir_income_jsonl(&ocupado, &pasada, hoy).is_err(), "la carpeta destino es un archivo");
+            assert_eq!(std::fs::read(&ocupado).unwrap(), b"x");
+
+            // Sitio: sobre `entries`, antes de la partición y fuera del filtro posterior.
+            let antes = tramo(".fetch_income_paged(&[], window_start, 4)", "partition_legacy_fee_evidence(&entries)");
+            assert!(
+                antes.contains("escribir_income_jsonl(std::path::Path::new(INCOME_DEMO_DIR), &entries, now_breaker)"),
+                "el productor va antes de la partición"
+            );
+            assert!(!tramo("partition_legacy_fee_evidence(&entries)", "struct Agg {").contains("escribir_income_jsonl"));
+            let _ = std::fs::remove_dir_all(&dir);
+        }
     }
 }
