@@ -131,19 +131,22 @@ fn load_binary_ticks_with_limit(
     coin_id: usize,
     max_ticks: Option<usize>,
 ) -> std::io::Result<Vec<TickEvent>> {
-    let file = std::fs::File::open(path)?;
-    let mmap = unsafe { memmap2::MmapOptions::new().map(&file)? };
+    // TGB-C: `path` es la cinta LÓGICA. Si el `.bin` no existe (NotFound y sólo NotFound), se usa
+    // `path + ".tgb"`, restituido y verificado entero (SHA-256 del original incluido) ANTES de parsear un solo
+    // registro; si existen los dos, manda el `.bin`. El `.bin` sigue mapeado en memoria, sin copia.
+    let tape = tick_tape::logica::open_logical_tape(path, tick_tape::tgb::Presupuesto::sin_tope())?;
+    let bytes = tape.as_bytes();
     let tick_size = std::mem::size_of::<BinTick>();
 
     let (data_ptr, data_len, legacy): (usize, usize, bool) =
-        if mmap.len() >= 8 && TickOrigin::from_header(&mmap[..8]).1 == 8 {
+        if bytes.len() >= 8 && TickOrigin::from_header(&bytes[..8]).1 == 8 {
             // Formato versionado: header de 8 bytes + registros alineados.
-            validate_alignment(mmap.len() - 8, path)?;
-            (8, mmap.len() - 8, false)
+            validate_alignment(bytes.len() - 8, path)?;
+            (8, bytes.len() - 8, false)
         } else {
             // Legacy sin header (histórico pre-R2.4): compatible, advertido.
-            validate_alignment(mmap.len(), path)?;
-            (0, mmap.len(), true)
+            validate_alignment(bytes.len(), path)?;
+            (0, bytes.len(), true)
         };
 
     if legacy {
@@ -155,11 +158,21 @@ fn load_binary_ticks_with_limit(
 
     let total_ticks = data_len / tick_size;
     let num_ticks = max_ticks.map_or(total_ticks, |limit| total_ticks.min(limit));
-    // Safety: el slice está alineado a 8 (header de 8 bytes + registros
-    // repr(C) de 40 bytes sobre un mmap alineado a página).
-    let slice = unsafe {
-        std::slice::from_raw_parts(mmap.as_ptr().add(data_ptr) as *const BinTick, num_ticks)
+    // TGB-C: cada campo se lee con `from_le_bytes`/`from_bits` (mismos bits que el cast `repr(C)` anterior en
+    // little-endian), sin depender de la alineación del respaldo: un original vacío no tiene puntero alineado.
+    let registros = &bytes[data_ptr..data_ptr + num_ticks * tick_size];
+    let campo = |r: &[u8], i: usize| {
+        let mut a = [0u8; 8];
+        a.copy_from_slice(&r[i * 8..i * 8 + 8]);
+        u64::from_le_bytes(a)
     };
+    let slice = registros.chunks_exact(tick_size).map(|r| BinTick {
+        timestamp: campo(r, 0),
+        bid_price: f64::from_bits(campo(r, 1)),
+        ask_price: f64::from_bits(campo(r, 2)),
+        bid_qty: f64::from_bits(campo(r, 3)),
+        ask_qty: f64::from_bits(campo(r, 4)),
+    });
 
     let mut ticks = Vec::new();
     ticks.try_reserve_exact(num_ticks).map_err(|e| {

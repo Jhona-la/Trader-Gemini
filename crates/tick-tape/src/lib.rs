@@ -16,4 +16,5 @@
 //!   bytes. El tiempo va como diferencia con el anterior en zigzag, y el anterior vuelve a 0 en cada bloque;
 //! - final: SHA-256 de todos los bytes anteriores del contenedor (el sello).
 
+pub mod logica;
 pub mod tgb;
