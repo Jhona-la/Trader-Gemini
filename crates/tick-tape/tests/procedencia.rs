@@ -75,7 +75,7 @@ impl Drop for Caso {
 
 fn recibo(bytes: &[u8], procedencia: &str, cobertura: &str) -> String {
     format!(
-        "formato=tg-procedencia-1\nsha256_original={}\nbytes_original={}\nprocedencia_acreditada={procedencia}\nevidencia_productor=binance_vision_sync D-723, fuentes data.binance.vision por SHA\ncobertura={cobertura}\n",
+        "formato=tg-procedencia-1\nsha256_original={}\nbytes_original={}\nprocedencia_acreditada={procedencia}\nevidencia_productor=binance_vision_sync D-723, fuentes Binance Vision por SHA\ncobertura={cobertura}\n",
         hex(&sha(bytes)),
         bytes.len()
     )
