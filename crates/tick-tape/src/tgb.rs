@@ -353,6 +353,75 @@ fn restituir_bloque(cuerpo: &[u8], b: &PlanBloque, salida: &mut [u8]) -> io::Res
     Ok(())
 }
 
+fn zstd_a(datos: &[u8]) -> io::Result<Vec<u8>> {
+    zstd::bulk::compress(datos, 3)
+}
+
+fn zigzag(d: u64) -> u64 {
+    let d = d as i64;
+    ((d << 1) ^ (d >> 63)) as u64
+}
+
+/// Empaqueta `original` en un contenedor TGB00001 (modo 1 con cabecera `TGMTICK1`/`TGMSYNT1` de 8 bytes exactos,
+/// modo 2 si son registros de 40 B sin cabecera, modo 0 en otro caso). Para pruebas y herramientas del repositorio:
+/// las cintas del disco las escribio `tgb` (zstd 19); este empaquetador usa zstd 3 y el mismo formato.
+pub fn empaquetar(original: &[u8]) -> io::Result<Vec<u8>> {
+    let cabecera_tick = original.len() >= CABECERA_ORIGINAL
+        && (&original[..CABECERA_ORIGINAL] == b"TGMTICK1" || &original[..CABECERA_ORIGINAL] == b"TGMSYNT1")
+        && (original.len() - CABECERA_ORIGINAL) % REGISTRO == 0;
+    let modo: u8 = if cabecera_tick {
+        1
+    } else if !original.is_empty() && original.len() % REGISTRO == 0 {
+        2
+    } else {
+        0
+    };
+    let mut c = Vec::new();
+    c.extend_from_slice(MAGIA_TGB);
+    c.extend_from_slice(&(original.len() as u64).to_le_bytes());
+    let sha: [u8; 32] = Sha256::digest(original).into();
+    c.extend_from_slice(&sha);
+    c.push(modo);
+    if modo == 0 {
+        let z = zstd_a(original)?;
+        c.extend_from_slice(&(z.len() as u64).to_le_bytes());
+        c.extend_from_slice(&z);
+    } else {
+        let regs = if modo == 1 {
+            c.extend_from_slice(&original[..CABECERA_ORIGINAL]);
+            &original[CABECERA_ORIGINAL..]
+        } else {
+            original
+        };
+        c.extend_from_slice(&((regs.len() / REGISTRO) as u64).to_le_bytes());
+        for bloque in regs.chunks(BLOQUE_MAX as usize * REGISTRO) {
+            let n = bloque.len() / REGISTRO;
+            c.extend_from_slice(&(n as u64).to_le_bytes());
+            for f in 0..CAMPOS {
+                let mut col = Vec::with_capacity(n * 8);
+                let mut previo = 0u64;
+                for r in bloque.chunks_exact(REGISTRO) {
+                    let v = u64_le(&r[f * 8..f * 8 + 8]);
+                    let w = if f == 0 {
+                        let d = v.wrapping_sub(previo);
+                        previo = v;
+                        zigzag(d)
+                    } else {
+                        v
+                    };
+                    col.extend_from_slice(&w.to_le_bytes());
+                }
+                let z = zstd_a(&col)?;
+                c.extend_from_slice(&(z.len() as u64).to_le_bytes());
+                c.extend_from_slice(&z);
+            }
+        }
+    }
+    let sello: [u8; 32] = Sha256::digest(&c).into();
+    c.extend_from_slice(&sello);
+    Ok(c)
+}
+
 /// Restituye y verifica el original de un contenedor TGB00001 entero.
 pub fn restituir_tgb(contenedor: &[u8], presupuesto: Presupuesto) -> io::Result<Restituido> {
     restituir_tgb_con(contenedor, presupuesto, None)

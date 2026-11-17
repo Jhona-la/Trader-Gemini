@@ -32,6 +32,12 @@ struct TapeReceipt {
     last_boundary_gap_ms: Option<u64>,
     coverage: &'static str,
     error: Option<String>,
+    /// TGB-F: como llegaron los bytes (`bin` o `tgb00001`). `sha256`/`bytes` son SIEMPRE del original;
+    /// `transport_sha256` es el SHA del archivo fisico `.bin.tgb` entero (el `sha256_tgb` del manifiesto).
+    transport: &'static str,
+    transport_path: Option<String>,
+    transport_bytes: Option<u64>,
+    transport_sha256: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -137,6 +143,10 @@ fn empty_tape_receipt(spec: &TapeSpec) -> TapeReceipt {
         last_boundary_gap_ms: None,
         coverage: "unverified",
         error: None,
+        transport: "unverified",
+        transport_path: None,
+        transport_bytes: None,
+        transport_sha256: None,
     }
 }
 
@@ -163,15 +173,44 @@ where
     F: FnOnce(),
     G: FnOnce(),
 {
-    inspect_tape_with_readers(
+    // TGB-F: dos lecturas LOGICAS independientes (`.bin`, o `.bin.tgb` restituido y verificado entero en cada
+    // una): la segunda abre y verifica otra vez, no reutiliza la instantanea de la primera. El recibo guarda el
+    // tamano y el SHA del ORIGINAL; el transporte de la primera lectura va aparte.
+    let transporte = std::cell::RefCell::new(None);
+    let mut receipt = inspect_tape_with_readers(
         spec,
         policy,
         hash_source,
-        || std::fs::read(&spec.path),
-        || std::fs::read(&spec.path),
+        || leer_con_transporte(&spec.path, &transporte),
+        || tick_tape::logica::leer_logica(&spec.path),
         before_parse,
         before_final_hash,
-    )
+    );
+    if let Some((nombre, ruta, bytes, sha)) = transporte.into_inner() {
+        receipt.transport = nombre;
+        receipt.transport_path = Some(ruta);
+        receipt.transport_bytes = bytes;
+        receipt.transport_sha256 = sha;
+    }
+    receipt
+}
+
+type Transporte = (&'static str, String, Option<u64>, Option<String>);
+
+fn leer_con_transporte(
+    path: &Path,
+    transporte: &std::cell::RefCell<Option<Transporte>>,
+) -> std::io::Result<Vec<u8>> {
+    let hex = |b: &[u8; 32]| b.iter().map(|x| format!("{x:02x}")).collect::<String>();
+    let tape = tick_tape::logica::open_logical_tape(path, tick_tape::tgb::Presupuesto::sin_tope())?;
+    let ruta = tape.ruta_fisica().to_string_lossy().into_owned();
+    *transporte.borrow_mut() = Some(match tape.transporte() {
+        tick_tape::logica::Transporte::Bin => ("bin", ruta, None, None),
+        tick_tape::logica::Transporte::Tgb { bytes_contenedor, sha256_contenedor, .. } => {
+            ("tgb00001", ruta, Some(bytes_contenedor), Some(hex(&sha256_contenedor)))
+        }
+    });
+    Ok(tape.as_bytes().to_vec())
 }
 
 fn inspect_tape_with_readers<F, G, H, I>(
@@ -196,7 +235,11 @@ where
     let snapshot = match first_reader() {
         Ok(bytes) => bytes,
         Err(error) => {
-            if error.kind() != std::io::ErrorKind::NotFound {
+            if tick_tape::tgb::fallo_de(&error).is_some() {
+                // TGB-F: el contenedor existe pero no pasa la verificacion: invalido, no ausente.
+                receipt.present = true;
+                receipt.integrity = "invalid";
+            } else if error.kind() != std::io::ErrorKind::NotFound {
                 receipt.integrity = "unreadable";
             }
             receipt.error = Some(format!("source read failed: {error}"));
@@ -1159,5 +1202,70 @@ mod tests {
             .error
             .as_deref()
             .is_some_and(|error| error.contains("changed") || error.contains("mismatch")));
+    }
+
+    /// TGB-F: con la cinta solo como `.bin.tgb`, el recibo es el del ORIGINAL (tamano y SHA del original, no del
+    /// contenedor), mas el transporte; las dos lecturas siguen siendo independientes y una sustitucion entre
+    /// ellas (aparece un `.bin` distinto) se rechaza; un contenedor danado es invalido, no ausente.
+    #[test]
+    fn tgb_transporte_conserva_la_identidad_del_original() {
+        use quantum_engine::model_manifest::sha256_hex;
+        let fixture = Fixture::new();
+        let (start, end) = month_bounds(2026, 6).expect("month bounds");
+        let original = tape_bytes(
+            b"TGMTICK1",
+            &[record(start + 60_000, 100.0, 100.5), record(end - 60_000, 101.0, 101.5)],
+            &[],
+        );
+        let contenedor = tick_tape::tgb::empaquetar(&original).expect("empaquetar");
+        let tgb = fixture.write("BNBUSDT_2026-06_REAL.bin.tgb", &contenedor);
+        let spec = TapeSpec {
+            symbol: "BNBUSDT",
+            month: "2026-06".to_string(),
+            year: 2026,
+            month_number: 6,
+            path: fixture.data_root().join("BNBUSDT_2026-06_REAL.bin"),
+        };
+        let r = inspect_tape(&spec, CoveragePolicy::default());
+        assert!(r.present, "con solo .bin.tgb la cinta logica esta presente: {:?}", r.error);
+        assert_eq!(r.integrity, "verified", "{:?}", r.error);
+        assert_eq!(r.bytes, Some(original.len() as u64), "tamano del ORIGINAL");
+        assert_eq!(r.sha256.as_deref(), Some(sha256_hex(&original).as_str()), "SHA del ORIGINAL");
+        assert_ne!(r.sha256.as_deref(), Some(sha256_hex(&contenedor).as_str()));
+        assert_eq!(r.rows, Some(2));
+        assert_eq!(r.transport, "tgb00001");
+        assert_eq!(r.transport_path.as_deref(), Some(tgb.to_string_lossy().as_ref()));
+        assert_eq!(r.transport_bytes, Some(contenedor.len() as u64));
+        assert_eq!(r.transport_sha256.as_deref(), Some(sha256_hex(&contenedor).as_str()));
+
+        // Sustitucion entre las dos lecturas: aparece un .bin con otro contenido (manda el .bin).
+        let otra = tape_bytes(
+            b"TGMTICK1",
+            &[record(start + 120_000, 100.0, 100.5), record(end - 60_000, 101.0, 101.5)],
+            &[],
+        );
+        let r = inspect_tape_with_hooks(&spec, CoveragePolicy::default(), &spec.path, || {}, || {
+            fs::write(&spec.path, &otra).expect("write substitute");
+        });
+        assert_eq!(r.integrity, "invalid");
+        assert!(r.error.as_deref().is_some_and(|e| e.contains("changed")), "{:?}", r.error);
+        fs::remove_file(&spec.path).expect("remove substitute");
+
+        // .bin presente: transporte bin, sin SHA de contenedor.
+        fixture.write("BNBUSDT_2026-06_REAL.bin", &original);
+        let r = inspect_tape(&spec, CoveragePolicy::default());
+        assert_eq!(r.integrity, "verified");
+        assert_eq!(r.transport, "bin");
+        assert_eq!(r.transport_sha256, None);
+        fs::remove_file(&spec.path).expect("remove bin");
+
+        // Contenedor danado: invalido y presente, con la causa TGB; nunca "missing".
+        let mut danado = contenedor.clone();
+        danado[60] ^= 0x01;
+        fixture.write("BNBUSDT_2026-06_REAL.bin.tgb", &danado);
+        let r = inspect_tape(&spec, CoveragePolicy::default());
+        assert_eq!(r.integrity, "invalid");
+        assert!(r.present);
+        assert!(r.error.as_deref().is_some_and(|e| e.contains("TGB00001")), "{:?}", r.error);
     }
 }

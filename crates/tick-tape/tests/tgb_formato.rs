@@ -80,3 +80,17 @@ fn tgb_roundtrip_preserva_bits_y_bloques() {
     let r = restituir_tgb(&codificar(&otro, 0, 1), Presupuesto::sin_tope()).unwrap();
     assert!(r.as_bytes() == &otro[..]);
 }
+
+#[test]
+fn tgb_empaquetar_ida_y_vuelta() {
+    // El empaquetador del crate (pruebas y herramientas) escribe el mismo formato. Solo reconoce cabeceras de 8
+    // bytes exactos (TGMTICK1/TGMSYNT1): la cabecera ajena `TGMXXXX1`, que tgb mete en modo 1 por el prefijo TGM,
+    // aqui va entera en modo 0. Las dos son restituibles.
+    for (nombre, orig, _, modo_tgb) in FIXTURES {
+        let c = tick_tape::tgb::empaquetar(orig).unwrap();
+        let r = restituir_tgb(&c, Presupuesto::sin_tope()).unwrap_or_else(|e| panic!("{nombre}: {e}"));
+        assert!(r.as_bytes() == *orig, "{nombre}");
+        let esperado = if *nombre == "f7_tgm_ajena" { 0 } else { *modo_tgb };
+        assert_eq!(r.modo(), esperado, "{nombre}: modo");
+    }
+}
