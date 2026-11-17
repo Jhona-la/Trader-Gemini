@@ -261,6 +261,89 @@ fn escribir_income_jsonl(
     Ok(nuevas)
 }
 
+// CABLEADOV7 §3: embudo del host (`FunnelCounter` de telemetry-server). Mide; no
+// decide: ninguna rama del motor lee este contador.
+/// Cubo horario de la clave del embudo: `epoch-ms / 3_600_000` (convención de `FunnelKey`).
+const EMBUDO_MS_POR_CUBO: u64 = 3_600_000;
+/// Clave agregada del aplanado inmune: `flatten_*` devuelve un conteo sin símbolos,
+/// así que no se atribuye a ninguno.
+const EMBUDO_CLAVE_APLANADO_INMUNE: &str = "AGREGADO_APLANADO_INMUNE";
+/// Retención de la deduplicación FLATTEN: el tope de la ventana rodante del
+/// FEE-BREAKER (`window_ms`, acotada a 48 h). Un cierre más viejo ya no vuelve en
+/// ninguna pasada.
+const EMBUDO_RETENCION_FLATTEN_MS: u64 = 48 * 3_600_000;
+const EMBUDO_DEMO_DIR: &str = "outputs";
+const EMBUDO_DEMO_ARCHIVO: &str = "funnel_demo.json";
+
+/// Contador del embudo del proceso.
+static EMBUDO_HOST: std::sync::LazyLock<telemetry_server::funnel::FunnelCounter> =
+    std::sync::LazyLock::new(telemetry_server::funnel::FunnelCounter::new);
+
+fn epoch_ms_host() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis() as u64
+}
+
+/// Posiciones cerradas por un intento del aplanado: el SEGUNDO componente de
+/// `Ok((cancelaciones, cerradas))` (`executor.rs`, `aplanar_cuenta`). Un `Err` no
+/// aporta un conteo observado (puede haber efectos parciales): `None`, no cero.
+fn cierres_del_aplanado(resultado: &Result<(usize, usize), String>) -> Option<u64> {
+    match resultado {
+        Ok((_cancelaciones, cerradas)) => u64::try_from(*cerradas).ok(),
+        Err(_) => None,
+    }
+}
+
+/// Suma al embudo (`IMMUNE_SYSTEM`) los cierres observados de un intento, bajo la
+/// clave agregada y el cubo horario de `epoch_ms` (reloj de pared del host al
+/// terminar el intento). Devuelve lo sumado.
+fn registrar_aplanado_inmune_en_embudo(
+    contador: &telemetry_server::funnel::FunnelCounter,
+    resultado: &Result<(usize, usize), String>,
+    epoch_ms: u64,
+) -> Option<u64> {
+    let cerradas = cierres_del_aplanado(resultado)?;
+    contador.record_immune_veto(EMBUDO_CLAVE_APLANADO_INMUNE, epoch_ms / EMBUDO_MS_POR_CUBO, cerradas);
+    Some(cerradas)
+}
+
+/// Cierres agrupados de una pasada del FEE-BREAKER al embudo (`FLATTEN`), una vez
+/// por `(símbolo, t_ms)` aunque la ventana rodante los traiga en varias pasadas.
+/// Mide cierres agrupados del breaker; no prueba que los causara el inmune.
+fn registrar_flatten_en_embudo(
+    contador: &telemetry_server::funnel::FunnelCounter,
+    vistos: &mut std::collections::HashSet<(String, u64)>,
+    simbolo: &str,
+    cierres: &[CierreAgregado],
+    ahora_ms: u64,
+) -> u64 {
+    let desde = ahora_ms.saturating_sub(EMBUDO_RETENCION_FLATTEN_MS);
+    vistos.retain(|(_, t)| *t >= desde);
+    let mut nuevos = 0u64;
+    for c in cierres {
+        if vistos.insert((simbolo.to_string(), c.t_ms)) {
+            contador.record_death(telemetry_server::funnel::FunnelGate::Flatten, simbolo, c.t_ms / EMBUDO_MS_POR_CUBO);
+            nuevos += 1;
+        }
+    }
+    nuevos
+}
+
+/// Vuelca los totales por compuerta (`funnel_totals_by_gate`, mapa de cadenas) a
+/// `dir/funnel_demo.json`, publicación temporal + final. Es lo que lee `--funnel`.
+fn volcar_embudo_json(
+    contador: &telemetry_server::funnel::FunnelCounter,
+    dir: &std::path::Path,
+) -> std::io::Result<std::collections::BTreeMap<String, u64>> {
+    std::fs::create_dir_all(dir)?;
+    let mapa = telemetry_server::report_demo_run::funnel_totals_by_gate(contador);
+    let texto = serde_json::to_string_pretty(&mapa).map_err(std::io::Error::other)?;
+    publicar_archivo_atomico(&dir.join(EMBUDO_DEMO_ARCHIVO), texto.as_bytes())?;
+    Ok(mapa)
+}
+
 /// P(X ≤ k) con X ~ Binomial(n, p), sumando en espacio logarítmico.
 fn cola_binomial_izquierda(n: usize, k: usize, p: f64) -> f64 {
     if !(p.is_finite() && p > 0.0 && p < 1.0) || k >= n {
@@ -682,6 +765,10 @@ async fn aplanado_inmune(
     };
     let ahora_ms = reloj.elapsed().as_millis() as u64;
     let tras = reintento.registrar(&resultado, ahora_ms);
+    // CABLEADOV7 §3: cierres del intento (segundo componente de Ok) al embudo,
+    // observados por referencia; un Err no aporta conteo. El reintento y su
+    // manejo de errores siguen igual.
+    let _ = registrar_aplanado_inmune_en_embudo(&EMBUDO_HOST, &resultado, epoch_ms_host());
     let intento = reintento.intentos();
     match &resultado {
         Ok((cancelaciones, positions)) => telemetry_server::telemetry_log!(
@@ -3989,6 +4076,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 let mut tick = tokio::time::interval(std::time::Duration::from_secs(300));
                 tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
                 tick.tick().await; // primer tick inmediato: alinear al ciclo de 5 min
+                // CABLEADOV7 §3: cierres agrupados ya sumados al embudo FLATTEN, entre pasadas.
+                let mut flatten_vistos: std::collections::HashSet<(String, u64)> = std::collections::HashSet::new();
                 loop {
                     tick.tick().await;
                     // V4I (punto 5b): la era se toma ANTES que el ejecutor; la respuesta solo
@@ -4235,6 +4324,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             continue;
                         };
                         let cierres = agrupar_cierres(a.registros, 1_000);
+                        // CABLEADOV7 §3: cada cierre agrupado (símbolo, t_ms) una sola vez al embudo.
+                        let _ = registrar_flatten_en_embudo(&EMBUDO_HOST, &mut flatten_vistos, &sym, &cierres, now_breaker);
                         let bruto: f64 = cierres.iter().map(|c| c.bruto).sum();
                         let gross_pos: f64 = cierres.iter().filter(|c| c.bruto > 0.0).map(|c| c.bruto).sum();
                         let net = bruto + a.funding - a.fees;
@@ -7577,6 +7668,22 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             if let Ok(escritor) = escritor_estado {
                 let _ = escritor.join();
             }
+            // CABLEADOV7 §3: volcado del embudo con el lazo detenido, después del
+            // aplanado final y de persistir el estado (fuera del apagado caliente).
+            match volcar_embudo_json(&EMBUDO_HOST, std::path::Path::new(EMBUDO_DEMO_DIR)) {
+                Ok(mapa) => telemetry_server::telemetry_log!(
+                    "[EMBUDO-HOST] {}/{} publicado: {:?}",
+                    EMBUDO_DEMO_DIR,
+                    EMBUDO_DEMO_ARCHIVO,
+                    mapa
+                ),
+                Err(e) => telemetry_server::telemetry_log!(
+                    "[EMBUDO-HOST] {}/{} no publicado: {}",
+                    EMBUDO_DEMO_DIR,
+                    EMBUDO_DEMO_ARCHIVO,
+                    e
+                ),
+            }
             telemetry_server::telemetry_log!(
                 "🛑 [SHUTDOWN] Estado persistido. Cierre limpio completo."
             );
@@ -8779,6 +8886,78 @@ mod tests {
             );
             assert!(!tramo("partition_legacy_fee_evidence(&entries)", "struct Agg {").contains("escribir_income_jsonl"));
             let _ = std::fs::remove_dir_all(&dir);
+        }
+
+        #[test]
+        fn embudo_cuenta_inmune_y_flatten_y_se_vuelca() {
+            use telemetry_server::funnel::{FunnelCounter, FunnelGate};
+            let c = FunnelCounter::new();
+            let t = 1_794_494_603_627u64;
+            // Inmune: cuenta el SEGUNDO componente (cerradas), no las cancelaciones.
+            assert_eq!(registrar_aplanado_inmune_en_embudo(&c, &Ok((5, 2)), t), Some(2));
+            assert_eq!(c.deaths_by_gate(FunnelGate::ImmuneSystem), 2, "5 cancelaciones no son cierres");
+            assert_eq!(
+                c.deaths(FunnelGate::ImmuneSystem, EMBUDO_CLAVE_APLANADO_INMUNE, t / EMBUDO_MS_POR_CUBO),
+                2,
+                "clave agregada y cubo epoch-ms / 3_600_000"
+            );
+            assert_eq!(registrar_aplanado_inmune_en_embudo(&c, &Err("418".to_string()), t), None);
+            assert_eq!(registrar_aplanado_inmune_en_embudo(&c, &Ok((3, 0)), t), Some(0));
+            assert_eq!(c.deaths_by_gate(FunnelGate::ImmuneSystem), 2, "un Err no se cuenta como conteo");
+            assert_eq!(cierres_del_aplanado(&Ok((7, 4))), Some(4));
+            assert_eq!(cierres_del_aplanado(&Err("x".to_string())), None);
+
+            // FLATTEN: cierres agrupados únicos por (símbolo, t_ms) entre pasadas.
+            let mut vistos = std::collections::HashSet::new();
+            let pasada1 = agrupar_cierres(vec![(t, -0.4), (t + 300, -0.3), (t + 60_000, 0.5)], 1_000);
+            assert_eq!(pasada1.len(), 2);
+            assert_eq!(registrar_flatten_en_embudo(&c, &mut vistos, "VETUSDT", &pasada1, t + 120_000), 2);
+            let pasada2 = agrupar_cierres(vec![(t, -0.4), (t + 300, -0.3), (t + 60_000, 0.5), (t + 300_000, 0.1)], 1_000);
+            assert_eq!(
+                registrar_flatten_en_embudo(&c, &mut vistos, "VETUSDT", &pasada2, t + 360_000),
+                1,
+                "la ventana rodante repite dos cierres: no se vuelven a sumar"
+            );
+            assert_eq!(registrar_flatten_en_embudo(&c, &mut vistos, "BTCUSDT", &pasada1, t + 360_000), 2, "otro símbolo");
+            assert_eq!(c.deaths_by_gate(FunnelGate::Flatten), 5);
+            assert_eq!(c.deaths(FunnelGate::Flatten, "VETUSDT", t / EMBUDO_MS_POR_CUBO), 3);
+            // Retención: pasada la ventana máxima del breaker se olvidan.
+            assert_eq!(registrar_flatten_en_embudo(&c, &mut vistos, "VETUSDT", &[], t + EMBUDO_RETENCION_FLATTEN_MS + 400_000), 0);
+            assert!(vistos.is_empty(), "retención acotada por la ventana real: {vistos:?}");
+
+            // Volcado: mapa de cadenas, el que consume `demo_report --funnel`.
+            let dir = carpeta("embudo");
+            let mapa = volcar_embudo_json(&c, &dir).unwrap();
+            let leido: std::collections::BTreeMap<String, u64> =
+                serde_json::from_str(&std::fs::read_to_string(dir.join(EMBUDO_DEMO_ARCHIVO)).unwrap()).unwrap();
+            assert_eq!(leido, mapa);
+            assert_eq!(leido.get("FLATTEN"), Some(&5));
+            assert_eq!(leido.get("IMMUNE_SYSTEM"), Some(&2));
+            assert_eq!(leido.len(), 2, "solo compuertas con muertes: {leido:?}");
+            assert_eq!(std::fs::read_dir(&dir).unwrap().count(), 1, "sin temporales");
+            let _ = std::fs::remove_dir_all(&dir);
+
+            // Sitios de producción.
+            assert!(
+                tramo("let tras = reintento.registrar(&resultado, ahora_ms);", "match &resultado {")
+                    .contains("registrar_aplanado_inmune_en_embudo(&EMBUDO_HOST, &resultado, epoch_ms_host())"),
+                "el inmune se registra al terminar el intento, por referencia"
+            );
+            assert!(
+                tramo("let cierres = agrupar_cierres(a.registros, 1_000);", "let decision = decision_fee_breaker(")
+                    .contains("registrar_flatten_en_embudo(&EMBUDO_HOST, &mut flatten_vistos, &sym, &cierres, now_breaker)"),
+                "FLATTEN tras agrupar_cierres, con el sym del llamador"
+            );
+            assert!(
+                tramo("fee_breaker.json corrupto", "let era_brk = puente_brk.era();")
+                    .contains("let mut flatten_vistos: std::collections::HashSet<(String, u64)> = std::collections::HashSet::new();\n                loop {"),
+                "estado de deduplicación entre pasadas, declarado fuera del lazo del breaker"
+            );
+            assert!(
+                tramo("if let Ok(escritor) = escritor_estado {", "std::process::exit(0);")
+                    .contains("volcar_embudo_json(&EMBUDO_HOST, std::path::Path::new(EMBUDO_DEMO_DIR))"),
+                "volcado tras detener el lazo y persistir, fuera del aplanado"
+            );
         }
     }
 }
