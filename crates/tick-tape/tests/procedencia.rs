@@ -6,7 +6,7 @@ mod comun;
 
 use comun::{hex, sha};
 use tick_tape::logica::{open_logical_tape, TapeBytes};
-use tick_tape::procedencia::{admitir_para_entrenamiento, firma_de_cinta, EstadoGeneracion, R_RELATIVA, SUELO_ANTIGUO};
+use tick_tape::procedencia::{admitir_para_entrenamiento, firma_de_cinta, EstadoGeneracion, IndiceFijado, R_RELATIVA, SUELO_ANTIGUO};
 use tick_tape::tgb::Presupuesto;
 
 fn registro(ts: u64, bid: f64, ask: f64) -> [u8; 40] {
@@ -73,14 +73,6 @@ impl Drop for Caso {
     }
 }
 
-fn recibo(bytes: &[u8], procedencia: &str, cobertura: &str) -> String {
-    format!(
-        "formato=tg-procedencia-1\nsha256_original={}\nbytes_original={}\nprocedencia_acreditada={procedencia}\nevidencia_productor=binance_vision_sync D-723, fuentes Binance Vision por SHA\ncobertura={cobertura}\n",
-        hex(&sha(bytes)),
-        bytes.len()
-    )
-}
-
 #[test]
 fn tgb_firma_distingue_recetas_sin_adivinar() {
     let bajos = precios(0.45, 0.013, 200); // por debajo del cruce 0.01 / 0.00005
@@ -123,33 +115,66 @@ fn tgb_firma_distingue_recetas_sin_adivinar() {
     assert!(firma_de_cinta(&ajena).is_err());
 }
 
+/// Cadena tg-procedencia-2 integra para `bytes`: (recibo, evidencia del productor, indice revisado).
+fn cadena(bytes: &[u8], procedencia: &str, cobertura: &str) -> (String, String, String) {
+    let n = (bytes.len() - 8) / 40;
+    let evidencia = format!(
+        "formato=tg-evidencia-productor-1\nproductor=binance_vision_sync\ncommit_productor={}\nsha256_fuentes_productor={}\nsha256_ejecutable={}\nreceta=relativa\nconstante_r_bits={:016x}\norigen_receta=src/bin/binance_vision_sync.rs:222\ncomando=binance_vision_sync\nentrada_sha256={}\nsha256_salida={}\nbytes_salida={}\nsha256_registro_salida={}\ntransformaciones=ninguna\n",
+        "ab".repeat(20),
+        hex(&sha(b"fuentes")),
+        hex(&sha(b"exe")),
+        R_RELATIVA.to_bits(),
+        hex(&sha(b"zip")),
+        hex(&sha(bytes)),
+        bytes.len(),
+        hex(&sha(b"stdout"))
+    );
+    let ev_sha = hex(&sha(evidencia.as_bytes()));
+    let indice = format!("formato=tg-indice-procedencia-1\nrevisado_por=prueba de contrato\nevidencia={ev_sha};binance_vision_sync;{};relativa\n", "ab".repeat(20));
+    let recibo = format!(
+        "formato=tg-procedencia-2\nversion_analizador=tick-tape-procedencia-2\nruta_logica=x_REAL.bin\nformato_cinta=TGMTICK1+40B_LE\nsha256_original={}\nbytes_original={}\nregistros_esperados={n}\nregistros_analizados={n}\ncobertura={cobertura}\nrecetas_compatibles=relativa\nestado_firma=relativa\nprimer_testigo_relativa=0\nprocedencia_acreditada={procedencia}\nevidencia_productor_sha256={ev_sha}\nanalisis=intervalos_exhaustivos\n",
+        hex(&sha(bytes)),
+        bytes.len()
+    );
+    (recibo, evidencia, indice)
+}
 #[test]
 fn tgb_solo_la_relativa_acreditada_entra_a_entrenamiento() {
+    // Contrato de ARCHIVOS (cinta en un temporal, por la fachada sobre TapeBytes); los PUROS estan en tgb_g_contract.
     let caso = Caso::nuevo("admision");
     let bajos = precios(0.45, 0.013, 200);
     let relativa = cinta(&bajos.iter().map(|p| rel(*p)).collect::<Vec<_>>());
     let antigua = cinta(&bajos.iter().map(|p| ant(*p)).collect::<Vec<_>>());
     let ambigua = cinta(&precios(60_000.0, 0.7, 50).iter().map(|p| rel(*p)).collect::<Vec<_>>());
+    let admitir = |t: &TapeBytes, c: &(String, String, String)| {
+        let ev = c.1.clone().into_bytes();
+        let mut res = |_: &[u8; 32]| -> Result<Option<Vec<u8>>, String> { Ok(Some(ev.clone())) };
+        let ix = IndiceFijado { bytes: c.2.as_bytes(), sha256_esperado: sha(c.2.as_bytes()) };
+        admitir_para_entrenamiento(t, Some(c.0.as_bytes()), Some(ix), &mut res)
+    };
 
-    // Verde: relativa con recibo de su SHA, procedencia acreditada y cobertura completa.
+    // Verde: relativa con su cadena integra.
     let t = caso.tape("verde", &relativa);
-    let ok = admitir_para_entrenamiento(&t, Some(&recibo(&relativa, "relativa", "completa")));
+    let ok = admitir(&t, &cadena(&relativa, "relativa", "completa"));
     assert!(ok.is_ok(), "{ok:?}");
     assert_eq!(t.as_bytes(), &relativa[..], "la admitida conserva sus bytes");
 
-    let rechazos: Vec<(&str, Vec<u8>, Option<String>, &str)> = vec![
-        ("marca ausente", relativa.clone(), None, "ausente"),
-        ("marca de otro SHA", relativa.clone(), Some(recibo(&antigua, "relativa", "completa")), "otro original"),
-        ("procedencia no acreditada", relativa.clone(), Some(recibo(&relativa, "indeterminada", "completa")), "no acreditada"),
-        ("analisis incompleto", relativa.clone(), Some(recibo(&relativa, "relativa", "parcial")), "incompleto"),
-        ("firma antigua", antigua.clone(), Some(recibo(&antigua, "relativa", "completa")), "antigua"),
-        ("sin testigos discriminantes", ambigua.clone(), Some(recibo(&ambigua, "relativa", "completa")), "indeterminada"),
+    let rechazos: Vec<(&str, Vec<u8>, (String, String, String), &str)> = vec![
+        ("marca de otro SHA", relativa.clone(), cadena(&antigua, "relativa", "completa"), "recibo_de_otro_original"),
+        ("procedencia no acreditada", relativa.clone(), cadena(&relativa, "indeterminada", "completa"), "procedencia_no_acreditada"),
+        ("analisis incompleto", relativa.clone(), cadena(&relativa, "relativa", "parcial"), "cobertura_incompleta"),
+        ("firma antigua", antigua.clone(), cadena(&antigua, "relativa", "completa"), "firma_antigua"),
+        ("sin testigos discriminantes", ambigua.clone(), cadena(&ambigua, "relativa", "completa"), "firma_indeterminada"),
     ];
-    for (nombre, bytes, rec, causa) in rechazos {
+    for (nombre, bytes, c, causa) in rechazos {
         let t = caso.tape(&nombre.replace(' ', "_"), &bytes);
-        match admitir_para_entrenamiento(&t, rec.as_deref()) {
+        match admitir(&t, &c) {
             Ok(_) => panic!("{nombre}: admitida sin evidencia suficiente"),
             Err(e) => assert!(e.contains(causa), "{nombre}: causa no verificable: {e}"),
         }
     }
+    let t = caso.tape("sin_marca", &relativa);
+    let mut nada = |_: &[u8; 32]| -> Result<Option<Vec<u8>>, String> { Ok(None) };
+    let e = admitir_para_entrenamiento(&t, None, None, &mut nada).err().unwrap_or_default();
+    assert!(e.contains("recibo_ausente"), "marca ausente: {e}");
 }

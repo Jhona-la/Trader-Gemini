@@ -1067,12 +1067,15 @@ fn admitir_cinta_para_muestras(path: &str) -> Result<tick_tape::logica::TapeByte
     let tape = tick_tape::logica::open_logical_tape(logica, tick_tape::tgb::Presupuesto::sin_tope())
         .map_err(|e| format!("no pude abrir {path}: {e}"))?;
     let ruta_recibo = tick_tape::procedencia::ruta_recibo(logica);
-    let recibo = match std::fs::read_to_string(&ruta_recibo) {
+    let recibo = match std::fs::read(&ruta_recibo) {
         Ok(t) => Some(t),
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => None,
         Err(e) => return Err(format!("no pude leer {}: {e}", ruta_recibo.display())),
     };
-    tick_tape::procedencia::admitir_para_entrenamiento(&tape, recibo.as_deref())?;
+    // TGBG-2: sin indice revisado fijado por hash no hay cadena que acredite la generacion (rechazo
+    // `procedencia_no_acreditada`); TGBG-5 cablea `--generation-index` y `--generation-index-sha256`.
+    let mut sin_evidencia = |_: &[u8; 32]| -> Result<Option<Vec<u8>>, String> { Ok(None) };
+    tick_tape::procedencia::admitir_para_entrenamiento(&tape, recibo.as_deref(), None, &mut sin_evidencia)?;
     Ok(tape)
 }
 
@@ -3501,13 +3504,16 @@ mod tests {
             }
             p.to_string_lossy().into_owned()
         };
+        // TGBG-2: el recibo autodeclarado de H (`evidencia_productor=prueba`) ya NO acredita la generacion, ni como
+        // `.bin` ni como `.bin.tgb`: sin una cadena reconocida en el indice revisado no hay procedencia.
         let ok = poner("REL_REAL.bin", &relativa, Some(recibo(&relativa)));
-        assert!(admitir_cinta_para_muestras(&ok).is_ok(), "{:?}", admitir_cinta_para_muestras(&ok).err());
-        // La relativa sólo como .bin.tgb: el recibo es del ORIGINAL, no del contenedor.
+        let e = admitir_cinta_para_muestras(&ok).err().unwrap_or_default();
+        assert!(e.contains("procedencia_no_acreditada"), "recibo autodeclarado admitido o sin causa: {e:?}");
         let tgb = dir.join("RELT_REAL.bin");
         std::fs::write(dir.join("RELT_REAL.bin.tgb"), tick_tape::tgb::empaquetar(&relativa).unwrap()).unwrap();
         std::fs::write(dir.join("RELT_REAL.bin.procedencia"), recibo(&relativa)).unwrap();
-        assert!(admitir_cinta_para_muestras(&tgb.to_string_lossy()).is_ok());
+        let e = admitir_cinta_para_muestras(&tgb.to_string_lossy()).err().unwrap_or_default();
+        assert!(e.contains("procedencia_no_acreditada"), "recibo autodeclarado admitido desde .tgb: {e:?}");
         for (nombre, path) in [
             ("firma antigua", poner("ANT_REAL.bin", &antigua, Some(recibo(&antigua)))),
             ("sin recibo", poner("SINREC_REAL.bin", &relativa, None)),

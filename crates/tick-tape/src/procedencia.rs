@@ -25,12 +25,17 @@
 //! `Mixta` si hay testigos exclusivos de las dos; `Indeterminada` si algun registro quedo sin decision, si todos
 //! admiten las dos o si no hay registros; si no, `Antigua` o `Relativa`. Un resultado ambiguo nunca se fuerza.
 //!
-//! La firma no acredita QUIEN genero la cinta. Para entrenar se exige ademas un RECIBO lateral
-//! (`X.bin.procedencia`) ligado al SHA-256 y al tamano exactos del original, con procedencia relativa acreditada
-//! por el productor y cobertura completa. Se rechazan antigua, mixta, otra, indeterminada, recibo ausente, recibo
-//! de otro SHA y analisis incompleto. Nada de esto reescribe la cinta ni corrige su spread al cargarla.
+//! La firma no acredita QUIEN genero la cinta. Para entrenar, [`admitir_original`] exige ademas un RECIBO
+//! (`X.bin.procedencia`, formato `tg-procedencia-2`) ligado al SHA-256 y al tamano del original, con cuentas, firma y
+//! testigo iguales a los recalculados, que apunta por SHA-256 a una EVIDENCIA DEL PRODUCTOR
+//! (`tg-evidencia-productor-1`) reconocida en un INDICE REVISADO (`tg-indice-procedencia-1`) cuyo SHA-256 fija quien
+//! llama (registro revisado por coordinador/integrador, nunca el propio recibo). Un texto libre, una ruta existente o
+//! el hash del propio recibo no sustituyen esa cadena. Nada de esto reescribe la cinta ni corrige su spread.
+//!
+//! El nucleo es PURO: recibe bytes y un resolutor de evidencia por hash; no abre archivos ni lee el reloj.
 
 use crate::logica::TapeBytes;
+use sha2::{Digest, Sha256};
 use std::path::{Path, PathBuf};
 
 /// Semi-spread relativo de la receta nueva (`binance_vision_sync.rs:222`).
@@ -257,93 +262,478 @@ pub fn ruta_recibo(logica: &Path) -> PathBuf {
     PathBuf::from(s)
 }
 
-/// Recibo lateral de procedencia, ligado a un original exacto.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Recibo {
-    pub sha256_original: [u8; 32],
-    pub bytes_original: u64,
-    pub procedencia_acreditada: String,
-    pub evidencia_productor: String,
-    pub cobertura: String,
-}
+// ───────────────────────────── documentos estrictos clave=valor ─────────────────────────────
 
-fn hex32(s: &str) -> Result<[u8; 32], String> {
-    let b = s.as_bytes();
-    if b.len() != 64 {
-        return Err(format!("sha256_original de {} caracteres", b.len()));
+/// Pares `clave=valor`, una por linea `\n`, sin espacios alrededor, sin `\r`, sin comentarios ni lineas vacias
+/// intermedias. Solo `repetibles` puede aparecer mas de una vez; toda clave debe estar en `claves`.
+fn campos<'a>(texto: &'a [u8], claves: &[&str], repetibles: &[&str]) -> Result<Vec<(&'a str, &'a str)>, String> {
+    let texto = std::str::from_utf8(texto).map_err(|e| format!("no es UTF-8: {e}"))?;
+    let cuerpo = texto.strip_suffix('\n').unwrap_or(texto);
+    if cuerpo.is_empty() {
+        return Err("documento vacio".to_string());
     }
-    let mut out = [0u8; 32];
-    for (k, par) in b.chunks_exact(2).enumerate() {
-        let txt = std::str::from_utf8(par).map_err(|e| e.to_string())?;
-        out[k] = u8::from_str_radix(txt, 16).map_err(|e| format!("sha256_original: {e}"))?;
+    let mut out: Vec<(&str, &str)> = Vec::new();
+    for linea in cuerpo.split('\n') {
+        if linea.contains('\r') {
+            return Err("retorno de carro en una linea".to_string());
+        }
+        let (k, v) = linea.split_once('=').ok_or_else(|| format!("linea sin '=': {linea}"))?;
+        if k.is_empty() || k.trim() != k || v.trim() != v || v.is_empty() {
+            return Err(format!("linea mal formada: {linea}"));
+        }
+        if !claves.contains(&k) {
+            return Err(format!("clave desconocida: {k}"));
+        }
+        if !repetibles.contains(&k) && out.iter().any(|(c, _)| *c == k) {
+            return Err(format!("clave repetida: {k}"));
+        }
+        out.push((k, v));
+    }
+    for k in claves {
+        if !out.iter().any(|(c, _)| c == k) {
+            return Err(format!("falta {k}"));
+        }
     }
     Ok(out)
 }
 
-/// Lee un recibo `formato=tg-procedencia-1` de lineas `clave=valor` (sin claves repetidas ni desconocidas).
-pub fn leer_recibo(texto: &str) -> Result<Recibo, String> {
-    let mut campos: Vec<(&str, &str)> = Vec::new();
-    for linea in texto.lines().map(str::trim).filter(|l| !l.is_empty() && !l.starts_with('#')) {
-        let (k, v) = linea.split_once('=').ok_or_else(|| format!("linea sin '=': {linea}"))?;
-        let (k, v) = (k.trim(), v.trim());
-        if campos.iter().any(|(c, _)| *c == k) {
-            return Err(format!("clave repetida: {k}"));
-        }
-        campos.push((k, v));
+fn uno<'a>(c: &[(&'a str, &'a str)], k: &str) -> &'a str {
+    c.iter().find(|(x, _)| *x == k).map(|(_, v)| *v).unwrap_or("")
+}
+
+/// Hex en minusculas de longitud exacta (sin signo, sin prefijo, sin mayusculas).
+fn hex_exacto<const N: usize>(s: &str, campo: &str) -> Result<[u8; N], String> {
+    let b = s.as_bytes();
+    if b.len() != 2 * N || !b.iter().all(|c| matches!(c, b'0'..=b'9' | b'a'..=b'f')) {
+        return Err(format!("{campo}: se esperan {} digitos hex en minusculas", 2 * N));
     }
-    let tomar = |k: &str| campos.iter().find(|(c, _)| *c == k).map(|(_, v)| *v).ok_or_else(|| format!("falta {k}"));
-    const CLAVES: [&str; 6] = ["formato", "sha256_original", "bytes_original", "procedencia_acreditada", "evidencia_productor", "cobertura"];
-    if let Some((k, _)) = campos.iter().find(|(c, _)| !CLAVES.contains(c)) {
-        return Err(format!("clave desconocida: {k}"));
+    let nib = |c: u8| if c <= b'9' { c - b'0' } else { c - b'a' + 10 };
+    let mut out = [0u8; N];
+    for (k, par) in b.chunks_exact(2).enumerate() {
+        out[k] = nib(par[0]) << 4 | nib(par[1]);
     }
-    if tomar("formato")? != "tg-procedencia-1" {
+    Ok(out)
+}
+
+/// Decimal sin signo, sin ceros a la izquierda (salvo "0").
+fn decimal(s: &str, campo: &str) -> Result<u64, String> {
+    let b = s.as_bytes();
+    if b.is_empty() || !b.iter().all(u8::is_ascii_digit) || (b.len() > 1 && b[0] == b'0') {
+        return Err(format!("{campo}: decimal mal formado"));
+    }
+    s.parse().map_err(|e| format!("{campo}: {e}"))
+}
+
+pub fn hex(b: &[u8]) -> String {
+    b.iter().map(|x| format!("{x:02x}")).collect()
+}
+
+/// Recibo de procedencia `tg-procedencia-2`, ligado a un original exacto.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Recibo {
+    pub ruta_logica: String,
+    pub sha256_original: [u8; 32],
+    pub bytes_original: u64,
+    pub registros_esperados: u64,
+    pub registros_analizados: u64,
+    pub cobertura: String,
+    pub recetas_compatibles: String,
+    pub estado_firma: String,
+    pub primer_testigo_relativa: u64,
+    pub procedencia_acreditada: String,
+    pub evidencia_productor_sha256: [u8; 32],
+}
+
+const CLAVES_RECIBO: [&str; 15] = [
+    "formato",
+    "version_analizador",
+    "ruta_logica",
+    "formato_cinta",
+    "sha256_original",
+    "bytes_original",
+    "registros_esperados",
+    "registros_analizados",
+    "cobertura",
+    "recetas_compatibles",
+    "estado_firma",
+    "primer_testigo_relativa",
+    "procedencia_acreditada",
+    "evidencia_productor_sha256",
+    "analisis",
+];
+
+/// Lee un recibo `formato=tg-procedencia-2` con el parser estricto.
+pub fn leer_recibo(texto: &[u8]) -> Result<Recibo, String> {
+    let c = campos(texto, &CLAVES_RECIBO, &[])?;
+    if uno(&c, "formato") != "tg-procedencia-2" {
         return Err("formato de recibo desconocido".to_string());
     }
+    if uno(&c, "version_analizador") != VERSION_ANALIZADOR {
+        return Err(format!("version de analizador no acreditable: {}", uno(&c, "version_analizador")));
+    }
+    if uno(&c, "formato_cinta") != FORMATO_CINTA {
+        return Err(format!("formato de cinta no admitido: {}", uno(&c, "formato_cinta")));
+    }
+    if uno(&c, "analisis") != "intervalos_exhaustivos" {
+        return Err(format!("metodo de analisis no admitido: {}", uno(&c, "analisis")));
+    }
     Ok(Recibo {
-        sha256_original: hex32(tomar("sha256_original")?)?,
-        bytes_original: tomar("bytes_original")?.parse().map_err(|e| format!("bytes_original: {e}"))?,
-        procedencia_acreditada: tomar("procedencia_acreditada")?.to_string(),
-        evidencia_productor: tomar("evidencia_productor")?.to_string(),
-        cobertura: tomar("cobertura")?.to_string(),
+        ruta_logica: uno(&c, "ruta_logica").to_string(),
+        sha256_original: hex_exacto(uno(&c, "sha256_original"), "sha256_original")?,
+        bytes_original: decimal(uno(&c, "bytes_original"), "bytes_original")?,
+        registros_esperados: decimal(uno(&c, "registros_esperados"), "registros_esperados")?,
+        registros_analizados: decimal(uno(&c, "registros_analizados"), "registros_analizados")?,
+        cobertura: uno(&c, "cobertura").to_string(),
+        recetas_compatibles: uno(&c, "recetas_compatibles").to_string(),
+        estado_firma: uno(&c, "estado_firma").to_string(),
+        primer_testigo_relativa: decimal(uno(&c, "primer_testigo_relativa"), "primer_testigo_relativa")?,
+        procedencia_acreditada: uno(&c, "procedencia_acreditada").to_string(),
+        evidencia_productor_sha256: hex_exacto(uno(&c, "evidencia_productor_sha256"), "evidencia_productor_sha256")?,
     })
 }
 
-/// Cinta admitida para preparar muestras de entrenamiento.
-#[derive(Debug, Clone)]
-pub struct Admitida {
-    pub firma: Firma,
-    pub recibo: Recibo,
+/// Evidencia del productor `tg-evidencia-productor-1`: quien genero el original, con que fuentes, ejecutable,
+/// receta, entradas, comando y salida.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct EvidenciaProductor {
+    pub productor: String,
+    pub commit_productor: [u8; 20],
+    pub sha256_fuentes_productor: [u8; 32],
+    pub sha256_ejecutable: [u8; 32],
+    pub receta: String,
+    pub constante_r_bits: u64,
+    pub origen_receta: String,
+    pub comando: String,
+    pub entradas: Vec<[u8; 32]>,
+    pub sha256_salida: [u8; 32],
+    pub bytes_salida: u64,
+    pub sha256_registro_salida: [u8; 32],
+    pub transformaciones: String,
 }
 
-/// Admision para ENTRENAR: firma recalculada sobre la cinta entera y recibo con identidad vigente y procedencia
-/// relativa acreditada. Cada rechazo dice su causa.
-pub fn admitir_para_entrenamiento(tape: &TapeBytes, recibo: Option<&str>) -> Result<Admitida, String> {
-    let ruta = tape.ruta_logica().display().to_string();
-    let firma = firma_de_cinta(tape.as_bytes()).map_err(|e| format!("{ruta}: {e}"))?;
+const CLAVES_EVIDENCIA: [&str; 14] = [
+    "formato",
+    "productor",
+    "commit_productor",
+    "sha256_fuentes_productor",
+    "sha256_ejecutable",
+    "receta",
+    "constante_r_bits",
+    "origen_receta",
+    "comando",
+    "entrada_sha256",
+    "sha256_salida",
+    "bytes_salida",
+    "sha256_registro_salida",
+    "transformaciones",
+];
+
+pub fn leer_evidencia(texto: &[u8]) -> Result<EvidenciaProductor, String> {
+    let c = campos(texto, &CLAVES_EVIDENCIA, &["entrada_sha256"])?;
+    if uno(&c, "formato") != "tg-evidencia-productor-1" {
+        return Err("formato de evidencia desconocido".to_string());
+    }
+    let mut entradas = Vec::new();
+    for (k, v) in &c {
+        if *k == "entrada_sha256" {
+            let h = hex_exacto::<32>(v, "entrada_sha256")?;
+            if entradas.contains(&h) {
+                return Err("entrada_sha256 repetida".to_string());
+            }
+            entradas.push(h);
+        }
+    }
+    let r_bits = hex_exacto::<8>(uno(&c, "constante_r_bits"), "constante_r_bits")?;
+    Ok(EvidenciaProductor {
+        productor: uno(&c, "productor").to_string(),
+        commit_productor: hex_exacto(uno(&c, "commit_productor"), "commit_productor")?,
+        sha256_fuentes_productor: hex_exacto(uno(&c, "sha256_fuentes_productor"), "sha256_fuentes_productor")?,
+        sha256_ejecutable: hex_exacto(uno(&c, "sha256_ejecutable"), "sha256_ejecutable")?,
+        receta: uno(&c, "receta").to_string(),
+        constante_r_bits: u64::from_be_bytes(r_bits),
+        origen_receta: uno(&c, "origen_receta").to_string(),
+        comando: uno(&c, "comando").to_string(),
+        entradas,
+        sha256_salida: hex_exacto(uno(&c, "sha256_salida"), "sha256_salida")?,
+        bytes_salida: decimal(uno(&c, "bytes_salida"), "bytes_salida")?,
+        sha256_registro_salida: hex_exacto(uno(&c, "sha256_registro_salida"), "sha256_registro_salida")?,
+        transformaciones: uno(&c, "transformaciones").to_string(),
+    })
+}
+
+/// Entrada del indice revisado: evidencia reconocida con su productor, commit y receta.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct EntradaIndice {
+    pub evidencia_sha256: [u8; 32],
+    pub productor: String,
+    pub commit_productor: [u8; 20],
+    pub receta: String,
+}
+
+/// Indice revisado `tg-indice-procedencia-1`: `revisado_por=` y una linea
+/// `evidencia=<sha256>;<productor>;<commit>;<receta>` por evidencia reconocida.
+pub fn leer_indice(texto: &[u8]) -> Result<(String, Vec<EntradaIndice>), String> {
+    let c = campos(texto, &["formato", "revisado_por", "evidencia"], &["evidencia"])?;
+    if uno(&c, "formato") != "tg-indice-procedencia-1" {
+        return Err("formato de indice desconocido".to_string());
+    }
+    let mut v: Vec<EntradaIndice> = Vec::new();
+    for (k, linea) in &c {
+        if *k != "evidencia" {
+            continue;
+        }
+        let partes: Vec<&str> = linea.split(';').collect();
+        let [sha, productor, commit, receta] = partes[..] else {
+            return Err(format!("entrada de indice mal formada: {linea}"));
+        };
+        if productor.is_empty() || receta.is_empty() {
+            return Err(format!("entrada de indice incompleta: {linea}"));
+        }
+        let e = EntradaIndice {
+            evidencia_sha256: hex_exacto(sha, "evidencia")?,
+            productor: productor.to_string(),
+            commit_productor: hex_exacto(commit, "commit")?,
+            receta: receta.to_string(),
+        };
+        if v.iter().any(|x| x.evidencia_sha256 == e.evidencia_sha256) {
+            return Err("evidencia repetida en el indice".to_string());
+        }
+        v.push(e);
+    }
+    Ok((uno(&c, "revisado_por").to_string(), v))
+}
+
+// ───────────────────────────────────── nucleo de admision ─────────────────────────────────────
+
+/// Causa estructurada de un rechazo.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Causa {
+    /// No es una cinta REAL bien formada (cabecera, registros truncados).
+    Formato,
+    /// La firma recalculada no es relativa.
+    Firma(EstadoGeneracion),
+    ReciboAusente,
+    ReciboInvalido,
+    /// El recibo es de otro original (SHA-256 o tamano).
+    OtroOriginal,
+    CoberturaIncompleta,
+    /// Registros esperados/analizados distintos de los del original.
+    CuentasDiscordantes,
+    /// Estado, recetas o testigo del recibo distintos de los recalculados.
+    FirmaDiscordante,
+    ProcedenciaNoAcreditada,
+    IndiceAusente,
+    /// El indice no tiene el SHA-256 fijado por quien llama.
+    IndiceNoFijado,
+    IndiceInvalido,
+    /// La evidencia citada no esta en el indice revisado.
+    EvidenciaNoReconocida,
+    EvidenciaAusente,
+    EvidenciaInvalida,
+    /// Hash, productor, commit, receta, constante o salida de la cadena no concuerdan.
+    CadenaRota,
+}
+
+impl Causa {
+    pub fn nombre(self) -> &'static str {
+        match self {
+            Causa::Formato => "formato",
+            Causa::Firma(EstadoGeneracion::Antigua) => "firma_antigua",
+            Causa::Firma(EstadoGeneracion::Relativa) => "firma_relativa",
+            Causa::Firma(EstadoGeneracion::Indeterminada) => "firma_indeterminada",
+            Causa::Firma(EstadoGeneracion::Mixta) => "firma_mixta",
+            Causa::Firma(EstadoGeneracion::OtraOInvalida) => "firma_otra_o_invalida",
+            Causa::ReciboAusente => "recibo_ausente",
+            Causa::ReciboInvalido => "recibo_invalido",
+            Causa::OtroOriginal => "recibo_de_otro_original",
+            Causa::CoberturaIncompleta => "cobertura_incompleta",
+            Causa::CuentasDiscordantes => "cuentas_discordantes",
+            Causa::FirmaDiscordante => "firma_discordante",
+            Causa::ProcedenciaNoAcreditada => "procedencia_no_acreditada",
+            Causa::IndiceAusente => "indice_ausente",
+            Causa::IndiceNoFijado => "indice_no_fijado",
+            Causa::IndiceInvalido => "indice_invalido",
+            Causa::EvidenciaNoReconocida => "evidencia_no_reconocida",
+            Causa::EvidenciaAusente => "evidencia_ausente",
+            Causa::EvidenciaInvalida => "evidencia_invalida",
+            Causa::CadenaRota => "cadena_rota",
+        }
+    }
+
+    /// La generacion no quedo acreditada por una cadena integra (todo lo posterior a la firma).
+    pub fn es_procedencia_no_acreditada(self) -> bool {
+        !matches!(self, Causa::Formato | Causa::Firma(_))
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Rechazo {
+    pub causa: Causa,
+    pub detalle: String,
+}
+
+impl std::fmt::Display for Rechazo {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        if self.causa.es_procedencia_no_acreditada() && self.causa != Causa::ProcedenciaNoAcreditada {
+            write!(f, "procedencia_no_acreditada ({}): {}", self.causa.nombre(), self.detalle)
+        } else {
+            write!(f, "{}: {}", self.causa.nombre(), self.detalle)
+        }
+    }
+}
+
+fn rechazo<T>(causa: Causa, detalle: impl Into<String>) -> Result<T, Rechazo> {
+    Err(Rechazo { causa, detalle: detalle.into() })
+}
+
+/// Indice revisado con el SHA-256 que fija quien llama (del registro revisado, no del recibo).
+#[derive(Debug, Clone, Copy)]
+pub struct IndiceFijado<'a> {
+    pub bytes: &'a [u8],
+    pub sha256_esperado: [u8; 32],
+}
+
+/// Original admitido para preparar muestras, con su identidad recalculada y la cadena que lo acredita.
+#[derive(Debug, Clone)]
+pub struct Admision {
+    pub sha256_original: [u8; 32],
+    pub bytes_original: u64,
+    pub firma: Firma,
+    pub recibo: Recibo,
+    pub evidencia_sha256: [u8; 32],
+    pub evidencia: EvidenciaProductor,
+    pub sha256_indice: [u8; 32],
+    pub revisado_por: String,
+}
+
+/// Resolutor de evidencia por SHA-256 (`Ok(None)` = no existe).
+pub type ResolverEvidencia<'a> = dyn FnMut(&[u8; 32]) -> Result<Option<Vec<u8>>, String> + 'a;
+
+/// NUCLEO PURO de admision para ENTRENAR sobre los bytes completos del original (los que se van a consumir).
+/// El SHA-256 y el tamano se calculan aqui, nunca se toman del recibo.
+pub fn admitir_original(
+    original: &[u8],
+    recibo: Option<&[u8]>,
+    indice: Option<IndiceFijado<'_>>,
+    evidencia: &mut ResolverEvidencia<'_>,
+) -> Result<Admision, Rechazo> {
+    let sha256_original: [u8; 32] = Sha256::digest(original).into();
+    let bytes_original = original.len() as u64;
+    let firma = match firma_de_cinta(original) {
+        Ok(f) => f,
+        Err(e) => return rechazo(Causa::Formato, e),
+    };
     let estado = firma.estado();
     if estado != EstadoGeneracion::Relativa {
-        return Err(format!(
-            "{ruta}: firma de generacion {} (solo relativa {}, solo antigua {}, ninguna {}, ambas {}; testigos rel {:?} ant {:?} ninguna {:?}): no entra a entrenamiento",
-            estado.nombre(),
-            firma.solo_relativa,
-            firma.solo_antigua,
-            firma.ninguna,
-            firma.ambas,
-            firma.primer_solo_relativa,
-            firma.primer_solo_antigua,
-            firma.primer_ninguna
-        ));
+        return rechazo(
+            Causa::Firma(estado),
+            format!(
+                "firma de generacion {} (solo relativa {}, solo antigua {}, ninguna {}, ambas {}, sin decision {}, invalidos {}; testigos rel {:?} ant {:?} ninguna {:?} invalido {:?}): no entra a entrenamiento",
+                estado.nombre(),
+                firma.solo_relativa,
+                firma.solo_antigua,
+                firma.ninguna,
+                firma.ambas,
+                firma.sin_decision,
+                firma.invalidos,
+                firma.primer_solo_relativa,
+                firma.primer_solo_antigua,
+                firma.primer_ninguna,
+                firma.primer_invalido
+            ),
+        );
     }
-    let texto = recibo.ok_or_else(|| format!("{ruta}: marca de procedencia ausente ({})", ruta_recibo(tape.ruta_logica()).display()))?;
-    let r = leer_recibo(texto).map_err(|e| format!("{ruta}: recibo invalido: {e}"))?;
-    if r.sha256_original != tape.sha256_original() || r.bytes_original != tape.len() as u64 {
-        return Err(format!("{ruta}: el recibo es de otro original (SHA-256 o tamano distintos)"));
-    }
-    if r.procedencia_acreditada != "relativa" || r.evidencia_productor.is_empty() {
-        return Err(format!("{ruta}: procedencia relativa no acreditada por el productor"));
+    let Some(texto) = recibo else {
+        return rechazo(Causa::ReciboAusente, "marca de procedencia ausente");
+    };
+    let r = match leer_recibo(texto) {
+        Ok(r) => r,
+        Err(e) => return rechazo(Causa::ReciboInvalido, e),
+    };
+    if r.sha256_original != sha256_original || r.bytes_original != bytes_original {
+        return rechazo(Causa::OtroOriginal, "el recibo es de otro original (SHA-256 o tamano distintos)");
     }
     if r.cobertura != "completa" {
-        return Err(format!("{ruta}: analisis de procedencia incompleto (cobertura {})", r.cobertura));
+        return rechazo(Causa::CoberturaIncompleta, format!("analisis de procedencia incompleto (cobertura {})", r.cobertura));
     }
-    Ok(Admitida { firma, recibo: r })
+    if r.registros_esperados != firma.registros || r.registros_analizados != firma.registros {
+        return rechazo(
+            Causa::CuentasDiscordantes,
+            format!(
+                "el recibo declara {} esperados y {} analizados; el original tiene {}",
+                r.registros_esperados, r.registros_analizados, firma.registros
+            ),
+        );
+    }
+    if r.estado_firma != estado.nombre()
+        || r.recetas_compatibles != firma.recetas_compatibles()
+        || Some(r.primer_testigo_relativa) != firma.primer_solo_relativa
+    {
+        return rechazo(Causa::FirmaDiscordante, "estado, recetas o testigo del recibo distintos de los recalculados");
+    }
+    if r.procedencia_acreditada != "relativa" {
+        return rechazo(Causa::ProcedenciaNoAcreditada, format!("procedencia declarada {}", r.procedencia_acreditada));
+    }
+    let Some(ix) = indice else {
+        return rechazo(Causa::IndiceAusente, "sin indice revisado de evidencia");
+    };
+    let sha256_indice: [u8; 32] = Sha256::digest(ix.bytes).into();
+    if sha256_indice != ix.sha256_esperado {
+        return rechazo(Causa::IndiceNoFijado, format!("el indice tiene SHA-256 {}", hex(&sha256_indice)));
+    }
+    let (revisado_por, entradas) = match leer_indice(ix.bytes) {
+        Ok(x) => x,
+        Err(e) => return rechazo(Causa::IndiceInvalido, e),
+    };
+    let Some(entrada) = entradas.iter().find(|e| e.evidencia_sha256 == r.evidencia_productor_sha256) else {
+        return rechazo(
+            Causa::EvidenciaNoReconocida,
+            format!("la evidencia {} no esta en el indice revisado", hex(&r.evidencia_productor_sha256)),
+        );
+    };
+    let bytes_ev = match evidencia(&r.evidencia_productor_sha256) {
+        Ok(Some(b)) => b,
+        Ok(None) => return rechazo(Causa::EvidenciaAusente, format!("no hay evidencia {}", hex(&r.evidencia_productor_sha256))),
+        Err(e) => return rechazo(Causa::EvidenciaAusente, e),
+    };
+    let sha_ev: [u8; 32] = Sha256::digest(&bytes_ev).into();
+    if sha_ev != r.evidencia_productor_sha256 {
+        return rechazo(Causa::CadenaRota, "la evidencia resuelta no tiene el SHA-256 citado");
+    }
+    let ev = match leer_evidencia(&bytes_ev) {
+        Ok(e) => e,
+        Err(e) => return rechazo(Causa::EvidenciaInvalida, e),
+    };
+    if ev.sha256_salida != sha256_original || ev.bytes_salida != bytes_original {
+        return rechazo(Causa::CadenaRota, "la salida del productor no es este original");
+    }
+    if ev.productor != entrada.productor || ev.commit_productor != entrada.commit_productor || ev.receta != entrada.receta {
+        return rechazo(Causa::CadenaRota, "productor, commit o receta distintos de los del indice revisado");
+    }
+    if ev.receta != "relativa" || ev.constante_r_bits != R_RELATIVA.to_bits() {
+        return rechazo(Causa::CadenaRota, "la receta del productor no es la relativa con su constante");
+    }
+    if ev.transformaciones != "ninguna" {
+        return rechazo(Causa::CadenaRota, format!("transformaciones intermedias sin evidencia: {}", ev.transformaciones));
+    }
+    Ok(Admision {
+        sha256_original,
+        bytes_original,
+        firma,
+        recibo: r,
+        evidencia_sha256: sha_ev,
+        evidencia: ev,
+        sha256_indice,
+        revisado_por,
+    })
+}
+
+/// Fachada sobre una cinta logica ya abierta: delega en [`admitir_original`] con sus bytes.
+pub fn admitir_para_entrenamiento(
+    tape: &TapeBytes,
+    recibo: Option<&[u8]>,
+    indice: Option<IndiceFijado<'_>>,
+    evidencia: &mut ResolverEvidencia<'_>,
+) -> Result<Admision, String> {
+    admitir_original(tape.as_bytes(), recibo, indice, evidencia).map_err(|e| format!("{}: {e}", tape.ruta_logica().display()))
 }
