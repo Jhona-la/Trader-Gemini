@@ -1,0 +1,3 @@
+# Fixtures binarios: sin conversion de fin de linea.
+*.bin -text
+*.tgb -text
