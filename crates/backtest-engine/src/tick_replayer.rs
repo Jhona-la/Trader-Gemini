@@ -213,6 +213,25 @@ fn load_binary_ticks_with_limit(
     Ok(ticks)
 }
 
+/// TGB-E: la cinta `preferida` (p. ej. el REAL) si existe como `.bin` o `.bin.tgb`; `respaldo` (p. ej. el
+/// sintético) sólo si faltan LAS DOS representaciones de la preferida. Un error de acceso (permiso, directorio)
+/// se devuelve: no se cede al respaldo. Una preferida corrupta se elige igual y su carga falla.
+pub fn elegir_cinta<'a>(preferida: &'a Path, respaldo: &'a Path) -> std::io::Result<&'a Path> {
+    if tick_tape::logica::hay_cinta(preferida)? { Ok(preferida) } else { Ok(respaldo) }
+}
+
+/// TGB-E: las cintas de `files` presentes como `.bin` o `.bin.tgb` (multimoneda), una vez cada una. Sólo la
+/// ausencia de las dos representaciones omite una moneda; cualquier otro error aborta.
+pub fn cintas_presentes<'a>(files: Vec<(&'a Path, usize)>) -> std::io::Result<Vec<(&'a Path, usize)>> {
+    let mut presentes = Vec::with_capacity(files.len());
+    for (p, cid) in files {
+        if tick_tape::logica::hay_cinta(p)? {
+            presentes.push((p, cid));
+        }
+    }
+    Ok(presentes)
+}
+
 pub fn load_multi_coin_binary_ticks(files: &[(&Path, usize)]) -> std::io::Result<Vec<TickEvent>> {
     let mut all_ticks = Vec::new();
     for (path, cid) in files {

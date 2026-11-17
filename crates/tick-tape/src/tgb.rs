@@ -133,10 +133,16 @@ pub(crate) enum Respaldo {
     Mapa(memmap2::Mmap),
 }
 
+/// Base alineada del original vacio: los lectores que convierten el slice en registros de 8 B (cast `repr(C)`)
+/// reciben un puntero alineado tambien con cero bytes.
+#[repr(align(64))]
+struct Alineado([u8; 64]);
+static VACIO_ALINEADO: Alineado = Alineado([0u8; 64]);
+
 impl Respaldo {
     pub(crate) fn bytes(&self) -> &[u8] {
         match self {
-            Respaldo::Vacio => &[],
+            Respaldo::Vacio => &VACIO_ALINEADO.0[..0],
             Respaldo::Mapa(m) => &m[..],
         }
     }

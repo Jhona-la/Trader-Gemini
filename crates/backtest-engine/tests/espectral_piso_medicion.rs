@@ -46,7 +46,7 @@ fn piso_espectral_distribucion_vdom_y_banda_critica_btc_sep() {
     let Some(path) = candidatos
         .into_iter()
         .flatten()
-        .find(|p| p.exists())
+        .find(|p| p.exists() || tick_tape::logica::ruta_tgb(p).is_file()) // TGB-E: cinta lógica
     else {
         eprintln!("[medición] tape ausente (probé TG_DATA_ROOT, workspace y raíz) — skip");
         return;

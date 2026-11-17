@@ -8,7 +8,6 @@
 
 use backtest_engine::booktick_replay::{ReplayConfig, ReplayTick};
 use quantum_arena::genome::SuperGenotype;
-use std::io::{Read, Seek, SeekFrom};
 
 const REGISTRO: usize = 40;
 
@@ -26,31 +25,23 @@ pub fn cargar_desde_entorno() -> Vec<ReplayTick> {
         .ok()
         .and_then(|v| v.parse::<u64>().ok())
         .unwrap_or(200_000);
-    let mut archivo = match std::fs::File::open(&ruta) {
-        Ok(a) => a,
+    // TGB-E: cinta lógica (`.bin` mapeado, o `.bin.tgb` verificado entero si el `.bin` no existe). En `.bin`
+    // sólo se tocan las páginas de la cola; en `.tgb` el SHA del original cubre la cinta entera.
+    let tape = match tick_tape::logica::open_logical_tape(
+        std::path::Path::new(&ruta),
+        tick_tape::tgb::Presupuesto::sin_tope(),
+    ) {
+        Ok(t) => t,
         Err(e) => panic!("no se pudo abrir la cinta {ruta}: {e}"),
     };
-    let largo = match archivo.metadata() {
-        Ok(m) => m.len(),
-        Err(e) => panic!("sin metadatos de la cinta {ruta}: {e}"),
-    };
-    let mut magia = [0u8; 8];
-    let cabecera = if largo >= 8 && archivo.read_exact(&mut magia).is_ok() && magia == *b"TGMTICK1"
-    {
-        8
-    } else {
-        0
-    };
+    let bytes = tape.as_bytes();
+    let largo = bytes.len() as u64;
+    let cabecera = if bytes.len() >= 8 && bytes[..8] == *b"TGMTICK1" { 8 } else { 0 };
     let registro = REGISTRO as u64;
     let total = (largo - cabecera) / registro;
     let n = total.min(max);
-    if let Err(e) = archivo.seek(SeekFrom::Start(cabecera + (total - n) * registro)) {
-        panic!("no se pudo posicionar la cinta {ruta}: {e}");
-    }
-    let mut cuerpo = vec![0u8; (n * registro) as usize];
-    if let Err(e) = archivo.read_exact(&mut cuerpo) {
-        panic!("no se pudo leer la cola de la cinta {ruta}: {e}");
-    }
+    let desde = (cabecera + (total - n) * registro) as usize;
+    let cuerpo = bytes[desde..desde + (n * registro) as usize].to_vec();
     // Se leyeron n registros completos: la cola sobrante está vacía.
     let (registros, _cola) = cuerpo.as_chunks::<REGISTRO>();
     let ticks: Vec<ReplayTick> = registros

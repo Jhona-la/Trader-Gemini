@@ -35,7 +35,8 @@ struct Tick {
 }
 
 fn cargar_tape(ruta: &str) -> Result<Vec<Tick>, String> {
-    let bytes = std::fs::read(ruta).map_err(|e| format!("leer {ruta}: {e}"))?;
+    // TGB-E: cinta lógica (`.bin`, o `.bin.tgb` verificado entero si el `.bin` no existe).
+    let bytes = tick_tape::logica::leer_logica(std::path::Path::new(ruta)).map_err(|e| format!("leer {ruta}: {e}"))?;
     const REG: usize = 40;
     if bytes.len() <= 8 || &bytes[..8] != b"TGMTICK1" || (bytes.len() - 8) % REG != 0 {
         return Err("tape no TGMTICK1 válido".into());

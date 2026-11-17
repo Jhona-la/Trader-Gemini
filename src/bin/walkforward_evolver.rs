@@ -216,7 +216,14 @@ fn main() {
         format!("target/release/audit_forensic_backtest{}", std::env::consts::EXE_SUFFIX)
     }));
 
-    let total_ticks = std::fs::metadata(&data).map(|m| m.len() / BIN_TICK_BYTES).unwrap_or(0);
+    // TGB-E: tamaño del ORIGINAL verificado (con `.bin.tgb`, restituido entero), no el del archivo físico.
+    let total_ticks = match tick_tape::logica::largo_logico(std::path::Path::new(&data)) {
+        Ok(n) => n / BIN_TICK_BYTES,
+        Err(e) => {
+            eprintln!("❌ {data}: {e}");
+            std::process::exit(1);
+        }
+    };
     if total_ticks < 10_000 {
         eprintln!("❌ {data}: {total_ticks} ticks; se necesitan al menos 10 000.");
         std::process::exit(1);

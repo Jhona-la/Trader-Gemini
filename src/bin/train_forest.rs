@@ -135,7 +135,6 @@ use god_engine_core::GodEngineCore;
 use quantum_arena::symbol_registry::SymbolSpec;
 use rand::rngs::StdRng;
 use rand::{RngExt, SeedableRng};
-use std::fs::File;
 use quantum_engine::model_manifest;
 use std::sync::atomic::Ordering;
 
@@ -1196,11 +1195,16 @@ fn main() {
     let oi_series_ref = &oi_series;
     // ── 1+2. Muestras: features+etiquetas desde ticks (reutilizable) ────
     let build = |path: &str| -> Samples {
-        let file = File::open(path).unwrap_or_else(|e| {
+        // TGB-E: cinta lógica (`.bin`, o `.bin.tgb` verificado entero si el `.bin` no existe).
+        let tape = tick_tape::logica::open_logical_tape(
+            std::path::Path::new(path),
+            tick_tape::tgb::Presupuesto::sin_tope(),
+        )
+        .unwrap_or_else(|e| {
             eprintln!("❌ no pude abrir {}: {}", path, e);
             std::process::exit(1);
         });
-        let mmap = unsafe { memmap2::MmapOptions::new().map(&file) }.unwrap();
+        let mmap = tape.as_bytes();
         let header_off = if mmap.len() >= 8 && &mmap[..8] == b"TGMTICK1" {
             8usize
         } else {

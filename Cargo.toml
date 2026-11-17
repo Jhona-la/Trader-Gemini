@@ -54,6 +54,8 @@ data-ingest = { path = "crates/data-ingest" }
 audit-engine = { path = "crates/audit-engine" }
 telemetry-engine = { path = "crates/telemetry-engine" }
 metacortex-engine = { path = "crates/metacortex-engine" }
+# TGB-E: lectores de cintas de ticks por la cinta logica (.bin o .bin.tgb).
+tick-tape = { path = "crates/tick-tape" }
 
 syn = { version = "2.0", features = ["full", "visit"] }
 rkyv = { version = "0.7", features = ["validation"] }

@@ -41,7 +41,7 @@ fn ortogonalidad_voces_rango_efectivo_btc_sep() {
         Some(manifest.join("../..").join("data").join(nombre_tape)),
         Some(manifest.join("../../..").join("data").join(nombre_tape)),
     ];
-    let Some(path) = candidatos.into_iter().flatten().find(|p| p.exists()) else {
+    let Some(path) = candidatos.into_iter().flatten().find(|p| p.exists() || tick_tape::logica::ruta_tgb(p).is_file()) else { // TGB-E: cinta lógica (.bin o .bin.tgb)
         eprintln!("[ortogonalidad] tape ausente — skip");
         return;
     };

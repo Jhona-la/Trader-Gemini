@@ -352,8 +352,13 @@ async fn run_forensic_backtest() {
         std::env::var("FORENSIC_DATA_PATH").unwrap_or_else(|_| "data/BTCUSDT_ticks.bin".to_string())
     };
 
-    let file = match std::fs::File::open(&data_path) {
-        Ok(f) => f,
+    // TGB-E: cinta lógica (`.bin`, o `.bin.tgb` verificado entero si el `.bin` no existe). FIX #1475 sigue:
+    // ningún expect; un fallo de apertura, de mapeo o de integridad TGB termina con su mensaje.
+    let tape = match tick_tape::logica::open_logical_tape(
+        std::path::Path::new(&data_path),
+        tick_tape::tgb::Presupuesto::sin_tope(),
+    ) {
+        Ok(t) => t,
         Err(e) => {
             println!("❌ No se pudo abrir {}: {}", data_path, e);
             println!("   Asegúrese de que exista el archivo de ticks. Puede generarlo con:");
@@ -361,15 +366,7 @@ async fn run_forensic_backtest() {
             return;
         }
     };
-
-    // FIX #1475: Mapeo MMAP seguro sin expect
-    let mmap = match unsafe { memmap2::MmapOptions::new().map(&file) } {
-        Ok(m) => m,
-        Err(e) => {
-            println!("❌ Fallo al mapear en memoria {}: {}", data_path, e);
-            return;
-        }
-    };
+    let mmap = tape.as_bytes();
     let bytes_len = mmap.len();
     #[derive(Debug, Clone, Copy)]
     #[repr(C)]

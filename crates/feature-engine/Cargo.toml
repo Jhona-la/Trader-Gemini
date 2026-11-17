@@ -5,3 +5,7 @@ edition = "2021"
 
 [dependencies]
 # Puro metal nativo para matemáticas.
+
+[dev-dependencies]
+# TGB-E: las mediciones con cintas reales (copula_real, transfer_entropy_real) leen la cinta logica.
+tick-tape = { path = "../tick-tape" }

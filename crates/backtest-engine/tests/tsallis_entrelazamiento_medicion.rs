@@ -40,7 +40,7 @@ fn path_tape(nombre: &str) -> Option<std::path::PathBuf> {
     ]
     .into_iter()
     .flatten()
-    .find(|p| p.is_file())
+    .find(|p| p.is_file() || tick_tape::logica::ruta_tgb(p).is_file()) // TGB-E: cinta lógica
 }
 
 #[test]

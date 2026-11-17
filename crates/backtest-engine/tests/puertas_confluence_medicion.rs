@@ -35,7 +35,7 @@ fn puertas_confluence_cual_gate_domina_btc_sep() {
         Some(manifest.join("../..").join("data").join(nombre)),
         Some(manifest.join("../../..").join("data").join(nombre)),
     ];
-    let Some(path) = candidatos.into_iter().flatten().find(|p| p.exists()) else {
+    let Some(path) = candidatos.into_iter().flatten().find(|p| p.exists() || tick_tape::logica::ruta_tgb(p).is_file()) else { // TGB-E: cinta lógica (.bin o .bin.tgb)
         eprintln!("[puertas] tape ausente — skip");
         return;
     };

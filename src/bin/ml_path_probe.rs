@@ -16,8 +16,13 @@ async fn main() {
     // 2. Motor de features con ticks REALES del archivo de julio (mmap):
     // los sintéticos daban todo finito; si el vivo falla, la diferencia
     // está en los datos reales.
-    let f = std::fs::File::open("data/BTCUSDT_ticks_REAL.bin").expect("abrir ticks");
-    let mmap = unsafe { memmap2::MmapOptions::new().map(&f) }.expect("mmap");
+    // TGB-E: cinta lógica (`.bin`, o `.bin.tgb` verificado entero si el `.bin` no existe).
+    let tape = tick_tape::logica::open_logical_tape(
+        std::path::Path::new("data/BTCUSDT_ticks_REAL.bin"),
+        tick_tape::tgb::Presupuesto::sin_tope(),
+    )
+    .expect("abrir ticks");
+    let mmap = tape.as_bytes();
     let header_off = if mmap.len() >= 8 && &mmap[..8] == b"TGMTICK1" { 8usize } else { 0 };
     #[derive(Clone, Copy)]
     #[repr(C)]

@@ -109,7 +109,19 @@ fn main() {
 
             // Now test reading real ticks from BTCUSDT_AUG_REAL.bin using std::fs
             use std::io::Read;
-            if let Ok(mut file) = std::fs::File::open("data/BTCUSDT_AUG_REAL.bin") {
+            // TGB-E: cinta lógica (`.bin`, o `.bin.tgb` verificado entero si el `.bin` no existe). Sólo la
+            // ausencia de las dos representaciones se salta en silencio; un error de lectura o de integridad se dice.
+            let cinta = tick_tape::logica::open_logical_tape(
+                std::path::Path::new("data/BTCUSDT_AUG_REAL.bin"),
+                tick_tape::tgb::Presupuesto::sin_tope(),
+            );
+            if let Err(e) = &cinta {
+                if e.kind() != std::io::ErrorKind::NotFound {
+                    eprintln!("❌ data/BTCUSDT_AUG_REAL.bin: {e}");
+                }
+            }
+            if let Ok(tape) = &cinta {
+                let mut file: &[u8] = tape.as_bytes();
                 let mut header = [0u8; 8];
                 let _ = file.read_exact(&mut header);
                 #[repr(C)]

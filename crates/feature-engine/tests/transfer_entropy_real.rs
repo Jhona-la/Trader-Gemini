@@ -14,7 +14,13 @@ use feature_engine::transfer_entropy::{transfer_entropy_eventos, VENTANA_MS_DEFA
 /// de 40 bytes (timestamp u64 + cuatro f64 little-endian). Este lector
 /// valida cabecera, longitud y orden, NO precios, gaps ni origen autenticado.
 fn timestamps_de_tape(ruta: &std::path::Path) -> Option<Vec<u64>> {
-    let bytes = std::fs::read(ruta).ok()?;
+    // TGB-E: cinta lógica (`.bin`, o `.bin.tgb` verificado entero si el `.bin` no existe).
+    // Solo la ausencia de las dos representaciones se omite; una cinta corrupta hace fallar la medicion.
+    let bytes = match tick_tape::logica::leer_logica(ruta) {
+        Ok(b) => b,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return None,
+        Err(e) => panic!("cinta {} ilegible o corrupta: {e}", ruta.display()),
+    };
     timestamps_de_bytes(&bytes)
 }
 

@@ -27,6 +27,8 @@ storage-engine = { path = "../storage-engine" }
 metacortex-engine = { path = "../metacortex-engine" }
 execution-engine = { path = "../execution-engine" }
 chrono = { version = "0.4", features = ["serde"] }
+# TGB-E: el diagnostico test_ml lee la cinta logica (.bin o .bin.tgb).
+tick-tape = { path = "../tick-tape" }
 
 [dev-dependencies]
 # Sólo statarb_live_physics_contract.rs (OmniState y apply_spot_tick); el

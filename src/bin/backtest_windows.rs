@@ -189,20 +189,18 @@ fn run_backtest_from_args(args: &[String]) {
     println!("══════════════════════════════════════════════════════════════════");
 
     // Cargar ticks
-    let mmap = match (|| -> Result<memmap2::Mmap, String> {
-        let f = std::fs::File::open(&file).map_err(|e| e.to_string())?;
-        unsafe {
-            memmap2::MmapOptions::new()
-                .map(&f)
-                .map_err(|e| e.to_string())
-        }
-    })() {
-        Ok(m) => m,
+    // TGB-E: cinta lógica (`.bin`, o `.bin.tgb` verificado entero si el `.bin` no existe).
+    let tape = match tick_tape::logica::open_logical_tape(
+        std::path::Path::new(&file),
+        tick_tape::tgb::Presupuesto::sin_tope(),
+    ) {
+        Ok(t) => t,
         Err(e) => {
             eprintln!("❌ No se pudo abrir {}: {}", file, e);
             std::process::exit(1);
         }
     };
+    let mmap = tape.as_bytes();
     #[repr(C)]
     struct BinTick {
         ts: u64,

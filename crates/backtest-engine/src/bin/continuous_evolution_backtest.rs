@@ -122,16 +122,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // R2.2 — PRIORIDAD AL DATO REAL: si existe el bin de aggTrades reales
     // (magic TGMTICK1), se usa; el sintético queda como fallback.
+    // TGB-E: el REAL es la cinta LÓGICA (`.bin` o `.bin.tgb`); el sintético sólo entra si faltan las dos
+    // representaciones del REAL, y un REAL inaccesible o corrupto aborta (aquí o en la carga), nunca cede.
     let btc_path = {
         let real = Path::new("data/BTCUSDT_ticks_REAL.bin");
-        if real.exists() {
+        let elegida =
+            backtest_engine::tick_replayer::elegir_cinta(real, Path::new("data/BTCUSDT_ticks.bin"))?;
+        if elegida == real {
             println!(
                 "📡 R2.2: usando AGGTRADES REALES (certificación sin artefactos de síntesis)."
             );
-            real
-        } else {
-            Path::new("data/BTCUSDT_ticks.bin")
         }
+        elegida
     };
     let eth_path = Path::new("data/ETHUSDT_ticks.bin");
     let sol_path = Path::new("data/SOLUSDT_ticks.bin");
@@ -198,16 +200,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     quantum_arena::symbol_registry::update_registry(specs);
 
     let ticks = if is_multicoin {
-        let files: Vec<(&Path, usize)> = vec![
+        // TGB-E: presentes como `.bin` o `.bin.tgb`; un error de acceso aborta en vez de omitir la moneda.
+        let files: Vec<(&Path, usize)> = backtest_engine::tick_replayer::cintas_presentes(vec![
             (btc_path, 0),
             (eth_path, 1),
             (sol_path, 2),
             (bnb_path, 3),
             (xrp_path, 4),
-        ]
-        .into_iter()
-        .filter(|(p, _)| p.exists())
-        .collect();
+        ])?;
         println!(
             "🌐 Modo Multi-Activo Habilitado: cargando {} archivos de ticks reales...",
             files.len()
@@ -217,7 +217,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         unsafe {
             std::env::set_var("SINGLE_COIN_MODE", "1");
         }
-        if !btc_path.exists() {
+        if !tick_tape::logica::hay_cinta(btc_path)? {
             // GLM-178: un backtest sin tape real no certifica nada (R2.2) —
             // antes terminaba en Ok(()) silencioso tras truncar el CSV.
             eprintln!(

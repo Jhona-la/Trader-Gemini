@@ -396,9 +396,15 @@ fn xlviiB_brecha_meta_en_tapes_reales_campeon() {
     println!("sym          trades  días   t/día   WR     net      fees");
     for (sym, month) in muestra {
         let path = base.join(format!("{sym}_{month}_REAL.bin"));
-        let Ok(events) = load_binary_ticks(&path, 0) else {
-            println!("{sym}: tape ausente, omitido");
-            continue;
+        // TGB-E: sólo la AUSENCIA de las dos representaciones (.bin y .bin.tgb) omite la cinta; un error de
+        // lectura o de integridad no puede producir una medición aparentemente satisfactoria.
+        let events = match load_binary_ticks(&path, 0) {
+            Ok(events) => events,
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+                println!("{sym}: tape ausente, omitido");
+                continue;
+            }
+            Err(e) => panic!("{sym}: cinta ilegible o corrupta: {e}"),
         };
         let ticks: Vec<ReplayTick> = events
             .iter()

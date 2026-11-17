@@ -7,8 +7,8 @@ use god_engine_core::stateful_engine::StatefulEngine;
 use serde_json::json;
 use sha2::{Digest, Sha256};
 use std::collections::BTreeMap;
-use std::fs::{File, OpenOptions};
-use std::io::{BufWriter, Read, Write};
+use std::fs::OpenOptions;
+use std::io::{BufWriter, Write};
 
 #[derive(Debug)]
 struct Options {
@@ -235,21 +235,25 @@ fn main() -> Result<(), String> {
         .checked_mul(RECORD_BYTES)
         .and_then(|n| n.checked_add(8))
         .ok_or("byte budget overflow")?;
-    let read_limit = u64::try_from(max_bytes)
-        .ok()
-        .and_then(|n| n.checked_add(1))
-        .ok_or("read limit overflow")?;
-    let mut bytes = Vec::new();
-    File::open(&options.input)
-        .map_err(|e| e.to_string())?
-        .take(read_limit)
-        .read_to_end(&mut bytes)
-        .map_err(|e| e.to_string())?;
+    // TGB-E: cinta lógica (`.bin`, o `.bin.tgb` verificado entero si el `.bin` no existe), con el presupuesto de
+    // registros como tope del original: un original mayor se rechaza antes de restituirlo.
+    let budget = u64::try_from(max_bytes).map_err(|_| "read limit overflow")?;
+    let tape = tick_tape::logica::open_logical_tape(
+        std::path::Path::new(&options.input),
+        tick_tape::tgb::Presupuesto::hasta(budget),
+    )
+    .map_err(|e| match tick_tape::tgb::fallo_de(&e) {
+        Some(tick_tape::tgb::FalloTgb::Presupuesto) => {
+            "input exceeds record budget; refusing silent truncation".to_string()
+        }
+        _ => e.to_string(),
+    })?;
+    let bytes = tape.as_bytes();
     if bytes.len() > max_bytes {
         return Err("input exceeds record budget; refusing silent truncation".into());
     }
     // Validate before creating output; never overwrite an existing dataset.
-    Tape::parse(&bytes, options.allow_legacy)?;
+    Tape::parse(bytes, options.allow_legacy)?;
     let mut output = BufWriter::new(
         OpenOptions::new()
             .write(true)
@@ -257,7 +261,7 @@ fn main() -> Result<(), String> {
             .open(&options.output)
             .map_err(|e| e.to_string())?,
     );
-    let rows = export_to(&mut output, &bytes, &options)?;
+    let rows = export_to(&mut output, bytes, &options)?;
     output.get_ref().sync_all().map_err(|e| e.to_string())?;
     println!("Research v2 complete: {rows} anchors. No model trained or promoted.");
     Ok(())

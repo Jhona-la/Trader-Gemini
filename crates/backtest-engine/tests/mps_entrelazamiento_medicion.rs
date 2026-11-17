@@ -49,7 +49,7 @@ fn path_tape(nombre: &str) -> Option<std::path::PathBuf> {
     ]
     .into_iter()
     .flatten()
-    .find(|p| p.is_file())
+    .find(|p| p.is_file() || tick_tape::logica::ruta_tgb(p).is_file()) // TGB-E: cinta lógica
 }
 
 fn cuantil(vals: &mut Vec<f64>, q: f64) -> f64 {
@@ -108,6 +108,10 @@ fn mps_entrelazamiento_sobre_tapes_2026_09_14() {
         {
             Ok(r) => r,
             Err(e) => {
+                // TGB-E: un contenedor .bin.tgb dañado es corrupción, no una cinta ausente: no se omite.
+                if let Some(f) = tick_tape::tgb::fallo_de(&e) {
+                    panic!("cinta {} corrupta ({f:?}): {e}", path.display());
+                }
                 // Diagnóstico honesto: ¿falla la APERTURA o el MMAP? La
                 // lectura plana clasifica la causa sin adivinar.
                 let lectura_plana = std::fs::File::open(&path)

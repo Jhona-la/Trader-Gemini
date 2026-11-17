@@ -20,7 +20,13 @@ use feature_engine::copulas::{lambda_cola_t, lambda_empirica, nu_mle, rho_desde_
 /// (timestamp u64 ms + 4×f64: bid=price−½, ask=price+½, qty venta/compra).
 /// El precio medio (bid+ask)/2 ES el precio del aggTrade.
 fn mid_de_tape(ruta: &std::path::Path) -> Option<Vec<(u64, f64)>> {
-    let bytes = std::fs::read(ruta).ok()?;
+    // TGB-E: cinta lógica (`.bin`, o `.bin.tgb` verificado entero si el `.bin` no existe).
+    // Solo la ausencia de las dos representaciones se omite; una cinta corrupta hace fallar la medicion.
+    let bytes = match tick_tape::logica::leer_logica(ruta) {
+        Ok(b) => b,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return None,
+        Err(e) => panic!("cinta {} ilegible o corrupta: {e}", ruta.display()),
+    };
     const REG: usize = 40;
     if bytes.len() <= 8 || &bytes[..8] != b"TGMTICK1" || (bytes.len() - 8) % REG != 0 {
         return None;

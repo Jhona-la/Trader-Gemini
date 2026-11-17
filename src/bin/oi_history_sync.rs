@@ -166,11 +166,14 @@ fn main() {
         if let Ok(entries) = std::fs::read_dir("data") {
             for e in entries.flatten() {
                 let name = e.file_name().to_string_lossy().into_owned();
-                if let Some(sym) = name
+                // TGB-E: la cinta lógica `X.bin` puede estar como `X.bin.tgb`; con las dos, cuenta una vez
+                // (dedup abajo).
+                let logico = name.strip_suffix(".tgb").unwrap_or(&name);
+                if let Some(sym) = logico
                     .strip_suffix("_2026-08_REAL.bin")
-                    .or_else(|| name.strip_suffix("_AUG_REAL.bin"))
+                    .or_else(|| logico.strip_suffix("_AUG_REAL.bin"))
                 {
-                    if roster.contains(sym) {
+                    if roster.contains(sym) && !with_data.iter().any(|s| s == sym) {
                         with_data.push(sym.to_string());
                     }
                 }

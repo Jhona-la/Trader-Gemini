@@ -16,7 +16,6 @@
 
 use quantum_arena::spectral_tape::{ForecastTarget, HorizonForecaster, SpectralTape};
 use quantum_arena::temporal_spectrum::{TemporalSpectrum, SPECTRUM_SCALES_MS};
-use std::fs::File;
 
 #[repr(C)]
 #[derive(Clone, Copy)]
@@ -241,8 +240,13 @@ fn main() {
         .and_then(|s| s.parse().ok())
         .unwrap_or(usize::MAX);
 
-    let file = File::open(path).expect("no se pudo abrir el fichero de ticks");
-    let mmap = unsafe { memmap2::MmapOptions::new().map(&file).expect("mmap") };
+    // TGB-E: cinta lógica (`.bin`, o `.bin.tgb` verificado entero si el `.bin` no existe).
+    let tape = tick_tape::logica::open_logical_tape(
+        std::path::Path::new(path),
+        tick_tape::tgb::Presupuesto::sin_tope(),
+    )
+    .expect("no se pudo abrir el fichero de ticks");
+    let mmap = tape.as_bytes();
     if mmap.len() < 8 || &mmap[..8] != b"TGMTICK1" {
         eprintln!(
             "❌ {} no es un tape REAL (cabecera TGMTICK1): este banco sólo mide datos reales",

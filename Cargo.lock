@@ -1033,6 +1033,9 @@ checksum = "9f1f227452a390804cdb637b74a86990f2a7d7ba4b7d5693aac9b4dd6defd8d6"
 [[package]]
 name = "feature-engine"
 version = "0.1.0"
+dependencies = [
+ "tick-tape",
+]
 
 [[package]]
 name = "find-msvc-tools"
@@ -1273,6 +1276,7 @@ dependencies = [
  "storage-engine",
  "strategy-core",
  "telemetry-server",
+ "tick-tape",
  "tokio",
 ]
 
@@ -4368,6 +4372,7 @@ dependencies = [
  "syn 2.0.118",
  "telemetry-engine",
  "telemetry-server",
+ "tick-tape",
  "tokio",
  "tokio-tungstenite 0.21.0",
  "url",

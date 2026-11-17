@@ -179,4 +179,5 @@ fn tgb_presupuesto_identidad_y_alineacion() {
     // Un original vacio (modo 0) se restituye vacio y verificado.
     let vacio = restituir_tgb(include_bytes!("fixtures/f5_vacio.bin.tgb"), Presupuesto::hasta(0)).unwrap();
     assert!(vacio.is_empty());
+    assert_eq!(vacio.as_bytes().as_ptr() as usize % 8, 0, "tambien el original vacio va alineado");
 }
