@@ -505,6 +505,19 @@ fn i10_control_cubeta_vieja_119() {
     assert_eq!(i9_peor_ventana(i9_cubeta_vieja(), |_| 1.0, Duration::from_secs(1800)), n_vieja);
 }
 
+/// I11: la admision historica de IBKR es RegistroVentana. Si alguien vuelve a
+/// implementar `ibkr_historico()` sobre la cubeta de I4, el peor caso mide 119
+/// y esta prueba falla (debe ser 60 = C).
+#[test]
+fn i11_admision_ibkr_no_es_la_cubeta_de_i4() {
+    use data_pipeline::ibkr::pacing::RegistroVentana;
+    use std::time::Duration;
+    assert_eq!(
+        i9_peor_ventana(RegistroVentana::ibkr_historico(), |_| 1.0, Duration::from_secs(1800)),
+        60
+    );
+}
+
 /// I10: el registro admite C en (t - W, t], rechaza la C+1 y la primera marca
 /// sale justo en t + W (borde abierto); el reloj hacia atras no admite.
 #[test]
