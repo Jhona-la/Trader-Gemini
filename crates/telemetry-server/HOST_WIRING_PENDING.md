@@ -1,5 +1,32 @@
 # Qué haría falta en el HOST para juzgar la Demo (DECLARADO, NO implementado)
 
+## Estado tras CABLEADO HOST v7 (17-nov-2026; manda sobre lo histórico de abajo)
+
+Implementado en `src/bin/god_engine.rs` (commits CABLEADOV7-P1..P4 de `integrador/capital-v4l`):
+
+* **Income (§2 abajo):** `escribir_income_jsonl` exporta todas las filas de cada pasada del
+  FEE-BREAKER, antes de su partición, a `outputs/income_demo.jsonl` (rotación diaria y
+  publicación atómica). No acredita cobertura del exchange ni conciliación.
+* **Embudo (§3):** `IMMUNE_SYSTEM` suma las posiciones cerradas de cada intento del aplanado
+  inmune (segundo componente de `Ok`, clave agregada `AGREGADO_APLANADO_INMUNE`); `FLATTEN`
+  suma una vez cada cierre agrupado `(símbolo, t_ms)` del FEE-BREAKER. Al apagar se vuelca
+  `outputs/funnel_demo.json` para `demo_report --funnel`. `record_latency_blocked` sigue sin
+  llamador.
+* **Contadores (§4):** `bootstrap_orders_sent` (por entrada dimensionada en bootstrap) y los
+  cierres `BRACKET_EXCHANGE` contabilizados. El resto sigue SIN CABLEAR (ver
+  `PUNTOS_DE_INCREMENTO` en `demo_counters.rs`): los cierres del núcleo y del inmune no tienen
+  hoy un neto por cierre acreditado en el host.
+
+Pendiente:
+
+* **`by=CORE` en `DEMO_TEL event=TRADE_CLOSE`:** no se aplicó. El esquema DEMO_TEL de
+  `report_demo_run.rs` (`esquema_tel`/`validar_tel`) rechaza un campo fuera de su lista
+  («texto fuera de esquema»), así que añadir `by=CORE` solo en el núcleo dejaría cada cierre
+  del núcleo como diagnóstico del informe oficial. Necesita una decisión de alcance que incluya
+  ese lector.
+* **Líneas DEMO con `trade_id` (§1):** los FILL DEMO_TEL ya traen el `trade_id` nativo; el resto
+  del §1 histórico sigue como estaba.
+
 Sol M1 · 12-nov-2026 10:xx. Área: `crates/telemetry-server` únicamente.
 **Este archivo es una declaración**: no toca `src/bin/god_engine.rs`, ni
 `god-engine-core`, ni `execution-engine`, ni las ventanas del motor vivo, ni

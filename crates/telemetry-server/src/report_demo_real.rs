@@ -20,10 +20,12 @@
 //!    declara en la salida (`≈`, sección "HORAS PRESTADAS"). Ninguna latencia
 //!    se calcula con horas prestadas.
 //!  * Los totales del embudo se leen de las líneas `[EMBUDO] 60 s ...` del
-//!    log, porque `FunnelCounter` NO está cableado en el host. La sección
-//!    `acumulado:` NO se suma (es acumulado, no ventana).
-//!  * Sin `trade_id` y sin productor de `income.jsonl`, las columnas de
-//!    dinero que no viajan en el log se reportan `N/D`; nunca se inventan.
+//!    log. Desde CABLEADO HOST v7 el `FunnelCounter` del host se vuelca aparte
+//!    (`outputs/funnel_demo.json`, para `demo_report --funnel`); este lector
+//!    no lo lee. La sección `acumulado:` NO se suma (es acumulado, no ventana).
+//!  * Este lector no lee el income (`outputs/income_demo.jsonl` lo exporta el
+//!    host y lo lee `demo_report`): las columnas de dinero que no viajan en el
+//!    log se reportan `N/D`; nunca se inventan.
 //!  * Las líneas `[EMBUDO]` del log están truncadas por el escritor (~482 B):
 //!    el parser tolera la cola cortada y sólo cuenta compuertas completas.
 //!
@@ -732,10 +734,10 @@ pub fn render_report_real(r: &InformeReal) -> String {
     ));
     s.push_str(&render_funnel_real(r));
     s.push_str("\nAVISOS\n");
-    s.push_str("  * trade_id: N/D — el host no emite líneas DEMO con trade_id (ver HOST_WIRING_PENDING.md).\n");
-    s.push_str("  * comisión/funding/neto del exchange: N/D — no hay productor de income.jsonl; el dinero mostrado viene SÓLO del log del host.\n");
+    s.push_str("  * trade_id: N/D — este lector no lee DEMO_TEL; los FILL con trade_id nativo los une demo_report (ver HOST_WIRING_PENDING.md).\n");
+    s.push_str("  * comisión/funding/neto del exchange: N/D aquí — este lector no lee el income; el host lo exporta a outputs/income_demo.jsonl (pasada del FEE-BREAKER, sin cobertura acreditada) y lo concilia demo_report --income. El dinero mostrado viene SÓLO del log del host.\n");
     s.push_str("  * who_ordered: N/D — el log no dice quién ordenó el cierre.\n");
-    s.push_str("  * embudo: leído de las líneas [EMBUDO] 60 s del log; FunnelCounter NO está cableado en el host.\n");
+    s.push_str("  * embudo: leído de las líneas [EMBUDO] 60 s del log; el contador del host (IMMUNE_SYSTEM y FLATTEN) se vuelca al apagar a outputs/funnel_demo.json, que lee demo_report --funnel.\n");
     s
 }
 
@@ -758,7 +760,7 @@ pub fn render_funnel_real(r: &InformeReal) -> String {
 /// Declaración de lo que haría falta en el HOST. NO se implementa aquí:
 /// este módulo pertenece a `telemetry-server` y el encargo prohíbe tocar el motor.
 pub const DECLARACION_HOST: &str = "\
-PENDIENTE EN EL HOST (declarado, NO implementado; no se lee .env ni se llama al exchange):
+PENDIENTE EN EL HOST (el punto 1 sigue declarado, NO implementado; 2 y 3 los implementó CABLEADO HOST v7; no se lee .env ni se llama al exchange):
  1. Líneas DEMO con trade_id: generar un trade_id estable por intención en el punto de
     creación de la orden (src/bin/god_engine.rs, junto a new_entry_client_id / EntryRequest),
     conservarlo en la reserva y en el reintento, y emitir con telemetry_log! (para que
@@ -767,14 +769,14 @@ PENDIENTE EN EL HOST (declarado, NO implementado; no se lee .env ni se llama al 
     reason=... by=...'. El fill lo puede emitir user_data_stream.rs:506 (ya tiene client id y
     acumulado); el cierre, god_engine.rs:4985 ([BRACKET CLOSE]) y god-engine-core/lib.rs:5462
     ([CLOSE TRACE]). Sin trade_id, demo_report no puede unir log con income.
- 2. Productor de income.jsonl: un escritor que vuelque una fila JSON por evento de income
-    (symbol, income_type, income, time_ms, trade_id, tran_id, asset) con el trade_id del
-    apartado 1, a un fichero fuera de models/, config_dir/ y data/demo/. El informe SOLO lee
-    ese fichero con parse_income_jsonl; NO lee credenciales ni llama al exchange. Hoy no existe:
-    bruto/comisión/funding conciliados = N/D.
- 3. FunnelCounter: cablear record_death/record_latency_blocked/record_immune_veto desde los
-    lazos del host (líneas exactas en AGENT_SYNC.md, SOL-M1-FUNNEL-CABLEADO) y volcar el
-    snapshot a JSON. Hasta entonces los totales se leen de las líneas [EMBUDO] 60 s del log.
+ 2. Income (CABLEADO HOST v7, implementado): el host exporta todas las filas de cada pasada
+    del FEE-BREAKER a outputs/income_demo.jsonl (symbol, income_type, income, time_ms,
+    trade_id, tran_id, asset), con rotación diaria y publicación atómica. No acredita
+    cobertura del exchange. Este lector no lo lee; demo_report --income sí.
+ 3. FunnelCounter (CABLEADO HOST v7, implementado): IMMUNE_SYSTEM (cierres del aplanado,
+    clave agregada) y FLATTEN (cierres agrupados del FEE-BREAKER) se vuelcan al apagar a
+    outputs/funnel_demo.json para demo_report --funnel. record_latency_blocked sigue sin
+    llamador. Este lector suma las líneas [EMBUDO] 60 s del log.
 ";
 
 /// CLI: `demo_report_real --log <run.log>`. Sólo LEE el log.
@@ -999,7 +1001,8 @@ mod tests_report_demo_real {
     #[test]
     fn real_declaracion_host_no_implementa_motor() {
         assert!(DECLARACION_HOST.contains("DEMO SIGNAL"));
-        assert!(DECLARACION_HOST.contains("income.jsonl"));
-        assert!(DECLARACION_HOST.contains("NO implementado"));
+        // CABLEADOV7-P5: el productor de income ya existe; la declaración dice dónde.
+        assert!(DECLARACION_HOST.contains("outputs/income_demo.jsonl"));
+        assert!(DECLARACION_HOST.contains("NO implementado"), "el punto 1 sigue pendiente");
     }
 }
