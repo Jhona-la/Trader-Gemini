@@ -4,6 +4,7 @@
 //! verificacion de cada SHA-256 (columnas, indice y el tramo de registros reconstruido intercalando columnas) ->
 //! renombrado al destino -> anotacion en el manifiesto. Una hora que falla retira su `.tmp` y no queda publicada.
 
+use crate::expulsion;
 use crate::presupuesto;
 use crate::publicacion;
 use crate::{
@@ -326,14 +327,35 @@ fn construir_hora(
     if let Some(s) = sumandos {
         let uso_sin_esta = man.uso_bytes() - previa.map(|p| man.horas[p].bytes).unwrap_or(0);
         if uso_sin_esta as i128 + h.bytes as i128 > s.limite_b {
-            return Err(format!(
-                "{clave}: no cabe ({} B nuevos + {uso_sin_esta} B en uso > limite {} B); no se construye\n{}",
-                h.bytes,
-                s.limite_b,
-                s.texto(man.uso_bytes())
-            ));
+            // P3: se expulsa lo minimo (LRU) para que quepa; nunca las horas de este mismo original (la
+            // construccion en curso) ni las que estan en lectura. Si no alcanza, no se expulsa ni se construye nada.
+            let uso_total = man.uso_bytes();
+            let no_cabe = |motivo: String| {
+                format!(
+                    "{clave}: no cabe ({} B nuevos + {uso_sin_esta} B en uso > limite {} B): {motivo}; no se construye\n{}",
+                    h.bytes,
+                    s.limite_b,
+                    s.texto(uso_total)
+                )
+            };
+            let objetivo = s.limite_b - h.bytes as i128;
+            if objetivo < 0 {
+                return Err(no_cabe("la hora sola supera el limite".into()));
+            }
+            let protegidas: Vec<String> = man
+                .horas
+                .iter()
+                .filter(|x| x.sha256_original == origen.sha256_original || x.clave == clave)
+                .map(|x| x.clave.clone())
+                .collect();
+            let motivo = format!("hacer sitio a {clave} ({} B; limite {} B)", h.bytes, s.limite_b);
+            if let Err(e) = expulsion::expulsar_en(raiz, man, objetivo as u64, &protegidas, &motivo) {
+                return Err(no_cabe(e));
+            }
         }
     }
+    // La expulsion pudo mover posiciones del manifiesto (nunca retira esta clave, que esta protegida).
+    let previa = man.posicion(&clave);
     let tmp = raiz.join(format!("{PREFIJO_TMP}{}-{}", clave.replace('/', "_"), std::process::id()));
     if tmp.exists() {
         std::fs::remove_dir_all(&tmp).map_err(|e| format!("{}: {e}", tmp.display()))?;

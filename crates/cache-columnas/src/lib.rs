@@ -11,6 +11,8 @@
 //! - Nada del motor vivo la lee; `train_forest` la consulta solo con `--cache columnas` (opt-in).
 
 pub mod construir;
+pub mod expulsion;
+pub mod lector;
 pub mod presupuesto;
 pub mod publicacion;
 pub mod verificar;
@@ -230,6 +232,10 @@ pub fn leer_u64(b: &[u8], i: usize) -> u64 {
     let mut w = [0u8; BYTES_PALABRA];
     w.copy_from_slice(&b[i * BYTES_PALABRA..(i + 1) * BYTES_PALABRA]);
     u64::from_le_bytes(w)
+}
+
+pub fn leer_f64_bits(b: &[u8], i: usize) -> f64 {
+    f64::from_bits(leer_u64(b, i))
 }
 
 pub fn leer_i64(b: &[u8], i: usize) -> i64 {

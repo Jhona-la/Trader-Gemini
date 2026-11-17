@@ -1,5 +1,6 @@
 //! `cache-columnas construir|verificar|medir` (pedido 20261116-2345-cachev3). Ver `src/lib.rs`.
 
+use cache_columnas::expulsion::expulsar_hasta;
 use cache_columnas::construir::{construir_desde_cinta, simbolo_de_ruta, Opciones};
 use cache_columnas::presupuesto::{leer_config, medir, Limite, BYTES_POR_GB};
 use cache_columnas::verificar::verificar;
@@ -11,6 +12,7 @@ const USO: &str = "uso:
   cache-columnas construir <cinta.bin> --config cinta_config.json [--raiz-medicion DIR] [--cache DIR]
                            [--fuente tgb-reales] [--simbolo S] [--sha256 HEX]
   cache-columnas verificar [--cache DIR] [--origen]
+  cache-columnas expulsar --hasta BYTES [--cache DIR]
   cache-columnas medir --config cinta_config.json [--raiz-medicion DIR] [--cache DIR]
 La cinta se lee por la cinta logica de tick-tape: X.bin, o X.bin.tgb si X.bin no existe (con las dos manda el .bin).
 --raiz-medicion: raiz del proyecto que se mide para el tope (por defecto, la carpeta actual).";
@@ -78,6 +80,18 @@ fn principal(args: &[String]) -> Result<(), String> {
             } else {
                 Err("verificacion con hallazgos".into())
             }
+        }
+        "expulsar" => {
+            let hasta: u64 = valor(args, "--hasta")
+                .ok_or("falta --hasta <bytes>")?
+                .parse()
+                .map_err(|e| format!("--hasta: {e}"))?;
+            let hechas = expulsar_hasta(&cache, hasta, "a mano (cache-columnas expulsar)")?;
+            for c in &hechas {
+                println!("EXPULSADA {c}");
+            }
+            println!("EXPULSAR {} | horas expulsadas {} | uso {} B", cache.display(), hechas.len(), leer_manifiesto(&cache)?.uso_bytes());
+            Ok(())
         }
         "medir" => {
             let l = limite(args)?;

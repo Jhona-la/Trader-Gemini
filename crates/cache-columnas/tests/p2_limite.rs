@@ -90,15 +90,24 @@ fn limite_derivado_rechaza_lo_que_no_cabe() {
     assert!(e.contains("no cabe") && e.contains("limite_cache") && e.contains("3800"), "{e}");
     assert!(leer_manifiesto(&cache).unwrap().horas.is_empty());
     assert!(!listar(&cache).iter().any(|p| p.contains("GUSDT") || p.contains(".tmp-")));
-    // Una hora pequena cabe; la segunda ya no (el uso de la cache cuenta).
+    // Una hora pequena cabe; la segunda ya no (el uso de la cache cuenta): desde P3 se expulsa la primera para
+    // hacerle sitio, y si la unica expulsable esta en lectura, no se construye.
     let p1 = d.join("cintas/P1_REAL.bin");
     let p2 = d.join("cintas/P2_REAL.bin");
     escribir(&p1, &cinta(DIA_BASE, 20, 1_000, 2));
     escribir(&p2, &cinta(DIA_BASE, 20, 1_000, 3));
     let i1 = construir_desde_cinta(&cache, &p1, &op("PAUSDT")).unwrap();
     assert!(i1.bytes_nuevos as i128 <= hueco && 2 * i1.bytes_nuevos as i128 > hueco, "{}", i1.bytes_nuevos);
+    let en_lectura = cache_columnas::lector::montar(&cache, &i1.horas_nuevas).unwrap();
     assert!(construir_desde_cinta(&cache, &p2, &op("PBUSDT")).unwrap_err().contains("no cabe"));
     assert_eq!(leer_manifiesto(&cache).unwrap().horas.len(), 1);
+    assert!(!listar(&cache).iter().any(|p| p.contains("PBUSDT")));
+    drop(en_lectura);
+    let i2 = construir_desde_cinta(&cache, &p2, &op("PBUSDT")).unwrap();
+    let man = leer_manifiesto(&cache).unwrap();
+    assert_eq!(man.horas.len(), 1);
+    assert_eq!(man.horas[0].clave, i2.horas_nuevas[0]);
+    assert!(man.uso_bytes() as i128 <= hueco);
     // Tope <= 0: no se construye NADA, ni lo que cabria.
     let cfg0 = config(&d, 0.000_002, 0.000_001, 0.000_001);
     let mut o = opciones("CEROUSDT");
