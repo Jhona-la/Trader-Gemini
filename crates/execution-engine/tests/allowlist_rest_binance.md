@@ -11,6 +11,9 @@ Reglas (las comprueba la prueba):
 2. Una fila cuyo archivo ya no escribe ningún host hace fallar la prueba: hay que borrarla (la lista solo se achica).
 3. La lista no puede crecer por encima del techo del inventario inicial (`TECHO_LISTA_BLANCA` en la prueba).
 4. Cada fila lleva su paso y su deuda. Cada paso P6-P10 trae en su recibo el diff de esta lista.
+5. (C4) Por identidad, no por tamaño: el conjunto de rutas de esta lista es exactamente la última aprobación de
+   `allowlist_rest_binance_aprobaciones.md`, y cada aprobación es subconjunto de la anterior con sus bajas
+   declaradas. Una sustitución a igual tamaño o un reingreso tras reducir hacen fallar la prueba.
 
 Inventario inicial: `rg -l` de los cinco hosts sobre esas carpetas en el commit de P4 (`fe3c23405`), 21 archivos.
 Tipo: REST = tráfico REST de producción a migrar; WS = WebSocket (la puerta REST no lo cubre); BULK =
