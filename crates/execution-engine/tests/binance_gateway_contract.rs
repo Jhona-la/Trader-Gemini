@@ -862,6 +862,90 @@ async fn c1_puerta_sin_cabecera_no_reabre_el_hueco() {
     assert_eq!(cinta.filas().len(), 3);
 }
 
+/// C2 (dictamen R2): el coste sale de los parámetros que salen. openOrders y
+/// openAlgoOrders sin `symbol` cuestan 40 (mapa :32 y :34); declararlos «con
+/// símbolo» sin llevarlo no puede reservar 1: se rechaza antes de enviar.
+/// Los bytes de la consulta firmada salen sin cambios.
+#[tokio::test]
+async fn c2_sin_symbol_no_reserva_el_coste_con_symbol() {
+    let es_alcance = |r: &Result<_, RechazoPuerta>| matches!(r, Err(e) if e.to_string().starts_with("PUERTA_ALCANCE"));
+    for ruta in ["/fapi/v1/openOrders", "/fapi/v1/openAlgoOrders"] {
+        let sin = coste_de_firma(Metodo::Get, ruta, false);
+        let con = coste_de_firma(Metodo::Get, ruta, true);
+        assert_eq!(sin.as_ref().map(|c| c.peso), Ok(40), "{ruta}");
+        assert_eq!(con.as_ref().map(|c| c.peso), Ok(1), "{ruta}");
+
+        let srv = Servidor::levantar(vec![guion(200, &[]), guion(200, &[])]).await;
+        let cinta = std::sync::Arc::new(CintaMemoria::nueva());
+        let g = puerta(&srv.base, cinta.clone());
+
+        // Declarado con símbolo, consulta sin él: rechazo antes de enviar.
+        let r = g
+            .enviar(
+                Pedido::nuevo(Metodo::Get, ruta, CallPriority::Lectura)
+                    .consulta("timestamp=1&signature=SECRETO")
+                    .con_simbolo(true),
+            )
+            .await;
+        assert!(es_alcance(&r), "{ruta}: {r:?}");
+        assert!(srv.recibidas().is_empty(), "{ruta}: no salió");
+        assert_eq!(g.en_vuelo(), [0, 0, 0]);
+        assert_eq!(g.uso_efectivo(), [0, 0, 0], "{ruta}: nada reservado");
+
+        // Ambiguos: fallan cerrados sin salir.
+        for consulta in [
+            "symbol=BTCUSDT&symbol=ETHUSDT&timestamp=1",
+            "symbol=&timestamp=1",
+            "SYMBOL=BTCUSDT&timestamp=1",
+            "%73ymbol=BTCUSDT&timestamp=1",
+        ] {
+            let r = g.enviar(Pedido::nuevo(Metodo::Get, ruta, CallPriority::Lectura).consulta(consulta)).await;
+            assert!(es_alcance(&r), "{ruta} {consulta}: {r:?}");
+        }
+        assert!(srv.recibidas().is_empty());
+
+        // Sin declarar y sin symbol: paga 40.
+        let r = g
+            .enviar(Pedido::nuevo(Metodo::Get, ruta, CallPriority::Lectura).consulta("timestamp=1&signature=SECRETO"))
+            .await;
+        assert!(r.is_ok(), "{ruta}: {r:?}");
+        // Con symbol: paga 1, y la consulta sale con sus mismos bytes.
+        let consulta = "symbol=BTCUSDT&timestamp=1&signature=SECRETO";
+        let r = g
+            .enviar(Pedido::nuevo(Metodo::Get, ruta, CallPriority::Lectura).consulta(consulta).con_simbolo(true))
+            .await;
+        assert!(r.is_ok(), "{ruta}: {r:?}");
+        let rec = srv.recibidas();
+        assert_eq!(rec.len(), 2);
+        assert_eq!(rec[1], format!("GET {ruta}?{consulta} HTTP/1.1"));
+        let filas = cinta.filas();
+        let salidas: Vec<(bool, Option<usize>)> = filas
+            .iter()
+            .filter(|f| matches!(f.resultado, ResultadoLlamada::Respondida { .. }))
+            .map(|f| (f.con_simbolo, f.coste_peso))
+            .collect();
+        assert_eq!(salidas, vec![(false, Some(40)), (true, Some(1))], "{ruta}");
+        assert_eq!(filas.len(), 7, "{ruta}: una fila por pedido");
+
+        // El coste correcto se reserva antes de enviar: con un límite de peso
+        // de 39, sin symbol no sale; con symbol sí.
+        let srv2 = Servidor::levantar(vec![guion(200, &[])]).await;
+        let mut chico = LimitesExchange::respaldo_lg12();
+        chico.peso_1m.limite = 39;
+        let g2 = BinanceGateway::nueva(&srv2.base, chico, cliente(), std::sync::Arc::new(CintaMemoria::nueva()));
+        let r = g2
+            .enviar(Pedido::nuevo(Metodo::Get, ruta, CallPriority::Critica).consulta("timestamp=1").con_simbolo(true))
+            .await;
+        assert!(r.is_err(), "{ruta}: {r:?}");
+        let r = g2.enviar(Pedido::nuevo(Metodo::Get, ruta, CallPriority::Critica).consulta("timestamp=1")).await;
+        assert!(matches!(r, Err(RechazoPuerta::Presupuesto(_))), "{ruta}: {r:?}");
+        assert!(srv2.recibidas().is_empty(), "{ruta}: 40 > 39 no sale");
+        let r = g2.enviar(Pedido::nuevo(Metodo::Get, ruta, CallPriority::Critica).consulta("symbol=BTCUSDT&timestamp=1")).await;
+        assert!(r.is_ok(), "{ruta}: {r:?}");
+        assert_eq!(srv2.recibidas().len(), 1);
+    }
+}
+
 /// Espera hasta que el freno de la puerta se levante (Retry-After de 1 s en
 /// el guion), con un tope para no colgar la prueba.
 async fn esperar_rearme(g: &BinanceGateway) -> bool {
@@ -913,7 +997,11 @@ async fn gateway_418_parada_total_hasta_retry_after() {
     let r = g.enviar(position_risk(CallPriority::Critica)).await;
     assert!(matches!(r, Err(RechazoPuerta::LimiteExchange(ref t)) if t.contains("HTTP_418")), "{r:?}");
     assert!(matches!(g.freno_activo(), Err(ref t) if t.contains("RATE_BRAKE")));
-    let orden = Pedido::nuevo(Metodo::Post, "/fapi/v1/order", CallPriority::Critica).con_simbolo(true);
+    // C2: el alcance sale de la consulta; la declaración con symbol exige
+    // que la consulta lo lleve (antes de C2 el pedido no traía consulta).
+    let orden = Pedido::nuevo(Metodo::Post, "/fapi/v1/order", CallPriority::Critica)
+        .consulta("symbol=BTCUSDT&side=BUY&timestamp=1&signature=SECRETO")
+        .con_simbolo(true);
     assert!(matches!(g.enviar(orden.clone()).await, Err(RechazoPuerta::Frenado(ref t)) if t.contains("RATE_BRAKE")));
     for p in uno_de_cada() {
         assert!(matches!(g.enviar(p).await, Err(RechazoPuerta::Frenado(_))));

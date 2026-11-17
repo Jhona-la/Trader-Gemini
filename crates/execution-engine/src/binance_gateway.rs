@@ -690,9 +690,44 @@ pub fn coste_de_firma(
     }
 }
 
+/// C2 (dictamen R2): si la consulta que sale lleva `symbol`, leído de los
+/// parámetros efectivos, sin tocar sus bytes (la firma HMAC va sobre ellos).
+///
+/// - `Ok(false)`: ningún parámetro `symbol` (todos los símbolos);
+/// - `Ok(true)`: exactamente un `symbol` con valor no vacío;
+/// - `Err`: ambiguo, falla cerrado: `symbol` repetido o vacío, una clave que
+///   sólo difiere de `symbol` en mayúsculas, o una clave con `%` (codificada:
+///   el servidor podría leerla como `symbol`).
+pub fn simbolo_en_consulta(consulta: &str) -> Result<bool, String> {
+    let mut simbolos = 0usize;
+    for par in consulta.split('&').filter(|p| !p.is_empty()) {
+        let (clave, valor) = par.split_once('=').unwrap_or((par, ""));
+        if clave.contains('%') {
+            return Err(format!("clave codificada en la consulta: {clave}"));
+        }
+        if clave == "symbol" {
+            if valor.is_empty() {
+                return Err("symbol vacio".to_string());
+            }
+            simbolos = simbolos.saturating_add(1);
+        } else if clave.eq_ignore_ascii_case("symbol") {
+            return Err(format!("clave ambigua: {clave}"));
+        }
+    }
+    match simbolos {
+        0 => Ok(false),
+        1 => Ok(true),
+        n => Err(format!("symbol repetido {n} veces")),
+    }
+}
+
 /// Por qué la puerta no dejó salir una petición, o por qué falló.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum RechazoPuerta {
+    /// C2: el alcance del peso (con o sin `symbol`) declarado contradice la
+    /// consulta que saldría, o la consulta es ambigua: falla cerrado antes de
+    /// enviar.
+    Alcance(String),
     /// La firma (método + ruta + alcance) no está en la tabla de pesos (P2):
     /// falla cerrado, nunca se supone peso 1.
     FirmaDesconocida(String),
@@ -713,6 +748,7 @@ pub enum RechazoPuerta {
 impl std::fmt::Display for RechazoPuerta {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
+            RechazoPuerta::Alcance(t) => write!(f, "PUERTA_ALCANCE: {t}"),
             RechazoPuerta::FirmaDesconocida(t) => write!(f, "PUERTA_FIRMA_DESCONOCIDA: {t}"),
             RechazoPuerta::PesoNoVerificado(t) => write!(f, "PUERTA_PESO_NO_VERIFICADO: {t}"),
             RechazoPuerta::Frenado(t) => write!(f, "PUERTA_FRENADA: {t}"),
@@ -1025,12 +1061,17 @@ impl CintaAuditoria for CintaJsonl {
 
 /// Un pedido a la puerta. `consulta` va tal cual detrás de `?` (la firma HMAC
 /// la pone quien llama, P9); nunca entra en la cinta ni en los errores.
+///
+/// C2: el alcance del peso (con o sin `symbol`) sale de `consulta`
+/// (`simbolo_en_consulta`), no de una declaración aparte. `con_simbolo` es
+/// una declaración opcional de quien llama: si la hay y contradice la
+/// consulta, la puerta rechaza el pedido antes de enviarlo.
 #[derive(Clone, Debug)]
 pub struct Pedido {
     pub metodo: Metodo,
     pub ruta: String,
     pub consulta: String,
-    pub con_simbolo: bool,
+    pub con_simbolo: Option<bool>,
     pub prioridad: CallPriority,
     pub cabeceras: Vec<(String, String)>,
 }
@@ -1041,7 +1082,7 @@ impl Pedido {
             metodo,
             ruta: ruta.into(),
             consulta: String::new(),
-            con_simbolo: false,
+            con_simbolo: None,
             prioridad,
             cabeceras: Vec::new(),
         }
@@ -1052,9 +1093,24 @@ impl Pedido {
         self
     }
 
+    /// Declara el alcance esperado; la puerta lo contrasta con la consulta.
     pub fn con_simbolo(mut self, con_simbolo: bool) -> Self {
-        self.con_simbolo = con_simbolo;
+        self.con_simbolo = Some(con_simbolo);
         self
+    }
+
+    /// C2: el alcance efectivo, de la consulta; `Err` si es ambigua o
+    /// contradice la declaración.
+    pub fn alcance_efectivo(&self) -> Result<bool, RechazoPuerta> {
+        let efectivo = simbolo_en_consulta(&self.consulta).map_err(RechazoPuerta::Alcance)?;
+        match self.con_simbolo {
+            Some(declarado) if declarado != efectivo => Err(RechazoPuerta::Alcance(format!(
+                "declarado {} y la consulta {}",
+                if declarado { "con symbol" } else { "sin symbol" },
+                if efectivo { "lleva symbol" } else { "no lleva symbol" }
+            ))),
+            _ => Ok(efectivo),
+        }
     }
 
     pub fn cabecera(mut self, nombre: impl Into<String>, valor: impl Into<String>) -> Self {
@@ -1166,9 +1222,11 @@ impl BinanceGateway {
         self.freno.comprobar(self.ahora_ms())
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn anotar(
         &self,
         pedido: &Pedido,
+        con_simbolo: bool,
         coste: Option<CosteBinance>,
         resultado: ResultadoLlamada,
         detalle: String,
@@ -1181,7 +1239,7 @@ impl BinanceGateway {
             sello_ms,
             metodo: pedido.metodo.como_str().to_string(),
             ruta: pedido.ruta.clone(),
-            con_simbolo: pedido.con_simbolo,
+            con_simbolo,
             prioridad: pedido.prioridad,
             coste_peso: coste.map(|c| c.peso),
             coste_ordenes: coste.map(|c| c.ordenes),
@@ -1197,11 +1255,19 @@ impl BinanceGateway {
     /// Envía un pedido por la puerta (ver el orden en el tipo). Sin
     /// reintentos.
     pub async fn enviar(&self, pedido: Pedido) -> Result<RespuestaPuerta, RechazoPuerta> {
-        // 1. Firma.
-        let coste = match coste_de_firma(pedido.metodo, &pedido.ruta, pedido.con_simbolo) {
+        // 1. Firma: alcance de la consulta efectiva (C2) y coste de la tabla.
+        let con_simbolo = match pedido.alcance_efectivo() {
+            Ok(b) => b,
+            Err(r) => {
+                let declarado = pedido.con_simbolo.unwrap_or(false);
+                self.anotar(&pedido, declarado, None, ResultadoLlamada::RechazadaFirma, r.to_string(), None);
+                return Err(r);
+            }
+        };
+        let coste = match coste_de_firma(pedido.metodo, &pedido.ruta, con_simbolo) {
             Ok(c) => c,
             Err(r) => {
-                self.anotar(&pedido, None, ResultadoLlamada::RechazadaFirma, r.to_string(), None);
+                self.anotar(&pedido, con_simbolo, None, ResultadoLlamada::RechazadaFirma, r.to_string(), None);
                 return Err(r);
             }
         };
@@ -1209,7 +1275,7 @@ impl BinanceGateway {
         let ahora = self.ahora_ms();
         if let Err(t) = self.freno.comprobar(ahora) {
             let r = RechazoPuerta::Frenado(t);
-            self.anotar(&pedido, Some(coste), ResultadoLlamada::RechazadaFreno, r.to_string(), None);
+            self.anotar(&pedido, con_simbolo, Some(coste), ResultadoLlamada::RechazadaFreno, r.to_string(), None);
             return Err(r);
         }
         // 3. Presupuesto de su prioridad.
@@ -1219,6 +1285,7 @@ impl BinanceGateway {
             Err(r) => {
                 self.anotar(
                     &pedido,
+                    con_simbolo,
                     Some(coste),
                     ResultadoLlamada::RechazadaPresupuesto,
                     r.to_string(),
@@ -1227,7 +1294,8 @@ impl BinanceGateway {
                 return Err(r);
             }
         };
-        // 4. Envío.
+        // 4. Envío: la consulta sale con los mismos bytes de los que salió el
+        // alcance (C2).
         let mut url = String::with_capacity(self.base.len() + pedido.ruta.len() + pedido.consulta.len() + 1);
         url.push_str(&self.base);
         url.push_str(&pedido.ruta);
@@ -1257,7 +1325,7 @@ impl BinanceGateway {
                 };
                 self.presupuesto().cerrar(reserva, desenlace, self.ahora_ms());
                 let r = RechazoPuerta::Red(texto);
-                self.anotar(&pedido, Some(coste), ResultadoLlamada::ErrorRed, r.to_string(), None);
+                self.anotar(&pedido, con_simbolo, Some(coste), ResultadoLlamada::ErrorRed, r.to_string(), None);
                 return Err(r);
             }
         };
@@ -1271,6 +1339,7 @@ impl BinanceGateway {
             let r = RechazoPuerta::LimiteExchange(texto);
             self.anotar(
                 &pedido,
+                con_simbolo,
                 Some(coste),
                 ResultadoLlamada::LimiteExchange { estado },
                 r.to_string(),
@@ -1292,6 +1361,7 @@ impl BinanceGateway {
                 ));
                 self.anotar(
                     &pedido,
+                    con_simbolo,
                     Some(coste),
                     ResultadoLlamada::ErrorRed,
                     r.to_string(),
@@ -1302,6 +1372,7 @@ impl BinanceGateway {
         };
         self.anotar(
             &pedido,
+            con_simbolo,
             Some(coste),
             ResultadoLlamada::Respondida { estado },
             String::new(),
