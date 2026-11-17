@@ -137,3 +137,6 @@ outputs/
 # V33: transacciones de rescate y semáforo de compilación solo locales.
 /.agent_tx/
 /.cargo_compile.lock
+
+# CACHEV3-P1: cache de columnas, derivado 100 % regenerable desde las cintas (no se versiona).
+/cache/columnas/

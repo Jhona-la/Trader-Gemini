@@ -1,0 +1,22 @@
+[package]
+name = "cache-columnas"
+version = "0.1.0"
+edition = "2021"
+# Sin campo `license`: el repositorio no declara ninguna; este crate tiene la misma licencia que el repositorio.
+# Cache DERIVADA (regenerable) de las cintas de ticks por columnas. Pedido del coordinador 20261116-2345-cachev3
+# (especificacion glm_app_pedido_cache_columnas_v3.md). Nada del motor vivo la lee.
+
+[lib]
+path = "src/lib.rs"
+
+[[bin]]
+name = "cache-columnas"
+path = "src/main.rs"
+
+[dependencies]
+# Cero dependencias nuevas: todas estan ya en Cargo.lock con esta version exacta.
+tick-tape = { path = "../tick-tape" }
+memmap2 = "=0.9.11"
+sha2 = "=0.10.9"
+serde = { version = "=1.0.228", features = ["derive"] }
+serde_json = "=1.0.150"

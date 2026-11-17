@@ -435,6 +435,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "cache-columnas"
+version = "0.1.0"
+dependencies = [
+ "memmap2 0.9.11",
+ "serde",
+ "serde_json",
+ "sha2",
+ "tick-tape",
+]
+
+[[package]]
 name = "castaway"
 version = "0.2.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
