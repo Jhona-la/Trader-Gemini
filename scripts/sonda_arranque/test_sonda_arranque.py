@@ -119,5 +119,58 @@ class P4Estimadores(unittest.TestCase):
         self.assertTrue(math.isfinite(k2["epsilon"]))
 
 
+class P2Presupuesto(unittest.TestCase):
+    def test_presupuesto_nunca_pasa_de_la_mitad(self):
+        presupuesto = cargar("presupuesto")
+        p = presupuesto.Presupuesto(b_por_minuto=2400, fraccion=0.5, ventana_ms=60000, cota_reserva=10)
+        self.assertEqual(p.tope, 1200)
+        reloj = 0
+        envios = []
+        # secuencia heredada: 500 respuestas de peso 5, latencia 0; la primera sin medida reserva la cota 10
+        for i in range(500):
+            reserva = None if i == 0 else 5
+            espera = p.espera_ms(reloj, reserva)
+            reloj += espera
+            usado = p.usado(reloj)
+            w = p.reserva_para(reserva)
+            self.assertLessEqual(usado + w, 1200, f"envio {i}: {usado} + {w} > 1200")
+            p.reservar(reloj, reserva)
+            envios.append((reloj, w))
+        # reconstruccion de la serie: en ninguna ventana de 60 s la suma de reservas pasa de 1200
+        for t, _ in envios:
+            en_ventana = sum(w for (u, w) in envios if t - 60000 < u <= t)
+            self.assertLessEqual(en_ventana, 1200)
+        self.assertEqual(envios[0][1], 10)  # primera peticion: cota documentada, no w medido
+        # con w = 5 el ritmo estable es una peticion cada 250 ms (60000*5/1200)
+        self.assertEqual(envios[-1][0] - envios[-2][0], 250)
+        # sin burst: con cupo libre, el siguiente envio igual espera su espaciado (60000*w/1200)
+        e = presupuesto.Presupuesto(b_por_minuto=2400, fraccion=0.5, ventana_ms=60000, cota_reserva=10)
+        e.reservar(0, 5)
+        self.assertEqual(e.espera_ms(0, 5), 250)
+        # frontera del cupo (solo la ventana, sin espaciado): exactamente 1200 entra, 1201 no
+        q = presupuesto.Presupuesto(b_por_minuto=2400, fraccion=0.5, ventana_ms=60000, cota_reserva=10,
+                                    espaciar=False)
+        for _ in range(119):
+            q.reservar(0, 10)
+        self.assertEqual(q.usado(0), 1190)
+        self.assertEqual(q.espera_ms(0, 10), 0)
+        self.assertGreater(q.espera_ms(0, 11), 0)
+        # timeout y contador incierto: la reserva no se libera antes de su ventana
+        t = presupuesto.Presupuesto(b_por_minuto=2400, fraccion=0.5, ventana_ms=60000, cota_reserva=10)
+        idx = t.reservar(0, None)
+        t.resolver(idx, w_medido=None, motivo="timeout")
+        self.assertEqual(t.usado(59999), 10)
+        self.assertEqual(t.usado(60000), 0)
+        idx2 = t.reservar(100000, None)
+        t.resolver(idx2, w_medido=3, motivo="contador incierto")
+        self.assertEqual(t.usado(100001), 10)  # nunca baja de la reserva por un delta incierto
+        idx3 = t.reservar(200000, 5)
+        t.resolver(idx3, w_medido=8, motivo="delta mayor")
+        self.assertEqual(t.usado(200001), 8)  # si el delta medido supera la reserva, cuenta el mayor
+        # un siguiente envio que nunca cabe no espera para siempre
+        with self.assertRaises(ValueError):
+            t.espera_ms(0, 1201)
+
+
 if __name__ == "__main__":
     unittest.main()
