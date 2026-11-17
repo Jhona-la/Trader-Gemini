@@ -946,6 +946,90 @@ async fn c2_sin_symbol_no_reserva_el_coste_con_symbol() {
     }
 }
 
+/// F1 (dictamen de cierre, R2-F): el alcance se lee de la consulta que el
+/// transporte enviará de verdad. Un `#` corta la consulta en el cliente HTTP
+/// (lo de detrás es fragmento y no sale): con
+/// `timestamp=1&signature=FIRMA_FICTICIA#&symbol=BTCUSDT` el `symbol` no
+/// llega al servidor, que cobra 40, no 1. Toda interpretación de la URL que
+/// cambie los bytes de la consulta firmada (fragmento, espacios o comillas que
+/// se codifican, tabuladores que se quitan, bytes no ASCII) se rechaza antes
+/// de reservar y sin enviar. Los bytes válidos salen sin recodificar.
+#[tokio::test]
+async fn f1_fragmento_no_cambia_el_alcance() {
+    let es_alcance = |r: &Result<_, RechazoPuerta>| matches!(r, Err(e) if e.to_string().starts_with("PUERTA_ALCANCE"));
+    for ruta in ["/fapi/v1/openOrders", "/fapi/v1/openAlgoOrders"] {
+        let srv = Servidor::levantar(vec![guion(200, &[]), guion(200, &[]), guion(200, &[])]).await;
+        let cinta = std::sync::Arc::new(CintaMemoria::nueva());
+        let g = puerta(&srv.base, cinta.clone());
+
+        // El caso de CODEX, sin declarar y declarado «con symbol».
+        let fragmento = "timestamp=1&signature=FIRMA_FICTICIA#&symbol=BTCUSDT";
+        for declarado in [None, Some(true)] {
+            let mut p = Pedido::nuevo(Metodo::Get, ruta, CallPriority::Lectura).consulta(fragmento);
+            if let Some(d) = declarado {
+                p = p.con_simbolo(d);
+            }
+            let r = g.enviar(p).await;
+            assert!(es_alcance(&r), "{ruta} {declarado:?}: {r:?}");
+            assert!(
+                matches!(&r, Err(e) if !e.to_string().contains("FIRMA_FICTICIA")),
+                "{ruta}: el rechazo no lleva la consulta"
+            );
+            assert!(srv.recibidas().is_empty(), "{ruta} {declarado:?}: no salió");
+            assert_eq!(g.en_vuelo(), [0, 0, 0], "{ruta}: nada en vuelo");
+            assert_eq!(g.uso_efectivo(), [0, 0, 0], "{ruta}: nada reservado");
+        }
+
+        // Normalizaciones de la URL que cambian la consulta firmada: rechazo.
+        for consulta in [
+            "symbol=BTCUSDT#&timestamp=1",
+            "timestamp=1#",
+            "symbol=BTC USDT&timestamp=1",
+            "symbol=BTCUSDT&timestamp=1 ",
+            "symbol=BTC\tUSDT&timestamp=1",
+            "symbol=BTCUSDT&timestamp=1\n",
+            "symbol=\"BTCUSDT\"&timestamp=1",
+            "symbol=BTCUSDT&nota=<x>&timestamp=1",
+            "symbol=BTCÜSDT&timestamp=1",
+        ] {
+            let r = g.enviar(Pedido::nuevo(Metodo::Get, ruta, CallPriority::Lectura).consulta(consulta)).await;
+            assert!(es_alcance(&r), "{ruta} {consulta:?}: {r:?}");
+        }
+        assert!(srv.recibidas().is_empty(), "{ruta}: ninguno salió");
+        assert_eq!(g.uso_efectivo(), [0, 0, 0], "{ruta}: nada reservado");
+        let filas = cinta.filas();
+        assert_eq!(filas.len(), 11, "{ruta}: una fila por pedido");
+        assert!(
+            filas.iter().all(|f| matches!(f.resultado, ResultadoLlamada::RechazadaFirma) && f.coste_peso.is_none()),
+            "{ruta}: rechazados en la firma, sin coste"
+        );
+        assert!(filas.iter().all(|f| !f.detalle.contains("FIRMA_FICTICIA")), "{ruta}: la cinta no lleva la consulta");
+
+        // Controles: consulta válida con symbol (paga 1), sin symbol (paga
+        // 40) y con escapes `%` ya válidos, que salen sin recodificar.
+        let validas = [
+            ("symbol=BTCUSDT&timestamp=1&signature=FIRMA_FICTICIA", true, 1),
+            ("timestamp=1&signature=FIRMA_FICTICIA", false, 40),
+            ("symbol=BTCUSDT&timestamp=1&nota=a%20b%23c%2B&signature=FIRMA_FICTICIA", true, 1),
+        ];
+        for (consulta, _, _) in validas {
+            let r = g.enviar(Pedido::nuevo(Metodo::Get, ruta, CallPriority::Lectura).consulta(consulta)).await;
+            assert!(matches!(r, Ok(ref r) if r.estado == 200), "{ruta} {consulta}: {r:?}");
+        }
+        let rec = srv.recibidas();
+        let esperadas: Vec<String> = validas.iter().map(|(c, _, _)| format!("GET {ruta}?{c} HTTP/1.1")).collect();
+        assert_eq!(rec, esperadas, "{ruta}: los mismos bytes");
+        let salidas: Vec<(bool, Option<usize>)> = cinta
+            .filas()
+            .iter()
+            .filter(|f| matches!(f.resultado, ResultadoLlamada::Respondida { .. }))
+            .map(|f| (f.con_simbolo, f.coste_peso))
+            .collect();
+        let esperado: Vec<(bool, Option<usize>)> = validas.iter().map(|(_, s, p)| (*s, Some(*p))).collect();
+        assert_eq!(salidas, esperado, "{ruta}: el coste de la consulta que salió");
+    }
+}
+
 /// Cabecera de peso de la primera respuesta del servidor demorado.
 const H_PREVIA: usize = 100;
 /// Cabecera de peso de la respuesta que se cancela durante el cuerpo.

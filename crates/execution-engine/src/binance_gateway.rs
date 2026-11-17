@@ -721,6 +721,34 @@ pub fn simbolo_en_consulta(consulta: &str) -> Result<bool, String> {
     }
 }
 
+/// F1 (dictamen de cierre, R2-F): la URL que el transporte enviará, el mismo
+/// objeto `reqwest::Url` que se pasa a `request`. Falla cerrado si su
+/// interpretación cambia la consulta firmada: un fragmento (`#`: el cliente
+/// HTTP corta la consulta ahí y lo de detrás no sale) o cualquier
+/// normalización que la recodifique o le quite bytes (espacios, comillas,
+/// `<`/`>` y no ASCII se codifican; tabuladores, saltos de línea y espacios
+/// de los extremos se quitan). Así la consulta efectiva es, byte a byte, la
+/// que dio quien llama, y sobre ella se lee el alcance. Los textos de error
+/// nunca llevan la consulta ni la firma (CL-202).
+pub fn url_de_transporte(base: &str, ruta: &str, consulta: &str) -> Result<reqwest::Url, String> {
+    let mut texto = String::with_capacity(base.len() + ruta.len() + consulta.len() + 1);
+    texto.push_str(base);
+    texto.push_str(ruta);
+    if !consulta.is_empty() {
+        texto.push('?');
+        texto.push_str(consulta);
+    }
+    let url = reqwest::Url::parse(&texto).map_err(|e| format!("URL no interpretable: {e}"))?;
+    if url.fragment().is_some() {
+        return Err("la URL lleva un fragmento (#): la consulta que saldria no es la firmada".to_string());
+    }
+    let esperada = if consulta.is_empty() { None } else { Some(consulta) };
+    if url.query() != esperada {
+        return Err("la URL cambiaria la consulta firmada (bytes recodificados o quitados)".to_string());
+    }
+    Ok(url)
+}
+
 /// Por qué la puerta no dejó salir una petición, o por qué falló.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum RechazoPuerta {
@@ -1106,7 +1134,13 @@ impl Pedido {
     /// C2: el alcance efectivo, de la consulta; `Err` si es ambigua o
     /// contradice la declaración.
     pub fn alcance_efectivo(&self) -> Result<bool, RechazoPuerta> {
-        let efectivo = simbolo_en_consulta(&self.consulta).map_err(RechazoPuerta::Alcance)?;
+        self.alcance_de_consulta(&self.consulta)
+    }
+
+    /// F1: el alcance de una consulta efectiva (la del objeto URL que sale),
+    /// contrastado con la declaración.
+    fn alcance_de_consulta(&self, consulta: &str) -> Result<bool, RechazoPuerta> {
+        let efectivo = simbolo_en_consulta(consulta).map_err(RechazoPuerta::Alcance)?;
         match self.con_simbolo {
             Some(declarado) if declarado != efectivo => Err(RechazoPuerta::Alcance(format!(
                 "declarado {} y la consulta {}",
@@ -1266,8 +1300,20 @@ impl BinanceGateway {
     /// perdido hasta que vence su ventana, nunca en vuelo para siempre) y
     /// deja la fila `Cancelada`. Una fila por pedido admitido, siempre.
     pub async fn enviar(&self, pedido: Pedido) -> Result<RespuestaPuerta, RechazoPuerta> {
-        // 1. Firma: alcance de la consulta efectiva (C2) y coste de la tabla.
-        let con_simbolo = match pedido.alcance_efectivo() {
+        // 0. F1: la URL que saldrá, antes de leer el alcance y de reservar.
+        // Si su interpretación cambia la consulta firmada, falla cerrado.
+        let url = match url_de_transporte(&self.base, &pedido.ruta, &pedido.consulta) {
+            Ok(u) => u,
+            Err(t) => {
+                let r = RechazoPuerta::Alcance(t);
+                let declarado = pedido.con_simbolo.unwrap_or(false);
+                self.anotar(&pedido, declarado, None, ResultadoLlamada::RechazadaFirma, r.to_string(), None);
+                return Err(r);
+            }
+        };
+        // 1. Firma: alcance de la consulta efectiva del transporte (C2, F1)
+        // y coste de la tabla.
+        let con_simbolo = match pedido.alcance_de_consulta(url.query().unwrap_or("")) {
             Ok(b) => b,
             Err(r) => {
                 let declarado = pedido.con_simbolo.unwrap_or(false);
@@ -1315,22 +1361,15 @@ impl BinanceGateway {
             limites: None,
             anotado: false,
         };
-        // 4. Envío: la consulta sale con los mismos bytes de los que salió el
-        // alcance (C2).
-        let mut url = String::with_capacity(self.base.len() + pedido.ruta.len() + pedido.consulta.len() + 1);
-        url.push_str(&self.base);
-        url.push_str(&pedido.ruta);
-        if !pedido.consulta.is_empty() {
-            url.push('?');
-            url.push_str(&pedido.consulta);
-        }
+        // 4. Envío: el mismo objeto URL del que salió el alcance (C2, F1), con
+        // los bytes de la consulta sin recodificar.
         let metodo = match pedido.metodo {
             Metodo::Get => reqwest::Method::GET,
             Metodo::Post => reqwest::Method::POST,
             Metodo::Put => reqwest::Method::PUT,
             Metodo::Delete => reqwest::Method::DELETE,
         };
-        let mut peticion = self.http.request(metodo, &url);
+        let mut peticion = self.http.request(metodo, url);
         for (nombre, valor) in &pedido.cabeceras {
             peticion = peticion.header(nombre.as_str(), valor.as_str());
         }
