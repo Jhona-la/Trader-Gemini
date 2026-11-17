@@ -21,7 +21,8 @@ members = [
     "crates/audit-engine",
     "crates/telemetry-engine",
     "crates/storage-engine",
-    "crates/metacortex-engine"
+    "crates/metacortex-engine",
+    "crates/tick-tape"
 ]
 
 [package]

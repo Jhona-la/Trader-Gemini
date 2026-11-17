@@ -1,0 +1,2 @@
+# Originales sinteticos de las pruebas de tick-tape (el .gitignore raiz excluye *.bin).
+!*.bin

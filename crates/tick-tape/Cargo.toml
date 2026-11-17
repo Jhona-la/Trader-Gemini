@@ -1,0 +1,12 @@
+[package]
+name = "tick-tape"
+version = "0.1.0"
+edition = "2021"
+# Sin campo `license`: el repositorio no declara ninguna y este crate tiene la misma licencia que el repositorio.
+# Procedencia del formato TGB00001: ver la cabecera de src/lib.rs.
+
+[dependencies]
+# Unicas dependencias autorizadas (pedido del coordinador 20261116-2008), con la version exacta ya resuelta en Cargo.lock.
+memmap2 = "=0.9.11"
+sha2 = "=0.10.9"
+zstd = { version = "=0.13.3", default-features = false }
