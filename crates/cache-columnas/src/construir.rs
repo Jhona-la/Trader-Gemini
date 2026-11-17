@@ -4,6 +4,7 @@
 //! verificacion de cada SHA-256 (columnas, indice y el tramo de registros reconstruido intercalando columnas) ->
 //! renombrado al destino -> anotacion en el manifiesto. Una hora que falla retira su `.tmp` y no queda publicada.
 
+use crate::presupuesto;
 use crate::publicacion;
 use crate::{
     ahora_ms, clave_hora, columnas, escribir_manifiesto, escribir_sincronizado, leer_manifiesto, leer_u64, nombre_valido,
@@ -32,6 +33,8 @@ pub struct Opciones {
     pub simbolo: String,
     /// SHA-256 del ORIGINAL que se exige (hex); si no coincide no se construye nada.
     pub sha256_esperado: Option<String>,
+    /// Tope derivado (P2). `None` solo en pruebas de P1; el binario lo exige siempre (`--config`).
+    pub limite: Option<presupuesto::Limite>,
     /// Solo pruebas: falla despues de escribir el `.tmp` de la hora numero `k` (0 = primera) y antes de publicarla.
     #[doc(hidden)]
     pub fallo_inyectado_en_hora: Option<usize>,
@@ -43,6 +46,8 @@ pub struct Informe {
     pub horas_presentes: Vec<String>,
     pub rows: u64,
     pub bytes_nuevos: u64,
+    /// Sumandos del tope (P2) con los que se decidio.
+    pub sumandos: Option<String>,
 }
 
 /// Simbolo por defecto: lo que va antes del primer `_` del nombre de la cinta (`BTCUSDT_2026-09-14_REAL.bin`).
@@ -135,6 +140,19 @@ pub fn construir_registros(
     let _cerrojo = Cerrojo::tomar(raiz)?;
     let mut man = leer_manifiesto(raiz)?;
     let mut inf = Informe::default();
+    // P2: el tope se mide en vivo al empezar (archivo y proyecto) y se compara contra el uso ACTUAL de la cache
+    // antes de cada hora. Fail-closed: tope <= 0 -> no se construye nada.
+    let sumandos = match &op.limite {
+        Some(l) => {
+            let s = presupuesto::medir(&l.config, &l.raiz_medicion, raiz)?;
+            inf.sumandos = Some(s.texto(man.uso_bytes()));
+            if s.limite_b <= 0 {
+                return Err(format!("limite de la cache <= 0: no se construye nada\n{}", s.texto(man.uso_bytes())));
+            }
+            Some(s)
+        }
+        None => None,
+    };
     let mut a = 0usize;
     let mut k = 0usize;
     while a < n {
@@ -144,7 +162,7 @@ pub fn construir_registros(
             b += 1;
         }
         let tramo = Tramo { cuerpo, pubs: &pubs, desde: a, hasta: b, hora_ms: hora * MS_POR_HORA, numero: k };
-        match construir_hora(raiz, &mut man, origen, fuente, &tramo, op)? {
+        match construir_hora(raiz, &mut man, origen, fuente, &tramo, op, sumandos.as_ref())? {
             Estado::Nueva { clave, bytes } => {
                 inf.bytes_nuevos += bytes;
                 inf.horas_nuevas.push(clave);
@@ -285,6 +303,7 @@ fn construir_hora(
     fuente: &publicacion::Fuente,
     t: &Tramo,
     op: &Opciones,
+    sumandos: Option<&presupuesto::Sumandos>,
 ) -> Result<Estado, String> {
     let clave = clave_hora(fuente.nombre, &op.simbolo, t.hora_ms);
     let previa = man.posicion(&clave);
@@ -302,6 +321,17 @@ fn construir_hora(
     if let (Some(p), Some(sha)) = (previa, &indice_en_destino) {
         if man.horas[p].sha256_indice == h.sha256_indice && *sha == h.sha256_indice {
             return Ok(Estado::Presente { clave });
+        }
+    }
+    if let Some(s) = sumandos {
+        let uso_sin_esta = man.uso_bytes() - previa.map(|p| man.horas[p].bytes).unwrap_or(0);
+        if uso_sin_esta as i128 + h.bytes as i128 > s.limite_b {
+            return Err(format!(
+                "{clave}: no cabe ({} B nuevos + {uso_sin_esta} B en uso > limite {} B); no se construye\n{}",
+                h.bytes,
+                s.limite_b,
+                s.texto(man.uso_bytes())
+            ));
         }
     }
     let tmp = raiz.join(format!("{PREFIJO_TMP}{}-{}", clave.replace('/', "_"), std::process::id()));

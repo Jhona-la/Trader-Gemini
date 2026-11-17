@@ -11,6 +11,7 @@
 //! - Nada del motor vivo la lee; `train_forest` la consulta solo con `--cache columnas` (opt-in).
 
 pub mod construir;
+pub mod presupuesto;
 pub mod publicacion;
 pub mod verificar;
 
