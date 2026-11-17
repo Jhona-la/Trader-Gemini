@@ -1,6 +1,7 @@
 //! `cache-columnas construir|verificar|medir` (pedido 20261116-2345-cachev3). Ver `src/lib.rs`.
 
 use cache_columnas::expulsion::expulsar_hasta;
+use cache_columnas::lector::{leer, Consulta};
 use cache_columnas::construir::{construir_desde_cinta, simbolo_de_ruta, Opciones};
 use cache_columnas::presupuesto::{leer_config, medir, Limite, BYTES_POR_GB};
 use cache_columnas::verificar::verificar;
@@ -13,6 +14,7 @@ const USO: &str = "uso:
                            [--fuente tgb-reales] [--simbolo S] [--sha256 HEX]
   cache-columnas verificar [--cache DIR] [--origen]
   cache-columnas expulsar --hasta BYTES [--cache DIR]
+  cache-columnas leer --simbolo S --desde PUB_MS --hasta PUB_MS [--fuente F] [--cache DIR]
   cache-columnas medir --config cinta_config.json [--raiz-medicion DIR] [--cache DIR]
 La cinta se lee por la cinta logica de tick-tape: X.bin, o X.bin.tgb si X.bin no existe (con las dos manda el .bin).
 --raiz-medicion: raiz del proyecto que se mide para el tope (por defecto, la carpeta actual).";
@@ -93,8 +95,32 @@ fn principal(args: &[String]) -> Result<(), String> {
             println!("EXPULSAR {} | horas expulsadas {} | uso {} B", cache.display(), hechas.len(), leer_manifiesto(&cache)?.uso_bytes());
             Ok(())
         }
-        "medir" => {
-            let l = limite(args)?;
+        "leer" => {
+            let num = |n: &str| -> Result<i64, String> {
+                valor(args, n).ok_or(format!("falta {n}"))?.parse().map_err(|e| format!("{n}: {e}"))
+            };
+            let consulta = Consulta {
+                series: vec![(
+                    valor(args, "--fuente").unwrap_or_else(|| "tgb-reales".to_string()),
+                    valor(args, "--simbolo").ok_or("falta --simbolo")?,
+                )],
+                desde_pub_ms: num("--desde")?,
+                hasta_pub_ms: num("--hasta")?,
+            };
+            let e = leer(&cache, &consulta)?;
+            let primera = e.filas.first().map(|f| f.pub_ms);
+            let ultima = e.filas.last().map(|f| f.pub_ms);
+            println!(
+                "LEER {} | horas montadas {} | filas {} | pub_ms primera {:?} ultima {:?} (rango sobre pub_ms, no sobre el evento)",
+                cache.display(),
+                e.horas.len(),
+                e.filas.len(),
+                primera,
+                ultima
+            );
+            Ok(())
+        }
+        "medir" => {            let l = limite(args)?;
             let s = medir(&l.config, &l.raiz_medicion, &cache)?;
             println!("{}", s.texto(leer_manifiesto(&cache)?.uso_bytes()));
             println!("MEDIR limite_cache_bytes {} ({:.3} GB decimales)", s.limite_b, s.limite_b as f64 / BYTES_POR_GB);

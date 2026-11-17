@@ -1,4 +1,4 @@
-//! Lectura por mmap de horas de la cache (pedido v3, P3/P5).
+//! Lectura por mmap de horas de la cache (pedido v3, P3/P4/P5).
 //!
 //! Montar una hora: cerrojo de lectura en su carpeta (la expulsion no la toca mientras viva), mapa de cada columna,
 //! comprobacion de TODOS sus SHA-256 sobre los bytes mapeados ([`crate::verificar::comprobar_hora`]) y marca de
@@ -103,4 +103,72 @@ pub fn montar(raiz: &Path, claves: &[String]) -> Result<Vec<HoraMontada>, String
     }
     escribir_manifiesto(raiz, &man)?;
     Ok(horas)
+}
+
+/// Consulta por momento de PUBLICACION (P4): el rango `[desde_pub_ms, hasta_pub_ms)` se evalua sobre `pub_ms`,
+/// nunca sobre la hora del evento. `series` = pares (fuente, simbolo).
+#[derive(Debug, Clone)]
+pub struct Consulta {
+    pub series: Vec<(String, String)>,
+    pub desde_pub_ms: i64,
+    pub hasta_pub_ms: i64,
+}
+
+/// Una fila entregada: hora montada `hora` (indice en [`Entrega::horas`]) y fila `fila` dentro de ella.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Fila {
+    pub pub_ms: i64,
+    pub ts: u64,
+    pub hora: usize,
+    pub fila: usize,
+}
+
+pub struct Entrega {
+    pub horas: Vec<HoraMontada>,
+    /// Ordenadas por `pub_ms`; a igualdad, por serie (orden de la consulta), hora y fila (orden estable).
+    pub filas: Vec<Fila>,
+}
+
+/// Une las series pedidas y entrega SOLO lo publicado en `[desde, hasta)`, ordenado por `pub_ms`.
+pub fn leer(raiz: &Path, c: &Consulta) -> Result<Entrega, String> {
+    if c.desde_pub_ms >= c.hasta_pub_ms {
+        return Err(format!("rango vacio: [{}, {})", c.desde_pub_ms, c.hasta_pub_ms));
+    }
+    let man = leer_manifiesto(raiz)?;
+    let mut elegidas: Vec<(usize, u64, String)> = Vec::new();
+    for (k, (fuente, simbolo)) in c.series.iter().enumerate() {
+        for e in &man.horas {
+            // Seleccion por el rango pub_ms del manifiesto (P4 c), sin escanear columnas.
+            if &e.fuente == fuente && &e.simbolo == simbolo && e.pub_min_ms < c.hasta_pub_ms && e.pub_max_ms >= c.desde_pub_ms {
+                elegidas.push((k, e.hora_ms, e.clave.clone()));
+            }
+        }
+    }
+    elegidas.sort();
+    let claves: Vec<String> = elegidas.into_iter().map(|(_, _, clave)| clave).collect();
+    let horas = montar(raiz, &claves)?;
+    let mut filas = Vec::new();
+    for (hi, h) in horas.iter().enumerate() {
+        for i in 0..h.rows() {
+            let t = h.pub_ms(i);
+            if t >= c.desde_pub_ms && t < c.hasta_pub_ms {
+                filas.push(Fila { pub_ms: t, ts: h.ts(i), hora: hi, fila: i });
+            }
+        }
+    }
+    filas.sort_by_key(|f| f.pub_ms);
+    Ok(Entrega { horas, filas })
+}
+
+/// Rango `pub_ms` [min, max] de una serie segun el manifiesto (para que el entrenador sepa que pedir).
+pub fn rango_pub(raiz: &Path, fuente: &str, simbolo: &str) -> Result<Option<(i64, i64)>, String> {
+    let man = leer_manifiesto(raiz)?;
+    let mut r: Option<(i64, i64)> = None;
+    for e in man.horas.iter().filter(|e| e.fuente == fuente && e.simbolo == simbolo) {
+        r = Some(match r {
+            None => (e.pub_min_ms, e.pub_max_ms),
+            Some((a, b)) => (a.min(e.pub_min_ms), b.max(e.pub_max_ms)),
+        });
+    }
+    Ok(r)
 }
