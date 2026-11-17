@@ -1,4 +1,5 @@
-//! TGB-G — marca de generacion de una cinta REAL y admision para ENTRENAR (pedido CODEX-CLI, Parte 4).
+//! TGB-G — marca de generacion de una cinta REAL y admision para ENTRENAR (pedido CODEX-CLI, Parte 4; cierre
+//! `pedido_tgb_g_v1.md` §3).
 //!
 //! Dos recetas historicas del semi-spread con que `binance_vision_sync` fabrico el libro de cada aggTrade de precio
 //! `p` (`bid = p - h`, `ask = p + h`):
@@ -8,21 +9,21 @@
 //! Son las constantes historicas de las recetas auditadas, no umbrales de trading. Por encima del cruce
 //! `0.01 / 0.00005` las dos dan los mismos bytes: ningun hash, nombre o fecha distingue quien escribio esa cinta.
 //!
-//! FIRMA. Para cada registro se busca un TESTIGO EXACTO: un `p` f64 que reproduzca bit a bit el `bid` y el `ask`
-//! con la receta. Si existe, el registro es compatible con esa receta (la compatibilidad queda probada por el
-//! testigo). Si no existe ninguno en la ventana, es incompatible. La ventana sale de la cota del redondeo: el
-//! `p` real dista del punto medio calculado `m = bid/2 + ask/2` a lo sumo `|bid - fl(p-h)|/2 + |ask - fl(p+h)|/2`
-//! mas el redondeo de `m`, es decir menos de 2 ulp de `p` (bid, p y ask estan a menos de un factor 2 entre si
-//! con `h <= p/2`). Se recorren `VENTANA_ULP` = 16 ulp a cada lado, ocho veces esa cota. No hay epsilon
-//! decimal ni porcentaje de registros que coincidan. Nota (TGB-G): cuando bid, p y ask comparten binade el error
-//! del medio es <= 3/8 ulp y redondea a `p`, asi que el testigo suele ser el propio medio; la ventana es una
-//! defensa para los cruces de binade. No se encontro un caso de estas dos recetas en que haga falta (su control
-//! de mutacion, ventana 0, sale ciego).
+//! FIRMA POR INTERVALOS (metodo conservador de la Parte 4). Si un `p` f64 produjo el registro, los reales
+//! `x = p - h` e `y = p + h` redondearon a `bid` y `ask`, asi que `x` esta en `[bid⁻, bid⁺]` e `y` en
+//! `[ask⁻, ask⁺]` (vecinos representables: cota exterior del redondeo al mas cercano), y `p = (x + y) / 2`
+//! exactamente. El intervalo `P` de todos los `p` posibles se calcula con esas cotas y se ensancha hacia fuera
+//! `ENSANCHE_ULP` pasos (cubre el redondeo de las mitades y de la suma, tambien al cruzar una binade). Despues se
+//! RECORRE ENTERO: cada f64 de `P` se prueba bit a bit con las dos recetas. Un testigo exacto prueba la
+//! compatibilidad; si ninguno de `P` reproduce el registro, la receta queda EXCLUIDA, porque fuera de `P` no hay
+//! candidatos. Si `P` tuviera mas de `MAX_CANDIDATOS` f64 (no ocurre con datos positivos y finitos; es la guarda
+//! de un intervalo inesperado), el registro queda SIN DECISION y la cinta no se acredita. No hay epsilon decimal,
+//! porcentaje tolerado, muestreo ni ventana fija: la ventana de 16 ulp de H se retira.
 //!
-//! ESTADO de la cinta (interseccion de todos los registros): `Relativa` si algun registro excluye la antigua y
-//! ninguno excluye la relativa; `Antigua` al reves; `Mixta` si hay de los dos; `OtraOInvalida` si algun registro
-//! no admite ninguna (incluidos no finitos, no positivos o cruzados, y la transformacion de medio tick de
-//! `tape_spread_fix`); `Indeterminada` si todos admiten las dos o no hay registros.
+//! ESTADO de la cinta: `OtraOInvalida` si algun registro es invalido (no finito, no positivo, cruzado, cantidad no
+//! finita o negativa) o no admite ninguna receta (incluida la transformacion de medio tick de `tape_spread_fix`);
+//! `Mixta` si hay testigos exclusivos de las dos; `Indeterminada` si algun registro quedo sin decision, si todos
+//! admiten las dos o si no hay registros; si no, `Antigua` o `Relativa`. Un resultado ambiguo nunca se fuerza.
 //!
 //! La firma no acredita QUIEN genero la cinta. Para entrenar se exige ademas un RECIBO lateral
 //! (`X.bin.procedencia`) ligado al SHA-256 y al tamano exactos del original, con procedencia relativa acreditada
@@ -36,10 +37,16 @@ use std::path::{Path, PathBuf};
 pub const R_RELATIVA: f64 = 0.00005;
 /// Suelo absoluto de la receta antigua (`tape_spread_fix.rs:4`).
 pub const SUELO_ANTIGUO: f64 = 0.01;
-/// Ulp recorridos a cada lado del punto medio (ver la cota en la cabecera del modulo).
-pub const VENTANA_ULP: u32 = 16;
+/// Pasos hacia fuera con que se ensancha cada extremo del intervalo de `p` (ver la cabecera).
+pub const ENSANCHE_ULP: u32 = 4;
+/// Tope de f64 que se recorren por registro; por encima, el registro queda sin decision (nunca acredita).
+pub const MAX_CANDIDATOS: u64 = 256;
 /// Cabecera REAL: los 8 bytes `TGMTICK1` (adenda (c) del coordinador; no basta el prefijo `TGM`).
 pub const CABECERA_REAL: &[u8; 8] = b"TGMTICK1";
+/// Formato de cinta que firma este analizador.
+pub const FORMATO_CINTA: &str = "TGMTICK1+40B_LE";
+/// Version del analizador que debe declarar el recibo.
+pub const VERSION_ANALIZADOR: &str = "tick-tape-procedencia-2";
 const REGISTRO: usize = 40;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -63,7 +70,18 @@ impl EstadoGeneracion {
     }
 }
 
-/// Contadores y primer testigo (indice de registro) de cada clase.
+/// Veredicto de una receta sobre un registro.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Veredicto {
+    /// Hay un `p` f64 que reproduce bid y ask bit a bit (testigo exacto).
+    Compatible,
+    /// Ningun f64 del intervalo exterior de `p` lo reproduce: queda excluida.
+    Excluida,
+    /// El intervalo excede `MAX_CANDIDATOS`: no se decide.
+    SinDecision,
+}
+
+/// Contadores, primer testigo y primer indice de exclusion (indice de registro; offset = 8 + 40 * indice).
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct Firma {
     pub registros: u64,
@@ -71,23 +89,49 @@ pub struct Firma {
     pub solo_relativa: u64,
     pub solo_antigua: u64,
     pub ninguna: u64,
+    pub sin_decision: u64,
+    pub invalidos: u64,
     pub primer_solo_relativa: Option<u64>,
     pub primer_solo_antigua: Option<u64>,
     pub primer_ninguna: Option<u64>,
+    pub primer_sin_decision: Option<u64>,
+    pub primer_invalido: Option<u64>,
+    pub primer_excluye_relativa: Option<u64>,
+    pub primer_excluye_antigua: Option<u64>,
 }
 
 impl Firma {
     pub fn estado(&self) -> EstadoGeneracion {
-        if self.ninguna > 0 {
+        if self.invalidos > 0 || self.ninguna > 0 {
             EstadoGeneracion::OtraOInvalida
         } else if self.solo_relativa > 0 && self.solo_antigua > 0 {
             EstadoGeneracion::Mixta
+        } else if self.sin_decision > 0 {
+            EstadoGeneracion::Indeterminada
         } else if self.solo_antigua > 0 {
             EstadoGeneracion::Antigua
         } else if self.solo_relativa > 0 {
             EstadoGeneracion::Relativa
         } else {
             EstadoGeneracion::Indeterminada
+        }
+    }
+
+    /// Recetas compatibles con TODOS los registros, en orden fijo (`relativa`, `antigua`), separadas por coma.
+    pub fn recetas_compatibles(&self) -> String {
+        let mut v = Vec::new();
+        if self.registros > 0 && self.invalidos == 0 && self.ninguna == 0 && self.sin_decision == 0 {
+            if self.solo_antigua == 0 {
+                v.push("relativa");
+            }
+            if self.solo_relativa == 0 {
+                v.push("antigua");
+            }
+        }
+        if v.is_empty() {
+            "ninguna".to_string()
+        } else {
+            v.join(",")
         }
     }
 }
@@ -105,36 +149,41 @@ fn reproduce(p: f64, semi: fn(f64) -> f64, bid: f64, ask: f64) -> bool {
     (p - h).to_bits() == bid.to_bits() && (p + h).to_bits() == ask.to_bits()
 }
 
-/// Siguiente f64 hacia arriba o hacia abajo de un positivo finito (por bits).
-fn vecino(p: f64, arriba: bool) -> Option<f64> {
-    let b = p.to_bits();
-    let n = if arriba { b.checked_add(1)? } else { b.checked_sub(1)? };
-    let q = f64::from_bits(n);
-    (q.is_finite() && q > 0.0).then_some(q)
+fn hacia_fuera(mut x: f64, arriba: bool) -> f64 {
+    for _ in 0..ENSANCHE_ULP {
+        x = if arriba { x.next_up() } else { x.next_down() };
+    }
+    x
 }
 
-/// ¿Existe un `p` en la ventana que reproduzca `bid`/`ask` con la receta?
-fn compatible(semi: fn(f64) -> f64, bid: f64, ask: f64) -> bool {
-    let m = bid * 0.5 + ask * 0.5;
-    if !(m.is_finite() && m > 0.0) {
-        return false;
+/// Intervalo exterior `[lo, hi]` (f64 positivos y finitos) de todo `p` que pudo producir `bid`/`ask`.
+pub fn intervalo_de_p(bid: f64, ask: f64) -> (f64, f64) {
+    let lo = hacia_fuera(bid.next_down() * 0.5 + ask.next_down() * 0.5, false);
+    let hi = hacia_fuera(bid.next_up() * 0.5 + ask.next_up() * 0.5, true);
+    let minimo = f64::from_bits(1);
+    let lo = if lo.is_finite() && lo > 0.0 { lo } else { minimo };
+    let hi = if hi.is_finite() { hi } else { f64::MAX };
+    (lo, hi)
+}
+
+/// Veredictos (relativa, antigua) de un registro valido, recorriendo entero el intervalo de `p`.
+pub fn veredictos(bid: f64, ask: f64) -> (Veredicto, Veredicto) {
+    let (lo, hi) = intervalo_de_p(bid, ask);
+    let (a, b) = (lo.to_bits(), hi.to_bits());
+    if b < a || b - a >= MAX_CANDIDATOS {
+        return (Veredicto::SinDecision, Veredicto::SinDecision);
     }
-    if reproduce(m, semi, bid, ask) {
-        return true;
-    }
-    for arriba in [true, false] {
-        let mut p = m;
-        for _ in 0..VENTANA_ULP {
-            match vecino(p, arriba) {
-                Some(q) => p = q,
-                None => break,
-            }
-            if reproduce(p, semi, bid, ask) {
-                return true;
-            }
+    let (mut rel, mut ant) = (false, false);
+    for bits in a..=b {
+        let p = f64::from_bits(bits);
+        rel = rel || reproduce(p, semi_relativo, bid, ask);
+        ant = ant || reproduce(p, semi_antiguo, bid, ask);
+        if rel && ant {
+            break;
         }
     }
-    false
+    let v = |c: bool| if c { Veredicto::Compatible } else { Veredicto::Excluida };
+    (v(rel), v(ant))
 }
 
 fn f64_en(r: &[u8], i: usize) -> f64 {
@@ -143,7 +192,12 @@ fn f64_en(r: &[u8], i: usize) -> f64 {
     f64::from_le_bytes(a)
 }
 
-/// Firma de los registros crudos de 40 B (sin cabecera), ANTES de cualquier saneamiento.
+/// Campos crudos validos para firmar: precios finitos y positivos sin cruce, cantidades finitas y no negativas.
+fn registro_valido(bid: f64, ask: f64, bq: f64, aq: f64) -> bool {
+    bid.is_finite() && ask.is_finite() && bid > 0.0 && ask > 0.0 && bid <= ask && bq.is_finite() && aq.is_finite() && bq >= 0.0 && aq >= 0.0
+}
+
+/// Firma de los registros crudos de 40 B (sin cabecera), ANTES de cualquier saneamiento. Recorre todos.
 pub fn firma_de_registros(cuerpo: &[u8]) -> Result<Firma, String> {
     if cuerpo.len() % REGISTRO != 0 {
         return Err(format!("{} B no son registros de {REGISTRO} B", cuerpo.len()));
@@ -151,27 +205,37 @@ pub fn firma_de_registros(cuerpo: &[u8]) -> Result<Firma, String> {
     let mut f = Firma::default();
     for (k, r) in cuerpo.chunks_exact(REGISTRO).enumerate() {
         let k = k as u64;
-        let (bid, ask) = (f64_en(r, 8), f64_en(r, 16));
-        let valido = bid.is_finite() && ask.is_finite() && bid > 0.0 && ask > 0.0 && bid <= ask;
-        let (rel, ant) = if valido {
-            (compatible(semi_relativo, bid, ask), compatible(semi_antiguo, bid, ask))
-        } else {
-            (false, false)
-        };
         f.registros += 1;
+        let (bid, ask, bq, aq) = (f64_en(r, 8), f64_en(r, 16), f64_en(r, 24), f64_en(r, 32));
+        if !registro_valido(bid, ask, bq, aq) {
+            f.invalidos += 1;
+            f.primer_invalido.get_or_insert(k);
+            continue;
+        }
+        let (rel, ant) = veredictos(bid, ask);
+        if rel == Veredicto::Excluida {
+            f.primer_excluye_relativa.get_or_insert(k);
+        }
+        if ant == Veredicto::Excluida {
+            f.primer_excluye_antigua.get_or_insert(k);
+        }
         match (rel, ant) {
-            (true, true) => f.ambas += 1,
-            (true, false) => {
+            (Veredicto::Compatible, Veredicto::Compatible) => f.ambas += 1,
+            (Veredicto::Compatible, Veredicto::Excluida) => {
                 f.solo_relativa += 1;
                 f.primer_solo_relativa.get_or_insert(k);
             }
-            (false, true) => {
+            (Veredicto::Excluida, Veredicto::Compatible) => {
                 f.solo_antigua += 1;
                 f.primer_solo_antigua.get_or_insert(k);
             }
-            (false, false) => {
+            (Veredicto::Excluida, Veredicto::Excluida) => {
                 f.ninguna += 1;
                 f.primer_ninguna.get_or_insert(k);
+            }
+            _ => {
+                f.sin_decision += 1;
+                f.primer_sin_decision.get_or_insert(k);
             }
         }
     }
