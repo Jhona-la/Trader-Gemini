@@ -1,0 +1,426 @@
+diff --git a/src/bin/train_forest.rs b/src/bin/train_forest.rs
+index b2a7143a3..0fb5ed8a6 100644
+--- a/src/bin/train_forest.rs
++++ b/src/bin/train_forest.rs
+@@ -1058,33 +1058,74 @@ fn load_macro_series() -> (
+     )
+ }
+ 
+-/// TGB-G: cinta que puede entrar a la PREPARACION DE MUESTRAS de entrenamiento: cinta logica verificada,
+-/// firma de generacion RELATIVA recalculada sobre la cinta entera y recibo `X.bin.procedencia` con procedencia
+-/// relativa acreditada, ligado al SHA-256 y al tamano del original (`tick_tape::procedencia`). Se rechazan
+-/// antigua, mixta, otra, indeterminada, recibo ausente, recibo de otro original y analisis incompleto.
+-fn admitir_cinta_para_muestras(path: &str) -> Result<tick_tape::logica::TapeBytes, String> {
+-    let logica = std::path::Path::new(path);
+-    let tape = tick_tape::logica::open_logical_tape(logica, tick_tape::tgb::Presupuesto::sin_tope())
+-        .map_err(|e| format!("no pude abrir {path}: {e}"))?;
+-    let ruta_recibo = tick_tape::procedencia::ruta_recibo(logica);
+-    let recibo = match std::fs::read(&ruta_recibo) {
+-        Ok(t) => Some(t),
+-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => None,
+-        Err(e) => return Err(format!("no pude leer {}: {e}", ruta_recibo.display())),
++/// TGB-G / TGBG-5: cinta que puede entrar a la PREPARACION DE MUESTRAS de entrenamiento, por el puente comun
++/// (`quantum_engine::tgb_generation`, la misma admision que `dataset_admission`): instantanea privada de la cinta
++/// logica, firma RELATIVA recalculada entera y cadena recibo -> evidencia del productor -> indice revisado fijado
++/// por `--generation-index-sha256`. Cualquier otra cosa se rechaza con su causa.
++fn admitir_cinta_para_muestras(
++    path: &str,
++    lectores: &dyn quantum_engine::tgb_generation::Lectores,
++    indice: Option<&quantum_engine::tgb_generation::IndiceRevisado>,
++) -> Result<quantum_engine::tgb_generation::CintaAdmitida, String> {
++    quantum_engine::tgb_generation::admitir_fuente(std::path::Path::new(path), lectores, indice).map_err(|e| e.to_string())
++}
++
++/// TGBG-5: las fuentes declaradas (train, `--val-in` y `--test-in`), TODAS admitidas antes de preparar una sola
++/// muestra. Un rechazo de cualquiera detiene el entrenador antes del primer build.
++struct FuentesAdmitidas {
++    train: quantum_engine::tgb_generation::CintaAdmitida,
++    seleccion: Option<quantum_engine::tgb_generation::CintaAdmitida>,
++    test: Option<quantum_engine::tgb_generation::CintaAdmitida>,
++}
++
++fn admitir_fuentes(
++    in_path: &str,
++    val_in: &str,
++    test_in: &str,
++    admitir: &dyn Fn(&str) -> Result<quantum_engine::tgb_generation::CintaAdmitida, String>,
++) -> Result<FuentesAdmitidas, String> {
++    let train = admitir(in_path)?;
++    let seleccion = if val_in.is_empty() { None } else { Some(admitir(val_in)?) };
++    let test: Option<quantum_engine::tgb_generation::CintaAdmitida> = None;
++    let _ = test_in;
++    Ok(FuentesAdmitidas { train, seleccion, test })
++}
++
++/// TGBG-5: los registros de la instantanea admitida, con parseo little-endian seguro (sin reinterpretar la memoria
++/// ni suponer su alineacion). La reserva falla de forma controlada.
++fn ticks_de_cinta(bytes: &[u8]) -> Result<Vec<BinTick>, String> {
++    const REGISTRO: usize = 40;
++    let cuerpo = bytes.strip_prefix(b"TGMTICK1").ok_or_else(|| "la cinta no empieza por TGMTICK1".to_string())?;
++    if cuerpo.len() % REGISTRO != 0 {
++        return Err(format!("registro parcial: {} B no son registros de {REGISTRO} B", cuerpo.len()));
++    }
++    let mut ticks = Vec::new();
++    ticks
++        .try_reserve_exact(cuerpo.len() / REGISTRO)
++        .map_err(|e| format!("sin memoria para {} ticks: {e}", cuerpo.len() / REGISTRO))?;
++    let palabra = |r: &[u8], k: usize| {
++        let mut w = [0u8; 8];
++        w.copy_from_slice(&r[k * 8..(k + 1) * 8]);
++        u64::from_le_bytes(w)
+     };
+-    // TGBG-2: sin indice revisado fijado por hash no hay cadena que acredite la generacion (rechazo
+-    // `procedencia_no_acreditada`); TGBG-5 cablea `--generation-index` y `--generation-index-sha256`.
+-    let mut sin_evidencia = |_: &[u8; 32]| -> Result<Option<Vec<u8>>, String> { Ok(None) };
+-    tick_tape::procedencia::admitir_para_entrenamiento(&tape, recibo.as_deref(), None, &mut sin_evidencia)?;
+-    Ok(tape)
++    for r in cuerpo.chunks_exact(REGISTRO) {
++        ticks.push(BinTick {
++            ts: palabra(r, 0),
++            bid: f64::from_bits(palabra(r, 1)),
++            ask: f64::from_bits(palabra(r, 2)),
++            bq: f64::from_bits(palabra(r, 3)),
++            aq: f64::from_bits(palabra(r, 4)),
++        });
++    }
++    Ok(ticks)
+ }
+ 
+ /// CACHEV3-P5 (opt-in, `--cache columnas`): los ticks de la cinta YA ADMITIDA (la admision de TGB-G no se salta),
+ /// servidos desde la cache de columnas si su manifiesto cubre el original entero (mismo SHA-256, registros
+ /// `[0, n_total)` sin huecos) y cada hora verifica sus SHA-256. Si no, `None` con el motivo, y el entrenador sigue
+-/// por la cinta mapeada de siempre, sin error. Bits exactos: cada palabra se copia, no se reinterpreta.
+-fn ticks_desde_cache(cache_dir: &str, tape: &tick_tape::logica::TapeBytes, n_total: usize) -> Option<Vec<BinTick>> {
+-    let sha = cache_columnas::hex(&tape.sha256_original());
++/// por la instantanea admitida, sin error. Bits exactos: cada palabra se copia, no se reinterpreta.
++fn ticks_desde_cache(cache_dir: &str, sha256_original: &[u8; 32], n_total: usize) -> Option<Vec<BinTick>> {
++    let sha = cache_columnas::hex(sha256_original);
+     let bytes = match cache_columnas::lector::registros_de_original(std::path::Path::new(cache_dir), &sha, n_total as u64) {
+         Ok(Some(b)) => b,
+         Ok(None) => {
+@@ -1163,6 +1204,27 @@ fn main() {
+     // QS-2: libro de usos del holdout final y motivo declarado para reusarlo.
+     let holdout_ledger = arg("--holdout-ledger", model_manifest::DEFAULT_HOLDOUT_LEDGER);
+     let test_reuse = arg("--test-reuse", "");
++    // TGBG-5: --val-in se lee aqui (antes de admitir) y el indice revisado de generacion se carga con su pin.
++    let val_in = arg("--val-in", "");
++    let indice_ruta = arg("--generation-index", "");
++    let indice_sha = arg("--generation-index-sha256", "");
++    let (lectores_generacion, indice_generacion) = match (indice_ruta.is_empty(), indice_sha.is_empty()) {
++        (true, true) => (quantum_engine::tgb_generation::LectoresDisco::sin_indice(), None),
++        (false, false) => {
++            let ruta = std::path::Path::new(&indice_ruta);
++            match quantum_engine::tgb_generation::IndiceRevisado::cargar(ruta, &indice_sha) {
++                Ok(ix) => (quantum_engine::tgb_generation::LectoresDisco::para_indice(ruta), Some(ix)),
++                Err(e) => {
++                    eprintln!("❌ --generation-index: {e}");
++                    std::process::exit(1);
++                }
++            }
++        }
++        _ => {
++            eprintln!("❌ --generation-index y --generation-index-sha256 van juntos");
++            std::process::exit(1);
++        }
++    };
+     // CALENTAMIENTO — MEDIDO EN RELOJ DEL TAPE, NO EN TICKS.
+     //
+     // Ningún vector se muestrea hasta que el estado MÁS LENTO que entra en él
+@@ -1260,36 +1322,33 @@ fn main() {
+     );
+ 
+     let oi_series_ref = &oi_series;
++    // TGB-E: cinta lógica (`.bin`, o `.bin.tgb` verificado entero si el `.bin` no existe).
++    // TGBG-5: train, selección y test ADMITIDOS por el puente común ANTES de construir una sola muestra; un
++    // rechazo de cualquiera sale con su causa sin preparar nada.
++    let fuentes = admitir_fuentes(&in_path, &val_in, &test_in, &|p: &str| {
++        admitir_cinta_para_muestras(p, &lectores_generacion, indice_generacion.as_ref())
++    })
++    .unwrap_or_else(|e| {
++        eprintln!("❌ {e}");
++        std::process::exit(1);
++    });
+     // ── 1+2. Muestras: features+etiquetas desde ticks (reutilizable) ────
+-    let build = |path: &str| -> Samples {
+-        // TGB-E: cinta lógica (`.bin`, o `.bin.tgb` verificado entero si el `.bin` no existe).
+-        // TGB-G: admitida para entrenar ANTES de construir una sola muestra; si no, sale con su causa.
+-        let tape = admitir_cinta_para_muestras(path).unwrap_or_else(|e| {
+-            eprintln!("❌ {e}");
++    let build = |cinta: &quantum_engine::tgb_generation::CintaAdmitida| -> Samples {
++        // TGBG-5: se consume la instantánea ADMITIDA (los bytes analizados), con parseo LE seguro.
++        let path_s = cinta.ruta_logica().display().to_string();
++        let path: &str = &path_s;
++        let ticks = ticks_de_cinta(cinta.bytes()).unwrap_or_else(|e| {
++            eprintln!("❌ {path}: {e}");
+             std::process::exit(1);
+         });
+-        let mmap = tape.as_bytes();
+-        let header_off = if mmap.len() >= 8 && &mmap[..8] == b"TGMTICK1" {
+-            8usize
+-        } else {
+-            0
+-        };
+-        let sz = std::mem::size_of::<BinTick>();
+-        assert_eq!(
+-            (mmap.len() - header_off) % sz,
+-            0,
+-            "partial tick record in {path}"
+-        );
+-        let n_total = (mmap.len() - header_off) / sz;
++        let n_total = ticks.len();
+         if n_total < 50_000 {
+             eprintln!("❌ datos insuficientes: {} ticks ({})", n_total, path);
+             std::process::exit(1);
+         }
+-        let ptr = unsafe { mmap.as_ptr().add(header_off) } as *const BinTick;
+-        let raw = unsafe { std::slice::from_raw_parts(ptr, n_total) };
+-        // CACHEV3-P5: sin `--cache columnas` no se consulta nada y `raw` es la cinta mapeada de siempre.
+-        let desde_cache = if usar_cache_columnas { ticks_desde_cache(&cache_dir, &tape, n_total) } else { None };
+-        let raw: &[BinTick] = desde_cache.as_deref().unwrap_or(raw);
++        // CACHEV3-P5: sin `--cache columnas` no se consulta nada y `raw` son los ticks de la instantánea admitida.
++        let desde_cache = if usar_cache_columnas { ticks_desde_cache(&cache_dir, &cinta.sha256_original(), n_total) } else { None };
++        let raw: &[BinTick] = desde_cache.as_deref().unwrap_or(&ticks);
+         validate_tick_order(raw).expect("invalid tick chronology");
+         println!("   [{}] {} ticks crudos", path, n_total);
+ 
+@@ -1873,7 +1932,7 @@ fn main() {
+         }
+         Samples { feats, labels, persist, ts: sample_ts }
+     };
+-    let s_train = build(&in_path);
++    let s_train = build(&fuentes.train);
+     let (feats, labels, persist_all, sample_ts) =
+         (s_train.feats, s_train.labels, s_train.persist, s_train.ts);
+     let n = labels.len();
+@@ -1889,7 +1948,6 @@ fn main() {
+     // descartan del train las muestras cuya ventana (t, t+τ] alcanza la
+     // primera muestra de validación. El recorte no es un número elegido: lo
+     // fija τ contra la densidad real del muestreo.
+-    let val_in = arg("--val-in", "");
+     let (tr_feats, va_feats, tr_y, va_y, va_persist, va_ts): (
+         Vec<Vec<f32>>,
+         Vec<Vec<f32>>,
+@@ -1932,7 +1990,11 @@ fn main() {
+         // solape se COMPRUEBA en vez de suponerse. La selección debe empezar
+         // después de toda muestra de train, y se purgan las filas de train
+         // cuya ventana de etiqueta [t, t+τ] alcanza el inicio de la selección.
+-        let s_val = build(&val_in);
++        let Some(seleccion) = fuentes.seleccion.as_ref() else {
++            eprintln!("❌ --val-in sin admitir");
++            std::process::exit(1);
++        };
++        let s_val = build(seleccion);
+         let train = como_intervalos(&feats, &labels, &sample_ts, horizon_ms);
+         let seleccion = como_intervalos(&s_val.feats, &s_val.labels, &s_val.ts, horizon_ms);
+         let (train, purgadas) = purge_training(train, &seleccion)
+@@ -2219,7 +2281,11 @@ fn main() {
+         println!("   sin --test-in: evidencia de selección solamente; NO apta para promoción");
+         (true, None)
+     } else {
+-        let s_test = build(&test_in);
++        let Some(cinta_test) = fuentes.test.as_ref() else {
++            eprintln!("❌ --test-in sin admitir");
++            std::process::exit(1);
++        };
++        let s_test = build(cinta_test);
+         let test = como_intervalos(&s_test.feats, &s_test.labels, &s_test.ts, horizon_ms);
+         require_later_holdout(&test, evidence_end).expect("invalid final holdout");
+         let pred = serving_predictions(&model, &test.features).expect("invalid test predictions");
+@@ -3507,19 +3573,19 @@ mod tests {
+         // TGBG-2: el recibo autodeclarado de H (`evidencia_productor=prueba`) ya NO acredita la generacion, ni como
+         // `.bin` ni como `.bin.tgb`: sin una cadena reconocida en el indice revisado no hay procedencia.
+         let ok = poner("REL_REAL.bin", &relativa, Some(recibo(&relativa)));
+-        let e = admitir_cinta_para_muestras(&ok).err().unwrap_or_default();
++        let e = admitir_cinta_para_muestras(&ok, &quantum_engine::tgb_generation::LectoresDisco::sin_indice(), None).err().unwrap_or_default();
+         assert!(e.contains("procedencia_no_acreditada"), "recibo autodeclarado admitido o sin causa: {e:?}");
+         let tgb = dir.join("RELT_REAL.bin");
+         std::fs::write(dir.join("RELT_REAL.bin.tgb"), tick_tape::tgb::empaquetar(&relativa).unwrap()).unwrap();
+         std::fs::write(dir.join("RELT_REAL.bin.procedencia"), recibo(&relativa)).unwrap();
+-        let e = admitir_cinta_para_muestras(&tgb.to_string_lossy()).err().unwrap_or_default();
++        let e = admitir_cinta_para_muestras(&tgb.to_string_lossy(), &quantum_engine::tgb_generation::LectoresDisco::sin_indice(), None).err().unwrap_or_default();
+         assert!(e.contains("procedencia_no_acreditada"), "recibo autodeclarado admitido desde .tgb: {e:?}");
+         for (nombre, path) in [
+             ("firma antigua", poner("ANT_REAL.bin", &antigua, Some(recibo(&antigua)))),
+             ("sin recibo", poner("SINREC_REAL.bin", &relativa, None)),
+             ("recibo de otro original", poner("OTRO_REAL.bin", &relativa, Some(recibo(&antigua)))),
+         ] {
+-            match admitir_cinta_para_muestras(&path) {
++            match admitir_cinta_para_muestras(&path, &quantum_engine::tgb_generation::LectoresDisco::sin_indice(), None) {
+                 Ok(_) => panic!("{nombre}: la cinta llegó a la preparación de muestras sin evidencia suficiente"),
+                 Err(e) => assert!(!e.is_empty(), "{nombre}: sin causa"),
+             }
+@@ -3571,28 +3637,166 @@ mod tests {
+         for ruta in [&bin, &solo_tgb] {
+             let (tape, esperado) = actual(ruta);
+             assert_eq!(esperado.len(), 540);
+-            let servido = ticks_desde_cache(&cache_s, &tape, esperado.len()).expect("la cache cubre la cinta");
++            // TGBG-5: el parseo LE seguro da los mismos bits que el cast de memoria de antes (NaN con carga, -0.0, inf).
++            assert_eq!(bits(&ticks_de_cinta(tape.as_bytes()).expect("parseo LE")), bits(&esperado), "parseo LE ({})", ruta.display());
++            let servido = ticks_desde_cache(&cache_s, &tape.sha256_original(), esperado.len()).expect("la cache cubre la cinta");
+             assert_eq!(bits(&servido), bits(&esperado), "paridad valor a valor ({})", ruta.display());
+         }
+         let (tape, esperado) = actual(&bin);
+         // (b) Sin cache: cae.
+-        assert!(ticks_desde_cache(&dir.join("no_existe").to_string_lossy(), &tape, esperado.len()).is_none());
++        assert!(ticks_desde_cache(&dir.join("no_existe").to_string_lossy(), &tape.sha256_original(), esperado.len()).is_none());
+         // Otro largo pedido (no cubre [0, n)): cae.
+-        assert!(ticks_desde_cache(&cache_s, &tape, esperado.len() - 1).is_none());
++        assert!(ticks_desde_cache(&cache_s, &tape.sha256_original(), esperado.len() - 1).is_none());
+         // Una hora alterada: cae, sin pánico.
+         let man = cache_columnas::leer_manifiesto(&cache).unwrap();
+         let ask = cache.join(&man.horas[1].clave).join("ask.f64le");
+         let mut b = std::fs::read(&ask).unwrap();
+         b[9] ^= 0x10;
+         std::fs::write(&ask, &b).unwrap();
+-        assert!(ticks_desde_cache(&cache_s, &tape, esperado.len()).is_none());
++        assert!(ticks_desde_cache(&cache_s, &tape.sha256_original(), esperado.len()).is_none());
+         // Una hora expulsada: ya no cubre, cae.
+         b[9] ^= 0x10;
+         std::fs::write(&ask, &b).unwrap();
+-        assert!(ticks_desde_cache(&cache_s, &tape, esperado.len()).is_some());
++        assert!(ticks_desde_cache(&cache_s, &tape.sha256_original(), esperado.len()).is_some());
+         let uso = cache_columnas::leer_manifiesto(&cache).unwrap().uso_bytes();
+         cache_columnas::expulsion::expulsar_hasta(&cache, uso - 1, "prueba").unwrap();
+-        assert!(ticks_desde_cache(&cache_s, &tape, esperado.len()).is_none());
++        assert!(ticks_desde_cache(&cache_s, &tape.sha256_original(), esperado.len()).is_none());
+         let _ = std::fs::remove_dir_all(&dir);
+     }
+-}
++
++    // ── TGBG-5 (G10): todas las fuentes admitidas antes de preparar muestras. PURA: lectores en memoria. ──
++    struct LectoresMemoria {
++        cintas: std::collections::HashMap<String, Vec<u8>>,
++        recibos: std::collections::HashMap<String, Vec<u8>>,
++        evidencias: Vec<Vec<u8>>,
++        registro: std::cell::RefCell<Vec<String>>,
++    }
++
++    fn sha32(b: &[u8]) -> [u8; 32] {
++        use sha2::Digest;
++        sha2::Sha256::digest(b).into()
++    }
++
++    fn hx(b: &[u8]) -> String {
++        b.iter().map(|x| format!("{x:02x}")).collect()
++    }
++
++    impl quantum_engine::tgb_generation::Lectores for LectoresMemoria {
++        fn original(&self, logica: &std::path::Path) -> std::io::Result<quantum_engine::tgb_generation::Instantanea> {
++            let k = logica.display().to_string();
++            self.registro.borrow_mut().push(format!("admitir {k}"));
++            let bytes = self.cintas.get(&k).cloned().ok_or_else(|| std::io::Error::new(std::io::ErrorKind::NotFound, k))?;
++            Ok(quantum_engine::tgb_generation::Instantanea { bytes, transporte: tick_tape::logica::Transporte::Bin })
++        }
++        fn recibo(&self, logica: &std::path::Path) -> std::io::Result<Option<Vec<u8>>> {
++            Ok(self.recibos.get(&logica.display().to_string()).cloned())
++        }
++        fn evidencia(&self, sha256: &[u8; 32]) -> std::io::Result<Option<Vec<u8>>> {
++            Ok(self.evidencias.iter().find(|e| sha32(e) == *sha256).cloned())
++        }
++    }
++
++    /// Cinta REAL relativa de precio bajo con `n` registros; `desde` la distingue de las demas.
++    fn cinta_g10(n: u64, desde: f64) -> Vec<u8> {
++        let mut v = b"TGMTICK1".to_vec();
++        for k in 0..n {
++            let p = desde + 0.013 * k as f64;
++            let h = p * 0.00005;
++            for x in [1_780_300_800_000 + k * 1_000, (p - h).to_bits(), (p + h).to_bits(), 1f64.to_bits(), 2f64.to_bits()] {
++                v.extend_from_slice(&x.to_le_bytes());
++            }
++        }
++        v
++    }
++
++    /// (recibo, evidencia) de `original`, y la linea del indice que reconoce la evidencia.
++    fn cadena_g10(original: &[u8]) -> (Vec<u8>, Vec<u8>, String) {
++        let commit = "ef".repeat(20);
++        let evidencia = format!(
++            "formato=tg-evidencia-productor-1\nproductor=binance_vision_sync\ncommit_productor={commit}\nsha256_fuentes_productor={}\nsha256_ejecutable={}\nreceta=relativa\nconstante_r_bits={:016x}\norigen_receta=src/bin/binance_vision_sync.rs:222\ncomando=binance_vision_sync\nentrada_sha256={}\nsha256_salida={}\nbytes_salida={}\nsha256_registro_salida={}\ntransformaciones=ninguna\n",
++            hx(&sha32(b"fuentes")),
++            hx(&sha32(b"exe")),
++            0.00005f64.to_bits(),
++            hx(&sha32(original)),
++            hx(&sha32(original)),
++            original.len(),
++            hx(&sha32(b"stdout"))
++        );
++        let ev = hx(&sha32(evidencia.as_bytes()));
++        let n = (original.len() - 8) / 40;
++        let recibo = format!(
++            "formato=tg-procedencia-2\nversion_analizador=tick-tape-procedencia-2\nruta_logica=g10\nformato_cinta=TGMTICK1+40B_LE\nsha256_original={}\nbytes_original={}\nregistros_esperados={n}\nregistros_analizados={n}\ncobertura=completa\nrecetas_compatibles=relativa\nestado_firma=relativa\nprimer_testigo_relativa=0\nprocedencia_acreditada=relativa\nevidencia_productor_sha256={ev}\nanalisis=intervalos_exhaustivos\n",
++            hx(&sha32(original)),
++            original.len()
++        );
++        (recibo.into_bytes(), evidencia.into_bytes(), format!("evidencia={ev};binance_vision_sync;{commit};relativa\n"))
++    }
++
++    #[test]
++    fn tgb_g_10_todas_las_fuentes_antes_de_muestras() {
++        let rutas = ["mem/TRAIN_REAL.bin", "mem/SEL_REAL.bin", "mem/TEST_REAL.bin"];
++        let originales = [cinta_g10(300, 0.45), cinta_g10(300, 0.46), cinta_g10(300, 0.47)];
++        let mut indice = "formato=tg-indice-procedencia-1\nrevisado_por=contrato G10\n".to_string();
++        let mut mem = LectoresMemoria {
++            cintas: Default::default(),
++            recibos: Default::default(),
++            evidencias: Vec::new(),
++            registro: Default::default(),
++        };
++        for (ruta, original) in rutas.iter().zip(&originales) {
++            let (recibo, evidencia, linea) = cadena_g10(original);
++            mem.cintas.insert(ruta.to_string(), original.clone());
++            mem.recibos.insert(ruta.to_string(), recibo);
++            mem.evidencias.push(evidencia);
++            indice.push_str(&linea);
++        }
++        let pin = sha32(indice.as_bytes());
++        let ix = quantum_engine::tgb_generation::IndiceRevisado::desde_bytes(indice.into_bytes(), pin);
++        // Preparador espia, invocado como main: build(&train), build(seleccion), build(test).
++        let preparar = |f: &FuentesAdmitidas, mem: &LectoresMemoria| -> Vec<[u8; 32]> {
++            let mut vistas = Vec::new();
++            for c in std::iter::once(&f.train).chain(f.seleccion.as_ref()).chain(f.test.as_ref()) {
++                mem.registro.borrow_mut().push(format!("preparar {}", c.ruta_logica().display()));
++                assert_eq!(ticks_de_cinta(c.bytes()).expect("ticks").len(), 300);
++                vistas.push(sha32(c.bytes()));
++            }
++            vistas
++        };
++        let orquestar = |mem: &LectoresMemoria| -> Result<Vec<[u8; 32]>, String> {
++            let f = admitir_fuentes(rutas[0], rutas[1], rutas[2], &|p: &str| admitir_cinta_para_muestras(p, mem, Some(&ix)))?;
++            Ok(preparar(&f, mem))
++        };
++
++        // Train, seleccion o test rechazados por turno (recibo retirado): cero preparaciones.
++        for k in 0..3 {
++            let recibo = mem.recibos.remove(rutas[k]).expect("recibo");
++            mem.registro.borrow_mut().clear();
++            let r = orquestar(&mem);
++            assert!(r.is_err(), "{}: rechazada y aun asi admitida", rutas[k]);
++            let reg = mem.registro.borrow().clone();
++            assert!(reg.iter().all(|l| !l.starts_with("preparar")), "{}: se prepararon muestras: {reg:?}", rutas[k]);
++            mem.recibos.insert(rutas[k].to_string(), recibo);
++        }
++
++        // Todas admitidas: el preparador recibe exactamente sus tres fuentes verificadas, despues de admitirlas todas.
++        mem.registro.borrow_mut().clear();
++        let vistas = orquestar(&mem).expect("las tres admitidas");
++        assert_eq!(vistas, originales.iter().map(|o| sha32(o)).collect::<Vec<_>>());
++        let reg = mem.registro.borrow().clone();
++        let ultima_admision = reg.iter().rposition(|l| l.starts_with("admitir")).expect("admisiones");
++        let primera_preparacion = reg.iter().position(|l| l.starts_with("preparar")).expect("preparaciones");
++        assert!(ultima_admision < primera_preparacion, "se preparo antes de admitir todo: {reg:?}");
++
++        // main: la admision de todas las fuentes precede al primer build, y ningun build recibe una ruta sin admitir.
++        let src = include_str!("train_forest.rs").replace("\r\n", "\n");
++        let inicio = src.find("\nfn main() {").expect("fn main");
++        let fin = inicio + 1 + src[inicio + 1..].find("\n}\n").expect("fin de main");
++        let cuerpo = &src[inicio..fin];
++        let admision = cuerpo.find("let fuentes = admitir_fuentes(&in_path, &val_in, &test_in,").expect("main admite las fuentes");
++        let primer_build = cuerpo.find("let s_train = build(&fuentes.train);").expect("build de train");
++        assert!(admision < primer_build, "main construye muestras antes de admitir todas las fuentes");
++        for viejo in ["build(&in_path)", "build(&val_in)", "build(&test_in)"] {
++            assert!(!cuerpo.contains(viejo), "main vuelve a construir desde una ruta sin admitir: {viejo}");
++        }
++    }
++}
+\ No newline at end of file

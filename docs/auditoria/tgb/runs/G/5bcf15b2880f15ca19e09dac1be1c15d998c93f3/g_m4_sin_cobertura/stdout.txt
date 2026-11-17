@@ -1,0 +1,27 @@
+﻿# g_m4_sin_cobertura | HEAD 5bcf15b2880f15ca19e09dac1be1c15d998c93f3 | sucios 3 | cargo/rustc vivos 0 | libre 325019717632 | ram_libre_gb 4.29 | inicio 2026-11-16T23:49:11 | cargo test --locked -p tick-tape --test procedencia --no-fail-fast | CINTA  | REF 
+   Compiling tick-tape v0.1.0 (C:\Users\jhona\Desktop\PC-Turbo\integrador\wt_v4l\crates\tick-tape)
+    Finished `test` profile [optimized] target(s) in 4.45s
+     Running tests\procedencia.rs (C:/Users/jhona/Documents/Proyectos/Trader Gemini/target\debug\deps\procedencia-8af2908c96413ab6.exe)
+
+running 2 tests
+test tgb_firma_distingue_recetas_sin_adivinar ... ok
+test tgb_solo_la_relativa_acreditada_entra_a_entrenamiento ... FAILED
+
+failures:
+
+---- tgb_solo_la_relativa_acreditada_entra_a_entrenamiento stdout ----
+
+thread 'tgb_solo_la_relativa_acreditada_entra_a_entrenamiento' (10388) panicked at crates\tick-tape\tests\procedencia.rs:151:22:
+analisis incompleto: admitida sin evidencia suficiente
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    tgb_solo_la_relativa_acreditada_entra_a_entrenamiento
+
+test result: FAILED. 1 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s
+
+error: test failed, to rerun pass `-p tick-tape --test procedencia`
+error: 1 target failed:
+    `-p tick-tape --test procedencia`
+# fin 2026-11-16T23:49:22 codigo 101

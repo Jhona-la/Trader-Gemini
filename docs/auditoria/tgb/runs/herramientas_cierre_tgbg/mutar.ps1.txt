@@ -1,0 +1,22 @@
+param([string]$Nombre, [string]$Archivo, [string]$Viejo, [string]$Nuevo, [string]$Args1, [string]$Tipo = 'mutation', [string]$Esperado = 'rojo')
+# Inyecta un cambio (reemplazo exacto, una sola vez), corre la prueba y restaura los bytes originales (fecha nueva).
+$ErrorActionPreference = 'Stop'
+$LOGDIR = 'C:\Users\jhona\Desktop\PC-Turbo\integrador\tgbg_logs'
+$wt = 'C:\Users\jhona\Desktop\PC-Turbo\integrador\wt_v4l'
+$ruta = Join-Path $wt $Archivo
+$bytes = [IO.File]::ReadAllBytes($ruta); $hash0 = (Get-FileHash $ruta).Hash
+$texto = [Text.Encoding]::UTF8.GetString($bytes)
+$n = ([regex]::Matches($texto, [regex]::Escape($Viejo))).Count
+if ($n -ne 1) { "MUTACION $Nombre : el ancla aparece $n veces" | Out-File -Encoding utf8 (Join-Path $LOGDIR "$Nombre.log"); exit 2 }
+$mut = $texto.Replace($Viejo, $Nuevo)
+New-Item -ItemType Directory -Force (Join-Path $LOGDIR 'mutaciones') | Out-Null
+"--- $Archivo (sha256 previo $($hash0.ToLower()))`n### TEXTO VIEJO (una aparicion exacta)`n$Viejo`n### TEXTO NUEVO`n$Nuevo`n### FIN" | Out-File -Encoding utf8 (Join-Path $LOGDIR "mutaciones\$Nombre.txt")
+[IO.File]::WriteAllText($ruta, $mut, (New-Object Text.UTF8Encoding($false)))
+try {
+  & 'C:\Users\jhona\Desktop\PC-Turbo\integrador\tgbg_logs\correr.ps1' -Nombre $Nombre -Args1 $Args1 -Tipo $Tipo -Esperado $Esperado
+  $code = $LASTEXITCODE
+} finally {
+  [IO.File]::WriteAllBytes($ruta, $bytes)
+}
+if ((Get-FileHash $ruta).Hash -ne $hash0) { "RESTAURACION FALLIDA $ruta" | Out-File -Append -Encoding utf8 (Join-Path $LOGDIR "$Nombre.log"); exit 3 }
+exit $code

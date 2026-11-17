@@ -1,0 +1,35 @@
+{
+  "schema": "tgb-run-1",
+  "paso": "F",
+  "run_id": "f_r02_tick_tape",
+  "tipo": "regresion",
+  "fecha_local": "2026-11-16T23:31:47",
+  "argv": [
+    "bash",
+    "scripts/cargo_semaforo.sh",
+    "test",
+    "--locked",
+    "-p",
+    "tick-tape",
+    "--test",
+    "tgb_formato"
+  ],
+  "resultado_observado": "verde",
+  "codigo_salida": 0,
+  "pruebas": {
+    "resumenes": 1,
+    "pasan": 2,
+    "fallan": 0,
+    "ignoradas": 0
+  },
+  "asercion_causante": null,
+  "stdout": {
+    "ruta": "stdout.txt",
+    "sha256": "7ed3ce26b759a11f5a98820c99c04bc38ca44579aa126db3baffbb13ebae9207"
+  },
+  "estado": "historico_no_atribuible",
+  "head_en_cabecera": "14b90b17813c946d8a3f667eabb366f0b9ab762c",
+  "archivos_rastreados_modificados": 3,
+  "nota": null,
+  "motivo_estado": "el log no guarda el parche del arbol (cambios sin confirmar); HEAD solo no describe el sujeto"
+}

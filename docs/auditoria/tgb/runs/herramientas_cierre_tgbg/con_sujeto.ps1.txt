@@ -1,0 +1,22 @@
+param([string]$Nombre, [string[]]$Archivos, [string[]]$Borradores, [string]$Args1, [string]$Tipo = 'red_before', [string]$Esperado = 'rojo')
+# Sustituye uno o mas archivos del worktree por borradores (sujeto del rojo: logica de H trasladada a la costura),
+# corre la prueba y restaura los bytes originales con fecha nueva.
+$ErrorActionPreference = 'Stop'
+$LOGDIR = 'C:\Users\jhona\Desktop\PC-Turbo\integrador\tgbg_logs'
+$wt = 'C:\Users\jhona\Desktop\PC-Turbo\integrador\wt_v4l'
+$guardados = @()
+for ($k = 0; $k -lt $Archivos.Count; $k++) {
+  $ruta = Join-Path $wt $Archivos[$k]
+  $guardados += ,@($ruta, [IO.File]::ReadAllBytes($ruta), (Get-FileHash $ruta).Hash)
+}
+try {
+  for ($k = 0; $k -lt $Archivos.Count; $k++) {
+    [IO.File]::WriteAllBytes((Join-Path $wt $Archivos[$k]), [IO.File]::ReadAllBytes($Borradores[$k]))
+  }
+  & 'C:\Users\jhona\Desktop\PC-Turbo\integrador\tgbg_logs\correr.ps1' -Nombre $Nombre -Args1 $Args1 -Tipo $Tipo -Esperado $Esperado
+  $code = $LASTEXITCODE
+} finally {
+  foreach ($g in $guardados) { [IO.File]::WriteAllBytes($g[0], $g[1]) }
+}
+foreach ($g in $guardados) { if ((Get-FileHash $g[0]).Hash -ne $g[2]) { "RESTAURACION FALLIDA $($g[0])" | Out-File -Append -Encoding utf8 (Join-Path $LOGDIR "$Nombre.log"); exit 3 } }
+exit $code

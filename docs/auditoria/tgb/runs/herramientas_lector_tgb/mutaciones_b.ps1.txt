@@ -1,0 +1,25 @@
+$m = 'C:\Users\jhona\Desktop\PC-Turbo\integrador\tgb_logs\mutar.ps1'
+$f = 'crates\tick-tape\src\tgb.rs'
+$a = 'test --locked -p tick-tape --test tgb_corrupciones'
+$l = @(
+  @('b_m01_sin_magia', 'if contenedor.len() >= MAGIA_TGB.len() && &contenedor[..MAGIA_TGB.len()] != MAGIA_TGB {', 'if false {'),
+  @('b_m02_sin_minimo', 'if contenedor.len() < MINIMO_CONTENEDOR {', 'if false {'),
+  @('b_m03_sin_sello', 'if h[..] != sello[..] {', 'if false {'),
+  @('b_m04_modo_desconocido_como_2', '        1 | 2 => {', '        _ => {'),
+  @('b_m05_sin_faltan_bloques', 'if c.pos == cuerpo.len() {', 'if false {'),
+  @('b_m06_sin_bloque_cero', 'if n == 0 {', 'if false {'),
+  @('b_m07_sin_bloque_max', 'if n > BLOQUE_MAX {', 'if false {'),
+  @('b_m08_sin_excede_total', 'if n > total - hechos {', 'if false {'),
+  @('b_m09_sin_columna_vacia', 'return Err(fallo(FalloTgb::ColumnaVacia, format!("campo {f}")));', 'let _ = f;'),
+  @('b_m10_sin_sobrante', 'if c.pos != cuerpo.len() {', 'if false {'),
+  @('b_m11_sin_largo_original', 'if regs != Some(largo) {', 'if false {'),
+  @('b_m12_sin_presupuesto', 'if largo > tope {', 'if false {'),
+  @('b_m13_corta_sin_error', 'Ok(0) => return Err(fallo(FalloTgb::LargoColumna,', 'Ok(0) => break, Ok(usize::MAX) => return Err(fallo(FalloTgb::LargoColumna,'),
+  @('b_m14_sin_sonda_eof', '            Ok(_) => return Err(fallo(FalloTgb::LargoColumna, format!("expande a mas de {}", destino.len()))),', '            Ok(_) => return Ok(()),'),
+  @('b_m15_sin_sha_original', 'if sha != sha_anotado {', 'if false {'),
+  @('b_m16_sin_identidad_bytes', 'if e.bytes != largo {', 'if false {'),
+  @('b_m17_sin_identidad_sha', 'if e.sha256 != sha {', 'if false {'),
+  @('b_m18_sin_cota_del_cuerpo', '.filter(|f| *f <= self.cuerpo.len())', '.filter(|f| *f <= self.cuerpo.len() + (1 << 40))')
+)
+foreach ($x in $l) { & $m -Nombre $x[0] -Archivo $f -Viejo $x[1] -Nuevo $x[2] -Args1 $a }
+'MUTACIONES B TERMINADAS' | Out-File -Encoding utf8 'C:\Users\jhona\Desktop\PC-Turbo\integrador\tgb_logs\mutaciones_b.done'

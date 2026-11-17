@@ -1,0 +1,18 @@
+$c='C:\Users\jhona\Desktop\PC-Turbo\integrador\tgb_logs\correr.ps1'
+$l=@(
+ @('q01_check_ws','check --locked --workspace --all-targets'),
+ @('q02_tick_tape','test --locked -p tick-tape --no-fail-fast'),
+ @('q03_e13_2_reader','test --locked -p backtest-engine --test tgb_reader_contract'),
+ @('q04_e13_3_selector','test --locked -p backtest-engine --test tgb_selector_contract'),
+ @('q05_e13_4_prefix','test --locked -p backtest-engine --test qra_tick_prefix_contract'),
+ @('q06_e13_5_admision','test --locked -p trader-gemini-v5 --bin dataset_admission tgb_'),
+ @('q07_e13_6_train','test --locked -p trader-gemini-v5 --bin train_forest tgb_'),
+ @('q08_bt','test --locked -p backtest-engine --no-fail-fast'),
+ @('q09_host','test --locked -p trader-gemini-v5 --tests --no-fail-fast'),
+ @('q10_bin','test --locked -p trader-gemini-v5 --bin god_engine'),
+ @('q11_fe','test --locked -p feature-engine --no-fail-fast'),
+ @('q12_gec_qa','test --locked -p god-engine-core -p quantum-arena --no-fail-fast')
+)
+$desde = [int]$args[0]; $hasta = [int]$args[1]
+for($i=$desde; $i -le $hasta; $i++){ $x=$l[$i]; powershell -NoProfile -File $c -Nombre $x[0] -Args1 $x[1] }
+"BATERIA Q $desde-$hasta TERMINADA" | Out-File -Encoding utf8 "C:\Users\jhona\Desktop\PC-Turbo\integrador\tgb_logs\bateria_q_$desde.done"

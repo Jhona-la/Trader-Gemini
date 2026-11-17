@@ -1,0 +1,35 @@
+# p1_r00_rojo | HEAD e62ace4cad16389e5586e82e959620eddd8e26d0 | sucios 1 | cargo/rustc vivos 3 | libre 305329483776 | ram_libre_gb 2.32 | inicio 2026-11-17T15:57:53Z | tipo red_before | esperado rojo | parche 635ba620740cddec34dfabfbe8b4c877acd6c5d0d340eb73a783227a04c62b19 | cargo test -p tick-tape --test tgb_g_contract --locked
+    Blocking waiting for file lock on build directory
+   Compiling tick-tape v0.1.0 (C:\Users\jhona\Desktop\PC-Turbo\integrador\wt_v4l\crates\tick-tape)
+    Finished `test` profile [optimized] target(s) in 2m 44s
+     Running tests\tgb_g_contract.rs (C:/Users/jhona/Documents/Proyectos/Trader Gemini/target\debug\deps\tgb_g_contract-0c08981f09535697.exe)
+
+running 3 tests
+test tgb_g01_recetas ... ok
+test tgb_g07_mixta_invalida_y_medio_tick ... FAILED
+test tgb_g02_cruce_y_vecinos ... FAILED
+
+failures:
+
+---- tgb_g07_mixta_invalida_y_medio_tick stdout ----
+
+thread 'tgb_g07_mixta_invalida_y_medio_tick' (63544) panicked at crates\tick-tape\tests\tgb_g_contract.rs:167:9:
+assertion `left == right` failed: cantidad invalida (NaN, 1)
+  left: Relativa
+ right: OtraOInvalida
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+---- tgb_g02_cruce_y_vecinos stdout ----
+
+thread 'tgb_g02_cruce_y_vecinos' (27100) panicked at crates\tick-tape\tests\tgb_g_contract.rs:136:5:
+control: el barrido contiene medios distintos de p (0 de 4000)
+
+
+failures:
+    tgb_g02_cruce_y_vecinos
+    tgb_g07_mixta_invalida_y_medio_tick
+
+test result: FAILED. 1 passed; 2 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+error: test failed, to rerun pass `-p tick-tape --test tgb_g_contract`
+# fin 2026-11-17T16:00:54Z codigo 101 duracion_s 181

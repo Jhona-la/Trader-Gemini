@@ -1,0 +1,32 @@
+# p2_m04_gg_cobertura | HEAD 40616b7fd9db9fc26b71382956dcb6c84ecaf7fc | sucios 4 | cargo/rustc vivos 2 | libre 305152851968 | ram_libre_gb 3.54 | inicio 2026-11-17T16:13:47Z | tipo mutation | esperado rojo | parche 8c028846f2bd38226dfaeacb4400f4781ccff8d4996fdb916da8274fc846fa97 | cargo test -p tick-tape --test tgb_g_contract --locked
+   Compiling tick-tape v0.1.0 (C:\Users\jhona\Desktop\PC-Turbo\integrador\wt_v4l\crates\tick-tape)
+    Finished `test` profile [optimized] target(s) in 4.63s
+     Running tests\tgb_g_contract.rs (C:/Users/jhona/Documents/Proyectos/Trader Gemini/target\debug\deps\tgb_g_contract-0c08981f09535697.exe)
+
+running 9 tests
+test tgb_g01_recetas ... ok
+test tgb_g03_rechaza_autodeclaracion ... ok
+test tgb_g07_mixta_invalida_y_medio_tick ... ok
+test tgb_g06_cobertura_y_cola ... FAILED
+test tgb_g05_identidad_original ... ok
+test tgb_g08_cabecera_y_recibo ... ok
+test tgb_g04_cadena_rota ... ok
+test tgb_g12_bin_tgb_equivalentes ... ok
+test tgb_g02_cruce_y_vecinos ... ok
+
+failures:
+
+---- tgb_g06_cobertura_y_cola stdout ----
+
+thread 'tgb_g06_cobertura_y_cola' (41588) panicked at crates\tick-tape\tests\tgb_g_contract.rs:297:18:
+registros_esperados=199: ADMITIDA sin evidencia suficiente (sha 1d1ab755e4fb6ff63fcf5550793d9e990089a5cfaf1cbe51e2f33da067cb7a10)
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    tgb_g06_cobertura_y_cola
+
+test result: FAILED. 8 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+error: test failed, to rerun pass `-p tick-tape --test tgb_g_contract`
+# fin 2026-11-17T16:13:57Z codigo 101 duracion_s 10

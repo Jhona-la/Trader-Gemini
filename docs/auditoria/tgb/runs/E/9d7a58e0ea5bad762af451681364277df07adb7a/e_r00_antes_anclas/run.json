@@ -1,0 +1,35 @@
+{
+  "schema": "tgb-run-1",
+  "paso": "E",
+  "run_id": "e_r00_antes_anclas",
+  "tipo": "red_before",
+  "fecha_local": "2026-11-16T23:15:02",
+  "argv": [
+    "bash",
+    "scripts/cargo_semaforo.sh",
+    "test",
+    "--locked",
+    "-p",
+    "tick-tape",
+    "--test",
+    "consumidores_contract"
+  ],
+  "resultado_observado": "rojo",
+  "codigo_salida": 101,
+  "pruebas": {
+    "resumenes": 1,
+    "pasan": 0,
+    "fallan": 1,
+    "ignoradas": 0
+  },
+  "asercion_causante": "crates\\tick-tape\\tests\\consumidores_contract.rs:70:5: lectores sin migrar a la cinta logica:",
+  "stdout": {
+    "ruta": "stdout.txt",
+    "sha256": "7778ecbb59af8a91fc29bee246ecdf3d238975195d983e2a26aff847e902584b"
+  },
+  "estado": "historico_no_atribuible",
+  "head_en_cabecera": "9d7a58e0ea5bad762af451681364277df07adb7a",
+  "archivos_rastreados_modificados": 7,
+  "nota": null,
+  "motivo_estado": "el log no guarda el parche del arbol (cambios sin confirmar); HEAD solo no describe el sujeto"
+}

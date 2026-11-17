@@ -1,0 +1,36 @@
+{
+  "schema": "tgb-run-1",
+  "paso": "CD",
+  "run_id": "cd_m3_with_extension",
+  "tipo": "mutation",
+  "fecha_local": "2026-11-16T23:05:38",
+  "argv": [
+    "bash",
+    "scripts/cargo_semaforo.sh",
+    "test",
+    "--locked",
+    "-p",
+    "backtest-engine",
+    "--test",
+    "tgb_reader_contract",
+    "--no-fail-fast"
+  ],
+  "resultado_observado": "rojo",
+  "codigo_salida": 101,
+  "pruebas": {
+    "resumenes": 1,
+    "pasan": 1,
+    "fallan": 3,
+    "ignoradas": 0
+  },
+  "asercion_causante": "crates\\backtest-engine\\tests\\tgb_reader_contract.rs:149:54: completo desde .tgb: Custom { kind: NotFound, error: \"cinta ausente: no existe C:\\\\Users\\\\jhona\\\\AppData\\\\Local\\\\Temp\\\\tgb_reader_contract_37900_prefijo\\\\f1.bin ni C:\\\\Users\\\\jhona\\\\AppData\\\\Local\\\\Temp\\\\tgb_reader_contract_37900_prefijo\\\\f1.tgb\" }",
+  "stdout": {
+    "ruta": "stdout.txt",
+    "sha256": "c300e7ca250482484211155166f01c1c2fb0a2a1b9b53791f8aecde0d16736a2"
+  },
+  "estado": "historico_no_atribuible",
+  "head_en_cabecera": "e6906854de572309415b25829adabee9be87fe77",
+  "archivos_rastreados_modificados": 12,
+  "nota": null,
+  "motivo_estado": "el log no guarda el parche del arbol (cambios sin confirmar); HEAD solo no describe el sujeto"
+}

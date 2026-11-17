@@ -1,0 +1,34 @@
+{
+  "schema": "tgb-run-1",
+  "paso": "G-compuerta",
+  "run_id": "q02_tick_tape",
+  "tipo": "regresion",
+  "fecha_local": "2026-11-17T00:27:46",
+  "argv": [
+    "bash",
+    "scripts/cargo_semaforo.sh",
+    "test",
+    "--locked",
+    "-p",
+    "tick-tape",
+    "--no-fail-fast"
+  ],
+  "resultado_observado": "verde",
+  "codigo_salida": 0,
+  "pruebas": {
+    "resumenes": 7,
+    "pasan": 10,
+    "fallan": 0,
+    "ignoradas": 0
+  },
+  "asercion_causante": null,
+  "stdout": {
+    "ruta": "stdout.txt",
+    "sha256": "9bc0d30fe373cc53d7c6e89951908959fffd098ff1e3817096b700c14c174219"
+  },
+  "estado": "historico_cabecera_limpia",
+  "head_en_cabecera": "324ef18dbe1805320db70056df4fe5d6a7edd329",
+  "archivos_rastreados_modificados": 0,
+  "nota": null,
+  "motivo_estado": "cabecera con 0 archivos rastreados modificados; no registra archivos sin rastrear"
+}

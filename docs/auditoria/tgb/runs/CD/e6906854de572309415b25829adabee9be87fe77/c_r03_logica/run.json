@@ -1,0 +1,35 @@
+{
+  "schema": "tgb-run-1",
+  "paso": "CD",
+  "run_id": "c_r03_logica",
+  "tipo": "regresion",
+  "fecha_local": "2026-11-16T23:01:56",
+  "argv": [
+    "bash",
+    "scripts/cargo_semaforo.sh",
+    "test",
+    "--locked",
+    "-p",
+    "tick-tape",
+    "--test",
+    "logica"
+  ],
+  "resultado_observado": "verde",
+  "codigo_salida": 0,
+  "pruebas": {
+    "resumenes": 1,
+    "pasan": 1,
+    "fallan": 0,
+    "ignoradas": 0
+  },
+  "asercion_causante": null,
+  "stdout": {
+    "ruta": "stdout.txt",
+    "sha256": "e658a00074f33c8677f83bb42d061b5749c1a2b7792f7b03b6f86653111ccb78"
+  },
+  "estado": "historico_no_atribuible",
+  "head_en_cabecera": "e6906854de572309415b25829adabee9be87fe77",
+  "archivos_rastreados_modificados": 4,
+  "nota": null,
+  "motivo_estado": "el log no guarda el parche del arbol (cambios sin confirmar); HEAD solo no describe el sujeto"
+}

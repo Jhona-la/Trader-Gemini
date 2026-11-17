@@ -1,0 +1,37 @@
+{
+  "schema": "tgb-run-1",
+  "paso": "TGBG-3",
+  "run_id": "p3_r01_rojo",
+  "tipo": "red_before",
+  "fecha_utc": "2026-11-17T16:22:27Z",
+  "cwd": "C:\\Users\\jhona\\Desktop\\PC-Turbo\\integrador\\wt_v4l",
+  "argv": [
+    "bash",
+    "scripts/cargo_semaforo.sh",
+    "test",
+    "-p",
+    "trader-gemini-v5",
+    "--lib",
+    "--locked",
+    "tgb_g_"
+  ],
+  "filtro": "tgb_g_",
+  "nota": "reemplazado por p3_r03_rojo (las aserciones pasan a comparar SHA-256 en vez de volcar bytes)",
+  "resultado_esperado": "rojo",
+  "resultado_observado": "rojo",
+  "codigo_salida": 101,
+  "duracion_s": 133,
+  "pruebas": {
+    "resumenes": 1,
+    "pasan": 3,
+    "fallan": 1,
+    "ignoradas": 0
+  },
+  "asercion_causante": "src\\tgb_generation.rs:380:9: assertion `left == right` failed: se consumen los bytes analizados",
+  "stdout": {
+    "ruta": "stdout.txt",
+    "sha256": "c0334b6e5a5817eecc94b6b4b231d852036f9bfbe1ec6d0d502cfa332e1211a8"
+  },
+  "stderr": "combinado en stdout.txt (cmd 2>&1 hacia el mismo archivo)",
+  "estado": "atribuible"
+}

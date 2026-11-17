@@ -1,0 +1,3 @@
+# Registro de evidencia: los bytes de los logs y parches se guardan tal cual (sin normalizar fin de linea ni
+# avisar de espacios finales: son salidas originales).
+* -text -whitespace

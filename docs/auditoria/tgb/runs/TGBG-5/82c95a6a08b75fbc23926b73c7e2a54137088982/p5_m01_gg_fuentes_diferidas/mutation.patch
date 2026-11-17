@@ -1,0 +1,7 @@
+--- src\bin\train_forest.rs (sha256 previo 950dfbe881377805898409eebdd8aaca777f7424b21401f22948a98c23705407)
+### TEXTO VIEJO (una aparicion exacta)
+    let test = if test_in.is_empty() { None } else { Some(admitir(test_in)?) };
+### TEXTO NUEVO
+    let test: Option<quantum_engine::tgb_generation::CintaAdmitida> = None;
+    let _ = test_in;
+### FIN

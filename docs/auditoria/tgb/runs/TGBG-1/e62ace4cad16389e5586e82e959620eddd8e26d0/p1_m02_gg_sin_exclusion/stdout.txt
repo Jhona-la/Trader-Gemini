@@ -1,0 +1,44 @@
+# p1_m02_gg_sin_exclusion | HEAD e62ace4cad16389e5586e82e959620eddd8e26d0 | sucios 1 | cargo/rustc vivos 2 | libre 305203515392 | ram_libre_gb 2.02 | inicio 2026-11-17T16:02:48Z | tipo mutation | esperado rojo | parche c20ccb0def64b30ecaf4a13e4196d102e0047c3c125d4a14f563f3632a89209f | cargo test -p tick-tape --test tgb_g_contract --locked
+   Compiling tick-tape v0.1.0 (C:\Users\jhona\Desktop\PC-Turbo\integrador\wt_v4l\crates\tick-tape)
+    Finished `test` profile [optimized] target(s) in 4.73s
+     Running tests\tgb_g_contract.rs (C:/Users/jhona/Documents/Proyectos/Trader Gemini/target\debug\deps\tgb_g_contract-0c08981f09535697.exe)
+
+running 3 tests
+test tgb_g01_recetas ... FAILED
+test tgb_g07_mixta_invalida_y_medio_tick ... FAILED
+test tgb_g02_cruce_y_vecinos ... FAILED
+
+failures:
+
+---- tgb_g01_recetas stdout ----
+
+thread 'tgb_g01_recetas' (55272) panicked at crates\tick-tape\tests\tgb_g_contract.rs:72:5:
+assertion `left == right` failed
+  left: Indeterminada
+ right: Relativa
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+---- tgb_g07_mixta_invalida_y_medio_tick stdout ----
+
+thread 'tgb_g07_mixta_invalida_y_medio_tick' (4424) panicked at crates\tick-tape\tests\tgb_g_contract.rs:148:5:
+assertion `left == right` failed
+  left: Indeterminada
+ right: Mixta
+
+---- tgb_g02_cruce_y_vecinos stdout ----
+
+thread 'tgb_g02_cruce_y_vecinos' (69144) panicked at crates\tick-tape\tests\tgb_g_contract.rs:115:13:
+assertion `left == right` failed: p=1e2: par relativo distinto del antiguo
+  left: (0, 0, 0, 0, 0)
+ right: (1, 0, 0, 0, 0)
+
+
+failures:
+    tgb_g01_recetas
+    tgb_g02_cruce_y_vecinos
+    tgb_g07_mixta_invalida_y_medio_tick
+
+test result: FAILED. 0 passed; 3 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+error: test failed, to rerun pass `-p tick-tape --test tgb_g_contract`
+# fin 2026-11-17T16:02:58Z codigo 101 duracion_s 10

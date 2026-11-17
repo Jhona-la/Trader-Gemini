@@ -1,0 +1,35 @@
+{
+  "schema": "tgb-run-1",
+  "paso": "G",
+  "run_id": "g_r05_ventana",
+  "tipo": "regresion",
+  "fecha_local": "2026-11-16T23:51:25",
+  "argv": [
+    "bash",
+    "scripts/cargo_semaforo.sh",
+    "test",
+    "--locked",
+    "-p",
+    "tick-tape",
+    "--test",
+    "procedencia"
+  ],
+  "resultado_observado": "rojo",
+  "codigo_salida": 101,
+  "pruebas": {
+    "resumenes": 1,
+    "pasan": 2,
+    "fallan": 1,
+    "ignoradas": 0
+  },
+  "asercion_causante": "crates\\tick-tape\\tests\\procedencia.rs:151:5: el barrido no encontro medios distintos de p",
+  "stdout": {
+    "ruta": "stdout.txt",
+    "sha256": "580f60df3766f348df1e2c26f31a1f3e081caf64e22d88e6e4e5d51e7a927670"
+  },
+  "estado": "historico_no_atribuible",
+  "head_en_cabecera": "5bcf15b2880f15ca19e09dac1be1c15d998c93f3",
+  "archivos_rastreados_modificados": 3,
+  "nota": null,
+  "motivo_estado": "el log no guarda el parche del arbol (cambios sin confirmar); HEAD solo no describe el sujeto"
+}

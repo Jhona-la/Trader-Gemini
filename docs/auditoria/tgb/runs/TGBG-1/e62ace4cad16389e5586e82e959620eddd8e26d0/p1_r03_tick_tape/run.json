@@ -1,0 +1,36 @@
+{
+  "schema": "tgb-run-1",
+  "paso": "TGBG-1",
+  "run_id": "p1_r03_tick_tape",
+  "tipo": "regresion",
+  "fecha_utc": "2026-11-17T16:03:12Z",
+  "cwd": "C:\\Users\\jhona\\Desktop\\PC-Turbo\\integrador\\wt_v4l",
+  "argv": [
+    "bash",
+    "scripts/cargo_semaforo.sh",
+    "test",
+    "--locked",
+    "-p",
+    "tick-tape",
+    "--no-fail-fast"
+  ],
+  "filtro": null,
+  "nota": null,
+  "resultado_esperado": "verde",
+  "resultado_observado": "verde",
+  "codigo_salida": 0,
+  "duracion_s": 15,
+  "pruebas": {
+    "resumenes": 8,
+    "pasan": 13,
+    "fallan": 0,
+    "ignoradas": 0
+  },
+  "asercion_causante": null,
+  "stdout": {
+    "ruta": "stdout.txt",
+    "sha256": "3d35c85d0cbc8a54951f62e503c4dad89176085876184aeb228c6efd637f73da"
+  },
+  "stderr": "combinado en stdout.txt (cmd 2>&1 hacia el mismo archivo)",
+  "estado": "atribuible"
+}

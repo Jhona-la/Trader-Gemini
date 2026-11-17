@@ -1,0 +1,37 @@
+{
+  "schema": "tgb-run-1",
+  "paso": "TGBG-1",
+  "run_id": "p1_m01_gg_medio_solo",
+  "tipo": "mutation",
+  "fecha_utc": "2026-11-17T16:02:34Z",
+  "cwd": "C:\\Users\\jhona\\Desktop\\PC-Turbo\\integrador\\wt_v4l",
+  "argv": [
+    "bash",
+    "scripts/cargo_semaforo.sh",
+    "test",
+    "-p",
+    "tick-tape",
+    "--test",
+    "tgb_g_contract",
+    "--locked"
+  ],
+  "filtro": null,
+  "nota": null,
+  "resultado_esperado": "rojo",
+  "resultado_observado": "rojo",
+  "codigo_salida": 101,
+  "duracion_s": 11,
+  "pruebas": {
+    "resumenes": 1,
+    "pasan": 2,
+    "fallan": 1,
+    "ignoradas": 0
+  },
+  "asercion_causante": "crates\\tick-tape\\tests\\tgb_g_contract.rs:134:9: assertion `left == right` failed: p=9.999999999987793e-1 (binade): relativa exclusiva",
+  "stdout": {
+    "ruta": "stdout.txt",
+    "sha256": "d191e73f19ec32313b2f58e20a8d8bb89eab5a00659d662880bf97f7c7cb41ec"
+  },
+  "stderr": "combinado en stdout.txt (cmd 2>&1 hacia el mismo archivo)",
+  "estado": "atribuible"
+}

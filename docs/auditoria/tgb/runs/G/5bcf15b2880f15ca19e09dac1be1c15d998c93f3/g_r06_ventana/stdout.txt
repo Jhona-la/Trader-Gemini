@@ -1,0 +1,27 @@
+# g_r06_ventana | HEAD 5bcf15b2880f15ca19e09dac1be1c15d998c93f3 | sucios 3 | cargo/rustc vivos 0 | libre 325008564224 | ram_libre_gb 2.97 | inicio 2026-11-16T23:52:20 | cargo test --locked -p tick-tape --test procedencia | CINTA  | REF 
+   Compiling tick-tape v0.1.0 (C:\Users\jhona\Desktop\PC-Turbo\integrador\wt_v4l\crates\tick-tape)
+    Finished `test` profile [optimized] target(s) in 5.32s
+     Running tests\procedencia.rs (C:/Users/jhona/Documents/Proyectos/Trader Gemini/target\debug\deps\procedencia-8af2908c96413ab6.exe)
+
+running 3 tests
+test tgb_firma_distingue_recetas_sin_adivinar ... ok
+test tgb_solo_la_relativa_acreditada_entra_a_entrenamiento ... ok
+test tgb_firma_usa_la_ventana_cuando_el_medio_no_es_p has been running for over 60 seconds
+test tgb_firma_usa_la_ventana_cuando_el_medio_no_es_p ... FAILED
+
+failures:
+
+---- tgb_firma_usa_la_ventana_cuando_el_medio_no_es_p stdout ----
+
+thread 'tgb_firma_usa_la_ventana_cuando_el_medio_no_es_p' (43936) panicked at crates\tick-tape\tests\procedencia.rs:142:5:
+el barrido no encontro medios distintos de p
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    tgb_firma_usa_la_ventana_cuando_el_medio_no_es_p
+
+test result: FAILED. 2 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1249.12s
+
+error: test failed, to rerun pass `-p tick-tape --test procedencia`
+# fin 2026-11-17T00:13:22 codigo 101

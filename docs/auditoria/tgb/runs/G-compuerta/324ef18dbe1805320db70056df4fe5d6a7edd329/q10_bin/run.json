@@ -1,0 +1,35 @@
+{
+  "schema": "tgb-run-1",
+  "paso": "G-compuerta",
+  "run_id": "q10_bin",
+  "tipo": "regresion",
+  "fecha_local": "2026-11-17T01:32:21",
+  "argv": [
+    "bash",
+    "scripts/cargo_semaforo.sh",
+    "test",
+    "--locked",
+    "-p",
+    "trader-gemini-v5",
+    "--bin",
+    "god_engine"
+  ],
+  "resultado_observado": "verde",
+  "codigo_salida": 0,
+  "pruebas": {
+    "resumenes": 1,
+    "pasan": 11,
+    "fallan": 0,
+    "ignoradas": 0
+  },
+  "asercion_causante": null,
+  "stdout": {
+    "ruta": "stdout.txt",
+    "sha256": "02b4cbb195a57e1b7ed91c597a23ddb33f3ff363ddcba603098e659c427dcc83"
+  },
+  "estado": "historico_cabecera_limpia",
+  "head_en_cabecera": "324ef18dbe1805320db70056df4fe5d6a7edd329",
+  "archivos_rastreados_modificados": 0,
+  "nota": null,
+  "motivo_estado": "cabecera con 0 archivos rastreados modificados; no registra archivos sin rastrear"
+}

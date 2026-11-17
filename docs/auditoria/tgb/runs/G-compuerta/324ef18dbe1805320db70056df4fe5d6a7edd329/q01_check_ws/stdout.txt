@@ -1,0 +1,190 @@
+﻿# q01_check_ws | HEAD 324ef18dbe1805320db70056df4fe5d6a7edd329 | sucios 0 | cargo/rustc vivos 0 | libre 323820269568 | ram_libre_gb 3.04 | inicio 2026-11-17T00:18:38 | cargo check --locked --workspace --all-targets | CINTA  | REF 
+[semaforo] barrido automático de target/ (RB-H1, cada 6 h)...
+[semaforo] [barrido] APLICADO: liberado≈15201.2 MB (incremental 1337 carpetas 15201.2 MB; variantes 0 archivos 0.0 MB)
+    Checking serde_core v1.0.228
+   Compiling rustversion v1.0.22
+    Checking libsqlite3-sys v0.38.2
+    Checking tick-tape v0.1.0 (C:\Users\jhona\Desktop\PC-Turbo\integrador\wt_v4l\crates\tick-tape)
+    Checking thiserror v2.0.18
+   Compiling target-features v0.1.6
+    Checking snap v1.1.1
+    Checking mime_guess v2.0.5
+    Checking ref-cast v1.0.25
+ ERROR rustc_interface::passes failed to compute checksum, omitting it from dep-info C:/Users/jhona/Documents/Proyectos/Trader\ Gemini/target\debug\build\target-features-ae02d78480f2a835\out/generated.md The system cannot find the path specified. (os error 3)
+    Checking rusqlite v0.40.2
+ ERROR rustc_interface::passes failed to compute checksum, omitting it from dep-info C:/Users/jhona/Documents/Proyectos/Trader\ Gemini/target\debug\build\target-features-ae02d78480f2a835\out/generated.md The system cannot find the path specified. (os error 3)
+   Compiling multiversion-macros v0.7.4
+    Checking feature-engine v0.1.0 (C:\Users\jhona\Desktop\PC-Turbo\integrador\wt_v4l\crates\feature-engine)
+    Checking serde v1.0.228
+    Checking indexmap v2.14.0
+    Checking serde_json v1.0.150
+    Checking serde_path_to_error v0.1.20
+    Checking storage-engine v0.1.0 (C:\Users\jhona\Desktop\PC-Turbo\integrador\wt_v4l\crates\storage-engine)
+    Checking deranged v0.5.8
+    Checking erased-serde v0.4.10
+    Checking csv v1.4.0
+    Checking h2 v0.3.27
+   Compiling serde-xml-rs v0.5.1
+    Checking chrono v0.4.45
+    Checking serde_urlencoded v0.7.1
+    Checking bincode v1.3.3
+    Checking polars-arrow-format v0.1.0
+    Checking hashbrown v0.14.5
+    Checking typetag v0.2.23
+    Checking data-ingest v0.1.0 (C:\Users\jhona\Desktop\PC-Turbo\integrador\wt_v4l\crates\data-ingest)
+    Checking halfbrown v0.4.0
+    Checking time v0.3.51
+   Compiling time-tz v2.0.0
+    Checking smartcore v0.3.2
+    Checking polars-error v0.43.1
+    Checking value-trait v0.12.1
+    Checking omniscient-registry v0.1.0 (C:\Users\jhona\Desktop\PC-Turbo\integrador\wt_v4l\crates\omniscient-registry)
+    Checking now v0.1.3
+    Checking simd-json v0.17.0
+    Checking arc-swap v1.9.2
+    Checking axum-core v0.4.5
+    Checking castaway v0.2.4
+   Compiling strum_macros v0.26.4
+    Checking zip v0.6.6
+    Checking compact_str v0.8.2
+    Checking hyper v0.14.32
+    Checking polars-utils v0.43.1
+    Checking polars-schema v0.43.1
+    Checking hyper-rustls v0.24.2
+    Checking hyper-tls v0.5.0
+    Checking warp v0.3.7
+    Checking axum v0.7.9
+    Checking reqwest v0.11.27
+warning: unused import: `POINCARE_HISTORY_LEN`
+  --> crates\feature-engine\tests\f46_001_hyperbolic_poincare_hodge_contract.rs:11:5
+   |
+11 |     POINCARE_HISTORY_LEN,
+   |     ^^^^^^^^^^^^^^^^^^^^
+   |
+   = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: `feature-engine` (test "f46_001_hyperbolic_poincare_hodge_contract") generated 1 warning (run `cargo fix --test "f46_001_hyperbolic_poincare_hodge_contract" -p feature-engine` to apply 1 suggestion)
+    Checking quantum-arena v0.1.0 (C:\Users\jhona\Desktop\PC-Turbo\integrador\wt_v4l\crates\quantum-arena)
+    Checking multiversion v0.7.4
+    Checking graph-architecture v0.1.0 (C:\Users\jhona\Desktop\PC-Turbo\integrador\wt_v4l\crates\graph-architecture)
+    Checking polars-arrow v0.43.1
+    Checking strategy-core v0.1.0 (C:\Users\jhona\Desktop\PC-Turbo\integrador\wt_v4l\crates\strategy-core)
+    Checking os-guardian v0.1.0 (C:\Users\jhona\Desktop\PC-Turbo\integrador\wt_v4l\crates\os-guardian)
+    Checking audit-engine v0.1.0 (C:\Users\jhona\Desktop\PC-Turbo\integrador\wt_v4l\crates\audit-engine)
+warning: use of deprecated function `std::arch::x86_64::_mm_getcsr`: see `_mm_getcsr` documentation - use inline assembly instead
+  --> crates\os-guardian\src\subnormal_control.rs:17:26
+   |
+17 | use core::arch::x86_64::{_mm_getcsr, _mm_setcsr};
+   |                          ^^^^^^^^^^
+   |
+   = note: `#[warn(deprecated)]` on by default
+
+warning: use of deprecated function `std::arch::x86_64::_mm_setcsr`: see `_mm_setcsr` documentation - use inline assembly instead
+  --> crates\os-guardian\src\subnormal_control.rs:17:38
+   |
+17 | use core::arch::x86_64::{_mm_getcsr, _mm_setcsr};
+   |                                      ^^^^^^^^^^
+
+warning: use of deprecated function `std::arch::x86_64::_mm_getcsr`: see `_mm_getcsr` documentation - use inline assembly instead
+  --> crates\os-guardian\src\subnormal_control.rs:47:29
+   |
+47 |             let mut mxcsr = _mm_getcsr();
+   |                             ^^^^^^^^^^
+
+warning: use of deprecated function `std::arch::x86_64::_mm_setcsr`: see `_mm_setcsr` documentation - use inline assembly instead
+  --> crates\os-guardian\src\subnormal_control.rs:49:13
+   |
+49 |             _mm_setcsr(mxcsr);
+   |             ^^^^^^^^^^
+
+warning: use of deprecated function `std::arch::x86_64::_mm_getcsr`: see `_mm_getcsr` documentation - use inline assembly instead
+  --> crates\os-guardian\src\subnormal_control.rs:52:28
+   |
+52 |             let verified = _mm_getcsr();
+   |                            ^^^^^^^^^^
+
+warning: use of deprecated function `std::arch::x86_64::_mm_getcsr`: see `_mm_getcsr` documentation - use inline assembly instead
+  --> crates\os-guardian\src\subnormal_control.rs:67:23
+   |
+67 |             let raw = _mm_getcsr();
+   |                       ^^^^^^^^^^
+
+warning: use of deprecated function `std::arch::x86_64::_mm_getcsr`: see `_mm_getcsr` documentation - use inline assembly instead
+  --> crates\os-guardian\src\subnormal_control.rs:89:29
+   |
+89 |             let mut mxcsr = _mm_getcsr();
+   |                             ^^^^^^^^^^
+
+warning: use of deprecated function `std::arch::x86_64::_mm_setcsr`: see `_mm_setcsr` documentation - use inline assembly instead
+  --> crates\os-guardian\src\subnormal_control.rs:91:13
+   |
+91 |             _mm_setcsr(mxcsr);
+   |             ^^^^^^^^^^
+
+    Checking ibapi v2.7.0
+    Checking signal-engine v0.1.0 (C:\Users\jhona\Desktop\PC-Turbo\integrador\wt_v4l\crates\signal-engine)
+warning: `os-guardian` (lib) generated 8 warnings
+    Checking metacortex-engine v0.1.0 (C:\Users\jhona\Desktop\PC-Turbo\integrador\wt_v4l\crates\metacortex-engine)
+    Checking polars-compute v0.43.1
+    Checking polars-row v0.43.1
+    Checking polars-core v0.43.1
+warning: `os-guardian` (lib test) generated 8 warnings (8 duplicates)
+    Checking polars-parquet v0.43.1
+    Checking telemetry-server v0.1.0 (C:\Users\jhona\Desktop\PC-Turbo\integrador\wt_v4l\crates\telemetry-server)
+    Checking risk-engine v0.1.0 (C:\Users\jhona\Desktop\PC-Turbo\integrador\wt_v4l\crates\risk-engine)
+warning: unused import: `WilsonExactRgReport`
+  --> crates\signal-engine\tests\f53_001_wilson_exact_renormalization_contract.rs:10:60
+   |
+10 |     WilsonExactRenormalizationEngine, WilsonExactRgParams, WilsonExactRgReport, RG_MOMENTUM_SCALES,
+   |                                                            ^^^^^^^^^^^^^^^^^^^
+   |
+   = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: `signal-engine` (test "f53_001_wilson_exact_renormalization_contract") generated 1 warning (run `cargo fix --test "f53_001_wilson_exact_renormalization_contract" -p signal-engine` to apply 1 suggestion)
+    Checking polars-ops v0.43.1
+    Checking polars-time v0.43.1
+    Checking execution-engine v0.1.0 (C:\Users\jhona\Desktop\PC-Turbo\integrador\wt_v4l\crates\execution-engine)
+    Checking polars-io v0.43.1
+    Checking dark-alpha-engine v0.1.0 (C:\Users\jhona\Desktop\PC-Turbo\integrador\wt_v4l\crates\dark-alpha-engine)
+    Checking polars-plan v0.43.1
+warning: unused import: `ChernSimonsBerryReport`
+  --> crates\risk-engine\tests\suite_fisica\f54_001_chern_simons_berry_phase_contract.rs:10:58
+   |
+10 |     ChernSimonsBerryParams, ChernSimonsBerryPhaseEngine, ChernSimonsBerryReport, ParameterState3D,
+   |                                                          ^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: method `mismo_freno` is never used
+    --> crates\execution-engine\src\client.rs:1042:19
+     |
+1033 | impl BinanceClient {
+     | ------------------ method in this implementation
+...
+1042 |     pub(crate) fn mismo_freno(&self, otro: &BinanceClient) -> bool {
+     |                   ^^^^^^^^^^^
+     |
+     = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: `execution-engine` (lib) generated 1 warning
+    Checking god-engine-core v0.1.0 (C:\Users\jhona\Desktop\PC-Turbo\integrador\wt_v4l\crates\god-engine-core)
+warning: `risk-engine` (test "suite_fisica") generated 1 warning (run `cargo fix --test "suite_fisica" -p risk-engine` to apply 1 suggestion)
+    Checking data-pipeline v0.1.0 (C:\Users\jhona\Desktop\PC-Turbo\integrador\wt_v4l\crates\data-pipeline)
+    Checking polars-expr v0.43.1
+    Checking polars-mem-engine v0.43.1
+    Checking polars-lazy v0.43.1
+    Checking polars v0.43.1
+    Checking backtest-engine v0.1.0 (C:\Users\jhona\Desktop\PC-Turbo\integrador\wt_v4l\crates\backtest-engine)
+    Checking evolution-engine v0.1.0 (C:\Users\jhona\Desktop\PC-Turbo\integrador\wt_v4l\crates\evolution-engine)
+    Checking trader-gemini-v5 v0.1.0 (C:\Users\jhona\Desktop\PC-Turbo\integrador\wt_v4l)
+warning: function `persistir_evidencia_demo_en_modo` is never used
+    --> src\bin\god_engine.rs:7935:4
+     |
+7935 | fn persistir_evidencia_demo_en_modo(
+     |    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+     |
+     = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: `trader-gemini-v5` (bin "god_engine") generated 1 warning
+    Finished `dev` profile [optimized] target(s) in 3m 04s
+# fin 2026-11-17T00:27:43 codigo 0

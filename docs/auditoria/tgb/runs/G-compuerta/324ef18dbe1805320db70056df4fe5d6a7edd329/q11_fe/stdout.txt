@@ -1,0 +1,1087 @@
+﻿# q11_fe | HEAD 324ef18dbe1805320db70056df4fe5d6a7edd329 | sucios 0 | cargo/rustc vivos 0 | libre 305127817216 | ram_libre_gb 3.73 | inicio 2026-11-17T01:36:05 | cargo test --locked -p feature-engine --no-fail-fast | CINTA  | REF 
+   Compiling feature-engine v0.1.0 (C:\Users\jhona\Desktop\PC-Turbo\integrador\wt_v4l\crates\feature-engine)
+warning: unused import: `POINCARE_HISTORY_LEN`
+  --> crates\feature-engine\tests\f46_001_hyperbolic_poincare_hodge_contract.rs:11:5
+   |
+11 |     POINCARE_HISTORY_LEN,
+   |     ^^^^^^^^^^^^^^^^^^^^
+   |
+   = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: `feature-engine` (test "f46_001_hyperbolic_poincare_hodge_contract") generated 1 warning (run `cargo fix --test "f46_001_hyperbolic_poincare_hodge_contract" -p feature-engine` to apply 1 suggestion)
+    Finished `test` profile [optimized] target(s) in 30.99s
+     Running unittests src\lib.rs (C:/Users/jhona/Documents/Proyectos/Trader Gemini/target\debug\deps\feature_engine-5a81eea9a19a6939.exe)
+
+running 90 tests
+test amplituhedron_order_flow::tests::test_amplituhedron_subnormal_safety ... ok
+test copulas::tests::inversion_eliptica_ancla_conocidas ... ok
+test copulas::tests::lambda_cola_decae_con_nu_y_valores_ancla ... ok
+test copulas::tests::copula_t_converge_a_gaussiana_cuando_nu_grande ... ok
+test hawkes::tests::test_hawkes_process_batch_and_nan_immunity ... ok
+test copulas::tests::t_cdf_simetria_y_cero ... ok
+test hawkes_cross::tests::xlv_seguidor_copiando_da_pico_en_lag_correcto ... ok
+test copulas::tests::lambda_empirica_en_independencia_y_comonotonia ... ok
+test copulas::tests::tau_comonotonica_y_antimonotonica ... ok
+test amplituhedron_order_flow::tests::test_amplituhedron_normal_evaluation ... ok
+test hawkes::tests::test_r7_r2_e1_hawkes_mu_hat_adaptacion_empirica ... ok
+test hawkes_cross::tests::xlv_lider_con_seguidores_da_matriz_asimetrica ... ok
+test copulas::tests::tau_rechaza_degenerados ... ok
+test hawkes::tests::test_hawkes_process_self_excitation_and_decay ... ok
+test copulas::tests::t_cuantil_valores_tabla ... ok
+test hurst_dfa::tests::contract_finite_positive_prices_do_not_lose_extreme_log_returns ... ok
+test hurst_dfa::tests::contract_dfa_is_invariant_to_return_amplitude ... ok
+test hurst_dfa::tests::contract_large_price_decline_preserves_log_return_accuracy ... ok
+test hurst_dfa::tests::contract_invalid_quality_threshold_never_validates_a_fit ... ok
+test hawkes_cross::tests::xlv_series_independientes_no_afirman_contagio ... ok
+test hurst_dfa::tests::contract_nonstationary_return_trend_is_not_certified_as_stationary_hurst ... ok
+test hurst_dfa::tests::contract_return_offset_preserves_detrended_slope ... ok
+test hurst_dfa::tests::contract_support_reports_actual_scales_and_clears_stale_estimates ... ok
+test hurst_dfa::tests::contract_test_innovations_are_centered_and_two_sided ... ok
+test hurst_dfa::tests::inmunidad_a_entradas_no_finitas ... ok
+test kalman::tests::test_kalman_filter_instantaneous_volatility_modulation ... ok
+test kalman::tests::test_kalman_filter_nan_measurement_and_dynamic_r_immunity ... ok
+test kalman::tests::test_kalman_filter_noise_smoothing ... ok
+test lead_lag::tests::h2_12_ruta_eth_divergencia_a_escala_plena_sin_autoreferencia ... ok
+test lead_lag::tests::h2_12_rho_negativo_anti_lider_no_firma ... ok
+test lead_lag::tests::qo_658_nan_immunity ... ok
+test lead_lag::tests::test_r7_r2_e3_rho_critico_adaptativo_monotonia ... ok
+test lead_lag::tests::test_r7_r2_e3_ruido_n12_no_supera_umbral_adaptativo ... ok
+test lead_lag::tests::qo_658_lead_lag_con_lags_y_reloj ... ok
+test microstructure::tests::d709_un_nan_no_envenena_el_ofi_para_siempre ... ok
+test lead_lag::tests::qo_658_lider_rezagado_no_firma ... ok
+test lead_lag::tests::omega11_lead_lag_eth_sin_autoreferencia ... ok
+test lead_lag::tests::qo_658_frescura_del_lider ... ok
+test microstructure::tests::test_art2_microstructure_clustering ... ok
+test microstructure::tests::test_institutional_volume_tracker ... ok
+test microstructure::tests::test_normalized_order_book_inverted_spread_rejection ... ok
+test microstructure::tests::test_normalized_order_book_l2 ... ok
+test microstructure::tests::test_order_flow_tracker ... ok
+test microstructure::tests::test_ofi_scale_invariance_btc_vs_altcoin ... ok
+test multifractal::tests::test_multi_scale_hurst_confluence ... ok
+test multifractal::tests::estado_publico_mayor_que_el_anillo_no_genera_espectro_parcial ... ok
+test hurst_dfa::tests::el_ajuste_log_log_es_bueno_en_series_con_escalamiento ... ok
+test multifractal::tests::test_multifractal_nan_and_negative_immunity ... ok
+test multifractal::tests::f2_c4_honest_variance_ratio_hurst_scaling ... ok
+test hurst_dfa::tests::paseo_aleatorio_da_hurst_medio ... ok
+test hurst_dfa::tests::serie_antipersistente_da_hurst_bajo ... ok
+test navier_stokes::tests::test_inmunidad_a_nan_y_precios_no_finitos ... ok
+test microstructure::tests::test_order_flow_tracker_nan_immunity ... ok
+test microstructure::tests::test_ofi_model ... ok
+test microstructure::tests::test_spoofing_detector ... ok
+test multifractal::tests::test_multifractal_scale_invariance_log_returns ... ok
+test navier_stokes::tests::test_mfg_stability_and_mach_supersonic_shockwave ... ok
+test multifractal::tests::test_multifractal_spectrum_calculation ... ok
+test microstructure::tests::test_ofi_model_nan_immunity ... ok
+test hurst_dfa::tests::d615_la_estimacion_no_deriva_con_el_numero_de_muestras ... ok
+test navier_stokes::tests::test_reynolds_turbulento_en_salto_violento_con_flujo_agresor ... ok
+test normalizer::tests::test_garman_klass_volatility_estimator ... ok
+test multifractal::tests::qo_597_espectro_nulo_sin_madurez_y_vivo_al_cumplirla ... ok
+test normalizer::tests::test_statistical_normalizer_mad ... ok
+test normalizer::tests::test_statistical_normalizer_nan_and_zero_mad ... ok
+test omni_strategies::tests::test_omni_strategies_uninitialized_and_nan_immunity ... ok
+test path_signatures::tests::reverso_niega_nivel1_y_transpone_nivel2 ... ok
+test path_signatures::tests::contornos_de_ventana ... ok
+test simd_neural_network::tests::test_simd_neural_net_nan_input_immunity ... ok
+test spectral::tests::test_fft_spectral_planck_taper_window_symmetry ... ok
+test tensor_ring::tests::test_tensor_ring_kinematics_derivatives ... ok
+test hurst_dfa::tests::serie_persistente_da_hurst_alto ... ok
+test simd_neural_network::tests::test_simd_neural_net_numerical_stability ... ok
+test simd_neural_network::tests::test_simd_neural_net_quantized_i8_inference ... ok
+test simd_neural_network::tests::test_simd_neural_net_train_step_nan_lr_immunity ... ok
+test simd_neural_network::tests::test_simd_neural_net_train_step_bounded ... ok
+test path_signatures::tests::linea_recta_forma_cerrada_e_invariante_al_remuestreo ... ok
+test path_signatures::tests::identidad_de_chen_nivel2 ... ok
+test tensor_ring::tests::test_tensor_ring_wrap_around ... ok
+test transfer_entropy::tests::contornos_sin_muestra_son_none ... ok
+test spectral::tests::test_fft_spectral_cycle_detection ... ok
+test spectral::tests::test_fft_spectral_nan_and_flat_immunity ... ok
+test transfer_entropy::tests::bidireccional_simetrica_te_comparable ... ok
+test navier_stokes::tests::test_monotonicidad_de_laminar_share ... ok
+test navier_stokes::tests::test_reynolds_laminar_en_mercado_tranquilo ... ok
+test transfer_entropy::tests::independientes_te_casi_cero ... ok
+test transfer_entropy::tests::y_sigue_a_x_una_ventana_despues_te_direccional ... ok
+test hurst_dfa::tests::d616_las_escalas_discriminan_estructura_real ... ok
+test multifractal::tests::qo_597_intermitencia_abre_el_espectro_mas_que_iid ... ok
+test copulas::tests::nu_mle_recupera_nu_sintetica ... ok
+
+test result: ok. 90 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 10.91s
+
+     Running tests\caputo_fraccional_contract.rs (C:/Users/jhona/Documents/Proyectos/Trader Gemini/target\debug\deps\caputo_fraccional_contract-259bcd55de188a8b.exe)
+
+running 5 tests
+test alfa_uno_es_la_diferencia_finita_ordinaria_exacta ... ok
+test constructor_neutral64_es_equivalente_a_try_new ... ok
+test entradas_invalidas_y_memoria_del_impulso ... ok
+test derivada_de_rampa_es_la_suma_de_pesos_y_la_memoria_es_monotona ... ok
+test pesos_decaen_como_cola_pesada_y_funden_memoria ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\cf2_dependencia_solucion_conocida.rs (C:/Users/jhona/Documents/Proyectos/Trader Gemini/target\debug\deps\cf2_dependencia_solucion_conocida-d56d08d6d4b69fc1.exe)
+
+running 13 tests
+test cf2_contagio_potencia_con_acople_a_1000ms ... ignored, OPEN F2.4-02 (Qoder/GLM): la base lineal densidad·lag se recorta a 1 cuando densidad·lag ≥ 1 y deja ciegos los lags de 500 ms en adelante
+test cf2_contagio_relojes_periodicos_independientes_no_son_contagio ... ignored, OPEN F2.4-02 (Qoder/GLM): el nulo binomial de cross_excitation supone llegadas sin estructura; dos relojes periódicos con fase estable dan z ≈ 7,9 en 200 ms
+test cf2_contagio_un_empate_no_anula_la_matriz ... ignored, OPEN F2.4-09 (Qoder/GLM): un solo empate de timestamps en una serie devuelve None para toda la matriz de contagio (LC-F1-35, pedido 2)
+test cf2_copula_gaussiana_no_fabrica_cola ... ignored, COSTE (≈ 2 min en debug, 60 000 pares por nu_mle): pasa hoy; correr con --include-ignored
+test cf2_lead_lag_desfase_plantado_a_cadencia_viva ... ignored, OPEN F2.4-07 (Línea C): la ventana del líder es de 50 muestras; a ~40 eventos/s cubre 1,25 s y el lag de 2000 ms sólo ve el alt congelado
+test cf2_lead_lag_nulo_ruido_blanco_tasa_de_falsos_lideres ... ignored, OPEN F2.4-07 (Línea C): el máximo de |ρ| sobre 5 lags sin corrección por multiplicidad infla los falsos líderes aun con ruido blanco
+test cf2_lead_lag_nulo_tasa_de_falsos_lideres ... ignored, OPEN F2.4-07 (Línea C): Pearson sobre OFI autocorrelado con umbral para muestras iid y máximo sobre 5 lags: falsos líderes muy por encima del 5 %
+test cf2_contagio_nulo_disperso_con_lider_hawkes ... ok
+test cf2_te_acople_plantado_valor_y_surrogados ... ok
+test cf2_lead_lag_recupera_desfase_plantado_2000ms ... ok
+test cf2_contagio_pares_desfasados_circularmente_tasa_de_lideres ... ok
+test cf2_te_nulo_independiente_calibrado_chi2 ... ok
+test cf2_copula_t_rho07_nu3_recupera_lambda_de_cola ... ok
+
+test result: ok. 6 passed; 0 failed; 7 ignored; 0 measured; 0 filtered out; finished in 4.00s
+
+     Running tests\cf2_entropia_firma_solucion_conocida.rs (C:/Users/jhona/Documents/Proyectos/Trader Gemini/target\debug\deps\cf2_entropia_firma_solucion_conocida-ff698f137c99b5be.exe)
+
+running 2 tests
+test cf2_firma_area_de_levy_poligono_regular ... ok
+test cf2_firma_exponencial_irregular_forma_cerrada ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\cf2_espectro_ciclo_irregular.rs (C:/Users/jhona/Documents/Proyectos/Trader Gemini/target\debug\deps\cf2_espectro_ciclo_irregular-0fbfb1dc2edca544.exe)
+
+running 2 tests
+test cf2_ciclo_muestreo_irregular_bin_4 ... ignored, OPEN F2.3b-04 (Línea C), CONTRATO DE API, no se activa sola: push(valor) no lleva tiempo; reescribir con la firma (t, valor). El FFT trabaja en tiempo de eventos y el bin del mismo ciclo físico depende de la densidad de eventos (sale el 8, no el 4)
+test cf2_ciclo_muestreo_uniforme_bin_4 ... ok
+
+test result: ok. 1 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\cf2_hodge_forma_cerrada.rs (C:/Users/jhona/Documents/Proyectos/Trader Gemini/target\debug\deps\cf2_hodge_forma_cerrada-100e6fbd62adc695.exe)
+
+running 2 tests
+test cf2_hodge_curl_share_es_funcion_de_momentos_transversales ... ok
+test cf2_hodge_ruido_independiente_da_curl_cercano_a_uno ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s
+
+     Running tests\cf2_hurst_solucion_conocida.rs (C:/Users/jhona/Documents/Proyectos/Trader Gemini/target\debug\deps\cf2_hurst_solucion_conocida-81c46a3740129ca2.exe)
+
+running 4 tests
+test cf2_dfa_fgn_07_error_por_realizacion ... ignored, OPEN F2.3b-01 (Línea C), requisito de precisión, no se cierra con el arreglo del sesgo: la sd por realización del DFA1 a N = 1024 (≈ 0,037) deja ≈ 81/100 realizaciones con error < 0,05, no 95
+test cf2_dfa_paseo_aleatorio_centrado_en_medio ... ignored, OPEN F2.3b-01 (Línea C): el DFA1 a N = 1024 tiene un sesgo de muestra finita de ≈ +0,02 sobre el paseo aleatorio y el estimador no lo descuenta
+test cf2_dfa_ruido_blanco_sesgo_de_forma_cerrada ... ok
+test cf2_dfa_fgn_07_media_dentro_de_005 ... ok
+
+test result: ok. 2 passed; 0 failed; 2 ignored; 0 measured; 0 filtered out; finished in 0.38s
+
+     Running tests\cf2_kalman_solucion_conocida.rs (C:/Users/jhona/Documents/Proyectos/Trader Gemini/target\debug\deps\cf2_kalman_solucion_conocida-e80cf56411d98b1d.exe)
+
+running 3 tests
+test cf2_kalman_riccati_estacionaria ... ok
+test cf2_kalman_cobertura_95_estacionaria ... ok
+test cf2_kalman_recupera_modelo_lineal_gaussiano ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\cf2_microestructura_solucion_conocida.rs (C:/Users/jhona/Documents/Proyectos/Trader Gemini/target\debug\deps\cf2_microestructura_solucion_conocida-41fabdfe3fb4f4e2.exe)
+
+running 9 tests
+test cf2_ballena_plantada_x50_al_uno_por_ciento ... ignored, OPEN F2.5-08 (Línea C): las ballenas inflan el σ̂ EWMA y se enmascaran; a la misma tasa de falsas alarmas el recall queda por debajo del oráculo de Neyman-Pearson
+test cf2_ballena_tasa_de_falsas_alarmas_sin_ballenas ... ignored, OPEN F2.5-08 (Línea C): z gaussiano ≥ 2,5 sobre un nocional de cola pesada; con LN(0,1) marca ≈ 4 veces el nominal 0,0062
+test cf2_ofi_no_depende_del_numero_de_trades_entre_snapshots ... ignored, OPEN F2.5-09 (Línea C): la EMA del OFI es por evento y cada trade con el libro quieto le mete un 0; con 9 trades por snapshot la lectura cae al 15 %
+test cf2_spoof_cancelacion_plantada_a_la_cadencia_de_depth5 ... ignored, OPEN F2.5-07 (Línea C): la ventana de detección es dt < 0,25 s estricto, igual a la cadencia de @depth5: una cancelación del 90 % a 250 ms da score 0
+test cf2_spoof_nulos_estructurales_sin_cancelacion ... ignored, OPEN F2.5-07 (Línea C), CONTRATO DE API, no se activa sola: reescribir con la firma nueva; hoy sólo recibe el máximo nocional de 5 niveles sin trades, y ejecución o traslación dan la misma señal que una cancelación
+test cf2_spoof_cancelacion_plantada_a_100ms ... ok
+test cf2_ofi_coincide_con_cont_kukanov_stoikov_evento_a_evento ... ok
+test cf2_spoof_tasa_de_falsas_alarmas_en_libro_sin_cancelaciones ... ok
+test cf2_spoof_tasa_de_falsas_alarmas_en_libro_cst_ordinario ... ok
+
+test result: ok. 4 passed; 0 failed; 5 ignored; 0 measured; 0 filtered out; finished in 0.02s
+
+     Running tests\cf2_momentos_solucion_conocida.rs (C:/Users/jhona/Documents/Proyectos/Trader Gemini/target\debug\deps\cf2_momentos_solucion_conocida-3742a3d3ba3e1e1f.exe)
+
+running 2 tests
+test cf2_ewma_tiempo_fisico_respuesta_al_escalon ... ok
+test cf2_welford_media_y_varianza_conocidas ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running tests\cf2_multifractal_solucion_conocida.rs (C:/Users/jhona/Documents/Proyectos/Trader Gemini/target\debug\deps\cf2_multifractal_solucion_conocida-567b20153341f814.exe)
+
+running 2 tests
+test cf2_generacion_cache_cambia_una_vez_cada_16 ... ignored, OPEN F2.3b-10 (Línea C): cache_generation devuelve el contador de consultas, que cambia en cada consulta, y la deduplicación de D0 nunca actúa
+test cf2_vr_macro_fgn_07_dentro_de_005 ... ignored, OPEN F2.3b-09 (Línea C): el cociente de varianzas macro está encogido hacia 0,5 (w = 50/62) y sesgado por la media muestral: con H = 0,7 da ≈ 0,62-0,64
+
+test result: ok. 0 passed; 0 failed; 2 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\cf2_navier_stokes_cadencia.rs (C:/Users/jhona/Documents/Proyectos/Trader Gemini/target\debug\deps\cf2_navier_stokes_cadencia-85645f2807d7ed64.exe)
+
+running 2 tests
+test cf2_re_invariante_a_la_cadencia ... ignored, OPEN F2.3b-05 (AGY): el Reynolds es proporcional a 1/√dt y mide la cadencia de eventos, no el régimen de la difusión (cociente √10 entre 10 ms y 100 ms)
+test cf2_re_forma_cerrada_10ms_y_100ms ... ok
+
+test result: ok. 1 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\copula_real.rs (C:/Users/jhona/Documents/Proyectos/Trader Gemini/target\debug\deps\copula_real-e3dc304ae0208cc5.exe)
+
+running 1 test
+test lxxi_copulas_t_pares_reales_agosto ... ignored, medición manual: ~2 min en release sobre tapes de agosto en data/
+
+test result: ok. 0 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\correlation_input_contract.rs (C:/Users/jhona/Documents/Proyectos/Trader Gemini/target\debug\deps\correlation_input_contract-ee0cc1b93fd04f89.exe)
+
+running 5 tests
+test identical_nonconstant_returns_remain_fully_correlated ... ok
+test overflowed_second_moments_do_not_commit_partial_state ... ok
+test quality_and_constructor_domains_are_explicit ... ok
+test incomplete_or_invalid_cross_sections_do_not_change_future_estimates ... ok
+test unrepresentable_returns_do_not_commit_a_price_baseline ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\dmrg_ising_solucion_conocida.rs (C:/Users/jhona/Documents/Proyectos/Trader Gemini/target\debug\deps\dmrg_ising_solucion_conocida-5f888e377edd4342.exe)
+
+running 6 tests
+test dmrg_limite_ferromagnetico_h0_exacto ... ok
+test dmrg_limite_espin_libre_j0_exacto ... ok
+test dmrg_reconstruccion_norma_uno ... ok
+test dmrg_monotonia_variacional_en_d ... ok
+test dmrg_energia_vs_entrelazamiento_del_estado_final ... ok
+test dmrg_punto_critico_recupera_el_suelo_exacto ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 53.67s
+
+     Running tests\entrelazamiento_solucion_conocida.rs (C:/Users/jhona/Documents/Proyectos/Trader Gemini/target\debug\deps\entrelazamiento_solucion_conocida-413a8365ed5330de.exe)
+
+running 18 tests
+test longitud_invalida_y_serie_corta_son_error ... ok
+test streaming_expira_al_ultimo_tramo ... ok
+test no_finitos_se_excluyen_con_recuento_honesto ... ok
+test streaming_iid_no_inventa_y_bordes_son_honestos ... ok
+test serie_constante_modo_mediana_es_ausencia_no_invention ... ok
+test streaming_es_bit_paridad_con_batch ... ok
+test streaming_medir_q_expira_al_ultimo_tramo_y_guardas ... ok
+test streaming_medir_q1_es_identico_a_medir ... ok
+test serie_alternada_recupera_ln2_exacto ... ok
+test markov_persistente_tiene_entrelazamiento_positivo ... ok
+test acotado_por_el_maximo_y_no_negativo ... ok
+test tsallis_limite_q1_es_von_neumann_exacto ... ok
+test tsallis_ghz_recupera_ln_q_de_2_cerrado ... ok
+test streaming_medir_q_es_bit_paridad_con_batch_q ... ok
+test tsallis_neto_iid_no_inventa_y_monotonia_en_q ... ok
+test iid_por_asimetrica_que_sea_delta_cero ... ok
+test curva_fases_es_determinista_y_valida_parametros ... ok
+test curva_fases_gato_critico_y_paramagnetico ... ok
+
+test result: ok. 18 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 8.17s
+
+     Running tests\event_spectrum_v2_contract.rs (C:/Users/jhona/Documents/Proyectos/Trader Gemini/target\debug\deps\event_spectrum_v2_contract-84e95157e7276eb5.exe)
+
+running 8 tests
+test constant_nonzero_input_has_no_oscillatory_power_in_v2 ... ok
+test quality_distinguishes_warmup_and_imputation_until_the_bad_event_expires ... ok
+test nonrepresentable_power_is_not_reported_as_zero ... ok
+test offset_is_removed_before_tapering ... ok
+test legacy_ml_path_still_exhibits_dc_leakage_and_amplitude_floor ... ok
+test unilateral_power_matches_parseval_including_nyquist ... ok
+test v2_shape_is_amplitude_invariant_and_power_scales_quadratically ... ok
+test wrapped_ring_matches_the_same_last_window_in_chronological_order ... ok
+
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\ewma_configuration_contract.rs (C:/Users/jhona/Documents/Proyectos/Trader Gemini/target\debug\deps\ewma_configuration_contract-12fd0301f3b36c4b.exe)
+
+running 4 tests
+test legacy_valid_event_updates_are_preserved ... ok
+test nan_alpha_is_rejected_at_construction - should panic ... ok
+test extrapolating_gain_is_not_an_ewma - should panic ... ok
+test negative_period_is_rejected_at_construction - should panic ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\ewma_physical_time_contract.rs (C:/Users/jhona/Documents/Proyectos/Trader Gemini/target\debug\deps\ewma_physical_time_contract-8f0f3255b6810543.exe)
+
+running 7 tests
+test checked_constructors_do_not_invent_a_gain ... ok
+test event_clock_is_not_physical_clock ... ok
+test exact_constant_input_solution ... ok
+test invalid_physical_inputs_are_atomic_and_zero_elapsed_does_not_move ... ok
+test nanosecond_update_at_century_scale_is_not_rounded_to_zero ... ok
+test partitioning_a_held_signal_preserves_solution ... ok
+test time_unit_rescaling_and_long_gap ... ok
+
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running tests\f100_001_joyce_g2_contract.rs (C:/Users/jhona/Documents/Proyectos/Trader Gemini/target\debug\deps\f100_001_joyce_g2_contract-70d6c50abbd170ea.exe)
+
+running 5 tests
+test test_c1_joyce_g2_initialization_and_purity ... ok
+test test_c4_joyce_g2_torsion_and_singularity_veto_activation ... ok
+test test_c3_coassociative_4form_properties ... ok
+test test_c2_fano_plane_associative_3form_properties ... ok
+test test_c5_rb_p1_invariants_and_numerical_resilience ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\f103_001_heterotic_e8_contract.rs (C:/Users/jhona/Documents/Proyectos/Trader Gemini/target\debug\deps\f103_001_heterotic_e8_contract-6b4f622d4cd101cf.exe)
+
+running 5 tests
+test test_c1_heterotic_e8_initialization_and_purity ... ok
+test test_c2_cartan_matrix_e8_unimodular_positive_definiteness ... ok
+test test_c3_green_schwarz_anomaly_cancellation_under_exact_conformal_flow ... ok
+test test_c4_heterotic_anomaly_veto_activation_on_severe_asymmetry ... ok
+test test_c5_heterotic_e8_rb_p1_resilience_and_nan_guards ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\f106_001_geometric_langlands_contract.rs (C:/Users/jhona/Documents/Proyectos/Trader Gemini/target\debug\deps\f106_001_geometric_langlands_contract-37cf71234f21a7dc.exe)
+
+running 5 tests
+test test_c1_hecke_eigenvalues_bounded_under_nominal_conditions ... ok
+test test_c2_ramanujan_violation_triggers_langlands_anomaly_veto ... ok
+test test_c3_automorphic_l_function_central_evaluation ... ok
+test test_c4_satake_parameters_unitarity_tracking ... ok
+test test_c5_zero_allocation_and_nan_finite_immunity ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\f109_001_homological_mirror_symmetry_contract.rs (C:/Users/jhona/Documents/Proyectos/Trader Gemini/target\debug\deps\f109_001_homological_mirror_symmetry_contract-6bccd4414630b759.exe)
+
+running 5 tests
+test test_c1_nominal_homological_mirror_symmetry_invariants ... ok
+test test_c3_floer_lagrangian_intersection_directional_response ... ok
+test test_c2_instanton_yukawa_coupling_growth ... ok
+test test_c4_mirror_symmetry_collapse_veto_propagation ... ok
+test test_c5_zero_panic_rb_p1_and_numerical_guards ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\f10_002_hodge_cross_market_contract.rs (C:/Users/jhona/Documents/Proyectos/Trader Gemini/target\debug\deps\f10_002_hodge_cross_market_contract-a81989362687125e.exe)
+
+running 6 tests
+test test_c1_pure_gradient_flow_analytical_zero_curl ... ok
+test test_c2_pure_vortex_analytical_unit_curl ... ok
+test test_c3_cross_microstructure_flow_antisymmetry ... ok
+test test_c4_leadership_potential_ranking_and_attractor_identification ... ok
+test test_c5_regime_classification_and_directional_trade_veto ... ok
+test test_c6_numerical_robustness_and_zero_panic ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running tests\f11_001_feynman_instanton_contract.rs (C:/Users/jhona/Documents/Proyectos/Trader Gemini/target\debug\deps\f11_001_feynman_instanton_contract-1c6b94e04f200a1f.exe)
+
+running 6 tests
+test test_c1_analytical_instanton_action_and_path_convergence ... ok
+test test_c3_semiclassical_gamow_wkb_tunneling_and_confinement ... ok
+test test_c5_multivariate_fokker_planck_propagator ... ok
+test test_c4_breakout_transition_and_monotonic_tunneling ... ok
+test test_c2_barrier_height_and_classical_turning_points ... ok
+test test_c6_silicon_invariants_and_zero_panic_guarantee ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\f12_002_grothendieck_sheaves_contract.rs (C:/Users/jhona/Documents/Proyectos/Trader Gemini/target\debug\deps\f12_002_grothendieck_sheaves_contract-23f7117bfafa4567.exe)
+
+running 6 tests
+test test_c1_exact_global_section_zero_frustration_energy ... ok
+test test_c2_cohomological_arbitrage_dislocation_and_restoration_gradient ... ok
+test test_c3_topological_holonomy_trap_frustrated_cycle ... ok
+test test_c6_adversarial_nan_inf_and_empty_inputs_zero_panic ... ok
+test test_c4_atiyah_singer_euler_poincare_index_invariance ... ok
+test test_c5_chiral_zero_mode_asymmetry_and_topological_bias ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\f13_001_connes_clifford_kan_contract.rs (C:/Users/jhona/Documents/Proyectos/Trader Gemini/target\debug\deps\f13_001_connes_clifford_kan_contract-f5fee66954b50500.exe)
+
+running 6 tests
+test test_c1_connes_spectral_distance_metric_axioms ... ok
+test test_c2_hudson_parthasarathy_qsde_trace_and_bloch_positivity ... ok
+test test_c3_clifford_geometric_algebra_associativity_and_anticommutation ... ok
+test test_c4_clifford_spinor_rotor_isometry_and_90deg_rotation ... ok
+test test_c5_cubic_bspline_partition_of_unity_and_kan_continuity ... ok
+test test_c6_full_connes_clifford_kan_cycle_and_adversarial_safety ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running tests\f14_001_simd_yoshida_replicator_contract.rs (C:/Users/jhona/Documents/Proyectos/Trader Gemini/target\debug\deps\f14_001_simd_yoshida_replicator_contract-b25752659e1fc8ea.exe)
+
+running 6 tests
+test c1_avx512_lane8_alignment_and_fma_exactness ... ok
+test c2_yoshida_4th_order_coefficients_and_symplectic_jacobian_det_one ... ok
+test c5_antisymmetric_zero_sum_game_invariance_and_shannon_diversity ... ok
+test c3_yoshida4_long_horizon_energy_conservation_vs_euler_drift ... ok
+test c6_nan_inf_adversarial_immunity_in_master_engine ... ok
+test c4_replicator_simplex_conservation_and_dominant_strategy_selection ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\f15_002_tropical_kdv_soliton_contract.rs (C:/Users/jhona/Documents/Proyectos/Trader Gemini/target\debug\deps\f15_002_tropical_kdv_soliton_contract-2adfd200b672ab2a.exe)
+
+running 6 tests
+test c1_tropical_semiring_axioms_and_matrix_identity ... ok
+test c2_karp_tropical_eigenvalue_exact_cycle_mean ... ok
+test c3_analytical_kdv_soliton_profile_and_velocity_amplitude_law ... ok
+test c4_ist_lax_schrodinger_bound_states_single_and_double_soliton ... ok
+test c5_kdv_conservation_laws_translation_invariance ... ok
+test c6_nan_inf_adversarial_immunity_in_tropical_kdv_engine ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\f16_001_soa_shadow_otoc_contract.rs (C:/Users/jhona/Documents/Proyectos/Trader Gemini/target\debug\deps\f16_001_soa_shadow_otoc_contract-d4db3d3e19f526ed.exe)
+
+running 6 tests
+test c1_soa_orderbook_64b_alignment_and_o1_slot_bijection ... ok
+test c2_soa_orderbook_bbo_microprice_and_level_cancellation ... ok
+test c5_quantum_otoc_maldacena_shenker_stanford_chaos_bound ... ok
+test c4_inflight_shadow_ledger_release_and_ttl_expiration ... ok
+test c3_inflight_shadow_ledger_prevents_margin_overspend_and_duplicates ... ok
+test c6_nan_inf_adversarial_immunity_in_master_engine ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\f17_001_tzcnt_lut_kpz_contract.rs (C:/Users/jhona/Documents/Proyectos/Trader Gemini/target\debug\deps\f17_001_tzcnt_lut_kpz_contract-a8274b8260c14e25.exe)
+
+running 6 tests
+test c1_bitmap_scanner_64b_alignment_and_cross_word_tzcnt_lzcnt ... ok
+test c2_bitmap_scanner_popcnt_and_summary_mask_cleanup ... ok
+test c3_fast_ascii_lut_encoder_u64_and_fixed_f64_exactness ... ok
+test c4_kpz_universal_exponents_galilean_invariance_identity ... ok
+test c5_kpz_cole_hopf_nonlinear_lateral_growth_drift ... ok
+test c6_nan_inf_adversarial_immunity_in_master_engine ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\f18_001_hairer_landauer_anderson_contract.rs (C:/Users/jhona/Documents/Proyectos/Trader Gemini/target\debug\deps\f18_001_hairer_landauer_anderson_contract-ea264169627f6b50.exe)
+
+running 6 tests
+test c1_hairer_structure_group_cocycle_identity ... ok
+test c3_landauer_buttiker_ballistic_transparency_zero_shot_noise ... ok
+test c5_anderson_localization_unimodular_det_and_disorder_transition ... ok
+test c4_landauer_buttiker_half_transmission_and_poissonian_tunnel_limit ... ok
+test c2_bony_paraproduct_and_bphz_renormalization_subtraction ... ok
+test c6_nan_inf_adversarial_immunity_in_master_engine ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\f19_001_spot_futures_abl_iceberg_contract.rs (C:/Users/jhona/Documents/Proyectos/Trader Gemini/target\debug\deps\f19_001_spot_futures_abl_iceberg_contract-bde95640f1321929.exe)
+
+running 6 tests
+test c1_spot_futures_directed_lead_lag_causality ... ok
+test c2_iceberg_hunter_l3_monotonic_bayesian_posterior ... ok
+test c3_abl_weak_value_matches_standard_expectation_when_pre_equals_post ... ok
+test c4_aav_anomalous_weak_value_amplification_outside_eigenvalue_spectrum ... ok
+test c5_abl_time_symmetric_probability_conservation ... ok
+test c6_nan_inf_adversarial_immunity_in_master_engine ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\f20_002_landauer_bec_hopfield_contract.rs (C:/Users/jhona/Documents/Proyectos/Trader Gemini/target\debug\deps\f20_002_landauer_bec_hopfield_contract-c0352ae4eed7a0bb.exe)
+
+running 6 tests
+test c2_landauer_thermodynamic_entropy_and_work_bound ... ok
+test c1_kbn_compensated_summation_eliminates_roundoff_drift ... ok
+test c3_bose_einstein_orderbook_condensate_fraction_and_chemical_potential ... ok
+test c4_modern_continuous_hopfield_monotonic_energy_descent ... ok
+test c5_modern_continuous_hopfield_attractor_projection_and_capacity ... ok
+test c6_landauer_bec_hopfield_master_engine_zero_panic_and_invariants ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\f21_001_voiculescu_jarzynski_svgd_contract.rs (C:/Users/jhona/Documents/Proyectos/Trader Gemini/target\debug\deps\f21_001_voiculescu_jarzynski_svgd_contract-0b32124b6908f8c7.exe)
+
+running 6 tests
+test c1_voiculescu_free_cumulants_and_wigner_semicircle_invariant ... ok
+test c2_voiculescu_free_entropy_positivity_and_bound ... ok
+test c3_jarzynski_fluctuation_equality_and_jensen_second_law ... ok
+test c4_jarzynski_crooks_reversibility_regimes ... ok
+test c5_svgd_deterministic_particle_transport_towards_posterior ... ok
+test c6_master_engine_zero_panic_and_invariants ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\f22_001_zakai_doob_amplituhedron_contract.rs (C:/Users/jhona/Documents/Proyectos/Trader Gemini/target\debug\deps\f22_001_zakai_doob_amplituhedron_contract-36c38fe452ac3d55.exe)
+
+running 6 tests
+test c1_zakai_spde_filtering_updates_moments_and_preserves_positivity ... ok
+test c2_doob_meyer_martingale_decomposition_and_toxicity ... ok
+test c3_kramers_kronig_analytical_causal_dispersion ... ok
+test c5_non_positive_geometry_detection ... ok
+test c4_positive_grassmannian_plucker_minors_totally_positive ... ok
+test c6_zakai_doob_amplituhedron_master_engine_zero_panic ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\f23_001_kam_eth_tur_stein_contract.rs (C:/Users/jhona/Documents/Proyectos/Trader Gemini/target\debug\deps\f23_001_kam_eth_tur_stein_contract-5ef47da2204b7ccd.exe)
+
+running 6 tests
+test c1_kam_chirikov_resonance_overlap_regimes ... ok
+test c4_barato_seifert_tur_inequality_bound ... ok
+test c6_kam_eth_tur_stein_master_engine_zero_panic ... ok
+test c2_eth_vs_mbl_orderbook_level_spacing_ratio ... ok
+test c5_james_stein_bayesian_shrinkage_norm_reduction ... ok
+test c3_lattice_boltzmann_d1q3_hydrodynamics_and_viscosity ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\f24_001_cover_orabona_wfr_ville_contract.rs (C:/Users/jhona/Documents/Proyectos/Trader Gemini/target\debug\deps\f24_001_cover_orabona_wfr_ville_contract-aa39bed877bb85dd.exe)
+
+running 7 tests
+test c1_grossman_zhou_floor_and_kyle_lambda_invariants ... ok
+test c2_cover_vovk_universal_portfolio_invariants ... ok
+test c3_orabona_coin_betting_growth_and_adaptation ... ok
+test c4_filoche_mayboroda_localization_landscape_invariants ... ok
+test c5_wasserstein_fisher_rao_distance_metric_invariants ... ok
+test c6_ville_supermartingale_maximal_inequality_bounds ... ok
+test c7_master_engine_zero_panic_and_invariants ... ok
+
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\f25_002_perelman_ricci_bouchaud_ewl_contract.rs (C:/Users/jhona/Documents/Proyectos/Trader Gemini/target\debug\deps\f25_002_perelman_ricci_bouchaud_ewl_contract-4a0f4fd08007d5df.exe)
+
+running 6 tests
+test c1_kahler_eigensystem_spectral_decomposition ... ok
+test c2_perelman_ricci_flow_smooth_decay ... ok
+test c3_perelman_surgery_on_neckpinch_singularity ... ok
+test c4_bouchaud_mezard_condensation_phase_transition ... ok
+test c5_ewl_quantum_game_classical_limit ... ok
+test c6_ewl_quantum_advantage_under_entanglement ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\f26_001_stoikov_virasoro_tqft_contract.rs (C:/Users/jhona/Documents/Proyectos/Trader Gemini/target\debug\deps\f26_001_stoikov_virasoro_tqft_contract-07f9e63e417ddb4a.exe)
+
+running 6 tests
+test c1_stoikov_microprice_imbalance_monotonicity ... ok
+test c2_stoikov_dynamic_recv_window_adaptation ... ok
+test c3_virasoro_algebra_commutation_and_central_anomaly ... ok
+test c4_polyakov_conformal_bootstrap_crossing_symmetry ... ok
+test c6_tqft_topological_protection_against_spoofing ... ok
+test c5_tqft_fibonacci_anyons_braiding_unitarity ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\f40_001_monge_kantorovich_wasserstein_contract.rs (C:/Users/jhona/Documents/Proyectos/Trader Gemini/target\debug\deps\f40_001_monge_kantorovich_wasserstein_contract-f046b046f3c20d8c.exe)
+
+running 4 tests
+test c3_subnormal_and_degenerate_numerical_stability ... ok
+test c2_drift_velocity_and_liquidity_evaporation_detection ... ok
+test c1_wasserstein_distance_identity_and_monotonicity ... ok
+test c4_zero_alloc_and_zero_panic_guarantee ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.07s
+
+     Running tests\f46_001_hyperbolic_poincare_hodge_contract.rs (C:/Users/jhona/Documents/Proyectos/Trader Gemini/target\debug\deps\f46_001_hyperbolic_poincare_hodge_contract-7f23b54d27e37fac.exe)
+
+running 4 tests
+test test_c1_poincare_metric_distance_and_triangle_inequality ... ok
+test test_c3_lipschitz_continuity_and_subnormal_resilience ... ok
+test test_c2_hodge_orthogonal_flux_and_vorticity ... ok
+test test_c4_zero_alloc_stack_determinism_and_ruin_bound ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\f49_001_quantum_geodesic_phase_space_contract.rs (C:/Users/jhona/Documents/Proyectos/Trader Gemini/target\debug\deps\f49_001_quantum_geodesic_phase_space_contract-b5e831a555aa4787.exe)
+
+running 4 tests
+test test_c1_symplectic_verlet_integration_and_energy_conservation ... ok
+test test_c2_brst_nilpotency_and_ghost_evaporation ... ok
+test test_c3_symplectic_curvature_drift_and_slot_scaling ... ok
+test test_c4_stack_zero_heap_and_nan_subnormal_immunity ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\f52_001_vietoris_rips_persistence_contract.rs (C:/Users/jhona/Documents/Proyectos/Trader Gemini/target\debug\deps\f52_001_vietoris_rips_persistence_contract-f7751b04c5b09572.exe)
+
+running 4 tests
+test test_c4_stack_zero_heap_and_nan_subnormal_immunity ... ok
+test test_c1_vietoris_rips_betti_numbers_and_connectedness ... ok
+test test_c2_persistent_entropy_and_air_pocket_detection ... ok
+test test_c3_topological_slot_scaling_bounds ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\f55_001_calabi_yau_seiberg_witten_contract.rs (C:/Users/jhona/Documents/Proyectos/Trader Gemini/target\debug\deps\f55_001_calabi_yau_seiberg_witten_contract-c0b073a709ed5daf.exe)
+
+running 4 tests
+test test_c1_kaehler_metric_and_ricci_flatness_deviation ... ok
+test test_c2_seiberg_witten_invariants_and_monopole_density ... ok
+test test_c3_conifold_singularity_detection_under_extreme_stress ... ok
+test test_c4_complex_coord_arithmetic_precision ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\f58_001_penrose_spin_network_contract.rs (C:/Users/jhona/Documents/Proyectos/Trader Gemini/target\debug\deps\f58_001_penrose_spin_network_contract-e1500690be124411.exe)
+
+running 4 tests
+test test_c1_su2_spin_representations_and_intertwiner ... ok
+test test_c2_ryu_takayanagi_holographic_entropy ... ok
+test test_c3_holographic_decoherence_detection_under_extreme_turbulence ... ok
+test test_c4_spin_node_hilbert_dimension_exactness ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\f61_001_bergman_fock_reproducing_contract.rs (C:/Users/jhona/Documents/Proyectos/Trader Gemini/target\debug\deps\f61_001_bergman_fock_reproducing_contract-fc38a726e92917e2.exe)
+
+running 4 tests
+test test_c1_bergman_kernel_positivity_and_kahler_potential ... ok
+test test_c3_critical_saturation_and_defensive_scaling ... ok
+test test_c2_shilov_boundary_proximity_under_severe_stress ... ok
+test test_c4_stack_o1_and_nan_infinity_resilience ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\f64_001_peps_hypergraph_ricci_contract.rs (C:/Users/jhona/Documents/Proyectos/Trader Gemini/target\debug\deps\f64_001_peps_hypergraph_ricci_contract-d17df79c1776df85.exe)
+
+running 4 tests
+test test_c1_peps_entanglement_entropy_and_area_law ... ok
+test test_c2_ricci_curvature_and_spectral_dimension_bounds ... ok
+test test_c3_hyperbolic_dispersion_alert_and_defensive_scaling ... ok
+test test_c4_stack_o1_and_nan_infinity_resilience ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\f67_001_ashtekar_lqg_area_contract.rs (C:/Users/jhona/Documents/Proyectos/Trader Gemini/target\debug\deps\f67_001_ashtekar_lqg_area_contract-41a12563300782d0.exe)
+
+running 4 tests
+test test_c1_ashtekar_area_eigenvalues_and_immirzi_gap ... ok
+test test_c4_stack_o1_and_nan_infinity_resilience ... ok
+test test_c3_quantum_singularity_detection_and_defensive_scale ... ok
+test test_c2_wilson_loop_holonomy_and_quantum_volume ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\f70_001_gross_pitaevskii_bec_contract.rs (C:/Users/jhona/Documents/Proyectos/Trader Gemini/target\debug\deps\f70_001_gross_pitaevskii_bec_contract-10785f2d6be05e98.exe)
+
+running 4 tests
+test test_c1_gross_pitaevskii_ground_state_and_bogoliubov_speed ... ok
+test test_c2_onsager_feynman_circulation_quantization ... ok
+test test_c3_vortex_shedding_and_defensive_slot_scaling ... ok
+test test_c4_zero_panic_rb_p1_resilience ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running tests\f73_001_liouville_quantum_gravity_contract.rs (C:/Users/jhona/Documents/Proyectos/Trader Gemini/target\debug\deps\f73_001_liouville_quantum_gravity_contract-0d17005f5e59a1d6.exe)
+
+running 4 tests
+test test_c1_liouville_central_charge_and_hausdorff_dimension ... ok
+test test_c2_calm_smooth_metric_and_constructive_slot_scaling ... ok
+test test_c3_violent_curvature_singularity_and_defensive_damping ... ok
+test test_c4_zero_panic_rb_p1_resilience ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\f76_001_jt_schwarzian_gravity_contract.rs (C:/Users/jhona/Documents/Proyectos/Trader Gemini/target\debug\deps\f76_001_jt_schwarzian_gravity_contract-d7f071420d748cda.exe)
+
+running 5 tests
+test test_c1_jt_schwarzian_steady_flow_equilibrium ... ok
+test test_c4_jt_schwarzian_stack_safety_and_boundedness ... ok
+test test_c2_jt_schwarzian_adiabatic_acceleration ... ok
+test test_c5_second_observation_does_not_fabricate_third_derivative ... ok
+test test_c3_jt_schwarzian_chaotic_divergence_singularity_detection ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\f79_001_matrix_model_kp_hierarchy_contract.rs (C:/Users/jhona/Documents/Proyectos/Trader Gemini/target\debug\deps\f79_001_matrix_model_kp_hierarchy_contract-e9ab3c50375b4f0d.exe)
+
+running 4 tests
+test test_matrix_model_kp_hierarchy_basic_flow_and_moments ... ok
+test test_matrix_model_kp_hierarchy_stability_under_nan_and_zeros ... ok
+test test_matrix_model_kp_hierarchy_deterministic_replay ... ok
+test test_matrix_model_kp_hierarchy_shock_detection ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\f7_001_rough_ergodic_contract.rs (C:/Users/jhona/Documents/Proyectos/Trader Gemini/target\debug\deps\f7_001_rough_ergodic_contract-c116d9cc3352a733.exe)
+
+running 6 tests
+test test_c2_convex_optimization_and_growth_advantage ... ok
+test test_c3_cramer_lundberg_wealth_ruin_bound ... ok
+test test_c5_malliavin_greeks_and_liquidity_vacuum_dampener ... ok
+test test_c6_ieee754_resilience_and_u_err_6_compliance ... ok
+test test_c1_ole_peters_ergodicity_gap_and_ruin_avoidance ... ok
+test test_c4_rough_bergomi_kernel_and_skew_power_law ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\f82_001_lattice_qcd_wilson_polyakov_contract.rs (C:/Users/jhona/Documents/Proyectos/Trader Gemini/target\debug\deps\f82_001_lattice_qcd_wilson_polyakov_contract-df963bd66c45de8c.exe)
+
+running 4 tests
+test test_c1_su2_matrix_unitarity_and_algebraic_group_laws ... ok
+test test_c4_stack_zero_heap_and_subnormal_immunity ... ok
+test test_c2_wilson_action_and_plaquette_bounds ... ok
+test test_c3_polyakov_loop_and_confinement_collapse_hard_veto ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\f85_001_chern_simons_witten_knot_contract.rs (C:/Users/jhona/Documents/Proyectos/Trader Gemini/target\debug\deps\f85_001_chern_simons_witten_knot_contract-543bc6a4c91876b4.exe)
+
+running 4 tests
+test test_c2_writhe_accumulation_and_braid_dynamics ... ok
+test test_c3_knot_collapse_and_writhe_shock_hard_veto ... ok
+test test_c1_chern_simons_jones_and_khovanov_invariants ... ok
+test test_c4_stack_zero_heap_and_subnormal_immunity ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\f88_001_kostant_souriau_prequantum_contract.rs (C:/Users/jhona/Documents/Proyectos/Trader Gemini/target\debug\deps\f88_001_kostant_souriau_prequantum_contract-a12de685dc43216c.exe)
+
+running 4 tests
+test test_c1_symplectic_area_and_reeb_holonomy ... ok
+test test_c2_polarization_coherence_and_slot_scaling ... ok
+test test_c3_prequantum_collapse_veto_activation ... ok
+test test_c4_nan_infinity_immunity_and_stack_determinism ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\f91_001_amplituhedron_order_flow_contract.rs (C:/Users/jhona/Documents/Proyectos/Trader Gemini/target\debug\deps\f91_001_amplituhedron_order_flow_contract-86c31f80df0b2bf2.exe)
+
+running 4 tests
+test test_c3_collinear_singularity_veto_activation ... ok
+test test_c2_flow_sensitivity_and_slot_scaling ... ok
+test test_c4_nan_infinity_immunity_and_stack_determinism ... ok
+test test_c1_amplituhedron_positivity_and_parke_taylor_finitude ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\f94_001_symplectic_floer_contract.rs (C:/Users/jhona/Documents/Proyectos/Trader Gemini/target\debug\deps\f94_001_symplectic_floer_contract-326d7358e5f8ffd0.exe)
+
+running 4 tests
+test test_c1_symplectic_action_and_floer_energy_finitude ... ok
+test test_c2_quantum_cohomology_grading_and_slot_scaling ... ok
+test test_c3_floer_homology_obstruction_veto_activation ... ok
+test test_c4_nan_infinity_immunity_and_stack_determinism ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\f97_001_connes_kreimer_contract.rs (C:/Users/jhona/Documents/Proyectos/Trader Gemini/target\debug\deps\f97_001_connes_kreimer_contract-09d91caa5616091d.exe)
+
+running 4 tests
+test test_c1_hopf_degree_and_uv_residue_monotonicity ... ok
+test test_c3_connes_kreimer_divergence_veto_activation ... ok
+test test_c2_antipode_zimmermann_subtraction_purification ... ok
+test test_c4_nan_infinity_immunity_and_stack_determinism ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\f9_001_wilson_rg_contract.rs (C:/Users/jhona/Documents/Proyectos/Trader Gemini/target\debug\deps\f9_001_wilson_rg_contract-637c76b230f0408d.exe)
+
+running 6 tests
+test test_c1_jacobi_eigensolver_orthonormality_and_accuracy ... ok
+test test_c2_marchenko_pastur_bounds_and_trace_preservation ... ok
+test test_c5_continuous_lyapunov_stability_vs_chaos ... ok
+test test_c4_wilson_rg_coarse_graining_and_operator_classification ... ok
+test test_c3_market_mode_isolation_and_snr ... ok
+test test_c6_unified_engine_multi_asset_robustness_and_zero_panic ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\firma_maxent_contract.rs (C:/Users/jhona/Documents/Proyectos/Trader Gemini/target\debug\deps\firma_maxent_contract-52a1b8c0d3944b42.exe)
+
+running 5 tests
+test sz1_paridad_streaming_batch_con_nulo_cerrado ... ok
+test sz4_ventana_incompleta_y_nulo_degenerado ... ok
+test sz3_antisimetria_exacta_verificada_por_el_kernel ... ok
+test sz2_el_anillo_cubre_las_ultimas_l ... ok
+test sz5_estabilidad_en_valores_extremos ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\fisher_rao_contract.rs (C:/Users/jhona/Documents/Proyectos/Trader Gemini/target\debug\deps\fisher_rao_contract-df66b1ffc5d04549.exe)
+
+running 4 tests
+test falla_cerrado_sin_ceros_fabricados ... ok
+test el_cambio_de_regimen_deforma_y_el_drift_tambien ... ok
+test el_nulo_caminante_es_acotado_y_documentado ... ok
+test identidades_de_la_forma_cerrada ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\flujo_rg_contract.rs (C:/Users/jhona/Documents/Proyectos/Trader Gemini/target\debug\deps\flujo_rg_contract-e7e1000515748a52.exe)
+
+running 5 tests
+test entradas_invalidas_son_error_honesto ... ok
+test bins_sin_energia_en_octavas_pobladas_se_excluyen_sin_inventar ... ok
+test dos_pendientes_rompen_el_flujo_en_la_escala_critica ... ok
+test ley_de_potencias_pura_es_punto_fijo_exacto ... ok
+test ruido_blanco_fija_beta_cero ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\hawkes_chain_integration.rs (C:/Users/jhona/Documents/Proyectos/Trader Gemini/target\debug\deps\hawkes_chain_integration-b731d4a3ca495537.exe)
+
+running 3 tests
+test xlvk_cadena_hawkes_produce_roles_correctos ... ok
+test xlvk_matriz_asimetrica_por_construccion ... ok
+test xlvk_datos_independientes_sin_estructura ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\hodge_flow_adaptation_contract.rs (C:/Users/jhona/Documents/Proyectos/Trader Gemini/target\debug\deps\hodge_flow_adaptation_contract-acde87763aba6b3a.exe)
+
+running 4 tests
+test test_hodge_cross_microstructure_return_sensitivity ... ok
+test test_hodge_engine_with_params_and_update_params ... ok
+test test_hodge_min_energy_threshold_filtering ... ok
+test test_hodge_params_validation_and_defaults ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\hodge_flow_contract.rs (C:/Users/jhona/Documents/Proyectos/Trader Gemini/target\debug\deps\hodge_flow_contract-58e080c6da91e0cb.exe)
+
+running 6 tests
+test test_r7_r3_a1_curl_invariante_a_padding_de_nodos_mudos ... ok
+test hodge_contrato_flujo_cruzado_microestructura_produce_curl_dinamico ... ok
+test hodge_contrato_flujo_gradiente_puro_tiene_curl_cero ... ok
+test hodge_contrato_ortogonalidad_l2_de_componentes ... ok
+test hodge_contrato_inmunidad_a_nan_y_grafos_pequenos ... ok
+test hodge_contrato_vortice_puro_tiene_curl_uno ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\kalman_numeric_contract.rs (C:/Users/jhona/Documents/Proyectos/Trader Gemini/target\debug\deps\kalman_numeric_contract-a51b0f11fd976145.exe)
+
+running 8 tests
+test dynamic_noise_has_no_absolute_unit_floor ... ok
+test convex_update_does_not_overflow_the_innovation ... ok
+test fallible_constructor_and_update_reject_invalid_domains ... ok
+test invalid_public_state_does_not_create_an_extrapolating_gain ... ok
+test finite_large_variances_do_not_overflow_the_gain_denominator ... ok
+test nominal_update_matches_scalar_posterior_and_zero_prior_stays_certain ... ok
+test rejected_measurement_does_not_change_dynamic_noise ... ok
+test small_covariances_preserve_unit_scaling_instead_of_using_a_floor ... ok
+
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\koopman_dmd_solucion_conocida.rs (C:/Users/jhona/Documents/Proyectos/Trader Gemini/target\debug\deps\koopman_dmd_solucion_conocida-c98ebb68acdd3c6b.exe)
+
+running 7 tests
+test koopman_factor_de_olvido_validado_en_constructor ... ok
+test koopman_recupera_el_autovalor_del_oscilador_amortiguado ... ok
+test koopman_rechaza_no_finitos_sin_contaminar_el_operador ... ok
+test koopman_recupera_la_frecuencia_con_ruido_moderado ... ok
+test koopman_detecta_la_bifurcacion_al_cruzar_el_circulo_unidad ... ok
+test koopman_recupera_la_recurrencia_lineal_de_orden_4 ... ok
+test koopman_warmup_insuficiente_y_stream_constante_son_ausencia_honesta ... ok
+
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\lppls_sornette_contract.rs (C:/Users/jhona/Documents/Proyectos/Trader Gemini/target\debug\deps\lppls_sornette_contract-a0fecdcb431e4def.exe)
+
+running 4 tests
+test falla_cerrado_sin_ceros_fabricados ... ok
+test sintetica_de_mercado_recupera_tc_m_omega_exactos ... ok
+test la_evidencia_es_monotona_en_la_amplitud_y_sin_confianza_fabricada ... ok
+test el_nulo_caminante_nunca_encadena ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.46s
+
+     Running tests\lyapunov_ks_contract.rs (C:/Users/jhona/Documents/Proyectos/Trader Gemini/target\debug\deps\lyapunov_ks_contract-5ad923bc38864210.exe)
+
+running 4 tests
+test espectro_contractivo_no_genera_informacion_ni_horizonte_finito ... ok
+test oscilador_expansivo_da_lyapunov_y_ks_exactos ... ok
+test oscilador_neutro_esta_en_la_frontera_de_predictibilidad ... ok
+test la_entropia_ordena_los_regimenes ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\matriz_rmt_contract.rs (C:/Users/jhona/Documents/Proyectos/Trader Gemini/target\debug\deps\matriz_rmt_contract-e5ae1399bdf25daf.exe)
+
+running 5 tests
+test equicorrelacion_un_factor_da_una_senal_exacta ... ok
+test streaming_captura_el_factor_comun ... ok
+test la_banda_se_estrecha_con_la_evidencia ... ok
+test identidad_es_todo_ruido_y_la_banda_es_exacta ... ok
+test ruido_wishart_puro_no_produce_senal ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\metrica_fisher_empirica_contract.rs (C:/Users/jhona/Documents/Proyectos/Trader Gemini/target\debug\deps\metrica_fisher_empirica_contract-41d48aa8d3d9eb77.exe)
+
+running 6 tests
+test beta_q_rango_y_normalizacion ... ok
+test score_en_limite_gaussiano_normalizado ... ok
+test scores_verificados_contra_diferencias_finitas ... ok
+test fall_closed_de_metrica_y_scores ... ok
+test metrica_en_limite_gaussiano_normalizado ... ok
+test ricci_continuidad_gaussiana_y_colas_normalizadas ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+
+     Running tests\mps_solucion_conocida.rs (C:/Users/jhona/Documents/Proyectos/Trader Gemini/target\debug\deps\mps_solucion_conocida-7074855c56e99f8d.exe)
+
+running 9 tests
+test mps_espectro_schmidt_anclas_ghz_y_producto ... ok
+test mps_entradas_invalidas_son_ausencia_honesta ... ok
+test mps_producto_sin_entrelazamiento_d1_suficiente ... ok
+test mps_ghz_entrelazamiento_ln2_y_bond_2 ... ok
+test mps_estado_w_entrelazamiento_forma_cerrada ... ok
+test mps_ortogonalidad_soportes_disjuntos ... ok
+test mps_truncamiento_agota_bond_y_reporta_error ... ok
+test mps_estado_denso_recupera_exacto_ida_y_vuelta ... ok
+test mps_autoconsistencia_norma_y_error ... ok
+
+test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\multifractal_invalid_params_contract.rs (C:/Users/jhona/Documents/Proyectos/Trader Gemini/target\debug\deps\multifractal_invalid_params_contract-eb808a0e6b33dda4.exe)
+
+running 4 tests
+test validation_rejects_finite_weights_whose_sum_overflows ... ok
+test validated_lower_bounds_are_used_at_the_exact_boundary ... ok
+test large_valid_weights_preserve_the_same_convex_combination ... ok
+test invalid_params_use_whole_default_fallback_without_changing_later_state ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+
+     Running tests\multifractal_microstructure_c1_contract.rs (C:/Users/jhona/Documents/Proyectos/Trader Gemini/target\debug\deps\multifractal_microstructure_c1_contract-5b0af6320c78b58a.exe)
+
+running 4 tests
+test contrato_smooth_persistence_degree_c1_hermite ... ok
+test contrato_multifractal_params_validacion_y_confluencia_continua ... ok
+test contrato_institutional_volume_burst_intensity_c1 ... ok
+test contrato_spoofing_detector_continuous_c1_decay_and_activation ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\navier_stokes_and_microstructure_adaptation_contract.rs (C:/Users/jhona/Documents/Proyectos/Trader Gemini/target\debug\deps\navier_stokes_and_microstructure_adaptation_contract-62b0738114bebac3.exe)
+
+running 6 tests
+test test_institutional_volume_tracker_adaptive_samples ... ok
+test test_laminar_share_monotonic_c_infinity_and_bounds ... ok
+test test_navier_stokes_engine_dynamic_threshold_adaptation ... ok
+test test_ofi_model_dynamic_alpha_adaptation_and_robustness ... ok
+test test_order_flow_tracker_adaptive_alphas ... ok
+test test_navier_stokes_params_validation_and_fail_closed ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\navier_stokes_reynolds_contract.rs (C:/Users/jhona/Documents/Proyectos/Trader Gemini/target\debug\deps\navier_stokes_reynolds_contract-bfe59f9f3e8b8583.exe)
+
+running 6 tests
+test test_navier_stokes_reynolds_fail_closed_nan_inf_immunity ... ok
+test test_navier_stokes_reynolds_kolmogorov_dissipation_positive_and_finite ... ok
+test test_navier_stokes_reynolds_laminar_share_monotonic_c_infinity ... ok
+test test_navier_stokes_reynolds_relaxation_time_adaptability ... ok
+test test_navier_stokes_reynolds_pure_dimensionless_invariance ... ok
+test test_navier_stokes_reynolds_shear_thinning_viscosity ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\norma_hinf_contract.rs (C:/Users/jhona/Documents/Proyectos/Trader Gemini/target\debug\deps\norma_hinf_contract-428d1d07533dcb73.exe)
+
+running 5 tests
+test empirica_cota_el_peor_caso_observado ... ok
+test forma_cerrada_es_exacta ... ok
+test filtro_de_precio_tiene_dos_ganancias_del_peor_caso ... ok
+test empirica_rechaza_lo_invalido ... ok
+test no_contractivo_es_error_honesto ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\omni_strategies_finitud_contract.rs (C:/Users/jhona/Documents/Proyectos/Trader Gemini/target\debug\deps\omni_strategies_finitud_contract-ad1acdbac5fcbd34.exe)
+
+running 2 tests
+test entrada_no_finita_o_precio_no_positivo_no_toca_el_estado ... ok
+test rasgos_finitos_aunque_un_cociente_desborde_f32 ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\path_signature_contract.rs (C:/Users/jhona/Documents/Proyectos/Trader Gemini/target\debug\deps\path_signature_contract-30b80197e824ba65.exe)
+
+running 15 tests
+test adjacent_representable_prices_keep_their_log_return ... ok
+test moving_the_epoch_does_not_change_window_features ... ok
+test level_two_collides_for_distinct_strictly_time_augmented_paths ... ok
+test large_price_declines_do_not_lose_ratio_precision_near_minus_one ... ok
+test momentos_exactos_del_nulo_unieje_vs_enumeracion ... ok
+test integer_elapsed_time_survives_absolute_epoch_above_f64_precision ... ok
+test normalized_features_alone_do_not_identify_absolute_horizon ... ok
+test shuffle_identity_exposes_redundant_level_two_coordinates ... ok
+test nulo_unieje_y_rectificacion_identidad_pares ... ok
+test subdividing_each_segment_preserves_the_same_geometric_path ... ok
+test unchecked_kernel_is_not_a_nonfinite_input_validator ... ok
+test extreme_positive_prices_do_not_require_a_representable_price_ratio ... ok
+test window_time_is_a_fraction_of_elapsed_duration ... ok
+test backward_internal_clock_is_rejected_without_sorting_prices ... ok
+test equal_timestamps_preserve_event_order_when_total_span_is_positive ... ok
+
+test result: ok. 15 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running tests\ricci_empirica_contract.rs (C:/Users/jhona/Documents/Proyectos/Trader Gemini/target\debug\deps\ricci_empirica_contract-17e36de4d92e3342.exe)
+
+running 4 tests
+test convergencia_con_h_y_determinante_degenerado_en_el_entorno ... ok
+test triple_forma_cerrada_gaussiana_euclidea_hiperbolica ... ok
+test falla_cerrado_sin_ceros_fabricados ... ok
+test la_curvatura_es_local_y_varia_con_el_punto_en_metricas_no_constantes ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\sinkhorn_sin_cuelgue_contract.rs (C:/Users/jhona/Documents/Proyectos/Trader Gemini/target\debug\deps\sinkhorn_sin_cuelgue_contract-68ca27a78ffa6bfd.exe)
+
+running 4 tests
+test sin_iteraciones_da_los_bits_de_la_ola_8 ... ok
+test con_parametros_no_finitos_da_los_bits_de_la_ola_8 ... ok
+test con_los_parametros_por_defecto_da_los_bits_de_la_ola_8 ... ok
+test agotando_las_iteraciones_da_los_bits_de_la_ola_8 ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 4.52s
+
+     Running tests\transfer_entropy_contract.rs (C:/Users/jhona/Documents/Proyectos/Trader Gemini/target\debug\deps\transfer_entropy_contract-9cca703a72ddb1e0.exe)
+
+running 20 tests
+test alphabet_complements_preserve_conditional_information ... ok
+test century_silence_uses_exact_counts_without_dense_allocation ... ok
+test cmi_matches_one_normalized_distribution ... ok
+test duplicate_events_do_not_change_binary_activity ... ok
+test epoch_translation_and_time_unit_dilation_preserve_counts ... ok
+test legacy_intersection_matches_the_explicit_contract ... ok
+test half_open_boundaries_and_partial_tail_are_auditable ... ok
+test explicit_coverage_allows_disjoint_event_extents ... ok
+test incomplete_terminal_bin_does_not_meet_minimum_support ... ok
+test malformed_alphabet_is_rejected_without_panicking ... ok
+test maximum_timestamp_does_not_overflow_bin_count ... ok
+test explicit_observation_distinguishes_silence_from_missing_coverage ... ok
+test swapping_assets_swaps_both_directional_estimates_and_counts ... ok
+test mismatched_series_are_not_silently_truncated ... ok
+test nonoverlapping_streams_are_not_padded_as_observed_zeros ... ok
+test minimum_support_is_explicit_not_a_statistical_theorem ... ok
+test typed_errors_distinguish_invalid_inputs_and_support ... ok
+test unordered_events_are_not_folded_or_discarded ... ok
+test upper_epoch_and_large_bin_width_have_no_arithmetic_overflow ... ok
+test sparse_counts_match_dense_oracle_across_scales_and_occupancies ... ok
+
+test result: ok. 20 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.13s
+
+     Running tests\transfer_entropy_real.rs (C:/Users/jhona/Documents/Proyectos/Trader Gemini/target\debug\deps\transfer_entropy_real-e70f2c2939fc9537.exe)
+
+running 8 tests
+test xlviiie_te_entre_pares_reales_agosto ... ignored, medición manual: ~2 min sobre tapes reales presentes en data/
+test reader_contract::partial_record_is_not_silently_discarded ... ok
+test reader_contract::empty_payload_is_not_a_valid_observation ... ok
+test reader_contract::wrong_origin_and_short_headers_are_rejected ... ok
+test reader_contract::unordered_tape_is_rejected ... ok
+test reader_contract::valid_measurement_returns_both_directions ... ok
+test reader_contract::timestamp_layout_and_duplicates_are_preserved ... ok
+test reader_contract::requested_measurement_cannot_pass_without_both_usable_streams ... ok
+
+test result: ok. 7 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\welford_mode_contract.rs (C:/Users/jhona/Documents/Proyectos/Trader Gemini/target\debug\deps\welford_mode_contract-4b691f767e14f187.exe)
+
+running 7 tests
+test decayed_statistics_match_explicit_empirical_weights ... ok
+test nonfinite_observation_preserves_both_modes ... ok
+test invalid_alpha_does_not_change_state ... ok
+test default_transition_keeps_legacy_policy ... ok
+test first_decayed_sample_has_no_phantom_zero_observation ... ok
+test returning_to_default_update_preserves_variance_representation ... ok
+test cumulative_matches_two_pass_reference ... ok
+
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+   Doc-tests feature_engine
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+# fin 2026-11-17T01:38:13 codigo 0

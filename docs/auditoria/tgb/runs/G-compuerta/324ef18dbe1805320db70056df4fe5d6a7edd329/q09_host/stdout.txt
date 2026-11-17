@@ -1,0 +1,746 @@
+﻿# q09_host | HEAD 324ef18dbe1805320db70056df4fe5d6a7edd329 | sucios 0 | cargo/rustc vivos 3 | libre 322902654976 | ram_libre_gb 0.39 | inicio 2026-11-17T01:21:21 | cargo test --locked -p trader-gemini-v5 --tests --no-fail-fast | CINTA  | REF 
+   Compiling serde_core v1.0.228
+   Compiling rustversion v1.0.22
+   Compiling target-features v0.1.6
+   Compiling libsqlite3-sys v0.38.2
+   Compiling snap v1.1.1
+   Compiling thiserror v2.0.18
+   Compiling mime_guess v2.0.5
+   Compiling ref-cast v1.0.25
+ ERROR rustc_interface::passes failed to compute checksum, omitting it from dep-info C:/Users/jhona/Documents/Proyectos/Trader\ Gemini/target\debug\build\target-features-ae02d78480f2a835\out/generated.md The system cannot find the path specified. (os error 3)
+   Compiling rusqlite v0.40.2
+   Compiling multiversion-macros v0.7.4
+   Compiling serde v1.0.228
+   Compiling indexmap v2.14.0
+   Compiling serde_json v1.0.150
+   Compiling deranged v0.5.8
+   Compiling serde_path_to_error v0.1.20
+   Compiling erased-serde v0.4.10
+   Compiling csv v1.4.0
+   Compiling chrono v0.4.45
+   Compiling serde_urlencoded v0.7.1
+   Compiling polars-arrow-format v0.1.0
+   Compiling hashbrown v0.14.5
+   Compiling bincode v1.3.3
+   Compiling halfbrown v0.4.0
+   Compiling storage-engine v0.1.0 (C:\Users\jhona\Desktop\PC-Turbo\integrador\wt_v4l\crates\storage-engine)
+   Compiling time v0.3.51
+   Compiling h2 v0.3.27
+   Compiling serde-xml-rs v0.5.1
+   Compiling typetag v0.2.23
+   Compiling data-ingest v0.1.0 (C:\Users\jhona\Desktop\PC-Turbo\integrador\wt_v4l\crates\data-ingest)
+   Compiling value-trait v0.12.1
+   Compiling time-tz v2.0.0
+   Compiling omniscient-registry v0.1.0 (C:\Users\jhona\Desktop\PC-Turbo\integrador\wt_v4l\crates\omniscient-registry)
+   Compiling now v0.1.3
+   Compiling smartcore v0.3.2
+   Compiling polars-error v0.43.1
+   Compiling simd-json v0.17.0
+   Compiling castaway v0.2.4
+   Compiling arc-swap v1.9.2
+   Compiling axum-core v0.4.5
+   Compiling strum_macros v0.26.4
+   Compiling compact_str v0.8.2
+   Compiling hyper v0.14.32
+   Compiling polars-utils v0.43.1
+   Compiling zip v0.6.6
+   Compiling hyper-tls v0.5.0
+   Compiling hyper-rustls v0.24.2
+   Compiling warp v0.3.7
+   Compiling polars-schema v0.43.1
+   Compiling reqwest v0.11.27
+   Compiling axum v0.7.9
+   Compiling graph-architecture v0.1.0 (C:\Users\jhona\Desktop\PC-Turbo\integrador\wt_v4l\crates\graph-architecture)
+   Compiling multiversion v0.7.4
+   Compiling quantum-arena v0.1.0 (C:\Users\jhona\Desktop\PC-Turbo\integrador\wt_v4l\crates\quantum-arena)
+   Compiling polars-arrow v0.43.1
+   Compiling ibapi v2.7.0
+   Compiling polars-compute v0.43.1
+   Compiling polars-row v0.43.1
+   Compiling polars-core v0.43.1
+   Compiling polars-parquet v0.43.1
+   Compiling strategy-core v0.1.0 (C:\Users\jhona\Desktop\PC-Turbo\integrador\wt_v4l\crates\strategy-core)
+   Compiling os-guardian v0.1.0 (C:\Users\jhona\Desktop\PC-Turbo\integrador\wt_v4l\crates\os-guardian)
+   Compiling audit-engine v0.1.0 (C:\Users\jhona\Desktop\PC-Turbo\integrador\wt_v4l\crates\audit-engine)
+warning: use of deprecated function `std::arch::x86_64::_mm_getcsr`: see `_mm_getcsr` documentation - use inline assembly instead
+  --> crates\os-guardian\src\subnormal_control.rs:17:26
+   |
+17 | use core::arch::x86_64::{_mm_getcsr, _mm_setcsr};
+   |                          ^^^^^^^^^^
+   |
+   = note: `#[warn(deprecated)]` on by default
+
+warning: use of deprecated function `std::arch::x86_64::_mm_setcsr`: see `_mm_setcsr` documentation - use inline assembly instead
+  --> crates\os-guardian\src\subnormal_control.rs:17:38
+   |
+17 | use core::arch::x86_64::{_mm_getcsr, _mm_setcsr};
+   |                                      ^^^^^^^^^^
+
+warning: use of deprecated function `std::arch::x86_64::_mm_getcsr`: see `_mm_getcsr` documentation - use inline assembly instead
+  --> crates\os-guardian\src\subnormal_control.rs:47:29
+   |
+47 |             let mut mxcsr = _mm_getcsr();
+   |                             ^^^^^^^^^^
+
+warning: use of deprecated function `std::arch::x86_64::_mm_setcsr`: see `_mm_setcsr` documentation - use inline assembly instead
+  --> crates\os-guardian\src\subnormal_control.rs:49:13
+   |
+49 |             _mm_setcsr(mxcsr);
+   |             ^^^^^^^^^^
+
+warning: use of deprecated function `std::arch::x86_64::_mm_getcsr`: see `_mm_getcsr` documentation - use inline assembly instead
+  --> crates\os-guardian\src\subnormal_control.rs:52:28
+   |
+52 |             let verified = _mm_getcsr();
+   |                            ^^^^^^^^^^
+
+warning: use of deprecated function `std::arch::x86_64::_mm_getcsr`: see `_mm_getcsr` documentation - use inline assembly instead
+  --> crates\os-guardian\src\subnormal_control.rs:67:23
+   |
+67 |             let raw = _mm_getcsr();
+   |                       ^^^^^^^^^^
+
+warning: use of deprecated function `std::arch::x86_64::_mm_getcsr`: see `_mm_getcsr` documentation - use inline assembly instead
+  --> crates\os-guardian\src\subnormal_control.rs:89:29
+   |
+89 |             let mut mxcsr = _mm_getcsr();
+   |                             ^^^^^^^^^^
+
+warning: use of deprecated function `std::arch::x86_64::_mm_setcsr`: see `_mm_setcsr` documentation - use inline assembly instead
+  --> crates\os-guardian\src\subnormal_control.rs:91:13
+   |
+91 |             _mm_setcsr(mxcsr);
+   |             ^^^^^^^^^^
+
+   Compiling signal-engine v0.1.0 (C:\Users\jhona\Desktop\PC-Turbo\integrador\wt_v4l\crates\signal-engine)
+   Compiling metacortex-engine v0.1.0 (C:\Users\jhona\Desktop\PC-Turbo\integrador\wt_v4l\crates\metacortex-engine)
+warning: `os-guardian` (lib) generated 8 warnings
+   Compiling polars-ops v0.43.1
+   Compiling polars-time v0.43.1
+   Compiling risk-engine v0.1.0 (C:\Users\jhona\Desktop\PC-Turbo\integrador\wt_v4l\crates\risk-engine)
+   Compiling polars-io v0.43.1
+   Compiling telemetry-server v0.1.0 (C:\Users\jhona\Desktop\PC-Turbo\integrador\wt_v4l\crates\telemetry-server)
+   Compiling execution-engine v0.1.0 (C:\Users\jhona\Desktop\PC-Turbo\integrador\wt_v4l\crates\execution-engine)
+   Compiling data-pipeline v0.1.0 (C:\Users\jhona\Desktop\PC-Turbo\integrador\wt_v4l\crates\data-pipeline)
+   Compiling polars-plan v0.43.1
+warning: method `mismo_freno` is never used
+    --> crates\execution-engine\src\client.rs:1042:19
+     |
+1033 | impl BinanceClient {
+     | ------------------ method in this implementation
+...
+1042 |     pub(crate) fn mismo_freno(&self, otro: &BinanceClient) -> bool {
+     |                   ^^^^^^^^^^^
+     |
+     = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+   Compiling dark-alpha-engine v0.1.0 (C:\Users\jhona\Desktop\PC-Turbo\integrador\wt_v4l\crates\dark-alpha-engine)
+   Compiling god-engine-core v0.1.0 (C:\Users\jhona\Desktop\PC-Turbo\integrador\wt_v4l\crates\god-engine-core)
+warning: `execution-engine` (lib) generated 1 warning
+   Compiling polars-expr v0.43.1
+   Compiling backtest-engine v0.1.0 (C:\Users\jhona\Desktop\PC-Turbo\integrador\wt_v4l\crates\backtest-engine)
+   Compiling evolution-engine v0.1.0 (C:\Users\jhona\Desktop\PC-Turbo\integrador\wt_v4l\crates\evolution-engine)
+   Compiling polars-mem-engine v0.43.1
+   Compiling polars-lazy v0.43.1
+   Compiling polars v0.43.1
+   Compiling trader-gemini-v5 v0.1.0 (C:\Users\jhona\Desktop\PC-Turbo\integrador\wt_v4l)
+warning: function `persistir_evidencia_demo_en_modo` is never used
+    --> src\bin\god_engine.rs:7935:4
+     |
+7935 | fn persistir_evidencia_demo_en_modo(
+     |    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+     |
+     = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: `trader-gemini-v5` (bin "god_engine") generated 1 warning
+    Finished `test` profile [optimized] target(s) in 8m 14s
+     Running unittests src\lib.rs (C:/Users/jhona/Documents/Proyectos/Trader Gemini/target\debug\deps\quantum_engine-caaacd02c64ad325.exe)
+
+running 34 tests
+test dark_alpha_router::tests::test_dark_alpha_router_ingest_dex_liquidation_and_nan_immunity ... ok
+test dark_alpha_router::tests::test_dark_alpha_router_atomic_get_set ... ok
+test model_manifest::tests::qs2_el_manifiesto_no_es_un_modelo_cargable ... ok
+test dashboard::tests::test_telemetry_event_enum_serialization ... ok
+test model_manifest::tests::qs2_contrato_de_promocion_sobre_el_holdout ... ok
+test orderbook::tests::ret45_intercambiar_lados_invierte_el_signo ... ok
+test orderbook::tests::ret45_neutral_sin_volumen_y_ante_entradas_no_finitas ... ok
+test orderbook::tests::ret45_valores_cerrados_de_obi_y_microprecio ... ok
+test model_manifest::tests::qs2_reuso_del_holdout_por_decision ... ok
+test parsers::tests::d610_resincroniza_tras_un_reinicio_de_la_secuencia ... ok
+test parsers::tests::d610_simbolo_fuera_del_universo_no_se_bloquea ... ok
+test parsers::tests::d610_acepta_secuencia_creciente_y_descarta_rancios ... ok
+test parsers::tests::d610_cada_simbolo_tiene_su_propia_secuencia ... ok
+test parsers::tests::p6_parse_depth5_levels_extrae_los_cinco_niveles ... ok
+test env_manager::tests::test_env_manager_data_path ... ok
+test parsers::tests::p6_parse_depth5_rechaza_libro_cruzado ... ok
+test orderbook::tests::ret45_el_microprecio_se_aparta_del_medio_medio_spread_por_el_obi ... ok
+test dark_alpha_sniffer::tests::f1_067_hyperliquid_sniffer_decoupled_from_god_engine ... ok
+test parsers::tests::test_parse_binance_trade_valid_and_negative_rejection ... ok
+test sa_params::tests::guards_numericos_degradan_a_default_sin_panic ... ok
+test symbol_manager::tests::cl38_la_histeresis_compara_en_la_grafia_canonica ... ok
+test parsers::tests::ret45_depth5_un_nivel_por_lado_y_rechazo_de_libro_cruzado ... ok
+test parsers::tests::test_parse_binance_kline_valid_and_integrity ... ok
+test sa_params::tests::sin_overrides_son_los_defaults_historicos ... ok
+test symbol_manager::tests::cl38_el_daemon_no_reescribe_el_universo_vivo_ni_el_ws ... ok
+test symbol_manager::tests::test_b3_37_roster_symbols_survive_rotation_to_unmodeled_movers ... ok
+test orderbook::tests::ret45_el_host_usa_la_funcion_y_no_acumula_libros ... ok
+test model_manifest::tests::qs2_ausente_e_invalido ... ok
+test model_manifest::tests::qs2_escribir_y_verificar ... ok
+test model_manifest::tests::qs2_un_modelo_editado_no_coincide ... ok
+test model_manifest::tests::qs2_hash_de_fichero_por_bloques_y_cobertura ... ok
+test symbol_manager::tests::test_merge_universe_with_hysteresis ... ok
+test model_manifest::tests::qs2_libro_de_usos_ida_y_vuelta ... ok
+test orderbook::tests::ret45_paridad_bit_a_bit_con_la_formula_previa_del_host ... ok
+
+test result: ok. 34 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.09s
+
+     Running unittests src\bin\algo_fetch_probe.rs (C:/Users/jhona/Documents/Proyectos/Trader Gemini/target\debug\deps\algo_fetch_probe-a293d92871e93e95.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src\bin\audit_forensic_backtest.rs (C:/Users/jhona/Documents/Proyectos/Trader Gemini/target\debug\deps\audit_forensic_backtest-9583dce1bb5d9e96.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src\bin\auto_trainer_daemon.rs (C:/Users/jhona/Documents/Proyectos/Trader Gemini/target\debug\deps\auto_trainer_daemon-20e47c16d19689be.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src\bin\backtest_windows.rs (C:/Users/jhona/Documents/Proyectos/Trader Gemini/target\debug\deps\backtest_windows-fffc01683c0c1cae.exe)
+
+running 21 tests
+test si_b15_report_contract::terminal_equity_domain_contract::a_small_observed_change_is_not_rounded_away_before_logging ... ok
+test si_b15_report_contract::terminal_equity_domain_contract::equivalent_capital_does_not_rescue_overflow_of_a_normal_factor_product ... ok
+test si_b15_report_contract::terminal_equity_domain_contract::equivalent_capital_rescales_unrepresentable_exponential_factors ... ok
+test si_b15_report_contract::terminal_equity_domain_contract::equivalent_capital_validates_its_domain_and_preserves_zero_growth ... ok
+test si_b15_report_contract::terminal_equity_domain_contract::equivalent_capital_survives_a_return_rounded_to_total_loss ... ok
+test si_b15_report_contract::terminal_equity_domain_contract::quotient_extremes_do_not_erase_finite_log_information ... ok
+test si_b15_report_contract::terminal_equity_domain_contract::powers_of_two_fix_the_equity_and_geometric_oracles ... ok
+test si_b15_report_contract::terminal_equity_domain_contract::nonpositive_equity_preserves_loss_without_fabricating_a_log_rate ... ok
+test si_b15_report_contract::terminal_equity_domain_contract::invalid_capital_and_duration_have_separate_domains ... ok
+test si_b15_report_contract::terminal_equity_domain_contract::percentages_do_not_print_overflow_as_infinite_performance ... ok
+test si_b15_report_contract::capital_and_rates_follow_equity_despite_positive_closed_pnl ... ok
+test si_b15_report_contract::capital_return_does_not_require_closed_trades ... ok
+test si_b15_report_contract::full_projection_uses_equity_without_closed_trades ... ok
+test si_b15_report_contract::invalid_duration_keeps_observed_equity_without_fabricating_rates ... ok
+test si_b15_report_contract::nonpositive_terminal_equity_keeps_loss_and_missing_geometric_equivalents ... ok
+test si_b15_report_contract::initial_ledger::actual_input_consumer_stops_when_filter_empties_tape_before_data_and_models ... ok
+test si_b15_report_contract::initial_ledger::post_limit_and_filter_short_window_omits_replay_and_performance ... ok
+test si_b15_report_contract::initial_ledger::actual_input_consumer_stops_after_max_ticks_before_data_and_models ... ok
+test si_b15_report_contract::initial_ledger::first_eligible_window_reports_supplied_zero_terminal_equity_as_total_loss ... ok
+test si_b15_report_contract::initial_ledger::replay_no_replay_sentinel_is_omitted_not_reported_as_total_loss ... ok
+test si_b15_report_contract::initial_ledger::invalid_initial_capital_omits_replay_without_fabricated_zero ... ok
+
+test result: ok. 21 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.24s
+
+     Running unittests src\bin\binance_vision_sync.rs (C:/Users/jhona/Documents/Proyectos/Trader Gemini/target\debug\deps\binance_vision_sync-e1f72489a9f5a65c.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src\bin\config_compiler.rs (C:/Users/jhona/Documents/Proyectos/Trader Gemini/target\debug\deps\config_compiler-c7c8cc42a6da49dc.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests crates\backtest-engine\src\bin\continuous_evolution_backtest.rs (C:/Users/jhona/Documents/Proyectos/Trader Gemini/target\debug\deps\continuous_evolution_backtest-b82d9e04bb0a3132.exe)
+
+running 7 tests
+test sim_close_contract::sol_rec3_floor_persistente_no_fabica_dia_fantasma ... ok
+test sim_close_contract::sol_rec3_dia_normal_continua ... ok
+test sim_close_contract::sol_rec3_severidad_rekt_y_camino_completo ... ok
+test sim_close_contract::sol_rec3_cinta_agotada_es_tapeend_no_dia_vacio ... ok
+test reporting_contract::ret10b_diagnostico_lee_el_umbral_del_genoma ... ok
+test reporting_contract::sol_r5_01_multiactivo_multislot_negative_carry_is_not_counted_twice ... ok
+test reporting_contract::sol_r5_01_carry_changes_close_fees_and_flat_cash_telescope ... ok
+
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.09s
+
+     Running unittests src\bin\copulas_manifest.rs (C:/Users/jhona/Documents/Proyectos/Trader Gemini/target\debug\deps\copulas_manifest-9162114b164b6715.exe)
+
+running 3 tests
+test tests::cl124_el_mes_es_obligatorio ... ok
+test tests::cl124_no_se_escribe_un_mes_anterior_al_vigente ... ok
+test tests::el_mes_del_manifiesto_vivo ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+
+     Running unittests src\bin\dashboard.rs (C:/Users/jhona/Documents/Proyectos/Trader Gemini/target\debug\deps\dashboard-f53b246b3acc4336.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src\bin\dataset_admission.rs (C:/Users/jhona/Documents/Proyectos/Trader Gemini/target\debug\deps\dataset_admission-7c425ce3c17468b5.exe)
+
+running 16 tests
+test tests::hybrid_read_is_rejected_by_independent_source_verification ... ok
+test tests::invalid_arguments_and_zero_thresholds_are_usage_errors ... ok
+test tests::equal_length_hash_source_mismatch_is_rejected ... ok
+test tests::aba_mutation_cannot_mix_hash_and_statistics ... ok
+test tests::competing_receipt_is_never_truncated_or_replaced ... ok
+test tests::substituted_temporary_cannot_publish_or_be_deleted ... ok
+test tests::one_record_cannot_verify_observed_continuity ... ok
+test tests::truncated_tail_hashes_every_byte_without_fabricating_coverage ... ok
+test tests::coverage_policy_is_serialized_with_the_receipt ... ok
+test tests::unreadable_source_is_not_reported_as_missing ... ok
+test tests::missing_inputs_and_preexisting_receipt_never_approve_or_overwrite ... ok
+test tests::observed_gap_and_month_edge_policy_are_measured_not_imputed ... ok
+test tests::valid_tapes_preserve_equal_timestamps_and_require_explicit_coverage_policy ... ok
+test tests::tgb_transporte_conserva_la_identidad_del_original ... ok
+test tests::unknown_synthetic_legacy_and_future_headers_fail_closed ... ok
+test tests::nonfinite_crossed_decreasing_and_out_of_month_records_are_rejected ... ok
+
+test result: ok. 16 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.50s
+
+     Running unittests src\bin\download_history.rs (C:/Users/jhona/Documents/Proyectos/Trader Gemini/target\debug\deps\download_history-048f82fc3a6bd354.exe)
+
+running 2 tests
+test market_context::tests::test_binance_funding_rate_deserialization ... ok
+test market_context::tests::test_market_context_fetcher_instantiation ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running unittests src\bin\evolution.rs (C:/Users/jhona/Documents/Proyectos/Trader Gemini/target\debug\deps\evolution-f27a57f27cd7e812.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src\bin\evolver.rs (C:/Users/jhona/Documents/Proyectos/Trader Gemini/target\debug\deps\evolver-10e6fb5206eadaa2.exe)
+
+running 7 tests
+test tests_lg17::lg17_sin_tapes_reales_no_se_promueve ... ok
+test tests_lg17::lg17b_sin_evaluador_canonico_no_se_promueve ... ok
+test tests_lg17::lg17_contra_un_incumbente_medido_exige_el_margen_comun ... ok
+test tests_lg17::lg17b_la_guarda_de_entorno_es_la_del_almacen ... ok
+test tests_lg17::lg17_contra_un_incumbente_sin_evidencia_exige_aptitud_positiva ... ok
+test tests_lg17::lg17_cableado_del_evolver ... ok
+test tests_lg17::lg17_el_corte_deja_la_cola_cronologica_para_juzgar ... ok
+
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running unittests src\bin\feature_exporter.rs (C:/Users/jhona/Documents/Proyectos/Trader Gemini/target\debug\deps\feature_exporter-2a0a4821ff74c79e.exe)
+
+running 10 tests
+test contract_tests::explicit_cli_has_no_hidden_trading_defaults ... ok
+test contract_tests::budgets_reject_instead_of_silent_prefix_or_success_footer ... ok
+test contract_tests::feature_rejection_aborts_export_without_success_footer ... ok
+test contract_tests::derived_overflow_is_missing_before_clipping ... ok
+test contract_tests::book_imbalance_does_not_fabricate_trade_aggressor_evidence ... ok
+test contract_tests::writer_and_flush_errors_propagate ... ok
+test contract_tests::v2_keeps_flat_and_censored_rows_and_has_terminal_manifest_hash ... ok
+test contract_tests::unavailable_external_features_are_null_not_macro_constants ... ok
+test contract_tests::invalid_tape_is_rejected_before_manifest ... ok
+test contract_tests::future_price_does_not_change_earlier_feature_snapshot ... ok
+
+test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s
+
+     Running unittests src\bin\feature_validator.rs (C:/Users/jhona/Documents/Proyectos/Trader Gemini/target\debug\deps\feature_validator-f72a26a0806df4c4.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src\bin\god_engine.rs (C:/Users/jhona/Documents/Proyectos/Trader Gemini/target\debug\deps\god_engine-de677d730ca712cc.exe)
+
+running 11 tests
+test tests::lg2_un_cambio_de_nivel_no_deja_ciega_a_la_moneda ... ok
+test tests::breaker_ingreso_no_finito_cierra_trading ... ok
+test tests::lg8_el_fee_breaker_exige_evidencia_y_cuenta_operaciones ... ok
+test tests::lg10_sin_iceberg_nativo_ningun_nocional_enruta_a_iceberg ... ok
+test tests::evidencia_demo_demo_si_escribe_segun_politica ... ok
+test tests::evidencia_demo_produccion_no_toca_bytes_ni_timestamp ... ok
+test tests::omega14_g0_5_genome_protection_prices_usa_fuente_unica_curva ... ok
+test tests::omega14_g0_5_c05_clamp_anclas_invariante ... ok
+test tests::evidencia_demo_no_finita_no_escribe ... ok
+test tests::cl45_cl46_diario_usa_llenado_y_tau_de_esta_reserva ... ok
+test tests::i11_un_servidor_que_acepta_y_corta_no_se_reintenta_sin_espera ... ok
+
+test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 3.06s
+
+     Running unittests src\bin\graph_server.rs (C:/Users/jhona/Documents/Proyectos/Trader Gemini/target\debug\deps\graph_server-c7e9de982002b302.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src\bin\income_report.rs (C:/Users/jhona/Documents/Proyectos/Trader Gemini/target\debug\deps\income_report-c2c82ff8ddf49965.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src\bin\latency_flow_audit.rs (C:/Users/jhona/Documents/Proyectos/Trader Gemini/target\debug\deps\latency_flow_audit-f64b3e65072de61a.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src\bin\macro_history_sync.rs (C:/Users/jhona/Documents/Proyectos/Trader Gemini/target\debug\deps\macro_history_sync-6e0a83347f5cf82c.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src\bin\ml_path_probe.rs (C:/Users/jhona/Documents/Proyectos/Trader Gemini/target\debug\deps\ml_path_probe-e3e3e5cc0e2173d6.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src\bin\model_manifest.rs (C:/Users/jhona/Documents/Proyectos/Trader Gemini/target\debug\deps\model_manifest-d8a0a5ae5b30f0c5.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src\bin\multi_coin_simulator.rs (C:/Users/jhona/Documents/Proyectos/Trader Gemini/target\debug\deps\multi_coin_simulator-7e5093f128b1cc90.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src\bin\oco_probe.rs (C:/Users/jhona/Documents/Proyectos/Trader Gemini/target\debug\deps\oco_probe-8c419d670ca44aa0.exe)
+
+running 1 test
+test tests::cl207_la_espera_sale_del_freno ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running unittests src\bin\oi_history_sync.rs (C:/Users/jhona/Documents/Proyectos/Trader Gemini/target\debug\deps\oi_history_sync-4a452a7e5aca0b83.exe)
+
+running 3 tests
+test tests_lg16::lg16_parse_descarta_filas_invalidas ... ok
+test tests_lg16::lg16_pagina_por_la_fila_mas_vieja_y_cubre_toda_la_retencion ... ok
+test tests_lg16::lg16_un_fallo_de_red_a_media_paginacion_conserva_lo_descargado ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running unittests src\bin\parquet_to_bin.rs (C:/Users/jhona/Documents/Proyectos/Trader Gemini/target\debug\deps\parquet_to_bin-b3a6e378ff7db528.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src\bin\benchmark.rs (C:/Users/jhona/Documents/Proyectos/Trader Gemini/target\debug\deps\quantum_benchmark-7447bb97973d4f52.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src\bin\spectral_bench.rs (C:/Users/jhona/Documents/Proyectos/Trader Gemini/target\debug\deps\spectral_bench-905b9d5f27637557.exe)
+
+running 2 tests
+test tests::si_bench_valid_trades_preserve_issued_ledger_and_closed_boundary ... ok
+test tests::si_bench_rejection_preserves_state_and_continuation ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running unittests src\bin\system_health.rs (C:/Users/jhona/Documents/Proyectos/Trader Gemini/target\debug\deps\system_health-9de4b6caee0e0ce1.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src\bin\tape_spread_fix.rs (C:/Users/jhona/Documents/Proyectos/Trader Gemini/target\debug\deps\tape_spread_fix-395aa1900569d36c.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src\bin\test_forest.rs (C:/Users/jhona/Documents/Proyectos/Trader Gemini/target\debug\deps\test_forest-abd6313a7af40b57.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src\bin\test_forest2.rs (C:/Users/jhona/Documents/Proyectos/Trader Gemini/target\debug\deps\test_forest2-6a40b8fd5a3c1fc6.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src\bin\trader_viz.rs (C:/Users/jhona/Documents/Proyectos/Trader Gemini/target\debug\deps\trader_viz-1015c483511b80d7.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src\bin\train_dark_alpha.rs (C:/Users/jhona/Documents/Proyectos/Trader Gemini/target\debug\deps\train_dark_alpha-f443cc1df8a07d65.exe)
+
+running 8 tests
+test contract_tests::schema_and_empty_data_are_rejected ... ok
+test contract_tests::input_read_errors_are_not_silent_skips ... ok
+test contract_tests::csv_retains_numeric_values_and_labels_for_exact_legacy_schema ... ok
+test contract_tests::mixed_short_long_and_extra_columns_are_rejected ... ok
+test contract_tests::invalid_features_are_not_silently_imputed ... ok
+test contract_tests::scaler_matches_population_moments_and_rejects_overflow ... ok
+test contract_tests::publication_path_is_versioned_outside_operational_namespace ... ok
+test contract_tests::nonfinite_ambiguous_or_out_of_range_targets_are_rejected ... ok
+
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src\bin\train_forest.rs (C:/Users/jhona/Documents/Proyectos/Trader Gemini/target\debug\deps\train_forest-5ba17cf777e9898c.exe)
+
+running 41 tests
+test contract_tests::promotion_requires_a_separate_test_but_research_candidate_does_not ... ok
+test contract_tests::regression_residual_is_the_negative_gradient_in_both_directions ... ok
+test contract_tests::holdout_must_follow_the_latest_label_end_not_the_latest_start ... ok
+test contract_tests::regression_newton_step_reduces_squared_error ... ok
+test contract_tests::invalid_split_statistics_cannot_be_selected ... ok
+test contract_tests::invalid_exports_are_rejected_without_writing_a_model ... ok
+test contract_tests::sample_contract_rejects_misalignment_nonfinite_and_bad_intervals ... ok
+test contract_tests::exported_forest_keeps_learning_rate ... ok
+test contract_tests::exported_forest_keeps_each_tree_children ... ok
+test contract_tests::reversed_identical_and_exhausted_training_windows_fail_closed ... ok
+test contract_tests::purge_handles_nonmonotone_label_ends_without_losing_alignment ... ok
+test contract_tests::sampling_budget_rejects_zero_and_handles_timestamp_overflow ... ok
+test contract_tests::retained_ensemble_predictions_exclude_discarded_rounds ... ok
+test contract_tests::loss_gate_rejects_invalid_and_zero_baseline_evidence ... ok
+test contract_tests::child_eligibility_uses_full_population_not_probe ... ok
+test contract_tests::sampling_stride_never_densifies_requested_grid ... ok
+test contract_tests::full_population_split_gain_matches_direct_sum ... ok
+test contract_tests::sampling_budget_caps_attempts_inclusive_end_and_irregular_ticks ... ok
+test contract_tests::sampling_stride_respects_budget_on_long_span ... ok
+test contract_tests::split_gains_match_bruteforce_with_bootstrap_duplicates ... ok
+test contract_tests::temporal_purge_uses_closed_information_intervals ... ok
+test contract_tests::xliv_como_intervalos_compone_los_contratos_de_seleccion_y_test ... ok
+test tests::agg_trade_qty_recupera_la_cantidad_exacta ... ok
+test contract_tests::large_node_tree_uses_valid_full_population_children ... ok
+test tests::el_gate_exige_batir_la_persistencia_no_la_media ... ok
+test contract_tests::temporal_split_purges_only_training_and_keeps_selection_intact ... ok
+test contract_tests::tick_contract_rejects_bad_chronology_and_nonfinite_market_values ... ok
+test tests::la_comprobacion_de_paridad_no_tiene_epsilon ... ok
+test tests::la_puntuacion_solo_cuenta_los_arboles_que_se_guardan ... ok
+test tests::la_purga_elimina_el_solape_de_horizonte ... ok
+test contract_tests::serialized_json_and_binary_preserve_additive_predictions ... ok
+test tests::la_rejilla_sale_del_tape ... ok
+test tests::las_ventanas_no_cruzan_el_instante_t ... ok
+test tests::el_inventario_de_canales_sin_productor_en_el_tape_esta_declarado_muerto ... ok
+test tests::el_recorrido_declara_las_columnas_sin_splits ... ok
+test tests::vol_es_sigma_del_horizonte_no_media_por_tick ... ok
+test tests::volu_es_nocional_negociado_no_media_inflada ... ok
+test tests::una_dim_muerta_distinta_de_cero_rompe_el_entrenamiento ... ok
+test tests::qs2_main_escribe_linaje_y_aplica_el_libro_del_holdout ... ok
+test tests::tgb_solo_la_cinta_relativa_acreditada_llega_a_las_muestras ... ok
+test tests::el_camino_viejo_y_el_del_motor_dan_vectores_distintos ... ok
+
+test result: ok. 41 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.61s
+
+     Running unittests src\bin\votes_export.rs (C:/Users/jhona/Documents/Proyectos/Trader Gemini/target\debug\deps\votes_export-54cdd771539af497.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src\bin\walkforward_evolver.rs (C:/Users/jhona/Documents/Proyectos/Trader Gemini/target\debug\deps\walkforward_evolver-42ee2e2d0a7de767.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\arranque_c3_6_hedge_pre_flight_contract.rs (C:/Users/jhona/Documents/Proyectos/Trader Gemini/target\debug\deps\arranque_c3_6_hedge_pre_flight_contract-609538e388f4f3f4.exe)
+
+running 1 test
+test guardia_hedge_pre_flight_incluye_is_testnet ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+
+     Running tests\capital_entry_contract.rs (C:/Users/jhona/Documents/Proyectos/Trader Gemini/target\debug\deps\capital_entry_contract-593ca84fc32cccbb.exe)
+
+running 2 tests
+test multi_coin_simulator_rechaza_capital_invalido_antes_de_efectos ... ok
+test evolution_rechaza_capital_invalido_antes_de_efectos ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.42s
+
+     Running tests\capital_v4i_frontera_contract.rs (C:/Users/jhona/Documents/Proyectos/Trader Gemini/target\debug\deps\capital_v4i_frontera_contract-ecc6cef23f46f8c8.exe)
+
+running 5 tests
+test barrera_antes_del_permiso_ni_apalancamiento_ni_post ... ok
+test barrera_despues_del_permiso_sin_post ... ok
+test control_sin_cambio_entrega_una_vez ... ok
+test remanente_tras_una_espera_no_sale_con_la_revision_vieja ... ok
+test barrera_despues_de_la_ultima_revalidacion_cero_entregas_y_recalculada_una ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.28s
+
+     Running tests\capital_v4j_admision_contract.rs (C:/Users/jhona/Documents/Proyectos/Trader Gemini/target\debug\deps\capital_v4j_admision_contract-bb2f3ba70ab89394.exe)
+
+running 6 tests
+test relevo_invalida_token_sin_reusar_importe ... ok
+test riesgo_obsoleto_en_reintento_y_leverage ... ok
+test v4k_f4_ausente_cero_y_deuda_vetan_y_conservan_salidas ... ok
+test veto_conserva_cierre_cancelacion_y_libera_rechazo ... ok
+test veto_y_revision_en_la_entrega_local_por_ruta ... ok
+test v4k_corte_entre_cruce_y_compromiso_local_por_ruta ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 12.53s
+
+     Running tests\capital_v4j_plano_freno_contract.rs (C:/Users/jhona/Documents/Proyectos/Trader Gemini/target\debug\deps\capital_v4j_plano_freno_contract-82e08b99acd9fff3.exe)
+
+running 12 tests
+test f7_acumulador_preserva_su_contrato ... ok
+test f2_risk_y_host_comparten_pico_y_drawdown_de_equity ... ok
+test f3_funding_y_comision_acreditados_afectan_equity_una_vez ... ok
+test f6_pico_persistido_y_cache_aislados_por_ambito ... ok
+test v4k_f5_cota_y_recuperacion_con_la_misma_revision ... ok
+test v4k_f8_income_retenido_no_registra_en_el_sucesor ... ok
+test f8_flujo_identificado_y_retiro_incierto_no_rearman ... ok
+test f5_relevo_retiene_cota_conservadora_y_no_aprueba_ganancia ... ok
+test f4_frio_ausente_cero_y_deuda_conservan_protecciones ... ok
+test f1_reserva_y_debito_provisional_no_disparan_ni_bajan_pico ... ok
+test v4k_f2_risk_y_host_deciden_con_la_misma_revision ... ok
+test v4k_f6_arranque_restaura_antes_de_la_primera_evidencia_y_el_relevo_descarta_efectos ... ok
+
+test result: ok. 12 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.77s
+
+     Running tests\capital_v4l_host_contract.rs (C:/Users/jhona/Documents/Proyectos/Trader Gemini/target\debug\deps\capital_v4l_host_contract-d45181ca9cbb4e50.exe)
+
+running 12 tests
+test v4l_f2_host_y_risk_con_decision_y_revision_observadas ... ok
+test v4l_f6_disparo_y_reintento_no_saltan_de_ambito ... ok
+test v4l_f6_restauracion_atomica_con_equity_vigente ... ok
+test v4n_f2_f5_paso_productivo_con_cartera_y_reserva ... ok
+test v4l_f5_cota_sin_ascenso_y_restauracion_productiva ... ok
+test v4n_r861_pico_ilegible_entre_la_vista_y_la_guarda ... ok
+test v4l_f8_income_antes_del_relevo_no_altera_sucesor ... ok
+test v4n_compromisos_cruzan_la_cota_retirada_con_debito_vivo ... ok
+test v4n_f4_protectora_viva_y_residual_protegido ... ok
+test v4l_f4_cero_ausencia_deuda_protegen_posicion_real ... ok
+test v4l_a1_host_revierte_una_vez_y_resuelve_maker_parcial ... ok
+test v4l_a1_compromiso_local_host_revalida_sin_esperar_red ... ok
+
+test result: ok. 12 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 15.83s
+
+     Running tests\capital_v4m_contract.rs (C:/Users/jhona/Documents/Proyectos/Trader Gemini/target\debug\deps\capital_v4m_contract-6942b706e9c6cf59.exe)
+
+running 4 tests
+test m_d2_sin_tranid_atraviesa_transporte_y_host ... ok
+test m_f6_reintento_no_toma_el_ejecutor_del_sucesor ... ok
+test m_f8_certificado_con_testigo_de_era ... ok
+test m_a1h_padre_e_hija_por_evidencia_terminal ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 4.50s
+
+     Running tests\continuous_capital_contract.rs (C:/Users/jhona/Documents/Proyectos/Trader Gemini/target\debug\deps\continuous_capital_contract-193e524297c4ce10.exe)
+
+running 3 tests
+test valid_initial_capital_reaches_the_missing_tape ... ok
+test invalid_initial_capital_creates_nothing_without_preexisting_csv ... ok
+test invalid_initial_capital_is_rejected_before_side_effects ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.63s
+
+     Running tests\dataset_admission_process_contract.rs (C:/Users/jhona/Documents/Proyectos/Trader Gemini/target\debug\deps\dataset_admission_process_contract-6d8cbeb60e45d593.exe)
+
+running 1 test
+dataset_admission --data-root <DIR> --output <NEW_JSON>
+dataset_admission: --data-root is required
+INSUFICIENTE: C:\Users\jhona\AppData\Local\Temp\dataset-admission-process-53184-0\receipt/manifest.json
+dataset_admission: refusing to overwrite existing receipt: C:\Users\jhona\AppData\Local\Temp\dataset-admission-process-53184-0\receipt/manifest.json
+test real_process_preserves_help_usage_rejection_and_overwrite_exit_codes ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.28s
+
+     Running tests\demo_tel_capital_update_sink_contract.rs (C:/Users/jhona/Documents/Proyectos/Trader Gemini/target\debug\deps\demo_tel_capital_update_sink_contract-e95ac81621870a0e.exe)
+
+running 2 tests
+test capital_update_sale_del_sink_real_una_vez_por_revision_aceptada ... ok
+test t3_capital_update_pasa_por_logger_real_por_revision ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.28s
+
+     Running tests\demo_tel_lines_contract.rs (C:/Users/jhona/Documents/Proyectos/Trader Gemini/target\debug\deps\demo_tel_lines_contract-eec460553886661b.exe)
+
+running 17 tests
+test t3_bench_disparo_immune ... ignored
+test demo_tel_la_linea_fill_existente_no_cambia ... ok
+test demo_tel_unrealized_pnl ... ok
+test demo_tel_immune_trigger ... ok
+test demo_tel_audit_summary ... ok
+test demo_tel_capital_update ... ok
+test demo_tel_fill ... ok
+test demo_tel_order_send ... ok
+test demo_tel_order_result_testigo ... ok
+test demo_tel_comparador_rechaza_mutaciones ... ok
+test demo_tel_decision_mid ... ok
+test demo_tel_symbol_spec ... ok
+test demo_tel_funding ... ok
+test demo_tel_trade_fee ... ok
+test demo_tel_trade_close ... ok
+test demo_tel_son_once_lineas ... ok
+test t3_immune_trigger_atraviesa_logger_y_parser_sin_truncar ... ok
+
+test result: ok. 16 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.34s
+
+     Running tests\host_oms_contract.rs (C:/Users/jhona/Documents/Proyectos/Trader Gemini/target\debug\deps\host_oms_contract-b1dac5698af38997.exe)
+
+running 32 tests
+test commission_cash_flow_preserves_rebates_in_the_host_cost_convention ... ok
+test close_receipt_is_used_only_for_its_exact_event_and_quantity_without_fabricating_fees ... ok
+test f28_batch_reaches_oms_twice_with_independent_sessions_and_uuids ... ok
+test f28_refresh_after_long_long_batch_preserves_both_slots_without_duplicate_adoption ... ok
+test f28_refresh_missing_short_evidence_does_not_close_either_leg ... ok
+test a_new_token_after_universe_change_cannot_inherit_old_authorization ... ok
+test lg32_la_inexistencia_exige_el_codigo_y_el_horizonte_documentados ... ok
+test a_regular_orphan_order_blocks_readiness_without_fabricating_cancellation ... ok
+test a_reordered_fee_book_is_rejected_before_publication ... ok
+test balance_publication_requires_current_executor_and_finite_nonnegative_evidence ... ok
+test f28_oco_roundtrip::host_rest_terminal_oco_receipt_releases_and_reaches_quiescence ... ok
+test f28_partial_fill_is_not_total_and_pending_settlement_does_not_release_early ... ok
+test f28_deadline_cancels_reservation_revokes_admission_and_allows_quiescence ... ok
+test both_queries_and_complete_arena_reconciliation_are_required_and_errors_revoke ... ok
+test f28_duplicate_remote_legs_on_same_side_remain_ambiguous_and_block_admission ... ok
+test f28_refresh_flat_short_leg_preserves_the_long_leg ... ok
+test f28_refresh_after_long_short_batch_accepts_hedge_and_preserves_both_sides ... ok
+test f28_rejection_of_one_proposal_does_not_cancel_its_sibling ... ok
+test f28_refresh_with_ambiguous_multi_slot_drift_preserves_identities_and_blocks ... ok
+test f28_terminal_partial_release_requires_protection_guard_and_drains_quiescence ... ok
+test glm210_ranura_aplanada_por_el_inmune_se_cura_con_fila_flat_y_bloquea_sin_evidencia ... ok
+test lg32_intencion_pura_con_inexistencia_probada_deja_de_bloquear ... ok
+test lg32_orden_reconocida_solo_se_cierra_con_un_ack_terminal_valido ... ok
+test observed_fees_are_per_symbol_and_fee_failure_or_wrong_generation_revokes_the_book ... ok
+test owned_entry_task_retains_old_account_through_post_ack_settlement_until_drop ... ok
+test refresh_freezes_new_entries_and_drains_submission_without_closing_its_unconfirmed_reservation ... ok
+test replaced_session_rejects_old_success_and_old_error_before_any_state_mutation ... ok
+test replacement_during_leverage_await_withholds_old_entry_until_new_session_reconciles ... ok
+test revocation_during_leverage_await_withholds_submission ... ok
+test snapshot_and_core_publication_share_a_gate_so_a_new_reservation_is_never_phantom_cleaned ... ok
+test startup_requires_remote_evidence_for_testnet_and_mainnet_but_not_explicit_paper ... ok
+test unreconciled_entry_never_mutates_transport_and_ready_entry_uses_real_dispatcher ... ok
+
+test result: ok. 32 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.35s
+
+     Running tests\i12_transicion_oms_contract.rs (C:/Users/jhona/Documents/Proyectos/Trader Gemini/target\debug\deps\i12_transicion_oms_contract-71e4da62dc192f56.exe)
+
+running 6 tests
+test i12_6_el_host_transita_por_el_paso_con_un_solo_refresco ... ok
+test i12_5_una_reserva_no_cancelable_se_informa_y_no_se_publica_encima ... ok
+test i12_1_la_reserva_del_tick_se_suelta_y_la_transicion_publica_al_primer_intento ... ok
+test i12_4_un_rechazo_entrega_un_solo_refresco_y_espera_a_que_termine ... ok
+test i12_2_una_senal_persistente_ya_no_construye_ni_encola_un_refresco_por_mensaje ... ok
+test i12_3_con_la_sesion_ocupada_por_otra_ranura_no_se_construye_ni_se_revoca ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.55s
+
+     Running tests\i13_sucesor_cuota_contract.rs (C:/Users/jhona/Documents/Proyectos/Trader Gemini/target\debug\deps\i13_sucesor_cuota_contract-1b03ba7c7f7ada10.exe)
+
+running 4 tests
+test i13_4_el_host_construye_el_sucesor_desde_el_ejecutor_vigente ... ok
+test i13_3_la_transicion_publica_un_sucesor_que_comparte_el_reloj_del_vigente ... ok
+test i13_1_con_la_misma_url_y_arena_el_sucesor_comparte_el_reloj ... ok
+test i13_2_con_otra_url_o_arena_estrena_freno_y_uso_y_lo_dice ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.34s
+
+# fin 2026-11-17T01:31:05 codigo 0

@@ -1,0 +1,36 @@
+{
+  "schema": "tgb-run-1",
+  "paso": "G-medicion",
+  "run_id": "m_r00_build",
+  "tipo": "red_before",
+  "fecha_local": "2026-11-17T00:15:14",
+  "argv": [
+    "bash",
+    "scripts/cargo_semaforo.sh",
+    "test",
+    "--locked",
+    "-p",
+    "backtest-engine",
+    "--test",
+    "tgb_medicion_btc",
+    "--no-run"
+  ],
+  "resultado_observado": "verde",
+  "codigo_salida": 0,
+  "pruebas": {
+    "resumenes": 0,
+    "pasan": 0,
+    "fallan": 0,
+    "ignoradas": 0
+  },
+  "asercion_causante": null,
+  "stdout": {
+    "ruta": "stdout.txt",
+    "sha256": "4080eff882ad827934c10e2c7bcde8b47b75c8d5d6777b7168b1f7a0cc76e1cf"
+  },
+  "estado": "historico_cabecera_limpia",
+  "head_en_cabecera": "324ef18dbe1805320db70056df4fe5d6a7edd329",
+  "archivos_rastreados_modificados": 0,
+  "nota": null,
+  "motivo_estado": "cabecera con 0 archivos rastreados modificados; no registra archivos sin rastrear"
+}

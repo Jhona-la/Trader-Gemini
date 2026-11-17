@@ -1,0 +1,37 @@
+{
+  "schema": "tgb-run-1",
+  "paso": "TGBG-3",
+  "run_id": "p3_r02_verde",
+  "tipo": "green_after",
+  "fecha_utc": "2026-11-17T16:24:44Z",
+  "cwd": "C:\\Users\\jhona\\Desktop\\PC-Turbo\\integrador\\wt_v4l",
+  "argv": [
+    "bash",
+    "scripts/cargo_semaforo.sh",
+    "test",
+    "-p",
+    "trader-gemini-v5",
+    "--lib",
+    "--locked",
+    "tgb_g_"
+  ],
+  "filtro": "tgb_g_",
+  "nota": "reemplazado por p3_r04_verde (mismo cambio de aserciones)",
+  "resultado_esperado": "verde",
+  "resultado_observado": "verde",
+  "codigo_salida": 0,
+  "duracion_s": 156,
+  "pruebas": {
+    "resumenes": 1,
+    "pasan": 4,
+    "fallan": 0,
+    "ignoradas": 0
+  },
+  "asercion_causante": null,
+  "stdout": {
+    "ruta": "stdout.txt",
+    "sha256": "4f64e906556feba67f1b839d8880141e3b2ae59cc9f6e95091f74ed84ec5a7c1"
+  },
+  "stderr": "combinado en stdout.txt (cmd 2>&1 hacia el mismo archivo)",
+  "estado": "atribuible"
+}

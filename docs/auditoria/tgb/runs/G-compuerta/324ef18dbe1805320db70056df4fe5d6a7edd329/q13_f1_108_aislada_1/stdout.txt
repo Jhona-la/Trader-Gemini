@@ -1,0 +1,99 @@
+# q13_f1_108_aislada_1 | HEAD 324ef18dbe1805320db70056df4fe5d6a7edd329 | sucios 0 | cargo/rustc vivos 0 | libre 299661512704 | ram_libre_gb 3.9 | inicio 2026-11-17T02:06:36 | cargo test --locked -p god-engine-core --test f1_108_109_async_dataset_and_dead_shadow_drift_contract | CINTA  | REF 
+    Blocking waiting for file lock on package cache
+    Blocking waiting for file lock on package cache
+    Blocking waiting for file lock on package cache
+   Compiling serde_core v1.0.228
+   Compiling rustversion v1.0.22
+   Compiling libsqlite3-sys v0.38.2
+   Compiling thiserror v2.0.18
+   Compiling rusqlite v0.40.2
+   Compiling serde v1.0.228
+   Compiling serde_json v1.0.150
+   Compiling serde_path_to_error v0.1.20
+   Compiling deranged v0.5.8
+   Compiling storage-engine v0.1.0 (C:\Users\jhona\Desktop\PC-Turbo\integrador\wt_v4l\crates\storage-engine)
+   Compiling serde-xml-rs v0.5.1
+   Compiling serde_urlencoded v0.7.1
+   Compiling chrono v0.4.45
+   Compiling bincode v1.3.3
+   Compiling time v0.3.51
+   Compiling time-tz v2.0.0
+   Compiling reqwest v0.11.27
+   Compiling omniscient-registry v0.1.0 (C:\Users\jhona\Desktop\PC-Turbo\integrador\wt_v4l\crates\omniscient-registry)
+   Compiling arc-swap v1.9.2
+   Compiling axum-core v0.4.5
+   Compiling quantum-arena v0.1.0 (C:\Users\jhona\Desktop\PC-Turbo\integrador\wt_v4l\crates\quantum-arena)
+   Compiling strategy-core v0.1.0 (C:\Users\jhona\Desktop\PC-Turbo\integrador\wt_v4l\crates\strategy-core)
+   Compiling os-guardian v0.1.0 (C:\Users\jhona\Desktop\PC-Turbo\integrador\wt_v4l\crates\os-guardian)
+   Compiling audit-engine v0.1.0 (C:\Users\jhona\Desktop\PC-Turbo\integrador\wt_v4l\crates\audit-engine)
+   Compiling signal-engine v0.1.0 (C:\Users\jhona\Desktop\PC-Turbo\integrador\wt_v4l\crates\signal-engine)
+warning: use of deprecated function `std::arch::x86_64::_mm_getcsr`: see `_mm_getcsr` documentation - use inline assembly instead
+  --> crates\os-guardian\src\subnormal_control.rs:17:26
+   |
+17 | use core::arch::x86_64::{_mm_getcsr, _mm_setcsr};
+   |                          ^^^^^^^^^^
+   |
+   = note: `#[warn(deprecated)]` on by default
+
+warning: use of deprecated function `std::arch::x86_64::_mm_setcsr`: see `_mm_setcsr` documentation - use inline assembly instead
+  --> crates\os-guardian\src\subnormal_control.rs:17:38
+   |
+17 | use core::arch::x86_64::{_mm_getcsr, _mm_setcsr};
+   |                                      ^^^^^^^^^^
+
+warning: use of deprecated function `std::arch::x86_64::_mm_getcsr`: see `_mm_getcsr` documentation - use inline assembly instead
+  --> crates\os-guardian\src\subnormal_control.rs:47:29
+   |
+47 |             let mut mxcsr = _mm_getcsr();
+   |                             ^^^^^^^^^^
+
+warning: use of deprecated function `std::arch::x86_64::_mm_setcsr`: see `_mm_setcsr` documentation - use inline assembly instead
+  --> crates\os-guardian\src\subnormal_control.rs:49:13
+   |
+49 |             _mm_setcsr(mxcsr);
+   |             ^^^^^^^^^^
+
+warning: use of deprecated function `std::arch::x86_64::_mm_getcsr`: see `_mm_getcsr` documentation - use inline assembly instead
+  --> crates\os-guardian\src\subnormal_control.rs:52:28
+   |
+52 |             let verified = _mm_getcsr();
+   |                            ^^^^^^^^^^
+
+warning: use of deprecated function `std::arch::x86_64::_mm_getcsr`: see `_mm_getcsr` documentation - use inline assembly instead
+  --> crates\os-guardian\src\subnormal_control.rs:67:23
+   |
+67 |             let raw = _mm_getcsr();
+   |                       ^^^^^^^^^^
+
+warning: use of deprecated function `std::arch::x86_64::_mm_getcsr`: see `_mm_getcsr` documentation - use inline assembly instead
+  --> crates\os-guardian\src\subnormal_control.rs:89:29
+   |
+89 |             let mut mxcsr = _mm_getcsr();
+   |                             ^^^^^^^^^^
+
+warning: use of deprecated function `std::arch::x86_64::_mm_setcsr`: see `_mm_setcsr` documentation - use inline assembly instead
+  --> crates\os-guardian\src\subnormal_control.rs:91:13
+   |
+91 |             _mm_setcsr(mxcsr);
+   |             ^^^^^^^^^^
+
+   Compiling metacortex-engine v0.1.0 (C:\Users\jhona\Desktop\PC-Turbo\integrador\wt_v4l\crates\metacortex-engine)
+   Compiling axum v0.7.9
+warning: `os-guardian` (lib) generated 8 warnings
+   Compiling risk-engine v0.1.0 (C:\Users\jhona\Desktop\PC-Turbo\integrador\wt_v4l\crates\risk-engine)
+   Compiling execution-engine v0.1.0 (C:\Users\jhona\Desktop\PC-Turbo\integrador\wt_v4l\crates\execution-engine)
+   Compiling ibapi v2.7.0
+   Compiling telemetry-server v0.1.0 (C:\Users\jhona\Desktop\PC-Turbo\integrador\wt_v4l\crates\telemetry-server)
+   Compiling dark-alpha-engine v0.1.0 (C:\Users\jhona\Desktop\PC-Turbo\integrador\wt_v4l\crates\dark-alpha-engine)
+   Compiling god-engine-core v0.1.0 (C:\Users\jhona\Desktop\PC-Turbo\integrador\wt_v4l\crates\god-engine-core)
+   Compiling data-pipeline v0.1.0 (C:\Users\jhona\Desktop\PC-Turbo\integrador\wt_v4l\crates\data-pipeline)
+    Finished `test` profile [optimized] target(s) in 1m 59s
+     Running tests\f1_108_109_async_dataset_and_dead_shadow_drift_contract.rs (C:/Users/jhona/Documents/Proyectos/Trader Gemini/target\debug\deps\f1_108_109_async_dataset_and_dead_shadow_drift_contract-420452d647e07618.exe)
+
+running 2 tests
+test test_f1_109_god_engine_core_clean_without_shadow_auditor_bloat ... ok
+test test_f1_108_async_dataset_recorder_sub_microsecond_latency ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.19s
+
+# fin 2026-11-17T02:08:55 codigo 0

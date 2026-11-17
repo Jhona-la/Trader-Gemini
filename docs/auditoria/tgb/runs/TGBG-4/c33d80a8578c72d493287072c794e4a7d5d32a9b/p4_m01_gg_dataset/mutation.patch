@@ -1,0 +1,6 @@
+--- src\bin\dataset_admission.rs (sha256 previo b4998e7aaf2316cac917db0f46faf7af1d60b81f087dc3215d6ce9a8cb6f490d)
+### TEXTO VIEJO (una aparicion exacta)
+    evaluar_generacion(&mut receipt, &spec.path, &snapshot, generacion);
+### TEXTO NUEVO
+    if receipt.integrity != "verified" { evaluar_generacion(&mut receipt, &spec.path, &snapshot, generacion); } else { receipt.training_eligible = true; receipt.training_rejection = None; }
+### FIN

@@ -1,0 +1,26 @@
+param([string]$Nombre, [string]$Args1, [string]$Wt = 'C:\Users\jhona\Desktop\PC-Turbo\integrador\wt_v4l')
+$ErrorActionPreference = 'Continue'
+$dir = 'C:\Users\jhona\Desktop\PC-Turbo\integrador\tgb_logs'
+Set-Location $Wt
+$env:SEMAFORO_AGENTE = 'integrador-lector-tgb'
+$env:SEMAFORO_BARRIDO = '1'  # COMPV2-P1 (16 nov): barrido RB-H1 en las ventanas de integracion
+# COMPV2-P6 (16 nov): antes '$env:RUSTC_WRAPPER = ''''' -- en PowerShell eso BORRA la variable y cargo usaba
+# igual rustc-wrapper = "sccache" de .cargo/config.toml (P0: 'Running `sccache ...rustc.exe`'). Se deja el de la config.
+$head = (git rev-parse HEAD)
+$sucio = (git status --porcelain --untracked-files=no | Measure-Object).Count
+$ajenos = (Get-CimInstance Win32_Process -Filter "Name='cargo.exe' OR Name='rustc.exe'" | Measure-Object).Count
+$libre0 = (Get-PSDrive C).Free; $ram0 = [math]::Round((Get-CimInstance Win32_OperatingSystem).FreePhysicalMemory/1MB,2)
+$t0 = Get-Date
+$log = Join-Path $dir "$Nombre.log"
+"# $Nombre | HEAD $head | sucios $sucio | cargo/rustc vivos $ajenos | libre $libre0 | ram_libre_gb $ram0 | inicio $($t0.ToString('s')) | cargo $Args1 | CINTA $env:RB_V1A_CINTA | REF $env:WB45_TRAZA_REFERENCIA" | Out-File -Encoding utf8 $log
+cmd /d /c "`"C:\Program Files\Git\bin\bash.exe`" scripts/cargo_semaforo.sh $Args1 >> `"$log`" 2>&1"
+$code = $LASTEXITCODE
+$t1 = Get-Date
+$libre1 = (Get-PSDrive C).Free
+$fila = "$Nombre`t$head`t$sucio`t$ajenos`t$libre0`t$libre1`t$ram0`t$($t0.ToString('s'))`t$([int]($t1-$t0).TotalSeconds)`t$code`t$Args1"
+Add-Content -Encoding utf8 (Join-Path $dir 'carga.tsv') $fila
+"# fin $($t1.ToString('s')) codigo $code" | Out-File -Append -Encoding utf8 $log
+exit $code
+
+
+

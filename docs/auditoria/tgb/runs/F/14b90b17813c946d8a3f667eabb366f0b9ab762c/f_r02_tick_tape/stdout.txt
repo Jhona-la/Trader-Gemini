@@ -1,0 +1,12 @@
+# f_r02_tick_tape | HEAD 14b90b17813c946d8a3f667eabb366f0b9ab762c | sucios 3 | cargo/rustc vivos 0 | libre 325106475008 | ram_libre_gb 6.38 | inicio 2026-11-16T23:31:47 | cargo test --locked -p tick-tape --test tgb_formato | CINTA  | REF 
+   Compiling tick-tape v0.1.0 (C:\Users\jhona\Desktop\PC-Turbo\integrador\wt_v4l\crates\tick-tape)
+    Finished `test` profile [optimized] target(s) in 14.81s
+     Running tests\tgb_formato.rs (C:/Users/jhona/Documents/Proyectos/Trader Gemini/target\debug\deps\tgb_formato-f8693a50423531c2.exe)
+
+running 2 tests
+test tgb_empaquetar_ida_y_vuelta ... ok
+test tgb_roundtrip_preserva_bits_y_bloques ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.02s
+
+# fin 2026-11-16T23:32:09 codigo 0

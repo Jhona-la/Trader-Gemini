@@ -1,0 +1,127 @@
+﻿# cd_m2_cae_con_cualquier_error | HEAD e6906854de572309415b25829adabee9be87fe77 | sucios 4 | cargo/rustc vivos 0 | libre 328957665280 | ram_libre_gb 2.67 | inicio 2026-11-16T23:04:02 | cargo test --locked -p backtest-engine --test tgb_reader_contract --no-fail-fast | CINTA  | REF 
+   Compiling serde_core v1.0.228
+   Compiling rustversion v1.0.22
+   Compiling libsqlite3-sys v0.38.2
+   Compiling thiserror v2.0.18
+   Compiling tick-tape v0.1.0 (C:\Users\jhona\Desktop\PC-Turbo\integrador\wt_v4l\crates\tick-tape)
+   Compiling rusqlite v0.40.2
+   Compiling serde v1.0.228
+   Compiling serde_json v1.0.150
+   Compiling deranged v0.5.8
+   Compiling serde_path_to_error v0.1.20
+warning: unreachable pattern
+   --> crates\tick-tape\src\logica.rs:114:9
+    |
+106 |         Err(_e) => {
+    |         ------- matches all the relevant values
+...
+114 |         Err(e) => Err(e),
+    |         ^^^^^^ no value can reach this
+    |
+    = note: `#[warn(unreachable_patterns)]` (part of `#[warn(unused)]`) on by default
+
+   Compiling storage-engine v0.1.0 (C:\Users\jhona\Desktop\PC-Turbo\integrador\wt_v4l\crates\storage-engine)
+   Compiling serde_urlencoded v0.7.1
+   Compiling chrono v0.4.45
+   Compiling bincode v1.3.3
+   Compiling serde-xml-rs v0.5.1
+   Compiling time v0.3.51
+   Compiling time-tz v2.0.0
+   Compiling reqwest v0.11.27
+   Compiling omniscient-registry v0.1.0 (C:\Users\jhona\Desktop\PC-Turbo\integrador\wt_v4l\crates\omniscient-registry)
+warning: `tick-tape` (lib) generated 1 warning
+   Compiling arc-swap v1.9.2
+   Compiling axum-core v0.4.5
+   Compiling quantum-arena v0.1.0 (C:\Users\jhona\Desktop\PC-Turbo\integrador\wt_v4l\crates\quantum-arena)
+   Compiling os-guardian v0.1.0 (C:\Users\jhona\Desktop\PC-Turbo\integrador\wt_v4l\crates\os-guardian)
+   Compiling strategy-core v0.1.0 (C:\Users\jhona\Desktop\PC-Turbo\integrador\wt_v4l\crates\strategy-core)
+   Compiling audit-engine v0.1.0 (C:\Users\jhona\Desktop\PC-Turbo\integrador\wt_v4l\crates\audit-engine)
+   Compiling signal-engine v0.1.0 (C:\Users\jhona\Desktop\PC-Turbo\integrador\wt_v4l\crates\signal-engine)
+warning: use of deprecated function `std::arch::x86_64::_mm_getcsr`: see `_mm_getcsr` documentation - use inline assembly instead
+  --> crates\os-guardian\src\subnormal_control.rs:17:26
+   |
+17 | use core::arch::x86_64::{_mm_getcsr, _mm_setcsr};
+   |                          ^^^^^^^^^^
+   |
+   = note: `#[warn(deprecated)]` on by default
+
+warning: use of deprecated function `std::arch::x86_64::_mm_setcsr`: see `_mm_setcsr` documentation - use inline assembly instead
+  --> crates\os-guardian\src\subnormal_control.rs:17:38
+   |
+17 | use core::arch::x86_64::{_mm_getcsr, _mm_setcsr};
+   |                                      ^^^^^^^^^^
+
+warning: use of deprecated function `std::arch::x86_64::_mm_getcsr`: see `_mm_getcsr` documentation - use inline assembly instead
+  --> crates\os-guardian\src\subnormal_control.rs:47:29
+   |
+47 |             let mut mxcsr = _mm_getcsr();
+   |                             ^^^^^^^^^^
+
+warning: use of deprecated function `std::arch::x86_64::_mm_setcsr`: see `_mm_setcsr` documentation - use inline assembly instead
+  --> crates\os-guardian\src\subnormal_control.rs:49:13
+   |
+49 |             _mm_setcsr(mxcsr);
+   |             ^^^^^^^^^^
+
+warning: use of deprecated function `std::arch::x86_64::_mm_getcsr`: see `_mm_getcsr` documentation - use inline assembly instead
+  --> crates\os-guardian\src\subnormal_control.rs:52:28
+   |
+52 |             let verified = _mm_getcsr();
+   |                            ^^^^^^^^^^
+
+warning: use of deprecated function `std::arch::x86_64::_mm_getcsr`: see `_mm_getcsr` documentation - use inline assembly instead
+  --> crates\os-guardian\src\subnormal_control.rs:67:23
+   |
+67 |             let raw = _mm_getcsr();
+   |                       ^^^^^^^^^^
+
+warning: use of deprecated function `std::arch::x86_64::_mm_getcsr`: see `_mm_getcsr` documentation - use inline assembly instead
+  --> crates\os-guardian\src\subnormal_control.rs:89:29
+   |
+89 |             let mut mxcsr = _mm_getcsr();
+   |                             ^^^^^^^^^^
+
+warning: use of deprecated function `std::arch::x86_64::_mm_setcsr`: see `_mm_setcsr` documentation - use inline assembly instead
+  --> crates\os-guardian\src\subnormal_control.rs:91:13
+   |
+91 |             _mm_setcsr(mxcsr);
+   |             ^^^^^^^^^^
+
+   Compiling metacortex-engine v0.1.0 (C:\Users\jhona\Desktop\PC-Turbo\integrador\wt_v4l\crates\metacortex-engine)
+   Compiling axum v0.7.9
+warning: `os-guardian` (lib) generated 8 warnings
+   Compiling risk-engine v0.1.0 (C:\Users\jhona\Desktop\PC-Turbo\integrador\wt_v4l\crates\risk-engine)
+   Compiling execution-engine v0.1.0 (C:\Users\jhona\Desktop\PC-Turbo\integrador\wt_v4l\crates\execution-engine)
+   Compiling ibapi v2.7.0
+   Compiling telemetry-server v0.1.0 (C:\Users\jhona\Desktop\PC-Turbo\integrador\wt_v4l\crates\telemetry-server)
+   Compiling dark-alpha-engine v0.1.0 (C:\Users\jhona\Desktop\PC-Turbo\integrador\wt_v4l\crates\dark-alpha-engine)
+   Compiling god-engine-core v0.1.0 (C:\Users\jhona\Desktop\PC-Turbo\integrador\wt_v4l\crates\god-engine-core)
+   Compiling data-pipeline v0.1.0 (C:\Users\jhona\Desktop\PC-Turbo\integrador\wt_v4l\crates\data-pipeline)
+   Compiling backtest-engine v0.1.0 (C:\Users\jhona\Desktop\PC-Turbo\integrador\wt_v4l\crates\backtest-engine)
+    Finished `test` profile [optimized] target(s) in 1m 26s
+     Running tests\tgb_reader_contract.rs (C:/Users/jhona/Documents/Proyectos/Trader Gemini/target\debug\deps\tgb_reader_contract-85b2f69b60595cdc.exe)
+
+running 4 tests
+test c_ausencias_directorios_y_rutas_no_ascii ... FAILED
+test c_con_ambos_manda_el_bin ... ok
+test d_prefijo_y_multimoneda_verifican_el_contenedor_entero ... ok
+test c_solo_tgb_da_los_mismos_eventos_y_errores_que_el_bin ... ok
+
+failures:
+
+---- c_ausencias_directorios_y_rutas_no_ascii stdout ----
+
+thread 'c_ausencias_directorios_y_rutas_no_ascii' (51844) panicked at crates\backtest-engine\tests\tgb_reader_contract.rs:124:5:
+un directorio en la ruta del .bin no puede caer al .tgb
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    c_ausencias_directorios_y_rutas_no_ascii
+
+test result: FAILED. 3 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.12s
+
+error: test failed, to rerun pass `-p backtest-engine --test tgb_reader_contract`
+error: 1 target failed:
+    `-p backtest-engine --test tgb_reader_contract`
+# fin 2026-11-16T23:05:36 codigo 101

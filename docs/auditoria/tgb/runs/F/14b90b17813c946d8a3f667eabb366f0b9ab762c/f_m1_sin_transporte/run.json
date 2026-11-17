@@ -1,0 +1,36 @@
+{
+  "schema": "tgb-run-1",
+  "paso": "F",
+  "run_id": "f_m1_sin_transporte",
+  "tipo": "mutation",
+  "fecha_local": "2026-11-16T23:35:07",
+  "argv": [
+    "bash",
+    "scripts/cargo_semaforo.sh",
+    "test",
+    "--locked",
+    "-p",
+    "trader-gemini-v5",
+    "--bin",
+    "dataset_admission",
+    "tgb_"
+  ],
+  "resultado_observado": "rojo",
+  "codigo_salida": 101,
+  "pruebas": {
+    "resumenes": 1,
+    "pasan": 0,
+    "fallan": 1,
+    "ignoradas": 0
+  },
+  "asercion_causante": "src\\bin\\dataset_admission.rs:1236:9: assertion `left == right` failed",
+  "stdout": {
+    "ruta": "stdout.txt",
+    "sha256": "ded8670a2e1afbb198eacb9548878394b7c9bce808a35a9914ac7ec4cea05e58"
+  },
+  "estado": "historico_no_atribuible",
+  "head_en_cabecera": "14b90b17813c946d8a3f667eabb366f0b9ab762c",
+  "archivos_rastreados_modificados": 3,
+  "nota": null,
+  "motivo_estado": "el log no guarda el parche del arbol (cambios sin confirmar); HEAD solo no describe el sujeto"
+}

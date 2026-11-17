@@ -1,0 +1,52 @@
+# Genera los originales sinteticos de las pruebas de tick-tape y sus contenedores con la herramienta del coordinador.
+# Salida: tgb_logs\fixtures\*.bin, *.bin.tgb y tgb_fixtures.jsonl (informe JSON de tgb comprimir por fixture).
+$ErrorActionPreference = 'Stop'
+$dir = 'C:\Users\jhona\Desktop\PC-Turbo\integrador\tgb_logs\fixtures'
+New-Item -ItemType Directory -Force $dir | Out-Null
+$tgb = 'C:\Users\jhona\Desktop\PC-Turbo\analisis\tgb\target\release\tgb.exe'
+function Add-U64([System.Collections.Generic.List[byte]]$lista, [UInt64]$v) { $lista.AddRange([BitConverter]::GetBytes($v)) }
+function Add-F64Bits([System.Collections.Generic.List[byte]]$lista, [UInt64]$bits) { $lista.AddRange([BitConverter]::GetBytes($bits)) }
+function Get-Bits([double]$x) { [BitConverter]::ToUInt64([BitConverter]::GetBytes($x), 0) }
+function New-Registros([int]$cuantos) {
+  $lista = New-Object 'System.Collections.Generic.List[byte]'
+  for ($k = 0; $k -lt $cuantos; $k++) {
+    [UInt64]$ts = [UInt64]1700000000000 + [UInt64]([math]::Floor($k / 3) * 7)
+    if ($k -eq 100) { $ts = [UInt64]5 }
+    if ($k -eq 101) { $ts = [UInt64]::MaxValue }
+    if ($k -eq 102) { $ts = [UInt64]0 }
+    $bid = Get-Bits (30000.0 + $k * 0.5)
+    $ask = Get-Bits (30000.0 + $k * 0.5 + 0.1)
+    $bq = Get-Bits (($k % 17) * 0.001)
+    $aq = Get-Bits (($k % 13) * 0.002 + 0.1)
+    if ($k -eq 10) { $bid = [UInt64]::Parse('8000000000000000','HexNumber') }      # -0.0
+    if ($k -eq 11) { $ask = [UInt64]::Parse('7ff8000000001234','HexNumber') }      # NaN con payload
+    if ($k -eq 12) { $bq = [UInt64]::Parse('7ff0000000000000','HexNumber') }       # +inf
+    if ($k -eq 13) { $aq = [UInt64]::Parse('fff0000000000000','HexNumber') }       # -inf
+    if ($k -eq 14) { $bid = [UInt64]::Parse('fff0000000000001','HexNumber') }      # NaN de senal, negativo
+    Add-U64 $lista $ts; Add-F64Bits $lista $bid; Add-F64Bits $lista $ask; Add-F64Bits $lista $bq; Add-F64Bits $lista $aq
+  }
+  return ,$lista.ToArray()
+}
+$reg257 = New-Registros 257
+$reg10 = New-Registros 10
+$reg3 = New-Registros 3
+$ascii = [Text.Encoding]::ASCII
+$casos = [ordered]@{
+  'f1_real'      = [byte[]]($ascii.GetBytes('TGMTICK1') + $reg257)
+  'f2_legado'    = [byte[]]$reg257
+  'f3_sintetico' = [byte[]]($ascii.GetBytes('TGMSYNT1') + $reg10)
+  'f4_otro'      = [byte[]](0..1002 | ForEach-Object { [byte](($_ * 31 + 7) % 251) })
+  'f5_vacio'     = [byte[]]@()
+  'f6_solo_cabecera' = [byte[]]$ascii.GetBytes('TGMTICK1')
+  'f7_tgm_ajena' = [byte[]]($ascii.GetBytes('TGMXXXX1') + $reg3)
+}
+$informe = Join-Path $dir 'tgb_fixtures.jsonl'
+'' | Out-File -Encoding ascii $informe
+foreach ($nombre in $casos.Keys) {
+  $bin = Join-Path $dir "$nombre.bin"
+  [IO.File]::WriteAllBytes($bin, $casos[$nombre])
+  $salida = & $tgb comprimir $bin "$bin.tgb" 2>&1
+  if ($LASTEXITCODE -ne 0) { throw "tgb fallo en $nombre : $salida" }
+  ('{"fixture":"' + $nombre + '","informe":' + ($salida -join '') + '}') | Out-File -Append -Encoding ascii $informe
+}
+Get-Content $informe

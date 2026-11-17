@@ -1,0 +1,11 @@
+# c_r03_logica | HEAD e6906854de572309415b25829adabee9be87fe77 | sucios 4 | cargo/rustc vivos 0 | libre 329386770432 | ram_libre_gb 2.82 | inicio 2026-11-16T23:01:56 | cargo test --locked -p tick-tape --test logica | CINTA  | REF 
+   Compiling tick-tape v0.1.0 (C:\Users\jhona\Desktop\PC-Turbo\integrador\wt_v4l\crates\tick-tape)
+    Finished `test` profile [optimized] target(s) in 3.78s
+     Running tests\logica.rs (C:/Users/jhona/Documents/Proyectos/Trader Gemini/target\debug\deps\logica-3cff9386b8e1596b.exe)
+
+running 1 test
+test logica_representacion_transporte_e_identidad ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s
+
+# fin 2026-11-16T23:02:07 codigo 0

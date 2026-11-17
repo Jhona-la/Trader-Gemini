@@ -1,0 +1,33 @@
+{
+  "schema": "tgb-run-1",
+  "paso": "G-compuerta",
+  "run_id": "q01_check_ws",
+  "tipo": "regresion",
+  "fecha_local": "2026-11-17T00:18:38",
+  "argv": [
+    "bash",
+    "scripts/cargo_semaforo.sh",
+    "check",
+    "--locked",
+    "--workspace",
+    "--all-targets"
+  ],
+  "resultado_observado": "verde",
+  "codigo_salida": 0,
+  "pruebas": {
+    "resumenes": 0,
+    "pasan": 0,
+    "fallan": 0,
+    "ignoradas": 0
+  },
+  "asercion_causante": null,
+  "stdout": {
+    "ruta": "stdout.txt",
+    "sha256": "19e6d235a551a9556d27891518b448c892627d0ffc75304e7a4b2d7e64b43362"
+  },
+  "estado": "historico_cabecera_limpia",
+  "head_en_cabecera": "324ef18dbe1805320db70056df4fe5d6a7edd329",
+  "archivos_rastreados_modificados": 0,
+  "nota": null,
+  "motivo_estado": "cabecera con 0 archivos rastreados modificados; no registra archivos sin rastrear"
+}

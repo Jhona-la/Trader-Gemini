@@ -1,0 +1,185 @@
+# cd_r01_despues | HEAD e6906854de572309415b25829adabee9be87fe77 | sucios 4 | cargo/rustc vivos 0 | libre 330045775872 | ram_libre_gb 6.74 | inicio 2026-11-16T22:56:46 | cargo test --locked -p backtest-engine --test tgb_reader_contract --test qra_tick_prefix_contract --lib --no-fail-fast | CINTA  | REF 
+   Compiling serde_core v1.0.228
+   Compiling rustversion v1.0.22
+   Compiling tokio-rustls v0.24.1
+   Compiling libsqlite3-sys v0.38.2
+   Compiling thiserror v2.0.18
+   Compiling tick-tape v0.1.0 (C:\Users\jhona\Desktop\PC-Turbo\integrador\wt_v4l\crates\tick-tape)
+   Compiling rusqlite v0.40.2
+   Compiling serde v1.0.228
+   Compiling serde_json v1.0.150
+   Compiling deranged v0.5.8
+   Compiling serde_path_to_error v0.1.20
+   Compiling hyper-rustls v0.24.2
+   Compiling storage-engine v0.1.0 (C:\Users\jhona\Desktop\PC-Turbo\integrador\wt_v4l\crates\storage-engine)
+   Compiling serde_urlencoded v0.7.1
+   Compiling chrono v0.4.45
+   Compiling bincode v1.3.3
+   Compiling serde-xml-rs v0.5.1
+   Compiling time v0.3.51
+   Compiling omniscient-registry v0.1.0 (C:\Users\jhona\Desktop\PC-Turbo\integrador\wt_v4l\crates\omniscient-registry)
+   Compiling time-tz v2.0.0
+   Compiling reqwest v0.11.27
+   Compiling arc-swap v1.9.2
+   Compiling axum-core v0.4.5
+   Compiling axum v0.7.9
+   Compiling quantum-arena v0.1.0 (C:\Users\jhona\Desktop\PC-Turbo\integrador\wt_v4l\crates\quantum-arena)
+   Compiling ibapi v2.7.0
+   Compiling os-guardian v0.1.0 (C:\Users\jhona\Desktop\PC-Turbo\integrador\wt_v4l\crates\os-guardian)
+   Compiling strategy-core v0.1.0 (C:\Users\jhona\Desktop\PC-Turbo\integrador\wt_v4l\crates\strategy-core)
+   Compiling audit-engine v0.1.0 (C:\Users\jhona\Desktop\PC-Turbo\integrador\wt_v4l\crates\audit-engine)
+warning: use of deprecated function `std::arch::x86_64::_mm_getcsr`: see `_mm_getcsr` documentation - use inline assembly instead
+  --> crates\os-guardian\src\subnormal_control.rs:17:26
+   |
+17 | use core::arch::x86_64::{_mm_getcsr, _mm_setcsr};
+   |                          ^^^^^^^^^^
+   |
+   = note: `#[warn(deprecated)]` on by default
+
+warning: use of deprecated function `std::arch::x86_64::_mm_setcsr`: see `_mm_setcsr` documentation - use inline assembly instead
+  --> crates\os-guardian\src\subnormal_control.rs:17:38
+   |
+17 | use core::arch::x86_64::{_mm_getcsr, _mm_setcsr};
+   |                                      ^^^^^^^^^^
+
+warning: use of deprecated function `std::arch::x86_64::_mm_getcsr`: see `_mm_getcsr` documentation - use inline assembly instead
+  --> crates\os-guardian\src\subnormal_control.rs:47:29
+   |
+47 |             let mut mxcsr = _mm_getcsr();
+   |                             ^^^^^^^^^^
+
+warning: use of deprecated function `std::arch::x86_64::_mm_setcsr`: see `_mm_setcsr` documentation - use inline assembly instead
+  --> crates\os-guardian\src\subnormal_control.rs:49:13
+   |
+49 |             _mm_setcsr(mxcsr);
+   |             ^^^^^^^^^^
+
+warning: use of deprecated function `std::arch::x86_64::_mm_getcsr`: see `_mm_getcsr` documentation - use inline assembly instead
+  --> crates\os-guardian\src\subnormal_control.rs:52:28
+   |
+52 |             let verified = _mm_getcsr();
+   |                            ^^^^^^^^^^
+
+warning: use of deprecated function `std::arch::x86_64::_mm_getcsr`: see `_mm_getcsr` documentation - use inline assembly instead
+  --> crates\os-guardian\src\subnormal_control.rs:67:23
+   |
+67 |             let raw = _mm_getcsr();
+   |                       ^^^^^^^^^^
+
+warning: use of deprecated function `std::arch::x86_64::_mm_getcsr`: see `_mm_getcsr` documentation - use inline assembly instead
+  --> crates\os-guardian\src\subnormal_control.rs:89:29
+   |
+89 |             let mut mxcsr = _mm_getcsr();
+   |                             ^^^^^^^^^^
+
+warning: use of deprecated function `std::arch::x86_64::_mm_setcsr`: see `_mm_setcsr` documentation - use inline assembly instead
+  --> crates\os-guardian\src\subnormal_control.rs:91:13
+   |
+91 |             _mm_setcsr(mxcsr);
+   |             ^^^^^^^^^^
+
+   Compiling signal-engine v0.1.0 (C:\Users\jhona\Desktop\PC-Turbo\integrador\wt_v4l\crates\signal-engine)
+   Compiling metacortex-engine v0.1.0 (C:\Users\jhona\Desktop\PC-Turbo\integrador\wt_v4l\crates\metacortex-engine)
+warning: `os-guardian` (lib) generated 8 warnings
+   Compiling risk-engine v0.1.0 (C:\Users\jhona\Desktop\PC-Turbo\integrador\wt_v4l\crates\risk-engine)
+   Compiling telemetry-server v0.1.0 (C:\Users\jhona\Desktop\PC-Turbo\integrador\wt_v4l\crates\telemetry-server)
+   Compiling execution-engine v0.1.0 (C:\Users\jhona\Desktop\PC-Turbo\integrador\wt_v4l\crates\execution-engine)
+   Compiling dark-alpha-engine v0.1.0 (C:\Users\jhona\Desktop\PC-Turbo\integrador\wt_v4l\crates\dark-alpha-engine)
+   Compiling data-pipeline v0.1.0 (C:\Users\jhona\Desktop\PC-Turbo\integrador\wt_v4l\crates\data-pipeline)
+   Compiling god-engine-core v0.1.0 (C:\Users\jhona\Desktop\PC-Turbo\integrador\wt_v4l\crates\god-engine-core)
+   Compiling backtest-engine v0.1.0 (C:\Users\jhona\Desktop\PC-Turbo\integrador\wt_v4l\crates\backtest-engine)
+    Finished `test` profile [optimized] target(s) in 2m 07s
+     Running unittests src\lib.rs (C:/Users/jhona/Documents/Proyectos/Trader Gemini/target\debug\deps\backtest_engine-a9fc6701a5510bd1.exe)
+
+running 62 tests
+test booktick_replay::causality_contract::cx_macro_before_first_observation_is_missing_not_future ... ok
+test booktick_replay::causality_contract::cx_extreme_warmup_is_rejected_without_overflow ... ok
+test booktick_replay::sol_r4_01_tests::sol_r4_01_guard_degenerado_dice_noreplay ... ok
+test booktick_replay::sol_r5_02_tests::mtm_open_position_can_equal_cash_when_net_mark_is_exactly_zero ... ok
+test booktick_replay::causality_contract::cx_only_rejected_prices_leave_core_cold_and_capital_intact ... ok
+test booktick_replay::sol_r5_02_tests::sol_r5_02_mtm_unitario_ganador_perdedor_y_paridad ... ok
+test booktick_replay::causality_contract::cx_merge_zero_warmup_has_no_hidden_600_row_floor ... ok
+test booktick_replay::causality_contract::cx_merge_short_warmup_observes_each_row_once_without_entries ... ok
+test booktick_replay::causality_contract::cx_first_event_has_no_future_feature_history ... ok
+test booktick_replay::tests::cl41_la_reserva_propia_no_veta_una_entrada_que_cabe ... ok
+test booktick_replay::tests::corte_t1_no_usa_el_cierre_del_mismo_dia ... ok
+test booktick_replay::tests::cl41b_la_reserva_retiene_el_margen_del_exchange ... ok
+test booktick_replay::tests::day_of_es_piso_utc_sin_desborde ... ok
+test booktick_replay::tests::envelope_autoritativa_veta_cuando_no_hay_edge ... ok
+test booktick_replay::tests::envelope_bootstrap_mantiene_entrada_que_sostiene_margen ... ok
+test booktick_replay::tests::envelope_gate_ignora_posicion_ya_evaluada ... ok
+test booktick_replay::tests::margin_guard_veta_notional_imposible_en_capital_micro ... ok
+test booktick_replay::causality_contract::cx_zero_warmup_does_not_disable_the_entry_path ... ok
+test booktick_replay::causality_contract::cx_nan_first_row_cannot_poison_accepted_replay ... ok
+test booktick_replay::causality_contract::cx_crossed_first_row_cannot_poison_accepted_replay ... ok
+test booktick_replay::causality_contract::cx_infinite_first_row_cannot_poison_accepted_replay ... ok
+test booktick_replay::tests::serie_vacia_es_neutra_sin_pánico ... ok
+test booktick_replay::tests::stop_pct_usa_distancia_real_del_sl ... ok
+test booktick_replay::tests::value_at_primer_dia_exacto_y_hueco ... ok
+test booktick_replay::causality_contract::cx_nonpositive_first_row_cannot_poison_accepted_replay ... ok
+test booktick_replay::tests::vol_brake_factor_replica_curva_del_vivo ... ok
+test booktick_replay::tests_lc_f0_20::panel_cuenta_aparte_el_cierre_sin_recibo ... ok
+test booktick_replay::tests::wiring_genoma_llega_al_signal_generation ... ok
+test booktick_replay::tests_lc_f0_20::recibo_del_cierre_exige_que_sea_de_ese_cierre ... ok
+test booktick_replay::visible_ioc_contract::visible_liquidity_below_one_lot_cannot_fill ... ok
+test booktick_replay::visible_ioc_contract::partial_fill_settles_the_reservation_and_cancels_the_remainder ... ok
+test metrics::tests::contornos_sin_muestra_sin_perdidas_y_ruina ... ok
+test metrics::tests::linea_de_panel_nombra_las_metricas ... ok
+test metrics::tests::cvar_empirico_es_la_media_de_la_cola_del_5pct ... ok
+test metrics::tests::panel_de_fixture_determinista_es_exacto ... ok
+test metrics::tests::test_multi_coin_event_priority ... ok
+test metrics::tests::test_multi_coin_event_priority_ordering ... ok
+test network_jitter::tests::test_network_jitter_nan_immunity ... ok
+test network_jitter::tests::test_network_jitter_sampling_and_slippage ... ok
+test booktick_replay::tests::r6_a6_macro_staleness_parity_with_registry ... ok
+test tests::test_backtest_native_empty_series ... ok
+test booktick_replay::causality_contract::cx_warmup_observes_but_never_opens_or_spends_capital ... ok
+test tests::test_backtest_native_nan_and_infinite_closes ... ok
+test tests::test_backtest_native_short_stats_buffer_rejection ... ok
+test tests::test_backtest_native_zero_and_nan_capital_rejection ... ok
+test tick_replayer::tests::test_r24_versioned_roundtrip_and_legacy_compat ... ok
+test tick_replayer::tests_lg15::lg15_el_cuerpo_empieza_tras_la_cabecera ... ok
+test booktick_replay::causality_contract::cx_appending_data_cannot_change_existing_prefix ... ok
+test booktick_replay::sol_r5_02b_tests::sol_r5_02b_mtm_post_ruina_no_mira_el_futuro ... ok
+test booktick_replay::causality_contract::cx_future_suffix_cannot_change_prefix_in_either_mode ... ok
+test tests::test_backtest_native_execution_contract ... ok
+test booktick_replay::sol_r5_02b_tests::sol_r5_02b_paridad_con_tramo_final_invalido ... ok
+test booktick_replay::sol_r4_01_tests::sol_r4_01_ruina_a_mitad_anualiza_solo_lo_ejecutado ... ok
+test tests::lc_f0_20_ranura_opcional_de_cierres_sin_recibo ... ok
+test booktick_replay::sol_r5_02_tests::sol_r5_02_caso_cerrado_o_abierto_pero_nunca_ciego ... ok
+test booktick_replay::sol_r4_01_tests::sol_r4_01_aduana_rechazados_no_cuentan_como_ejecutados ... ok
+test booktick_replay::sol_r4_01_tests::sol_r4_01_sin_ruina_span_ejecutado_es_la_cinta_entera ... ok
+test tests::golden_backtest_determinism ... ok
+test booktick_replay::tests::replay_con_envolvente_sigue_determinista has been running for over 60 seconds
+test booktick_replay::tests::replay_sano_es_determinista_y_no_explota has been running for over 60 seconds
+test booktick_replay::tests::xlvih_default_es_el_historico_y_determinista has been running for over 60 seconds
+test booktick_replay::tests::xlvih_shift_cero_paridad_y_negativo_saneado has been running for over 60 seconds
+test booktick_replay::tests::replay_con_envolvente_sigue_determinista ... ok
+test booktick_replay::tests::replay_sano_es_determinista_y_no_explota ... ok
+test booktick_replay::tests::xlvih_default_es_el_historico_y_determinista ... ok
+test booktick_replay::tests::xlvih_shift_cero_paridad_y_negativo_saneado ... ok
+
+test result: ok. 62 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 109.26s
+
+     Running tests\qra_tick_prefix_contract.rs (C:/Users/jhona/Documents/Proyectos/Trader Gemini/target\debug\deps\qra_tick_prefix_contract-ddb824b5e7c6f633.exe)
+
+running 5 tests
+test zero_prefix_still_reports_file_access_errors ... ok
+test prefix_preserves_complete_loader_numeric_sanitization ... ok
+test header_only_valid_tape_has_an_empty_prefix ... ok
+test prefix_validates_the_entire_alignment_even_for_limit_zero ... ok
+test prefix_matches_complete_events_and_bounds_capacity_for_all_formats ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.08s
+
+     Running tests\tgb_reader_contract.rs (C:/Users/jhona/Documents/Proyectos/Trader Gemini/target\debug\deps\tgb_reader_contract-85b2f69b60595cdc.exe)
+
+running 4 tests
+test c_con_ambos_manda_el_bin ... ok
+test c_ausencias_directorios_y_rutas_no_ascii ... ok
+test d_prefijo_y_multimoneda_verifican_el_contenedor_entero ... ok
+test c_solo_tgb_da_los_mismos_eventos_y_errores_que_el_bin ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.33s
+
+# fin 2026-11-16T23:00:48 codigo 0

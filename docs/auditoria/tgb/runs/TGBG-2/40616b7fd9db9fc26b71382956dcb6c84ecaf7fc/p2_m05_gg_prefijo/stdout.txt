@@ -1,0 +1,48 @@
+# p2_m05_gg_prefijo | HEAD 40616b7fd9db9fc26b71382956dcb6c84ecaf7fc | sucios 4 | cargo/rustc vivos 2 | libre 305147138048 | ram_libre_gb 4.26 | inicio 2026-11-17T16:13:59Z | tipo mutation | esperado rojo | parche 691c69bdcd5c9e6724a50c62d4813a3ebea4efcc1b7c2c4f3249e51105c8f07a | cargo test -p tick-tape --test tgb_g_contract --locked
+   Compiling tick-tape v0.1.0 (C:\Users\jhona\Desktop\PC-Turbo\integrador\wt_v4l\crates\tick-tape)
+    Finished `test` profile [optimized] target(s) in 5.32s
+     Running tests\tgb_g_contract.rs (C:/Users/jhona/Documents/Proyectos/Trader Gemini/target\debug\deps\tgb_g_contract-0c08981f09535697.exe)
+
+running 9 tests
+test tgb_g01_recetas ... ok
+test tgb_g03_rechaza_autodeclaracion ... ok
+test tgb_g07_mixta_invalida_y_medio_tick ... FAILED
+test tgb_g12_bin_tgb_equivalentes ... FAILED
+test tgb_g06_cobertura_y_cola ... FAILED
+test tgb_g05_identidad_original ... ok
+test tgb_g08_cabecera_y_recibo ... ok
+test tgb_g04_cadena_rota ... ok
+test tgb_g02_cruce_y_vecinos ... ok
+
+failures:
+
+---- tgb_g07_mixta_invalida_y_medio_tick stdout ----
+
+thread 'tgb_g07_mixta_invalida_y_medio_tick' (62572) panicked at crates\tick-tape\tests\tgb_g_contract.rs:153:5:
+assertion `left == right` failed
+  left: Relativa
+ right: Mixta
+
+---- tgb_g12_bin_tgb_equivalentes stdout ----
+
+thread 'tgb_g12_bin_tgb_equivalentes' (54844) panicked at crates\tick-tape\tests\tgb_g_contract.rs:496:32:
+desde el .bin: Rechazo { causa: CuentasDiscordantes, detalle: "el recibo declara 300 esperados y 300 analizados; el original tiene 200" }
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+---- tgb_g06_cobertura_y_cola stdout ----
+
+thread 'tgb_g06_cobertura_y_cola' (44472) panicked at crates\tick-tape\tests\tgb_g_contract.rs:299:13:
+assertion `left == right` failed: mezcla tardia: causa distinta (procedencia_no_acreditada (cuentas_discordantes): el recibo declara 201 esperados y 201 analizados; el original tiene 200)
+  left: CuentasDiscordantes
+ right: Firma(Mixta)
+
+
+failures:
+    tgb_g06_cobertura_y_cola
+    tgb_g07_mixta_invalida_y_medio_tick
+    tgb_g12_bin_tgb_equivalentes
+
+test result: FAILED. 6 passed; 3 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+error: test failed, to rerun pass `-p tick-tape --test tgb_g_contract`
+# fin 2026-11-17T16:14:10Z codigo 101 duracion_s 10

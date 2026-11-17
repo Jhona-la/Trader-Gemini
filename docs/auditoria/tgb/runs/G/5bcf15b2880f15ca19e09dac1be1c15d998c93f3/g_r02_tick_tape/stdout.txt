@@ -1,0 +1,71 @@
+# g_r02_tick_tape | HEAD 5bcf15b2880f15ca19e09dac1be1c15d998c93f3 | sucios 3 | cargo/rustc vivos 0 | libre 325117259776 | ram_libre_gb 4.03 | inicio 2026-11-16T23:47:08 | cargo test --locked -p tick-tape --no-fail-fast | CINTA  | REF 
+   Compiling tick-tape v0.1.0 (C:\Users\jhona\Desktop\PC-Turbo\integrador\wt_v4l\crates\tick-tape)
+    Finished `test` profile [optimized] target(s) in 10.67s
+     Running unittests src\lib.rs (C:/Users/jhona/Documents/Proyectos/Trader Gemini/target\debug\deps\tick_tape-a774a6447d6a8c15.exe)
+
+running 1 test
+test logica::pruebas::permiso_denegado_no_cambia_de_fuente ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.07s
+
+     Running tests\consumidores_contract.rs (C:/Users/jhona/Documents/Proyectos/Trader Gemini/target\debug\deps\consumidores_contract-f32bbd9d961b44fa.exe)
+
+running 1 test
+test e_los_lectores_directos_abren_la_cinta_logica ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running tests\logica.rs (C:/Users/jhona/Documents/Proyectos/Trader Gemini/target\debug\deps\logica-3cff9386b8e1596b.exe)
+
+running 1 test
+test logica_representacion_transporte_e_identidad ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.15s
+
+     Running tests\procedencia.rs (C:/Users/jhona/Documents/Proyectos/Trader Gemini/target\debug\deps\procedencia-8af2908c96413ab6.exe)
+
+running 2 tests
+test tgb_firma_distingue_recetas_sin_adivinar ... ok
+test tgb_solo_la_relativa_acreditada_entra_a_entrenamiento ... FAILED
+
+failures:
+
+---- tgb_solo_la_relativa_acreditada_entra_a_entrenamiento stdout ----
+
+thread 'tgb_solo_la_relativa_acreditada_entra_a_entrenamiento' (48068) panicked at crates\tick-tape\tests\procedencia.rs:65:35:
+called `Result::unwrap()` on an `Err` value: Os { code: 1224, kind: Uncategorized, message: "The requested operation cannot be performed on a file with a user-mapped section open." }
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    tgb_solo_la_relativa_acreditada_entra_a_entrenamiento
+
+test result: FAILED. 1 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s
+
+error: test failed, to rerun pass `-p tick-tape --test procedencia`
+     Running tests\tgb_corrupciones.rs (C:/Users/jhona/Documents/Proyectos/Trader Gemini/target\debug\deps\tgb_corrupciones-e2a50d9f2f66bd71.exe)
+
+running 3 tests
+test tgb_presupuesto_identidad_y_alineacion ... ok
+test tgb_descompresion_acotada_y_frames_concatenados ... ok
+test tgb_rechaza_20_corrupciones ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.05s
+
+     Running tests\tgb_formato.rs (C:/Users/jhona/Documents/Proyectos/Trader Gemini/target\debug\deps\tgb_formato-f8693a50423531c2.exe)
+
+running 2 tests
+test tgb_empaquetar_ida_y_vuelta ... ok
+test tgb_roundtrip_preserva_bits_y_bloques ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 4.90s
+
+   Doc-tests tick_tape
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+error: 1 target failed:
+    `-p tick-tape --test procedencia`
+# fin 2026-11-16T23:47:37 codigo 101

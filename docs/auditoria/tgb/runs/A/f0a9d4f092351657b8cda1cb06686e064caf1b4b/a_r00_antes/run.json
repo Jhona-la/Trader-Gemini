@@ -1,0 +1,33 @@
+{
+  "schema": "tgb-run-1",
+  "paso": "A",
+  "run_id": "a_r00_antes",
+  "tipo": "red_before",
+  "fecha_local": "2026-11-16T22:44:56",
+  "argv": [
+    "bash",
+    "scripts/cargo_semaforo.sh",
+    "test",
+    "--locked",
+    "-p",
+    "tick-tape"
+  ],
+  "resultado_observado": "rojo",
+  "codigo_salida": 101,
+  "pruebas": {
+    "resumenes": 2,
+    "pasan": 0,
+    "fallan": 1,
+    "ignoradas": 0
+  },
+  "asercion_causante": "crates\\tick-tape\\tests\\tgb_formato.rs:51:33: f1_real: la herramienta lo escribio y el lector lo rechaza: TGB00001 todavia no implementado",
+  "stdout": {
+    "ruta": "stdout.txt",
+    "sha256": "1c9fbf227e258a56c6cce3cf336969c1ad1a9aa6c07de8850a6d3578d9a11559"
+  },
+  "estado": "historico_no_atribuible",
+  "head_en_cabecera": "f0a9d4f092351657b8cda1cb06686e064caf1b4b",
+  "archivos_rastreados_modificados": 2,
+  "nota": null,
+  "motivo_estado": "el log no guarda el parche del arbol (cambios sin confirmar); HEAD solo no describe el sujeto"
+}

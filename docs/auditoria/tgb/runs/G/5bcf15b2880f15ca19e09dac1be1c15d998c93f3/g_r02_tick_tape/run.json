@@ -1,0 +1,34 @@
+{
+  "schema": "tgb-run-1",
+  "paso": "G",
+  "run_id": "g_r02_tick_tape",
+  "tipo": "regresion",
+  "fecha_local": "2026-11-16T23:47:08",
+  "argv": [
+    "bash",
+    "scripts/cargo_semaforo.sh",
+    "test",
+    "--locked",
+    "-p",
+    "tick-tape",
+    "--no-fail-fast"
+  ],
+  "resultado_observado": "rojo",
+  "codigo_salida": 101,
+  "pruebas": {
+    "resumenes": 7,
+    "pasan": 9,
+    "fallan": 1,
+    "ignoradas": 0
+  },
+  "asercion_causante": "crates\\tick-tape\\tests\\procedencia.rs:65:35: called `Result::unwrap()` on an `Err` value: Os { code: 1224, kind: Uncategorized, message: \"The requested operation cannot be performed on a file with a user-mapped section open.\" }",
+  "stdout": {
+    "ruta": "stdout.txt",
+    "sha256": "43eb93e6abc719519c85de35dde253ebc597b12382d6fd6c83a5334dc3707bbd"
+  },
+  "estado": "historico_no_atribuible",
+  "head_en_cabecera": "5bcf15b2880f15ca19e09dac1be1c15d998c93f3",
+  "archivos_rastreados_modificados": 3,
+  "nota": null,
+  "motivo_estado": "el log no guarda el parche del arbol (cambios sin confirmar); HEAD solo no describe el sujeto"
+}

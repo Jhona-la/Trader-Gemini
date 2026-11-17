@@ -1,0 +1,19 @@
+$L = 'C:\Users\jhona\Desktop\PC-Turbo\integrador\tgbg_logs'
+$A = 'test -p tick-tape --test tgb_g_contract --locked'
+$F = 'crates\tick-tape\src\procedencia.rs'
+$m = @(
+ @('p2_m01_gg_productor', '    if ev.productor != entrada.productor || ev.commit_productor != entrada.commit_productor || ev.receta != entrada.receta {', '    if false {'),
+ @('p2_m02_gg_hash', '    if r.sha256_original != sha256_original || r.bytes_original != bytes_original {', '    if r.bytes_original != bytes_original {'),
+ @('p2_m03_gg_bytes', '    if r.sha256_original != sha256_original || r.bytes_original != bytes_original {', '    if r.sha256_original != sha256_original {'),
+ @('p2_m04_gg_cobertura', '    if r.registros_esperados != firma.registros || r.registros_analizados != firma.registros {', '    if false {'),
+ @('p2_m05_gg_prefijo', '    for (k, r) in cuerpo.chunks_exact(REGISTRO).enumerate() {', '    for (k, r) in cuerpo.chunks_exact(REGISTRO).take(200).enumerate() {'),
+ @('p2_m06_gg_cabecera', '        Some(c) if c == CABECERA_REAL => firma_de_registros(&bytes[8..]),', '        Some(c) if c[..3] == CABECERA_REAL[..3] => firma_de_registros(&bytes[8..]),'),
+ @('p2_m07_gg_evidencia_hash', '    if sha_ev != r.evidencia_productor_sha256 {', '    if false {'),
+ @('p2_m08_gg_indice_pin', '    if sha256_indice != ix.sha256_esperado {', '    if false {'),
+ @('p2_m09_gg_firma_discordante', '        || Some(r.primer_testigo_relativa) != firma.primer_solo_relativa', '        || false')
+)
+foreach ($x in $m) {
+  & "$L\mutar.ps1" -Nombre $x[0] -Archivo $F -Viejo $x[1] -Nuevo $x[2] -Args1 $A
+  Add-Content -Encoding utf8 "$L\mutaciones.tsv" "$($x[0])`t$LASTEXITCODE"
+}
+'MUTACIONES P2 TERMINADAS' | Out-File -Encoding utf8 "$L\mutaciones_p2.done"

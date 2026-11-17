@@ -1,0 +1,37 @@
+{
+  "schema": "tgb-run-1",
+  "paso": "TGBG-1",
+  "run_id": "p1_r00_rojo",
+  "tipo": "red_before",
+  "fecha_utc": "2026-11-17T15:57:53Z",
+  "cwd": "C:\\Users\\jhona\\Desktop\\PC-Turbo\\integrador\\wt_v4l",
+  "argv": [
+    "bash",
+    "scripts/cargo_semaforo.sh",
+    "test",
+    "-p",
+    "tick-tape",
+    "--test",
+    "tgb_g_contract",
+    "--locked"
+  ],
+  "filtro": null,
+  "nota": "rojo valido en G07, pero G02 fallo por su CONTROL (barrido de 4000 f64 demasiado corto, ningun medio distinto de p); se amplio a 30000 y se repitio como p1_r01_rojo",
+  "resultado_esperado": "rojo",
+  "resultado_observado": "rojo",
+  "codigo_salida": 101,
+  "duracion_s": 181,
+  "pruebas": {
+    "resumenes": 1,
+    "pasan": 1,
+    "fallan": 2,
+    "ignoradas": 0
+  },
+  "asercion_causante": "crates\\tick-tape\\tests\\tgb_g_contract.rs:167:9: assertion `left == right` failed: cantidad invalida (NaN, 1)",
+  "stdout": {
+    "ruta": "stdout.txt",
+    "sha256": "c3422015a01532887abbe43d9d74f4667b6b0618ad6da0e7de1eb2355edd04ba"
+  },
+  "stderr": "combinado en stdout.txt (cmd 2>&1 hacia el mismo archivo)",
+  "estado": "atribuible"
+}

@@ -1,0 +1,37 @@
+{
+  "schema": "tgb-run-1",
+  "paso": "TGBG-2",
+  "run_id": "p2_r01_verde",
+  "tipo": "green_after",
+  "fecha_utc": "2026-11-17T16:09:46Z",
+  "cwd": "C:\\Users\\jhona\\Desktop\\PC-Turbo\\integrador\\wt_v4l",
+  "argv": [
+    "bash",
+    "scripts/cargo_semaforo.sh",
+    "test",
+    "-p",
+    "tick-tape",
+    "--test",
+    "tgb_g_contract",
+    "--locked"
+  ],
+  "filtro": null,
+  "nota": "verde previo al refuerzo de G04 (evidencia de otro hash sobre ESTE original, para que gg_evidencia_hash no saliera ciega); el verde vigente es p2_r02_verde",
+  "resultado_esperado": "verde",
+  "resultado_observado": "verde",
+  "codigo_salida": 0,
+  "duracion_s": 21,
+  "pruebas": {
+    "resumenes": 1,
+    "pasan": 9,
+    "fallan": 0,
+    "ignoradas": 0
+  },
+  "asercion_causante": null,
+  "stdout": {
+    "ruta": "stdout.txt",
+    "sha256": "76aea056bf0f47c557e4d69d8c4a56ca0ef82fe32c2de204b9813d9182301ac9"
+  },
+  "stderr": "combinado en stdout.txt (cmd 2>&1 hacia el mismo archivo)",
+  "estado": "atribuible"
+}

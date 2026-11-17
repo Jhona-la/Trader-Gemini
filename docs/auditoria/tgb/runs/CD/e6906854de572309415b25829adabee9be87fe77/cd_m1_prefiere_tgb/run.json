@@ -1,0 +1,36 @@
+{
+  "schema": "tgb-run-1",
+  "paso": "CD",
+  "run_id": "cd_m1_prefiere_tgb",
+  "tipo": "mutation",
+  "fecha_local": "2026-11-16T23:02:18",
+  "argv": [
+    "bash",
+    "scripts/cargo_semaforo.sh",
+    "test",
+    "--locked",
+    "-p",
+    "backtest-engine",
+    "--test",
+    "tgb_reader_contract",
+    "--no-fail-fast"
+  ],
+  "resultado_observado": "rojo",
+  "codigo_salida": 101,
+  "pruebas": {
+    "resumenes": 1,
+    "pasan": 3,
+    "fallan": 1,
+    "ignoradas": 0
+  },
+  "asercion_causante": "crates\\backtest-engine\\tests\\tgb_reader_contract.rs:63:13: assertion `left == right` failed: ambos distintos: cantidad de eventos",
+  "stdout": {
+    "ruta": "stdout.txt",
+    "sha256": "1ad9d8ed2389f3c498b606842ac521ff56368f15f6eb42e917aa1ec79cc7dee8"
+  },
+  "estado": "historico_no_atribuible",
+  "head_en_cabecera": "e6906854de572309415b25829adabee9be87fe77",
+  "archivos_rastreados_modificados": 4,
+  "nota": null,
+  "motivo_estado": "el log no guarda el parche del arbol (cambios sin confirmar); HEAD solo no describe el sujeto"
+}

@@ -1,0 +1,36 @@
+{
+  "schema": "tgb-run-1",
+  "paso": "CD",
+  "run_id": "cd_m4_prefijo_cero_anticipado",
+  "tipo": "mutation",
+  "fecha_local": "2026-11-16T23:07:23",
+  "argv": [
+    "bash",
+    "scripts/cargo_semaforo.sh",
+    "test",
+    "--locked",
+    "-p",
+    "backtest-engine",
+    "--test",
+    "tgb_reader_contract",
+    "--no-fail-fast"
+  ],
+  "resultado_observado": "error",
+  "codigo_salida": 101,
+  "pruebas": {
+    "resumenes": 0,
+    "pasan": 0,
+    "fallan": 0,
+    "ignoradas": 0
+  },
+  "asercion_causante": null,
+  "stdout": {
+    "ruta": "stdout.txt",
+    "sha256": "6e049b070386df05cbe7d20b77d542f347e485fb94ed3ae4b57092b9010e08a4"
+  },
+  "estado": "historico_no_atribuible",
+  "head_en_cabecera": "e6906854de572309415b25829adabee9be87fe77",
+  "archivos_rastreados_modificados": 16,
+  "nota": "fallo de compilacion (trampa de PowerShell); repetido como cd_m4b",
+  "motivo_estado": "el log no guarda el parche del arbol (cambios sin confirmar); HEAD solo no describe el sujeto"
+}

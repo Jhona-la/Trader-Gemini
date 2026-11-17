@@ -1,0 +1,50 @@
+# p2_r00_rojo | HEAD 40616b7fd9db9fc26b71382956dcb6c84ecaf7fc | sucios 4 | cargo/rustc vivos 2 | libre 305203240960 | ram_libre_gb 6.06 | inicio 2026-11-17T16:09:03Z | tipo red_before | esperado rojo | parche fcae1c00edce387d248f984b2a061f1270568bbb0e644b6f8b8bcabda3228f26 | cargo test -p tick-tape --test tgb_g_contract --locked
+   Compiling tick-tape v0.1.0 (C:\Users\jhona\Desktop\PC-Turbo\integrador\wt_v4l\crates\tick-tape)
+    Finished `test` profile [optimized] target(s) in 23.52s
+     Running tests\tgb_g_contract.rs (C:/Users/jhona/Documents/Proyectos/Trader Gemini/target\debug\deps\tgb_g_contract-0c08981f09535697.exe)
+
+running 9 tests
+test tgb_g01_recetas ... ok
+test tgb_g04_cadena_rota ... FAILED
+test tgb_g03_rechaza_autodeclaracion ... FAILED
+test tgb_g06_cobertura_y_cola ... FAILED
+test tgb_g08_cabecera_y_recibo ... FAILED
+test tgb_g07_mixta_invalida_y_medio_tick ... ok
+test tgb_g05_identidad_original ... ok
+test tgb_g12_bin_tgb_equivalentes ... ok
+test tgb_g02_cruce_y_vecinos ... ok
+
+failures:
+
+---- tgb_g04_cadena_rota stdout ----
+
+thread 'tgb_g04_cadena_rota' (50984) panicked at crates\tick-tape\tests\tgb_g_contract.rs:297:18:
+evidencia fuera del indice: ADMITIDA sin evidencia suficiente (sha 1d1ab755e4fb6ff63fcf5550793d9e990089a5cfaf1cbe51e2f33da067cb7a10)
+
+---- tgb_g03_rechaza_autodeclaracion stdout ----
+
+thread 'tgb_g03_rechaza_autodeclaracion' (25028) panicked at crates\tick-tape\tests\tgb_g_contract.rs:297:18:
+evidencia de texto libre: ADMITIDA sin evidencia suficiente (sha 1d1ab755e4fb6ff63fcf5550793d9e990089a5cfaf1cbe51e2f33da067cb7a10)
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+---- tgb_g06_cobertura_y_cola stdout ----
+
+thread 'tgb_g06_cobertura_y_cola' (36940) panicked at crates\tick-tape\tests\tgb_g_contract.rs:297:18:
+registros_esperados=199: ADMITIDA sin evidencia suficiente (sha 1d1ab755e4fb6ff63fcf5550793d9e990089a5cfaf1cbe51e2f33da067cb7a10)
+
+---- tgb_g08_cabecera_y_recibo stdout ----
+
+thread 'tgb_g08_cabecera_y_recibo' (24684) panicked at crates\tick-tape\tests\tgb_g_contract.rs:297:18:
+decimal con signo: ADMITIDA sin evidencia suficiente (sha 1d1ab755e4fb6ff63fcf5550793d9e990089a5cfaf1cbe51e2f33da067cb7a10)
+
+
+failures:
+    tgb_g03_rechaza_autodeclaracion
+    tgb_g04_cadena_rota
+    tgb_g06_cobertura_y_cola
+    tgb_g08_cabecera_y_recibo
+
+test result: FAILED. 5 passed; 4 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+error: test failed, to rerun pass `-p tick-tape --test tgb_g_contract`
+# fin 2026-11-17T16:09:34Z codigo 101 duracion_s 31

@@ -1,0 +1,38 @@
+{
+  "schema": "tgb-run-1",
+  "paso": "TGBG-4",
+  "run_id": "p4_m01_gg_dataset",
+  "tipo": "mutation",
+  "fecha_utc": "2026-11-17T16:49:13Z",
+  "cwd": "C:\\Users\\jhona\\Desktop\\PC-Turbo\\integrador\\wt_v4l",
+  "argv": [
+    "bash",
+    "scripts/cargo_semaforo.sh",
+    "test",
+    "-p",
+    "trader-gemini-v5",
+    "--bin",
+    "dataset_admission",
+    "--locked",
+    "tgb_g_"
+  ],
+  "filtro": "tgb_g_",
+  "nota": null,
+  "resultado_esperado": "rojo",
+  "resultado_observado": "rojo",
+  "codigo_salida": 101,
+  "duracion_s": 153,
+  "pruebas": {
+    "resumenes": 1,
+    "pasan": 0,
+    "fallan": 1,
+    "ignoradas": 0
+  },
+  "asercion_causante": "src\\bin\\dataset_admission.rs:1467:13: assertion `left == right` failed: sin recibo",
+  "stdout": {
+    "ruta": "stdout.txt",
+    "sha256": "6f9347ca8bd3fab1d613010151adbe9b8846d6ab8ea122d05880735e38fea399"
+  },
+  "stderr": "combinado en stdout.txt (cmd 2>&1 hacia el mismo archivo)",
+  "estado": "atribuible"
+}

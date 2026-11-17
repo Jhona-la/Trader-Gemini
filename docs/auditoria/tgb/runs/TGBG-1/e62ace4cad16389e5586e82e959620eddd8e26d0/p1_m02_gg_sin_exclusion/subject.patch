@@ -1,0 +1,458 @@
+diff --git a/crates/tick-tape/src/procedencia.rs b/crates/tick-tape/src/procedencia.rs
+index 8ea25e1fd..68d874b50 100644
+--- a/crates/tick-tape/src/procedencia.rs
++++ b/crates/tick-tape/src/procedencia.rs
+@@ -1,4 +1,5 @@
+-//! TGB-G — marca de generacion de una cinta REAL y admision para ENTRENAR (pedido CODEX-CLI, Parte 4).
++//! TGB-G — marca de generacion de una cinta REAL y admision para ENTRENAR (pedido CODEX-CLI, Parte 4; cierre
++//! `pedido_tgb_g_v1.md` §3).
+ //!
+ //! Dos recetas historicas del semi-spread con que `binance_vision_sync` fabrico el libro de cada aggTrade de precio
+ //! `p` (`bid = p - h`, `ask = p + h`):
+@@ -8,21 +9,21 @@
+ //! Son las constantes historicas de las recetas auditadas, no umbrales de trading. Por encima del cruce
+ //! `0.01 / 0.00005` las dos dan los mismos bytes: ningun hash, nombre o fecha distingue quien escribio esa cinta.
+ //!
+-//! FIRMA. Para cada registro se busca un TESTIGO EXACTO: un `p` f64 que reproduzca bit a bit el `bid` y el `ask`
+-//! con la receta. Si existe, el registro es compatible con esa receta (la compatibilidad queda probada por el
+-//! testigo). Si no existe ninguno en la ventana, es incompatible. La ventana sale de la cota del redondeo: el
+-//! `p` real dista del punto medio calculado `m = bid/2 + ask/2` a lo sumo `|bid - fl(p-h)|/2 + |ask - fl(p+h)|/2`
+-//! mas el redondeo de `m`, es decir menos de 2 ulp de `p` (bid, p y ask estan a menos de un factor 2 entre si
+-//! con `h <= p/2`). Se recorren `VENTANA_ULP` = 16 ulp a cada lado, ocho veces esa cota. No hay epsilon
+-//! decimal ni porcentaje de registros que coincidan. Nota (TGB-G): cuando bid, p y ask comparten binade el error
+-//! del medio es <= 3/8 ulp y redondea a `p`, asi que el testigo suele ser el propio medio; la ventana es una
+-//! defensa para los cruces de binade. No se encontro un caso de estas dos recetas en que haga falta (su control
+-//! de mutacion, ventana 0, sale ciego).
++//! FIRMA POR INTERVALOS (metodo conservador de la Parte 4). Si un `p` f64 produjo el registro, los reales
++//! `x = p - h` e `y = p + h` redondearon a `bid` y `ask`, asi que `x` esta en `[bid⁻, bid⁺]` e `y` en
++//! `[ask⁻, ask⁺]` (vecinos representables: cota exterior del redondeo al mas cercano), y `p = (x + y) / 2`
++//! exactamente. El intervalo `P` de todos los `p` posibles se calcula con esas cotas y se ensancha hacia fuera
++//! `ENSANCHE_ULP` pasos (cubre el redondeo de las mitades y de la suma, tambien al cruzar una binade). Despues se
++//! RECORRE ENTERO: cada f64 de `P` se prueba bit a bit con las dos recetas. Un testigo exacto prueba la
++//! compatibilidad; si ninguno de `P` reproduce el registro, la receta queda EXCLUIDA, porque fuera de `P` no hay
++//! candidatos. Si `P` tuviera mas de `MAX_CANDIDATOS` f64 (no ocurre con datos positivos y finitos; es la guarda
++//! de un intervalo inesperado), el registro queda SIN DECISION y la cinta no se acredita. No hay epsilon decimal,
++//! porcentaje tolerado, muestreo ni ventana fija: la ventana de 16 ulp de H se retira.
+ //!
+-//! ESTADO de la cinta (interseccion de todos los registros): `Relativa` si algun registro excluye la antigua y
+-//! ninguno excluye la relativa; `Antigua` al reves; `Mixta` si hay de los dos; `OtraOInvalida` si algun registro
+-//! no admite ninguna (incluidos no finitos, no positivos o cruzados, y la transformacion de medio tick de
+-//! `tape_spread_fix`); `Indeterminada` si todos admiten las dos o no hay registros.
++//! ESTADO de la cinta: `OtraOInvalida` si algun registro es invalido (no finito, no positivo, cruzado, cantidad no
++//! finita o negativa) o no admite ninguna receta (incluida la transformacion de medio tick de `tape_spread_fix`);
++//! `Mixta` si hay testigos exclusivos de las dos; `Indeterminada` si algun registro quedo sin decision, si todos
++//! admiten las dos o si no hay registros; si no, `Antigua` o `Relativa`. Un resultado ambiguo nunca se fuerza.
+ //!
+ //! La firma no acredita QUIEN genero la cinta. Para entrenar se exige ademas un RECIBO lateral
+ //! (`X.bin.procedencia`) ligado al SHA-256 y al tamano exactos del original, con procedencia relativa acreditada
+@@ -36,10 +37,16 @@ use std::path::{Path, PathBuf};
+ pub const R_RELATIVA: f64 = 0.00005;
+ /// Suelo absoluto de la receta antigua (`tape_spread_fix.rs:4`).
+ pub const SUELO_ANTIGUO: f64 = 0.01;
+-/// Ulp recorridos a cada lado del punto medio (ver la cota en la cabecera del modulo).
+-pub const VENTANA_ULP: u32 = 16;
++/// Pasos hacia fuera con que se ensancha cada extremo del intervalo de `p` (ver la cabecera).
++pub const ENSANCHE_ULP: u32 = 4;
++/// Tope de f64 que se recorren por registro; por encima, el registro queda sin decision (nunca acredita).
++pub const MAX_CANDIDATOS: u64 = 256;
+ /// Cabecera REAL: los 8 bytes `TGMTICK1` (adenda (c) del coordinador; no basta el prefijo `TGM`).
+ pub const CABECERA_REAL: &[u8; 8] = b"TGMTICK1";
++/// Formato de cinta que firma este analizador.
++pub const FORMATO_CINTA: &str = "TGMTICK1+40B_LE";
++/// Version del analizador que debe declarar el recibo.
++pub const VERSION_ANALIZADOR: &str = "tick-tape-procedencia-2";
+ const REGISTRO: usize = 40;
+ 
+ #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+@@ -63,7 +70,18 @@ impl EstadoGeneracion {
+     }
+ }
+ 
+-/// Contadores y primer testigo (indice de registro) de cada clase.
++/// Veredicto de una receta sobre un registro.
++#[derive(Debug, Clone, Copy, PartialEq, Eq)]
++pub enum Veredicto {
++    /// Hay un `p` f64 que reproduce bid y ask bit a bit (testigo exacto).
++    Compatible,
++    /// Ningun f64 del intervalo exterior de `p` lo reproduce: queda excluida.
++    Excluida,
++    /// El intervalo excede `MAX_CANDIDATOS`: no se decide.
++    SinDecision,
++}
++
++/// Contadores, primer testigo y primer indice de exclusion (indice de registro; offset = 8 + 40 * indice).
+ #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+ pub struct Firma {
+     pub registros: u64,
+@@ -71,17 +89,25 @@ pub struct Firma {
+     pub solo_relativa: u64,
+     pub solo_antigua: u64,
+     pub ninguna: u64,
++    pub sin_decision: u64,
++    pub invalidos: u64,
+     pub primer_solo_relativa: Option<u64>,
+     pub primer_solo_antigua: Option<u64>,
+     pub primer_ninguna: Option<u64>,
++    pub primer_sin_decision: Option<u64>,
++    pub primer_invalido: Option<u64>,
++    pub primer_excluye_relativa: Option<u64>,
++    pub primer_excluye_antigua: Option<u64>,
+ }
+ 
+ impl Firma {
+     pub fn estado(&self) -> EstadoGeneracion {
+-        if self.ninguna > 0 {
++        if self.invalidos > 0 || self.ninguna > 0 {
+             EstadoGeneracion::OtraOInvalida
+         } else if self.solo_relativa > 0 && self.solo_antigua > 0 {
+             EstadoGeneracion::Mixta
++        } else if self.sin_decision > 0 {
++            EstadoGeneracion::Indeterminada
+         } else if self.solo_antigua > 0 {
+             EstadoGeneracion::Antigua
+         } else if self.solo_relativa > 0 {
+@@ -90,6 +116,24 @@ impl Firma {
+             EstadoGeneracion::Indeterminada
+         }
+     }
++
++    /// Recetas compatibles con TODOS los registros, en orden fijo (`relativa`, `antigua`), separadas por coma.
++    pub fn recetas_compatibles(&self) -> String {
++        let mut v = Vec::new();
++        if self.registros > 0 && self.invalidos == 0 && self.ninguna == 0 && self.sin_decision == 0 {
++            if self.solo_antigua == 0 {
++                v.push("relativa");
++            }
++            if self.solo_relativa == 0 {
++                v.push("antigua");
++            }
++        }
++        if v.is_empty() {
++            "ninguna".to_string()
++        } else {
++            v.join(",")
++        }
++    }
+ }
+ 
+ fn semi_relativo(p: f64) -> f64 {
+@@ -105,36 +149,41 @@ fn reproduce(p: f64, semi: fn(f64) -> f64, bid: f64, ask: f64) -> bool {
+     (p - h).to_bits() == bid.to_bits() && (p + h).to_bits() == ask.to_bits()
+ }
+ 
+-/// Siguiente f64 hacia arriba o hacia abajo de un positivo finito (por bits).
+-fn vecino(p: f64, arriba: bool) -> Option<f64> {
+-    let b = p.to_bits();
+-    let n = if arriba { b.checked_add(1)? } else { b.checked_sub(1)? };
+-    let q = f64::from_bits(n);
+-    (q.is_finite() && q > 0.0).then_some(q)
++fn hacia_fuera(mut x: f64, arriba: bool) -> f64 {
++    for _ in 0..ENSANCHE_ULP {
++        x = if arriba { x.next_up() } else { x.next_down() };
++    }
++    x
++}
++
++/// Intervalo exterior `[lo, hi]` (f64 positivos y finitos) de todo `p` que pudo producir `bid`/`ask`.
++pub fn intervalo_de_p(bid: f64, ask: f64) -> (f64, f64) {
++    let lo = hacia_fuera(bid.next_down() * 0.5 + ask.next_down() * 0.5, false);
++    let hi = hacia_fuera(bid.next_up() * 0.5 + ask.next_up() * 0.5, true);
++    let minimo = f64::from_bits(1);
++    let lo = if lo.is_finite() && lo > 0.0 { lo } else { minimo };
++    let hi = if hi.is_finite() { hi } else { f64::MAX };
++    (lo, hi)
+ }
+ 
+-/// ¿Existe un `p` en la ventana que reproduzca `bid`/`ask` con la receta?
+-fn compatible(semi: fn(f64) -> f64, bid: f64, ask: f64) -> bool {
+-    let m = bid * 0.5 + ask * 0.5;
+-    if !(m.is_finite() && m > 0.0) {
+-        return false;
+-    }
+-    if reproduce(m, semi, bid, ask) {
+-        return true;
++/// Veredictos (relativa, antigua) de un registro valido, recorriendo entero el intervalo de `p`.
++pub fn veredictos(bid: f64, ask: f64) -> (Veredicto, Veredicto) {
++    let (lo, hi) = intervalo_de_p(bid, ask);
++    let (a, b) = (lo.to_bits(), hi.to_bits());
++    if b < a || b - a >= MAX_CANDIDATOS {
++        return (Veredicto::SinDecision, Veredicto::SinDecision);
+     }
+-    for arriba in [true, false] {
+-        let mut p = m;
+-        for _ in 0..VENTANA_ULP {
+-            match vecino(p, arriba) {
+-                Some(q) => p = q,
+-                None => break,
+-            }
+-            if reproduce(p, semi, bid, ask) {
+-                return true;
+-            }
++    let (mut rel, mut ant) = (false, false);
++    for bits in a..=b {
++        let p = f64::from_bits(bits);
++        rel = rel || reproduce(p, semi_relativo, bid, ask);
++        ant = ant || reproduce(p, semi_antiguo, bid, ask);
++        if rel && ant {
++            break;
+         }
+     }
+-    false
++    let v = |c: bool| if c { Veredicto::Compatible } else { Veredicto::SinDecision };
++    (v(rel), v(ant))
+ }
+ 
+ fn f64_en(r: &[u8], i: usize) -> f64 {
+@@ -143,7 +192,12 @@ fn f64_en(r: &[u8], i: usize) -> f64 {
+     f64::from_le_bytes(a)
+ }
+ 
+-/// Firma de los registros crudos de 40 B (sin cabecera), ANTES de cualquier saneamiento.
++/// Campos crudos validos para firmar: precios finitos y positivos sin cruce, cantidades finitas y no negativas.
++fn registro_valido(bid: f64, ask: f64, bq: f64, aq: f64) -> bool {
++    bid.is_finite() && ask.is_finite() && bid > 0.0 && ask > 0.0 && bid <= ask && bq.is_finite() && aq.is_finite() && bq >= 0.0 && aq >= 0.0
++}
++
++/// Firma de los registros crudos de 40 B (sin cabecera), ANTES de cualquier saneamiento. Recorre todos.
+ pub fn firma_de_registros(cuerpo: &[u8]) -> Result<Firma, String> {
+     if cuerpo.len() % REGISTRO != 0 {
+         return Err(format!("{} B no son registros de {REGISTRO} B", cuerpo.len()));
+@@ -151,28 +205,38 @@ pub fn firma_de_registros(cuerpo: &[u8]) -> Result<Firma, String> {
+     let mut f = Firma::default();
+     for (k, r) in cuerpo.chunks_exact(REGISTRO).enumerate() {
+         let k = k as u64;
+-        let (bid, ask) = (f64_en(r, 8), f64_en(r, 16));
+-        let valido = bid.is_finite() && ask.is_finite() && bid > 0.0 && ask > 0.0 && bid <= ask;
+-        let (rel, ant) = if valido {
+-            (compatible(semi_relativo, bid, ask), compatible(semi_antiguo, bid, ask))
+-        } else {
+-            (false, false)
+-        };
+         f.registros += 1;
++        let (bid, ask, bq, aq) = (f64_en(r, 8), f64_en(r, 16), f64_en(r, 24), f64_en(r, 32));
++        if !registro_valido(bid, ask, bq, aq) {
++            f.invalidos += 1;
++            f.primer_invalido.get_or_insert(k);
++            continue;
++        }
++        let (rel, ant) = veredictos(bid, ask);
++        if rel == Veredicto::Excluida {
++            f.primer_excluye_relativa.get_or_insert(k);
++        }
++        if ant == Veredicto::Excluida {
++            f.primer_excluye_antigua.get_or_insert(k);
++        }
+         match (rel, ant) {
+-            (true, true) => f.ambas += 1,
+-            (true, false) => {
++            (Veredicto::Compatible, Veredicto::Compatible) => f.ambas += 1,
++            (Veredicto::Compatible, Veredicto::Excluida) => {
+                 f.solo_relativa += 1;
+                 f.primer_solo_relativa.get_or_insert(k);
+             }
+-            (false, true) => {
++            (Veredicto::Excluida, Veredicto::Compatible) => {
+                 f.solo_antigua += 1;
+                 f.primer_solo_antigua.get_or_insert(k);
+             }
+-            (false, false) => {
++            (Veredicto::Excluida, Veredicto::Excluida) => {
+                 f.ninguna += 1;
+                 f.primer_ninguna.get_or_insert(k);
+             }
++            _ => {
++                f.sin_decision += 1;
++                f.primer_sin_decision.get_or_insert(k);
++            }
+         }
+     }
+     Ok(f)
+diff --git a/crates/tick-tape/tests/tgb_g_contract.rs b/crates/tick-tape/tests/tgb_g_contract.rs
+new file mode 100644
+index 000000000..44e62204c
+--- /dev/null
++++ b/crates/tick-tape/tests/tgb_g_contract.rs
+@@ -0,0 +1,183 @@
++//! TGB-G (cierre, `pedido_tgb_g_v1.md` §4): contratos PUROS de la firma de generacion y de la admision.
++//! Buffers y fixtures en memoria; sin temporales, sin reloj, sin red. Los pares bid/ask se fabrican aqui con las
++//! recetas (oraculo independiente del clasificador); nunca se usa el clasificador para generar lo esperado.
++
++use tick_tape::procedencia::{firma_de_cinta, firma_de_registros, EstadoGeneracion, Firma, R_RELATIVA, SUELO_ANTIGUO};
++
++fn registro_q(ts: u64, bid: f64, ask: f64, bq: f64, aq: f64) -> [u8; 40] {
++    let mut r = [0u8; 40];
++    r[..8].copy_from_slice(&ts.to_le_bytes());
++    r[8..16].copy_from_slice(&bid.to_le_bytes());
++    r[16..24].copy_from_slice(&ask.to_le_bytes());
++    r[24..32].copy_from_slice(&bq.to_le_bytes());
++    r[32..40].copy_from_slice(&aq.to_le_bytes());
++    r
++}
++
++fn registro(ts: u64, bid: f64, ask: f64) -> [u8; 40] {
++    registro_q(ts, bid, ask, 1.0, 2.0)
++}
++
++fn rel(p: f64) -> (f64, f64) {
++    let h = p * R_RELATIVA;
++    (p - h, p + h)
++}
++
++fn ant(p: f64) -> (f64, f64) {
++    let h = (p * R_RELATIVA).max(SUELO_ANTIGUO);
++    (p - h, p + h)
++}
++
++fn medio_tick(p: f64, tick: f64) -> (f64, f64) {
++    let h = (p * R_RELATIVA).max(tick * 0.5);
++    (p - h, p + h)
++}
++
++fn cinta(pares: &[(f64, f64)]) -> Vec<u8> {
++    let mut v = b"TGMTICK1".to_vec();
++    for (k, (b, a)) in pares.iter().enumerate() {
++        v.extend_from_slice(&registro(1_780_300_800_000 + k as u64, *b, *a));
++    }
++    v
++}
++
++fn precios(desde: f64, paso: f64, n: usize) -> Vec<f64> {
++    (0..n).map(|k| desde + paso * k as f64).collect()
++}
++
++fn firma(bytes: &[u8]) -> Firma {
++    firma_de_cinta(bytes).expect("cinta REAL bien formada")
++}
++
++/// Clase de UN registro: (solo_relativa, solo_antigua, ambas, ninguna, invalido).
++fn clase(b: f64, a: f64) -> (u64, u64, u64, u64, u64) {
++    let f = firma_de_registros(&registro(1, b, a)).expect("40 B");
++    (f.solo_relativa, f.solo_antigua, f.ambas, f.ninguna, f.invalidos)
++}
++
++fn mismos_bits(x: (f64, f64), y: (f64, f64)) -> bool {
++    x.0.to_bits() == y.0.to_bits() && x.1.to_bits() == y.1.to_bits()
++}
++
++#[test]
++fn tgb_g01_recetas() {
++    let bajos = precios(0.45, 0.013, 200); // por debajo del cruce 0.01 / 0.00005
++    let altos = precios(60_000.0, 0.7, 200); // muy por encima: las dos recetas dan los mismos bytes
++    let r_bajos = cinta(&bajos.iter().map(|p| rel(*p)).collect::<Vec<_>>());
++    let a_bajos = cinta(&bajos.iter().map(|p| ant(*p)).collect::<Vec<_>>());
++    let r_altos = cinta(&altos.iter().map(|p| rel(*p)).collect::<Vec<_>>());
++    let copia = r_bajos.clone();
++
++    let f = firma(&r_bajos);
++    assert_eq!(f.estado(), EstadoGeneracion::Relativa);
++    assert_eq!((f.registros, f.solo_relativa, f.solo_antigua, f.ambas, f.ninguna, f.invalidos, f.sin_decision), (200, 200, 0, 0, 0, 0, 0));
++    assert_eq!((f.primer_solo_relativa, f.primer_excluye_antigua, f.primer_excluye_relativa), (Some(0), Some(0), None));
++    assert_eq!(f.recetas_compatibles(), "relativa");
++
++    let f = firma(&a_bajos);
++    assert_eq!(f.estado(), EstadoGeneracion::Antigua);
++    assert_eq!((f.solo_antigua, f.solo_relativa, f.primer_solo_antigua, f.primer_excluye_relativa), (200, 0, Some(0), Some(0)));
++    assert_eq!(f.recetas_compatibles(), "antigua");
++
++    let f = firma(&r_altos);
++    assert_eq!(f.estado(), EstadoGeneracion::Indeterminada, "donde las recetas coinciden");
++    assert_eq!((f.ambas, f.solo_relativa, f.solo_antigua), (200, 0, 0));
++    assert_eq!(f.recetas_compatibles(), "relativa,antigua");
++
++    assert_eq!(r_bajos, copia, "la firma no altera los bytes");
++}
++
++#[test]
++fn tgb_g02_cruce_y_vecinos() {
++    // Cruce exacto c/r y sus vecinos f64 a AMBOS lados, la mitad y el doble del cruce. Oraculo: si las dos recetas
++    // dan los mismos bits, el registro admite las dos (nunca se inventa exclusividad); si no, cada par es exclusivo
++    // de su receta.
++    let cruce = SUELO_ANTIGUO / R_RELATIVA;
++    let mut ps = vec![cruce, cruce * 0.5, cruce * 2.0];
++    let (mut abajo, mut arriba) = (cruce, cruce);
++    for _ in 0..16 {
++        abajo = abajo.next_down();
++        arriba = arriba.next_up();
++        ps.push(abajo);
++        ps.push(arriba);
++    }
++    // f64 extremos validos: subnormal, normal minimo, muy pequeno y muy grande.
++    ps.extend([f64::from_bits(1000), f64::MIN_POSITIVE, 1e-300, 1e300]);
++    let (mut identicos, mut distintos) = (0, 0);
++    for p in ps {
++        let (r, a) = (rel(p), ant(p));
++        let valido = |x: (f64, f64)| x.0.is_finite() && x.1.is_finite() && x.0 > 0.0 && x.0 <= x.1;
++        if mismos_bits(r, a) {
++            identicos += 1;
++            assert_eq!(clase(r.0, r.1), (0, 0, 1, 0, 0), "p={p:e}: pares identicos deben admitir las dos");
++        } else {
++            distintos += 1;
++            assert_eq!(clase(r.0, r.1), (1, 0, 0, 0, 0), "p={p:e}: par relativo distinto del antiguo");
++            if valido(a) {
++                assert_eq!(clase(a.0, a.1), (0, 1, 0, 0, 0), "p={p:e}: par antiguo distinto del relativo");
++            }
++        }
++    }
++    assert!(identicos >= 10 && distintos >= 4, "control: hay casos de los dos tipos ({identicos}, {distintos})");
++
++    // Cruces de binade: justo por debajo de 1.0 el ask pasa a la binade de arriba y el punto medio calculado a veces
++    // NO es p (desde unos 11 000 f64 por debajo). El testigo debe encontrarse igual (recorrido entero del intervalo, no solo el medio).
++    let mut p = 1.0f64;
++    let (mut medio_distinto, mut n) = (0, 0);
++    for _ in 0..30_000 {
++        p = p.next_down();
++        let (b, a) = rel(p);
++        if (b * 0.5 + a * 0.5).to_bits() != p.to_bits() {
++            medio_distinto += 1;
++        }
++        n += 1;
++        assert_eq!(clase(b, a), (1, 0, 0, 0, 0), "p={p:e} (binade): relativa exclusiva");
++    }
++    assert!(medio_distinto > 0, "control: el barrido contiene medios distintos de p ({medio_distinto} de {n})");
++}
++
++#[test]
++fn tgb_g07_mixta_invalida_y_medio_tick() {
++    let bajos = precios(0.45, 0.013, 200);
++    let r_bajos: Vec<_> = bajos.iter().map(|p| rel(*p)).collect();
++    let a_bajos: Vec<_> = bajos.iter().map(|p| ant(*p)).collect();
++
++    let mut mezcla = r_bajos.clone();
++    mezcla.extend_from_slice(&a_bajos);
++    let f = firma(&cinta(&mezcla));
++    assert_eq!(f.estado(), EstadoGeneracion::Mixta);
++    assert_eq!((f.primer_solo_relativa, f.primer_solo_antigua), (Some(0), Some(200)));
++    assert_eq!(f.recetas_compatibles(), "ninguna");
++
++    // Precios no finitos, cruzados o no positivos.
++    for malo in [(f64::NAN, 1.0), (1.0, f64::INFINITY), (2.0, 1.0), (0.0, 1.0), (-1.0, 1.0)] {
++        let mut v = r_bajos.clone();
++        v.push(malo);
++        let f = firma(&cinta(&v));
++        assert_eq!(f.estado(), EstadoGeneracion::OtraOInvalida, "precio invalido {malo:?}");
++        assert_eq!((f.invalidos, f.primer_invalido), (1, Some(200)), "precio invalido {malo:?}");
++    }
++    // Cantidades invalidas: se validan crudas, sin saneamiento, aunque el precio sea relativo exacto.
++    for (bq, aq) in [(f64::NAN, 1.0), (1.0, f64::INFINITY), (-1.0, 1.0), (1.0, -0.5)] {
++        let mut v = cinta(&r_bajos);
++        let (b, a) = rel(0.9);
++        v.extend_from_slice(&registro_q(9, b, a, bq, aq));
++        let copia = v.clone();
++        let f = firma(&v);
++        assert_eq!(f.estado(), EstadoGeneracion::OtraOInvalida, "cantidad invalida ({bq}, {aq})");
++        assert_eq!(f.primer_invalido, Some(200), "cantidad invalida ({bq}, {aq})");
++        assert_eq!(v, copia, "sin saneamiento");
++    }
++    // Ninguna receta: la transformacion de medio tick no se atribuye a ninguna de las dos.
++    let fix: Vec<_> = bajos.iter().map(|p| medio_tick(*p, 0.001)).collect();
++    let f = firma(&cinta(&fix));
++    assert_eq!(f.estado(), EstadoGeneracion::OtraOInvalida, "medio tick");
++    assert!(f.ninguna > 0 && f.invalidos == 0, "medio tick: ninguna receta, no invalido");
++
++    // Cinta vacia (solo cabecera): indeterminada, sin registros. Truncada: error.
++    let f = firma(b"TGMTICK1");
++    assert_eq!((f.estado(), f.registros), (EstadoGeneracion::Indeterminada, 0));
++    let mut truncada = cinta(&r_bajos[..3]);
++    truncada.pop();
++    assert!(firma_de_cinta(&truncada).is_err(), "registro truncado");
++}

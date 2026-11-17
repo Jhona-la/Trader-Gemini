@@ -1,0 +1,39 @@
+{
+  "schema": "tgb-run-1",
+  "paso": "CD",
+  "run_id": "cd_r01_despues",
+  "tipo": "green_after",
+  "fecha_local": "2026-11-16T22:56:46",
+  "argv": [
+    "bash",
+    "scripts/cargo_semaforo.sh",
+    "test",
+    "--locked",
+    "-p",
+    "backtest-engine",
+    "--test",
+    "tgb_reader_contract",
+    "--test",
+    "qra_tick_prefix_contract",
+    "--lib",
+    "--no-fail-fast"
+  ],
+  "resultado_observado": "verde",
+  "codigo_salida": 0,
+  "pruebas": {
+    "resumenes": 3,
+    "pasan": 71,
+    "fallan": 0,
+    "ignoradas": 0
+  },
+  "asercion_causante": null,
+  "stdout": {
+    "ruta": "stdout.txt",
+    "sha256": "62773643ab8461c106ad9888542ffcc7bf8f8dc5823cb420369c2434a81a03b2"
+  },
+  "estado": "historico_no_atribuible",
+  "head_en_cabecera": "e6906854de572309415b25829adabee9be87fe77",
+  "archivos_rastreados_modificados": 4,
+  "nota": null,
+  "motivo_estado": "el log no guarda el parche del arbol (cambios sin confirmar); HEAD solo no describe el sujeto"
+}

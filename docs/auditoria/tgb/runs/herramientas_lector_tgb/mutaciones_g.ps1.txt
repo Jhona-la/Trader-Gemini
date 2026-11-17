@@ -1,0 +1,12 @@
+$m = 'C:\Users\jhona\Desktop\PC-Turbo\integrador\tgb_logs\mutar.ps1'
+$f = 'crates\tick-tape\src\procedencia.rs'
+$a = 'test --locked -p tick-tape --test procedencia --no-fail-fast'
+$l = @(
+  @('g_m1_firma_no_exige_relativa', 'if estado != EstadoGeneracion::Relativa {', 'if false {'),
+  @('g_m2_recibo_sin_identidad', 'if r.sha256_original != tape.sha256_original() || r.bytes_original != tape.len() as u64 {', 'if false {'),
+  @('g_m3_ventana_cero', 'pub const VENTANA_ULP: u32 = 16;', 'pub const VENTANA_ULP: u32 = 0;'),
+  @('g_m4_sin_cobertura', 'if r.cobertura != "completa" {', 'if false {'),
+  @('g_m5_cabecera_tres_bytes', 'Some(c) if c == CABECERA_REAL =>', 'Some(c) if c[..3] == CABECERA_REAL[..3] =>')
+)
+foreach ($x in $l) { & $m -Nombre $x[0] -Archivo $f -Viejo $x[1] -Nuevo $x[2] -Args1 $a }
+'MUTACIONES G TERMINADAS' | Out-File -Encoding utf8 'C:\Users\jhona\Desktop\PC-Turbo\integrador\tgb_logs\mutaciones_g.done'

@@ -1,0 +1,33 @@
+# a_r00_antes | HEAD f0a9d4f092351657b8cda1cb06686e064caf1b4b | sucios 2 | cargo/rustc vivos 0 | libre 330416410624 | ram_libre_gb 7 | inicio 2026-11-16T22:44:56 | cargo test --locked -p tick-tape | CINTA  | REF 
+   Compiling zstd-sys v2.0.16+zstd.1.5.7
+   Compiling zstd-safe v7.2.4
+   Compiling zstd v0.13.3
+   Compiling tick-tape v0.1.0 (C:\Users\jhona\Desktop\PC-Turbo\integrador\wt_v4l\crates\tick-tape)
+    Finished `test` profile [optimized] target(s) in 16.19s
+     Running unittests src\lib.rs (C:/Users/jhona/Documents/Proyectos/Trader Gemini/target\debug\deps\tick_tape-a774a6447d6a8c15.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\tgb_formato.rs (C:/Users/jhona/Documents/Proyectos/Trader Gemini/target\debug\deps\tgb_formato-f8693a50423531c2.exe)
+
+running 1 test
+test tgb_roundtrip_preserva_bits_y_bloques ... FAILED
+
+failures:
+
+---- tgb_roundtrip_preserva_bits_y_bloques stdout ----
+
+thread 'tgb_roundtrip_preserva_bits_y_bloques' (12476) panicked at crates\tick-tape\tests\tgb_formato.rs:51:33:
+f1_real: la herramienta lo escribio y el lector lo rechaza: TGB00001 todavia no implementado
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    tgb_roundtrip_preserva_bits_y_bloques
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+error: test failed, to rerun pass `-p tick-tape --test tgb_formato`
+# fin 2026-11-16T22:45:17 codigo 101

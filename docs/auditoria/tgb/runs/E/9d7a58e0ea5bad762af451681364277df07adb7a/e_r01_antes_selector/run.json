@@ -1,0 +1,36 @@
+{
+  "schema": "tgb-run-1",
+  "paso": "E",
+  "run_id": "e_r01_antes_selector",
+  "tipo": "red_before",
+  "fecha_local": "2026-11-16T23:15:15",
+  "argv": [
+    "bash",
+    "scripts/cargo_semaforo.sh",
+    "test",
+    "--locked",
+    "-p",
+    "backtest-engine",
+    "--test",
+    "tgb_selector_contract",
+    "--no-fail-fast"
+  ],
+  "resultado_observado": "rojo",
+  "codigo_salida": 101,
+  "pruebas": {
+    "resumenes": 1,
+    "pasan": 0,
+    "fallan": 2,
+    "ignoradas": 0
+  },
+  "asercion_causante": "crates\\backtest-engine\\tests\\tgb_selector_contract.rs:55:5: assertion `left == right` failed: un REAL corrupto sigue siendo el REAL: la carga tiene que fallar",
+  "stdout": {
+    "ruta": "stdout.txt",
+    "sha256": "0c652dec40c7ab0f2de48ba790c3d01a196e3412bd9c0b4104ed3c0e5f3c4e4c"
+  },
+  "estado": "historico_no_atribuible",
+  "head_en_cabecera": "9d7a58e0ea5bad762af451681364277df07adb7a",
+  "archivos_rastreados_modificados": 7,
+  "nota": null,
+  "motivo_estado": "el log no guarda el parche del arbol (cambios sin confirmar); HEAD solo no describe el sujeto"
+}

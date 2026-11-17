@@ -1,0 +1,35 @@
+{
+  "schema": "tgb-run-1",
+  "paso": "B",
+  "run_id": "b_m12_sin_presupuesto",
+  "tipo": "mutation",
+  "fecha_local": "2026-11-16T22:53:04",
+  "argv": [
+    "bash",
+    "scripts/cargo_semaforo.sh",
+    "test",
+    "--locked",
+    "-p",
+    "tick-tape",
+    "--test",
+    "tgb_corrupciones"
+  ],
+  "resultado_observado": "rojo",
+  "codigo_salida": 101,
+  "pruebas": {
+    "resumenes": 1,
+    "pasan": 2,
+    "fallan": 1,
+    "ignoradas": 0
+  },
+  "asercion_causante": "crates\\tick-tape\\tests\\tgb_corrupciones.rs:166:72: called `Option::unwrap()` on a `None` value",
+  "stdout": {
+    "ruta": "stdout.txt",
+    "sha256": "70bc0e241aeacbf24e5a698fac57bbfbd4a4c9b222910a71b82b3c1422f0181c"
+  },
+  "estado": "historico_no_atribuible",
+  "head_en_cabecera": "09d2b22db58e009e9d2aa8ff43c4fbba24b6790d",
+  "archivos_rastreados_modificados": 1,
+  "nota": null,
+  "motivo_estado": "el log no guarda el parche del arbol (cambios sin confirmar); HEAD solo no describe el sujeto"
+}

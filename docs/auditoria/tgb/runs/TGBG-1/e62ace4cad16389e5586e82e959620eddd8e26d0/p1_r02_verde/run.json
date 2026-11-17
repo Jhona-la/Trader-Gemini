@@ -1,0 +1,37 @@
+{
+  "schema": "tgb-run-1",
+  "paso": "TGBG-1",
+  "run_id": "p1_r02_verde",
+  "tipo": "green_after",
+  "fecha_utc": "2026-11-17T16:02:06Z",
+  "cwd": "C:\\Users\\jhona\\Desktop\\PC-Turbo\\integrador\\wt_v4l",
+  "argv": [
+    "bash",
+    "scripts/cargo_semaforo.sh",
+    "test",
+    "-p",
+    "tick-tape",
+    "--test",
+    "tgb_g_contract",
+    "--locked"
+  ],
+  "filtro": null,
+  "nota": null,
+  "resultado_esperado": "verde",
+  "resultado_observado": "verde",
+  "codigo_salida": 0,
+  "duracion_s": 10,
+  "pruebas": {
+    "resumenes": 1,
+    "pasan": 3,
+    "fallan": 0,
+    "ignoradas": 0
+  },
+  "asercion_causante": null,
+  "stdout": {
+    "ruta": "stdout.txt",
+    "sha256": "1fda329edfc1cbe9f454c62f88f9ee350769c0414dd2517953498d46992da046"
+  },
+  "stderr": "combinado en stdout.txt (cmd 2>&1 hacia el mismo archivo)",
+  "estado": "atribuible"
+}

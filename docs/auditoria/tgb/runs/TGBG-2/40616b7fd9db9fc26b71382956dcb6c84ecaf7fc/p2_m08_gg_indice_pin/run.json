@@ -1,0 +1,37 @@
+{
+  "schema": "tgb-run-1",
+  "paso": "TGBG-2",
+  "run_id": "p2_m08_gg_indice_pin",
+  "tipo": "mutation",
+  "fecha_utc": "2026-11-17T16:14:44Z",
+  "cwd": "C:\\Users\\jhona\\Desktop\\PC-Turbo\\integrador\\wt_v4l",
+  "argv": [
+    "bash",
+    "scripts/cargo_semaforo.sh",
+    "test",
+    "-p",
+    "tick-tape",
+    "--test",
+    "tgb_g_contract",
+    "--locked"
+  ],
+  "filtro": null,
+  "nota": null,
+  "resultado_esperado": "rojo",
+  "resultado_observado": "rojo",
+  "codigo_salida": 101,
+  "duracion_s": 10,
+  "pruebas": {
+    "resumenes": 1,
+    "pasan": 8,
+    "fallan": 1,
+    "ignoradas": 0
+  },
+  "asercion_causante": "crates\\tick-tape\\tests\\tgb_g_contract.rs:297:18: pin ajeno: ADMITIDA sin evidencia suficiente (sha 1d1ab755e4fb6ff63fcf5550793d9e990089a5cfaf1cbe51e2f33da067cb7a10)",
+  "stdout": {
+    "ruta": "stdout.txt",
+    "sha256": "09381acf9e026df7d7255e7053c4c3ec4e2a38ac8eb816d0905dddbe3f802fd9"
+  },
+  "stderr": "combinado en stdout.txt (cmd 2>&1 hacia el mismo archivo)",
+  "estado": "atribuible"
+}

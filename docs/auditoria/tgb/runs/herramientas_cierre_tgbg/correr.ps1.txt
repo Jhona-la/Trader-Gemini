@@ -1,0 +1,30 @@
+param([string]$Nombre, [string]$Args1, [string]$Tipo = 'otro', [string]$Esperado = '', [string]$Wt = 'C:\Users\jhona\Desktop\PC-Turbo\integrador\wt_v4l')
+# Corre un comando cargo por el semaforo y guarda: log, sujeto (HEAD + parche del arbol + nuevos sin rastrear) y fila de carga.
+$ErrorActionPreference = 'Continue'
+$LOGDIR = 'C:\Users\jhona\Desktop\PC-Turbo\integrador\tgbg_logs'
+Set-Location $Wt
+$env:SEMAFORO_AGENTE = 'integrador-cierretgbg'
+$env:SEMAFORO_BARRIDO = '1'
+$head = (git rev-parse HEAD)
+$sucio = (git status --porcelain --untracked-files=no | Measure-Object).Count
+$ajenos = (Get-CimInstance Win32_Process -Filter "Name='cargo.exe' OR Name='rustc.exe'" | Measure-Object).Count
+$libre0 = (Get-PSDrive C).Free; $ram0 = [math]::Round((Get-CimInstance Win32_OperatingSystem).FreePhysicalMemory/1MB,2)
+if ($libre0 -lt 60GB) { "# $Nombre PARADO: C: libre $libre0 < 60 GB" | Out-File -Encoding utf8 (Join-Path $LOGDIR "$Nombre.log"); exit 90 }
+$SUJ = Join-Path $LOGDIR "sujetos"
+New-Item -ItemType Directory -Force $SUJ | Out-Null
+$parche = Join-Path $SUJ "$Nombre.patch"
+cmd /d /c "git diff HEAD > `"$parche`""
+foreach ($nuevo in @(git ls-files --others --exclude-standard -- crates src tests docs)) {
+  cmd /d /c "git diff --no-index -- NUL `"$nuevo`" >> `"$parche`""
+}
+$t0 = Get-Date
+$log = Join-Path $LOGDIR "$Nombre.log"
+"# $Nombre | HEAD $head | sucios $sucio | cargo/rustc vivos $ajenos | libre $libre0 | ram_libre_gb $ram0 | inicio $($t0.ToUniversalTime().ToString('s'))Z | tipo $Tipo | esperado $Esperado | parche $((Get-FileHash $parche).Hash.ToLower()) | cargo $Args1" | Out-File -Encoding utf8 $log
+cmd /d /c "`"C:\Program Files\Git\bin\bash.exe`" scripts/cargo_semaforo.sh $Args1 >> `"$log`" 2>&1"
+$code = $LASTEXITCODE
+$t1 = Get-Date
+$libre1 = (Get-PSDrive C).Free
+$fila = "$Nombre`t$head`t$sucio`t$ajenos`t$libre0`t$libre1`t$ram0`t$($t0.ToString('s'))`t$([int]($t1-$t0).TotalSeconds)`t$code`t$Tipo`t$Args1"
+Add-Content -Encoding utf8 (Join-Path $LOGDIR 'carga.tsv') $fila
+"# fin $($t1.ToUniversalTime().ToString('s'))Z codigo $code duracion_s $([int]($t1-$t0).TotalSeconds)" | Out-File -Append -Encoding utf8 $log
+exit $code

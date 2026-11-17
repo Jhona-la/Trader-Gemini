@@ -1,0 +1,141 @@
+param([string]$Destino = 'C:\Users\jhona\Desktop\PC-Turbo\integrador\wt_v4l\docs\auditoria\tgb')
+# Registro versionado de la serie TGB (pedido_tgb_g_v1 §2). Copia los logs tal cual (bytes intactos) como stdout.txt,
+# y escribe run.json, subject.json, parches y checksums por corrida, mas indice.jsonl.
+$ErrorActionPreference = 'Stop'
+$WT = 'C:\Users\jhona\Desktop\PC-Turbo\integrador\wt_v4l'
+$NUEVOS = 'C:\Users\jhona\Desktop\PC-Turbo\integrador\tgbg_logs'
+$VIEJOS = 'C:\Users\jhona\Desktop\PC-Turbo\integrador\tgb_logs'
+$utf8 = New-Object Text.UTF8Encoding($false)
+Set-Location $WT
+$rustc = (& rustc -V) -join ' '; $cargo = (& cargo -V) -join ' '
+$TARGET = 'C:/Users/jhona/Documents/Proyectos/Trader Gemini/target'
+
+function Get-Sha([string]$ruta) { (Get-FileHash -Algorithm SHA256 -LiteralPath $ruta).Hash.ToLower() }
+function Get-ShaTexto([string]$t) { $b = $utf8.GetBytes($t); $h = [Security.Cryptography.SHA256]::Create().ComputeHash($b); ($h | % { $_.ToString('x2') }) -join '' }
+function Write-Json([string]$ruta, $obj) { [IO.File]::WriteAllText($ruta, ($obj | ConvertTo-Json -Depth 6) + "`n", $utf8) }
+
+function Read-Log([string]$ruta) {
+  $l = [IO.File]::ReadAllLines($ruta)
+  $h = $l[0]
+  $r = [ordered]@{ head = ''; sucios = $null; inicio = ''; cargo = ''; tipo = ''; esperado = ''; codigo = $null; duracion = $null; pasan = 0; fallan = 0; ignoradas = 0; resultados = 0; asercion = $null }
+  if ($h -match 'HEAD (\w+)') { $r.head = $Matches[1] }
+  if ($h -match 'sucios (\d+)') { $r.sucios = [int]$Matches[1] }
+  if ($h -match 'inicio (\S+)') { $r.inicio = $Matches[1] }
+  if ($h -match '\| cargo (.+?)( \| CINTA|$)') { $r.cargo = $Matches[1].Trim() }
+  if ($h -match '\| tipo (\S+)') { $r.tipo = $Matches[1] }
+  if ($h -match '\| esperado (\S+)') { $r.esperado = $Matches[1] }
+  foreach ($x in $l) {
+    if ($x -match '^# fin \S+ codigo (\d+)') { $r.codigo = [int]$Matches[1] }
+    if ($x -match 'duracion_s (\d+)') { $r.duracion = [int]$Matches[1] }
+    if ($x -match '^test result: \w+\. (\d+) passed; (\d+) failed; (\d+) ignored') { $r.pasan += [int]$Matches[1]; $r.fallan += [int]$Matches[2]; $r.ignoradas += [int]$Matches[3]; $r.resultados++ }
+  }
+  for ($k = 0; $k -lt $l.Count; $k++) { if ($l[$k] -match "panicked at (.+)$") { $sig = if ($k + 1 -lt $l.Count) { $l[$k + 1].Trim() } else { '' }; $r.asercion = "$($Matches[1]) $sig"; break } }
+  $r
+}
+
+function Get-TipoHistorico([string]$n) {
+  if ($n -match '_m\d') { 'mutation' } elseif ($n -match 'antes|_r00') { 'red_before' } elseif ($n -match 'despues|verde|final') { 'green_after' } else { 'regresion' }
+}
+
+New-Item -ItemType Directory -Force $Destino | Out-Null
+$indice = [Collections.Generic.List[string]]::new()
+$corridas = @()
+
+$notas = @{
+  'p1_r00_rojo' = 'rojo valido en G07, pero G02 fallo por su CONTROL (barrido de 4000 f64 demasiado corto, ningun medio distinto de p); se amplio a 30000 y se repitio como p1_r01_rojo';
+  'p2_r01_verde' = 'verde previo al refuerzo de G04 (evidencia de otro hash sobre ESTE original, para que gg_evidencia_hash no saliera ciega); el verde vigente es p2_r02_verde';
+  'p3_r00_rojo' = 'rojo por la asercion de aperturas; se puso primero la de bytes consumidos y se repitio (p3_r01, con volcado de bytes; p3_r03 con hashes)';
+  'p3_r01_rojo' = 'reemplazado por p3_r03_rojo (las aserciones pasan a comparar SHA-256 en vez de volcar bytes)';
+  'p3_r02_verde' = 'reemplazado por p3_r04_verde (mismo cambio de aserciones)';
+  'p3_r03_rojo' = 'rojo vigente de TGBG-3; la costura (reabrir para consumir) es tambien el control gg_snapshot';
+  'p4_r00_rojo' = 'rojo por una anotacion (evidencia sin SHA), no por la conducta; G09 se reordeno y se repitio como p4_r02_rojo';
+  'p4_r01_verde' = 'reemplazado por p4_r03_verde (G09 reordenado)';
+  'p5_m02_gg_main_sin_compuerta' = 'control de ANCLA de texto de main, no de conducta';
+  'p5_r00_rojo' = 'la costura (seleccion y test admitidos despues) es tambien el control gg_fuentes_diferidas en su forma de H'
+}
+# 1) Corridas nuevas TGBG-1..5 (sujeto = commit base + parche efectivo guardado al lanzar).
+foreach ($log in Get-ChildItem $NUEVOS -Filter 'p*_*.log' | Sort-Object Name) {
+  $id = $log.BaseName
+  $paso = 'TGBG-' + $id.Substring(1, 1)
+  $d = Read-Log $log.FullName
+  $tipo = if ($d.tipo) { $d.tipo } else { 'otro' }
+  $observado = if ($d.codigo -eq 0) { 'verde' } elseif ($d.fallan -gt 0) { 'rojo' } else { 'error' }
+  $dir = Join-Path $Destino "runs\$paso\$($d.head)\$id"
+  New-Item -ItemType Directory -Force $dir | Out-Null
+  [IO.File]::WriteAllBytes((Join-Path $dir 'stdout.txt'), [IO.File]::ReadAllBytes($log.FullName))
+  $parche = Join-Path $NUEVOS "sujetos\$id.patch"
+  [IO.File]::WriteAllBytes((Join-Path $dir 'subject.patch'), [IO.File]::ReadAllBytes($parche))
+  $mut = Join-Path $NUEVOS "mutaciones\$id.txt"
+  if (Test-Path $mut) { [IO.File]::WriteAllBytes((Join-Path $dir 'mutation.patch'), [IO.File]::ReadAllBytes($mut)) }
+  $argv = @('bash', 'scripts/cargo_semaforo.sh') + ($d.cargo -split ' ' | ? { $_ })
+  $run = [ordered]@{
+    schema = 'tgb-run-1'; paso = $paso; run_id = $id; tipo = $tipo; fecha_utc = $d.inicio; cwd = $WT; argv = $argv
+    filtro = $(if ((($d.cargo -split ' ') | Select -Last 1) -notlike '-*') { ($d.cargo -split ' ') | Select -Last 1 } else { $null }); nota = $notas[$id]; resultado_esperado = $d.esperado; resultado_observado = $observado
+    codigo_salida = $d.codigo; duracion_s = $d.duracion; pruebas = [ordered]@{ resumenes = $d.resultados; pasan = $d.pasan; fallan = $d.fallan; ignoradas = $d.ignoradas }
+    asercion_causante = $d.asercion; stdout = [ordered]@{ ruta = 'stdout.txt'; sha256 = (Get-Sha (Join-Path $dir 'stdout.txt')) }
+    stderr = 'combinado en stdout.txt (cmd 2>&1 hacia el mismo archivo)'; estado = 'atribuible'
+  }
+  Write-Json (Join-Path $dir 'run.json') $run
+  $subj = [ordered]@{
+    schema = 'tgb-subject-1'; tested_commit = $d.head; tree = (@(git rev-parse "$($d.head)^{tree}")[0]); cambio_evaluado = 'commit base + subject.patch (git diff HEAD y archivos nuevos sin rastrear, tomado al lanzar)'
+    subject_patch_sha256 = (Get-Sha (Join-Path $dir 'subject.patch')); mutation_patch_sha256 = $(if (Test-Path $mut) { Get-Sha (Join-Path $dir 'mutation.patch') } else { $null })
+    cargo_lock_blob = (@(git rev-parse "$($d.head):Cargo.lock")[0]); cargo_config_blob = (@(git rev-parse "$($d.head):.cargo/config.toml")[0])
+    herramientas = [ordered]@{ rustc = $rustc; cargo = $cargo }; perfil = 'test (perfiles del Cargo.toml raiz)'; features = 'por defecto'; target = 'x86_64-pc-windows-msvc'
+    cargo_target_dir = $TARGET; lanzador = 'integrador\tgbg_logs\correr.ps1 via scripts/cargo_semaforo.sh (SEMAFORO_AGENTE=integrador-cierretgbg)'
+  }
+  Write-Json (Join-Path $dir 'subject.json') $subj
+  $corridas += [ordered]@{ paso = $paso; run_id = $id; tipo = $tipo; dir = $dir; estado = 'atribuible'; observado = $observado; base = $d.head }
+}
+
+# 2) Historico A-G de lector-tgb (integrador\tgb_logs): bytes tal cual; sin parche del sujeto.
+$pasoDe = @{ 'a' = 'A'; 'b' = 'B'; 'c' = 'CD'; 'cd' = 'CD'; 'e' = 'E'; 'f' = 'F'; 'g' = 'G'; 'm' = 'G-medicion'; 'q' = 'G-compuerta' }
+foreach ($log in Get-ChildItem $VIEJOS -Filter '*.log' | Sort-Object Name) {
+  $id = $log.BaseName
+  $pre = if ($id -match '^(cd|[a-z])') { $Matches[1] } else { 'x' }
+  if ($id -match '^q\d') { $pre = 'q' }
+  $paso = $pasoDe[$pre]
+  $d = Read-Log $log.FullName
+  $estado = if ($d.sucios -eq 0 -and ($pre -eq 'q' -or $pre -eq 'm')) { 'historico_cabecera_limpia' } else { 'historico_no_atribuible' }
+  $sha = Get-Sha $log.FullName
+  if ($log.Length -gt 5MB) {
+    $indice.Add((@{ paso = $paso; run_id = $id; estado = 'excluido_por_tamano'; bytes = $log.Length; sha256_original = $sha; ubicacion = "integrador\tgb_logs\$($log.Name)" } | ConvertTo-Json -Compress))
+    continue
+  }
+  $dir = Join-Path $Destino "runs\$paso\$($d.head)\$id"
+  New-Item -ItemType Directory -Force $dir | Out-Null
+  [IO.File]::WriteAllBytes((Join-Path $dir 'stdout.txt'), [IO.File]::ReadAllBytes($log.FullName))
+  $tipo = Get-TipoHistorico $id
+  $observado = if ($d.codigo -eq 0) { 'verde' } elseif ($d.fallan -gt 0) { 'rojo' } elseif ($null -eq $d.codigo) { 'sin_codigo' } else { 'error' }
+  $nota = if ($id -like 'g_m3*') { 'control CIEGO segun el mensaje de 324ef18db (ventana de 0 ulp): no cuenta como proteccion demostrada' } elseif ($id -eq 'cd_m4_prefijo_cero_anticipado') { 'fallo de compilacion (trampa de PowerShell); repetido como cd_m4b' } else { $null }
+  $run = [ordered]@{
+    schema = 'tgb-run-1'; paso = $paso; run_id = $id; tipo = $tipo; fecha_local = $d.inicio; argv = @('bash', 'scripts/cargo_semaforo.sh') + ($d.cargo -split ' ' | ? { $_ })
+    resultado_observado = $observado; codigo_salida = $d.codigo; pruebas = [ordered]@{ resumenes = $d.resultados; pasan = $d.pasan; fallan = $d.fallan; ignoradas = $d.ignoradas }
+    asercion_causante = $d.asercion; stdout = [ordered]@{ ruta = 'stdout.txt'; sha256 = (Get-Sha (Join-Path $dir 'stdout.txt')) }
+    estado = $estado; head_en_cabecera = $d.head; archivos_rastreados_modificados = $d.sucios; nota = $nota
+    motivo_estado = $(if ($estado -eq 'historico_no_atribuible') { 'el log no guarda el parche del arbol (cambios sin confirmar); HEAD solo no describe el sujeto' } else { 'cabecera con 0 archivos rastreados modificados; no registra archivos sin rastrear' })
+  }
+  Write-Json (Join-Path $dir 'run.json') $run
+  $corridas += [ordered]@{ paso = $paso; run_id = $id; tipo = $tipo; dir = $dir; estado = $estado; observado = $observado; base = $d.head }
+}
+
+# 3) Herramientas de la serie A-G (los reemplazos exactos de cada mutacion viven en estos guiones).
+$herr = Join-Path $Destino 'runs\herramientas_lector_tgb'
+New-Item -ItemType Directory -Force $herr | Out-Null
+foreach ($g in 'correr.ps1', 'mutar.ps1', 'mutaciones_b.ps1', 'mutaciones_cd.ps1', 'mutaciones_g.ps1', 'bateria_q.ps1', 'gen_fixtures.ps1') {
+  if (Test-Path (Join-Path $VIEJOS $g)) { [IO.File]::WriteAllBytes((Join-Path $herr ($g + '.txt')), [IO.File]::ReadAllBytes((Join-Path $VIEJOS $g))) }
+}
+$herr2 = Join-Path $Destino 'runs\herramientas_cierre_tgbg'
+New-Item -ItemType Directory -Force $herr2 | Out-Null
+foreach ($g in 'correr.ps1', 'mutar.ps1', 'con_sujeto.ps1', 'mutaciones_p2.ps1', 'generar_registro.ps1') {
+  [IO.File]::WriteAllBytes((Join-Path $herr2 ($g + '.txt')), [IO.File]::ReadAllBytes((Join-Path $NUEVOS $g)))
+}
+
+# 4) Checksums por corrida e indice.
+foreach ($c in $corridas) {
+  $lineas = Get-ChildItem $c.dir -File | ? { $_.Name -ne 'checksums.sha256' } | Sort-Object Name | % { "$(Get-Sha $_.FullName)  $($_.Name)" }
+  [IO.File]::WriteAllText((Join-Path $c.dir 'checksums.sha256'), (($lineas -join "`n") + "`n"), $utf8)
+  $rel = $c.dir.Substring($Destino.Length + 1).Replace('\', '/')
+  $indice.Add(([ordered]@{ paso = $c.paso; run_id = $c.run_id; tipo = $c.tipo; estado = $c.estado; resultado = $c.observado; base = $c.base; ruta = $rel; checksums_sha256 = (Get-Sha (Join-Path $c.dir 'checksums.sha256')) } | ConvertTo-Json -Compress))
+}
+[IO.File]::WriteAllText((Join-Path $Destino 'indice.jsonl'), (($indice -join "`n") + "`n"), $utf8)
+"corridas $($corridas.Count), indice $($indice.Count)"

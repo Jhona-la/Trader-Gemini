@@ -1,0 +1,6 @@
+--- crates\tick-tape\src\procedencia.rs (sha256 previo 78802e9444e6b0e538cc494436d245835b5241a2486418f2cee41390353c5db7)
+### TEXTO VIEJO (una aparicion exacta)
+    for bits in a..=b {
+### TEXTO NUEVO
+    for bits in [(bid * 0.5 + ask * 0.5).to_bits()] {
+### FIN

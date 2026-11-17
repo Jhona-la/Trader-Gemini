@@ -1,0 +1,352 @@
+diff --git a/src/bin/dataset_admission.rs b/src/bin/dataset_admission.rs
+index 147e2e44a..0bfa23ce2 100644
+--- a/src/bin/dataset_admission.rs
++++ b/src/bin/dataset_admission.rs
+@@ -41,6 +41,28 @@ struct TapeReceipt {
+     /// TGB-G: firma de generacion de los registros crudos (`tick_tape::procedencia`): antigua, relativa,
+     /// indeterminada, mixta u otra_o_invalida. Es compatibilidad numerica, NO procedencia acreditada.
+     generation_signature: Option<&'static str>,
++    /// TGBG-4: procedencia de la GENERACION por el puente comun (`quantum_engine::tgb_generation`), la misma admision
++    /// que usa `train_forest`: `accredited` solo con recibo -> evidencia del productor -> indice revisado fijado por
++    /// hash; `not_accredited` con la causa en `training_rejection`; `unverified` si la integridad no se verifico.
++    /// Integridad y generacion van separadas: un original integro sin procedencia es `verified` y no entrena.
++    generation_provenance: &'static str,
++    generation_evidence_sha256: Option<String>,
++    generation_index_sha256: Option<String>,
++    generation_coverage: Option<String>,
++    training_eligible: bool,
++    training_rejection: Option<String>,
++}
++
++/// TGBG-4: lectores de recibo/evidencia y el indice revisado (con su pin) para la admision de generacion.
++struct Generacion {
++    lectores: Box<dyn quantum_engine::tgb_generation::Lectores>,
++    indice: Option<quantum_engine::tgb_generation::IndiceRevisado>,
++}
++
++impl Generacion {
++    fn sin_indice() -> Self {
++        Generacion { lectores: Box::new(quantum_engine::tgb_generation::LectoresDisco::sin_indice()), indice: None }
++    }
+ }
+ 
+ #[derive(Debug, Serialize)]
+@@ -77,6 +99,8 @@ struct Config {
+     data_root: PathBuf,
+     output: PathBuf,
+     coverage: CoveragePolicy,
++    /// TGBG-4: `--generation-index` y `--generation-index-sha256`, los dos o ninguno.
++    generation_index: Option<(PathBuf, String)>,
+ }
+ 
+ fn tape_specs(data_root: &Path) -> Vec<TapeSpec> {
+@@ -151,19 +175,31 @@ fn empty_tape_receipt(spec: &TapeSpec) -> TapeReceipt {
+         transport_bytes: None,
+         transport_sha256: None,
+         generation_signature: None,
++        generation_provenance: "unverified",
++        generation_evidence_sha256: None,
++        generation_index_sha256: None,
++        generation_coverage: None,
++        training_eligible: false,
++        training_rejection: Some("integrity_not_verified".to_string()),
+     }
+ }
+ 
++#[cfg(test)]
+ fn inspect_tape(spec: &TapeSpec, policy: CoveragePolicy) -> TapeReceipt {
+-    inspect_tape_with_hash_source(spec, policy, &spec.path)
++    inspect_tape_with_generation(spec, policy, &Generacion::sin_indice())
++}
++
++fn inspect_tape_with_generation(spec: &TapeSpec, policy: CoveragePolicy, generacion: &Generacion) -> TapeReceipt {
++    inspect_tape_with_hooks(spec, policy, &spec.path, || {}, || {}, generacion)
+ }
+ 
++#[cfg(test)]
+ fn inspect_tape_with_hash_source(
+     spec: &TapeSpec,
+     policy: CoveragePolicy,
+     hash_source: &Path,
+ ) -> TapeReceipt {
+-    inspect_tape_with_hooks(spec, policy, hash_source, || {}, || {})
++    inspect_tape_with_hooks(spec, policy, hash_source, || {}, || {}, &Generacion::sin_indice())
+ }
+ 
+ fn inspect_tape_with_hooks<F, G>(
+@@ -172,6 +208,7 @@ fn inspect_tape_with_hooks<F, G>(
+     hash_source: &Path,
+     before_parse: F,
+     before_final_hash: G,
++    generacion: &Generacion,
+ ) -> TapeReceipt
+ where
+     F: FnOnce(),
+@@ -189,6 +226,7 @@ where
+         || tick_tape::logica::leer_logica(&spec.path),
+         before_parse,
+         before_final_hash,
++        generacion,
+     );
+     if let Some((nombre, ruta, bytes, sha)) = transporte.into_inner() {
+         receipt.transport = nombre;
+@@ -225,6 +263,7 @@ fn inspect_tape_with_readers<F, G, H, I>(
+     verification_reader: G,
+     before_parse: H,
+     before_final_hash: I,
++    generacion: &Generacion,
+ ) -> TapeReceipt
+ where
+     F: FnOnce() -> std::io::Result<Vec<u8>>,
+@@ -394,13 +433,38 @@ where
+     {
+         receipt.coverage = "policy_verified";
+     }
++    // TGBG-4: generacion sobre los MISMOS bytes que se verificaron (la primera lectura, igual a la segunda).
++    if receipt.integrity != "verified" { evaluar_generacion(&mut receipt, &spec.path, &snapshot, generacion); } else { receipt.training_eligible = true; receipt.training_rejection = None; }
+     receipt
+ }
+ 
++/// TGBG-4: admision de generacion para ENTRENAR por el puente comun; no toca `integrity` ni `classification`.
++fn evaluar_generacion(receipt: &mut TapeReceipt, logica: &Path, original: &[u8], generacion: &Generacion) {
++    use quantum_engine::tgb_generation::evaluar;
++    let hex = |b: &[u8; 32]| b.iter().map(|x| format!("{x:02x}")).collect::<String>();
++    match evaluar(logica, original, generacion.lectores.as_ref(), generacion.indice.as_ref()) {
++        Ok(admision) => {
++            receipt.generation_provenance = "accredited";
++            receipt.generation_evidence_sha256 = Some(hex(&admision.evidencia_sha256));
++            receipt.generation_index_sha256 = Some(hex(&admision.sha256_indice));
++            receipt.generation_coverage = Some(admision.recibo.cobertura.clone());
++            receipt.training_eligible = true;
++            receipt.training_rejection = None;
++        }
++        Err(rechazo) => {
++            receipt.generation_provenance = "not_accredited";
++            receipt.training_eligible = false;
++            receipt.training_rejection = Some(format!("{}: {}", rechazo.nombre(), rechazo.detalle));
++        }
++    }
++}
++
+ fn parse_config(args: &[String]) -> Result<Config, String> {
+     let mut data_root = None;
+     let mut output = None;
+     let mut coverage = CoveragePolicy::default();
++    let mut generation_index = None;
++    let mut generation_index_sha256 = None;
+     let mut index = 0;
+     while index < args.len() {
+         let flag = args[index].as_str();
+@@ -428,14 +492,22 @@ fn parse_config(args: &[String]) -> Result<Config, String> {
+                 }
+                 coverage.max_boundary_gap_ms = Some(maximum);
+             }
++            "--generation-index" => generation_index = Some(PathBuf::from(value)),
++            "--generation-index-sha256" => generation_index_sha256 = Some(value.clone()),
+             _ => return Err(format!("unknown argument: {flag}")),
+         }
+         index += 2;
+     }
++    let generation_index = match (generation_index, generation_index_sha256) {
++        (Some(path), Some(sha)) => Some((path, sha)),
++        (None, None) => None,
++        _ => return Err("--generation-index and --generation-index-sha256 go together".to_string()),
++    };
+     Ok(Config {
+         data_root: data_root.ok_or_else(|| "--data-root is required".to_string())?,
+         output: output.ok_or_else(|| "--output is required".to_string())?,
+         coverage,
++        generation_index,
+     })
+ }
+ 
+@@ -553,10 +625,18 @@ where
+     F: FnOnce(&Path, &Path),
+ {
+     let config = parse_config(args)?;
++    // TGBG-4: el indice revisado se carga (y su pin se valida) antes de reservar el recibo.
++    let generacion = match &config.generation_index {
++        Some((path, sha)) => Generacion {
++            lectores: Box::new(quantum_engine::tgb_generation::LectoresDisco::para_indice(path)),
++            indice: Some(quantum_engine::tgb_generation::IndiceRevisado::cargar(path, sha)?),
++        },
++        None => Generacion::sin_indice(),
++    };
+     let reservation = ReceiptReservation::reserve(&config.output)?;
+     let tapes = tape_specs(&config.data_root)
+         .iter()
+-        .map(|spec| inspect_tape(spec, config.coverage))
++        .map(|spec| inspect_tape_with_generation(spec, config.coverage, &generacion))
+         .collect();
+     let manifest = DatasetManifest {
+         schema: "dataset_admission.v1",
+@@ -598,7 +678,9 @@ fn exit_code_for(manifest: &DatasetManifest) -> u8 {
+ fn main() -> ExitCode {
+     let args: Vec<String> = std::env::args().skip(1).collect();
+     if args.iter().any(|arg| arg == "--help" || arg == "-h") {
+-        println!("dataset_admission --data-root <DIR> --output <NEW_JSON>");
++        println!(
++            "dataset_admission --data-root <DIR> --output <NEW_JSON> [--generation-index <INDICE> --generation-index-sha256 <SHA256>]"
++        );
+         return ExitCode::SUCCESS;
+     }
+     match run(&args) {
+@@ -1128,6 +1210,7 @@ mod tests {
+             move || {
+                 overwrite_mapped_fixture(&restore_source, &original_for_hook);
+             },
++            &Generacion::sin_indice(),
+         );
+         assert_eq!(receipt.integrity, "verified");
+         assert_eq!(receipt.sha256.as_deref(), Some(expected_sha.as_str()));
+@@ -1200,6 +1283,7 @@ mod tests {
+             || Ok(stable.clone()),
+             || {},
+             || {},
++            &Generacion::sin_indice(),
+         );
+         assert_eq!(receipt.integrity, "invalid");
+         assert_eq!(receipt.sha256, None);
+@@ -1255,7 +1339,7 @@ mod tests {
+         );
+         let r = inspect_tape_with_hooks(&spec, CoveragePolicy::default(), &spec.path, || {}, || {
+             fs::write(&spec.path, &otra).expect("write substitute");
+-        });
++        }, &Generacion::sin_indice());
+         assert_eq!(r.integrity, "invalid");
+         assert!(r.error.as_deref().is_some_and(|e| e.contains("changed")), "{:?}", r.error);
+         fs::remove_file(&spec.path).expect("remove substitute");
+@@ -1277,4 +1361,131 @@ mod tests {
+         assert!(r.present);
+         assert!(r.error.as_deref().is_some_and(|e| e.contains("TGB00001")), "{:?}", r.error);
+     }
+-}
++
++    // ── TGBG-4 (G09): la misma admision de generacion que el entrenamiento, por la costura de lectores. PURA:
++    // lectores y buffers en memoria, sin temporales; la ruta de la cinta no existe en disco.
++    struct LectoresMemoria {
++        recibo: Option<Vec<u8>>,
++        evidencias: Vec<Vec<u8>>,
++    }
++
++    fn sha32(b: &[u8]) -> [u8; 32] {
++        use sha2::Digest;
++        sha2::Sha256::digest(b).into()
++    }
++
++    fn hx(b: &[u8]) -> String {
++        b.iter().map(|x| format!("{x:02x}")).collect()
++    }
++
++    impl quantum_engine::tgb_generation::Lectores for LectoresMemoria {
++        fn original(&self, _: &Path) -> std::io::Result<quantum_engine::tgb_generation::Instantanea> {
++            Err(std::io::Error::new(std::io::ErrorKind::Unsupported, "dataset_admission entrega sus propios bytes"))
++        }
++        fn recibo(&self, _: &Path) -> std::io::Result<Option<Vec<u8>>> {
++            Ok(self.recibo.clone())
++        }
++        fn evidencia(&self, sha256: &[u8; 32]) -> std::io::Result<Option<Vec<u8>>> {
++            Ok(self.evidencias.iter().find(|e| sha32(e) == *sha256).cloned())
++        }
++    }
++
++    /// (recibo, evidencia, indice, pin) de una cadena integra para `original`.
++    fn cadena_g09(original: &[u8]) -> (Vec<u8>, Vec<u8>, Vec<u8>, [u8; 32]) {
++        let commit = "cd".repeat(20);
++        let evidencia = format!(
++            "formato=tg-evidencia-productor-1\nproductor=binance_vision_sync\ncommit_productor={commit}\nsha256_fuentes_productor={}\nsha256_ejecutable={}\nreceta=relativa\nconstante_r_bits={:016x}\norigen_receta=src/bin/binance_vision_sync.rs:222\ncomando=binance_vision_sync\nentrada_sha256={}\nsha256_salida={}\nbytes_salida={}\nsha256_registro_salida={}\ntransformaciones=ninguna\n",
++            hx(&sha32(b"fuentes")),
++            hx(&sha32(b"exe")),
++            0.00005f64.to_bits(),
++            hx(&sha32(b"zip")),
++            hx(&sha32(original)),
++            original.len(),
++            hx(&sha32(b"stdout"))
++        );
++        let ev = hx(&sha32(evidencia.as_bytes()));
++        let indice = format!("formato=tg-indice-procedencia-1\nrevisado_por=contrato G09\nevidencia={ev};binance_vision_sync;{commit};relativa\n");
++        let n = (original.len() - 8) / 40;
++        let recibo = format!(
++            "formato=tg-procedencia-2\nversion_analizador=tick-tape-procedencia-2\nruta_logica=BNBUSDT_2026-06_REAL.bin\nformato_cinta=TGMTICK1+40B_LE\nsha256_original={}\nbytes_original={}\nregistros_esperados={n}\nregistros_analizados={n}\ncobertura=completa\nrecetas_compatibles=relativa\nestado_firma=relativa\nprimer_testigo_relativa=0\nprocedencia_acreditada=relativa\nevidencia_productor_sha256={ev}\nanalisis=intervalos_exhaustivos\n",
++            hx(&sha32(original)),
++            original.len()
++        );
++        let pin = sha32(indice.as_bytes());
++        (recibo.into_bytes(), evidencia.into_bytes(), indice.into_bytes(), pin)
++    }
++
++    #[test]
++    fn tgb_g_09_dataset_exige_procedencia() {
++        let (start, _) = month_bounds(2026, 6).expect("month bounds");
++        let receta = |p: f64, suelo: f64| {
++            let h = (p * 0.00005f64).max(suelo);
++            (p - h, p + h)
++        };
++        let cinta = |suelo: f64| {
++            let registros: Vec<[u8; 40]> = (0..200u64)
++                .map(|k| {
++                    let (b, a) = receta(0.45 + 0.013 * k as f64, suelo);
++                    record(start + 60_000 + k * 1_000, b, a)
++                })
++                .collect();
++            tape_bytes(b"TGMTICK1", &registros, &[])
++        };
++        let original = cinta(0.0);
++        let antigua = cinta(0.01);
++        let (recibo, evidencia, indice, pin) = cadena_g09(&original);
++        let spec = TapeSpec {
++            symbol: "BNBUSDT",
++            month: "2026-06".to_string(),
++            year: 2026,
++            month_number: 6,
++            path: PathBuf::from("memoria/BNBUSDT_2026-06_REAL.bin"),
++        };
++        let generacion = |recibo: Option<Vec<u8>>, con_indice: bool| Generacion {
++            lectores: Box::new(LectoresMemoria { recibo, evidencias: vec![evidencia.clone()] }),
++            indice: con_indice.then(|| quantum_engine::tgb_generation::IndiceRevisado::desde_bytes(indice.clone(), pin)),
++        };
++        let inspeccionar = |bytes: &Vec<u8>, verificacion: &Vec<u8>, g: &Generacion| {
++            let (b, v) = (bytes.clone(), verificacion.clone());
++            inspect_tape_with_readers(&spec, CoveragePolicy::default(), &spec.path, move || Ok(b), move || Ok(v), || {}, || {}, g)
++        };
++
++
++        // Original integro sin procedencia: integridad verificada, entrenamiento rechazado con su causa.
++        let h = format!(
++            "formato=tg-procedencia-1\nsha256_original={}\nbytes_original={}\nprocedencia_acreditada=relativa\nevidencia_productor=prueba\ncobertura=completa\n",
++            hx(&sha32(&original)),
++            original.len()
++        );
++        for (caso, g, causa) in [
++            ("sin recibo", generacion(None, true), "recibo_ausente"),
++            ("recibo autodeclarado de H", generacion(Some(h.into_bytes()), true), "procedencia_no_acreditada"),
++            ("sin indice revisado", generacion(Some(recibo.clone()), false), "indice_ausente"),
++        ] {
++            let r = inspeccionar(&original, &original, &g);
++            assert_eq!(r.integrity, "verified", "{caso}: {:?}", r.error);
++            assert_eq!((r.generation_provenance, r.training_eligible), ("not_accredited", false), "{caso}");
++            let motivo = r.training_rejection.unwrap_or_default();
++            assert!(motivo.contains(causa), "{caso}: {motivo}");
++        }
++
++        // Firma antigua integra: no entrena aunque su recibo y su cadena fueran de ella.
++        let (rec_a, _, _, _) = cadena_g09(&antigua);
++        let r = inspeccionar(&antigua, &antigua, &generacion(Some(rec_a), true));
++        assert_eq!((r.integrity, r.training_eligible), ("verified", false));
++        assert!(r.training_rejection.unwrap_or_default().starts_with("firma_antigua"));
++
++        // Sustitucion entre las dos lecturas: invalida y no entrena.
++        let r = inspeccionar(&original, &antigua, &generacion(Some(recibo.clone()), true));
++        assert_eq!((r.integrity, r.training_eligible), ("invalid", false), "{:?}", r.error);
++
++        // Control positivo: solo la cadena integra hace apta la cinta, con la evidencia y el indice anotados.
++        let r = inspeccionar(&original, &original, &generacion(Some(recibo.clone()), true));
++        assert_eq!(r.integrity, "verified", "{:?}", r.error);
++        assert_eq!((r.generation_provenance, r.training_eligible), ("accredited", true), "{:?}", r.training_rejection);
++        assert_eq!(r.generation_evidence_sha256.as_deref(), Some(hx(&sha32(&evidencia)).as_str()));
++        assert_eq!(r.generation_index_sha256.as_deref(), Some(hx(&pin).as_str()));
++        assert_eq!(r.generation_coverage.as_deref(), Some("completa"));
++        assert_eq!(r.generation_signature, Some("relativa"));
++    }
++}
+\ No newline at end of file

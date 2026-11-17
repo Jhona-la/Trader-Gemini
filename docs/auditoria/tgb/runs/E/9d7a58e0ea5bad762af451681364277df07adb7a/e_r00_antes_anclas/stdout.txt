@@ -1,0 +1,73 @@
+# e_r00_antes_anclas | HEAD 9d7a58e0ea5bad762af451681364277df07adb7a | sucios 7 | cargo/rustc vivos 0 | libre 328641232896 | ram_libre_gb 5.55 | inicio 2026-11-16T23:15:02 | cargo test --locked -p tick-tape --test consumidores_contract | CINTA  | REF 
+   Compiling tick-tape v0.1.0 (C:\Users\jhona\Desktop\PC-Turbo\integrador\wt_v4l\crates\tick-tape)
+    Finished `test` profile [optimized] target(s) in 6.35s
+     Running tests\consumidores_contract.rs (C:/Users/jhona/Documents/Proyectos/Trader Gemini/target\debug\deps\consumidores_contract-f32bbd9d961b44fa.exe)
+
+running 1 test
+test e_los_lectores_directos_abren_la_cinta_logica ... FAILED
+
+failures:
+
+---- e_los_lectores_directos_abren_la_cinta_logica stdout ----
+
+thread 'e_los_lectores_directos_abren_la_cinta_logica' (50976) panicked at crates\tick-tape\tests\consumidores_contract.rs:70:5:
+lectores sin migrar a la cinta logica:
+src/bin/backtest_windows.rs: falta `tick_tape::logica::open_logical_tape`
+src/bin/backtest_windows.rs: sigue la apertura directa `std::fs::File::open(&file)`
+src/bin/audit_forensic_backtest.rs: falta `tick_tape::logica::open_logical_tape`
+src/bin/audit_forensic_backtest.rs: sigue la apertura directa `std::fs::File::open(&data_path)`
+src/bin/train_forest.rs: falta `tick_tape::logica::open_logical_tape`
+src/bin/train_forest.rs: sigue la apertura directa `File::open(path).unwrap_or_else`
+src/bin/feature_exporter.rs: falta `tick_tape::logica::open_logical_tape`
+src/bin/feature_exporter.rs: falta `Presupuesto::hasta(budget)`
+src/bin/feature_exporter.rs: sigue la apertura directa `File::open(&options.input)`
+src/bin/votes_export.rs: falta `tick_tape::logica::leer_logica`
+src/bin/votes_export.rs: sigue la apertura directa `std::fs::read(ruta)`
+src/bin/copulas_manifest.rs: falta `tick_tape::logica::leer_logica`
+src/bin/copulas_manifest.rs: falta `ErrorKind::NotFound => return None`
+src/bin/copulas_manifest.rs: sigue la apertura directa `std::fs::read(ruta)`
+src/bin/ml_path_probe.rs: falta `tick_tape::logica::open_logical_tape`
+src/bin/ml_path_probe.rs: sigue la apertura directa `std::fs::File::open("data/BTCUSDT_ticks_REAL.bin")`
+src/bin/spectral_bench.rs: falta `tick_tape::logica::open_logical_tape`
+src/bin/spectral_bench.rs: sigue la apertura directa `File::open(path).expect`
+crates/god-engine-core/src/bin/test_ml.rs: falta `tick_tape::logica::open_logical_tape`
+crates/god-engine-core/src/bin/test_ml.rs: sigue la apertura directa `std::fs::File::open("data/BTCUSDT_AUG_REAL.bin")`
+src/bin/walkforward_evolver.rs: falta `tick_tape::logica::largo_logico`
+src/bin/walkforward_evolver.rs: sigue la apertura directa `std::fs::metadata(&data)`
+src/bin/oi_history_sync.rs: falta `strip_suffix(".tgb")`
+crates/backtest-engine/src/bin/continuous_evolution_backtest.rs: falta `tick_replayer::elegir_cinta`
+crates/backtest-engine/src/bin/continuous_evolution_backtest.rs: falta `tick_replayer::cintas_presentes`
+crates/backtest-engine/src/bin/continuous_evolution_backtest.rs: falta `tick_tape::logica::hay_cinta(btc_path)`
+crates/backtest-engine/src/bin/continuous_evolution_backtest.rs: sigue la apertura directa `real.exists()`
+crates/backtest-engine/src/bin/continuous_evolution_backtest.rs: sigue la apertura directa `p.exists()`
+crates/backtest-engine/src/bin/continuous_evolution_backtest.rs: sigue la apertura directa `btc_path.exists()`
+crates/backtest-engine/tests/cinta_real/mod.rs: falta `tick_tape::logica::open_logical_tape`
+crates/backtest-engine/tests/cinta_real/mod.rs: sigue la apertura directa `std::fs::File::open(&ruta)`
+crates/backtest-engine/tests/bt_vivo_parity_audit.rs: falta `ErrorKind::NotFound`
+crates/backtest-engine/tests/bt_vivo_parity_audit.rs: sigue la apertura directa `let Ok(events) = load_binary_ticks(&path, 0) else`
+crates/backtest-engine/tests/mps_entrelazamiento_medicion.rs: falta `ruta_tgb(p)`
+crates/backtest-engine/tests/mps_entrelazamiento_medicion.rs: falta `tick_tape::tgb::fallo_de(&e)`
+crates/backtest-engine/tests/censo_mudos_medicion.rs: falta `ruta_tgb(p)`
+crates/backtest-engine/tests/espectral_piso_medicion.rs: falta `ruta_tgb(p)`
+crates/backtest-engine/tests/fases_ising_medicion.rs: falta `ruta_tgb(p)`
+crates/backtest-engine/tests/firmas_camino_medicion.rs: falta `ruta_tgb(p)`
+crates/backtest-engine/tests/koopman_observables_medicion.rs: falta `ruta_tgb(p)`
+crates/backtest-engine/tests/ortogonalidad_voces_medicion.rs: falta `ruta_tgb(p)`
+crates/backtest-engine/tests/puertas_confluence_medicion.rs: falta `ruta_tgb(p)`
+crates/backtest-engine/tests/tsallis_entrelazamiento_medicion.rs: falta `ruta_tgb(p)`
+crates/feature-engine/tests/copula_real.rs: falta `tick_tape::logica::leer_logica`
+crates/feature-engine/tests/copula_real.rs: falta `ErrorKind::NotFound => return None`
+crates/feature-engine/tests/copula_real.rs: sigue la apertura directa `std::fs::read(ruta)`
+crates/feature-engine/tests/transfer_entropy_real.rs: falta `tick_tape::logica::leer_logica`
+crates/feature-engine/tests/transfer_entropy_real.rs: falta `ErrorKind::NotFound => return None`
+crates/feature-engine/tests/transfer_entropy_real.rs: sigue la apertura directa `std::fs::read(ruta)`
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    e_los_lectores_directos_abren_la_cinta_logica
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+error: test failed, to rerun pass `-p tick-tape --test consumidores_contract`
+# fin 2026-11-16T23:15:13 codigo 101

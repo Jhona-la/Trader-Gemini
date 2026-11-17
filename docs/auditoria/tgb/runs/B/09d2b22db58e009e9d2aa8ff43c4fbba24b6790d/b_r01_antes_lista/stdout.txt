@@ -1,0 +1,44 @@
+# b_r01_antes_lista | HEAD 09d2b22db58e009e9d2aa8ff43c4fbba24b6790d | sucios 1 | cargo/rustc vivos 0 | libre 330375368704 | ram_libre_gb 4.99 | inicio 2026-11-16T22:49:08 | cargo test --locked -p tick-tape --test tgb_corrupciones tgb_rechaza_20 | CINTA  | REF 
+   Compiling tick-tape v0.1.0 (C:\Users\jhona\Desktop\PC-Turbo\integrador\wt_v4l\crates\tick-tape)
+    Finished `test` profile [optimized] target(s) in 2.41s
+     Running tests\tgb_corrupciones.rs (C:/Users/jhona/Documents/Proyectos/Trader Gemini/target\debug\deps\tgb_corrupciones-e2a50d9f2f66bd71.exe)
+
+running 1 test
+test tgb_rechaza_20_corrupciones ... FAILED
+
+failures:
+
+---- tgb_rechaza_20_corrupciones stdout ----
+
+thread 'tgb_rechaza_20_corrupciones' (29304) panicked at crates\tick-tape\tests\tgb_corrupciones.rs:134:5:
+corrupciones mal detectadas:
+C01 magia: esperado Magia, obtenido error sin causa TGB: no es un contenedor TGB00001
+C02 cabecera cortada: esperado Cortado, obtenido error sin causa TGB: no es un contenedor TGB00001
+C03 falta un byte del sello: esperado Sello, obtenido error sin causa TGB: sello del contenedor distinto
+C04 sello alterado: esperado Sello, obtenido error sin causa TGB: sello del contenedor distinto
+C05 payload sin resellar: esperado Sello, obtenido error sin causa TGB: sello del contenedor distinto
+C06 largo original: esperado LargoOriginal, obtenido ACEPTADO (10288 B publicados)
+C07 SHA original: esperado ShaOriginal, obtenido ACEPTADO (10288 B publicados)
+C08 modo desconocido: esperado Modo, obtenido error sin causa TGB: Unknown frame descriptor
+C09 total mayor que los bloques: esperado FaltanBloques, obtenido error sin causa TGB: contenedor cortado
+C10 total menor que el bloque: esperado BloqueExcedeTotal, obtenido ACEPTADO (10288 B publicados)
+C11 bloque con cero registros: esperado BloqueCero, obtenido error sin causa TGB: contenedor cortado
+C12 bloque mayor que el maximo: esperado BloqueMayorQueMax, obtenido error sin causa TGB: contenedor cortado
+C13 largo comprimido fuera del archivo: esperado FueraDelCuerpo, obtenido error sin causa TGB: contenedor cortado
+C14 columna comprimida vacia: esperado ColumnaVacia, obtenido error sin causa TGB: incomplete frame
+C15 frame Zstandard invalido: esperado Zstd, obtenido error sin causa TGB: Unknown frame descriptor
+C16 columna que expande a menos: esperado LargoColumna, obtenido error sin causa TGB: contenedor cortado
+C17 bytes sobrantes antes del sello: esperado Sobrante, obtenido ACEPTADO (10288 B publicados)
+C18 cabecera original modificada: esperado ShaOriginal, obtenido ACEPTADO (10288 B publicados)
+C19 tiempos validos y distintos: esperado ShaOriginal, obtenido ACEPTADO (10288 B publicados)
+C20 largo original u64 maximo: esperado LargoOriginal, obtenido ACEPTADO (10288 B publicados)
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    tgb_rechaza_20_corrupciones
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 2 filtered out; finished in 0.00s
+
+error: test failed, to rerun pass `-p tick-tape --test tgb_corrupciones`
+# fin 2026-11-16T22:49:15 codigo 101

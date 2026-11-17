@@ -1,0 +1,36 @@
+{
+  "schema": "tgb-run-1",
+  "paso": "G-compuerta",
+  "run_id": "q12_gec_qa",
+  "tipo": "regresion",
+  "fecha_local": "2026-11-17T01:38:15",
+  "argv": [
+    "bash",
+    "scripts/cargo_semaforo.sh",
+    "test",
+    "--locked",
+    "-p",
+    "god-engine-core",
+    "-p",
+    "quantum-arena",
+    "--no-fail-fast"
+  ],
+  "resultado_observado": "rojo",
+  "codigo_salida": 101,
+  "pruebas": {
+    "resumenes": 240,
+    "pasan": 1414,
+    "fallan": 7,
+    "ignoradas": 49
+  },
+  "asercion_causante": "crates\\god-engine-core\\tests\\f1_108_109_async_dataset_and_dead_shadow_drift_contract.rs:36:5: F1-108: record_training_sample debe ser no bloqueante y completar en < 50 µs, tardó 215 µs",
+  "stdout": {
+    "ruta": "stdout.txt",
+    "sha256": "7a9794aaf916fb940f4f7e9ba58ee83332b1c6a061d897766af124dc1f26f82f"
+  },
+  "estado": "historico_cabecera_limpia",
+  "head_en_cabecera": "324ef18dbe1805320db70056df4fe5d6a7edd329",
+  "archivos_rastreados_modificados": 0,
+  "nota": null,
+  "motivo_estado": "cabecera con 0 archivos rastreados modificados; no registra archivos sin rastrear"
+}

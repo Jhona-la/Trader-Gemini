@@ -1,0 +1,6 @@
+--- crates\tick-tape\src\procedencia.rs (sha256 previo 7e83755f1b9bdedf6c70d3d8c612210d6aa1a0ed2ac19abc40ffaa7ed9f4b3d8)
+### TEXTO VIEJO (una aparicion exacta)
+    if sha256_indice != ix.sha256_esperado {
+### TEXTO NUEVO
+    if false {
+### FIN

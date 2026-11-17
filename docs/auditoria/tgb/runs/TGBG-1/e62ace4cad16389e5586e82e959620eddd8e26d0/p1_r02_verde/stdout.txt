@@ -1,0 +1,13 @@
+# p1_r02_verde | HEAD e62ace4cad16389e5586e82e959620eddd8e26d0 | sucios 1 | cargo/rustc vivos 1 | libre 305219874816 | ram_libre_gb 2.68 | inicio 2026-11-17T16:02:06Z | tipo green_after | esperado verde | parche c871cb256ae7b2afca907265d2005a50bf556fbfb924fbbc6ad8d2eae892f0c0 | cargo test -p tick-tape --test tgb_g_contract --locked
+   Compiling tick-tape v0.1.0 (C:\Users\jhona\Desktop\PC-Turbo\integrador\wt_v4l\crates\tick-tape)
+    Finished `test` profile [optimized] target(s) in 4.64s
+     Running tests\tgb_g_contract.rs (C:/Users/jhona/Documents/Proyectos/Trader Gemini/target\debug\deps\tgb_g_contract-0c08981f09535697.exe)
+
+running 3 tests
+test tgb_g07_mixta_invalida_y_medio_tick ... ok
+test tgb_g01_recetas ... ok
+test tgb_g02_cruce_y_vecinos ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+# fin 2026-11-17T16:02:16Z codigo 0 duracion_s 10

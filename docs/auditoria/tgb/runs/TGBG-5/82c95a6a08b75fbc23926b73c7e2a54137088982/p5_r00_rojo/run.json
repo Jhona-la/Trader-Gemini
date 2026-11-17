@@ -1,0 +1,38 @@
+{
+  "schema": "tgb-run-1",
+  "paso": "TGBG-5",
+  "run_id": "p5_r00_rojo",
+  "tipo": "red_before",
+  "fecha_utc": "2026-11-17T16:57:40Z",
+  "cwd": "C:\\Users\\jhona\\Desktop\\PC-Turbo\\integrador\\wt_v4l",
+  "argv": [
+    "bash",
+    "scripts/cargo_semaforo.sh",
+    "test",
+    "-p",
+    "trader-gemini-v5",
+    "--bin",
+    "train_forest",
+    "--locked",
+    "tgb_g_"
+  ],
+  "filtro": "tgb_g_",
+  "nota": "la costura (seleccion y test admitidos despues) es tambien el control gg_fuentes_diferidas en su forma de H",
+  "resultado_esperado": "rojo",
+  "resultado_observado": "rojo",
+  "codigo_salida": 101,
+  "duracion_s": 145,
+  "pruebas": {
+    "resumenes": 1,
+    "pasan": 0,
+    "fallan": 1,
+    "ignoradas": 0
+  },
+  "asercion_causante": "src\\bin\\train_forest.rs:3775:13: mem/SEL_REAL.bin: rechazada y aun asi admitida",
+  "stdout": {
+    "ruta": "stdout.txt",
+    "sha256": "eac94305521c34b2048baf4369538a4c22e19ac59f044d9906a3fc98fda8fbf5"
+  },
+  "stderr": "combinado en stdout.txt (cmd 2>&1 hacia el mismo archivo)",
+  "estado": "atribuible"
+}

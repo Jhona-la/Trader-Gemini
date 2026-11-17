@@ -1,0 +1,11 @@
+--- src\tgb_generation.rs (sha256 previo cd614ffc7c352f51552e6513dabf12cc0905a76a39f1391f8b66030c120bdd76)
+### TEXTO VIEJO (una aparicion exacta)
+        self.admision.sha256_original
+    }
+### TEXTO NUEVO
+        match self.transporte {
+            Transporte::Tgb { sha256_contenedor, .. } => sha256_contenedor,
+            Transporte::Bin => self.admision.sha256_original,
+        }
+    }
+### FIN

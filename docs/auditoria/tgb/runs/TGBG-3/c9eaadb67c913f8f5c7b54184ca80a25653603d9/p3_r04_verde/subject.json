@@ -1,0 +1,19 @@
+{
+  "schema": "tgb-subject-1",
+  "tested_commit": "c9eaadb67c913f8f5c7b54184ca80a25653603d9",
+  "tree": "a1c194ece8d0aeee10c4785e8e16d3c7250bebdd",
+  "cambio_evaluado": "commit base + subject.patch (git diff HEAD y archivos nuevos sin rastrear, tomado al lanzar)",
+  "subject_patch_sha256": "f84c4965a2b74600e1f7e329d2f43cfd0f2fd2f99baf2ee282778418809cac52",
+  "mutation_patch_sha256": null,
+  "cargo_lock_blob": "45985e5ed956990f68f9c6acafe3a00c4fd89b94",
+  "cargo_config_blob": "23c1333760b49fdf685a3dcf04799fd54a15bd14",
+  "herramientas": {
+    "rustc": "rustc 1.98.0-nightly (096694416 2026-06-29)",
+    "cargo": "cargo 1.98.0-nightly (a335d47ff 2026-06-26)"
+  },
+  "perfil": "test (perfiles del Cargo.toml raiz)",
+  "features": "por defecto",
+  "target": "x86_64-pc-windows-msvc",
+  "cargo_target_dir": "C:/Users/jhona/Documents/Proyectos/Trader Gemini/target",
+  "lanzador": "integrador\\tgbg_logs\\correr.ps1 via scripts/cargo_semaforo.sh (SEMAFORO_AGENTE=integrador-cierretgbg)"
+}

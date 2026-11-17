@@ -1,0 +1,426 @@
+diff --git a/src/lib.rs b/src/lib.rs
+index fdd690c01..82831e748 100644
+--- a/src/lib.rs
++++ b/src/lib.rs
+@@ -10,6 +10,8 @@ pub mod orderbook;
+ pub mod parsers;
+ pub mod symbol_manager;
+ pub mod sa_params;
++// TGBG-3: puente comun de admision de generacion de cintas REAL (train_forest y dataset_admission).
++pub mod tgb_generation;
+ 
+ // NOTA: Las funciones FFI extern "C" (quantum_ring_new, quantum_ring_free, quantum_ring_read_tick)
+ // han sido eliminadas en la Fase 4 de Auditoría Suprema.
+diff --git a/src/tgb_generation.rs b/src/tgb_generation.rs
+new file mode 100644
+index 000000000..69fb48af9
+--- /dev/null
++++ b/src/tgb_generation.rs
+@@ -0,0 +1,407 @@
++//! TGBG-3 (`pedido_tgb_g_v1.md` §3.3): puente COMUN de la raiz para admitir la generacion de una cinta REAL antes
++//! de que llegue a las muestras. Lo usan `train_forest` (todas sus fuentes, antes del primer build) y
++//! `dataset_admission` (campo `training_eligible`). Delega la decision en el nucleo puro
++//! `tick_tape::procedencia::admitir_original`.
++//!
++//! - Los bytes ANALIZADOS son los CONSUMIDOS: la cinta se copia a una instantanea privada (un mmap de archivo no
++//!   impide escrituras externas) y [`CintaAdmitida`] solo se construye admitiendo esa instantanea. Reabrir la fuente
++//!   exige una admision nueva.
++//! - El indice revisado se carga una vez y se fija con el SHA-256 que da quien llama (`--generation-index-sha256`),
++//!   que debe salir del registro revisado, nunca del recibo. Las evidencias se resuelven por su SHA-256 en
++//!   `<carpeta del indice>/<sha256>.evidencia`.
++//! - Los lectores se inyectan ([`Lectores`]): produccion lee disco ([`LectoresDisco`]); los contratos, memoria.
++
++use std::io;
++use std::path::{Path, PathBuf};
++use tick_tape::logica::Transporte;
++use tick_tape::procedencia::{self, Admision, Causa, IndiceFijado};
++
++/// Bytes ORIGINALES de una cinta logica en una copia privada, con su transporte.
++pub struct Instantanea {
++    pub bytes: Vec<u8>,
++    pub transporte: Transporte,
++}
++
++/// Lectores de la admision: original, recibo lateral y evidencia por SHA-256.
++pub trait Lectores {
++    fn original(&self, logica: &Path) -> io::Result<Instantanea>;
++    fn recibo(&self, logica: &Path) -> io::Result<Option<Vec<u8>>>;
++    fn evidencia(&self, sha256: &[u8; 32]) -> io::Result<Option<Vec<u8>>>;
++}
++
++/// Lectores de produccion: cinta logica de `tick_tape` (`.bin`, o `.bin.tgb` verificado entero), recibo
++/// `X.bin.procedencia` y evidencias junto al indice revisado.
++pub struct LectoresDisco {
++    dir_evidencia: Option<PathBuf>,
++}
++
++impl LectoresDisco {
++    /// Sin indice: ninguna evidencia se resuelve (la admision rechaza con `indice_ausente`).
++    pub fn sin_indice() -> Self {
++        LectoresDisco { dir_evidencia: None }
++    }
++
++    /// Evidencias en la carpeta del indice revisado.
++    pub fn para_indice(ruta_indice: &Path) -> Self {
++        let dir = ruta_indice.parent().map(Path::to_path_buf).unwrap_or_default();
++        LectoresDisco { dir_evidencia: Some(dir) }
++    }
++}
++
++fn leer_opcional(ruta: &Path) -> io::Result<Option<Vec<u8>>> {
++    match std::fs::read(ruta) {
++        Ok(b) => Ok(Some(b)),
++        Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(None),
++        Err(e) => Err(io::Error::new(e.kind(), format!("{}: {e}", ruta.display()))),
++    }
++}
++
++impl Lectores for LectoresDisco {
++    fn original(&self, logica: &Path) -> io::Result<Instantanea> {
++        let tape = tick_tape::logica::open_logical_tape(logica, tick_tape::tgb::Presupuesto::sin_tope())?;
++        let mut bytes = Vec::new();
++        bytes
++            .try_reserve_exact(tape.len())
++            .map_err(|e| io::Error::new(io::ErrorKind::OutOfMemory, format!("{}: {e}", logica.display())))?;
++        bytes.extend_from_slice(tape.as_bytes());
++        Ok(Instantanea { bytes, transporte: tape.transporte() })
++    }
++
++    fn recibo(&self, logica: &Path) -> io::Result<Option<Vec<u8>>> {
++        leer_opcional(&procedencia::ruta_recibo(logica))
++    }
++
++    fn evidencia(&self, sha256: &[u8; 32]) -> io::Result<Option<Vec<u8>>> {
++        match &self.dir_evidencia {
++            Some(dir) => leer_opcional(&dir.join(format!("{}.evidencia", procedencia::hex(sha256)))),
++            None => Ok(None),
++        }
++    }
++}
++
++/// SHA-256 en hex de 64 digitos en minusculas.
++pub fn sha256_de_hex(s: &str) -> Result<[u8; 32], String> {
++    let b = s.as_bytes();
++    if b.len() != 64 || !b.iter().all(|c| matches!(c, b'0'..=b'9' | b'a'..=b'f')) {
++        return Err(format!("SHA-256 mal formado (64 hex en minusculas): {s}"));
++    }
++    let nib = |c: u8| if c <= b'9' { c - b'0' } else { c - b'a' + 10 };
++    let mut out = [0u8; 32];
++    for (k, par) in b.chunks_exact(2).enumerate() {
++        out[k] = nib(par[0]) << 4 | nib(par[1]);
++    }
++    Ok(out)
++}
++
++/// Indice revisado con el SHA-256 que fija quien llama. El nucleo comprueba el SHA; aqui solo se guarda.
++pub struct IndiceRevisado {
++    bytes: Vec<u8>,
++    sha256_esperado: [u8; 32],
++}
++
++impl IndiceRevisado {
++    pub fn desde_bytes(bytes: Vec<u8>, sha256_esperado: [u8; 32]) -> Self {
++        IndiceRevisado { bytes, sha256_esperado }
++    }
++
++    /// Carga `--generation-index` con `--generation-index-sha256`.
++    pub fn cargar(ruta: &Path, sha256_hex: &str) -> Result<Self, String> {
++        let sha = sha256_de_hex(sha256_hex)?;
++        let bytes = std::fs::read(ruta).map_err(|e| format!("no pude leer el indice {}: {e}", ruta.display()))?;
++        Ok(IndiceRevisado::desde_bytes(bytes, sha))
++    }
++
++    fn fijado(&self) -> IndiceFijado<'_> {
++        IndiceFijado { bytes: &self.bytes, sha256_esperado: self.sha256_esperado }
++    }
++}
++
++/// Rechazo con la ruta logica; `causa` es `None` si fallo la lectura del original.
++#[derive(Debug, Clone)]
++pub struct RechazoGeneracion {
++    pub ruta: String,
++    pub causa: Option<Causa>,
++    pub detalle: String,
++}
++
++impl RechazoGeneracion {
++    pub fn nombre(&self) -> &'static str {
++        self.causa.map(Causa::nombre).unwrap_or("lectura")
++    }
++}
++
++impl std::fmt::Display for RechazoGeneracion {
++    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
++        write!(f, "{}: {}", self.ruta, self.detalle)
++    }
++}
++
++/// Cinta ADMITIDA para preparar muestras: la instantanea analizada, que es la que se consume.
++pub struct CintaAdmitida {
++    ruta_logica: PathBuf,
++    bytes: Vec<u8>,
++    transporte: Transporte,
++    admision: Admision,
++}
++
++impl CintaAdmitida {
++    pub fn bytes(&self) -> &[u8] {
++        &self.bytes
++    }
++    pub fn ruta_logica(&self) -> &Path {
++        &self.ruta_logica
++    }
++    pub fn transporte(&self) -> Transporte {
++        self.transporte
++    }
++    /// SHA-256 del ORIGINAL admitido (nunca el del contenedor de transporte).
++    pub fn sha256_original(&self) -> [u8; 32] {
++        self.admision.sha256_original
++    }
++    pub fn admision(&self) -> &Admision {
++        &self.admision
++    }
++}
++
++/// Decision sobre unos bytes ya leidos (los de `dataset_admission`), sin quedarse con ellos.
++pub fn evaluar(
++    logica: &Path,
++    original: &[u8],
++    lectores: &dyn Lectores,
++    indice: Option<&IndiceRevisado>,
++) -> Result<Admision, RechazoGeneracion> {
++    let ruta = logica.display().to_string();
++    let recibo = lectores
++        .recibo(logica)
++        .map_err(|e| RechazoGeneracion { ruta: ruta.clone(), causa: Some(Causa::ReciboInvalido), detalle: format!("recibo ilegible: {e}") })?;
++    let mut resolver = |h: &[u8; 32]| lectores.evidencia(h).map_err(|e| e.to_string());
++    procedencia::admitir_original(original, recibo.as_deref(), indice.map(IndiceRevisado::fijado), &mut resolver)
++        .map_err(|r| RechazoGeneracion { ruta, causa: Some(r.causa), detalle: r.to_string() })
++}
++
++/// Admite una instantanea ya tomada y se queda con ella.
++pub fn admitir_instantanea(
++    logica: &Path,
++    instantanea: Instantanea,
++    lectores: &dyn Lectores,
++    indice: Option<&IndiceRevisado>,
++) -> Result<CintaAdmitida, RechazoGeneracion> {
++    let admision = evaluar(logica, &instantanea.bytes, lectores, indice)?;
++    Ok(CintaAdmitida { ruta_logica: logica.to_path_buf(), bytes: instantanea.bytes, transporte: instantanea.transporte, admision })
++}
++
++/// Abre la fuente UNA vez (instantanea privada) y la admite.
++pub fn admitir_fuente(
++    logica: &Path,
++    lectores: &dyn Lectores,
++    indice: Option<&IndiceRevisado>,
++) -> Result<CintaAdmitida, RechazoGeneracion> {
++    let instantanea = lectores.original(logica).map_err(|e| RechazoGeneracion {
++        ruta: logica.display().to_string(),
++        causa: None,
++        detalle: format!("no pude abrir {}: {e}", logica.display()),
++    })?;
++    admitir_instantanea(logica, instantanea, lectores, indice)
++}
++
++/// Contratos PUROS del puente (lectores y buffers en memoria; sin temporales, reloj ni red).
++#[cfg(test)]
++pub(crate) mod pruebas {
++    use super::*;
++    use sha2::{Digest, Sha256};
++    use std::cell::{Cell, RefCell};
++    use std::collections::HashMap;
++
++    pub fn sha(b: &[u8]) -> [u8; 32] {
++        Sha256::digest(b).into()
++    }
++
++    pub fn hx(b: &[u8]) -> String {
++        b.iter().map(|x| format!("{x:02x}")).collect()
++    }
++
++    /// Cinta REAL relativa de precio bajo (recetas auditadas como datos de prueba), timestamps desde `ts0`.
++    pub fn cinta_relativa(n: usize, desde: f64, ts0: u64) -> Vec<u8> {
++        let mut v = b"TGMTICK1".to_vec();
++        for k in 0..n {
++            let p = desde + 0.013 * k as f64;
++            let h = p * procedencia::R_RELATIVA;
++            for x in [ts0 + k as u64 * 1_000, (p - h).to_bits(), (p + h).to_bits(), 1f64.to_bits(), 2f64.to_bits()] {
++                v.extend_from_slice(&x.to_le_bytes());
++            }
++        }
++        v
++    }
++
++    /// Cadena integra en memoria para `original`: (recibo, evidencia, indice revisado).
++    pub fn cadena(original: &[u8], ruta: &str) -> (Vec<u8>, Vec<u8>, IndiceRevisado) {
++        let commit = "ab".repeat(20);
++        let evidencia = format!(
++            "formato=tg-evidencia-productor-1\nproductor=binance_vision_sync\ncommit_productor={commit}\nsha256_fuentes_productor={}\nsha256_ejecutable={}\nreceta=relativa\nconstante_r_bits={:016x}\norigen_receta=src/bin/binance_vision_sync.rs:222\ncomando=binance_vision_sync\nentrada_sha256={}\nsha256_salida={}\nbytes_salida={}\nsha256_registro_salida={}\ntransformaciones=ninguna\n",
++            hx(&sha(b"fuentes")),
++            hx(&sha(b"exe")),
++            procedencia::R_RELATIVA.to_bits(),
++            hx(&sha(b"zip")),
++            hx(&sha(original)),
++            original.len(),
++            hx(&sha(b"stdout"))
++        );
++        let ev_sha = hx(&sha(evidencia.as_bytes()));
++        let indice = format!("formato=tg-indice-procedencia-1\nrevisado_por=contrato\nevidencia={ev_sha};binance_vision_sync;{commit};relativa\n");
++        let n = (original.len() - 8) / 40;
++        let recibo = format!(
++            "formato=tg-procedencia-2\nversion_analizador=tick-tape-procedencia-2\nruta_logica={ruta}\nformato_cinta=TGMTICK1+40B_LE\nsha256_original={}\nbytes_original={}\nregistros_esperados={n}\nregistros_analizados={n}\ncobertura=completa\nrecetas_compatibles=relativa\nestado_firma=relativa\nprimer_testigo_relativa=0\nprocedencia_acreditada=relativa\nevidencia_productor_sha256={ev_sha}\nanalisis=intervalos_exhaustivos\n",
++            hx(&sha(original)),
++            original.len()
++        );
++        let pin = sha(indice.as_bytes());
++        (recibo.into_bytes(), evidencia.into_bytes(), IndiceRevisado::desde_bytes(indice.into_bytes(), pin))
++    }
++
++    /// Lectores en memoria. `versiones[ruta]` da los bytes de cada apertura sucesiva (la ultima se repite).
++    #[derive(Default)]
++    pub struct Memoria {
++        pub versiones: RefCell<HashMap<String, Vec<Vec<u8>>>>,
++        pub contenedores: HashMap<String, Vec<u8>>,
++        pub recibos: HashMap<String, Vec<u8>>,
++        pub evidencias: Vec<Vec<u8>>,
++        pub aperturas: Cell<u32>,
++        pub consultas: Cell<u32>,
++    }
++
++    impl Memoria {
++        pub fn con(ruta: &str, original: Vec<u8>, c: &(Vec<u8>, Vec<u8>, IndiceRevisado)) -> Memoria {
++            let m = Memoria::default();
++            m.versiones.borrow_mut().insert(ruta.to_string(), vec![original]);
++            let mut m = m;
++            m.recibos.insert(ruta.to_string(), c.0.clone());
++            m.evidencias.push(c.1.clone());
++            m
++        }
++    }
++
++    impl Lectores for Memoria {
++        fn original(&self, logica: &Path) -> io::Result<Instantanea> {
++            self.aperturas.set(self.aperturas.get() + 1);
++            let k = logica.display().to_string();
++            if let Some(c) = self.contenedores.get(&k) {
++                let r = tick_tape::tgb::restituir_tgb(c, tick_tape::tgb::Presupuesto::sin_tope())?;
++                let transporte = Transporte::Tgb { bytes_contenedor: c.len() as u64, sha256_contenedor: sha(c), modo: r.modo() };
++                return Ok(Instantanea { bytes: r.as_bytes().to_vec(), transporte });
++            }
++            let mut v = self.versiones.borrow_mut();
++            let lista = v.get_mut(&k).ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, k.clone()))?;
++            let bytes = if lista.len() > 1 { lista.remove(0) } else { lista[0].clone() };
++            Ok(Instantanea { bytes, transporte: Transporte::Bin })
++        }
++        fn recibo(&self, logica: &Path) -> io::Result<Option<Vec<u8>>> {
++            self.consultas.set(self.consultas.get() + 1);
++            Ok(self.recibos.get(&logica.display().to_string()).cloned())
++        }
++        fn evidencia(&self, sha256: &[u8; 32]) -> io::Result<Option<Vec<u8>>> {
++            self.consultas.set(self.consultas.get() + 1);
++            Ok(self.evidencias.iter().find(|e| sha(e) == *sha256).cloned())
++        }
++    }
++
++    const RUTA: &str = "mem/XRPUSDT_2026-06_REAL.bin";
++
++    #[test]
++    fn tgb_g_03_puente_rechaza_autodeclaracion() {
++        let original = cinta_relativa(200, 0.45, 1_780_300_800_000);
++        let c = cadena(&original, RUTA);
++        let m = Memoria::con(RUTA, original.clone(), &c);
++        let a = admitir_fuente(Path::new(RUTA), &m, Some(&c.2)).expect("cadena integra");
++        assert_eq!(a.sha256_original(), sha(&original));
++        assert_eq!(a.bytes(), &original[..]);
++
++        // Recibo de H con `evidencia_productor=prueba`.
++        let h = format!(
++            "formato=tg-procedencia-1\nsha256_original={}\nbytes_original={}\nprocedencia_acreditada=relativa\nevidencia_productor=prueba\ncobertura=completa\n",
++            hx(&sha(&original)),
++            original.len()
++        );
++        let mut m2 = Memoria::con(RUTA, original.clone(), &c);
++        m2.recibos.insert(RUTA.to_string(), h.into_bytes());
++        let e = admitir_fuente(Path::new(RUTA), &m2, Some(&c.2)).err().expect("recibo de H rechazado");
++        assert!(e.detalle.starts_with("procedencia_no_acreditada"), "{e}");
++
++        // Sin indice revisado, o con evidencia de texto libre reconocida por su hash.
++        let e = admitir_fuente(Path::new(RUTA), &m, None).err().expect("sin indice");
++        assert_eq!(e.causa, Some(Causa::IndiceAusente));
++        let mut m3 = Memoria::con(RUTA, original.clone(), &c);
++        m3.evidencias = vec![b"prueba".to_vec()];
++        let libre = format!("formato=tg-indice-procedencia-1\nrevisado_por=x\nevidencia={};binance_vision_sync;{};relativa\n", hx(&sha(b"prueba")), "ab".repeat(20));
++        let recibo_libre = String::from_utf8(c.0.clone()).unwrap_or_default().replace(&hx(&sha(&c.1)), &hx(&sha(b"prueba")));
++        m3.recibos.insert(RUTA.to_string(), recibo_libre.into_bytes());
++        let ix = IndiceRevisado::desde_bytes(libre.clone().into_bytes(), sha(libre.as_bytes()));
++        let e = admitir_fuente(Path::new(RUTA), &m3, Some(&ix)).err().expect("evidencia libre");
++        assert_eq!(e.causa, Some(Causa::EvidenciaInvalida), "{e}");
++    }
++
++    #[test]
++    fn tgb_g_04_puente_cadena_rota() {
++        let original = cinta_relativa(200, 0.45, 1_780_300_800_000);
++        let c = cadena(&original, RUTA);
++        // Evidencia que no esta en el disco/memoria del resolutor.
++        let mut m = Memoria::con(RUTA, original.clone(), &c);
++        m.evidencias.clear();
++        let e = admitir_fuente(Path::new(RUTA), &m, Some(&c.2)).err().expect("evidencia ausente");
++        assert_eq!(e.causa, Some(Causa::EvidenciaAusente));
++        // Indice con un pin que no es el suyo.
++        let m = Memoria::con(RUTA, original.clone(), &c);
++        let ajeno = IndiceRevisado::desde_bytes(c.2.bytes.clone(), sha(b"otro registro"));
++        let e = admitir_fuente(Path::new(RUTA), &m, Some(&ajeno)).err().expect("pin ajeno");
++        assert_eq!(e.causa, Some(Causa::IndiceNoFijado));
++        // Pin mal escrito en la linea de comandos.
++        assert!(sha256_de_hex(&hx(&c.2.sha256_esperado).to_uppercase()).is_err());
++        assert!(sha256_de_hex(&hx(&c.2.sha256_esperado)[..63]).is_err());
++        assert_eq!(sha256_de_hex(&hx(&c.2.sha256_esperado)), Ok(c.2.sha256_esperado));
++    }
++
++    #[test]
++    fn tgb_g_11_snapshot_y_evidencia_vigentes() {
++        // La fuente cambia entre aperturas: la cinta admitida es la instantanea analizada, y una reapertura bajo la
++        // marca anterior se rechaza.
++        let v1 = cinta_relativa(200, 0.45, 1_780_300_800_000);
++        let v2 = cinta_relativa(200, 0.46, 1_780_300_800_000);
++        let c = cadena(&v1, RUTA);
++        let m = Memoria::con(RUTA, v1.clone(), &c);
++        m.versiones.borrow_mut().insert(RUTA.to_string(), vec![v1.clone(), v2.clone()]);
++        let a = admitir_fuente(Path::new(RUTA), &m, Some(&c.2)).expect("v1 admitida");
++        assert_eq!(a.bytes(), &v1[..], "se consumen los bytes analizados");
++        assert_eq!(m.aperturas.get(), 1, "una sola apertura por admision");
++        assert_eq!(sha(a.bytes()), a.sha256_original());
++        let e = admitir_fuente(Path::new(RUTA), &m, Some(&c.2)).err().expect("v2 bajo la marca de v1");
++        assert_eq!(e.causa, Some(Causa::OtroOriginal), "{e}");
++        assert_eq!(a.bytes(), &v1[..], "la admitida no cambia al reabrir");
++    }
++
++    #[test]
++    fn tgb_g_12_puente_bin_tgb_equivalentes() {
++        let original = cinta_relativa(300, 0.45, 1_780_300_800_000);
++        let c = cadena(&original, RUTA);
++        let m = Memoria::con(RUTA, original.clone(), &c);
++        let por_bin = admitir_fuente(Path::new(RUTA), &m, Some(&c.2)).expect(".bin");
++        let contenedor = tick_tape::tgb::empaquetar(&original).expect("empaquetar");
++        let mut m2 = Memoria::con(RUTA, original.clone(), &c);
++        m2.contenedores.insert(RUTA.to_string(), contenedor.clone());
++        let por_tgb = admitir_fuente(Path::new(RUTA), &m2, Some(&c.2)).expect(".tgb");
++        assert_eq!(por_tgb.sha256_original(), por_bin.sha256_original());
++        assert_eq!(por_tgb.sha256_original(), sha(&original));
++        assert_eq!(por_tgb.bytes(), por_bin.bytes());
++        assert_eq!(por_tgb.admision().firma, por_bin.admision().firma);
++        match por_tgb.transporte() {
++            Transporte::Tgb { sha256_contenedor, .. } => assert_eq!(sha256_contenedor, sha(&contenedor)),
++            Transporte::Bin => panic!("transporte perdido"),
++        }
++        // Contenedor corrupto: ni recibo ni evidencia se consultan.
++        let mut roto = contenedor.clone();
++        let medio = roto.len() / 2;
++        roto[medio] ^= 0x40;
++        let mut m3 = Memoria::con(RUTA, original.clone(), &c);
++        m3.contenedores.insert(RUTA.to_string(), roto);
++        let e = admitir_fuente(Path::new(RUTA), &m3, Some(&c.2)).err().expect("contenedor corrupto");
++        assert_eq!((e.causa, m3.consultas.get()), (None, 0), "{e}");
++    }
++}

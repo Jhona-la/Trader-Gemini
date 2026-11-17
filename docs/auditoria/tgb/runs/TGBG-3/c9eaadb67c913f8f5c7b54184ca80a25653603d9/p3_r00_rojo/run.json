@@ -1,0 +1,37 @@
+{
+  "schema": "tgb-run-1",
+  "paso": "TGBG-3",
+  "run_id": "p3_r00_rojo",
+  "tipo": "red_before",
+  "fecha_utc": "2026-11-17T16:19:54Z",
+  "cwd": "C:\\Users\\jhona\\Desktop\\PC-Turbo\\integrador\\wt_v4l",
+  "argv": [
+    "bash",
+    "scripts/cargo_semaforo.sh",
+    "test",
+    "-p",
+    "trader-gemini-v5",
+    "--lib",
+    "--locked",
+    "tgb_g_"
+  ],
+  "filtro": "tgb_g_",
+  "nota": "rojo por la asercion de aperturas; se puso primero la de bytes consumidos y se repitio (p3_r01, con volcado de bytes; p3_r03 con hashes)",
+  "resultado_esperado": "rojo",
+  "resultado_observado": "rojo",
+  "codigo_salida": 101,
+  "duracion_s": 136,
+  "pruebas": {
+    "resumenes": 1,
+    "pasan": 3,
+    "fallan": 1,
+    "ignoradas": 0
+  },
+  "asercion_causante": "src\\tgb_generation.rs:380:9: assertion `left == right` failed: una sola apertura por admision",
+  "stdout": {
+    "ruta": "stdout.txt",
+    "sha256": "fb7e083c17e93ac3225e03621ef8da6bdb537fa02b4f24996884814560924284"
+  },
+  "stderr": "combinado en stdout.txt (cmd 2>&1 hacia el mismo archivo)",
+  "estado": "atribuible"
+}

@@ -1,0 +1,37 @@
+{
+  "schema": "tgb-run-1",
+  "paso": "TGBG-2",
+  "run_id": "p2_m01_gg_productor",
+  "tipo": "mutation",
+  "fecha_utc": "2026-11-17T16:13:03Z",
+  "cwd": "C:\\Users\\jhona\\Desktop\\PC-Turbo\\integrador\\wt_v4l",
+  "argv": [
+    "bash",
+    "scripts/cargo_semaforo.sh",
+    "test",
+    "-p",
+    "tick-tape",
+    "--test",
+    "tgb_g_contract",
+    "--locked"
+  ],
+  "filtro": null,
+  "nota": null,
+  "resultado_esperado": "rojo",
+  "resultado_observado": "rojo",
+  "codigo_salida": 101,
+  "duracion_s": 17,
+  "pruebas": {
+    "resumenes": 1,
+    "pasan": 8,
+    "fallan": 1,
+    "ignoradas": 0
+  },
+  "asercion_causante": "crates\\tick-tape\\tests\\tgb_g_contract.rs:297:18: productor distinto del indice: ADMITIDA sin evidencia suficiente (sha 1d1ab755e4fb6ff63fcf5550793d9e990089a5cfaf1cbe51e2f33da067cb7a10)",
+  "stdout": {
+    "ruta": "stdout.txt",
+    "sha256": "7d1cd1950b0d98fd58dd8204af03d0c14f7f6a90e2c63f0dfe0c6ef3c56f58eb"
+  },
+  "stderr": "combinado en stdout.txt (cmd 2>&1 hacia el mismo archivo)",
+  "estado": "atribuible"
+}

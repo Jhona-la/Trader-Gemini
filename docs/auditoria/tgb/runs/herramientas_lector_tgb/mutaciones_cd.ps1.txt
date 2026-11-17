@@ -1,0 +1,13 @@
+$m = 'C:\Users\jhona\Desktop\PC-Turbo\integrador\tgb_logs\mutar.ps1'
+$lo = 'crates\tick-tape\src\logica.rs'
+$tr = 'crates\backtest-engine\src\tick_replayer.rs'
+$a = 'test --locked -p backtest-engine --test tgb_reader_contract --no-fail-fast'
+$l = @(
+  @('cd_m1_prefiere_tgb', $lo, 'Ok(f) => Ok((Representacion::Bin, logica.to_path_buf(), f)),', 'Ok(_) if abrir(&ruta_tgb(logica)).is_ok() => abrir(&ruta_tgb(logica)).map(|f| (Representacion::Tgb, ruta_tgb(logica), f)), Ok(f) => Ok((Representacion::Bin, logica.to_path_buf(), f)),'),
+  @('cd_m2_cae_con_cualquier_error', $lo, 'Err(e) if e.kind() == io::ErrorKind::NotFound => {', 'Err(_e) => {'),
+  @('cd_m3_with_extension', $lo, 'PathBuf::from(s)', '{ let _ = s; logica.with_extension("tgb") }'),
+  @('cd_m4_prefijo_cero_anticipado', $tr, '    let tape = tick_tape::logica::open_logical_tape(path, tick_tape::tgb::Presupuesto::sin_tope())?;', '    if max_ticks == Some(0) { return Ok(Vec::new()); }' + "`n" + '    let tape = tick_tape::logica::open_logical_tape(path, tick_tape::tgb::Presupuesto::sin_tope())?;'),
+  @('cd_m5_multi_omite_errores', $tr, 'all_ticks.append(&mut load_binary_ticks(path, *cid)?);', 'if let Ok(mut v) = load_binary_ticks(path, *cid) { all_ticks.append(&mut v); }')
+)
+foreach ($x in $l) { & $m -Nombre $x[0] -Archivo $x[1] -Viejo $x[2] -Nuevo $x[3] -Args1 $a }
+'MUTACIONES CD TERMINADAS' | Out-File -Encoding utf8 'C:\Users\jhona\Desktop\PC-Turbo\integrador\tgb_logs\mutaciones_cd.done'

@@ -1,0 +1,55 @@
+﻿# q02_tick_tape | HEAD 324ef18dbe1805320db70056df4fe5d6a7edd329 | sucios 0 | cargo/rustc vivos 0 | libre 336266014720 | ram_libre_gb 5.42 | inicio 2026-11-17T00:27:46 | cargo test --locked -p tick-tape --no-fail-fast | CINTA  | REF 
+    Finished `test` profile [optimized] target(s) in 8.19s
+     Running unittests src\lib.rs (C:/Users/jhona/Documents/Proyectos/Trader Gemini/target\debug\deps\tick_tape-a774a6447d6a8c15.exe)
+
+running 1 test
+test logica::pruebas::permiso_denegado_no_cambia_de_fuente ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running tests\consumidores_contract.rs (C:/Users/jhona/Documents/Proyectos/Trader Gemini/target\debug\deps\consumidores_contract-f32bbd9d961b44fa.exe)
+
+running 1 test
+test e_los_lectores_directos_abren_la_cinta_logica ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\logica.rs (C:/Users/jhona/Documents/Proyectos/Trader Gemini/target\debug\deps\logica-3cff9386b8e1596b.exe)
+
+running 1 test
+test logica_representacion_transporte_e_identidad ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+
+     Running tests\procedencia.rs (C:/Users/jhona/Documents/Proyectos/Trader Gemini/target\debug\deps\procedencia-8af2908c96413ab6.exe)
+
+running 2 tests
+test tgb_firma_distingue_recetas_sin_adivinar ... ok
+test tgb_solo_la_relativa_acreditada_entra_a_entrenamiento ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.06s
+
+     Running tests\tgb_corrupciones.rs (C:/Users/jhona/Documents/Proyectos/Trader Gemini/target\debug\deps\tgb_corrupciones-e2a50d9f2f66bd71.exe)
+
+running 3 tests
+test tgb_presupuesto_identidad_y_alineacion ... ok
+test tgb_descompresion_acotada_y_frames_concatenados ... ok
+test tgb_rechaza_20_corrupciones ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running tests\tgb_formato.rs (C:/Users/jhona/Documents/Proyectos/Trader Gemini/target\debug\deps\tgb_formato-f8693a50423531c2.exe)
+
+running 2 tests
+test tgb_empaquetar_ida_y_vuelta ... ok
+test tgb_roundtrip_preserva_bits_y_bloques ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.57s
+
+   Doc-tests tick_tape
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+# fin 2026-11-17T00:28:05 codigo 0

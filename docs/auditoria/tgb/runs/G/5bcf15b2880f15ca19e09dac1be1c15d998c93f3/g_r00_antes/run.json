@@ -1,0 +1,36 @@
+{
+  "schema": "tgb-run-1",
+  "paso": "G",
+  "run_id": "g_r00_antes",
+  "tipo": "red_before",
+  "fecha_local": "2026-11-16T23:40:53",
+  "argv": [
+    "bash",
+    "scripts/cargo_semaforo.sh",
+    "test",
+    "--locked",
+    "-p",
+    "trader-gemini-v5",
+    "--bin",
+    "train_forest",
+    "tgb_"
+  ],
+  "resultado_observado": "rojo",
+  "codigo_salida": 101,
+  "pruebas": {
+    "resumenes": 1,
+    "pasan": 0,
+    "fallan": 1,
+    "ignoradas": 0
+  },
+  "asercion_causante": "src\\bin\\train_forest.rs:3456:26: firma antigua: la cinta llegó a la preparación de muestras sin evidencia suficiente",
+  "stdout": {
+    "ruta": "stdout.txt",
+    "sha256": "9d77b1a4485545bdba7823a22bc2161a82093dcbe67e11074ff35f6bbe071136"
+  },
+  "estado": "historico_no_atribuible",
+  "head_en_cabecera": "5bcf15b2880f15ca19e09dac1be1c15d998c93f3",
+  "archivos_rastreados_modificados": 1,
+  "nota": null,
+  "motivo_estado": "el log no guarda el parche del arbol (cambios sin confirmar); HEAD solo no describe el sujeto"
+}

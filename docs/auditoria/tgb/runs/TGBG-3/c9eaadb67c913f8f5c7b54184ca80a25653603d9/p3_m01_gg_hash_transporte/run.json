@@ -1,0 +1,37 @@
+{
+  "schema": "tgb-run-1",
+  "paso": "TGBG-3",
+  "run_id": "p3_m01_gg_hash_transporte",
+  "tipo": "mutation",
+  "fecha_utc": "2026-11-17T16:32:25Z",
+  "cwd": "C:\\Users\\jhona\\Desktop\\PC-Turbo\\integrador\\wt_v4l",
+  "argv": [
+    "bash",
+    "scripts/cargo_semaforo.sh",
+    "test",
+    "-p",
+    "trader-gemini-v5",
+    "--lib",
+    "--locked",
+    "tgb_g_"
+  ],
+  "filtro": "tgb_g_",
+  "nota": null,
+  "resultado_esperado": "rojo",
+  "resultado_observado": "rojo",
+  "codigo_salida": 101,
+  "duracion_s": 136,
+  "pruebas": {
+    "resumenes": 1,
+    "pasan": 3,
+    "fallan": 1,
+    "ignoradas": 0
+  },
+  "asercion_causante": "src\\tgb_generation.rs:393:9: assertion `left == right` failed",
+  "stdout": {
+    "ruta": "stdout.txt",
+    "sha256": "b64e03add2c7b66b5219e104aee26b3b528466732151b078df59ae822351e8e6"
+  },
+  "stderr": "combinado en stdout.txt (cmd 2>&1 hacia el mismo archivo)",
+  "estado": "atribuible"
+}

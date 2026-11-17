@@ -1,0 +1,36 @@
+{
+  "schema": "tgb-run-1",
+  "paso": "G",
+  "run_id": "g_m1_firma_no_exige_relativa",
+  "tipo": "mutation",
+  "fecha_local": "2026-11-16T23:48:24",
+  "argv": [
+    "bash",
+    "scripts/cargo_semaforo.sh",
+    "test",
+    "--locked",
+    "-p",
+    "tick-tape",
+    "--test",
+    "procedencia",
+    "--no-fail-fast"
+  ],
+  "resultado_observado": "rojo",
+  "codigo_salida": 101,
+  "pruebas": {
+    "resumenes": 1,
+    "pasan": 1,
+    "fallan": 1,
+    "ignoradas": 0
+  },
+  "asercion_causante": "crates\\tick-tape\\tests\\procedencia.rs:151:22: firma antigua: admitida sin evidencia suficiente",
+  "stdout": {
+    "ruta": "stdout.txt",
+    "sha256": "25766b51e8816220da37f37dd764b9fd9ef4f773749c86684d643a1ef3df4990"
+  },
+  "estado": "historico_no_atribuible",
+  "head_en_cabecera": "5bcf15b2880f15ca19e09dac1be1c15d998c93f3",
+  "archivos_rastreados_modificados": 3,
+  "nota": null,
+  "motivo_estado": "el log no guarda el parche del arbol (cambios sin confirmar); HEAD solo no describe el sujeto"
+}

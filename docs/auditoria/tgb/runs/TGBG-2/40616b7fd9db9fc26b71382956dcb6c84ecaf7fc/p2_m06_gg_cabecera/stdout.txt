@@ -1,0 +1,34 @@
+# p2_m06_gg_cabecera | HEAD 40616b7fd9db9fc26b71382956dcb6c84ecaf7fc | sucios 4 | cargo/rustc vivos 2 | libre 305144418304 | ram_libre_gb 4.38 | inicio 2026-11-17T16:14:12Z | tipo mutation | esperado rojo | parche 24d618f06b125cdd948ba61c2b9d706ff97c69ff4ae207d80ed7cd2cec2227f6 | cargo test -p tick-tape --test tgb_g_contract --locked
+   Compiling tick-tape v0.1.0 (C:\Users\jhona\Desktop\PC-Turbo\integrador\wt_v4l\crates\tick-tape)
+    Finished `test` profile [optimized] target(s) in 4.39s
+     Running tests\tgb_g_contract.rs (C:/Users/jhona/Documents/Proyectos/Trader Gemini/target\debug\deps\tgb_g_contract-0c08981f09535697.exe)
+
+running 9 tests
+test tgb_g01_recetas ... ok
+test tgb_g03_rechaza_autodeclaracion ... ok
+test tgb_g08_cabecera_y_recibo ... FAILED
+test tgb_g05_identidad_original ... ok
+test tgb_g07_mixta_invalida_y_medio_tick ... ok
+test tgb_g06_cobertura_y_cola ... ok
+test tgb_g04_cadena_rota ... ok
+test tgb_g12_bin_tgb_equivalentes ... ok
+test tgb_g02_cruce_y_vecinos ... ok
+
+failures:
+
+---- tgb_g08_cabecera_y_recibo stdout ----
+
+thread 'tgb_g08_cabecera_y_recibo' (31824) panicked at crates\tick-tape\tests\tgb_g_contract.rs:299:13:
+assertion `left == right` failed: cabecera TGMXXXX1: causa distinta (procedencia_no_acreditada (recibo_de_otro_original): el recibo es de otro original (SHA-256 o tamano distintos))
+  left: OtroOriginal
+ right: Formato
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    tgb_g08_cabecera_y_recibo
+
+test result: FAILED. 8 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+error: test failed, to rerun pass `-p tick-tape --test tgb_g_contract`
+# fin 2026-11-17T16:14:29Z codigo 101 duracion_s 17

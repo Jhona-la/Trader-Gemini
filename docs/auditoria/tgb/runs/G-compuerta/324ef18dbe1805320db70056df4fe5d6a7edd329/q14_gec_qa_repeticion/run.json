@@ -1,0 +1,36 @@
+{
+  "schema": "tgb-run-1",
+  "paso": "G-compuerta",
+  "run_id": "q14_gec_qa_repeticion",
+  "tipo": "regresion",
+  "fecha_local": "2026-11-17T02:15:06",
+  "argv": [
+    "bash",
+    "scripts/cargo_semaforo.sh",
+    "test",
+    "--locked",
+    "-p",
+    "god-engine-core",
+    "-p",
+    "quantum-arena",
+    "--no-fail-fast"
+  ],
+  "resultado_observado": "rojo",
+  "codigo_salida": 101,
+  "pruebas": {
+    "resumenes": 240,
+    "pasan": 1415,
+    "fallan": 6,
+    "ignoradas": 49
+  },
+  "asercion_causante": "crates\\god-engine-core\\tests\\f99_002_wave27_living_graph_synthesis_contract.rs:163:9: assertion `left == right` failed",
+  "stdout": {
+    "ruta": "stdout.txt",
+    "sha256": "89faae3e73315af1433c11fdd74800ce6569b740c7ed92cd8230d37d63550de3"
+  },
+  "estado": "historico_cabecera_limpia",
+  "head_en_cabecera": "324ef18dbe1805320db70056df4fe5d6a7edd329",
+  "archivos_rastreados_modificados": 0,
+  "nota": null,
+  "motivo_estado": "cabecera con 0 archivos rastreados modificados; no registra archivos sin rastrear"
+}

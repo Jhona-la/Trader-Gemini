@@ -1,0 +1,38 @@
+{
+  "schema": "tgb-run-1",
+  "paso": "TGBG-5",
+  "run_id": "p5_m02_gg_main_sin_compuerta",
+  "tipo": "mutation",
+  "fecha_utc": "2026-11-17T17:05:33Z",
+  "cwd": "C:\\Users\\jhona\\Desktop\\PC-Turbo\\integrador\\wt_v4l",
+  "argv": [
+    "bash",
+    "scripts/cargo_semaforo.sh",
+    "test",
+    "-p",
+    "trader-gemini-v5",
+    "--bin",
+    "train_forest",
+    "--locked",
+    "tgb_g_"
+  ],
+  "filtro": "tgb_g_",
+  "nota": "control de ANCLA de texto de main, no de conducta",
+  "resultado_esperado": "rojo",
+  "resultado_observado": "rojo",
+  "codigo_salida": 101,
+  "duracion_s": 158,
+  "pruebas": {
+    "resumenes": 1,
+    "pasan": 0,
+    "fallan": 1,
+    "ignoradas": 0
+  },
+  "asercion_causante": "src\\bin\\train_forest.rs:3795:80: build de train",
+  "stdout": {
+    "ruta": "stdout.txt",
+    "sha256": "ffebbf21e7c4fc23a4ebbd9ed112774f84e99ee341fe092f67e8a89da78096dc"
+  },
+  "stderr": "combinado en stdout.txt (cmd 2>&1 hacia el mismo archivo)",
+  "estado": "atribuible"
+}

@@ -1,0 +1,156 @@
+﻿# q06_e13_5_admision | HEAD 324ef18dbe1805320db70056df4fe5d6a7edd329 | sucios 0 | cargo/rustc vivos 0 | libre 336197496832 | ram_libre_gb 3.46 | inicio 2026-11-17T00:32:50 | cargo test --locked -p trader-gemini-v5 --bin dataset_admission tgb_ | CINTA  | REF 
+   Compiling serde_core v1.0.228
+   Compiling rustversion v1.0.22
+   Compiling target-features v0.1.6
+   Compiling libsqlite3-sys v0.38.2
+   Compiling snap v1.1.1
+   Compiling thiserror v2.0.18
+   Compiling tick-tape v0.1.0 (C:\Users\jhona\Desktop\PC-Turbo\integrador\wt_v4l\crates\tick-tape)
+   Compiling mime_guess v2.0.5
+   Compiling ref-cast v1.0.25
+   Compiling rusqlite v0.40.2
+ ERROR rustc_interface::passes failed to compute checksum, omitting it from dep-info C:/Users/jhona/Documents/Proyectos/Trader\ Gemini/target\debug\build\target-features-ae02d78480f2a835\out/generated.md The system cannot find the path specified. (os error 3)
+   Compiling multiversion-macros v0.7.4
+   Compiling serde v1.0.228
+   Compiling indexmap v2.14.0
+   Compiling serde_json v1.0.150
+   Compiling deranged v0.5.8
+   Compiling serde_path_to_error v0.1.20
+   Compiling erased-serde v0.4.10
+   Compiling csv v1.4.0
+   Compiling storage-engine v0.1.0 (C:\Users\jhona\Desktop\PC-Turbo\integrador\wt_v4l\crates\storage-engine)
+   Compiling time v0.3.51
+   Compiling chrono v0.4.45
+   Compiling serde_urlencoded v0.7.1
+   Compiling polars-arrow-format v0.1.0
+   Compiling hashbrown v0.14.5
+   Compiling bincode v1.3.3
+   Compiling serde-xml-rs v0.5.1
+   Compiling halfbrown v0.4.0
+   Compiling h2 v0.3.27
+   Compiling data-ingest v0.1.0 (C:\Users\jhona\Desktop\PC-Turbo\integrador\wt_v4l\crates\data-ingest)
+   Compiling typetag v0.2.23
+   Compiling value-trait v0.12.1
+   Compiling time-tz v2.0.0
+   Compiling polars-error v0.43.1
+   Compiling omniscient-registry v0.1.0 (C:\Users\jhona\Desktop\PC-Turbo\integrador\wt_v4l\crates\omniscient-registry)
+   Compiling now v0.1.3
+   Compiling zip v0.6.6
+   Compiling smartcore v0.3.2
+   Compiling castaway v0.2.4
+   Compiling arc-swap v1.9.2
+   Compiling axum-core v0.4.5
+   Compiling strum_macros v0.26.4
+   Compiling simd-json v0.17.0
+   Compiling compact_str v0.8.2
+   Compiling hyper v0.14.32
+   Compiling polars-utils v0.43.1
+   Compiling hyper-tls v0.5.0
+   Compiling hyper-rustls v0.24.2
+   Compiling warp v0.3.7
+   Compiling reqwest v0.11.27
+   Compiling polars-schema v0.43.1
+   Compiling graph-architecture v0.1.0 (C:\Users\jhona\Desktop\PC-Turbo\integrador\wt_v4l\crates\graph-architecture)
+   Compiling quantum-arena v0.1.0 (C:\Users\jhona\Desktop\PC-Turbo\integrador\wt_v4l\crates\quantum-arena)
+   Compiling axum v0.7.9
+   Compiling os-guardian v0.1.0 (C:\Users\jhona\Desktop\PC-Turbo\integrador\wt_v4l\crates\os-guardian)
+   Compiling strategy-core v0.1.0 (C:\Users\jhona\Desktop\PC-Turbo\integrador\wt_v4l\crates\strategy-core)
+   Compiling audit-engine v0.1.0 (C:\Users\jhona\Desktop\PC-Turbo\integrador\wt_v4l\crates\audit-engine)
+   Compiling signal-engine v0.1.0 (C:\Users\jhona\Desktop\PC-Turbo\integrador\wt_v4l\crates\signal-engine)
+warning: use of deprecated function `std::arch::x86_64::_mm_getcsr`: see `_mm_getcsr` documentation - use inline assembly instead
+  --> crates\os-guardian\src\subnormal_control.rs:17:26
+   |
+17 | use core::arch::x86_64::{_mm_getcsr, _mm_setcsr};
+   |                          ^^^^^^^^^^
+   |
+   = note: `#[warn(deprecated)]` on by default
+
+warning: use of deprecated function `std::arch::x86_64::_mm_setcsr`: see `_mm_setcsr` documentation - use inline assembly instead
+  --> crates\os-guardian\src\subnormal_control.rs:17:38
+   |
+17 | use core::arch::x86_64::{_mm_getcsr, _mm_setcsr};
+   |                                      ^^^^^^^^^^
+
+warning: use of deprecated function `std::arch::x86_64::_mm_getcsr`: see `_mm_getcsr` documentation - use inline assembly instead
+  --> crates\os-guardian\src\subnormal_control.rs:47:29
+   |
+47 |             let mut mxcsr = _mm_getcsr();
+   |                             ^^^^^^^^^^
+
+warning: use of deprecated function `std::arch::x86_64::_mm_setcsr`: see `_mm_setcsr` documentation - use inline assembly instead
+  --> crates\os-guardian\src\subnormal_control.rs:49:13
+   |
+49 |             _mm_setcsr(mxcsr);
+   |             ^^^^^^^^^^
+
+warning: use of deprecated function `std::arch::x86_64::_mm_getcsr`: see `_mm_getcsr` documentation - use inline assembly instead
+  --> crates\os-guardian\src\subnormal_control.rs:52:28
+   |
+52 |             let verified = _mm_getcsr();
+   |                            ^^^^^^^^^^
+
+warning: use of deprecated function `std::arch::x86_64::_mm_getcsr`: see `_mm_getcsr` documentation - use inline assembly instead
+  --> crates\os-guardian\src\subnormal_control.rs:67:23
+   |
+67 |             let raw = _mm_getcsr();
+   |                       ^^^^^^^^^^
+
+warning: use of deprecated function `std::arch::x86_64::_mm_getcsr`: see `_mm_getcsr` documentation - use inline assembly instead
+  --> crates\os-guardian\src\subnormal_control.rs:89:29
+   |
+89 |             let mut mxcsr = _mm_getcsr();
+   |                             ^^^^^^^^^^
+
+warning: use of deprecated function `std::arch::x86_64::_mm_setcsr`: see `_mm_setcsr` documentation - use inline assembly instead
+  --> crates\os-guardian\src\subnormal_control.rs:91:13
+   |
+91 |             _mm_setcsr(mxcsr);
+   |             ^^^^^^^^^^
+
+   Compiling metacortex-engine v0.1.0 (C:\Users\jhona\Desktop\PC-Turbo\integrador\wt_v4l\crates\metacortex-engine)
+warning: `os-guardian` (lib) generated 8 warnings
+   Compiling risk-engine v0.1.0 (C:\Users\jhona\Desktop\PC-Turbo\integrador\wt_v4l\crates\risk-engine)
+   Compiling execution-engine v0.1.0 (C:\Users\jhona\Desktop\PC-Turbo\integrador\wt_v4l\crates\execution-engine)
+   Compiling multiversion v0.7.4
+   Compiling polars-arrow v0.43.1
+   Compiling ibapi v2.7.0
+warning: method `mismo_freno` is never used
+    --> crates\execution-engine\src\client.rs:1042:19
+     |
+1033 | impl BinanceClient {
+     | ------------------ method in this implementation
+...
+1042 |     pub(crate) fn mismo_freno(&self, otro: &BinanceClient) -> bool {
+     |                   ^^^^^^^^^^^
+     |
+     = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: `execution-engine` (lib) generated 1 warning
+   Compiling polars-compute v0.43.1
+   Compiling polars-row v0.43.1
+   Compiling polars-core v0.43.1
+   Compiling polars-parquet v0.43.1
+   Compiling telemetry-server v0.1.0 (C:\Users\jhona\Desktop\PC-Turbo\integrador\wt_v4l\crates\telemetry-server)
+   Compiling dark-alpha-engine v0.1.0 (C:\Users\jhona\Desktop\PC-Turbo\integrador\wt_v4l\crates\dark-alpha-engine)
+   Compiling god-engine-core v0.1.0 (C:\Users\jhona\Desktop\PC-Turbo\integrador\wt_v4l\crates\god-engine-core)
+   Compiling polars-ops v0.43.1
+   Compiling polars-time v0.43.1
+   Compiling polars-io v0.43.1
+   Compiling polars-plan v0.43.1
+   Compiling data-pipeline v0.1.0 (C:\Users\jhona\Desktop\PC-Turbo\integrador\wt_v4l\crates\data-pipeline)
+   Compiling backtest-engine v0.1.0 (C:\Users\jhona\Desktop\PC-Turbo\integrador\wt_v4l\crates\backtest-engine)
+   Compiling evolution-engine v0.1.0 (C:\Users\jhona\Desktop\PC-Turbo\integrador\wt_v4l\crates\evolution-engine)
+   Compiling polars-expr v0.43.1
+   Compiling polars-mem-engine v0.43.1
+   Compiling polars-lazy v0.43.1
+   Compiling polars v0.43.1
+   Compiling trader-gemini-v5 v0.1.0 (C:\Users\jhona\Desktop\PC-Turbo\integrador\wt_v4l)
+    Finished `test` profile [optimized] target(s) in 2m 07s
+     Running unittests src\bin\dataset_admission.rs (C:/Users/jhona/Documents/Proyectos/Trader Gemini/target\debug\deps\dataset_admission-7c425ce3c17468b5.exe)
+
+running 1 test
+test tests::tgb_transporte_conserva_la_identidad_del_original ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 15 filtered out; finished in 0.07s
+
+# fin 2026-11-17T00:35:04 codigo 0

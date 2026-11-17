@@ -1,0 +1,36 @@
+{
+  "schema": "tgb-run-1",
+  "paso": "CD",
+  "run_id": "cd_m5_multi_omite_errores",
+  "tipo": "mutation",
+  "fecha_local": "2026-11-16T23:08:54",
+  "argv": [
+    "bash",
+    "scripts/cargo_semaforo.sh",
+    "test",
+    "--locked",
+    "-p",
+    "backtest-engine",
+    "--test",
+    "tgb_reader_contract",
+    "--no-fail-fast"
+  ],
+  "resultado_observado": "rojo",
+  "codigo_salida": 101,
+  "pruebas": {
+    "resumenes": 1,
+    "pasan": 3,
+    "fallan": 1,
+    "ignoradas": 0
+  },
+  "asercion_causante": "crates\\backtest-engine\\tests\\tgb_reader_contract.rs:171:5: una cinta mala no se omite en multimoneda",
+  "stdout": {
+    "ruta": "stdout.txt",
+    "sha256": "620393dad6440bd31b4cb2470a6a83c262501f699d94ec1b5736ab3d057fdd0a"
+  },
+  "estado": "historico_no_atribuible",
+  "head_en_cabecera": "e6906854de572309415b25829adabee9be87fe77",
+  "archivos_rastreados_modificados": 28,
+  "nota": null,
+  "motivo_estado": "el log no guarda el parche del arbol (cambios sin confirmar); HEAD solo no describe el sujeto"
+}

@@ -1,0 +1,20 @@
+param([string]$Nombre, [string]$Archivo, [string]$Viejo, [string]$Nuevo, [string]$Args1)
+# Inyecta un defecto (reemplazo exacto, una sola vez), corre la prueba y restaura los bytes originales.
+$ErrorActionPreference = 'Stop'
+$wt = 'C:\Users\jhona\Desktop\PC-Turbo\integrador\wt_v4l'
+$ruta = Join-Path $wt $Archivo
+$bytes = [IO.File]::ReadAllBytes($ruta); $hash0 = (Get-FileHash $ruta).Hash
+$texto = [Text.Encoding]::UTF8.GetString($bytes)
+$n = ([regex]::Matches($texto, [regex]::Escape($Viejo))).Count
+if ($n -ne 1) { "MUTACION $Nombre : el ancla aparece $n veces" | Out-File -Encoding utf8 "C:\Users\jhona\Desktop\PC-Turbo\integrador\tgb_logs\$Nombre.log"; exit 2 }
+$mut = $texto.Replace($Viejo, $Nuevo)
+[IO.File]::WriteAllText($ruta, $mut, (New-Object Text.UTF8Encoding($false)))
+try {
+  & C:\Users\jhona\Desktop\PC-Turbo\integrador\tgb_logs\correr.ps1 -Nombre $Nombre -Args1 $Args1
+  $code = $LASTEXITCODE
+} finally {
+  [IO.File]::WriteAllBytes($ruta, $bytes)
+}
+if ((Get-FileHash $ruta).Hash -ne $hash0) { "RESTAURACION FALLIDA $ruta" | Out-File -Append -Encoding utf8 "C:\Users\jhona\Desktop\PC-Turbo\integrador\tgb_logs\$Nombre.log"; exit 3 }
+exit $code
+

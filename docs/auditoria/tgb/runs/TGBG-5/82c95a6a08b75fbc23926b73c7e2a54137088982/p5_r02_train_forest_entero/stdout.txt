@@ -1,0 +1,199 @@
+# p5_r02_train_forest_entero | HEAD 82c95a6a08b75fbc23926b73c7e2a54137088982 | sucios 1 | cargo/rustc vivos 1 | libre 304659423232 | ram_libre_gb 1.89 | inicio 2026-11-17T17:08:14Z | tipo regresion | esperado verde | parche ef90ce98ad26c5a118dc682f221ecdb2fc8ab31a42571e799726f423de3aab42 | cargo test -p trader-gemini-v5 --bin train_forest --locked
+    Blocking waiting for file lock on build directory
+   Compiling serde_core v1.0.228
+   Compiling rustversion v1.0.22
+   Compiling target-features v0.1.6
+   Compiling libsqlite3-sys v0.38.2
+   Compiling snap v1.1.1
+   Compiling thiserror v2.0.18
+   Compiling mime_guess v2.0.5
+   Compiling ref-cast v1.0.25
+ ERROR rustc_interface::passes failed to compute checksum, omitting it from dep-info C:/Users/jhona/Documents/Proyectos/Trader\ Gemini/target\debug\build\target-features-ae02d78480f2a835\out/generated.md The system cannot find the path specified. (os error 3)
+   Compiling multiversion-macros v0.7.4
+   Compiling rusqlite v0.40.2
+   Compiling serde v1.0.228
+   Compiling indexmap v2.14.0
+   Compiling serde_json v1.0.150
+   Compiling deranged v0.5.8
+   Compiling serde_path_to_error v0.1.20
+   Compiling erased-serde v0.4.10
+   Compiling csv v1.4.0
+   Compiling storage-engine v0.1.0 (C:\Users\jhona\Desktop\PC-Turbo\integrador\wt_v4l\crates\storage-engine)
+   Compiling chrono v0.4.45
+   Compiling serde_urlencoded v0.7.1
+   Compiling polars-arrow-format v0.1.0
+   Compiling hashbrown v0.14.5
+   Compiling bincode v1.3.3
+   Compiling halfbrown v0.4.0
+   Compiling typetag v0.2.23
+   Compiling h2 v0.3.27
+   Compiling serde-xml-rs v0.5.1
+   Compiling data-ingest v0.1.0 (C:\Users\jhona\Desktop\PC-Turbo\integrador\wt_v4l\crates\data-ingest)
+   Compiling cache-columnas v0.1.0 (C:\Users\jhona\Desktop\PC-Turbo\integrador\wt_v4l\crates\cache-columnas)
+   Compiling time v0.3.51
+   Compiling value-trait v0.12.1
+   Compiling smartcore v0.3.2
+   Compiling omniscient-registry v0.1.0 (C:\Users\jhona\Desktop\PC-Turbo\integrador\wt_v4l\crates\omniscient-registry)
+   Compiling now v0.1.3
+   Compiling time-tz v2.0.0
+   Compiling polars-error v0.43.1
+   Compiling simd-json v0.17.0
+   Compiling zip v0.6.6
+   Compiling hyper v0.14.32
+   Compiling castaway v0.2.4
+   Compiling arc-swap v1.9.2
+   Compiling axum-core v0.4.5
+   Compiling strum_macros v0.26.4
+   Compiling compact_str v0.8.2
+   Compiling hyper-tls v0.5.0
+   Compiling hyper-rustls v0.24.2
+   Compiling warp v0.3.7
+   Compiling reqwest v0.11.27
+   Compiling polars-utils v0.43.1
+   Compiling graph-architecture v0.1.0 (C:\Users\jhona\Desktop\PC-Turbo\integrador\wt_v4l\crates\graph-architecture)
+   Compiling quantum-arena v0.1.0 (C:\Users\jhona\Desktop\PC-Turbo\integrador\wt_v4l\crates\quantum-arena)
+   Compiling polars-schema v0.43.1
+   Compiling os-guardian v0.1.0 (C:\Users\jhona\Desktop\PC-Turbo\integrador\wt_v4l\crates\os-guardian)
+   Compiling strategy-core v0.1.0 (C:\Users\jhona\Desktop\PC-Turbo\integrador\wt_v4l\crates\strategy-core)
+   Compiling audit-engine v0.1.0 (C:\Users\jhona\Desktop\PC-Turbo\integrador\wt_v4l\crates\audit-engine)
+   Compiling signal-engine v0.1.0 (C:\Users\jhona\Desktop\PC-Turbo\integrador\wt_v4l\crates\signal-engine)
+warning: use of deprecated function `std::arch::x86_64::_mm_getcsr`: see `_mm_getcsr` documentation - use inline assembly instead
+  --> crates\os-guardian\src\subnormal_control.rs:17:26
+   |
+17 | use core::arch::x86_64::{_mm_getcsr, _mm_setcsr};
+   |                          ^^^^^^^^^^
+   |
+   = note: `#[warn(deprecated)]` on by default
+
+warning: use of deprecated function `std::arch::x86_64::_mm_setcsr`: see `_mm_setcsr` documentation - use inline assembly instead
+  --> crates\os-guardian\src\subnormal_control.rs:17:38
+   |
+17 | use core::arch::x86_64::{_mm_getcsr, _mm_setcsr};
+   |                                      ^^^^^^^^^^
+
+warning: use of deprecated function `std::arch::x86_64::_mm_getcsr`: see `_mm_getcsr` documentation - use inline assembly instead
+  --> crates\os-guardian\src\subnormal_control.rs:47:29
+   |
+47 |             let mut mxcsr = _mm_getcsr();
+   |                             ^^^^^^^^^^
+
+warning: use of deprecated function `std::arch::x86_64::_mm_setcsr`: see `_mm_setcsr` documentation - use inline assembly instead
+  --> crates\os-guardian\src\subnormal_control.rs:49:13
+   |
+49 |             _mm_setcsr(mxcsr);
+   |             ^^^^^^^^^^
+
+warning: use of deprecated function `std::arch::x86_64::_mm_getcsr`: see `_mm_getcsr` documentation - use inline assembly instead
+  --> crates\os-guardian\src\subnormal_control.rs:52:28
+   |
+52 |             let verified = _mm_getcsr();
+   |                            ^^^^^^^^^^
+
+warning: use of deprecated function `std::arch::x86_64::_mm_getcsr`: see `_mm_getcsr` documentation - use inline assembly instead
+  --> crates\os-guardian\src\subnormal_control.rs:67:23
+   |
+67 |             let raw = _mm_getcsr();
+   |                       ^^^^^^^^^^
+
+warning: use of deprecated function `std::arch::x86_64::_mm_getcsr`: see `_mm_getcsr` documentation - use inline assembly instead
+  --> crates\os-guardian\src\subnormal_control.rs:89:29
+   |
+89 |             let mut mxcsr = _mm_getcsr();
+   |                             ^^^^^^^^^^
+
+warning: use of deprecated function `std::arch::x86_64::_mm_setcsr`: see `_mm_setcsr` documentation - use inline assembly instead
+  --> crates\os-guardian\src\subnormal_control.rs:91:13
+   |
+91 |             _mm_setcsr(mxcsr);
+   |             ^^^^^^^^^^
+
+   Compiling metacortex-engine v0.1.0 (C:\Users\jhona\Desktop\PC-Turbo\integrador\wt_v4l\crates\metacortex-engine)
+warning: `os-guardian` (lib) generated 8 warnings
+   Compiling axum v0.7.9
+   Compiling risk-engine v0.1.0 (C:\Users\jhona\Desktop\PC-Turbo\integrador\wt_v4l\crates\risk-engine)
+   Compiling execution-engine v0.1.0 (C:\Users\jhona\Desktop\PC-Turbo\integrador\wt_v4l\crates\execution-engine)
+   Compiling ibapi v2.7.0
+   Compiling multiversion v0.7.4
+   Compiling polars-arrow v0.43.1
+warning: method `mismo_freno` is never used
+    --> crates\execution-engine\src\client.rs:1042:19
+     |
+1033 | impl BinanceClient {
+     | ------------------ method in this implementation
+...
+1042 |     pub(crate) fn mismo_freno(&self, otro: &BinanceClient) -> bool {
+     |                   ^^^^^^^^^^^
+     |
+     = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+   Compiling polars-compute v0.43.1
+   Compiling polars-row v0.43.1
+   Compiling polars-core v0.43.1
+   Compiling polars-parquet v0.43.1
+warning: `execution-engine` (lib) generated 1 warning
+   Compiling polars-ops v0.43.1
+   Compiling polars-time v0.43.1
+   Compiling telemetry-server v0.1.0 (C:\Users\jhona\Desktop\PC-Turbo\integrador\wt_v4l\crates\telemetry-server)
+   Compiling polars-io v0.43.1
+   Compiling polars-plan v0.43.1
+   Compiling dark-alpha-engine v0.1.0 (C:\Users\jhona\Desktop\PC-Turbo\integrador\wt_v4l\crates\dark-alpha-engine)
+   Compiling god-engine-core v0.1.0 (C:\Users\jhona\Desktop\PC-Turbo\integrador\wt_v4l\crates\god-engine-core)
+   Compiling data-pipeline v0.1.0 (C:\Users\jhona\Desktop\PC-Turbo\integrador\wt_v4l\crates\data-pipeline)
+   Compiling backtest-engine v0.1.0 (C:\Users\jhona\Desktop\PC-Turbo\integrador\wt_v4l\crates\backtest-engine)
+   Compiling evolution-engine v0.1.0 (C:\Users\jhona\Desktop\PC-Turbo\integrador\wt_v4l\crates\evolution-engine)
+   Compiling polars-expr v0.43.1
+   Compiling polars-mem-engine v0.43.1
+   Compiling polars-lazy v0.43.1
+   Compiling polars v0.43.1
+   Compiling trader-gemini-v5 v0.1.0 (C:\Users\jhona\Desktop\PC-Turbo\integrador\wt_v4l)
+    Finished `test` profile [optimized] target(s) in 5m 00s
+     Running unittests src\bin\train_forest.rs (C:/Users/jhona/Documents/Proyectos/Trader Gemini/target\debug\deps\train_forest-42ed1747a901fe76.exe)
+
+running 43 tests
+test contract_tests::holdout_must_follow_the_latest_label_end_not_the_latest_start ... ok
+test contract_tests::invalid_split_statistics_cannot_be_selected ... ok
+test contract_tests::exported_forest_keeps_each_tree_children ... ok
+test contract_tests::exported_forest_keeps_learning_rate ... ok
+test contract_tests::promotion_requires_a_separate_test_but_research_candidate_does_not ... ok
+test contract_tests::regression_residual_is_the_negative_gradient_in_both_directions ... ok
+test contract_tests::loss_gate_rejects_invalid_and_zero_baseline_evidence ... ok
+test contract_tests::sample_contract_rejects_misalignment_nonfinite_and_bad_intervals ... ok
+test contract_tests::purge_handles_nonmonotone_label_ends_without_losing_alignment ... ok
+test contract_tests::regression_newton_step_reduces_squared_error ... ok
+test contract_tests::retained_ensemble_predictions_exclude_discarded_rounds ... ok
+test contract_tests::reversed_identical_and_exhausted_training_windows_fail_closed ... ok
+test contract_tests::child_eligibility_uses_full_population_not_probe ... ok
+test contract_tests::invalid_exports_are_rejected_without_writing_a_model ... ok
+test contract_tests::full_population_split_gain_matches_direct_sum ... ok
+test contract_tests::sampling_budget_caps_attempts_inclusive_end_and_irregular_ticks ... ok
+test contract_tests::sampling_budget_rejects_zero_and_handles_timestamp_overflow ... ok
+test contract_tests::sampling_stride_never_densifies_requested_grid ... ok
+test contract_tests::sampling_stride_respects_budget_on_long_span ... ok
+test contract_tests::large_node_tree_uses_valid_full_population_children ... ok
+test contract_tests::serialized_json_and_binary_preserve_additive_predictions ... ok
+test contract_tests::split_gains_match_bruteforce_with_bootstrap_duplicates ... ok
+test contract_tests::temporal_purge_uses_closed_information_intervals ... ok
+test contract_tests::temporal_split_purges_only_training_and_keeps_selection_intact ... ok
+test contract_tests::tick_contract_rejects_bad_chronology_and_nonfinite_market_values ... ok
+test contract_tests::xliv_como_intervalos_compone_los_contratos_de_seleccion_y_test ... ok
+test tests::agg_trade_qty_recupera_la_cantidad_exacta ... ok
+test tests::el_gate_exige_batir_la_persistencia_no_la_media ... ok
+test tests::el_inventario_de_canales_sin_productor_en_el_tape_esta_declarado_muerto ... ok
+test tests::el_recorrido_declara_las_columnas_sin_splits ... ok
+test tests::la_comprobacion_de_paridad_no_tiene_epsilon ... ok
+test tests::la_puntuacion_solo_cuenta_los_arboles_que_se_guardan ... ok
+test tests::la_purga_elimina_el_solape_de_horizonte ... ok
+test tests::la_rejilla_sale_del_tape ... ok
+test tests::las_ventanas_no_cruzan_el_instante_t ... ok
+test tests::qs2_main_escribe_linaje_y_aplica_el_libro_del_holdout ... ok
+test tests::una_dim_muerta_distinta_de_cero_rompe_el_entrenamiento ... ok
+test tests::vol_es_sigma_del_horizonte_no_media_por_tick ... ok
+test tests::volu_es_nocional_negociado_no_media_inflada ... ok
+test tests::tgb_g_10_todas_las_fuentes_antes_de_muestras ... ok
+test tests::tgb_solo_la_cinta_relativa_acreditada_llega_a_las_muestras ... ok
+test tests::train_forest_cache_paridad_y_caida ... ok
+test tests::el_camino_viejo_y_el_del_motor_dan_vectores_distintos ... ok
+
+test result: ok. 43 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.56s
+
+# fin 2026-11-17T17:13:20Z codigo 0 duracion_s 307

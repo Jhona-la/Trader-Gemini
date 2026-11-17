@@ -1,0 +1,36 @@
+{
+  "schema": "tgb-run-1",
+  "paso": "CD",
+  "run_id": "cd_r00_antes",
+  "tipo": "red_before",
+  "fecha_local": "2026-11-16T22:54:49",
+  "argv": [
+    "bash",
+    "scripts/cargo_semaforo.sh",
+    "test",
+    "--locked",
+    "-p",
+    "backtest-engine",
+    "--test",
+    "tgb_reader_contract",
+    "--no-fail-fast"
+  ],
+  "resultado_observado": "rojo",
+  "codigo_salida": 101,
+  "pruebas": {
+    "resumenes": 1,
+    "pasan": 1,
+    "fallan": 3,
+    "ignoradas": 0
+  },
+  "asercion_causante": "crates\\backtest-engine\\tests\\tgb_reader_contract.rs:149:54: completo desde .tgb: Os { code: 2, kind: NotFound, message: \"The system cannot find the file specified.\" }",
+  "stdout": {
+    "ruta": "stdout.txt",
+    "sha256": "b961a2384130d8f50c2814ab390961d252e55ff4bbb16ae66f9dd3163215aa80"
+  },
+  "estado": "historico_no_atribuible",
+  "head_en_cabecera": "e6906854de572309415b25829adabee9be87fe77",
+  "archivos_rastreados_modificados": 0,
+  "nota": null,
+  "motivo_estado": "el log no guarda el parche del arbol (cambios sin confirmar); HEAD solo no describe el sujeto"
+}

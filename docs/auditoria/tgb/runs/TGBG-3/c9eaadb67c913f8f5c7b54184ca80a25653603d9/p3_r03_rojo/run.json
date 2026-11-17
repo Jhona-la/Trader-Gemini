@@ -1,0 +1,37 @@
+{
+  "schema": "tgb-run-1",
+  "paso": "TGBG-3",
+  "run_id": "p3_r03_rojo",
+  "tipo": "red_before",
+  "fecha_utc": "2026-11-17T16:28:05Z",
+  "cwd": "C:\\Users\\jhona\\Desktop\\PC-Turbo\\integrador\\wt_v4l",
+  "argv": [
+    "bash",
+    "scripts/cargo_semaforo.sh",
+    "test",
+    "-p",
+    "trader-gemini-v5",
+    "--lib",
+    "--locked",
+    "tgb_g_"
+  ],
+  "filtro": "tgb_g_",
+  "nota": "rojo vigente de TGBG-3; la costura (reabrir para consumir) es tambien el control gg_snapshot",
+  "resultado_esperado": "rojo",
+  "resultado_observado": "rojo",
+  "codigo_salida": 101,
+  "duracion_s": 128,
+  "pruebas": {
+    "resumenes": 1,
+    "pasan": 3,
+    "fallan": 1,
+    "ignoradas": 0
+  },
+  "asercion_causante": "src\\tgb_generation.rs:380:9: assertion `left == right` failed: se consumen los bytes analizados",
+  "stdout": {
+    "ruta": "stdout.txt",
+    "sha256": "b24a7190929bf3aa5de4dac5eaf7547f3f0ede6a7f4f2a354ac3800e3b224bbe"
+  },
+  "stderr": "combinado en stdout.txt (cmd 2>&1 hacia el mismo archivo)",
+  "estado": "atribuible"
+}

@@ -1,0 +1,36 @@
+{
+  "schema": "tgb-run-1",
+  "paso": "G",
+  "run_id": "g_m3_ventana_cero",
+  "tipo": "mutation",
+  "fecha_local": "2026-11-16T23:48:52",
+  "argv": [
+    "bash",
+    "scripts/cargo_semaforo.sh",
+    "test",
+    "--locked",
+    "-p",
+    "tick-tape",
+    "--test",
+    "procedencia",
+    "--no-fail-fast"
+  ],
+  "resultado_observado": "verde",
+  "codigo_salida": 0,
+  "pruebas": {
+    "resumenes": 1,
+    "pasan": 2,
+    "fallan": 0,
+    "ignoradas": 0
+  },
+  "asercion_causante": null,
+  "stdout": {
+    "ruta": "stdout.txt",
+    "sha256": "d4028ec763e0b80caeedcca05630e2af7442cce05516c764cc4a9d4935c1d73f"
+  },
+  "estado": "historico_no_atribuible",
+  "head_en_cabecera": "5bcf15b2880f15ca19e09dac1be1c15d998c93f3",
+  "archivos_rastreados_modificados": 3,
+  "nota": "control CIEGO segun el mensaje de 324ef18db (ventana de 0 ulp): no cuenta como proteccion demostrada",
+  "motivo_estado": "el log no guarda el parche del arbol (cambios sin confirmar); HEAD solo no describe el sujeto"
+}

@@ -1,0 +1,26 @@
+﻿# b_m14_sin_sonda_eof | HEAD 09d2b22db58e009e9d2aa8ff43c4fbba24b6790d | sucios 1 | cargo/rustc vivos 0 | libre 329700806656 | ram_libre_gb 7.54 | inicio 2026-11-16T22:53:22 | cargo test --locked -p tick-tape --test tgb_corrupciones | CINTA  | REF 
+   Compiling tick-tape v0.1.0 (C:\Users\jhona\Desktop\PC-Turbo\integrador\wt_v4l\crates\tick-tape)
+    Finished `test` profile [optimized] target(s) in 2.94s
+     Running tests\tgb_corrupciones.rs (C:/Users/jhona/Documents/Proyectos/Trader Gemini/target\debug\deps\tgb_corrupciones-e2a50d9f2f66bd71.exe)
+
+running 3 tests
+test tgb_descompresion_acotada_y_frames_concatenados ... FAILED
+test tgb_presupuesto_identidad_y_alineacion ... ok
+test tgb_rechaza_20_corrupciones ... ok
+
+failures:
+
+---- tgb_descompresion_acotada_y_frames_concatenados stdout ----
+
+thread 'tgb_descompresion_acotada_y_frames_concatenados' (39532) panicked at crates\tick-tape\tests\tgb_corrupciones.rs:15:18:
+aceptado: 10288 B publicados
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    tgb_descompresion_acotada_y_frames_concatenados
+
+test result: FAILED. 2 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+error: test failed, to rerun pass `-p tick-tape --test tgb_corrupciones`
+# fin 2026-11-16T22:53:30 codigo 101
