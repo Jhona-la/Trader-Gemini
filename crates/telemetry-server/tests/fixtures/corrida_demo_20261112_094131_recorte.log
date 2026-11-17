@@ -1,0 +1,91 @@
+[ts=1794494493189] ========================================================
+[ts=1794494493189] 🚀 GOD ENGINE - NATIVE RUST ORCHESTRATOR (UNIFIED SCALP/SWING)
+[ts=1794494493189] ⚡ Sub-Microsecond Execution Core initialized.
+[ts=1794494493189] 🛡️ OS Guardian active: strict resource isolation.
+[ts=1794494493189] ========================================================
+[ts=1794494493189] 
+========================================================
+[ts=1794494493189] 🔥 [MODO WARMUP/DEMO ACTIVO] El sistema inicia en Paper Trading para simulación.
+[ts=1794494581063] 🕵️ [SOMBRA] consejo: 1 resueltas (TP 0 · SL 0 · τ 1), R neto medio -0.159 · Ville: paga e^-0.2, pierde e^-0.2 (umbral e^6.1) → sin evidencia todavía · promesa del riesgo +3.14 R, realizado -0.16 R en 1 (de más e^0.4) → promesa sin evidencia todavía · abiertas 4 · solapes 58
+[ts=1794494585228] 🕵️ [SOMBRA] ML-GATE sin ventaja: 1 resueltas (TP 0 · SL 0 · τ 1), R neto medio -0.179 · Ville: paga e^-0.2, pierde e^-0.2 (umbral e^6.1) → sin evidencia todavía · promesa del riesgo +3.53 R, realizado -0.18 R en 1 (de más e^0.5) → promesa sin evidencia todavía · abiertas 4 · solapes 69
+[ts=1794494589394] 💰 Gross PnL: 0.0000 | Net PnL: 0.0000 | Fees: 0.0000 | Win-Rate: 0.00%
+[ts=1794494589394] 📈 ROI Net (on wallet capital): 0.0000%
+[ts=1794494589394] --- [TELEMETRY LATENCY REPORT] tsc=1.7966GHz calibrated=true instrument_floor=20ns unmeasured_spans=0 reversed_spans=0 ---
+[ts=1794494589394] ✅ GodEngineCore::process_tick_dual: 470769 ns
+[ts=1794494589394] ✅ GodEngineCore::process_event: 451544 ns
+[ts=1794494590885] 🔭 [EMBUDO] 60 s · ticks 7748 (2807 bloqueados: el llamador no las permite (sólo libro 976 · pánico o calentamiento del host 0) 976 · comisiones sin observar 1831) · evaluaciones 4941 · sin convicción 0 · intenciones con el libro plano 137 (L 4 · C 133) → escudos: acondicionamiento espectral (X-016) 55 → sin ranura 0 → riesgo: admite 41, rechaza 41 (confianza 41) → consejo 33 → ML-GATE 8 → margen 0 → aperturas 0 · sin permiso de fase 0 · CUELLO: escudo acondici
+[ts=1794494591193] 🫀 [ML-HEARTBEAT] BNBUSDT forest=Some(0.28183048963546753) base=0.1810 combined=0.2818 stored=0.2318 roster=true
+🔌 [USER-STREAM] Apagado inmediato por reemplazo.
+[ts=1794494591398] 🫀 [ML-HEARTBEAT] ATOMUSDT forest=Some(0.2042086124420166) base=0.2151 combined=0.2042 stored=0.1542 roster=true
+[ts=1794494592005] 🫀 [ML-HEARTBEAT] NEARUSDT forest=None base=0.5000 combined=0.5000 stored=0.4500 roster=false
+[ts=1794494592302] 🌈 [ESPECTRO] NEARUSDT fusión -0.885 τ_dom 1minms pers[-0.39,-0.42] ensamble[F:0.5000 NN:0.5000] ml=0.4500
+[ts=1794494592302] 🌈 [ESPECTRO] XLMUSDT fusión -0.749 τ_dom 1minms pers[-0.47,-0.45] ensamble[F:0.5000 NN:0.5000] ml=0.1587
+[ts=1794494592302] 🌈 [ESPECTRO] SOLUSDT fusión -0.010 τ_dom 1minms pers[-0.32,-0.48] ensamble[F:0.5000 NN:0.5000] ml=0.0748
+[ts=1794494592302] 🌈 [ESPECTRO] BNBUSDT fusión -0.784 τ_dom 1minms pers[-0.12,-0.25] ensamble[F:0.5000 NN:0.5000] ml=0.2416
+[ts=1794494592302] 🌈 [ESPECTRO] ATOMUSDT fusión +0.680 τ_dom 1minms pers[-0.16,-0.33] ensamble[F:0.5000 NN:0.5000] ml=0.1589
+[ts=1794494592302] 🌈 [ESPECTRO] ETHUSDT fusión -0.755 τ_dom 1minms pers[-0.26,-0.51] ensamble[F:0.5000 NN:0.5000] ml=0.4500
+[ts=1794494592302] 🌈 [ESPECTRO] DOGEUSDT fusión +0.829 τ_dom 1minms pers[-0.18,-0.10] ensamble[F:0.5000 NN:0.5000] ml=0.4500
+[ts=1794494592302] 🌈 [ESPECTRO] 1000SHIBUSDT fusión -0.712 τ_dom 1minms pers[-0.22,-0.27] ensamble[F:0.5000 NN:0.5000] ml=0.4500
+[ts=1794494592302] 🌈 [ESPECTRO] DOTUSDT fusión -0.783 τ_dom 1minms pers[-0.37,-0.49] ensamble[F:0.5000 NN:0.5000] ml=0.4500
+[ts=1794494592302] 🌈 [ESPECTRO] LINKUSDT fusión -0.750 τ_dom 1minms pers[-0.34,-0.32] ensamble[F:0.5000 NN:0.5000] ml=0.4500
+[ts=1794494592302] 🌈 [ESPECTRO] POLUSDT fusión -0.770 τ_dom 1minms pers[-0.40,-0.39] ensamble[F:0.5000 NN:0.5000] ml=0.4500
+[ts=1794494592302] 🌈 [ESPECTRO] BCHUSDT fusión +0.721 τ_dom 1minms pers[-0.34,-0.51] ensamble[F:0.5000 NN:0.5000] ml=0.4500
+[ts=1794494592302] 🌈 [ESPECTRO] UNIUSDT fusión -0.795 τ_dom 1minms pers[-0.41,-0.39] ensamble[F:0.5000 NN:0.5000] ml=0.4500
+[ts=1794494592302] 🌈 [ESPECTRO] AVAXUSDT fusión -0.789 τ_dom 1minms pers[-0.30,-0.51] ensamble[F:0.5000 NN:0.5000] ml=0.4500
+[ts=1794494592302] 🌈 [ESPECTRO] APTUSDT fusión -0.801 τ_dom 1minms pers[-0.28,-0.36] ensamble[F:0.5000 NN:0.5000] ml=0.4500
+[ts=1794494592302] 🌈 [ESPECTRO] RENDERUSDT fusión +0.697 τ_dom 1minms pers[-0.26,-0.31] ensamble[F:0.5000 NN:0.5000] ml=0.4500
+[ts=1794494599098] 🔄 [RECONCILIATION] SnapshotOutcome { status: Ready, adopted: 0, adjustments: 0, unresolved: 0, orphan_orders: 0, unresolved_orders: 0, pending_regular_orders: 0, pruned: 0, error: None }
+🚀 [ORCHESTRATOR] Fase: GenomicAudit -> DemoVerify (approval & OMS reconciliation confirmed)
+🚀 [ORCHESTRATOR] Fase: DemoVerify -> PaperTrading
+[ts=1794494599394] 💰 Gross PnL: 0.0000 | Net PnL: 0.0000 | Fees: 0.0000 | Win-Rate: 0.00%
+[ts=1794494599394] 📈 ROI Net (on wallet capital): 0.0000%
+[ts=1794494599394] --- [TELEMETRY LATENCY REPORT] tsc=1.7966GHz calibrated=true instrument_floor=20ns unmeasured_spans=0 reversed_spans=0 ---
+[ts=1794494599394] ✅ GodEngineCore::process_event: 454188 ns
+[ts=1794494599394] ✅ GodEngineCore::process_tick_dual: 472816 ns
+[ts=1794494603846] 🚀 [OPEN TRACE] #1 dir=SHORT slot=0 tau=17592186ms rama=11 conf=0.8008 lev=2.0x margin=$2.55 notional=$5.10 sc=-0.464 obi=-1.000 ofi=-0.010 cvd=-1.000 ht=-0.00020 st=-0.00020 mac=0.00000 mic=-0.00043 ts=1794494603627
+[ts=1794494606103] 🛡️ [OCO GUARD] Protección para VETUSDT (TP: 0.0047, SL: 0.0052)
+⚠️ [REGISTRY] TradeUpdate con cumulativeFilled 0 < conocido 996 para cS_01a1d036a8e978e29a360418357ab707
+💧 [FILL] VETUSDT SELL LIMIT cS_01a1d036a8e978e29a360418357ab707 @ 0.00512 (acum 996/996 status Filled)
+[ts=1794494606152] 📡 [USER-DATA] Posiciones vivas: VETUSDT -996
+🏦 [TELEMETRÍA] Capital Compuesto Inicializado Dinámicamente a: 1655.8071 USD
+[ts=1794494609395] 💰 Gross PnL: 0.0000 | Net PnL: 0.0000 | Fees: 0.0000 | Win-Rate: 0.00%
+[ts=1794494609395] 📈 ROI Net (on wallet capital): 0.0000%
+[ts=1794494609395] --- [TELEMETRY LATENCY REPORT] tsc=1.7966GHz calibrated=true instrument_floor=20ns unmeasured_spans=0 reversed_spans=0 ---
+[ts=1794494609395] ✅ GodEngineCore::process_tick_dual: 524038 ns
+[ts=1794494609395] ✅ GodEngineCore::process_event: 502381 ns
+[ts=1794494612439] ⏱️ [TELEMETRY] Processed 5000 ticks/klines. Cumulative Fees: $0.0000. Last tick: 441000 ns
+[ts=1794494613195] 📥 [COLA-WS] 60 s: descartes=0 (total 0) profundidad=0/5000 espera_local_max=60 ms
+[ts=1794494613985] 🕵️ [SOMBRA] consejo: 2 resueltas (TP 0 · SL 0 · τ 2), R neto medio -0.070 · Ville: paga e^-0.3, pierde e^-0.3 (umbral e^6.1) → sin evidencia todavía · promesa del riesgo +2.92 R, realizado -0.07 R en 2 (de más e^0.7) → promesa sin evidencia todavía · abiertas 3 · solapes 76
+[ts=1794494616041] 🕵️ [SOMBRA] riesgo:confianza: 1 resueltas (TP 0 · SL 0 · τ 1), R neto medio -0.618 · Ville: paga e^-0.3, pierde e^-0.1 (umbral e^6.1) → sin evidencia todavía · sin promesa medida · abiertas 2 · solapes 76 · sin geometría 0
+[ts=1794494619395] 💰 Gross PnL: 0.0000 | Net PnL: 0.0000 | Fees: 0.0000 | Win-Rate: 0.00%
+[ts=1794494619395] 📈 ROI Net (on wallet capital): 0.0000%
+[ts=1794494619395] --- [TELEMETRY LATENCY REPORT] tsc=1.7966GHz calibrated=true instrument_floor=20ns unmeasured_spans=0 reversed_spans=0 ---
+[ts=1794494619395] ✅ GodEngineCore::process_event: 537233 ns
+[ts=1794494619395] ✅ GodEngineCore::process_tick_dual: 559233 ns
+[ts=1794494628801] 🕵️ [SOMBRA] riesgo:confianza: 2 resueltas (TP 0 · SL 0 · τ 2), R neto medio -0.425 · Ville: paga e^-0.3, pierde e^-0.2 (umbral e^6.1) → sin evidencia todavía · sin promesa medida · abiertas 1 · solapes 76 · sin geometría 0
+[ts=1794494629396] 💰 Gross PnL: 0.0000 | Net PnL: 0.0000 | Fees: 0.0000 | Win-Rate: 0.00%
+[ts=1794494629396] 📈 ROI Net (on wallet capital): 0.0000%
+[ts=1794494629396] --- [TELEMETRY LATENCY REPORT] tsc=1.7966GHz calibrated=true instrument_floor=20ns unmeasured_spans=0 reversed_spans=0 ---
+[ts=1794494629396] ✅ GodEngineCore::process_event: 579038 ns
+[ts=1794494649398] --- [TELEMETRY LATENCY REPORT] tsc=1.7966GHz calibrated=true instrument_floor=20ns unmeasured_spans=0 reversed_spans=0 ---
+[ts=1794494649398] ✅ GodEngineCore::process_tick_dual: 674607 ns
+[ts=1794494649398] ✅ GodEngineCore::process_event: 648479 ns
+[ts=1794494650887] 🔭 [EMBUDO] 60 s · ticks 6546 (1920 bloqueados: el llamador no las permite (sólo libro 968 · pánico o calentamiento del host 0) 968 · comisiones sin observar 952) · evaluaciones 4626 · sin convicción 0 · intenciones con el libro plano 219 (L 0 · C 219) → escudos: acondicionamiento espectral (X-016) 31 → sin ranura 0 → riesgo: admite 1, rechaza 187 (sonda_ocupada 187) → consejo 0 → ML-GATE 0 → margen 0 → aperturas 1 · sin permiso de fase 0 · con posición abiert
+[ts=1794494651435] 🫀 [ML-HEARTBEAT] ATOMUSDT forest=Some(0.22283385694026947) base=0.2151 combined=0.2228 stored=0.1728 roster=true
+[ts=1794494651519] 🫀 [ML-HEARTBEAT] BNBUSDT forest=Some(0.2518711984157562) base=0.1810 combined=0.2519 stored=0.2019 roster=true
+[ts=1794494709402] 📈 ROI Net (on wallet capital): 0.0000%
+[ts=1794494709402] --- [TELEMETRY LATENCY REPORT] tsc=1.7966GHz calibrated=true instrument_floor=20ns unmeasured_spans=0 reversed_spans=0 ---
+[ts=1794494709402] ✅ GodEngineCore::process_event: 797150 ns
+[ts=1794494709402] ✅ GodEngineCore::process_tick_dual: 809842 ns
+[ts=1794494710887] 🔭 [EMBUDO] 60 s · ticks 8324 (1963 bloqueados: el llamador no las permite (sólo libro 1005 · pánico o calentamiento del host 0) 1005 · comisiones sin observar 956 · liquidaciones sin marca válida 2) · evaluaciones 6361 · sin convicción 0 · intenciones con el libro plano 438 (L 0 · C 438) → escudos: acondicionamiento espectral (X-016) 82 → sin ranura 0 → riesgo: admite 0, rechaza 356 (sonda_ocupada 356) → consejo 0 → ML-GATE 0 → margen 0 → aperturas 0 · sin pe
+[ts=1794494711707] 🫀 [ML-HEARTBEAT] ATOMUSDT forest=Some(0.1944185197353363) base=0.2151 combined=0.1944 stored=0.2444 roster=true
+[ts=1794494712349] 🫀 [ML-HEARTBEAT] NEARUSDT forest=None base=0.5000 combined=0.5000 stored=0.4500 roster=false
+[ts=1794497785574] 🛑 [SHUTDOWN] ^C recibido — drenando posiciones y estado...
+[ts=1794497785574] ✅ [UNIFIED CORE] Unified Event Loop safely terminated.
+🧹 [FLATTEN] VETUSDT cerrada 996 @ ~0 (status FILLED)
+⚠️ [REGISTRY] TradeUpdate con cumulativeFilled 0 < conocido 996 para 01a1d067355e7f419557423e33d72b63
+💧 [FILL] VETUSDT BUY MARKET 01a1d067355e7f419557423e33d72b63 @ 0.005072 (acum 996/996 status Filled)
+[ts=1794497787567] 📡 [USER-DATA] Posiciones vivas: VETUSDT 0
+🏦 [TELEMETRÍA] Capital Compuesto Inicializado Dinámicamente a: 1655.8529 USD
+⚠️ [ALGO-UPDATE] VETUSDT STOP_MARKET CONT_oco_1794494608848461_1_SL TERMINAL (CANCELED) — protección posiblemente revocada
+⚠️ [ALGO-UPDATE] VETUSDT TAKE_PROFIT_MARKET CONT_oco_1794494608848461_1_TP TERMINAL (CANCELED) — protección posiblemente revocada

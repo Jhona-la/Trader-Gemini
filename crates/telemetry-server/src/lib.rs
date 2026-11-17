@@ -12,6 +12,8 @@ pub mod causal_attribution;
 pub mod trade_ledger;
 pub mod funnel; // SOL M1 ítem 2: contador del embudo por compuerta (sol.md §5)
 pub mod report_demo_run; // SOL M1 ítem 2: informe por operación de una corrida Demo (log TG_LOG_TS=1 + income)
+pub mod report_demo_real; // CABLEADOV7: segundo lector (lo que el motor escribe hoy)
+pub mod demo_counters; // CABLEADOV7: banco de contadores de la sección C (mide, no decide)
 pub mod estrangulador;
 pub mod flight_recorder;
 pub mod forensic_auditor;
