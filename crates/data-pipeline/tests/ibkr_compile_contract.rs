@@ -35,10 +35,108 @@ fn i2_ibkr_module_no_usa_prelude() {
     }
 }
 
+/// Reposicion de una ficha de la cubeta de I4: 10 s. DERIVADO: 600 s / 60.
+/// IBKR-I11: retirada de produccion (la admision historica es `RegistroVentana`
+/// desde I10); vive aqui solo para el control de 119 y las pruebas de I4.
+const IBKR_HISTORICAL_REFILL_SECS: u64 =
+    data_pipeline::ibkr::pacing::IBKR_HISTORICAL_WINDOW_SECS / data_pipeline::ibkr::IBKR_HISTORICAL_MAX_PER_10MIN as u64;
+
+/// Cubeta de fichas de I4: `capacidad` fichas, una ficha nueva cada `reposicion`.
+///
+/// IBKR-I11: copia exacta de la que estaba en `src/ibkr/pacing.rs` (I4..I10),
+/// retirada de produccion. NO es la admision de IBKR (su peor caso es
+/// C + ceil(W/r) - 1 = 119 por ventana de 600 s); se conserva solo como control
+/// de las pruebas i4/i9/i10.
+#[derive(Debug, Clone)]
+struct TokenBucket {
+    capacidad: usize,
+    reposicion: std::time::Duration,
+    fichas: usize,
+    /// Instante desde el que se cuenta la proxima reposicion.
+    ultima: Option<std::time::Instant>,
+}
+
+impl TokenBucket {
+    /// Cubeta llena con `capacidad` fichas. Con `reposicion` cero no repone
+    /// nunca (falla cerrado, sin panico).
+    fn new(capacidad: usize, reposicion: std::time::Duration) -> Self {
+        Self { capacidad, reposicion, fichas: capacidad, ultima: None }
+    }
+
+    fn reponer(&mut self, ahora: std::time::Instant) {
+        let Some(ultima) = self.ultima else {
+            self.ultima = Some(ahora);
+            return;
+        };
+        if ahora <= ultima {
+            return;
+        }
+        let paso = self.reposicion.as_nanos();
+        if paso == 0 {
+            return;
+        }
+        let transcurrido = ahora - ultima;
+        let nuevas = usize::try_from(transcurrido.as_nanos() / paso).unwrap_or(usize::MAX);
+        if nuevas == 0 {
+            return;
+        }
+        self.fichas = self.fichas.saturating_add(nuevas).min(self.capacidad);
+        let avance = u32::try_from(nuevas).ok().and_then(|n| self.reposicion.checked_mul(n));
+        let siguiente = avance.and_then(|a| ultima.checked_add(a));
+        if self.fichas == self.capacidad || siguiente.is_none() {
+            self.ultima = Some(ahora);
+        } else {
+            self.ultima = siguiente;
+        }
+    }
+
+    /// Toma una ficha en `ahora` si hay. Devuelve `false` sin tomar nada si la
+    /// cubeta esta vacia.
+    fn try_acquire_at(&mut self, ahora: std::time::Instant) -> bool {
+        self.reponer(ahora);
+        if self.fichas == 0 {
+            return false;
+        }
+        self.fichas -= 1;
+        true
+    }
+
+    /// Fichas disponibles en `ahora`.
+    fn disponibles_at(&mut self, ahora: std::time::Instant) -> usize {
+        self.reponer(ahora);
+        self.fichas
+    }
+}
+
+/// I11: la cubeta de I4 y su reposicion ya no existen en produccion. Falla si
+/// alguno de los dos nombres vuelve a aparecer en `src/ibkr/` (codigo o
+/// comentario). Los nombres se arman por partes para no depender de este archivo.
+#[test]
+fn i11_produccion_sin_cubeta_de_i4() {
+    let fuentes = [
+        ("src/ibkr/mod.rs", include_str!("../src/ibkr/mod.rs")),
+        ("src/ibkr/pacing.rs", include_str!("../src/ibkr/pacing.rs")),
+        ("src/ibkr/error_handler.rs", include_str!("../src/ibkr/error_handler.rs")),
+        ("src/ibkr/cache.rs", include_str!("../src/ibkr/cache.rs")),
+        ("src/ibkr/tape_writer.rs", include_str!("../src/ibkr/tape_writer.rs")),
+    ];
+    let prohibidos = [concat!("Token", "Bucket"), concat!("IBKR_HISTORICAL_", "REFILL_SECS")];
+    let mut hallados = Vec::new();
+    for (ruta, texto) in fuentes {
+        for (i, linea) in texto.lines().enumerate() {
+            for p in prohibidos {
+                if linea.contains(p) {
+                    hallados.push(format!("{ruta}:{} contiene {p}", i + 1));
+                }
+            }
+        }
+    }
+    assert!(hallados.is_empty(), "la cubeta de I4 sigue en produccion: {hallados:?}");
+}
+
 /// I4: la cubeta admite 60, rechaza la 61 y repone 1 ficha cada 10 s.
 #[test]
 fn i4_token_bucket_respects_capacity_and_refill() {
-    use data_pipeline::ibkr::pacing::TokenBucket;
     use std::time::{Duration, Instant};
 
     let t0 = Instant::now();
@@ -57,10 +155,11 @@ fn i4_token_bucket_respects_capacity_and_refill() {
 
 /// I4 (ajustada en I10): la admision historica de IBKR sale de las constantes
 /// (C = 60 en W = 600 s; r = 600 s / 60 = 10 s sigue derivada). Desde I10 la
-/// admision es `RegistroVentana`, no `TokenBucket`.
+/// admision es `RegistroVentana`, no `TokenBucket`. Desde I11, r vive en este
+/// archivo (retirada de produccion).
 #[test]
 fn i4_token_bucket_ibkr_derivado_de_constantes() {
-    use data_pipeline::ibkr::pacing::{RegistroVentana, IBKR_HISTORICAL_REFILL_SECS, IBKR_HISTORICAL_WINDOW_SECS};
+    use data_pipeline::ibkr::pacing::{RegistroVentana, IBKR_HISTORICAL_WINDOW_SECS};
     use data_pipeline::ibkr::IBKR_HISTORICAL_MAX_PER_10MIN;
     use std::time::Duration;
     assert_eq!(IBKR_HISTORICAL_WINDOW_SECS, 600);
@@ -325,7 +424,7 @@ fn i7_freno_fases_y_causas() {
 #[test]
 fn i8_full_ibkr_module_integration() {
     use data_pipeline::ibkr::{
-        cache::IbkrCache, error_handler::ErrorHandler, pacing::TokenBucket, tape_writer::TapeWriter, IbkrBar,
+        cache::IbkrCache, error_handler::ErrorHandler, tape_writer::TapeWriter, IbkrBar,
         IbkrGateway, IBKR_DEDUP_CACHE_TTL_SECS, IBKR_HISTORICAL_MAX_PER_10MIN, IBKR_MAX_STREAMING_LINES_BUDGET,
         IBKR_MIN_PACING_INTERVAL_MS, IBKR_PACING_BREAKER_COOLDOWN_SECS,
     };
@@ -334,11 +433,11 @@ fn i8_full_ibkr_module_integration() {
     assert_eq!(IBKR_DEDUP_CACHE_TTL_SECS, 30);
     assert_eq!(IBKR_MAX_STREAMING_LINES_BUDGET, 80);
     assert_eq!(IBKR_PACING_BREAKER_COOLDOWN_SECS, 65);
-    let _ = std::any::type_name::<(IbkrGateway, IbkrBar, IbkrCache<u8>, TokenBucket, TapeWriter, ErrorHandler)>();
+    let _ = std::any::type_name::<(IbkrGateway, IbkrBar, IbkrCache<u8>, TapeWriter, ErrorHandler)>();
 
-    // Reexportes en la raiz del modulo: los mismos tipos.
+    // Reexportes en la raiz del modulo: los mismos tipos. I11: la cubeta de I4
+    // ya no es API publica (lo vigila i11_produccion_sin_cubeta_de_i4).
     use data_pipeline::ibkr as m;
-    assert_eq!(std::any::type_name::<m::TokenBucket>(), std::any::type_name::<TokenBucket>());
     assert_eq!(std::any::type_name::<m::IbkrCache<u8>>(), std::any::type_name::<IbkrCache<u8>>());
     assert_eq!(std::any::type_name::<m::TapeWriter>(), std::any::type_name::<TapeWriter>());
     assert_eq!(std::any::type_name::<m::ErrorHandler>(), std::any::type_name::<ErrorHandler>());
@@ -353,7 +452,7 @@ fn i8_full_ibkr_module_integration() {
 /// I4 (RB-P1): los casos limite fallan cerrados sin panico (release = panic = abort).
 #[test]
 fn i4_casos_limite_sin_panico() {
-    use data_pipeline::ibkr::pacing::{StreamingLines, TokenBucket};
+    use data_pipeline::ibkr::pacing::StreamingLines;
     use std::time::{Duration, Instant};
     let t0 = Instant::now();
     let mut b = TokenBucket::new(1, Duration::ZERO);
@@ -370,12 +469,12 @@ trait I9Admision {
     fn disponibles_at(&mut self, t: std::time::Instant) -> usize;
     fn try_acquire_at(&mut self, t: std::time::Instant) -> bool;
 }
-impl I9Admision for data_pipeline::ibkr::pacing::TokenBucket {
+impl I9Admision for TokenBucket {
     fn disponibles_at(&mut self, t: std::time::Instant) -> usize {
-        data_pipeline::ibkr::pacing::TokenBucket::disponibles_at(self, t)
+        TokenBucket::disponibles_at(self, t)
     }
     fn try_acquire_at(&mut self, t: std::time::Instant) -> bool {
-        data_pipeline::ibkr::pacing::TokenBucket::try_acquire_at(self, t)
+        TokenBucket::try_acquire_at(self, t)
     }
 }
 impl I9Admision for data_pipeline::ibkr::pacing::RegistroVentana {
@@ -388,8 +487,7 @@ impl I9Admision for data_pipeline::ibkr::pacing::RegistroVentana {
 }
 
 /// Cubeta vieja de I4 con los limites de IBKR (60 fichas, una cada 10 s).
-fn i9_cubeta_vieja() -> data_pipeline::ibkr::pacing::TokenBucket {
-    use data_pipeline::ibkr::pacing::{TokenBucket, IBKR_HISTORICAL_REFILL_SECS};
+fn i9_cubeta_vieja() -> TokenBucket {
     use data_pipeline::ibkr::IBKR_HISTORICAL_MAX_PER_10MIN;
     TokenBucket::new(IBKR_HISTORICAL_MAX_PER_10MIN, std::time::Duration::from_secs(IBKR_HISTORICAL_REFILL_SECS))
 }
@@ -496,7 +594,7 @@ fn i9_invariante_ventana_movil_depende_de_la_cubeta_no_de_t_m() {
 /// la prueba anterior no probaria nada.
 #[test]
 fn i10_control_cubeta_vieja_119() {
-    use data_pipeline::ibkr::pacing::{IBKR_HISTORICAL_REFILL_SECS, IBKR_HISTORICAL_WINDOW_SECS};
+    use data_pipeline::ibkr::pacing::IBKR_HISTORICAL_WINDOW_SECS;
     use data_pipeline::ibkr::IBKR_HISTORICAL_MAX_PER_10MIN;
     use std::time::Duration;
     let (c, w, r) = (IBKR_HISTORICAL_MAX_PER_10MIN, IBKR_HISTORICAL_WINDOW_SECS, IBKR_HISTORICAL_REFILL_SECS);

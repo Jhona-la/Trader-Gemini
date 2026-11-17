@@ -16,11 +16,6 @@ use super::{IBKR_HISTORICAL_MAX_PER_10MIN, IBKR_MAX_STREAMING_LINES_BUDGET, IBKR
 /// `IBKR_HISTORICAL_MAX_PER_10MIN`).
 pub const IBKR_HISTORICAL_WINDOW_SECS: u64 = 600;
 
-/// Reposicion de una ficha: 10 s. DERIVADO: 600 s / 60 peticiones.
-/// Desde I10 la admision historica no la usa (`RegistroVentana` solo lee C y W).
-pub const IBKR_HISTORICAL_REFILL_SECS: u64 =
-    IBKR_HISTORICAL_WINDOW_SECS / IBKR_HISTORICAL_MAX_PER_10MIN as u64;
-
 /// Maximo de peticiones historicas simultaneas en vuelo: 50. OFICIAL segun la
 /// especificacion de AGY (seccion 2.1), que cita
 /// https://interactivebrokers.github.io/tws-api/historical_limitations.html
@@ -99,76 +94,6 @@ impl RegistroVentana {
 
     pub fn ventana(&self) -> Duration {
         self.ventana
-    }
-}
-
-/// Cubeta de fichas: `capacidad` fichas, una ficha nueva cada `reposicion`.
-///
-/// IBKR-I10: ya NO es la admision de las peticiones historicas (su peor caso
-/// es C + ceil(W/r) - 1 = 119 por ventana de 600 s); esa es `RegistroVentana`.
-/// Se conserva como cubeta generica y como control de las pruebas i9/i10.
-#[derive(Debug, Clone)]
-pub struct TokenBucket {
-    capacidad: usize,
-    reposicion: Duration,
-    fichas: usize,
-    /// Instante desde el que se cuenta la proxima reposicion.
-    ultima: Option<Instant>,
-}
-
-impl TokenBucket {
-    /// Cubeta llena con `capacidad` fichas. Con `reposicion` cero no repone
-    /// nunca (falla cerrado; sin panico: release usa panic = abort, RB-P1).
-    pub fn new(capacidad: usize, reposicion: Duration) -> Self {
-        Self { capacidad, reposicion, fichas: capacidad, ultima: None }
-    }
-
-    fn reponer(&mut self, ahora: Instant) {
-        let Some(ultima) = self.ultima else {
-            self.ultima = Some(ahora);
-            return;
-        };
-        if ahora <= ultima {
-            return;
-        }
-        let paso = self.reposicion.as_nanos();
-        if paso == 0 {
-            return;
-        }
-        let transcurrido = ahora - ultima;
-        let nuevas = usize::try_from(transcurrido.as_nanos() / paso).unwrap_or(usize::MAX);
-        if nuevas == 0 {
-            return;
-        }
-        self.fichas = self.fichas.saturating_add(nuevas).min(self.capacidad);
-        let avance = u32::try_from(nuevas).ok().and_then(|n| self.reposicion.checked_mul(n));
-        let siguiente = avance.and_then(|a| ultima.checked_add(a));
-        if self.fichas == self.capacidad || siguiente.is_none() {
-            self.ultima = Some(ahora);
-        } else {
-            self.ultima = siguiente;
-        }
-    }
-
-    /// Toma una ficha en `ahora` si hay. Devuelve `false` sin tomar nada si la
-    /// cubeta esta vacia.
-    pub fn try_acquire_at(&mut self, ahora: Instant) -> bool {
-        self.reponer(ahora);
-        if self.fichas == 0 {
-            return false;
-        }
-        self.fichas -= 1;
-        true
-    }
-
-    /// Fichas disponibles en `ahora`.
-    pub fn disponibles_at(&mut self, ahora: Instant) -> usize {
-        self.reponer(ahora);
-        self.fichas
-    }
-
-    pub fn capacidad(&self) -> usize {
-        self.capacidad
     }
 }
 

@@ -22,15 +22,17 @@ use super::IBKR_PACING_BREAKER_COOLDOWN_SECS;
 
 /// Reanudacion a media tasa tras el enfriamiento: T_m = W = 600 s.
 /// IBKR-I9. Notacion: C = IBKR_HISTORICAL_MAX_PER_10MIN = 60,
-/// W = IBKR_HISTORICAL_WINDOW_SECS = 600 s, r = IBKR_HISTORICAL_REFILL_SECS = W/C = 10 s,
+/// W = IBKR_HISTORICAL_WINDOW_SECS = 600 s, r = W/C = 10 s (reposicion de la cubeta de I4),
 /// g = IBKR_MIN_PACING_INTERVAL_MS = 2,5 s, T_f = IBKR_PACING_BREAKER_COOLDOWN_SECS = 65 s.
-///   N_max(W) = C + ceil(W/r) - 1 = 60 + 60 - 1 = 119 > C   (TokenBucket lleno al empezar; g <= r)
-///   dN_max/dT_m = 0                                        (TokenBucket y PacingGate no leen factor_tasa_at)
+///   N_max(W) = C + ceil(W/r) - 1 = 60 + 60 - 1 = 119 > C   (cubeta de I4 llena al empezar; g <= r)
+///   dN_max/dT_m = 0                                        (la cubeta de I4 y PacingGate no leen factor_tasa_at)
 ///   => no existe T_m con N_max(W) <= C; la condicion es de la cubeta: C_b + ceil(W/r_b) - 1 <= C.
 ///   T_m := W  (respaldo del pedido I9 sin supuestos; NO basta para la invariante).
 /// IBKR-I10: la admision historica pasa a `pacing::RegistroVentana` (ventana deslizante
 /// exacta), con N_max(W) = C para todo T_m. La invariante ya no depende de la media tasa,
 /// que se conserva como reaccion a la senal de IBKR (162/420).
+/// IBKR-I11: la cubeta de I4 y su reposicion r salen de produccion; viven solo en
+/// tests/ibkr_compile_contract.rs como control de 119 (i10_control_cubeta_vieja_119).
 /// Pruebas: tests/ibkr_compile_contract.rs, i9_* e i10_*.
 pub const IBKR_PACING_RECOVERY_HALF_RATE_SECS: u64 = IBKR_HISTORICAL_WINDOW_SECS;
 
