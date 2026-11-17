@@ -172,5 +172,217 @@ class P2Presupuesto(unittest.TestCase):
             t.espera_ms(0, 1201)
 
 
+# ------------------------------------------------------------------ integracion: HTTP en 127.0.0.1
+
+import csv as _csv
+import http.server
+import json as _json
+import os
+import shutil
+import tempfile
+import threading
+import time
+
+
+def _barra(t, o, h, l, c, v):
+    return [t, str(o), str(h), str(l), str(c), str(v), t + 59999, "0", 1, "0", "0", "0"]
+
+
+class _Guion(http.server.BaseHTTPRequestHandler):
+    """Responde segun una lista de pasos; cada paso = (codigo, cabeceras, cuerpo, demora_s)."""
+
+    def do_GET(self):  # noqa: N802
+        srv = self.server
+        srv.peticiones.append((self.path, dict(self.headers)))
+        codigo, cabeceras, cuerpo, demora = srv.pasos.pop(0) if srv.pasos else (500, {}, b"", 0)
+        if demora:
+            time.sleep(demora)
+        try:
+            self.send_response(codigo)
+            for k, v in cabeceras.items():
+                self.send_header(k, v)
+            self.send_header("Content-Length", str(len(cuerpo)))
+            self.end_headers()
+            self.wfile.write(cuerpo)
+        except (BrokenPipeError, ConnectionResetError, ConnectionAbortedError):
+            pass
+
+    def log_message(self, *a):
+        pass
+
+
+class _ConServidor(unittest.TestCase):
+    def setUp(self):
+        self.srv = http.server.ThreadingHTTPServer(("127.0.0.1", 0), _Guion)
+        self.srv.daemon_threads = True
+        self.srv.pasos = []
+        self.srv.peticiones = []
+        self.hilo = threading.Thread(target=self.srv.serve_forever, daemon=True)
+        self.hilo.start()
+        self.base = f"http://127.0.0.1:{self.srv.server_address[1]}"
+        self.dir = tempfile.mkdtemp(prefix="sonda_c3_prueba_")
+        self.reloj = [1_000_000]
+
+    def tearDown(self):
+        self.srv.shutdown()
+        self.srv.server_close()
+        self.hilo.join(5)
+        shutil.rmtree(self.dir, ignore_errors=True)
+
+    def ahora(self):
+        return self.reloj[0]
+
+    def dormir(self, ms):
+        self.reloj[0] += int(ms)
+
+    def filas(self, sonda):
+        with open(sonda.ruta_csv, newline="", encoding="utf-8") as f:
+            return list(_csv.DictReader(f))
+
+
+class P1Csv(_ConServidor):
+    def test_csv_registra_cada_intento(self):
+        sonda_m = cargar("sonda")
+        presupuesto = cargar("presupuesto")
+        ok = _json.dumps([_barra(0, 10, 11, 9, 10.5, 3), _barra(60000, 10.5, 12, 10, 11, 0),
+                          _barra(120000, 11, 10, 12, 11, 1)]).encode()  # la tercera: low > high
+        self.srv.pasos = [
+            (200, {"X-MBX-USED-WEIGHT-1M": "7"}, ok, 0),
+            (429, {"Retry-After": "30", "X-MBX-USED-WEIGHT-1M": "1250"}, b"{}", 0),
+            (200, {}, ok, 1.5),  # timeout del cliente (0,3 s)
+            (200, {"X-MBX-USED-WEIGHT-1M": "20"}, b'{"code": -1121, "msg": "Invalid symbol."}', 0),
+            (200, {}, ok, 0),  # contador ausente
+            (200, {"X-MBX-USED-WEIGHT-1M": "3"}, ok, 0),  # retroceso: reinicio de ventana
+            (200, {"X-MBX-USED-WEIGHT-1M": "8"}, ok, 0),  # 3 -> 8 atribuible (+5)
+        ]
+        s = sonda_m.Sonda(self.base, self.dir, presupuesto.Presupuesto(espaciar=False), reloj_ms=self.ahora,
+                          dormir_ms=self.dormir, timeout_s=0.3, permitir_local=True, concurrencia_acotada=True,
+                          m_acreditado=None)
+        for i in range(7):
+            s.intento("BTCUSDT", cohorte=f"c{i}", reintento=0, d_previsto_ms=0)
+        s.cerrar()
+        f = self.filas(s)
+        self.assertEqual(len(f), 7)
+        for fila in f:
+            for col in sonda_m.COLUMNAS:
+                self.assertIn(col, fila)
+            self.assertNotEqual(fila["ts_envio_iso"], "")
+        a, b, c, d, e, g, h = f
+        self.assertEqual((a["codigo_http"], a["exito_http"], a["esquema_valido"]), ("200", "1", "1"))
+        self.assertEqual((a["barras_recibidas"], a["barras_validas"], a["barras_rechazadas"]), ("3", "2", "1"))
+        self.assertEqual(a["warmup_suficiente"], "N/D")  # sin M acreditado no hay exito de suficiencia
+        self.assertTrue(a["peso_delta_estado"].startswith("N/D"))  # primera lectura: sin previa
+        self.assertEqual(a["limit"], "1000")
+        self.assertEqual((b["codigo_http"], b["exito"], b["retry_after_s"], b["error"]), ("429", "0", "30", "http_429"))
+        # 7 -> 1250 no es el peso de UNA peticion (cota documentada 10): trafico no contabilizado
+        self.assertEqual((b["peso_delta"], b["peso_delta_estado"]), ("N/D", "N/D:excede_cota_endpoint"))
+        self.assertEqual((c["error"], c["exito"], c["latencia_ms"], c["codigo_http"]), ("timeout", "0", "N/D", "N/D"))
+        self.assertEqual((d["codigo_http"], d["exito_http"], d["esquema_valido"], d["exito"]), ("200", "1", "0", "0"))
+        self.assertEqual(d["barras_validas"], "0")
+        self.assertEqual(e["peso_delta_estado"], "N/D:header_ausente")
+        self.assertEqual(e["header_peso_posterior"], "")
+        self.assertEqual(g["peso_delta_estado"], "N/D:sin_lectura_previa")  # e no dejo lectura
+        self.assertEqual((h["peso_delta"], h["peso_delta_estado"]), ("5", "atribuible"))
+        self.assertEqual((h["header_peso_anterior"], h["header_peso_posterior"]), ("3", "8"))
+        # retroceso: un tramo 8 -> 3 no se recorta a cero ni se inventa
+        s2 = sonda_m.Sonda(self.base, self.dir, presupuesto.Presupuesto(espaciar=False), reloj_ms=self.ahora,
+                           dormir_ms=self.dormir, timeout_s=0.3, permitir_local=True, concurrencia_acotada=True,
+                           nombre_csv="b.csv")
+        self.srv.pasos = [(200, {"X-MBX-USED-WEIGHT-1M": "8"}, ok, 0), (200, {"X-MBX-USED-WEIGHT-1M": "3"}, ok, 0),
+                          (200, {"X-MBX-USED-WEIGHT-1M": "9"}, ok, 0)]
+        s2.intento("ETHUSDT", "x", 0, 0)
+        s2.intento("ETHUSDT", "y", 0, 0)
+        self.dormir(60000)  # cambia la ventana del contador
+        s2.intento("ETHUSDT", "z", 0, 0)
+        s2.cerrar()
+        f2 = self.filas(s2)
+        self.assertEqual(f2[1]["peso_delta_estado"], "N/D:retroceso_o_reinicio")
+        self.assertEqual(f2[1]["peso_delta"], "N/D")
+        self.assertEqual(f2[2]["peso_delta_estado"], "N/D:cambio_de_ventana")
+        # concurrencia no acotada: nunca hay peso exclusivo atribuible
+        s3 = sonda_m.Sonda(self.base, self.dir, presupuesto.Presupuesto(espaciar=False), reloj_ms=self.ahora,
+                           dormir_ms=self.dormir, timeout_s=0.3, permitir_local=True, concurrencia_acotada=False,
+                           nombre_csv="c.csv")
+        self.srv.pasos = [(200, {"X-MBX-USED-WEIGHT-1M": "1"}, ok, 0), (200, {"X-MBX-USED-WEIGHT-1M": "6"}, ok, 0)]
+        s3.intento("ETHUSDT", "x", 0, 0)
+        s3.intento("ETHUSDT", "y", 0, 0)
+        s3.cerrar()
+        self.assertEqual(self.filas(s3)[1]["peso_delta_estado"], "N/D:concurrencia_no_acotada")
+        # la peticion es el GET publico del warmup: ruta, parametros y sin llaves
+        ruta, cab = self.srv.peticiones[0]
+        self.assertEqual(ruta, "/fapi/v1/klines?symbol=BTCUSDT&interval=1m&limit=1000")
+        self.assertFalse(any(k.lower() in ("x-mbx-apikey", "authorization") for k in cab))
+
+    def test_solo_testnet_y_solo_lectura(self):
+        sonda_m = cargar("sonda")
+        presupuesto = cargar("presupuesto")
+        for base in ("https://fapi.binance.com", "http://testnet.binancefuture.com", "https://example.org",
+                     "https://testnet.binancefuture.com.evil.org", self.base):
+            with self.assertRaises(ValueError, msg=base):
+                sonda_m.Sonda(base, self.dir, presupuesto.Presupuesto(), permitir_local=False)
+        sonda_m.Sonda("https://testnet.binancefuture.com", self.dir, presupuesto.Presupuesto()).cerrar()
+        # sin redirecciones a otro host o endpoint
+        self.srv.pasos = [(302, {"Location": "https://fapi.binance.com/fapi/v1/order"}, b"", 0)]
+        s = sonda_m.Sonda(self.base, self.dir, presupuesto.Presupuesto(), reloj_ms=self.ahora, dormir_ms=self.dormir,
+                          timeout_s=0.5, permitir_local=True, nombre_csv="r.csv")
+        s.intento("BTCUSDT", "r", 0, 0)
+        s.cerrar()
+        fila = self.filas(s)[0]
+        self.assertEqual((fila["codigo_http"], fila["exito"]), ("302", "0"))
+        self.assertEqual(len(self.srv.peticiones), 1)
+        # la sonda no tiene ningun camino que envie ordenes: solo GET a /fapi/v1/klines
+        with open(sonda_m.__file__, encoding="utf-8") as fh:
+            fuente = fh.read()
+        for prohibido in ("/fapi/v1/order", "POST", "X-MBX-APIKEY", "signature=", ".env"):
+            self.assertNotIn(prohibido, fuente)
+
+
+class P3RetryAfter(_ConServidor):
+    def test_retry_after_se_respeta(self):
+        sonda_m = cargar("sonda")
+        presupuesto = cargar("presupuesto")
+        ok = _json.dumps([_barra(0, 10, 11, 9, 10.5, 3)]).encode()
+        self.srv.pasos = [(429, {"Retry-After": "30"}, b"{}", 0), (200, {}, ok, 0)]
+        s = sonda_m.Sonda(self.base, self.dir, presupuesto.Presupuesto(), reloj_ms=self.ahora, dormir_ms=self.dormir,
+                          timeout_s=0.5, permitir_local=True)
+        estado = s.correr(["BTCUSDT"], max_reintentos=3, max_intentos=10, max_duracion_ms=10 * 60000)
+        s.cerrar()
+        f = self.filas(s)
+        self.assertEqual(len(f), 2)
+        self.assertEqual(f[0]["codigo_http"], "429")
+        self.assertGreaterEqual(int(f[1]["mono_envio_ms"]) - int(f[0]["mono_respuesta_ms"]), 30000)
+        self.assertEqual(f[1]["codigo_http"], "200")
+        self.assertEqual((f[1]["cohorte"], f[1]["reintento"]), (f[0]["cohorte"], "1"))
+        self.assertGreaterEqual(int(f[1]["espera_real_ms"]), 30000)
+        self.assertEqual(estado["terminacion"], "completa")
+        # 429 sin Retry-After: 60 s
+        self.srv.pasos = [(429, {}, b"{}", 0), (200, {}, ok, 0)]
+        s2 = sonda_m.Sonda(self.base, self.dir, presupuesto.Presupuesto(), reloj_ms=self.ahora, dormir_ms=self.dormir,
+                           timeout_s=0.5, permitir_local=True, nombre_csv="b.csv")
+        s2.correr(["BTCUSDT"], max_reintentos=3, max_intentos=10, max_duracion_ms=10 * 60000)
+        s2.cerrar()
+        g = self.filas(s2)
+        self.assertGreaterEqual(int(g[1]["mono_envio_ms"]) - int(g[0]["mono_respuesta_ms"]), 60000)
+        # 418: pausa la ventana (o 300 s) y TERMINA la tanda marcandola, sin insistir
+        n0 = len(self.srv.peticiones)
+        self.srv.pasos = [(418, {"Retry-After": "120"}, b"{}", 0), (200, {}, ok, 0), (200, {}, ok, 0)]
+        s3 = sonda_m.Sonda(self.base, self.dir, presupuesto.Presupuesto(), reloj_ms=self.ahora, dormir_ms=self.dormir,
+                           timeout_s=0.5, permitir_local=True, nombre_csv="c.csv")
+        t0 = self.ahora()
+        e3 = s3.correr(["BTCUSDT", "ETHUSDT"], max_reintentos=3, max_intentos=10, max_duracion_ms=10 * 60000)
+        s3.cerrar()
+        self.assertEqual(len(self.srv.peticiones) - n0, 1)
+        self.assertEqual(e3["terminacion"], "terminada_418")
+        self.assertGreaterEqual(self.ahora() - t0, 120000)
+        # limite finito de intentos: termina incompleta, no persigue fallos
+        self.srv.pasos = [(500, {}, b"", 0)] * 5
+        s4 = sonda_m.Sonda(self.base, self.dir, presupuesto.Presupuesto(), reloj_ms=self.ahora, dormir_ms=self.dormir,
+                           timeout_s=0.5, permitir_local=True, nombre_csv="d.csv")
+        e4 = s4.correr(["BTCUSDT"], max_reintentos=10, max_intentos=3, max_duracion_ms=10 * 60000)
+        s4.cerrar()
+        self.assertEqual(len(self.filas(s4)), 3)
+        self.assertEqual(e4["terminacion"], "incompleta_limite_intentos")
+
+
 if __name__ == "__main__":
     unittest.main()
