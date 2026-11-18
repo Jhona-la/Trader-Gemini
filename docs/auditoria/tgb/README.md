@@ -59,3 +59,54 @@ reemplazadas (rojos repetidos, verdes previos a un refuerzo) llevan `nota` en su
 
 Los rojos se tomaron sobre la logica de H trasladada a la costura nueva (la costura de cada paso esta en el
 `subject.patch` de su rojo). Las funciones nuevas ausentes de H no se usaron como rojo por compilacion.
+
+## Fallos preexistentes de la compuerta del cierre (k40 y k41)
+
+Cambio 2 de la N1 de AGY-CLI sobre `c0f3bc1f7` (`agentes\salidas\20261117-2000-agy-n1tgbg\informe.md`, PUNTO 3 y
+PUNTO 5). En la compuerta del cierre, las dos suites enteras repetidas sobre `c0f3bc1f7` dieron:
+
+- `k40_gec_qa_repeticion` (`test --locked -p god-engine-core -p quantum-arena --no-fail-fast`): 1415 pasan, 6 fallan,
+  49 ignoradas. sha256 del log `E60376DA732E77E2D16A173DA9F755BEE8545AED86244A886BFFC7D2DA48195D`.
+- `k41_bt_repeticion` (`test --locked -p backtest-engine --no-fail-fast`): 200 pasan, 1 falla, 20 ignoradas.
+  sha256 del log `1BE46BFD76F4B4202725C0F03164092B4CDB2E2268CAC1D21497B00B1F8F5F85`.
+
+Los logs estan en `integrador\tgbg_logs` (fuera del repo; `k41` pesa 22,6 MB). Los 7 fallos ya existian antes de TGB-G.
+Esta tabla los cruza con la evidencia anterior al primer commit TGBG-1 (`40616b7fd`, 17 nov 11:03):
+
+| Fallo (k40/k41) | Ya fallaba en | Evidencia anterior a TGB-G |
+| --- | --- | --- |
+| `test_c2_wave27_connes_kreimer_divergence_veto_propagation`, `test_c3_wave27_donaldson_thomas_wall_crossing_veto_propagation`, `test_c4_wave27_asymptotic_safety_singularity_veto_propagation` (god-engine-core, `f99_002_wave27_living_graph_synthesis_contract`) | rotos por `55a3fd464` (W29, 10 nov 14:21) | `20261112-2314-qoder-PRUEBAS-ROJAS.md:5`; certificados de `50fc038e1` (f07) y `e62ace4ca` |
+| `glm223_warmup_nan_y_publicacion_en_frontera`, `glm223_colas_efectivas_aplanan_la_geometria` (god-engine-core, `ricci_q_publicacion_contract`) | desde su nacimiento, `fb072846e` (GLM-223, 10 nov 13:02) | `20261112-2314-qoder-PRUEBAS-ROJAS.md:7`; `20261114-2233-glm-comprobacion-ricci-q-glm223.md:3` (colision de escala: sigma de 1e-3 contra h absoluto de 1e-3); certificados de `50fc038e1` (f07) y `e62ace4ca` |
+| `rb_p1_ningun_paquete_sube_su_cuenta_de_panicos` (quantum-arena, `rb_p1_trinquete_panicos_contract`; telemetry-server 12 > linea base 4) | origin/main `50fc038e1` | certificado de `50fc038e1` (f07, "rb_p1 telemetry-server 12>4"); `20261116-0307-integrador-PUBLICACION-C3.md:6` (CI de `5ef982bb7` con los mismos 7 fallos registrados); certificado de `e62ace4ca` ("RB-P1 mismas filas") |
+| `t1_cobertura_genetica_del_oraculo_de_aptitud` (backtest-engine; 9,7 % < 11 %) | origin/main `50fc038e1` | `20261112-2314-qoder-PRUEBAS-ROJAS.md:9`; `20261113-1518-qoder-V4K-MAPA.md:7`; certificados de `50fc038e1` (f08, 194/1/20) y `324ef18db` (q08, 200/1/20) |
+
+Comparacion por cuentas con la base: `e62ace4ca` dio 1415/6/49 en god-engine-core + quantum-arena, con los mismos 6
+por nombre. `324ef18db` dio 200/1/20 en backtest-engine, con el mismo fallo. k40 y k41 repiten esas cuentas exactas: TGB-G
+no agrega ni quita fallos por nombre.
+
+`.agent_tx/coordinacion/REGISTRO_DE_FALLAS.md` (68 lineas al 18 nov) se consulto por pedido de la N1 y no tiene una fila
+FA para estos 7 fallos. La preexistencia se apoya en los mensajes y certificados de arriba, no en ese registro. Abrir una
+fila es decision del coordinador.
+
+Los documentos citados no estan en el repo (`.agent_tx/` y `integrador\certificados\` estan fuera de git). Los hashes fijan
+los bytes leidos el 18 nov:
+
+| Documento | sha256 |
+| --- | --- |
+| `.agent_tx/coordinacion/mensajes/20261112-2314-qoder-PRUEBAS-ROJAS.md` | `463A4E3BD63D2FC727EBCD4F0923E3E0753829B99DF0A39EEE4510CD42B9BCCD` |
+| `.agent_tx/coordinacion/mensajes/20261113-1518-qoder-V4K-MAPA.md` | `A9D4BBD82BBADAD8E616408650ADE3DF7542636E3810F76865BB0DBB33B312DF` |
+| `.agent_tx/coordinacion/mensajes/20261114-2233-glm-comprobacion-ricci-q-glm223.md` | `A050E77015F836D27FC039849953F0436F3F3DABCB9C5121F7C720F19D99F7A0` |
+| `.agent_tx/coordinacion/mensajes/20261116-0307-integrador-PUBLICACION-C3.md` | `0B8CE26E8197B9E9D246D627054B044498621F1D6556510298D956A2116AFAB6` |
+| `.agent_tx/coordinacion/REGISTRO_DE_FALLAS.md` | `1A51502B10A1297A4407FD0B6D550E88BF9573661E23F4D5CC935C56B4E614D1` |
+| `integrador\certificados\50fc038e1ebf3f3ac3f94628a51de99e9ff38f72.json` | `CBBE203FC990C0581C623318EC7EB4BD519D106CE1DAA5E0E151BCDAFBB602CF` |
+| `integrador\certificados\e62ace4cad16389e5586e82e959620eddd8e26d0.json` | `BEB1348EA46A28ABA5950897581BCA0A481969703000338C0C6E1E7305304CD2` |
+| `integrador\certificados\324ef18dbe1805320db70056df4fe5d6a7edd329.json` | `27FB9E8290C95A4B83005C8362C85E9AF6D73156475AF219C583E4894960A82F` |
+| `integrador\certificados\c0f3bc1f7c45878f6c0fdaa98090ad5b520744b4.json` | `A7DD5305A9D16D2363220F95425E10BCF68CF709009AADB6C882060BC437A6A5` |
+
+## Ampliacion de la lista blanca aprobada (cambio 1 de la N1)
+
+El coordinador aprobo el 17 nov a las 20:45 que el Lote 17 (TGB-G-PROCEDENCIA) incluya `docs/auditoria/tgb/.gitattributes`
+(`* -text -whitespace`, para conservar los bytes de los logs y parches) y los guiones auxiliares de
+`docs/auditoria/tgb/runs/herramientas_*/`. Esos archivos no estaban en la lista cerrada de `pedido_tgb_g_v1.md` §5.2. La
+ampliacion queda anotada en la adenda de la lista blanca del Carril E
+(`.agent_tx/diagnostics/auditoria_perdidas/agy_cli_lista_blanca_carril_e_v2.md`).
