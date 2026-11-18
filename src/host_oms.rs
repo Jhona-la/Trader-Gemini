@@ -1226,6 +1226,61 @@ pub fn signed_commission_cost(income: f64) -> Option<f64> {
     income.is_finite().then_some(-income)
 }
 
+/// SIGNO-COMISION (pedido 20261117-2355, hallazgo `codex_app_demo_testnet.md` §4): agregado de
+/// CUENTA de una pasada del income. Por simbolo llegan sus filas REALIZED_PNL `(t, pnl)`, el
+/// funding como FLUJO de caja (+ cobrado, - pagado) y la comision como COSTO
+/// (`signed_commission_cost`: + pagada, - rebate). Devuelve `(bruto, flujo_de_costos, filas,
+/// ganadoras)` con `flujo_de_costos = funding - costo`, firmado como lo leen el profiler, el
+/// breaker de Produccion y el certificado demo (negativo = gasto): `bruto + flujo_de_costos` es
+/// el neto, el mismo que el calculo por simbolo (`bruto + funding - costo`). Antes el host sumaba
+/// `costo + funding`, y una comision pagada subia el neto.
+/// `filas` cuenta filas REALIZED_PNL, no ciclos: un cierre en varios llenados cuenta varias
+/// (pendiente separado, documentado en la respuesta del pedido).
+pub fn agregado_income_de_cuenta<'a>(
+    simbolos: impl IntoIterator<Item = (&'a [(u64, f64)], f64, f64)>,
+) -> (f64, f64, u64, u64) {
+    let mut bruto = 0.0;
+    let mut flujo_de_costos = 0.0;
+    let mut filas: u64 = 0;
+    let mut ganadoras: u64 = 0;
+    for (registros, funding, costo_comision) in simbolos {
+        flujo_de_costos += funding - costo_comision;
+        for (_, pnl) in registros {
+            filas += 1;
+            if *pnl > 0.0 {
+                ganadoras += 1;
+            }
+            bruto += pnl;
+        }
+    }
+    (bruto, flujo_de_costos, filas, ganadoras)
+}
+
+/// EV neto por fila del certificado demo y del breaker de Produccion. N/D (`None`), nunca 0, sin
+/// filas o con bruto, flujo o cociente no finito.
+pub fn ev_neto_por_cierre(cierres: u64, bruto: f64, flujo_de_costos: f64) -> Option<f64> {
+    if cierres == 0 || !bruto.is_finite() || !flujo_de_costos.is_finite() {
+        return None;
+    }
+    let ev = (bruto + flujo_de_costos) / cierres as f64;
+    ev.is_finite().then_some(ev)
+}
+
+/// GLM-219: el breaker Prod->Demo con el income de la cuenta (trasladado del bin por
+/// SIGNO-COMISION para probarlo sin red). Sin filas no decide; un EV N/D llega como NaN y el
+/// orquestador lo trata como no finito (dispara), como antes.
+pub fn breaker_de_ingreso(
+    orch: &mut god_engine_core::orchestrator::PhaseOrchestrator,
+    cierres: u64,
+    bruto: f64,
+    flujo_de_costos: f64,
+) -> bool {
+    if cierres == 0 {
+        return false;
+    }
+    orch.registrar_desempeno_prod(cierres, ev_neto_por_cierre(cierres, bruto, flujo_de_costos).unwrap_or(f64::NAN))
+}
+
 struct GuardedEntry<'a, T> {
     session: &'a OmsSession,
     token: &'a SessionToken,
@@ -1332,13 +1387,9 @@ pub fn persistir_evidencia_demo_en_modo(
     if !is_demo_mode {
         return Ok(false);
     }
-    if cierres == 0 || !bruto.is_finite() || !fees.is_finite() {
+    let Some(ev_neto_por_trade) = ev_neto_por_cierre(cierres, bruto, fees) else {
         return Ok(false);
-    }
-    let ev_neto_por_trade = (bruto + fees) / cierres as f64;
-    if !ev_neto_por_trade.is_finite() {
-        return Ok(false);
-    }
+    };
     let evidencia = god_engine_core::orchestrator::EvidenciaDemo { cierres, ev_neto_por_trade, wins };
     let texto = serde_json::to_string_pretty(&evidencia).map_err(|e| e.to_string())?;
     std::fs::write(ruta, texto).map_err(|e| e.to_string())?;

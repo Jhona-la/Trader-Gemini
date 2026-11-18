@@ -4253,20 +4253,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     // con el exchange cobrando de verdad; con closes > 0 el
                     // único escritor del seqlock prefiere estos valores.
                     {
-                        let mut x_gross = 0.0;
-                        let mut x_fees = 0.0;
-                        let mut x_closes: u64 = 0;
-                        let mut x_wins: u64 = 0;
-                        for a in per.values() {
-                            x_fees += a.fees + a.funding;
-                            for (_, pnl) in &a.registros {
-                                x_closes += 1;
-                                if *pnl > 0.0 {
-                                    x_wins += 1;
-                                }
-                                x_gross += pnl;
-                            }
-                        }
+                        // SIGNO-COMISION: `x_fees` es el FLUJO firmado (funding - costo de
+                        // comision; negativo = gasto), el que leen profiler, breaker y certificado.
+                        let (x_gross, x_fees, x_closes, x_wins) = quantum_engine::host_oms::agregado_income_de_cuenta(
+                            per.values().map(|a| (a.registros.as_slice(), a.funding, a.fees)),
+                        );
                         // CAPITAL-UNICO V4L (L-F8): la respuesta se aplica con el MISMO testigo con el
                         // que se capturo la consulta (era y sesion del puente, tomadas antes del
                         // ejecutor). Los agregados se prepararon fuera; los efectos que consumen el
@@ -8201,10 +8192,8 @@ fn registrar_breaker_ingreso(
     bruto: f64,
     fees: f64,
 ) -> bool {
-    if cierres == 0 {
-        return false;
-    }
-    orch.registrar_desempeno_prod(cierres, (bruto + fees) / cierres as f64)
+    // SIGNO-COMISION: la logica vive en host_oms (probada sin red con el agregado de cuenta).
+    quantum_engine::host_oms::breaker_de_ingreso(orch, cierres, bruto, fees)
 }
 
 fn persistir_evidencia_demo_en_modo(
