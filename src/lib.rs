@@ -1,3 +1,5 @@
+// DEMO-A: contrato de arranque del perfil explicito (contexto sellado del proceso).
+pub mod arranque_entorno;
 pub mod config;
 pub mod dark_alpha_router;
 pub mod dark_alpha_sniffer;

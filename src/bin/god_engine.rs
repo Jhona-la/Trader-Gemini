@@ -3,7 +3,6 @@ static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
 
 use futures_util::StreamExt;
 use quantum_engine::parsers;
-use std::env;
 use std::sync::Arc;
 use tokio::sync::mpsc;
 use tokio::time::{sleep, Duration};
@@ -1649,6 +1648,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // 🛠️ [BOOTLOADER] Inicializar el entorno desde .env
     dotenvy::dotenv().ok();
 
+    // DEMO-A (contrato de arranque, especificacion Demo §A.2): perfil explicito, USE_TESTNET
+    // literal, una sola pareja de llaves de la familia del perfil y feed canonico, validados AQUI,
+    // antes del logger, de cualquier cliente, socket, OMS, puente, feed o pre-flight hedge. Un
+    // rechazo es UNA linea en stderr (campo y motivo, nunca valores) y codigo 2, sin transporte.
+    let contexto_arranque = match quantum_engine::arranque_entorno::validar_proceso() {
+        Ok(ctx) => ctx,
+        Err(rechazo) => {
+            eprintln!("{}", rechazo.linea());
+            std::process::exit(quantum_engine::arranque_entorno::CODIGO_RECHAZO);
+        }
+    };
+    quantum_engine::arranque_entorno::sellar(contexto_arranque.clone());
+
     // LG-11 (Línea G): `telemetry_log!` encola en vez de imprimir en el hilo
     // del bucle vivo (≈8,5 MB de cola; el consumidor duerme si está vacía).
     // CL-144: con TG_LOG_FILE el log del motor rota y se comprime solo
@@ -1703,7 +1715,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // TIENE PRIORIDAD sobre el .env real. Identidad demo: si se detecta,
     // telemetría roja — jamás debe llegar a mainnet (para producción:
     // LAUNCH_PRODUCTION.bat sin ese script).
-    if env::var("BINANCE_API_KEY").unwrap_or_default() == "shadow" {
+    // DEMO-A: la llave es la del contexto sellado (en Demo, BINANCE_API_KEY ya se rechazo).
+    if contexto_arranque.llave() == "shadow" {
         eprintln!("\x1b[31m🔴 [HOST-012][SHADOW-KEY] BINANCE_API_KEY=='shadow' detectada tras dotenvy — CLAVE 'shadow' CON PRIORIDAD SOBRE .env (identidad demo inyectada por run_god_engine.ps1). ESTE ENTORNO NO ES PRODUCCIÓN. NUNCA usar para mainnet: usar LAUNCH_PRODUCTION.bat sin ese script.\x1b[0m");
         telemetry_server::telemetry_log!(
             "🔴 [HOST-012][SHADOW-KEY] BINANCE_API_KEY=='shadow' tiene prioridad sobre .env — entorno DEMO inyectado por run_god_engine.ps1. NUNCA usar para mainnet: usar LAUNCH_PRODUCTION.bat sin ese script."
@@ -1711,44 +1724,21 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     telemetry_server::telemetry_log!("\n========================================================");
-    let args: Vec<String> = env::args().collect();
-    // FASE 28 + F5.2: El calentamiento cuántico es obligatorio. Siempre inicia en
-    // Demo/Testnet salvo --force-live CON armado humano explícito.
-    //
-    // PUERTA HUMANA DE MAINNET (Plan Maestro 7.4): --force-live solo activa
-    // producción si EXISTE el archivo físico `config_dir/MAINNET_ARMED`
-    // (creado a mano por el operador tras la certificación demo) y NO existe
-    // STOP_TRADING.LOCK. Un flag de CLI jamás volverá a ser suficiente para
-    // tocar capital real — el audit halló mainnet alcanzable tras 120 ticks.
-    let requested_live = args.contains(&"--force-live".to_string());
-    // H-2: MAINNET_ARMED con path centralizado (antes relativo al CWD —
-    // lanzar desde otro directorio degradaba silenciosamente a mainnet-sin-lock)
-    let mainnet_armed = std::path::Path::new(
-        &quantum_arena::paths::data_join("../../config_dir/MAINNET_ARMED")
-            .replace("data/../../", ""),
-    )
-    .exists()
-        || std::path::Path::new("config_dir/MAINNET_ARMED").exists();
-    let emergency_lock = operator_lock_exists();
-    let is_demo_mode = if requested_live && mainnet_armed && !emergency_lock {
+    // FASE 28 + F5.2 + PUERTA HUMANA DE MAINNET (Plan Maestro 7.4), DEMO-A: el modo sale del
+    // perfil sellado. `mainnet-live` exige `--force-live` una vez, `config_dir/MAINNET_ARMED` en la
+    // ruta canonica y ningun STOP_TRADING.LOCK; cualquier otra combinacion ya se rechazo arriba
+    // (antes caia en silencio a Demo).
+    let is_demo_mode = contexto_arranque.modo_demo();
+    if is_demo_mode {
         telemetry_server::telemetry_log!(
-            "🔴 [MODO PRODUCCION ARMADO] MAINNET_ARMED presente — fuego real AUTORIZADO por el operador."
+            "🧪 [ARRANQUE] perfil {}: modo Demo",
+            contexto_arranque.perfil().nombre()
         );
-        false
-    } else if requested_live {
-        if emergency_lock {
-            telemetry_server::telemetry_log!(
-                "🛑 [PUERTA MAINNET] STOP_TRADING.LOCK activo — --force-live IGNORADO. Modo demo."
-            );
-        } else {
-            telemetry_server::telemetry_log!(
-                "🛑 [PUERTA MAINNET] --force-live sin config_dir/MAINNET_ARMED — capital real PROHIBIDO hasta certificación (Plan 7.4). Cayendo a DEMO."
-            );
-        }
-        true
     } else {
-        true
-    };
+        telemetry_server::telemetry_log!(
+            "🔴 [MODO PRODUCCION ARMADO] perfil mainnet-live con MAINNET_ARMED — fuego real AUTORIZADO por el operador."
+        );
+    }
 
     // E3 — ENTORNO DE GENOMA por modo de operación: demo y producción
     // mantienen linajes SEPARADOS (y separados del backtest). Sin esto, el
@@ -1916,78 +1906,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // (`Url::parse(..).expect`). Se valida aquí y, si no sirve, se ignora y
     // decide la selección por latencia. Sólo un host (con puerto opcional):
     // vacío, con esquema, ruta, consulta o credenciales no es un host.
-    let ws_env_valido = env::var("BEST_WS_ENDPOINT")
-        .ok()
-        .map(|ep| ep.trim().to_string())
-        .filter(|ep| {
-            let host = ep.split(':').next().unwrap_or("");
-            let valido = !host.is_empty()
-                && !ep.contains(['/', '?', '#', '@', ' ', '\\'])
-                && url::Url::parse(&format!("wss://{ep}/stream"))
-                    .map(|u| u.host_str() == Some(host))
-                    .unwrap_or(false);
-            if !valido {
-                telemetry_server::telemetry_log!(
-                    "⚠️ [WS] BEST_WS_ENDPOINT «{}» no es un host válido; se ignora",
-                    ep
-                );
-            }
-            valido
-        });
-    let initial_ws_host = if let Some(ep) = ws_env_valido {
-        ep
-    } else {
-        let is_env_testnet = env::var("USE_TESTNET")
-            .unwrap_or_default()
-            .trim()
-            .to_lowercase()
-            == "true";
-        if is_env_testnet {
-            "stream.binancefuture.com".to_string()
-        } else {
-            // CL-54 (hallazgo forense #202): sólo hosts USDⓈ-M. La lista
-            // incluía `dstream.binance.com` (COIN-M): si ganaba por latencia,
-            // los streams `<par>usdt@...` no existen allí, no llegaba ningún
-            // tick y el calentamiento no terminaba nunca. Misma lista que
-            // `data_pipeline::ws_client`.
-            let endpoints = vec!["fstream.binance.com", "fstream-auth.binance.com"];
-            let mut best_host = "fstream.binance.com".to_string();
-            let mut best_latency = u128::MAX;
-
-            let mut best_ip = String::new();
-            for ep in endpoints {
-                if let Ok(addrs) = tokio::net::lookup_host((ep, 443)).await {
-                    for addr in addrs {
-                        let start = tokio::time::Instant::now();
-                        if let Ok(_) = tokio::time::timeout(
-                            tokio::time::Duration::from_millis(500),
-                            tokio::net::TcpStream::connect(addr),
-                        )
-                        .await
-                        {
-                            let latency = start.elapsed().as_millis();
-                            if latency < best_latency {
-                                best_latency = latency;
-                                best_host = ep.to_string();
-                                best_ip = addr.ip().to_string();
-                            }
-                        }
-                    }
-                }
-            }
-            if !best_ip.is_empty() {
-                telemetry_server::telemetry_log!(
-                    "🚀 [LATENCY ACCELERATOR] Selected WS IP {} (Host: {}) with {}ms latency",
-                    best_ip,
-                    best_host,
-                    best_latency
-                );
-                best_host
-            } else {
-                best_host
-            }
-        }
-    };
+    // DEMO-A (A5): el host del feed es el canonico del perfil sellado (`BEST_WS_ENDPOINT`, si
+    // vino, ya se valido contra ese mismo literal antes de nada). Ya no hay seleccion por
+    // latencia ni un host elegido por sintaxis: CL-54 (solo USDⓈ-M) queda cumplido por
+    // construccion.
+    let initial_ws_host = contexto_arranque.host_feed().to_string();
     // I-1b (Línea I): una URL por categoría. La URL heredada sin categoría
     // (`wss://{host}/stream?streams=…`) sólo recibe en producción la
     // categoría pública: medido el 2026-10-24, cero velas y cero
@@ -2104,31 +2027,26 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     // FASE 3A: FETCH CLAVES Y CONEXIÓN API REST PARA CHEQUEO DE COMISIONES Y CAPITAL ANTES DEL WARMUP Y ENTRENAMIENTO
-    let mut testnet_key = env::var("TESTNET_API_KEY").unwrap_or_default();
-    let mut testnet_secret = env::var("TESTNET_SECRET_KEY").unwrap_or_default();
-    let mut mainnet_key = env::var("MAINNET_API_KEY").unwrap_or_default();
-    let mut mainnet_secret = env::var("MAINNET_SECRET_KEY").unwrap_or_default();
+    // DEMO-A (A3): las llaves salen SOLO del contexto sellado: una pareja completa de la familia
+    // del perfil (papel: ninguna). La otra familia queda vacia: el relevo no puede cambiar de
+    // venue ni de cuenta. Sin auto-mapeo entre nombres ni aviso de «ambas familias».
+    let (testnet_key, testnet_secret, mainnet_key, mainnet_secret) = if contexto_arranque.testnet() {
+        (
+            contexto_arranque.llave().to_string(),
+            contexto_arranque.secreto().to_string(),
+            String::new(),
+            String::new(),
+        )
+    } else {
+        (
+            String::new(),
+            String::new(),
+            contexto_arranque.llave().to_string(),
+            contexto_arranque.secreto().to_string(),
+        )
+    };
 
-    // Auto-map TESTNET keys
-    if testnet_key.is_empty() {
-        testnet_key = env::var("BINANCE_TESTNET_API_KEY").unwrap_or_default();
-        testnet_secret = env::var("BINANCE_TESTNET_SECRET_KEY").unwrap_or_default();
-    }
-    // Auto-map MAINNET keys from .env
-    if mainnet_key.is_empty() {
-        mainnet_key = env::var("BINANCE_API_KEY").unwrap_or_default();
-        mainnet_secret = env::var("BINANCE_SECRET_KEY").unwrap_or_default();
-    }
-
-    if testnet_key.is_empty() || mainnet_key.is_empty() {
-        telemetry_server::telemetry_log!("⚠️ [WARNING] TESTNET_API_KEY or MAINNET_API_KEY not found. Ensure both are set for seamless transition.");
-    }
-
-    let is_env_testnet = env::var("USE_TESTNET")
-        .unwrap_or_default()
-        .trim()
-        .to_lowercase()
-        == "true";
+    let is_env_testnet = contexto_arranque.testnet();
     let (active_key, active_secret, is_testnet) = if is_env_testnet {
         telemetry_server::telemetry_log!(
             "🌐 [ENV DETECTED] Using BINANCE TESTNET for API connections."
@@ -2143,8 +2061,20 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // CAPITAL-UNICO V4I (INV-D): identidad de la cuenta de arranque (sin el secreto).
     let cuenta_de_arranque = identidad_de_cuenta(is_testnet, &active_key);
-    let mut order_executor =
-        execution_engine::executor::OrderExecutor::new(active_key, active_secret, is_testnet);
+    // DEMO-A (A7): sin respaldo a `Client::new()` ni cabecera vacia: un cliente que no se puede
+    // construir con lo sellado es un rechazo del arranque (antes del primer transporte).
+    let mut order_executor = match execution_engine::executor::OrderExecutor::try_new(active_key, active_secret, is_testnet) {
+        Ok(ejecutor) => ejecutor,
+        Err(fallo) => {
+            let campo = match fallo {
+                execution_engine::client::FalloConstruccionCliente::ClienteHttp => "cliente_http",
+                execution_engine::client::FalloConstruccionCliente::CabeceraLlave => "cabecera_llave",
+            };
+            telemetry_server::macros::vaciar_telemetria();
+            eprintln!("{} campo={} motivo=INVALIDO perfil={}", quantum_engine::arranque_entorno::PREFIJO_RECHAZO, campo, contexto_arranque.perfil().nombre());
+            std::process::exit(quantum_engine::arranque_entorno::CODIGO_RECHAZO);
+        }
+    };
     // D-700 (DÉCIMA OLA · auditoría integral): LA PUERTA HUMANA GOBIERNA EL
     // FUEGO REAL DESDE EL PRIMER EJECUTOR.
     //
@@ -2160,12 +2090,20 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // ortogonal, sino la MISMA puerta de capital que decide `is_demo_mode`: en
     // testnet se opera nativamente contra su API; en mainnet sin armado humano,
     // papel local.
-    order_executor.set_paper_trading(is_demo_mode && !is_env_testnet);
-    if is_demo_mode && !is_env_testnet {
+    // DEMO-A: el papel es del perfil (`paper-testnet` y `paper-mainnet`), no una deduccion.
+    order_executor.set_paper_trading(contexto_arranque.papel());
+    if contexto_arranque.papel() {
         telemetry_server::telemetry_log!(
-            "🧻 [PUERTA MAINNET] Ejecutor en PAPEL local: sin MAINNET_ARMED no sale ninguna orden a la cuenta real."
+            "🧻 [PUERTA MAINNET] Ejecutor en PAPEL local (perfil {}): no sale ninguna orden a ninguna cuenta.",
+            contexto_arranque.perfil().nombre()
         );
     }
+    // DEMO-A: recibo sellado del arranque (sin valores de credenciales).
+    telemetry_server::telemetry_log!(
+        "{} cuenta={:016x}",
+        contexto_arranque.recibo(),
+        cuenta_de_arranque
+    );
     let exec = Arc::new(arc_swap::ArcSwap::from_pointee(order_executor));
     let oms_session = Arc::new(quantum_engine::host_oms::OmsSession::new(
         Arc::clone(&exec),
@@ -4408,16 +4346,26 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .map(|(i, s)| (s.to_uppercase(), i))
                 .collect();
             rt_handle.spawn(async move {
-                let is_testnet = EnvManager::is_demo_env();
+                // DEMO-A (A10): el venue del OI es el del contexto sellado (antes `is_demo_env`,
+                // que SHADOW_MODE o BINANCE_USE_DEMO podian contradecir), sin cliente de respaldo
+                // y sin seguir 3xx: si el cliente no se construye, no hay poller (OI ausente).
+                let is_testnet = quantum_engine::arranque_entorno::venue_testnet_auxiliar();
                 let base_url = if is_testnet {
-                    "https://testnet.binancefuture.com"
+                    execution_engine::client::BINANCE_TESTNET_URL
                 } else {
-                    "https://fapi.binance.com"
+                    execution_engine::client::BINANCE_BASE_URL
                 };
-                let client = reqwest::Client::builder()
+                let client = match reqwest::Client::builder()
                     .timeout(std::time::Duration::from_secs(8))
+                    .redirect(reqwest::redirect::Policy::none())
                     .build()
-                    .unwrap_or_else(|_| reqwest::Client::new());
+                {
+                    Ok(c) => c,
+                    Err(_) => {
+                        telemetry_server::telemetry_log!("⚠️ [OI-POLLER] cliente no construible: OI ausente en esta sesión (sin respaldo)");
+                        return;
+                    }
+                };
                 let mut ticker = tokio::time::interval(std::time::Duration::from_secs(120));
                 ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
                 telemetry_server::telemetry_log!(
@@ -5914,7 +5862,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             None,
                             &reintento_transicion,
                             || {
-                                let is_env_testnet = std::env::var("USE_TESTNET").unwrap_or_default().trim().to_lowercase() == "true";
+                                // DEMO-A (A8): el relevo consume la instantanea sellada del arranque:
+                                // ni el entorno mutable ni otra familia de llaves abren otro perfil.
+                                let is_env_testnet = contexto_arranque.testnet();
                                 let (target_key, target_secret, target_is_testnet) = if is_env_testnet {
                                     (testnet_key.clone(), testnet_secret.clone(), true)
                                 } else {
@@ -5929,17 +5879,29 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 // arranque, así que no compartir es una anomalía. El kill-switch del
                                 // vigente cruza siempre (N58): el latch dura hasta reiniciar.
                                 let previo = exec.load_full();
-                                let (mut mainnet_executor, herencia) = execution_engine::executor::OrderExecutor::sucesor_de(
+                                // DEMO-A (A7/A8): sin respaldo a `Client::new()`. Si el cliente
+                                // sellado no se puede construir, se vuelve a publicar el ejecutor
+                                // vigente (transporte ya acreditado: cancelaciones y reducciones
+                                // siguen disponibles) y ningun cliente sin comprobar recibe permiso.
+                                let (mut mainnet_executor, herencia) = match execution_engine::executor::OrderExecutor::try_sucesor_de(
                                     &previo,
                                     target_key,
                                     target_secret,
                                     target_is_testnet,
                                     Arc::clone(&arena_real),
-                                );
+                                ) {
+                                    Ok(par) => par,
+                                    Err(fallo) => {
+                                        telemetry_engine::telemetry_err!("[OMS TRANSITION] ENTORNO_RECHAZADO campo=cliente_relevo motivo={:?}: se conserva el ejecutor vigente", fallo);
+                                        return previo;
+                                    }
+                                };
                                 if let Some(motivo) = herencia.motivo_sin_herencia() {
                                     telemetry_engine::telemetry_err!("[OMS TRANSITION] el ejecutor nuevo estrena freno 429/418 y uso del exchange ({}): puede enviar dentro del Retry-After o del ban del anterior", motivo);
                                 }
-                                if is_env_testnet {
+                                if contexto_arranque.papel() {
+                                    mainnet_executor.set_paper_trading(true);
+                                } else if is_env_testnet {
                                     mainnet_executor.set_paper_trading(false);
                                 } else {
                                     mainnet_executor.set_paper_trading(is_paper_trading);
@@ -5955,7 +5917,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         // otra cuenta el libro empieza sin saldo, antes de la era nueva y bajo el
                         // mutex del puente (orden puente, puerta).
                         if sesion_publicada.is_some() {
-                            let testnet_del_relevo = std::env::var("USE_TESTNET").unwrap_or_default().trim().to_lowercase() == "true";
+                            // DEMO-A (A8): el rotulo de la cuenta del relevo sale del contexto sellado.
+                            let testnet_del_relevo = contexto_arranque.testnet();
                             let cuenta_del_relevo = if testnet_del_relevo {
                                 identidad_de_cuenta(true, &testnet_key)
                             } else {
@@ -7869,11 +7832,8 @@ async fn bucle_lector_ws(
     // `client_async_tls` no tenían timeout: un handshake TLS colgado (TCP
     // aceptado, servidor mudo) dejaba el feed mudo para siempre SIN
     // disparar el stall, porque el watchdog sólo vigilaba tras conectar.
-    let is_testnet_cfg = std::env::var("USE_TESTNET")
-        .unwrap_or_default()
-        .trim()
-        .to_lowercase()
-        == "true";
+    // DEMO-A (A9): el venue del lector es el del contexto sellado, no el entorno mutable.
+    let is_testnet_cfg = quantum_engine::arranque_entorno::venue_testnet_auxiliar();
     let watchdog_secs: u64 = std::env::var("BINANCE_WS_TIMEOUT_SECS")
         .ok()
         .and_then(|s| s.parse().ok())
@@ -7903,6 +7863,20 @@ async fn bucle_lector_ws(
                 continue;
             }
         };
+        // DEMO-A (A9): cada conexion y reconexion valida la URL efectiva contra el feed del
+        // contexto sellado: otro host, esquema, puerto o usuario no se conecta (cero conexiones
+        // al host indebido, cero frames y cero permisos derivados de ellos).
+        if !quantum_engine::arranque_entorno::sellado()
+            .is_none_or(|ctx| ctx.url_de_feed_admitida(&current_url))
+        {
+            telemetry_server::telemetry_log!(
+                "🛑 [WS:{}] FEED_BLOQUEADO: la URL de conexión no es el feed canónico del perfil sellado; no se conecta",
+                cfg.nombre
+            );
+            // Misma pausa que la URL invalida de arriba (LG-28).
+            tokio::time::sleep(std::time::Duration::from_millis(5_000)).await;
+            continue;
+        }
         let host = url.host_str().unwrap_or("stream.binancefuture.com");
         let port = url.port_or_known_default().unwrap_or(443);
 
@@ -7934,7 +7908,10 @@ async fn bucle_lector_ws(
             };
 
         // Allow manual IP injection via ENV to bypass DNS if desired
-        if let Ok(env_ips) = std::env::var("BINANCE_WS_IPS") {
+        // DEMO-A (A9): con perfil sellado no hay IPs inyectadas (el contrato rechaza la variable).
+        if let Ok(env_ips) = std::env::var("BINANCE_WS_IPS").map_err(|_| ()).and_then(|v| {
+            if quantum_engine::arranque_entorno::sellado().is_some() { Err(()) } else { Ok(v) }
+        }) {
             for ip_str in env_ips.split(',') {
                 if let Ok(addr) = ip_str.trim().parse::<std::net::SocketAddr>() {
                     if !resolved_addrs.contains(&addr) {

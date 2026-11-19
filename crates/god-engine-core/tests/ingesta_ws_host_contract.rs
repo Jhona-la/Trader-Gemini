@@ -74,8 +74,15 @@ fn cl50b_la_transicion_no_reconecta_el_ws() {
 fn cl54_el_selector_de_host_solo_ofrece_usdm() {
     let h = host();
     let t = tramo(&h, "letinitial_ws_host=", "letws_url=");
-    assert!(t.contains("\"fstream.binance.com\""));
+    // DEMO-A: el host del feed sale del contexto sellado del perfil (sin seleccion por
+    // latencia); sus dos valores son las constantes USD-M de `user_data_stream.rs`.
+    assert!(t.contains("letinitial_ws_host=contexto_arranque.host_feed().to_string();"));
     assert!(!t.contains("dstream.binance.com"), "COIN-M no sirve pares USDT-M");
+    let uds: String = include_str!("../../execution-engine/src/user_data_stream.rs")
+        .split_whitespace()
+        .collect();
+    assert!(uds.contains("pubconstHOST_FEED_MAINNET_USDM:&str=\"fstream.binance.com\";"));
+    assert!(!uds.contains("dstream.binance.com"), "COIN-M no sirve pares USDT-M");
 }
 
 /// Todo envío del lector pasa por la cola contada: ningún `try_send` suelto
@@ -140,7 +147,8 @@ fn cl156_el_calentamiento_rest_usa_el_venue_del_ejecutor() {
         "let(active_key,active_secret,is_testnet)=",
         "SystemDiagnostics::execute_phase_3_warmup(",
     );
-    assert!(t.contains("OrderExecutor::new(active_key,active_secret,is_testnet);"));
+    // DEMO-A: el arranque usa el constructor sin respaldo (`try_new`), con el mismo venue.
+    assert!(t.contains("OrderExecutor::try_new(active_key,active_secret,is_testnet)"));
     assert!(
         !t.contains("letis_testnet") && !t.contains("letmutis_testnet"),
         "nadie redefine el venue entre el ejecutor y el calentamiento"

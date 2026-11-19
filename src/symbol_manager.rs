@@ -33,7 +33,8 @@ pub async fn evolve_symbols_daemon_with_resubscribe(
             "🔄 [SYMBOL MANAGER] Recalculando Top Dinámico usando métricas reales (REST API)..."
         );
         let limit = quantum_arena::symbols::get_active_universe_size();
-        let is_testnet = crate::env_manager::EnvManager::is_demo_env();
+        // DEMO-A (A10): venue del contexto sellado (heredado fuera de god_engine).
+        let is_testnet = crate::arranque_entorno::venue_testnet_auxiliar();
 
         let pool_limit = 1000;
         let specs_res =
@@ -46,7 +47,7 @@ pub async fn evolve_symbols_daemon_with_resubscribe(
             let top_symbols =
                 merge_universe_with_hysteresis(&current, &raw_top_symbols, limit, &roster);
 
-            let is_testnet_env = crate::env_manager::EnvManager::is_demo_env();
+            let is_testnet_env = crate::arranque_entorno::venue_testnet_auxiliar();
             let config_bytes = tokio::fs::read("data/dynamic_config.bin")
                 .await
                 .unwrap_or_default();

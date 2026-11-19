@@ -168,7 +168,8 @@ fn i13_4_el_host_construye_el_sucesor_desde_el_ejecutor_vigente() {
         0,
         "el host no estrena freno ni uso en la transición"
     );
-    assert_eq!(produccion.matches("OrderExecutor::sucesor_de(").count(), 1);
+    // DEMO-A: el host usa `try_sucesor_de` (la misma herencia, sin cliente de respaldo).
+    assert_eq!(produccion.matches("OrderExecutor::try_sucesor_de(").count(), 1);
     let bloque = host
         .split("if newly_transitioned {")
         .nth(2)
@@ -177,7 +178,7 @@ fn i13_4_el_host_construye_el_sucesor_desde_el_ejecutor_vigente() {
         .find("oms_session.paso_transicion(")
         .expect("la transición pasa por OmsSession::paso_transicion");
     let sucesor = bloque
-        .find("OrderExecutor::sucesor_de(")
+        .find("OrderExecutor::try_sucesor_de(")
         .expect("el sucesor se construye en el bloque");
     let publicada = bloque
         .find("ResultadoTransicion::Publicada")

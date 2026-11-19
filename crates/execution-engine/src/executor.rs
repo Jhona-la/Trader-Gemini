@@ -615,6 +615,42 @@ impl OrderExecutor {
         (nuevo, HerenciaDeCuota::Compartida)
     }
 
+    /// DEMO-A (A7): el ejecutor del perfil sellado. El cliente HTTP se construye con
+    /// `BinanceClient::try_new`: builder (TLS incluido) o cabecera de la llave invalidos
+    /// devuelven el error, sin respaldo a `Client::new()` ni cabecera vacia, y sin seguir 3xx.
+    pub fn try_new(
+        api_key: String,
+        api_secret: String,
+        is_testnet: bool,
+    ) -> Result<Self, crate::client::FalloConstruccionCliente> {
+        let cliente = BinanceClient::try_new(api_key.clone(), is_testnet)?;
+        let mut nuevo = Self::new(api_key, api_secret, is_testnet);
+        nuevo.client = cliente.con_reloj(Arc::clone(&nuevo.arena));
+        Ok(nuevo)
+    }
+
+    /// DEMO-A (A7/A8): `sucesor_de` con el cliente del perfil sellado (sin respaldo). Con la
+    /// herencia compartida, el cliente nuevo adopta el mismo freno 429/418 que adopto el sucesor.
+    #[must_use = "la herencia dice si el sucesor estrenó freno y uso; el host la registra"]
+    pub fn try_sucesor_de(
+        previo: &OrderExecutor,
+        api_key: String,
+        api_secret: String,
+        is_testnet: bool,
+        arena: std::sync::Arc<quantum_arena::GlobalArena>,
+    ) -> Result<(Self, HerenciaDeCuota), crate::client::FalloConstruccionCliente> {
+        let cliente = BinanceClient::try_new(api_key.clone(), is_testnet)?;
+        let (mut nuevo, mut herencia) = Self::sucesor_de(previo, api_key, api_secret, is_testnet, arena);
+        let mut cliente = cliente.con_reloj(Arc::clone(&nuevo.arena));
+        if matches!(herencia, HerenciaDeCuota::Compartida)
+            && !cliente.adoptar_freno_de(&previo.client, &previo.arena)
+        {
+            herencia = HerenciaDeCuota::RelojAjeno;
+        }
+        nuevo.client = cliente;
+        Ok((nuevo, herencia))
+    }
+
     /// Registro de órdenes (F1.5) — para spawn del user-data stream y queries.
     pub fn registry(&self) -> std::sync::Arc<crate::order_registry::OrderRegistry> {
         self.order_registry.clone()

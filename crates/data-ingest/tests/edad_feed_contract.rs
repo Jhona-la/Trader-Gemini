@@ -57,7 +57,8 @@ fn i2_los_avisos_de_latencia_llevan_la_descomposicion() {
 #[test]
 fn i2c_el_monitor_informa_la_contrapresion_por_periodo() {
     let h = compacto();
-    let t = tramo(&h, "\"ws-backpressure-monitor\"", "letmuttestnet_key=");
+    // DEMO-A: el bloque que sigue al monitor es ahora el de las llaves del contexto sellado.
+    let t = tramo(&h, "\"ws-backpressure-monitor\"", "let(testnet_key,testnet_secret,mainnet_key,mainnet_secret)=");
     assert!(t.contains("estado_cola.tomar_descartes_del_periodo()"));
     assert!(t.contains("estado_cola.tomar_espera_max()"));
     assert!(t.contains("telemetry_server::telemetry_log!("), "por la cola de telemetría, no por stdout");

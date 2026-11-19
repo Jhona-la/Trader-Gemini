@@ -443,6 +443,15 @@ impl FrenoExchange {
     }
 }
 
+/// DEMO-A (A7): por que no se pudo construir el cliente del perfil sellado. Sin valores.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FalloConstruccionCliente {
+    /// El builder de reqwest fallo (TLS o resolvedor incluidos).
+    ClienteHttp,
+    /// La llave no forma una cabecera HTTP valida.
+    CabeceraLlave,
+}
+
 #[derive(Clone)]
 pub struct BinanceClient {
     http: Client,
@@ -470,20 +479,41 @@ impl BinanceClient {
         Self::with_timeout(api_key, is_testnet, Duration::from_millis(1200))
     }
 
-    pub fn with_timeout(api_key: String, is_testnet: bool, timeout: Duration) -> Self {
-        // FIX #1497: Construcción resiliente de cliente HTTP reqwest HFT sin expect
-        let http = ClientBuilder::new()
+    /// DEMO-A (A7): el constructor del perfil sellado. Builder (incluido TLS) o cabecera de la
+    /// llave invalidos son un ERROR: sin respaldo a `Client::new()` ni cabecera vacia. El cliente
+    /// no sigue redirecciones: un 3xx privado vuelve tal cual, sin segunda solicitud ni
+    /// autenticacion enviada a otro origen.
+    pub fn try_with_timeout(
+        api_key: String,
+        is_testnet: bool,
+        timeout: Duration,
+    ) -> Result<Self, FalloConstruccionCliente> {
+        let http = Self::builder_http(timeout)
+            .build()
+            .map_err(|_| FalloConstruccionCliente::ClienteHttp)?;
+        let header_val =
+            HeaderValue::from_str(&api_key).map_err(|_| FalloConstruccionCliente::CabeceraLlave)?;
+        Ok(Self::armar(http, header_val, is_testnet))
+    }
+
+    /// DEMO-A: `try_with_timeout` con el timeout HFT de `new`.
+    pub fn try_new(api_key: String, is_testnet: bool) -> Result<Self, FalloConstruccionCliente> {
+        Self::try_with_timeout(api_key, is_testnet, Duration::from_millis(1200))
+    }
+
+    fn builder_http(timeout: Duration) -> ClientBuilder {
+        ClientBuilder::new()
             .pool_max_idle_per_host(25) // Maximize concurrent keep-alives for Binance
             .pool_idle_timeout(None) // NEVER drop idle connections to avoid TLS handshake latency
             .tcp_nodelay(true)
             .tcp_keepalive(Some(Duration::from_secs(15))) // Latidos cada 15s para evitar drops fantasma de socket
             .hickory_dns(true) // Fast DNS
             .timeout(timeout) // Timeout optimizado para HFT
-            .build()
-            .unwrap_or_else(|_| Client::new());
+            // DEMO-A (A7): ningun 3xx se sigue (ni con la cabecera de la llave a otro origen).
+            .redirect(reqwest::redirect::Policy::none())
+    }
 
-        let header_val =
-            HeaderValue::from_str(&api_key).unwrap_or_else(|_| HeaderValue::from_static(""));
+    fn armar(http: Client, header_val: HeaderValue, is_testnet: bool) -> Self {
         Self {
             http,
             api_key: std::sync::Arc::new(ArcSwap::from_pointee(header_val)),
@@ -493,6 +523,19 @@ impl BinanceClient {
             ))),
             base_prueba: None,
         }
+    }
+
+    /// Constructor heredado (herramientas y pruebas fuera del perfil sellado). `god_engine`
+    /// usa [`try_with_timeout`](Self::try_with_timeout).
+    pub fn with_timeout(api_key: String, is_testnet: bool, timeout: Duration) -> Self {
+        // FIX #1497: Construcción resiliente de cliente HTTP reqwest HFT sin expect
+        let http = Self::builder_http(timeout)
+            .build()
+            .unwrap_or_else(|_| Client::new());
+
+        let header_val =
+            HeaderValue::from_str(&api_key).unwrap_or_else(|_| HeaderValue::from_static(""));
+        Self::armar(http, header_val, is_testnet)
     }
 
     /// N20 (CL-188): un freno nuevo con el reloj del ejecutor (el mismo Arc

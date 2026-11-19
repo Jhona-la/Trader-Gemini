@@ -17,6 +17,14 @@ use std::sync::Arc;
 use tokio_tungstenite::connect_async;
 use url::Url;
 
+/// DEMO-A (recibo sellado del arranque): las bases del WS privado que usa `start` por venue y
+/// los hosts publicos canonicos del feed USD-M por venue. Viven aqui (archivo de la lista blanca
+/// del escaner P5 por sus hosts WS) para que el contrato de arranque no escriba hosts.
+pub const WS_PRIVADO_TESTNET: &str = "wss://stream.binancefuture.com/ws";
+pub const WS_PRIVADO_MAINNET: &str = "wss://fstream.binance.com/ws";
+pub const HOST_FEED_TESTNET_USDM: &str = "stream.binancefuture.com";
+pub const HOST_FEED_MAINNET_USDM: &str = "fstream.binance.com";
+
 /// Posición reportada por el exchange (ACCOUNT_UPDATE / positionRisk).
 #[derive(Debug, Clone, Default)]
 pub struct RemotePosition {
