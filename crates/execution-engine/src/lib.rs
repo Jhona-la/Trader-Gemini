@@ -11,6 +11,7 @@ pub mod resincronizar_cuenta;
 pub mod executor;
 pub mod fixed_filter;
 pub mod freno_temporal;
+pub mod importe_venue;
 pub mod income_evidence;
 pub mod ioc_evidence;
 pub mod ntp;
