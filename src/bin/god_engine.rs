@@ -1774,14 +1774,24 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // la puerta DemoVerify→ProductionMainnet permanece CERRADA (fail-closed):
     // nunca más transición inmediata sin métrica.
     if !is_demo_mode {
-        let ruta = quantum_arena::paths::env_data_path_for(true, "evidencia_demo.json");
-        let evidencia = std::fs::read_to_string(&ruta).ok().and_then(|txt| {
-            serde_json::from_str::<god_engine_core::orchestrator::EvidenciaDemo>(&txt).ok()
-        });
-        match evidencia {
-            Some(ev) => {
+        // CICLOS-2 (pedido 20261118-0535-cicloscompletos): la puerta solo consume el recibo v2 de
+        // CICLOS COMPLETOS, con version, ambito Testnet, estado y revocacion validos. El legado por
+        // filas (`evidencia_demo.json`) ya no autoriza: solo se anota como diagnostico.
+        let ruta_legado = quantum_arena::paths::env_data_path_for(true, "evidencia_demo.json");
+        if std::path::Path::new(&ruta_legado).exists() {
+            telemetry_server::telemetry_log!(
+                "📋 [ORCHESTRATOR] certificado legado por filas presente ({}): solo diagnostico, no autoriza Producción",
+                ruta_legado
+            );
+        }
+        let ruta = quantum_arena::paths::env_data_path_for(true, quantum_engine::ciclos_completos::ARCHIVO_CERTIFICADO_V2);
+        match quantum_engine::ciclos_completos::cargar_evidencia_ciclos_v2(
+            std::path::Path::new(&ruta),
+            quantum_engine::ciclos_completos::AmbitoEsperado::del_arranque().as_ref(),
+        ) {
+            Ok(ev) => {
                 telemetry_server::telemetry_log!(
-                    "📋 [ORCHESTRATOR] certificado demo cargado: {} cierres, EV neto {:+.6} USDT/trade (mínimo {} cierres y EV > 0 para Producción)",
+                    "📋 [ORCHESTRATOR] certificado de ciclos v2 cargado: {} ciclos completos, EV neto {:+.6} USDT/ciclo (mínimo {} ciclos y EV > 0 para Producción)",
                     ev.cierres,
                     ev.ev_neto_por_trade,
                     god_engine_core::orchestrator::MIN_CIERRES_PARA_PROD
@@ -1791,10 +1801,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     .unwrap_or_else(|e| e.into_inner())
                     .set_evidencia_demo(Some(ev));
             }
-            None => {
+            Err(motivo) => {
                 telemetry_server::telemetry_log!(
-                    "🔒 [ORCHESTRATOR] SIN certificado demo ({}): la puerta a Producción permanecerá cerrada — correr Demo primero",
-                    ruta
+                    "🔒 [ORCHESTRATOR] SIN certificado de ciclos v2 ({}: {:?}): la puerta a Producción permanecerá cerrada — correr Demo primero",
+                    ruta,
+                    motivo
                 );
             }
         }
@@ -4287,12 +4298,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 telemetry_server::telemetry_log!(
                                     "🛑 [BREAKER Prod→Demo] disparado por income real: EV {ev_prod:+.6} con {x_closes} cierres — operativa bloqueada, re-certificar en Demo"
                                 );
+                                // CICLOS-2: la revocacion del recibo v2 persiste en disco (sobrevive al reinicio).
+                                let ruta_v2 = quantum_arena::paths::env_data_path_for(true, quantum_engine::ciclos_completos::ARCHIVO_CERTIFICADO_V2);
+                                if let Err(e) = quantum_engine::ciclos_completos::revocar_certificado_v2(std::path::Path::new(&ruta_v2), "BREAKER_PROD_DEMO") {
+                                    telemetry_server::telemetry_log!("⚠️ [ORCHESTRATOR] revocacion del recibo v2 no persistida ({ruta_v2}): {e}");
+                                }
                             }
                         }
                         // GLM-216 (bloqueante #2): en demo, persistir el
                         // certificado de rentabilidad que la puerta a
                         // Producción exige (cierres ≥ 30 y EV neto > 0).
-                        let ruta = quantum_arena::paths::env_data_path_for(true, "evidencia_demo.json");
+                        // CICLOS-2: el recibo por filas queda como diagnostico con otro nombre, para que un
+                        // binario anterior (que lee `evidencia_demo.json`) no se autorice con el.
+                        let ruta = quantum_arena::paths::env_data_path_for(true, "evidencia_filas_diagnostico.json");
                         // CAPITAL-UNICO V4M (F8): el certificado se publica con el testigo de la
                         // consulta (`era_brk`), bajo el mutex del relevo; un relevo posterior a la
                         // guarda del profiler ya no deja escribir la evidencia de la cuenta anterior.

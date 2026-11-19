@@ -1,5 +1,7 @@
 // DEMO-A: contrato de arranque del perfil explicito (contexto sellado del proceso).
 pub mod arranque_entorno;
+// CICLOS-2: ciclos completos y certificado v2 de la puerta de dinero real.
+pub mod ciclos_completos;
 pub mod config;
 pub mod dark_alpha_router;
 pub mod dark_alpha_sniffer;
