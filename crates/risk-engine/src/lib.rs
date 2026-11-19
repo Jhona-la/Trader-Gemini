@@ -38,6 +38,8 @@ pub mod barrera_de_la_decision {
 pub mod drgt_massive_gravity;
 pub mod envio;
 pub mod evidence;
+// DEMO-B: perdida diaria derivada (presupuesto puro, ancla del dia y latch).
+pub mod perdida_diaria;
 pub mod fisher_rao_amari_manifold;
 pub mod freno_estrategia;
 pub mod gromov_symplectic_barrier;

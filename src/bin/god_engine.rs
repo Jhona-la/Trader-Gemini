@@ -1160,6 +1160,18 @@ fn suspend_symbol_until(symbol: &str, until_ms: u64) {
         .insert(symbol.to_string(), until_ms);
 }
 
+/// DEMO-B: la evidencia del roster que la guarda diaria congela al abrir el dia. El host tiene UNA
+/// envolvente para la cuenta (no una por simbolo): el roster es esa entrada (win rate medio del
+/// posterior y n neto). Sin guarda (otros perfiles) no hace nada.
+fn publicar_evidencia_diaria(
+    guarda: &Option<Arc<quantum_engine::host_oms::GuardaDiariaHost>>,
+    envolvente: &risk_engine::kelly_envelope::RiskEnvelope,
+) {
+    if let Some(g) = guarda {
+        g.publicar_evidencia(vec![(envolvente.posterior.mean(), envolvente.posterior.n())]);
+    }
+}
+
 /// CAPITAL-UNICO V4I (INV-D): identidad estable de la cuenta del ejecutor (venue y clave publica;
 /// nunca el secreto). El libro del dimensionable empieza de cero si cambia: nada leido en otra
 /// cuenta ordena ni prueba inclusion en esta.
@@ -2109,6 +2121,28 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         Arc::clone(&exec),
         Arc::clone(&oms_reconciled),
     ));
+    // DEMO-B (perdida diaria, especificacion Demo §B): solo en `demo-testnet`. Estado por cuenta
+    // (venue Testnet + identidad de la cuenta) y dia UTC, recuperado al arrancar (mismo dia: misma
+    // base y latch). La guarda veta aperturas en la entrada del OMS y en la frontera del POST.
+    let guarda_diaria: Option<Arc<quantum_engine::host_oms::GuardaDiariaHost>> = if contexto_arranque.es_demo_testnet() {
+        let ruta = std::path::PathBuf::from(quantum_arena::paths::env_data_path_for(
+            true,
+            &format!("perdida_diaria_{:016x}.txt", cuenta_de_arranque),
+        ));
+        let g = Arc::new(quantum_engine::host_oms::GuardaDiariaHost::recuperar(
+            cuenta_de_arranque,
+            ruta,
+            quantum_engine::host_oms::reloj_utc_ms,
+        ));
+        let _ = oms_session.vincular_guarda_diaria(Arc::clone(&g));
+        telemetry_server::telemetry_log!(
+            "🛡️ [DIA-UTC] guarda de perdida diaria activa (estado de hoy recuperado: {})",
+            g.estado().is_some()
+        );
+        Some(g)
+    } else {
+        None
+    };
 
     // CAPITAL-UNICO V3 (P1.4, opción A pura): el espacio del pico es venue +
     // cuenta (huella de la clave API) + definición. Ningún pico ajeno se adopta.
@@ -2978,6 +3012,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             // las rutas del espacio nuevo en `buzon_imm` y el inmune las adopta.
             let buzon_imm = Arc::clone(&buzon_espacio_pico);
             let flujos_imm = Arc::clone(&flujos_externos);
+            let guarda_diaria_imm = guarda_diaria.clone();
             let rutas_pico = risk_engine::drawdown::RutasPico::del_espacio(&espacio_pico, |n| {
                 std::path::PathBuf::from(quantum_arena::paths::env_data_path(n))
             });
@@ -3264,6 +3299,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     // que encoge en una racha perdedora (LH-04): disparaba tras
                     // 13 SL en vez de 31.
                     let freno = risk_engine::drawdown::freno_duro(&arena_imm, peak_capital, cap);
+                    // DEMO-B: la guarda diaria observa la MISMA equity y pico de este paso del freno
+                    // (abre el dia en el corte UTC y enclava el latch). No toca el freno duro.
+                    if let Some(g) = &guarda_diaria_imm {
+                        if let Some(linea) = g.observar_con_aviso(
+                            cap,
+                            peak_capital,
+                            arena_imm.config.global_max_drawdown.load(Ordering::Relaxed),
+                        ) {
+                            telemetry_server::telemetry_log!("🛡️ [DIA-UTC] {}", linea);
+                        }
+                    }
                     // Una cuenta liquidada (cap <= 0) debe DISPARAR el sistema
                     // inmune, no desarmarlo: el guard `cap > 0.0` anterior
                     // dejaba todos los frenos apagados exactamente en el único
@@ -3985,6 +4031,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             // V4I (punto 5b): el testigo de era del funding (ver el bucle).
             let puente_brk = Arc::clone(&puente_cuenta);
             let flujos_brk = Arc::clone(&flujos_externos);
+            let guarda_diaria_brk = guarda_diaria.clone();
             let exec_brk = Arc::clone(&exec);
             let arena_brk = Arc::clone(&arena_real);
             // GLM-219 (bloqueante #3): el breaker Prod→Demo se alimenta aquí,
@@ -4181,6 +4228,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         for (e, (id, r)) in externos.zip(registros) {
                             if matches!(r, risk_engine::drawdown::RegistroDeFlujo::Nuevo | risk_engine::drawdown::RegistroDeFlujo::OtroActivo | risk_engine::drawdown::RegistroDeFlujo::SinIdentidad) {
                                 telemetry_server::telemetry_log!("[CAPITAL] flujo externo {} {:.8} {} (tranId {}, era {}): incierto, sin ajuste de pico ni freno", e.income_type, e.income, e.asset, id, era_brk);
+                            }
+                        }
+                        // DEMO-B: el ledger propio de la perdida diaria (F_D), con la misma
+                        // respuesta vigente: una vez por tranId; sin identidad u otro activo, N/D.
+                        if let Some(g) = &guarda_diaria_brk {
+                            for e in flujos_de_la_consulta.iter().filter(|e| risk_engine::drawdown::es_flujo_externo(&e.income_type)) {
+                                if let Err(causa) = g.registrar_flujo(e.time, e.tran_id, &e.asset, e.income) {
+                                    telemetry_server::telemetry_log!("🛡️ [DIA-UTC] flujo externo tranId {}: {}", e.tran_id, causa);
+                                }
                             }
                         }
                     }
@@ -4847,6 +4903,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 "🧬 [KELLY] Sin envolvente previa — posterior fresco de Jeffreys (HOST-005)"
             );
         }
+        // DEMO-B: la guarda diaria congela al abrir el dia la evidencia que publica el nucleo (aqui,
+        // tras restaurar la envolvente, y tras cada cierre que la actualiza).
+        publicar_evidencia_diaria(&guarda_diaria, &risk_envelope);
         // CL-108 (C-F8, decisión del dueño «Guardar todo»): el estado
         // aprendido (cierres y evidencia por moneda, calibradores, freno de la
         // estrategia, riesgo y geometría medidos) se restaura antes de operar
@@ -5790,6 +5849,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 // HOST-005 / F1-059: persistir el posterior tras cada
                                 // cierre limpio contabilizado sin bloquear el bucle de eventos.
                                 persist_kelly_envelope_async(&rt_handle, &risk_envelope);
+                                publicar_evidencia_diaria(&guarda_diaria, &risk_envelope);
                                 total_gross_pnl += bc.pnl_gross;
                                 total_net_pnl += net_bc;
                                 total_fees += bc.fees;
@@ -6411,6 +6471,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         // HOST-005 / F1-059: persistir el posterior tras cada cierre
                         // limpio contabilizado sin bloquear el bucle de eventos.
                         persist_kelly_envelope_async(&rt_handle, &risk_envelope);
+                        publicar_evidencia_diaria(&guarda_diaria, &risk_envelope);
                         if let Some(receipt) = accounting {
                             total_gross_pnl += receipt.gross_pnl;
                             total_fees += receipt.total_fees();

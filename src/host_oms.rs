@@ -42,6 +42,125 @@ pub struct OmsSession {
     /// exchange aplico sin evento local (pide evidencia perdida al puente: veta hasta una REST
     /// pedida despues). Se llama sin candados del OMS.
     al_cierre_externo: std::sync::OnceLock<Box<dyn Fn() + Send + Sync>>,
+    /// DEMO-B: la guarda de perdida diaria del perfil `demo-testnet` (una vez). Veta aperturas en
+    /// la entrada del OMS y en cada cruce de la frontera del transporte; nunca cierres.
+    guarda_diaria: std::sync::OnceLock<Arc<GuardaDiariaHost>>,
+}
+
+/// DEMO-B (especificacion Demo §B.3): la guarda de perdida diaria de una cuenta, compartida por
+/// el lazo del inmune (observa equity y pico), el lazo del income (flujos externos), el nucleo
+/// (evidencia del roster) y el OMS (decide cada apertura con la equity de ese instante). El
+/// estado se persiste de forma atomica en cada transicion (dia abierto o latch).
+pub struct GuardaDiariaHost {
+    guarda: Mutex<risk_engine::perdida_diaria::GuardaDiaria>,
+    ruta: std::path::PathBuf,
+    reloj_ms: fn() -> u64,
+    ultimo_aviso: Mutex<Option<String>>,
+}
+
+/// Reloj de pared UTC en ms (el dia UTC de la guarda).
+pub fn reloj_utc_ms() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as u64)
+        .unwrap_or(0)
+}
+
+impl GuardaDiariaHost {
+    /// Recupera el estado de hoy de `cuenta` desde `ruta` (reinicio: misma base y latch).
+    pub fn recuperar(cuenta: u64, ruta: std::path::PathBuf, reloj_ms: fn() -> u64) -> Self {
+        let guarda = risk_engine::perdida_diaria::GuardaDiaria::recuperar(cuenta, &ruta, reloj_ms());
+        Self { guarda: Mutex::new(guarda), ruta, reloj_ms, ultimo_aviso: Mutex::new(None) }
+    }
+
+    fn persistir(&self, guarda: &risk_engine::perdida_diaria::GuardaDiaria) -> Result<(), String> {
+        match guarda.estado.as_ref() {
+            Some(estado) => risk_engine::perdida_diaria::guardar_estado(&self.ruta, estado)
+                .map_err(|e| format!("estado diario no persistido: {e}")),
+            None => Ok(()),
+        }
+    }
+
+    /// Una observacion del lazo del inmune. Persiste si abrio el dia o puso el latch.
+    pub fn observar(&self, equity: f64, pico: f64, global_max_drawdown: f64) -> (risk_engine::perdida_diaria::Transicion, Result<(), String>) {
+        let mut g = self.guarda.lock().unwrap_or_else(|p| p.into_inner());
+        let t = g.observar((self.reloj_ms)(), equity, pico, global_max_drawdown);
+        let persistido = match t {
+            risk_engine::perdida_diaria::Transicion::DiaAbierto(_)
+            | risk_engine::perdida_diaria::Transicion::Bloqueado => self.persistir(&g),
+            _ => Ok(()),
+        };
+        (t, persistido)
+    }
+
+    /// `observar` y la linea de telemetria si el estado cambio (una por cambio, no por ciclo).
+    pub fn observar_con_aviso(&self, equity: f64, pico: f64, global_max_drawdown: f64) -> Option<String> {
+        use risk_engine::perdida_diaria::Transicion;
+        let (t, persistido) = self.observar(equity, pico, global_max_drawdown);
+        let linea = match &t {
+            Transicion::DiaAbierto(p) => Some(format!(
+                "DIA_ABIERTO q_D={:.6} h={:.6} f_sizing={:.6} d_duro={:.6} d_unidad={:.10} d_restante={:.10} d_D={:.10} B_D={:.8} USDT",
+                p.q_d, p.h, p.f_sizing, p.d_duro, p.d_unidad, p.d_restante, p.d_d, p.b_d
+            )),
+            Transicion::Bloqueado => Some(format!("{} hasta el siguiente dia UTC acreditado", risk_engine::perdida_diaria::CODIGO_DAY_LOSS_LOCKED)),
+            Transicion::SinAncla(c) => Some(format!("{} causa={}: aperturas retenidas", risk_engine::perdida_diaria::CODIGO_DAY_EQUITY_ND, c.nombre())),
+            Transicion::RelojRegresivo => Some("RELOJ_REGRESIVO: observacion ignorada, estado conservado".to_string()),
+            Transicion::Nada => None,
+        };
+        let linea = match (linea, persistido) {
+            (Some(l), Err(e)) => Some(format!("{l} ({e})")),
+            (l, _) => l,
+        };
+        let mut ultimo = self.ultimo_aviso.lock().unwrap_or_else(|p| p.into_inner());
+        match linea {
+            Some(l) if ultimo.as_deref() != Some(l.as_str()) => {
+                *ultimo = Some(l.clone());
+                Some(l)
+            }
+            _ => None,
+        }
+    }
+
+    /// Flujo externo de la cuenta (`/fapi/v1/income`), con su instante del venue.
+    pub fn registrar_flujo(&self, tiempo_ms: u64, id: u64, activo: &str, importe: f64) -> Result<(), String> {
+        let mut g = self.guarda.lock().unwrap_or_else(|p| p.into_inner());
+        let r = g.registrar_flujo(tiempo_ms, id, activo, importe);
+        let p = self.persistir(&g);
+        r.map_err(|c| c.nombre().to_string()).and(p)
+    }
+
+    /// Evidencia del roster (win rate, n) que el nucleo publica; se congela al abrir el dia.
+    pub fn publicar_evidencia(&self, evidencia: Vec<(f64, f64)>) {
+        self.guarda.lock().unwrap_or_else(|p| p.into_inner()).publicar_evidencia(evidencia);
+    }
+
+    /// La decision para una apertura con la equity del freno de este instante. Persiste el latch.
+    pub fn permite_apertura(&self, arena: &GlobalArena) -> Result<(), String> {
+        let equity = arena.capital_exchange.load(Ordering::Acquire);
+        let mut g = self.guarda.lock().unwrap_or_else(|p| p.into_inner());
+        let antes = g.estado.as_ref().is_some_and(|e| e.bloqueado);
+        let decision = g.permite_apertura((self.reloj_ms)(), equity);
+        if !antes && g.estado.as_ref().is_some_and(|e| e.bloqueado) {
+            // El latch vale aunque la escritura falle (en memoria); el error se informa.
+            let _ = self.persistir(&g);
+        }
+        match decision {
+            risk_engine::perdida_diaria::DecisionDiaria::Permitida => Ok(()),
+            risk_engine::perdida_diaria::DecisionDiaria::DayLossLocked => {
+                Err(risk_engine::perdida_diaria::CODIGO_DAY_LOSS_LOCKED.to_string())
+            }
+            risk_engine::perdida_diaria::DecisionDiaria::DayEquityNd(c) => Err(format!(
+                "{} causa={}",
+                risk_engine::perdida_diaria::CODIGO_DAY_EQUITY_ND,
+                c.nombre()
+            )),
+        }
+    }
+
+    /// Copia del estado del dia (recibo y pruebas).
+    pub fn estado(&self) -> Option<risk_engine::perdida_diaria::EstadoDiario> {
+        self.guarda.lock().unwrap_or_else(|p| p.into_inner()).estado.clone()
+    }
 }
 
 struct SessionState {
@@ -217,12 +336,26 @@ impl OmsSession {
             quiescent: Notify::new(),
             refresh_serial: tokio::sync::Mutex::new(()),
             al_cierre_externo: std::sync::OnceLock::new(),
+            guarda_diaria: std::sync::OnceLock::new(),
         }
     }
 
     /// CAPITAL-UNICO V4H (INV-G): vincula la accion del host ante un cierre externo (una vez).
     pub fn vincular_cierre_externo(&self, f: impl Fn() + Send + Sync + 'static) {
         let _ = self.al_cierre_externo.set(Box::new(f));
+    }
+
+    /// DEMO-B: vincula la guarda de perdida diaria (una vez; `false` si ya habia una).
+    pub fn vincular_guarda_diaria(&self, guarda: Arc<GuardaDiariaHost>) -> bool {
+        self.guarda_diaria.set(guarda).is_ok()
+    }
+
+    /// DEMO-B: el veto de la guarda diaria para una apertura (sin guarda: no veta).
+    fn veto_diario(&self, arena: &GlobalArena) -> Result<(), String> {
+        match self.guarda_diaria.get() {
+            Some(g) => g.permite_apertura(arena),
+            None => Ok(()),
+        }
     }
 
     pub fn snapshot_token(&self) -> SessionToken {
@@ -393,6 +526,10 @@ impl OmsSession {
         if !self.token_is_current(state.generation, token) {
             return Err("OMS_ENTRY_WITHHELD: stale executor session".into());
         }
+        // DEMO-B: perdida diaria (DAY_LOSS_LOCKED / DAY_EQUITY_ND), antes de cualquier etapa de
+        // la apertura. Los cierres no pasan por aqui.
+        self.veto_diario(arena)
+            .map_err(|motivo| format!("OMS_ENTRY_WITHHELD: {motivo}"))?;
         // CAPITAL-UNICO V3 (P1.2): ninguna entrada hasta tener saldo vigente de
         // la era del puente de la cuenta (y equity completa). Sólo entradas:
         // los cierres no pasan por aquí.
@@ -519,6 +656,9 @@ impl OmsSession {
         {
             return Err("session is refreshing or unreconciled".into());
         }
+        // DEMO-B: la perdida diaria se revalida en cada cruce de la frontera del transporte, con
+        // la equity de ese instante (un cruce del suelo en el mismo poll retiene el POST).
+        self.veto_diario(arena)?;
         let mut libro = arena
             .config
             .entry_publication_gate
