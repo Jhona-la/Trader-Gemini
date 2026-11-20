@@ -1,5 +1,5 @@
 //! CICLOS-2 (pedido 20261118-0535-cicloscompletos; espec. `ciclos_completos_v2.md` §3, matriz 01-10 y
-//! regresiones). El productor real (`ciclos_completos::certificar_ciclos`) recibe fills, cashflows,
+//! regresiones; CICLOS-4: casos 11 y 12 de QODER-APP C8, 07b y r5). El productor real (`ciclos_completos::certificar_ciclos`) recibe fills, cashflows,
 //! fotos de borde y cobertura inyectados en memoria; su recibo pasa por el escritor y el lector
 //! reales (`escribir_certificado_v2` / `cargar_evidencia_ciclos_v2`, en un directorio temporal) y de
 //! ahi a la puerta real (`PhaseOrchestrator`). Ningun contador se inyecta ya calculado.
@@ -44,6 +44,11 @@ fn esperado() -> AmbitoEsperado {
 fn imp(t: &str) -> Result<ImporteVenue, CausaImporteNd> {
     importe_de_texto(t)
 }
+/// Saldo USDT de borde con el texto dado.
+fn saldo(t: &str) -> Option<SaldoVenue> {
+    Some(SaldoVenue { asset: "USDT".into(), importe: imp(t) })
+}
+const SALDO_T0: &str = "1000";
 /// Importe exacto del fixture.
 fn dec(t: &str) -> DecimalExacto {
     match importe_de_texto(t) {
@@ -127,7 +132,19 @@ impl Gen {
             foto_t1: Some(BTreeMap::new()),
             cobertura_fills_completa: true,
             cobertura_funding_completa: true,
+            saldo_t0: saldo(SALDO_T0),
+            saldo_t1: saldo(&self.saldo_final().texto()),
         }
+    }
+    /// Saldo en T1 que cuadra exacto con las filas de caja legibles del fixture (CICLOS-4, C3).
+    fn saldo_final(&self) -> DecimalExacto {
+        let mut s = dec(SALDO_T0);
+        for c in &self.caja {
+            if let Ok(i) = &c.importe {
+                s = s.checked_add(i.valor).unwrap_or_else(|| panic!("saldo del fixture desborda"));
+            }
+        }
+        s
     }
 }
 
@@ -681,4 +698,188 @@ fn demo_ciclos_r4_cableado_de_la_puerta() {
     let revoca = src.find("quantum_engine::ciclos_completos::revocar_certificado_v2(").unwrap_or(0);
     assert!(disparo < revoca && revoca - disparo < 1_200, "el disparo del freno revoca el recibo v2 en disco");
     assert!(src.contains("registrar_breaker_ingreso(&mut *orch, x_closes, x_gross, x_fees)"), "el freno sigue en filas");
+}
+
+// ---------------------------------------------------------------- CICLOS-4 (adenda y N1 de QODER-APP)
+
+/// C1/C8 caso 11 (denominador mixto, bloqueante): 30 ciclos acreditados con EV > 0 y UN ciclo
+/// cerrado estructuralmente con neto N/D. El N/D no sale del denominador: bloquea el recibo.
+#[test]
+fn demo_ciclos_11_denominador_mixto_bloquea_el_recibo() {
+    // Control: los 30 solos abren (la puerta muerde).
+    let (ev30, f30) = por_la_puerta("c11c", &certificar_ciclos(&episodios(30, "1").entrada(ModoPosicion::OneWay)));
+    assert_eq!(ev30.map(|e| e.cierres), Ok(30));
+    assert_eq!(f30, SystemPhase::ProductionMainnet, "control: 30 acreditados con EV > 0 admiten");
+    // (a) 31 estructurales, 30 acreditados, 1 N/D (rp ausente en su cierre).
+    let mut g = episodios(30, "1");
+    g.ow("BTCUSDT", Lado::Compra, "1", "0");
+    g.ow("BTCUSDT", Lado::Venta, "1", "1");
+    let ultimo = g.fills.len() - 1;
+    g.fills[ultimo].rp = Err(CausaImporteNd::Ausente);
+    let mixto = certificar_ciclos(&g.entrada(ModoPosicion::OneWay));
+    assert_eq!((mixto.ciclos_estructurales, mixto.n_ciclos_validos, mixto.ciclos_nd), (31, 30, 1));
+    assert!(tiene(&mixto, CausaCiclosNd::CicloNdEnDenominador), "{:?}", mixto.causas_nd);
+    assert_eq!((mixto.estado.as_str(), mixto.ev_neto_por_ciclo), (ESTADO_ND, None), "el N/D bloquea, no se excluye");
+    assert_eq!(mixto.neto_total, dec("30"), "la media de los observables es descripcion");
+    let (ev, fase) = por_la_puerta("c11a", &mixto);
+    assert_eq!(ev, Err(MotivoSinEvidencia::Incompleto));
+    assert_eq!(fase, SystemPhase::DemoVerify);
+    // (b) La reversion de un solo fill que C+D manda a N/D (dos ciclos estructurales N/D).
+    let mut r = episodios(30, "1");
+    r.ow("BTCUSDT", Lado::Compra, "2", "0");
+    r.fill_con("BTCUSDT", Lado::Venta, Pierna::Both, "3", imp("0.4"), Some("0.4"), Some("-0.03"), CausaSalida::Normal);
+
+    // Caso 11 de QODER: el tramo que abre con la reversion sigue abierto en T1.
+    let mut entrada_reversion = r.entrada(ModoPosicion::OneWay);
+    entrada_reversion.foto_t1 = Some(BTreeMap::from([(
+        "BTCUSDT".into(),
+        Foto { both_e8: e8("-1"), ..Foto::default() },
+    )]));
+    let reversion_abierta = certificar_ciclos(&entrada_reversion);
+    assert_eq!(
+        (reversion_abierta.ciclos_estructurales, reversion_abierta.n_ciclos_validos, reversion_abierta.ciclos_nd),
+        (31, 30, 1)
+    );
+    assert_eq!((reversion_abierta.arrastres, reversion_abierta.abiertos), (0, 1));
+    assert!(!tiene(&reversion_abierta, CausaCiclosNd::DescuadreFotoT1));
+    assert!(tiene(&reversion_abierta, CausaCiclosNd::ReversionSinImportesExplicitos));
+    assert!(tiene(&reversion_abierta, CausaCiclosNd::CicloNdEnDenominador));
+    assert_eq!(reversion_abierta.neto_total, dec("30"));
+    assert_eq!((reversion_abierta.estado.as_str(), reversion_abierta.ev_neto_por_ciclo), (ESTADO_ND, None));
+    assert_eq!(
+        por_la_puerta("c11g", &reversion_abierta),
+        (Err(MotivoSinEvidencia::Incompleto), SystemPhase::DemoVerify)
+    );
+
+    r.fill_con("BTCUSDT", Lado::Compra, Pierna::Both, "1", imp("0.1"), Some("0.1"), Some("0"), CausaSalida::Normal);
+    let rev = certificar_ciclos(&r.entrada(ModoPosicion::OneWay));
+    assert_eq!((rev.ciclos_estructurales, rev.n_ciclos_validos, rev.ciclos_nd), (32, 30, 2));
+    assert!(tiene(&rev, CausaCiclosNd::ReversionSinImportesExplicitos));
+    assert!(tiene(&rev, CausaCiclosNd::CicloNdEnDenominador));
+    assert_eq!((rev.estado.as_str(), rev.ev_neto_por_ciclo), (ESTADO_ND, None));
+    assert_eq!(por_la_puerta("c11b", &rev).1, SystemPhase::DemoVerify);
+    // (c) Un recibo retocado para "excluir" el N/D no autoriza.
+    let con = |et: &str, f: &dyn Fn(&mut serde_json::Value)| {
+        let mut v = serde_json::to_value(&mixto).unwrap_or_default();
+        f(&mut v);
+        let d = Dir::nuevo(et);
+        std::fs::write(d.cert(), v.to_string()).unwrap_or_else(|e| panic!("{e}"));
+        cargar_evidencia_ciclos_v2(&d.cert(), Some(&esperado()))
+    };
+    let valido = |v: &mut serde_json::Value| {
+        v["estado"] = ESTADO_VALIDO.into();
+        v["causas_nd"] = serde_json::json!([]);
+        v["ev_neto_por_ciclo"] = 1.0.into();
+    };
+    assert_eq!(con("c11d", &|v| valido(v)), Err(MotivoSinEvidencia::Inconsistente), "ciclos_nd > 0");
+    assert_eq!(
+        con("c11e", &|v| {
+            valido(v);
+            v["ciclos_nd"] = 0.into();
+        }),
+        Err(MotivoSinEvidencia::Inconsistente),
+        "30 validos de 31 estructurales"
+    );
+    assert_eq!(
+        con("c11f", &|v| {
+            valido(v);
+            v["ciclos_nd"] = 0.into();
+            v["ciclos_estructurales"] = 30.into();
+            if let Some(a) = v["ciclos"].as_array_mut() {
+                a.pop();
+            }
+        }),
+        Err(MotivoSinEvidencia::Inconsistente),
+        "quitar el ciclo N/D rompe el respaldo"
+    );
+}
+
+/// C3/C8 caso 12 (cuadratura exacta): ventana USDT sin FX con delta de saldo EXACTAMENTE igual al
+/// neto mas los flujos externos => pasa; una unidad en la ultima cifra => N/D y puerta cerrada.
+#[test]
+fn demo_ciclos_12_cuadratura_exacta_sin_tolerancia() {
+    let g = episodios(30, "1");
+    let base = g.entrada(ModoPosicion::OneWay);
+    let ok = certificar_ciclos(&base);
+    assert_eq!((ok.estado.as_str(), ok.saldo_t0, ok.saldo_t1), (ESTADO_VALIDO, Some(dec("1000")), Some(dec("1030"))), "{:?}", ok.causas_nd);
+    assert_eq!(por_la_puerta("c12a", &ok).1, SystemPhase::ProductionMainnet, "control: cuadra exacto y abre");
+    let con_saldo_t1 = |t: &str| {
+        let mut e = base.clone();
+        e.saldo_t1 = saldo(t);
+        certificar_ciclos(&e)
+    };
+    for t in ["1030.00000001", "1029.99999999", "1030.000000000001", "1030.1"] {
+        let c = con_saldo_t1(t);
+        assert!(tiene(&c, CausaCiclosNd::CuadraturaDescuadrada), "{t}: {:?}", c.causas_nd);
+        assert_eq!((c.estado.as_str(), c.ev_neto_por_ciclo), (ESTADO_ND, None), "{t}");
+        let (ev, fase) = por_la_puerta("c12b", &c);
+        assert_eq!((ev, fase), (Err(MotivoSinEvidencia::Incompleto), SystemPhase::DemoVerify), "{t}: sin tolerancia");
+    }
+    assert_eq!(con_saldo_t1("1030.000").estado, ESTADO_VALIDO, "mismo valor con otro texto cuadra");
+    // Saldo ausente o ilegible: N/D.
+    for s in [None, Some(SaldoVenue { asset: "USDT".into(), importe: Err(CausaImporteNd::NumeroJsonSinTexto) })] {
+        let mut e = base.clone();
+        e.saldo_t0 = s;
+        assert!(tiene(&certificar_ciclos(&e), CausaCiclosNd::SaldoBordeAusente));
+    }
+    // Fuera de la cohorte USDT unico sin FX: N/D, nunca "igualdad con tolerancia".
+    let mut e = base.clone();
+    e.saldo_t1 = Some(SaldoVenue { asset: "BNB".into(), importe: imp("1030") });
+    assert!(tiene(&certificar_ciclos(&e), CausaCiclosNd::CuadraturaFueraDeCohorte));
+    let mut e = base.clone();
+    if let Some(c) = e.caja.first_mut() {
+        c.asset = String::new();
+    }
+    let sin_activo = certificar_ciclos(&e);
+    assert!(tiene(&sin_activo, CausaCiclosNd::MonedaNoUsdt), "QODER-APP C7: activo ausente no es USDT");
+    assert!(tiene(&sin_activo, CausaCiclosNd::CuadraturaFueraDeCohorte));
+    // Flujo externo: cuenta en la cuadratura y no en los ciclos.
+    let mut t = episodios(30, "1");
+    t.caja_con("", TipoCaja::Externo, None, T0 + 500, "USDT", imp("100"), None);
+    let tr = certificar_ciclos(&t.entrada(ModoPosicion::OneWay));
+    assert_eq!((tr.estado.as_str(), tr.n_ciclos_validos, tr.neto_total, tr.externos), (ESTADO_VALIDO, 30, dec("30"), dec("100")), "{:?}", tr.causas_nd);
+    let mut e = t.entrada(ModoPosicion::OneWay);
+    e.caja.retain(|c| c.tipo != TipoCaja::Externo);
+    assert!(tiene(&certificar_ciclos(&e), CausaCiclosNd::CuadraturaDescuadrada), "un deposito no declarado no cuadra");
+    // Un recibo con el saldo retocado no autoriza.
+    let mut v = serde_json::to_value(&ok).unwrap_or_default();
+    v["saldo_t1"] = "1030.00000001".into();
+    let d = Dir::nuevo("c12c");
+    std::fs::write(d.cert(), v.to_string()).unwrap_or_else(|e| panic!("{e}"));
+    assert_eq!(cargar_evidencia_ciclos_v2(&d.cert(), Some(&esperado())), Err(MotivoSinEvidencia::Inconsistente));
+}
+
+/// C2: el adaptador conserva la granularidad POR FILA (tranId), no la suma por tradeId; con un
+/// solo fill de reversion, dos filas sin tramo explicito siguen sin satisfacer C.
+#[test]
+fn demo_ciclos_07b_granularidad_por_fila() {
+    let mut g = Gen::nuevo();
+    g.ow("BTCUSDT", Lado::Compra, "1", "0");
+    let id = g.fill_con("BTCUSDT", Lado::Venta, Pierna::Both, "1", imp("1"), Some("1"), Some("-0.02"), CausaSalida::Normal);
+    let t = g.t;
+    g.caja_con("BTCUSDT", TipoCaja::Comision, Some(id), t, "USDT", imp("-0.01"), None);
+    let dos = certificar_ciclos(&g.entrada(ModoPosicion::OneWay));
+    assert_eq!((dos.n_ciclos_validos, dos.estado.as_str()), (1, ESTADO_VALIDO), "{:?}", dos.causas_nd);
+    assert_eq!(dos.ciclos[0].comision, dec("-0.03"), "dos filas del mismo tradeId, cada una por su tranId");
+    // Reversion con dos filas de comision sin tramo: C no se satisface => D (N/D).
+    let mut r = Gen::nuevo();
+    r.ow("BTCUSDT", Lado::Compra, "2", "0");
+    let id = r.fill_con("BTCUSDT", Lado::Venta, Pierna::Both, "3", imp("0.4"), Some("0.4"), Some("-0.02"), CausaSalida::Normal);
+    let t = r.t;
+    r.caja_con("BTCUSDT", TipoCaja::Comision, Some(id), t, "USDT", imp("-0.01"), None);
+    r.fill_con("BTCUSDT", Lado::Compra, Pierna::Both, "1", imp("0.1"), Some("0.1"), Some("0"), CausaSalida::Normal);
+    let nd = certificar_ciclos(&r.entrada(ModoPosicion::OneWay));
+    assert!(tiene(&nd, CausaCiclosNd::ReversionSinImportesExplicitos));
+    assert_eq!((nd.n_ciclos_validos, nd.ev_neto_por_ciclo), (0, None));
+}
+
+/// C2/C5/C6/C7: el codigo del certificado no reutiliza tolerancias ni lectores prohibidos.
+#[test]
+fn demo_ciclos_r5_sin_tolerancias_ni_lectores_prohibidos() {
+    let src = include_str!("../src/ciclos_completos.rs").replace("\r\n", "\n");
+    let codigo: String = src.lines().filter(|l| !l.trim_start().starts_with("//")).collect::<Vec<_>>().join("\n");
+    assert!(codigo.contains("fn cuadra("), "control: el filtro deja el codigo");
+    for prohibido in ["mismo_saldo", "state_validator", "1e-8", "1e-9", "abs() <=", "trade_ledger", "parse_income_jsonl", "decimal_e8", "f64::EPSILON"] {
+        assert!(!codigo.contains(prohibido), "prohibido en el certificado: {prohibido}");
+    }
 }

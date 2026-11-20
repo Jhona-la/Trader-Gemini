@@ -11,7 +11,34 @@
 //! POR QUE: el certificado legado cuenta una fila `REALIZED_PNL` como un cierre: diez ciclos con
 //! tres parciales cada uno son 30 "cierres" y abren la puerta (MIN_CIERRES_PARA_PROD = 30).
 //! FAIL-CLOSED: cualquier dato critico sin acreditar deja el ciclo o el certificado en N/D con
-//! su causa; nunca un cero inventado. Las filas, el freno de Produccion (minimo 10 filas), el
+//! su causa; nunca un cero inventado.
+//!
+//! CICLOS-4 (adenda 20261118-0547 del coordinador y N1 de QODER-APP `qoder_app_n1_ciclos_v2.md`,
+//! Parte 5):
+//! - C1 INVARIANTE DE DENOMINADOR: "dato critico" es cualquier partida de cualquier ciclo cerrado
+//!   estructuralmente de la ventana. Si alguno tiene neto N/D, el certificado entero es N/D
+//!   (`CicloNdEnDenominador`): los ciclos N/D NO se excluyen del denominador, bloquean el recibo.
+//!   La media de los completos observables (`neto_total`) es descripcion y no alimenta la puerta.
+//! - C2 DECISION (coordinador, 18 nov 03:20): C primaria (importes explicitos del venue para el
+//!   tramo de cierre y el de apertura, sin prorrateo local), D de respaldo (N/D si C no alcanza);
+//!   A, B y E descartadas y prohibido reintroducirlas. Con un solo fill y una sola fila de
+//!   cashflow por tradeId, C no se satisface y el ciclo es N/D. El adaptador conserva la
+//!   granularidad POR FILA (identidad `tranId`); no usa el agrupador contable de
+//!   `telemetry-server/src/trade_ledger.rs` (884-891, 931-936), que suma las filas de un tradeId.
+//! - C3 CUADRATURA por IGUALDAD EXACTA, sin tolerancia: walletBalance(T1) - walletBalance(T0) ==
+//!   suma de netos de los ciclos + flujos externos, en decimal exacto. Solo esta definida en la
+//!   cohorte USDT unico sin FX (fuera de ella, N/D); si falla con datos reales, N/D con la causa
+//!   publicada y la puerta cerrada. NINGUN implementador puede introducir una tolerancia: que el
+//!   saldo del venue cuadre exacto es una hipotesis a verificar empiricamente, no un hecho.
+//! - C5: no se usan ni para probar plano ni para cuadrar `user_data_stream.rs:1115`
+//!   (|c| <= 1e-8 => Cerrada), `puente_cuenta.rs:355-357` (`mismo_saldo`, relativa 1e-9 con piso
+//!   1,0) ni `state_validator.rs:62-77` (0,01 y 1,0 absolutos; kill switch comentado en :78). El
+//!   plano es cero exacto.
+//! - C6/C7: importes en `DecimalExacto` (nunca `decimal_e8`, que es de cantidad y sin signo);
+//!   activo ausente nunca es USDT (no se usa el lector legado `parse_income_jsonl`).
+//! - C10 COSTE ACEPTADO: C+D con igualdad exacta puede dejar la puerta cerrada de forma
+//!   indefinida. Es el comportamiento deseado; la via para ampliar la elegibilidad es mas
+//!   evidencia del venue, NO una tolerancia ni el regreso a A/B. Las filas, el freno de Produccion (minimo 10 filas), el
 //! profiler, el panel y el freno estadistico por simbolo NO cambian: siguen leyendo filas.
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::path::{Path, PathBuf};
@@ -120,6 +147,9 @@ pub enum TipoCaja {
     Funding,
     /// Cargo identificable de liquidacion o ADL no clasificado en otra partida.
     CargoForzoso,
+    /// Flujo externo de la cuenta (TRANSFER y similares): no es de ningun ciclo; entra solo en la
+    /// cuadratura con el saldo.
+    Externo,
 }
 
 /// Tramo de una reversion one-way, cuando el venue entrega el importe de cada tramo (opcion C).
@@ -156,6 +186,13 @@ impl Foto {
     }
 }
 
+/// `walletBalance` de la cuenta en un borde, con su activo y el texto del venue.
+#[derive(Debug, Clone, PartialEq)]
+pub struct SaldoVenue {
+    pub asset: String,
+    pub importe: Result<ImporteVenue, CausaImporteNd>,
+}
+
 /// Lo que fija el recibo: cuenta Testnet, sesion, estrategia y SHA del binario y la configuracion.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -187,6 +224,9 @@ pub struct EntradaCiclos {
     pub cobertura_fills_completa: bool,
     /// Cobertura de funding comprobada: la ausencia de filas FUNDING_FEE vale cero acreditado.
     pub cobertura_funding_completa: bool,
+    /// Saldo de la cuenta en T0 y en T1 (`None`: sin saldo de borde, cuadratura N/D).
+    pub saldo_t0: Option<SaldoVenue>,
+    pub saldo_t1: Option<SaldoVenue>,
 }
 
 /// Causas N/D (del ciclo o del certificado).
@@ -213,6 +253,16 @@ pub enum CausaCiclosNd {
     CargoForzosoIlegible,
     ReversionSinImportesExplicitos,
     Desbordamiento,
+    /// C1: un ciclo cerrado estructuralmente tiene neto N/D: bloquea el recibo entero.
+    CicloNdEnDenominador,
+    /// Falta el saldo de un borde o es ilegible.
+    SaldoBordeAusente,
+    /// Fuera de la cohorte USDT unico sin FX la cuadratura no esta definida.
+    CuadraturaFueraDeCohorte,
+    /// Algun ciclo, arrastre o abierto impide sumar todos los netos.
+    CuadraturaNoEvaluable,
+    /// Delta de saldo distinto (por exacto) de netos + externos.
+    CuadraturaDescuadrada,
 }
 
 /// Resumen de un ciclo cerrado dentro de la ventana (importes decimales exactos del venue, firmados
@@ -253,6 +303,10 @@ pub struct CertificadoCiclosV2 {
     pub ganadores: u64,
     /// Suma de los netos acreditados (descriptiva si el estado es ND: no alimenta la puerta).
     pub neto_total: DecimalExacto,
+    /// Saldos de borde (texto exacto del venue) y flujos externos de la ventana: la cuadratura.
+    pub saldo_t0: Option<DecimalExacto>,
+    pub saldo_t1: Option<DecimalExacto>,
+    pub externos: DecimalExacto,
     /// EV de certificacion por ciclo: `None` si el estado no es VALIDO o no hay ciclos.
     pub ev_neto_por_ciclo: Option<f64>,
     pub causas_nd: Vec<String>,
@@ -505,11 +559,18 @@ pub fn certificar_ciclos(e: &EntradaCiclos) -> CertificadoCiclosV2 {
     let mut pnl_de_fila: HashMap<usize, Vec<&CajaVenue>> = HashMap::new();
     let mut comision_de_fila: HashMap<usize, Vec<&CajaVenue>> = HashMap::new();
     let mut filas_realized_pnl: u64 = 0;
+    let mut externos = DecimalExacto::CERO;
     for c in &caja {
         if c.asset != ACTIVO_DE_CUENTA {
             globales.insert(CausaCiclosNd::MonedaNoUsdt);
         }
         match c.tipo {
+            TipoCaja::Externo => match &c.importe {
+                Ok(imp) => sumar(&mut externos, imp.valor, &mut globales),
+                Err(_) => {
+                    globales.insert(CausaCiclosNd::ImporteIlegible);
+                }
+            },
             TipoCaja::RealizedPnl | TipoCaja::Comision => {
                 if c.tipo == TipoCaja::RealizedPnl {
                     filas_realized_pnl += 1;
@@ -709,6 +770,9 @@ pub fn certificar_ciclos(e: &EntradaCiclos) -> CertificadoCiclosV2 {
         abiertos,
         ganadores: 0,
         neto_total: DecimalExacto::CERO,
+        saldo_t0: e.saldo_t0.as_ref().and_then(|s| s.importe.as_ref().ok()).map(|i| i.valor),
+        saldo_t1: e.saldo_t1.as_ref().and_then(|s| s.importe.as_ref().ok()).map(|i| i.valor),
+        externos,
         ev_neto_por_ciclo: None,
         causas_nd: globales.iter().map(|x| format!("{x:?}")).collect(),
         ciclos: resumenes,
@@ -725,11 +789,48 @@ pub fn certificar_ciclos(e: &EntradaCiclos) -> CertificadoCiclosV2 {
     cert.ciclos_nd = cert.ciclos_estructurales - n;
     cert.ganadores = ganadores;
     cert.neto_total = neto;
+    // C1: un ciclo estructural con neto N/D bloquea el recibo entero (no sale del denominador).
+    if cert.ciclos_nd > 0 {
+        cert.causas_nd.push(format!("{:?}", CausaCiclosNd::CicloNdEnDenominador));
+    }
+    // C3: cuadratura por igualdad exacta, solo en la cohorte USDT unico sin FX.
+    if let Some(causa) = causa_cuadratura(e, &caja, &cert) {
+        cert.causas_nd.push(format!("{causa:?}"));
+    }
     let valido = cert.causas_nd.is_empty() && cert.ciclos_nd == 0;
     cert.estado = if valido { ESTADO_VALIDO } else { ESTADO_ND }.to_string();
     cert.ev_neto_por_ciclo = if valido { ev_por_ciclo(neto, n) } else { None };
     cert.hash_ciclos = hash_de(&cert);
     cert
+}
+
+/// C3: `None` si la cuadratura es exacta; si no, la causa N/D. Sin tolerancia de ningun tipo.
+fn causa_cuadratura(e: &EntradaCiclos, caja: &[CajaVenue], cert: &CertificadoCiclosV2) -> Option<CausaCiclosNd> {
+    let saldos = [&e.saldo_t0, &e.saldo_t1];
+    let fuera = caja.iter().any(|c| c.asset != ACTIVO_DE_CUENTA)
+        || saldos.iter().any(|s| s.as_ref().is_some_and(|s| s.asset != ACTIVO_DE_CUENTA));
+    if fuera {
+        return Some(CausaCiclosNd::CuadraturaFueraDeCohorte);
+    }
+    let (Some(s0), Some(s1)) = (cert.saldo_t0, cert.saldo_t1) else {
+        return Some(CausaCiclosNd::SaldoBordeAusente);
+    };
+    if cert.arrastres > 0 || cert.abiertos > 0 || cert.ciclos.iter().any(|c| c.neto.is_none()) {
+        return Some(CausaCiclosNd::CuadraturaNoEvaluable);
+    }
+    if cuadra(s0, s1, cert.neto_total, cert.externos) {
+        None
+    } else {
+        Some(CausaCiclosNd::CuadraturaDescuadrada)
+    }
+}
+
+/// Igualdad EXACTA: saldo(T1) - saldo(T0) == netos + externos (un desbordamiento no cuadra).
+fn cuadra(s0: DecimalExacto, s1: DecimalExacto, neto: DecimalExacto, externos: DecimalExacto) -> bool {
+    match (s1.checked_sub(s0), neto.checked_add(externos)) {
+        (Some(delta), Some(esperado)) => delta == esperado,
+        _ => false,
+    }
 }
 
 /// (validos, neto total, ganadores por X > 0, desbordamiento).
@@ -766,7 +867,11 @@ fn ev_por_ciclo(neto: DecimalExacto, n: u64) -> Option<f64> {
 }
 
 fn hash_de(c: &CertificadoCiclosV2) -> String {
-    let base = serde_json::to_string(&(&c.ambito, &c.modo, c.ventana_desde_ms, c.ventana_hasta_ms, &c.ciclos)).unwrap_or_default();
+    let base = serde_json::to_string(&(
+        (&c.ambito, &c.modo, c.ventana_desde_ms, c.ventana_hasta_ms, &c.ciclos),
+        (&c.saldo_t0, &c.saldo_t1, &c.externos),
+    ))
+    .unwrap_or_default();
     let mut h = Sha256::new();
     h.update(base.as_bytes());
     h.finalize().iter().map(|b| format!("{b:02x}")).collect()
@@ -924,7 +1029,8 @@ pub fn cargar_evidencia_ciclos_v2(
         && n == cert.ciclos_estructurales
         && cert.neto_total == neto
         && cert.ganadores == ganadores
-        && cert.ev_neto_por_ciclo.map(f64::to_bits) == ev_por_ciclo(neto, n).map(f64::to_bits);
+        && cert.ev_neto_por_ciclo.map(f64::to_bits) == ev_por_ciclo(neto, n).map(f64::to_bits)
+        && matches!((cert.saldo_t0, cert.saldo_t1), (Some(s0), Some(s1)) if cuadra(s0, s1, neto, cert.externos));
     if !coherente {
         return Err(MotivoSinEvidencia::Inconsistente);
     }
