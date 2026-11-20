@@ -3,13 +3,15 @@
 //! fotos de borde y cobertura inyectados en memoria; su recibo pasa por el escritor y el lector
 //! reales (`escribir_certificado_v2` / `cargar_evidencia_ciclos_v2`, en un directorio temporal) y de
 //! ahi a la puerta real (`PhaseOrchestrator`). Ningun contador se inyecta ya calculado.
-//! Importes del venue en punto fijo (1e-8): la cuadratura es por igualdad exacta, sin tolerancia.
+//! Importes del venue como decimal exacto con signo sobre su texto (CICLOS-3, sin escala elegida):
+//! la cuadratura es por igualdad exacta, sin tolerancia. Las cantidades siguen en 1e-8 (escala de
+//! cantidad).
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
-use execution_engine::importe_venue::{importe_de_texto, CausaImporteNd, ImporteVenue};
+use execution_engine::importe_venue::{importe_de_texto, CausaImporteNd, DecimalExacto, ImporteVenue};
 use god_engine_core::orchestrator::{EvidenciaDemo, PhaseOrchestrator, SystemPhase, MIN_CIERRES_PARA_PROD};
 use quantum_engine::ciclos_completos::*;
 
@@ -42,10 +44,18 @@ fn esperado() -> AmbitoEsperado {
 fn imp(t: &str) -> Result<ImporteVenue, CausaImporteNd> {
     importe_de_texto(t)
 }
-fn e8(t: &str) -> i64 {
+/// Importe exacto del fixture.
+fn dec(t: &str) -> DecimalExacto {
     match importe_de_texto(t) {
-        Ok(i) => i.e8,
+        Ok(i) => i.valor,
         Err(c) => panic!("fixture {t}: {c:?}"),
+    }
+}
+/// Cantidad del fixture a la escala de cantidad (1e-8).
+fn e8(t: &str) -> i64 {
+    match dec(t).en_unidades(8).and_then(|x| i64::try_from(x).ok()) {
+        Some(x) => x,
+        None => panic!("cantidad {t} fuera de la escala de 1e-8"),
     }
 }
 
@@ -190,8 +200,8 @@ fn demo_ciclos_01_treinta_filas_diez_ciclos_puerta_cerrada() {
     assert_eq!(cert.n_ciclos_validos, 10, "10 ciclos completos, no 30 cierres: {cert:?}");
     assert_eq!(cert.ciclos_estructurales, 10);
     assert_eq!(cert.estado, ESTADO_VALIDO, "comision y funding cero acreditados: {:?}", cert.causas_nd);
-    assert_eq!(cert.neto_total_e8, e8("30"));
-    assert!(cert.ciclos.iter().all(|c| c.comision_e8 == 0 && c.funding_e8 == 0 && c.neto_e8 == Some(e8("3"))));
+    assert_eq!(cert.neto_total, dec("30"));
+    assert!(cert.ciclos.iter().all(|c| c.comision == DecimalExacto::CERO && c.funding == DecimalExacto::CERO && c.neto == Some(dec("3"))));
     assert_eq!(cert.ev_neto_por_ciclo, Some(3.0));
     let (ev, fase) = por_la_puerta("c01", &cert);
     assert_eq!(ev, Ok(EvidenciaDemo { cierres: 10, ev_neto_por_trade: 3.0, wins: 10 }));
@@ -261,7 +271,7 @@ fn demo_ciclos_03_parciales_refuerzos_y_remanente() {
     let cerrado = certificar_ciclos(&g.entrada(ModoPosicion::OneWay));
     assert_eq!((cerrado.n_ciclos_validos, cerrado.filas_realized_pnl), (1, 3));
     assert_eq!(cerrado.ciclos[0].fills, 5);
-    assert_eq!(cerrado.neto_total_e8, e8("4"));
+    assert_eq!(cerrado.neto_total, dec("4"));
     // Remanente exacto, por pequeno que sea (1e-8), mantiene el ciclo abierto.
     let mut p = Gen::nuevo();
     p.ow("BTCUSDT", Lado::Compra, "1", "0");
@@ -293,7 +303,7 @@ fn demo_ciclos_04_hedge_y_separacion_de_identidades() {
     d.ow("BTCUSDT", Lado::Venta, "1", "1");
     d.ow("ETHUSDT", Lado::Venta, "1", "2");
     let dos = certificar_ciclos(&d.entrada(ModoPosicion::OneWay));
-    assert_eq!((dos.n_ciclos_validos, dos.neto_total_e8), (2, e8("3")));
+    assert_eq!((dos.n_ciclos_validos, dos.neto_total), (2, dec("3")));
     // El mismo tradeId en otra cuenta y en otro entorno es otra historia: no contradice ni se suma.
     let mut otra = d.fills.clone();
     for (cuenta, entorno) in [("otra-cuenta", ENTORNO_TESTNET), (CUENTA, "mainnet")] {
@@ -323,8 +333,8 @@ fn demo_ciclos_05_kill_switch_liquidacion_y_adl() {
         g.caja_con("BTCUSDT", TipoCaja::CargoForzoso, Some(id), t, "USDT", imp("-0.5"), None);
         let cert = certificar_ciclos(&g.entrada(ModoPosicion::OneWay));
         assert_eq!((cert.n_ciclos_validos, cert.ganadores), (1, 0), "{causa:?}: un ciclo perdedor incluido");
-        assert_eq!(cert.ciclos[0].cargos_e8, e8("-0.5"));
-        assert_eq!(cert.neto_total_e8, e8("-3.5"), "{causa:?}");
+        assert_eq!(cert.ciclos[0].cargos, dec("-0.5"));
+        assert_eq!(cert.neto_total, dec("-3.5"), "{causa:?}");
         // Cargo forzoso de importe desconocido: EV N/D.
         if let Some(c) = g.caja.last_mut() {
             c.importe = Err(CausaImporteNd::Formato);
@@ -395,8 +405,8 @@ fn demo_ciclos_07_reversion_con_un_fill() {
     c.fill_con("BTCUSDT", Lado::Compra, Pierna::Both, "1", imp("0.1"), Some("0.1"), Some("0"), CausaSalida::Normal);
     let ok = certificar_ciclos(&c.entrada(ModoPosicion::OneWay));
     assert_eq!((ok.n_ciclos_validos, ok.estado.as_str()), (2, ESTADO_VALIDO), "{:?}", ok.causas_nd);
-    assert_eq!(ok.ciclos.iter().map(|x| x.neto_e8).collect::<Vec<_>>(), vec![Some(e8("0.38")), Some(e8("0.09"))]);
-    assert_eq!(ok.neto_total_e8, e8("0.47"), "sin residuo perdido: -0,03 entero repartido");
+    assert_eq!(ok.ciclos.iter().map(|x| x.neto).collect::<Vec<_>>(), vec![Some(dec("0.38")), Some(dec("0.09"))]);
+    assert_eq!(ok.neto_total, dec("0.47"), "sin residuo perdido: -0,03 entero repartido");
 }
 
 #[test]
@@ -411,7 +421,7 @@ fn demo_ciclos_08_replay_orden_y_cobertura() {
     }));
     e.caja.extend(g.caja.iter().cloned());
     let replay = certificar_ciclos(&e);
-    assert_eq!((replay.n_ciclos_validos, replay.neto_total_e8, &replay.hash_ciclos), (10, e8("30"), &base.hash_ciclos));
+    assert_eq!((replay.n_ciclos_validos, replay.neto_total, &replay.hash_ciclos), (10, dec("30"), &base.hash_ciclos));
     // Desorden recuperable: la misma evidencia en otro orden.
     let mut e = g.entrada(ModoPosicion::OneWay);
     e.fills.reverse();
@@ -454,8 +464,8 @@ fn demo_ciclos_09_ev_firmado_y_atribucion() {
     let cert = certificar_ciclos(&g.entrada(ModoPosicion::OneWay));
     assert_eq!(cert.ciclos.len(), 1);
     let c = &cert.ciclos[0];
-    assert_eq!((c.bruto_e8, c.comision_e8, c.funding_e8, c.cargos_e8), (e8("0.50"), e8("-0.35"), e8("0.10"), 0), "rp e ingreso, una sola vez");
-    assert_eq!(c.neto_e8, Some(e8("0.25")));
+    assert_eq!((c.bruto, c.comision, c.funding, c.cargos), (dec("0.50"), dec("-0.35"), dec("0.10"), DecimalExacto::CERO), "rp e ingreso, una sola vez");
+    assert_eq!(c.neto, Some(dec("0.25")));
     assert_eq!((cert.ganadores, cert.ev_neto_por_ciclo), (1, Some(0.25)));
     // rp ausente o ilegible: N/D, nunca bruto cero.
     for causa in [CausaImporteNd::Ausente, CausaImporteNd::Formato] {
@@ -492,7 +502,19 @@ fn demo_ciclos_09_ev_firmado_y_atribucion() {
     g.fill_con("BTCUSDT", Lado::Compra, Pierna::Both, "1", imp("0"), None, Some("-0.15"), CausaSalida::Normal);
     g.fill_con("BTCUSDT", Lado::Venta, Pierna::Both, "1", imp("0.10"), Some("0.10"), Some("-0.05"), CausaSalida::Normal);
     let perd = certificar_ciclos(&g.entrada(ModoPosicion::OneWay));
-    assert_eq!((perd.n_ciclos_validos, perd.ganadores, perd.neto_total_e8), (1, 0, e8("-0.10")));
+    assert_eq!((perd.n_ciclos_validos, perd.ganadores, perd.neto_total), (1, 0, dec("-0.10")));
+    // CICLOS-3 (sin escala elegida): una comision de 9 cifras decimales es exacta, no N/D ni
+    // redondeada, y su signo de pago se conserva.
+    let mut g = Gen::nuevo();
+    g.fill_con("BTCUSDT", Lado::Compra, Pierna::Both, "1", imp("0"), None, Some("0"), CausaSalida::Normal);
+    g.fill_con("BTCUSDT", Lado::Venta, Pierna::Both, "1", imp("0.25"), Some("0.25"), Some("-0.000000001"), CausaSalida::Normal);
+    let fino = certificar_ciclos(&g.entrada(ModoPosicion::OneWay));
+    assert_eq!((fino.n_ciclos_validos, fino.estado.as_str()), (1, ESTADO_VALIDO), "{:?} {:?}", fino.causas_nd, fino.ciclos);
+    assert_eq!(fino.ciclos[0].comision, dec("-0.000000001"));
+    assert_eq!(fino.neto_total, dec("0.249999999"));
+    assert_ne!(fino.neto_total, dec("0.25"), "sin tolerancia: una unidad en la ultima cifra cuenta");
+    let s = serde_json::to_value(&fino).unwrap_or_default();
+    assert_eq!(s["neto_total"], serde_json::json!("0.249999999"), "el recibo lleva el texto exacto");
 }
 
 #[test]
@@ -515,7 +537,8 @@ fn demo_ciclos_10_recibo_y_reinicio() {
     assert_eq!(con("ndc", &|v| v["n_ciclos_validos"] = 31.into()), Err(MotivoSinEvidencia::Inconsistente));
     assert_eq!(con("hash", &|v| v["hash_ciclos"] = "".into()), Err(MotivoSinEvidencia::SinRespaldo));
     assert_eq!(con("est", &|v| v["estado"] = ESTADO_ND.into()), Err(MotivoSinEvidencia::Incompleto));
-    assert_eq!(con("bruto", &|v| v["ciclos"][0]["neto_e8"] = 900_000_000i64.into()), Err(MotivoSinEvidencia::Inconsistente));
+    assert_eq!(con("bruto", &|v| v["ciclos"][0]["neto"] = "9".into()), Err(MotivoSinEvidencia::Inconsistente));
+    assert_eq!(con("neto_f", &|v| v["neto_total"] = 30.into()), Err(MotivoSinEvidencia::Corrupto), "un numero JSON no es un importe");
     let d2 = Dir::nuevo("c10x");
     std::fs::write(d2.cert(), "{").unwrap_or_else(|e| panic!("{e}"));
     assert_eq!(cargar_evidencia_ciclos_v2(&d2.cert(), Some(&esperado())), Err(MotivoSinEvidencia::Corrupto));

@@ -1,6 +1,9 @@
 //! CICLOS-2 (pedido 20261118-0535-cicloscompletos; espec. `.agent_tx/diagnostics/auditoria_perdidas/
 //! ciclos_completos_v2.md` §§1-3, decision del coordinador sobre §2.3: opcion C con D de respaldo,
-//! cuadratura por igualdad exacta en punto fijo, sin tolerancia; la opcion E queda prohibida).
+//! cuadratura por igualdad exacta, sin tolerancia; la opcion E queda prohibida). CICLOS-3 (adenda
+//! del coordinador, punto 4; QODER-APP C6): los importes son decimales EXACTOS CON SIGNO sobre el
+//! texto del venue (`importe_venue::DecimalExacto`), sin escala elegida; las cantidades siguen en
+//! la escala de cantidad (1e-8, la de `decimal_e8`), que nunca se aplica a dinero.
 //!
 //! QUE: reconstruye CICLOS COMPLETOS (de plano acreditado a plano acreditado, por entorno, venue,
 //! cuenta y simbolo) a partir de los fills y de los cashflows del venue, y emite el certificado
@@ -13,7 +16,7 @@
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::path::{Path, PathBuf};
 
-use execution_engine::importe_venue::{CausaImporteNd, ImporteVenue, UNIDADES_POR_ACTIVO};
+use execution_engine::importe_venue::{CausaImporteNd, DecimalExacto, ImporteVenue};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
@@ -212,7 +215,8 @@ pub enum CausaCiclosNd {
     Desbordamiento,
 }
 
-/// Resumen de un ciclo cerrado dentro de la ventana (importes en 1e-8, firmados como flujo).
+/// Resumen de un ciclo cerrado dentro de la ventana (importes decimales exactos del venue, firmados
+/// como flujo; se serializan como texto decimal canonico).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ResumenCiclo {
@@ -220,12 +224,12 @@ pub struct ResumenCiclo {
     pub apertura_trade_id: u64,
     pub cierre_trade_id: u64,
     pub fills: u32,
-    pub bruto_e8: i64,
-    pub comision_e8: i64,
-    pub funding_e8: i64,
-    pub cargos_e8: i64,
+    pub bruto: DecimalExacto,
+    pub comision: DecimalExacto,
+    pub funding: DecimalExacto,
+    pub cargos: DecimalExacto,
     /// `None`: N/D (ver `causas_nd`).
-    pub neto_e8: Option<i64>,
+    pub neto: Option<DecimalExacto>,
     pub causas_nd: Vec<String>,
 }
 
@@ -247,8 +251,8 @@ pub struct CertificadoCiclosV2 {
     pub arrastres: u64,
     pub abiertos: u64,
     pub ganadores: u64,
-    /// Suma de los netos acreditados (descriptiva si el estado es ND).
-    pub neto_total_e8: i64,
+    /// Suma de los netos acreditados (descriptiva si el estado es ND: no alimenta la puerta).
+    pub neto_total: DecimalExacto,
     /// EV de certificacion por ciclo: `None` si el estado no es VALIDO o no hay ciclos.
     pub ev_neto_por_ciclo: Option<f64>,
     pub causas_nd: Vec<String>,
@@ -276,9 +280,9 @@ struct Ciclo {
     t_cierre: Option<u64>,
     fills: Vec<(usize, Rol)>,
     causas: BTreeSet<CausaCiclosNd>,
-    comision_e8: i64,
-    funding_e8: i64,
-    cargos_e8: i64,
+    comision: DecimalExacto,
+    funding: DecimalExacto,
+    cargos: DecimalExacto,
 }
 
 impl Ciclo {
@@ -290,14 +294,14 @@ impl Ciclo {
             t_cierre: None,
             fills: Vec::new(),
             causas: BTreeSet::new(),
-            comision_e8: 0,
-            funding_e8: 0,
-            cargos_e8: 0,
+            comision: DecimalExacto::CERO,
+            funding: DecimalExacto::CERO,
+            cargos: DecimalExacto::CERO,
         }
     }
 }
 
-fn sumar(acc: &mut i64, x: i64, causas: &mut BTreeSet<CausaCiclosNd>) {
+fn sumar(acc: &mut DecimalExacto, x: DecimalExacto, causas: &mut BTreeSet<CausaCiclosNd>) {
     match acc.checked_add(x) {
         Some(v) => *acc = v,
         None => {
@@ -552,9 +556,9 @@ pub fn certificar_ciclos(e: &EntradaCiclos) -> CertificadoCiclosV2 {
                     Ok(imp) => {
                         let ci = &mut ciclos[k];
                         if c.tipo == TipoCaja::Funding {
-                            sumar(&mut ci.funding_e8, imp.e8, &mut ci.causas);
+                            sumar(&mut ci.funding, imp.valor, &mut ci.causas);
                         } else {
-                            sumar(&mut ci.cargos_e8, imp.e8, &mut ci.causas);
+                            sumar(&mut ci.cargos, imp.valor, &mut ci.causas);
                         }
                     }
                     Err(_) => {
@@ -571,7 +575,7 @@ pub fn certificar_ciclos(e: &EntradaCiclos) -> CertificadoCiclosV2 {
     }
 
     // Por fill: bruto (rp) y comision (filas explicitas del venue, incluido "0").
-    let mut bruto_ciclo: Vec<i64> = vec![0; ciclos.len()];
+    let mut bruto_ciclo: Vec<DecimalExacto> = vec![DecimalExacto::CERO; ciclos.len()];
     for (i, f) in fills.iter().enumerate() {
         let destinos = ciclos_del_fill[i].clone();
         if destinos.is_empty() {
@@ -583,7 +587,7 @@ pub fn certificar_ciclos(e: &EntradaCiclos) -> CertificadoCiclosV2 {
             Ok(rp) => {
                 for fila in pnl_de_fila.get(&i).into_iter().flatten() {
                     match &fila.importe {
-                        Ok(v) if v.e8 == rp.e8 => {}
+                        Ok(v) if v.valor == rp.valor => {}
                         Ok(_) => {
                             ciclos[k_rp].causas.insert(CausaCiclosNd::TestigosPnlContradictorios);
                         }
@@ -593,7 +597,7 @@ pub fn certificar_ciclos(e: &EntradaCiclos) -> CertificadoCiclosV2 {
                     }
                 }
                 let mut causas = std::mem::take(&mut ciclos[k_rp].causas);
-                sumar(&mut bruto_ciclo[k_rp], rp.e8, &mut causas);
+                sumar(&mut bruto_ciclo[k_rp], rp.valor, &mut causas);
                 ciclos[k_rp].causas = causas;
             }
             Err(_) => {
@@ -616,7 +620,7 @@ pub fn certificar_ciclos(e: &EntradaCiclos) -> CertificadoCiclosV2 {
             }
             continue;
         }
-        let importe = |c: &CajaVenue| c.importe.as_ref().map(|v| v.e8).unwrap_or(0);
+        let importe = |c: &CajaVenue| c.importe.as_ref().map(|v| v.valor).unwrap_or(DecimalExacto::CERO);
         if destinos.len() > 1 {
             // Reversion: opcion C (importe explicito del venue por tramo) o D (N/D).
             let todos_con_tramo = filas.iter().all(|c| c.tramo.is_some());
@@ -632,7 +636,7 @@ pub fn certificar_ciclos(e: &EntradaCiclos) -> CertificadoCiclosV2 {
                 let tramo = if *rol == Rol::ReversionApertura { Tramo::Apertura } else { Tramo::Cierre };
                 let mut causas = std::mem::take(&mut ciclos[*k].causas);
                 for c in filas.iter().filter(|c| c.tramo == Some(tramo)) {
-                    sumar(&mut ciclos[*k].comision_e8, importe(*c), &mut causas);
+                    sumar(&mut ciclos[*k].comision, importe(*c), &mut causas);
                 }
                 ciclos[*k].causas = causas;
             }
@@ -640,7 +644,7 @@ pub fn certificar_ciclos(e: &EntradaCiclos) -> CertificadoCiclosV2 {
             let k = destinos[0].0;
             let mut causas = std::mem::take(&mut ciclos[k].causas);
             for c in &filas {
-                sumar(&mut ciclos[k].comision_e8, importe(*c), &mut causas);
+                sumar(&mut ciclos[k].comision, importe(*c), &mut causas);
             }
             ciclos[k].causas = causas;
         }
@@ -665,7 +669,7 @@ pub fn certificar_ciclos(e: &EntradaCiclos) -> CertificadoCiclosV2 {
         }
         let mut causas = c.causas.clone();
         let mut neto = bruto_ciclo[k];
-        for x in [c.comision_e8, c.funding_e8, c.cargos_e8] {
+        for x in [c.comision, c.funding, c.cargos] {
             sumar(&mut neto, x, &mut causas);
         }
         let primero = c.fills.first().map(|(i, _)| fills[*i].trade_id).unwrap_or(0);
@@ -675,11 +679,11 @@ pub fn certificar_ciclos(e: &EntradaCiclos) -> CertificadoCiclosV2 {
             apertura_trade_id: primero,
             cierre_trade_id: ultimo,
             fills: c.fills.len() as u32,
-            bruto_e8: bruto_ciclo[k],
-            comision_e8: c.comision_e8,
-            funding_e8: c.funding_e8,
-            cargos_e8: c.cargos_e8,
-            neto_e8: causas.is_empty().then_some(neto),
+            bruto: bruto_ciclo[k],
+            comision: c.comision,
+            funding: c.funding,
+            cargos: c.cargos,
+            neto: causas.is_empty().then_some(neto),
             causas_nd: causas.iter().map(|x| format!("{x:?}")).collect(),
         });
     }
@@ -704,7 +708,7 @@ pub fn certificar_ciclos(e: &EntradaCiclos) -> CertificadoCiclosV2 {
         arrastres,
         abiertos,
         ganadores: 0,
-        neto_total_e8: 0,
+        neto_total: DecimalExacto::CERO,
         ev_neto_por_ciclo: None,
         causas_nd: globales.iter().map(|x| format!("{x:?}")).collect(),
         ciclos: resumenes,
@@ -720,7 +724,7 @@ pub fn certificar_ciclos(e: &EntradaCiclos) -> CertificadoCiclosV2 {
     cert.n_ciclos_validos = n;
     cert.ciclos_nd = cert.ciclos_estructurales - n;
     cert.ganadores = ganadores;
-    cert.neto_total_e8 = neto;
+    cert.neto_total = neto;
     let valido = cert.causas_nd.is_empty() && cert.ciclos_nd == 0;
     cert.estado = if valido { ESTADO_VALIDO } else { ESTADO_ND }.to_string();
     cert.ev_neto_por_ciclo = if valido { ev_por_ciclo(neto, n) } else { None };
@@ -729,12 +733,12 @@ pub fn certificar_ciclos(e: &EntradaCiclos) -> CertificadoCiclosV2 {
 }
 
 /// (validos, neto total, ganadores por X > 0, desbordamiento).
-fn contar(ciclos: &[ResumenCiclo]) -> (u64, i64, u64, bool) {
-    let (mut n, mut neto, mut g, mut desborde) = (0u64, 0i64, 0u64, false);
+fn contar(ciclos: &[ResumenCiclo]) -> (u64, DecimalExacto, u64, bool) {
+    let (mut n, mut neto, mut g, mut desborde) = (0u64, DecimalExacto::CERO, 0u64, false);
     for c in ciclos {
-        if let (Some(x), true) = (c.neto_e8, c.causas_nd.is_empty()) {
+        if let (Some(x), true) = (c.neto, c.causas_nd.is_empty()) {
             n += 1;
-            if x > 0 {
+            if x.signo() == std::cmp::Ordering::Greater {
                 g += 1;
             }
             match neto.checked_add(x) {
@@ -746,12 +750,19 @@ fn contar(ciclos: &[ResumenCiclo]) -> (u64, i64, u64, bool) {
     (n, neto, g, desborde)
 }
 
-fn ev_por_ciclo(neto_e8: i64, n: u64) -> Option<f64> {
+/// EV por ciclo en `f64` SOLO para la puerta vigente (que lo compara con 0). El signo sale del
+/// decimal exacto; si la presentacion en `f64` no conserva ese signo, N/D.
+fn ev_por_ciclo(neto: DecimalExacto, n: u64) -> Option<f64> {
     if n == 0 {
         return None;
     }
-    let ev = neto_e8 as f64 / n as f64 / UNIDADES_POR_ACTIVO as f64;
-    ev.is_finite().then_some(ev)
+    let ev = neto.como_f64() / n as f64;
+    let mismo_signo = match neto.signo() {
+        std::cmp::Ordering::Greater => ev > 0.0,
+        std::cmp::Ordering::Less => ev < 0.0,
+        std::cmp::Ordering::Equal => ev == 0.0,
+    };
+    (ev.is_finite() && mismo_signo).then_some(ev)
 }
 
 fn hash_de(c: &CertificadoCiclosV2) -> String {
@@ -911,7 +922,7 @@ pub fn cargar_evidencia_ciclos_v2(
         && cert.n_ciclos_validos == n
         && cert.ciclos_nd == 0
         && n == cert.ciclos_estructurales
-        && cert.neto_total_e8 == neto
+        && cert.neto_total == neto
         && cert.ganadores == ganadores
         && cert.ev_neto_por_ciclo.map(f64::to_bits) == ev_por_ciclo(neto, n).map(f64::to_bits);
     if !coherente {
