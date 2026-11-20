@@ -849,6 +849,36 @@ fn demo_ciclos_12_cuadratura_exacta_sin_tolerancia() {
     assert_eq!(cargar_evidencia_ciclos_v2(&d.cert(), Some(&esperado())), Err(MotivoSinEvidencia::Inconsistente));
 }
 
+#[test]
+fn demo_ciclos_12_desborde_publica_causa_y_cierra_puerta() {
+    let maximo = i128::MAX.to_string();
+    let mut g = episodios(30, "1");
+    let mut diferencia = g.entrada(ModoPosicion::OneWay);
+    diferencia.saldo_t0 = saldo("-1");
+    diferencia.saldo_t1 = saldo(&maximo);
+
+    let mut suma = g.entrada(ModoPosicion::OneWay);
+    g.caja_con("", TipoCaja::Externo, None, T0 + 500, "USDT", imp(&maximo), None);
+    suma.caja = g.caja;
+
+    let delta = certificar_ciclos(&diferencia);
+    let rhs = certificar_ciclos(&suma);
+    let causa = [format!("{:?}", CausaCiclosNd::Desbordamiento)];
+    assert_eq!(
+        [delta.causas_nd.as_slice(), rhs.causas_nd.as_slice()],
+        [causa.as_slice(), causa.as_slice()],
+        "desbordes en delta de saldo y en neto más flujos"
+    );
+    for (etiqueta, cert) in [("c12delta", &delta), ("c12suma", &rhs)] {
+        assert_eq!((cert.ciclos_estructurales, cert.n_ciclos_validos, cert.ciclos_nd), (30, 30, 0));
+        assert_eq!((cert.estado.as_str(), cert.ev_neto_por_ciclo), (ESTADO_ND, None));
+        assert_eq!(
+            por_la_puerta(etiqueta, cert),
+            (Err(MotivoSinEvidencia::Incompleto), SystemPhase::DemoVerify)
+        );
+    }
+}
+
 /// C2: el adaptador conserva la granularidad POR FILA (tranId), no la suma por tradeId; con un
 /// solo fill de reversion, dos filas sin tramo explicito siguen sin satisfacer C.
 #[test]

@@ -818,19 +818,16 @@ fn causa_cuadratura(e: &EntradaCiclos, caja: &[CajaVenue], cert: &CertificadoCic
     if cert.arrastres > 0 || cert.abiertos > 0 || cert.ciclos.iter().any(|c| c.neto.is_none()) {
         return Some(CausaCiclosNd::CuadraturaNoEvaluable);
     }
-    if cuadra(s0, s1, cert.neto_total, cert.externos) {
-        None
-    } else {
-        Some(CausaCiclosNd::CuadraturaDescuadrada)
+    match cuadra(s0, s1, cert.neto_total, cert.externos) {
+        Some(true) => None,
+        Some(false) => Some(CausaCiclosNd::CuadraturaDescuadrada),
+        None => Some(CausaCiclosNd::Desbordamiento),
     }
 }
 
-/// Igualdad EXACTA: saldo(T1) - saldo(T0) == netos + externos (un desbordamiento no cuadra).
-fn cuadra(s0: DecimalExacto, s1: DecimalExacto, neto: DecimalExacto, externos: DecimalExacto) -> bool {
-    match (s1.checked_sub(s0), neto.checked_add(externos)) {
-        (Some(delta), Some(esperado)) => delta == esperado,
-        _ => false,
-    }
+/// Igualdad exacta entre delta de saldo y netos más externos. `None` si desborda una operación.
+fn cuadra(s0: DecimalExacto, s1: DecimalExacto, neto: DecimalExacto, externos: DecimalExacto) -> Option<bool> {
+    Some(s1.checked_sub(s0)? == neto.checked_add(externos)?)
 }
 
 /// (validos, neto total, ganadores por X > 0, desbordamiento).
@@ -1030,7 +1027,7 @@ pub fn cargar_evidencia_ciclos_v2(
         && cert.neto_total == neto
         && cert.ganadores == ganadores
         && cert.ev_neto_por_ciclo.map(f64::to_bits) == ev_por_ciclo(neto, n).map(f64::to_bits)
-        && matches!((cert.saldo_t0, cert.saldo_t1), (Some(s0), Some(s1)) if cuadra(s0, s1, neto, cert.externos));
+        && matches!((cert.saldo_t0, cert.saldo_t1), (Some(s0), Some(s1)) if cuadra(s0, s1, neto, cert.externos) == Some(true));
     if !coherente {
         return Err(MotivoSinEvidencia::Inconsistente);
     }
