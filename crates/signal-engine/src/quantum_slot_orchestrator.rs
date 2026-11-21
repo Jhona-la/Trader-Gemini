@@ -243,6 +243,13 @@ impl Default for QuantumSlotOrchestratorParams {
     }
 }
 
+/// Fracción de riesgo efectiva mínima y máxima de la síntesis de órdenes.
+const RIESGO_EFECTIVO_MIN: f64 = 0.01;
+const RIESGO_EFECTIVO_MAX: f64 = 0.25;
+/// Apalancamiento efectivo mínimo y máximo de la síntesis de órdenes.
+const APALANCAMIENTO_EFECTIVO_MIN: f64 = 1.0;
+const APALANCAMIENTO_EFECTIVO_MAX: f64 = 50.0;
+
 /// Orquestador cuántico multi-slot de silicio.
 ///
 /// Gestiona la evaluación armónica y la emisión de órdenes concurrentes en memoria de stack,
@@ -593,6 +600,14 @@ impl QuantumSlotOrchestrator {
         }
     }
 
+    /// Nocional/capital que recibe un slot al abrirse como único activo: la cota de
+    /// `synthesize_order_emissions` (riesgo y apalancamiento efectivos). Una entrada NaN
+    /// devuelve NaN.
+    pub fn exposicion_bruta_maxima_por_slot(max_leverage: f64, risk_fraction: f64) -> f64 {
+        risk_fraction.clamp(RIESGO_EFECTIVO_MIN, RIESGO_EFECTIVO_MAX)
+            * max_leverage.clamp(APALANCAMIENTO_EFECTIVO_MIN, APALANCAMIENTO_EFECTIVO_MAX)
+    }
+
     /// Sintetiza propuestas concretas de órdenes para ejecución a partir del informe de evaluación multi-slot.
     pub fn synthesize_order_emissions(
         &self,
@@ -614,8 +629,9 @@ impl QuantumSlotOrchestrator {
             return emission;
         }
 
-        let safe_risk = risk_fraction.clamp(0.01, 0.25);
-        let safe_leverage = max_leverage.clamp(1.0, 50.0);
+        let safe_risk = risk_fraction.clamp(RIESGO_EFECTIVO_MIN, RIESGO_EFECTIVO_MAX);
+        let safe_leverage =
+            max_leverage.clamp(APALANCAMIENTO_EFECTIVO_MIN, APALANCAMIENTO_EFECTIVO_MAX);
 
         // Reparto de capital entre slots activos sin sobrepasar el capital disponible
         let capital_per_active_slot =

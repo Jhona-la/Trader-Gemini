@@ -25,6 +25,9 @@
 //! ## 4. CÓMO
 //! 1. Se registran los tiempos y volúmenes sucesivos de ticks, calculando la velocidad de tiempo de mercado $f'(t) \approx \Delta \tau / \Delta t$.
 //! 2. Se computan la aceleración $f''(t)$ y la tasa de cambio de aceleración $f'''(t)$ mediante diferencias finitas normalizadas.
+//!    $f''$ necesita dos tasas observadas y $f'''$ tres: en las dos primeras muestras el informe
+//!    es de calentamiento (`derivatives_measured = false`, sin singularidad) y desde la tercera
+//!    se calcula $f'''$.
 //! 3. Se evalúa el derivado de Schwarzian $\{f, \tau\} = \frac{f'''}{f'} - \frac{3}{2}\left(\frac{f''}{f'}\right)^2$.
 //! 4. Se calcula la energía de Schwarzian y la densidad de estados holográfica $\rho(E)$.
 //! 5. Si $|\{f, \tau\}| \ge \mathcal{S}_{\text{crit}}$, se dispara `schwarzian_singularity_detected = true`.
@@ -75,12 +78,18 @@ pub struct JtSchwarzianReport {
     pub schwarzian_singularity_detected: bool,
     /// Factor de modulación de slot continuo [0.15, 1.25].
     pub slot_scale_factor: f64,
+    /// `false` en el calentamiento (menos de tres tasas observadas): la derivada y la energía
+    /// valen 0 porque no se pueden medir, no porque la curvatura sea nula.
+    pub derivatives_measured: bool,
 }
 
 #[derive(Debug, Clone)]
 pub struct JtSchwarzianEngine {
     config: JtSchwarzianConfig,
     prev_f_prime: f64,
+    /// f'' de la muestra anterior: `None` hasta que dos tasas observadas la miden. Sin ella
+    /// f''' no se puede calcular: suponer f'' = 0 en la muestra anterior convierte cualquier
+    /// cambio de tasa entre dos ticks en f''' = Δf'/dt² (≈ 400·Δf' a 50 ms).
     prev_f_double_prime: Option<f64>,
     step_count: usize,
 }
@@ -92,6 +101,22 @@ impl JtSchwarzianEngine {
             prev_f_prime: 1.0,
             prev_f_double_prime: None,
             step_count: 0,
+        }
+    }
+
+    /// Informe de calentamiento: sin las tres tasas que exige f''' no hay derivada de
+    /// Schwarzian medible, así que no se declara singularidad ni se recorta el slot.
+    fn warm_up_report(&self) -> JtSchwarzianReport {
+        let c = self.config.schwarzian_coupling_c.max(1e-4);
+        JtSchwarzianReport {
+            schwarzian_derivative: 0.0,
+            schwarzian_energy: 0.0,
+            density_of_states_rho: c / (2.0 * std::f64::consts::PI * std::f64::consts::PI),
+            lyapunov_exponent: (2.0 * std::f64::consts::PI)
+                / self.config.inverse_temperature_beta.max(1e-4),
+            schwarzian_singularity_detected: false,
+            slot_scale_factor: 1.0,
+            derivatives_measured: false,
         }
     }
 
@@ -108,58 +133,26 @@ impl JtSchwarzianEngine {
             market_time_rate
         };
 
-        let lyapunov =
-            (2.0 * std::f64::consts::PI) / self.config.inverse_temperature_beta.max(1e-4);
-
         if self.step_count == 0 {
             self.prev_f_prime = f_prime;
             self.prev_f_double_prime = None;
             self.step_count = 1;
-
-            return JtSchwarzianReport {
-                schwarzian_derivative: 0.0,
-                schwarzian_energy: 0.0,
-                density_of_states_rho: self.config.schwarzian_coupling_c
-                    / (2.0 * std::f64::consts::PI * std::f64::consts::PI),
-                lyapunov_exponent: lyapunov,
-                schwarzian_singularity_detected: false,
-                slot_scale_factor: 1.0,
-            };
+            return self.warm_up_report();
         }
 
+        // Derivadas numéricas de segundo y tercer orden. f'' necesita dos tasas y f''' tres:
+        // con sólo dos, la f'' anterior no está medida y f''' no se calcula.
+        let f_double_prime = (f_prime - self.prev_f_prime) / safe_dt;
         if self.step_count == 1 {
-            let f_double_prime = (f_prime - self.prev_f_prime) / safe_dt;
             self.prev_f_prime = f_prime;
             self.prev_f_double_prime = Some(f_double_prime);
             self.step_count = 2;
-
-            return JtSchwarzianReport {
-                schwarzian_derivative: 0.0,
-                schwarzian_energy: 0.0,
-                density_of_states_rho: self.config.schwarzian_coupling_c
-                    / (2.0 * std::f64::consts::PI * std::f64::consts::PI),
-                lyapunov_exponent: lyapunov,
-                schwarzian_singularity_detected: false,
-                slot_scale_factor: 1.0,
-            };
+            return self.warm_up_report();
         }
-
-        // Derivadas numéricas de segundo y tercer orden sobre soporte temporal válido
-        let f_double_prime = (f_prime - self.prev_f_prime) / safe_dt;
         let Some(prev_f_double_prime) = self.prev_f_double_prime else {
             self.prev_f_prime = f_prime;
             self.prev_f_double_prime = Some(f_double_prime);
-            let lyapunov =
-                (2.0 * std::f64::consts::PI) / self.config.inverse_temperature_beta.max(1e-4);
-            return JtSchwarzianReport {
-                schwarzian_derivative: 0.0,
-                schwarzian_energy: 0.0,
-                density_of_states_rho: self.config.schwarzian_coupling_c
-                    / (2.0 * std::f64::consts::PI * std::f64::consts::PI),
-                lyapunov_exponent: lyapunov,
-                schwarzian_singularity_detected: false,
-                slot_scale_factor: 1.0,
-            };
+            return self.warm_up_report();
         };
         let f_triple_prime = (f_double_prime - prev_f_double_prime) / safe_dt;
 
@@ -202,6 +195,7 @@ impl JtSchwarzianEngine {
             lyapunov_exponent: lyapunov,
             schwarzian_singularity_detected: singularity,
             slot_scale_factor: slot_scale,
+            derivatives_measured: true,
         }
     }
 }

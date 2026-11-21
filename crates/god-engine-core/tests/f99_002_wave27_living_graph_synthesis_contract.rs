@@ -113,6 +113,17 @@ fn test_c2_wave27_connes_kreimer_divergence_veto_propagation() {
             ..Default::default()
         });
 
+    // Aísla el veto Fracton (W29 §104): el salto de 80 a 100 lleva el sitio de retorno al tope
+    // del retículo, la densidad de dipolos llega a 0.875 (> 0.85) y su etiqueta, que va antes en
+    // la cadena, taparía la que verifica este contrato.
+    orchestrator.fracton_topological_engines[0] = signal_engine::FractonTopologicalOrderEngine::new(
+        signal_engine::FractonTopologicalConfig {
+            topological_entropy_threshold: 0.0,
+            fracton_mobility_threshold: f64::INFINITY,
+            ..Default::default()
+        },
+    );
+
     let triad = [
         AssetColorState {
             normalized_return: 0.05,
@@ -177,6 +188,17 @@ fn test_c3_wave27_donaldson_thomas_wall_crossing_veto_propagation() {
             wall_crossing_threshold: 0.0001,
             ..Default::default()
         });
+
+    // Aísla el veto Fracton (W29 §104): el salto de 80 a 100 lleva el sitio de retorno al tope
+    // del retículo, la densidad de dipolos llega a 0.875 (> 0.85) y su etiqueta, que va antes en
+    // la cadena, taparía la que verifica este contrato.
+    orchestrator.fracton_topological_engines[0] = signal_engine::FractonTopologicalOrderEngine::new(
+        signal_engine::FractonTopologicalConfig {
+            topological_entropy_threshold: 0.0,
+            fracton_mobility_threshold: f64::INFINITY,
+            ..Default::default()
+        },
+    );
 
     let triad = [
         AssetColorState {
@@ -247,6 +269,17 @@ fn test_c4_wave27_asymptotic_safety_singularity_veto_propagation() {
             max_ngfp_distance: 0.0001,
             ..Default::default()
         });
+
+    // Aísla el veto Fracton (W29 §104): el salto de 80 a 100 lleva el sitio de retorno al tope
+    // del retículo, la densidad de dipolos llega a 0.875 (> 0.85) y su etiqueta, que va antes en
+    // la cadena, taparía la que verifica este contrato.
+    orchestrator.fracton_topological_engines[0] = signal_engine::FractonTopologicalOrderEngine::new(
+        signal_engine::FractonTopologicalConfig {
+            topological_entropy_threshold: 0.0,
+            fracton_mobility_threshold: f64::INFINITY,
+            ..Default::default()
+        },
+    );
 
     let triad = [
         AssetColorState {
