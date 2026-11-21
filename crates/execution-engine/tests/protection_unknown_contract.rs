@@ -21,22 +21,63 @@ fn open_algo_fetch_failure_is_unknown_and_cannot_create_legs() {
         "a failed fetch must not become an empty order list"
     );
     let compacted = compact(body);
+    // I-14 (N44): unknown coverage is an explicit error. The function returns
+    // `Result` and the leg read leaves with `?` before anything is placed.
     assert!(
-        compacted.contains("evidence_unknown:true"),
+        compacted.contains(")->Result<ProtectionAudit,String>{"),
         "failed coverage evidence must be explicit"
     );
+    let lectura = compacted
+        .find("cobertura_leida(executor.fetch_open_algo_orders(symbol).await,is_long,)?;")
+        .expect("failed coverage evidence must be explicit");
+    let colocacion = compacted.find(".place_algo_leg(").expect("leg placement");
     assert!(
-        compacted.contains("protection_health::mark_dirty()"),
-        "unknown coverage must remain scheduled for reconciliation"
+        lectura < colocacion,
+        "no leg can be placed before the coverage is read"
     );
 }
 
 #[test]
 fn watchdog_does_not_escalate_unknown_coverage() {
     let compacted = compact(host());
+    // Watchdog: the error skips the position before gap accounting and leaves
+    // the audit incomplete, so the protection flag is not cleared and the
+    // reading is retried (`vigilante::ReintentoLectura`). It does not call
+    // `mark_dirty`: that counts a terminal event and would advance its own
+    // retry every cycle.
+    let llamada = compacted
+        .find("\"WATCHDOG\",).await{")
+        .expect("watchdog call");
+    let resto = &compacted[llamada..];
+    let error = resto.find("Err(e)=>{").expect("watchdog error branch");
+    let incompleta = resto
+        .find("lecturas.error(&p.symbol,&e);continue;")
+        .expect("unknown coverage must remain scheduled for reconciliation");
+    let huecos = resto
+        .find("let(g_tp,g_sl)=(prot.tp_gap,prot.sl_gap);")
+        .expect("gap accounting");
     assert!(
-        compacted.contains("ifprot.evidence_unknown{"),
+        error < incompleta && incompleta < huecos,
         "unknown coverage must bypass gap accounting and emergency escalation"
+    );
+    // Startup adoption (RESTORE) runs outside the watchdog: there the caller
+    // marks the flag dirty so the watchdog audits it.
+    let restore = compacted
+        .find("|Err(e)=ensure_position_protected(")
+        .expect("restore call");
+    let r = &compacted[restore..];
+    let fin = r
+        .find("\"RESTORE\",).await{")
+        .expect("restore error branch");
+    let marca = r
+        .find("protection_health::mark_dirty();")
+        .expect("unknown coverage must remain scheduled for reconciliation");
+    // `}});` closes the error branch and the spawned task; a bare `});` also
+    // appears inside the log's format string (`({});`).
+    let siguiente = r.find("}});").expect("end of the restore task");
+    assert!(
+        fin < marca && marca < siguiente,
+        "unknown coverage must remain scheduled for reconciliation"
     );
 }
 
