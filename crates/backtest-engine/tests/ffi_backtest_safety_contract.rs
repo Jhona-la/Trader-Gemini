@@ -15,6 +15,18 @@
 use backtest_engine::*;
 use quantum_arena::genome::SuperGenotype;
 use std::ffi::CString;
+use std::sync::{Mutex, MutexGuard, PoisonError};
+
+// INITIAL_CAPITAL es una variable de entorno de proceso compartida por todas las pruebas
+// del binario. std::env::set_var/remove_var son unsafe precisamente porque compiten con
+// cualquier lectura concurrente del entorno; el lector de produccion esta en
+// crates/backtest-engine/src/lib.rs:1069 (y :1173, :1272). Este candado serializa el acceso
+// a la variable solo entre las pruebas de este contrato que la tocan. Tolerante al veneno:
+// una prueba que falle no arrastra a las demas.
+static CAPITAL_ENV: Mutex<()> = Mutex::new(());
+fn capital_env_lock() -> MutexGuard<'static, ()> {
+    CAPITAL_ENV.lock().unwrap_or_else(PoisonError::into_inner)
+}
 
 #[test]
 fn ffi_null_pointer_and_zero_len_safety() {
@@ -142,6 +154,7 @@ fn ffi_initial_capital_rejection_of_missing_or_corrupt_env() {
 
     for invalid in invalid_cap_values {
         unsafe {
+            let _g = capital_env_lock();
             std::env::set_var("INITIAL_CAPITAL", invalid);
             let res = ffi_run_unified_backtest(
                 dummy_data.as_ptr(),
@@ -164,6 +177,7 @@ fn ffi_initial_capital_rejection_of_missing_or_corrupt_env() {
 
     // Probar sin variable seteada
     unsafe {
+        let _g = capital_env_lock();
         std::env::remove_var("INITIAL_CAPITAL");
         let res = ffi_run_unified_backtest(
             dummy_data.as_ptr(),
@@ -192,6 +206,7 @@ fn ffi_checked_arithmetic_overflow_rejected() {
     let filepath = CString::new("dummy_non_existent.bin").unwrap();
 
     unsafe {
+        let _g = capital_env_lock();
         std::env::set_var("INITIAL_CAPITAL", "1000.0");
         // len enorme que causa desbordamiento en len * 32
         let huge_len = usize::MAX / 2;
@@ -228,6 +243,7 @@ fn ffi_valid_execution_with_explicit_capital() {
     let sym = CString::new("BTCUSDT").unwrap();
 
     unsafe {
+        let _g = capital_env_lock();
         std::env::set_var("INITIAL_CAPITAL", "1000.0");
         let res = ffi_run_unified_backtest(
             closes.as_ptr(),
