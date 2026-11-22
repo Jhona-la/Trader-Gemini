@@ -21,6 +21,9 @@ use std::{
 #[derive(Default)]
 pub(crate) struct SalidaPrueba {
     codigos: Mutex<Vec<(u32, bool)>>,
+    /// Simula una salida ordenada que se bloquea (p. ej. el volcado de stdout): el proceso sigue
+    /// vivo tras pedirla, hasta una terminacion no ordenada.
+    ordenada_bloqueada: AtomicBool,
 }
 
 impl SalidaPrueba {
@@ -36,6 +39,10 @@ impl Salida for SalidaCompartida {
         if let Ok(mut v) = self.0.codigos.lock() {
             v.push((codigo, ordenada));
         }
+    }
+    fn terminado(&self) -> bool {
+        let bloqueada = self.0.ordenada_bloqueada.load(Ordering::SeqCst);
+        self.0.codigos().iter().any(|&(_, ordenada)| !ordenada || !bloqueada)
     }
 }
 
@@ -899,4 +906,31 @@ fn parada_normal_no_borra_fatal() {
     ctl.fin_listo(0, false);
     assert!(ctl.desarmar().is_ok(), "sin fatal: resultado sano");
     vig.join().expect("vigilante");
+}
+
+// ---------------------------------------------------------------------------------------------
+// T10 (SALIDAFALLO-4, hallazgo 1 de la N1): la salida ordenada no retira al vigilante del plazo.
+// ---------------------------------------------------------------------------------------------
+#[test]
+fn salida_ordenada_bloqueada_vence_plazo() {
+    let plazo = Duration::from_secs(5);
+    let (ctl, salida, reloj) = control_de_prueba(plazo);
+    salida.ordenada_bloqueada.store(true, Ordering::SeqCst);
+    let vig = lanzar_vigilante(&ctl);
+    ctl.fatal(Clase::Lector, "fatal con salida ordenada bloqueada");
+    esperar("cortes", || ctl.admision.cortada());
+    // El cierre posible termino: el vigilante pide la salida ordenada, que no llega a terminar.
+    ctl.fin_listo(1, false);
+    esperar("salida ordenada pedida", || !salida.codigos().is_empty());
+    assert_eq!(salida.codigos(), [(SALIDA_FATAL_CERRADO, true)]);
+    // Antes del plazo el vigilante sigue armado y no termina de otra forma.
+    reloj.avanzar(plazo - Duration::from_nanos(1));
+    ctl.despertar_vigilante();
+    thread::sleep(Duration::from_millis(20));
+    assert_eq!(salida.codigos(), [(SALIDA_FATAL_CERRADO, true)], "antes del plazo no hay otra salida");
+    // Vencido el plazo desde el primer fatal: terminacion nativa con cierre incompleto.
+    reloj.avanzar(Duration::from_nanos(1));
+    ctl.despertar_vigilante();
+    vig.join().expect("vigilante");
+    assert_eq!(salida.codigos(), [(SALIDA_FATAL_CERRADO, true), (SALIDA_FATAL_INCOMPLETO, false)]);
 }

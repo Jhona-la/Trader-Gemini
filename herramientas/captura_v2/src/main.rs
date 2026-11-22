@@ -2017,10 +2017,18 @@ fn run_capture(args: &[String]) -> std::process::ExitCode {
         }
     };
     let cancel = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    // SALIDAFALLO-4: el hilo de salida ordenada existe antes del vigilante.
+    let salida = match salidafallo::SalidaProceso::arrancar() {
+        Ok(s) => s,
+        Err(e) => {
+            eprintln!("CAPTURE ERROR no arranca el hilo de salida: {e}");
+            return std::process::ExitCode::FAILURE;
+        }
+    };
     let ctl = Arc::new(Control::nuevo(
         plazo,
         Box::new(salidafallo::RelojMonotono::nuevo()),
-        Box::new(salidafallo::SalidaProceso),
+        Box::new(salida),
         Arc::new(salidafallo::CompuertaStore::real(cancel)),
     ));
     ctl.registrar_principal(thread::current());

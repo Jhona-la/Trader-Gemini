@@ -85,19 +85,66 @@ impl Reloj for RelojMonotono {
 
 pub trait Salida: Send + Sync {
     /// Termina el proceso. `ordenada`: el cierre posible termino y se puede volcar stdout.
-    /// En produccion no vuelve; el adaptador de pruebas registra el codigo y vuelve.
+    /// SALIDAFALLO-4 (P5): la salida ordenada NO la ejecuta el vigilante; se pide a otro hilo y el
+    /// vigilante sigue haciendo cumplir el plazo hasta la salida real. La no ordenada no vuelve
+    /// en produccion; el adaptador de pruebas registra el codigo y vuelve.
     fn terminar(&self, codigo: u32, ordenada: bool);
+    /// Verdad si el proceso ya no sigue. En produccion, mientras este codigo corre, el proceso
+    /// esta vivo (falso); solo el adaptador de pruebas simula el fin.
+    fn terminado(&self) -> bool {
+        false
+    }
 }
 
-/// Salida real: `process::exit` tras un cierre completado (vuelca stdout con try_lock) y
-/// `TerminateProcess` para el plazo vencido o el fallo del vigilante (no ejecuta destructores,
-/// ni atexit, ni espera candados de E/S).
-pub struct SalidaProceso;
+/// Peticion de salida ordenada para el hilo `capture-salida` (codigo + 1; 0 = sin peticion).
+pub struct SalidaPedida {
+    codigo: AtomicU32,
+    hilo: OnceLock<Thread>,
+}
+
+/// Salida real. Ordenada: el hilo `capture-salida` (arrancado antes del vigilante) vuelca
+/// stdout/stderr y termina con `TerminateProcess` (sin `ExitProcess`: no hay desconexion de DLL
+/// ni candado del cargador que pueda bloquear); si ese volcado se bloquea, el vigilante, que
+/// sigue armado, termina con cierre incompleto al vencer el plazo. No ordenada (plazo vencido o
+/// fallo del vigilante): `TerminateProcess` inmediato (sin destructores, atexit ni candados).
+pub struct SalidaProceso {
+    pedida: Arc<SalidaPedida>,
+}
+
+impl SalidaProceso {
+    pub fn arrancar() -> io::Result<Self> {
+        let pedida = Arc::new(SalidaPedida { codigo: AtomicU32::new(0), hilo: OnceLock::new() });
+        let p2 = Arc::clone(&pedida);
+        let h = thread::Builder::new().name("capture-salida".into()).spawn(move || salida_ordenada(&p2))?;
+        let _ = pedida.hilo.set(h.thread().clone());
+        Ok(Self { pedida })
+    }
+}
+
+fn salida_ordenada(p: &SalidaPedida) {
+    let codigo = loop {
+        let c = p.codigo.load(Ordering::SeqCst);
+        if c != 0 {
+            break c - 1;
+        }
+        thread::park();
+    };
+    {
+        use std::io::Write as _;
+        let _ = io::stdout().flush();
+        let _ = io::stderr().flush();
+    }
+    terminar_nativo(codigo)
+}
 
 impl Salida for SalidaProceso {
     fn terminar(&self, codigo: u32, ordenada: bool) {
         if ordenada {
-            std::process::exit(i32::try_from(codigo).unwrap_or(i32::MAX));
+            let _ = self.pedida.codigo.compare_exchange(0, codigo + 1, Ordering::SeqCst, Ordering::SeqCst);
+            if let Some(h) = self.pedida.hilo.get() {
+                h.unpark();
+            }
+            return;
         }
         terminar_nativo(codigo)
     }
@@ -550,11 +597,17 @@ pub fn vigilar(ctl: &Control) {
     }
     ctl.cortes_nativos();
     let t0 = Duration::from_nanos(ctl.t_fatal_ns.load(Ordering::SeqCst));
+    let mut salida_pedida = false;
     loop {
         let b = ctl.banderas();
-        if b & FIN_LISTO != 0 {
+        if b & FIN_LISTO != 0 && !salida_pedida {
+            salida_pedida = true;
             let codigo = if b & INCOMPLETO != 0 { SALIDA_FATAL_INCOMPLETO } else { SALIDA_FATAL_CERRADO };
+            // SALIDAFALLO-4: la salida ordenada la hace otro hilo; el plazo sigue vigilado
+            // hasta que el proceso termine de verdad.
             ctl.salida.terminar(codigo, true);
+        }
+        if salida_pedida && ctl.salida.terminado() {
             return;
         }
         let pasado = ctl.reloj.ahora().saturating_sub(t0);
