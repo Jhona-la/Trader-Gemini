@@ -3,6 +3,7 @@
 //! de disco libre.
 
 use crate::{CaptureResult, codec, digest, write_json};
+use crate::salidafallo::{CompuertaStore, OpStore};
 use flate2::read::GzDecoder;
 use serde_json::{Value, json};
 use std::{
@@ -20,6 +21,17 @@ pub struct StoreConfig {
     pub min_free_bytes: u64,
     pub codec: codec::Params,
     pub scan_every: Duration,
+    /// SALIDAFALLO P4c: compuerta nativa (comparte `cancel`). Ordena cada trabajo y cada borrado.
+    pub gate: std::sync::Arc<CompuertaStore>,
+}
+
+/// Borrado de recode: con configuracion de captura pasa por la compuerta; sin ella (CLI y
+/// pruebas de recode) es el borrado directo de siempre.
+fn remove(cfg: Option<&StoreConfig>, op: OpStore, path: &Path) -> io::Result<()> {
+    match cfg {
+        Some(cfg) => cfg.gate.borrar(op, path),
+        None => fs::remove_file(path),
+    }
 }
 
 // Politica solicitada en encargo_retencion_v2.md: nunca vencer datos antes de un ano.
@@ -141,6 +153,12 @@ pub fn recode(dir: &Path, name: &str, p: codec::Params) -> CaptureResult<Value> 
 fn recode_checked(dir: &Path, name: &str, p: codec::Params, cfg: Option<&StoreConfig>) -> CaptureResult<Value> {
     let gz = dir.join(format!("{name}.jsonl.gz"));
     let manifest_path = dir.join(format!("{name}.manifest.json"));
+    // P4c: el trabajo entero queda admitido (y delimitado si llega el corte) o no empieza.
+    let _job = match cfg {
+        Some(cfg) => Some(cfg.gate.admitir(OpStore::Recode)
+            .ok_or_else(|| io::Error::other(format!("{name}: compuerta de store cerrada; no se recodifica")))?),
+        None => None,
+    };
     let manifest: Value = serde_json::from_reader(File::open(&manifest_path)?)?;
     let started = Instant::now();
     let (gz_bytes, gz_sha) = digest(&gz)?;
@@ -149,7 +167,7 @@ fn recode_checked(dir: &Path, name: &str, p: codec::Params, cfg: Option<&StoreCo
     }
     let out = dir.join(format!("{name}.tgll"));
     let partial = dir.join(format!("{name}.tgll.partial"));
-    let _ = fs::remove_file(&partial);
+    let _ = remove(cfg, OpStore::RecodeBorraParcialViejo, &partial);
     let enc = {
         let file = fs::OpenOptions::new().write(true).create_new(true).open(&partial)?;
         let mut w = BufWriter::with_capacity(1 << 20, SpaceWriter { inner: file, cfg });
@@ -160,7 +178,7 @@ fn recode_checked(dir: &Path, name: &str, p: codec::Params, cfg: Option<&StoreCo
     };
     let encode_s = started.elapsed().as_secs_f64();
     if manifest["rows"].as_u64() != Some(enc.lines) {
-        let _ = fs::remove_file(&partial);
+        let _ = remove(cfg, OpStore::RecodeBorraParcial, &partial);
         return Err(io::Error::other(format!("{name}: filas del manifiesto {} != lineas leidas {}", manifest["rows"], enc.lines)).into());
     }
     fs::rename(&partial, &out)?;
@@ -185,7 +203,7 @@ fn recode_checked(dir: &Path, name: &str, p: codec::Params, cfg: Option<&StoreCo
         "last_recv_utc_ms":manifest["last_recv_utc_ms"], "recoded_utc_ms":utc_ms(),
     });
     let receipt_path = dir.join(format!("{name}.recode.json"));
-    let _ = fs::remove_file(receipt_path.with_extension("json.partial"));
+    let _ = remove(cfg, OpStore::RecodeBorraReciboParcial, &receipt_path.with_extension("json.partial"));
     write_json(&receipt_path, &receipt)?;
     if let Some(cfg) = cfg {
         if cfg.cancel.load(std::sync::atomic::Ordering::Acquire) {
@@ -196,7 +214,7 @@ fn recode_checked(dir: &Path, name: &str, p: codec::Params, cfg: Option<&StoreCo
     if digest(&gz)? != (gz_bytes, gz_sha.clone()) {
         return Err(io::Error::other("gzip cambio durante la recodificacion; se conserva").into());
     }
-    fs::remove_file(&gz)?;
+    remove(cfg, OpStore::RecodeBorraGzip, &gz)?;
     Ok(receipt)
 }
 
@@ -297,15 +315,16 @@ fn verify_archive_group(g: &Group) -> CaptureResult<()> {
 }
 
 /// Retencion por edad. Con disco bajo/incierto se para sin empezar recode ni purga.
-pub fn run(cfg: StoreConfig, sealed: mpsc::Receiver<(PathBuf, String)>, stop_tx: tokio::sync::oneshot::Sender<StoreStop>) {
-    let mut stop_tx = Some(stop_tx);
+/// SALIDAFALLO P2: el aviso es `&mut Option` para que el envoltorio del hilo fije su estado de
+/// salida antes de soltarlo.
+pub fn run(cfg: StoreConfig, sealed: mpsc::Receiver<(PathBuf, String)>, stop_tx: &mut Option<tokio::sync::oneshot::Sender<StoreStop>>) {
     let mut failed = std::collections::HashSet::new();
     let mut last_status = Instant::now() - cfg.scan_every;
     loop {
         if cfg.cancel.load(std::sync::atomic::Ordering::Acquire) { return; }
         let free = match space(&cfg.root, cfg.min_free_bytes) {
             Ok(free) => free,
-            Err(stop) => { signal_stop(&cfg.root, &mut stop_tx, stop); return; }
+            Err(stop) => { signal_stop(&cfg.root, stop_tx, stop); return; }
         };
         let now = utc_ms();
         let (groups, total, _) = scan(&cfg.root);
@@ -314,8 +333,9 @@ pub fn run(cfg: StoreConfig, sealed: mpsc::Receiver<(PathBuf, String)>, stop_tx:
             // Un gzip coexistente indica una transaccion sin cerrar. No se toca su grupo.
             if g.dir.join(format!("{}.jsonl.gz",g.name)).exists() { continue; }
             if cfg.cancel.load(std::sync::atomic::Ordering::Acquire) { return; }
+            let Some(_job) = cfg.gate.admitir(OpStore::Retencion) else { return; };
             if let Err(e) = verify_archive_group(g) {
-                signal_stop(&cfg.root, &mut stop_tx, StoreStop::StorageError(e.to_string())); return;
+                signal_stop(&cfg.root, stop_tx, StoreStop::StorageError(e.to_string())); return;
             }
             let intent = json!({"utc_ms":now,"event":"expiry_intent","hour":g.name,
                 "run":g.dir,"expiry_anchor_ms":g.expiry_anchor_ms,"retention_ms":cfg.retention_ms});
@@ -323,10 +343,10 @@ pub fn run(cfg: StoreConfig, sealed: mpsc::Receiver<(PathBuf, String)>, stop_tx:
             for ext in [".tgll", ".recode.json", ".manifest.json"] {
                 if cfg.cancel.load(std::sync::atomic::Ordering::Acquire) { return; }
                 if let Err(stop) = space(&cfg.root, cfg.min_free_bytes) {
-                    signal_stop(&cfg.root, &mut stop_tx, stop); return;
+                    signal_stop(&cfg.root, stop_tx, stop); return;
                 }
-                if let Err(e) = fs::remove_file(g.dir.join(format!("{}{ext}", g.name))) {
-                    signal_stop(&cfg.root, &mut stop_tx, StoreStop::StorageError(format!("purga {}{ext}: {e}",g.name))); return;
+                if let Err(e) = cfg.gate.borrar(OpStore::RetencionBorra, &g.dir.join(format!("{}{ext}", g.name))) {
+                    signal_stop(&cfg.root, stop_tx, StoreStop::StorageError(format!("purga {}{ext}: {e}",g.name))); return;
                 }
             }
             deleted.push(json!({"run":g.dir,"hour":g.name,"bytes":g.bytes}));
@@ -353,11 +373,12 @@ pub fn run(cfg: StoreConfig, sealed: mpsc::Receiver<(PathBuf, String)>, stop_tx:
                 "oldest_hour_ms":groups.first().map(|g| g.hour),"newest_hour_ms":groups.last().map(|g| g.hour),
             });
             if let Err(e) = write_json_replace(&cfg.root.join("STATUS.json"), &status) {
-                signal_stop(&cfg.root, &mut stop_tx, StoreStop::StorageError(format!("STATUS: {e}"))); return;
+                signal_stop(&cfg.root, stop_tx, StoreStop::StorageError(format!("STATUS: {e}"))); return;
             }
         }
         // Recuperar el reinicio entre recibo durable y borrado del gzip, sin re-encode ni sobreescritura.
         for g in groups.iter().filter(|g| g.recoded && g.dir.join(format!("{}.jsonl.gz",g.name)).exists()) {
+            let Some(_job) = cfg.gate.admitir(OpStore::Recuperacion) else { return; };
             let recovered = (|| -> CaptureResult<()> {
                 verify_archive_group(g)?;
                 let gz = g.dir.join(format!("{}.jsonl.gz",g.name));
@@ -375,11 +396,11 @@ pub fn run(cfg: StoreConfig, sealed: mpsc::Receiver<(PathBuf, String)>, stop_tx:
                     return Err(io::Error::other("recuperacion cancelada: gzip conservado").into());
                 }
                 space(&cfg.root,cfg.min_free_bytes).map_err(|s| io::Error::other(s.message()))?;
-                fs::remove_file(&gz)?;
+                cfg.gate.borrar(OpStore::RecuperacionBorraGzip, &gz)?;
                 Ok(())
             })();
             if let Err(e)=recovered {
-                signal_stop(&cfg.root,&mut stop_tx,StoreStop::StorageError(e.to_string())); return;
+                signal_stop(&cfg.root,stop_tx,StoreStop::StorageError(e.to_string())); return;
             }
         }
         if let Some((dir, name)) = pending.iter().find(|(d, n)| !failed.contains(&(d.clone(), n.clone()))) {
@@ -512,15 +533,19 @@ mod retention_tests {
             group
         }
         fn cfg(&self) -> StoreConfig {
+            let cancel = Arc::new(AtomicBool::new(false));
             StoreConfig { root: self.root.clone(), retention_ms: RETAIN,
-                cancel: Arc::new(AtomicBool::new(false)), min_free_bytes: crate::MIN_FREE_BYTES,
-                codec: Self::params(), scan_every: crate::STORE_SCAN_EVERY }
+                cancel: Arc::clone(&cancel), min_free_bytes: crate::MIN_FREE_BYTES,
+                codec: Self::params(), scan_every: crate::STORE_SCAN_EVERY,
+                gate: Arc::new(CompuertaStore::real(cancel)) }
         }
         fn run_once(&self) -> Option<StoreStop> {
             let (sealed_tx, sealed_rx) = mpsc::channel();
             drop(sealed_tx); // Una pasada real de run, sin hilo ni espera de scan_every.
             let (stop_tx, mut stop_rx) = tokio::sync::oneshot::channel();
-            run(self.cfg(), sealed_rx, stop_tx);
+            let mut stop_tx = Some(stop_tx);
+            run(self.cfg(), sealed_rx, &mut stop_tx);
+            drop(stop_tx);
             match stop_rx.try_recv() {
                 Ok(stop) => Some(stop),
                 Err(tokio::sync::oneshot::error::TryRecvError::Closed) => None,

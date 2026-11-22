@@ -762,11 +762,11 @@ async fn local_rotation_and_hour_boundary_keep_payload_and_seals() -> CaptureRes
     let (queue, rx) = ArchiveQueue::new(128, 2 << 20);
     let (seal_tx, seal_rx) = blocking_channel::sync_channel(SEAL_QUEUE_CAPACITY);
     let seal_path = output.0.clone();
-    let sealer = ArchiveWorker::spawn("local-seal", move || {
-        Ok(seal_segments(&seal_path, seal_rx, None))
+    let sealer = ArchiveWorker::spawn_local("local-seal", move || {
+        Ok(seal_segments(&RealDisk, &seal_path, seal_rx, None, None))
     })?;
     let write_path = output.0.clone();
-    let writer = ArchiveWorker::spawn("local-archive", move || archive(&write_path, rx, seal_tx))?;
+    let writer = ArchiveWorker::spawn_local("local-archive", move || archive_local(&write_path, rx, seal_tx))?;
     let mut after_roll = false;
     for (r, cont) in &bank.rows {
         let mut row = r.clone();
@@ -817,13 +817,13 @@ async fn stall_sealer(overload: bool) -> CaptureResult<()> {
     let (seal_tx, seal_rx) = blocking_channel::sync_channel(1);
     let (release, delayed) = blocking_channel::channel::<()>();
     let seal_path = dir.0.clone();
-    let sealer = ArchiveWorker::spawn("local-seal-delayed", move || {
+    let sealer = ArchiveWorker::spawn_local("local-seal-delayed", move || {
         delayed.recv()?;
-        Ok(seal_segments(&seal_path, seal_rx, None))
+        Ok(seal_segments(&RealDisk, &seal_path, seal_rx, None, None))
     })?;
     let write_path = dir.0.clone();
-    let writer = ArchiveWorker::spawn("local-writer-delayed", move || {
-        archive(&write_path, rx, seal_tx)
+    let writer = ArchiveWorker::spawn_local("local-writer-delayed", move || {
+        archive_local(&write_path, rx, seal_tx)
     })?;
     for ordinal in 1..=3 {
         let ts = (ordinal - 1) * HOUR_MS + ROTATION_GRACE_MS + 1;
