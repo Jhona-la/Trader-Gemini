@@ -1012,3 +1012,34 @@ fn instantaneas_de_corte_con_pausa() {
     assert!(compuerta.cerrada());
     assert!(borrados.lock().expect("b").is_empty());
 }
+// ---------------------------------------------------------------------------------------------
+// T13 (SALIDAFALLO-6, hallazgo 3 de la N1): la operacion de store admitida antes del cierre queda
+// identificada en la misma instantanea que su contador (pausa tras admitir).
+// ---------------------------------------------------------------------------------------------
+#[test]
+fn identidad_store_en_la_instantanea() {
+    let (compuerta, _) = compuerta_memoria();
+    // Una operacion anterior ya termino: no es la que esta en curso al cerrar.
+    drop(compuerta.admitir(OpStore::Retencion).expect("previa"));
+    let barrera = Arc::new(Barrier::new(2));
+    let b2 = Arc::clone(&barrera);
+    compuerta.fijar_pausa(Box::new(move |p| {
+        if p == Punto::TrasAdmitirStore && thread::current().name() == Some("store-pausado") {
+            b2.wait();
+            b2.wait();
+        }
+    }));
+    let c2 = Arc::clone(&compuerta);
+    let store = thread::Builder::new().name("store-pausado".into()).spawn(move || {
+        let guarda = c2.admitir(OpStore::Recuperacion).expect("admitida antes del cierre");
+        drop(guarda);
+    }).expect("hilo");
+    barrera.wait(); // admitida; la guarda aun no se devolvio.
+    let corte = compuerta.cerrar().expect("corte");
+    assert_eq!(corte, CorteStore { en_curso: 1, ultima: OpStore::Recuperacion }, "la operacion en curso queda identificada");
+    barrera.wait();
+    store.join().expect("hilo");
+    assert_eq!(compuerta.en_curso(), 0);
+    assert!(compuerta.admitir(OpStore::Recode).is_none());
+    assert_eq!(compuerta.corte(), Some(corte));
+}

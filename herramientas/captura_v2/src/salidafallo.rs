@@ -297,6 +297,8 @@ pub(crate) enum Punto {
     TrasCorteAdmision,
     /// Tras el `fetch_or` del cierre de store y antes de publicar su instantanea.
     TrasCierreStore,
+    /// Tras admitir una operacion de store (CAS) y antes de devolver su guarda.
+    TrasAdmitirStore,
 }
 
 #[cfg(test)]
@@ -863,9 +865,15 @@ impl Drop for Vuelo<'_> {
 }
 
 // ---------------------------------------------------------------------------------------------
-// Compuerta nativa de store (P4c). Bit 63 = cerrada; bits bajos = operaciones en curso.
+// Compuerta nativa de store (P4c). Bit 63 = cerrada; bits 56..63 = identidad de la ultima operacion
+// admitida; bits 0..56 = operaciones en curso. SALIDAFALLO-6 (N1 hallazgo 3): admitir es un CAS que
+// suma la operacion y fija su identidad en la misma palabra, asi que el `fetch_or` del cierre lee
+// contador e identidad en una sola instantanea.
 // ---------------------------------------------------------------------------------------------
 const CERRADA: u64 = 1 << 63;
+const DESPL_OP: u32 = 56;
+const MASCARA_OP: u64 = 0x7F << DESPL_OP;
+const MASCARA_EN_CURSO: u64 = (1 << DESPL_OP) - 1;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[repr(u8)]
@@ -903,7 +911,7 @@ impl OpStore {
 pub struct CorteStore {
     /// Operaciones que ya habian entrado al llegar el corte (no se esperan).
     pub en_curso: u64,
-    /// Ultima operacion admitida antes del corte.
+    /// Ultima operacion admitida antes del corte (en curso si `en_curso` > 0).
     pub ultima: OpStore,
 }
 
@@ -912,7 +920,6 @@ type Despertador = Box<dyn Fn() + Send + Sync>;
 
 pub struct CompuertaStore {
     estado: AtomicU64,
-    ultima: AtomicU8,
     pub cancel: Arc<AtomicBool>,
     borrador: Borrador,
     despertador: OnceLock<Despertador>,
@@ -925,7 +932,6 @@ impl CompuertaStore {
     pub fn nueva(cancel: Arc<AtomicBool>, borrador: Borrador) -> Self {
         Self {
             estado: AtomicU64::new(0),
-            ultima: AtomicU8::new(OpStore::Ninguna as u8),
             cancel,
             borrador,
             despertador: OnceLock::new(),
@@ -950,12 +956,19 @@ impl CompuertaStore {
     }
 
     pub fn admitir(&self, op: OpStore) -> Option<GuardaStore<'_>> {
-        let previo = self.estado.fetch_add(1, Ordering::SeqCst);
-        if previo & CERRADA != 0 {
-            self.estado.fetch_sub(1, Ordering::SeqCst);
-            return None;
+        let mut actual = self.estado.load(Ordering::SeqCst);
+        loop {
+            if actual & CERRADA != 0 {
+                return None;
+            }
+            let nuevo = ((actual & !MASCARA_OP) + 1) | ((op as u64) << DESPL_OP);
+            match self.estado.compare_exchange(actual, nuevo, Ordering::SeqCst, Ordering::SeqCst) {
+                Ok(_) => break,
+                Err(v) => actual = v,
+            }
         }
-        self.ultima.store(op as u8, Ordering::SeqCst);
+        #[cfg(test)]
+        pausar(&self.pausa, Punto::TrasAdmitirStore);
         Some(GuardaStore(self))
     }
 
@@ -975,8 +988,8 @@ impl CompuertaStore {
             #[cfg(test)]
             pausar(&self.pausa, Punto::TrasCierreStore);
             let _ = self.corte.set(CorteStore {
-                en_curso: previo & !CERRADA,
-                ultima: OpStore::desde(self.ultima.load(Ordering::SeqCst)),
+                en_curso: previo & MASCARA_EN_CURSO,
+                ultima: OpStore::desde(((previo & MASCARA_OP) >> DESPL_OP) as u8),
             });
         }
         if let Some(d) = self.despertador.get() {
@@ -991,7 +1004,7 @@ impl CompuertaStore {
     }
 
     pub fn en_curso(&self) -> u64 {
-        self.estado.load(Ordering::SeqCst) & !CERRADA
+        self.estado.load(Ordering::SeqCst) & MASCARA_EN_CURSO
     }
 
     pub fn corte(&self) -> Option<CorteStore> {
