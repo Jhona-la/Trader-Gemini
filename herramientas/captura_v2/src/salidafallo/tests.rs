@@ -934,3 +934,81 @@ fn salida_ordenada_bloqueada_vence_plazo() {
     vig.join().expect("vigilante");
     assert_eq!(salida.codigos(), [(SALIDA_FATAL_CERRADO, true), (SALIDA_FATAL_INCOMPLETO, false)]);
 }
+// ---------------------------------------------------------------------------------------------
+// T11 (SALIDAFALLO-5, hallazgo 2 de la N1): pausa determinista entre el CAS del primer fatal y
+// la publicacion de su detalle. El lector nunca ve la clase con un detalle vacio.
+// ---------------------------------------------------------------------------------------------
+#[test]
+fn primer_fatal_sin_detalle_vacio() {
+    let (ctl, _, _) = control_de_prueba(PLAZO_FATAL);
+    let barrera = Arc::new(Barrier::new(2));
+    let b2 = Arc::clone(&barrera);
+    ctl.fijar_pausa(Box::new(move |p| {
+        if p == Punto::TrasCasFatal && thread::current().name() == Some("fatal-pausado") {
+            b2.wait();
+            b2.wait();
+        }
+    }));
+    let c = Arc::clone(&ctl);
+    let ganador = thread::Builder::new().name("fatal-pausado".into())
+        .spawn(move || c.fatal(Clase::Lector, "detalle completo del primer fatal")).expect("hilo");
+    barrera.wait(); // CAS ganado; el detalle aun no esta copiado ni FATAL publicado.
+    assert_eq!(ctl.primer_fatal(), None, "nunca la clase con un detalle vacio");
+    assert_eq!(ctl.fatal_pendiente(), Some(Clase::Lector));
+    assert!(!ctl.es_fatal());
+    assert!(!ctl.fatal(Clase::Escritor, "segundo"), "el CAS ya tiene dueno: es secundario");
+    barrera.wait();
+    assert!(ganador.join().expect("hilo"));
+    assert_eq!(ctl.primer_fatal(), Some((Clase::Lector, "detalle completo del primer fatal".to_string())));
+    assert_eq!(ctl.fatal_pendiente(), None);
+    assert_eq!(ctl.secundarios().0, vec!["escritor_error: segundo".to_string()]);
+}
+
+// ---------------------------------------------------------------------------------------------
+// T12 (SALIDAFALLO-5, sobre SALIDAFALLO-3): pausa determinista entre el cambio de estado del
+// corte (admision y store) y la publicacion de su instantanea.
+// ---------------------------------------------------------------------------------------------
+#[test]
+fn instantaneas_de_corte_con_pausa() {
+    let adm = Arc::new(Admision::nueva());
+    let barrera = Arc::new(Barrier::new(2));
+    let b2 = Arc::clone(&barrera);
+    adm.fijar_pausa(Box::new(move |p| {
+        if p == Punto::TrasCorteAdmision {
+            b2.wait();
+            b2.wait();
+        }
+    }));
+    let a2 = Arc::clone(&adm);
+    let cortador = thread::spawn(move || a2.cortar(Motivo::Fatal));
+    barrera.wait(); // bit de corte puesto; instantanea sin publicar.
+    assert!(!adm.cortada(), "sin instantanea publicada no se ve cortada");
+    assert!(!adm.resuelta(), "sin instantanea publicada no se ve resuelta");
+    assert_eq!(adm.corte(), None);
+    assert!(adm.entrar().is_none(), "la admision ya esta cerrada aunque la instantanea falte");
+    barrera.wait();
+    assert_eq!(cortador.join().expect("hilo"), Some(Corte { motivo: Motivo::Fatal, confirmadas: 0, en_vuelo: 0 }));
+    assert!(adm.cortada() && adm.resuelta());
+    assert_eq!(adm.rechazos_tras_corte(), 1);
+
+    let (compuerta, borrados) = compuerta_memoria();
+    let barrera = Arc::new(Barrier::new(2));
+    let b2 = Arc::clone(&barrera);
+    compuerta.fijar_pausa(Box::new(move |p| {
+        if p == Punto::TrasCierreStore {
+            b2.wait();
+            b2.wait();
+        }
+    }));
+    let c2 = Arc::clone(&compuerta);
+    let cerrador = thread::spawn(move || c2.cerrar());
+    barrera.wait(); // bit de cierre puesto; instantanea sin publicar.
+    assert!(!compuerta.cerrada(), "sin instantanea publicada no se ve cerrada");
+    assert_eq!(compuerta.corte(), None);
+    assert!(compuerta.admitir(OpStore::Retencion).is_none(), "ya no admite trabajo");
+    assert!(compuerta.borrar(OpStore::RetencionBorra, Path::new("x.tgll")).is_err(), "ni borrados");
+    barrera.wait();
+    assert_eq!(cerrador.join().expect("hilo"), Some(CorteStore { en_curso: 0, ultima: OpStore::Ninguna }));
+    assert!(compuerta.cerrada());
+    assert!(borrados.lock().expect("b").is_empty());
+}

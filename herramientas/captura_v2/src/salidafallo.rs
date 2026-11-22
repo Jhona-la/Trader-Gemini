@@ -286,6 +286,29 @@ impl Clase {
     }
 }
 
+// Puntos de pausa de prueba (SALIDAFALLO-5): ventanas entre un cambio de estado atomico y la
+// publicacion de lo que lo describe. Solo existen bajo cfg(test); produccion no los tiene.
+#[cfg(test)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Punto {
+    /// Tras ganar el CAS del primer fatal y antes de copiar su detalle.
+    TrasCasFatal,
+    /// Tras el `fetch_or` del corte de admision y antes de publicar su instantanea.
+    TrasCorteAdmision,
+    /// Tras el `fetch_or` del cierre de store y antes de publicar su instantanea.
+    TrasCierreStore,
+}
+
+#[cfg(test)]
+pub(crate) type Pausa = Box<dyn Fn(Punto) + Send + Sync>;
+
+#[cfg(test)]
+fn pausar(p: &OnceLock<Pausa>, punto: Punto) {
+    if let Some(f) = p.get() {
+        f(punto);
+    }
+}
+
 // Banderas de `Control::banderas`.
 const FATAL: u32 = 1;
 const DESARMADO: u32 = 1 << 1;
@@ -322,6 +345,8 @@ pub struct Control {
     plazo: Duration,
     reloj: Box<dyn Reloj>,
     salida: Box<dyn Salida>,
+    #[cfg(test)]
+    pausa: OnceLock<Pausa>,
 }
 
 impl Control {
@@ -344,7 +369,19 @@ impl Control {
             plazo,
             reloj,
             salida,
+            #[cfg(test)]
+            pausa: OnceLock::new(),
         }
+    }
+
+    #[cfg(test)]
+    pub(crate) fn fijar_pausa(&self, p: Pausa) {
+        let _ = self.pausa.set(p);
+    }
+
+    #[cfg(test)]
+    pub(crate) fn pausar(&self, punto: Punto) {
+        pausar(&self.pausa, punto);
     }
 
     pub fn plazo(&self) -> Duration {
@@ -393,6 +430,8 @@ impl Control {
             .compare_exchange(Clase::Ninguna as u8, clase as u8, Ordering::SeqCst, Ordering::SeqCst)
             .is_ok();
         if primero {
+            #[cfg(test)]
+            self.pausar(Punto::TrasCasFatal);
             self.detalle.escribir_una_vez(partes);
             let t = u64::try_from(self.reloj.ahora().as_nanos()).unwrap_or(u64::MAX);
             self.t_fatal_ns.store(t, Ordering::SeqCst);
@@ -448,12 +487,27 @@ impl Control {
         );
     }
 
+    /// SALIDAFALLO-5 (N1 hallazgo 2): el primer fatal solo se ve completo. El ganador del CAS
+    /// copia el detalle (listo con Release) y despues publica FATAL; aqui se exige FATAL antes de
+    /// leer clase y detalle, asi que nunca se devuelve la clase con un detalle vacio. Entre el CAS
+    /// y la publicacion, `fatal_pendiente` dice la clase sin inventar el texto.
     pub fn primer_fatal(&self) -> Option<(Clase, String)> {
-        let clase = Clase::desde(self.clase.load(Ordering::SeqCst));
-        if clase == Clase::Ninguna {
+        if self.banderas() & FATAL == 0 {
             return None;
         }
-        Some((clase, self.detalle.leer().unwrap_or_default()))
+        let clase = Clase::desde(self.clase.load(Ordering::SeqCst));
+        Some((clase, self.detalle.leer()?))
+    }
+
+    /// Clase de un primer fatal ya decidido (CAS ganado) cuyo detalle aun no esta publicado.
+    pub fn fatal_pendiente(&self) -> Option<Clase> {
+        if self.primer_fatal().is_some() {
+            return None;
+        }
+        match Clase::desde(self.clase.load(Ordering::SeqCst)) {
+            Clase::Ninguna => None,
+            c => Some(c),
+        }
     }
 
     pub fn secundarios(&self) -> (Vec<String>, usize) {
@@ -680,6 +734,8 @@ pub struct Admision {
     reservas_canceladas: AtomicU64,
     rechazos_tras_corte: AtomicU64,
     escritor: OnceLock<Thread>,
+    #[cfg(test)]
+    pausa: OnceLock<Pausa>,
 }
 
 impl Admision {
@@ -690,7 +746,14 @@ impl Admision {
             reservas_canceladas: AtomicU64::new(0),
             rechazos_tras_corte: AtomicU64::new(0),
             escritor: OnceLock::new(),
+            #[cfg(test)]
+            pausa: OnceLock::new(),
         }
+    }
+
+    #[cfg(test)]
+    pub(crate) fn fijar_pausa(&self, p: Pausa) {
+        let _ = self.pausa.set(p);
     }
 
     pub fn registrar_escritor(&self, hilo: Thread) {
@@ -718,6 +781,8 @@ impl Admision {
     pub fn cortar(&self, motivo: Motivo) -> Option<Corte> {
         let previo = self.estado.fetch_or(CORTADA, Ordering::SeqCst);
         if previo & CORTADA == 0 {
+            #[cfg(test)]
+            pausar(&self.pausa, Punto::TrasCorteAdmision);
             let corte = Corte {
                 motivo,
                 confirmadas: (previo & MASCARA_CONFIRMADAS) >> BITS_VUELO,
@@ -852,6 +917,8 @@ pub struct CompuertaStore {
     borrador: Borrador,
     despertador: OnceLock<Despertador>,
     corte: OnceLock<CorteStore>,
+    #[cfg(test)]
+    pausa: OnceLock<Pausa>,
 }
 
 impl CompuertaStore {
@@ -863,7 +930,14 @@ impl CompuertaStore {
             borrador,
             despertador: OnceLock::new(),
             corte: OnceLock::new(),
+            #[cfg(test)]
+            pausa: OnceLock::new(),
         }
+    }
+
+    #[cfg(test)]
+    pub(crate) fn fijar_pausa(&self, p: Pausa) {
+        let _ = self.pausa.set(p);
     }
 
     /// Produccion: el borrado real es `fs::remove_file`.
@@ -898,6 +972,8 @@ impl CompuertaStore {
         self.cancel.store(true, Ordering::Release);
         let previo = self.estado.fetch_or(CERRADA, Ordering::SeqCst);
         if previo & CERRADA == 0 {
+            #[cfg(test)]
+            pausar(&self.pausa, Punto::TrasCierreStore);
             let _ = self.corte.set(CorteStore {
                 en_curso: previo & !CERRADA,
                 ultima: OpStore::desde(self.ultima.load(Ordering::SeqCst)),
