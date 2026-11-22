@@ -762,10 +762,14 @@ fn archive<D: Disk>(
     let mut segment_number = 0;
     let mut sequence = 0_u64;
     let mut newest = 0;
-    let fail = |out: &mut ArchiveOutcome, what: &str, segment: Option<&str>, error: String| {
+    // SALIDAFALLO-8 (N1 hallazgo 5): cada fallo del escritor registra, como los del sellador, la
+    // ruta del artefacto afectado, su estado en disco, su validacion y las filas que no se admiten.
+    let partial_of = |segment: &str| dir.join(format!("{segment}.jsonl.gz.partial"));
+    let fail = |out: &mut ArchiveOutcome, what: &str, segment: Option<&str>, error: String, state: &str, rows: u64| {
         let message = format!("escritor {what}: {error}");
         ctl.fatal(Clase::Escritor, &message);
-        out.failures.push(json!({"phase": what, "segment": segment, "error": error}));
+        out.failures.push(json!({"phase": what, "segment": segment, "error": error,
+            "path": segment.map(partial_of), "state": state, "validated": false, "admitted": false, "rows": rows}));
     };
     loop {
         let QueuedRow { mut row, cont, _charge, .. } = match rx.next_row(&ctl.admision) {
@@ -777,7 +781,7 @@ fn archive<D: Disk>(
         };
         let Some(timestamp) = row["recv_utc_ms"].as_u64() else {
             out.rows_unwritten += 1;
-            fail(&mut out, "timestamp", None, "archive record lacks timestamp".into());
+            fail(&mut out, "timestamp", None, "archive record lacks timestamp".into(), "fila_sin_marca_no_escrita", 1);
             continue;
         };
         let hour = timestamp / HOUR_MS * HOUR_MS;
@@ -797,7 +801,7 @@ fn archive<D: Disk>(
                     Err(e) => {
                         out.rows_unwritten += 1;
                         failed_hours.insert(hour);
-                        fail(&mut out, "open", Some(&format!("hour-{hour}-{segment_number:04}")), e.to_string());
+                        fail(&mut out, "open", Some(&format!("hour-{hour}-{segment_number:04}")), e.to_string(), "partial_no_creado", 1);
                         continue;
                     }
                 }
@@ -805,12 +809,13 @@ fn archive<D: Disk>(
         };
         if let Err(e) = segment.append(&row, cont.as_ref(), timestamp) {
             // El segmento queda como .jsonl.gz.partial en el estado alcanzado; no se sella.
+            let lost = 1 + segment.counts.rows;
             out.rows_written -= segment.counts.rows;
-            out.rows_unwritten += 1 + segment.counts.rows;
+            out.rows_unwritten += lost;
             let name = segment.name.clone();
             open.remove(&hour);
             failed_hours.insert(hour);
-            fail(&mut out, "append", Some(&name), e.to_string());
+            fail(&mut out, "append", Some(&name), e.to_string(), "jsonl.gz.partial_conservado_sin_sellar", lost);
             continue;
         }
         out.rows_written += 1;
@@ -823,7 +828,7 @@ fn archive<D: Disk>(
                 if let Err(rows) = handoff_segment(&seal, completed) {
                     out.rows_written -= rows;
                     out.rows_unwritten += rows;
-                    fail(&mut out, "handoff", Some(&name), "archive sealer unavailable".into());
+                    fail(&mut out, "handoff", Some(&name), "archive sealer unavailable".into(), "jsonl.gz.partial_conservado_sin_sellar", rows);
                 }
             }
         }
@@ -833,7 +838,7 @@ fn archive<D: Disk>(
         if let Err(rows) = handoff_segment(&seal, segment) {
             out.rows_written -= rows;
             out.rows_unwritten += rows;
-            fail(&mut out, "handoff", Some(&name), "archive sealer unavailable".into());
+            fail(&mut out, "handoff", Some(&name), "archive sealer unavailable".into(), "jsonl.gz.partial_conservado_sin_sellar", rows);
         }
     }
     out

@@ -1156,3 +1156,53 @@ fn end_cubre_fatal_tardio() {
     assert_eq!(end["status"], "error");
     assert_eq!(ctl.codigo_fin(), 1);
 }
+// ---------------------------------------------------------------------------------------------
+// T15 (SALIDAFALLO-8, hallazgo 5 de la N1): los fallos del escritor en append y handoff
+// registran ruta, estado de conservacion, validacion y filas, como los del sellador.
+// ---------------------------------------------------------------------------------------------
+#[test]
+fn fallo_escritor_con_ruta_y_estado() {
+    let h = crate::HOUR_MS;
+    let (seg1, seg2) = ("hour-0-0001", format!("hour-{h}-0002"));
+    let partial = |n: &str| json!(dir().join(format!("{n}.jsonl.gz.partial")));
+    // Append fallido en la primera hora (fila grande y poco compresible, como en T8).
+    let (ctl, _, _) = control_de_prueba(PLAZO_FATAL);
+    let disco = DiscoMemoria(Arc::default());
+    disco.0.fallar(seg1, "write");
+    let (queue, rx) = ArchiveQueue::with_admission(16, 4 << 20, Arc::clone(&ctl.admision));
+    let mut x = 0x9E37_79B9_7F4A_7C15_u64;
+    let grande: String = (0..400_000).map(|_| {
+        x ^= x << 13;
+        x ^= x >> 7;
+        x ^= x << 17;
+        char::from(b"0123456789abcdef"[(x & 15) as usize])
+    }).collect();
+    for (s, ts, pl) in [(1, h - 1, grande.as_str()), (2, h + 1, "{}"), (3, h - 2, "{}"), (4, h + crate::ROTATION_GRACE_MS, "{}")] {
+        queue.offer(fila(s, ts, pl), None).expect("fila");
+    }
+    drop(queue);
+    let (out, _) = archivar(&disco, &ctl, rx);
+    let f = &out.failures[0];
+    assert_eq!(f["phase"], "append");
+    assert_eq!(f["segment"], seg1);
+    assert_eq!(f["path"], partial(seg1));
+    assert_eq!(f["state"], "jsonl.gz.partial_conservado_sin_sellar");
+    assert_eq!((f["validated"].as_bool(), f["admitted"].as_bool()), (Some(false), Some(false)));
+    assert_eq!(f["rows"], 1);
+    assert!(disco.0.existe(&dir().join(format!("{seg1}.jsonl.gz.partial"))), "el parcial se conserva");
+    // Handoff fallido (sellador ausente): ruta y estado de cada segmento afectado.
+    let (ctl, _, _) = control_de_prueba(PLAZO_FATAL);
+    let disco = DiscoMemoria(Arc::default());
+    let (seal_tx, seal_rx) = std_mpsc::sync_channel(crate::SEAL_QUEUE_CAPACITY);
+    drop(seal_rx);
+    let out = archive(&disco, &dir(), cola_con_horas(&ctl), seal_tx, &ctl);
+    let handoffs: Vec<&Value> = out.failures.iter().filter(|f| f["phase"] == "handoff").collect();
+    assert_eq!(handoffs.len(), 2);
+    for (f, seg) in handoffs.iter().zip([seg1, seg2.as_str()]) {
+        assert_eq!(f["segment"], seg);
+        assert_eq!(f["path"], partial(seg));
+        assert_eq!(f["state"], "jsonl.gz.partial_conservado_sin_sellar");
+        assert_eq!((f["validated"].as_bool(), f["admitted"].as_bool()), (Some(false), Some(false)));
+        assert_eq!(f["rows"], 2);
+    }
+}
