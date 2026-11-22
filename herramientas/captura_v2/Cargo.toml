@@ -1,0 +1,26 @@
+[package]
+name = "captura_v2"
+version = "0.2.0"
+edition = "2024"
+
+[workspace]
+resolver = "2"
+
+[dependencies]
+flate2 = "1"
+futures-util = { version = "0.3", features = ["sink"] }
+reqwest = { version = "0.11", default-features = false, features = ["rustls-tls"] }
+serde_json = "1"
+sha2 = "0.10"
+tokio = { version = "1.37", features = ["macros", "rt-multi-thread", "signal", "sync", "time"] }
+tokio-tungstenite = { version = "0.21", features = ["native-tls"] }
+zstd = "0.13"
+fastrand = "2"
+windows-sys = { version = "0.61", features = ["Win32_Storage_FileSystem", "Win32_System_Threading"] }
+
+[dev-dependencies]
+# R3b: reloj pausado solo para probar la guarda, sin esperas de tiempo real.
+tokio = { version = "1.37", features = ["test-util"] }
+
+[profile.release]
+opt-level = 3

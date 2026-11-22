@@ -1,0 +1,27 @@
+{
+    "schema":  "captura-r3b-340-v1",
+    "patch_sha256":  "d08dc4500c944467b8935ea99be1925e0ea3db6437c1747a2a72ccaf54c0ecd2",
+    "exe_sha256":  "e3ddbf183803bd90b33839955a05fe6bd7d26c74c7b41e18904be6b3a5d247b6",
+    "fuentes":  {
+                    "Cargo.toml":  "8d57d343860c458cb09767af2b7aaaf28e13a1c2d6fc9b31e7febcfc55963b92",
+                    "Cargo.lock":  "5f8bc695f3c8d65dd1df537ffe998d2e83b2be7cafe4ad7a7b75bebf04400e8c",
+                    "supervisor_v2.ps1":  "0d9fc6e8e186fe36f5eaaf784af2ed226bb79c4d9bb5fb0d09fadf617096f4b1",
+                    "src\\banco_local.rs":  "96bc214d4c3cb4c807377083ceda30bf40c7cef1698dbb9559008dc4f05bfac6",
+                    "src\\codec.rs":  "4a8addafc467067a4a6e4a607762f8df9cae2ec6d8dc3caffb7176a9a8c2f516",
+                    "src\\gate.rs":  "f07157625f0e9fcdb6d1aedf4603ea4575cf0f4d1036ba90250afda77ed457d0",
+                    "src\\l2.rs":  "fa33e36cf0aa2e00852ca0abf5a81505263ee0df3d66e1ff6d544b6f590fb3f4",
+                    "src\\main.rs":  "b8bf1fd801eb272b57bf7babea0721e2bc20666ccea5b8178af44e55dc087682",
+                    "src\\public_l2.rs":  "bd0a708ba3969c4f9211dcc80415f5f335195bd2560f96cb0a72428a44a02b78",
+                    "src\\store.rs":  "9e0985602ec915f9f299b9fb0dbd2fa0b0bcc7cbf8372864fde4da438f7ce9fb"
+                },
+    "supervisor_sha256":  "0d9fc6e8e186fe36f5eaaf784af2ed226bb79c4d9bb5fb0d09fadf617096f4b1",
+    "pruebas_sha256":  "bef5e98890c05ddf163d0ee5af4049ba9fa8334227eb7baf3891d673f9f308ac",
+    "compilacion":  "cargo build --release --offline --locked",
+    "exit_code":  0,
+    "cargo":  "cargo 1.96.0 (30a34c682 2026-05-25)",
+    "rustc":  "rustc 1.96.0 (ac68faa20 2026-05-25)\nbinary: rustc\ncommit-hash: ac68faa20c58cbccd01ee7208bf3b6e93a7d7f96\ncommit-date: 2026-05-25\nhost: x86_64-pc-windows-msvc\nrelease: 1.96.0\nLLVM version: 22.1.2",
+    "crates_copiados":  186,
+    "build_stdout_sha256":  "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "build_stderr_sha256":  "643323396d7609cefcf810e710d8e41102bd932a36f3fe72c0d1404a9f8dc46d",
+    "fecha":  "2026-11-18T21:30:21.1295843-05:00"
+}
