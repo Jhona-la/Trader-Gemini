@@ -11,9 +11,82 @@
 
 use god_engine_core::GodEngineCore;
 use quantum_arena::{GlobalArena, symbol_registry, symbols};
+use std::sync::{Mutex, MutexGuard, PoisonError};
+
+/// El universo y el registro de specs son globales del proceso y las pruebas de
+/// este binario los publican o los leen: se turnan. Sin el candado,
+/// `test_f1_034` publica `["SOLUSDT"]` en otro hilo mientras `test_f1_042`
+/// construye su núcleo, los slots 1 y 3 se quedan sin identidad y la lectura
+/// con respaldo devolvía el `mid_price` global (el «leído 0.012» de la
+/// compuerta). Tolerante al veneno: una prueba que falle no arrastra a las demás.
+static TEST_LOCK: Mutex<()> = Mutex::new(());
+
+fn bloqueo() -> MutexGuard<'static, ()> {
+    TEST_LOCK.lock().unwrap_or_else(PoisonError::into_inner)
+}
+
+/// Lectura del `mid_price` publicado con la identidad de `simbolo`, sin
+/// respaldo a la clave global: NAN si ese símbolo no publicó.
+fn mid_de(arena: &GlobalArena, simbolo: &str) -> f64 {
+    arena.registry.get_scoped_strict(simbolo, "mid_price").unwrap_or(f64::NAN)
+}
+
+/// Los tres eventos de `test_f1_042` (slots 0, 1 y 3), compartidos con la
+/// reproducción determinista para que las dos alimenten lo mismo.
+fn tres_eventos_f1_042(core: &mut GodEngineCore) {
+    let _ = core.process_event(
+        0, true, false, true, 65000.0, 1.5, 64999.0, 65001.0, 10.0, 10.0, 0.05, 0.0, 10_000, false, &[0.0; 54], false,
+    );
+    let _ = core.process_event(
+        1, true, false, true, 3500.0, 5.0, 3499.0, 3501.0, 20.0, 20.0, -0.02, 0.0, 10_000, false, &[0.0; 54], false,
+    );
+    let _ = core.process_event(
+        3, true, false, true, 0.012, 50000.0, 0.0119, 0.0121, 100000.0, 100000.0, 0.10, 0.0, 10_000, false, &[0.0; 54], false,
+    );
+}
+
+/// Reproducción determinista, sin hilos ni reloj, del «BTCUSDT mid_price
+/// esperado 65000.0, leído 0.012»: se publica a propósito el universo de
+/// `test_f1_034` (`["SOLUSDT"]`) y se alimentan los tres eventos de
+/// `test_f1_042`. El slot 0 publica como SOLUSDT, los slots 1 y 3 no tienen
+/// identidad, y el `mid_price` global queda en 0.012 (el último evento). La
+/// lectura por símbolo de las aserciones de este binario no puede devolver
+/// ese global como si fuera el precio de BTCUSDT.
+#[test]
+fn test_f1_042_universo_ajeno_no_se_lee_como_precio_de_btc() {
+    let _guard = bloqueo();
+    let universe = vec!["SOLUSDT".to_string()];
+    symbols::update_dynamic_universe(universe.clone());
+    symbol_registry::update_registry(
+        universe
+            .iter()
+            .map(|s| symbol_registry::get_official_binance_spec(s))
+            .collect(),
+    );
+
+    let arena = GlobalArena::build_in_own_stack(100.0);
+    let mut core = GodEngineCore::new(arena.clone());
+    tres_eventos_f1_042(&mut core);
+
+    // Control: el escenario es el del fallo. El global lleva el último precio
+    // (0.012) y el slot 0 publicó bajo el nombre del universo ajeno.
+    let global = arena.registry.get_value_fast("mid_price").unwrap_or(f64::NAN);
+    assert!((global - 0.012).abs() < 1e-9, "control: mid_price global = {global}");
+    let sol = mid_de(&arena, "SOLUSDT");
+    assert!((sol - 65000.0).abs() < 1e-6, "control: SOLUSDT mid_price = {sol}");
+
+    // Lo que se exige: sin identidad no hay precio por símbolo.
+    let btc = mid_de(&arena, "BTCUSDT");
+    let eth = mid_de(&arena, "ETHUSDT");
+    let pepe = mid_de(&arena, "1000PEPEUSDT");
+    assert!(btc.is_nan(), "BTCUSDT mid_price sin identidad debe ser NAN, leído {btc}");
+    assert!(eth.is_nan(), "ETHUSDT mid_price sin identidad debe ser NAN, leído {eth}");
+    assert!(pepe.is_nan(), "1000PEPEUSDT mid_price sin identidad debe ser NAN, leído {pepe}");
+}
 
 #[test]
 fn test_f1_042_zero_alloc_stack_symbol_parity_and_leads() {
+    let _guard = bloqueo();
     let universe = vec![
         "BTCUSDT".to_string(),
         "ETHUSDT".to_string(),
@@ -50,9 +123,10 @@ fn test_f1_042_zero_alloc_stack_symbol_parity_and_leads() {
     let _ = ord_3;
 
     // 4. Verificar que el registro omnisciente tiene las claves scoped por símbolo exacto
-    let btc_mid = arena.registry.get_scoped_value_or("BTCUSDT", "mid_price", f64::NAN);
-    let eth_mid = arena.registry.get_scoped_value_or("ETHUSDT", "mid_price", f64::NAN);
-    let pepe_mid = arena.registry.get_scoped_value_or("1000PEPEUSDT", "mid_price", f64::NAN);
+    //    (lectura estricta: NAN = ese slot no publicó con esa identidad)
+    let btc_mid = mid_de(&arena, "BTCUSDT");
+    let eth_mid = mid_de(&arena, "ETHUSDT");
+    let pepe_mid = mid_de(&arena, "1000PEPEUSDT");
     assert!((btc_mid - 65000.0).abs() < 1e-6, "BTCUSDT mid_price esperado 65000.0, leído {btc_mid}");
     assert!((eth_mid - 3500.0).abs() < 1e-6, "ETHUSDT mid_price esperado 3500.0, leído {eth_mid}");
     assert!((pepe_mid - 0.012).abs() < 1e-6, "1000PEPEUSDT mid_price esperado 0.012, leído {pepe_mid}");
@@ -60,6 +134,7 @@ fn test_f1_042_zero_alloc_stack_symbol_parity_and_leads() {
 
 #[test]
 fn test_f1_034_reset_engines_clears_kline_close_memory_and_ensembles() {
+    let _guard = bloqueo();
     let universe = vec!["SOLUSDT".to_string()];
     symbols::update_dynamic_universe(universe.clone());
     symbol_registry::update_registry(
@@ -106,6 +181,7 @@ fn test_f1_034_reset_engines_clears_kline_close_memory_and_ensembles() {
 
 #[test]
 fn test_f1_042_unregistered_coin_id_failclosed_safety() {
+    let _guard = bloqueo();
     let arena = GlobalArena::build_in_own_stack(100.0);
     let mut core = GodEngineCore::new(arena);
 

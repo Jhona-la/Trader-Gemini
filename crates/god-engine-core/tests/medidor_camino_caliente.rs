@@ -663,3 +663,111 @@ fn medir_camino_caliente() {
     }
     println!("MEDIDOR_MICRO\tregistry.get_for_coin_or\t{:.1}", por_llamada(t));
 }
+
+// ---------------------------------------------------------------------------
+// F1-108: despacho del grabador de datasets (release, ignorada en la CI)
+// ---------------------------------------------------------------------------
+
+/// Tope de F1-108: el que tenía `test_f1_108_async_dataset_recorder_sub_microsecond_latency`
+/// (`f1_108_109_async_dataset_and_dead_shadow_drift_contract.rs`, `elapsed.as_micros() < 50`)
+/// sobre una sola muestra de reloj de pared en debug. Aquí se afirma sobre la
+/// mediana de cada repetición, en release, tras el calentamiento.
+const TOPE_F1_108_NS: f64 = 50_000.0;
+
+/// Mide `record_training_sample` con los mismos parámetros del banco
+/// (`MEDIDOR_EVENTOS` llamadas medidas, `MEDIDOR_CALENTAMIENTO` sin medir,
+/// `MEDIDOR_REPETICIONES`), ciclos del TSC calibrados sobre el mismo bucle y
+/// `resumir`/`percentil`. Cada llamada se clasifica fuera de la región medida
+/// como encolada o descartada (cola llena, `DATASET_DROPPED_SAMPLES`): las dos
+/// son el camino caliente real. El archivo del grabador va a un directorio
+/// temporal (`TGM_DATA_DIR`) con un símbolo propio, no a `data/`.
+///
+/// Uso: `cargo test --release -p god-engine-core --test medidor_camino_caliente
+/// -- --ignored --nocapture --test-threads=1 medir_grabador_f1_108`
+#[test]
+#[ignore = "banco: cargo test --release ... -- --ignored --nocapture --test-threads=1 medir_grabador_f1_108"]
+fn medir_grabador_f1_108() {
+    use god_engine_core::dataset_recorder::{
+        DATASET_DROPPED_SAMPLES, init_dataset_recorder, record_training_sample,
+    };
+    let medidos = entero_de_entorno("MEDIDOR_EVENTOS", 200_000) as usize;
+    let calentamiento = entero_de_entorno("MEDIDOR_CALENTAMIENTO", 50_000) as usize;
+    let repeticiones = entero_de_entorno("MEDIDOR_REPETICIONES", 5) as usize;
+    assert!(medidos > 0 && repeticiones > 0);
+    if cfg!(debug_assertions) {
+        eprintln!("[MEDIDOR] AVISO: build debug; la puerta exige --release");
+    }
+
+    let dir = std::env::temp_dir().join(format!("medir_grabador_f1_108_{}", std::process::id()));
+    std::fs::create_dir_all(&dir).expect("directorio temporal del banco");
+    // SAFETY: el banco corre con --test-threads=1; el hilo grabador lee la
+    // variable al abrir el archivo de un símbolo nuevo, después de esto.
+    unsafe { std::env::set_var("TGM_DATA_DIR", &dir) };
+    init_dataset_recorder();
+
+    let simbolo = "F1108BANCO".to_string();
+    let objetivo = 0.0152;
+    let rasgos = [0.25f64; 54];
+    let mut ciclos_llamada = vec![0u64; medidos];
+    let mut asign_llamada = vec![0u32; medidos];
+    let mut descartada = vec![false; medidos];
+    let binario = huella_del_binario();
+
+    println!(
+        "MEDIDOR_F1108_CAB\trep\tllamadas\tmediana_ns\tp99_ns\tp999_ns\tmax_ns\tmedia_ns\t\
+         asign_por_llamada\tencoladas\tmediana_encoladas_ns\tdescartadas\tmediana_descartadas_ns\t\
+         ghz\tdebug\tbinario"
+    );
+    let mut medianas = Vec::with_capacity(repeticiones);
+    for rep in 0..repeticiones {
+        for _ in 0..calentamiento {
+            record_training_sample(simbolo.clone(), objetivo, rasgos);
+        }
+        let t_ini = Instant::now();
+        let c_ini = ciclos();
+        for i in 0..medidos {
+            let s = simbolo.clone();
+            let d = DATASET_DROPPED_SAMPLES.load(Ordering::Relaxed);
+            let a = asignaciones();
+            let c = ciclos();
+            record_training_sample(s, objetivo, black_box(rasgos));
+            ciclos_llamada[i] = ciclos() - c;
+            asign_llamada[i] = (asignaciones() - a).min(u32::MAX as u64) as u32;
+            descartada[i] = DATASET_DROPPED_SAMPLES.load(Ordering::Relaxed) != d;
+        }
+        let c_total = ciclos() - c_ini;
+        let ns_por_ciclo = t_ini.elapsed().as_nanos() as f64 / c_total as f64;
+        let r = resumir(&ciclos_llamada, &asign_llamada, ns_por_ciclo);
+        let parte = |quiere: bool| {
+            let c: Vec<u64> = (0..medidos).filter(|&i| descartada[i] == quiere).map(|i| ciclos_llamada[i]).collect();
+            let a = vec![0u32; c.len()];
+            (c.len(), if c.is_empty() { f64::NAN } else { resumir(&c, &a, ns_por_ciclo).mediana_ns })
+        };
+        let (n_enc, med_enc) = parte(false);
+        let (n_desc, med_desc) = parte(true);
+        println!(
+            "MEDIDOR_F1108\t{rep}\t{}\t{:.1}\t{:.1}\t{:.1}\t{:.1}\t{:.1}\t{:.3}\t{n_enc}\t{med_enc:.1}\t{n_desc}\t{med_desc:.1}\t{:.3}\t{}\t{binario}",
+            r.eventos,
+            r.mediana_ns,
+            r.p99_ns,
+            r.p999_ns,
+            r.max_ns,
+            r.media_ns,
+            r.asignaciones_por_evento,
+            1.0 / ns_por_ciclo,
+            cfg!(debug_assertions) as u8,
+        );
+        medianas.push((r.mediana_ns, med_enc));
+    }
+
+    for (rep, (mediana, mediana_encoladas)) in medianas.iter().enumerate() {
+        assert!(
+            *mediana < TOPE_F1_108_NS,
+            "F1-108: mediana de record_training_sample {mediana:.1} ns >= {TOPE_F1_108_NS} ns (rep {rep})"
+        );
+        assert!(
+            mediana_encoladas.is_nan() || *mediana_encoladas < TOPE_F1_108_NS,
+            "F1-108: mediana de las encoladas {mediana_encoladas:.1} ns >= {TOPE_F1_108_NS} ns (rep {rep})"
+        );
+    }
+}
