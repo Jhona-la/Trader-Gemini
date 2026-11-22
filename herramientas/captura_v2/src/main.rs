@@ -1681,7 +1681,7 @@ async fn capture(args: &[String], ctl: Arc<Control>) -> CaptureResult<CaptureEnd
             writer_finished: Arc::clone(&writer_finished), sealer_finished: Arc::clone(&sealer_finished),
             store_finished: Arc::clone(&store_finished),
         };
-        thread::Builder::new().name("capture-end".into()).spawn(move || finish_capture(parts))?
+        thread::Builder::new().name("capture-end".into()).spawn(move || finish_capture(parts, &RealDisk))?
     };
     ctl.registrar_finalizador(finisher.thread().clone());
     drop(finisher);
@@ -1805,9 +1805,16 @@ struct FinishParts {
     store_finished: Arc<std::sync::atomic::AtomicBool>,
 }
 
+/// Reescrituras de END por un fatal que cambio el estado mientras END se escribia: una, la del
+/// fatal que la propia escritura pudo causar; uno posterior se declara como cierre incompleto.
+const END_REESCRITURAS_MAX: u32 = 1;
+
 /// Finalizador unico (P4b). Con fatal no espera al runtime: le basta el fin del escritor y del
 /// sellador. No hace join de store si no termino: lo registra y el cierre queda incompleto.
-fn finish_capture(p: FinishParts) {
+/// SALIDAFALLO-7: en la parada sana compone END solo con el runtime ya destruido, y reescribe END
+/// si un fatal llego mientras se escribia. Frontera: END describe todo fatal anterior a su ultima
+/// escritura; uno posterior solo queda en el codigo de salida (no cero) y en stderr.
+fn finish_capture<D: Disk>(p: FinishParts, disk: &D) {
     let ctl = &p.ctl;
     let mut woke_async = false;
     loop {
@@ -1817,11 +1824,15 @@ fn finish_capture(p: FinishParts) {
             ctl.avisar_async();
         }
         let archive_done = p.writer_finished.load(Ordering::SeqCst) && p.sealer_finished.load(Ordering::SeqCst);
-        if ctl.async_listo() && (archive_done || !fatal) {
-            break;
-        }
         if fatal && archive_done {
             break;
+        }
+        if !fatal && ctl.async_listo() {
+            if ctl.runtime_fuera() {
+                break;
+            }
+            #[cfg(test)]
+            ctl.pausar(salidafallo::Punto::FinalizadorEsperaRuntime);
         }
         thread::park();
     }
@@ -1887,56 +1898,88 @@ fn finish_capture(p: FinishParts) {
     if outcome.rows_unwritten > 0 || !report.failures.is_empty() {
         incomplete.push("hay filas o segmentos sin sellar".into());
     }
-    let first = ctl.primer_fatal();
-    let (secondary, secondary_lost) = ctl.secundarios();
-    let status = if first.is_some() || !errors.is_empty() { "error" } else { "stopped" };
     let stop_reason = p.audit.stop_reason(fin.stop_reason, fin.exit);
     let rejected = match p.audit.rejected.lock() {
         Ok(mut rows) => std::mem::take(&mut *rows),
         Err(poisoned) => std::mem::take(&mut *poisoned.into_inner()),
     };
-    let stamp = p.clock.stamp().unwrap_or(Stamp { utc_ms: 0, mono_ns: 0 });
-    let end = json!({
-        "status":status,"stop_reason":stop_reason,"ended_utc_ms":stamp.utc_ms,"duration_ns":stamp.mono_ns,
-        "segments":report.segments,"rows":counts.rows,"kinds":counts.kinds,"streams":counts.streams,
-        "frames_by_route":counts.routes,"errors":errors,
-        "connections_opened":p.connections.load(Ordering::Relaxed),
-        "archive_queue":{
-            "enqueued_rows":enqueued,
-            "sampled_peak_rows":p.audit.peak_rows.load(Ordering::Relaxed),
-            "sampled_peak_charged_bytes":p.audit.peak_charged_bytes.load(Ordering::Relaxed),
-            "dequeued_rows":p.audit.dequeued.load(Ordering::Relaxed),
-            "max_dequeue_age_ns":p.audit.max_dequeue_age_ns.load(Ordering::Relaxed),
-            "failure_reason":p.audit.failure_reason(),
-            "rejected_rows":rejected,
-        },
-        "archive_seal":seal_telemetry,
-        "salidafallo":{
-            "first_fatal": first.as_ref().map(|(c, d)| json!({"class": c.nombre(), "detail": d})),
-            "secondary_errors": secondary, "secondary_lost": secondary_lost,
-            "finisher_mode": if fatal_mode { "fatal_sin_runtime" } else { "async_entregado" },
-            "admission": {
-                "cut": cut.map(|c| json!({"reason": format!("{:?}", c.motivo), "confirmed": c.confirmadas, "in_flight": c.en_vuelo})),
-                "resolved": resolved, "accounting": accounting,
-                "reservations_cancelled": adm.reservas_canceladas(), "rejected_after_cut": adm.rechazos_tras_corte(),
+    let mut rewrites = 0u32;
+    let (persisted, mut incomplete_close) = loop {
+        // SALIDAFALLO-7: el estado del fatal se lee al componer cada escritura de END.
+        let marca = ctl.marca_fatal();
+        let first = ctl.primer_fatal();
+        let pending = ctl.fatal_pendiente();
+        let (secondary, secondary_lost) = ctl.secundarios();
+        let any_fatal = first.is_some() || pending.is_some();
+        let status = if any_fatal || !errors.is_empty() { "error" } else { "stopped" };
+        let first_json = match (&first, pending) {
+            (Some((c, d)), _) => json!({"class": c.nombre(), "detail": d}),
+            (None, Some(c)) => json!({"class": c.nombre(), "detail": null, "detail_pending": true}),
+            (None, None) => Value::Null,
+        };
+        let nanos = |d: Duration| u64::try_from(d.as_nanos()).unwrap_or(u64::MAX);
+        let stamp = p.clock.stamp().unwrap_or(Stamp { utc_ms: 0, mono_ns: 0 });
+        let end = json!({
+            "status":status,"stop_reason":stop_reason,"ended_utc_ms":stamp.utc_ms,"duration_ns":stamp.mono_ns,
+            "segments":report.segments,"rows":counts.rows,"kinds":counts.kinds,"streams":counts.streams,
+            "frames_by_route":counts.routes,"errors":errors,
+            "connections_opened":p.connections.load(Ordering::Relaxed),
+            "archive_queue":{
+                "enqueued_rows":enqueued,
+                "sampled_peak_rows":p.audit.peak_rows.load(Ordering::Relaxed),
+                "sampled_peak_charged_bytes":p.audit.peak_charged_bytes.load(Ordering::Relaxed),
+                "dequeued_rows":p.audit.dequeued.load(Ordering::Relaxed),
+                "max_dequeue_age_ns":p.audit.max_dequeue_age_ns.load(Ordering::Relaxed),
+                "failure_reason":p.audit.failure_reason(),
+                "rejected_rows":rejected,
             },
-            "writer": outcome.json(),
-            "store": {"state": store_state, "cut": ctl.store.corte().map(|c| json!({"in_progress": c.en_curso, "last_op": format!("{:?}", c.ultima)}))},
-            "incomplete_close": !incomplete.is_empty(), "incomplete_reasons": incomplete,
-            "deadline_ns": u64::try_from(ctl.plazo().as_nanos()).unwrap_or(u64::MAX),
-        },
-        "recode":"las horas selladas se re-codifican en el hilo capture-store; lo pendiente se retoma al arrancar",
-    });
-    let mut incomplete_close = end["salidafallo"]["incomplete_close"] == true && first.is_some();
-    if let Err(e) = write_json(&p.dir.join("END.json"), &end) {
-        // P4b: si END no puede persistirse se registra fuera (stderr) y no condiciona la salida.
-        eprintln!("CAPTURE END NO PERSISTIDO: {e}");
-        ctl.fatal(Clase::Cierre, &format!("END.json no persistido: {e}"));
+            "archive_seal":seal_telemetry,
+            "salidafallo":{
+                "first_fatal": first_json,
+                "first_fatal_control_ns": ctl.t_primer_fatal().map(nanos),
+                "end_composed_control_ns": nanos(ctl.ahora()),
+                "end_rewrites": rewrites,
+                "secondary_errors": secondary, "secondary_lost": secondary_lost,
+                "finisher_mode": if fatal_mode { "fatal_sin_runtime" } else { "async_entregado" },
+                "runtime_destroyed_before_end": ctl.runtime_fuera(),
+                "admission": {
+                    "cut": cut.map(|c| json!({"reason": format!("{:?}", c.motivo), "confirmed": c.confirmadas, "in_flight": c.en_vuelo})),
+                    "resolved": resolved, "accounting": accounting,
+                    "reservations_cancelled": adm.reservas_canceladas(), "rejected_after_cut": adm.rechazos_tras_corte(),
+                },
+                "writer": outcome.json(),
+                "store": {"state": store_state, "cut": ctl.store.corte().map(|c| json!({"in_progress": c.en_curso, "last_op": format!("{:?}", c.ultima)}))},
+                "incomplete_close": !incomplete.is_empty(), "incomplete_reasons": incomplete,
+                "deadline_ns": nanos(ctl.plazo()),
+            },
+            "recode":"las horas selladas se re-codifican en el hilo capture-store; lo pendiente se retoma al arrancar",
+        });
+        let incomplete_close = !incomplete.is_empty() && any_fatal;
+        let persisted = match disk.write_json(&p.dir.join("END.json"), &end) {
+            Ok(()) => true,
+            Err(e) => {
+                // P4b: si END no puede persistirse se registra fuera (stderr) y no condiciona la salida.
+                eprintln!("CAPTURE END NO PERSISTIDO: {e}");
+                ctl.fatal(Clase::Cierre, &format!("END.json no persistido: {e}"));
+                false
+            }
+        };
+        if ctl.marca_fatal() == marca {
+            break (persisted, incomplete_close);
+        }
+        if rewrites >= END_REESCRITURAS_MAX {
+            eprintln!("CAPTURE END: fatal posterior a la ultima escritura de END.json; cierre incompleto");
+            break (persisted, true);
+        }
+        rewrites += 1;
+    };
+    if !persisted {
         incomplete_close = true;
     }
+    let any_fatal = ctl.primer_fatal().is_some() || ctl.fatal_pendiente().is_some();
     let code = if fin.exit != 0 {
         fin.exit
-    } else if errors.is_empty() && first.is_none() {
+    } else if errors.is_empty() && !any_fatal {
         0
     } else {
         1
@@ -2067,9 +2110,12 @@ fn run_capture(args: &[String]) -> std::process::ExitCode {
             salir_sin_finalizador(&ctl, 1)
         }
         Ok(CaptureEnd::Finisher) => {
-            ctl.esperar_fin();
-            // El vigilante sigue armado durante la destruccion del runtime.
+            // SALIDAFALLO-7: el runtime se destruye ANTES de que el finalizador componga END en la
+            // parada sana, asi que un fatal durante la destruccion entra en END. El vigilante sigue
+            // armado durante la destruccion (con fatal, el finalizador no espera a este paso).
             drop(runtime);
+            ctl.runtime_destruido();
+            ctl.esperar_fin();
             if ctl.desarmar().is_err() {
                 esperar_al_vigilante()
             }

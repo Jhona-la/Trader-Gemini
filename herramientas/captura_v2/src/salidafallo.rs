@@ -299,6 +299,8 @@ pub(crate) enum Punto {
     TrasCierreStore,
     /// Tras admitir una operacion de store (CAS) y antes de devolver su guarda.
     TrasAdmitirStore,
+    /// El finalizador espera, en una parada sana, a que el runtime este destruido.
+    FinalizadorEsperaRuntime,
 }
 
 #[cfg(test)]
@@ -319,6 +321,8 @@ const INCOMPLETO: u32 = 1 << 3;
 const VIGILANTE_VIVO: u32 = 1 << 4;
 const ASYNC_LISTO: u32 = 1 << 5;
 const CORTES_HECHOS: u32 = 1 << 6;
+/// SALIDAFALLO-7: el runtime de Tokio ya se destruyo (parada sana: END se compone despues).
+const RUNTIME_FUERA: u32 = 1 << 7;
 
 /// Datos que el recorrido async entrega al finalizador al terminar (parada sana o fatal con
 /// runtime vivo).
@@ -564,6 +568,37 @@ impl Control {
 
     pub fn async_listo(&self) -> bool {
         self.banderas() & ASYNC_LISTO != 0
+    }
+
+    /// SALIDAFALLO-7 (N1 hallazgo 4): el hilo principal destruyo el runtime. En la parada sana
+    /// el finalizador espera esta marca antes de componer END, para que un fatal durante la
+    /// destruccion del runtime entre en END.
+    pub fn runtime_destruido(&self) {
+        self.banderas.fetch_or(RUNTIME_FUERA, Ordering::SeqCst);
+        self.despertar_finalizador();
+    }
+
+    pub fn runtime_fuera(&self) -> bool {
+        self.banderas() & RUNTIME_FUERA != 0
+    }
+
+    /// Huella del estado de fallos: si cambia entre componer y escribir END, END se reescribe.
+    pub fn marca_fatal(&self) -> (u8, bool, usize) {
+        let n = match self.secundarios.lock() {
+            Ok(v) => v.len(),
+            Err(p) => p.into_inner().len(),
+        };
+        (self.clase.load(Ordering::SeqCst), self.es_fatal(), n + self.secundarios_perdidos.load(Ordering::Relaxed))
+    }
+
+    /// Instante del primer fatal en el reloj del control (origen: creacion del control).
+    pub fn t_primer_fatal(&self) -> Option<Duration> {
+        self.es_fatal().then(|| Duration::from_nanos(self.t_fatal_ns.load(Ordering::SeqCst)))
+    }
+
+    /// Ahora, en el reloj del control.
+    pub fn ahora(&self) -> Duration {
+        self.reloj.ahora()
     }
 
     /// El finalizador termino (con o sin END persistido).

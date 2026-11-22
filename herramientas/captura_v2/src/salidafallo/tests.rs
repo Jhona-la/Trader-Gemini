@@ -1043,3 +1043,116 @@ fn identidad_store_en_la_instantanea() {
     assert!(compuerta.admitir(OpStore::Recode).is_none());
     assert_eq!(compuerta.corte(), Some(corte));
 }
+// ---------------------------------------------------------------------------------------------
+// T14 (SALIDAFALLO-7, hallazgo 4 de la N1): END cubre los fatales tardios. Recorre el
+// finalizador real (`finish_capture`) sobre el disco en memoria.
+// ---------------------------------------------------------------------------------------------
+type AlEscribirEnd = Mutex<Option<Box<dyn FnOnce() + Send>>>;
+
+/// Disco en memoria que avisa cada escritura de END.json y puede ejecutar una accion durante la
+/// primera (un fatal "durante la escritura de END").
+struct DiscoEnd {
+    mem: DiscoMemoria,
+    avisos: std_mpsc::Sender<&'static str>,
+    al_escribir: AlEscribirEnd,
+}
+
+impl Disk for DiscoEnd {
+    type File = ArchivoMemoria;
+    fn create(&self, path: &Path) -> io::Result<ArchivoMemoria> {
+        self.mem.create(path)
+    }
+    fn sync(&self, f: &ArchivoMemoria) -> io::Result<()> {
+        self.mem.sync(f)
+    }
+    fn digest(&self, path: &Path) -> CaptureResult<(u64, String)> {
+        self.mem.digest(path)
+    }
+    fn publish(&self, from: &Path, to: &Path) -> io::Result<()> {
+        self.mem.publish(from, to)
+    }
+    fn write_json(&self, path: &Path, value: &Value) -> CaptureResult<()> {
+        if path.file_name().is_some_and(|n| n == "END.json") {
+            let accion = self.al_escribir.lock().ok().and_then(|mut a| a.take());
+            if let Some(a) = accion {
+                a();
+            }
+            let _ = self.avisos.send("END");
+        }
+        self.mem.write_json(path, value)
+    }
+}
+
+fn partes_fin(ctl: &Arc<Control>) -> crate::FinishParts {
+    let hecho = || Arc::new(AtomicBool::new(true));
+    crate::FinishParts {
+        ctl: Arc::clone(ctl),
+        dir: dir(),
+        clock: crate::Clock(Instant::now()),
+        audit: Arc::new(crate::QueueAudit::default()),
+        connections: Arc::new(AtomicU64::new(0)),
+        writer_thread: thread::spawn(crate::ArchiveOutcome::default),
+        sealer_thread: thread::spawn(crate::SealReport::default),
+        store_thread: thread::spawn(|| ()),
+        writer_finished: hecho(),
+        sealer_finished: hecho(),
+        store_finished: hecho(),
+    }
+}
+
+fn lanzar_finalizador(ctl: &Arc<Control>, disco: DiscoEnd) -> thread::JoinHandle<()> {
+    let partes = partes_fin(ctl);
+    let h = thread::spawn(move || crate::finish_capture(partes, &disco));
+    ctl.registrar_finalizador(h.thread().clone());
+    h
+}
+
+fn end_de(mem: &DiscoMemoria) -> Value {
+    serde_json::from_slice(&mem.0.leer(&dir().join("END.json")).expect("END.json")).expect("json")
+}
+
+#[test]
+fn end_cubre_fatal_tardio() {
+    let sano = || FinAsync { stop_reason: "deadline", exit: 0, errors: Vec::new() };
+    // a) Parada sana: el finalizador no compone END con el runtime vivo. Un fatal durante la
+    // destruccion del runtime entra en END y el codigo no es cero.
+    let (ctl, _, _) = control_de_prueba(PLAZO_FATAL);
+    let (tx, rx) = std_mpsc::channel();
+    let t2 = tx.clone();
+    ctl.fijar_pausa(Box::new(move |p| {
+        if p == Punto::FinalizadorEsperaRuntime {
+            let _ = t2.send("espera_runtime");
+        }
+    }));
+    let mem = DiscoMemoria(Arc::default());
+    let fin = lanzar_finalizador(&ctl, DiscoEnd { mem: mem.clone(), avisos: tx, al_escribir: Mutex::new(None) });
+    ctl.entregar_fin_async(sano());
+    assert_eq!(rx.recv_timeout(Duration::from_secs(20)), Ok("espera_runtime"), "END no se compone con el runtime vivo");
+    ctl.fatal(Clase::Panic, "panic durante la destruccion del runtime");
+    ctl.runtime_destruido();
+    fin.join().expect("finalizador");
+    let end = end_de(&mem);
+    assert_eq!(end["salidafallo"]["first_fatal"]["class"], "panic");
+    assert_eq!(end["salidafallo"]["first_fatal"]["detail"], "panic durante la destruccion del runtime");
+    assert_eq!(end["status"], "error");
+    assert_eq!(ctl.codigo_fin(), 1);
+
+    // b) Fatal durante la escritura de END: END se reescribe con ese fatal.
+    let (ctl, _, _) = control_de_prueba(PLAZO_FATAL);
+    let (tx, rx) = std_mpsc::channel();
+    let c2 = Arc::clone(&ctl);
+    let mem = DiscoMemoria(Arc::default());
+    let accion: Box<dyn FnOnce() + Send> = Box::new(move || {
+        c2.fatal(Clase::Cierre, "fatal durante la escritura de END");
+    });
+    let fin = lanzar_finalizador(&ctl, DiscoEnd { mem: mem.clone(), avisos: tx, al_escribir: Mutex::new(Some(accion)) });
+    ctl.entregar_fin_async(sano());
+    ctl.runtime_destruido();
+    fin.join().expect("finalizador");
+    assert_eq!(rx.try_iter().count(), 2, "END escrito dos veces");
+    let end = end_de(&mem);
+    assert_eq!(end["salidafallo"]["first_fatal"]["class"], "cierre_error");
+    assert_eq!(end["salidafallo"]["end_rewrites"], 1);
+    assert_eq!(end["status"], "error");
+    assert_eq!(ctl.codigo_fin(), 1);
+}
