@@ -312,7 +312,12 @@ fn panic_market_es_fatal() {
     });
     let error = resultado.expect_err("JoinError de conexion es fatal");
     assert!(error.to_string().contains("conexion market: panic"), "{error}");
-    assert!(matches!(life.try_recv(), Err(tokio::sync::mpsc::error::TryRecvError::Disconnected)), "nunca llego Life::Ended");
+    let mut restantes = Vec::new();
+    while let Ok(ev) = life.try_recv() {
+        restantes.push(ev);
+    }
+    assert!(!restantes.iter().any(|ev| matches!(ev, Life::Ended(..))), "nunca llego Life::Ended: {restantes:?}");
+    assert!(matches!(life.try_recv(), Err(tokio::sync::mpsc::error::TryRecvError::Disconnected)));
     // El shard devuelve ese Err y el supervisor lo vuelve fatal con su identidad.
     let m = Supervisor::evaluar(&ctl, "shard 4 market", Ok(Err(error)), false).expect("registrado");
     assert!(m.contains("shard 4 market"));
@@ -364,26 +369,18 @@ fn fin_inesperado_es_fatal() {
         tasks.spawn(async move {
             let _ = life_tx.send(Life::Ended(9, "WebSocket ended".into(), false));
         });
+        // Cada orden se fuerza de forma explicita (el select! elige al azar entre ramas listas).
         let (por_join, por_life) = rt.block_on(async {
             let mut orden = Vec::new();
             let mut fin = None;
-            while orden.len() < 2 {
-                if join_primero && orden.is_empty() {
+            for paso in if join_primero { ["join", "life"] } else { ["life", "join"] } {
+                if paso == "join" {
                     let r = tasks.join_next().await.expect("join");
                     crate::salidafallo::conexion_terminada(r).expect("join exitoso no es fatal");
-                    orden.push("join");
-                    continue;
+                } else {
+                    fin = life.recv().await;
                 }
-                tokio::select! {
-                    Some(r) = tasks.join_next(), if !tasks.is_empty() => {
-                        crate::salidafallo::conexion_terminada(r).expect("join exitoso no es fatal");
-                        orden.push("join");
-                    }
-                    Some(ev) = life.recv() => {
-                        fin = Some(ev);
-                        orden.push("life");
-                    }
-                }
+                orden.push(paso);
             }
             (orden, fin)
         });
