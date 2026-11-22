@@ -680,13 +680,15 @@ impl Admision {
         self.corte.get().copied()
     }
 
+    /// Verdad solo con la instantanea del corte ya publicada (quien gana el `fetch_or` la fija
+    /// justo despues): quien vea el corte puede leer siempre `corte()`.
     pub fn cortada(&self) -> bool {
-        self.estado.load(Ordering::SeqCst) & CORTADA != 0
+        self.estado.load(Ordering::SeqCst) & CORTADA != 0 && self.corte.get().is_some()
     }
 
     pub fn resuelta(&self) -> bool {
         let s = self.estado.load(Ordering::SeqCst);
-        s & CORTADA != 0 && s & MASCARA_VUELO == 0
+        s & CORTADA != 0 && s & MASCARA_VUELO == 0 && self.corte.get().is_some()
     }
 
     pub fn en_vuelo(&self) -> u64 {
@@ -854,8 +856,9 @@ impl CompuertaStore {
         self.corte.get().copied()
     }
 
+    /// Como `Admision::cortada`: verdad solo con la instantanea del corte publicada.
     pub fn cerrada(&self) -> bool {
-        self.estado.load(Ordering::SeqCst) & CERRADA != 0
+        self.estado.load(Ordering::SeqCst) & CERRADA != 0 && self.corte.get().is_some()
     }
 
     pub fn en_curso(&self) -> u64 {
