@@ -1206,3 +1206,31 @@ fn fallo_escritor_con_ruta_y_estado() {
         assert_eq!(f["rows"], 2);
     }
 }
+// ---------------------------------------------------------------------------------------------
+// T16 (SALIDAFALLO-9, hallazgo 6 de la N1): el venue local del ensayo P8 solo admite 127.0.0.1,
+// sin TLS, sin valor por defecto, y las inyecciones solo existen con el venue local.
+// ---------------------------------------------------------------------------------------------
+#[test]
+fn venue_local_solo_loopback() {
+    let a = |v: &[&str]| v.iter().map(|s| s.to_string()).collect::<Vec<_>>();
+    let v = crate::Venue::local(&a(&["ws_local=127.0.0.1:9001", "rest_local=http://127.0.0.1:9002"])).expect("loopback");
+    assert_eq!((v.name, v.ws, v.rest), ("local", "127.0.0.1:9001", "http://127.0.0.1:9002"));
+    assert!(v.url("public", &["FSTUSDT".into()], false).starts_with("ws://127.0.0.1:9001/public/stream?"));
+    for malos in [
+        &["ws_local=10.0.0.1:9001", "rest_local=http://127.0.0.1:9002"][..],
+        &["ws_local=127.0.0.1:9001", "rest_local=http://192.168.1.2:9002"][..],
+        &["ws_local=127.0.0.1:9001", "rest_local=https://127.0.0.1:9002"][..],
+        &["ws_local=fstream.binance.com:443", "rest_local=http://127.0.0.1:9002"][..],
+        &["rest_local=http://127.0.0.1:9002"][..],
+        &["ws_local=127.0.0.1:9001"][..],
+    ] {
+        assert!(crate::Venue::local(&a(malos)).is_err(), "{malos:?}");
+    }
+    assert!(crate::Venue::parse("mainnet").expect("mainnet").url("public", &["FSTUSDT".into()], false).starts_with("wss://fstream.binance.com/"));
+    assert!(crate::Venue::parse("local").is_err(), "local no tiene destino por defecto");
+    assert!(crate::inyeccion::desde_args(&a(&["mainnet", "out", "r.csv", "inyectar=panic_tarea"])).is_err());
+    assert!(crate::inyeccion::desde_args(&a(&["testnet", "out", "r.csv", "inyectar=panic_tarea"])).is_err());
+    assert_eq!(crate::inyeccion::desde_args(&a(&["mainnet", "out", "r.csv"])), Ok(None));
+    assert_eq!(crate::inyeccion::desde_args(&a(&["local", "out", "r.csv", "inyectar=store_ocupado"])), Ok(Some(crate::inyeccion::Caso::StoreOcupado)));
+    assert!(crate::inyeccion::desde_args(&a(&["local", "out", "r.csv", "inyectar=desconocido"])).is_err());
+}

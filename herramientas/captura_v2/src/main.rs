@@ -7,6 +7,7 @@
 
 mod codec;
 mod gate;
+mod inyeccion;
 mod l2;
 mod public_l2;
 mod salidafallo;
@@ -16,6 +17,8 @@ use salidafallo::{Admision, Clase, Control};
 
 #[cfg(test)]
 mod banco_local;
+#[cfg(test)]
+mod banco_p8;
 
 use flate2::{Compression, write::GzEncoder};
 use futures_util::{SinkExt, StreamExt};
@@ -152,6 +155,28 @@ impl Venue {
         }
     }
 
+    /// SALIDAFALLO-9 (P8): transporte local de ensayo. Solo 127.0.0.1 (WebSocket sin TLS en
+    /// `ws_local=127.0.0.1:PUERTO`, REST en `rest_local=http://127.0.0.1:PUERTO`); no hay valor por
+    /// defecto, asi que nunca cae en los destinos de mainnet o testnet.
+    fn local(args: &[String]) -> CaptureResult<Self> {
+        let loopback = |a: std::net::SocketAddr| a.ip() == std::net::IpAddr::V4(std::net::Ipv4Addr::LOCALHOST);
+        let ws: String = opt(args, "ws_local")?.ok_or_else(|| io::Error::other("venue local needs ws_local=127.0.0.1:PORT"))?;
+        let rest: String = opt(args, "rest_local")?.ok_or_else(|| io::Error::other("venue local needs rest_local=http://127.0.0.1:PORT"))?;
+        let ws_addr: std::net::SocketAddr = ws.parse().map_err(|_| io::Error::other("ws_local must be 127.0.0.1:PORT"))?;
+        let rest_addr: std::net::SocketAddr = rest
+            .strip_prefix("http://")
+            .and_then(|a| a.parse().ok())
+            .ok_or_else(|| io::Error::other("rest_local must be http://127.0.0.1:PORT"))?;
+        if !loopback(ws_addr) || !loopback(rest_addr) {
+            return Err(io::Error::other("venue local only admits 127.0.0.1").into());
+        }
+        Ok(Self {
+            name: "local",
+            ws: Box::leak(ws_addr.to_string().into_boxed_str()),
+            rest: Box::leak(format!("http://{rest_addr}").into_boxed_str()),
+        })
+    }
+
     fn url(self, route: &str, symbols: &[String], with_force: bool) -> String {
         let mut names = Vec::new();
         for symbol in symbols {
@@ -165,7 +190,8 @@ impl Venue {
         if with_force {
             names.push("!forceOrder@arr".into());
         }
-        format!("wss://{}/{route}/stream?streams={}", self.ws, names.join("/"))
+        let scheme = if self.name == "local" { "ws" } else { "wss" };
+        format!("{scheme}://{}/{route}/stream?streams={}", self.ws, names.join("/"))
     }
 }
 
@@ -517,6 +543,7 @@ impl ArchiveQueue {
         );
         #[cfg(test)]
         self.pause_at(OfferPoint::AfterReserve);
+        inyeccion::tras_reserva();
         // Confirmacion ordenada con el corte (CAS sobre la palabra de admision). Si el corte llego
         // durante la reserva, se sueltan plaza y presupuesto y la fila no cuenta como aceptada.
         if !flight.confirmar() {
@@ -531,6 +558,7 @@ impl ArchiveQueue {
         self.audit.accepted.fetch_add(1, Ordering::Relaxed);
         #[cfg(test)]
         self.pause_at(OfferPoint::AfterConfirm);
+        inyeccion::tras_confirmar();
         slot.send(QueuedRow {
             row,
             cont,
@@ -612,6 +640,7 @@ pub(crate) trait Disk: Send + Sync + 'static {
     fn write_json(&self, path: &Path, value: &Value) -> CaptureResult<()>;
 }
 
+#[derive(Clone, Copy)]
 pub(crate) struct RealDisk;
 
 impl Disk for RealDisk {
@@ -629,6 +658,44 @@ impl Disk for RealDisk {
         retry_archive_sharing_violation("publish gzip", from, || fs::rename(from, to))
     }
     fn write_json(&self, path: &Path, value: &Value) -> CaptureResult<()> {
+        write_json(path, value)
+    }
+}
+
+/// SALIDAFALLO-9 (P8): disco de ensayo. Delega en las mismas llamadas de `RealDisk` y solo
+/// anade el fallo o el bloqueo del caso inyectado (venue local). No se usa fuera del ensayo.
+#[derive(Clone, Copy)]
+pub(crate) struct DiscoP8;
+
+pub(crate) struct ArchivoP8(File);
+
+impl Write for ArchivoP8 {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        inyeccion::fallo_escritura()?;
+        self.0.write(buf)
+    }
+    fn flush(&mut self) -> io::Result<()> {
+        self.0.flush()
+    }
+}
+
+impl Disk for DiscoP8 {
+    type File = ArchivoP8;
+    fn create(&self, path: &Path) -> io::Result<ArchivoP8> {
+        new_file(path).map(ArchivoP8)
+    }
+    fn sync(&self, file: &ArchivoP8) -> io::Result<()> {
+        inyeccion::al_sincronizar();
+        file.0.sync_all()
+    }
+    fn digest(&self, path: &Path) -> CaptureResult<(u64, String)> {
+        digest(path)
+    }
+    fn publish(&self, from: &Path, to: &Path) -> io::Result<()> {
+        RealDisk.publish(from, to)
+    }
+    fn write_json(&self, path: &Path, value: &Value) -> CaptureResult<()> {
+        inyeccion::al_escribir_json(path)?;
         write_json(path, value)
     }
 }
@@ -737,6 +804,8 @@ struct ArchiveOutcome {
     rows_unwritten: u64,
     failures: Vec<Value>,
     end: Option<QueueEnd>,
+    drain_after_cut_ns: Option<u64>,
+    rows_after_cut: u64,
 }
 
 impl ArchiveOutcome {
@@ -744,6 +813,7 @@ impl ArchiveOutcome {
         json!({
             "rows_written": self.rows_written, "rows_unwritten": self.rows_unwritten,
             "failures": self.failures, "queue_end": self.end.map(|e| format!("{e:?}")),
+            "drain_after_cut_ns": self.drain_after_cut_ns, "rows_after_cut": self.rows_after_cut,
         })
     }
 }
@@ -756,7 +826,10 @@ fn archive<D: Disk>(
     ctl: &Control,
 ) -> ArchiveOutcome {
     ctl.admision.registrar_escritor(thread::current());
+    inyeccion::escritor_antes_de_drenar(&ctl.admision);
     let mut out = ArchiveOutcome::default();
+    // SALIDAFALLO-9 (N2 3.2): medicion del drenaje de la cola desde que el escritor ve el corte.
+    let mut cut_seen: Option<(Instant, u64)> = None;
     let mut open = BTreeMap::<u64, Segment<D::File>>::new();
     let mut failed_hours = std::collections::BTreeSet::<u64>::new();
     let mut segment_number = 0;
@@ -772,6 +845,9 @@ fn archive<D: Disk>(
             "path": segment.map(partial_of), "state": state, "validated": false, "admitted": false, "rows": rows}));
     };
     loop {
+        if cut_seen.is_none() && ctl.admision.cortada() {
+            cut_seen = Some((Instant::now(), sequence));
+        }
         let QueuedRow { mut row, cont, _charge, .. } = match rx.next_row(&ctl.admision) {
             Ok(row) => row,
             Err(end) => {
@@ -840,6 +916,10 @@ fn archive<D: Disk>(
             out.rows_unwritten += rows;
             fail(&mut out, "handoff", Some(&name), "archive sealer unavailable".into(), "jsonl.gz.partial_conservado_sin_sellar", rows);
         }
+    }
+    if let Some((at, rows_before)) = cut_seen {
+        out.drain_after_cut_ns = Some(elapsed_ns(at));
+        out.rows_after_cut = sequence - rows_before;
     }
     out
 }
@@ -1235,6 +1315,8 @@ fn jitter() -> Duration {
 
 struct Live {
     id: u64,
+    /// SALIDAFALLO-9 (P8): cancelacion de la tarea de conexion, solo para el caso inyectado.
+    abort: tokio::task::AbortHandle,
     close: Option<oneshot::Sender<String>>,
     opened: Option<Instant>,
     started: Instant,
@@ -1263,8 +1345,8 @@ impl ShardCtx {
             life: life.clone(),
             l2_streams,
         };
-        tasks.spawn(connection(conn, self.url.clone(), rx, self.stop.clone(), self.fatal.clone()));
-        Live { id, close: Some(tx), opened: None, started: Instant::now() }
+        let abort = tasks.spawn(connection(conn, self.url.clone(), rx, self.stop.clone(), self.fatal.clone()));
+        Live { id, abort, close: Some(tx), opened: None, started: Instant::now() }
     }
 
     fn row(&self, kind: &str, conn: u64, row: Value) -> CaptureResult<()> {
@@ -1380,6 +1462,13 @@ impl ShardCtx {
                 },
                 _ = tick.tick() => {
                     let now = Instant::now();
+                    // P8: cancelacion sin panic de la conexion activa antes de su Life::Ended; solo
+                    // el join del JoinSet la observa (control sensible de m16).
+                    if active.as_ref().is_some_and(|a| a.opened.is_some()) && inyeccion::cancelar_conexion_market() {
+                        if let Some(a) = &active {
+                            a.abort.abort();
+                        }
+                    }
                     if active.is_none() && reconnect_at.is_some_and(|t| now >= t) {
                         reconnect_at = None;
                         active = Some(self.spawn_conn(&life_tx, &mut tasks));
@@ -1531,7 +1620,14 @@ async fn capture(args: &[String], ctl: Arc<Control>) -> CaptureResult<CaptureEnd
         )
         .into());
     };
-    let venue = Venue::parse(venue)?;
+    let venue = if venue == "local" {
+        Venue::local(rest)?
+    } else {
+        if rest.iter().any(|a| a.starts_with("ws_local=") || a.starts_with("rest_local=")) {
+            return Err(io::Error::other("ws_local= and rest_local= only with venue local").into());
+        }
+        Venue::parse(venue)?
+    };
     let until: Option<u64> = opt(rest, "until_ms")?;
     let rotate_after = opt::<u64>(rest, "rotate_after_s")?.map(Duration::from_secs).unwrap_or(ROTATE_AFTER);
     let r2_max_gap = opt::<u64>(rest, "r2_max_gap_s")?.map(Duration::from_secs).unwrap_or(public_l2::R2_MAX_GAP_DEFAULT);
@@ -1618,10 +1714,14 @@ async fn capture(args: &[String], ctl: Arc<Control>) -> CaptureResult<CaptureEnd
         }),
     )?;
     println!("CAPTURE {}", dir.display());
-    let client = reqwest::Client::builder()
+    let mut client = reqwest::Client::builder()
         .timeout(Duration::from_secs(12))
-        .redirect(reqwest::redirect::Policy::none())
-        .build()?;
+        .redirect(reqwest::redirect::Policy::none());
+    if venue.name == "local" {
+        // SALIDAFALLO-9: el ensayo local nunca pasa por un proxy del entorno.
+        client = client.no_proxy();
+    }
+    let client = client.build()?;
     let (queue, rx) = ArchiveQueue::with_admission(QUEUE_CAPACITY, QUEUE_BYTE_BUDGET, Arc::clone(&ctl.admision));
     let audit = Arc::clone(&queue.audit);
     let (sealed_tx, sealed_rx) = blocking_channel::channel();
@@ -1661,35 +1761,17 @@ async fn capture(args: &[String], ctl: Arc<Control>) -> CaptureResult<CaptureEnd
             drop(low_tx);
         })?
     };
-    let (seal_tx, seal_rx) = blocking_channel::sync_channel(SEAL_QUEUE_CAPACITY);
-    let sealer_dir = dir.clone();
-    let sealer_finished = Arc::new(std::sync::atomic::AtomicBool::new(false));
-    let sealer_ctl = Arc::clone(&ctl);
-    let sealer = ArchiveWorker::spawn("capture-seal", Arc::clone(&ctl), Arc::clone(&sealer_finished), move || {
-        seal_segments(&RealDisk, &sealer_dir, seal_rx, Some(sealed_tx), Some(&sealer_ctl))
-    })?;
-    let writer_dir = dir.clone();
-    let writer_finished = Arc::new(std::sync::atomic::AtomicBool::new(false));
-    let writer_ctl = Arc::clone(&ctl);
-    let writer = ArchiveWorker::spawn("capture-gzip", Arc::clone(&ctl), Arc::clone(&writer_finished), move || {
-        archive(&RealDisk, &writer_dir, rx, seal_tx, &writer_ctl)
-    })?;
-    let ArchiveWorker { done: mut writer_done, thread: writer_thread } = writer;
-    let ArchiveWorker { done: mut sealer_done, thread: sealer_thread } = sealer;
     let connections = Arc::new(AtomicU64::new(0));
-    // SALIDAFALLO P4b: finalizador unico de END.json, nativo. Espera la entrega del recorrido async
-    // o, con fatal, el fin del escritor y del sellador (no depende de que Tokio progrese).
-    let finisher = {
-        let parts = FinishParts {
-            ctl: Arc::clone(&ctl), dir: dir.clone(), clock, audit: Arc::clone(&audit),
-            connections: Arc::clone(&connections), writer_thread, sealer_thread, store_thread,
-            writer_finished: Arc::clone(&writer_finished), sealer_finished: Arc::clone(&sealer_finished),
-            store_finished: Arc::clone(&store_finished),
-        };
-        thread::Builder::new().name("capture-end".into()).spawn(move || finish_capture(parts, &RealDisk))?
+    let archive_parts = ArchiveSpawn {
+        ctl: Arc::clone(&ctl), dir: dir.clone(), rx, sealed_tx, clock, audit: Arc::clone(&audit),
+        connections: Arc::clone(&connections), store_thread, store_finished: Arc::clone(&store_finished),
     };
-    ctl.registrar_finalizador(finisher.thread().clone());
-    drop(finisher);
+    // SALIDAFALLO-9: el disco de ensayo solo con el venue local y un caso de disco; si no, RealDisk.
+    let (mut writer_done, mut sealer_done) = if inyeccion::caso().is_some_and(inyeccion::Caso::usa_disco) {
+        spawn_archive(DiscoP8, archive_parts)?
+    } else {
+        spawn_archive(RealDisk, archive_parts)?
+    };
     let (stop_tx, stop) = watch::channel(false);
     let (fatal_tx, mut fatal_rx) = mpsc::unbounded_channel::<String>();
     let (gate_tx, gate_rx) = mpsc::unbounded_channel();
@@ -1705,6 +1787,17 @@ async fn capture(args: &[String], ctl: Arc<Control>) -> CaptureResult<CaptureEnd
         tasks.lanzar("rest gate".into(), async move {
             gate.run(gate_rx, stop).await.map_err(|e| io::Error::other(format!("rest gate: {e}")).into())
         });
+    }
+    // SALIDAFALLO-9 (P8): tarea del ensayo, solo con el venue local y `inyectar=`.
+    if let Some(caso) = inyeccion::caso() {
+        let stop = stop.clone();
+        let conns = Arc::clone(&connections);
+        let accepted = Arc::clone(&audit);
+        let iniciales = total_shards as u64;
+        tasks.lanzar("inyector p8".into(), inyeccion::inyector(
+            caso, stop, move || conns.load(Ordering::Relaxed), iniciales,
+            move || accepted.accepted.load(Ordering::Relaxed),
+        ));
     }
     for (index, route, syms, url, roster_base) in shard_defs {
         let r2_rank: HashMap<String, usize> =
@@ -1787,6 +1880,52 @@ async fn capture(args: &[String], ctl: Arc<Control>) -> CaptureResult<CaptureEnd
     ctl.admision.cortar(salidafallo::Motivo::Sana);
     ctl.entregar_fin_async(salidafallo::FinAsync { stop_reason, exit, errors });
     Ok(CaptureEnd::Finisher)
+}
+
+struct ArchiveSpawn {
+    ctl: Arc<Control>,
+    dir: PathBuf,
+    rx: ArchiveReceiver,
+    sealed_tx: blocking_channel::Sender<(PathBuf, String)>,
+    clock: Clock,
+    audit: Arc<QueueAudit>,
+    connections: Arc<AtomicU64>,
+    store_thread: thread::JoinHandle<()>,
+    store_finished: Arc<std::sync::atomic::AtomicBool>,
+}
+
+/// Escritor, sellador y finalizador de END sobre el disco dado (RealDisk en produccion; DiscoP8
+/// solo en el ensayo P8). Devuelve los avisos de fin del escritor y del sellador para el select!.
+fn spawn_archive<D: Disk + Copy>(disk: D, a: ArchiveSpawn) -> CaptureResult<(oneshot::Receiver<()>, oneshot::Receiver<()>)> {
+    let ArchiveSpawn { ctl, dir, rx, sealed_tx, clock, audit, connections, store_thread, store_finished } = a;
+    let (seal_tx, seal_rx) = blocking_channel::sync_channel(SEAL_QUEUE_CAPACITY);
+    let sealer_dir = dir.clone();
+    let sealer_finished = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let sealer_ctl = Arc::clone(&ctl);
+    let sealer = ArchiveWorker::spawn("capture-seal", Arc::clone(&ctl), Arc::clone(&sealer_finished), move || {
+        seal_segments(&disk, &sealer_dir, seal_rx, Some(sealed_tx), Some(&sealer_ctl))
+    })?;
+    let writer_dir = dir.clone();
+    let writer_finished = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let writer_ctl = Arc::clone(&ctl);
+    let writer = ArchiveWorker::spawn("capture-gzip", Arc::clone(&ctl), Arc::clone(&writer_finished), move || {
+        archive(&disk, &writer_dir, rx, seal_tx, &writer_ctl)
+    })?;
+    let ArchiveWorker { done: writer_done, thread: writer_thread } = writer;
+    let ArchiveWorker { done: sealer_done, thread: sealer_thread } = sealer;
+    // SALIDAFALLO P4b: finalizador unico de END.json, nativo. Espera la entrega del recorrido async
+    // o, con fatal, el fin del escritor y del sellador (no depende de que Tokio progrese).
+    let finisher = {
+        let parts = FinishParts {
+            ctl: Arc::clone(&ctl), dir, clock, audit,
+            connections, writer_thread, sealer_thread, store_thread,
+            writer_finished, sealer_finished, store_finished,
+        };
+        thread::Builder::new().name("capture-end".into()).spawn(move || finish_capture(parts, &disk))?
+    };
+    ctl.registrar_finalizador(finisher.thread().clone());
+    drop(finisher);
+    Ok((writer_done, sealer_done))
 }
 
 enum CaptureEnd {
@@ -2064,7 +2203,26 @@ fn run_capture(args: &[String]) -> std::process::ExitCode {
             return std::process::ExitCode::FAILURE;
         }
     };
+    // SALIDAFALLO-9 (P8): `inyectar=` solo con el venue local; con mainnet o testnet se rechaza.
+    let caso = match inyeccion::desde_args(args) {
+        Ok(c) => c,
+        Err(e) => {
+            eprintln!("CAPTURE ERROR {e}");
+            return std::process::ExitCode::FAILURE;
+        }
+    };
+    let local = args.first().map(String::as_str) == Some("local");
     let cancel = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    // SALIDAFALLO-9 (P8): con el venue local los borrados de store pasan por un adaptador que los
+    // registra en stdout (P8_BORRADO_SIMULADO) y no borra nada. Fuera del ensayo, el borrado real.
+    let compuerta = if local {
+        salidafallo::CompuertaStore::nueva(cancel, Box::new(|p: &Path| {
+            println!("P8_BORRADO_SIMULADO {}", p.display());
+            Ok(())
+        }))
+    } else {
+        salidafallo::CompuertaStore::real(cancel)
+    };
     // SALIDAFALLO-4: el hilo de salida ordenada existe antes del vigilante.
     let salida = match salidafallo::SalidaProceso::arrancar() {
         Ok(s) => s,
@@ -2077,8 +2235,11 @@ fn run_capture(args: &[String]) -> std::process::ExitCode {
         plazo,
         Box::new(salidafallo::RelojMonotono::nuevo()),
         Box::new(salida),
-        Arc::new(salidafallo::CompuertaStore::real(cancel)),
+        Arc::new(compuerta),
     ));
+    if let Some(c) = caso {
+        inyeccion::fijar(c, Arc::clone(&ctl));
+    }
     ctl.registrar_principal(thread::current());
     let vigilante = {
         let ctl = Arc::clone(&ctl);
@@ -2096,7 +2257,13 @@ fn run_capture(args: &[String]) -> std::process::ExitCode {
         thread::yield_now();
     }
     salidafallo::instalar_hook(Arc::clone(&ctl));
-    let runtime = match tokio::runtime::Builder::new_multi_thread().worker_threads(4).enable_all().build() {
+    let mut builder = tokio::runtime::Builder::new_multi_thread();
+    builder.worker_threads(4).enable_all();
+    if inyeccion::es(inyeccion::Caso::PanicWorkerPark) {
+        // P8: solo en ese caso; el builder de produccion no instala on_thread_park.
+        builder.on_thread_park(inyeccion::al_estacionar_worker);
+    }
+    let runtime = match builder.build() {
         Ok(rt) => rt,
         Err(e) => {
             eprintln!("CAPTURE ERROR runtime: {e}");

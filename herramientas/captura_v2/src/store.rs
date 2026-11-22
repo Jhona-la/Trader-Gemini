@@ -318,6 +318,7 @@ fn verify_archive_group(g: &Group) -> CaptureResult<()> {
 /// SALIDAFALLO P2: el aviso es `&mut Option` para que el envoltorio del hilo fije su estado de
 /// salida antes de soltarlo.
 pub fn run(cfg: StoreConfig, sealed: mpsc::Receiver<(PathBuf, String)>, stop_tx: &mut Option<tokio::sync::oneshot::Sender<StoreStop>>) {
+    crate::inyeccion::store_al_empezar(&cfg.gate);
     let mut failed = std::collections::HashSet::new();
     let mut last_status = Instant::now() - cfg.scan_every;
     loop {

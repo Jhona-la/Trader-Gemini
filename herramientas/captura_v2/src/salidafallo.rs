@@ -129,6 +129,7 @@ fn salida_ordenada(p: &SalidaPedida) {
         }
         thread::park();
     };
+    crate::inyeccion::antes_de_volcar_salida();
     {
         use std::io::Write as _;
         let _ = io::stdout().flush();
@@ -250,6 +251,8 @@ pub enum Clase {
     Sellador = 9,
     /// Fatal pedido por el finalizador o el cierre (p. ej. END no persistido).
     Cierre = 10,
+    /// Fatal del ensayo P8 (solo con el venue local y `inyectar=`).
+    Inyectado = 11,
 }
 
 impl Clase {
@@ -265,6 +268,7 @@ impl Clase {
             8 => Self::Escritor,
             9 => Self::Sellador,
             10 => Self::Cierre,
+            11 => Self::Inyectado,
             _ => Self::Ninguna,
         }
     }
@@ -282,6 +286,7 @@ impl Clase {
             Self::Escritor => "escritor_error",
             Self::Sellador => "sellador_error",
             Self::Cierre => "cierre_error",
+            Self::Inyectado => "inyectado_p8",
         }
     }
 }
@@ -686,6 +691,7 @@ pub fn vigilar(ctl: &Control) {
         }
         thread::park();
     }
+    crate::inyeccion::vigilante_vio_fatal();
     ctl.cortes_nativos();
     let t0 = Duration::from_nanos(ctl.t_fatal_ns.load(Ordering::SeqCst));
     let mut salida_pedida = false;
