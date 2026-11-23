@@ -37,7 +37,7 @@ use std::{
 /// Fatal con el cierre posible completado (END escrito y contabilidad coherente).
 pub const SALIDA_FATAL_CERRADO: u32 = 1;
 /// Fatal con cierre incompleto: plazo vencido, contabilidad sin resolver, store sin confirmar
-/// su parada o END no persistido.
+/// su parada, END no persistido o fatal posterior al ultimo cotejo de END (C4).
 pub const SALIDA_FATAL_INCOMPLETO: u32 = 4;
 /// El vigilante fallo (panic o no pudo vigilar): terminacion nativa inmediata.
 pub const SALIDA_VIGILANTE: u32 = 5;
@@ -341,6 +341,11 @@ const ASYNC_LISTO: u32 = 1 << 5;
 const CORTES_HECHOS: u32 = 1 << 6;
 /// SALIDAFALLO-7: el runtime de Tokio ya se destruyo (parada sana: END se compone despues).
 const RUNTIME_FUERA: u32 = 1 << 7;
+/// SALIDAFALLO-13 (C4 de la N1 v3): la ultima escritura de END cotejada (marca igual al componer
+/// y tras escribir) no describia ningun fatal. El finalizador la publica ANTES de FIN_LISTO; si
+/// despues hay fatal (intervalo posterior al ultimo cotejo y anterior al desarme), END no lo
+/// describe y la salida es de cierre incompleto.
+const END_SIN_FATAL: u32 = 1 << 8;
 
 /// Datos que el recorrido async entrega al finalizador al terminar (parada sana o fatal con
 /// runtime vivo).
@@ -628,6 +633,12 @@ impl Control {
         Self::despertar(&self.principal);
     }
 
+    /// SALIDAFALLO-13 (C4): lo llama el finalizador antes de `fin_listo` cuando la ultima escritura
+    /// persistida y cotejada de END no describia ningun fatal (ni primero ni pendiente).
+    pub fn end_cotejado_sin_fatal(&self) {
+        self.banderas.fetch_or(END_SIN_FATAL, Ordering::SeqCst);
+    }
+
     pub fn fin_hecho(&self) -> bool {
         self.banderas() & FIN_LISTO != 0
     }
@@ -740,9 +751,11 @@ pub fn vigilar(ctl: &Control) {
     }
 }
 
-/// Codigo de la salida ordenada segun las banderas leidas en una sola carga.
+/// Codigo de la salida ordenada segun las banderas leidas en una sola carga. Solo se llama con
+/// FATAL: si la ultima escritura cotejada de END no describia ningun fatal (END_SIN_FATAL), el
+/// fatal es posterior a END y el cierre es incompleto (C4), no "fatal con cierre completo".
 fn codigo_de_salida(b: u32) -> u32 {
-    if b & INCOMPLETO != 0 { SALIDA_FATAL_INCOMPLETO } else { SALIDA_FATAL_CERRADO }
+    if b & (INCOMPLETO | END_SIN_FATAL) != 0 { SALIDA_FATAL_INCOMPLETO } else { SALIDA_FATAL_CERRADO }
 }
 
 #[cfg(test)]

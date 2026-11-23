@@ -1264,3 +1264,32 @@ fn vencimiento_prioriza_sobre_salida_ordenada() {
     assert!(ambas.load(Ordering::SeqCst), "las dos condiciones estaban presentes al mirar");
     assert_eq!(salida.codigos(), [(SALIDA_FATAL_INCOMPLETO, false)], "el vencimiento gana; ninguna salida ordenada");
 }
+// ---------------------------------------------------------------------------------------------
+// T18 (SALIDAFALLO-13, C4 de la N1 v3): fatal en el intervalo posterior al ultimo cotejo de END y
+// anterior al desarme. Recorre el `finish_capture` real (END sano escrito y cotejado una vez), el
+// fatal llega despues, el desarme se rechaza y el vigilante real sale con cierre incompleto; la
+// causa queda en el Control y END no se reescribe.
+// ---------------------------------------------------------------------------------------------
+#[test]
+fn fatal_tras_cotejo_rechaza_desarme() {
+    let (ctl, salida, _) = control_de_prueba(PLAZO_FATAL);
+    let vig = lanzar_vigilante(&ctl);
+    let (tx, rx) = std_mpsc::channel();
+    let mem = DiscoMemoria(Arc::default());
+    let fin = lanzar_finalizador(&ctl, DiscoEnd { mem: mem.clone(), avisos: tx, al_escribir: Mutex::new(None) });
+    ctl.entregar_fin_async(FinAsync { stop_reason: "deadline", exit: 0, errors: Vec::new() });
+    ctl.runtime_destruido();
+    fin.join().expect("finalizador");
+    assert_eq!(rx.try_iter().count(), 1, "END escrito una sola vez");
+    let end = end_de(&mem);
+    // Las partes sinteticas no traen rutas (error no fatal de END); lo que importa: ningun fatal descrito.
+    assert!(end["salidafallo"]["first_fatal"].is_null() && end["salidafallo"]["end_rewrites"] == 0, "END cotejado sin fatal");
+    assert!(ctl.fin_hecho() && !ctl.es_fatal());
+    let causa = "fatal tras el ultimo cotejo de END y antes del desarme";
+    ctl.fatal(Clase::Cierre, causa);
+    assert_eq!(ctl.desarmar(), Err(()), "el desarme se rechaza");
+    vig.join().expect("vigilante");
+    assert_eq!(salida.codigos(), [(SALIDA_FATAL_INCOMPLETO, true)], "salida con cierre incompleto: END no describe el fatal");
+    assert_eq!(ctl.primer_fatal(), Some((Clase::Cierre, causa.to_owned())), "la causa queda en el Control");
+    assert_eq!(end_de(&mem), end, "END no se reescribe");
+}

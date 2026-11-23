@@ -1977,9 +1977,15 @@ const END_REESCRITURAS_MAX: u32 = 1;
 
 /// Finalizador unico (P4b). Con fatal no espera al runtime: le basta el fin del escritor y del
 /// sellador. No hace join de store si no termino: lo registra y el cierre queda incompleto.
-/// SALIDAFALLO-7: en la parada sana compone END solo con el runtime ya destruido, y reescribe END
-/// si un fatal llego mientras se escribia. Frontera: END describe todo fatal anterior a su ultima
-/// escritura; uno posterior solo queda en el codigo de salida (no cero) y en stderr.
+/// SALIDAFALLO-7: en la parada sana compone END solo con el runtime ya destruido.
+/// SALIDAFALLO-13 (C4 de la N1 v3), frontera de END, en orden: (1) lecturas al componer: la marca
+/// de fatales se toma ANTES de construir el JSON y el primer fatal, el pendiente y los secundarios
+/// se leen despues; (2) inicio y (3) final de la escritura (`write_json`); (4) cotejo posterior:
+/// si la marca cambio entre (1) y (4), END se reescribe una sola vez (END_REESCRITURAS_MAX); un
+/// cambio tras esa reescritura deja cierre incompleto; (5) desarme en el hilo principal. END
+/// describe todo fatal anterior a la lectura de la marca de su ultima escritura cotejada. Un fatal
+/// entre (4) y (5) no entra en END: hace fallar el desarme y la salida es de cierre incompleto
+/// (codigo 4, `END_SIN_FATAL`); su causa queda en el Control. No se promete detalle en stderr.
 fn finish_capture<D: Disk>(p: FinishParts, disk: &D) {
     let ctl = &p.ctl;
     let mut woke_async = false;
@@ -2070,7 +2076,7 @@ fn finish_capture<D: Disk>(p: FinishParts, disk: &D) {
         Err(poisoned) => std::mem::take(&mut *poisoned.into_inner()),
     };
     let mut rewrites = 0u32;
-    let (persisted, mut incomplete_close) = loop {
+    let (persisted, mut incomplete_close, described) = loop {
         // SALIDAFALLO-7: el estado del fatal se lee al componer cada escritura de END.
         let marca = ctl.marca_fatal();
         let first = ctl.primer_fatal();
@@ -2130,17 +2136,28 @@ fn finish_capture<D: Disk>(p: FinishParts, disk: &D) {
                 false
             }
         };
+        // Cotejo posterior a la escritura: misma marca = END describe todo fatal anterior a este
+        // punto. `marca` se leyo antes de construir el JSON, asi que un fatal entre esa lectura y el
+        // final de la escritura cambia la marca y causa la (unica) reescritura.
         if ctl.marca_fatal() == marca {
-            break (persisted, incomplete_close);
+            break (persisted, incomplete_close, marca);
         }
         if rewrites >= END_REESCRITURAS_MAX {
             eprintln!("CAPTURE END: fatal posterior a la ultima escritura de END.json; cierre incompleto");
-            break (persisted, true);
+            break (persisted, true, marca);
         }
         rewrites += 1;
     };
     if !persisted {
         incomplete_close = true;
+    }
+    // SALIDAFALLO-13 (C4 de la N1 v3): intervalo posterior al ultimo cotejo y anterior al desarme.
+    // Si el END cotejado no describia ningun fatal, se publica antes de FIN_LISTO; un fatal en ese
+    // intervalo hace fallar `desarmar` y el vigilante sale con cierre incompleto (codigo 4). La
+    // causa queda en el Control (primer fatal) y en ese codigo; END no la describe y no se promete
+    // su detalle en stderr.
+    if persisted && described.0 == salidafallo::Clase::Ninguna as u8 && !described.1 {
+        ctl.end_cotejado_sin_fatal();
     }
     let any_fatal = ctl.primer_fatal().is_some() || ctl.fatal_pendiente().is_some();
     let code = if fin.exit != 0 {
