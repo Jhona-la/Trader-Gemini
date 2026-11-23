@@ -5,7 +5,8 @@
 //!   errores secundarios, banderas de cierre y adaptadores de reloj y salida.
 //! - `vigilar`: el vigilante `std::thread`. Duerme con `park`; al primer fatal aplica los cortes
 //!   nativos (admision, escritor, store), espera con reloj monotono a que el finalizador avise y
-//!   termina el proceso con codigo no cero. Si vence el plazo, termina sin esperar a nadie.
+//!   pide la terminacion con codigo no cero. Si vence el plazo, la pide sin esperar a nadie, con
+//!   prioridad sobre la salida ordenada (C1).
 //! - `instalar_hook`: hook de panic global (solo en el recorrido `capture`, nunca en el harness).
 //! - `Admision`: corte observable de la cola de archivo. Un solo `AtomicU64` empaqueta la
 //!   bandera de corte, las ofertas en vuelo y las confirmadas: el corte devuelve una instantanea
@@ -103,10 +104,20 @@ pub struct SalidaPedida {
 }
 
 /// Salida real. Ordenada: el hilo `capture-salida` (arrancado antes del vigilante) vuelca
-/// stdout/stderr y termina con `TerminateProcess` (sin `ExitProcess`: no hay desconexion de DLL
+/// stdout/stderr y pide `TerminateProcess` (sin `ExitProcess`: no hay desconexion de DLL
 /// ni candado del cargador que pueda bloquear); si ese volcado se bloquea, el vigilante, que
-/// sigue armado, termina con cierre incompleto al vencer el plazo. No ordenada (plazo vencido o
-/// fallo del vigilante): `TerminateProcess` inmediato (sin destructores, atexit ni candados).
+/// sigue armado, pide la terminacion con cierre incompleto al vencer el plazo. No ordenada (plazo
+/// vencido o fallo del vigilante): `TerminateProcess` inmediato (sin destructores, atexit ni
+/// candados).
+///
+/// SALIDAFALLO-10 (C1 de la N1 v3), frontera del contrato. Lo acotado es la PETICION nativa:
+/// el vigilante hace cumplir el plazo mientras su hilo siga ejecutandose y, al vencer, pide
+/// `TerminateProcess` sin ejecutar codigo de usuario, destructores ni desconexion de DLL. La
+/// SALIDA OBSERVADA del proceso es otra cosa: segun la documentacion de Microsoft de
+/// `TerminateProcess`, la llamada detiene todos los hilos y el proceso puede no terminar hasta que
+/// la E/S pendiente del kernel termine o se cancele; en ese estado tampoco sigue el vigilante. No se
+/// afirma una cota universal para esa E/S. La salida observada se acredita por medicion (P8:
+/// marcador sincronizado y cota superior del banco), solo para los casos y bytes ensayados.
 pub struct SalidaProceso {
     pedida: Arc<SalidaPedida>,
 }
@@ -306,6 +317,8 @@ pub(crate) enum Punto {
     TrasAdmitirStore,
     /// El finalizador espera, en una parada sana, a que el runtime este destruido.
     FinalizadorEsperaRuntime,
+    /// SALIDAFALLO-10: el vigilante aplico los cortes y aun no miro reloj ni banderas.
+    VigilanteTrasCortes,
 }
 
 #[cfg(test)]
@@ -675,7 +688,10 @@ impl Drop for VigilanteVivo<'_> {
 }
 
 /// Cuerpo del vigilante. Reloj monotono (adaptador), esperas `park`/`park_timeout`, sin joins,
-/// sellado, END ni otra E/S de cierre. Permanece armado hasta `desarmar`.
+/// sellado, END ni otra E/S de cierre. Permanece armado hasta `desarmar`. En cada vuelta mira
+/// primero el plazo (C1): vencido, pide la terminacion no ordenada con cierre incompleto aunque
+/// FIN_LISTO ya este publicado. Lo que acota es su peticion nativa, no la salida observada (ver
+/// `SalidaProceso`).
 pub fn vigilar(ctl: &Control) {
     ctl.banderas.fetch_or(VIGILANTE_VIVO, Ordering::SeqCst);
     let _vivo = VigilanteVivo(ctl);
@@ -693,28 +709,40 @@ pub fn vigilar(ctl: &Control) {
     }
     crate::inyeccion::vigilante_vio_fatal();
     ctl.cortes_nativos();
+    #[cfg(test)]
+    ctl.pausar(Punto::VigilanteTrasCortes);
     let t0 = Duration::from_nanos(ctl.t_fatal_ns.load(Ordering::SeqCst));
     let mut salida_pedida = false;
     loop {
         let b = ctl.banderas();
-        if b & FIN_LISTO != 0 && !salida_pedida {
-            salida_pedida = true;
-            let codigo = if b & INCOMPLETO != 0 { SALIDA_FATAL_INCOMPLETO } else { SALIDA_FATAL_CERRADO };
-            // SALIDAFALLO-4: la salida ordenada la hace otro hilo; el plazo sigue vigilado
-            // hasta que el proceso termine de verdad.
-            ctl.salida.terminar(codigo, true);
-        }
-        if salida_pedida && ctl.salida.terminado() {
-            return;
-        }
+        // SALIDAFALLO-10 (C1 de la N1 v3): el vencimiento tiene prioridad. El reloj se mira ANTES
+        // de publicar la salida ordenada: si en la misma vuelta ya estan FIN_LISTO y el plazo
+        // vencido, se pide la terminacion no ordenada con cierre incompleto y nunca una salida
+        // ordenada iniciada despues del vencimiento (que capture-salida podria ganar y etiquetar
+        // como cierre completo).
         let pasado = ctl.reloj.ahora().saturating_sub(t0);
         if pasado >= ctl.plazo {
             ctl.banderas.fetch_or(INCOMPLETO, Ordering::SeqCst);
             ctl.salida.terminar(SALIDA_FATAL_INCOMPLETO, false);
             return;
         }
+        if b & FIN_LISTO != 0 && !salida_pedida {
+            salida_pedida = true;
+            let codigo = codigo_de_salida(b);
+            // SALIDAFALLO-4: la salida ordenada la hace otro hilo; el plazo sigue vigilado
+            // mientras este hilo siga ejecutandose (ver el contrato de `SalidaProceso`).
+            ctl.salida.terminar(codigo, true);
+        }
+        if salida_pedida && ctl.salida.terminado() {
+            return;
+        }
         thread::park_timeout(ctl.plazo - pasado);
     }
+}
+
+/// Codigo de la salida ordenada segun las banderas leidas en una sola carga.
+fn codigo_de_salida(b: u32) -> u32 {
+    if b & INCOMPLETO != 0 { SALIDA_FATAL_INCOMPLETO } else { SALIDA_FATAL_CERRADO }
 }
 
 #[cfg(test)]

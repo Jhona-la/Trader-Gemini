@@ -1234,3 +1234,33 @@ fn venue_local_solo_loopback() {
     assert_eq!(crate::inyeccion::desde_args(&a(&["local", "out", "r.csv", "inyectar=store_ocupado"])), Ok(Some(crate::inyeccion::Caso::StoreOcupado)));
     assert!(crate::inyeccion::desde_args(&a(&["local", "out", "r.csv", "inyectar=desconocido"])).is_err());
 }
+// ---------------------------------------------------------------------------------------------
+// T17 (SALIDAFALLO-10, C1 de la N1 v3): con FIN_LISTO publicado y el plazo ya vencido en la misma
+// vuelta, el vigilante da prioridad al vencimiento: termina sin ordenar y con cierre incompleto, y
+// nunca pide una salida ordenada iniciada despues del vencimiento. La pausa determinista pone las
+// dos condiciones desde el propio hilo del vigilante, despues de los cortes y antes de su primera
+// lectura de reloj y banderas.
+// ---------------------------------------------------------------------------------------------
+#[test]
+fn vencimiento_prioriza_sobre_salida_ordenada() {
+    let plazo = Duration::from_secs(5);
+    let (ctl, salida, reloj) = control_de_prueba(plazo);
+    let debil = Arc::downgrade(&ctl);
+    let r2 = Arc::clone(&reloj);
+    let ambas = Arc::new(AtomicBool::new(false));
+    let a2 = Arc::clone(&ambas);
+    ctl.fijar_pausa(Box::new(move |p| {
+        if p == Punto::VigilanteTrasCortes {
+            if let Some(c) = debil.upgrade() {
+                r2.avanzar(plazo);
+                c.fin_listo(SALIDA_FATAL_CERRADO as u8, false);
+                a2.store(c.fin_hecho() && c.ahora() >= plazo, Ordering::SeqCst);
+            }
+        }
+    }));
+    let vig = lanzar_vigilante(&ctl);
+    ctl.fatal(Clase::Lector, "fatal con fin listo y plazo vencido a la vez");
+    vig.join().expect("vigilante");
+    assert!(ambas.load(Ordering::SeqCst), "las dos condiciones estaban presentes al mirar");
+    assert_eq!(salida.codigos(), [(SALIDA_FATAL_INCOMPLETO, false)], "el vencimiento gana; ninguna salida ordenada");
+}
