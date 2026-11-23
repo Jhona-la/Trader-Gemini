@@ -337,6 +337,20 @@ fn inventario(raiz: &Path) -> (Vec<Value>, Vec<Value>) {
 
 // --- Criterios por caso ------------------------------------------------------------------------
 
+/// SALIDAFALLO-11 (C2): cota superior del tiempo del marcador a la salida observada por el padre.
+/// Derivacion (sin cifras a mano, todo de la corrida): el padre ve el marcador como mucho una vuelta
+/// despues de escribirse y ve la salida como mucho una vuelta despues de ocurrir; esa vuelta medida
+/// (`parent_max_loop_ns`, que incluye el sueno del sondeo en el mismo temporizador del sistema) es la
+/// resolucion. La tolerancia del lado del hijo es el retraso del `park_timeout` del vigilante sobre
+/// el mismo temporizador, acotado por la misma vuelta medida. Cota = plazo efectivo + resolucion +
+/// tolerancia. La salida del proceso tras `TerminateProcess` queda dentro de lo observado; no es
+/// una cota universal (contrato de `SalidaProceso`).
+fn cota_superior_ns(plazo_ns: u64, vuelta_ns: u64) -> u64 {
+    let resolucion = vuelta_ns;
+    let tolerancia = vuelta_ns;
+    plazo_ns.saturating_add(resolucion).saturating_add(tolerancia)
+}
+
 fn comprobar(e: &Escenario, r: &Value) -> Vec<String> {
     let mut f = Vec::new();
     let mut exigir = |ok: bool, que: &str| {
@@ -419,14 +433,45 @@ fn comprobar(e: &Escenario, r: &Value) -> Vec<String> {
             exigir(!ff.is_null(), "END escrito antes de la salida bloqueada");
             exigir(r["stdout"].as_str().is_some_and(|s| s.contains("P8_INYECCION salida_bloqueada salida_bloqueada")), "la salida ordenada se bloqueo");
             // El marcador se escribe antes del fatal y el padre lo ve, a lo sumo, una vuelta despues.
-            let desde = r["parent_ns_from_first_marker_to_exit"].as_u64().unwrap_or(0);
-            let plazo_ns = r["deadline_ms"].as_u64().unwrap_or(u64::MAX).saturating_mul(1_000_000);
-            let vuelta = r["parent_max_loop_ns"].as_u64().unwrap_or(u64::MAX);
+            // SALIDAFALLO-11 (C2 de la N1 v3): plazo efectivo en ns (no el truncado a ms del
+            // informe) y cota en los dos extremos, con la resolucion medida en la propia corrida.
+            let desde = r["parent_ns_from_first_marker_to_exit"].as_u64();
+            let plazo_ns = r["deadline_ns_effective"].as_u64();
+            let vuelta = r["parent_max_loop_ns"].as_u64();
+            exigir(plazo_ns.is_some() && plazo_ns == sf["deadline_ns"].as_u64(), "plazo efectivo en ns = deadline_ns de END");
+            let (desde, plazo_ns, vuelta) = (desde.unwrap_or(0), plazo_ns.unwrap_or(u64::MAX), vuelta.unwrap_or(u64::MAX));
             exigir(desde >= plazo_ns.saturating_sub(vuelta), "la salida llego por el plazo, no antes");
+            exigir(desde <= cota_superior_ns(plazo_ns, vuelta), "la salida llego dentro de la cota superior desde el marcador");
         }
         _ => exigir(false, "caso desconocido"),
     }
     f
+}
+
+/// SALIDAFALLO-11 (C2): control de la cota superior sobre el mismo `comprobar` del banco. Un
+/// informe sintetico de `salida_bloqueada` pasa en el borde de la cota y falla una unidad por
+/// encima (y una por debajo del extremo inferior), con la vuelta y el plazo de un caso real
+/// (recibo v3 `salida_bloqueada_plazo_defecto/harness.json`).
+#[test]
+fn p8_cota_superior_control() {
+    let e = *ESCENARIOS.iter().find(|e| e.nombre == "salida_bloqueada_plazo_defecto").expect("escenario");
+    let plazo = u64::try_from(salidafallo::PLAZO_FATAL.as_nanos()).expect("ns");
+    let vuelta = 24_724_900_u64;
+    let informe = |desde: u64| json!({
+        "killed_by_parent": false, "exit_code": 4,
+        "end": {"salidafallo": {"first_fatal": {"class": "inyectado_p8", "detail": "x"}, "deadline_ns": plazo}},
+        "stdout": "P8_INYECCION salida_bloqueada salida_bloqueada control_ns=1",
+        "parent_ns_from_first_marker_to_exit": desde, "deadline_ns_effective": plazo, "parent_max_loop_ns": vuelta,
+    });
+    let cota = cota_superior_ns(plazo, vuelta);
+    assert_eq!(cota, plazo + 2 * vuelta);
+    assert_eq!(comprobar(&e, &informe(plazo)), Vec::<String>::new(), "en el plazo: pasa");
+    assert_eq!(comprobar(&e, &informe(cota)), Vec::<String>::new(), "en el borde de la cota: pasa");
+    assert_eq!(comprobar(&e, &informe(cota + 1)), ["la salida llego dentro de la cota superior desde el marcador"], "por encima: falla");
+    assert_eq!(comprobar(&e, &informe(plazo - vuelta - 1)), ["la salida llego por el plazo, no antes"], "por debajo: falla");
+    let mut otro = informe(plazo);
+    otro["end"]["salidafallo"]["deadline_ns"] = json!(plazo - 1);
+    assert_eq!(comprobar(&e, &otro), ["plazo efectivo en ns = deadline_ns de END"], "el plazo del informe debe ser el del hijo");
 }
 
 // --- El caso ---------------------------------------------------------------------------------
@@ -448,6 +493,8 @@ fn p8_caso() -> CaptureResult<()> {
     let out = raiz.join("out");
     let utc0 = SystemTime::now().duration_since(UNIX_EPOCH)?.as_millis() as u64;
     let plazo_ms = e.plazo_ms.unwrap_or(salidafallo::PLAZO_FATAL.as_millis() as u64);
+    // Plazo efectivo del hijo, exacto en ns (el de `plazo_ms` solo sirve para el tope del padre).
+    let plazo_efectivo = e.plazo_ms.map_or(salidafallo::PLAZO_FATAL, Duration::from_millis);
     let mut args = vec![
         "capture".to_owned(), "local".to_owned(), out.display().to_string(), roster.display().to_string(),
         format!("until_ms={}", utc0 + e.until_s * 1000),
@@ -514,6 +561,8 @@ fn p8_caso() -> CaptureResult<()> {
         "command": args, "cwd": raiz, "pid": pid, "process_creation_filetime": creado,
         "loopback": {"ws": srv.ws.to_string(), "rest": srv.rest.to_string()},
         "launch_utc_ms": utc0, "deadline_ms": plazo_ms, "deadline_is_default": e.plazo_ms.is_none(),
+        "deadline_ns_effective": nanos(plazo_efectivo),
+        "upper_bound_ns_from_marker": cota_superior_ns(nanos(plazo_efectivo), nanos(vuelta_max)),
         "parent_cap_ns": nanos(tope), "parent_poll_ms": 5, "parent_max_loop_ns": nanos(vuelta_max),
         "parent_ns_launch_to_exit": nanos(fin),
         "parent_ns_launch_to_first_marker": marcador.map(nanos),
