@@ -55,7 +55,10 @@ pub const SALIDA_VIGILANTE: u32 = 5;
 //   rotacion (hora actual y la anterior dentro de ROTATION_GRACE_MS) + SEAL_QUEUE_CAPACITY en
 //   cola + 1 en el sellador. Una tercera hora abierta solo aparece con marcas fuera de orden;
 //   entonces el plazo puede vencer y el cierre queda incompleto (salida de fallo).
-//   El drenaje de la cola de filas no tiene medicion propia: N/D, no se suma nada por el.
+//   La derivación histórica del plazo no incluyó medición propia del drenaje de filas. El caso P8
+//   cola_llena de v3 aporta una medición posterior, trazada por su harness y la auditoría de N1.
+//   Esa observación no se incorporó automáticamente al presupuesto ni constituye una cota
+//   universal.
 // ---------------------------------------------------------------------------------------------
 pub const SELLADO_MAX_MEDIDO_NS: u64 = 85_500 + 1_904_600 + 3_290_400 + 24_053_800
     + 66_682_075_400 + 7_294_300 + 61_394_800;
@@ -702,7 +705,9 @@ impl Drop for VigilanteVivo<'_> {
 /// sellado, END ni otra E/S de cierre. Permanece armado hasta `desarmar`. En cada vuelta mira
 /// primero el plazo (C1): vencido, pide la terminacion no ordenada con cierre incompleto aunque
 /// FIN_LISTO ya este publicado. Lo que acota es su peticion nativa, no la salida observada (ver
-/// `SalidaProceso`).
+/// `SalidaProceso`). Sin vencimiento y con FIN_LISTO pide la salida ordenada con el codigo de
+/// `codigo_de_salida`: 4 si el cierre fue incompleto o si la ultima escritura cotejada de END no
+/// describia ningun fatal (fatal entre el cotejo y el desarme, C4); 1 si END describe el fatal.
 pub fn vigilar(ctl: &Control) {
     ctl.banderas.fetch_or(VIGILANTE_VIVO, Ordering::SeqCst);
     let _vivo = VigilanteVivo(ctl);
@@ -947,8 +952,8 @@ impl Drop for Vuelo<'_> {
 }
 
 // ---------------------------------------------------------------------------------------------
-// Compuerta nativa de store (P4c). Bit 63 = cerrada; bits 56..63 = identidad de la ultima operacion
-// admitida; bits 0..56 = operaciones en curso. SALIDAFALLO-6 (N1 hallazgo 3): admitir es un CAS que
+// Compuerta nativa de store (P4c). Bit 63 = cerrada; bits 56 a 62 = identidad de la última operación
+// admitida; bits 0 a 55 = operaciones en curso. SALIDAFALLO-6 (N1 hallazgo 3): admitir es un CAS que
 // suma la operacion y fija su identidad en la misma palabra, asi que el `fetch_or` del cierre lee
 // contador e identidad en una sola instantanea.
 // ---------------------------------------------------------------------------------------------

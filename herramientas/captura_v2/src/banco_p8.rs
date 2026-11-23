@@ -21,8 +21,8 @@ use tokio::{
 };
 
 /// Cuatro simbolos: con SHARDS_PER_ROUTE = 4 da la disposicion de produccion (4 public + 4 market,
-/// un simbolo por shard). Con menos de 4 simbolos los indices de shard tienen huecos y run_market
-/// (codigo heredado de r3b) calcula total - index fuera de rango: lo encontro el primer ensayo.
+/// un simbolo por shard). El defecto heredado de r3b con menos simbolos (indices con huecos y
+/// total - index fuera de rango en run_market) lo corrige SALIDAFALLO-14 (`shard_defs`).
 const SIMBOLOS: [&str; 4] = ["FSTUSDT", "SNDUSDT", "TRDUSDT", "FTHUSDT"];
 /// Ritmo del generador sintetico del servidor (parametro del banco, no una cifra del colector).
 const PASO_SERVIDOR: Duration = Duration::from_millis(20);
