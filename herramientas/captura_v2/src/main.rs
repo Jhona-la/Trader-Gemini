@@ -1440,7 +1440,7 @@ impl ShardCtx {
                             // Primera rotacion escalonada: el shard i rota a (N - i)/N del intervalo.
                             let span = if first_rotation {
                                 first_rotation = false;
-                                self.rotate_after.mul_f64((self.total - self.index) as f64 / self.total as f64)
+                                primera_rotacion(self.rotate_after, self.index, self.total)?
                             } else {
                                 self.rotate_after
                             };
@@ -1595,6 +1595,40 @@ async fn stop_file(path: PathBuf) {
     }
 }
 
+/// Definicion de un shard: (indice, ruta, simbolos, url, roster_base).
+type ShardDef = (usize, &'static str, Vec<String>, String, usize);
+
+/// SALIDAFALLO-14 (defecto de pocos simbolos, heredado de r3b): constructor productivo de los
+/// shards. El indice es la posicion de insercion (0..defs.len(), sin huecos): antes era
+/// `route_i * SHARDS_PER_ROUTE + k`, que con menos de SHARDS_PER_ROUTE trozos por ruta dejaba
+/// indices >= total (1 y 2 simbolos: resta fuera de rango en run_market) o = total (3, 5, 6 y 9:
+/// primera rotacion de un shard market con plazo cero). Con trozos completos (40 simbolos) la
+/// secuencia es identica a la anterior. `capture` consume este resultado sin renumerarlo.
+fn shard_defs(symbols: &[String], venue: Venue) -> Vec<ShardDef> {
+    let per = symbols.len().div_ceil(SHARDS_PER_ROUTE).max(1);
+    let mut defs = Vec::new();
+    for route in ["public", "market"] {
+        for (k, chunk) in symbols.chunks(per).enumerate() {
+            let index = defs.len();
+            let with_force = route == "market" && k == 0;
+            // Posicion del primer simbolo del shard dentro del roster completo: base de la
+            // fase R2 para escalonar los temporizadores entre shards (public_l2::r2_phase).
+            let roster_base = if route == "public" { k * per } else { 0 };
+            defs.push((index, route, chunk.to_vec(), venue.url(route, chunk, with_force), roster_base));
+        }
+    }
+    defs
+}
+
+/// SALIDAFALLO-14: primera rotacion escalonada; el shard i rota a (N - i)/N del intervalo. Exige
+/// i < N antes de la resta (error explicito en vez de panic).
+fn primera_rotacion(rotate_after: Duration, index: usize, total: usize) -> CaptureResult<Duration> {
+    if index >= total {
+        return Err(io::Error::other(format!("shard {index} fuera de 0..{total}")).into());
+    }
+    Ok(rotate_after.mul_f64((total - index) as f64 / total as f64))
+}
+
 /// Roster: simbolos unicos del CSV del manifiesto de Binance Vision cuyo tipo no es BVOLIndex
 /// (indices de opciones sin libro ni trades de futuros). Spec 2.0.
 fn roster(csv: &Path) -> CaptureResult<Vec<String>> {
@@ -1671,22 +1705,16 @@ async fn capture(args: &[String], ctl: Arc<Control>) -> CaptureResult<CaptureEnd
         return Ok(CaptureEnd::Early(3));
     }
     let symbols = roster(Path::new(roster_csv))?;
+    // SALIDAFALLO-14 (pocos simbolos): un roster sin simbolos negociables se rechaza aqui, antes de
+    // crear RUN, lanzar escritores o dividir por total_shards.
+    if symbols.is_empty() {
+        return Err(io::Error::other(format!("roster sin simbolos negociables ({roster_csv}); no arranca")).into());
+    }
     let (_, roster_sha) = digest(Path::new(roster_csv))?;
     let r2_symbols_total = symbols.len();
-    let per = symbols.len().div_ceil(SHARDS_PER_ROUTE).max(1);
     let dir = root.join(format!("run-{}-{}-{}", venue.name, start.utc_ms, std::process::id()));
     fs::create_dir(&dir)?;
-    let mut shard_defs = Vec::new();
-    for (route_i, route) in ["public", "market"].into_iter().enumerate() {
-        for (k, chunk) in symbols.chunks(per).enumerate() {
-            let index = route_i * SHARDS_PER_ROUTE + k;
-            let with_force = route == "market" && k == 0;
-            // Posicion del primer simbolo del shard dentro del roster completo: base de la
-            // fase R2 para escalonar los temporizadores entre shards (public_l2::r2_phase).
-            let roster_base = if route == "public" { k * per } else { 0 };
-            shard_defs.push((index, route, chunk.to_vec(), venue.url(route, chunk, with_force), roster_base));
-        }
-    }
+    let shard_defs = shard_defs(&symbols, venue);
     let total_shards = shard_defs.len();
     let r2_snapshot = json!({
         "goal":"ancla fresca por simbolo aunque el stream calle (objetivo de intervalo entre anclas)",
@@ -2471,6 +2499,86 @@ mod tests {
         fs::write(&path, "simbolo,tipo,ruta,bytes\nBTCBVOLUSDT,BVOLIndex,x,1\nBTCUSDT,klines,x,1\nBTCUSDT,aggTrades,x,1\nADAUSDT,klines,x,1\n")?;
         assert_eq!(roster(&path)?, ["ADAUSDT", "BTCUSDT"]);
         fs::remove_file(path)?;
+        Ok(())
+    }
+
+    /// Constructor de la base fijada f16d85e26 (herramientas/captura_v2/src/main.rs:1676-1689 de ese
+    /// commit), copiado tal cual salvo el envoltorio de funcion: referencia de los esperados de n=40.
+    fn shard_defs_base(symbols: &[String], venue: Venue) -> Vec<ShardDef> {
+        let per = symbols.len().div_ceil(SHARDS_PER_ROUTE).max(1);
+        let mut shard_defs = Vec::new();
+        for (route_i, route) in ["public", "market"].into_iter().enumerate() {
+            for (k, chunk) in symbols.chunks(per).enumerate() {
+                let index = route_i * SHARDS_PER_ROUTE + k;
+                let with_force = route == "market" && k == 0;
+                let roster_base = if route == "public" { k * per } else { 0 };
+                shard_defs.push((index, route, chunk.to_vec(), venue.url(route, chunk, with_force), roster_base));
+            }
+        }
+        shard_defs
+    }
+
+    /// SALIDAFALLO-14: el constructor productivo `shard_defs` (el mismo que consume `capture`) numera
+    /// sin huecos para n = 1, 2, 3, 5, 6, 9 y 40, cubre el roster por ruta en orden, agrupa public y
+    /// luego market, conserva with_force y da index < total y primera rotacion positiva con el
+    /// intervalo efectivo por defecto (ROTATE_AFTER, el de RUN sin rotate_after_s). Con n = 40 la
+    /// secuencia completa es la del constructor de la base con los mismos argumentos.
+    #[test]
+    fn shards_sin_huecos_con_pocos_simbolos() -> CaptureResult<()> {
+        let venue = Venue::parse("mainnet")?;
+        for n in [1usize, 2, 3, 5, 6, 9, 40] {
+            let symbols: Vec<String> = (0..n).map(|i| format!("S{i:02}USDT")).collect();
+            let defs = shard_defs(&symbols, venue);
+            let total = defs.len();
+            assert_eq!(defs.iter().map(|d| d.0).collect::<Vec<_>>(), (0..total).collect::<Vec<_>>(), "n={n}: indices 0..len en orden");
+            let rutas: Vec<&str> = defs.iter().map(|d| d.1).collect();
+            let publicos = rutas.iter().take_while(|r| **r == "public").count();
+            assert!(publicos > 0 && rutas[publicos..].iter().all(|r| *r == "market") && rutas.len() == 2 * publicos, "n={n}: public y luego market");
+            for ruta in ["public", "market"] {
+                let cubiertos: Vec<String> = defs.iter().filter(|d| d.1 == ruta).flat_map(|d| d.2.clone()).collect();
+                assert_eq!(cubiertos, symbols, "n={n}: cobertura de {ruta}");
+            }
+            let fuerza: Vec<bool> = defs.iter().map(|d| d.3.contains("!forceOrder@arr")).collect();
+            assert_eq!(fuerza.iter().filter(|f| **f).count(), 1, "n={n}: un solo with_force");
+            assert!(fuerza[publicos], "n={n}: with_force en el primer market");
+            for d in &defs {
+                assert!(d.0 < total, "n={n}: index < total antes de la resta");
+                assert!(primera_rotacion(ROTATE_AFTER, d.0, total)? > Duration::ZERO, "n={n}: primera rotacion positiva del shard {}", d.0);
+            }
+            if n == 40 {
+                assert!(defs == shard_defs_base(&symbols, venue), "n=40: identico al constructor de la base");
+            }
+        }
+        Ok(())
+    }
+
+    /// SALIDAFALLO-14: el recorrido real de `capture` rechaza con error explicito (no panic) un
+    /// roster sin simbolos negociables, antes de crear RUN: CSV con cabecera valida sin filas y CSV
+    /// cuyas filas elimina el filtro (solo BVOLIndex).
+    #[test]
+    fn roster_vacio_se_rechaza_antes_de_run() -> CaptureResult<()> {
+        let stamp = SystemTime::now().duration_since(UNIX_EPOCH)?.as_nanos();
+        for (caso, csv) in [("sin_filas", "simbolo,tipo\n"), ("filtradas", "simbolo,tipo\nBTCBVOLUSDT,BVOLIndex\nETHBVOLUSDT,BVOLIndex\n")] {
+            let base = env::temp_dir().join(format!("roster-vacio-{stamp}-{caso}"));
+            fs::create_dir_all(&base)?;
+            let roster = base.join("roster.csv");
+            fs::write(&roster, csv)?;
+            let out = base.join("out");
+            let until = SystemTime::now().duration_since(UNIX_EPOCH)?.as_millis() as u64 + 3_600_000;
+            let args: Vec<String> = vec!["local".into(), out.display().to_string(), roster.display().to_string(),
+                format!("until_ms={until}"), "ws_local=127.0.0.1:9".into(), "rest_local=http://127.0.0.1:9".into(), "min_free_bytes=0".into()];
+            let corrida = thread::spawn(move || {
+                let (ctl, _, _) = salidafallo::tests::control_de_prueba(salidafallo::PLAZO_FATAL);
+                let rt = tokio::runtime::Builder::new_current_thread().enable_all().build().expect("runtime");
+                rt.block_on(capture(&args, ctl)).map(|_| ()).map_err(|e| e.to_string())
+            })
+            .join();
+            let Ok(resultado) = corrida else { panic!("{caso}: capture entro en panic; se esperaba un error explicito") };
+            let error = resultado.err().unwrap_or_default();
+            assert!(error.contains("roster sin simbolos negociables"), "{caso}: error explicito, no {error:?}");
+            let runs: Vec<_> = fs::read_dir(&out)?.flatten().filter(|e| e.file_name().to_string_lossy().starts_with("run-")).collect();
+            assert!(runs.is_empty(), "{caso}: no se crea RUN");
+        }
         Ok(())
     }
 
