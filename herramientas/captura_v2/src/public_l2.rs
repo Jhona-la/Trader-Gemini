@@ -361,7 +361,8 @@ impl Conn {
         } else {
             None
         };
-        let now = Instant::now();
+        // SALIDAFALLO-12 (C3): reloj del arbitraje; identidad salvo con retener_l2 (venue local).
+        let now = crate::inyeccion::reloj_l2(Instant::now());
         let mut book = lock(&self.book);
         book.seen
             .entry(self.id)
@@ -405,6 +406,14 @@ impl Conn {
 
 impl ShardBook {
     fn drain_l2(&mut self, emitter: &Emitter, now: Instant, finish: bool) -> CaptureResult<()> {
+        if finish && crate::inyeccion::es(crate::inyeccion::Caso::RetenerL2) {
+            // SALIDAFALLO-12 (C3): testigo de lo que sigue en el arbitro al empezar el drenaje final.
+            let depth: Vec<(String, u64)> = self.depth.iter()
+                .flat_map(|(s, st)| st.arbiter.pendientes().into_iter().map(move |u| (s.clone(), u))).collect();
+            let ticker: Vec<(String, u64)> = self.tickers.iter()
+                .flat_map(|(s, tk)| tk.pendientes().into_iter().map(move |u| (s.clone(), u))).collect();
+            crate::inyeccion::l2_pendientes(emitter.shard, &depth, &ticker);
+        }
         for state in self.depth.values_mut() {
             let output = if finish {
                 state.arbiter.finish()
@@ -488,7 +497,7 @@ impl ShardCtx {
         replies: &mpsc::UnboundedSender<gate::Reply>,
     ) -> CaptureResult<()> {
         let mut book = lock(&self.book);
-        book.drain_l2(&self.emitter, now, false)?;
+        book.drain_l2(&self.emitter, crate::inyeccion::reloj_l2(now), false)?;
         for (symbol, state) in &mut book.depth {
             let Some(periodic) = state.snapshot_wanted(now) else {
                 continue;

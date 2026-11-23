@@ -120,12 +120,12 @@ pub struct Stamp {
 }
 
 impl Clock {
+    /// SALIDAFALLO-12 (C3): `inyeccion::desfase_utc_ms` es cero salvo en dos casos P8 del venue local
+    /// que cruzan una hora de archivo; el monotono no cambia.
     pub fn stamp(self) -> CaptureResult<Stamp> {
         Ok(Stamp {
-            utc_ms: SystemTime::now()
-                .duration_since(UNIX_EPOCH)?
-                .as_millis()
-                .try_into()?,
+            utc_ms: u64::try_from(SystemTime::now().duration_since(UNIX_EPOCH)?.as_millis())?
+                + inyeccion::desfase_utc_ms(),
             mono_ns: self.0.elapsed().as_nanos().try_into()?,
         })
     }
@@ -638,6 +638,11 @@ pub(crate) trait Disk: Send + Sync + 'static {
     fn digest(&self, path: &Path) -> CaptureResult<(u64, String)>;
     fn publish(&self, from: &Path, to: &Path) -> io::Result<()>;
     fn write_json(&self, path: &Path, value: &Value) -> CaptureResult<()>;
+    /// SALIDAFALLO-12 (C3): punto antes de las fases gzip_finish y flush del sellado. En produccion
+    /// no hace nada; el disco de ensayo P8 puede fallar ahi.
+    fn antes_de_fase(&self, _fase: &'static str) -> io::Result<()> {
+        Ok(())
+    }
 }
 
 #[derive(Clone, Copy)]
@@ -682,6 +687,7 @@ impl Write for ArchivoP8 {
 impl Disk for DiscoP8 {
     type File = ArchivoP8;
     fn create(&self, path: &Path) -> io::Result<ArchivoP8> {
+        inyeccion::fallo_fase("open")?;
         new_file(path).map(ArchivoP8)
     }
     fn sync(&self, file: &ArchivoP8) -> io::Result<()> {
@@ -689,10 +695,15 @@ impl Disk for DiscoP8 {
         file.0.sync_all()
     }
     fn digest(&self, path: &Path) -> CaptureResult<(u64, String)> {
+        inyeccion::fallo_fase("sha256")?;
         digest(path)
     }
     fn publish(&self, from: &Path, to: &Path) -> io::Result<()> {
+        inyeccion::fallo_fase("publish_gzip")?;
         RealDisk.publish(from, to)
+    }
+    fn antes_de_fase(&self, fase: &'static str) -> io::Result<()> {
+        inyeccion::fallo_fase(fase)
     }
     fn write_json(&self, path: &Path, value: &Value) -> CaptureResult<()> {
         inyeccion::al_escribir_json(path)?;
@@ -759,9 +770,16 @@ impl<F: Write + Send> Segment<F> {
         }
         let file = format!("{}.jsonl.gz", self.name);
         let partial = dir.join(format!("{file}.partial"));
-        let mut writer = time_phase(times, "gzip_finish_ns", || self.gzip.finish())
-            .map_err(|e| fail("gzip_finish", PARTIAL)(&e))?;
-        time_phase(times, "flush_ns", || writer.flush()).map_err(|e| fail("flush", PARTIAL)(&e))?;
+        let mut writer = time_phase(times, "gzip_finish_ns", || {
+            disk.antes_de_fase("gzip_finish")?;
+            self.gzip.finish()
+        })
+        .map_err(|e| fail("gzip_finish", PARTIAL)(&e))?;
+        time_phase(times, "flush_ns", || {
+            disk.antes_de_fase("flush")?;
+            writer.flush()
+        })
+        .map_err(|e| fail("flush", PARTIAL)(&e))?;
         time_phase(times, "sync_all_ns", || disk.sync(writer.get_ref())).map_err(|e| fail("sync_all", PARTIAL)(&e))?;
         time_phase(times, "file_close_ns", || drop(writer));
         let (bytes, sha256) = time_phase(times, "sha256_ns", || disk.digest(&partial))
@@ -1001,6 +1019,10 @@ fn seal_segments<D: Disk>(
                     "path": dir.join(format!("{name}.{}", if failure.state == "jsonl.gz.partial" { "jsonl.gz.partial" } else { "jsonl.gz" })),
                 }));
             }
+        }
+        // SALIDAFALLO-12 (C3): solo con fallo_handoff del venue local; suelta el receptor.
+        if inyeccion::sellador_se_retira() {
+            break;
         }
     }
     report

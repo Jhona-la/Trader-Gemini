@@ -141,6 +141,11 @@ impl<T> Depth<T> {
         output
     }
 
+    /// SALIDAFALLO-12 (C3): `u` de las tramas retenidas (solo lectura, testigo del ensayo P8).
+    pub(crate) fn pendientes(&self) -> Vec<u64> {
+        self.pending.iter().map(|p| p.id.last).collect()
+    }
+
     pub(crate) fn finish(&mut self) -> Vec<DepthOutput<T>> {
         self.drain_pending(STOPPED_WITH_GAP)
     }
@@ -292,6 +297,11 @@ impl<T> Ticker<T> {
             self.emit_first(&mut output);
         }
         output
+    }
+
+    /// SALIDAFALLO-12 (C3): IDs retenidos (solo lectura, testigo del ensayo P8).
+    pub(crate) fn pendientes(&self) -> Vec<u64> {
+        self.pending.keys().copied().collect()
     }
 
     pub(crate) fn flush(&mut self) -> Vec<T> {

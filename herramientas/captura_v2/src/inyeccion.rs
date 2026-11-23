@@ -37,9 +37,18 @@ pub enum Caso {
     FatalDropRuntime,
     FalloVigilante,
     SalidaBloqueada,
+    // SALIDAFALLO-12 (C3 de la N1 v3).
+    RetenerL2,
+    FalloOpen,
+    FalloHandoff,
+    FalloGzipFinish,
+    FalloFlush,
+    FalloHash,
+    FalloPublishGzip,
+    FalloManifiestoSegundo,
 }
 
-const CASOS: [(&str, Caso); 18] = [
+const CASOS: [(&str, Caso); 26] = [
     ("panic_tarea", Caso::PanicTarea),
     ("fin_tarea", Caso::FinTarea),
     ("cancelar_conexion_market", Caso::CancelarConexionMarket),
@@ -58,6 +67,14 @@ const CASOS: [(&str, Caso); 18] = [
     ("fatal_drop_runtime", Caso::FatalDropRuntime),
     ("fallo_vigilante", Caso::FalloVigilante),
     ("salida_bloqueada", Caso::SalidaBloqueada),
+    ("retener_l2", Caso::RetenerL2),
+    ("fallo_open", Caso::FalloOpen),
+    ("fallo_handoff", Caso::FalloHandoff),
+    ("fallo_gzip_finish", Caso::FalloGzipFinish),
+    ("fallo_flush", Caso::FalloFlush),
+    ("fallo_hash", Caso::FalloHash),
+    ("fallo_publish_gzip", Caso::FalloPublishGzip),
+    ("fallo_manifiesto_segundo", Caso::FalloManifiestoSegundo),
 ];
 
 impl Caso {
@@ -70,6 +87,8 @@ impl Caso {
         matches!(
             self,
             Self::FalloAppend | Self::FalloManifiesto | Self::SelladorBloqueado | Self::FalloEnd | Self::BloqueoEnd | Self::FatalDuranteEnd
+                | Self::FalloOpen | Self::FalloGzipFinish | Self::FalloFlush | Self::FalloHash | Self::FalloPublishGzip
+                | Self::FalloManifiestoSegundo
         )
     }
 }
@@ -203,6 +222,80 @@ pub fn store_ocupado() -> bool {
     STORE_OCUPADO.load(Ordering::SeqCst)
 }
 
+// --- SALIDAFALLO-12 (C3 de la N1 v3) ---------------------------------------------------------
+
+/// Desfase de la marca UTC de recepcion (`Clock::stamp`). Cero salvo en los casos que necesitan
+/// cruzar una hora real de archivo (fallo_manifiesto_segundo, fallo_handoff); lo fija el inyector
+/// una vez, tras el trabajo conocido. El reloj monotono del vigilante no cambia.
+static DESFASE_UTC_MS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+pub fn desfase_utc_ms() -> u64 {
+    DESFASE_UTC_MS.load(Ordering::SeqCst)
+}
+
+/// Desfase que aplica el inyector: una hora y la gracia de rotacion, para que la primera fila
+/// desplazada rote la hora abierta (regla de main.rs `archive`).
+pub const DESFASE_CRUCE_MS: u64 = crate::HOUR_MS + crate::ROTATION_GRACE_MS;
+
+pub fn usa_desfase(c: Caso) -> bool {
+    matches!(c, Caso::FalloManifiestoSegundo | Caso::FalloHandoff)
+}
+
+/// Instante congelado del arbitraje L2 (retener_l2): fijado en la primera lectura tras armar.
+static L2_CONGELADO: OnceLock<std::time::Instant> = OnceLock::new();
+
+/// Reloj del arbitraje L2 (public_l2: ofertas y vencimientos). Con retener_l2 armado devuelve un
+/// instante fijo, asi que nada de lo retenido despues vence: queda en el arbitro hasta el drenaje
+/// final `drain_l2(.., true)`. Sin ese caso devuelve `ahora` tal cual.
+pub fn reloj_l2(ahora: std::time::Instant) -> std::time::Instant {
+    if armado(Caso::RetenerL2) {
+        let congelado = *L2_CONGELADO.get_or_init(|| {
+            marcar("l2_congelado");
+            ahora
+        });
+        return congelado;
+    }
+    ahora
+}
+
+/// Testigo del drenaje final de L2: identidades que siguen en el arbitro justo antes de
+/// `drain_l2(.., true)`. Solo con retener_l2.
+pub fn l2_pendientes(shard: Option<usize>, depth: &[(String, u64)], ticker: &[(String, u64)]) {
+    if es(Caso::RetenerL2) {
+        let lista = |v: &[(String, u64)]| v.iter().map(|(s, u)| format!("{s}:{u}")).collect::<Vec<_>>().join(",");
+        println!("P8_L2_PENDIENTES shard={} depth={} ticker={}", shard.map_or(-1, |s| s as i64), lista(depth), lista(ticker));
+    }
+}
+
+/// Fallo de una fase real del archivo (DiscoP8): open al crear el primer segmento; gzip_finish,
+/// flush, sha256 y publish_gzip en el sellado, ya armado. Una sola vez por caso.
+pub fn fallo_fase(fase: &str) -> io::Result<()> {
+    let caso = match fase {
+        "open" => Caso::FalloOpen,
+        "gzip_finish" => Caso::FalloGzipFinish,
+        "flush" => Caso::FalloFlush,
+        "sha256" => Caso::FalloHash,
+        "publish_gzip" => Caso::FalloPublishGzip,
+        _ => return Ok(()),
+    };
+    let toca = if caso == Caso::FalloOpen { es(caso) } else { armado(caso) };
+    if toca && !TOMADO.swap(true, Ordering::SeqCst) {
+        marcar(&format!("fallo_{fase}"));
+        return Err(io::Error::other(format!("P8 inyectado: fallo de {fase}")));
+    }
+    Ok(())
+}
+
+/// capture-seal, tras sellar un segmento: con fallo_handoff el sellador se retira (suelta su
+/// receptor) despues del primer segmento, asi que el siguiente handoff del escritor falla de verdad.
+pub fn sellador_se_retira() -> bool {
+    let si = es(Caso::FalloHandoff) && !TOMADO.swap(true, Ordering::SeqCst);
+    if si {
+        marcar("sellador_se_retira");
+    }
+    si
+}
+
 /// Builder::on_thread_park de un worker real de Tokio (fuera de Future::poll).
 pub fn al_estacionar_worker() {
     if tomar(Caso::PanicWorkerPark) {
@@ -242,7 +335,10 @@ pub fn al_sincronizar() {
 /// write_json (DiscoP8): manifiesto fallido, END fallido o bloqueado, fatal durante END.
 pub fn al_escribir_json(path: &std::path::Path) -> io::Result<()> {
     let nombre = path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
-    if nombre.ends_with(".manifest.json") && es(Caso::FalloManifiesto) && !TOMADO.swap(true, Ordering::SeqCst) {
+    if nombre.ends_with(".manifest.json")
+        && (es(Caso::FalloManifiesto) || es(Caso::FalloManifiestoSegundo))
+        && !TOMADO.swap(true, Ordering::SeqCst)
+    {
         marcar("fallo_manifiesto");
         return Err(io::Error::other("P8 inyectado: fallo del manifiesto tras el rename"));
     }
@@ -341,7 +437,18 @@ pub async fn inyector(
         | Caso::PausaReserva
         | Caso::PausaConfirmada
         | Caso::RetenerConfirmada
-        | Caso::FalloAppend => armar(),
+        | Caso::FalloAppend
+        | Caso::RetenerL2
+        | Caso::FalloGzipFinish
+        | Caso::FalloFlush
+        | Caso::FalloHash
+        | Caso::FalloPublishGzip => armar(),
+        Caso::FalloManifiestoSegundo | Caso::FalloHandoff => {
+            armar();
+            DESFASE_UTC_MS.store(DESFASE_CRUCE_MS, Ordering::SeqCst);
+            marcar("desfase_utc");
+        }
+        Caso::FalloOpen => {}
         Caso::SelladorBloqueado => {
             armar();
             fatal("fatal con el sellador por bloquearse (inyectado)");

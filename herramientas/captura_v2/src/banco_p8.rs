@@ -58,7 +58,7 @@ struct Escenario {
 /// defecto (eso lo hace `salida_bloqueada_plazo_defecto`).
 const PLAZO_ENSAYO_MS: Option<u64> = Some(20_000);
 
-const ESCENARIOS: [Escenario; 20] = [
+const ESCENARIOS: [Escenario; 28] = [
     Escenario { nombre: "sana", inyectar: None, codigos: &[0], plazo_ms: None, until_s: 40, modo: Modo::CerrarUnaVez },
     Escenario { nombre: "panic_tarea", inyectar: Some("panic_tarea"), codigos: &[1], plazo_ms: PLAZO_ENSAYO_MS, until_s: 120, modo: Modo::Normal },
     Escenario { nombre: "fin_tarea", inyectar: Some("fin_tarea"), codigos: &[1], plazo_ms: PLAZO_ENSAYO_MS, until_s: 120, modo: Modo::Normal },
@@ -79,6 +79,16 @@ const ESCENARIOS: [Escenario; 20] = [
     Escenario { nombre: "fallo_vigilante", inyectar: Some("fallo_vigilante"), codigos: &[5], plazo_ms: PLAZO_ENSAYO_MS, until_s: 120, modo: Modo::Normal },
     Escenario { nombre: "salida_bloqueada", inyectar: Some("salida_bloqueada"), codigos: &[4], plazo_ms: PLAZO_ENSAYO_MS, until_s: 120, modo: Modo::Normal },
     Escenario { nombre: "salida_bloqueada_plazo_defecto", inyectar: Some("salida_bloqueada"), codigos: &[4], plazo_ms: None, until_s: 600, modo: Modo::Normal },
+    // SALIDAFALLO-12 (C3 de la N1 v3): parada sana con filas depth/ticker identificables retenidas
+    // en el arbitro al parar, y fallos reales de cada fase del archivo en el exe ensayado.
+    Escenario { nombre: "retener_l2", inyectar: Some("retener_l2"), codigos: &[0], plazo_ms: None, until_s: 30, modo: Modo::Normal },
+    Escenario { nombre: "fallo_open", inyectar: Some("fallo_open"), codigos: &[4], plazo_ms: PLAZO_ENSAYO_MS, until_s: 120, modo: Modo::Normal },
+    Escenario { nombre: "fallo_handoff", inyectar: Some("fallo_handoff"), codigos: &[4], plazo_ms: PLAZO_ENSAYO_MS, until_s: 120, modo: Modo::Normal },
+    Escenario { nombre: "fallo_gzip_finish", inyectar: Some("fallo_gzip_finish"), codigos: &[4], plazo_ms: None, until_s: 30, modo: Modo::Normal },
+    Escenario { nombre: "fallo_flush", inyectar: Some("fallo_flush"), codigos: &[4], plazo_ms: None, until_s: 30, modo: Modo::Normal },
+    Escenario { nombre: "fallo_hash", inyectar: Some("fallo_hash"), codigos: &[4], plazo_ms: None, until_s: 30, modo: Modo::Normal },
+    Escenario { nombre: "fallo_publish_gzip", inyectar: Some("fallo_publish_gzip"), codigos: &[4], plazo_ms: None, until_s: 30, modo: Modo::Normal },
+    Escenario { nombre: "fallo_manifiesto_segundo", inyectar: Some("fallo_manifiesto_segundo"), codigos: &[4], plazo_ms: PLAZO_ENSAYO_MS, until_s: 120, modo: Modo::Normal },
 ];
 
 // --- Servidores locales ----------------------------------------------------------------------
@@ -103,6 +113,10 @@ struct Servidor {
     rest: std::net::SocketAddr,
     conexiones: Arc<Mutex<Vec<String>>>,
     rest_pedidos: Arc<Mutex<Vec<String>>>,
+    /// SALIDAFALLO-12 (C3): 0 normal; 1 = pedido el lote final L2; 2 = enviado (public callado).
+    lote_l2: Arc<AtomicU64>,
+    /// Identidades del lote final, fijadas por el servidor ANTES de enviarlo: (simbolo, flujo, u).
+    retenidas: Arc<Mutex<Vec<(String, &'static str, u64)>>>,
 }
 
 async fn servidor(modo: Modo) -> CaptureResult<Servidor> {
@@ -114,22 +128,41 @@ async fn servidor(modo: Modo) -> CaptureResult<Servidor> {
     // Contadores por simbolo: u del libro (depth/bookTicker) y a de aggTrade.
     let u: Arc<Vec<AtomicU64>> = Arc::new(SIMBOLOS.iter().map(|_| AtomicU64::new(1000)).collect());
     let a: Arc<Vec<AtomicU64>> = Arc::new(SIMBOLOS.iter().map(|_| AtomicU64::new(1)).collect());
+    let lote_l2 = Arc::new(AtomicU64::new(0));
+    let retenidas: Arc<Mutex<Vec<(String, &'static str, u64)>>> = Arc::default();
     {
         let (tx_pub, tx_mkt, u, a) = (tx_pub.clone(), tx_mkt.clone(), Arc::clone(&u), Arc::clone(&a));
+        let (lote_l2, retenidas) = (Arc::clone(&lote_l2), Arc::clone(&retenidas));
         tokio::spawn(async move {
             let mut tick = time::interval(PASO_SERVIDOR);
             let mut n = 0u64;
             loop {
                 tick.tick().await;
                 n += 1;
+                let lote = lote_l2.load(Ordering::SeqCst);
                 for (i, s) in SIMBOLOS.iter().enumerate() {
+                    if lote == 1 {
+                        // Lote final: depth con hueco de predecesor (k - 1 nunca se envia), asi que el
+                        // arbitro lo retiene, y bookTicker con un u nuevo. Las identidades se anotan antes.
+                        let k = u[i].fetch_add(2, Ordering::SeqCst) + 2;
+                        if let Ok(mut v) = retenidas.lock() {
+                            v.push(((*s).to_owned(), "depth", k));
+                            v.push(((*s).to_owned(), "ticker", k));
+                        }
+                        let _ = tx_pub.send(trama(s, "depth@100ms", json!({"e":"depthUpdate","s":s,"U":k,"u":k,"pu":k - 1,"b":[],"a":[]})));
+                        let _ = tx_pub.send(trama(s, "bookTicker", json!({"e":"bookTicker","s":s,"u":k,"b":"1.0","B":"2","a":"1.1","A":"3"})));
+                    } else if lote == 0 {
                     let nu = u[i].fetch_add(1, Ordering::SeqCst) + 1;
                     let _ = tx_pub.send(trama(s, "depth@100ms", json!({"e":"depthUpdate","s":s,"U":nu,"u":nu,"pu":nu - 1,"b":[],"a":[]})));
                     let _ = tx_pub.send(trama(s, "bookTicker", json!({"e":"bookTicker","s":s,"u":nu,"b":"1.0","B":"2","a":"1.1","A":"3"})));
+                    }
                     let _ = tx_mkt.send(agg(s, a[i].fetch_add(1, Ordering::SeqCst) + 1));
                     if n % (1000 / PASO_SERVIDOR.as_millis() as u64) == 0 {
                         let _ = tx_mkt.send(trama(s, "markPrice@1s", json!({"e":"markPriceUpdate","s":s,"p":"1.0"})));
                     }
+                }
+                if lote == 1 {
+                    lote_l2.store(2, Ordering::SeqCst);
                 }
             }
         });
@@ -233,7 +266,7 @@ async fn servidor(modo: Modo) -> CaptureResult<Servidor> {
             }
         });
     }
-    Ok(Servidor { ws: ws_addr, rest: rest_addr, conexiones, rest_pedidos })
+    Ok(Servidor { ws: ws_addr, rest: rest_addr, conexiones, rest_pedidos, lote_l2, retenidas })
 }
 // --- Identidad del hijo ------------------------------------------------------------------------
 
@@ -333,6 +366,55 @@ fn inventario(raiz: &Path) -> (Vec<Value>, Vec<Value>) {
         }
     }
     (archivos, gz)
+}
+
+/// SALIDAFALLO-12 (C3): identidad (simbolo, flujo, u) de una fila depth/bookTicker del gzip, leida
+/// del payload original (`data.s`, `data.u`) y del stream.
+fn identidad_l2(fila: &Value) -> Option<(String, &'static str, u64)> {
+    let stream = fila["stream"].as_str()?;
+    let flujo = if stream.contains("@depth") { "depth" } else if stream.contains("@bookTicker") { "ticker" } else { return None };
+    let p: Value = serde_json::from_str(fila["payload"].as_str()?).ok()?;
+    let d = if p["data"].is_object() { &p["data"] } else { &p };
+    Some((d["s"].as_str()?.to_owned(), flujo, d["u"].as_u64()?))
+}
+
+/// SALIDAFALLO-12 (C3): oraculo de las filas retenidas. Para cada identidad que el servidor fijo
+/// ANTES de enviar el lote final: si el testigo del hijo la vio pendiente en el arbitro al empezar
+/// `drain_l2(.., true)` y cuantas filas con esa identidad hay en los gzip decodificados (y de que
+/// clase). Lo exigido lo decide `comprobar`.
+fn filas_retenidas(srv: &Servidor, gz: &[Value], stdout: &str) -> Value {
+    let esperadas = srv.retenidas.lock().map(|v| v.clone()).unwrap_or_default();
+    let mut pendientes = HashSet::<(String, &'static str, u64)>::new();
+    for l in stdout.lines().filter_map(|l| l.strip_prefix("P8_L2_PENDIENTES ")) {
+        for campo in l.split(' ') {
+            let (flujo, lista) = match campo.split_once('=') {
+                Some(("depth", v)) => ("depth", v),
+                Some(("ticker", v)) => ("ticker", v),
+                _ => continue,
+            };
+            for par in lista.split(',').filter(|p| !p.is_empty()) {
+                if let Some((s, u)) = par.rsplit_once(':').and_then(|(s, u)| u.parse().ok().map(|u| (s.to_owned(), u))) {
+                    pendientes.insert((s, flujo, u));
+                }
+            }
+        }
+    }
+    let mut vistas = BTreeMap::<(String, &'static str, u64), Vec<String>>::new();
+    for g in gz {
+        let Some(p) = g["path"].as_str() else { continue };
+        let lector = std::io::BufReader::new(GzDecoder::new(File::open(p).expect("abrir")));
+        for l in lector.lines().map_while(Result::ok) {
+            let fila: Value = serde_json::from_str(&l).unwrap_or(Value::Null);
+            if let Some(id) = identidad_l2(&fila) {
+                vistas.entry(id).or_default().push(fila["kind"].as_str().unwrap_or("?").to_owned());
+            }
+        }
+    }
+    json!(esperadas.iter().map(|id| {
+        let clases = vistas.get(id).cloned().unwrap_or_default();
+        json!({"symbol": id.0, "flow": id.1, "u": id.2, "pending_at_final_drain": pendientes.contains(id),
+            "rows_in_gzip": clases.len(), "kinds": clases})
+    }).collect::<Vec<_>>())
 }
 
 // --- Criterios por caso ------------------------------------------------------------------------
@@ -443,6 +525,56 @@ fn comprobar(e: &Escenario, r: &Value) -> Vec<String> {
             exigir(desde >= plazo_ns.saturating_sub(vuelta), "la salida llego por el plazo, no antes");
             exigir(desde <= cota_superior_ns(plazo_ns, vuelta), "la salida llego dentro de la cota superior desde el marcador");
         }
+        // SALIDAFALLO-12 (C3 de la N1 v3).
+        "retener_l2" => {
+            exigir(end["status"] == "stopped" && ff.is_null() && end["stop_reason"] == "deadline", "parada sana por until_ms sin fatal");
+            exigir(finales_validos >= 1 && finales_validos == gz.len(), "todos los gzip finales con manifiesto valido");
+            let filas: u64 = gz.iter().filter_map(|g| g["rows"].as_u64()).sum();
+            exigir(end["rows"].as_u64() == Some(filas) && filas > 0, "filas de END = filas de los gzip");
+            exigir(r["l2_batch_state"] == 2, "el servidor envio el lote final");
+            let ret = r["l2_retained"].as_array().cloned().unwrap_or_default();
+            let flujos = |f: &str| ret.iter().filter(|x| x["flow"] == f).count();
+            exigir(flujos("depth") == SIMBOLOS.len() && flujos("ticker") == SIMBOLOS.len(), "una identidad depth y una ticker por simbolo en el lote");
+            exigir(ret.iter().all(|x| x["pending_at_final_drain"] == true), "cada identidad seguia en el arbitro al empezar drain_l2(.., true)");
+            exigir(ret.iter().all(|x| x["rows_in_gzip"] == 1 && x["kinds"][0] == "frame"), "cada identidad retenida esta una sola vez en los gzip");
+            exigir(contable(), "contabilidad de admision coherente");
+        }
+        "fallo_open" => {
+            let w = &sf["writer"]["failures"][0];
+            exigir(w["phase"] == "open" && w["state"] == "partial_no_creado", "fallo real de open con estado");
+            exigir(w["path"].as_str().is_some_and(|p| !Path::new(p).exists()), "el parcial no se creo");
+            exigir(r["injection_markers"].to_string().contains("fallo_open"), "el fallo actuo en Disk::create");
+        }
+        "fallo_handoff" => {
+            exigir(r["injection_markers"].to_string().contains("sellador_se_retira"), "el sellador se retiro tras el primer segmento");
+            let w = sf["writer"]["failures"].as_array().cloned().unwrap_or_default();
+            exigir(w.iter().any(|w| w["phase"] == "handoff" && w["state"] == "jsonl.gz.partial_conservado_sin_sellar"
+                && w["path"].as_str().is_some_and(|p| Path::new(p).exists())), "handoff fallido de verdad con el parcial conservado");
+            exigir(finales_validos >= 1, "el primer segmento quedo sellado y valido");
+        }
+        "fallo_gzip_finish" | "fallo_flush" | "fallo_hash" | "fallo_publish_gzip" => {
+            let fase = match e.nombre { "fallo_gzip_finish" => "gzip_finish", "fallo_flush" => "flush", "fallo_hash" => "sha256", _ => "publish_gzip" };
+            let s = &end["archive_seal"]["failures"][0];
+            exigir(s["phase"] == fase && s["state"] == "jsonl.gz.partial", "fallo real de la fase del sellado con su estado");
+            exigir(s["path"].as_str().is_some_and(|p| p.ends_with(".jsonl.gz.partial") && Path::new(p).exists()), "el parcial se conserva en su ruta");
+            exigir(r["injection_markers"].to_string().contains(&format!("fallo_{fase}")), "el fallo actuo en la fase");
+            exigir(!gz.iter().any(|g| g["final"] == true), "ningun gzip final publicado con el fallo");
+        }
+        "fallo_manifiesto_segundo" => {
+            let s = end["archive_seal"]["failures"].as_array().cloned().unwrap_or_default();
+            exigir(s.len() == 1 && s[0]["phase"] == "publish_manifest", "un solo fallo: el manifiesto del primer segmento");
+            let sin = gz.iter().find(|g| g["final"] == true && g["manifest"].is_null() && g["error"].is_null());
+            exigir(sin.is_some(), "primer gzip final integro sin manifiesto");
+            // Hora del segmento fallido, leida de su nombre (hour-<ms>-<n>). Los rezagados de esa misma
+            // hora (filas marcadas antes del desfase que llegan tras la rotacion) no cuentan como el
+            // segundo segmento: se exige uno sano de una hora posterior.
+            let hora_fallida: Option<u64> = sin.and_then(|a| a["path"].as_str()).and_then(|p| p.rsplit("hour-").next())
+                .and_then(|r| r.split('-').next()).and_then(|h| h.parse().ok());
+            let sano = gz.iter().find(|g| g["final"] == true && g["manifest_matches"] == true && g["error"].is_null()
+                && g["rows_outside_utc_hour"] == 0 && g["ingest_seq_not_increasing"] == 0 && g["rows"].as_u64() > Some(0)
+                && g["manifest"]["utc_hour_ms"].as_u64() > hora_fallida && hora_fallida.is_some());
+            exigir(sano.is_some(), "segundo segmento sellado sano, de la hora siguiente, tras el fallo del manifiesto");
+        }
         _ => exigir(false, "caso desconocido"),
     }
     f
@@ -474,6 +606,43 @@ fn p8_cota_superior_control() {
     assert_eq!(comprobar(&e, &otro), ["plazo efectivo en ns = deadline_ns de END"], "el plazo del informe debe ser el del hijo");
 }
 
+/// SALIDAFALLO-12 (C3): control del oraculo de retenidas y del segundo segmento sobre el mismo
+/// `comprobar`. El informe sano pasa; quitar una identidad del gzip, duplicarla o no verla pendiente
+/// en el drenaje final falla por su asercion, y un "segundo segmento" de la misma hora no basta.
+#[test]
+fn p8_criterios_c3_control() {
+    let e = *ESCENARIOS.iter().find(|e| e.nombre == "retener_l2").expect("escenario");
+    let ids: Vec<Value> = SIMBOLOS.iter().flat_map(|s| ["depth", "ticker"].map(|f| json!({"symbol": s, "flow": f, "u": 7,
+        "pending_at_final_drain": true, "rows_in_gzip": 1, "kinds": ["frame"]}))).collect();
+    let gz = json!([{"final": true, "manifest_matches": true, "error": null, "rows_outside_utc_hour": 0,
+        "ingest_seq_not_increasing": 0, "rows": 10}]);
+    let informe = |ids: Vec<Value>| json!({"killed_by_parent": false, "exit_code": 0, "l2_batch_state": 2, "l2_retained": ids, "gzip": gz,
+        "end": {"status": "stopped", "stop_reason": "deadline", "rows": 10, "salidafallo": {"first_fatal": null,
+            "admission": {"accounting": {"confirmed": 10, "written": 10, "unwritten": 0}}}}});
+    assert_eq!(comprobar(&e, &informe(ids.clone())), Vec::<String>::new(), "sano: pasa");
+    let mut falta = ids.clone();
+    falta[3]["rows_in_gzip"] = json!(0);
+    assert_eq!(comprobar(&e, &informe(falta)), ["cada identidad retenida esta una sola vez en los gzip"], "perdida: falla");
+    let mut doble = ids.clone();
+    doble[0]["rows_in_gzip"] = json!(2);
+    assert_eq!(comprobar(&e, &informe(doble)), ["cada identidad retenida esta una sola vez en los gzip"], "duplicada: falla");
+    let mut vencida = ids.clone();
+    vencida[5]["pending_at_final_drain"] = json!(false);
+    assert_eq!(comprobar(&e, &informe(vencida)), ["cada identidad seguia en el arbitro al empezar drain_l2(.., true)"], "no retenida: falla");
+    assert_eq!(comprobar(&e, &informe(ids[1..].to_vec())), ["una identidad depth y una ticker por simbolo en el lote"], "lote incompleto: falla");
+
+    let e = *ESCENARIOS.iter().find(|e| e.nombre == "fallo_manifiesto_segundo").expect("escenario");
+    let seg = |n: &str, hora: u64, man: bool| json!({"path": format!("x\\run-local-1-2\\hour-{hora}-{n}.jsonl.gz"), "final": true,
+        "error": null, "rows": 3, "rows_outside_utc_hour": 0, "ingest_seq_not_increasing": 0,
+        "manifest": if man { json!({"utc_hour_ms": hora}) } else { Value::Null }, "manifest_matches": man});
+    let informe = |gz: Value| json!({"killed_by_parent": false, "exit_code": 4, "gzip": gz,
+        "end": {"archive_seal": {"failures": [{"phase": "publish_manifest"}]}, "salidafallo": {}}});
+    let h = HOUR_MS;
+    assert_eq!(comprobar(&e, &informe(json!([seg("0001", h, false), seg("0002", 2 * h, true)]))), Vec::<String>::new(), "hora siguiente: pasa");
+    assert_eq!(comprobar(&e, &informe(json!([seg("0001", h, false), seg("0003", h, true)]))),
+        ["segundo segmento sellado sano, de la hora siguiente, tras el fallo del manifiesto"], "rezagado de la misma hora: falla");
+}
+
 // --- El caso ---------------------------------------------------------------------------------
 
 #[test]
@@ -495,9 +664,16 @@ fn p8_caso() -> CaptureResult<()> {
     let plazo_ms = e.plazo_ms.unwrap_or(salidafallo::PLAZO_FATAL.as_millis() as u64);
     // Plazo efectivo del hijo, exacto en ns (el de `plazo_ms` solo sirve para el tope del padre).
     let plazo_efectivo = e.plazo_ms.map_or(salidafallo::PLAZO_FATAL, Duration::from_millis);
+    // SALIDAFALLO-12 (C3): los casos que cruzan una hora desplazan la marca UTC del hijo; until_ms
+    // se da en esa misma escala para que la parada ordinaria no llegue antes de tiempo.
+    let caso_iny = e.inyectar.map(|c| inyeccion::desde_args(&["local".to_owned(), format!("inyectar={c}")]));
+    let desfase = match caso_iny {
+        Some(Ok(Some(c))) if inyeccion::usa_desfase(c) => inyeccion::DESFASE_CRUCE_MS,
+        _ => 0,
+    };
     let mut args = vec![
         "capture".to_owned(), "local".to_owned(), out.display().to_string(), roster.display().to_string(),
-        format!("until_ms={}", utc0 + e.until_s * 1000),
+        format!("until_ms={}", utc0 + e.until_s * 1000 + desfase),
         format!("ws_local={}", srv.ws), format!("rest_local=http://{}", srv.rest),
     ];
     if let Some(c) = e.inyectar {
@@ -532,8 +708,13 @@ fn p8_caso() -> CaptureResult<()> {
         if let Some(st) = child.try_wait()? {
             break st;
         }
-        if marcador.is_none() && fs::read_to_string(&stdout_p).is_ok_and(|s| s.contains("P8_INYECCION") && s.contains(" fatal control_ns=")) {
+        let visto = fs::read_to_string(&stdout_p).unwrap_or_default();
+        if marcador.is_none() && visto.contains("P8_INYECCION") && visto.contains(" fatal control_ns=") {
             marcador = Some(t0.elapsed());
+        }
+        // C3: con el arbitro ya congelado, el servidor envia el lote final identificable y calla public.
+        if e.nombre == "retener_l2" && srv.lote_l2.load(Ordering::SeqCst) == 0 && visto.contains("P8_INYECCION retener_l2 l2_congelado") {
+            srv.lote_l2.store(1, Ordering::SeqCst);
         }
         if t0.elapsed() >= tope {
             // Regla 8: solo el hijo propio, con su identidad comprobada por el mismo handle.
@@ -572,6 +753,9 @@ fn p8_caso() -> CaptureResult<()> {
         "simulated_deletions": stdout.lines().filter(|l| l.starts_with("P8_BORRADO_SIMULADO")).count(),
         "injection_markers": stdout.lines().filter(|l| l.starts_with("P8_INYECCION")).collect::<Vec<_>>(),
         "ws_connections": srv.conexiones.lock().map(|v| v.clone()).unwrap_or_default(),
+        "utc_shift_ms": desfase,
+        "l2_batch_state": srv.lote_l2.load(Ordering::SeqCst),
+        "l2_retained": filas_retenidas(&srv, &gz, &stdout),
         "rest_requests": srv.rest_pedidos.lock().map(|v| v.len()).unwrap_or_default(),
         "stdout": stdout, "stderr": stderr,
     });
