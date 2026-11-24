@@ -23,6 +23,66 @@ pub struct StoreConfig {
     pub scan_every: Duration,
     /// SALIDAFALLO P4c: compuerta nativa (comparte `cancel`). Ordena cada trabajo y cada borrado.
     pub gate: std::sync::Arc<CompuertaStore>,
+    /// FALLAS-1: reloj de store (monotono para STATUS y esperas, UTC para retencion), inyectable.
+    pub reloj: std::sync::Arc<dyn RelojStore>,
+}
+
+/// FALLAS-1: reloj que usa `run`. El monotono gobierna la cadencia de STATUS y la espera de avisos;
+/// el UTC solo la retencion y las marcas de los registros. Son independientes.
+pub trait RelojStore: Send + Sync {
+    /// Tiempo monotono transcurrido desde el origen fijo de este reloj (cero o positivo).
+    fn mono(&self) -> Duration;
+    /// Marca UTC en ms (retencion por edad).
+    fn utc_ms(&self) -> u64;
+    /// Espera un aviso de hora sellada como mucho `max`.
+    fn esperar(&self, sealed: &mpsc::Receiver<(PathBuf, String)>, max: Duration) -> Result<(), mpsc::RecvTimeoutError>;
+}
+
+/// Reloj de produccion: el origen es el `Instant` de su creacion; nunca se resta nada a un `Instant`.
+pub struct RelojStoreReal {
+    origen: Instant,
+}
+
+impl RelojStoreReal {
+    pub fn nuevo() -> Self {
+        Self { origen: Instant::now() }
+    }
+}
+
+impl RelojStore for RelojStoreReal {
+    fn mono(&self) -> Duration {
+        self.origen.elapsed()
+    }
+    fn utc_ms(&self) -> u64 {
+        utc_ms()
+    }
+    fn esperar(&self, sealed: &mpsc::Receiver<(PathBuf, String)>, max: Duration) -> Result<(), mpsc::RecvTimeoutError> {
+        sealed.recv_timeout(max).map(|_| ())
+    }
+}
+
+/// FALLAS-1: cadencia de STATUS sin inventar un instante anterior al actual. La primera publicacion
+/// queda pendiente (`None`) y se hace en la primera vuelta que supera las guardas; despues toca cuando
+/// el tiempo monotono transcurrido desde la ultima publicacion, comprobado con `checked_sub`, alcanza
+/// `cada`. Un reloj que retrocediera no adelanta la publicacion.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct CadenciaStatus {
+    ultima: Option<Duration>,
+}
+
+impl CadenciaStatus {
+    pub(crate) fn pendiente() -> Self {
+        Self { ultima: None }
+    }
+    pub(crate) fn toca(&self, ahora: Duration, cada: Duration) -> bool {
+        match self.ultima {
+            None => true,
+            Some(t) => ahora.checked_sub(t).is_some_and(|transcurrido| transcurrido >= cada),
+        }
+    }
+    pub(crate) fn publicada(&mut self, ahora: Duration) {
+        self.ultima = Some(ahora);
+    }
 }
 
 /// Borrado de recode: con configuracion de captura pasa por la compuerta; sin ella (CLI y
@@ -320,14 +380,14 @@ fn verify_archive_group(g: &Group) -> CaptureResult<()> {
 pub fn run(cfg: StoreConfig, sealed: mpsc::Receiver<(PathBuf, String)>, stop_tx: &mut Option<tokio::sync::oneshot::Sender<StoreStop>>) {
     crate::inyeccion::store_al_empezar(&cfg.gate);
     let mut failed = std::collections::HashSet::new();
-    let mut last_status = Instant::now() - cfg.scan_every;
+    let mut status = CadenciaStatus::pendiente();
     loop {
         if cfg.cancel.load(std::sync::atomic::Ordering::Acquire) { return; }
         let free = match space(&cfg.root, cfg.min_free_bytes) {
             Ok(free) => free,
             Err(stop) => { signal_stop(&cfg.root, stop_tx, stop); return; }
         };
-        let now = utc_ms();
+        let now = cfg.reloj.utc_ms();
         let (groups, total, _) = scan(&cfg.root);
         let mut deleted = Vec::new();
         for g in groups.iter().filter(|g| g.recoded && expired(g.expiry_anchor_ms, now, cfg.retention_ms)) {
@@ -358,8 +418,9 @@ pub fn run(cfg: StoreConfig, sealed: mpsc::Receiver<(PathBuf, String)>, stop_tx:
         }
         // Releer el disco: nunca publicar como existentes grupos ya borrados ni restas supuestas.
         let (groups, total_now, pending) = scan(&cfg.root);
-        if last_status.elapsed() >= cfg.scan_every || !deleted.is_empty() {
-            last_status = Instant::now();
+        let ahora = cfg.reloj.mono();
+        if status.toca(ahora, cfg.scan_every) || !deleted.is_empty() {
+            status.publicada(ahora);
             let recoded: Vec<&Group> = groups.iter().filter(|g| g.recoded).collect();
             let bytes: u64 = recoded.iter().map(|g| g.tgll_bytes).sum();
             let span: u64 = recoded.iter().map(|g| g.span_ms).sum();
@@ -414,8 +475,8 @@ pub fn run(cfg: StoreConfig, sealed: mpsc::Receiver<(PathBuf, String)>, stop_tx:
             }
             continue;
         }
-        match sealed.recv_timeout(cfg.scan_every) {
-            Ok(_) | Err(mpsc::RecvTimeoutError::Timeout) => {}
+        match cfg.reloj.esperar(&sealed, cfg.scan_every) {
+            Ok(()) | Err(mpsc::RecvTimeoutError::Timeout) => {}
             Err(mpsc::RecvTimeoutError::Disconnected) => return,
         }
     }
@@ -428,6 +489,10 @@ fn write_json_replace(path: &Path, value: &Value) -> io::Result<()> {
 }
 
 #[cfg(test)]
+#[path = "store_reloj_tests.rs"]
+mod reloj_tests;
+
+#[cfg(test)]
 mod retention_tests {
     use super::*;
     use flate2::{Compression, write::GzEncoder};
@@ -437,26 +502,26 @@ mod retention_tests {
     const RETAIN: u64 = crate::RETENTION_MS;
     static NEXT_FIXTURE: AtomicU64 = AtomicU64::new(0);
 
-    struct DiskReading { free: u64, calls: usize }
+    pub(super) struct DiskReading { free: u64, calls: usize, falla: bool }
     thread_local! {
         static DISK_READING: RefCell<Option<DiskReading>> = const { RefCell::new(None) };
     }
 
     // No se llena el SSD ni se cambia su umbral real. Cada test controla solo su hilo.
-    struct DiskProbe;
+    pub(super) struct DiskProbe;
     impl DiskProbe {
-        fn new(free: u64) -> Self {
+        pub(super) fn new(free: u64) -> Self {
             DISK_READING.with(|slot| {
                 let mut slot = slot.borrow_mut();
                 assert!(slot.is_none(), "inyeccion de disco anidada");
-                *slot = Some(DiskReading { free, calls: 0 });
+                *slot = Some(DiskReading { free, calls: 0, falla: false });
             });
             Self
         }
-        fn set(&self, free: u64) {
+        pub(super) fn set(&self, free: u64) {
             DISK_READING.with(|slot| slot.borrow_mut().as_mut().unwrap().free = free);
         }
-        fn calls(&self) -> usize {
+        pub(super) fn calls(&self) -> usize {
             DISK_READING.with(|slot| slot.borrow().as_ref().unwrap().calls)
         }
     }
@@ -469,20 +534,37 @@ mod retention_tests {
         let injected = DISK_READING.with(|slot| {
             slot.borrow_mut().as_mut().map(|reading| {
                 reading.calls += 1;
-                reading.free
+                (reading.free, reading.falla)
             })
         });
-        injected.map_or_else(|| free_bytes(root), Ok)
+        match injected {
+            // FALLAS-1 (A32): error real devuelto por la sonda inyectada, no una cifra supuesta.
+            Some((_, true)) => Err(io::Error::other("sonda de disco inyectada: fallo de lectura")),
+            Some((free, false)) => Ok(free),
+            None => free_bytes(root),
+        }
+    }
+    /// FALLAS-1: lectura de disco de la sonda del hilo, desde el guion de un reloj de prueba.
+    pub(super) fn fijar_disco(free: u64, falla: bool) {
+        DISK_READING.with(|slot| {
+            if let Some(r) = slot.borrow_mut().as_mut() {
+                r.free = free;
+                r.falla = falla;
+            }
+        });
+    }
+    pub(super) fn llamadas_disco() -> usize {
+        DISK_READING.with(|slot| slot.borrow().as_ref().map_or(0, |r| r.calls))
     }
 
-    struct Fixture {
-        root: PathBuf,
-        dir: PathBuf,
-        name: String,
-        gzip: Vec<u8>,
+    pub(super) struct Fixture {
+        pub(super) root: PathBuf,
+        pub(super) dir: PathBuf,
+        pub(super) name: String,
+        pub(super) gzip: Vec<u8>,
     }
     impl Fixture {
-        fn sealed() -> CaptureResult<Self> {
+        pub(super) fn sealed() -> CaptureResult<Self> {
             let stamp = SystemTime::now().duration_since(UNIX_EPOCH)?.as_nanos();
             let root = Path::new(env!("CARGO_MANIFEST_DIR")).join(".retention-tests").join(format!(
                 "{}-{stamp}-{}", std::process::id(), NEXT_FIXTURE.fetch_add(1, Ordering::Relaxed)));
@@ -505,7 +587,7 @@ mod retention_tests {
             fixture.put_json(".manifest.json", &m)?;
             Ok(fixture)
         }
-        fn archived_with_gzip() -> CaptureResult<Self> {
+        pub(super) fn archived_with_gzip() -> CaptureResult<Self> {
             let fixture = Self::sealed()?;
             recode(&fixture.dir, &fixture.name, Self::params())?;
             assert!(!fixture.path(".jsonl.gz").exists());
@@ -513,11 +595,11 @@ mod retention_tests {
             fs::write(fixture.path(".jsonl.gz"), &fixture.gzip)?;
             Ok(fixture)
         }
-        fn params() -> codec::Params {
+        pub(super) fn params() -> codec::Params {
             // Parametros pequenos del fixture ya usados por los tests de main.rs.
             codec::Params { zstd_level: 3, block_raw_bytes: 1 << 20, window_log: 20 }
         }
-        fn path(&self, ext: &str) -> PathBuf { self.dir.join(format!("{}{ext}", self.name)) }
+        pub(super) fn path(&self, ext: &str) -> PathBuf { self.dir.join(format!("{}{ext}", self.name)) }
         fn get_json(&self, ext: &str) -> CaptureResult<Value> {
             Ok(serde_json::from_reader(File::open(self.path(ext))?)?)
         }
@@ -533,12 +615,12 @@ mod retention_tests {
             assert!(group.expiry_anchor_ms.is_some());
             group
         }
-        fn cfg(&self) -> StoreConfig {
+        pub(super) fn cfg(&self) -> StoreConfig {
             let cancel = Arc::new(AtomicBool::new(false));
             StoreConfig { root: self.root.clone(), retention_ms: RETAIN,
                 cancel: Arc::clone(&cancel), min_free_bytes: crate::MIN_FREE_BYTES,
                 codec: Self::params(), scan_every: crate::STORE_SCAN_EVERY,
-                gate: Arc::new(CompuertaStore::real(cancel)) }
+                gate: Arc::new(CompuertaStore::real(cancel)), reloj: Arc::new(RelojStoreReal::nuevo()) }
         }
         fn run_once(&self) -> Option<StoreStop> {
             let (sealed_tx, sealed_rx) = mpsc::channel();
@@ -553,7 +635,7 @@ mod retention_tests {
                 Err(error) => panic!("run no cerro el canal: {error}"),
             }
         }
-        fn assert_gzip_kept(&self) -> CaptureResult<()> {
+        pub(super) fn assert_gzip_kept(&self) -> CaptureResult<()> {
             assert_eq!(fs::read(self.path(".jsonl.gz"))?, self.gzip);
             Ok(())
         }

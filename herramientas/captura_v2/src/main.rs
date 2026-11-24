@@ -1786,7 +1786,7 @@ async fn capture(args: &[String], ctl: Arc<Control>) -> CaptureResult<CaptureEnd
     }
     let store_cfg = store::StoreConfig { root: root.clone(), retention_ms: RETENTION_MS,
         cancel: Arc::clone(&ctl.store.cancel), min_free_bytes, codec: codec_p, scan_every: STORE_SCAN_EVERY,
-        gate: Arc::clone(&ctl.store) };
+        gate: Arc::clone(&ctl.store), reloj: Arc::new(store::RelojStoreReal::nuevo()) };
     let store_exit = Arc::new(salidafallo::SalidaStore::nueva());
     let store_finished = Arc::new(std::sync::atomic::AtomicBool::new(false));
     let store_thread = {
