@@ -19,6 +19,8 @@ use salidafallo::{Admision, Clase, Control};
 mod banco_local;
 #[cfg(test)]
 mod banco_p8;
+#[cfg(test)]
+mod cola_tests;
 
 use flate2::{Compression, write::GzEncoder};
 use futures_util::{SinkExt, StreamExt};
@@ -55,12 +57,17 @@ type Socket = WebSocketStream<MaybeTlsStream<tokio::net::TcpStream>>;
 const HOUR_MS: u64 = 3_600_000;
 /// Spec 2.1: 8 conexiones = 4 shards /public + 4 shards /market (10 simbolos por shard).
 const SHARDS_PER_ROUTE: usize = 4;
-/// Spec 2.7: 8.192 filas (v1) x 10,74 (carga v2 / pico horario v1) = 87.844 -> potencia de 2 superior.
-const QUEUE_CAPACITY: usize = 131_072;
+// FALLAS-2: la capacidad de filas ya no es un literal (r3b/v4: 131.072 = 8.192 filas de v1 x 10,74
+// redondeado, sin relacion con el presupuesto de bytes). Se deriva en codigo, en `derivar_capacidad`,
+// como floor(QUEUE_BYTE_BUDGET / ROW_CHARGE_OVERHEAD): cada fila admitida retiene al menos
+// ROW_CHARGE_OVERHEAD permisos del presupuesto hasta que el escritor termina de procesarla, asi que el
+// presupuesto se agota antes que las plazas y la barrera de filas deja de rechazar con bytes libres.
 /// Spec 2.7: 32 MiB (v1) x 10,74 = 342 MiB -> potencia de 2 superior.
 const QUEUE_BYTE_BUDGET: usize = 512 * 1024 * 1024;
-/// v1 main.rs:34.
+/// v1 main.rs:34. Cargo minimo garantizado por fila (el cargo real es este mas los bytes de texto).
 const ROW_CHARGE_OVERHEAD: usize = 2_048;
+/// Formula de la capacidad de filas que se publica en RUN.json y END.json.
+const QUEUE_CAPACITY_FORMULA: &str = "floor(queue_byte_budget / queue_row_overhead_charge)";
 /// v1 main.rs:35.
 const SEAL_QUEUE_CAPACITY: usize = 2;
 /// v1 main.rs:36.
@@ -362,8 +369,49 @@ struct QueuedRow {
     _charge: OwnedSemaphorePermit,
 }
 
+/// FALLAS-2: capacidad de la cola de archivo y sus insumos, tal como se usan y se publican.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct CapacidadCola {
+    filas: usize,
+    presupuesto_bytes: usize,
+    cargo_minimo_fila: usize,
+}
+
+impl CapacidadCola {
+    fn json(&self) -> Value {
+        json!({"rows": self.filas, "byte_budget": self.presupuesto_bytes,
+            "row_min_charge": self.cargo_minimo_fila, "formula": QUEUE_CAPACITY_FORMULA})
+    }
+}
+
+/// FALLAS-2: C = floor(B / q_min) con sus precondiciones. Toda fila admitida retiene q_i >= q_min
+/// permisos de B mientras ocupa una plaza (se reservan antes que la plaza y se sueltan despues de
+/// procesarla), asi que plazas ocupadas <= cargos vivos <= floor(B / q_min) = C y (C + 1) * q_min > B:
+/// la plaza C + 1 nunca hace falta mientras quede presupuesto para el cargo minimo.
+///
+/// Limites de las APIs: `try_acquire_many_owned` toma u32, asi que B <= u32::MAX (un cargo q_i <= B
+/// siempre se convierte); `Semaphore::new` y `mpsc::channel` exigen permisos y plazas <=
+/// `Semaphore::MAX_PERMITS`, y el canal ademas una plaza como minimo (B >= q_min > 0).
+fn derivar_capacidad(presupuesto_bytes: usize, cargo_minimo_fila: usize) -> Result<CapacidadCola, String> {
+    if cargo_minimo_fila == 0 {
+        return Err("cola de archivo: cargo minimo por fila nulo".into());
+    }
+    if presupuesto_bytes < cargo_minimo_fila {
+        return Err(format!("cola de archivo: presupuesto {presupuesto_bytes} B menor que el cargo minimo {cargo_minimo_fila} B"));
+    }
+    if presupuesto_bytes > u32::MAX as usize || presupuesto_bytes > Semaphore::MAX_PERMITS {
+        return Err(format!("cola de archivo: presupuesto {presupuesto_bytes} B fuera de u32 o de Semaphore::MAX_PERMITS"));
+    }
+    let filas = presupuesto_bytes / cargo_minimo_fila;
+    Ok(CapacidadCola { filas, presupuesto_bytes, cargo_minimo_fila })
+}
+
 #[derive(Default)]
 struct QueueAudit {
+    /// FALLAS-2: capacidad efectiva (None solo en las colas de prueba de capacidad explicita).
+    capacidad: Option<CapacidadCola>,
+    /// FALLAS-2 (A17/A42): presupuesto compartido con la cola, para la foto final de bytes retenidos.
+    budget: Option<(Arc<Semaphore>, usize)>,
     accepted: AtomicUsize,
     dequeued: AtomicUsize,
     peak_rows: AtomicUsize,
@@ -380,6 +428,10 @@ impl QueueAudit {
         self.dequeued.fetch_add(1, Ordering::Relaxed);
     }
 
+    fn charged_bytes(&self) -> Option<usize> {
+        self.budget.as_ref().map(|(b, limit)| limit - b.available_permits())
+    }
+
     fn failure_reason(&self) -> Option<&'static str> {
         match self.first_failure.lock() {
             Ok(reason) => *reason,
@@ -389,7 +441,7 @@ impl QueueAudit {
 
     fn stop_reason(&self, fallback: &'static str, exit: u8) -> &'static str {
         match self.failure_reason() {
-            Some("row_capacity" | "byte_budget") if exit == 0 => "archive_queue_full",
+            Some("row_capacity" | "byte_budget" | "row_exceeds_budget") if exit == 0 => "archive_queue_full",
             _ => fallback,
         }
     }
@@ -455,6 +507,8 @@ struct ArchiveQueue {
     tx: mpsc::Sender<QueuedRow>,
     budget: Arc<Semaphore>,
     byte_limit: usize,
+    /// FALLAS-2: el mismo q_min de la derivacion es la base del cargo de cada oferta.
+    row_min_charge: usize,
     audit: Arc<QueueAudit>,
     admission: Arc<Admision>,
     #[cfg(test)]
@@ -467,13 +521,30 @@ impl ArchiveQueue {
         Self::with_admission(capacity, byte_limit, Arc::new(Admision::nueva()))
     }
 
+    /// Cola de prueba con capacidad de filas explicita (fixtures de los casos heredados que ejercen la
+    /// rama defensiva `row_capacity` o un canal pequeno). Produccion usa `derivada`.
+    #[cfg(test)]
     fn with_admission(capacity: usize, byte_limit: usize, admission: Arc<Admision>) -> (Self, ArchiveReceiver) {
+        Self::construir(capacity, byte_limit, ROW_CHARGE_OVERHEAD, None, admission)
+    }
+
+    /// FALLAS-2: cola de produccion. La capacidad de filas sale de `derivar_capacidad`.
+    fn derivada(byte_limit: usize, row_min_charge: usize, admission: Arc<Admision>) -> Result<(Self, ArchiveReceiver, CapacidadCola), String> {
+        let c = derivar_capacidad(byte_limit, row_min_charge)?;
+        let (q, rx) = Self::construir(c.filas, c.presupuesto_bytes, c.cargo_minimo_fila, Some(c), admission);
+        Ok((q, rx, c))
+    }
+
+    fn construir(capacity: usize, byte_limit: usize, row_min_charge: usize, capacidad: Option<CapacidadCola>,
+        admission: Arc<Admision>) -> (Self, ArchiveReceiver) {
         let (tx, rx) = mpsc::channel(capacity);
-        let audit = Arc::new(QueueAudit::default());
+        let budget = Arc::new(Semaphore::new(byte_limit));
+        let audit = Arc::new(QueueAudit { capacidad, budget: Some((Arc::clone(&budget), byte_limit)), ..QueueAudit::default() });
         let queue = Self {
             tx,
-            budget: Arc::new(Semaphore::new(byte_limit)),
+            budget,
             byte_limit,
+            row_min_charge,
             audit: Arc::clone(&audit),
             admission,
             #[cfg(test)]
@@ -481,6 +552,19 @@ impl ArchiveQueue {
         };
         (queue, ArchiveReceiver { rx, audit })
     }
+
+    /// FALLAS-2: cargo de una fila: q_min mas los bytes de sus valores de texto de primer nivel
+    /// (payload, stream, simbolo...), con suma saturada. q_i >= q_min por construccion.
+    fn charge_of(&self, row: &Value) -> usize {
+        let text_bytes = row
+            .as_object()
+            .into_iter()
+            .flat_map(|fields| fields.values())
+            .filter_map(Value::as_str)
+            .fold(0usize, |sum, value| sum.saturating_add(value.len()));
+        self.row_min_charge.saturating_add(text_bytes)
+    }
+
 
     #[cfg(test)]
     fn pause_at(&self, point: OfferPoint) {
@@ -498,13 +582,7 @@ impl ArchiveQueue {
             ))
             .into());
         };
-        let text_bytes = row
-            .as_object()
-            .into_iter()
-            .flat_map(|fields| fields.values())
-            .filter_map(Value::as_str)
-            .fold(0usize, |sum, value| sum.saturating_add(value.len()));
-        let charged = ROW_CHARGE_OVERHEAD.saturating_add(text_bytes);
+        let charged = self.charge_of(&row);
         // Reserve and send under the same admission guard as the first rejection.
         let mut failure = self.audit.first_failure.lock()
             .map_err(|_| io::Error::other("archive queue admission lock poisoned"))?;
@@ -515,6 +593,11 @@ impl ArchiveQueue {
         }
         if self.tx.is_closed() {
             return self.reject(&mut failure, &row, "writer_unavailable", charged);
+        }
+        // FALLAS-2 (A36): una fila cuyo cargo no cabe ni con la cola vacia se rechaza con su causa,
+        // sin reservar nada (incluye cargos saturados o fuera de u32).
+        if charged > self.byte_limit {
+            return self.reject(&mut failure, &row, "row_exceeds_budget", charged);
         }
         let charge = match u32::try_from(charged)
             .ok()
@@ -585,6 +668,14 @@ impl ArchiveQueue {
             "row_charge_bytes":charged,
             "queue_occupied":self.tx.max_capacity() - self.tx.capacity(),
             "charged_bytes":self.byte_limit - self.budget.available_permits(),
+            // FALLAS-2 (A17): foto del primer rechazo con la capacidad efectiva y su derivacion. El
+            // cargo tentativo (row_charge_bytes) solo esta dentro de charged_bytes en `row_capacity`
+            // (reservado antes de pedir la plaza, se suelte al volver); en las demas causas no se reservo.
+            "phase":"first_rejection",
+            "queue_capacity_rows":self.tx.max_capacity(), "byte_budget":self.byte_limit,
+            "row_min_charge":self.row_min_charge,
+            "capacity_derivation":self.audit.capacidad.map(|c| c.json()),
+            "oferta_id":row["oferta_id"],
         });
         match self.audit.rejected.lock() {
             Ok(mut rows) => rows.push(failure),
@@ -844,7 +935,7 @@ fn archive<D: Disk>(
     ctl: &Control,
 ) -> ArchiveOutcome {
     ctl.admision.registrar_escritor(thread::current());
-    inyeccion::escritor_antes_de_drenar(&ctl.admision);
+    inyeccion::escritor_antes_de_drenar(&ctl.admision, &|| rx.audit.accepted.load(Ordering::Relaxed));
     let mut out = ArchiveOutcome::default();
     // SALIDAFALLO-9 (N2 3.2): medicion del drenaje de la cola desde que el escritor ve el corte.
     let mut cut_seen: Option<(Instant, u64)> = None;
@@ -1728,6 +1819,9 @@ async fn capture(args: &[String], ctl: Arc<Control>) -> CaptureResult<CaptureEnd
             "storm_reserve_per_min":800,"baseline_weight_per_min":16,
             "pilot_interval_floor_s":44,"pilot_interval_s":300},
     });
+    // FALLAS-2: cola de produccion con la capacidad derivada; la misma derivacion va a RUN.json.
+    let (queue, rx, capacidad_cola) = ArchiveQueue::derivada(QUEUE_BYTE_BUDGET, ROW_CHARGE_OVERHEAD, Arc::clone(&ctl.admision))
+        .map_err(io::Error::other)?;
     write_json(
         &dir.join("RUN.json"),
         &json!({
@@ -1736,8 +1830,9 @@ async fn capture(args: &[String], ctl: Arc<Control>) -> CaptureResult<CaptureEnd
             "shards": shard_defs.iter().map(|(i,r,s,u,b)| json!({"shard":i,"route":r,"symbols":s,"url":u,"roster_base":b,"streams":u.split("streams=").nth(1).map(|x| x.split('/').count())})).collect::<Vec<_>>(),
             "snapshot_rest":venue.rest,"started_utc_ms":start.utc_ms,"until_utc_ms":until,
             "parameters":{
-                "queue_capacity":QUEUE_CAPACITY, "queue_byte_budget":QUEUE_BYTE_BUDGET,
-                "queue_row_overhead_charge":ROW_CHARGE_OVERHEAD, "seal_queue_capacity":SEAL_QUEUE_CAPACITY,
+                "queue_capacity":capacidad_cola.filas, "queue_byte_budget":capacidad_cola.presupuesto_bytes,
+                "queue_row_overhead_charge":capacidad_cola.cargo_minimo_fila,
+                "queue_capacity_formula":QUEUE_CAPACITY_FORMULA, "seal_queue_capacity":SEAL_QUEUE_CAPACITY,
                 "rotation_grace_ms":ROTATION_GRACE_MS, "rotate_after_ms":rotate_after.as_millis() as u64,
                 "rotation_stagger_ms":(rotate_after / total_shards as u32).as_millis() as u64,
                 "overlap_grace_ms":OVERLAP_GRACE.as_millis() as u64, "hold_max_ms":HOLD_MAX.as_millis() as u64,
@@ -1772,7 +1867,6 @@ async fn capture(args: &[String], ctl: Arc<Control>) -> CaptureResult<CaptureEnd
         client = client.no_proxy();
     }
     let client = client.build()?;
-    let (queue, rx) = ArchiveQueue::with_admission(QUEUE_CAPACITY, QUEUE_BYTE_BUDGET, Arc::clone(&ctl.admision));
     let audit = Arc::clone(&queue.audit);
     let (sealed_tx, sealed_rx) = blocking_channel::channel();
     let (low_tx, low_rx) = oneshot::channel::<store::StoreStop>();
@@ -2132,6 +2226,11 @@ fn finish_capture<D: Disk>(p: FinishParts, disk: &D) {
                 "max_dequeue_age_ns":p.audit.max_dequeue_age_ns.load(Ordering::Relaxed),
                 "failure_reason":p.audit.failure_reason(),
                 "rejected_rows":rejected,
+                // FALLAS-2 (A17): capacidad efectiva y su derivacion, y estado al componer END (distinto
+                // de la foto del primer rechazo, que va en rejected_rows[0]).
+                "capacity":p.audit.capacidad.map(|c| c.json()),
+                "at_end_charged_bytes":p.audit.charged_bytes(),
+                "at_end_rows_not_dequeued":enqueued.saturating_sub(p.audit.dequeued.load(Ordering::Relaxed)),
             },
             "archive_seal":seal_telemetry,
             "salidafallo":{

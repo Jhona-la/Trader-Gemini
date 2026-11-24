@@ -46,9 +46,11 @@ pub enum Caso {
     FalloHash,
     FalloPublishGzip,
     FalloManifiestoSegundo,
+    // FALLAS-2: escritor detenido hasta superar la barrera de filas de r3b.
+    BarreraFilas,
 }
 
-const CASOS: [(&str, Caso); 26] = [
+const CASOS: [(&str, Caso); 27] = [
     ("panic_tarea", Caso::PanicTarea),
     ("fin_tarea", Caso::FinTarea),
     ("cancelar_conexion_market", Caso::CancelarConexionMarket),
@@ -75,6 +77,7 @@ const CASOS: [(&str, Caso); 26] = [
     ("fallo_hash", Caso::FalloHash),
     ("fallo_publish_gzip", Caso::FalloPublishGzip),
     ("fallo_manifiesto_segundo", Caso::FalloManifiestoSegundo),
+    ("barrera_filas", Caso::BarreraFilas),
 ];
 
 impl Caso {
@@ -199,13 +202,30 @@ pub fn tras_confirmar() {
     }
 }
 
-/// archive, antes de drenar: con cola_llena el escritor no saca filas hasta el corte fatal.
-pub fn escritor_antes_de_drenar(adm: &Admision) {
+/// archive, antes de drenar: con cola_llena el escritor no saca filas hasta el corte fatal. Con
+/// barrera_filas (FALLAS-2) no saca filas hasta que la cola haya aceptado mas filas que la capacidad
+/// antigua de r3b (fixture del incidente), o hasta un corte.
+pub fn escritor_antes_de_drenar(adm: &Admision, aceptadas: &dyn Fn() -> usize) {
     if es(Caso::ColaLlena) {
         marcar("escritor_detenido");
         esperar_corte(adm);
         marcar("escritor_reanudado");
+    } else if es(Caso::BarreraFilas) {
+        let barrera = barrera_r3b_filas();
+        marcar(&format!("escritor_detenido barrera={barrera}"));
+        while aceptadas() <= barrera && !adm.cortada() {
+            thread::sleep(Duration::from_millis(1));
+        }
+        marcar(&format!("escritor_reanudado aceptadas={}", aceptadas()));
     }
+}
+
+/// FALLAS-2: capacidad de filas fija de r3b, leida de la fixture versionada del incidente
+/// (RUN.json:24 del run terminado en 29060), no de una constante del colector.
+pub fn barrera_r3b_filas() -> usize {
+    const FIXTURE: &str = include_str!("../fixtures/fallas/incidente_29060_cola.json");
+    serde_json::from_str::<serde_json::Value>(FIXTURE).ok()
+        .and_then(|v| v["queue_capacity"].as_u64()).map_or(usize::MAX, |c| c as usize)
 }
 
 /// store::run, al empezar: con store_ocupado el hilo admite una operacion y no vuelve.
@@ -448,7 +468,7 @@ pub async fn inyector(
             DESFASE_UTC_MS.store(DESFASE_CRUCE_MS, Ordering::SeqCst);
             marcar("desfase_utc");
         }
-        Caso::FalloOpen => {}
+        Caso::FalloOpen | Caso::BarreraFilas => {}
         Caso::SelladorBloqueado => {
             armar();
             fatal("fatal con el sellador por bloquearse (inyectado)");

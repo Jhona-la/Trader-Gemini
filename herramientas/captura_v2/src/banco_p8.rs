@@ -26,8 +26,9 @@ use tokio::{
 const SIMBOLOS: [&str; 4] = ["FSTUSDT", "SNDUSDT", "TRDUSDT", "FTHUSDT"];
 /// Ritmo del generador sintetico del servidor (parametro del banco, no una cifra del colector).
 const PASO_SERVIDOR: Duration = Duration::from_millis(20);
-/// Rafaga de aggTrade para llenar la cola de archivo: el doble de su capacidad de filas.
-const RAFAGA: usize = 2 * QUEUE_CAPACITY;
+/// Rafaga de aggTrade para agotar la cola de archivo: el doble de su capacidad de filas derivada,
+/// floor(B / q_min) (FALLAS-2). Cada trama cobra al menos q_min, asi que basta para agotar B.
+const RAFAGA: usize = 2 * (QUEUE_BYTE_BUDGET / ROW_CHARGE_OVERHEAD);
 /// Margen del tope del padre sobre la duracion pedida y el plazo (preparacion y arranque). No es
 /// parte de la cota del colector: si el padre llega a su tope, el caso es FALLO.
 const MARGEN_PADRE: Duration = Duration::from_secs(120);
@@ -39,7 +40,13 @@ enum Modo {
     CerrarUnaVez,
     /// La primera conexion market recibe una rafaga de RAFAGA tramas.
     Rafaga,
+    /// FALLAS-2: la primera conexion market recibe barrera r3b + RAFAGA_EXTRA tramas aggTrade.
+    RafagaBarrera,
 }
+
+/// FALLAS-2: tramas de la rafaga de barrera_filas por encima de la capacidad antigua (parametro del
+/// banco: asegura que la testigo C_antigua + 1 y algunas mas lleguen con el escritor detenido).
+const RAFAGA_EXTRA: usize = 4_096;
 
 #[derive(Clone, Copy)]
 struct Escenario {
@@ -58,7 +65,7 @@ struct Escenario {
 /// defecto (eso lo hace `salida_bloqueada_plazo_defecto`).
 const PLAZO_ENSAYO_MS: Option<u64> = Some(20_000);
 
-const ESCENARIOS: [Escenario; 28] = [
+const ESCENARIOS: [Escenario; 29] = [
     Escenario { nombre: "sana", inyectar: None, codigos: &[0], plazo_ms: None, until_s: 40, modo: Modo::CerrarUnaVez },
     Escenario { nombre: "panic_tarea", inyectar: Some("panic_tarea"), codigos: &[1], plazo_ms: PLAZO_ENSAYO_MS, until_s: 120, modo: Modo::Normal },
     Escenario { nombre: "fin_tarea", inyectar: Some("fin_tarea"), codigos: &[1], plazo_ms: PLAZO_ENSAYO_MS, until_s: 120, modo: Modo::Normal },
@@ -89,6 +96,8 @@ const ESCENARIOS: [Escenario; 28] = [
     Escenario { nombre: "fallo_hash", inyectar: Some("fallo_hash"), codigos: &[4], plazo_ms: None, until_s: 30, modo: Modo::Normal },
     Escenario { nombre: "fallo_publish_gzip", inyectar: Some("fallo_publish_gzip"), codigos: &[4], plazo_ms: None, until_s: 30, modo: Modo::Normal },
     Escenario { nombre: "fallo_manifiesto_segundo", inyectar: Some("fallo_manifiesto_segundo"), codigos: &[4], plazo_ms: PLAZO_ENSAYO_MS, until_s: 120, modo: Modo::Normal },
+    // FALLAS-2: barrera antigua de filas con presupuesto disponible, en el exe y con parada sana.
+    Escenario { nombre: "barrera_filas", inyectar: Some("barrera_filas"), codigos: &[0], plazo_ms: None, until_s: 90, modo: Modo::RafagaBarrera },
 ];
 
 // --- Servidores locales ----------------------------------------------------------------------
@@ -117,6 +126,8 @@ struct Servidor {
     lote_l2: Arc<AtomicU64>,
     /// Identidades del lote final, fijadas por el servidor ANTES de enviarlo: (simbolo, flujo, u).
     retenidas: Arc<Mutex<Vec<(String, &'static str, u64)>>>,
+    /// FALLAS-2: (simbolo, primer a, ultimo a) de la rafaga enviada, fijados por el servidor.
+    rafaga: Arc<Mutex<Option<(String, u64, u64)>>>,
 }
 
 async fn servidor(modo: Modo) -> CaptureResult<Servidor> {
@@ -130,6 +141,7 @@ async fn servidor(modo: Modo) -> CaptureResult<Servidor> {
     let a: Arc<Vec<AtomicU64>> = Arc::new(SIMBOLOS.iter().map(|_| AtomicU64::new(1)).collect());
     let lote_l2 = Arc::new(AtomicU64::new(0));
     let retenidas: Arc<Mutex<Vec<(String, &'static str, u64)>>> = Arc::default();
+    let rafaga_rango: Arc<Mutex<Option<(String, u64, u64)>>> = Arc::default();
     {
         let (tx_pub, tx_mkt, u, a) = (tx_pub.clone(), tx_mkt.clone(), Arc::clone(&u), Arc::clone(&a));
         let (lote_l2, retenidas) = (Arc::clone(&lote_l2), Arc::clone(&retenidas));
@@ -171,6 +183,7 @@ async fn servidor(modo: Modo) -> CaptureResult<Servidor> {
     {
         let conexiones = Arc::clone(&conexiones);
         let a = Arc::clone(&a);
+        let rafaga_rango = Arc::clone(&rafaga_rango);
         tokio::spawn(async move {
             let (mut cerrada_pub, mut cerrada_mkt, mut rafaga_hecha) = (false, false, false);
             loop {
@@ -190,16 +203,25 @@ async fn servidor(modo: Modo) -> CaptureResult<Servidor> {
                 let publica = ruta.starts_with("/public/");
                 let mut rx = if publica { tx_pub.subscribe() } else { tx_mkt.subscribe() };
                 let cerrar = modo == Modo::CerrarUnaVez && if publica { !std::mem::replace(&mut cerrada_pub, true) } else { !std::mem::replace(&mut cerrada_mkt, true) };
-                let rafaga = modo == Modo::Rafaga && !publica && !std::mem::replace(&mut rafaga_hecha, true);
+                let rafaga = matches!(modo, Modo::Rafaga | Modo::RafagaBarrera) && !publica && !std::mem::replace(&mut rafaga_hecha, true);
+                let tramas = if modo == Modo::RafagaBarrera { inyeccion::barrera_r3b_filas() + RAFAGA_EXTRA } else { RAFAGA };
                 let a = Arc::clone(&a);
+                let rafaga_rango = Arc::clone(&rafaga_rango);
                 tokio::spawn(async move {
                     if rafaga {
                         if let Some(i) = SIMBOLOS.iter().position(|s| pedidos.contains(&format!("{}@aggTrade", s.to_ascii_lowercase()))) {
-                            for _ in 0..RAFAGA {
-                                let (_, t) = agg(SIMBOLOS[i], a[i].fetch_add(1, Ordering::SeqCst) + 1);
+                            let (mut primero, mut ultimo) = (None, 0);
+                            for _ in 0..tramas {
+                                let id = a[i].fetch_add(1, Ordering::SeqCst) + 1;
+                                let (_, t) = agg(SIMBOLOS[i], id);
                                 if sock.send(Message::Text(t)).await.is_err() {
                                     return;
                                 }
+                                primero.get_or_insert(id);
+                                ultimo = id;
+                            }
+                            if let (Ok(mut r), Some(p)) = (rafaga_rango.lock(), primero) {
+                                *r = Some((SIMBOLOS[i].to_owned(), p, ultimo));
                             }
                         }
                     }
@@ -266,7 +288,7 @@ async fn servidor(modo: Modo) -> CaptureResult<Servidor> {
             }
         });
     }
-    Ok(Servidor { ws: ws_addr, rest: rest_addr, conexiones, rest_pedidos, lote_l2, retenidas })
+    Ok(Servidor { ws: ws_addr, rest: rest_addr, conexiones, rest_pedidos, lote_l2, retenidas, rafaga: rafaga_rango })
 }
 // --- Identidad del hijo ------------------------------------------------------------------------
 
@@ -287,6 +309,32 @@ fn creacion(child: &std::process::Child) -> u64 {
     let ok = unsafe { GetProcessTimes(child.as_raw_handle(), &mut c, &mut e, &mut k, &mut u) };
     assert_ne!(ok, 0, "GetProcessTimes");
     (u64::from(c.hi) << 32) | u64::from(c.lo)
+}
+
+/// FALLAS-2 (A10/A37/A45): memoria del hijo leida de su handle (PROCESS_MEMORY_COUNTERS).
+#[repr(C)]
+#[derive(Default)]
+struct MemoriaProceso {
+    cb: u32,
+    page_faults: u32,
+    peak_working_set: usize,
+    working_set: usize,
+    quota_peak_paged: usize,
+    quota_paged: usize,
+    quota_peak_nonpaged: usize,
+    quota_nonpaged: usize,
+    pagefile: usize,
+    peak_pagefile: usize,
+}
+
+unsafe extern "system" {
+    fn K32GetProcessMemoryInfo(h: *mut std::ffi::c_void, m: *mut MemoriaProceso, cb: u32) -> i32;
+}
+
+fn memoria(child: &std::process::Child) -> Option<MemoriaProceso> {
+    let mut m = MemoriaProceso { cb: std::mem::size_of::<MemoriaProceso>() as u32, ..MemoriaProceso::default() };
+    let ok = unsafe { K32GetProcessMemoryInfo(child.as_raw_handle(), &mut m, m.cb) };
+    (ok != 0).then_some(m)
 }
 
 // --- Validacion externa de archivos ------------------------------------------------------------
@@ -417,6 +465,37 @@ fn filas_retenidas(srv: &Servidor, gz: &[Value], stdout: &str) -> Value {
     }).collect::<Vec<_>>())
 }
 
+/// FALLAS-2 (A40/A41/A51): conciliacion por identidad de lo archivado. Identidad del emisor
+/// (route, shard, seq), fijada antes de la cola; identidad del servidor (simbolo, a) de cada aggTrade.
+/// Para la rafaga, cuantas de las identidades enviadas faltan o se repiten en los gzip.
+fn identidades(srv: &Servidor, gz: &[Value]) -> Value {
+    let mut emisor = HashMap::<(String, i64, u64), u64>::new();
+    let mut agg = HashMap::<(String, u64), u64>::new();
+    for g in gz {
+        let Some(p) = g["path"].as_str() else { continue };
+        let lector = std::io::BufReader::new(GzDecoder::new(File::open(p).expect("abrir")));
+        for l in lector.lines().map_while(Result::ok) {
+            let f: Value = serde_json::from_str(&l).unwrap_or(Value::Null);
+            let clave = (f["route"].as_str().unwrap_or("?").to_owned(), f["shard"].as_i64().unwrap_or(-1), f["seq"].as_u64().unwrap_or(0));
+            *emisor.entry(clave).or_default() += 1;
+            if f["stream"].as_str().is_some_and(|s| s.ends_with("@aggTrade")) {
+                let d: Value = f["payload"].as_str().and_then(|x| serde_json::from_str(x).ok()).unwrap_or(Value::Null);
+                if let (Some(s), Some(a)) = (d["data"]["s"].as_str(), d["data"]["a"].as_u64()) {
+                    *agg.entry((s.to_owned(), a)).or_default() += 1;
+                }
+            }
+        }
+    }
+    let rango = srv.rafaga.lock().ok().and_then(|r| r.clone());
+    let rafaga = rango.map(|(s, p, u)| {
+        let n = |a: u64| agg.get(&(s.clone(), a)).copied().unwrap_or(0);
+        json!({"symbol": s, "first_a": p, "last_a": u, "sent": u - p + 1,
+            "missing": (p..=u).filter(|a| n(*a) == 0).count(), "duplicated": (p..=u).filter(|a| n(*a) > 1).count()})
+    });
+    json!({"emitter_identities": emisor.len(), "emitter_duplicated": emisor.values().filter(|c| **c > 1).count(),
+        "agg_identities": agg.len(), "agg_duplicated": agg.values().filter(|c| **c > 1).count(), "burst": rafaga})
+}
+
 // --- Criterios por caso ------------------------------------------------------------------------
 
 /// SALIDAFALLO-11 (C2): cota superior del tiempo del marcador a la salida observada por el padre.
@@ -484,7 +563,13 @@ fn comprobar(e: &Escenario, r: &Value) -> Vec<String> {
         }
         "retener_confirmada" | "sellador_bloqueado" | "bloqueo_end" => exigir(end.is_null(), "sin END (cierre incompleto declarado)"),
         "cola_llena" => {
-            exigir(end["archive_queue"]["failure_reason"] == "row_capacity", "rechazo por capacidad de filas");
+            // FALLAS-2: con la capacidad derivada el primer rechazo es por agotamiento real del
+            // presupuesto de bytes (cargo de la fila + bytes ya cargados > B), no por filas.
+            let rech = &end["archive_queue"]["rejected_rows"][0];
+            exigir(end["archive_queue"]["failure_reason"] == "byte_budget", "rechazo por agotamiento del presupuesto de bytes");
+            exigir(rech["charged_bytes"].as_u64().zip(rech["row_charge_bytes"].as_u64()).zip(rech["byte_budget"].as_u64())
+                .is_some_and(|((c, q), b)| c + q > b), "agotamiento real: cargados + cargo de la fila > B");
+            exigir(rech["queue_occupied"].as_u64() < rech["queue_capacity_rows"].as_u64(), "quedaban plazas: la barrera de filas no actuo");
             exigir(sf["writer"]["drain_after_cut_ns"].is_u64() && sf["writer"]["rows_after_cut"].as_u64() >= Some(1), "drenaje medido");
             exigir(contable(), "contabilidad de admision coherente");
             exigir(finales_validos >= 1, "gzip final valido con las aceptadas");
@@ -574,6 +659,21 @@ fn comprobar(e: &Escenario, r: &Value) -> Vec<String> {
                 && g["rows_outside_utc_hour"] == 0 && g["ingest_seq_not_increasing"] == 0 && g["rows"].as_u64() > Some(0)
                 && g["manifest"]["utc_hour_ms"].as_u64() > hora_fallida && hora_fallida.is_some());
             exigir(sano.is_some(), "segundo segmento sellado sano, de la hora siguiente, tras el fallo del manifiesto");
+        }
+        // FALLAS-2: escritor detenido hasta superar la capacidad antigua; parada sana y conciliacion.
+        "barrera_filas" => {
+            let aq = &end["archive_queue"];
+            exigir(end["status"] == "stopped" && ff.is_null() && end["stop_reason"] == "deadline", "parada sana por until_ms sin fatal");
+            exigir(aq["failure_reason"].is_null() && aq["rejected_rows"].as_array().is_some_and(Vec::is_empty), "sin rechazos de admision");
+            exigir(aq["sampled_peak_rows"].as_u64() > Some(inyeccion::barrera_r3b_filas() as u64), "la cola supero la capacidad antigua de filas");
+            exigir(r["injection_markers"].to_string().contains("escritor_reanudado"), "el escritor se reanudo tras la barrera");
+            exigir(finales_validos >= 1 && finales_validos == gz.len(), "todos los gzip finales con manifiesto valido");
+            let filas: u64 = gz.iter().filter_map(|g| g["rows"].as_u64()).sum();
+            exigir(end["rows"].as_u64() == Some(filas) && aq["enqueued_rows"].as_u64() == Some(filas), "filas de END = aceptadas = filas de los gzip");
+            exigir(contable(), "contabilidad de admision coherente");
+            let id = &r["identities"];
+            exigir(id["emitter_duplicated"] == 0 && id["agg_duplicated"] == 0, "ninguna identidad archivada repetida");
+            exigir(id["burst"]["missing"] == 0 && id["burst"]["sent"].as_u64() > Some(inyeccion::barrera_r3b_filas() as u64), "cada trama de la rafaga archivada una vez");
         }
         _ => exigir(false, "caso desconocido"),
     }
@@ -702,7 +802,15 @@ fn p8_caso() -> CaptureResult<()> {
     let mut killed = false;
     let mut vuelta_max = Duration::ZERO;
     let mut vuelta0 = Instant::now();
+    let mut muestras_mem = Vec::new();
+    let mut ultima_muestra: Option<Instant> = None;
     let estado = loop {
+        if ultima_muestra.is_none_or(|m| m.elapsed() >= Duration::from_millis(100)) {
+            ultima_muestra = Some(Instant::now());
+            if let Some(m) = memoria(&child) {
+                muestras_mem.push(json!([t0.elapsed().as_nanos() as u64, m.working_set, m.pagefile]));
+            }
+        }
         vuelta_max = vuelta_max.max(vuelta0.elapsed());
         vuelta0 = Instant::now();
         if let Some(st) = child.try_wait()? {
@@ -726,6 +834,7 @@ fn p8_caso() -> CaptureResult<()> {
         thread::sleep(Duration::from_millis(5));
     };
     let fin = t0.elapsed();
+    let mem_fin = memoria(&child);
     let stdout = fs::read_to_string(&stdout_p).unwrap_or_default();
     let stderr = fs::read_to_string(&stderr_p).unwrap_or_default();
     if marcador.is_none() && stdout.contains(" fatal control_ns=") {
@@ -759,6 +868,10 @@ fn p8_caso() -> CaptureResult<()> {
         "rest_requests": srv.rest_pedidos.lock().map(|v| v.len()).unwrap_or_default(),
         "stdout": stdout, "stderr": stderr,
     });
+    r["identities"] = identidades(&srv, &gz);
+    r["child_memory"] = json!({"peak_working_set_bytes": mem_fin.as_ref().map(|m| m.peak_working_set),
+        "peak_pagefile_bytes": mem_fin.as_ref().map(|m| m.peak_pagefile), "sample_every_ms": 100,
+        "samples_ns_ws_pagefile": muestras_mem, "source": "K32GetProcessMemoryInfo sobre el handle del hijo"});
     let fallas = comprobar(&e, &r);
     r["checks_failed"] = json!(fallas);
     r["verdict"] = json!(if fallas.is_empty() { "PASS" } else { "FALLO" });
