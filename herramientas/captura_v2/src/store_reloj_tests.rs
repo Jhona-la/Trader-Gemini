@@ -24,6 +24,9 @@ const EPSILON: Duration = Duration::from_nanos(1);
 const I: Duration = crate::STORE_SCAN_EVERY;
 /// UTC de partida del guion: hora 2 de 1970 + 1 ms. La fixture (hora 1) vence en 1 h + 365 d.
 const UTC0: u64 = 2 * crate::HOUR_MS + 1;
+/// Origen de las pruebas de conservacion (A21, A31-A33): representable tambien en la base (>= I),
+/// para aislar la propiedad conservada del defecto de arranque, que prueban A23-A24.
+const ORIGEN_CONSERVACION: Duration = I;
 
 /// Lo que ve el guion en cada espera de `run`.
 struct Paso<'a> {
@@ -238,7 +241,7 @@ fn cadencia(caso: &str, origen: Duration, pasos: &'static [(Duration, bool)]) {
         }
     }));
     let (cfg, _) = cfg_con(&root, Arc::clone(&reloj), Arc::clone(&cancel));
-    let pared = Instant::now();
+    let pared = std::time::Instant::now(); // reloj de pared real, no el del adaptador
     let c = correr(cfg, &reloj);
     let pared_ns = pared.elapsed().as_nanos() as u64;
     let obs = observado.lock().expect("obs").clone();
@@ -366,7 +369,7 @@ fn a31_disco_minimo_inferior_y_descenso() -> CaptureResult<()> {
     let fixture = Fixture::sealed()?;
     let _probe = DiskProbe::new(min - 1);
     let cancel = Arc::new(AtomicBool::new(false));
-    let reloj = RelojGuion::nuevo(Duration::ZERO, Box::new(|_| {}));
+    let reloj = RelojGuion::nuevo(ORIGEN_CONSERVACION, Box::new(|_| {}));
     let (cfg, _) = cfg_con(&fixture.root, Arc::clone(&reloj), cancel);
     let c = correr(cfg, &reloj);
     imprimir("a31_inferior", &c, json!({"min": min}));
@@ -381,7 +384,7 @@ fn a31_disco_minimo_inferior_y_descenso() -> CaptureResult<()> {
     let root = raiz_vacia()?;
     let probe = DiskProbe::new(min);
     let cancel = Arc::new(AtomicBool::new(false));
-    let reloj = RelojGuion::nuevo(Duration::ZERO, Box::new(move |p: &Paso<'_>| {
+    let reloj = RelojGuion::nuevo(ORIGEN_CONSERVACION, Box::new(move |p: &Paso<'_>| {
         if p.vuelta == 1 { fijar_disco(min - 1, false); }
     }));
     let (cfg, _) = cfg_con(&root, Arc::clone(&reloj), cancel);
@@ -401,7 +404,7 @@ fn a32_sondeo_de_disco_falla() {
     let _probe = DiskProbe::new(crate::MIN_FREE_BYTES);
     fijar_disco(crate::MIN_FREE_BYTES, true);
     let cancel = Arc::new(AtomicBool::new(false));
-    let reloj = RelojGuion::nuevo(Duration::ZERO, Box::new(|_| {}));
+    let reloj = RelojGuion::nuevo(ORIGEN_CONSERVACION, Box::new(|_| {}));
     let (cfg, _) = cfg_con(&root, Arc::clone(&reloj), cancel);
     let c = correr(cfg, &reloj);
     imprimir("a32_sondeo_falla", &c, json!({}));
@@ -418,7 +421,7 @@ fn a33_error_de_escritura_de_status() {
     fs::create_dir_all(root.join("STATUS.json.tmp")).expect("carpeta que bloquea el temporal");
     let _probe = DiskProbe::new(crate::MIN_FREE_BYTES);
     let cancel = Arc::new(AtomicBool::new(false));
-    let reloj = RelojGuion::nuevo(Duration::ZERO, Box::new(|_| {}));
+    let reloj = RelojGuion::nuevo(ORIGEN_CONSERVACION, Box::new(|_| {}));
     let (cfg, _) = cfg_con(&root, Arc::clone(&reloj), cancel);
     let c = correr(cfg, &reloj);
     imprimir("a33_status_falla", &c, json!({}));
@@ -434,8 +437,8 @@ fn a21_run_usa_el_reloj_inyectado() {
     let _probe = DiskProbe::new(crate::MIN_FREE_BYTES);
     let cancel = Arc::new(AtomicBool::new(false));
     let c2 = Arc::clone(&cancel);
-    let reloj = RelojGuion::nuevo(Duration::ZERO, Box::new(move |p: &Paso<'_>| {
-        if p.vuelta == 2 { c2.store(true, Ordering::Release); } else { p.reloj.fijar(I); }
+    let reloj = RelojGuion::nuevo(ORIGEN_CONSERVACION, Box::new(move |p: &Paso<'_>| {
+        if p.vuelta == 2 { c2.store(true, Ordering::Release); } else { p.reloj.fijar(ORIGEN_CONSERVACION + I); }
     }));
     let (cfg, _) = cfg_con(&root, Arc::clone(&reloj), cancel);
     let c = correr(cfg, &reloj);
