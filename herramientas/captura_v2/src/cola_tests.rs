@@ -130,6 +130,29 @@ fn a04_capacidad_de_produccion_derivada_del_presupuesto() {
     assert!((q.tx.max_capacity() + 1) * ROW_CHARGE_OVERHEAD > QUEUE_BYTE_BUDGET, "A08: (C + 1) * q_min > B");
 }
 
+// --- A05 (solo candidato: la base no tiene derivacion) ----------------------------------------
+#[test]
+fn a05_precondiciones_de_la_derivacion() {
+    let casos: Vec<(usize, usize)> = vec![(QUEUE_BYTE_BUDGET, ROW_CHARGE_OVERHEAD), (5, 2), (2_048, 2_048), (2_049, 2_048),
+        (u32::MAX as usize, 1), (u32::MAX as usize, ROW_CHARGE_OVERHEAD)];
+    let mut informe = Vec::new();
+    for (b, q) in casos {
+        let c = derivar_capacidad(b, q).expect("configuracion valida");
+        informe.push(json!({"B": b, "q_min": q, "C": c.filas}));
+        assert_eq!(c.filas, b / q, "A05: C = floor(B / q_min)");
+        assert!(c.filas >= 1 && c.filas * q <= b && (c.filas + 1) * q > b, "A05/A08: frontera de la cota");
+        // La cola se construye sin panic con esa capacidad (mpsc::channel y Semaphore::new).
+        let _ = ArchiveQueue::derivada(b, q, Arc::new(Admision::nueva())).expect("cola construida");
+    }
+    let invalidos = [(QUEUE_BYTE_BUDGET, 0usize), (2_047, 2_048), (0, 1), (u32::MAX as usize + 1, ROW_CHARGE_OVERHEAD)];
+    for (b, q) in invalidos {
+        let r = derivar_capacidad(b, q);
+        informe.push(json!({"B": b, "q_min": q, "rechazo": r.as_ref().err()}));
+        assert!(r.is_err(), "A05: configuracion invalida rechazada de forma explicita: B={b} q={q}");
+    }
+    println!("MEDIDA_COLA {}", json!({"caso": "a05", "sujeto": SUJETO, "casos": informe,
+        "semaphore_max_permits": Semaphore::MAX_PERMITS}));
+}
 // --- A34 / A56 ---------------------------------------------------------------------------------
 /// La barrera antigua: con el receptor vivo y sin desencolar, C_antigua + 1 ofertas cuyos cargos
 /// suman menos que B. La base rechaza la testigo (C_antigua + 1) por `row_capacity`.

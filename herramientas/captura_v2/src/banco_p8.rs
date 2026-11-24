@@ -65,7 +65,7 @@ struct Escenario {
 /// defecto (eso lo hace `salida_bloqueada_plazo_defecto`).
 const PLAZO_ENSAYO_MS: Option<u64> = Some(20_000);
 
-const ESCENARIOS: [Escenario; 29] = [
+const ESCENARIOS: [Escenario; 30] = [
     Escenario { nombre: "sana", inyectar: None, codigos: &[0], plazo_ms: None, until_s: 40, modo: Modo::CerrarUnaVez },
     Escenario { nombre: "panic_tarea", inyectar: Some("panic_tarea"), codigos: &[1], plazo_ms: PLAZO_ENSAYO_MS, until_s: 120, modo: Modo::Normal },
     Escenario { nombre: "fin_tarea", inyectar: Some("fin_tarea"), codigos: &[1], plazo_ms: PLAZO_ENSAYO_MS, until_s: 120, modo: Modo::Normal },
@@ -98,6 +98,9 @@ const ESCENARIOS: [Escenario; 29] = [
     Escenario { nombre: "fallo_manifiesto_segundo", inyectar: Some("fallo_manifiesto_segundo"), codigos: &[4], plazo_ms: PLAZO_ENSAYO_MS, until_s: 120, modo: Modo::Normal },
     // FALLAS-2: barrera antigua de filas con presupuesto disponible, en el exe y con parada sana.
     Escenario { nombre: "barrera_filas", inyectar: Some("barrera_filas"), codigos: &[0], plazo_ms: None, until_s: 90, modo: Modo::RafagaBarrera },
+    // FALLAS-1 (A33/A49): fallo autentico de store en el exe: el temporal de STATUS es una carpeta
+    // creada por el banco antes de lanzar al hijo; la primera publicacion falla de verdad.
+    Escenario { nombre: "fallo_status_store", inyectar: None, codigos: &[1], plazo_ms: None, until_s: 60, modo: Modo::Normal },
 ];
 
 // --- Servidores locales ----------------------------------------------------------------------
@@ -675,6 +678,13 @@ fn comprobar(e: &Escenario, r: &Value) -> Vec<String> {
             exigir(id["emitter_duplicated"] == 0 && id["agg_duplicated"] == 0, "ninguna identidad archivada repetida");
             exigir(id["burst"]["missing"] == 0 && id["burst"]["sent"].as_u64() > Some(inyeccion::barrera_r3b_filas() as u64), "cada trama de la rafaga archivada una vez");
         }
+        "fallo_status_store" => {
+            exigir(end["stop_reason"] == "store_error" && end["status"] == "error", "parada por error de store");
+            exigir(end["errors"].to_string().contains("ARCHIVO-PARADO: STATUS:"), "END con el error real de la escritura de STATUS");
+            exigir(r["stderr"].as_str().is_some_and(|s| s.contains("ARCHIVO-PARADO: STATUS:")), "aviso de store en stderr");
+            exigir(!r["cwd"].as_str().is_some_and(|c| Path::new(c).join("out").join("STATUS.json").exists()), "sin STATUS.json publicado");
+            exigir(contable() && finales_validos >= 1, "lo aceptado se archiva y la contabilidad cuadra");
+        }
         _ => exigir(false, "caso desconocido"),
     }
     f
@@ -760,6 +770,9 @@ fn p8_caso() -> CaptureResult<()> {
     let roster = raiz.join("roster.csv");
     fs::write(&roster, format!("simbolo,tipo\n{}", SIMBOLOS.iter().map(|s| format!("{s},PERPETUAL\n")).collect::<String>()))?;
     let out = raiz.join("out");
+    if e.nombre == "fallo_status_store" {
+        fs::create_dir_all(out.join("STATUS.json.tmp"))?;
+    }
     let utc0 = SystemTime::now().duration_since(UNIX_EPOCH)?.as_millis() as u64;
     let plazo_ms = e.plazo_ms.unwrap_or(salidafallo::PLAZO_FATAL.as_millis() as u64);
     // Plazo efectivo del hijo, exacto en ns (el de `plazo_ms` solo sirve para el tope del padre).
