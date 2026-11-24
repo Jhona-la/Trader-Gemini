@@ -151,6 +151,9 @@ fn a47_presion_inversa_del_sellado_con_testigo() -> CaptureResult<()> {
     let a_cero = esperar_hasta("el atraso vuelve a cero", limite, || deq() == total);
     drop(ofrecer);
     drop(queue);
+    // Parada sana como en produccion: el corte de admision despierta al escritor (park) y este drena y
+    // termina; soltar el emisor no lo despierta (el primer intento de esta prueba se colgo ahi).
+    ctl.admision.cortar(salidafallo::Motivo::Sana);
     let out = escritor.join().expect("escritor");
     let rep = sellador.join().expect("sellador");
     // 5) Conciliacion: cada fila archivada una vez y en orden de ingest_seq.
