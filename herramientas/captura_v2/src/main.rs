@@ -21,6 +21,8 @@ mod banco_local;
 mod banco_p8;
 #[cfg(test)]
 mod cola_tests;
+#[cfg(test)]
+mod sellado_tests;
 
 use flate2::{Compression, write::GzEncoder};
 use futures_util::{SinkExt, StreamExt};
