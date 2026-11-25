@@ -388,7 +388,7 @@ impl HarHistory {
     fn append_ticks(&mut self, raw: &[BinTick]) -> Result<(), String> {
         validate_tick_order(raw)?;
         let cutoff = self.points.last().map(|p| p.0);
-        let mut seam_pending = cutoff.is_some();
+        let mut seam_pending = cutoff;
         let mut sum = self.points.last().map_or(0.0, |p| p.1);
         for tk in raw {
             // En solapes, el tape ya incorporado es la fuente del pasado.
@@ -404,9 +404,8 @@ impl HarHistory {
             if !mid.is_finite() {
                 return Err("HAR: mid no finito".into());
             }
-            if seam_pending {
-                self.seams.push((cutoff.unwrap(), tk.ts));
-                seam_pending = false;
+            if let Some(prev_ts) = seam_pending.take() {
+                self.seams.push((prev_ts, tk.ts));
             }
             if let Some(prev) = self.last_mid {
                 let r = (mid - prev) / prev;
@@ -416,8 +415,8 @@ impl HarHistory {
                 }
             }
             self.last_mid = Some(mid);
-            if self.points.last().is_some_and(|p| p.0 == tk.ts) {
-                self.points.last_mut().unwrap().1 = sum;
+            if let Some(last) = self.points.last_mut().filter(|p| p.0 == tk.ts) {
+                last.1 = sum;
             } else {
                 self.points.push((tk.ts, sum));
             }
@@ -1407,8 +1406,16 @@ impl EarlyStopping {
         }
     }
 
-    fn observe(&mut self, loss: f64, rounds: usize, elapsed: usize, patience: usize) -> bool {
-        assert!(loss.is_finite(), "non-finite early-stop loss");
+    fn observe(
+        &mut self,
+        loss: f64,
+        rounds: usize,
+        elapsed: usize,
+        patience: usize,
+    ) -> Result<bool, String> {
+        if !loss.is_finite() {
+            return Err("non-finite early-stop loss".into());
+        }
         if loss + 1e-9 < self.best_loss {
             self.best_loss = loss;
             self.best_rounds = rounds;
@@ -1416,7 +1423,7 @@ impl EarlyStopping {
         } else {
             self.since_improve += elapsed;
         }
-        self.since_improve >= patience
+        Ok(self.since_improve >= patience)
     }
 }
 
@@ -1742,6 +1749,20 @@ fn ticks_desde_cache(cache_dir: &str, sha256_original: &[u8; 32], n_total: usize
     Some(ticks)
 }
 
+fn salir_si_error<T, E: std::fmt::Display>(res: Result<T, E>, contexto: &str) -> T {
+    match res {
+        Ok(v) => v,
+        Err(e) => {
+            if contexto.is_empty() {
+                eprintln!("❌ {e}");
+            } else {
+                eprintln!("❌ {contexto}: {e}");
+            }
+            std::process::exit(1);
+        }
+    }
+}
+
 fn main() {
     let args: Vec<String> = std::env::args().collect();
     let symbol = if args.len() > 1 && !args[1].starts_with('-') {
@@ -1792,8 +1813,10 @@ fn main() {
     let test_reuse = arg("--test-reuse", "");
     // TGBG-5: --val-in se lee aqui (antes de admitir) y el indice revisado de generacion se carga con su pin.
     let val_in = arg("--val-in", "");
-    let early_stop_in = early_stop_path(&args, &val_in, patience)
-        .expect("early-stop CLI rejected before I/O");
+    let early_stop_in = salir_si_error(
+        early_stop_path(&args, &val_in, patience),
+        "early-stop CLI rejected before I/O",
+    );
     let indice_ruta = arg("--generation-index", "");
     let indice_sha = arg("--generation-index-sha256", "");
     let (lectores_generacion, indice_generacion) = match (indice_ruta.is_empty(), indice_sha.is_empty()) {
@@ -1924,14 +1947,14 @@ fn main() {
     let early_stop_source = if early_stop_in.is_empty() {
         None
     } else {
-        Some(
+        Some(salir_si_error(
             admitir_cinta_para_muestras(
                 &early_stop_in,
                 &lectores_generacion,
                 indice_generacion.as_ref(),
-            )
-            .expect("early-stop source rejected before samples"),
-        )
+            ),
+            "early-stop source rejected before samples",
+        ))
     };
     // ── 1+2. Muestras: features+etiquetas desde ticks (reutilizable) ────
     let build = |cinta: &quantum_engine::tgb_generation::CintaAdmitida| -> Samples {
@@ -2613,19 +2636,23 @@ fn main() {
     };
     let (tr_feats, va_feats, tr_y, va_y, va_persist, va_ts, tr_ts) = split_samples;
     let early_stop_samples = early_stop_source.as_ref().map(build);
-    let (tr_feats, tr_y, tr_ts) = if let Some(early) = early_stop_samples.as_ref() {
+    let (tr_feats, tr_y, tr_ts) = if let (Some(early_src), Some(early)) =
+        (early_stop_source.as_ref(), early_stop_samples.as_ref())
+    {
         let train = como_intervalos(&tr_feats, &tr_y, &tr_ts, horizon_ms);
         let early_intervals = como_intervalos(&early.feats, &early.labels, &early.ts, horizon_ms);
         let selection = como_intervalos(&va_feats, &va_y, &va_ts, horizon_ms);
-        let (train, purged) = prepare_early_stop(train, &early_intervals, &selection)
-            .expect("invalid train/early-stop/selection separation");
+        let (train, purged) = salir_si_error(
+            prepare_early_stop(train, &early_intervals, &selection),
+            "invalid train/early-stop/selection separation",
+        );
         let retained_ts = train.intervals.iter().map(|v| v.start).collect();
         println!(
             "   early-stop independiente: {} filas, purga train={} (horizonte={}ms), sha256={}",
             early.labels.len(),
             purged,
             horizon_ms,
-            cache_columnas::hex(&early_stop_source.as_ref().unwrap().sha256_original())
+            cache_columnas::hex(&early_src.sha256_original())
         );
         (train.features, train.labels, retained_ts)
     } else {
@@ -2654,17 +2681,22 @@ fn main() {
         calibration.record["selection_labels_used_for_fit"] = serde_json::json!(false);
         // El linaje auxiliar identifica los mismos bytes admitidos, aunque la
         // ruta logica cambie despues o solo exista su transporte .bin.tgb.
-        calibration.record["train_lineage"] = serde_json::to_value(model_manifest::InputRecord {
-            role: "train".into(),
-            path: in_path.clone(),
-            bytes: fuentes.train.bytes().len() as u64,
-            sha256: cache_columnas::hex(&fuentes.train.sha256_original()),
-            first_ts_ms: tr_ts.first().copied(),
-            last_ts_ms: tr_ts.last().copied(),
-            samples: Some(tr_ts.len()),
-        })
-        .expect("HAR train lineage JSON");
-        let bytes = serde_json::to_vec_pretty(&calibration.record).expect("HAR calibration JSON");
+        calibration.record["train_lineage"] = salir_si_error(
+            serde_json::to_value(model_manifest::InputRecord {
+                role: "train".into(),
+                path: in_path.clone(),
+                bytes: fuentes.train.bytes().len() as u64,
+                sha256: cache_columnas::hex(&fuentes.train.sha256_original()),
+                first_ts_ms: tr_ts.first().copied(),
+                last_ts_ms: tr_ts.last().copied(),
+                samples: Some(tr_ts.len()),
+            }),
+            "HAR train lineage JSON",
+        );
+        let bytes = salir_si_error(
+            serde_json::to_vec_pretty(&calibration.record),
+            "HAR calibration JSON",
+        );
         let sha = model_manifest::sha256_hex(&bytes);
         let directory = arg(
             "--har-report-dir",
@@ -2806,7 +2838,10 @@ fn main() {
                     logloss(&tr_feats, &tr_y, &f_train),
                 )
             };
-            let stop = early_stop.observe(vl, trees.len(), check_every, patience);
+            let stop = salir_si_error(
+                early_stop.observe(vl, trees.len(), check_every, patience),
+                "",
+            );
             println!(
                 "   ronda {:3} train {:.6} · early-stop {:.6} {}",
                 round,
@@ -3204,7 +3239,7 @@ fn main() {
             "gate_uses_qlike": false, "gate_selection_pass": gate_sel,
             "gate_test_pass": test_evidencia.as_ref().map(|_| test_ok),
         });
-        let bytes = serde_json::to_vec_pretty(&report).expect("HAR comparison JSON");
+        let bytes = salir_si_error(serde_json::to_vec_pretty(&report), "HAR comparison JSON");
         let sha = model_manifest::sha256_hex(&bytes);
         let name = format!("comparacion.{model_sha}.{sha}.json");
         if let Err(e) = write_har_record(directory, &name, &report) {
@@ -5039,17 +5074,21 @@ mod early_stop_v1_tests {
     #[test]
     fn early_stop_checks_each_tree_counts_patience_and_retains_best() {
         let mut stop = EarlyStopping::new();
-        assert!(!stop.observe(4.0, 1, 1, 2));
-        assert!(!stop.observe(1.0, 2, 1, 2));
-        assert!(!stop.observe(1.0, 3, 1, 2));
-        assert!(stop.observe(2.0, 4, 1, 2));
+        assert!(!stop.observe(4.0, 1, 1, 2).unwrap());
+        assert!(!stop.observe(1.0, 2, 1, 2).unwrap());
+        assert!(!stop.observe(1.0, 3, 1, 2).unwrap());
+        assert!(stop.observe(2.0, 4, 1, 2).unwrap());
         assert_eq!(stop.best_rounds, 2);
         assert_eq!(stop.best_loss, 1.0);
         assert_eq!(stop.since_improve, 2);
+        assert_eq!(
+            stop.observe(f64::NAN, 5, 1, 2),
+            Err("non-finite early-stop loss".to_string())
+        );
         let mut reset = EarlyStopping::new();
-        assert!(!reset.observe(4.0, 1, 1, 2));
-        assert!(!reset.observe(5.0, 2, 1, 2));
-        assert!(!reset.observe(3.0, 3, 1, 2));
+        assert!(!reset.observe(4.0, 1, 1, 2).unwrap());
+        assert!(!reset.observe(5.0, 2, 1, 2).unwrap());
+        assert!(!reset.observe(3.0, 3, 1, 2).unwrap());
         assert_eq!(reset.since_improve, 0);
         assert_eq!(reset.best_rounds, 3);
     }
@@ -5075,7 +5114,10 @@ mod early_stop_v1_tests {
             for round in 1..=2 {
                 trees.push(leaf());
                 let prediction = forest_raw(0.0, 1.0, &trees, &x[0]);
-                if stop.observe((early_y - prediction).powi(2), round, 1, 1) {
+                if stop
+                    .observe((early_y - prediction).powi(2), round, 1, 1)
+                    .unwrap()
+                {
                     break;
                 }
             }
