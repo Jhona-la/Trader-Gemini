@@ -4,7 +4,9 @@
 //! la viscosidad cinemática con adelgazamiento por corte (shear-thinning), la invariancia
 //! de escala de precios, y la disipación de Kolmogorov en microestructura de alta frecuencia.
 
-use feature_engine::navier_stokes::{HydrodynamicRegime, NavierStokesReynoldsEngine};
+use feature_engine::navier_stokes::{
+    HydrodynamicRegime, NavierStokesInput, NavierStokesReynoldsEngine,
+};
 
 #[test]
 fn test_navier_stokes_reynolds_pure_dimensionless_invariance() {
@@ -27,9 +29,33 @@ fn test_navier_stokes_reynolds_pure_dimensionless_invariance() {
 
     // Warmup inicial idéntico
     let t0 = 1_000_000u64;
-    engine_btc.update(p_btc, p_btc * (1.0 + spread_pct), 5.0, 5.0, 0.0, atr_pct, t0);
-    engine_sol.update(p_sol, p_sol * (1.0 + spread_pct), 5.0, 5.0, 0.0, atr_pct, t0);
-    engine_doge.update(p_doge, p_doge * (1.0 + spread_pct), 5.0, 5.0, 0.0, atr_pct, t0);
+    engine_btc.update(NavierStokesInput {
+        bid_price: p_btc,
+        ask_price: p_btc * (1.0 + spread_pct),
+        bid_qty: 5.0,
+        ask_qty: 5.0,
+        trade_qty: 0.0,
+        atr_pct,
+        event_time_ms: t0,
+    });
+    engine_sol.update(NavierStokesInput {
+        bid_price: p_sol,
+        ask_price: p_sol * (1.0 + spread_pct),
+        bid_qty: 5.0,
+        ask_qty: 5.0,
+        trade_qty: 0.0,
+        atr_pct,
+        event_time_ms: t0,
+    });
+    engine_doge.update(NavierStokesInput {
+        bid_price: p_doge,
+        ask_price: p_doge * (1.0 + spread_pct),
+        bid_qty: 5.0,
+        ask_qty: 5.0,
+        trade_qty: 0.0,
+        atr_pct,
+        event_time_ms: t0,
+    });
 
     // Evento dinámico con la misma perturbación relativa en dt = 50 ms
     let t1 = t0 + 50;
@@ -47,35 +73,35 @@ fn test_navier_stokes_reynolds_pure_dimensionless_invariance() {
     let sol_depth_qty = 50_000.0 / p_sol_1;
     let doge_depth_qty = 50_000.0 / p_doge_1;
 
-    let re_btc = engine_btc.update(
-        p_btc_1,
-        p_btc_1 * (1.0 + spread_pct),
-        btc_depth_qty,
-        btc_depth_qty,
-        btc_trade_qty,
+    let re_btc = engine_btc.update(NavierStokesInput {
+        bid_price: p_btc_1,
+        ask_price: p_btc_1 * (1.0 + spread_pct),
+        bid_qty: btc_depth_qty,
+        ask_qty: btc_depth_qty,
+        trade_qty: btc_trade_qty,
         atr_pct,
-        t1,
-    );
+        event_time_ms: t1,
+    });
 
-    let re_sol = engine_sol.update(
-        p_sol_1,
-        p_sol_1 * (1.0 + spread_pct),
-        sol_depth_qty,
-        sol_depth_qty,
-        sol_trade_qty,
+    let re_sol = engine_sol.update(NavierStokesInput {
+        bid_price: p_sol_1,
+        ask_price: p_sol_1 * (1.0 + spread_pct),
+        bid_qty: sol_depth_qty,
+        ask_qty: sol_depth_qty,
+        trade_qty: sol_trade_qty,
         atr_pct,
-        t1,
-    );
+        event_time_ms: t1,
+    });
 
-    let re_doge = engine_doge.update(
-        p_doge_1,
-        p_doge_1 * (1.0 + spread_pct),
-        doge_depth_qty,
-        doge_depth_qty,
-        doge_trade_qty,
+    let re_doge = engine_doge.update(NavierStokesInput {
+        bid_price: p_doge_1,
+        ask_price: p_doge_1 * (1.0 + spread_pct),
+        bid_qty: doge_depth_qty,
+        ask_qty: doge_depth_qty,
+        trade_qty: doge_trade_qty,
         atr_pct,
-        t1,
-    );
+        event_time_ms: t1,
+    });
 
     assert!(re_btc.is_finite() && re_sol.is_finite() && re_doge.is_finite());
     assert!(
@@ -103,16 +129,48 @@ fn test_navier_stokes_reynolds_shear_thinning_viscosity() {
 
     let p = 100.0;
     let t0 = 1_000_000u64;
-    engine_calm.update(p, p + 0.10, 10.0, 10.0, 0.0, 0.0010, t0);
-    engine_shear.update(p, p + 0.10, 10.0, 10.0, 0.0, 0.0010, t0);
+    engine_calm.update(NavierStokesInput {
+        bid_price: p,
+        ask_price: p + 0.10,
+        bid_qty: 10.0,
+        ask_qty: 10.0,
+        trade_qty: 0.0,
+        atr_pct: 0.0010,
+        event_time_ms: t0,
+    });
+    engine_shear.update(NavierStokesInput {
+        bid_price: p,
+        ask_price: p + 0.10,
+        bid_qty: 10.0,
+        ask_qty: 10.0,
+        trade_qty: 0.0,
+        atr_pct: 0.0010,
+        event_time_ms: t0,
+    });
 
     let t1 = t0 + 100;
     let p_next = p + 0.20; // Movimiento idéntico de precio
 
     // Calm: sin flujo agresor
-    let re_calm = engine_calm.update(p_next, p_next + 0.10, 10.0, 10.0, 0.0, 0.0010, t1);
+    let re_calm = engine_calm.update(NavierStokesInput {
+        bid_price: p_next,
+        ask_price: p_next + 0.10,
+        bid_qty: 10.0,
+        ask_qty: 10.0,
+        trade_qty: 0.0,
+        atr_pct: 0.0010,
+        event_time_ms: t1,
+    });
     // Shear: flujo agresor masivo (trade_qty = 500)
-    let re_shear = engine_shear.update(p_next, p_next + 0.10, 10.0, 10.0, 500.0, 0.0010, t1);
+    let re_shear = engine_shear.update(NavierStokesInput {
+        bid_price: p_next,
+        ask_price: p_next + 0.10,
+        bid_qty: 10.0,
+        ask_qty: 10.0,
+        trade_qty: 500.0,
+        atr_pct: 0.0010,
+        event_time_ms: t1,
+    });
 
     assert!(
         re_shear > re_calm,
@@ -167,8 +225,24 @@ fn test_navier_stokes_reynolds_kolmogorov_dissipation_positive_and_finite() {
     let mut engine = NavierStokesReynoldsEngine::new();
     let p = 50_000.0;
 
-    engine.update(p, p + 1.0, 10.0, 10.0, 0.0, 0.0010, 1_000_000);
-    let _ = engine.update(p + 50.0, p + 51.0, 10.0, 10.0, 50.0, 0.0010, 1_000_100);
+    engine.update(NavierStokesInput {
+        bid_price: p,
+        ask_price: p + 1.0,
+        bid_qty: 10.0,
+        ask_qty: 10.0,
+        trade_qty: 0.0,
+        atr_pct: 0.0010,
+        event_time_ms: 1_000_000,
+    });
+    let _ = engine.update(NavierStokesInput {
+        bid_price: p + 50.0,
+        ask_price: p + 51.0,
+        bid_qty: 10.0,
+        ask_qty: 10.0,
+        trade_qty: 50.0,
+        atr_pct: 0.0010,
+        event_time_ms: 1_000_100,
+    });
 
     let eps = engine.energy_dissipation_rate;
     assert!(eps >= 0.0, "La disipación de Kolmogorov debe ser no-negativa: {}", eps);
@@ -180,18 +254,50 @@ fn test_navier_stokes_reynolds_fail_closed_nan_inf_immunity() {
     let mut engine = NavierStokesReynoldsEngine::new();
 
     // Entradas patológicas
-    let re1 = engine.update(f64::NAN, 100.0, 1.0, 1.0, 0.0, 0.001, 1000);
+    let re1 = engine.update(NavierStokesInput {
+        bid_price: f64::NAN,
+        ask_price: 100.0,
+        bid_qty: 1.0,
+        ask_qty: 1.0,
+        trade_qty: 0.0,
+        atr_pct: 0.001,
+        event_time_ms: 1000,
+    });
     assert_eq!(re1, 0.0);
 
-    let re2 = engine.update(100.0, f64::INFINITY, 1.0, 1.0, 0.0, 0.001, 1050);
+    let re2 = engine.update(NavierStokesInput {
+        bid_price: 100.0,
+        ask_price: f64::INFINITY,
+        bid_qty: 1.0,
+        ask_qty: 1.0,
+        trade_qty: 0.0,
+        atr_pct: 0.001,
+        event_time_ms: 1050,
+    });
     assert_eq!(re2, 0.0);
 
     // Spread negativo o invertido (ask <= bid)
-    let re3 = engine.update(100.0, 99.0, 1.0, 1.0, 0.0, 0.001, 1100);
+    let re3 = engine.update(NavierStokesInput {
+        bid_price: 100.0,
+        ask_price: 99.0,
+        bid_qty: 1.0,
+        ask_qty: 1.0,
+        trade_qty: 0.0,
+        atr_pct: 0.001,
+        event_time_ms: 1100,
+    });
     assert_eq!(re3, 0.0);
 
     // Precios negativos
-    let re4 = engine.update(-10.0, -9.0, 1.0, 1.0, 0.0, 0.001, 1150);
+    let re4 = engine.update(NavierStokesInput {
+        bid_price: -10.0,
+        ask_price: -9.0,
+        bid_qty: 1.0,
+        ask_qty: 1.0,
+        trade_qty: 0.0,
+        atr_pct: 0.001,
+        event_time_ms: 1150,
+    });
     assert_eq!(re4, 0.0);
 
     assert!(engine.reynolds_number.is_finite());
@@ -213,11 +319,43 @@ fn test_navier_stokes_reynolds_relaxation_time_adaptability() {
     let mut e2 = engine_double;
 
     let p = 1000.0;
-    e1.update(p, p + 1.0, 5.0, 5.0, 0.0, 0.001, 1_000_000);
-    e2.update(p, p + 1.0, 5.0, 5.0, 0.0, 0.001, 1_000_000);
+    e1.update(NavierStokesInput {
+        bid_price: p,
+        ask_price: p + 1.0,
+        bid_qty: 5.0,
+        ask_qty: 5.0,
+        trade_qty: 0.0,
+        atr_pct: 0.001,
+        event_time_ms: 1_000_000,
+    });
+    e2.update(NavierStokesInput {
+        bid_price: p,
+        ask_price: p + 1.0,
+        bid_qty: 5.0,
+        ask_qty: 5.0,
+        trade_qty: 0.0,
+        atr_pct: 0.001,
+        event_time_ms: 1_000_000,
+    });
 
-    let re1 = e1.update(p + 2.0, p + 3.0, 5.0, 5.0, 0.0, 0.001, 1_000_050);
-    let re2 = e2.update(p + 2.0, p + 3.0, 5.0, 5.0, 0.0, 0.001, 1_000_050);
+    let re1 = e1.update(NavierStokesInput {
+        bid_price: p + 2.0,
+        ask_price: p + 3.0,
+        bid_qty: 5.0,
+        ask_qty: 5.0,
+        trade_qty: 0.0,
+        atr_pct: 0.001,
+        event_time_ms: 1_000_050,
+    });
+    let re2 = e2.update(NavierStokesInput {
+        bid_price: p + 2.0,
+        ask_price: p + 3.0,
+        bid_qty: 5.0,
+        ask_qty: 5.0,
+        trade_qty: 0.0,
+        atr_pct: 0.001,
+        event_time_ms: 1_000_050,
+    });
 
     assert!(
         (re2 - 2.0 * re1).abs() < 1e-9,

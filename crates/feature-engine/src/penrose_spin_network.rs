@@ -100,6 +100,17 @@ pub struct PenroseSpinNetworkReport {
     pub event_time_ms: u64,
 }
 
+#[derive(Debug, Clone, Copy)]
+pub struct SpinNetworkInput {
+    pub price_ret: f64,
+    pub instantaneous_vol: f64,
+    pub ofi: f64,
+    pub obi: f64,
+    pub spread_bps: f64,
+    pub depth_imbalance: f64,
+    pub event_time_ms: u64,
+}
+
 /// Motor de Grafo de Espín Cuántico de Penrose y Redes de Ryu-Takayanagi.
 #[derive(Debug, Clone)]
 pub struct PenroseSpinNetworkEngine {
@@ -123,22 +134,13 @@ impl PenroseSpinNetworkEngine {
     }
 
     /// Actualiza la red de espín y calcula la entropía holográfica de Ryu-Takayanagi en $O(1)$ stack.
-    pub fn update_and_evaluate(
-        &mut self,
-        price_ret: f64,
-        instantaneous_vol: f64,
-        ofi: f64,
-        obi: f64,
-        spread_bps: f64,
-        depth_imbalance: f64,
-        event_time_ms: u64,
-    ) -> PenroseSpinNetworkReport {
-        let inputs_valid = price_ret.is_finite()
-            && instantaneous_vol.is_finite()
-            && ofi.is_finite()
-            && obi.is_finite()
-            && spread_bps.is_finite()
-            && depth_imbalance.is_finite();
+    pub fn update_and_evaluate(&mut self, input: SpinNetworkInput) -> PenroseSpinNetworkReport {
+        let inputs_valid = input.price_ret.is_finite()
+            && input.instantaneous_vol.is_finite()
+            && input.ofi.is_finite()
+            && input.obi.is_finite()
+            && input.spread_bps.is_finite()
+            && input.depth_imbalance.is_finite();
         if !inputs_valid {
             return PenroseSpinNetworkReport {
                 ryu_takayanagi_entropy: 0.0,
@@ -147,36 +149,36 @@ impl PenroseSpinNetworkEngine {
                 total_spin_dimension: 0.0,
                 holographic_decoherence_detected: true,
                 slot_scaling_factor: 0.10,
-                event_time_ms,
+                event_time_ms: input.event_time_ms,
             };
         }
 
-        self.last_event_time_ms = event_time_ms;
+        self.last_event_time_ms = input.event_time_ms;
 
         // 1. Asignación de representaciones irreducibles $SU(2)$ a los 4 canales de liquidez:
         // Nodo 0: Flujo Direccional (OFI) -> j_0, m_0
-        let ofi_abs = ofi.abs().clamp(0.0, 1.0);
+        let ofi_abs = input.ofi.abs().clamp(0.0, 1.0);
         let j0 = ((ofi_abs * 4.0).round() * 0.5).clamp(0.0, self.params.max_spin);
-        let m0 = (ofi.clamp(-1.0, 1.0) * j0).clamp(-j0, j0);
+        let m0 = (input.ofi.clamp(-1.0, 1.0) * j0).clamp(-j0, j0);
         let node0 = SpinNode::new(j0, m0, ofi_abs);
 
         // Nodo 1: Desbalance de Libro (OBI) -> j_1, m_1
-        let obi_abs = obi.abs().clamp(0.0, 1.0);
+        let obi_abs = input.obi.abs().clamp(0.0, 1.0);
         let j1 = ((obi_abs * 4.0).round() * 0.5).clamp(0.0, self.params.max_spin);
-        let m1 = (obi.clamp(-1.0, 1.0) * j1).clamp(-j1, j1);
+        let m1 = (input.obi.clamp(-1.0, 1.0) * j1).clamp(-j1, j1);
         let node1 = SpinNode::new(j1, m1, obi_abs);
 
         // Nodo 2: Volatilidad y Retorno -> j_2, m_2
-        let vol_norm = (instantaneous_vol * 100.0).clamp(0.0, 2.0);
+        let vol_norm = (input.instantaneous_vol * 100.0).clamp(0.0, 2.0);
         let j2 = ((vol_norm * 2.0).round() * 0.5).clamp(0.0, self.params.max_spin);
-        let ret_sign = if price_ret >= 0.0 { 1.0 } else { -1.0 };
+        let ret_sign = if input.price_ret >= 0.0 { 1.0 } else { -1.0 };
         let m2 = (ret_sign * j2).clamp(-j2, j2);
         let node2 = SpinNode::new(j2, m2, vol_norm);
 
         // Nodo 3: Fricción de Spread y Profundidad -> j_3, m_3
-        let spread_norm = (spread_bps * 0.1).clamp(0.0, 2.0);
+        let spread_norm = (input.spread_bps * 0.1).clamp(0.0, 2.0);
         let j3 = ((spread_norm * 2.0).round() * 0.5).clamp(0.0, self.params.max_spin);
-        let m3 = (depth_imbalance.clamp(-1.0, 1.0) * j3).clamp(-j3, j3);
+        let m3 = (input.depth_imbalance.clamp(-1.0, 1.0) * j3).clamp(-j3, j3);
         let node3 = SpinNode::new(j3, m3, spread_norm);
 
         let current_network = [node0, node1, node2, node3];
@@ -249,7 +251,7 @@ impl PenroseSpinNetworkEngine {
             total_spin_dimension,
             holographic_decoherence_detected,
             slot_scaling_factor,
-            event_time_ms,
+            event_time_ms: input.event_time_ms,
         }
     }
 }

@@ -22,7 +22,7 @@
 //! causa"]` con el assert intacto; documenta el defecto y se activa con el
 //! arreglo. Para correrlos: `cargo test ... -- --include-ignored`.
 
-use feature_engine::navier_stokes::NavierStokesReynoldsEngine;
+use feature_engine::navier_stokes::{NavierStokesInput, NavierStokesReynoldsEngine};
 
 /// LCG de 64 bits (constantes de Knuth/MMIX) con salida de 53 bits en (0, 1).
 struct Lcg(u64);
@@ -49,12 +49,28 @@ fn re_medio(dt_ms: u64, n: usize, semilla: u64) -> f64 {
     let mut rng = Lcg(semilla);
     let mut ns = NavierStokesReynoldsEngine::new();
     let (mut mid, mut t) = (100.0f64, 1_000u64);
-    ns.update(mid - 0.005, mid + 0.005, 1.0, 1.0, 0.0, 0.001, t);
+    ns.update(NavierStokesInput {
+        bid_price: mid - 0.005,
+        ask_price: mid + 0.005,
+        bid_qty: 1.0,
+        ask_qty: 1.0,
+        trade_qty: 0.0,
+        atr_pct: 0.001,
+        event_time_ms: t,
+    });
     let mut suma = 0.0;
     for _ in 0..n {
         mid += SIGMA * dt.sqrt() * rng.n();
         t += dt_ms;
-        ns.update(mid - 0.005, mid + 0.005, 1.0, 1.0, 0.0, 0.001, t);
+        ns.update(NavierStokesInput {
+            bid_price: mid - 0.005,
+            ask_price: mid + 0.005,
+            bid_qty: 1.0,
+            ask_qty: 1.0,
+            trade_qty: 0.0,
+            atr_pct: 0.001,
+            event_time_ms: t,
+        });
         suma += ns.reynolds_number;
     }
     suma / n as f64

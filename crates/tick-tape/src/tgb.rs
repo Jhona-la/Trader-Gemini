@@ -337,7 +337,7 @@ fn restituir_bloque(cuerpo: &[u8], b: &PlanBloque, salida: &mut [u8]) -> io::Res
         cols.push(r?);
     }
     let mut previo = 0u64;
-    for (k, reg) in salida.chunks_exact_mut(REGISTRO).enumerate() {
+    for (k, reg) in salida.as_chunks_mut::<REGISTRO>().0.iter_mut().enumerate() {
         for (f, col) in cols.iter().enumerate() {
             let a = k * 8;
             let t = u64_le(&col[a..a + 8]);
@@ -368,10 +368,10 @@ fn zigzag(d: u64) -> u64 {
 pub fn empaquetar(original: &[u8]) -> io::Result<Vec<u8>> {
     let cabecera_tick = original.len() >= CABECERA_ORIGINAL
         && (&original[..CABECERA_ORIGINAL] == b"TGMTICK1" || &original[..CABECERA_ORIGINAL] == b"TGMSYNT1")
-        && (original.len() - CABECERA_ORIGINAL) % REGISTRO == 0;
+        && (original.len() - CABECERA_ORIGINAL).is_multiple_of(REGISTRO);
     let modo: u8 = if cabecera_tick {
         1
-    } else if !original.is_empty() && original.len() % REGISTRO == 0 {
+    } else if !original.is_empty() && original.len().is_multiple_of(REGISTRO) {
         2
     } else {
         0
@@ -400,7 +400,7 @@ pub fn empaquetar(original: &[u8]) -> io::Result<Vec<u8>> {
             for f in 0..CAMPOS {
                 let mut col = Vec::with_capacity(n * 8);
                 let mut previo = 0u64;
-                for r in bloque.chunks_exact(REGISTRO) {
+                for r in bloque.as_chunks::<REGISTRO>().0 {
                     let v = u64_le(&r[f * 8..f * 8 + 8]);
                     let w = if f == 0 {
                         let d = v.wrapping_sub(previo);

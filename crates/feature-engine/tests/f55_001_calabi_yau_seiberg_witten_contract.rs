@@ -6,7 +6,9 @@
 //! - C3: Detección de singularidad de conifold ante colapso de liquidez y reducción defensiva de slot a $\omega_{CY} = 0.10$.
 //! - C4: Determinismo en stack $O(1)$, cero heap allocations en hot path y estabilidad ante perturbaciones extremas.
 
-use feature_engine::{CalabiYauParams, CalabiYauSeibergWittenEngine, ComplexCoord, CY_HISTORY_LEN};
+use feature_engine::{
+    CalabiYauParams, CalabiYauSeibergWittenEngine, ComplexCoord, UpdateParams, CY_HISTORY_LEN,
+};
 
 #[test]
 fn test_c1_kaehler_metric_and_ricci_flatness_deviation() {
@@ -14,15 +16,15 @@ fn test_c1_kaehler_metric_and_ricci_flatness_deviation() {
     let mut engine = CalabiYauSeibergWittenEngine::new(params);
 
     // Estado estacionario con microestructura normalizada
-    let report = engine.update_and_evaluate(
-        0.0002, // price_ret
-        0.0015, // instantaneous_vol
-        0.15,   // obi
-        0.20,   // ofi
-        2.5,    // spread_bps
-        0.05,   // depth_imbalance
-        1_700_000_000,
-    );
+    let report = engine.update_and_evaluate(UpdateParams {
+        price_ret: 0.0002,
+        instantaneous_vol: 0.0015,
+        obi: 0.15,
+        ofi: 0.20,
+        spread_bps: 2.5,
+        depth_imbalance: 0.05,
+        event_time_ms: 1_700_000_000,
+    });
 
     assert!(
         report.kaehler_volume > 0.0,
@@ -51,15 +53,15 @@ fn test_c2_seiberg_witten_invariants_and_monopole_density() {
     let mut engine = CalabiYauSeibergWittenEngine::new(params);
 
     for i in 0..CY_HISTORY_LEN {
-        let rep = engine.update_and_evaluate(
-            0.0005 * (i as f64),
-            0.0020,
-            0.30,
-            -0.20,
-            3.0,
-            0.10,
-            1_700_000_000 + (i as u64) * 100,
-        );
+        let rep = engine.update_and_evaluate(UpdateParams {
+            price_ret: 0.0005 * (i as f64),
+            instantaneous_vol: 0.0020,
+            obi: 0.30,
+            ofi: -0.20,
+            spread_bps: 3.0,
+            depth_imbalance: 0.10,
+            event_time_ms: 1_700_000_000 + (i as u64) * 100,
+        });
 
         assert!(
             rep.seiberg_witten_invariant >= -1.0 && rep.seiberg_witten_invariant <= 1.0,
@@ -86,15 +88,15 @@ fn test_c3_conifold_singularity_detection_under_extreme_stress() {
     let mut engine = CalabiYauSeibergWittenEngine::new(params);
 
     // Inyectamos condiciones extremas de deformación de métrica
-    let report = engine.update_and_evaluate(
-        0.08, // 8% retorno de salto violento
-        0.15, // 15% vol
-        1.0,  // OBI extremo
-        1.0,  // OFI extremo
-        80.0, // spread salvaje de 80 bps
-        1.0,  // depth imbalance total
-        1_700_000_500,
-    );
+    let report = engine.update_and_evaluate(UpdateParams {
+        price_ret: 0.08,         // 8% retorno de salto violento
+        instantaneous_vol: 0.15, // 15% vol
+        obi: 1.0,                // OBI extremo
+        ofi: 1.0,                // OFI extremo
+        spread_bps: 80.0,        // spread salvaje de 80 bps
+        depth_imbalance: 1.0,    // depth imbalance total
+        event_time_ms: 1_700_000_500,
+    });
 
     assert!(
         report.conifold_singularity_detected,

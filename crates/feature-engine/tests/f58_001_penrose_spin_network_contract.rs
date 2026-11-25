@@ -7,7 +7,8 @@
 //! - C4: Determinismo en stack $O(1)$, cero heap allocations en hot path e inmunidad a NaNs.
 
 use feature_engine::{
-    PenroseSpinNetworkEngine, PenroseSpinNetworkParams, SpinNode, SPIN_HISTORY_CAPACITY,
+    PenroseSpinNetworkEngine, PenroseSpinNetworkParams, SpinNetworkInput, SpinNode,
+    SPIN_HISTORY_CAPACITY,
 };
 
 #[test]
@@ -16,15 +17,15 @@ fn test_c1_su2_spin_representations_and_intertwiner() {
     let mut engine = PenroseSpinNetworkEngine::new(params);
 
     // Microestructura equilibrada
-    let report = engine.update_and_evaluate(
-        0.0001, // price_ret
-        0.0010, // instantaneous_vol
-        0.20,   // ofi
-        0.15,   // obi
-        1.5,    // spread_bps
-        0.05,   // depth_imbalance
-        1_700_000_000,
-    );
+    let report = engine.update_and_evaluate(SpinNetworkInput {
+        price_ret: 0.0001,
+        instantaneous_vol: 0.0010,
+        ofi: 0.20,
+        obi: 0.15,
+        spread_bps: 1.5,
+        depth_imbalance: 0.05,
+        event_time_ms: 1_700_000_000,
+    });
 
     assert!(
         report.intertwiner_norm >= 0.0 && report.intertwiner_norm <= 1.0,
@@ -53,15 +54,15 @@ fn test_c2_ryu_takayanagi_holographic_entropy() {
     let mut engine = PenroseSpinNetworkEngine::new(params);
 
     for i in 0..SPIN_HISTORY_CAPACITY {
-        let rep = engine.update_and_evaluate(
-            0.0002 * (i as f64),
-            0.002,
-            0.25,
-            -0.10,
-            2.0,
-            0.10,
-            1_700_000_000 + (i as u64) * 100,
-        );
+        let rep = engine.update_and_evaluate(SpinNetworkInput {
+            price_ret: 0.0002 * (i as f64),
+            instantaneous_vol: 0.002,
+            ofi: 0.25,
+            obi: -0.10,
+            spread_bps: 2.0,
+            depth_imbalance: 0.10,
+            event_time_ms: 1_700_000_000 + (i as u64) * 100,
+        });
 
         assert!(
             rep.ryu_takayanagi_entropy >= 0.0,
@@ -83,15 +84,15 @@ fn test_c3_holographic_decoherence_detection_under_extreme_turbulence() {
     let mut engine = PenroseSpinNetworkEngine::new(params);
 
     // Inyectamos divergencias extremas de espín para maximizar el área geodésica AdS
-    let report = engine.update_and_evaluate(
-        0.10, // 10% retorno
-        0.20, // 20% vol instantánea
-        1.0,  // OFI extremo
-        -1.0, // OBI opuesto extremo
-        50.0, // spread salvaje
-        1.0,  // depth imbalance total
-        1_700_000_500,
-    );
+    let report = engine.update_and_evaluate(SpinNetworkInput {
+        price_ret: 0.10,         // 10% retorno
+        instantaneous_vol: 0.20, // 20% vol instantánea
+        ofi: 1.0,                // OFI extremo
+        obi: -1.0,               // OBI opuesto extremo
+        spread_bps: 50.0,        // spread salvaje
+        depth_imbalance: 1.0,    // depth imbalance total
+        event_time_ms: 1_700_000_500,
+    });
 
     assert!(
         report.holographic_decoherence_detected,

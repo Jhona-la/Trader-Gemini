@@ -92,7 +92,7 @@ pub use bouchaud_mezard_ewl::{
 };
 pub use calabi_yau_seiberg_witten::{
     CalabiYauParams, CalabiYauSeibergWittenEngine, CalabiYauSeibergWittenReport, ComplexCoord,
-    CY_COMPLEX_DIM, CY_HISTORY_LEN,
+    UpdateParams, CY_COMPLEX_DIM, CY_HISTORY_LEN,
 };
 pub use chern_simons_witten_knot::{
     ChernSimonsWittenConfig, ChernSimonsWittenKnotEngine, ChernSimonsWittenReport, Crossing,
@@ -200,12 +200,14 @@ pub use multifractal::{
     smooth_persistence_degree, MultiScaleHurstConfluence, MultifractalParams,
     MultifractalSpectrumEngine,
 };
-pub use navier_stokes::{HydrodynamicRegime, NavierStokesParams, NavierStokesReynoldsEngine};
+pub use navier_stokes::{
+    HydrodynamicRegime, NavierStokesInput, NavierStokesParams, NavierStokesReynoldsEngine,
+};
 pub use normalizer::{GarmanKlassVolatilityEstimator, StatisticalNormalizer};
 pub use omni_strategies::OmniStrategyEngine;
 pub use penrose_spin_network::{
-    PenroseSpinNetworkEngine, PenroseSpinNetworkParams, PenroseSpinNetworkReport, SpinNode,
-    MAX_SPIN_NODES, SPIN_HISTORY_CAPACITY,
+    PenroseSpinNetworkEngine, PenroseSpinNetworkParams, PenroseSpinNetworkReport, SpinNetworkInput,
+    SpinNode, MAX_SPIN_NODES, SPIN_HISTORY_CAPACITY,
 };
 pub use peps_hypergraph_ricci::{
     PepsHypergraphRicciEngine, PepsHypergraphRicciReport, PepsRicciParams, PEPS_BOND_DIM,
