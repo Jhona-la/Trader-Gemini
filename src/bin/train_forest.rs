@@ -126,7 +126,7 @@
 //!
 //! Uso: train_forest BTCUSDT [--in data/BTCUSDT_SEP26.bin] [--max-samples 400000]
 //!      [--horizon-ms 300000] [--trees 300] [--lr 0.1] [--depth 5]
-//!      [--val-in selection.bin] [--test-in later-test.bin] [--promote]
+//!      [--early-stop-in early.bin] [--val-in selection.bin] [--test-in later-test.bin] [--promote]
 //!      [--calentamiento-ms 43200000] [--cache columnas] [--cache-dir cache/columnas]
 
 use god_engine_core::ml_inference::{macro_ml_features, NanoForest, NanoForestData};
@@ -191,6 +191,19 @@ struct Samples {
     persist: Vec<f64>,
     ts: Vec<u64>,
 }
+
+/// Particion de muestras en dos lados (temporal 80/20 o cruzada por archivo):
+/// features y etiquetas de train y validacion, persistencia de validacion y
+/// las marcas temporales de cada lado.
+type SplitSamples = (
+    Vec<Vec<f32>>,
+    Vec<Vec<f32>>,
+    Vec<f64>,
+    Vec<f64>,
+    Vec<f64>,
+    Vec<u64>,
+    Vec<u64>,
+);
 
 /// Acumuladores de UNA ventana temporal de ticks.
 #[derive(Default, Clone, Copy, PartialEq, Debug)]
@@ -357,6 +370,514 @@ fn regression_gate(mse_model: f64, mse_mean: f64, mse_persist: f64, margin: f64)
     // profundidad — el contrato lo valida al inicio, esto cubre llamadas futuras).
     let pasa = margin.is_finite() && margin >= 0.0 && skill >= margin;
     (r2_mean, skill, pasa)
+}
+
+// HAR-RV secundario y QLIKE: diagnosticos de volatilidad, sin intervenir el gate.
+// Los intervalos se anclan en tiempo fisico, independientemente del stride.
+#[derive(Default)]
+struct HarHistory {
+    // Prefijo causal de retornos al cuadrado, agrupado por timestamp.
+    points: Vec<(u64, f64)>,
+    last_mid: Option<f64>,
+    ignored_overlap: usize,
+    invalid_prices: usize,
+    seams: Vec<(u64, u64)>,
+}
+
+impl HarHistory {
+    fn append_ticks(&mut self, raw: &[BinTick]) -> Result<(), String> {
+        validate_tick_order(raw)?;
+        let cutoff = self.points.last().map(|p| p.0);
+        let mut seam_pending = cutoff.is_some();
+        let mut sum = self.points.last().map_or(0.0, |p| p.1);
+        for tk in raw {
+            // En solapes, el tape ya incorporado es la fuente del pasado.
+            if cutoff.is_some_and(|t| tk.ts <= t) {
+                self.ignored_overlap += 1;
+                continue;
+            }
+            if !(tk.bid.is_finite() && tk.ask.is_finite() && tk.bid > 0.0 && tk.ask >= tk.bid) {
+                self.invalid_prices += 1;
+                continue;
+            }
+            let mid = (tk.bid + tk.ask) / 2.0;
+            if !mid.is_finite() {
+                return Err("HAR: mid no finito".into());
+            }
+            if seam_pending {
+                self.seams.push((cutoff.unwrap(), tk.ts));
+                seam_pending = false;
+            }
+            if let Some(prev) = self.last_mid {
+                let r = (mid - prev) / prev;
+                sum += r * r;
+                if !sum.is_finite() {
+                    return Err("HAR: prefijo de varianza no finito".into());
+                }
+            }
+            self.last_mid = Some(mid);
+            if self.points.last().is_some_and(|p| p.0 == tk.ts) {
+                self.points.last_mut().unwrap().1 = sum;
+            } else {
+                self.points.push((tk.ts, sum));
+            }
+        }
+        if self.points.is_empty() {
+            return Err("HAR: tape sin precios utilizables".into());
+        }
+        Ok(())
+    }
+
+    fn append_through(&mut self, raw: &[BinTick], end: u64) -> Result<(), String> {
+        // El tape de build ya tiene cronologia validada. Ningun precio posterior
+        // al limite participa en prefijos, validaciones numericas ni calibracion.
+        let count = raw.partition_point(|t| t.ts <= end);
+        self.append_ticks(&raw[..count])
+    }
+
+    fn append_admitted(
+        &mut self,
+        cinta: &quantum_engine::tgb_generation::CintaAdmitida,
+        end: u64,
+    ) -> Result<(), String> {
+        // TGBG-5: HAR consume la misma instantanea admitida que build.
+        // El lector comun sirve tambien .bin.tgb; no se reabre la ruta logica.
+        let raw = ticks_de_cinta(cinta.bytes())?;
+        self.append_through(&raw, end)
+    }
+
+    fn rv(&self, start: u64, end: u64) -> Option<f64> {
+        if start >= end || start < self.points.first()?.0 || end > self.points.last()?.0 {
+            return None;
+        }
+        let lo = self.points.partition_point(|p| p.0 <= start);
+        let hi = self.points.partition_point(|p| p.0 <= end);
+        if lo == 0 || hi <= lo {
+            return None; // Ningun retorno observado en (start,end].
+        }
+        let variance = self.points[hi - 1].1 - self.points[lo - 1].1;
+        (variance.is_finite() && variance >= 0.0).then(|| realized_vol_pct(variance))
+    }
+
+    fn features(&self, t: u64, tau: u64, windows: &[usize]) -> Option<Vec<f64>> {
+        if tau == 0 || windows.is_empty() || windows.windows(2).any(|w| w[0] >= w[1]) {
+            return None;
+        }
+        let mut sums = Vec::with_capacity(windows.len());
+        let mut sum = 0.0;
+        let mut end = t;
+        let mut next = 0;
+        for k in 1..=*windows.last()? {
+            let start = end.checked_sub(tau)?;
+            sum += self.rv(start, end)?;
+            if windows[next] == k {
+                sums.push(sum / k as f64);
+                next += 1;
+            }
+            end = start;
+        }
+        (sums.len() == windows.len() && sums.iter().all(|x| x.is_finite())).then_some(sums)
+    }
+}
+
+// Se conserva el tramo contiguo mas largo: nunca se comprime una laguna temporal.
+fn har_grid(history: &HarHistory, first: u64, last: u64, tau: u64) -> (Vec<f64>, usize, u64) {
+    let (mut best, mut run) = (Vec::new(), Vec::new());
+    let (mut missing, mut best_end) = (0, first);
+    if tau == 0 {
+        return (best, missing, best_end);
+    }
+    let mut end = first;
+    loop {
+        if let Some(x) = end
+            .checked_sub(tau)
+            .and_then(|start| history.rv(start, end))
+        {
+            run.push(x);
+        } else {
+            if run.len() > best.len() {
+                best = std::mem::take(&mut run);
+                best_end = end - tau;
+            }
+            run.clear();
+            missing += 1;
+        }
+        match end.checked_add(tau) {
+            Some(next) if next <= last => end = next,
+            _ => break,
+        }
+    }
+    if run.len() > best.len() {
+        best = run;
+        best_end = end;
+    }
+    (best, missing, best_end)
+}
+
+fn har_windows(grid: &[f64]) -> (Vec<usize>, Vec<String>) {
+    let mut windows = vec![1]; // Unidad fisica del problema: un horizonte tau.
+    let mut reasons = Vec::new();
+    if grid.is_empty() || grid.iter().any(|x| !x.is_finite()) {
+        reasons.push("malla_train_ausente_o_no_finita".into());
+        return (windows, reasons);
+    }
+    let n = grid.len();
+    let mean = grid.iter().sum::<f64>() / n as f64;
+    let centered: Vec<_> = grid.iter().map(|x| x - mean).collect();
+    let denom = centered.iter().map(|x| x * x).sum::<f64>();
+    if !(denom.is_finite() && denom > 0.0) {
+        reasons.push("malla_train_constante; se conserva solo tau".into());
+        return (windows, reasons);
+    }
+    let rho = |lag: usize| {
+        centered[lag..]
+            .iter()
+            .zip(&centered[..n - lag])
+            .map(|(a, b)| a * b)
+            .sum::<f64>()
+            / denom
+    };
+    // Limite de viabilidad exigido por la especificacion: mitad de la malla.
+    let limit = n / 2;
+    if let Some(m) = (2..=limit).find(|&k| rho(k).abs() <= 1.0 / (n as f64).sqrt()) {
+        windows.push(m);
+        if let Some(l) = (m + 1..=limit).find(|&k| rho(k).abs() <= 1.0 / n as f64) {
+            windows.push(l);
+        } else {
+            reasons.push("sin_cruce_l_en_lags_viables; rejilla_reducida".into());
+        }
+    } else {
+        reasons.push("sin_cruce_m_en_lags_viables; rejilla_reducida".into());
+    }
+    (windows, reasons)
+}
+
+#[derive(Debug, Clone, PartialEq)]
+struct HarModel {
+    windows: Vec<usize>,
+    beta: Vec<f64>, // Intercepto seguido de pendientes, en unidades originales.
+    ridge_lambda: f64,
+}
+
+impl HarModel {
+    fn predict(&self, history: &HarHistory, t: u64, tau: u64) -> Option<f64> {
+        let x = history.features(t, tau, &self.windows)?;
+        let prediction = self.beta[0]
+            + self.beta[1..]
+                .iter()
+                .zip(x)
+                .map(|(b, x)| b * x)
+                .sum::<f64>();
+        prediction.is_finite().then_some(prediction)
+    }
+}
+
+// OLS centrado y escalado con Ridge numerico. No hay lambda elegida por validacion
+// ni un literal de regularizacion: lambda = sqrt(EPSILON) * traza(X'X) / p.
+// Para columnas constantes, la escala de respaldo es el numero de filas de train.
+fn har_ridge(x: &[Vec<f64>], y: &[f64], windows: Vec<usize>) -> Option<HarModel> {
+    let p = windows.len();
+    if p == 0
+        || x.len() != y.len()
+        || y.len() < p + 1
+        || y.iter().any(|v| !v.is_finite())
+        || x.iter()
+            .any(|r| r.len() != p || r.iter().any(|v| !v.is_finite()))
+    {
+        return None;
+    }
+    let n = y.len() as f64;
+    let mean_y = y.iter().sum::<f64>() / n;
+    let means: Vec<_> = (0..p)
+        .map(|j| x.iter().map(|r| r[j]).sum::<f64>() / n)
+        .collect();
+    let scales: Vec<_> = (0..p)
+        .map(|j| {
+            let sd = (x.iter().map(|r| (r[j] - means[j]).powi(2)).sum::<f64>() / n).sqrt();
+            if sd == 0.0 {
+                1.0
+            } else {
+                sd
+            }
+        })
+        .collect();
+    let mut a = vec![vec![0.0; p + 1]; p];
+    for (row, target) in x.iter().zip(y) {
+        let z: Vec<_> = (0..p).map(|j| (row[j] - means[j]) / scales[j]).collect();
+        for j in 0..p {
+            for k in 0..p {
+                a[j][k] += z[j] * z[k];
+            }
+            a[j][p] += z[j] * (target - mean_y);
+        }
+    }
+    let trace = (0..p).map(|j| a[j][j]).sum::<f64>();
+    let scale = if trace > 0.0 { trace / p as f64 } else { n };
+    let ridge_lambda = f64::EPSILON.sqrt() * scale;
+    if !(ridge_lambda.is_finite() && ridge_lambda > 0.0) {
+        return None;
+    }
+    for (j, row) in a.iter_mut().enumerate() {
+        row[j] += ridge_lambda;
+    }
+    // Eliminacion con pivoteo parcial; el intercepto no se penaliza.
+    for col in 0..p {
+        let pivot = (col..p).max_by(|&i, &j| a[i][col].abs().total_cmp(&a[j][col].abs()))?;
+        a.swap(col, pivot);
+        let divisor = a[col][col];
+        if !divisor.is_finite() || divisor == 0.0 {
+            return None;
+        }
+        for value in &mut a[col][col..=p] {
+            *value /= divisor;
+        }
+        let pivot_tail: Vec<f64> = a[col][col..=p].to_vec();
+        for (j, row) in a.iter_mut().enumerate() {
+            if j != col {
+                let factor = row[col];
+                for (offset, &pivot_value) in pivot_tail.iter().enumerate() {
+                    row[col + offset] -= factor * pivot_value;
+                }
+            }
+        }
+    }
+    let slopes: Vec<_> = (0..p).map(|j| a[j][p] / scales[j]).collect();
+    let intercept = mean_y - slopes.iter().zip(means).map(|(b, m)| b * m).sum::<f64>();
+    let mut beta = vec![intercept];
+    beta.extend(slopes);
+    beta.iter().all(|b| b.is_finite()).then_some(HarModel {
+        windows,
+        beta,
+        ridge_lambda,
+    })
+}
+
+fn har_variance(sigma_pct: f64) -> Option<f64> {
+    let v = (sigma_pct / 100.0).powi(2); // Conversion de porcentaje a varianza.
+    (sigma_pct.is_finite() && sigma_pct >= 0.0 && v.is_finite()).then_some(v)
+}
+
+struct HarCalibration {
+    model: Option<HarModel>,
+    floor: Option<f64>,
+    record: serde_json::Value,
+}
+
+fn fit_har(history: &HarHistory, ts: &[u64], y: &[f64], tau: u64) -> HarCalibration {
+    let floor = y
+        .iter()
+        .filter_map(|&v| har_variance(v))
+        .filter(|&v| v > 0.0)
+        .min_by(f64::total_cmp);
+    let (grid, missing_grid, grid_end) = match (ts.first(), ts.last()) {
+        (Some(&first), Some(&last)) => har_grid(history, first, last, tau),
+        _ => (Vec::new(), 0, 0),
+    };
+    let (windows, mut reasons) = har_windows(&grid);
+    let mut rows = Vec::new();
+    let mut targets = Vec::new();
+    let (mut missing_history, mut nonfinite) = (0, 0);
+    for (&t, &target) in ts.iter().zip(y) {
+        if har_variance(target).is_none() {
+            nonfinite += 1;
+            continue;
+        }
+        if let Some(x) = history.features(t, tau, &windows) {
+            rows.push(x);
+            targets.push(target);
+        } else {
+            missing_history += 1;
+        }
+    }
+    let model = if tau > 0 && ts.len() == y.len() && !grid.is_empty() {
+        har_ridge(&rows, &targets, windows.clone())
+    } else {
+        None
+    };
+    if tau == 0 || ts.len() != y.len() {
+        reasons.push("horizonte_o_alineacion_train_invalida".into());
+    } else if targets.len() < windows.len() + 1 {
+        reasons.push("menos_filas_train_utiles_que_coeficientes".into());
+    } else if model.is_none() {
+        reasons.push("sin_malla_train_o_sistema_numerico_no_resoluble".into());
+    }
+    let n_grid = grid.len() as f64;
+    let window_ms: Option<Vec<u64>> = windows
+        .iter()
+        .map(|&w| u64::try_from(w).ok()?.checked_mul(tau))
+        .collect();
+    let record = serde_json::json!({
+        "schema": "har-rv-qlike-v1", "status": if model.is_some() { "AJUSTADO" } else { "HAR_NO_VIABLE" },
+        "horizon_ms": tau, "windows_tau": windows, "windows_ms": window_ms,
+        "window_rule": "s=1; m: primer k>1 con |rho(k)|<=1/sqrt(N); l: primer k>m con |rho(k)|<=1/N; k<=N/2",
+        "window_reduction_reasons": reasons, "grid_step_ms": tau,
+        "grid_origin_ms": ts.first(), "grid_used_end_ms": grid_end,
+        "grid_rows": grid.len(), "grid_missing_intervals": missing_grid,
+        "grid_policy": "tramo contiguo mas largo; lags en intervalos fisicos tau; ACF centrada con denominador global",
+        "threshold_m": if grid.is_empty() { None } else { Some(1.0/n_grid.sqrt()) },
+        "threshold_l": if grid.is_empty() { None } else { Some(1.0/n_grid) },
+        "train_rows_purged": y.len(), "fit_rows": targets.len(),
+        "fit_missing_history": missing_history, "fit_invalid_targets": nonfinite,
+        "train_first_ms": ts.first(), "train_last_ms": ts.last(),
+        "beta": model.as_ref().map(|m| &m.beta),
+        "ridge_lambda": model.as_ref().map(|m| m.ridge_lambda),
+        "ridge_rule": "centrado y escala RMS train; intercepto libre; sqrt(f64::EPSILON)*traza(Gram)/p; si traza=0: sqrt(EPSILON)*N_fit",
+        "variance_floor": floor, "floor_rule": "min((sigma_train_pct/100)^2 > 0), train purgado",
+        "qlike_floor_policy": "max(varianza_pronosticada,floor) para todos; sigma<=0 usa floor",
+        "fit_source": "solo etiquetas train purgado; seleccion y test no son argumentos",
+        "ignored_overlap_ticks": history.ignored_overlap, "invalid_price_ticks": history.invalid_prices,
+        "history_seams_ms": history.seams,
+    });
+    HarCalibration {
+        model,
+        floor,
+        record,
+    }
+}
+
+// None distingue el realizado cero y los valores no representables de una perdida.
+fn har_qlike(actual_pct: f64, predicted_pct: f64, floor: f64) -> Option<(f64, bool)> {
+    let actual = har_variance(actual_pct)?;
+    if actual <= 0.0 || !predicted_pct.is_finite() || !floor.is_finite() || floor <= 0.0 {
+        return None;
+    }
+    // Un sigma negativo no se convierte en un pronostico positivo al elevarlo al cuadrado.
+    let predicted = if predicted_pct <= 0.0 {
+        0.0
+    } else {
+        har_variance(predicted_pct)?
+    };
+    let clipped = predicted < floor;
+    let ratio = actual / predicted.max(floor);
+    if !ratio.is_finite() || ratio <= 0.0 {
+        return None;
+    }
+    let delta = ratio - 1.0;
+    let loss = if delta.abs() < 1.0 {
+        delta - delta.ln_1p()
+    } else {
+        ratio - ratio.ln() - 1.0
+    };
+    (loss.is_finite() && loss >= 0.0).then_some((loss, clipped))
+}
+
+// Serie de evaluacion alineada que consume compare_har: etiquetas, las tres
+// predicciones baseline y el pronostico medio, junto a los metadatos de la
+// particion (marcas temporales y horizonte).
+struct HarEvalSeries<'a> {
+    ts: &'a [u64],
+    y: &'a [f64],
+    model: &'a [f64],
+    persist: &'a [f64],
+    mean: f64,
+    tau: u64,
+}
+
+fn compare_har(
+    calibration: &HarCalibration,
+    history: &HarHistory,
+    series: HarEvalSeries<'_>,
+) -> serde_json::Value {
+    let HarEvalSeries {
+        ts,
+        y,
+        model,
+        persist,
+        mean,
+        tau,
+    } = series;
+    let mut n_mse = 0usize;
+    let mut n_qlike = 0usize;
+    let (mut zero, mut missing, mut invalid, mut bad_qlike) = (0usize, 0usize, 0usize, 0usize);
+    // Orden declarado, compartido por MSE, QLIKE y contadores de recorte.
+    let names = ["modelo", "persistencia", "har", "media"];
+    let mut mse = [0.0; 4];
+    let mut qlike = [0.0; 4];
+    let mut clipped = [0usize; 4];
+    let aligned = ts.len() == y.len() && y.len() == model.len() && y.len() == persist.len();
+    if aligned {
+        for i in 0..y.len() {
+            let prediction = calibration
+                .model
+                .as_ref()
+                .and_then(|m| m.predict(history, ts[i], tau));
+            let Some(har) = prediction else {
+                missing += 1;
+                continue;
+            };
+            let forecasts = [model[i], persist[i], har, mean];
+            let errors = forecasts.map(|f| (y[i] - f).powi(2));
+            if har_variance(y[i]).is_none() || errors.iter().any(|e| !e.is_finite()) {
+                invalid += 1;
+                continue;
+            }
+            n_mse += 1;
+            for j in 0..names.len() {
+                mse[j] += (errors[j] - mse[j]) / n_mse as f64;
+            }
+            if y[i] == 0.0 {
+                zero += 1;
+                continue;
+            }
+            let losses: Option<Vec<_>> = calibration.floor.and_then(|floor| {
+                forecasts
+                    .iter()
+                    .map(|&f| har_qlike(y[i], f, floor))
+                    .collect()
+            });
+            let Some(losses) = losses else {
+                bad_qlike += 1;
+                continue;
+            };
+            n_qlike += 1;
+            for j in 0..names.len() {
+                qlike[j] += (losses[j].0 - qlike[j]) / n_qlike as f64;
+                clipped[j] += usize::from(losses[j].1);
+            }
+        }
+    }
+    // Regla de calidad declarada por la especificacion, sin tunear con holdout.
+    let too_many_clips = clipped[2] > n_qlike.saturating_sub(clipped[2]);
+    let viable = aligned
+        && calibration.model.is_some()
+        && calibration.floor.is_some()
+        && n_qlike > 0
+        && !too_many_clips
+        && invalid == 0
+        && bad_qlike == 0;
+    let metrics: serde_json::Map<String, serde_json::Value> = (0..names.len())
+        .map(|j| {
+            (
+                names[j].into(),
+                serde_json::json!({
+                    "mse_sigma_pct_common": if n_mse > 0 { Some(mse[j]) } else { None },
+                    "qlike": if n_qlike > 0 { Some(qlike[j]) } else { None },
+                    "qlike_clipped": clipped[j],
+                }),
+            )
+        })
+        .collect();
+    serde_json::json!({
+        "status": if viable { "COMPARABLE" } else { "HAR_NO_VIABLE" },
+        "qlike_evidence": viable, "gate_uses_qlike": false,
+        "rows_total": y.len(), "mse_common_rows": n_mse, "qlike_common_rows": n_qlike,
+        "qlike_omitted_zero": zero, "zero_targets_total": y.iter().filter(|&&v| v == 0.0).count(),
+        "har_missing_history": missing,
+        "invalid_rows": invalid, "qlike_unrepresentable_rows": bad_qlike,
+        "aligned_inputs": aligned, "har_more_than_half_clipped": too_many_clips,
+        "quality_rule": "HAR_NO_VIABLE si mas de la mitad de filas QLIKE comunes requieren recorte HAR",
+        "common_population": "todos los modelos usan las mismas filas; ceros siguen en MSE; gate conserva su poblacion original",
+        "variance_floor": calibration.floor, "metrics": metrics,
+        "history_seams_ms": history.seams, "ignored_overlap_ticks": history.ignored_overlap,
+    })
+}
+
+// Los archivos auxiliares no amplian ModelManifest ni cambian la escritura del modelo.
+fn write_har_record(directory: &str, name: &str, record: &serde_json::Value) -> Result<(), String> {
+    let path = std::path::Path::new(directory).join(name);
+    std::fs::create_dir_all(directory).map_err(|e| e.to_string())?;
+    let bytes = serde_json::to_vec_pretty(record).map_err(|e| e.to_string())?;
+    std::fs::write(&path, bytes).map_err(|e| format!("{}: {e}", path.display()))
 }
 
 // ── PARIDAD ENTRENAMIENTO↔SERVICIO ───────────────────────────────────────
@@ -857,6 +1378,72 @@ fn require_later_holdout(test: &TrainingSamples, evidence_end: u64) -> Result<()
     Ok(())
 }
 
+/// Plan v1.4: el holdout del gate es posterior a TODA etiqueta de early stop.
+/// Train se purga contra early stop antes de ajustar el bosque o HAR.
+fn prepare_early_stop(
+    train: TrainingSamples,
+    early: &TrainingSamples,
+    selection: &TrainingSamples,
+) -> Result<(TrainingSamples, usize), String> {
+    early.validate()?;
+    require_later_holdout(selection, early.max_end())?;
+    purge_training(train, early)
+}
+
+/// La tolerancia de mejora y la cadencia legada se conservan.
+/// Con --early-stop-in se observa cada arbol y paciencia cuenta arboles.
+struct EarlyStopping {
+    best_loss: f64,
+    best_rounds: usize,
+    since_improve: usize,
+}
+
+impl EarlyStopping {
+    fn new() -> Self {
+        Self {
+            best_loss: f64::INFINITY,
+            best_rounds: 0,
+            since_improve: 0,
+        }
+    }
+
+    fn observe(&mut self, loss: f64, rounds: usize, elapsed: usize, patience: usize) -> bool {
+        assert!(loss.is_finite(), "non-finite early-stop loss");
+        if loss + 1e-9 < self.best_loss {
+            self.best_loss = loss;
+            self.best_rounds = rounds;
+            self.since_improve = 0;
+        } else {
+            self.since_improve += elapsed;
+        }
+        self.since_improve >= patience
+    }
+}
+
+/// El flag nuevo no puede caer silenciosamente al valor por defecto.
+fn early_stop_path(args: &[String], val_in: &str, patience: usize) -> Result<String, String> {
+    let positions: Vec<_> = args
+        .iter()
+        .enumerate()
+        .filter(|(_, a)| a.as_str() == "--early-stop-in")
+        .map(|(i, _)| i)
+        .collect();
+    if args.iter().any(|a| a.starts_with("--early-stop-in=")) || positions.len() > 1 {
+        return Err("use --early-stop-in FILE una sola vez".into());
+    }
+    let Some(&i) = positions.first() else {
+        return Ok(String::new());
+    };
+    let path = args
+        .get(i + 1)
+        .filter(|p| !p.is_empty() && !p.starts_with('-'))
+        .ok_or("--early-stop-in requiere una ruta")?;
+    if val_in.is_empty() || patience == 0 {
+        return Err("--early-stop-in requiere --val-in independiente y --patience > 0".into());
+    }
+    Ok(path.clone())
+}
+
 fn require_promotion_holdout(promote: bool, test_path: &str) -> Result<(), String> {
     if promote && test_path.is_empty() {
         return Err("--promote requires a later, independent --test-in; --val-in is selection evidence, not a final test".into());
@@ -1205,6 +1792,8 @@ fn main() {
     let test_reuse = arg("--test-reuse", "");
     // TGBG-5: --val-in se lee aqui (antes de admitir) y el indice revisado de generacion se carga con su pin.
     let val_in = arg("--val-in", "");
+    let early_stop_in = early_stop_path(&args, &val_in, patience)
+        .expect("early-stop CLI rejected before I/O");
     let indice_ruta = arg("--generation-index", "");
     let indice_sha = arg("--generation-index-sha256", "");
     let (lectores_generacion, indice_generacion) = match (indice_ruta.is_empty(), indice_sha.is_empty()) {
@@ -1331,6 +1920,19 @@ fn main() {
         eprintln!("❌ {e}");
         std::process::exit(1);
     });
+    // La fuente adicional tambien se admite antes del primer build.
+    let early_stop_source = if early_stop_in.is_empty() {
+        None
+    } else {
+        Some(
+            admitir_cinta_para_muestras(
+                &early_stop_in,
+                &lectores_generacion,
+                indice_generacion.as_ref(),
+            )
+            .expect("early-stop source rejected before samples"),
+        )
+    };
     // ── 1+2. Muestras: features+etiquetas desde ticks (reutilizable) ────
     let build = |cinta: &quantum_engine::tgb_generation::CintaAdmitida| -> Samples {
         // TGBG-5: se consume la instantánea ADMITIDA (los bytes analizados), con parseo LE seguro.
@@ -1935,6 +2537,8 @@ fn main() {
     let (feats, labels, persist_all, sample_ts) =
         (s_train.feats, s_train.labels, s_train.persist, s_train.ts);
     let n = labels.len();
+    // El diagnostico HAR consume las fuentes ya admitidas, despues de conocer la purga.
+    let mut har_history: Result<HarHistory, String> = Ok(HarHistory::default());
 
     // ── 3. Split: temporal 80/20 CON PURGA, o CRUZADO por archivo ────────
     // El split cruzado (train AGO → val SEP) es la validación MÁS dura y
@@ -1947,14 +2551,7 @@ fn main() {
     // descartan del train las muestras cuya ventana (t, t+τ] alcanza la
     // primera muestra de validación. El recorte no es un número elegido: lo
     // fija τ contra la densidad real del muestreo.
-    let (tr_feats, va_feats, tr_y, va_y, va_persist, va_ts): (
-        Vec<Vec<f32>>,
-        Vec<Vec<f32>>,
-        Vec<f64>,
-        Vec<f64>,
-        Vec<f64>,
-        Vec<u64>,
-    ) = if val_in.is_empty() {
+    let split_samples: SplitSamples = if val_in.is_empty() {
         let split = n * 8 / 10;
         let tr_end = purge_end(&sample_ts, split, horizon_ms);
         // Mínimo FÍSICO del entrenador, no un número elegido: un árbol no
@@ -1983,6 +2580,7 @@ fn main() {
             labels[split..].to_vec(),
             persist_all[split..].to_vec(),
             sample_ts[split..].to_vec(),
+            sample_ts[..tr_end].to_vec(),
         )
     } else {
         // Validación en OTRO fichero. XLIV-13 (recompone FMT): que no haya
@@ -2002,8 +2600,102 @@ fn main() {
             "   validación cruzada por archivo · purga de solape: −{} muestras de train (τ={}ms)",
             purgadas, horizon_ms
         );
-        (train.features, s_val.feats, train.labels, s_val.labels, s_val.persist, s_val.ts)
+        let retained_ts = train.intervals.iter().map(|v| v.start).collect();
+        (
+            train.features,
+            s_val.feats,
+            train.labels,
+            s_val.labels,
+            s_val.persist,
+            s_val.ts,
+            retained_ts,
+        )
     };
+    let (tr_feats, va_feats, tr_y, va_y, va_persist, va_ts, tr_ts) = split_samples;
+    let early_stop_samples = early_stop_source.as_ref().map(build);
+    let (tr_feats, tr_y, tr_ts) = if let Some(early) = early_stop_samples.as_ref() {
+        let train = como_intervalos(&tr_feats, &tr_y, &tr_ts, horizon_ms);
+        let early_intervals = como_intervalos(&early.feats, &early.labels, &early.ts, horizon_ms);
+        let selection = como_intervalos(&va_feats, &va_y, &va_ts, horizon_ms);
+        let (train, purged) = prepare_early_stop(train, &early_intervals, &selection)
+            .expect("invalid train/early-stop/selection separation");
+        let retained_ts = train.intervals.iter().map(|v| v.start).collect();
+        println!(
+            "   early-stop independiente: {} filas, purga train={} (horizonte={}ms), sha256={}",
+            early.labels.len(),
+            purged,
+            horizon_ms,
+            cache_columnas::hex(&early_stop_source.as_ref().unwrap().sha256_original())
+        );
+        (train.features, train.labels, retained_ts)
+    } else {
+        (tr_feats, tr_y, tr_ts)
+    };
+    // Solo train purgado entra en fit_har. El artefacto queda inmutable antes
+    // de incorporar el tape de seleccion al historial de diagnostico.
+    let har_calibration = if label_mode == "vol" {
+        har_history = har_history.and_then(|mut h| {
+            h.append_admitted(&fuentes.train, tr_ts.last().copied().unwrap_or(0))?;
+            Ok(h)
+        });
+        let mut calibration = match &har_history {
+            Ok(h) => fit_har(h, &tr_ts, &tr_y, horizon_ms),
+            Err(reason) => HarCalibration {
+                model: None,
+                floor: None,
+                record: serde_json::json!({"status": "HAR_NO_VIABLE", "reason": reason}),
+            },
+        };
+        calibration.record["train_input"] = serde_json::json!(&in_path);
+        calibration.record["history_source"] =
+            serde_json::json!("instantanea CintaAdmitida; parseo LE comun; sin reabrir rutas");
+        calibration.record["train_admitted_sha256"] =
+            serde_json::json!(cache_columnas::hex(&fuentes.train.sha256_original()));
+        calibration.record["selection_labels_used_for_fit"] = serde_json::json!(false);
+        // El linaje auxiliar identifica los mismos bytes admitidos, aunque la
+        // ruta logica cambie despues o solo exista su transporte .bin.tgb.
+        calibration.record["train_lineage"] = serde_json::to_value(model_manifest::InputRecord {
+            role: "train".into(),
+            path: in_path.clone(),
+            bytes: fuentes.train.bytes().len() as u64,
+            sha256: cache_columnas::hex(&fuentes.train.sha256_original()),
+            first_ts_ms: tr_ts.first().copied(),
+            last_ts_ms: tr_ts.last().copied(),
+            samples: Some(tr_ts.len()),
+        })
+        .expect("HAR train lineage JSON");
+        let bytes = serde_json::to_vec_pretty(&calibration.record).expect("HAR calibration JSON");
+        let sha = model_manifest::sha256_hex(&bytes);
+        let directory = arg(
+            "--har-report-dir",
+            &format!("reports/har-rv-qlike/{}/{}", symbol, sha),
+        );
+        let saved = match write_har_record(&directory, "calibracion.json", &calibration.record) {
+            Ok(()) => {
+                println!("   HAR calibracion guardada: {directory}/calibracion.json");
+                true
+            }
+            Err(e) => {
+                eprintln!("HAR: no se pudo guardar calibracion: {e}");
+                false
+            }
+        };
+        println!("   HAR calibracion train congelada (sha256 {sha}; guardada={saved})");
+        Some((calibration, directory, sha, saved))
+    } else {
+        None
+    };
+    if har_calibration.is_some() {
+        har_history = har_history.and_then(|mut h| {
+            let end = va_ts.last().copied().unwrap_or(0);
+            // El sufijo purgado tambien es pasado legitimo para seleccion.
+            h.append_admitted(&fuentes.train, end)?;
+            if let Some(cinta) = fuentes.seleccion.as_ref() {
+                h.append_admitted(cinta, end)?;
+            }
+            Ok(h)
+        });
+    }
     // Fin de la información usada para entrenar y seleccionar: el test
     // posterior debe empezar DESPUÉS (la selección es la parte más tardía).
     let evidence_end = va_ts.last().map_or(0, |&t| t.saturating_add(horizon_ms));
@@ -2046,11 +2738,12 @@ fn main() {
             / ys.len().max(1) as f64
     };
     let mut f_train = vec![init_score as f64; split];
-    let mut f_val = vec![init_score as f64; va_y.len()];
+    let (stop_feats, stop_y) = early_stop_samples.as_ref()
+        .map(|s| (&s.feats, &s.labels)).unwrap_or((&va_feats, &va_y));
+    let check_every = if early_stop_samples.is_some() { 1 } else { 5 };
+    let mut f_stop = vec![init_score as f64; stop_y.len()];
     let mut trees: Vec<Vec<TreeNode>> = Vec::new();
-    let mut best_val = f64::INFINITY;
-    let mut best_rounds = 0usize;
-    let mut since_improve = 0usize;
+    let mut early_stop = EarlyStopping::new();
     let mut rng = StdRng::seed_from_u64(42);
     let n_feat = tr_feats[0].len();
 
@@ -2100,51 +2793,39 @@ fn main() {
         for (i, x) in tr_feats.iter().enumerate() {
             f_train[i] += lr * eval_tree(&nodes, x) as f64;
         }
-        for (i, x) in va_feats.iter().enumerate() {
-            f_val[i] += lr * eval_tree(&nodes, x) as f64;
+        for (i, x) in stop_feats.iter().enumerate() {
+            f_stop[i] += lr * eval_tree(&nodes, x) as f64;
         }
         trees.push(nodes);
-        if round % 5 == 0 || round == n_rounds - 1 {
+        if round % check_every == 0 || round == n_rounds - 1 {
             let (vl, tl) = if is_regression {
-                (mse(&va_y, &f_val), mse(&tr_y, &f_train))
+                (mse(stop_y, &f_stop), mse(&tr_y, &f_train))
             } else {
                 (
-                    logloss(&va_feats, &va_y, &f_val),
+                    logloss(stop_feats, stop_y, &f_stop),
                     logloss(&tr_feats, &tr_y, &f_train),
                 )
             };
-            if vl + 1e-9 < best_val {
-                best_val = vl;
-                best_rounds = trees.len();
-                since_improve = 0;
-            } else {
-                since_improve += 5;
-            }
+            let stop = early_stop.observe(vl, trees.len(), check_every, patience);
             println!(
-                "   ronda {:3} train {:.6} · val {:.6} {}",
+                "   ronda {:3} train {:.6} · early-stop {:.6} {}",
                 round,
                 tl,
                 vl,
-                if since_improve == 0 { "★" } else { "" }
+                if early_stop.since_improve == 0 { "★" } else { "" }
             );
-            if since_improve >= patience {
+            if stop {
                 println!("   early stopping (paciencia {})", patience);
                 break;
             }
         }
     }
-    trees.truncate(best_rounds.max(1));
-    // EL DIAGNÓSTICO DEBE DESCRIBIR EL MODELO QUE SE GUARDA.
-    //
-    // `f_val` venía acumulando TODOS los árboles aplicados en el bucle,
-    // incluidos los `patience` últimos que el early stopping acaba de
-    // descartar con `truncate`. Las percentiles p10/p50/p90 y la varianza que
-    // se imprimen abajo son precisamente el detector de «modelo cuantizado /
-    // señal muerta» (ver la cabecera de este fichero): describirlas sobre un
-    // bosque que NO es el serializado es medir otra cosa. Se recalcula la
-    // puntuación cruda sobre el bosque truncado — la misma composición que
-    // `predict_raw` sirve en vivo. `best_val` NO se toca: por construcción ya
-    // es la métrica de estos `best_rounds` árboles.
+    trees.truncate(early_stop.best_rounds.max(1));
+    println!("   early-stop best_rounds={} loss={:.6}", early_stop.best_rounds, early_stop.best_loss);
+    // El modelo retenido se congela antes de puntuar --val-in por servicio.
+    // f_stop puede incluir arboles descartados; nunca se usa para el gate.
+    // Con --early-stop-in, va_y no interviene en best_rounds ni paciencia.
+    // Sin ese flag se conserva la seleccion legada sobre validacion.
     //
     // XLIV-13 (recompone FMT-190/191): el artefacto que se guardará se
     // serializa AQUÍ y la validación se puntúa con él por la ruta de servicio
@@ -2189,6 +2870,21 @@ fn main() {
     // último valor. Se evalúa sobre la MISMA partición de validación y en las
     // MISMAS unidades que la etiqueta.
     let mse_persist = if is_regression { mse(&va_y, &va_persist) } else { f64::NAN };
+    let har_selection = har_calibration.as_ref().map(|(calibration, _, _, _)| {
+        let report = match &har_history {
+            Ok(h) => compare_har(calibration, h, HarEvalSeries {
+                ts: &va_ts,
+                y: &va_y,
+                model: &f_val,
+                persist: &va_persist,
+                mean: init_score as f64,
+                tau: horizon_ms,
+            }),
+            Err(reason) => serde_json::json!({"status": "HAR_NO_VIABLE", "qlike_evidence": false, "reason": reason}),
+        };
+        println!("   HAR-RV/QLIKE seleccion: {report}");
+        report
+    });
     // Diagnóstico: predicciones (sigmoid en clasificación; crudas en regresión)
     let val_preds: Vec<f64> = va_feats
         .iter()
@@ -2243,20 +2939,23 @@ fn main() {
     // autocorrelacionan; batir al «mañana será como hoy» sí. El R² contra la
     // media se sigue imprimiendo, etiquetado como informativo.
     //
-    // OPTIMISMO RESIDUAL — CONOCIDO Y NO CORREGIDO AQUÍ: `best_rounds` se elige
-    // minimizando la métrica de ESTA MISMA partición de validación, y luego el
-    // gate juzga al modelo con ella. El modelo está, por tanto, ajustado a la
-    // validación a través del número de árboles; la PERSISTENCIA no está
-    // ajustada a nada. El skill que sale de aquí es un techo, no una medida
-    // limpia. Cerrarlo exige una TERCERA partición (early stopping en una,
-    // gate en otra), lo que reparte el presupuesto de datos y es una decisión
-    // del operador, no del entrenador: no se cambia por iniciativa propia.
+    // Con --early-stop-in el gate recibe solo el modelo congelado, tras
+    // comprobar train < early-stop < seleccion. Sin el flag se conserva
+    // el optimismo residual de usar validacion para elegir best_rounds.
     let gate_pass = if is_regression {
         let (r2_mean, skill, pass) = regression_gate(best_val, baseline, mse_persist, gate_margin);
-        println!("   MSE persistencia (σ/volumen recientes en (t−τ,t]): {:.6}", mse_persist);
-        println!("   skill vs PERSISTENCIA = {:.4}  ← ESTE es el gate (margen {})",
-                 skill, gate_margin);
-        println!("   R² vs media constante = {:.4}  (informativo: NO es el gate)", r2_mean);
+        println!(
+            "   MSE persistencia (σ/volumen recientes en (t−τ,t]): {:.6}",
+            mse_persist
+        );
+        println!(
+            "   skill vs PERSISTENCIA = {:.4}  ← ESTE es el gate (margen {})",
+            skill, gate_margin
+        );
+        println!(
+            "   R² vs media constante = {:.4}  (informativo: NO es el gate)",
+            r2_mean
+        );
         pass
     } else {
         baseline - best_val >= gate_margin
@@ -2276,6 +2975,7 @@ fn main() {
     // llega al test; sus etiquetas no eligen árboles ni ajustan nada. Sin
     // --test-in la evidencia es de selección y NO es apta para promoción
     // (`require_promotion_holdout` ya lo impidió al arrancar).
+    let mut har_test = None;
     let (test_ok, test_evidencia): (bool, Option<(f64, f64, model_manifest::InputRecord)>) = if test_in.is_empty() {
         println!("   sin --test-in: evidencia de selección solamente; NO apta para promoción");
         (true, None)
@@ -2289,6 +2989,29 @@ fn main() {
         require_later_holdout(&test, evidence_end).expect("invalid final holdout");
         let pred = serving_predictions(&model, &test.features).expect("invalid test predictions");
         let constante = vec![init_score as f64; test.labels.len()];
+        if let Some((calibration, _, _, _)) = &har_calibration {
+            har_history = har_history.and_then(|mut h| {
+                let end = s_test.ts.last().copied().unwrap_or(0);
+                // Recupera tambien los sufijos disponibles que ahora son pasado.
+                h.append_admitted(&fuentes.train, end)?;
+                if let Some(cinta) = fuentes.seleccion.as_ref() { h.append_admitted(cinta, end)?; }
+                h.append_admitted(cinta_test, end)?;
+                Ok(h)
+            });
+            let report = match &har_history {
+                Ok(h) => compare_har(calibration, h, HarEvalSeries {
+                    ts: &s_test.ts,
+                    y: &test.labels,
+                    model: &pred,
+                    persist: &s_test.persist,
+                    mean: init_score as f64,
+                    tau: horizon_ms,
+                }),
+                Err(reason) => serde_json::json!({"status": "HAR_NO_VIABLE", "qlike_evidence": false, "reason": reason}),
+            };
+            println!("   HAR-RV/QLIKE test posterior: {report}");
+            har_test = Some(report);
+        }
         let (pass, perdida, base) = if is_regression {
             let mse_modelo = mse(&test.labels, &pred);
             let mse_pers = mse(&test.labels, &s_test.persist);
@@ -2472,6 +3195,24 @@ fn main() {
         &escrito.model_sha256[..12],
         version.as_deref().unwrap_or("desconocido")
     );
+    if let Some((_, directory, calibration_sha, calibration_saved)) = &har_calibration {
+        let report = serde_json::json!({
+            "schema": "har-rv-qlike-v1", "model_sha256": &model_sha,
+            "calibration_sha256": calibration_sha, "calibration_written": calibration_saved,
+            "code_version": &version,
+            "selection": har_selection, "test": har_test,
+            "gate_uses_qlike": false, "gate_selection_pass": gate_sel,
+            "gate_test_pass": test_evidencia.as_ref().map(|_| test_ok),
+        });
+        let bytes = serde_json::to_vec_pretty(&report).expect("HAR comparison JSON");
+        let sha = model_manifest::sha256_hex(&bytes);
+        let name = format!("comparacion.{model_sha}.{sha}.json");
+        if let Err(e) = write_har_record(directory, &name, &report) {
+            eprintln!("HAR: no se pudo guardar comparacion: {e}");
+        } else {
+            println!("   HAR-RV/QLIKE: {directory}/{name}");
+        }
+    }
     // QS-2: toda consulta del test queda anotada, pase o no el gate y se
     // promueva o no: un intento fallido también es información usada.
     if let Some((_, _, registro)) = &test_evidencia {
@@ -3797,5 +4538,553 @@ mod tests {
         for viejo in ["build(&in_path)", "build(&val_in)", "build(&test_in)"] {
             assert!(!cuerpo.contains(viejo), "main vuelve a construir desde una ruta sin admitir: {viejo}");
         }
+    }
+}
+#[cfg(test)]
+mod har_qlike_tests {
+    use super::*;
+
+    // Cada incremento de prefijo equivale a UNA volatilidad de horizonte conocida.
+    fn history(vols: &[f64]) -> HarHistory {
+        let mut h = HarHistory::default();
+        let mut sum = 0.0;
+        h.points.push((1, sum));
+        for (i, &v) in vols.iter().enumerate() {
+            sum += (v / 100.0).powi(2);
+            h.points.push((1 + (i as u64 + 1) * 10, sum));
+        }
+        h
+    }
+
+    fn tick(ts: u64, mid: f64) -> BinTick {
+        BinTick {
+            ts,
+            bid: mid,
+            ask: mid,
+            bq: 1.0,
+            aq: 1.0,
+        }
+    }
+
+    fn calibration(beta: Vec<f64>, windows: Vec<usize>, floor: Option<f64>) -> HarCalibration {
+        HarCalibration {
+            model: Some(HarModel {
+                beta,
+                windows,
+                ridge_lambda: 0.0,
+            }),
+            floor,
+            record: serde_json::json!({}),
+        }
+    }
+
+    fn close(actual: f64, expected: f64) {
+        assert!(
+            (actual - expected).abs() < 1e-10,
+            "actual={actual}, expected={expected}"
+        );
+    }
+
+    #[test]
+    fn har_ventanas_y_prediccion_basica() {
+        let h = history(&[1.0, 2.0, 3.0, 4.0]);
+        let x = h.features(41, 10, &[1, 2, 3]).unwrap();
+        for (a, b) in x.into_iter().zip([4.0, 3.5, 3.0]) {
+            close(a, b);
+        }
+        let m = HarModel {
+            windows: vec![1, 2, 3],
+            beta: vec![0.0, 0.5, 0.25, 0.25],
+            ridge_lambda: 0.0,
+        };
+        close(m.predict(&h, 41, 10).unwrap(), 3.625);
+    }
+
+    #[test]
+    fn har_intervalos_fisicos_no_dependen_del_stride() {
+        let h = history(&[1.0, 2.0, 3.0, 4.0]);
+        let fine: Vec<_> = (11..=41)
+            .step_by(5)
+            .filter_map(|t| h.features(t, 10, &[1]))
+            .collect();
+        let coarse: Vec<_> = (11..=41)
+            .step_by(10)
+            .filter_map(|t| h.features(t, 10, &[1]))
+            .collect();
+        close(fine.last().unwrap()[0], coarse.last().unwrap()[0]);
+        close(h.features(41, 10, &[1, 2, 3]).unwrap()[2], 3.0);
+        let wrong_index_mean = fine[fine.len() - 3..].iter().map(|x| x[0]).sum::<f64>() / 3.0;
+        assert!((wrong_index_mean - 3.0).abs() > 0.1);
+    }
+
+    #[test]
+    fn har_autocorrelacion_usa_malla_no_solapada_tau() {
+        let h = history(&[1.0, 2.0, 3.0, 4.0]);
+        let (grid, missing, end) = har_grid(&h, 11, 41, 10);
+        assert_eq!((grid.len(), missing, end), (4, 0, 41));
+        for (a, b) in grid.iter().zip([1.0, 2.0, 3.0, 4.0]) {
+            close(*a, b);
+        }
+        // Un stride de cinco produciria siete muestras: no se usa como N de ACF.
+        assert_eq!((11..=41).step_by(5).count(), 7);
+    }
+
+    #[test]
+    fn har_autocorrelacion_negativa_se_compara_en_valor_absoluto() {
+        // Media=2, denominador=8, rho(2)=-6/8, rho(3)=-1/8.
+        // N=8, umbral_m=1/sqrt(8): k=2 no cruza; k=3 si cruza.
+        let (windows, reasons) = har_windows(&[1.0, 1.0, 3.0, 3.0, 1.0, 1.0, 3.0, 3.0]);
+        assert_eq!(windows, vec![1, 3]);
+        assert!(!reasons.is_empty());
+    }
+
+    #[test]
+    fn har_larga_es_posterior_a_media_y_usa_umbral_mas_estricto() {
+        // N=12, un impulso inicial: rho(k)=-k/(12*11).
+        // |rho(2)|=1/66 <= 1/sqrt(12); |rho(3)|=1/44 <= 1/12.
+        let mut grid = vec![1.0; 12];
+        grid[0] = 2.0;
+        let (windows, reasons) = har_windows(&grid);
+        assert_eq!(windows, vec![1, 2, 3]);
+        assert!(reasons.is_empty());
+    }
+
+    #[test]
+    fn har_lagunas_no_se_comprimen_en_la_malla() {
+        let mut h = history(&[1.0, 2.0, 3.0, 4.0, 5.0]);
+        for p in &mut h.points[3..] {
+            p.0 += 10;
+        }
+        let (grid, missing, end) = har_grid(&h, 11, 61, 10);
+        assert_eq!((grid.len(), missing, end), (3, 1, 61));
+        for (a, b) in grid.iter().zip([3.0, 4.0, 5.0]) {
+            close(*a, b);
+        }
+    }
+
+    #[test]
+    fn har_ventanas_faltantes_se_registran_sin_defaults() {
+        let (windows, reasons) = har_windows(&[1.0, 2.0]);
+        assert_eq!(windows, vec![1]);
+        assert!(reasons.iter().any(|r| r.contains("sin_cruce_m")));
+    }
+
+    #[test]
+    fn har_ridge_serie_plana_tiene_intercepto_media_y_pendientes_cero() {
+        let x = vec![vec![2.0, 2.0, 2.0]; 4];
+        let m = har_ridge(&x, &[1.0, 2.0, 3.0, 4.0], vec![1, 2, 3]).unwrap();
+        close(m.beta[0], 2.5);
+        for b in &m.beta[1..] {
+            close(*b, 0.0);
+        }
+        close(m.ridge_lambda, 4.0 * f64::EPSILON.sqrt());
+    }
+
+    #[test]
+    fn har_ridge_colinealidad_exacta_tiene_solucion_finita() {
+        let x: Vec<_> = (1..=4).map(|i| vec![i as f64; 3]).collect();
+        let m = har_ridge(&x, &[2.0, 4.0, 6.0, 8.0], vec![1, 2, 3]).unwrap();
+        let expected = 2.0 / (3.0 + f64::EPSILON.sqrt());
+        // Las columnas identicas comparten la pendiente; el intercepto es libre.
+        for b in &m.beta[1..] {
+            assert!((*b - expected).abs() < 1e-7);
+        }
+        assert!((m.beta[0] - (5.0 - 7.5 * expected)).abs() < 1e-7);
+        assert!(m.beta.iter().all(|b| b.is_finite()));
+    }
+
+    #[test]
+    fn har_ridge_caso_dos_filas_calculable_a_mano() {
+        // x=[0,2], y=[1,5]: media_x=1, media_y=3, Gram=2, rhs=4.
+        let m = har_ridge(&[vec![0.0], vec![2.0]], &[1.0, 5.0], vec![1]).unwrap();
+        let slope = 2.0 / (1.0 + f64::EPSILON.sqrt());
+        close(m.beta[1], slope);
+        close(m.beta[0], 3.0 - slope);
+    }
+
+    #[test]
+    fn har_ridge_rechaza_nan_e_infinito() {
+        assert!(har_ridge(&[vec![f64::NAN], vec![1.0]], &[1.0, 2.0], vec![1]).is_none());
+        assert!(har_ridge(&[vec![0.0], vec![1.0]], &[1.0, f64::INFINITY], vec![1]).is_none());
+    }
+
+    #[test]
+    fn har_ajuste_cuenta_y_descarta_etiquetas_no_finitas() {
+        let h = history(&[1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0]);
+        let ts: Vec<_> = (11..=81).step_by(10).collect();
+        let c = fit_har(&h, &ts, &[1.0, 2.0, 3.0, 4.0, 5.0, f64::NAN, 7.0, 8.0], 10);
+        assert_eq!(c.record["fit_invalid_targets"], 1);
+        assert!(c.model.is_some());
+        assert!(c.model.unwrap().beta.iter().all(|v| v.is_finite()));
+    }
+
+    #[test]
+    fn qlike_floor_procede_solo_de_train_positivo() {
+        let h = history(&[1.0, 2.0, 3.0, 4.0]);
+        let c = fit_har(&h, &[11, 21, 31, 41], &[4.0, 2.0, 0.0, f64::NAN], 10);
+        close(c.floor.unwrap(), 0.0004);
+        assert!(fit_har(&h, &[11, 21], &[0.0, 0.0], 10).floor.is_none());
+    }
+
+    #[test]
+    fn qlike_cero_cuando_acierto() {
+        // sigma=200% equivale a varianza=4.
+        assert_eq!(har_qlike(200.0, 200.0, 1.0), Some((0.0, false)));
+    }
+
+    #[test]
+    fn qlike_penaliza_mas_subestimar() {
+        let under = har_qlike(200.0, 100.0 * 2.0_f64.sqrt(), 1.0).unwrap().0;
+        let over = har_qlike(200.0, 100.0 * 8.0_f64.sqrt(), 1.0).unwrap().0;
+        close(under, 1.0 - 2.0_f64.ln());
+        close(over, 2.0_f64.ln() - 0.5);
+        assert!(under > over);
+    }
+
+    #[test]
+    fn qlike_cero_realizado_se_omite_pero_sigue_en_mse() {
+        assert!(har_qlike(0.0, 2.0, 0.0001).is_none());
+        let c = calibration(vec![0.0, 1.0], vec![1], Some(0.0001));
+        let r = compare_har(
+            &c,
+            &history(&[1.0, 2.0]),
+            HarEvalSeries {
+                ts: &[11, 21],
+                y: &[0.0, 2.0],
+                model: &[1.0, 2.0],
+                persist: &[1.0, 2.0],
+                mean: 2.0,
+                tau: 10,
+            },
+        );
+        assert_eq!(r["mse_common_rows"], 2);
+        assert_eq!(r["qlike_common_rows"], 1);
+        assert_eq!(r["qlike_omitted_zero"], 1);
+        close(
+            r["metrics"]["har"]["mse_sigma_pct_common"]
+                .as_f64()
+                .unwrap(),
+            0.5,
+        );
+    }
+
+    #[test]
+    fn qlike_recorte_ignora_el_signo_al_cuadrar_y_aplica_suelo_positivo() {
+        for prediction in [-200.0, -50.0, 0.0, 5.0] {
+            // actual=100% -> varianza exactamente 1.0; floor=1.0. Las cuatro
+            // predicciones quedan por debajo del suelo (0.0 o ~0.0025), asi
+            // que predicted.max(floor)=1.0 y ratio=1.0/1.0=1.0 exacto: la rama
+            // delta - delta.ln_1p() de har_qlike devuelve 0.0 - 0.0 = 0.0.
+            // -200.0 vigila el signo: si se elevara al cuadrado daria 4.0,
+            // por encima del suelo, y la perdida dejaria de ser 0.0.
+            assert_eq!(har_qlike(100.0, prediction, 1.0), Some((0.0, true)));
+        }
+    }
+
+    #[test]
+    fn qlike_suelo_simetrico_en_los_cuatro_modelos() {
+        let c = calibration(vec![0.0, 0.0], vec![1], Some(0.01));
+        let r = compare_har(
+            &c,
+            &history(&[1.0]),
+            HarEvalSeries {
+                ts: &[11],
+                y: &[10.0],
+                model: &[0.0],
+                persist: &[0.0],
+                mean: 0.0,
+                tau: 10,
+            },
+        );
+        for name in ["modelo", "persistencia", "har", "media"] {
+            assert_eq!(r["metrics"][name]["qlike_clipped"], 1);
+            close(r["metrics"][name]["qlike"].as_f64().unwrap(), 0.0);
+        }
+        assert_eq!(r["qlike_evidence"], false);
+    }
+
+    #[test]
+    fn qlike_sin_floor_train_no_fabrica_epsilon() {
+        let c = calibration(vec![0.0, 1.0], vec![1], None);
+        let r = compare_har(
+            &c,
+            &history(&[1.0]),
+            HarEvalSeries {
+                ts: &[11],
+                y: &[1.0],
+                model: &[1.0],
+                persist: &[1.0],
+                mean: 1.0,
+                tau: 10,
+            },
+        );
+        assert_eq!(r["qlike_evidence"], false);
+        assert!(r["metrics"]["har"]["qlike"].is_null());
+    }
+
+    #[test]
+    fn qlike_mas_de_mitad_recortada_invalida_evidencia() {
+        let c = calibration(vec![-1.0, 1.0], vec![1], Some(0.0001));
+        let h = history(&[1.0, 1.0, 3.0]);
+        let half = compare_har(
+            &c,
+            &h,
+            HarEvalSeries {
+                ts: &[11, 31],
+                y: &[1.0, 1.0],
+                model: &[1.0, 1.0],
+                persist: &[1.0, 1.0],
+                mean: 1.0,
+                tau: 10,
+            },
+        );
+        assert_eq!(half["har_more_than_half_clipped"], false);
+        assert_eq!(half["qlike_evidence"], true);
+        let majority = compare_har(
+            &c,
+            &h,
+            HarEvalSeries {
+                ts: &[11, 21, 31],
+                y: &[1.0; 3],
+                model: &[1.0; 3],
+                persist: &[1.0; 3],
+                mean: 1.0,
+                tau: 10,
+            },
+        );
+        assert_eq!(majority["har_more_than_half_clipped"], true);
+        assert_eq!(majority["qlike_evidence"], false);
+    }
+
+    #[test]
+    fn har_causalidad_estricta_ante_ticks_futuros_modificados() {
+        let mut ticks: Vec<_> = (0..=6)
+            .map(|i| tick(1 + i * 10, 100.0 * 1.01_f64.powi(i as i32)))
+            .collect();
+        let mut truncated = HarHistory::default();
+        truncated.append_ticks(&ticks[..=4]).unwrap();
+        let expected = truncated.features(41, 10, &[1, 2, 3]).unwrap();
+        ticks[5].bid = 500.0;
+        ticks[5].ask = 500.0;
+        ticks[6].bid = 900.0;
+        ticks[6].ask = 900.0;
+        let mut full = HarHistory::default();
+        full.append_ticks(&ticks).unwrap();
+        assert_eq!(expected, full.features(41, 10, &[1, 2, 3]).unwrap());
+    }
+
+    #[test]
+    fn har_calibracion_no_inspecciona_precios_posteriores_a_train() {
+        let mut ticks: Vec<_> = (0..=8)
+            .map(|i| tick(1 + i * 10, 100.0 * 1.01_f64.powi(i as i32)))
+            .collect();
+        let mut before = HarHistory::default();
+        before.append_through(&ticks, 61).unwrap();
+        let ts = [11, 21, 31, 41, 51, 61];
+        let y = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0];
+        let first = fit_har(&before, &ts, &y, 10);
+        // Un mid que desbordaria la suma no debe invalidar el train anterior.
+        ticks[7].bid = f64::MAX;
+        ticks[7].ask = f64::MAX;
+        let mut after = HarHistory::default();
+        after.append_through(&ticks, 61).unwrap();
+        let second = fit_har(&after, &ts, &y, 10);
+        assert_eq!(before.points, after.points);
+        assert_eq!(first.model, second.model);
+        assert!(first.model.is_some());
+    }
+
+    #[test]
+    fn har_sin_fuga_de_etiquetas_de_seleccion_y_test() {
+        let h = history(&[1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0]);
+        let ts: Vec<_> = (11..=81).step_by(10).collect();
+        let mut y = vec![2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0];
+        let end = purge_end(&ts, 6, 10);
+        let before = fit_har(&h, &ts[..end], &y[..end], 10);
+        for target in &mut y[6..] {
+            *target = 1_000_000.0;
+        }
+        let after = fit_har(&h, &ts[..end], &y[..end], 10);
+        assert_eq!(before.model, after.model);
+        assert_eq!(before.floor, after.floor);
+        assert_eq!(
+            before.model.as_ref().unwrap().predict(&h, 81, 10),
+            after.model.as_ref().unwrap().predict(&h, 81, 10)
+        );
+    }
+
+    #[test]
+    fn har_purga_excluye_etiqueta_que_alcanza_la_frontera() {
+        let h = history(&[1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0]);
+        let ts: Vec<_> = (11..=81).step_by(10).collect();
+        let mut y = vec![2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0];
+        // Seleccion empieza en 71; la etiqueta de t=61 termina en 71 y se purga.
+        let end = purge_end(&ts, 6, 10);
+        assert_eq!(end, 5);
+        let before = fit_har(&h, &ts[..end], &y[..end], 10);
+        y[5] = 1_000_000.0;
+        let after = fit_har(&h, &ts[..end], &y[..end], 10);
+        assert_eq!(before.model, after.model);
+        assert_eq!(after.record["train_rows_purged"], 5);
+        assert!(ts[end - 1] + 10 < ts[6]);
+    }
+
+    #[test]
+    fn har_reutiliza_solo_pasado_de_la_particion_anterior() {
+        let mut h = HarHistory::default();
+        h.append_ticks(&[tick(1, 100.0), tick(11, 101.0), tick(21, 102.01)])
+            .unwrap();
+        let selection = [tick(21, 102.01), tick(31, 103.0301), tick(41, 104.060401)];
+        let mut isolated = HarHistory::default();
+        isolated.append_ticks(&selection).unwrap();
+        assert!(isolated.features(41, 10, &[1, 2, 3]).is_none());
+        h.append_ticks(&selection).unwrap();
+        for x in h.features(41, 10, &[1, 2, 3]).unwrap() {
+            close(x, 1.0);
+        }
+        assert_eq!(h.ignored_overlap, 1);
+        assert_eq!(h.seams, vec![(21, 31)]);
+    }
+
+    #[test]
+    fn qlike_no_finitud_elimina_la_misma_fila_en_todos() {
+        let c = calibration(vec![0.0, 1.0], vec![1], Some(0.0001));
+        let r = compare_har(
+            &c,
+            &history(&[1.0, 2.0]),
+            HarEvalSeries {
+                ts: &[11, 21],
+                y: &[1.0, 2.0],
+                model: &[f64::NAN, 2.0],
+                persist: &[1.0, 2.0],
+                mean: 2.0,
+                tau: 10,
+            },
+        );
+        assert_eq!(r["invalid_rows"], 1);
+        assert_eq!(r["qlike_common_rows"], 1);
+        assert_eq!(r["qlike_evidence"], false);
+        for name in ["modelo", "persistencia", "har", "media"] {
+            close(r["metrics"][name]["qlike"].as_f64().unwrap(), 0.0);
+        }
+        assert!(har_qlike(f64::INFINITY, 1.0, 0.0001).is_none());
+    }
+
+    #[test]
+    fn har_timestamp_duplicado_respeta_borde_izquierdo_abierto() {
+        let mut h = HarHistory::default();
+        h.append_ticks(&[
+            tick(1, 100.0),
+            tick(11, 101.0),
+            tick(11, 102.01),
+            tick(21, 103.0301),
+        ])
+        .unwrap();
+        close(h.rv(1, 11).unwrap(), 2.0_f64.sqrt());
+        close(h.rv(11, 21).unwrap(), 1.0);
+        assert_eq!(h.points.len(), 3);
+    }
+}
+
+#[cfg(test)]
+mod early_stop_v1_tests {
+    use super::*;
+
+    fn sample(times: &[u64], horizon: u64) -> TrainingSamples {
+        let mut samples = TrainingSamples::default();
+        for &t in times {
+            samples.push(vec![t as f32], t as f64, t, t + horizon);
+        }
+        samples
+    }
+
+    #[test]
+    fn early_stop_cli_rejects_missing_duplicate_or_ambiguous_paths() {
+        let args = |values: &[&str]| values.iter().map(|s| s.to_string()).collect::<Vec<_>>();
+        assert_eq!(early_stop_path(&args(&["bin", "SYM"]), "", 0).unwrap(), "");
+        assert_eq!(
+            early_stop_path(&args(&["--early-stop-in", "early.bin"]), "val.bin", 2).unwrap(),
+            "early.bin"
+        );
+        for values in [
+            vec!["--early-stop-in"],
+            vec!["--early-stop-in", "--val-in"],
+            vec!["--early-stop-in", ""],
+            vec!["--early-stop-in", "a", "--early-stop-in", "b"],
+            vec!["--early-stop-in=a"],
+        ] {
+            assert!(early_stop_path(&args(&values), "val.bin", 2).is_err());
+        }
+        assert!(early_stop_path(&args(&["--early-stop-in", "a"]), "", 2).is_err());
+        assert!(early_stop_path(&args(&["--early-stop-in", "a"]), "val.bin", 0).is_err());
+    }
+
+    #[test]
+    fn early_stop_purges_train_at_equality_and_rejects_gate_overlap() {
+        let early = sample(&[40, 50], 10);
+        let (train, purged) =
+            prepare_early_stop(sample(&[10, 20, 30], 10), &early, &sample(&[61, 71], 10)).unwrap();
+        assert_eq!(purged, 1);
+        assert_eq!(train.labels, vec![10.0, 20.0]);
+        assert!(prepare_early_stop(sample(&[10, 20], 10), &early, &sample(&[60], 10)).is_err());
+        assert!(prepare_early_stop(sample(&[40, 50], 10), &early, &sample(&[61], 10)).is_err());
+        assert!(prepare_early_stop(
+            sample(&[10], 10),
+            &TrainingSamples::default(),
+            &sample(&[61], 10)
+        )
+        .is_err());
+    }
+
+    #[test]
+    fn early_stop_checks_each_tree_counts_patience_and_retains_best() {
+        let mut stop = EarlyStopping::new();
+        assert!(!stop.observe(4.0, 1, 1, 2));
+        assert!(!stop.observe(1.0, 2, 1, 2));
+        assert!(!stop.observe(1.0, 3, 1, 2));
+        assert!(stop.observe(2.0, 4, 1, 2));
+        assert_eq!(stop.best_rounds, 2);
+        assert_eq!(stop.best_loss, 1.0);
+        assert_eq!(stop.since_improve, 2);
+        let mut reset = EarlyStopping::new();
+        assert!(!reset.observe(4.0, 1, 1, 2));
+        assert!(!reset.observe(5.0, 2, 1, 2));
+        assert!(!reset.observe(3.0, 3, 1, 2));
+        assert_eq!(reset.since_improve, 0);
+        assert_eq!(reset.best_rounds, 3);
+    }
+
+    #[test]
+    fn early_stop_gate_labels_do_not_choose_trees_and_frozen_predictions_are_retained() {
+        // Fixture: el mejor arbol para early es el primero; para gate seria el segundo.
+        let leaf = || {
+            vec![TreeNode {
+                feature: -1,
+                threshold: 0.0,
+                left: -1,
+                right: -1,
+                value: 1.0,
+            }]
+        };
+        let x = vec![vec![0.0; DIM_VECTOR]];
+        let early_y = 1.0;
+        let mut retained = Vec::new();
+        for gate_y in [2.0, -3.0] {
+            let mut trees = Vec::new();
+            let mut stop = EarlyStopping::new();
+            for round in 1..=2 {
+                trees.push(leaf());
+                let prediction = forest_raw(0.0, 1.0, &trees, &x[0]);
+                if stop.observe((early_y - prediction).powi(2), round, 1, 1) {
+                    break;
+                }
+            }
+            trees.truncate(stop.best_rounds);
+            let model = serialize_forest(&trees, 0.0, 1.0).unwrap();
+            let prediction = serving_predictions(&model, &x).unwrap()[0];
+            assert_eq!(prediction, 1.0);
+            retained.push((stop.best_rounds, (gate_y - prediction).powi(2)));
+        }
+        assert_eq!(retained, vec![(1, 1.0), (1, 16.0)]);
     }
 }
