@@ -68,7 +68,10 @@ fn fila(id: u64, ts: u64) -> Value {
 fn esperar_hasta(que: &str, limite: Duration, cond: impl Fn() -> bool) -> Duration {
     let t = Instant::now();
     while !cond() {
-        assert!(t.elapsed() < limite, "no se cumplio dentro del limite de la prueba: {que}");
+        assert!(
+            t.elapsed() < limite,
+            "no se cumplio dentro del limite de la prueba: {que}"
+        );
         thread::yield_now();
     }
     t.elapsed()
@@ -77,16 +80,29 @@ fn esperar_hasta(que: &str, limite: Duration, cond: impl Fn() -> bool) -> Durati
 #[test]
 fn a47_presion_inversa_del_sellado_con_testigo() -> CaptureResult<()> {
     let stamp = SystemTime::now().duration_since(UNIX_EPOCH)?.as_nanos();
-    let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join(".retention-tests").join(format!("sellado-{}-{stamp}", std::process::id()));
+    let dir = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join(".retention-tests")
+        .join(format!("sellado-{}-{stamp}", std::process::id()));
     fs::create_dir_all(&dir)?;
     let cancel = Arc::new(std::sync::atomic::AtomicBool::new(false));
-    let ctl = Arc::new(Control::nuevo(salidafallo::PLAZO_FATAL, Box::new(salidafallo::RelojMonotono::nuevo()),
-        Box::new(SalidaNula), Arc::new(salidafallo::CompuertaStore::real(cancel))));
-    let (queue, rx, cap) = ArchiveQueue::derivada(QUEUE_BYTE_BUDGET, ROW_CHARGE_OVERHEAD, Arc::clone(&ctl.admision))
-        .map_err(io::Error::other)?;
+    let ctl = Arc::new(Control::nuevo(
+        salidafallo::PLAZO_FATAL,
+        Box::new(salidafallo::RelojMonotono::nuevo()),
+        Box::new(SalidaNula),
+        Arc::new(salidafallo::CompuertaStore::real(cancel)),
+    ));
+    let (queue, rx, cap) = ArchiveQueue::derivada(
+        QUEUE_BYTE_BUDGET,
+        ROW_CHARGE_OVERHEAD,
+        Arc::clone(&ctl.admision),
+    )
+    .map_err(io::Error::other)?;
     let audit = Arc::clone(&queue.audit);
     let estado = Arc::new((Mutex::new((false, false)), Condvar::new()));
-    let disco = DiscoRetenido { real: RealDisk, estado: Arc::clone(&estado) };
+    let disco = DiscoRetenido {
+        real: RealDisk,
+        estado: Arc::clone(&estado),
+    };
     let (seal_tx, seal_rx) = std_mpsc::sync_channel(SEAL_QUEUE_CAPACITY);
     let (d2, c2) = (Arc::new(disco), Arc::clone(&ctl));
     let d3 = Arc::clone(&d2);
@@ -123,7 +139,11 @@ fn a47_presion_inversa_del_sellado_con_testigo() -> CaptureResult<()> {
         ofrecer(h(3 + n) + ROTATION_GRACE_MS)?;
     }
     let antes = 2 + rotaciones as usize;
-    esperar_hasta("el escritor desencola la fila que provoca el envio bloqueado", limite, || deq() == antes);
+    esperar_hasta(
+        "el escritor desencola la fila que provoca el envio bloqueado",
+        limite,
+        || deq() == antes,
+    );
     // 3) Testigo y llegadas activas durante la retencion.
     let hora_abierta = h(3 + rotaciones - 1) + ROTATION_GRACE_MS + 1;
     let testigo = ofrecer(hora_abierta)?;
@@ -133,11 +153,21 @@ fn a47_presion_inversa_del_sellado_con_testigo() -> CaptureResult<()> {
     }
     let t_obs = Instant::now();
     while t_obs.elapsed() < Duration::from_millis(300) {
-        assert_eq!(deq(), antes, "A47: con el sello retenido y el canal lleno la testigo no se desencola");
+        assert_eq!(
+            deq(),
+            antes,
+            "A47: con el sello retenido y el canal lleno la testigo no se desencola"
+        );
         thread::yield_now();
     }
-    let (ocupadas, cargados) = (queue.tx.max_capacity() - queue.tx.capacity(), audit.charged_bytes().unwrap_or(0));
-    assert!(audit.failure_reason().is_none(), "A47: sin rechazo durante la retencion");
+    let (ocupadas, cargados) = (
+        queue.tx.max_capacity() - queue.tx.capacity(),
+        audit.charged_bytes().unwrap_or(0),
+    );
+    assert!(
+        audit.failure_reason().is_none(),
+        "A47: sin rechazo durante la retencion"
+    );
     assert!(cargados <= QUEUE_BYTE_BUDGET && ocupadas <= cap.filas);
     // 4) Liberar el sello: independiente del retorno del envio.
     let t_lib = Instant::now();
@@ -146,7 +176,9 @@ fn a47_presion_inversa_del_sellado_con_testigo() -> CaptureResult<()> {
         m.lock().expect("estado").1 = true;
         cv.notify_all();
     }
-    let a_testigo = esperar_hasta("la testigo se desencola tras liberar", limite, || deq() > antes);
+    let a_testigo = esperar_hasta("la testigo se desencola tras liberar", limite, || {
+        deq() > antes
+    });
     let total = acc();
     let a_cero = esperar_hasta("el atraso vuelve a cero", limite, || deq() == total);
     drop(ofrecer);
@@ -159,8 +191,11 @@ fn a47_presion_inversa_del_sellado_con_testigo() -> CaptureResult<()> {
     // 5) Conciliacion: cada fila archivada una vez y en orden de ingest_seq.
     let mut ids = Vec::new();
     let mut seqs = Vec::new();
-    let mut nombres: Vec<_> = fs::read_dir(&dir)?.flatten().map(|e| e.path())
-        .filter(|p| p.to_string_lossy().ends_with(".jsonl.gz")).collect();
+    let mut nombres: Vec<_> = fs::read_dir(&dir)?
+        .flatten()
+        .map(|e| e.path())
+        .filter(|p| p.to_string_lossy().ends_with(".jsonl.gz"))
+        .collect();
     nombres.sort();
     for p in &nombres {
         for l in std::io::BufReader::new(flate2::read::GzDecoder::new(File::open(p)?)).lines() {
@@ -173,17 +208,24 @@ fn a47_presion_inversa_del_sellado_con_testigo() -> CaptureResult<()> {
     unicos.sort_unstable();
     unicos.dedup();
     seqs.sort_unstable();
-    println!("MEDIDA_SELLADO {}", json!({"caso": "a47", "criterio": "presion_inversa_finita",
+    println!(
+        "MEDIDA_SELLADO {}",
+        json!({"caso": "a47", "criterio": "presion_inversa_finita",
         "seal_queue_capacity": SEAL_QUEUE_CAPACITY, "segmentos_entregados_antes_del_bloqueo": 1 + SEAL_QUEUE_CAPACITY,
         "testigo": testigo, "desencoladas_antes_de_liberar": antes, "llegadas_durante_retencion": llegadas,
         "ocupadas_durante_retencion": ocupadas, "bytes_cargados_durante_retencion": cargados,
         "liberacion_a_testigo_ns": a_testigo.as_nanos() as u64, "liberacion_a_atraso_cero_ns": (a_testigo + a_cero).as_nanos() as u64,
         "pared_liberacion_total_ns": t_lib.elapsed().as_nanos() as u64,
         "aceptadas": total, "archivadas": ids.len(), "identidades_unicas": unicos.len(),
-        "escritor": out.json(), "segmentos_sellados": rep.segments, "fallos_sellado": rep.failures}));
+        "escritor": out.json(), "segmentos_sellados": rep.segments, "fallos_sellado": rep.failures})
+    );
     assert_eq!(ids.len(), total, "A47/A51: todas las aceptadas archivadas");
     assert_eq!(unicos.len(), total, "A40: ninguna identidad repetida");
-    assert_eq!(seqs, (1..=total as u64).collect::<Vec<_>>(), "A41: ingest_seq unico y sin huecos");
+    assert_eq!(
+        seqs,
+        (1..=total as u64).collect::<Vec<_>>(),
+        "A41: ingest_seq unico y sin huecos"
+    );
     assert!(ids.contains(&testigo));
     assert!(rep.failures.is_empty() && out.failures.is_empty());
     assert_eq!(audit.charged_bytes(), Some(0), "A42: reservas devueltas");

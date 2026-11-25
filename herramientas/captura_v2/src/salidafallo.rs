@@ -60,8 +60,8 @@ pub const SALIDA_VIGILANTE: u32 = 5;
 //   Esa observación no se incorporó automáticamente al presupuesto ni constituye una cota
 //   universal.
 // ---------------------------------------------------------------------------------------------
-pub const SELLADO_MAX_MEDIDO_NS: u64 = 85_500 + 1_904_600 + 3_290_400 + 24_053_800
-    + 66_682_075_400 + 7_294_300 + 61_394_800;
+pub const SELLADO_MAX_MEDIDO_NS: u64 =
+    85_500 + 1_904_600 + 3_290_400 + 24_053_800 + 66_682_075_400 + 7_294_300 + 61_394_800;
 pub const SEGMENTOS_EN_CIERRE: u64 = 2 + crate::SEAL_QUEUE_CAPACITY as u64 + 1;
 pub const PLAZO_FATAL: Duration = Duration::from_nanos(SEGMENTOS_EN_CIERRE * SELLADO_MAX_MEDIDO_NS);
 
@@ -127,9 +127,14 @@ pub struct SalidaProceso {
 
 impl SalidaProceso {
     pub fn arrancar() -> io::Result<Self> {
-        let pedida = Arc::new(SalidaPedida { codigo: AtomicU32::new(0), hilo: OnceLock::new() });
+        let pedida = Arc::new(SalidaPedida {
+            codigo: AtomicU32::new(0),
+            hilo: OnceLock::new(),
+        });
         let p2 = Arc::clone(&pedida);
-        let h = thread::Builder::new().name("capture-salida".into()).spawn(move || salida_ordenada(&p2))?;
+        let h = thread::Builder::new()
+            .name("capture-salida".into())
+            .spawn(move || salida_ordenada(&p2))?;
         let _ = pedida.hilo.set(h.thread().clone());
         Ok(Self { pedida })
     }
@@ -155,7 +160,12 @@ fn salida_ordenada(p: &SalidaPedida) {
 impl Salida for SalidaProceso {
     fn terminar(&self, codigo: u32, ordenada: bool) {
         if ordenada {
-            let _ = self.pedida.codigo.compare_exchange(0, codigo + 1, Ordering::SeqCst, Ordering::SeqCst);
+            let _ = self.pedida.codigo.compare_exchange(
+                0,
+                codigo + 1,
+                Ordering::SeqCst,
+                Ordering::SeqCst,
+            );
             if let Some(h) = self.pedida.hilo.get() {
                 h.unpark();
             }
@@ -196,7 +206,11 @@ unsafe impl Sync for TextoFijo {}
 
 impl TextoFijo {
     const fn nuevo() -> Self {
-        Self { bytes: UnsafeCell::new([0; TEXTO_FIJO]), largo: AtomicUsize::new(0), listo: AtomicBool::new(false) }
+        Self {
+            bytes: UnsafeCell::new([0; TEXTO_FIJO]),
+            largo: AtomicUsize::new(0),
+            listo: AtomicBool::new(false),
+        }
     }
 
     fn escribir_una_vez(&self, partes: &[&[u8]]) {
@@ -382,7 +396,12 @@ pub struct Control {
 }
 
 impl Control {
-    pub fn nuevo(plazo: Duration, reloj: Box<dyn Reloj>, salida: Box<dyn Salida>, store: Arc<CompuertaStore>) -> Self {
+    pub fn nuevo(
+        plazo: Duration,
+        reloj: Box<dyn Reloj>,
+        salida: Box<dyn Salida>,
+        store: Arc<CompuertaStore>,
+    ) -> Self {
         Self {
             banderas: AtomicU32::new(0),
             clase: AtomicU8::new(Clase::Ninguna as u8),
@@ -459,7 +478,12 @@ impl Control {
     fn fijar(&self, clase: Clase, partes: &[&[u8]], desde_hook: bool) -> bool {
         let primero = self
             .clase
-            .compare_exchange(Clase::Ninguna as u8, clase as u8, Ordering::SeqCst, Ordering::SeqCst)
+            .compare_exchange(
+                Clase::Ninguna as u8,
+                clase as u8,
+                Ordering::SeqCst,
+                Ordering::SeqCst,
+            )
             .is_ok();
         if primero {
             #[cfg(test)]
@@ -514,7 +538,16 @@ impl Control {
         };
         self.fijar(
             Clase::Panic,
-            &[b"panic en hilo ", nombre.as_bytes(), b" en ", archivo.as_bytes(), b":", num, b": ", mensaje.as_bytes()],
+            &[
+                b"panic en hilo ",
+                nombre.as_bytes(),
+                b" en ",
+                archivo.as_bytes(),
+                b":",
+                num,
+                b": ",
+                mensaje.as_bytes(),
+            ],
             true,
         );
     }
@@ -571,7 +604,11 @@ impl Control {
     pub async fn esperar_fatal(&self) {
         std::future::poll_fn(|cx| {
             self.aviso_async.register(cx.waker());
-            if self.es_fatal() { std::task::Poll::Ready(()) } else { std::task::Poll::Pending }
+            if self.es_fatal() {
+                std::task::Poll::Ready(())
+            } else {
+                std::task::Poll::Pending
+            }
         })
         .await
     }
@@ -614,12 +651,17 @@ impl Control {
             Ok(v) => v.len(),
             Err(p) => p.into_inner().len(),
         };
-        (self.clase.load(Ordering::SeqCst), self.es_fatal(), n + self.secundarios_perdidos.load(Ordering::Relaxed))
+        (
+            self.clase.load(Ordering::SeqCst),
+            self.es_fatal(),
+            n + self.secundarios_perdidos.load(Ordering::Relaxed),
+        )
     }
 
     /// Instante del primer fatal en el reloj del control (origen: creacion del control).
     pub fn t_primer_fatal(&self) -> Option<Duration> {
-        self.es_fatal().then(|| Duration::from_nanos(self.t_fatal_ns.load(Ordering::SeqCst)))
+        self.es_fatal()
+            .then(|| Duration::from_nanos(self.t_fatal_ns.load(Ordering::SeqCst)))
     }
 
     /// Ahora, en el reloj del control.
@@ -665,7 +707,12 @@ impl Control {
             if actual & FATAL != 0 {
                 return Err(());
             }
-            match self.banderas.compare_exchange(actual, actual | DESARMADO, Ordering::SeqCst, Ordering::SeqCst) {
+            match self.banderas.compare_exchange(
+                actual,
+                actual | DESARMADO,
+                Ordering::SeqCst,
+                Ordering::SeqCst,
+            ) {
                 Ok(_) => {
                     self.despertar_vigilante();
                     return Ok(());
@@ -760,7 +807,11 @@ pub fn vigilar(ctl: &Control) {
 /// FATAL: si la ultima escritura cotejada de END no describia ningun fatal (END_SIN_FATAL), el
 /// fatal es posterior a END y el cierre es incompleto (C4), no "fatal con cierre completo".
 fn codigo_de_salida(b: u32) -> u32 {
-    if b & (INCOMPLETO | END_SIN_FATAL) != 0 { SALIDA_FATAL_INCOMPLETO } else { SALIDA_FATAL_CERRADO }
+    if b & (INCOMPLETO | END_SIN_FATAL) != 0 {
+        SALIDA_FATAL_INCOMPLETO
+    } else {
+        SALIDA_FATAL_CERRADO
+    }
 }
 
 #[cfg(test)]
@@ -863,7 +914,11 @@ impl Admision {
             self.despertar_escritor();
             return None;
         }
-        Some(Vuelo { adm: self, confirmada: false, cancelada: false })
+        Some(Vuelo {
+            adm: self,
+            confirmada: false,
+            cancelada: false,
+        })
     }
 
     /// Corte monotono. Devuelve la instantanea del primer corte (el de este llamador o uno previo).
@@ -930,7 +985,12 @@ impl Vuelo<'_> {
                 self.cancelada = true;
                 return false;
             }
-            match self.adm.estado.compare_exchange(actual, actual + UNA_CONFIRMADA, Ordering::SeqCst, Ordering::SeqCst) {
+            match self.adm.estado.compare_exchange(
+                actual,
+                actual + UNA_CONFIRMADA,
+                Ordering::SeqCst,
+                Ordering::SeqCst,
+            ) {
                 Ok(_) => {
                     self.confirmada = true;
                     return true;
@@ -1049,7 +1109,10 @@ impl CompuertaStore {
                 return None;
             }
             let nuevo = ((actual & !MASCARA_OP) + 1) | ((op as u64) << DESPL_OP);
-            match self.estado.compare_exchange(actual, nuevo, Ordering::SeqCst, Ordering::SeqCst) {
+            match self
+                .estado
+                .compare_exchange(actual, nuevo, Ordering::SeqCst, Ordering::SeqCst)
+            {
                 Ok(_) => break,
                 Err(v) => actual = v,
             }
@@ -1062,7 +1125,10 @@ impl CompuertaStore {
     /// Borrado ordenado por la compuerta: si esta cerrada, no se borra.
     pub fn borrar(&self, op: OpStore, ruta: &Path) -> io::Result<()> {
         let Some(_g) = self.admitir(op) else {
-            return Err(io::Error::other(format!("compuerta de store cerrada; no se borra {}", ruta.display())));
+            return Err(io::Error::other(format!(
+                "compuerta de store cerrada; no se borra {}",
+                ruta.display()
+            )));
         };
         (self.borrador)(ruta)
     }
@@ -1153,7 +1219,9 @@ pub fn clasificar_store(
     cierre_pedido: bool,
 ) -> EventoStore {
     match aviso {
-        Ok(crate::store::StoreStop::LowDisk { free, minimum }) => EventoStore::DiscoBajo { free, minimum },
+        Ok(crate::store::StoreStop::LowDisk { free, minimum }) => {
+            EventoStore::DiscoBajo { free, minimum }
+        }
         Ok(crate::store::StoreStop::StorageError(e)) => EventoStore::ErrorAlmacen(e),
         Err(_) => match estado {
             EstadoStore::Panic => EventoStore::Panic,
@@ -1176,7 +1244,11 @@ impl EventoStore {
                 let s = crate::store::StoreStop::StorageError(e);
                 (s.code(), s.message(), s.reason())
             }
-            Self::FinEsperado => (0, "capture-store termino tras el cierre".into(), "store_ended"),
+            Self::FinEsperado => (
+                0,
+                "capture-store termino tras el cierre".into(),
+                "store_ended",
+            ),
             Self::FinInesperado => {
                 let m = "capture-store termino sin orden de parada";
                 ctl.fatal(Clase::StoreFin, m);
@@ -1212,7 +1284,10 @@ impl Default for Supervisor {
 
 impl Supervisor {
     pub fn nuevo() -> Self {
-        Self { tareas: tokio::task::JoinSet::new(), nombres: HashMap::new() }
+        Self {
+            tareas: tokio::task::JoinSet::new(),
+            nombres: HashMap::new(),
+        }
     }
 
     pub fn lanzar<F>(&mut self, nombre: String, tarea: F)
@@ -1228,10 +1303,20 @@ impl Supervisor {
     }
 
     /// Siguiente tarea terminada con su nombre (pendiente para siempre si no quedan).
-    pub async fn siguiente(&mut self) -> (String, Result<CaptureResult<()>, tokio::task::JoinError>) {
+    pub async fn siguiente(
+        &mut self,
+    ) -> (String, Result<CaptureResult<()>, tokio::task::JoinError>) {
         match self.tareas.join_next_with_id().await {
-            Some(Ok((id, r))) => (self.nombres.remove(&id).unwrap_or_else(|| format!("{id}")), Ok(r)),
-            Some(Err(e)) => (self.nombres.remove(&e.id()).unwrap_or_else(|| format!("{}", e.id())), Err(e)),
+            Some(Ok((id, r))) => (
+                self.nombres.remove(&id).unwrap_or_else(|| format!("{id}")),
+                Ok(r),
+            ),
+            Some(Err(e)) => (
+                self.nombres
+                    .remove(&e.id())
+                    .unwrap_or_else(|| format!("{}", e.id())),
+                Err(e),
+            ),
             None => std::future::pending().await,
         }
     }
@@ -1286,7 +1371,9 @@ impl Supervisor {
 pub fn conexion_terminada(r: Result<(), tokio::task::JoinError>) -> CaptureResult<()> {
     match r {
         Ok(()) => Ok(()),
-        Err(e) if e.is_panic() => Err(io::Error::other(format!("conexion market: panic ({e})")).into()),
+        Err(e) if e.is_panic() => {
+            Err(io::Error::other(format!("conexion market: panic ({e})")).into())
+        }
         Err(e) => Err(io::Error::other(format!("conexion market: cancelada ({e})")).into()),
     }
 }

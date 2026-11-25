@@ -16,8 +16,8 @@
 use crate::{CaptureResult, Clock, Emitter};
 use serde_json::{Value, json};
 use std::{
-    collections::{BTreeMap, BinaryHeap, HashMap},
     cmp::Reverse,
+    collections::{BTreeMap, BinaryHeap, HashMap},
     fs,
     path::PathBuf,
     time::{Duration, Instant},
@@ -202,7 +202,8 @@ impl Gate {
         }
         if let Some(last) = self.last_sent {
             let rate_per_ms = l.limit as f64 / l.window.as_millis() as f64 * self.factor;
-            let spacing = Duration::from_secs_f64(self.last_cost.max(1) as f64 / rate_per_ms / 1000.0);
+            let spacing =
+                Duration::from_secs_f64(self.last_cost.max(1) as f64 / rate_per_ms / 1000.0);
             if now < last + spacing {
                 return Some(last + spacing - now);
             }
@@ -234,7 +235,17 @@ impl Gate {
         Some(used)
     }
 
-    async fn get(&mut self, kind: Kind, url: String) -> (Option<u16>, Option<u64>, Option<u64>, Option<String>, Option<String>) {
+    async fn get(
+        &mut self,
+        kind: Kind,
+        url: String,
+    ) -> (
+        Option<u16>,
+        Option<u64>,
+        Option<u64>,
+        Option<String>,
+        Option<String>,
+    ) {
         self.last_sent = Some(Instant::now());
         self.last_cost = self.cost(kind);
         match self.client.get(url).send().await {
@@ -261,15 +272,24 @@ impl Gate {
 
     /// Respuesta 429/418 comun a todos los tipos. Devuelve true si la puerta debe dejar de
     /// atender esta llamada (y reencolarla si fue 429).
-    fn throttle(&mut self, status: Option<u16>, retry_after: Option<u64>, body: &Option<String>) -> CaptureResult<bool> {
+    fn throttle(
+        &mut self,
+        status: Option<u16>,
+        retry_after: Option<u64>,
+        body: &Option<String>,
+    ) -> CaptureResult<bool> {
         match status {
             Some(429) => {
-                let wait = Duration::from_secs(retry_after.unwrap_or(0)).max(self.until_window_end());
+                let wait =
+                    Duration::from_secs(retry_after.unwrap_or(0)).max(self.until_window_end());
                 self.paused_until = Some(Instant::now() + wait);
                 self.factor /= 2.0;
                 self.last_429_window = Some(self.window_index(now_ms(self.clock)));
-                self.emit("rest_429", json!({"retry_after_s":retry_after,"pause_ms":wait.as_millis() as u64,
-                    "rate_factor":self.factor,"payload":body}))?;
+                self.emit(
+                    "rest_429",
+                    json!({"retry_after_s":retry_after,"pause_ms":wait.as_millis() as u64,
+                    "rate_factor":self.factor,"payload":body}),
+                )?;
                 Ok(true)
             }
             Some(418) => {
@@ -280,7 +300,9 @@ impl Gate {
                 let _ = fs::write(self.ban_file(), serde_json::to_vec_pretty(&record)?);
                 let _ = fs::write(
                     self.cfg.root.join("ALERTA_REST_418.txt"),
-                    format!("HTTP 418 de Binance: REST cerrada en la captura v2. Detalle: {record}\n"),
+                    format!(
+                        "HTTP 418 de Binance: REST cerrada en la captura v2. Detalle: {record}\n"
+                    ),
                 );
                 eprintln!("ALERTA REST 418: puerta REST cerrada hasta reiniciar; WebSocket sigue");
                 self.emit("rest_ban", record)?;
@@ -359,10 +381,18 @@ impl Gate {
             }
             Kind::Depth => {
                 // limit=1000: maximo que admite el endpoint (doc de Binance), igual que el kit v1.
-                let url = format!("{}/fapi/v1/depth?symbol={}&limit=1000", self.cfg.rest, req.symbol);
+                let url = format!(
+                    "{}/fapi/v1/depth?symbol={}&limit=1000",
+                    self.cfg.rest, req.symbol
+                );
                 let (status, retry_after, used, body, error) = self.get(Kind::Depth, url).await;
                 if self.throttle(status, retry_after, &body)? {
-                    return Ok(if self.closed { Self::fail(req, CLOSED_COOLDOWN); None } else { Some(req) });
+                    return Ok(if self.closed {
+                        Self::fail(req, CLOSED_COOLDOWN);
+                        None
+                    } else {
+                        Some(req)
+                    });
                 }
                 let last_id = if status == Some(200) {
                     body.as_deref()
@@ -371,27 +401,52 @@ impl Gate {
                 } else {
                     None
                 };
-                let error = error.or_else(|| last_id.is_none().then(|| format!("REST snapshot missing valid lastUpdateId (HTTP {status:?})")));
-                let kind = if last_id.is_some() { "snapshot" } else { "snapshot_error" };
+                let error = error.or_else(|| {
+                    last_id.is_none().then(|| {
+                        format!("REST snapshot missing valid lastUpdateId (HTTP {status:?})")
+                    })
+                });
+                let kind = if last_id.is_some() {
+                    "snapshot"
+                } else {
+                    "snapshot_error"
+                };
                 self.emitter.emit_now(kind, 0, json!({"shard_request":req.shard,"symbol":req.symbol,
                     "depth_generation":req.generation,"trigger_u":req.trigger_u,"r2_periodic":req.periodic,
                     "request_utc_ms":request.utc_ms,"request_mono_ns":request.mono_ns,
                     "http_status":status,"last_update_id":last_id,"used_weight":used,
                     "learned_weights":self.learned_json(),"payload":body,"error":error}), None)?;
-                let cooldown = Duration::from_secs(retry_after.unwrap_or(self.cfg.default_cooldown_s).clamp(1, 3600));
+                let cooldown = Duration::from_secs(
+                    retry_after
+                        .unwrap_or(self.cfg.default_cooldown_s)
+                        .clamp(1, 3600),
+                );
                 if let Some(tx) = &req.reply {
-                    let _ = tx.send(Reply::Depth { symbol: req.symbol.clone(), generation: req.generation, ok: last_id.is_some(), cooldown });
+                    let _ = tx.send(Reply::Depth {
+                        symbol: req.symbol.clone(),
+                        generation: req.generation,
+                        ok: last_id.is_some(),
+                        cooldown,
+                    });
                 }
                 Ok(None)
             }
             Kind::AggFill => {
                 let url = format!(
                     "{}/fapi/v1/aggTrades?symbol={}&fromId={}&limit={}",
-                    self.cfg.rest, req.symbol, req.from_id, req.limit.min(self.cfg.agg_limit_max)
+                    self.cfg.rest,
+                    req.symbol,
+                    req.from_id,
+                    req.limit.min(self.cfg.agg_limit_max)
                 );
                 let (status, retry_after, used, body, error) = self.get(Kind::AggFill, url).await;
                 if self.throttle(status, retry_after, &body)? {
-                    return Ok(if self.closed { Self::fail(req, CLOSED_COOLDOWN); None } else { Some(req) });
+                    return Ok(if self.closed {
+                        Self::fail(req, CLOSED_COOLDOWN);
+                        None
+                    } else {
+                        Some(req)
+                    });
                 }
                 let parsed: Option<Value> = if status == Some(200) {
                     body.as_deref().and_then(|b| serde_json::from_str(b).ok())
@@ -405,13 +460,23 @@ impl Gate {
                     .and_then(|t| t["a"].as_u64());
                 let ok = parsed.as_ref().is_some_and(Value::is_array);
                 let kind = if ok { "agg_fill" } else { "agg_fill_error" };
-                self.emitter.emit_now(kind, 0, json!({"shard_request":req.shard,"symbol":req.symbol,
+                self.emitter.emit_now(
+                    kind,
+                    0,
+                    json!({"shard_request":req.shard,"symbol":req.symbol,
                     "from_id":req.from_id,"limit":req.limit,"last_agg_id":last_id,
                     "request_utc_ms":request.utc_ms,"request_mono_ns":request.mono_ns,
                     "http_status":status,"used_weight":used,"learned_weights":self.learned_json(),
-                    "payload":body,"error":error}), None)?;
+                    "payload":body,"error":error}),
+                    None,
+                )?;
                 if let Some(tx) = &req.reply {
-                    let _ = tx.send(Reply::Agg { symbol: req.symbol.clone(), from_id: req.from_id, ok, last_id });
+                    let _ = tx.send(Reply::Agg {
+                        symbol: req.symbol.clone(),
+                        from_id: req.from_id,
+                        ok,
+                        last_id,
+                    });
                 }
                 Ok(None)
             }
@@ -421,20 +486,35 @@ impl Gate {
     fn fail(req: Request, cooldown: Duration) {
         if let Some(tx) = &req.reply {
             let _ = match req.kind {
-                Kind::Depth => tx.send(Reply::Depth { symbol: req.symbol, generation: req.generation, ok: false, cooldown }),
-                Kind::AggFill => tx.send(Reply::Agg { symbol: req.symbol, from_id: req.from_id, ok: false, last_id: None }),
+                Kind::Depth => tx.send(Reply::Depth {
+                    symbol: req.symbol,
+                    generation: req.generation,
+                    ok: false,
+                    cooldown,
+                }),
+                Kind::AggFill => tx.send(Reply::Agg {
+                    symbol: req.symbol,
+                    from_id: req.from_id,
+                    ok: false,
+                    last_id: None,
+                }),
                 Kind::Info => Ok(()),
             };
         }
     }
 
-    pub async fn run(mut self, mut rx: mpsc::UnboundedReceiver<Request>, mut stop: watch::Receiver<bool>) -> CaptureResult<()> {
+    pub async fn run(
+        mut self,
+        mut rx: mpsc::UnboundedReceiver<Request>,
+        mut stop: watch::Receiver<bool>,
+    ) -> CaptureResult<()> {
         // Veto 418 de una corrida anterior.
         if let Ok(text) = fs::read_to_string(self.ban_file()) {
             let v: Value = serde_json::from_str(&text).unwrap_or(Value::Null);
             match v["until_utc_ms"].as_u64() {
                 Some(until) if until > now_ms(self.clock) => {
-                    self.paused_until = Some(Instant::now() + Duration::from_millis(until - now_ms(self.clock)));
+                    self.paused_until =
+                        Some(Instant::now() + Duration::from_millis(until - now_ms(self.clock)));
                     self.emit("rest_ban_inherited", v)?;
                 }
                 Some(_) => {}

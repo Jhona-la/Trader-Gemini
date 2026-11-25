@@ -4,7 +4,10 @@
 //! archive, seal_segments, CompuertaStore, clasificar_store, Supervisor, conexion_terminada).
 
 use super::*;
-use crate::{ArchiveQueue, Disk, Emitter, Life, OfferPoint, QueueEnd, ROW_CHARGE_OVERHEAD, archive, seal_segments};
+use crate::{
+    ArchiveQueue, Disk, Emitter, Life, OfferPoint, QueueEnd, ROW_CHARGE_OVERHEAD, archive,
+    seal_segments,
+};
 use flate2::read::GzDecoder;
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
@@ -42,7 +45,10 @@ impl Salida for SalidaCompartida {
     }
     fn terminado(&self) -> bool {
         let bloqueada = self.0.ordenada_bloqueada.load(Ordering::SeqCst);
-        self.0.codigos().iter().any(|&(_, ordenada)| !ordenada || !bloqueada)
+        self.0
+            .codigos()
+            .iter()
+            .any(|&(_, ordenada)| !ordenada || !bloqueada)
     }
 }
 
@@ -53,7 +59,10 @@ pub(crate) struct RelojPrueba {
 
 impl RelojPrueba {
     fn avanzar(&self, d: Duration) {
-        self.ns.fetch_add(u64::try_from(d.as_nanos()).unwrap_or(u64::MAX), Ordering::SeqCst);
+        self.ns.fetch_add(
+            u64::try_from(d.as_nanos()).unwrap_or(u64::MAX),
+            Ordering::SeqCst,
+        );
     }
 }
 
@@ -73,22 +82,35 @@ fn compuerta_memoria() -> (Arc<CompuertaStore>, Borrados) {
     let compuerta = CompuertaStore::nueva(
         Arc::new(AtomicBool::new(false)),
         Box::new(move |p| {
-            registro.lock().map_err(|_| io::Error::other("envenenado"))?.push(p.to_path_buf());
+            registro
+                .lock()
+                .map_err(|_| io::Error::other("envenenado"))?
+                .push(p.to_path_buf());
             Ok(())
         }),
     );
     (Arc::new(compuerta), borrados)
 }
 
-pub(crate) fn control_de_prueba(plazo: Duration) -> (Arc<Control>, Arc<SalidaPrueba>, Arc<RelojPrueba>) {
+pub(crate) fn control_de_prueba(
+    plazo: Duration,
+) -> (Arc<Control>, Arc<SalidaPrueba>, Arc<RelojPrueba>) {
     let (compuerta, _) = compuerta_memoria();
     control_con_compuerta(plazo, compuerta)
 }
 
-fn control_con_compuerta(plazo: Duration, compuerta: Arc<CompuertaStore>) -> (Arc<Control>, Arc<SalidaPrueba>, Arc<RelojPrueba>) {
+fn control_con_compuerta(
+    plazo: Duration,
+    compuerta: Arc<CompuertaStore>,
+) -> (Arc<Control>, Arc<SalidaPrueba>, Arc<RelojPrueba>) {
     let salida = Arc::new(SalidaPrueba::default());
     let reloj = Arc::new(RelojPrueba::default());
-    let ctl = Control::nuevo(plazo, Box::new(RelojCompartido(Arc::clone(&reloj))), Box::new(SalidaCompartida(Arc::clone(&salida))), compuerta);
+    let ctl = Control::nuevo(
+        plazo,
+        Box::new(RelojCompartido(Arc::clone(&reloj))),
+        Box::new(SalidaCompartida(Arc::clone(&salida))),
+        compuerta,
+    );
     (Arc::new(ctl), salida, reloj)
 }
 
@@ -110,7 +132,10 @@ fn lanzar_vigilante(ctl: &Arc<Control>) -> thread::JoinHandle<()> {
 }
 
 fn rt() -> tokio::runtime::Runtime {
-    tokio::runtime::Builder::new_current_thread().enable_all().build().expect("runtime de prueba")
+    tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .expect("runtime de prueba")
 }
 
 fn fila(seq: u64, ts: u64, payload: &str) -> Value {
@@ -127,11 +152,23 @@ struct Memoria {
 
 impl Memoria {
     fn falla(&self, ruta: &Path, fase: &str) -> bool {
-        let nombre = ruta.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
-        self.fallos.lock().map(|f| f.iter().any(|(s, ph)| *ph == fase && nombre.starts_with(s.as_str()))).unwrap_or(false)
+        let nombre = ruta
+            .file_name()
+            .map(|n| n.to_string_lossy().into_owned())
+            .unwrap_or_default();
+        self.fallos
+            .lock()
+            .map(|f| {
+                f.iter()
+                    .any(|(s, ph)| *ph == fase && nombre.starts_with(s.as_str()))
+            })
+            .unwrap_or(false)
     }
     fn fallar(&self, segmento: &str, fase: &'static str) {
-        self.fallos.lock().expect("fallos").insert((segmento.to_owned(), fase));
+        self.fallos
+            .lock()
+            .expect("fallos")
+            .insert((segmento.to_owned(), fase));
     }
     fn leer(&self, ruta: &Path) -> Option<Vec<u8>> {
         self.archivos.lock().expect("archivos").get(ruta).cloned()
@@ -158,7 +195,13 @@ impl Write for ArchivoMemoria {
         if self.mem.falla(&self.ruta, "write") {
             return Err(inyectado("write"));
         }
-        self.mem.archivos.lock().map_err(|_| inyectado("lock"))?.entry(self.ruta.clone()).or_default().extend_from_slice(b);
+        self.mem
+            .archivos
+            .lock()
+            .map_err(|_| inyectado("lock"))?
+            .entry(self.ruta.clone())
+            .or_default()
+            .extend_from_slice(b);
         Ok(b.len())
     }
     fn flush(&mut self) -> io::Result<()> {
@@ -180,10 +223,17 @@ impl Disk for DiscoMemoria {
             return Err(io::Error::new(io::ErrorKind::AlreadyExists, "existe"));
         }
         a.insert(path.to_path_buf(), Vec::new());
-        Ok(ArchivoMemoria { ruta: path.to_path_buf(), mem: Arc::clone(&self.0) })
+        Ok(ArchivoMemoria {
+            ruta: path.to_path_buf(),
+            mem: Arc::clone(&self.0),
+        })
     }
     fn sync(&self, f: &ArchivoMemoria) -> io::Result<()> {
-        if self.0.falla(&f.ruta, "sync") { Err(inyectado("sync")) } else { Ok(()) }
+        if self.0.falla(&f.ruta, "sync") {
+            Err(inyectado("sync"))
+        } else {
+            Ok(())
+        }
     }
     fn digest(&self, path: &Path) -> CaptureResult<(u64, String)> {
         if self.0.falla(path, "sha256") {
@@ -207,7 +257,11 @@ impl Disk for DiscoMemoria {
         }
         let mut b = serde_json::to_vec_pretty(value)?;
         b.push(b'\n');
-        self.0.archivos.lock().map_err(|_| inyectado("lock"))?.insert(path.to_path_buf(), b);
+        self.0
+            .archivos
+            .lock()
+            .map_err(|_| inyectado("lock"))?
+            .insert(path.to_path_buf(), b);
         Ok(())
     }
 }
@@ -217,7 +271,11 @@ fn dir() -> PathBuf {
 }
 
 /// Escritor + sellador de produccion sobre el disco en memoria. Devuelve (outcome, report).
-fn archivar(disco: &DiscoMemoria, ctl: &Arc<Control>, rx: crate::ArchiveReceiver) -> (crate::ArchiveOutcome, crate::SealReport) {
+fn archivar(
+    disco: &DiscoMemoria,
+    ctl: &Arc<Control>,
+    rx: crate::ArchiveReceiver,
+) -> (crate::ArchiveOutcome, crate::SealReport) {
     let (seal_tx, seal_rx) = std_mpsc::sync_channel(crate::SEAL_QUEUE_CAPACITY);
     let d2 = disco.clone();
     let c2 = Arc::clone(ctl);
@@ -229,7 +287,11 @@ fn archivar(disco: &DiscoMemoria, ctl: &Arc<Control>, rx: crate::ArchiveReceiver
 fn gz_seqs(bytes: &[u8]) -> Vec<u64> {
     BufReader::new(GzDecoder::new(bytes))
         .lines()
-        .map(|l| serde_json::from_str::<Value>(&l.expect("linea")).expect("json")["ingest_seq"].as_u64().expect("seq"))
+        .map(|l| {
+            serde_json::from_str::<Value>(&l.expect("linea")).expect("json")["ingest_seq"]
+                .as_u64()
+                .expect("seq")
+        })
         .collect()
 }
 
@@ -244,7 +306,9 @@ fn panic_superior_es_fatal() {
     let _entrada = rt.enter();
     let (stop_tx, stop_rx) = tokio::sync::watch::channel(false);
     let mut sup = Supervisor::nuevo();
-    sup.lanzar("rest gate".into(), async { panic!("driver averiado (inyectado)") });
+    sup.lanzar("rest gate".into(), async {
+        panic!("driver averiado (inyectado)")
+    });
     for nombre in ["shard 0 public", "shard 4 market"] {
         let mut stop = stop_rx.clone();
         let falla_en_cierre = nombre.ends_with("market");
@@ -261,9 +325,15 @@ fn panic_superior_es_fatal() {
     // Captura: la tarea superior cae y el supervisor la identifica sin ninguna otra senal de stop.
     let (nombre, r) = rt.block_on(sup.siguiente());
     assert_eq!(nombre, "rest gate");
-    assert!(!*stop_rx.borrow(), "el fatal no necesita la orden de parada");
+    assert!(
+        !*stop_rx.borrow(),
+        "el fatal no necesita la orden de parada"
+    );
     let error = Supervisor::evaluar(&ctl, &nombre, r, false).expect("error registrado");
-    assert!(error.contains("rest gate") && error.contains("panic"), "{error}");
+    assert!(
+        error.contains("rest gate") && error.contains("panic"),
+        "{error}"
+    );
     let (clase, detalle) = ctl.primer_fatal().expect("primer fatal");
     assert_eq!(clase, Clase::TareaPanic);
     assert!(detalle.contains("rest gate"), "{detalle}");
@@ -276,9 +346,16 @@ fn panic_superior_es_fatal() {
     let errores = rt.block_on(sup.cerrar(&ctl));
     assert_eq!(errores.len(), 1, "{errores:?}");
     assert!(errores[0].contains("shard 4 market") && errores[0].contains("panic"));
-    assert_eq!(ctl.primer_fatal().map(|f| f.0), Some(Clase::TareaPanic), "la causa inicial no se sustituye");
+    assert_eq!(
+        ctl.primer_fatal().map(|f| f.0),
+        Some(Clase::TareaPanic),
+        "la causa inicial no se sustituye"
+    );
     let (secundarios, _) = ctl.secundarios();
-    assert!(secundarios.iter().any(|s| s.contains("shard 4 market")), "{secundarios:?}");
+    assert!(
+        secundarios.iter().any(|s| s.contains("shard 4 market")),
+        "{secundarios:?}"
+    );
     assert!(sup.vacio());
     ctl.fin_listo(1, false);
     vig.join().expect("vigilante");
@@ -318,13 +395,22 @@ fn panic_market_es_fatal() {
         }
     });
     let error = resultado.expect_err("JoinError de conexion es fatal");
-    assert!(error.to_string().contains("conexion market: panic"), "{error}");
+    assert!(
+        error.to_string().contains("conexion market: panic"),
+        "{error}"
+    );
     let mut restantes = Vec::new();
     while let Ok(ev) = life.try_recv() {
         restantes.push(ev);
     }
-    assert!(!restantes.iter().any(|ev| matches!(ev, Life::Ended(..))), "nunca llego Life::Ended: {restantes:?}");
-    assert!(matches!(life.try_recv(), Err(tokio::sync::mpsc::error::TryRecvError::Disconnected)));
+    assert!(
+        !restantes.iter().any(|ev| matches!(ev, Life::Ended(..))),
+        "nunca llego Life::Ended: {restantes:?}"
+    );
+    assert!(matches!(
+        life.try_recv(),
+        Err(tokio::sync::mpsc::error::TryRecvError::Disconnected)
+    ));
     // El shard devuelve ese Err y el supervisor lo vuelve fatal con su identidad.
     let m = Supervisor::evaluar(&ctl, "shard 4 market", Ok(Err(error)), false).expect("registrado");
     assert!(m.contains("shard 4 market"));
@@ -360,7 +446,10 @@ fn fin_inesperado_es_fatal() {
     sup.lanzar("shard 2 public".into(), async { Ok(()) });
     let (nombre, r) = rt.block_on(sup.siguiente());
     let e = Supervisor::evaluar(&ctl, &nombre, r, false).expect("fin inesperado");
-    assert!(e.contains("shard 2 public") && e.contains("sin orden de parada"), "{e}");
+    assert!(
+        e.contains("shard 2 public") && e.contains("sin orden de parada"),
+        "{e}"
+    );
     assert_eq!(ctl.primer_fatal().map(|f| f.0), Some(Clase::TareaFin));
     // La misma salida tras la orden de parada es el fin esperado.
     let (sano, _, _) = control_de_prueba(PLAZO_FATAL);
@@ -380,7 +469,11 @@ fn fin_inesperado_es_fatal() {
         let (por_join, por_life) = rt.block_on(async {
             let mut orden = Vec::new();
             let mut fin = None;
-            for paso in if join_primero { ["join", "life"] } else { ["life", "join"] } {
+            for paso in if join_primero {
+                ["join", "life"]
+            } else {
+                ["life", "join"]
+            } {
                 if paso == "join" {
                     let r = tasks.join_next().await.expect("join");
                     crate::salidafallo::conexion_terminada(r).expect("join exitoso no es fatal");
@@ -393,7 +486,9 @@ fn fin_inesperado_es_fatal() {
         });
         assert_eq!(por_join.len(), 2);
         assert_eq!(por_join[0] == "join", join_primero, "{por_join:?}");
-        assert!(matches!(por_life, Some(Life::Ended(9, ref why, false)) if why == "WebSocket ended"));
+        assert!(
+            matches!(por_life, Some(Life::Ended(9, ref why, false)) if why == "WebSocket ended")
+        );
         assert!(!ctl.es_fatal(), "un cierre recuperable no es fatal");
     }
 }
@@ -412,18 +507,53 @@ fn fallo_store_no_es_disco_bajo() {
     };
     // Medicion real de disco bajo y error de almacen: paradas ordinarias, no fatales.
     let (ctl, _, _) = control_de_prueba(PLAZO_FATAL);
-    let ev = clasificar_store(Ok(StoreStop::LowDisk { free: 7, minimum: 9 }), EstadoStore::Volvio, false);
-    assert_eq!(ev, EventoStore::DiscoBajo { free: 7, minimum: 9 });
-    assert_eq!(ev.aplicar(&ctl), (3, "DISCO-BAJO: 7 bytes libres < 9".into(), "low_disk"));
-    let ev = clasificar_store(Ok(StoreStop::StorageError("x".into())), EstadoStore::Volvio, false);
+    let ev = clasificar_store(
+        Ok(StoreStop::LowDisk {
+            free: 7,
+            minimum: 9,
+        }),
+        EstadoStore::Volvio,
+        false,
+    );
+    assert_eq!(
+        ev,
+        EventoStore::DiscoBajo {
+            free: 7,
+            minimum: 9
+        }
+    );
+    assert_eq!(
+        ev.aplicar(&ctl),
+        (3, "DISCO-BAJO: 7 bytes libres < 9".into(), "low_disk")
+    );
+    let ev = clasificar_store(
+        Ok(StoreStop::StorageError("x".into())),
+        EstadoStore::Volvio,
+        false,
+    );
     assert_eq!(ev.aplicar(&ctl).2, "store_error");
     assert!(!ctl.es_fatal());
     // Cancelacion del oneshot: nunca se vuelve una medicion; depende de como termino el hilo.
     for (estado, cierre, esperado, clase) in [
-        (EstadoStore::Panic, false, EventoStore::Panic, Some(Clase::StorePanic)),
-        (EstadoStore::Volvio, false, EventoStore::FinInesperado, Some(Clase::StoreFin)),
+        (
+            EstadoStore::Panic,
+            false,
+            EventoStore::Panic,
+            Some(Clase::StorePanic),
+        ),
+        (
+            EstadoStore::Volvio,
+            false,
+            EventoStore::FinInesperado,
+            Some(Clase::StoreFin),
+        ),
         (EstadoStore::Volvio, true, EventoStore::FinEsperado, None),
-        (EstadoStore::Corriendo, false, EventoStore::CanalCancelado, Some(Clase::StoreCanal)),
+        (
+            EstadoStore::Corriendo,
+            false,
+            EventoStore::CanalCancelado,
+            Some(Clase::StoreCanal),
+        ),
     ] {
         let (ctl, _, _) = control_de_prueba(PLAZO_FATAL);
         let ev = clasificar_store(cancelado(), estado, cierre);
@@ -435,8 +565,12 @@ fn fallo_store_no_es_disco_bajo() {
     }
     // Compuerta: fatal entre escaneo y trabajo -> ni trabajo nuevo ni borrados pendientes.
     let destructivas = [
-        OpStore::RecodeBorraParcialViejo, OpStore::RecodeBorraParcial, OpStore::RecodeBorraReciboParcial,
-        OpStore::RecodeBorraGzip, OpStore::RetencionBorra, OpStore::RecuperacionBorraGzip,
+        OpStore::RecodeBorraParcialViejo,
+        OpStore::RecodeBorraParcial,
+        OpStore::RecodeBorraReciboParcial,
+        OpStore::RecodeBorraGzip,
+        OpStore::RetencionBorra,
+        OpStore::RecuperacionBorraGzip,
     ];
     let (compuerta, borrados) = compuerta_memoria();
     let (ctl, _, _) = control_con_compuerta(PLAZO_FATAL, Arc::clone(&compuerta));
@@ -445,13 +579,17 @@ fn fallo_store_no_es_disco_bajo() {
         let _ = wake_tx.send(());
     }));
     // Modo sano: politica ordinaria intacta (el borrado ocurre).
-    compuerta.borrar(OpStore::RetencionBorra, Path::new("vieja.tgll")).expect("sano");
+    compuerta
+        .borrar(OpStore::RetencionBorra, Path::new("vieja.tgll"))
+        .expect("sano");
     assert_eq!(borrados.lock().expect("b").len(), 1);
     // Un trabajo ya iniciado (recode) bloqueado no bloquea el corte nativo.
     let barrera = Arc::new(Barrier::new(2));
     let (c2, b2) = (Arc::clone(&compuerta), Arc::clone(&barrera));
     let ocupado = thread::spawn(move || {
-        let job = c2.admitir(OpStore::Recode).expect("admitido antes del corte");
+        let job = c2
+            .admitir(OpStore::Recode)
+            .expect("admitido antes del corte");
         b2.wait();
         b2.wait(); // Recode "en curso" hasta que la prueba lo suelte.
         // Fatal durante recode y antes de su punto destructivo: el borrado se niega.
@@ -463,8 +601,16 @@ fn fallo_store_no_es_disco_bajo() {
     ctl.fatal(Clase::Panic, "fatal inyectado");
     ctl.cortes_nativos(); // lo que hace el vigilante; vuelve sin esperar al trabajo
     assert!(compuerta.cerrada() && compuerta.cancel.load(Ordering::Acquire));
-    assert_eq!(compuerta.corte(), Some(CorteStore { en_curso: 1, ultima: OpStore::Recode }));
-    wake_rx.recv_timeout(Duration::from_secs(20)).expect("store despertado de forma nativa");
+    assert_eq!(
+        compuerta.corte(),
+        Some(CorteStore {
+            en_curso: 1,
+            ultima: OpStore::Recode
+        })
+    );
+    wake_rx
+        .recv_timeout(Duration::from_secs(20))
+        .expect("store despertado de forma nativa");
     barrera.wait();
     assert!(ocupado.join().expect("hilo").is_err());
     for op in destructivas {
@@ -473,29 +619,43 @@ fn fallo_store_no_es_disco_bajo() {
     for op in [OpStore::Recode, OpStore::Retencion, OpStore::Recuperacion] {
         assert!(compuerta.admitir(op).is_none(), "{op:?}");
     }
-    assert_eq!(borrados.lock().expect("b").len(), 1, "ningun borrado tras el corte");
+    assert_eq!(
+        borrados.lock().expect("b").len(),
+        1,
+        "ningun borrado tras el corte"
+    );
     // Carrera de admision: cada borrado que ocurrio con la compuerta ya cerrada estaba en curso
     // en la instantanea del corte.
     for _ in 0..50 {
         let tardios = Arc::new(AtomicU64::new(0));
         let ref_c: Arc<OnceLock<Arc<CompuertaStore>>> = Arc::new(OnceLock::new());
         let (t2, r2) = (Arc::clone(&tardios), Arc::clone(&ref_c));
-        let compuerta = Arc::new(CompuertaStore::nueva(Arc::new(AtomicBool::new(false)), Box::new(move |_| {
-            if r2.get().is_some_and(|c| c.cerrada()) {
-                t2.fetch_add(1, Ordering::SeqCst);
-            }
-            Ok(())
-        })));
+        let compuerta = Arc::new(CompuertaStore::nueva(
+            Arc::new(AtomicBool::new(false)),
+            Box::new(move |_| {
+                if r2.get().is_some_and(|c| c.cerrada()) {
+                    t2.fetch_add(1, Ordering::SeqCst);
+                }
+                Ok(())
+            }),
+        ));
         let _ = ref_c.set(Arc::clone(&compuerta));
-        let hilos: Vec<_> = (0..4).map(|_| {
-            let c = Arc::clone(&compuerta);
-            thread::spawn(move || while c.borrar(OpStore::RetencionBorra, Path::new("r")).is_ok() {})
-        }).collect();
+        let hilos: Vec<_> = (0..4)
+            .map(|_| {
+                let c = Arc::clone(&compuerta);
+                thread::spawn(
+                    move || while c.borrar(OpStore::RetencionBorra, Path::new("r")).is_ok() {},
+                )
+            })
+            .collect();
         let corte = compuerta.cerrar().expect("corte");
         for h in hilos {
             h.join().expect("hilo");
         }
-        assert!(tardios.load(Ordering::SeqCst) <= corte.en_curso, "borrado no admitido antes del corte");
+        assert!(
+            tardios.load(Ordering::SeqCst) <= corte.en_curso,
+            "borrado no admitido antes del corte"
+        );
         assert_eq!(compuerta.en_curso(), 0);
     }
 }
@@ -512,7 +672,8 @@ fn fatal_nativo_sin_runtime() {
     }));
     let (ctl, salida, _) = control_con_compuerta(PLAZO_FATAL, compuerta);
     let vig = lanzar_vigilante(&ctl);
-    let (queue, mut rx) = ArchiveQueue::with_admission(8, 32 * ROW_CHARGE_OVERHEAD, Arc::clone(&ctl.admision));
+    let (queue, mut rx) =
+        ArchiveQueue::with_admission(8, 32 * ROW_CHARGE_OVERHEAD, Arc::clone(&ctl.admision));
     let adm = Arc::clone(&ctl.admision);
     let escritor = thread::spawn(move || {
         adm.registrar_escritor(thread::current());
@@ -529,13 +690,27 @@ fn fatal_nativo_sin_runtime() {
         queue.offer(fila(s, 100, "x"), None).expect("admitida");
     }
     let c = Arc::clone(&ctl);
-    thread::spawn(move || c.fatal(Clase::Escritor, "fatal desde un hilo nativo")).join().expect("hilo");
+    thread::spawn(move || c.fatal(Clase::Escritor, "fatal desde un hilo nativo"))
+        .join()
+        .expect("hilo");
     // El vigilante corta, despierta al escritor (con un emisor clonado todavia vivo) y a store.
     let (n, end) = escritor.join().expect("escritor");
     assert_eq!((n, end), (3, QueueEnd::CutResolved));
-    assert_eq!(ctl.admision.corte(), Some(Corte { motivo: Motivo::Fatal, confirmadas: 3, en_vuelo: 0 }));
-    wake_rx.recv_timeout(Duration::from_secs(20)).expect("store despertado");
-    assert!(queue.offer(fila(4, 100, "tarde"), None).is_err(), "sin admision tras el corte");
+    assert_eq!(
+        ctl.admision.corte(),
+        Some(Corte {
+            motivo: Motivo::Fatal,
+            confirmadas: 3,
+            en_vuelo: 0
+        })
+    );
+    wake_rx
+        .recv_timeout(Duration::from_secs(20))
+        .expect("store despertado");
+    assert!(
+        queue.offer(fila(4, 100, "tarde"), None).is_err(),
+        "sin admision tras el corte"
+    );
     assert_eq!(ctl.admision.rechazos_tras_corte(), 1);
     drop(queue);
     ctl.fin_listo(1, false);
@@ -546,7 +721,10 @@ fn fatal_nativo_sin_runtime() {
 // ---------------------------------------------------------------------------------------------
 // T6
 // ---------------------------------------------------------------------------------------------
-fn escritor_de(ctl: &Arc<Control>, mut rx: crate::ArchiveReceiver) -> (thread::JoinHandle<(u64, QueueEnd)>, Arc<AtomicU64>) {
+fn escritor_de(
+    ctl: &Arc<Control>,
+    mut rx: crate::ArchiveReceiver,
+) -> (thread::JoinHandle<(u64, QueueEnd)>, Arc<AtomicU64>) {
     let adm = Arc::clone(&ctl.admision);
     let vistos = Arc::new(AtomicU64::new(0));
     let v2 = Arc::clone(&vistos);
@@ -564,8 +742,14 @@ fn escritor_de(ctl: &Arc<Control>, mut rx: crate::ArchiveReceiver) -> (thread::J
     (h, vistos)
 }
 
-fn cola_pausada(ctl: &Arc<Control>, punto: OfferPoint, barrera: Arc<Barrier>, cap: usize) -> (ArchiveQueue, crate::ArchiveReceiver) {
-    let (mut q, rx) = ArchiveQueue::with_admission(cap, 32 * ROW_CHARGE_OVERHEAD, Arc::clone(&ctl.admision));
+fn cola_pausada(
+    ctl: &Arc<Control>,
+    punto: OfferPoint,
+    barrera: Arc<Barrier>,
+    cap: usize,
+) -> (ArchiveQueue, crate::ArchiveReceiver) {
+    let (mut q, rx) =
+        ArchiveQueue::with_admission(cap, 32 * ROW_CHARGE_OVERHEAD, Arc::clone(&ctl.admision));
     q.pause = Some(Arc::new(move |p| {
         if p == punto && thread::current().name() == Some("productor-pausado") {
             barrera.wait();
@@ -579,24 +763,45 @@ fn cola_pausada(ctl: &Arc<Control>, punto: OfferPoint, barrera: Arc<Barrier>, ca
 fn cola_vacia_y_llena_cierra() {
     // a) Cola vacia con emisor clonado retenido: el corte despierta y termina sin EOF.
     let (ctl, _, _) = control_de_prueba(PLAZO_FATAL);
-    let (queue, rx) = ArchiveQueue::with_admission(4, 32 * ROW_CHARGE_OVERHEAD, Arc::clone(&ctl.admision));
+    let (queue, rx) =
+        ArchiveQueue::with_admission(4, 32 * ROW_CHARGE_OVERHEAD, Arc::clone(&ctl.admision));
     let clon = queue.clone();
     let (escritor, _) = escritor_de(&ctl, rx);
     esperar("escritor dormido", || ctl.admision.escritor.get().is_some());
-    assert_eq!(ctl.admision.cortar(Motivo::Fatal), Some(Corte { motivo: Motivo::Fatal, confirmadas: 0, en_vuelo: 0 }));
-    assert_eq!(escritor.join().expect("escritor"), (0, QueueEnd::CutResolved));
+    assert_eq!(
+        ctl.admision.cortar(Motivo::Fatal),
+        Some(Corte {
+            motivo: Motivo::Fatal,
+            confirmadas: 0,
+            en_vuelo: 0
+        })
+    );
+    assert_eq!(
+        escritor.join().expect("escritor"),
+        (0, QueueEnd::CutResolved)
+    );
     drop((queue, clon));
 
     // b) Cola llena: el rechazo por capacidad conserva su causa; se drenan las aceptadas.
     let (ctl, _, _) = control_de_prueba(PLAZO_FATAL);
-    let (queue, rx) = ArchiveQueue::with_admission(2, 32 * ROW_CHARGE_OVERHEAD, Arc::clone(&ctl.admision));
+    let (queue, rx) =
+        ArchiveQueue::with_admission(2, 32 * ROW_CHARGE_OVERHEAD, Arc::clone(&ctl.admision));
     queue.offer(fila(1, 100, "a"), None).expect("1");
     queue.offer(fila(2, 100, "b"), None).expect("2");
-    assert!(queue.offer(fila(3, 100, "c"), None).unwrap_err().to_string().contains("row_capacity"));
+    assert!(
+        queue
+            .offer(fila(3, 100, "c"), None)
+            .unwrap_err()
+            .to_string()
+            .contains("row_capacity")
+    );
     let corte = ctl.admision.cortar(Motivo::Fatal).expect("corte");
     assert_eq!((corte.confirmadas, corte.en_vuelo), (2, 0));
     let (escritor, _) = escritor_de(&ctl, rx);
-    assert_eq!(escritor.join().expect("escritor"), (2, QueueEnd::CutResolved));
+    assert_eq!(
+        escritor.join().expect("escritor"),
+        (2, QueueEnd::CutResolved)
+    );
     assert_eq!(queue.audit.accepted.load(Ordering::SeqCst), 2);
     drop(queue);
 
@@ -607,22 +812,46 @@ fn cola_vacia_y_llena_cierra() {
     let (queue, rx) = cola_pausada(&ctl, OfferPoint::AfterReserve, Arc::clone(&barrera), 4);
     queue.offer(fila(1, 100, "previa"), None).expect("previa");
     let q2 = queue.clone();
-    let productor = thread::Builder::new().name("productor-pausado".into())
-        .spawn(move || q2.offer(fila(2, 100, "reservada"), None)).expect("productor");
+    let productor = thread::Builder::new()
+        .name("productor-pausado".into())
+        .spawn(move || q2.offer(fila(2, 100, "reservada"), None))
+        .expect("productor");
     barrera.wait();
     let corte = ctl.admision.cortar(Motivo::Fatal).expect("corte");
     assert_eq!((corte.confirmadas, corte.en_vuelo), (1, 1));
-    assert!(!ctl.admision.resuelta(), "una reserva pendiente no es una fila archivada");
+    assert!(
+        !ctl.admision.resuelta(),
+        "una reserva pendiente no es una fila archivada"
+    );
     let (escritor, _) = escritor_de(&ctl, rx);
     barrera.wait();
     let r = productor.join().expect("productor");
-    assert!(r.unwrap_err().to_string().contains("cut during reservation"));
-    assert_eq!(escritor.join().expect("escritor"), (1, QueueEnd::CutResolved));
+    assert!(
+        r.unwrap_err()
+            .to_string()
+            .contains("cut during reservation")
+    );
+    assert_eq!(
+        escritor.join().expect("escritor"),
+        (1, QueueEnd::CutResolved)
+    );
     assert_eq!(ctl.admision.reservas_canceladas(), 1);
-    assert_eq!(ctl.admision.confirmadas(), 1, "ninguna confirmacion tras el corte");
+    assert_eq!(
+        ctl.admision.confirmadas(),
+        1,
+        "ninguna confirmacion tras el corte"
+    );
     assert_eq!(queue.audit.accepted.load(Ordering::SeqCst), 1);
-    assert_eq!(queue.budget.available_permits(), queue.byte_limit, "presupuesto liberado");
-    assert_eq!(queue.tx.capacity(), queue.tx.max_capacity(), "plaza liberada");
+    assert_eq!(
+        queue.budget.available_permits(),
+        queue.byte_limit,
+        "presupuesto liberado"
+    );
+    assert_eq!(
+        queue.tx.capacity(),
+        queue.tx.max_capacity(),
+        "plaza liberada"
+    );
     drop(queue);
 
     // d) Pausado tras confirmar y antes de enviar: es una fila con obligacion de drenaje.
@@ -630,18 +859,29 @@ fn cola_vacia_y_llena_cierra() {
     let barrera = Arc::new(Barrier::new(2));
     let (queue, rx) = cola_pausada(&ctl, OfferPoint::AfterConfirm, Arc::clone(&barrera), 4);
     let q2 = queue.clone();
-    let productor = thread::Builder::new().name("productor-pausado".into())
-        .spawn(move || q2.offer(fila(1, 100, "confirmada"), None)).expect("productor");
+    let productor = thread::Builder::new()
+        .name("productor-pausado".into())
+        .spawn(move || q2.offer(fila(1, 100, "confirmada"), None))
+        .expect("productor");
     barrera.wait();
     let corte = ctl.admision.cortar(Motivo::Fatal).expect("corte");
     assert_eq!((corte.confirmadas, corte.en_vuelo), (1, 1));
     let (escritor, vistos) = escritor_de(&ctl, rx);
     assert!(!ctl.admision.resuelta());
-    assert!(!escritor.is_finished(), "no hay falsa completitud con una confirmada sin enviar");
+    assert!(
+        !escritor.is_finished(),
+        "no hay falsa completitud con una confirmada sin enviar"
+    );
     assert_eq!(vistos.load(Ordering::SeqCst), 0);
     barrera.wait();
-    productor.join().expect("productor").expect("la confirmada se envia");
-    assert_eq!(escritor.join().expect("escritor"), (1, QueueEnd::CutResolved));
+    productor
+        .join()
+        .expect("productor")
+        .expect("la confirmada se envia");
+    assert_eq!(
+        escritor.join().expect("escritor"),
+        (1, QueueEnd::CutResolved)
+    );
     drop(queue);
 
     // e) Permiso retenido para siempre: el reloj inyectado vence y el vigilante sale con fallo
@@ -652,8 +892,10 @@ fn cola_vacia_y_llena_cierra() {
     let barrera = Arc::new(Barrier::new(2));
     let (queue, rx) = cola_pausada(&ctl, OfferPoint::AfterConfirm, Arc::clone(&barrera), 4);
     let q2 = queue.clone();
-    let productor = thread::Builder::new().name("productor-pausado".into())
-        .spawn(move || q2.offer(fila(1, 100, "retenida"), None)).expect("productor");
+    let productor = thread::Builder::new()
+        .name("productor-pausado".into())
+        .spawn(move || q2.offer(fila(1, 100, "retenida"), None))
+        .expect("productor");
     barrera.wait();
     let (escritor, _) = escritor_de(&ctl, rx);
     ctl.fatal(Clase::Escritor, "fatal con permiso retenido");
@@ -665,7 +907,10 @@ fn cola_vacia_y_llena_cierra() {
     assert!(!escritor.is_finished() && !ctl.admision.resuelta());
     barrera.wait();
     productor.join().expect("productor").expect("envio");
-    assert_eq!(escritor.join().expect("escritor"), (1, QueueEnd::CutResolved));
+    assert_eq!(
+        escritor.join().expect("escritor"),
+        (1, QueueEnd::CutResolved)
+    );
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -705,7 +950,10 @@ fn plazo_nativo_impide_bloqueo() {
     assert!(!ctl.vigilante_vivo());
     // Con el vigilante caido, el camino del hook termina por su cuenta.
     ctl.fijar(Clase::Panic, &[b"panic tardio"], true);
-    assert_eq!(salida.codigos(), [(SALIDA_VIGILANTE, false), (SALIDA_VIGILANTE, false)]);
+    assert_eq!(
+        salida.codigos(),
+        [(SALIDA_VIGILANTE, false), (SALIDA_VIGILANTE, false)]
+    );
 
     // Armado hasta la destruccion del runtime: el finalizador sano ya aviso (codigo 0) y un fatal
     // posterior (p. ej. durante la destruccion) sigue siendo una salida de fallo.
@@ -731,10 +979,24 @@ fn plazo_nativo_impide_bloqueo() {
 // T8
 // ---------------------------------------------------------------------------------------------
 fn cola_con_horas(ctl: &Arc<Control>) -> crate::ArchiveReceiver {
-    let (queue, rx) = ArchiveQueue::with_admission(16, 64 * ROW_CHARGE_OVERHEAD, Arc::clone(&ctl.admision));
+    let (queue, rx) =
+        ArchiveQueue::with_admission(16, 64 * ROW_CHARGE_OVERHEAD, Arc::clone(&ctl.admision));
     let h = crate::HOUR_MS;
-    for (s, ts) in [(1, h - 1), (2, h + 1), (3, h - 2), (4, h + crate::ROTATION_GRACE_MS)] {
-        queue.offer(fila(s, ts, "{}"), Some(crate::Cont::Agg { symbol: "XRPUSDT".into(), a: s })).expect("fila");
+    for (s, ts) in [
+        (1, h - 1),
+        (2, h + 1),
+        (3, h - 2),
+        (4, h + crate::ROTATION_GRACE_MS),
+    ] {
+        queue
+            .offer(
+                fila(s, ts, "{}"),
+                Some(crate::Cont::Agg {
+                    symbol: "XRPUSDT".into(),
+                    a: s,
+                }),
+            )
+            .expect("fila");
     }
     rx
 }
@@ -748,12 +1010,17 @@ fn error_sellado_no_da_exito() {
     let (ctl, _, _) = control_de_prueba(PLAZO_FATAL);
     let disco = DiscoMemoria(Arc::default());
     let (out, rep) = archivar(&disco, &ctl, cola_con_horas(&ctl));
-    assert_eq!((out.rows_written, out.rows_unwritten, rep.segments), (4, 0, 2));
+    assert_eq!(
+        (out.rows_written, out.rows_unwritten, rep.segments),
+        (4, 0, 2)
+    );
     assert!(rep.error.is_none() && rep.failures.is_empty() && !ctl.es_fatal());
     for (seg, esperado) in [(seg1, [1, 3]), (seg2.as_str(), [2, 4])] {
         let gz = disco.0.leer(&p(seg, ".jsonl.gz")).expect("gzip final");
         assert_eq!(gz_seqs(&gz), esperado, "hora UTC y gracia de rotacion");
-        let m: Value = serde_json::from_slice(&disco.0.leer(&p(seg, ".manifest.json")).expect("manifiesto")).expect("json");
+        let m: Value =
+            serde_json::from_slice(&disco.0.leer(&p(seg, ".manifest.json")).expect("manifiesto"))
+                .expect("json");
         assert_eq!(m["bytes"], gz.len() as u64);
         assert_eq!(m["sha256"], format!("{:x}", Sha256::digest(&gz)));
         assert_eq!(m["rows"], 2);
@@ -770,16 +1037,36 @@ fn error_sellado_no_da_exito() {
     assert_eq!(rep.segments, 1);
     assert_eq!(rep.failures.len(), 1);
     let f = &rep.failures[0];
-    assert_eq!((f["segment"].as_str(), f["phase"].as_str(), f["state"].as_str(), f["admitted"].as_bool()),
-        (Some(seg1), Some("publish_manifest"), Some("jsonl.gz_final_sin_manifiesto_valido"), Some(false)));
+    assert_eq!(
+        (
+            f["segment"].as_str(),
+            f["phase"].as_str(),
+            f["state"].as_str(),
+            f["admitted"].as_bool()
+        ),
+        (
+            Some(seg1),
+            Some("publish_manifest"),
+            Some("jsonl.gz_final_sin_manifiesto_valido"),
+            Some(false)
+        )
+    );
     assert!(disco.0.existe(&p(seg1, ".jsonl.gz")) && !disco.0.existe(&p(seg1, ".manifest.json")));
     assert!(disco.0.existe(&p(&seg2, ".manifest.json")));
     assert!(rep.error.is_some());
     assert_eq!(ctl.primer_fatal().map(|f| f.0), Some(Clase::Sellador));
-    assert_ne!(rep.counts.rows, out.rows_written, "lo sellado no iguala lo escrito: no hay exito");
+    assert_ne!(
+        rep.counts.rows, out.rows_written,
+        "lo sellado no iguala lo escrito: no hay exito"
+    );
     // Fallos ANTES del rename: el artefacto queda .jsonl.gz.partial; el otro segmento se sella.
-    for (fase, esperadas) in [("write", &["gzip_finish", "flush"][..]), ("flush", &["flush"][..]),
-        ("sync", &["sync_all"][..]), ("sha256", &["sha256"][..]), ("publish", &["publish_gzip"][..])] {
+    for (fase, esperadas) in [
+        ("write", &["gzip_finish", "flush"][..]),
+        ("flush", &["flush"][..]),
+        ("sync", &["sync_all"][..]),
+        ("sha256", &["sha256"][..]),
+        ("publish", &["publish_gzip"][..]),
+    ] {
         let (ctl, _, _) = control_de_prueba(PLAZO_FATAL);
         let disco = DiscoMemoria(Arc::default());
         let (seal_tx, seal_rx) = std_mpsc::sync_channel(crate::SEAL_QUEUE_CAPACITY);
@@ -789,9 +1076,15 @@ fn error_sellado_no_da_exito() {
         let rep = seal_segments(&disco, &dir(), seal_rx, None, Some(&ctl));
         assert_eq!(rep.segments, 1, "{fase}");
         let f = &rep.failures[0];
-        assert!(esperadas.contains(&f["phase"].as_str().unwrap_or("")), "{fase}: {f}");
+        assert!(
+            esperadas.contains(&f["phase"].as_str().unwrap_or("")),
+            "{fase}: {f}"
+        );
         assert_eq!(f["state"], "jsonl.gz.partial", "{fase}");
-        assert!(disco.0.existe(&p(seg1, ".jsonl.gz.partial")) && !disco.0.existe(&p(seg1, ".jsonl.gz")), "{fase}");
+        assert!(
+            disco.0.existe(&p(seg1, ".jsonl.gz.partial")) && !disco.0.existe(&p(seg1, ".jsonl.gz")),
+            "{fase}"
+        );
         assert!(disco.0.existe(&p(&seg2, ".manifest.json")), "{fase}");
         assert!(ctl.es_fatal());
     }
@@ -804,13 +1097,20 @@ fn error_sellado_no_da_exito() {
     disco.0.fallar(seg1, "write");
     let (queue, rx) = ArchiveQueue::with_admission(16, 4 << 20, Arc::clone(&ctl.admision));
     let mut x = 0x9E37_79B9_7F4A_7C15_u64;
-    let grande: String = (0..400_000).map(|_| {
-        x ^= x << 13;
-        x ^= x >> 7;
-        x ^= x << 17;
-        char::from(b"0123456789abcdef"[(x & 15) as usize])
-    }).collect();
-    for (s, ts, pl) in [(1, h - 1, grande.as_str()), (2, h + 1, "{}"), (3, h - 2, "{}"), (4, h + crate::ROTATION_GRACE_MS, "{}")] {
+    let grande: String = (0..400_000)
+        .map(|_| {
+            x ^= x << 13;
+            x ^= x >> 7;
+            x ^= x << 17;
+            char::from(b"0123456789abcdef"[(x & 15) as usize])
+        })
+        .collect();
+    for (s, ts, pl) in [
+        (1, h - 1, grande.as_str()),
+        (2, h + 1, "{}"),
+        (3, h - 2, "{}"),
+        (4, h + crate::ROTATION_GRACE_MS, "{}"),
+    ] {
         queue.offer(fila(s, ts, pl), None).expect("fila");
     }
     drop(queue);
@@ -827,7 +1127,13 @@ fn error_sellado_no_da_exito() {
     drop(seal_rx);
     let out = archive(&disco, &dir(), cola_con_horas(&ctl), seal_tx, &ctl);
     assert_eq!((out.rows_written, out.rows_unwritten), (0, 4));
-    assert_eq!(out.failures.iter().filter(|f| f["phase"] == "handoff").count(), 2);
+    assert_eq!(
+        out.failures
+            .iter()
+            .filter(|f| f["phase"] == "handoff")
+            .count(),
+        2
+    );
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -843,7 +1149,11 @@ fn parada_normal_no_borra_fatal() {
             ctl.fatal(Clase::Lector, "fatal antes del stop");
             ctl.cortes_nativos();
             parada();
-            assert_eq!(ctl.admision.corte().map(|c| c.motivo), Some(Motivo::Fatal), "el corte fatal prevalece");
+            assert_eq!(
+                ctl.admision.corte().map(|c| c.motivo),
+                Some(Motivo::Fatal),
+                "el corte fatal prevalece"
+            );
         } else {
             parada();
             ctl.fatal(Clase::Lector, "fatal despues del stop");
@@ -875,31 +1185,61 @@ fn parada_normal_no_borra_fatal() {
         assert_eq!(codigos.len(), 1, "{fase}");
         assert_ne!(codigos[0].0, 0, "{fase}: un fatal tardio no es exito");
         assert!(ctl.desarmar().is_err(), "{fase}");
-        assert_eq!(ctl.primer_fatal().map(|f| f.1), Some(if fase == "END" { "END.json no persistido".into() } else { fase.into() }));
+        assert_eq!(
+            ctl.primer_fatal().map(|f| f.1),
+            Some(if fase == "END" {
+                "END.json no persistido".into()
+            } else {
+                fase.into()
+            })
+        );
     }
     // Parada sana con el orden de public_l2: las conexiones terminaron, el drenaje L2 final emite
     // a la cola AUN ABIERTA, despues se corta la admision (sana), el escritor drena exactamente las
     // aceptadas (con un emisor clonado vivo) y se sellan los segmentos.
     let (ctl, _, _) = control_de_prueba(PLAZO_FATAL);
     let vig = lanzar_vigilante(&ctl);
-    let (queue, rx) = ArchiveQueue::with_admission(64, 128 * ROW_CHARGE_OVERHEAD, Arc::clone(&ctl.admision));
+    let (queue, rx) =
+        ArchiveQueue::with_admission(64, 128 * ROW_CHARGE_OVERHEAD, Arc::clone(&ctl.admision));
     let disco = DiscoMemoria(Arc::default());
     let (d2, c2) = (disco.clone(), Arc::clone(&ctl));
     let archivador = thread::spawn(move || archivar(&d2, &c2, rx));
-    let emisor = Emitter { queue: queue.clone(), clock: crate::Clock(Instant::now()), route: "public", shard: Some(0), seq: Arc::new(AtomicU64::new(0)) };
+    let emisor = Emitter {
+        queue: queue.clone(),
+        clock: crate::Clock(Instant::now()),
+        route: "public",
+        shard: Some(0),
+        seq: Arc::new(AtomicU64::new(0)),
+    };
     let h = crate::HOUR_MS;
     let finales = 5;
     for i in 0..finales {
-        let at = crate::Stamp { utc_ms: h + i, mono_ns: i };
+        let at = crate::Stamp {
+            utc_ms: h + i,
+            mono_ns: i,
+        };
         emisor.emit("frame", 11, at, json!({"stream":"btcusdt@depth@100ms","symbol":"BTCUSDT","payload":"{}","depth_generation":1}), None)
             .expect("drenaje L2 admitido antes del corte");
     }
     let corte = ctl.admision.cortar(Motivo::Sana).expect("corte sano");
-    assert_eq!(corte, Corte { motivo: Motivo::Sana, confirmadas: finales, en_vuelo: 0 });
-    assert!(emisor.emit_now("frame", 11, json!({}), None).is_err(), "tras el corte no se admite");
+    assert_eq!(
+        corte,
+        Corte {
+            motivo: Motivo::Sana,
+            confirmadas: finales,
+            en_vuelo: 0
+        }
+    );
+    assert!(
+        emisor.emit_now("frame", 11, json!({}), None).is_err(),
+        "tras el corte no se admite"
+    );
     let (out, rep) = archivador.join().expect("archivador");
     assert_eq!(out.end, Some(QueueEnd::CutResolved));
-    assert_eq!((out.rows_written, out.rows_unwritten, rep.counts.rows), (finales, 0, finales));
+    assert_eq!(
+        (out.rows_written, out.rows_unwritten, rep.counts.rows),
+        (finales, 0, finales)
+    );
     assert_eq!(rep.segments, 1);
     assert!(rep.failures.is_empty() && !ctl.es_fatal());
     drop((emisor, queue));
@@ -927,12 +1267,22 @@ fn salida_ordenada_bloqueada_vence_plazo() {
     reloj.avanzar(plazo - Duration::from_nanos(1));
     ctl.despertar_vigilante();
     thread::sleep(Duration::from_millis(20));
-    assert_eq!(salida.codigos(), [(SALIDA_FATAL_CERRADO, true)], "antes del plazo no hay otra salida");
+    assert_eq!(
+        salida.codigos(),
+        [(SALIDA_FATAL_CERRADO, true)],
+        "antes del plazo no hay otra salida"
+    );
     // Vencido el plazo desde el primer fatal: terminacion nativa con cierre incompleto.
     reloj.avanzar(Duration::from_nanos(1));
     ctl.despertar_vigilante();
     vig.join().expect("vigilante");
-    assert_eq!(salida.codigos(), [(SALIDA_FATAL_CERRADO, true), (SALIDA_FATAL_INCOMPLETO, false)]);
+    assert_eq!(
+        salida.codigos(),
+        [
+            (SALIDA_FATAL_CERRADO, true),
+            (SALIDA_FATAL_INCOMPLETO, false)
+        ]
+    );
 }
 // ---------------------------------------------------------------------------------------------
 // T11 (SALIDAFALLO-5, hallazgo 2 de la N1): pausa determinista entre el CAS del primer fatal y
@@ -950,18 +1300,36 @@ fn primer_fatal_sin_detalle_vacio() {
         }
     }));
     let c = Arc::clone(&ctl);
-    let ganador = thread::Builder::new().name("fatal-pausado".into())
-        .spawn(move || c.fatal(Clase::Lector, "detalle completo del primer fatal")).expect("hilo");
+    let ganador = thread::Builder::new()
+        .name("fatal-pausado".into())
+        .spawn(move || c.fatal(Clase::Lector, "detalle completo del primer fatal"))
+        .expect("hilo");
     barrera.wait(); // CAS ganado; el detalle aun no esta copiado ni FATAL publicado.
-    assert_eq!(ctl.primer_fatal(), None, "nunca la clase con un detalle vacio");
+    assert_eq!(
+        ctl.primer_fatal(),
+        None,
+        "nunca la clase con un detalle vacio"
+    );
     assert_eq!(ctl.fatal_pendiente(), Some(Clase::Lector));
     assert!(!ctl.es_fatal());
-    assert!(!ctl.fatal(Clase::Escritor, "segundo"), "el CAS ya tiene dueno: es secundario");
+    assert!(
+        !ctl.fatal(Clase::Escritor, "segundo"),
+        "el CAS ya tiene dueno: es secundario"
+    );
     barrera.wait();
     assert!(ganador.join().expect("hilo"));
-    assert_eq!(ctl.primer_fatal(), Some((Clase::Lector, "detalle completo del primer fatal".to_string())));
+    assert_eq!(
+        ctl.primer_fatal(),
+        Some((
+            Clase::Lector,
+            "detalle completo del primer fatal".to_string()
+        ))
+    );
     assert_eq!(ctl.fatal_pendiente(), None);
-    assert_eq!(ctl.secundarios().0, vec!["escritor_error: segundo".to_string()]);
+    assert_eq!(
+        ctl.secundarios().0,
+        vec!["escritor_error: segundo".to_string()]
+    );
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -983,11 +1351,24 @@ fn instantaneas_de_corte_con_pausa() {
     let cortador = thread::spawn(move || a2.cortar(Motivo::Fatal));
     barrera.wait(); // bit de corte puesto; instantanea sin publicar.
     assert!(!adm.cortada(), "sin instantanea publicada no se ve cortada");
-    assert!(!adm.resuelta(), "sin instantanea publicada no se ve resuelta");
+    assert!(
+        !adm.resuelta(),
+        "sin instantanea publicada no se ve resuelta"
+    );
     assert_eq!(adm.corte(), None);
-    assert!(adm.entrar().is_none(), "la admision ya esta cerrada aunque la instantanea falte");
+    assert!(
+        adm.entrar().is_none(),
+        "la admision ya esta cerrada aunque la instantanea falte"
+    );
     barrera.wait();
-    assert_eq!(cortador.join().expect("hilo"), Some(Corte { motivo: Motivo::Fatal, confirmadas: 0, en_vuelo: 0 }));
+    assert_eq!(
+        cortador.join().expect("hilo"),
+        Some(Corte {
+            motivo: Motivo::Fatal,
+            confirmadas: 0,
+            en_vuelo: 0
+        })
+    );
     assert!(adm.cortada() && adm.resuelta());
     assert_eq!(adm.rechazos_tras_corte(), 1);
 
@@ -1003,12 +1384,29 @@ fn instantaneas_de_corte_con_pausa() {
     let c2 = Arc::clone(&compuerta);
     let cerrador = thread::spawn(move || c2.cerrar());
     barrera.wait(); // bit de cierre puesto; instantanea sin publicar.
-    assert!(!compuerta.cerrada(), "sin instantanea publicada no se ve cerrada");
+    assert!(
+        !compuerta.cerrada(),
+        "sin instantanea publicada no se ve cerrada"
+    );
     assert_eq!(compuerta.corte(), None);
-    assert!(compuerta.admitir(OpStore::Retencion).is_none(), "ya no admite trabajo");
-    assert!(compuerta.borrar(OpStore::RetencionBorra, Path::new("x.tgll")).is_err(), "ni borrados");
+    assert!(
+        compuerta.admitir(OpStore::Retencion).is_none(),
+        "ya no admite trabajo"
+    );
+    assert!(
+        compuerta
+            .borrar(OpStore::RetencionBorra, Path::new("x.tgll"))
+            .is_err(),
+        "ni borrados"
+    );
     barrera.wait();
-    assert_eq!(cerrador.join().expect("hilo"), Some(CorteStore { en_curso: 0, ultima: OpStore::Ninguna }));
+    assert_eq!(
+        cerrador.join().expect("hilo"),
+        Some(CorteStore {
+            en_curso: 0,
+            ultima: OpStore::Ninguna
+        })
+    );
     assert!(compuerta.cerrada());
     assert!(borrados.lock().expect("b").is_empty());
 }
@@ -1030,13 +1428,25 @@ fn identidad_store_en_la_instantanea() {
         }
     }));
     let c2 = Arc::clone(&compuerta);
-    let store = thread::Builder::new().name("store-pausado".into()).spawn(move || {
-        let guarda = c2.admitir(OpStore::Recuperacion).expect("admitida antes del cierre");
-        drop(guarda);
-    }).expect("hilo");
+    let store = thread::Builder::new()
+        .name("store-pausado".into())
+        .spawn(move || {
+            let guarda = c2
+                .admitir(OpStore::Recuperacion)
+                .expect("admitida antes del cierre");
+            drop(guarda);
+        })
+        .expect("hilo");
     barrera.wait(); // admitida; la guarda aun no se devolvio.
     let corte = compuerta.cerrar().expect("corte");
-    assert_eq!(corte, CorteStore { en_curso: 1, ultima: OpStore::Recuperacion }, "la operacion en curso queda identificada");
+    assert_eq!(
+        corte,
+        CorteStore {
+            en_curso: 1,
+            ultima: OpStore::Recuperacion
+        },
+        "la operacion en curso queda identificada"
+    );
     barrera.wait();
     store.join().expect("hilo");
     assert_eq!(compuerta.en_curso(), 0);
@@ -1113,7 +1523,11 @@ fn end_de(mem: &DiscoMemoria) -> Value {
 
 #[test]
 fn end_cubre_fatal_tardio() {
-    let sano = || FinAsync { stop_reason: "deadline", exit: 0, errors: Vec::new() };
+    let sano = || FinAsync {
+        stop_reason: "deadline",
+        exit: 0,
+        errors: Vec::new(),
+    };
     // a) Parada sana: el finalizador no compone END con el runtime vivo. Un fatal durante la
     // destruccion del runtime entra en END y el codigo no es cero.
     let (ctl, _, _) = control_de_prueba(PLAZO_FATAL);
@@ -1125,15 +1539,29 @@ fn end_cubre_fatal_tardio() {
         }
     }));
     let mem = DiscoMemoria(Arc::default());
-    let fin = lanzar_finalizador(&ctl, DiscoEnd { mem: mem.clone(), avisos: tx, al_escribir: Mutex::new(None) });
+    let fin = lanzar_finalizador(
+        &ctl,
+        DiscoEnd {
+            mem: mem.clone(),
+            avisos: tx,
+            al_escribir: Mutex::new(None),
+        },
+    );
     ctl.entregar_fin_async(sano());
-    assert_eq!(rx.recv_timeout(Duration::from_secs(20)), Ok("espera_runtime"), "END no se compone con el runtime vivo");
+    assert_eq!(
+        rx.recv_timeout(Duration::from_secs(20)),
+        Ok("espera_runtime"),
+        "END no se compone con el runtime vivo"
+    );
     ctl.fatal(Clase::Panic, "panic durante la destruccion del runtime");
     ctl.runtime_destruido();
     fin.join().expect("finalizador");
     let end = end_de(&mem);
     assert_eq!(end["salidafallo"]["first_fatal"]["class"], "panic");
-    assert_eq!(end["salidafallo"]["first_fatal"]["detail"], "panic durante la destruccion del runtime");
+    assert_eq!(
+        end["salidafallo"]["first_fatal"]["detail"],
+        "panic durante la destruccion del runtime"
+    );
     assert_eq!(end["status"], "error");
     assert_eq!(ctl.codigo_fin(), 1);
 
@@ -1145,7 +1573,14 @@ fn end_cubre_fatal_tardio() {
     let accion: Box<dyn FnOnce() + Send> = Box::new(move || {
         c2.fatal(Clase::Cierre, "fatal durante la escritura de END");
     });
-    let fin = lanzar_finalizador(&ctl, DiscoEnd { mem: mem.clone(), avisos: tx, al_escribir: Mutex::new(Some(accion)) });
+    let fin = lanzar_finalizador(
+        &ctl,
+        DiscoEnd {
+            mem: mem.clone(),
+            avisos: tx,
+            al_escribir: Mutex::new(Some(accion)),
+        },
+    );
     ctl.entregar_fin_async(sano());
     ctl.runtime_destruido();
     fin.join().expect("finalizador");
@@ -1171,13 +1606,20 @@ fn fallo_escritor_con_ruta_y_estado() {
     disco.0.fallar(seg1, "write");
     let (queue, rx) = ArchiveQueue::with_admission(16, 4 << 20, Arc::clone(&ctl.admision));
     let mut x = 0x9E37_79B9_7F4A_7C15_u64;
-    let grande: String = (0..400_000).map(|_| {
-        x ^= x << 13;
-        x ^= x >> 7;
-        x ^= x << 17;
-        char::from(b"0123456789abcdef"[(x & 15) as usize])
-    }).collect();
-    for (s, ts, pl) in [(1, h - 1, grande.as_str()), (2, h + 1, "{}"), (3, h - 2, "{}"), (4, h + crate::ROTATION_GRACE_MS, "{}")] {
+    let grande: String = (0..400_000)
+        .map(|_| {
+            x ^= x << 13;
+            x ^= x >> 7;
+            x ^= x << 17;
+            char::from(b"0123456789abcdef"[(x & 15) as usize])
+        })
+        .collect();
+    for (s, ts, pl) in [
+        (1, h - 1, grande.as_str()),
+        (2, h + 1, "{}"),
+        (3, h - 2, "{}"),
+        (4, h + crate::ROTATION_GRACE_MS, "{}"),
+    ] {
         queue.offer(fila(s, ts, pl), None).expect("fila");
     }
     drop(queue);
@@ -1187,22 +1629,37 @@ fn fallo_escritor_con_ruta_y_estado() {
     assert_eq!(f["segment"], seg1);
     assert_eq!(f["path"], partial(seg1));
     assert_eq!(f["state"], "jsonl.gz.partial_conservado_sin_sellar");
-    assert_eq!((f["validated"].as_bool(), f["admitted"].as_bool()), (Some(false), Some(false)));
+    assert_eq!(
+        (f["validated"].as_bool(), f["admitted"].as_bool()),
+        (Some(false), Some(false))
+    );
     assert_eq!(f["rows"], 1);
-    assert!(disco.0.existe(&dir().join(format!("{seg1}.jsonl.gz.partial"))), "el parcial se conserva");
+    assert!(
+        disco
+            .0
+            .existe(&dir().join(format!("{seg1}.jsonl.gz.partial"))),
+        "el parcial se conserva"
+    );
     // Handoff fallido (sellador ausente): ruta y estado de cada segmento afectado.
     let (ctl, _, _) = control_de_prueba(PLAZO_FATAL);
     let disco = DiscoMemoria(Arc::default());
     let (seal_tx, seal_rx) = std_mpsc::sync_channel(crate::SEAL_QUEUE_CAPACITY);
     drop(seal_rx);
     let out = archive(&disco, &dir(), cola_con_horas(&ctl), seal_tx, &ctl);
-    let handoffs: Vec<&Value> = out.failures.iter().filter(|f| f["phase"] == "handoff").collect();
+    let handoffs: Vec<&Value> = out
+        .failures
+        .iter()
+        .filter(|f| f["phase"] == "handoff")
+        .collect();
     assert_eq!(handoffs.len(), 2);
     for (f, seg) in handoffs.iter().zip([seg1, seg2.as_str()]) {
         assert_eq!(f["segment"], seg);
         assert_eq!(f["path"], partial(seg));
         assert_eq!(f["state"], "jsonl.gz.partial_conservado_sin_sellar");
-        assert_eq!((f["validated"].as_bool(), f["admitted"].as_bool()), (Some(false), Some(false)));
+        assert_eq!(
+            (f["validated"].as_bool(), f["admitted"].as_bool()),
+            (Some(false), Some(false))
+        );
         assert_eq!(f["rows"], 2);
     }
 }
@@ -1213,26 +1670,68 @@ fn fallo_escritor_con_ruta_y_estado() {
 #[test]
 fn venue_local_solo_loopback() {
     let a = |v: &[&str]| v.iter().map(|s| s.to_string()).collect::<Vec<_>>();
-    let v = crate::Venue::local(&a(&["ws_local=127.0.0.1:9001", "rest_local=http://127.0.0.1:9002"])).expect("loopback");
-    assert_eq!((v.name, v.ws, v.rest), ("local", "127.0.0.1:9001", "http://127.0.0.1:9002"));
-    assert!(v.url("public", &["FSTUSDT".into()], false).starts_with("ws://127.0.0.1:9001/public/stream?"));
+    let v = crate::Venue::local(&a(&[
+        "ws_local=127.0.0.1:9001",
+        "rest_local=http://127.0.0.1:9002",
+    ]))
+    .expect("loopback");
+    assert_eq!(
+        (v.name, v.ws, v.rest),
+        ("local", "127.0.0.1:9001", "http://127.0.0.1:9002")
+    );
+    assert!(
+        v.url("public", &["FSTUSDT".into()], false)
+            .starts_with("ws://127.0.0.1:9001/public/stream?")
+    );
     for malos in [
         &["ws_local=10.0.0.1:9001", "rest_local=http://127.0.0.1:9002"][..],
-        &["ws_local=127.0.0.1:9001", "rest_local=http://192.168.1.2:9002"][..],
-        &["ws_local=127.0.0.1:9001", "rest_local=https://127.0.0.1:9002"][..],
-        &["ws_local=fstream.binance.com:443", "rest_local=http://127.0.0.1:9002"][..],
+        &[
+            "ws_local=127.0.0.1:9001",
+            "rest_local=http://192.168.1.2:9002",
+        ][..],
+        &[
+            "ws_local=127.0.0.1:9001",
+            "rest_local=https://127.0.0.1:9002",
+        ][..],
+        &[
+            "ws_local=fstream.binance.com:443",
+            "rest_local=http://127.0.0.1:9002",
+        ][..],
         &["rest_local=http://127.0.0.1:9002"][..],
         &["ws_local=127.0.0.1:9001"][..],
     ] {
         assert!(crate::Venue::local(&a(malos)).is_err(), "{malos:?}");
     }
-    assert!(crate::Venue::parse("mainnet").expect("mainnet").url("public", &["FSTUSDT".into()], false).starts_with("wss://fstream.binance.com/"));
-    assert!(crate::Venue::parse("local").is_err(), "local no tiene destino por defecto");
-    assert!(crate::inyeccion::desde_args(&a(&["mainnet", "out", "r.csv", "inyectar=panic_tarea"])).is_err());
-    assert!(crate::inyeccion::desde_args(&a(&["testnet", "out", "r.csv", "inyectar=panic_tarea"])).is_err());
-    assert_eq!(crate::inyeccion::desde_args(&a(&["mainnet", "out", "r.csv"])), Ok(None));
-    assert_eq!(crate::inyeccion::desde_args(&a(&["local", "out", "r.csv", "inyectar=store_ocupado"])), Ok(Some(crate::inyeccion::Caso::StoreOcupado)));
-    assert!(crate::inyeccion::desde_args(&a(&["local", "out", "r.csv", "inyectar=desconocido"])).is_err());
+    assert!(
+        crate::Venue::parse("mainnet")
+            .expect("mainnet")
+            .url("public", &["FSTUSDT".into()], false)
+            .starts_with("wss://fstream.binance.com/")
+    );
+    assert!(
+        crate::Venue::parse("local").is_err(),
+        "local no tiene destino por defecto"
+    );
+    assert!(
+        crate::inyeccion::desde_args(&a(&["mainnet", "out", "r.csv", "inyectar=panic_tarea"]))
+            .is_err()
+    );
+    assert!(
+        crate::inyeccion::desde_args(&a(&["testnet", "out", "r.csv", "inyectar=panic_tarea"]))
+            .is_err()
+    );
+    assert_eq!(
+        crate::inyeccion::desde_args(&a(&["mainnet", "out", "r.csv"])),
+        Ok(None)
+    );
+    assert_eq!(
+        crate::inyeccion::desde_args(&a(&["local", "out", "r.csv", "inyectar=store_ocupado"])),
+        Ok(Some(crate::inyeccion::Caso::StoreOcupado))
+    );
+    assert!(
+        crate::inyeccion::desde_args(&a(&["local", "out", "r.csv", "inyectar=desconocido"]))
+            .is_err()
+    );
 }
 // ---------------------------------------------------------------------------------------------
 // T17 (SALIDAFALLO-10, C1 de la N1 v3): con FIN_LISTO publicado y el plazo ya vencido en la misma
@@ -1259,10 +1758,20 @@ fn vencimiento_prioriza_sobre_salida_ordenada() {
         }
     }));
     let vig = lanzar_vigilante(&ctl);
-    ctl.fatal(Clase::Lector, "fatal con fin listo y plazo vencido a la vez");
+    ctl.fatal(
+        Clase::Lector,
+        "fatal con fin listo y plazo vencido a la vez",
+    );
     vig.join().expect("vigilante");
-    assert!(ambas.load(Ordering::SeqCst), "las dos condiciones estaban presentes al mirar");
-    assert_eq!(salida.codigos(), [(SALIDA_FATAL_INCOMPLETO, false)], "el vencimiento gana; ninguna salida ordenada");
+    assert!(
+        ambas.load(Ordering::SeqCst),
+        "las dos condiciones estaban presentes al mirar"
+    );
+    assert_eq!(
+        salida.codigos(),
+        [(SALIDA_FATAL_INCOMPLETO, false)],
+        "el vencimiento gana; ninguna salida ordenada"
+    );
 }
 // ---------------------------------------------------------------------------------------------
 // T18 (SALIDAFALLO-13, C4 de la N1 v3): fatal en el intervalo posterior al ultimo cotejo de END y
@@ -1276,20 +1785,42 @@ fn fatal_tras_cotejo_rechaza_desarme() {
     let vig = lanzar_vigilante(&ctl);
     let (tx, rx) = std_mpsc::channel();
     let mem = DiscoMemoria(Arc::default());
-    let fin = lanzar_finalizador(&ctl, DiscoEnd { mem: mem.clone(), avisos: tx, al_escribir: Mutex::new(None) });
-    ctl.entregar_fin_async(FinAsync { stop_reason: "deadline", exit: 0, errors: Vec::new() });
+    let fin = lanzar_finalizador(
+        &ctl,
+        DiscoEnd {
+            mem: mem.clone(),
+            avisos: tx,
+            al_escribir: Mutex::new(None),
+        },
+    );
+    ctl.entregar_fin_async(FinAsync {
+        stop_reason: "deadline",
+        exit: 0,
+        errors: Vec::new(),
+    });
     ctl.runtime_destruido();
     fin.join().expect("finalizador");
     assert_eq!(rx.try_iter().count(), 1, "END escrito una sola vez");
     let end = end_de(&mem);
     // Las partes sinteticas no traen rutas (error no fatal de END); lo que importa: ningun fatal descrito.
-    assert!(end["salidafallo"]["first_fatal"].is_null() && end["salidafallo"]["end_rewrites"] == 0, "END cotejado sin fatal");
+    assert!(
+        end["salidafallo"]["first_fatal"].is_null() && end["salidafallo"]["end_rewrites"] == 0,
+        "END cotejado sin fatal"
+    );
     assert!(ctl.fin_hecho() && !ctl.es_fatal());
     let causa = "fatal tras el ultimo cotejo de END y antes del desarme";
     ctl.fatal(Clase::Cierre, causa);
     assert_eq!(ctl.desarmar(), Err(()), "el desarme se rechaza");
     vig.join().expect("vigilante");
-    assert_eq!(salida.codigos(), [(SALIDA_FATAL_INCOMPLETO, true)], "salida con cierre incompleto: END no describe el fatal");
-    assert_eq!(ctl.primer_fatal(), Some((Clase::Cierre, causa.to_owned())), "la causa queda en el Control");
+    assert_eq!(
+        salida.codigos(),
+        [(SALIDA_FATAL_INCOMPLETO, true)],
+        "salida con cierre incompleto: END no describe el fatal"
+    );
+    assert_eq!(
+        ctl.primer_fatal(),
+        Some((Clase::Cierre, causa.to_owned())),
+        "la causa queda en el Control"
+    );
     assert_eq!(end_de(&mem), end, "END no se reescribe");
 }

@@ -212,7 +212,11 @@ impl Bank {
             } else {
                 110
             };
-            ("200 OK", None, json!({"lastUpdateId":id,"bids":[],"asks":[]}))
+            (
+                "200 OK",
+                None,
+                json!({"lastUpdateId":id,"bids":[],"asks":[]}),
+            )
         }));
         let gate = tokio::spawn(gate.run(gate_rx, stop_rx));
         let shard = tokio::spawn(ctx.run());
@@ -337,7 +341,10 @@ impl RestGateBank {
                 default_cooldown_s: 1,
                 info_refresh: Duration::from_secs(60),
             },
-            reqwest::Client::builder().no_proxy().timeout(WAIT).build()?,
+            reqwest::Client::builder()
+                .no_proxy()
+                .timeout(WAIT)
+                .build()?,
             emitter(queue, clock, "rest", None),
             clock,
         );
@@ -350,7 +357,10 @@ impl RestGateBank {
                 .and_then(|get| get.split_once(' '))
                 .map(|(path, _)| path)
                 .expect("expected HTTP GET from local gate");
-            trace.lock().unwrap().push((path.to_owned(), Instant::now()));
+            trace
+                .lock()
+                .unwrap()
+                .push((path.to_owned(), Instant::now()));
             if path == "/fapi/v1/exchangeInfo" {
                 return ("200 OK", None, exchange_info());
             }
@@ -358,10 +368,22 @@ impl RestGateBank {
                 rejected = true;
                 return (first_status, Some(retry_after.as_secs()), json!({}));
             }
-            ("200 OK", None, json!({"lastUpdateId":100,"bids":[],"asks":[]}))
+            (
+                "200 OK",
+                None,
+                json!({"lastUpdateId":100,"bids":[],"asks":[]}),
+            )
         }));
         let gate = tokio::spawn(gate.run(gate_rx, stop_rx));
-        Ok(Self { dir, stop, tx, rx, gate, rest, requests })
+        Ok(Self {
+            dir,
+            stop,
+            tx,
+            rx,
+            gate,
+            rest,
+            requests,
+        })
     }
 
     fn depth(
@@ -400,7 +422,10 @@ impl RestGateBank {
     async fn finish(&mut self) -> CaptureResult<()> {
         self.stop.send(true)?;
         time::timeout(WAIT, &mut self.gate).await???;
-        assert!(!self.rest.is_finished(), "local REST fixture stopped accepting");
+        assert!(
+            !self.rest.is_finished(),
+            "local REST fixture stopped accepting"
+        );
         Ok(())
     }
 }
@@ -459,7 +484,10 @@ async fn local_r2_gate_429_requeues_without_requests_during_pause() -> CaptureRe
         .iter()
         .filter(|(_, received)| received.duration_since(requests[1].1) < pause)
         .count();
-    assert_eq!(during_pause, 0, "REST requests during HTTP 429 pause: {requests:?}");
+    assert_eq!(
+        during_pause, 0,
+        "REST requests during HTTP 429 pause: {requests:?}"
+    );
     println!(
         "local REST 429 requests_during_pause={during_pause} first_retry_ms={} requests_total={}",
         requests[2].1.duration_since(requests[1].1).as_millis(),
@@ -495,7 +523,9 @@ async fn local_r2_gate_418_rejects_requests_without_http() -> CaptureResult<()> 
     assert!(fs::read_to_string(bank.dir.0.join("ALERTA_REST_418.txt"))?.contains("HTTP 418"));
     println!(
         "local REST 418 requests_after_ban={} cooldown_s={} requests_total={}",
-        requests.len() - 2, cooldown.as_secs(), requests.len()
+        requests.len() - 2,
+        cooldown.as_secs(),
+        requests.len()
     );
     Ok(())
 }
@@ -551,13 +581,17 @@ fn verify_frames<'a>(rows: impl IntoIterator<Item = &'a Value>, expected: &[Stri
 }
 
 async fn seed(bank: &mut Bank, primary: &mut TestSocket) -> CaptureResult<Vec<String>> {
-    let startup = bank.until("R2 startup plan", |r| {
-        r["kind"] == "r2_plan" && r["reason"] == "arranque"
-    }).await?;
+    let startup = bank
+        .until("R2 startup plan", |r| {
+            r["kind"] == "r2_plan" && r["reason"] == "arranque"
+        })
+        .await?;
     assert_eq!(startup["symbols"], 2);
-    let resolved = bank.until("R2 plan with local exchangeInfo", |r| {
-        r["kind"] == "r2_plan" && r["limit"] == 1000
-    }).await?;
+    let resolved = bank
+        .until("R2 plan with local exchangeInfo", |r| {
+            r["kind"] == "r2_plan" && r["limit"] == 1000
+        })
+        .await?;
     assert_eq!(resolved["window_s"], 1);
     assert_eq!(resolved["interval_ms"], 300_000);
     let expected = vec![depth(100, 99), ticker(SYMBOL, 1000), ticker(OTHER, 1000)];

@@ -82,15 +82,27 @@ const CASOS: [(&str, Caso); 27] = [
 
 impl Caso {
     pub fn nombre(self) -> &'static str {
-        CASOS.iter().find(|(_, c)| *c == self).map_or("?", |(n, _)| n)
+        CASOS
+            .iter()
+            .find(|(_, c)| *c == self)
+            .map_or("?", |(n, _)| n)
     }
 
     /// Casos que necesitan el disco de ensayo (`DiscoP8`); los demas usan `RealDisk`.
     pub fn usa_disco(self) -> bool {
         matches!(
             self,
-            Self::FalloAppend | Self::FalloManifiesto | Self::SelladorBloqueado | Self::FalloEnd | Self::BloqueoEnd | Self::FatalDuranteEnd
-                | Self::FalloOpen | Self::FalloGzipFinish | Self::FalloFlush | Self::FalloHash | Self::FalloPublishGzip
+            Self::FalloAppend
+                | Self::FalloManifiesto
+                | Self::SelladorBloqueado
+                | Self::FalloEnd
+                | Self::BloqueoEnd
+                | Self::FatalDuranteEnd
+                | Self::FalloOpen
+                | Self::FalloGzipFinish
+                | Self::FalloFlush
+                | Self::FalloHash
+                | Self::FalloPublishGzip
                 | Self::FalloManifiestoSegundo
         )
     }
@@ -147,8 +159,13 @@ pub fn armar() {
 }
 
 pub fn marcar(evento: &str) {
-    let ns = CONTROL.get().map_or(0, |c| u64::try_from(c.ahora().as_nanos()).unwrap_or(u64::MAX));
-    println!("P8_INYECCION {} {evento} control_ns={ns}", caso().map_or("ninguno", Caso::nombre));
+    let ns = CONTROL.get().map_or(0, |c| {
+        u64::try_from(c.ahora().as_nanos()).unwrap_or(u64::MAX)
+    });
+    println!(
+        "P8_INYECCION {} {evento} control_ns={ns}",
+        caso().map_or("ninguno", Caso::nombre)
+    );
 }
 
 pub fn fatal(detalle: &str) {
@@ -224,8 +241,10 @@ pub fn escritor_antes_de_drenar(adm: &Admision, aceptadas: &dyn Fn() -> usize) {
 /// (RUN.json:24 del run terminado en 29060), no de una constante del colector.
 pub fn barrera_r3b_filas() -> usize {
     const FIXTURE: &str = include_str!("../fixtures/fallas/incidente_29060_cola.json");
-    serde_json::from_str::<serde_json::Value>(FIXTURE).ok()
-        .and_then(|v| v["queue_capacity"].as_u64()).map_or(usize::MAX, |c| c as usize)
+    serde_json::from_str::<serde_json::Value>(FIXTURE)
+        .ok()
+        .and_then(|v| v["queue_capacity"].as_u64())
+        .map_or(usize::MAX, |c| c as usize)
 }
 
 /// store::run, al empezar: con store_ocupado el hilo admite una operacion y no vuelve.
@@ -282,8 +301,18 @@ pub fn reloj_l2(ahora: std::time::Instant) -> std::time::Instant {
 /// `drain_l2(.., true)`. Solo con retener_l2.
 pub fn l2_pendientes(shard: Option<usize>, depth: &[(String, u64)], ticker: &[(String, u64)]) {
     if es(Caso::RetenerL2) {
-        let lista = |v: &[(String, u64)]| v.iter().map(|(s, u)| format!("{s}:{u}")).collect::<Vec<_>>().join(",");
-        println!("P8_L2_PENDIENTES shard={} depth={} ticker={}", shard.map_or(-1, |s| s as i64), lista(depth), lista(ticker));
+        let lista = |v: &[(String, u64)]| {
+            v.iter()
+                .map(|(s, u)| format!("{s}:{u}"))
+                .collect::<Vec<_>>()
+                .join(",")
+        };
+        println!(
+            "P8_L2_PENDIENTES shard={} depth={} ticker={}",
+            shard.map_or(-1, |s| s as i64),
+            lista(depth),
+            lista(ticker)
+        );
     }
 }
 
@@ -298,7 +327,11 @@ pub fn fallo_fase(fase: &str) -> io::Result<()> {
         "publish_gzip" => Caso::FalloPublishGzip,
         _ => return Ok(()),
     };
-    let toca = if caso == Caso::FalloOpen { es(caso) } else { armado(caso) };
+    let toca = if caso == Caso::FalloOpen {
+        es(caso)
+    } else {
+        armado(caso)
+    };
     if toca && !TOMADO.swap(true, Ordering::SeqCst) {
         marcar(&format!("fallo_{fase}"));
         return Err(io::Error::other(format!("P8 inyectado: fallo de {fase}")));
@@ -339,7 +372,9 @@ pub fn fallo_escritura() -> io::Result<()> {
         if !TOMADO.swap(true, Ordering::SeqCst) {
             marcar("fallo_append");
         }
-        return Err(io::Error::other("P8 inyectado: fallo de escritura del segmento"));
+        return Err(io::Error::other(
+            "P8 inyectado: fallo de escritura del segmento",
+        ));
     }
     Ok(())
 }
@@ -354,18 +389,25 @@ pub fn al_sincronizar() {
 
 /// write_json (DiscoP8): manifiesto fallido, END fallido o bloqueado, fatal durante END.
 pub fn al_escribir_json(path: &std::path::Path) -> io::Result<()> {
-    let nombre = path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+    let nombre = path
+        .file_name()
+        .map(|n| n.to_string_lossy().into_owned())
+        .unwrap_or_default();
     if nombre.ends_with(".manifest.json")
         && (es(Caso::FalloManifiesto) || es(Caso::FalloManifiestoSegundo))
         && !TOMADO.swap(true, Ordering::SeqCst)
     {
         marcar("fallo_manifiesto");
-        return Err(io::Error::other("P8 inyectado: fallo del manifiesto tras el rename"));
+        return Err(io::Error::other(
+            "P8 inyectado: fallo del manifiesto tras el rename",
+        ));
     }
     if nombre == "END.json" {
         if es(Caso::FalloEnd) {
             marcar("fallo_end");
-            return Err(io::Error::other("P8 inyectado: END.json no se puede escribir"));
+            return Err(io::Error::other(
+                "P8 inyectado: END.json no se puede escribir",
+            ));
         }
         if es(Caso::BloqueoEnd) {
             marcar("bloqueo_end");
@@ -393,11 +435,13 @@ pub fn antes_de_volcar_salida() {
         marcar("salida_bloqueada");
         let tomado = Arc::new(AtomicBool::new(false));
         let t2 = Arc::clone(&tomado);
-        let _ = thread::Builder::new().name("p8-retiene-stdout".into()).spawn(move || {
-            let _candado = io::stdout().lock();
-            t2.store(true, Ordering::SeqCst);
-            bloquear_para_siempre();
-        });
+        let _ = thread::Builder::new()
+            .name("p8-retiene-stdout".into())
+            .spawn(move || {
+                let _candado = io::stdout().lock();
+                t2.store(true, Ordering::SeqCst);
+                bloquear_para_siempre();
+            });
         while !tomado.load(Ordering::SeqCst) {
             thread::yield_now();
         }
@@ -473,14 +517,20 @@ pub async fn inyector(
             armar();
             fatal("fatal con el sellador por bloquearse (inyectado)");
         }
-        Caso::BloqueoEnd | Caso::FalloVigilante | Caso::SalidaBloqueada => fatal("fatal del ensayo (inyectado)"),
+        Caso::BloqueoEnd | Caso::FalloVigilante | Caso::SalidaBloqueada => {
+            fatal("fatal del ensayo (inyectado)")
+        }
         Caso::StoreOcupado => {
             while !store_ocupado() {
                 tokio::time::sleep(paso).await;
             }
             fatal("fatal con capture-store ocupado (inyectado)");
         }
-        Caso::ColaLlena | Caso::FalloManifiesto | Caso::FalloEnd | Caso::FatalDuranteEnd | Caso::FatalDropRuntime => {}
+        Caso::ColaLlena
+        | Caso::FalloManifiesto
+        | Caso::FalloEnd
+        | Caso::FatalDuranteEnd
+        | Caso::FatalDropRuntime => {}
     }
     while !*stop.borrow() {
         if stop.changed().await.is_err() {

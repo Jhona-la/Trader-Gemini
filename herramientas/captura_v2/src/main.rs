@@ -168,10 +168,16 @@ impl Venue {
     /// `ws_local=127.0.0.1:PUERTO`, REST en `rest_local=http://127.0.0.1:PUERTO`); no hay valor por
     /// defecto, asi que nunca cae en los destinos de mainnet o testnet.
     fn local(args: &[String]) -> CaptureResult<Self> {
-        let loopback = |a: std::net::SocketAddr| a.ip() == std::net::IpAddr::V4(std::net::Ipv4Addr::LOCALHOST);
-        let ws: String = opt(args, "ws_local")?.ok_or_else(|| io::Error::other("venue local needs ws_local=127.0.0.1:PORT"))?;
-        let rest: String = opt(args, "rest_local")?.ok_or_else(|| io::Error::other("venue local needs rest_local=http://127.0.0.1:PORT"))?;
-        let ws_addr: std::net::SocketAddr = ws.parse().map_err(|_| io::Error::other("ws_local must be 127.0.0.1:PORT"))?;
+        let loopback =
+            |a: std::net::SocketAddr| a.ip() == std::net::IpAddr::V4(std::net::Ipv4Addr::LOCALHOST);
+        let ws: String = opt(args, "ws_local")?
+            .ok_or_else(|| io::Error::other("venue local needs ws_local=127.0.0.1:PORT"))?;
+        let rest: String = opt(args, "rest_local")?.ok_or_else(|| {
+            io::Error::other("venue local needs rest_local=http://127.0.0.1:PORT")
+        })?;
+        let ws_addr: std::net::SocketAddr = ws
+            .parse()
+            .map_err(|_| io::Error::other("ws_local must be 127.0.0.1:PORT"))?;
         let rest_addr: std::net::SocketAddr = rest
             .strip_prefix("http://")
             .and_then(|a| a.parse().ok())
@@ -200,7 +206,11 @@ impl Venue {
             names.push("!forceOrder@arr".into());
         }
         let scheme = if self.name == "local" { "ws" } else { "wss" };
-        format!("{scheme}://{}/{route}/stream?streams={}", self.ws, names.join("/"))
+        format!(
+            "{scheme}://{}/{route}/stream?streams={}",
+            self.ws,
+            names.join("/")
+        )
     }
 }
 
@@ -268,10 +278,23 @@ pub fn digest(path: &Path) -> CaptureResult<(u64, String)> {
 // ---------------------------------------------------------------------------------------------
 #[derive(Clone, Debug)]
 pub enum Cont {
-    Depth { symbol: String, first: u64, last: u64, prev: u64 },
-    Book { symbol: String, u: u64 },
-    Agg { symbol: String, a: u64 },
-    Stall { symbol: String },
+    Depth {
+        symbol: String,
+        first: u64,
+        last: u64,
+        prev: u64,
+    },
+    Book {
+        symbol: String,
+        u: u64,
+    },
+    Agg {
+        symbol: String,
+        a: u64,
+    },
+    Stall {
+        symbol: String,
+    },
 }
 
 #[derive(Default, Clone)]
@@ -306,7 +329,12 @@ impl Counts {
             }
         }
         match cont {
-            Some(Cont::Depth { symbol, first, last, prev }) => {
+            Some(Cont::Depth {
+                symbol,
+                first,
+                last,
+                prev,
+            }) => {
                 self.cont.entry(symbol.clone()).or_default().depth = Some((*first, *last, *prev));
             }
             Some(Cont::Book { symbol, u }) => {
@@ -317,7 +345,9 @@ impl Counts {
                 let e = self.cont.entry(symbol.clone()).or_default();
                 e.agg_a = Some(e.agg_a.map_or(*a, |x| x.max(*a)));
             }
-            Some(Cont::Stall { symbol }) => self.cont.entry(symbol.clone()).or_default().stalls += 1,
+            Some(Cont::Stall { symbol }) => {
+                self.cont.entry(symbol.clone()).or_default().stalls += 1
+            }
             None => {}
         }
     }
@@ -394,18 +424,29 @@ impl CapacidadCola {
 /// Limites de las APIs: `try_acquire_many_owned` toma u32, asi que B <= u32::MAX (un cargo q_i <= B
 /// siempre se convierte); `Semaphore::new` y `mpsc::channel` exigen permisos y plazas <=
 /// `Semaphore::MAX_PERMITS`, y el canal ademas una plaza como minimo (B >= q_min > 0).
-fn derivar_capacidad(presupuesto_bytes: usize, cargo_minimo_fila: usize) -> Result<CapacidadCola, String> {
+fn derivar_capacidad(
+    presupuesto_bytes: usize,
+    cargo_minimo_fila: usize,
+) -> Result<CapacidadCola, String> {
     if cargo_minimo_fila == 0 {
         return Err("cola de archivo: cargo minimo por fila nulo".into());
     }
     if presupuesto_bytes < cargo_minimo_fila {
-        return Err(format!("cola de archivo: presupuesto {presupuesto_bytes} B menor que el cargo minimo {cargo_minimo_fila} B"));
+        return Err(format!(
+            "cola de archivo: presupuesto {presupuesto_bytes} B menor que el cargo minimo {cargo_minimo_fila} B"
+        ));
     }
     if presupuesto_bytes > u32::MAX as usize || presupuesto_bytes > Semaphore::MAX_PERMITS {
-        return Err(format!("cola de archivo: presupuesto {presupuesto_bytes} B fuera de u32 o de Semaphore::MAX_PERMITS"));
+        return Err(format!(
+            "cola de archivo: presupuesto {presupuesto_bytes} B fuera de u32 o de Semaphore::MAX_PERMITS"
+        ));
     }
     let filas = presupuesto_bytes / cargo_minimo_fila;
-    Ok(CapacidadCola { filas, presupuesto_bytes, cargo_minimo_fila })
+    Ok(CapacidadCola {
+        filas,
+        presupuesto_bytes,
+        cargo_minimo_fila,
+    })
 }
 
 #[derive(Default)]
@@ -431,7 +472,9 @@ impl QueueAudit {
     }
 
     fn charged_bytes(&self) -> Option<usize> {
-        self.budget.as_ref().map(|(b, limit)| limit - b.available_permits())
+        self.budget
+            .as_ref()
+            .map(|(b, limit)| limit - b.available_permits())
     }
 
     fn failure_reason(&self) -> Option<&'static str> {
@@ -443,7 +486,9 @@ impl QueueAudit {
 
     fn stop_reason(&self, fallback: &'static str, exit: u8) -> &'static str {
         match self.failure_reason() {
-            Some("row_capacity" | "byte_budget" | "row_exceeds_budget") if exit == 0 => "archive_queue_full",
+            Some("row_capacity" | "byte_budget" | "row_exceeds_budget") if exit == 0 => {
+                "archive_queue_full"
+            }
             _ => fallback,
         }
     }
@@ -526,22 +571,45 @@ impl ArchiveQueue {
     /// Cola de prueba con capacidad de filas explicita (fixtures de los casos heredados que ejercen la
     /// rama defensiva `row_capacity` o un canal pequeno). Produccion usa `derivada`.
     #[cfg(test)]
-    fn with_admission(capacity: usize, byte_limit: usize, admission: Arc<Admision>) -> (Self, ArchiveReceiver) {
+    fn with_admission(
+        capacity: usize,
+        byte_limit: usize,
+        admission: Arc<Admision>,
+    ) -> (Self, ArchiveReceiver) {
         Self::construir(capacity, byte_limit, ROW_CHARGE_OVERHEAD, None, admission)
     }
 
     /// FALLAS-2: cola de produccion. La capacidad de filas sale de `derivar_capacidad`.
-    fn derivada(byte_limit: usize, row_min_charge: usize, admission: Arc<Admision>) -> Result<(Self, ArchiveReceiver, CapacidadCola), String> {
+    fn derivada(
+        byte_limit: usize,
+        row_min_charge: usize,
+        admission: Arc<Admision>,
+    ) -> Result<(Self, ArchiveReceiver, CapacidadCola), String> {
         let c = derivar_capacidad(byte_limit, row_min_charge)?;
-        let (q, rx) = Self::construir(c.filas, c.presupuesto_bytes, c.cargo_minimo_fila, Some(c), admission);
+        let (q, rx) = Self::construir(
+            c.filas,
+            c.presupuesto_bytes,
+            c.cargo_minimo_fila,
+            Some(c),
+            admission,
+        );
         Ok((q, rx, c))
     }
 
-    fn construir(capacity: usize, byte_limit: usize, row_min_charge: usize, capacidad: Option<CapacidadCola>,
-        admission: Arc<Admision>) -> (Self, ArchiveReceiver) {
+    fn construir(
+        capacity: usize,
+        byte_limit: usize,
+        row_min_charge: usize,
+        capacidad: Option<CapacidadCola>,
+        admission: Arc<Admision>,
+    ) -> (Self, ArchiveReceiver) {
         let (tx, rx) = mpsc::channel(capacity);
         let budget = Arc::new(Semaphore::new(byte_limit));
-        let audit = Arc::new(QueueAudit { capacidad, budget: Some((Arc::clone(&budget), byte_limit)), ..QueueAudit::default() });
+        let audit = Arc::new(QueueAudit {
+            capacidad,
+            budget: Some((Arc::clone(&budget), byte_limit)),
+            ..QueueAudit::default()
+        });
         let queue = Self {
             tx,
             budget,
@@ -567,7 +635,6 @@ impl ArchiveQueue {
         self.row_min_charge.saturating_add(text_bytes)
     }
 
-
     #[cfg(test)]
     fn pause_at(&self, point: OfferPoint) {
         if let Some(p) = &self.pause {
@@ -586,12 +653,16 @@ impl ArchiveQueue {
         };
         let charged = self.charge_of(&row);
         // Reserve and send under the same admission guard as the first rejection.
-        let mut failure = self.audit.first_failure.lock()
+        let mut failure = self
+            .audit
+            .first_failure
+            .lock()
             .map_err(|_| io::Error::other("archive queue admission lock poisoned"))?;
         if let Some(reason) = *failure {
             return Err(io::Error::other(format!(
                 "archive admission already closed ({reason}); capture stopped"
-            )).into());
+            ))
+            .into());
         }
         if self.tx.is_closed() {
             return self.reject(&mut failure, &row, "writer_unavailable", charged);
@@ -611,7 +682,9 @@ impl ArchiveQueue {
         let slot = match self.tx.try_reserve() {
             Ok(slot) => slot,
             Err(mpsc::error::TrySendError::Full(_)) => {
-                self.audit.peak_rows.fetch_max(self.tx.max_capacity(), Ordering::Relaxed);
+                self.audit
+                    .peak_rows
+                    .fetch_max(self.tx.max_capacity(), Ordering::Relaxed);
                 return self.reject(&mut failure, &row, "row_capacity", charged);
             }
             Err(mpsc::error::TrySendError::Closed(_)) => {
@@ -703,7 +776,14 @@ pub struct Emitter {
 }
 
 impl Emitter {
-    fn emit(&self, kind: &str, connection: u64, at: Stamp, mut row: Value, cont: Option<Cont>) -> CaptureResult<()> {
+    fn emit(
+        &self,
+        kind: &str,
+        connection: u64,
+        at: Stamp,
+        mut row: Value,
+        cont: Option<Cont>,
+    ) -> CaptureResult<()> {
         row["kind"] = json!(kind);
         row["route"] = json!(self.route);
         row["shard"] = json!(self.shard);
@@ -714,7 +794,13 @@ impl Emitter {
         self.queue.offer(row, cont)
     }
 
-    pub fn emit_now(&self, kind: &str, connection: u64, row: Value, cont: Option<Cont>) -> CaptureResult<()> {
+    pub fn emit_now(
+        &self,
+        kind: &str,
+        connection: u64,
+        row: Value,
+        cont: Option<Cont>,
+    ) -> CaptureResult<()> {
         self.emit(kind, connection, self.clock.stamp()?, row, cont)
     }
 }
@@ -825,7 +911,13 @@ struct SealFailure {
 }
 
 impl<F: Write + Send> Segment<F> {
-    fn open<D: Disk<File = F>>(disk: &D, dir: &Path, hour: u64, timestamp: u64, number: u64) -> CaptureResult<Self> {
+    fn open<D: Disk<File = F>>(
+        disk: &D,
+        dir: &Path,
+        hour: u64,
+        timestamp: u64,
+        number: u64,
+    ) -> CaptureResult<Self> {
         let name = format!("hour-{hour}-{number:04}");
         let path = dir.join(format!("{name}.jsonl.gz.partial"));
         let gzip = GzEncoder::new(
@@ -855,9 +947,20 @@ impl<F: Write + Send> Segment<F> {
         Ok(())
     }
 
-    fn seal<D: Disk<File = F>>(self, disk: &D, dir: &Path, times: &mut PhaseTimes) -> Result<(String, Counts), SealFailure> {
+    fn seal<D: Disk<File = F>>(
+        self,
+        disk: &D,
+        dir: &Path,
+        times: &mut PhaseTimes,
+    ) -> Result<(String, Counts), SealFailure> {
         const PARTIAL: &str = "jsonl.gz.partial";
-        let fail = |phase: &'static str, state: &'static str| move |e: &dyn std::fmt::Display| SealFailure { phase, error: e.to_string(), state };
+        let fail = |phase: &'static str, state: &'static str| {
+            move |e: &dyn std::fmt::Display| SealFailure {
+                phase,
+                error: e.to_string(),
+                state,
+            }
+        };
         if let Some(handoff) = self.handoff_at {
             times.insert("handoff_to_seal_ns", elapsed_ns(handoff));
         }
@@ -873,13 +976,16 @@ impl<F: Write + Send> Segment<F> {
             writer.flush()
         })
         .map_err(|e| fail("flush", PARTIAL)(&e))?;
-        time_phase(times, "sync_all_ns", || disk.sync(writer.get_ref())).map_err(|e| fail("sync_all", PARTIAL)(&e))?;
+        time_phase(times, "sync_all_ns", || disk.sync(writer.get_ref()))
+            .map_err(|e| fail("sync_all", PARTIAL)(&e))?;
         time_phase(times, "file_close_ns", || drop(writer));
         let (bytes, sha256) = time_phase(times, "sha256_ns", || disk.digest(&partial))
             .map_err(|e| fail("sha256", PARTIAL)(&e))?;
         let final_path = dir.join(&file);
-        time_phase(times, "publish_gzip_ns", || disk.publish(&partial, &final_path))
-            .map_err(|e| fail("publish_gzip", PARTIAL)(&e))?;
+        time_phase(times, "publish_gzip_ns", || {
+            disk.publish(&partial, &final_path)
+        })
+        .map_err(|e| fail("publish_gzip", PARTIAL)(&e))?;
         // Desde aqui el gzip ya es final: un fallo del manifiesto lo deja sin manifiesto valido.
         time_phase(times, "publish_manifest_ns", || {
             disk.write_json(
@@ -937,7 +1043,9 @@ fn archive<D: Disk>(
     ctl: &Control,
 ) -> ArchiveOutcome {
     ctl.admision.registrar_escritor(thread::current());
-    inyeccion::escritor_antes_de_drenar(&ctl.admision, &|| rx.audit.accepted.load(Ordering::Relaxed));
+    inyeccion::escritor_antes_de_drenar(&ctl.admision, &|| {
+        rx.audit.accepted.load(Ordering::Relaxed)
+    });
     let mut out = ArchiveOutcome::default();
     // SALIDAFALLO-9 (N2 3.2): medicion del drenaje de la cola desde que el escritor ve el corte.
     let mut cut_seen: Option<(Instant, u64)> = None;
@@ -949,7 +1057,12 @@ fn archive<D: Disk>(
     // SALIDAFALLO-8 (N1 hallazgo 5): cada fallo del escritor registra, como los del sellador, la
     // ruta del artefacto afectado, su estado en disco, su validacion y las filas que no se admiten.
     let partial_of = |segment: &str| dir.join(format!("{segment}.jsonl.gz.partial"));
-    let fail = |out: &mut ArchiveOutcome, what: &str, segment: Option<&str>, error: String, state: &str, rows: u64| {
+    let fail = |out: &mut ArchiveOutcome,
+                what: &str,
+                segment: Option<&str>,
+                error: String,
+                state: &str,
+                rows: u64| {
         let message = format!("escritor {what}: {error}");
         ctl.fatal(Clase::Escritor, &message);
         out.failures.push(json!({"phase": what, "segment": segment, "error": error,
@@ -959,7 +1072,12 @@ fn archive<D: Disk>(
         if cut_seen.is_none() && ctl.admision.cortada() {
             cut_seen = Some((Instant::now(), sequence));
         }
-        let QueuedRow { mut row, cont, _charge, .. } = match rx.next_row(&ctl.admision) {
+        let QueuedRow {
+            mut row,
+            cont,
+            _charge,
+            ..
+        } = match rx.next_row(&ctl.admision) {
             Ok(row) => row,
             Err(end) => {
                 out.end = Some(end);
@@ -968,7 +1086,14 @@ fn archive<D: Disk>(
         };
         let Some(timestamp) = row["recv_utc_ms"].as_u64() else {
             out.rows_unwritten += 1;
-            fail(&mut out, "timestamp", None, "archive record lacks timestamp".into(), "fila_sin_marca_no_escrita", 1);
+            fail(
+                &mut out,
+                "timestamp",
+                None,
+                "archive record lacks timestamp".into(),
+                "fila_sin_marca_no_escrita",
+                1,
+            );
             continue;
         };
         let hour = timestamp / HOUR_MS * HOUR_MS;
@@ -988,7 +1113,14 @@ fn archive<D: Disk>(
                     Err(e) => {
                         out.rows_unwritten += 1;
                         failed_hours.insert(hour);
-                        fail(&mut out, "open", Some(&format!("hour-{hour}-{segment_number:04}")), e.to_string(), "partial_no_creado", 1);
+                        fail(
+                            &mut out,
+                            "open",
+                            Some(&format!("hour-{hour}-{segment_number:04}")),
+                            e.to_string(),
+                            "partial_no_creado",
+                            1,
+                        );
                         continue;
                     }
                 }
@@ -1002,7 +1134,14 @@ fn archive<D: Disk>(
             let name = segment.name.clone();
             open.remove(&hour);
             failed_hours.insert(hour);
-            fail(&mut out, "append", Some(&name), e.to_string(), "jsonl.gz.partial_conservado_sin_sellar", lost);
+            fail(
+                &mut out,
+                "append",
+                Some(&name),
+                e.to_string(),
+                "jsonl.gz.partial_conservado_sin_sellar",
+                lost,
+            );
             continue;
         }
         out.rows_written += 1;
@@ -1015,7 +1154,14 @@ fn archive<D: Disk>(
                 if let Err(rows) = handoff_segment(&seal, completed) {
                     out.rows_written -= rows;
                     out.rows_unwritten += rows;
-                    fail(&mut out, "handoff", Some(&name), "archive sealer unavailable".into(), "jsonl.gz.partial_conservado_sin_sellar", rows);
+                    fail(
+                        &mut out,
+                        "handoff",
+                        Some(&name),
+                        "archive sealer unavailable".into(),
+                        "jsonl.gz.partial_conservado_sin_sellar",
+                        rows,
+                    );
                 }
             }
         }
@@ -1025,7 +1171,14 @@ fn archive<D: Disk>(
         if let Err(rows) = handoff_segment(&seal, segment) {
             out.rows_written -= rows;
             out.rows_unwritten += rows;
-            fail(&mut out, "handoff", Some(&name), "archive sealer unavailable".into(), "jsonl.gz.partial_conservado_sin_sellar", rows);
+            fail(
+                &mut out,
+                "handoff",
+                Some(&name),
+                "archive sealer unavailable".into(),
+                "jsonl.gz.partial_conservado_sin_sellar",
+                rows,
+            );
         }
     }
     if let Some((at, rows_before)) = cut_seen {
@@ -1061,11 +1214,14 @@ impl SealReport {
             let peak = self.phase_max_ns.entry(phase).or_default();
             *peak = (*peak).max(ns);
         }
-        println!("SEAL_TIMING {}", json!({
-            "segment": name,
-            "ok": success,
-            "phase_ns": times,
-        }));
+        println!(
+            "SEAL_TIMING {}",
+            json!({
+                "segment": name,
+                "ok": success,
+                "phase_ns": times,
+            })
+        );
     }
 
     fn telemetry_json(&self) -> Value {
@@ -1101,7 +1257,10 @@ fn seal_segments<D: Disk>(
             }
             Err(failure) => {
                 // P4b: se registra y se sigue con los demas segmentos.
-                let message = format!("could not seal {name} ({}): {}", failure.phase, failure.error);
+                let message = format!(
+                    "could not seal {name} ({}): {}",
+                    failure.phase, failure.error
+                );
                 if let Some(ctl) = ctl {
                     ctl.fatal(Clase::Sellador, &message);
                 }
@@ -1165,9 +1324,17 @@ impl<T: Send + 'static> ArchiveWorker<T> {
 /// Banco local (solo pruebas): las firmas de antes sobre las de SALIDAFALLO.
 #[cfg(test)]
 impl<X: Send + 'static> ArchiveWorker<CaptureResult<X>> {
-    fn spawn_local(name: &str, job: impl FnOnce() -> CaptureResult<X> + Send + 'static) -> CaptureResult<Self> {
+    fn spawn_local(
+        name: &str,
+        job: impl FnOnce() -> CaptureResult<X> + Send + 'static,
+    ) -> CaptureResult<Self> {
         let (ctl, _, _) = salidafallo::tests::control_de_prueba(salidafallo::PLAZO_FATAL);
-        Self::spawn(name, ctl, Arc::new(std::sync::atomic::AtomicBool::new(false)), job)
+        Self::spawn(
+            name,
+            ctl,
+            Arc::new(std::sync::atomic::AtomicBool::new(false)),
+            job,
+        )
     }
 
     async fn finish(self, completion_observed: bool) -> CaptureResult<X> {
@@ -1181,7 +1348,11 @@ impl<X: Send + 'static> ArchiveWorker<CaptureResult<X>> {
 }
 
 #[cfg(test)]
-fn archive_local(dir: &Path, rx: ArchiveReceiver, seal: blocking_channel::SyncSender<Segment<File>>) -> CaptureResult<()> {
+fn archive_local(
+    dir: &Path,
+    rx: ArchiveReceiver,
+    seal: blocking_channel::SyncSender<Segment<File>>,
+) -> CaptureResult<()> {
     let (ctl, _, _) = salidafallo::tests::control_de_prueba(salidafallo::PLAZO_FATAL);
     let outcome = archive(&RealDisk, dir, rx, seal, &ctl);
     match outcome.failures.first() {
@@ -1258,13 +1429,22 @@ impl Conn {
         let parsed: Value = match serde_json::from_str(&text) {
             Ok(v) => v,
             Err(_) => {
-                self.emitter.emit("frame", self.id, at, json!({"payload":text,"parse_error":true}), None)?;
+                self.emitter.emit(
+                    "frame",
+                    self.id,
+                    at,
+                    json!({"payload":text,"parse_error":true}),
+                    None,
+                )?;
                 return Ok(false);
             }
         };
         let stream = parsed["stream"].as_str().map(str::to_owned);
         let data = &parsed["data"];
-        let symbol = data["s"].as_str().or_else(|| data["o"]["s"].as_str()).map(str::to_owned);
+        let symbol = data["s"]
+            .as_str()
+            .or_else(|| data["o"]["s"].as_str())
+            .map(str::to_owned);
         if self.route == "public" {
             return self.public_frame(text, at, stream, symbol, data);
         }
@@ -1286,8 +1466,18 @@ impl Conn {
                                 let mut from = last + 1;
                                 while from < a {
                                     let n = (a - from).min(AGG_LIMIT_MAX);
-                                    let _ = self.gate.send(gate::Request { kind: gate::Kind::AggFill, priority: 2, shard: self.shard,
-                                        symbol: symbol.clone(), generation: 0, trigger_u: a, from_id: from, limit: n, periodic: false, reply: None });
+                                    let _ = self.gate.send(gate::Request {
+                                        kind: gate::Kind::AggFill,
+                                        priority: 2,
+                                        shard: self.shard,
+                                        symbol: symbol.clone(),
+                                        generation: 0,
+                                        trigger_u: a,
+                                        from_id: from,
+                                        limit: n,
+                                        periodic: false,
+                                        reply: None,
+                                    });
                                     from += n;
                                 }
                             }
@@ -1296,12 +1486,21 @@ impl Conn {
                                 b.agg.insert(symbol.clone(), a);
                             }
                         }
-                        cont = Some(Cont::Agg { symbol: symbol.clone(), a });
+                        cont = Some(Cont::Agg {
+                            symbol: symbol.clone(),
+                            a,
+                        });
                     }
                 } else if stream.ends_with("@markPrice@1s") {
                     b.mark.insert(symbol.clone(), now);
                     if b.stalled.remove(symbol) {
-                        self.emitter.emit("stall_end", self.id, at, json!({"symbol":symbol,"stream":stream}), None)?;
+                        self.emitter.emit(
+                            "stall_end",
+                            self.id,
+                            at,
+                            json!({"symbol":symbol,"stream":stream}),
+                            None,
+                        )?;
                     }
                 }
             }
@@ -1319,7 +1518,12 @@ impl Conn {
         Ok(stream.is_some() && data.is_object())
     }
 
-    async fn connected(&mut self, mut ws: Socket, mut close: oneshot::Receiver<String>, mut stop: watch::Receiver<bool>) -> CaptureResult<String> {
+    async fn connected(
+        &mut self,
+        mut ws: Socket,
+        mut close: oneshot::Receiver<String>,
+        mut stop: watch::Receiver<bool>,
+    ) -> CaptureResult<String> {
         let mut tick = time::interval(Duration::from_secs(1));
         tick.set_missed_tick_behavior(MissedTickBehavior::Skip);
         let mut last_frame = Instant::now();
@@ -1369,7 +1573,13 @@ impl Conn {
 }
 
 /// Una conexion de un shard: abre, lee hasta cerrar o fallar, y avisa al supervisor del shard.
-async fn connection(mut conn: Conn, url: String, mut close: oneshot::Receiver<String>, mut stop: watch::Receiver<bool>, fatal: mpsc::UnboundedSender<String>) {
+async fn connection(
+    mut conn: Conn,
+    url: String,
+    mut close: oneshot::Receiver<String>,
+    mut stop: watch::Receiver<bool>,
+    fatal: mpsc::UnboundedSender<String>,
+) {
     let id = conn.id;
     let life = conn.life.clone();
     let result: CaptureResult<String> = async {
@@ -1390,7 +1600,8 @@ async fn connection(mut conn: Conn, url: String, mut close: oneshot::Receiver<St
                 }
                 let _ = life.send(Life::Open(id));
                 let why = conn.connected(ws, close, stop.clone()).await?;
-                conn.emitter.emit_now("socket_close", id, json!({"reason":why}), None)?;
+                conn.emitter
+                    .emit_now("socket_close", id, json!({"reason":why}), None)?;
                 Ok(why)
             }
             Ok(Err(e)) => Ok(format!("WebSocket connect: {e}")),
@@ -1442,11 +1653,17 @@ impl ShardCtx {
         let id = self.connections.fetch_add(1, Ordering::Relaxed) + 1;
         let (tx, rx) = oneshot::channel();
         let l2_streams = if self.route == "public" {
-            self.symbols.iter().flat_map(|symbol| {
-                let lower = symbol.to_ascii_lowercase();
-                let upper = symbol.to_ascii_uppercase();
-                [(format!("{lower}@depth@100ms"), upper.clone()), (format!("{lower}@bookTicker"), upper)]
-            }).collect()
+            self.symbols
+                .iter()
+                .flat_map(|symbol| {
+                    let lower = symbol.to_ascii_lowercase();
+                    let upper = symbol.to_ascii_uppercase();
+                    [
+                        (format!("{lower}@depth@100ms"), upper.clone()),
+                        (format!("{lower}@bookTicker"), upper),
+                    ]
+                })
+                .collect()
         } else {
             HashMap::new()
         };
@@ -1460,8 +1677,20 @@ impl ShardCtx {
             life: life.clone(),
             l2_streams,
         };
-        let abort = tasks.spawn(connection(conn, self.url.clone(), rx, self.stop.clone(), self.fatal.clone()));
-        Live { id, abort, close: Some(tx), opened: None, started: Instant::now() }
+        let abort = tasks.spawn(connection(
+            conn,
+            self.url.clone(),
+            rx,
+            self.stop.clone(),
+            self.fatal.clone(),
+        ));
+        Live {
+            id,
+            abort,
+            close: Some(tx),
+            opened: None,
+            started: Instant::now(),
+        }
     }
 
     fn row(&self, kind: &str, conn: u64, row: Value) -> CaptureResult<()> {
@@ -1707,7 +1936,13 @@ fn shard_defs(symbols: &[String], venue: Venue) -> Vec<ShardDef> {
             // Posicion del primer simbolo del shard dentro del roster completo: base de la
             // fase R2 para escalonar los temporizadores entre shards (public_l2::r2_phase).
             let roster_base = if route == "public" { k * per } else { 0 };
-            defs.push((index, route, chunk.to_vec(), venue.url(route, chunk, with_force), roster_base));
+            defs.push((
+                index,
+                route,
+                chunk.to_vec(),
+                venue.url(route, chunk, with_force),
+                roster_base,
+            ));
         }
     }
     defs
@@ -1742,13 +1977,20 @@ fn roster(csv: &Path) -> CaptureResult<Vec<String>> {
             *e = *e || tradable;
         }
     }
-    Ok(all.into_iter().filter(|(_, t)| *t).map(|(s, _)| s).collect())
+    Ok(all
+        .into_iter()
+        .filter(|(_, t)| *t)
+        .map(|(s, _)| s)
+        .collect())
 }
 
 fn opt<T: std::str::FromStr>(args: &[String], key: &str) -> CaptureResult<Option<T>> {
     for a in args {
         if let Some(v) = a.strip_prefix(&format!("{key}=")) {
-            return Ok(Some(v.parse().map_err(|_| io::Error::other(format!("bad value for {key}")))?));
+            return Ok(Some(
+                v.parse()
+                    .map_err(|_| io::Error::other(format!("bad value for {key}")))?,
+            ));
         }
     }
     Ok(None)
@@ -1772,16 +2014,25 @@ async fn capture(args: &[String], ctl: Arc<Control>) -> CaptureResult<CaptureEnd
     let venue = if venue == "local" {
         Venue::local(rest)?
     } else {
-        if rest.iter().any(|a| a.starts_with("ws_local=") || a.starts_with("rest_local=")) {
+        if rest
+            .iter()
+            .any(|a| a.starts_with("ws_local=") || a.starts_with("rest_local="))
+        {
             return Err(io::Error::other("ws_local= and rest_local= only with venue local").into());
         }
         Venue::parse(venue)?
     };
     let until: Option<u64> = opt(rest, "until_ms")?;
-    let rotate_after = opt::<u64>(rest, "rotate_after_s")?.map(Duration::from_secs).unwrap_or(ROTATE_AFTER);
-    let r2_max_gap = opt::<u64>(rest, "r2_max_gap_s")?.map(Duration::from_secs).unwrap_or(public_l2::R2_MAX_GAP_DEFAULT);
+    let rotate_after = opt::<u64>(rest, "rotate_after_s")?
+        .map(Duration::from_secs)
+        .unwrap_or(ROTATE_AFTER);
+    let r2_max_gap = opt::<u64>(rest, "r2_max_gap_s")?
+        .map(Duration::from_secs)
+        .unwrap_or(public_l2::R2_MAX_GAP_DEFAULT);
     if rest.iter().any(|a| a.starts_with("alloc_bytes=")) {
-        return Err(io::Error::other("R3 no admite alloc_bytes; retencion fija de 365 dias").into());
+        return Err(
+            io::Error::other("R3 no admite alloc_bytes; retencion fija de 365 dias").into(),
+        );
     }
     let min_free_bytes = opt(rest, "min_free_bytes")?.unwrap_or(MIN_FREE_BYTES);
     let codec_p = codec_params(rest)?;
@@ -1801,11 +2052,19 @@ async fn capture(args: &[String], ctl: Arc<Control>) -> CaptureResult<CaptureEnd
     // SALIDAFALLO-14 (pocos simbolos): un roster sin simbolos negociables se rechaza aqui, antes de
     // crear RUN, lanzar escritores o dividir por total_shards.
     if symbols.is_empty() {
-        return Err(io::Error::other(format!("roster sin simbolos negociables ({roster_csv}); no arranca")).into());
+        return Err(io::Error::other(format!(
+            "roster sin simbolos negociables ({roster_csv}); no arranca"
+        ))
+        .into());
     }
     let (_, roster_sha) = digest(Path::new(roster_csv))?;
     let r2_symbols_total = symbols.len();
-    let dir = root.join(format!("run-{}-{}-{}", venue.name, start.utc_ms, std::process::id()));
+    let dir = root.join(format!(
+        "run-{}-{}-{}",
+        venue.name,
+        start.utc_ms,
+        std::process::id()
+    ));
     fs::create_dir(&dir)?;
     let shard_defs = shard_defs(&symbols, venue);
     let total_shards = shard_defs.len();
@@ -1822,8 +2081,12 @@ async fn capture(args: &[String], ctl: Arc<Control>) -> CaptureResult<CaptureEnd
             "pilot_interval_floor_s":44,"pilot_interval_s":300},
     });
     // FALLAS-2: cola de produccion con la capacidad derivada; la misma derivacion va a RUN.json.
-    let (queue, rx, capacidad_cola) = ArchiveQueue::derivada(QUEUE_BYTE_BUDGET, ROW_CHARGE_OVERHEAD, Arc::clone(&ctl.admision))
-        .map_err(io::Error::other)?;
+    let (queue, rx, capacidad_cola) = ArchiveQueue::derivada(
+        QUEUE_BYTE_BUDGET,
+        ROW_CHARGE_OVERHEAD,
+        Arc::clone(&ctl.admision),
+    )
+    .map_err(io::Error::other)?;
     write_json(
         &dir.join("RUN.json"),
         &json!({
@@ -1880,58 +2143,103 @@ async fn capture(args: &[String], ctl: Arc<Control>) -> CaptureResult<CaptureEnd
             let _ = wake.send((PathBuf::new(), String::new()));
         }));
     }
-    let store_cfg = store::StoreConfig { root: root.clone(), retention_ms: RETENTION_MS,
-        cancel: Arc::clone(&ctl.store.cancel), min_free_bytes, codec: codec_p, scan_every: STORE_SCAN_EVERY,
-        gate: Arc::clone(&ctl.store), reloj: Arc::new(store::RelojStoreReal::nuevo()) };
+    let store_cfg = store::StoreConfig {
+        root: root.clone(),
+        retention_ms: RETENTION_MS,
+        cancel: Arc::clone(&ctl.store.cancel),
+        min_free_bytes,
+        codec: codec_p,
+        scan_every: STORE_SCAN_EVERY,
+        gate: Arc::clone(&ctl.store),
+        reloj: Arc::new(store::RelojStoreReal::nuevo()),
+    };
     let store_exit = Arc::new(salidafallo::SalidaStore::nueva());
     let store_finished = Arc::new(std::sync::atomic::AtomicBool::new(false));
     let store_thread = {
         let store_exit = Arc::clone(&store_exit);
-        let end = WorkerEnd { finished: Arc::clone(&store_finished), ctl: Arc::clone(&ctl) };
-        thread::Builder::new().name("capture-store".into()).spawn(move || {
-            let _end = end;
-            // Re-codificar con la prioridad de hilo mas baja sobre la clase del proceso (CPU): la captura va
-            // primero y, con el proceso en AboveNormal, el hilo queda al nivel de un hilo normal ajeno (C3).
-            // No se usa THREAD_MODE_BACKGROUND_BEGIN: recorta E/S y memoria y en la prueba de 2 h dejo la hora
-            // 0002 sin terminar en 28 min.
-            #[cfg(windows)]
-            unsafe {
-                use windows_sys::Win32::System::Threading::{GetCurrentThread, SetThreadPriority, THREAD_PRIORITY_LOWEST};
-                SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_LOWEST);
-            }
-            // SALIDAFALLO P2: el estado de salida se fija ANTES de soltar el aviso oneshot, para que
-            // el select distinga fin, panic y cancelacion del canal.
-            let mut low_tx = Some(low_tx);
-            let ran = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| store::run(store_cfg, sealed_rx, &mut low_tx)));
-            store_exit.fijar(if ran.is_ok() { salidafallo::EstadoStore::Volvio } else { salidafallo::EstadoStore::Panic });
-            drop(low_tx);
-        })?
+        let end = WorkerEnd {
+            finished: Arc::clone(&store_finished),
+            ctl: Arc::clone(&ctl),
+        };
+        thread::Builder::new()
+            .name("capture-store".into())
+            .spawn(move || {
+                let _end = end;
+                // Re-codificar con la prioridad de hilo mas baja sobre la clase del proceso (CPU): la captura va
+                // primero y, con el proceso en AboveNormal, el hilo queda al nivel de un hilo normal ajeno (C3).
+                // No se usa THREAD_MODE_BACKGROUND_BEGIN: recorta E/S y memoria y en la prueba de 2 h dejo la hora
+                // 0002 sin terminar en 28 min.
+                #[cfg(windows)]
+                unsafe {
+                    use windows_sys::Win32::System::Threading::{
+                        GetCurrentThread, SetThreadPriority, THREAD_PRIORITY_LOWEST,
+                    };
+                    SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_LOWEST);
+                }
+                // SALIDAFALLO P2: el estado de salida se fija ANTES de soltar el aviso oneshot, para que
+                // el select distinga fin, panic y cancelacion del canal.
+                let mut low_tx = Some(low_tx);
+                let ran = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                    store::run(store_cfg, sealed_rx, &mut low_tx)
+                }));
+                store_exit.fijar(if ran.is_ok() {
+                    salidafallo::EstadoStore::Volvio
+                } else {
+                    salidafallo::EstadoStore::Panic
+                });
+                drop(low_tx);
+            })?
     };
     let connections = Arc::new(AtomicU64::new(0));
     let archive_parts = ArchiveSpawn {
-        ctl: Arc::clone(&ctl), dir: dir.clone(), rx, sealed_tx, clock, audit: Arc::clone(&audit),
-        connections: Arc::clone(&connections), store_thread, store_finished: Arc::clone(&store_finished),
+        ctl: Arc::clone(&ctl),
+        dir: dir.clone(),
+        rx,
+        sealed_tx,
+        clock,
+        audit: Arc::clone(&audit),
+        connections: Arc::clone(&connections),
+        store_thread,
+        store_finished: Arc::clone(&store_finished),
     };
     // SALIDAFALLO-9: el disco de ensayo solo con el venue local y un caso de disco; si no, RealDisk.
-    let (mut writer_done, mut sealer_done) = if inyeccion::caso().is_some_and(inyeccion::Caso::usa_disco) {
-        spawn_archive(DiscoP8, archive_parts)?
-    } else {
-        spawn_archive(RealDisk, archive_parts)?
-    };
+    let (mut writer_done, mut sealer_done) =
+        if inyeccion::caso().is_some_and(inyeccion::Caso::usa_disco) {
+            spawn_archive(DiscoP8, archive_parts)?
+        } else {
+            spawn_archive(RealDisk, archive_parts)?
+        };
     let (stop_tx, stop) = watch::channel(false);
     let (fatal_tx, mut fatal_rx) = mpsc::unbounded_channel::<String>();
     let (gate_tx, gate_rx) = mpsc::unbounded_channel();
-    let gate_emitter = Emitter { queue: queue.clone(), clock, route: "rest", shard: None, seq: Arc::new(AtomicU64::new(0)) };
+    let gate_emitter = Emitter {
+        queue: queue.clone(),
+        clock,
+        route: "rest",
+        shard: None,
+        seq: Arc::new(AtomicU64::new(0)),
+    };
     let (gate, info_rx) = gate::Gate::new(
-        gate::GateConfig { rest: venue.rest, root: root.clone(), agg_limit_max: AGG_LIMIT_MAX, default_cooldown_s: REST_DEFAULT_COOLDOWN_S, info_refresh: INFO_REFRESH },
-        client.clone(), gate_emitter, clock);
+        gate::GateConfig {
+            rest: venue.rest,
+            root: root.clone(),
+            agg_limit_max: AGG_LIMIT_MAX,
+            default_cooldown_s: REST_DEFAULT_COOLDOWN_S,
+            info_refresh: INFO_REFRESH,
+        },
+        client.clone(),
+        gate_emitter,
+        clock,
+    );
     // SALIDAFALLO P2: el JoinSet superior se observa durante la captura con la identidad de cada
     // tarea; un JoinError o un final antes de la orden de parada es fatal.
     let mut tasks = salidafallo::Supervisor::nuevo();
     {
         let stop = stop.clone();
         tasks.lanzar("rest gate".into(), async move {
-            gate.run(gate_rx, stop).await.map_err(|e| io::Error::other(format!("rest gate: {e}")).into())
+            gate.run(gate_rx, stop)
+                .await
+                .map_err(|e| io::Error::other(format!("rest gate: {e}")).into())
         });
     }
     // SALIDAFALLO-9 (P8): tarea del ensayo, solo con el venue local y `inyectar=`.
@@ -1940,23 +2248,53 @@ async fn capture(args: &[String], ctl: Arc<Control>) -> CaptureResult<CaptureEnd
         let conns = Arc::clone(&connections);
         let accepted = Arc::clone(&audit);
         let iniciales = total_shards as u64;
-        tasks.lanzar("inyector p8".into(), inyeccion::inyector(
-            caso, stop, move || conns.load(Ordering::Relaxed), iniciales,
-            move || accepted.accepted.load(Ordering::Relaxed),
-        ));
+        tasks.lanzar(
+            "inyector p8".into(),
+            inyeccion::inyector(
+                caso,
+                stop,
+                move || conns.load(Ordering::Relaxed),
+                iniciales,
+                move || accepted.accepted.load(Ordering::Relaxed),
+            ),
+        );
     }
     for (index, route, syms, url, roster_base) in shard_defs {
-        let r2_rank: HashMap<String, usize> =
-            syms.iter().enumerate().map(|(i, s)| (s.clone(), roster_base + i)).collect();
+        let r2_rank: HashMap<String, usize> = syms
+            .iter()
+            .enumerate()
+            .map(|(i, s)| (s.clone(), roster_base + i))
+            .collect();
         let ctx = ShardCtx {
-            venue, route, index, total: total_shards, symbols: syms, url,
-            emitter: Emitter { queue: queue.clone(), clock, route, shard: Some(index), seq: Arc::new(AtomicU64::new(0)) },
-            clock, book: Arc::new(Mutex::new(ShardBook::default())), gate: gate_tx.clone(),
-            stop: stop.clone(), fatal: fatal_tx.clone(), rotate_after, connections: Arc::clone(&connections),
-            gate_info: info_rx.clone(), r2_max_gap, r2_symbols_total, r2_rank,
+            venue,
+            route,
+            index,
+            total: total_shards,
+            symbols: syms,
+            url,
+            emitter: Emitter {
+                queue: queue.clone(),
+                clock,
+                route,
+                shard: Some(index),
+                seq: Arc::new(AtomicU64::new(0)),
+            },
+            clock,
+            book: Arc::new(Mutex::new(ShardBook::default())),
+            gate: gate_tx.clone(),
+            stop: stop.clone(),
+            fatal: fatal_tx.clone(),
+            rotate_after,
+            connections: Arc::clone(&connections),
+            gate_info: info_rx.clone(),
+            r2_max_gap,
+            r2_symbols_total,
+            r2_rank,
         };
         tasks.lanzar(format!("shard {index} {route}"), async move {
-            ctx.run().await.map_err(|e| io::Error::other(format!("shard {index}: {e}")).into())
+            ctx.run()
+                .await
+                .map_err(|e| io::Error::other(format!("shard {index}: {e}")).into())
         });
     }
     drop(gate_tx);
@@ -2024,7 +2362,11 @@ async fn capture(args: &[String], ctl: Arc<Control>) -> CaptureResult<CaptureEnd
     // P4d: corte sano solo despues de que las conexiones terminaron y el drenaje L2 final entro
     // a la cola. Si ya hubo fatal, el corte fatal (del vigilante) prevalece.
     ctl.admision.cortar(salidafallo::Motivo::Sana);
-    ctl.entregar_fin_async(salidafallo::FinAsync { stop_reason, exit, errors });
+    ctl.entregar_fin_async(salidafallo::FinAsync {
+        stop_reason,
+        exit,
+        errors,
+    });
     Ok(CaptureEnd::Finisher)
 }
 
@@ -2042,32 +2384,75 @@ struct ArchiveSpawn {
 
 /// Escritor, sellador y finalizador de END sobre el disco dado (RealDisk en produccion; DiscoP8
 /// solo en el ensayo P8). Devuelve los avisos de fin del escritor y del sellador para el select!.
-fn spawn_archive<D: Disk + Copy>(disk: D, a: ArchiveSpawn) -> CaptureResult<(oneshot::Receiver<()>, oneshot::Receiver<()>)> {
-    let ArchiveSpawn { ctl, dir, rx, sealed_tx, clock, audit, connections, store_thread, store_finished } = a;
+fn spawn_archive<D: Disk + Copy>(
+    disk: D,
+    a: ArchiveSpawn,
+) -> CaptureResult<(oneshot::Receiver<()>, oneshot::Receiver<()>)> {
+    let ArchiveSpawn {
+        ctl,
+        dir,
+        rx,
+        sealed_tx,
+        clock,
+        audit,
+        connections,
+        store_thread,
+        store_finished,
+    } = a;
     let (seal_tx, seal_rx) = blocking_channel::sync_channel(SEAL_QUEUE_CAPACITY);
     let sealer_dir = dir.clone();
     let sealer_finished = Arc::new(std::sync::atomic::AtomicBool::new(false));
     let sealer_ctl = Arc::clone(&ctl);
-    let sealer = ArchiveWorker::spawn("capture-seal", Arc::clone(&ctl), Arc::clone(&sealer_finished), move || {
-        seal_segments(&disk, &sealer_dir, seal_rx, Some(sealed_tx), Some(&sealer_ctl))
-    })?;
+    let sealer = ArchiveWorker::spawn(
+        "capture-seal",
+        Arc::clone(&ctl),
+        Arc::clone(&sealer_finished),
+        move || {
+            seal_segments(
+                &disk,
+                &sealer_dir,
+                seal_rx,
+                Some(sealed_tx),
+                Some(&sealer_ctl),
+            )
+        },
+    )?;
     let writer_dir = dir.clone();
     let writer_finished = Arc::new(std::sync::atomic::AtomicBool::new(false));
     let writer_ctl = Arc::clone(&ctl);
-    let writer = ArchiveWorker::spawn("capture-gzip", Arc::clone(&ctl), Arc::clone(&writer_finished), move || {
-        archive(&disk, &writer_dir, rx, seal_tx, &writer_ctl)
-    })?;
-    let ArchiveWorker { done: writer_done, thread: writer_thread } = writer;
-    let ArchiveWorker { done: sealer_done, thread: sealer_thread } = sealer;
+    let writer = ArchiveWorker::spawn(
+        "capture-gzip",
+        Arc::clone(&ctl),
+        Arc::clone(&writer_finished),
+        move || archive(&disk, &writer_dir, rx, seal_tx, &writer_ctl),
+    )?;
+    let ArchiveWorker {
+        done: writer_done,
+        thread: writer_thread,
+    } = writer;
+    let ArchiveWorker {
+        done: sealer_done,
+        thread: sealer_thread,
+    } = sealer;
     // SALIDAFALLO P4b: finalizador unico de END.json, nativo. Espera la entrega del recorrido async
     // o, con fatal, el fin del escritor y del sellador (no depende de que Tokio progrese).
     let finisher = {
         let parts = FinishParts {
-            ctl: Arc::clone(&ctl), dir, clock, audit,
-            connections, writer_thread, sealer_thread, store_thread,
-            writer_finished, sealer_finished, store_finished,
+            ctl: Arc::clone(&ctl),
+            dir,
+            clock,
+            audit,
+            connections,
+            writer_thread,
+            sealer_thread,
+            store_thread,
+            writer_finished,
+            sealer_finished,
+            store_finished,
         };
-        thread::Builder::new().name("capture-end".into()).spawn(move || finish_capture(parts, &disk))?
+        thread::Builder::new()
+            .name("capture-end".into())
+            .spawn(move || finish_capture(parts, &disk))?
     };
     ctl.registrar_finalizador(finisher.thread().clone());
     drop(finisher);
@@ -2119,7 +2504,8 @@ fn finish_capture<D: Disk>(p: FinishParts, disk: &D) {
             woke_async = true;
             ctl.avisar_async();
         }
-        let archive_done = p.writer_finished.load(Ordering::SeqCst) && p.sealer_finished.load(Ordering::SeqCst);
+        let archive_done =
+            p.writer_finished.load(Ordering::SeqCst) && p.sealer_finished.load(Ordering::SeqCst);
         if fatal && archive_done {
             break;
         }
@@ -2133,7 +2519,11 @@ fn finish_capture<D: Disk>(p: FinishParts, disk: &D) {
         thread::park();
     }
     let fatal_mode = ctl.es_fatal() && !ctl.async_listo();
-    let fin = ctl.tomar_fin_async().unwrap_or(salidafallo::FinAsync { stop_reason: "fatal", exit: 1, errors: Vec::new() });
+    let fin = ctl.tomar_fin_async().unwrap_or(salidafallo::FinAsync {
+        stop_reason: "fatal",
+        exit: 1,
+        errors: Vec::new(),
+    });
     let mut errors = fin.errors;
     let mut incomplete = Vec::<String>::new();
     let outcome = match p.writer_thread.join() {
@@ -2171,7 +2561,10 @@ fn finish_capture<D: Disk>(p: FinishParts, disk: &D) {
     let counts = &report.counts;
     let enqueued = p.audit.accepted.load(Ordering::Relaxed);
     if counts.rows != enqueued as u64 {
-        errors.push(format!("{} rows were enqueued but {} were sealed", enqueued, counts.rows));
+        errors.push(format!(
+            "{} rows were enqueued but {} were sealed",
+            enqueued, counts.rows
+        ));
     }
     if counts.routes.len() != 2 {
         errors.push("capture has no market frames from at least one required route".into());
@@ -2182,11 +2575,17 @@ fn finish_capture<D: Disk>(p: FinishParts, disk: &D) {
     let resolved = adm.resuelta();
     let confirmed = adm.confirmadas();
     let accounting = if !resolved {
-        incomplete.push(format!("admision sin resolver: {} ofertas en vuelo", adm.en_vuelo()));
+        incomplete.push(format!(
+            "admision sin resolver: {} ofertas en vuelo",
+            adm.en_vuelo()
+        ));
         json!("N/D: reservas en curso sin resolver; no hay instantanea coherente de filas")
     } else {
         if outcome.rows_written + outcome.rows_unwritten != confirmed {
-            incomplete.push(format!("confirmadas {confirmed} != escritas {} + no escritas {}", outcome.rows_written, outcome.rows_unwritten));
+            incomplete.push(format!(
+                "confirmadas {confirmed} != escritas {} + no escritas {}",
+                outcome.rows_written, outcome.rows_unwritten
+            ));
         }
         json!({"confirmed": confirmed, "written": outcome.rows_written, "unwritten": outcome.rows_unwritten,
             "sealed": counts.rows})
@@ -2207,14 +2606,21 @@ fn finish_capture<D: Disk>(p: FinishParts, disk: &D) {
         let pending = ctl.fatal_pendiente();
         let (secondary, secondary_lost) = ctl.secundarios();
         let any_fatal = first.is_some() || pending.is_some();
-        let status = if any_fatal || !errors.is_empty() { "error" } else { "stopped" };
+        let status = if any_fatal || !errors.is_empty() {
+            "error"
+        } else {
+            "stopped"
+        };
         let first_json = match (&first, pending) {
             (Some((c, d)), _) => json!({"class": c.nombre(), "detail": d}),
             (None, Some(c)) => json!({"class": c.nombre(), "detail": null, "detail_pending": true}),
             (None, None) => Value::Null,
         };
         let nanos = |d: Duration| u64::try_from(d.as_nanos()).unwrap_or(u64::MAX);
-        let stamp = p.clock.stamp().unwrap_or(Stamp { utc_ms: 0, mono_ns: 0 });
+        let stamp = p.clock.stamp().unwrap_or(Stamp {
+            utc_ms: 0,
+            mono_ns: 0,
+        });
         let end = json!({
             "status":status,"stop_reason":stop_reason,"ended_utc_ms":stamp.utc_ms,"duration_ns":stamp.mono_ns,
             "segments":report.segments,"rows":counts.rows,"kinds":counts.kinds,"streams":counts.streams,
@@ -2272,7 +2678,9 @@ fn finish_capture<D: Disk>(p: FinishParts, disk: &D) {
             break (persisted, incomplete_close, marca);
         }
         if rewrites >= END_REESCRITURAS_MAX {
-            eprintln!("CAPTURE END: fatal posterior a la ultima escritura de END.json; cierre incompleto");
+            eprintln!(
+                "CAPTURE END: fatal posterior a la ultima escritura de END.json; cierre incompleto"
+            );
             break (persisted, true, marca);
         }
         rewrites += 1;
@@ -2365,7 +2773,9 @@ fn main() -> std::process::ExitCode {
 
 fn run_capture(args: &[String]) -> std::process::ExitCode {
     let plazo = match opt::<u64>(args, "plazo_fatal_ms") {
-        Ok(v) => v.map(Duration::from_millis).unwrap_or(salidafallo::PLAZO_FATAL),
+        Ok(v) => v
+            .map(Duration::from_millis)
+            .unwrap_or(salidafallo::PLAZO_FATAL),
         Err(e) => {
             eprintln!("CAPTURE ERROR {e}");
             return std::process::ExitCode::FAILURE;
@@ -2384,10 +2794,13 @@ fn run_capture(args: &[String]) -> std::process::ExitCode {
     // SALIDAFALLO-9 (P8): con el venue local los borrados de store pasan por un adaptador que los
     // registra en stdout (P8_BORRADO_SIMULADO) y no borra nada. Fuera del ensayo, el borrado real.
     let compuerta = if local {
-        salidafallo::CompuertaStore::nueva(cancel, Box::new(|p: &Path| {
-            println!("P8_BORRADO_SIMULADO {}", p.display());
-            Ok(())
-        }))
+        salidafallo::CompuertaStore::nueva(
+            cancel,
+            Box::new(|p: &Path| {
+                println!("P8_BORRADO_SIMULADO {}", p.display());
+                Ok(())
+            }),
+        )
     } else {
         salidafallo::CompuertaStore::real(cancel)
     };
@@ -2411,7 +2824,9 @@ fn run_capture(args: &[String]) -> std::process::ExitCode {
     ctl.registrar_principal(thread::current());
     let vigilante = {
         let ctl = Arc::clone(&ctl);
-        thread::Builder::new().name("capture-vigia".into()).spawn(move || salidafallo::vigilar(&ctl))
+        thread::Builder::new()
+            .name("capture-vigia".into())
+            .spawn(move || salidafallo::vigilar(&ctl))
     };
     match vigilante {
         Ok(h) => ctl.registrar_vigilante(h.thread().clone()),
@@ -2502,7 +2917,11 @@ mod tests {
         assert!(queue.offer(frame(2, 101, "rejected"), None).is_err());
         let pending = rx.try_recv()?;
         assert_eq!(pending.row["seq"], 1);
-        let rejected = queue.audit.rejected.lock().map_err(|_| io::Error::other("poisoned"))?;
+        let rejected = queue
+            .audit
+            .rejected
+            .lock()
+            .map_err(|_| io::Error::other("poisoned"))?;
         assert_eq!(rejected.len(), 1);
         assert_eq!(rejected[0]["reason"], "row_capacity");
         Ok(())
@@ -2519,11 +2938,21 @@ mod tests {
         assert_eq!(first.row["seq"], 1);
         drop(first);
         assert!(queue.offer(frame(3, 102, "after drain"), None).is_err());
-        assert!(matches!(rx.try_recv(), Err(mpsc::error::TryRecvError::Empty)));
+        assert!(matches!(
+            rx.try_recv(),
+            Err(mpsc::error::TryRecvError::Empty)
+        ));
         assert_eq!(queue.audit.failure_reason(), Some("byte_budget"));
-        assert_eq!(queue.audit.stop_reason("reader_error", 0), "archive_queue_full");
+        assert_eq!(
+            queue.audit.stop_reason("reader_error", 0),
+            "archive_queue_full"
+        );
         assert_eq!(queue.audit.stop_reason("low_disk", 3), "low_disk");
-        let rejected = queue.audit.rejected.lock().map_err(|_| io::Error::other("poisoned"))?;
+        let rejected = queue
+            .audit
+            .rejected
+            .lock()
+            .map_err(|_| io::Error::other("poisoned"))?;
         assert_eq!(rejected.len(), 1);
         assert_eq!(rejected[0]["seq"], 2);
         Ok(())
@@ -2534,10 +2963,23 @@ mod tests {
         let stamp = SystemTime::now().duration_since(UNIX_EPOCH)?.as_nanos();
         let dir = env::temp_dir().join(format!("captura-v2-test-{}-{stamp}", std::process::id()));
         fs::create_dir(&dir)?;
-        let (ctl, _salida, _reloj) = salidafallo::tests::control_de_prueba(salidafallo::PLAZO_FATAL);
-        let (queue, rx) = ArchiveQueue::with_admission(8, 32 * ROW_CHARGE_OVERHEAD, Arc::clone(&ctl.admision));
-        for (sequence, timestamp) in [(1, HOUR_MS - 1), (2, HOUR_MS + 1), (3, HOUR_MS - 2), (4, HOUR_MS + ROTATION_GRACE_MS)] {
-            queue.offer(frame(sequence, timestamp, "{}"), Some(Cont::Agg { symbol: "XRPUSDT".into(), a: sequence }))?;
+        let (ctl, _salida, _reloj) =
+            salidafallo::tests::control_de_prueba(salidafallo::PLAZO_FATAL);
+        let (queue, rx) =
+            ArchiveQueue::with_admission(8, 32 * ROW_CHARGE_OVERHEAD, Arc::clone(&ctl.admision));
+        for (sequence, timestamp) in [
+            (1, HOUR_MS - 1),
+            (2, HOUR_MS + 1),
+            (3, HOUR_MS - 2),
+            (4, HOUR_MS + ROTATION_GRACE_MS),
+        ] {
+            queue.offer(
+                frame(sequence, timestamp, "{}"),
+                Some(Cont::Agg {
+                    symbol: "XRPUSDT".into(),
+                    a: sequence,
+                }),
+            )?;
         }
         drop(queue);
         let (seal, pending) = blocking_channel::sync_channel(2);
@@ -2552,16 +2994,37 @@ mod tests {
         for (file, expected) in [("hour-0-0001", [1, 3]), ("hour-3600000-0002", [2, 4])] {
             let gzip = dir.join(format!("{file}.jsonl.gz"));
             let data = BufReader::new(GzDecoder::new(File::open(&gzip)?));
-            let seqs: Vec<u64> = data.lines().map(|l| serde_json::from_str::<Value>(&l.unwrap()).unwrap()["ingest_seq"].as_u64().unwrap()).collect();
+            let seqs: Vec<u64> = data
+                .lines()
+                .map(|l| {
+                    serde_json::from_str::<Value>(&l.unwrap()).unwrap()["ingest_seq"]
+                        .as_u64()
+                        .unwrap()
+                })
+                .collect();
             assert_eq!(seqs, expected);
-            let m: Value = serde_json::from_reader(File::open(dir.join(format!("{file}.manifest.json")))?)?;
+            let m: Value =
+                serde_json::from_reader(File::open(dir.join(format!("{file}.manifest.json")))?)?;
             assert_eq!(m["schema"], 2);
             assert_eq!(m["continuity"]["XRPUSDT"]["last_agg_a"], expected[1]);
-            let keys: Vec<String> = m["continuity"]["XRPUSDT"].as_object().unwrap().keys().map(|k| k.to_lowercase()).collect();
+            let keys: Vec<String> = m["continuity"]["XRPUSDT"]
+                .as_object()
+                .unwrap()
+                .keys()
+                .map(|k| k.to_lowercase())
+                .collect();
             let unique: HashSet<&String> = keys.iter().collect();
-            assert_eq!(keys.len(), unique.len(), "claves que solo difieren en mayusculas rompen ConvertFrom-Json");
+            assert_eq!(
+                keys.len(),
+                unique.len(),
+                "claves que solo difieren en mayusculas rompen ConvertFrom-Json"
+            );
             // Re-codificacion: verifica y solo entonces borra el .jsonl.gz.
-            let p = codec::Params { zstd_level: 3, block_raw_bytes: 1 << 20, window_log: 20 };
+            let p = codec::Params {
+                zstd_level: 3,
+                block_raw_bytes: 1 << 20,
+                window_log: 20,
+            };
             let r = store::recode(&dir, file, p)?;
             assert_eq!(r["identical"], true);
             assert!(!gzip.exists());
@@ -2580,13 +3043,18 @@ mod tests {
         fs::create_dir(&dir)?;
         let mut seg = Segment::open(&RealDisk, &dir, 0, 1, 1)?;
         seg.append(&frame(1, 1, "{}"), None, 1)?;
-        seg.seal(&RealDisk, &dir, &mut PhaseTimes::new()).map_err(|f| io::Error::other(f.error))?;
+        seg.seal(&RealDisk, &dir, &mut PhaseTimes::new())
+            .map_err(|f| io::Error::other(f.error))?;
         let manifest = dir.join("hour-0-0001.manifest.json");
         let mut m: Value = serde_json::from_reader(File::open(&manifest)?)?;
         m["sha256"] = json!("00");
         fs::remove_file(&manifest)?;
         write_json(&manifest, &m)?;
-        let p = codec::Params { zstd_level: 3, block_raw_bytes: 1 << 20, window_log: 20 };
+        let p = codec::Params {
+            zstd_level: 3,
+            block_raw_bytes: 1 << 20,
+            window_log: 20,
+        };
         assert!(store::recode(&dir, "hour-0-0001", p).is_err());
         assert!(dir.join("hour-0-0001.jsonl.gz").exists());
         fs::remove_dir_all(dir)?;
@@ -2597,7 +3065,10 @@ mod tests {
     fn roster_drops_bvol_indices() -> CaptureResult<()> {
         let stamp = SystemTime::now().duration_since(UNIX_EPOCH)?.as_nanos();
         let path = env::temp_dir().join(format!("roster-{stamp}.csv"));
-        fs::write(&path, "simbolo,tipo,ruta,bytes\nBTCBVOLUSDT,BVOLIndex,x,1\nBTCUSDT,klines,x,1\nBTCUSDT,aggTrades,x,1\nADAUSDT,klines,x,1\n")?;
+        fs::write(
+            &path,
+            "simbolo,tipo,ruta,bytes\nBTCBVOLUSDT,BVOLIndex,x,1\nBTCUSDT,klines,x,1\nBTCUSDT,aggTrades,x,1\nADAUSDT,klines,x,1\n",
+        )?;
         assert_eq!(roster(&path)?, ["ADAUSDT", "BTCUSDT"]);
         fs::remove_file(path)?;
         Ok(())
@@ -2613,7 +3084,13 @@ mod tests {
                 let index = route_i * SHARDS_PER_ROUTE + k;
                 let with_force = route == "market" && k == 0;
                 let roster_base = if route == "public" { k * per } else { 0 };
-                shard_defs.push((index, route, chunk.to_vec(), venue.url(route, chunk, with_force), roster_base));
+                shard_defs.push((
+                    index,
+                    route,
+                    chunk.to_vec(),
+                    venue.url(route, chunk, with_force),
+                    roster_base,
+                ));
             }
         }
         shard_defs
@@ -2631,23 +3108,50 @@ mod tests {
             let symbols: Vec<String> = (0..n).map(|i| format!("S{i:02}USDT")).collect();
             let defs = shard_defs(&symbols, venue);
             let total = defs.len();
-            assert_eq!(defs.iter().map(|d| d.0).collect::<Vec<_>>(), (0..total).collect::<Vec<_>>(), "n={n}: indices 0..len en orden");
+            assert_eq!(
+                defs.iter().map(|d| d.0).collect::<Vec<_>>(),
+                (0..total).collect::<Vec<_>>(),
+                "n={n}: indices 0..len en orden"
+            );
             let rutas: Vec<&str> = defs.iter().map(|d| d.1).collect();
             let publicos = rutas.iter().take_while(|r| **r == "public").count();
-            assert!(publicos > 0 && rutas[publicos..].iter().all(|r| *r == "market") && rutas.len() == 2 * publicos, "n={n}: public y luego market");
+            assert!(
+                publicos > 0
+                    && rutas[publicos..].iter().all(|r| *r == "market")
+                    && rutas.len() == 2 * publicos,
+                "n={n}: public y luego market"
+            );
             for ruta in ["public", "market"] {
-                let cubiertos: Vec<String> = defs.iter().filter(|d| d.1 == ruta).flat_map(|d| d.2.clone()).collect();
+                let cubiertos: Vec<String> = defs
+                    .iter()
+                    .filter(|d| d.1 == ruta)
+                    .flat_map(|d| d.2.clone())
+                    .collect();
                 assert_eq!(cubiertos, symbols, "n={n}: cobertura de {ruta}");
             }
-            let fuerza: Vec<bool> = defs.iter().map(|d| d.3.contains("!forceOrder@arr")).collect();
-            assert_eq!(fuerza.iter().filter(|f| **f).count(), 1, "n={n}: un solo with_force");
+            let fuerza: Vec<bool> = defs
+                .iter()
+                .map(|d| d.3.contains("!forceOrder@arr"))
+                .collect();
+            assert_eq!(
+                fuerza.iter().filter(|f| **f).count(),
+                1,
+                "n={n}: un solo with_force"
+            );
             assert!(fuerza[publicos], "n={n}: with_force en el primer market");
             for d in &defs {
                 assert!(d.0 < total, "n={n}: index < total antes de la resta");
-                assert!(primera_rotacion(ROTATE_AFTER, d.0, total)? > Duration::ZERO, "n={n}: primera rotacion positiva del shard {}", d.0);
+                assert!(
+                    primera_rotacion(ROTATE_AFTER, d.0, total)? > Duration::ZERO,
+                    "n={n}: primera rotacion positiva del shard {}",
+                    d.0
+                );
             }
             if n == 40 {
-                assert!(defs == shard_defs_base(&symbols, venue), "n=40: identico al constructor de la base");
+                assert!(
+                    defs == shard_defs_base(&symbols, venue),
+                    "n=40: identico al constructor de la base"
+                );
             }
         }
         Ok(())
@@ -2659,25 +3163,52 @@ mod tests {
     #[test]
     fn roster_vacio_se_rechaza_antes_de_run() -> CaptureResult<()> {
         let stamp = SystemTime::now().duration_since(UNIX_EPOCH)?.as_nanos();
-        for (caso, csv) in [("sin_filas", "simbolo,tipo\n"), ("filtradas", "simbolo,tipo\nBTCBVOLUSDT,BVOLIndex\nETHBVOLUSDT,BVOLIndex\n")] {
+        for (caso, csv) in [
+            ("sin_filas", "simbolo,tipo\n"),
+            (
+                "filtradas",
+                "simbolo,tipo\nBTCBVOLUSDT,BVOLIndex\nETHBVOLUSDT,BVOLIndex\n",
+            ),
+        ] {
             let base = env::temp_dir().join(format!("roster-vacio-{stamp}-{caso}"));
             fs::create_dir_all(&base)?;
             let roster = base.join("roster.csv");
             fs::write(&roster, csv)?;
             let out = base.join("out");
-            let until = SystemTime::now().duration_since(UNIX_EPOCH)?.as_millis() as u64 + 3_600_000;
-            let args: Vec<String> = vec!["local".into(), out.display().to_string(), roster.display().to_string(),
-                format!("until_ms={until}"), "ws_local=127.0.0.1:9".into(), "rest_local=http://127.0.0.1:9".into(), "min_free_bytes=0".into()];
+            let until =
+                SystemTime::now().duration_since(UNIX_EPOCH)?.as_millis() as u64 + 3_600_000;
+            let args: Vec<String> = vec![
+                "local".into(),
+                out.display().to_string(),
+                roster.display().to_string(),
+                format!("until_ms={until}"),
+                "ws_local=127.0.0.1:9".into(),
+                "rest_local=http://127.0.0.1:9".into(),
+                "min_free_bytes=0".into(),
+            ];
             let corrida = thread::spawn(move || {
                 let (ctl, _, _) = salidafallo::tests::control_de_prueba(salidafallo::PLAZO_FATAL);
-                let rt = tokio::runtime::Builder::new_current_thread().enable_all().build().expect("runtime");
-                rt.block_on(capture(&args, ctl)).map(|_| ()).map_err(|e| e.to_string())
+                let rt = tokio::runtime::Builder::new_current_thread()
+                    .enable_all()
+                    .build()
+                    .expect("runtime");
+                rt.block_on(capture(&args, ctl))
+                    .map(|_| ())
+                    .map_err(|e| e.to_string())
             })
             .join();
-            let Ok(resultado) = corrida else { panic!("{caso}: capture entro en panic; se esperaba un error explicito") };
+            let Ok(resultado) = corrida else {
+                panic!("{caso}: capture entro en panic; se esperaba un error explicito")
+            };
             let error = resultado.err().unwrap_or_default();
-            assert!(error.contains("roster sin simbolos negociables"), "{caso}: error explicito, no {error:?}");
-            let runs: Vec<_> = fs::read_dir(&out)?.flatten().filter(|e| e.file_name().to_string_lossy().starts_with("run-")).collect();
+            assert!(
+                error.contains("roster sin simbolos negociables"),
+                "{caso}: error explicito, no {error:?}"
+            );
+            let runs: Vec<_> = fs::read_dir(&out)?
+                .flatten()
+                .filter(|e| e.file_name().to_string_lossy().starts_with("run-"))
+                .collect();
             assert!(runs.is_empty(), "{caso}: no se crea RUN");
         }
         Ok(())
@@ -2687,8 +3218,14 @@ mod tests {
     fn urls_use_public_and_market_routes() -> CaptureResult<()> {
         let v = Venue::parse("mainnet")?;
         let syms = vec!["BTCUSDT".to_string()];
-        assert_eq!(v.url("public", &syms, false), "wss://fstream.binance.com/public/stream?streams=btcusdt@bookTicker/btcusdt@depth@100ms");
-        assert_eq!(v.url("market", &syms, true), "wss://fstream.binance.com/market/stream?streams=btcusdt@aggTrade/btcusdt@markPrice@1s/!forceOrder@arr");
+        assert_eq!(
+            v.url("public", &syms, false),
+            "wss://fstream.binance.com/public/stream?streams=btcusdt@bookTicker/btcusdt@depth@100ms"
+        );
+        assert_eq!(
+            v.url("market", &syms, true),
+            "wss://fstream.binance.com/market/stream?streams=btcusdt@aggTrade/btcusdt@markPrice@1s/!forceOrder@arr"
+        );
         Ok(())
     }
 }

@@ -18,8 +18,12 @@ mod adaptador {
     pub const SUJETO: &str = "candidato";
     /// Cola de produccion: la misma llamada que `capture` (derivada de B y q_min).
     pub fn cola_produccion() -> (ArchiveQueue, ArchiveReceiver) {
-        let (q, rx, _) = ArchiveQueue::derivada(QUEUE_BYTE_BUDGET, ROW_CHARGE_OVERHEAD, Arc::new(Admision::nueva()))
-            .expect("capacidad derivada");
+        let (q, rx, _) = ArchiveQueue::derivada(
+            QUEUE_BYTE_BUDGET,
+            ROW_CHARGE_OVERHEAD,
+            Arc::new(Admision::nueva()),
+        )
+        .expect("capacidad derivada");
         (q, rx)
     }
     pub fn cargo(q: &ArchiveQueue, row: &Value) -> usize {
@@ -129,8 +133,16 @@ struct Incidente {
 
 fn incidente() -> Incidente {
     let v: Value = serde_json::from_str(FIXTURE_INCIDENTE).expect("fixture del incidente");
-    let n = |k: &str| v[k].as_u64().map(|x| x as usize).unwrap_or_else(|| panic!("fixture sin {k}"));
-    Incidente { capacidad_antigua: n("queue_capacity"), presupuesto: n("queue_byte_budget"), cargo_minimo: n("queue_row_overhead_charge") }
+    let n = |k: &str| {
+        v[k].as_u64()
+            .map(|x| x as usize)
+            .unwrap_or_else(|| panic!("fixture sin {k}"))
+    };
+    Incidente {
+        capacidad_antigua: n("queue_capacity"),
+        presupuesto: n("queue_byte_budget"),
+        cargo_minimo: n("queue_row_overhead_charge"),
+    }
 }
 
 fn fixture_sha256() -> String {
@@ -147,8 +159,17 @@ fn fila(id: u64, largo: usize) -> Value {
 
 fn razon(e: &(dyn Error + Send + Sync)) -> String {
     let s = e.to_string();
-    ["already closed", "admission cut", "row_capacity", "byte_budget", "row_exceeds_budget", "writer_unavailable"]
-        .iter().find(|r| s.contains(*r)).map_or(s.clone(), |r| (*r).to_owned())
+    [
+        "already closed",
+        "admission cut",
+        "row_capacity",
+        "byte_budget",
+        "row_exceeds_budget",
+        "writer_unavailable",
+    ]
+    .iter()
+    .find(|r| s.contains(*r))
+    .map_or(s.clone(), |r| (*r).to_owned())
 }
 
 fn drenar(rx: &mut ArchiveReceiver) -> Vec<u64> {
@@ -164,34 +185,64 @@ fn drenar(rx: &mut ArchiveReceiver) -> Vec<u64> {
 fn a04_capacidad_de_produccion_derivada_del_presupuesto() {
     let (q, _rx) = cola_produccion();
     let derivada = QUEUE_BYTE_BUDGET / ROW_CHARGE_OVERHEAD;
-    println!("MEDIDA_COLA {}", json!({"caso": "a04", "sujeto": SUJETO, "capacidad_canal": q.tx.max_capacity(),
-        "presupuesto": QUEUE_BYTE_BUDGET, "cargo_minimo": ROW_CHARGE_OVERHEAD, "floor_B_qmin": derivada}));
-    assert_eq!(q.tx.max_capacity(), derivada, "A04: capacidad de filas de produccion = floor(B / q_min)");
-    assert!((q.tx.max_capacity() + 1) * ROW_CHARGE_OVERHEAD > QUEUE_BYTE_BUDGET, "A08: (C + 1) * q_min > B");
+    println!(
+        "MEDIDA_COLA {}",
+        json!({"caso": "a04", "sujeto": SUJETO, "capacidad_canal": q.tx.max_capacity(),
+        "presupuesto": QUEUE_BYTE_BUDGET, "cargo_minimo": ROW_CHARGE_OVERHEAD, "floor_B_qmin": derivada})
+    );
+    assert_eq!(
+        q.tx.max_capacity(),
+        derivada,
+        "A04: capacidad de filas de produccion = floor(B / q_min)"
+    );
+    assert!(
+        (q.tx.max_capacity() + 1) * ROW_CHARGE_OVERHEAD > QUEUE_BYTE_BUDGET,
+        "A08: (C + 1) * q_min > B"
+    );
 }
 
 // --- A05 (solo candidato: la base no tiene derivacion) ----------------------------------------
 #[test]
 fn a05_precondiciones_de_la_derivacion() {
-    let casos: Vec<(usize, usize)> = vec![(QUEUE_BYTE_BUDGET, ROW_CHARGE_OVERHEAD), (5, 2), (2_048, 2_048), (2_049, 2_048),
-        (u32::MAX as usize, 1), (u32::MAX as usize, ROW_CHARGE_OVERHEAD)];
+    let casos: Vec<(usize, usize)> = vec![
+        (QUEUE_BYTE_BUDGET, ROW_CHARGE_OVERHEAD),
+        (5, 2),
+        (2_048, 2_048),
+        (2_049, 2_048),
+        (u32::MAX as usize, 1),
+        (u32::MAX as usize, ROW_CHARGE_OVERHEAD),
+    ];
     let mut informe = Vec::new();
     for (b, q) in casos {
         let c = derivar_capacidad(b, q).expect("configuracion valida");
         informe.push(json!({"B": b, "q_min": q, "C": c.filas}));
         assert_eq!(c.filas, b / q, "A05: C = floor(B / q_min)");
-        assert!(c.filas >= 1 && c.filas * q <= b && (c.filas + 1) * q > b, "A05/A08: frontera de la cota");
+        assert!(
+            c.filas >= 1 && c.filas * q <= b && (c.filas + 1) * q > b,
+            "A05/A08: frontera de la cota"
+        );
         // La cola se construye sin panic con esa capacidad (mpsc::channel y Semaphore::new).
         let _ = ArchiveQueue::derivada(b, q, Arc::new(Admision::nueva())).expect("cola construida");
     }
-    let invalidos = [(QUEUE_BYTE_BUDGET, 0usize), (2_047, 2_048), (0, 1), (u32::MAX as usize + 1, ROW_CHARGE_OVERHEAD)];
+    let invalidos = [
+        (QUEUE_BYTE_BUDGET, 0usize),
+        (2_047, 2_048),
+        (0, 1),
+        (u32::MAX as usize + 1, ROW_CHARGE_OVERHEAD),
+    ];
     for (b, q) in invalidos {
         let r = derivar_capacidad(b, q);
         informe.push(json!({"B": b, "q_min": q, "rechazo": r.as_ref().err()}));
-        assert!(r.is_err(), "A05: configuracion invalida rechazada de forma explicita: B={b} q={q}");
+        assert!(
+            r.is_err(),
+            "A05: configuracion invalida rechazada de forma explicita: B={b} q={q}"
+        );
     }
-    println!("MEDIDA_COLA {}", json!({"caso": "a05", "sujeto": SUJETO, "casos": informe,
-        "semaphore_max_permits": Semaphore::MAX_PERMITS}));
+    println!(
+        "MEDIDA_COLA {}",
+        json!({"caso": "a05", "sujeto": SUJETO, "casos": informe,
+        "semaphore_max_permits": Semaphore::MAX_PERMITS})
+    );
 }
 // --- A34 / A56 ---------------------------------------------------------------------------------
 /// La barrera antigua: con el receptor vivo y sin desencolar, C_antigua + 1 ofertas cuyos cargos
@@ -199,12 +250,20 @@ fn a05_precondiciones_de_la_derivacion() {
 #[test]
 fn a34_barrera_antigua_de_filas_con_presupuesto_disponible() {
     let inc = incidente();
-    assert_eq!((inc.presupuesto, inc.cargo_minimo), (QUEUE_BYTE_BUDGET, ROW_CHARGE_OVERHEAD), "la fixture describe este presupuesto");
+    assert_eq!(
+        (inc.presupuesto, inc.cargo_minimo),
+        (QUEUE_BYTE_BUDGET, ROW_CHARGE_OVERHEAD),
+        "la fixture describe este presupuesto"
+    );
     let (q, mut rx) = cola_produccion();
     let total = inc.capacidad_antigua + 1;
     let filas: Vec<Value> = (0..total as u64).map(|id| fila(id, 16)).collect();
     let suma: usize = filas.iter().map(|f| cargo(&q, f)).sum();
-    assert!(suma <= QUEUE_BYTE_BUDGET, "precondicion: suma de cargos {suma} <= B {}", QUEUE_BYTE_BUDGET);
+    assert!(
+        suma <= QUEUE_BYTE_BUDGET,
+        "precondicion: suma de cargos {suma} <= B {}",
+        QUEUE_BYTE_BUDGET
+    );
     let mut rechazos = Vec::new();
     for f in filas {
         let id = f["oferta_id"].as_u64().unwrap_or(u64::MAX);
@@ -214,15 +273,29 @@ fn a34_barrera_antigua_de_filas_con_presupuesto_disponible() {
         }
     }
     let (ocupadas, cargados) = (q.tx.max_capacity() - q.tx.capacity(), bytes_cargados(&q));
-    println!("MEDIDA_COLA {}", json!({"caso": "a34", "sujeto": SUJETO, "fixture_sha256": fixture_sha256(),
+    println!(
+        "MEDIDA_COLA {}",
+        json!({"caso": "a34", "sujeto": SUJETO, "fixture_sha256": fixture_sha256(),
         "capacidad_antigua": inc.capacidad_antigua, "ofertas": total, "suma_cargos": suma, "presupuesto": QUEUE_BYTE_BUDGET,
         "ocupadas": ocupadas, "bytes_cargados": cargados, "rechazos": rechazos,
-        "rechazadas_auditoria": *q.audit.rejected.lock().expect("r")}));
-    assert_eq!(rechazos, Vec::<(u64, String)>::new(),
-        "A34: con presupuesto disponible se admiten las C_antigua + 1 ofertas (testigo incluida)");
+        "rechazadas_auditoria": *q.audit.rejected.lock().expect("r")})
+    );
+    assert_eq!(
+        rechazos,
+        Vec::<(u64, String)>::new(),
+        "A34: con presupuesto disponible se admiten las C_antigua + 1 ofertas (testigo incluida)"
+    );
     let ids = drenar(&mut rx);
-    assert_eq!(ids, (0..total as u64).collect::<Vec<_>>(), "A40: identidades en orden y una sola vez");
-    assert_eq!(bytes_cargados(&q), 0, "A42: tras desencolar y soltar las filas no queda cargo");
+    assert_eq!(
+        ids,
+        (0..total as u64).collect::<Vec<_>>(),
+        "A40: identidades en orden y una sola vez"
+    );
+    assert_eq!(
+        bytes_cargados(&q),
+        0,
+        "A42: tras desencolar y soltar las filas no queda cargo"
+    );
 }
 
 // --- A13 ---------------------------------------------------------------------------------------
@@ -230,25 +303,49 @@ fn a34_barrera_antigua_de_filas_con_presupuesto_disponible() {
 #[test]
 fn a13_agotamiento_real_del_presupuesto() {
     let (q, mut rx) = cola_produccion();
-    let largo = 8_192 - ROW_CHARGE_OVERHEAD - ("frame".len() + "market".len() + "fstusdt@aggTrade".len() + "FSTUSDT".len());
+    let largo = 8_192
+        - ROW_CHARGE_OVERHEAD
+        - ("frame".len() + "market".len() + "fstusdt@aggTrade".len() + "FSTUSDT".len());
     let c = cargo(&q, &fila(0, largo));
     assert_eq!(c, 8_192);
     let n = QUEUE_BYTE_BUDGET / c;
-    assert!(n < incidente().capacidad_antigua, "el caso no depende de la barrera de filas");
+    assert!(
+        n < incidente().capacidad_antigua,
+        "el caso no depende de la barrera de filas"
+    );
     for id in 0..n as u64 {
-        q.offer(fila(id, largo), None).expect("cabe en el presupuesto");
+        q.offer(fila(id, largo), None)
+            .expect("cabe en el presupuesto");
     }
-    let r = q.offer(fila(n as u64, largo), None).map_err(|e| razon(e.as_ref()));
-    let despues = q.offer(fila(n as u64 + 1, 0), None).map_err(|e| razon(e.as_ref()));
+    let r = q
+        .offer(fila(n as u64, largo), None)
+        .map_err(|e| razon(e.as_ref()));
+    let despues = q
+        .offer(fila(n as u64 + 1, 0), None)
+        .map_err(|e| razon(e.as_ref()));
     let rech = q.audit.rejected.lock().expect("r").clone();
-    println!("MEDIDA_COLA {}", json!({"caso": "a13", "sujeto": SUJETO, "admitidas": n, "cargo": c,
+    println!(
+        "MEDIDA_COLA {}",
+        json!({"caso": "a13", "sujeto": SUJETO, "admitidas": n, "cargo": c,
         "rechazo": format!("{r:?}"), "despues": format!("{despues:?}"), "auditoria": rech,
-        "primer_fallo": q.audit.failure_reason()}));
-    assert_eq!(r, Err("byte_budget".to_owned()), "A13: la fila n+1 se rechaza por agotamiento real");
-    assert_eq!(despues, Err("already closed".to_owned()), "A13: primer fallo conservado; la admision queda cerrada");
+        "primer_fallo": q.audit.failure_reason()})
+    );
+    assert_eq!(
+        r,
+        Err("byte_budget".to_owned()),
+        "A13: la fila n+1 se rechaza por agotamiento real"
+    );
+    assert_eq!(
+        despues,
+        Err("already closed".to_owned()),
+        "A13: primer fallo conservado; la admision queda cerrada"
+    );
     assert_eq!(q.audit.failure_reason(), Some("byte_budget"));
     assert_eq!(rech.len(), 1, "un solo rechazo registrado");
-    assert_eq!(rech[0]["oferta_id"].as_u64().or(Some(n as u64)), Some(n as u64));
+    assert_eq!(
+        rech[0]["oferta_id"].as_u64().or(Some(n as u64)),
+        Some(n as u64)
+    );
     assert_eq!(drenar(&mut rx).len(), n, "lo admitido se drena");
     assert_eq!(bytes_cargados(&q), 0, "A42: reservas devueltas");
 }
@@ -267,12 +364,22 @@ fn a35_fronteras_del_presupuesto_y_fila_en_proceso() {
             q.offer(fila(id, largo(8_192)), None).expect("cabe");
         }
         let ultimo = 8_192 - falta; // total = B - falta
-        q.offer(fila(n as u64, largo(ultimo)), None).expect("A35: el ultimo cargo valido se admite");
+        q.offer(fila(n as u64, largo(ultimo)), None)
+            .expect("A35: el ultimo cargo valido se admite");
         assert_eq!(bytes_cargados(&q), QUEUE_BYTE_BUDGET - falta);
-        let r = q.offer(fila(n as u64 + 1, 0), None).map_err(|e| razon(e.as_ref()));
-        println!("MEDIDA_COLA {}", json!({"caso": format!("a35_{caso}"), "sujeto": SUJETO, "cargados": QUEUE_BYTE_BUDGET - falta,
-            "siguiente": format!("{r:?}")}));
-        assert_eq!(r, Err("byte_budget".to_owned()), "A35 {caso}: el siguiente cargo imposible se rechaza con causa");
+        let r = q
+            .offer(fila(n as u64 + 1, 0), None)
+            .map_err(|e| razon(e.as_ref()));
+        println!(
+            "MEDIDA_COLA {}",
+            json!({"caso": format!("a35_{caso}"), "sujeto": SUJETO, "cargados": QUEUE_BYTE_BUDGET - falta,
+            "siguiente": format!("{r:?}")})
+        );
+        assert_eq!(
+            r,
+            Err("byte_budget".to_owned()),
+            "A35 {caso}: el siguiente cargo imposible se rechaza con causa"
+        );
         assert_eq!(drenar(&mut rx).len(), n + 1);
         assert_eq!(bytes_cargados(&q), 0);
     }
@@ -285,9 +392,15 @@ fn a35_fronteras_del_presupuesto_y_fila_en_proceso() {
     let r = q.offer(fila(2, 0), None).map_err(|e| razon(e.as_ref()));
     let cargados = bytes_cargados(&q);
     drop(en_proceso);
-    println!("MEDIDA_COLA {}", json!({"caso": "a35_en_proceso", "sujeto": SUJETO, "cargados_con_fila_en_proceso": cargados,
-        "siguiente": format!("{r:?}")}));
-    assert_eq!(cargados, QUEUE_BYTE_BUDGET, "A07: la fila en proceso conserva su cargo");
+    println!(
+        "MEDIDA_COLA {}",
+        json!({"caso": "a35_en_proceso", "sujeto": SUJETO, "cargados_con_fila_en_proceso": cargados,
+        "siguiente": format!("{r:?}")})
+    );
+    assert_eq!(
+        cargados, QUEUE_BYTE_BUDGET,
+        "A07: la fila en proceso conserva su cargo"
+    );
     assert_eq!(r, Err("byte_budget".to_owned()));
 }
 
@@ -295,16 +408,31 @@ fn a35_fronteras_del_presupuesto_y_fila_en_proceso() {
 #[test]
 fn a36_fila_cuyo_cargo_rebasa_el_presupuesto() {
     let (q, _rx) = cola_produccion();
-    let r = q.offer(fila(0, QUEUE_BYTE_BUDGET), None).map_err(|e| razon(e.as_ref()));
+    let r = q
+        .offer(fila(0, QUEUE_BYTE_BUDGET), None)
+        .map_err(|e| razon(e.as_ref()));
     let rech = q.audit.rejected.lock().expect("r").clone();
-    println!("MEDIDA_COLA {}", json!({"caso": "a36", "sujeto": SUJETO, "resultado": format!("{r:?}"), "auditoria": rech,
-        "primer_fallo": q.audit.failure_reason()}));
+    println!(
+        "MEDIDA_COLA {}",
+        json!({"caso": "a36", "sujeto": SUJETO, "resultado": format!("{r:?}"), "auditoria": rech,
+        "primer_fallo": q.audit.failure_reason()})
+    );
     assert!(r.is_err(), "A36: la fila imposible se rechaza");
     assert_eq!(bytes_cargados(&q), 0, "A36: no se reserva nada");
-    assert_eq!(q.tx.capacity(), q.tx.max_capacity(), "A36: ninguna plaza ocupada");
-    assert!(q.audit.failure_reason().is_some(), "A36: primer fallo explicito");
+    assert_eq!(
+        q.tx.capacity(),
+        q.tx.max_capacity(),
+        "A36: ninguna plaza ocupada"
+    );
+    assert!(
+        q.audit.failure_reason().is_some(),
+        "A36: primer fallo explicito"
+    );
     assert_eq!(rech.len(), 1);
-    assert!(rech[0]["row_charge_bytes"].as_u64() > Some(QUEUE_BYTE_BUDGET as u64), "cargo calculado sin truncar");
+    assert!(
+        rech[0]["row_charge_bytes"].as_u64() > Some(QUEUE_BYTE_BUDGET as u64),
+        "cargo calculado sin truncar"
+    );
 }
 
 // --- A14 ---------------------------------------------------------------------------------------
@@ -313,9 +441,20 @@ fn a14_escritor_cerrado_antes_de_ofrecer() {
     let (q, rx) = cola_produccion();
     drop(rx);
     let r = q.offer(fila(0, 8), None).map_err(|e| razon(e.as_ref()));
-    println!("MEDIDA_COLA {}", json!({"caso": "a14", "sujeto": SUJETO, "resultado": format!("{r:?}")}));
-    assert_eq!(r, Err("writer_unavailable".to_owned()), "A14: escritor ausente rechazado con causa");
-    assert_eq!(bytes_cargados(&q), 0, "A14: sin permisos consumidos tras el cierre");
+    println!(
+        "MEDIDA_COLA {}",
+        json!({"caso": "a14", "sujeto": SUJETO, "resultado": format!("{r:?}")})
+    );
+    assert_eq!(
+        r,
+        Err("writer_unavailable".to_owned()),
+        "A14: escritor ausente rechazado con causa"
+    );
+    assert_eq!(
+        bytes_cargados(&q),
+        0,
+        "A14: sin permisos consumidos tras el cierre"
+    );
 }
 
 // --- A09 / A10 / A11 ---------------------------------------------------------------------------
@@ -329,8 +468,15 @@ fn a10_memoria_de_la_cola_con_escritor_detenido() {
         "Value": std::mem::size_of::<Value>(), "Option_Cont": std::mem::size_of::<Option<Cont>>(),
         "OwnedSemaphorePermit": std::mem::size_of::<OwnedSemaphorePermit>()});
     let mut fases = Vec::new();
-    for (nombre, largos, filas) in [("cortas_16B", vec![16usize], 100_000usize), ("libro_1200B", vec![1_200], 60_000),
-        ("mezcla_16_300_1200_4000B", vec![16, 300, 1_200, 4_000], 60_000)] {
+    for (nombre, largos, filas) in [
+        ("cortas_16B", vec![16usize], 100_000usize),
+        ("libro_1200B", vec![1_200], 60_000),
+        (
+            "mezcla_16_300_1200_4000B",
+            vec![16, 300, 1_200, 4_000],
+            60_000,
+        ),
+    ] {
         let inicio = reiniciar_pico();
         let (q, mut rx) = cola_produccion();
         let tras_crear = vivos();
@@ -338,7 +484,12 @@ fn a10_memoria_de_la_cola_con_escritor_detenido() {
         let admitidas = Arc::new(AtomicUsize::new(0));
         thread::scope(|s| {
             for emisor in 0..4u64 {
-                let (q, largos, cargo_total, admitidas) = (q.clone(), largos.clone(), Arc::clone(&cargo_total), Arc::clone(&admitidas));
+                let (q, largos, cargo_total, admitidas) = (
+                    q.clone(),
+                    largos.clone(),
+                    Arc::clone(&cargo_total),
+                    Arc::clone(&admitidas),
+                );
                 s.spawn(move || {
                     let _marca = Marca::poner();
                     for k in 0..(filas / 4) as u64 {
@@ -371,13 +522,22 @@ fn a10_memoria_de_la_cola_con_escritor_detenido() {
             "heap_por_fila": heap_cola as f64 / n.max(1) as f64,
             "cargo_por_fila": cargo_total.load(Ordering::Relaxed) as f64 / n.max(1) as f64,
             "heap_fuera_del_cargo": heap_cola as i64 - cargo_total.load(Ordering::Relaxed) as i64});
-        println!("MEDIDA_COLA {}", json!({"caso": "a10", "sujeto": SUJETO, "medida": fase}));
+        println!(
+            "MEDIDA_COLA {}",
+            json!({"caso": "a10", "sujeto": SUJETO, "medida": fase})
+        );
         fases.push(fase);
         assert_eq!(drenadas, n);
     }
-    println!("MEDIDA_COLA {}", json!({"caso": "a09_layout", "sujeto": SUJETO, "tamanos": tam,
-        "metodo": "asignador contador #[global_allocator] del binario de pruebas; heap vivo (bytes pedidos) antes/despues"}));
+    println!(
+        "MEDIDA_COLA {}",
+        json!({"caso": "a09_layout", "sujeto": SUJETO, "tamanos": tam,
+        "metodo": "asignador contador #[global_allocator] del binario de pruebas; heap vivo (bytes pedidos) antes/despues"})
+    );
     for f in &fases {
-        assert!(f["heap_fuera_del_cargo"].as_i64() <= Some(0), "A11: el heap de la cola cabe en sus cargos: {f}");
+        assert!(
+            f["heap_fuera_del_cargo"].as_i64() <= Some(0),
+            "A11: el heap de la cola cabe en sus cargos: {f}"
+        );
     }
 }

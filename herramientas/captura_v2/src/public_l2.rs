@@ -76,7 +76,13 @@ impl R2Plan {
     }
 }
 
-pub(super) fn r2_plan(max_gap: Duration, symbols: usize, weight: u64, limit: u64, window_s: u64) -> R2Plan {
+pub(super) fn r2_plan(
+    max_gap: Duration,
+    symbols: usize,
+    weight: u64,
+    limit: u64,
+    window_s: u64,
+) -> R2Plan {
     let cycle = (symbols as u64 * weight) as f64;
     // Linea base por VENTANA: los snapshots/simbolo/hora ya emitidos escalados a la ventana
     // del limite (window_s=60 reproduce la cuenta original cycle*1.2/60; N1 cambio 5).
@@ -88,7 +94,10 @@ pub(super) fn r2_plan(max_gap: Duration, symbols: usize, weight: u64, limit: u64
     let floor_s = (cycle * window_s as f64 / budget.max(1.0)).ceil() as u64;
     R2Plan {
         interval: max_gap.max(Duration::from_secs(floor_s)),
-        symbols, limit, window_s, weight,
+        symbols,
+        limit,
+        window_s,
+        weight,
         defaulted: false,
     }
 }
@@ -99,7 +108,8 @@ pub(super) fn r2_plan(max_gap: Duration, symbols: usize, weight: u64, limit: u64
 /// Interpreta SECOND/MINUTE/HOUR/DAY con el mismo criterio que la puerta (gate.rs).
 pub(super) fn r2_plan_from_info(info: &Value, max_gap: Duration, symbols: usize) -> R2Plan {
     let row = &info["request_weight_limit"];
-    let (mut limit, mut window_s, mut weight) = (R2_DEFAULT_LIMIT, R2_DEFAULT_WINDOW_S, R2_DEFAULT_WEIGHT);
+    let (mut limit, mut window_s, mut weight) =
+        (R2_DEFAULT_LIMIT, R2_DEFAULT_WINDOW_S, R2_DEFAULT_WEIGHT);
     let mut defaulted = false;
     if let Some(n) = row["limit"].as_u64() {
         limit = n;
@@ -142,7 +152,10 @@ pub(super) struct R2Timer {
 
 impl R2Timer {
     fn arm(now: Instant, interval: Duration, phase: Duration) -> Self {
-        Self { next: now + phase, interval }
+        Self {
+            next: now + phase,
+            interval,
+        }
     }
 
     fn due(&self, now: Instant) -> bool {
@@ -233,7 +246,14 @@ impl DepthState {
     /// `arm` = (intervalo, fase) R2 del plan VIGENTE: se arma con la fase en el primer
     /// exito y se rearma en cada exito adoptando el intervalo recalculado (si el limite
     /// o el peso aprendido cambiaron, el nuevo T rige desde este rearme).
-    fn reply(&mut self, generation: u64, ok: bool, cooldown: Duration, now: Instant, arm: Option<(Duration, Duration)>) {
+    fn reply(
+        &mut self,
+        generation: u64,
+        ok: bool,
+        cooldown: Duration,
+        now: Instant,
+        arm: Option<(Duration, Duration)>,
+    ) {
         if self.pending != Some(generation) {
             return;
         }
@@ -408,10 +428,21 @@ impl ShardBook {
     fn drain_l2(&mut self, emitter: &Emitter, now: Instant, finish: bool) -> CaptureResult<()> {
         if finish && crate::inyeccion::es(crate::inyeccion::Caso::RetenerL2) {
             // SALIDAFALLO-12 (C3): testigo de lo que sigue en el arbitro al empezar el drenaje final.
-            let depth: Vec<(String, u64)> = self.depth.iter()
-                .flat_map(|(s, st)| st.arbiter.pendientes().into_iter().map(move |u| (s.clone(), u))).collect();
-            let ticker: Vec<(String, u64)> = self.tickers.iter()
-                .flat_map(|(s, tk)| tk.pendientes().into_iter().map(move |u| (s.clone(), u))).collect();
+            let depth: Vec<(String, u64)> = self
+                .depth
+                .iter()
+                .flat_map(|(s, st)| {
+                    st.arbiter
+                        .pendientes()
+                        .into_iter()
+                        .map(move |u| (s.clone(), u))
+                })
+                .collect();
+            let ticker: Vec<(String, u64)> = self
+                .tickers
+                .iter()
+                .flat_map(|(s, tk)| tk.pendientes().into_iter().map(move |u| (s.clone(), u)))
+                .collect();
             crate::inyeccion::l2_pendientes(emitter.shard, &depth, &ticker);
         }
         for state in self.depth.values_mut() {
@@ -541,7 +572,13 @@ impl ShardCtx {
             let phase = r2_phase(rank, self.r2_symbols_total, plan.interval);
             let mut book = lock(&self.book);
             if let Some(state) = book.depth.get_mut(&symbol) {
-                state.reply(generation, ok, cooldown, Instant::now(), Some((plan.interval, phase)));
+                state.reply(
+                    generation,
+                    ok,
+                    cooldown,
+                    Instant::now(),
+                    Some((plan.interval, phase)),
+                );
             }
         }
     }
@@ -552,7 +589,11 @@ impl ShardCtx {
     /// puerta no sirve ningun depth hasta conocer el limite (gate.rs), asi que el plan
     /// de defaults solo gobierna temporizadores, nunca peticiones.
     fn current_r2_plan(&self) -> R2Plan {
-        r2_plan_from_info(&self.gate_info.borrow(), self.r2_max_gap, self.r2_symbols_total)
+        r2_plan_from_info(
+            &self.gate_info.borrow(),
+            self.r2_max_gap,
+            self.r2_symbols_total,
+        )
     }
 
     // Cada shard registra el plan fuera del mutex del libro. Los temporizadores
@@ -748,7 +789,10 @@ mod tests {
     fn frame(symbol: &str) -> PublicFrame {
         PublicFrame {
             connection: 1,
-            stamp: Stamp { utc_ms: 0, mono_ns: 0 },
+            stamp: Stamp {
+                utc_ms: 0,
+                mono_ns: 0,
+            },
             stream: format!("{}@depth@100ms", symbol.to_ascii_lowercase()),
             symbol: symbol.to_owned(),
             payload: "{}".into(),
@@ -788,7 +832,10 @@ mod tests {
         let max_gap = Duration::from_secs(300);
         let startup = r2_plan_from_info(&Value::Null, max_gap, 40);
         assert!(startup.defaulted);
-        assert_eq!((startup.limit, startup.window_s, startup.weight), (2400, 60, 20));
+        assert_eq!(
+            (startup.limit, startup.window_s, startup.weight),
+            (2400, 60, 20)
+        );
         assert_eq!(startup.interval, max_gap);
 
         // 40 * 20 de peso por vuelta. Las bases por ventana son 8 y 46080.
@@ -810,10 +857,22 @@ mod tests {
     #[test]
     fn r2_fases_escalonan_los_simbolos_sin_solaparse() {
         let interval = Duration::from_secs(300);
-        let phases: Vec<_> = (0..40).map(|rank| r2_phase(rank, 40, interval).as_millis()).collect();
+        let phases: Vec<_> = (0..40)
+            .map(|rank| r2_phase(rank, 40, interval).as_millis())
+            .collect();
         let step = interval.as_millis() / 40;
-        assert!(phases.iter().all(|p| *p >= step && *p <= interval.as_millis()));
-        assert_eq!(phases.iter().collect::<std::collections::BTreeSet<_>>().len(), 40);
+        assert!(
+            phases
+                .iter()
+                .all(|p| *p >= step && *p <= interval.as_millis())
+        );
+        assert_eq!(
+            phases
+                .iter()
+                .collect::<std::collections::BTreeSet<_>>()
+                .len(),
+            40
+        );
         assert_eq!(phases[0], step);
         assert_eq!(phases[39], interval.as_millis());
         assert_eq!(phases[1] - phases[0], step);
@@ -827,9 +886,18 @@ mod tests {
         assert_eq!(state.snapshot_wanted(now), Some(true));
         state.pending = Some(0);
         assert_eq!(state.snapshot_wanted(now), None);
-        state.reply(0, true, Duration::from_secs(5), now, Some((interval, Duration::ZERO)));
+        state.reply(
+            0,
+            true,
+            Duration::from_secs(5),
+            now,
+            Some((interval, Duration::ZERO)),
+        );
         assert_eq!(state.snapshot_wanted(now + Duration::from_secs(299)), None);
-        assert_eq!(state.snapshot_wanted(now + Duration::from_secs(300)), Some(true));
+        assert_eq!(
+            state.snapshot_wanted(now + Duration::from_secs(300)),
+            Some(true)
+        );
     }
 
     #[test]
@@ -852,8 +920,14 @@ mod tests {
             reply_at,
             Some((updated.interval, updated_phase)),
         );
-        assert_eq!(state.snapshot_wanted(reply_at + Duration::from_secs(333)), None);
-        assert_eq!(state.snapshot_wanted(reply_at + Duration::from_secs(334)), Some(true));
+        assert_eq!(
+            state.snapshot_wanted(reply_at + Duration::from_secs(333)),
+            None
+        );
+        assert_eq!(
+            state.snapshot_wanted(reply_at + Duration::from_secs(334)),
+            Some(true)
+        );
     }
 
     #[test]
@@ -862,9 +936,18 @@ mod tests {
         let interval = Duration::from_secs(300);
         let mut state = DepthState::new(now);
         state.pending = Some(0);
-        state.reply(0, true, Duration::from_secs(5), now, Some((interval, Duration::from_secs(120))));
+        state.reply(
+            0,
+            true,
+            Duration::from_secs(5),
+            now,
+            Some((interval, Duration::from_secs(120))),
+        );
         assert_eq!(state.snapshot_wanted(now + Duration::from_secs(119)), None);
-        assert_eq!(state.snapshot_wanted(now + Duration::from_secs(120)), Some(true));
+        assert_eq!(
+            state.snapshot_wanted(now + Duration::from_secs(120)),
+            Some(true)
+        );
     }
 
     // Prueba de ESTADO DEL SHARD (la puerta se prueba aparte, en banco_local): aqui se
@@ -877,12 +960,25 @@ mod tests {
         state.pending = Some(0);
         // 429: la puerta pausa (max(Retry-After, fin de ventana)) y la respuesta final
         // llega con ok=false y cooldown >= Retry-After (gate.rs throttle/serve).
-        state.reply(0, false, Duration::from_secs(60), now, Some((interval, Duration::ZERO)));
+        state.reply(
+            0,
+            false,
+            Duration::from_secs(60),
+            now,
+            Some((interval, Duration::ZERO)),
+        );
         assert_eq!(state.snapshot_wanted(now + Duration::from_secs(30)), None);
-        assert_eq!(state.snapshot_wanted(now + Duration::from_secs(61)), Some(false));
+        assert_eq!(
+            state.snapshot_wanted(now + Duration::from_secs(61)),
+            Some(false)
+        );
         // El websocket no se entera del 429: el arbitro sigue comprometiendo frames.
         let out = state.arbiter.offer(
-            l2::DepthId { first: 100, last: 100, previous: 99 },
+            l2::DepthId {
+                first: 100,
+                last: 100,
+                previous: 99,
+            },
             frame("BTCUSDT"),
             0,
             now + Duration::from_secs(30),
@@ -899,12 +995,25 @@ mod tests {
         state.pending = Some(0);
         // 418: puerta cerrada; rechaza con el tope de espera del kit v1 (gate.rs
         // CLOSED_COOLDOWN = 3600 s). Un intento por hora mientras siga cerrada.
-        state.reply(0, false, Duration::from_secs(3600), now, Some((interval, Duration::ZERO)));
+        state.reply(
+            0,
+            false,
+            Duration::from_secs(3600),
+            now,
+            Some((interval, Duration::ZERO)),
+        );
         assert_eq!(state.snapshot_wanted(now + Duration::from_secs(3599)), None);
-        assert_eq!(state.snapshot_wanted(now + Duration::from_secs(3601)), Some(false));
+        assert_eq!(
+            state.snapshot_wanted(now + Duration::from_secs(3601)),
+            Some(false)
+        );
         // El flujo publico sigue arbitrando durante el veto REST.
         let out = state.arbiter.offer(
-            l2::DepthId { first: 7, last: 7, previous: 6 },
+            l2::DepthId {
+                first: 7,
+                last: 7,
+                previous: 6,
+            },
             frame("ETHUSDT"),
             0,
             now + Duration::from_secs(3599),
