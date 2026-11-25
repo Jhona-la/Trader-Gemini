@@ -411,15 +411,23 @@ pub struct VisitLimits {
 impl VisitLimits {
     /// Presupuesto canonico de secciones: valor de CODEC_BLOCK_RAW, src/main.rs:92.
     /// El mismo numero tiene distinta unidad logica en codificador y visitante.
+    // Motivo: API del lector TGLL v2 (entrenamiento, C y train_forest); hoy solo en pruebas.
+    #[cfg_attr(not(test), allow(dead_code))]
     pub const CAPTURE_BLOCK_BYTES: usize = 64 << 20;
     /// CODEC_WINDOW_LOG, src/main.rs:96; ventana maxima de 128 MiB.
+    // Motivo: API del lector TGLL v2 (entrenamiento, C y train_forest); hoy solo en pruebas.
+    #[cfg_attr(not(test), allow(dead_code))]
     pub const CAPTURE_WINDOW_LOG_MAX: u32 = 27;
     /// Capacidad ya usada por los buffers del codec en encode y decode.
+    // Motivo: API del lector TGLL v2 (entrenamiento, C y train_forest); hoy solo en pruebas.
+    #[cfg_attr(not(test), allow(dead_code))]
     pub const CAPTURE_IO_BUFFER_BYTES: usize = 1 << 20;
 
     /// Los limites de linea y diccionario siguen siendo decisiones explicitas
     /// del llamante. Un bloque valido con secciones mayores que el presupuesto
     /// produce error; no se amplia silenciosamente ni se equipara al crudo.
+    // Motivo: API del lector TGLL v2 (entrenamiento, C y train_forest); hoy solo en pruebas.
+    #[cfg_attr(not(test), allow(dead_code))]
     pub const fn capture(max_line_bytes: usize, max_dictionary_bytes: usize) -> Self {
         Self {
             max_block_bytes: Self::CAPTURE_BLOCK_BYTES,
@@ -686,6 +694,8 @@ pub fn visit_lines(
 
 /// Entrada por ruta para el entrenamiento: rechaza .partial antes de abrirlo.
 /// La variante Read no conoce nombres y no puede comprobar este requisito.
+// Motivo: API del lector TGLL v2 (entrenamiento, C y train_forest); hoy solo en pruebas.
+#[cfg_attr(not(test), allow(dead_code))]
 pub fn visit_file(
     path: impl AsRef<std::path::Path>,
     limits: VisitLimits,
