@@ -1,0 +1,13 @@
+{
+  "schema": 1,
+  "que": "Parametros de la cola de archivo del run del incidente row_capacity (terminado en 29060), leidos de su RUN.json y END.json",
+  "fuente": "agentes/salidas/20261123-1340-codex2-fallascaptura/evidencia_09_runs_parametros.txt (SHA256 51629983767BE21A958156A75F12A38672E90FFD87B011CE21A8FA7AE60ACDB6), lineas 66-68 (RUN.json:23-25) y 5, 9, 12, 13, 17 (END.json:5,9,12,13,17)",
+  "run": "run-mainnet-1795133439214-29060",
+  "queue_byte_budget": 536870912,
+  "queue_capacity": 131072,
+  "queue_row_overhead_charge": 2048,
+  "end_failure_reason": "row_capacity",
+  "end_rejected_queue_occupied": 131072,
+  "end_rejected_charged_bytes": 304298586,
+  "end_rejected_row_charge_bytes": 2287
+}
