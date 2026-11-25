@@ -35,6 +35,41 @@ use adaptador::*;
 struct Contador;
 static VIVOS: AtomicUsize = AtomicUsize::new(0);
 static PICO: AtomicUsize = AtomicUsize::new(0);
+/// Heap vivo contado solo en los hilos marcados con `Marca` (a10); el resto del proceso no entra.
+static VIVOS_MEDIDA: AtomicUsize = AtomicUsize::new(0);
+
+thread_local! {
+    // const y Cell<bool> sin Drop: no reserva heap ni registra destructor (no recursa en el asignador).
+    static EN_MEDIDA: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+/// Anota `delta` en VIVOS_MEDIDA si el hilo esta marcado (un hilo en cierre cuenta como no marcado).
+/// La resta es saturada: liberar en un hilo marcado lo asignado sin marcar no subdesborda.
+fn anotar(delta: usize, suma: bool) {
+    if EN_MEDIDA.try_with(|c| c.get()).unwrap_or(false) {
+        if suma {
+            VIVOS_MEDIDA.fetch_add(delta, Ordering::Relaxed);
+        } else {
+            let _ = VIVOS_MEDIDA.fetch_update(Ordering::Relaxed, Ordering::Relaxed, |v| {
+                Some(v.saturating_sub(delta))
+            });
+        }
+    }
+}
+
+/// Guarda RAII: marca el hilo actual para la medida y lo desmarca al salir (tambien en panic).
+struct Marca;
+impl Marca {
+    fn poner() -> Marca {
+        EN_MEDIDA.with(|c| c.set(true));
+        Marca
+    }
+}
+impl Drop for Marca {
+    fn drop(&mut self) {
+        EN_MEDIDA.with(|c| c.set(false));
+    }
+}
 
 unsafe impl GlobalAlloc for Contador {
     unsafe fn alloc(&self, l: Layout) -> *mut u8 {
@@ -42,12 +77,14 @@ unsafe impl GlobalAlloc for Contador {
         if !p.is_null() {
             let v = VIVOS.fetch_add(l.size(), Ordering::Relaxed) + l.size();
             PICO.fetch_max(v, Ordering::Relaxed);
+            anotar(l.size(), true);
         }
         p
     }
     unsafe fn dealloc(&self, p: *mut u8, l: Layout) {
         unsafe { System.dealloc(p, l) };
         VIVOS.fetch_sub(l.size(), Ordering::Relaxed);
+        anotar(l.size(), false);
     }
     unsafe fn realloc(&self, p: *mut u8, l: Layout, nuevo: usize) -> *mut u8 {
         let q = unsafe { System.realloc(p, l, nuevo) };
@@ -55,8 +92,10 @@ unsafe impl GlobalAlloc for Contador {
             if nuevo >= l.size() {
                 let v = VIVOS.fetch_add(nuevo - l.size(), Ordering::Relaxed) + (nuevo - l.size());
                 PICO.fetch_max(v, Ordering::Relaxed);
+                anotar(nuevo - l.size(), true);
             } else {
                 VIVOS.fetch_sub(l.size() - nuevo, Ordering::Relaxed);
+                anotar(l.size() - nuevo, false);
             }
         }
         q
@@ -66,8 +105,9 @@ unsafe impl GlobalAlloc for Contador {
 #[global_allocator]
 static ASIGNADOR: Contador = Contador;
 
+/// Heap vivo de los hilos marcados (acumulador por hilo de la medida de a10).
 fn vivos() -> usize {
-    VIVOS.load(Ordering::Relaxed)
+    VIVOS_MEDIDA.load(Ordering::Relaxed)
 }
 fn reiniciar_pico() -> usize {
     let v = vivos();
@@ -284,6 +324,7 @@ fn a14_escritor_cerrado_antes_de_ofrecer() {
 /// emisores; despues se drena y se mide la recuperacion. Compara el heap por fila con su cargo.
 #[test]
 fn a10_memoria_de_la_cola_con_escritor_detenido() {
+    let _marca = Marca::poner();
     let tam = json!({"QueuedRow": std::mem::size_of::<QueuedRow>(), "QueuedRow_align": std::mem::align_of::<QueuedRow>(),
         "Value": std::mem::size_of::<Value>(), "Option_Cont": std::mem::size_of::<Option<Cont>>(),
         "OwnedSemaphorePermit": std::mem::size_of::<OwnedSemaphorePermit>()});
@@ -299,6 +340,7 @@ fn a10_memoria_de_la_cola_con_escritor_detenido() {
             for emisor in 0..4u64 {
                 let (q, largos, cargo_total, admitidas) = (q.clone(), largos.clone(), Arc::clone(&cargo_total), Arc::clone(&admitidas));
                 s.spawn(move || {
+                    let _marca = Marca::poner();
                     for k in 0..(filas / 4) as u64 {
                         let id = emisor * 1_000_000 + k;
                         let f = fila(id, largos[(k as usize) % largos.len()]);
