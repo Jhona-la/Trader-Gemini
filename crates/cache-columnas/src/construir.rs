@@ -102,7 +102,7 @@ pub fn construir_registros(
     if !nombre_valido(&op.simbolo) {
         return Err(format!("simbolo invalido: {:?}", op.simbolo));
     }
-    if cuerpo.len() % BYTES_REGISTRO != 0 {
+    if !cuerpo.len().is_multiple_of(BYTES_REGISTRO) {
         return Err(format!("{}: registro parcial ({} B no es multiplo de {BYTES_REGISTRO})", origen.logica, cuerpo.len()));
     }
     let n = cuerpo.len() / BYTES_REGISTRO;

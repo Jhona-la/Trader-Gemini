@@ -35,18 +35,19 @@ use feature_engine::{
     GeometricLanglandsHeckeEngine, GeometricLanglandsHeckeReport, GrossPitaevskiiBecEngine,
     GrossPitaevskiiBecReport, GrossPitaevskiiParams, HeteroticE8CalabiYauConfig,
     HeteroticE8CalabiYauEngine, HeteroticE8CalabiYauReport, HomologicalMirrorSymmetryConfig,
-    HomologicalMirrorSymmetryEngine, HomologicalMirrorSymmetryReport, HyperbolicPoincareHodgeEngine,
-    HyperbolicPoincareHodgeParams, HyperbolicPoincareHodgeReport, JoyceG2Config, JoyceG2Report,
-    JtSchwarzianConfig, JtSchwarzianEngine, JtSchwarzianReport, KostantSouriauConfig,
-    KostantSouriauPrequantumEngine, KostantSouriauReport, LatticeQcdConfig, LatticeQcdReport,
-    LatticeQcdWilsonPolyakovEngine, LiouvilleCft2dQuantumGravityEngine, LiouvilleCftParams,
-    LiouvilleQuantumGravityReport, MTheoryJoyceG2Engine, MatrixModelKpConfig,
-    MatrixModelKpHierarchyEngine, MatrixModelKpReport, MongeKantorovichWassersteinEngine,
-    PenroseSpinNetworkEngine, PenroseSpinNetworkParams, PenroseSpinNetworkReport,
-    PepsHypergraphRicciEngine, PepsHypergraphRicciReport, PepsRicciParams,
-    QuantumGeodesicPhaseSpaceEngine, SymplecticFloerCohomologyEngine, SymplecticFloerConfig,
-    SymplecticFloerReport, VietorisRipsParams, VietorisRipsReport, VietorisRipsTopologicalEngine,
-    WassersteinParams, WassersteinReport, KP_MATRIX_DIM, WASSERSTEIN_NODES,
+    HomologicalMirrorSymmetryEngine, HomologicalMirrorSymmetryReport,
+    HyperbolicPoincareHodgeEngine, HyperbolicPoincareHodgeParams, HyperbolicPoincareHodgeReport,
+    JoyceG2Config, JoyceG2Report, JtSchwarzianConfig, JtSchwarzianEngine, JtSchwarzianReport,
+    KP_MATRIX_DIM, KostantSouriauConfig, KostantSouriauPrequantumEngine, KostantSouriauReport,
+    LatticeQcdConfig, LatticeQcdReport, LatticeQcdWilsonPolyakovEngine,
+    LiouvilleCft2dQuantumGravityEngine, LiouvilleCftParams, LiouvilleQuantumGravityReport,
+    MTheoryJoyceG2Engine, MatrixModelKpConfig, MatrixModelKpHierarchyEngine, MatrixModelKpReport,
+    MongeKantorovichWassersteinEngine, PenroseSpinNetworkEngine, PenroseSpinNetworkParams,
+    PenroseSpinNetworkReport, PepsHypergraphRicciEngine, PepsHypergraphRicciReport,
+    PepsRicciParams, QuantumGeodesicPhaseSpaceEngine, SpinNetworkInput,
+    SymplecticFloerCohomologyEngine, SymplecticFloerConfig, SymplecticFloerReport, UpdateParams,
+    VietorisRipsParams, VietorisRipsReport, VietorisRipsTopologicalEngine, WASSERSTEIN_NODES,
+    WassersteinParams, WassersteinReport,
 };
 use risk_engine::{
     AdaptiveQuantumVetoGovernor, AdaptiveVetoDecision, AsymptoticSafetyConfig,
@@ -862,15 +863,16 @@ impl OmniscientLivingGraphOrchestrator {
 
         // 22. Auto-Regulación Cuántica por Invariantes de Calabi-Yau y Seiberg-Witten (Fase 55)
         let depth_imbalance = (bid_qty - ask_qty) / (bid_qty + ask_qty).max(0.001);
-        let calabi_yau_report = self.calabi_yau_engines[safe_coin_id].update_and_evaluate(
-            price_ret,
-            volatility_state.effective_volatility,
-            obi,
-            ofi,
-            spread_bps,
-            depth_imbalance,
-            event_time_ms,
-        );
+        let calabi_yau_report =
+            self.calabi_yau_engines[safe_coin_id].update_and_evaluate(UpdateParams {
+                price_ret,
+                instantaneous_vol: volatility_state.effective_volatility,
+                obi,
+                ofi,
+                spread_bps,
+                depth_imbalance,
+                event_time_ms,
+            });
 
         // 23. Termodinámica Estocástica de Jarzynski-Crooks y Producción de Entropía (Fase 56)
         let jarzynski_crooks_report = self.jarzynski_crooks_engines[safe_coin_id]
@@ -893,15 +895,16 @@ impl OmniscientLivingGraphOrchestrator {
         );
 
         // 25. Grafo de Espín Cuántico de Penrose y Entropía Holográfica Ryu-Takayanagi (Fase 58)
-        let penrose_spin_report = self.penrose_spin_engines[safe_coin_id].update_and_evaluate(
-            price_ret,
-            volatility_state.effective_volatility,
-            ofi,
-            obi,
-            spread_bps,
-            depth_imbalance,
-            event_time_ms,
-        );
+        let penrose_spin_report =
+            self.penrose_spin_engines[safe_coin_id].update_and_evaluate(SpinNetworkInput {
+                price_ret,
+                instantaneous_vol: volatility_state.effective_volatility,
+                ofi,
+                obi,
+                spread_bps,
+                depth_imbalance,
+                event_time_ms,
+            });
 
         // 26. Operador de Transferencia de Ruelle-Frobenius y Resonancias Pollicott-Ruelle (Fase 59)
         let ruelle_frobenius_report = self.ruelle_frobenius_engines[safe_coin_id]

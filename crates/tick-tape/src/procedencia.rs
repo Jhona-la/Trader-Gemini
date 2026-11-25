@@ -204,11 +204,11 @@ fn registro_valido(bid: f64, ask: f64, bq: f64, aq: f64) -> bool {
 
 /// Firma de los registros crudos de 40 B (sin cabecera), ANTES de cualquier saneamiento. Recorre todos.
 pub fn firma_de_registros(cuerpo: &[u8]) -> Result<Firma, String> {
-    if cuerpo.len() % REGISTRO != 0 {
+    if !cuerpo.len().is_multiple_of(REGISTRO) {
         return Err(format!("{} B no son registros de {REGISTRO} B", cuerpo.len()));
     }
     let mut f = Firma::default();
-    for (k, r) in cuerpo.chunks_exact(REGISTRO).enumerate() {
+    for (k, r) in cuerpo.as_chunks::<REGISTRO>().0.iter().enumerate() {
         let k = k as u64;
         f.registros += 1;
         let (bid, ask, bq, aq) = (f64_en(r, 8), f64_en(r, 16), f64_en(r, 24), f64_en(r, 32));
@@ -309,7 +309,7 @@ fn hex_exacto<const N: usize>(s: &str, campo: &str) -> Result<[u8; N], String> {
     }
     let nib = |c: u8| if c <= b'9' { c - b'0' } else { c - b'a' + 10 };
     let mut out = [0u8; N];
-    for (k, par) in b.chunks_exact(2).enumerate() {
+    for (k, par) in b.as_chunks::<2>().0.iter().enumerate() {
         out[k] = nib(par[0]) << 4 | nib(par[1]);
     }
     Ok(out)

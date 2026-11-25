@@ -45,6 +45,17 @@ pub struct NavierStokesParams {
     pub ewma_alpha: f64,
 }
 
+#[derive(Debug, Clone, Copy)]
+pub struct NavierStokesInput {
+    pub bid_price: f64,
+    pub ask_price: f64,
+    pub bid_qty: f64,
+    pub ask_qty: f64,
+    pub trade_qty: f64,
+    pub atr_pct: f64,
+    pub event_time_ms: u64,
+}
+
 impl Default for NavierStokesParams {
     fn default() -> Self {
         Self {
@@ -210,30 +221,21 @@ impl NavierStokesReynoldsEngine {
     /// * `atr_pct`: Rango verdadero medio relativo (fracción de precio).
     /// * `event_time_ms`: Marca temporal del exchange en milisegundos.
     #[inline(always)]
-    pub fn update(
-        &mut self,
-        bid_price: f64,
-        ask_price: f64,
-        bid_qty: f64,
-        ask_qty: f64,
-        trade_qty: f64,
-        atr_pct: f64,
-        event_time_ms: u64,
-    ) -> f64 {
-        if !bid_price.is_finite()
-            || !ask_price.is_finite()
-            || bid_price <= 0.0
-            || ask_price <= bid_price
+    pub fn update(&mut self, input: NavierStokesInput) -> f64 {
+        if !input.bid_price.is_finite()
+            || !input.ask_price.is_finite()
+            || input.bid_price <= 0.0
+            || input.ask_price <= input.bid_price
         {
             return self.reynolds_number;
         }
 
-        let mid_price = (bid_price + ask_price) * 0.5;
-        let spread = ask_price - bid_price;
+        let mid_price = (input.bid_price + input.ask_price) * 0.5;
+        let spread = input.ask_price - input.bid_price;
 
         // 1. Escala temporal física causal (dt en segundos)
-        let dt = if self.prev_event_time_ms > 0 && event_time_ms > self.prev_event_time_ms {
-            ((event_time_ms - self.prev_event_time_ms) as f64 * 0.001).clamp(0.0005, 5.0)
+        let dt = if self.prev_event_time_ms > 0 && input.event_time_ms > self.prev_event_time_ms {
+            ((input.event_time_ms - self.prev_event_time_ms) as f64 * 0.001).clamp(0.0005, 5.0)
         } else {
             0.050 // Inicialización o eventos intra-ms: 50 ms por defecto
         };
@@ -249,21 +251,30 @@ impl NavierStokesReynoldsEngine {
         self.acceleration = current_accel.clamp(-1e6, 1e6);
 
         // 3. Profundidad pasiva BBO en términos de valor nocional (amortiguamiento viscoso)
-        let valid_bid_qty = if bid_qty.is_finite() && bid_qty > 0.0 { bid_qty } else { 1.0 };
-        let valid_ask_qty = if ask_qty.is_finite() && ask_qty > 0.0 { ask_qty } else { 1.0 };
-        let passive_depth_usd = (valid_bid_qty * bid_price + valid_ask_qty * ask_price).max(10.0);
+        let valid_bid_qty = if input.bid_qty.is_finite() && input.bid_qty > 0.0 {
+            input.bid_qty
+        } else {
+            1.0
+        };
+        let valid_ask_qty = if input.ask_qty.is_finite() && input.ask_qty > 0.0 {
+            input.ask_qty
+        } else {
+            1.0
+        };
+        let passive_depth_usd =
+            (valid_bid_qty * input.bid_price + valid_ask_qty * input.ask_price).max(10.0);
 
         // 4. Inercia del volumen agresor y multiplicador adimensional de agresión
-        let aggressive_trade_usd = if trade_qty.is_finite() && trade_qty > 0.0 {
-            trade_qty * mid_price
+        let aggressive_trade_usd = if input.trade_qty.is_finite() && input.trade_qty > 0.0 {
+            input.trade_qty * mid_price
         } else {
             0.0
         };
         let aggression_multiplier = 1.0 + (aggressive_trade_usd / passive_depth_usd).clamp(0.0, 20.0);
 
         // 5. Escala característica de longitud L y regularización de capa límite [USD]
-        let safe_atr = if atr_pct.is_finite() && atr_pct > 0.0 {
-            atr_pct.clamp(0.0002, 0.10)
+        let safe_atr = if input.atr_pct.is_finite() && input.atr_pct > 0.0 {
+            input.atr_pct.clamp(0.0002, 0.10)
         } else {
             0.0010
         };
@@ -354,7 +365,7 @@ impl NavierStokesReynoldsEngine {
         self.mfg_stability_index = stability;
 
         self.prev_mid_price = mid_price;
-        self.prev_event_time_ms = event_time_ms;
+        self.prev_event_time_ms = input.event_time_ms;
 
         self.reynolds_number
     }
@@ -441,15 +452,15 @@ mod tests {
         for i in 0..20 {
             // Precio oscila muy levemente (0.01 USD), spread saludable (1.0 USD), sin trades agresivos
             let p = base_p + (i % 2) as f64 * 0.01;
-            re = engine.update(
-                p,
-                p + 1.0,
-                10.0,
-                10.0,
-                0.0,
-                0.0010,
-                1_000_000 + i * 100,
-            );
+            re = engine.update(NavierStokesInput {
+                bid_price: p,
+                ask_price: p + 1.0,
+                bid_qty: 10.0,
+                ask_qty: 10.0,
+                trade_qty: 0.0,
+                atr_pct: 0.0010,
+                event_time_ms: 1_000_000 + i * 100,
+            });
         }
         assert!(re < NavierStokesReynoldsEngine::CRITICAL_REYNOLDS_LAMINAR, "Re debe ser laminar: {re}");
         assert_eq!(engine.regime(), HydrodynamicRegime::Laminar);
@@ -461,18 +472,26 @@ mod tests {
     fn test_reynolds_turbulento_en_salto_violento_con_flujo_agresor() {
         let mut engine = NavierStokesReynoldsEngine::new();
         // Calentar
-        engine.update(50_000.0, 50_001.0, 5.0, 5.0, 0.0, 0.0010, 1_000_000);
+        engine.update(NavierStokesInput {
+            bid_price: 50_000.0,
+            ask_price: 50_001.0,
+            bid_qty: 5.0,
+            ask_qty: 5.0,
+            trade_qty: 0.0,
+            atr_pct: 0.0010,
+            event_time_ms: 1_000_000,
+        });
 
         // Salto masivo de precio en 10ms (150 USD) con 100x volumen agresor
-        let re = engine.update(
-            50_150.0,
-            50_151.0,
-            1.0,
-            1.0,
-            200.0,
-            0.0010,
-            1_000_010,
-        );
+        let re = engine.update(NavierStokesInput {
+            bid_price: 50_150.0,
+            ask_price: 50_151.0,
+            bid_qty: 1.0,
+            ask_qty: 1.0,
+            trade_qty: 200.0,
+            atr_pct: 0.0010,
+            event_time_ms: 1_000_010,
+        });
 
         assert!(re >= NavierStokesReynoldsEngine::CRITICAL_REYNOLDS_TURBULENT, "Re debe ser turbulento: {re}");
         assert_eq!(engine.regime(), HydrodynamicRegime::Turbulent);
@@ -483,8 +502,24 @@ mod tests {
     #[test]
     fn test_inmunidad_a_nan_y_precios_no_finitos() {
         let mut engine = NavierStokesReynoldsEngine::new();
-        let re_prev = engine.update(50_000.0, 50_001.0, 5.0, 5.0, 0.0, 0.0010, 1_000_000);
-        let re_nan = engine.update(f64::NAN, 50_001.0, 5.0, 5.0, 0.0, 0.0010, 1_000_100);
+        let re_prev = engine.update(NavierStokesInput {
+            bid_price: 50_000.0,
+            ask_price: 50_001.0,
+            bid_qty: 5.0,
+            ask_qty: 5.0,
+            trade_qty: 0.0,
+            atr_pct: 0.0010,
+            event_time_ms: 1_000_000,
+        });
+        let re_nan = engine.update(NavierStokesInput {
+            bid_price: f64::NAN,
+            ask_price: 50_001.0,
+            bid_qty: 5.0,
+            ask_qty: 5.0,
+            trade_qty: 0.0,
+            atr_pct: 0.0010,
+            event_time_ms: 1_000_100,
+        });
         assert_eq!(re_prev, re_nan);
         assert!(engine.reynolds_number.is_finite());
         assert!(engine.laminar_share.is_finite());
@@ -508,9 +543,25 @@ mod tests {
     fn test_mfg_stability_and_mach_supersonic_shockwave() {
         let mut engine = NavierStokesReynoldsEngine::new();
         // Calentar
-        engine.update(50_000.0, 50_001.0, 10.0, 10.0, 0.0, 0.0010, 1_000_000);
+        engine.update(NavierStokesInput {
+            bid_price: 50_000.0,
+            ask_price: 50_001.0,
+            bid_qty: 10.0,
+            ask_qty: 10.0,
+            trade_qty: 0.0,
+            atr_pct: 0.0010,
+            event_time_ms: 1_000_000,
+        });
         // Régimen tranquilo: subsónico y alta estabilidad MFG
-        engine.update(50_000.01, 50_001.01, 10.0, 10.0, 0.0, 0.0010, 1_000_100);
+        engine.update(NavierStokesInput {
+            bid_price: 50_000.01,
+            ask_price: 50_001.01,
+            bid_qty: 10.0,
+            ask_qty: 10.0,
+            trade_qty: 0.0,
+            atr_pct: 0.0010,
+            event_time_ms: 1_000_100,
+        });
         assert!(!engine.is_supersonic());
         assert!(engine.mach_number() < 1.0);
         assert!(engine.mfg_stability_index() > 0.30);
@@ -518,7 +569,15 @@ mod tests {
         assert!(engine.sound_speed() > 0.0);
 
         // Disparo violento con vaciado de profundidad: flujo supersónico
-        engine.update(50_200.0, 50_201.0, 0.1, 0.1, 500.0, 0.0010, 1_000_110);
+        engine.update(NavierStokesInput {
+            bid_price: 50_200.0,
+            ask_price: 50_201.0,
+            bid_qty: 0.1,
+            ask_qty: 0.1,
+            trade_qty: 500.0,
+            atr_pct: 0.0010,
+            event_time_ms: 1_000_110,
+        });
         assert!(engine.is_supersonic(), "Debe detectar flujo supersónico Ma={}", engine.mach_number());
         assert!(engine.mach_number() >= 1.0);
         assert!(engine.mfg_stability_index() < 0.05, "Estabilidad colapsa ante shockwave");

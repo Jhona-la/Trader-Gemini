@@ -188,9 +188,9 @@ impl VietorisRipsTopologicalEngine {
 
         // 2. Construcción de matriz de distancias simétrica en stack ($16 \times 16$)
         let mut dist_matrix = [[0.0_f64; TDA_POINT_CLOUD_LEN]; TDA_POINT_CLOUD_LEN];
-        for i in 0..n {
-            for j in (i + 1)..n {
-                let d = self.point_cloud[i].distance_to(&self.point_cloud[j]);
+        for (i, pi) in self.point_cloud.iter().enumerate().take(n) {
+            for (j, pj) in self.point_cloud.iter().enumerate().take(n).skip(i + 1) {
+                let d = pi.distance_to(pj);
                 dist_matrix[i][j] = d;
                 dist_matrix[j][i] = d;
             }
@@ -204,14 +204,14 @@ impl VietorisRipsTopologicalEngine {
         let mut r = self.params.base_filtration_radius.max(0.01);
         let mut prev_components = n as f64;
 
-        for level in 0..TDA_FILTRATION_LEVELS {
+        for lifetimes_level in lifetimes.iter_mut().take(TDA_FILTRATION_LEVELS) {
             let (b0, b1) = self.compute_betti_at_radius(&dist_matrix, n, r);
             betti_0_sum += b0 as f64;
             betti_1_sum += b1 as f64;
 
             // Vida de componentes que colapsan en este nivel
             let collapsed = (prev_components - (b0 as f64)).max(0.0);
-            lifetimes[level] = collapsed * r;
+            *lifetimes_level = collapsed * r;
             prev_components = b0 as f64;
 
             r *= self.params.filtration_step_scale.clamp(1.10, 3.0);
@@ -309,8 +309,8 @@ impl VietorisRipsTopologicalEngine {
 
         // Conteo de componentes conexas $\beta_0$
         let mut b0 = 0_usize;
-        for i in 0..n {
-            if parent[i] == i {
+        for (i, &p) in parent.iter().enumerate().take(n) {
+            if p == i {
                 b0 += 1;
             }
         }
@@ -320,8 +320,8 @@ impl VietorisRipsTopologicalEngine {
         for i in 0..n {
             for j in (i + 1)..n {
                 if adj[i][j] {
-                    for k in (j + 1)..n {
-                        if adj[i][k] && adj[j][k] {
+                    for (k, &edge_jk) in adj[j].iter().enumerate().take(n).skip(j + 1) {
+                        if adj[i][k] && edge_jk {
                             triangle_count += 1;
                         }
                     }

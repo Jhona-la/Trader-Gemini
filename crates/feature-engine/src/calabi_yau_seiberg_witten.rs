@@ -132,6 +132,17 @@ pub struct CalabiYauSeibergWittenReport {
     pub event_time_ms: u64,
 }
 
+#[derive(Debug, Clone, Copy)]
+pub struct UpdateParams {
+    pub price_ret: f64,
+    pub instantaneous_vol: f64,
+    pub obi: f64,
+    pub ofi: f64,
+    pub spread_bps: f64,
+    pub depth_imbalance: f64,
+    pub event_time_ms: u64,
+}
+
 /// Motor de Auto-Regulación Cuántica por Invariantes de Calabi-Yau y Fibraciones de Seiberg-Witten.
 #[derive(Debug, Clone)]
 pub struct CalabiYauSeibergWittenEngine {
@@ -155,27 +166,18 @@ impl CalabiYauSeibergWittenEngine {
     }
 
     /// Actualiza el estado de microestructura y calcula los invariantes geométricos en $O(1)$ stack.
-    pub fn update_and_evaluate(
-        &mut self,
-        price_ret: f64,
-        instantaneous_vol: f64,
-        obi: f64,
-        ofi: f64,
-        spread_bps: f64,
-        depth_imbalance: f64,
-        event_time_ms: u64,
-    ) -> CalabiYauSeibergWittenReport {
-        self.last_event_time_ms = event_time_ms;
+    pub fn update_and_evaluate(&mut self, params: UpdateParams) -> CalabiYauSeibergWittenReport {
+        self.last_event_time_ms = params.event_time_ms;
 
         // 1. Mapeo a las 3 coordenadas complejas en $\mathbb{C}^3$
         let z1 = ComplexCoord::new(
-            (price_ret * 100.0).clamp(-10.0, 10.0),
-            (instantaneous_vol * 100.0).clamp(0.0, 10.0),
+            (params.price_ret * 100.0).clamp(-10.0, 10.0),
+            (params.instantaneous_vol * 100.0).clamp(0.0, 10.0),
         );
-        let z2 = ComplexCoord::new(obi.clamp(-1.0, 1.0), ofi.clamp(-1.0, 1.0));
+        let z2 = ComplexCoord::new(params.obi.clamp(-1.0, 1.0), params.ofi.clamp(-1.0, 1.0));
         let z3 = ComplexCoord::new(
-            (spread_bps * 0.1).clamp(0.0, 10.0),
-            depth_imbalance.clamp(-1.0, 1.0),
+            (params.spread_bps * 0.1).clamp(0.0, 10.0),
+            params.depth_imbalance.clamp(-1.0, 1.0),
         );
         let current_state = [z1, z2, z3];
 
@@ -256,7 +258,7 @@ impl CalabiYauSeibergWittenEngine {
             hodge_euler_characteristic,
             conifold_singularity_detected,
             slot_scaling_factor,
-            event_time_ms,
+            event_time_ms: params.event_time_ms,
         }
     }
 }

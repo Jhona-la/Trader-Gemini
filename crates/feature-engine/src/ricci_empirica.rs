@@ -40,7 +40,7 @@ where
     G: Fn(f64, f64) -> [[f64; 2]; 2],
 {
     let mut dg = [[[0.0f64; 2]; 2]; 2];
-    for k in 0..2 {
+    for (k, dg_k) in dg.iter_mut().enumerate() {
         let gp = if k == 0 {
             metrica(t1 + h, t2)
         } else {
@@ -57,7 +57,7 @@ where
                 if !v.is_finite() {
                     return None;
                 }
-                dg[k][i][j] = v;
+                dg_k[i][j] = v;
             }
         }
     }
@@ -79,8 +79,12 @@ fn inversa2x2(g: &[[f64; 2]; 2]) -> Option<[[f64; 2]; 2]> {
     Some([[d / det, -b / det], [-c / det, a / det]])
 }
 
+type Metrica2x2 = [[f64; 2]; 2];
+type Christoffel2x2x2 = [[[f64; 2]; 2]; 2];
+type CristoResult = (Metrica2x2, Christoffel2x2x2);
+
 /// Métrica + inversa + símbolos de Christoffel Γ^i_{jk} en un punto.
-fn cristo<G>(metrica: &G, t1: f64, t2: f64, h: f64) -> Option<([[f64; 2]; 2], [[[f64; 2]; 2]; 2])>
+fn cristo<G>(metrica: &G, t1: f64, t2: f64, h: f64) -> Option<CristoResult>
 where
     G: Fn(f64, f64) -> [[f64; 2]; 2],
 {
@@ -147,8 +151,8 @@ where
                 // ∂_m Γ^l_{l j}: derivada en dirección m de Γ^l_{jl}
                 let d2 = d_gam[m][l][l][j];
                 let mut r = d1 - d2;
-                for t in 0..2 {
-                    r += gam[l][l][t] * gam[t][m][j] - gam[l][m][t] * gam[t][l][j];
+                for (t, gam_t) in gam.iter().enumerate() {
+                    r += gam[l][l][t] * gam_t[m][j] - gam[l][m][t] * gam_t[l][j];
                 }
                 ric_jm += r;
             }
