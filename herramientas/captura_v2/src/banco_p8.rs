@@ -336,6 +336,9 @@ fn streams_de(ruta: &str) -> HashSet<String> {
         .unwrap_or_default()
 }
 
+/// Identidades del lote final: (simbolo, flujo, u).
+type Retenidas = Arc<Mutex<Vec<(String, &'static str, u64)>>>;
+
 struct Servidor {
     ws: std::net::SocketAddr,
     rest: std::net::SocketAddr,
@@ -344,7 +347,7 @@ struct Servidor {
     /// SALIDAFALLO-12 (C3): 0 normal; 1 = pedido el lote final L2; 2 = enviado (public callado).
     lote_l2: Arc<AtomicU64>,
     /// Identidades del lote final, fijadas por el servidor ANTES de enviarlo: (simbolo, flujo, u).
-    retenidas: Arc<Mutex<Vec<(String, &'static str, u64)>>>,
+    retenidas: Retenidas,
     /// FALLAS-2: (simbolo, primer a, ultimo a) de la rafaga enviada, fijados por el servidor.
     rafaga: Arc<Mutex<Option<(String, u64, u64)>>>,
 }
@@ -359,7 +362,7 @@ async fn servidor(modo: Modo) -> CaptureResult<Servidor> {
     let u: Arc<Vec<AtomicU64>> = Arc::new(SIMBOLOS.iter().map(|_| AtomicU64::new(1000)).collect());
     let a: Arc<Vec<AtomicU64>> = Arc::new(SIMBOLOS.iter().map(|_| AtomicU64::new(1)).collect());
     let lote_l2 = Arc::new(AtomicU64::new(0));
-    let retenidas: Arc<Mutex<Vec<(String, &'static str, u64)>>> = Arc::default();
+    let retenidas: Retenidas = Arc::default();
     let rafaga_rango: Arc<Mutex<Option<(String, u64, u64)>>> = Arc::default();
     {
         let (tx_pub, tx_mkt, u, a) = (
@@ -397,7 +400,7 @@ async fn servidor(modo: Modo) -> CaptureResult<Servidor> {
                         let _ = tx_pub.send(trama(s, "bookTicker", json!({"e":"bookTicker","s":s,"u":nu,"b":"1.0","B":"2","a":"1.1","A":"3"})));
                     }
                     let _ = tx_mkt.send(agg(s, a[i].fetch_add(1, Ordering::SeqCst) + 1));
-                    if n % (1000 / PASO_SERVIDOR.as_millis() as u64) == 0 {
+                    if n.is_multiple_of(1000 / PASO_SERVIDOR.as_millis() as u64) {
                         let _ = tx_mkt.send(trama(
                             s,
                             "markPrice@1s",
@@ -459,23 +462,23 @@ async fn servidor(modo: Modo) -> CaptureResult<Servidor> {
                 let a = Arc::clone(&a);
                 let rafaga_rango = Arc::clone(&rafaga_rango);
                 tokio::spawn(async move {
-                    if rafaga {
-                        if let Some(i) = SIMBOLOS.iter().position(|s| {
+                    if rafaga
+                        && let Some(i) = SIMBOLOS.iter().position(|s| {
                             pedidos.contains(&format!("{}@aggTrade", s.to_ascii_lowercase()))
-                        }) {
-                            let (mut primero, mut ultimo) = (None, 0);
-                            for _ in 0..tramas {
-                                let id = a[i].fetch_add(1, Ordering::SeqCst) + 1;
-                                let (_, t) = agg(SIMBOLOS[i], id);
-                                if sock.send(Message::Text(t)).await.is_err() {
-                                    return;
-                                }
-                                primero.get_or_insert(id);
-                                ultimo = id;
+                        })
+                    {
+                        let (mut primero, mut ultimo) = (None, 0);
+                        for _ in 0..tramas {
+                            let id = a[i].fetch_add(1, Ordering::SeqCst) + 1;
+                            let (_, t) = agg(SIMBOLOS[i], id);
+                            if sock.send(Message::Text(t)).await.is_err() {
+                                return;
                             }
-                            if let (Ok(mut r), Some(p)) = (rafaga_rango.lock(), primero) {
-                                *r = Some((SIMBOLOS[i].to_owned(), p, ultimo));
-                            }
+                            primero.get_or_insert(id);
+                            ultimo = id;
+                        }
+                        if let (Ok(mut r), Some(p)) = (rafaga_rango.lock(), primero) {
+                            *r = Some((SIMBOLOS[i].to_owned(), p, ultimo));
                         }
                     }
                     let fin = time::sleep(if cerrar {
@@ -662,10 +665,10 @@ fn validar_gzip(p: &Path, hora: Option<u64>) -> Value {
                 *kinds
                     .entry(v["kind"].as_str().unwrap_or("?").to_owned())
                     .or_default() += 1;
-                if let (Some(h), Some(t)) = (hora, v["recv_utc_ms"].as_u64()) {
-                    if t < h || t >= h + HOUR_MS {
-                        fuera_de_hora += 1;
-                    }
+                if let (Some(h), Some(t)) = (hora, v["recv_utc_ms"].as_u64())
+                    && (t < h || t >= h + HOUR_MS)
+                {
+                    fuera_de_hora += 1;
                 }
                 let s = v["ingest_seq"].as_u64().unwrap_or(0);
                 if s <= ultimo {

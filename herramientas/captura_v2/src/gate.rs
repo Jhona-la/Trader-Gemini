@@ -185,20 +185,22 @@ impl Gate {
         };
         let cost = self.cost(kind);
         // Recuperacion del factor: una ventana completa sin 429.
-        if let Some(w) = self.last_429_window {
-            if self.window_index(now_ms(self.clock)) > w + 1 && self.factor < 1.0 {
-                self.factor = (self.factor * 2.0).min(1.0);
-                self.last_429_window = if self.factor < 1.0 {
-                    Some(self.window_index(now_ms(self.clock)) - 1)
-                } else {
-                    None
-                };
-            }
+        if let Some(w) = self.last_429_window
+            && self.window_index(now_ms(self.clock)) > w + 1
+            && self.factor < 1.0
+        {
+            self.factor = (self.factor * 2.0).min(1.0);
+            self.last_429_window = if self.factor < 1.0 {
+                Some(self.window_index(now_ms(self.clock)) - 1)
+            } else {
+                None
+            };
         }
-        if let Some((window, used)) = self.used {
-            if window == self.window_index(now_ms(self.clock)) && used + cost >= l.limit {
-                return Some(self.until_window_end() + Duration::from_millis(250));
-            }
+        if let Some((window, used)) = self.used
+            && window == self.window_index(now_ms(self.clock))
+            && used + cost >= l.limit
+        {
+            return Some(self.until_window_end() + Duration::from_millis(250));
         }
         if let Some(last) = self.last_sent {
             let rate_per_ms = l.limit as f64 / l.window.as_millis() as f64 * self.factor;
@@ -222,13 +224,14 @@ impl Gate {
             .and_then(|v| v.to_str().ok())
             .and_then(|s| s.parse::<u64>().ok())?;
         let window = self.window_index(now_ms(self.clock));
-        if let Some((w, before)) = self.used {
-            if w == window && used > before {
-                let delta = used - before;
-                let e = self.learned.entry(kind).or_insert(0);
-                if delta > *e {
-                    *e = delta;
-                }
+        if let Some((w, before)) = self.used
+            && w == window
+            && used > before
+        {
+            let delta = used - before;
+            let e = self.learned.entry(kind).or_insert(0);
+            if delta > *e {
+                *e = delta;
             }
         }
         self.used = Some((window, used));
@@ -551,28 +554,28 @@ impl Gate {
                 }
             }
             let mut sleep_for = Duration::from_secs(1);
-            if self.limits.is_some() {
-                if let Some(Reverse((_, _, id))) = heap.peek().copied() {
-                    let kind = store[&id].kind;
-                    match self.wait_for(kind) {
-                        None => {
-                            heap.pop();
-                            let req = store.remove(&id).expect("request in store");
-                            if req.kind == Kind::Depth {
-                                pending_depth.remove(&req.symbol);
-                            }
-                            if let Some(back) = self.serve(req).await? {
-                                order += 1;
-                                heap.push(Reverse((back.priority, order, id)));
-                                if back.kind == Kind::Depth {
-                                    pending_depth.insert(back.symbol.clone(), id);
-                                }
-                                store.insert(id, back);
-                            }
-                            continue;
+            if self.limits.is_some()
+                && let Some(Reverse((_, _, id))) = heap.peek().copied()
+            {
+                let kind = store[&id].kind;
+                match self.wait_for(kind) {
+                    None => {
+                        heap.pop();
+                        let req = store.remove(&id).expect("request in store");
+                        if req.kind == Kind::Depth {
+                            pending_depth.remove(&req.symbol);
                         }
-                        Some(w) => sleep_for = w.min(Duration::from_secs(1)),
+                        if let Some(back) = self.serve(req).await? {
+                            order += 1;
+                            heap.push(Reverse((back.priority, order, id)));
+                            if back.kind == Kind::Depth {
+                                pending_depth.insert(back.symbol.clone(), id);
+                            }
+                            store.insert(id, back);
+                        }
+                        continue;
                     }
+                    Some(w) => sleep_for = w.min(Duration::from_secs(1)),
                 }
             }
             tokio::select! {
@@ -584,15 +587,14 @@ impl Gate {
                         continue;
                     }
                     // Una foto pendiente por simbolo: la mas nueva reemplaza a la vieja.
-                    if req.kind == Kind::Depth {
-                        if let Some(old) = pending_depth.get(&req.symbol).copied() {
-                            if let Some(slot) = store.get_mut(&old) {
-                                let prio = slot.priority.min(req.priority);
-                                *slot = req;
-                                slot.priority = prio;
-                                continue;
-                            }
-                        }
+                    if req.kind == Kind::Depth
+                        && let Some(old) = pending_depth.get(&req.symbol).copied()
+                        && let Some(slot) = store.get_mut(&old)
+                    {
+                        let prio = slot.priority.min(req.priority);
+                        *slot = req;
+                        slot.priority = prio;
+                        continue;
                     }
                     next_id += 1;
                     order += 1;

@@ -381,11 +381,11 @@ fn scan(root: &Path) -> (Vec<Group>, u64, Vec<(PathBuf, String)>) {
     };
     for run in runs.flatten() {
         let path = run.path();
-        if let Ok(m) = run.metadata() {
-            if m.is_file() {
-                total += m.len();
-                continue;
-            }
+        if let Ok(m) = run.metadata()
+            && m.is_file()
+        {
+            total += m.len();
+            continue;
         }
         let Ok(files) = fs::read_dir(&path) else {
             continue;

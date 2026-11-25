@@ -231,11 +231,12 @@ fn retry_archive_sharing_violation<T>(
         match action() {
             Ok(value) => return Ok(value),
             Err(error) => {
-                if cfg!(windows) && error.raw_os_error() == Some(SHARING_VIOLATION) {
-                    if let Some(delay_ms) = delays.next() {
-                        thread::sleep(Duration::from_millis(delay_ms));
-                        continue;
-                    }
+                if cfg!(windows)
+                    && error.raw_os_error() == Some(SHARING_VIOLATION)
+                    && let Some(delay_ms) = delays.next()
+                {
+                    thread::sleep(Duration::from_millis(delay_ms));
+                    continue;
                 }
                 return Err(io::Error::new(
                     error.kind(),
@@ -323,10 +324,10 @@ impl Counts {
         if let Some(stream) = row["stream"].as_str() {
             increment(&mut self.streams, stream);
         }
-        if row["kind"] == "frame" {
-            if let Some(route) = row["route"].as_str() {
-                increment(&mut self.routes, route);
-            }
+        if row["kind"] == "frame"
+            && let Some(route) = row["route"].as_str()
+        {
+            increment(&mut self.routes, route);
         }
         match cont {
             Some(Cont::Depth {
@@ -1808,10 +1809,10 @@ impl ShardCtx {
                     let now = Instant::now();
                     // P8: cancelacion sin panic de la conexion activa antes de su Life::Ended; solo
                     // el join del JoinSet la observa (control sensible de m16).
-                    if active.as_ref().is_some_and(|a| a.opened.is_some()) && inyeccion::cancelar_conexion_market() {
-                        if let Some(a) = &active {
-                            a.abort.abort();
-                        }
+                    if active.as_ref().is_some_and(|a| a.opened.is_some()) && inyeccion::cancelar_conexion_market()
+                        && let Some(a) = &active
+                    {
+                        a.abort.abort();
                     }
                     if active.is_none() && reconnect_at.is_some_and(|t| now >= t) {
                         reconnect_at = None;

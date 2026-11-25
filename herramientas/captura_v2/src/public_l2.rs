@@ -722,29 +722,28 @@ impl ShardCtx {
                         backup_at = None;
                         backup = Some(self.spawn_conn(&life_tx, &mut tasks));
                     }
-                    if let (Some(a), Some(b), Some(due)) = (&active, &backup, rotation_due) {
-                        if now >= due && self.online(b) {
-                            if let Some(opened) = b.opened {
-                                let (missing, streams) = lock(&self.book).recent_rotation_streams(a.id, b.id, now);
-                                if missing.is_empty() && !streams.is_empty() {
-                                    let (old_id, new_id) = (a.id, b.id);
-                                    self.row("rotation_ready", new_id, json!({"old_connection":old_id,"new_connection":new_id,
-                                        "overlap_ms":now.duration_since(opened).as_millis() as u64,
-                                        "streams_on_new":streams,"missing":missing}))?;
-                                    let mut old = active.take().expect("active checked");
-                                    close(&mut old, format!("rotation to connection {new_id}"));
-                                    self.row("rotation_close", old_id, json!({"old_connection":old_id,"new_connection":new_id,
-                                        "old_lived_ms":old.opened.map(|o| o.elapsed().as_millis() as u64)}))?;
-                                    active = backup.take();
-                                    backup = Some(self.spawn_conn(&life_tx, &mut tasks));
-                                    backup_at = None;
-                                    rotation_due = Some(opened + self.rotate_after);
-                                    holding = false;
-                                } else if !holding && now.duration_since(due) >= OVERLAP_GRACE {
-                                    holding = true;
-                                    self.row("rotation_hold", b.id, json!({"old_connection":a.id,"new_connection":b.id,"missing":missing}))?;
-                                }
-                            }
+                    if let (Some(a), Some(b), Some(due)) = (&active, &backup, rotation_due)
+                        && now >= due && self.online(b)
+                        && let Some(opened) = b.opened
+                    {
+                        let (missing, streams) = lock(&self.book).recent_rotation_streams(a.id, b.id, now);
+                        if missing.is_empty() && !streams.is_empty() {
+                            let (old_id, new_id) = (a.id, b.id);
+                            self.row("rotation_ready", new_id, json!({"old_connection":old_id,"new_connection":new_id,
+                                "overlap_ms":now.duration_since(opened).as_millis() as u64,
+                                "streams_on_new":streams,"missing":missing}))?;
+                            let mut old = active.take().expect("active checked");
+                            close(&mut old, format!("rotation to connection {new_id}"));
+                            self.row("rotation_close", old_id, json!({"old_connection":old_id,"new_connection":new_id,
+                                "old_lived_ms":old.opened.map(|o| o.elapsed().as_millis() as u64)}))?;
+                            active = backup.take();
+                            backup = Some(self.spawn_conn(&life_tx, &mut tasks));
+                            backup_at = None;
+                            rotation_due = Some(opened + self.rotate_after);
+                            holding = false;
+                        } else if !holding && now.duration_since(due) >= OVERLAP_GRACE {
+                            holding = true;
+                            self.row("rotation_hold", b.id, json!({"old_connection":a.id,"new_connection":b.id,"missing":missing}))?;
                         }
                     }
                     self.public_tick(now, &reply_tx)?;

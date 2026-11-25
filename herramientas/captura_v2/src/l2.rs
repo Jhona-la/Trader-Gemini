@@ -320,11 +320,11 @@ impl<T> Ticker<T> {
     }
 
     fn emit(&mut self, id: u64, frame: T, output: &mut Vec<T>) {
-        if self.emitted.len() == TICKER_HISTORY {
-            if let Some(old) = self.emitted.pop_front() {
-                self.recent.remove(&old);
-                self.retired_max = Some(self.retired_max.map_or(old, |limit| limit.max(old)));
-            }
+        if self.emitted.len() == TICKER_HISTORY
+            && let Some(old) = self.emitted.pop_front()
+        {
+            self.recent.remove(&old);
+            self.retired_max = Some(self.retired_max.map_or(old, |limit| limit.max(old)));
         }
         self.recent.insert(id);
         self.emitted.push_back(id);

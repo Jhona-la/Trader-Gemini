@@ -1749,12 +1749,12 @@ fn vencimiento_prioriza_sobre_salida_ordenada() {
     let ambas = Arc::new(AtomicBool::new(false));
     let a2 = Arc::clone(&ambas);
     ctl.fijar_pausa(Box::new(move |p| {
-        if p == Punto::VigilanteTrasCortes {
-            if let Some(c) = debil.upgrade() {
-                r2.avanzar(plazo);
-                c.fin_listo(SALIDA_FATAL_CERRADO as u8, false);
-                a2.store(c.fin_hecho() && c.ahora() >= plazo, Ordering::SeqCst);
-            }
+        if p == Punto::VigilanteTrasCortes
+            && let Some(c) = debil.upgrade()
+        {
+            r2.avanzar(plazo);
+            c.fin_listo(SALIDA_FATAL_CERRADO as u8, false);
+            a2.store(c.fin_hecho() && c.ahora() >= plazo, Ordering::SeqCst);
         }
     }));
     let vig = lanzar_vigilante(&ctl);

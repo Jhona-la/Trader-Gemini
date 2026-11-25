@@ -210,7 +210,9 @@ fn arranque(caso: &str, origen: Duration) {
     let root = raiz_vacia().expect("raiz");
     let probe = DiskProbe::new(crate::MIN_FREE_BYTES);
     let cancel = Arc::new(AtomicBool::new(false));
-    let visto: Arc<Mutex<Option<(Option<u64>, usize)>>> = Arc::default();
+    /// (UTC del STATUS, llamadas al disco) vistos en la primera vuelta.
+    type Visto = Arc<Mutex<Option<(Option<u64>, usize)>>>;
+    let visto: Visto = Arc::default();
     let (v2, c2, r2) = (Arc::clone(&visto), Arc::clone(&cancel), root.clone());
     let reloj = RelojGuion::nuevo(
         origen,
