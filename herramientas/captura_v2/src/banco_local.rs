@@ -759,14 +759,14 @@ async fn local_rotation_and_hour_boundary_keep_payload_and_seals() -> CaptureRes
 
     // Re-use the rows from the sockets in the real writer, with a controlled UTC clock.
     let output = TestDir::new()?;
-    let (queue, rx) = ArchiveQueue::new(128, 2 << 20);
+    let (ctl, queue, rx) = shared_archive(128, 2 << 20);
     let (seal_tx, seal_rx) = blocking_channel::sync_channel(SEAL_QUEUE_CAPACITY);
     let seal_path = output.0.clone();
     let sealer = ArchiveWorker::spawn_local("local-seal", move || {
         Ok(seal_segments(&RealDisk, &seal_path, seal_rx, None, None))
     })?;
     let write_path = output.0.clone();
-    let writer = ArchiveWorker::spawn_local("local-archive", move || archive_local(&write_path, rx, seal_tx))?;
+    let writer = spawn_shared_writer("local-archive", &ctl, write_path, rx, seal_tx)?;
     let mut after_roll = false;
     for (r, cont) in &bank.rows {
         let mut row = r.clone();
@@ -782,6 +782,8 @@ async fn local_rotation_and_hour_boundary_keep_payload_and_seals() -> CaptureRes
         queue.offer(row, cont.clone())?;
     }
     drop(queue);
+    // Parada sana en el orden de produccion: soltar la cola y cortar la admision.
+    ctl.admision.cortar(salidafallo::Motivo::Sana);
     time::timeout(WAIT, writer.finish(false)).await??;
     let report = time::timeout(WAIT, sealer.finish(false)).await??;
     assert_eq!(report.segments, 2);
@@ -808,10 +810,42 @@ fn sample_row(ordinal: u64, time_ms: u64) -> Value {
     json!({"kind":"sample","route":"local","seq":ordinal,"recv_utc_ms":time_ms})
 }
 
+/// D29: cola y escritor reales con UNA sola `Admision`, la del `Control` de prueba, como en
+/// produccion (`ArchiveQueue::derivada` con `Arc::clone(&ctl.admision)`). Asi `offer` (al salir
+/// de `Vuelo`) y el corte despiertan al mismo escritor que se registro en `archive`.
+fn shared_archive(cap: usize, byte_limit: usize) -> (Arc<Control>, ArchiveQueue, ArchiveReceiver) {
+    let (ctl, _, _) = salidafallo::tests::control_de_prueba(salidafallo::PLAZO_FATAL);
+    let (queue, rx) = ArchiveQueue::with_admission(cap, byte_limit, Arc::clone(&ctl.admision));
+    (ctl, queue, rx)
+}
+
+/// Escritor real (`archive`) con el mismo `Control` que la cola de `shared_archive`.
+fn spawn_shared_writer(
+    name: &str,
+    ctl: &Arc<Control>,
+    dir: PathBuf,
+    rx: ArchiveReceiver,
+    seal: blocking_channel::SyncSender<Segment<File>>,
+) -> CaptureResult<ArchiveWorker<CaptureResult<()>>> {
+    let writer_ctl = Arc::clone(ctl);
+    ArchiveWorker::spawn(
+        name,
+        Arc::clone(ctl),
+        Arc::new(std::sync::atomic::AtomicBool::new(false)),
+        move || {
+            let outcome = archive(&RealDisk, &dir, rx, seal, &writer_ctl);
+            match outcome.failures.first() {
+                None => Ok(()),
+                Some(f) => Err(io::Error::other(f.to_string()).into()),
+            }
+        },
+    )
+}
+
 async fn stall_sealer(overload: bool) -> CaptureResult<()> {
     let dir = TestDir::new()?;
     let cap = if overload { 3 } else { 8 };
-    let (queue, rx) = ArchiveQueue::new(cap, 256 << 10);
+    let (ctl, queue, rx) = shared_archive(cap, 256 << 10);
     let audit = Arc::clone(&queue.audit);
     // Fill the seal handoff through the real writer while the sealer is paused.
     let (seal_tx, seal_rx) = blocking_channel::sync_channel(1);
@@ -822,9 +856,7 @@ async fn stall_sealer(overload: bool) -> CaptureResult<()> {
         Ok(seal_segments(&RealDisk, &seal_path, seal_rx, None, None))
     })?;
     let write_path = dir.0.clone();
-    let writer = ArchiveWorker::spawn_local("local-writer-delayed", move || {
-        archive_local(&write_path, rx, seal_tx)
-    })?;
+    let writer = spawn_shared_writer("local-writer-delayed", &ctl, write_path, rx, seal_tx)?;
     for ordinal in 1..=3 {
         let ts = (ordinal - 1) * HOUR_MS + ROTATION_GRACE_MS + 1;
         queue.offer(sample_row(ordinal, ts), None)?;
@@ -849,6 +881,8 @@ async fn stall_sealer(overload: bool) -> CaptureResult<()> {
         assert!(err.to_string().contains("row_capacity"), "{err}");
         assert_eq!(audit.failure_reason(), Some("row_capacity"));
         assert_eq!(audit.stop_reason("reader_error", 0), "archive_queue_full");
+        // Como el cierre fatal de produccion: cortar la admision que comparte el escritor.
+        ctl.admision.cortar(salidafallo::Motivo::Fatal);
     } else {
         assert_eq!(audit.failure_reason(), None);
     }
@@ -867,6 +901,10 @@ async fn stall_sealer(overload: bool) -> CaptureResult<()> {
         assert_eq!(rejected[0]["reason"], "row_capacity");
     }
     drop(queue);
+    if !overload {
+        // Parada sana en el orden de produccion: soltar la cola y cortar la admision.
+        ctl.admision.cortar(salidafallo::Motivo::Sana);
+    }
     time::timeout(WAIT, writer.finish(false)).await??;
     let report = time::timeout(WAIT, sealer.finish(false)).await??;
     assert!(report.error.is_none(), "{:?}", report.error);
