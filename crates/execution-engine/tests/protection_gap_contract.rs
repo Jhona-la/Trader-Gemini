@@ -23,7 +23,7 @@ fn cl17_las_piernas_bajo_el_minimo_se_envian_no_se_omiten() {
     assert!(!host.contains("min_notional_skips"), "sin rechazos inventados");
     assert!(cuerpo.contains("\"TAKE_PROFIT_MARKET\""));
     assert!(cuerpo.contains("\"STOP_MARKET\""));
-    assert!(cuerpo.matches("note_rejection(symbol,&e)").count() >= 2);
+    assert!(cuerpo.matches("note_rejection(symbol,is_long,&e)").count() >= 2);
 }
 
 /// Un TP ausente con el SL completo no deja la posición desnuda: no puede
