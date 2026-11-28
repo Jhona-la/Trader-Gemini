@@ -22,6 +22,10 @@ pub const VOL_SPECTRUM_SCALES: usize = 32;
 /// Tamaño de la ventana deslizante de retornos en stack para CWT.
 pub const RETURN_WINDOW_SIZE: usize = 32;
 
+/// Muestras mínimas antes de que la CWT estime volatilidad. Con menos, `update` devuelve el
+/// estado neutro, cuya `effective_volatility = 0.0` significa «sin estimar».
+pub const MUESTRAS_MINIMAS_CWT: usize = 4;
+
 /// Parámetros de configuración del operador de volatilidad continua.
 #[derive(Debug, Clone, Copy)]
 pub struct ContinuousVolatilityParams {
@@ -134,6 +138,16 @@ impl ContinuousVolatilityOperatorEngine {
         }
     }
 
+    /// Si la ventana de retornos está llena y la estimación es la estacionaria. Mientras sea
+    /// `false`, `effective_volatility` no es una medida de volatilidad: vale 0.0 («sin
+    /// estimar») con menos de `MUESTRAS_MINIMAS_CWT` muestras, y después está sesgada, porque
+    /// `update` divide por las muestras vistas pero sólo usa las primeras columnas de los kernels
+    /// de Morlet, centrados en la mitad de la ventana. Con retornos i.i.d. de varianza σ²,
+    /// E[traza]/σ² es 2,84 con 4 muestras, 4,08 con 8, 9,84 con 24 y 8,57 con la ventana llena.
+    pub fn is_warm(&self) -> bool {
+        self.count >= RETURN_WINDOW_SIZE
+    }
+
     /// Actualiza el buffer de retornos en stack y calcula el nuevo estado espectral continuo.
     ///
     /// Complejidad temporal estricta $\mathcal{O}(32 \times 32) \approx 1024$ multiplicaciones FMA
@@ -153,7 +167,7 @@ impl ContinuousVolatilityOperatorEngine {
         }
 
         // Si tenemos pocas muestras, retornamos el estado neutral inicial
-        if self.count < 4 {
+        if self.count < MUESTRAS_MINIMAS_CWT {
             return ContinuousVolatilityState::default();
         }
 
